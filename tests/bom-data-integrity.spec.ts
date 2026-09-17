@@ -2,7 +2,10 @@
  * Coherence checks for the Bill of Materials seed data (Production ▸ Bill of materials).
  *
  * Rule validated: every product reference on every BOM is a REAL registered
- * product id from CATALOG — nothing is a loose/orphan string. Specifically:
+ * product id — nothing is a loose/orphan string. The registry is FULL_CATALOG:
+ * the stocked CATALOG plus SUBCON_CATALOG (the apparel line, held separately so
+ * it does not shift the seed generators' modulo picks — see catalog.ts).
+ * Specifically:
  *   1. Each rawMaterials[].productId resolves to a CATALOG product.
  *   2. finishedGoodId resolves to a CATALOG product.
  *   3. Each otherOutputs[].productId resolves to a CATALOG product.
@@ -13,9 +16,9 @@
  */
 import { describe, it, expect } from 'vitest'
 import { billOfMaterials } from '~/data/billOfMaterials'
-import { CATALOG } from '~/data/catalog'
+import { FULL_CATALOG } from '~/data/catalog'
 
-const catalogIds = new Set(CATALOG.map(p => p.id))
+const catalogIds = new Set(FULL_CATALOG.map(p => p.id))
 
 describe('BOM ↔ CATALOG coherence — no orphan product references', () => {
   it('every rawMaterials productId is a real CATALOG id', () => {

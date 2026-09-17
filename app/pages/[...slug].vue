@@ -114,6 +114,9 @@ const pageRegistry: Record<string, Component> = {
   'Canceled':          defineAsyncComponent(() => import('~/components/pages/CanceledReceiptIndexPage.vue')),
   'Work orders':        defineAsyncComponent(() => import('~/components/pages/WorkOrdersIndexPage.vue')),
   'Bill of materials':  defineAsyncComponent(() => import('~/components/pages/BillOfMaterialsIndexPage.vue')),
+  'Subcon orders':      defineAsyncComponent(() => import('~/components/pages/SubconOrdersIndexPage.vue')),
+  // Reports → Subcon → Custody & WIP dashboard.
+  'Subcon custody':     defineAsyncComponent(() => import('~/components/pages/SubconCustodyDashboardPage.vue')),
   'Warehouse transfers': defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue')),
   'Inbox':             defineAsyncComponent(() => import('~/components/pages/InboxPage.vue')),
   'Stock adjustments':  defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
@@ -267,6 +270,9 @@ const WorkOrderDetailsPage = asyncPage(() => import('~/components/pages/WorkOrde
 const NewMaterialRecordPage = asyncPage(() => import('~/components/pages/NewMaterialRecordPage.vue'))
 const BillOfMaterialsDetailsPage = asyncPage(() => import('~/components/pages/BillOfMaterialsDetailsPage.vue'))
 const CreateBillOfMaterialsPage = asyncPage(() => import('~/components/pages/CreateBillOfMaterialsPage.vue'))
+const SubconOrderDetailsPage = asyncPage(() => import('~/components/pages/SubconOrderDetailsPage.vue'))
+const CreateSubconOrderPage = asyncPage(() => import('~/components/pages/CreateSubconOrderPage.vue'))
+const SubconGoodsReceiptPage = asyncPage(() => import('~/components/pages/SubconGoodsReceiptPage.vue'))
 const ProductionRequestIndexPage = asyncPage(() => import('~/components/pages/ProductionRequestIndexPage.vue'))
 const WarehouseTransfersPage = asyncPage(() => import('~/components/pages/WarehouseTransfersPage.vue'))
 const StockAdjustmentsPage = asyncPage(() => import('~/components/pages/StockAdjustmentsPage.vue'))
@@ -404,6 +410,7 @@ const NewSalesQuotePage = asyncPage(() => import('~/components/pages/NewSalesQuo
 const NewSalesDeliveryPage = asyncPage(() => import('~/components/pages/NewSalesDeliveryPage.vue'))
 const NewPurchaseQuotePage = asyncPage(() => import('~/components/pages/NewPurchaseQuotePage.vue'))
 const NewPurchaseDeliveryPage = asyncPage(() => import('~/components/pages/NewPurchaseDeliveryPage.vue'))
+const NewPurchaseInvoicePage = asyncPage(() => import('~/components/pages/NewPurchaseInvoicePage.vue'))
 const BillReviewPage = asyncPage(() => import('~/components/pages/BillReviewPage.vue'))
 const InvoiceReviewPage = asyncPage(() => import('~/components/pages/InvoiceReviewPage.vue'))
 const ReceiptReviewPage = asyncPage(() => import('~/components/pages/ReceiptReviewPage.vue'))
@@ -667,6 +674,14 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'work-orders') {
     return { component: WorkOrderDetailsPage, id: segs[1] }
   }
+  // /subcon-orders/new → configure a new subcon order (full page); /:id → the
+  // order's document chain. The bare index falls through to the registry.
+  if (segs.length >= 2 && segs[0] === 'subcon-orders') {
+    if (segs[1] === 'new') return { component: CreateSubconOrderPage, id: 'new' }
+    // /subcon-orders/:id/receipt → receive the vendor's output against the order
+    if (segs.length >= 3 && segs[2] === 'receipt') return { component: SubconGoodsReceiptPage, id: segs[1]! }
+    return { component: SubconOrderDetailsPage, id: segs[1]! }
+  }
   // /bill-of-materials/new → create form; /:id → BOM detail.
   // The bare index falls through to the registry.
   if (segs.length >= 2 && segs[0] === 'bill-of-materials') {
@@ -808,6 +823,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   }
   if (segs.length >= 2 && segs[0] === 'purchase-requests' && segs[1] !== 'awaiting-approval') {
     return { component: PurchaseRequestDetailsPage, id: segs[1] }
+  }
+  // /purchase-invoices/new → create form (the :id match below already guards 'new')
+  if (segs.length >= 2 && segs[0] === 'purchase-invoices' && segs[1] === 'new') {
+    return { component: NewPurchaseInvoicePage, id: 'new' }
   }
   // /purchase-invoices/:id → detail (index has tabs; guard the tab slugs)
   if (segs.length >= 2 && segs[0] === 'purchase-invoices'

@@ -1,12 +1,15 @@
 <script setup lang="ts">
 /**
- * "New purchase delivery" form — Purchases ▸ Purchase deliveries ▸ New purchase delivery.
- * Buy-side mirror of NewSalesDeliveryPage.vue, vendor-keyed.
+ * "New purchase invoice" form — Purchases ▸ Purchase invoices ▸ New purchase invoice.
  *
- * Page shell / header grid / footer follow PurchaseOrderFormPage.vue; the
- * line-items table, its prefix-suffix cells and its error treatment follow
- * NewExpensePage.vue, which is the ERP's reference implementation for all
- * three (see the ERP line-items + transaction-error pattern notes).
+ * The vendor's bill, raised against a purchase order once that order is closed
+ * (or awaiting its invoice). Opened from the purchase order's own Actions menu,
+ * or from a subcon work order's Documents table, via `?fromPo=<id>`.
+ *
+ * Shell, header grid, line-items table and footer are the same ones
+ * NewPurchaseDeliveryPage.vue uses — this is the billing document in the same
+ * chain, so it reads as its sibling rather than as a new kind of page. Shipping
+ * fields are dropped (an invoice ships nothing) and a due date takes their place.
  */
 import {
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
@@ -20,16 +23,16 @@ import {
 import { formatIDR } from '~/utils/currency'
 import type { DataInterface } from '@mekari/pixel3'
 import {
-  vendors, products, purchaseDeliveries,
+  vendors, products, purchaseInvoices, purchaseOrders,
   PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS,
 } from '~/data'
-import { addPurchaseDelivery } from '~/data/purchaseDeliveries'
+import { addPurchaseInvoice } from '~/data/purchaseInvoices'
+import { getPurchaseOrderDetail } from '~/data/purchaseOrderDetails'
 import { setPurchaseOrderStatus } from '~/data/purchaseOrders'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
-import { recordSubconDocument, recordSubconProduction, workOrderForDocument } from '~/data/workOrders'
+import { recordSubconDocument, workOrderForDocument } from '~/data/workOrders'
 import { SUBCON_VENDORS } from '~/data/subcon'
-import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 
 const router = useRouter()
 const { t } = useLocale()
@@ -68,23 +71,20 @@ const emailTags      = ref<DataInterface[]>([])
 const billingAddress = ref('')
 const shipTo         = ref('')
 const txDate         = ref(isoToDMY(todayISO()))
-const shipDate       = ref('')
-const shipVia        = ref('')
+// An invoice is a payment document: it carries a due date, not a ship date.
+const dueDate        = ref('')
 const paymentTerms   = ref('')
-const trackingNo     = ref('')
 const referenceNo    = ref('')
 const warehouse      = ref('')
 const tagsList       = ref<DataInterface[]>([])
 
 // ── Transaction no. settings (auto-numbering) — shared global component ────────
 const noSettingsOpen = ref(false)
-const nextTxNo = computed(() => `Purchase Delivery #${nextDeliveryNumber()}`)
+const nextTxNo = computed(() => nextInvoiceNumber())
 const txNoFormats = [{ label: t('Auto'), value: 'auto' }]
 function onNoFormatSave(_config: NumberFormatConfig) { noSettingsOpen.value = false }
 
-// Both default on so the form opens in the state the design documents.
-const requiresShipping = ref(true)
-const shipToDifferent  = ref(true)
+const shipToDifferent  = ref(false)
 const priceIncludesTax = ref(false)
 
 function onEmailChange(data: DataInterface[]) { emailTags.value = data }
@@ -115,47 +115,45 @@ interface LineItem {
 let _seq = 0
 const items = ref<LineItem[]>([])
 
-// ── Subcon prefill (?fromPo) ──────────────────────────────────────────────────
-// Opened from a purchase order's "Create purchase delivery". If that order came
-// from a subcon work order, the delivery is what actually PRODUCES the finished
-// good — so it opens with the output line and the quantity still outstanding,
-// and several deliveries can close one work order out together.
+// ── Prefill from the purchase order (?fromPo) ─────────────────────────────────
+// An invoice bills an order, so it opens with that order's real lines and money
+// rather than a blank table. When the order came from a subcon work order, the
+// invoice is also the last document in that work order's chain.
 const route = useRoute()
-const subconWorkOrder = computed(() => {
-  const poId = route.query.fromPo
-  return typeof poId === 'string' ? workOrderForDocument(poId) : undefined
-})
 const fromPurchaseOrderId = computed(() =>
   typeof route.query.fromPo === 'string' ? route.query.fromPo : '')
+const subconWorkOrder = computed(() =>
+  fromPurchaseOrderId.value ? workOrderForDocument(fromPurchaseOrderId.value) : undefined)
 
-/** What the work order still needs produced — the cap on this delivery. */
-const subconOverDeliverError = ref('')
-
-const outstandingFg = computed(() => {
-  const wo = subconWorkOrder.value
-  return wo ? Math.max(0, wo.plannedQty - wo.producedQty) : 0
-})
+/** The order being billed, if this form was opened from one. */
+const sourceOrder = computed(() =>
+  purchaseOrders.find(o => o.id === fromPurchaseOrderId.value))
 
 onMounted(() => {
-  const wo = subconWorkOrder.value
-  if (!wo) return
-  const output = catalogProduct(billOfMaterials.find(b => b.id === wo.bomId)?.finishedGoodId ?? '')
-  const vendor = vendorOptions.value.find(v => v.name === wo.subcon?.vendorName)
+  const po = sourceOrder.value
+  if (!po) return
+
+  const vendor = vendorOptions.value.find(v => v.name === po.vendor.name)
   if (vendor) vendorId.value = vendor.id
-  if (!output) return
-  items.value = [{
+  referenceNo.value = po.number
+  if (po.dueDate) dueDate.value = isoToDMY(po.dueDate)
+
+  // The order's own detail is the one place the lines are resolved — it returns
+  // the real ones for an order raised through the form and generated ones for a
+  // seeded order, so either way the invoice bills what the order actually says.
+  items.value = getPurchaseOrderDetail(po.id).lineItems.map(l => ({
     _key: ++_seq,
-    product: output.name,
-    sku: output.sku,
-    description: `${t('Produced against')} ${wo.number}`,
-    qty: outstandingFg.value,
-    unit: output.unit,
-    unitPrice: 0,
-    discountPct: 0,
-    taxLabel: 'PPN 11%',
+    product: l.product,
+    sku: l.sku,
+    description: l.description,
+    qty: l.qty,
+    unit: l.unit,
+    unitPrice: l.unitPrice,
+    discountPct: l.discountPct,
+    taxLabel: l.taxLabel,
     productError: false,
     qtyError: false,
-  }]
+  }))
 })
 
 function removeItem(key: number) { items.value = items.value.filter(it => it._key !== key) }
@@ -251,8 +249,7 @@ const taxAmount   = computed(() => Math.round(taxBase.value * 0.11))
 const shippingFee = ref(0)
 const total       = computed(() => taxBase.value + taxAmount.value + shippingFee.value)
 
-// A delivery is not a payment document — no withholding/deposit at create; the
-// header figure is the delivery total.
+// No withholding/deposit at create — the header figure is the invoice total.
 const orderTotal = computed(() => total.value)
 
 const fmt = formatIDR
@@ -292,71 +289,60 @@ function validate(): boolean {
     if (!(it.qty > 0)) { it.qtyError = true; ok = false }
   })
 
-  // A subcon delivery produces finished goods, so it cannot deliver more than the
-  // work order still needs — otherwise a second delivery would over-produce it.
-  if (subconWorkOrder.value) {
-    const delivered = items.value.reduce((sum, it) => sum + (Number(it.qty) || 0), 0)
-    if (delivered > outstandingFg.value) {
-      items.value.forEach(it => { it.qtyError = true })
-      subconOverDeliverError.value = `${t('This work order still needs')} ${outstandingFg.value} ${t('to be produced')}`
-      ok = false
-    } else {
-      subconOverDeliverError.value = ''
-    }
-  }
   return ok
 }
 
-function nextDeliveryNumber(): number {
-  return purchaseDeliveries.reduce((max, d) => Math.max(max, d.number), 30000) + 1
-}
-function nextDeliveryId(): string {
-  const n = purchaseDeliveries.reduce((max, d) => {
-    const num = parseInt(d.id.replace(/\D/g, ''), 10)
+function nextInvoiceNumber(): string {
+  const n = purchaseInvoices.reduce((max, inv) => {
+    const num = parseInt(String(inv.id).replace(/\D/g, ''), 10)
     return Number.isNaN(num) ? max : Math.max(max, num)
   }, 0) + 1
-  return `PD${String(n).padStart(3, '0')}`
+  return `PINV-2026-${String(n).padStart(3, '0')}`
 }
 
-function onCancel() { router.push('/purchase-deliveries') }
+function onCancel() { router.push('/purchase-invoices') }
 
 function onSave() {
   // Validation errors surface INLINE (per-field + the banner below), never as a toast.
   if (!validate()) return
   // A subcon vendor is not in the `vendors` store (see vendorOptions), so the
   // name is resolved off the merged option list rather than the store alone.
-  // addPurchaseDelivery() rather than a raw push: it is the store's own creator
-  // and it PERSISTS, so the delivery (and anything linking to it) survives a
+  // addPurchaseInvoice() rather than a raw push: it is the store's own creator
+  // and it PERSISTS, so the invoice (and anything linking to it) survives a
   // refresh and its id is never handed out twice.
-  const delivery = addPurchaseDelivery({
+  const invoice = addPurchaseInvoice({
     vendor: { id: vendorId.value, name: vendorNameOf(vendorId.value) },
     date: dmyToIso(txDate.value),
-    fulfillmentStatus: 'in transit',
-    billingStatus: 'unbilled',
-    total: total.value,
+    dueDate: dueDate.value ? dmyToIso(dueDate.value) : dmyToIso(txDate.value),
+    amount: total.value,
+    status: 'open',
+    itemCount: items.value.length,
+    hasAttachment: attachments.value.length > 0,
     tags: tagsList.value.map(t2 => String(t2.value)),
+    ...(referenceNo.value ? { referenceNo: referenceNo.value } : {}),
+    lineItems: items.value.map(it => ({
+      product: it.product, sku: it.sku, description: it.description,
+      qty: it.qty, unit: it.unit, unitPrice: it.unitPrice,
+      discountPct: it.discountPct, taxLabel: it.taxLabel, amount: lineAmount(it),
+    })),
   })
 
-  // A subcon delivery is the moment finished goods actually exist: record it on
-  // the work order and add its quantity to what has been produced. The work order
-  // stays "partially produced" until the deliveries add up to the planned qty.
+  // Billing the order closes the subcon chain — record the invoice on the work
+  // order so its Documents table shows the whole run, request through bill.
   const wo = subconWorkOrder.value
   if (wo) {
     recordSubconDocument(wo.id, {
-      kind: 'purchaseDelivery',
-      id: delivery.id,
-      // Same label the delivery's own detail page uses.
-      number: `${t('Purchase Delivery')} #${delivery.number}`,
-      route: '/purchase-deliveries',
+      kind: 'purchaseInvoice',
+      id: invoice.id,
+      number: invoice.number,
+      route: '/purchase-invoices',
     })
-    recordSubconProduction(wo.id, items.value.reduce((sum, it) => sum + (Number(it.qty) || 0), 0))
   }
-  // The goods are in, so the order it was raised against is now waiting on the
-  // vendor's bill — which is what makes "Create purchase invoice" the next step.
-  if (fromPurchaseOrderId.value) setPurchaseOrderStatus(fromPurchaseOrderId.value, 'awaiting invoice')
+  // The order has now been billed, which closes it.
+  if (sourceOrder.value) setPurchaseOrderStatus(sourceOrder.value.id, 'closed')
 
-  toast.notify({ variant: 'success', title: t('Purchase delivery created'), rootProps: { class: 'toast-enterprise' } })
-  router.push(`/purchase-deliveries/${delivery.id}`)
+  toast.notify({ variant: 'success', title: t('Purchase invoice created'), rootProps: { class: 'toast-enterprise' } })
+  router.push(`/purchase-invoices/${invoice.id}`)
 }
 </script>
 
@@ -366,8 +352,8 @@ function onSave() {
     <!-- ── Fixed header bar ── -->
     <header class="si-form-bar">
       <div class="si-form-bar-left">
-        <MpTextlink id="si-crumb" as="a" class="si-crumb" @click.prevent="onCancel">{{ t('Purchase deliveries') }}</MpTextlink>
-        <h1 class="si-form-h1">{{ t('New purchase delivery') }}</h1>
+        <MpTextlink id="si-crumb" as="a" class="si-crumb" @click.prevent="onCancel">{{ t('Purchase invoices') }}</MpTextlink>
+        <h1 class="si-form-h1">{{ t('New purchase invoice') }}</h1>
       </div>
     </header>
 
@@ -393,7 +379,7 @@ function onSave() {
         </MpFormControl>
 
         <div class="si-header1-total">
-          <h3 class="si-header1-total-value">{{ t('Delivery total') }} {{ fmt(orderTotal) }}</h3>
+          <h3 class="si-header1-total-value">{{ t('Invoice total') }} {{ fmt(orderTotal) }}</h3>
         </div>
       </section>
 
@@ -407,7 +393,6 @@ function onSave() {
           </MpFormControl>
 
           <div class="si-checkbox-stack">
-            <MpCheckbox id="f-requires-shipping" v-model:is-checked="requiresShipping">{{ t('Requires shipping') }}</MpCheckbox>
             <MpCheckbox id="f-ship-diff" v-model:is-checked="shipToDifferent">{{ t('Ship to different address') }}</MpCheckbox>
           </div>
 
@@ -424,27 +409,14 @@ function onSave() {
             <MpDatePicker id="f-tx-date-inp" v-model="txDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
           </MpFormControl>
 
+          <MpFormControl id="f-due-date" class="si-field">
+            <MpFormLabel>{{ t('Due date') }}</MpFormLabel>
+            <MpDatePicker id="f-due-date-inp" v-model="dueDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
+          </MpFormControl>
+
           <MpFormControl id="f-payment" class="si-field">
             <MpFormLabel>{{ t('Payment terms') }}</MpFormLabel>
             <MpAutocomplete id="f-payment-inp" v-model="paymentTerms" :data="PAYMENT_TERMS" use-portal is-clearable is-full-width />
-          </MpFormControl>
-        </div>
-
-        <!-- Col 3: shipping — only when "Requires shipping" is on -->
-        <div v-if="requiresShipping" class="si-header2-col">
-          <MpFormControl id="f-ship-date" class="si-field">
-            <MpFormLabel>{{ t('Ship date') }}</MpFormLabel>
-            <MpDatePicker id="f-ship-date-inp" v-model="shipDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
-          </MpFormControl>
-
-          <MpFormControl id="f-ship-via" class="si-field">
-            <MpFormLabel>{{ t('Ship via') }}</MpFormLabel>
-            <MpInput id="f-ship-via-inp" v-model="shipVia" is-full-width />
-          </MpFormControl>
-
-          <MpFormControl id="f-tracking" class="si-field">
-            <MpFormLabel>{{ t('Tracking no.') }}</MpFormLabel>
-            <MpInput id="f-tracking-inp" v-model="trackingNo" is-full-width />
           </MpFormControl>
         </div>
 
@@ -459,7 +431,7 @@ function onSave() {
                 </MpButton>
               </span>
             </MpFormLabel>
-            <MpInput id="f-tx-no-inp" :placeholder="t('Auto')" is-disabled is-full-width />
+            <MpInput id="f-tx-no-inp" :value="nextTxNo" :placeholder="t('Auto')" is-disabled is-full-width />
           </MpFormControl>
 
           <MpFormControl id="f-ref" class="si-field">
@@ -488,16 +460,10 @@ function onSave() {
           <MpCheckbox id="f-price-incl-tax" v-model:is-checked="priceIncludesTax">{{ t('Price includes tax') }}</MpCheckbox>
         </div>
 
-        <!-- Produced against a subcon work order: say how much is still outstanding. -->
-        <MpBanner v-if="subconOverDeliverError" variant="danger" align-items="center" class="si-items-error-banner">
-          <MpBannerIcon />
-          <MpBannerTitle>{{ t('Delivery exceeds what is still needed') }}</MpBannerTitle>
-          <MpBannerDescription>{{ subconOverDeliverError }}</MpBannerDescription>
-        </MpBanner>
         <MpBanner v-if="hasLineItemErrors || noItemsError" id="si-lineitems-error-banner" variant="danger" align-items="center" class="si-items-error-banner">
           <MpBannerIcon id="si-lineitems-error-banner-icon" />
           <MpBannerTitle>{{ noItemsError && !hasLineItemErrors ? t('Add at least one product') : t('Failed to save') }}</MpBannerTitle>
-          <MpBannerDescription>{{ noItemsError && !hasLineItemErrors ? t('A purchase delivery needs at least one line item before you can save.') : t('The transaction contains incomplete or invalid data. Review the highlighted fields.') }}</MpBannerDescription>
+          <MpBannerDescription>{{ noItemsError && !hasLineItemErrors ? t('A purchase invoice needs at least one line item before you can save.') : t('The transaction contains incomplete or invalid data. Review the highlighted fields.') }}</MpBannerDescription>
         </MpBanner>
 
         <div class="si-items-scroll">

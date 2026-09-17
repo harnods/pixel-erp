@@ -402,6 +402,7 @@ const erpNavGroups: NavItem[][] = [
         { label: 'Tax', to: 'Tax report' },
         { label: 'Cash & bank', to: 'Cash & bank report' },
         { label: 'Production', to: 'Production report' },
+        { label: 'Subcon custody', to: 'Subcon custody' },
         { label: 'Fixed assets', to: 'Fixed assets report' },
       ]],
     },
@@ -506,7 +507,7 @@ const erpNavGroups: NavItem[][] = [
       name: 'Production', icon: 'fulfillment',
       expandOnClick: true,
       submenu: [
-        [{ label: 'Production plans' }, { label: 'Production request' }, { label: 'Work orders' }, { label: 'Bill of materials' }],
+        [{ label: 'Production plans' }, { label: 'Production request' }, { label: 'Work orders' }, { label: 'Bill of materials' }, { label: 'Subcon orders' }],
         [{ label: 'Production reports', iconType: 'shortcut', shortcutTo: { nav: 'Reports', sub: 'Production' } }, { label: 'Production settings', iconType: 'settings' }],
       ],
     },

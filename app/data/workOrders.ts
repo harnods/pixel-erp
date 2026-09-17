@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 import { TODAY } from './master'
 import { billOfMaterials } from './billOfMaterials'
+import type { SubconScope, SubconSplit, SubconMethod } from './subcon'
 import { loadSnapshot, saveSnapshot } from './persist'
 
 /**
@@ -17,8 +18,9 @@ export interface WorkOrder {
   bomId: string
   /** bill of materials name — denormalized for display/sort, mirrors billOfMaterials.find(bomId).name */
   bomName: string
-  /** Standard = made-to-stock · Order = made-to-order (tied to a sales order) */
-  category: 'Standard' | 'Order'
+  /** Standard = made-to-stock · Order = made-to-order (tied to a sales order) ·
+   *  Subcontracting = the work itself is performed by an outside vendor */
+  category: 'Standard' | 'Order' | 'Subcontracting'
   /** Assembly = build the output · Disassembly = break the output into components */
   type: 'Assembly' | 'Disassembly'
   /** whether the WO follows a defined routing (sequence of operations) */
@@ -51,6 +53,68 @@ export interface WorkOrder {
    * reserved but unconsumed.
    */
   materialReservations?: Record<string, WorkOrderMaterialReservation>
+  /**
+   * Warehouse each component is drawn from, keyed by productId — set per line on
+   * the work order form. A subcon transfer takes its ORIGIN from here rather than
+   * asking again: the components already say where they come from.
+   */
+  componentWarehouses?: Record<string, { id: string; name: string }>
+  /** Present only on a `Subcontracting` work order — the vendor setup that decides
+   *  which purchase requests, transfers and receipts the work order raises. */
+  subcon?: WorkOrderSubconSetup
+}
+
+/** The subcon configuration carried on a Subcontracting work order. */
+export interface WorkOrderSubconSetup {
+  scope: SubconScope
+  split: SubconSplit
+  method: SubconMethod
+  vendorId: string
+  vendorName: string
+  /** ISO date the vendor promised the goods back. */
+  promisedDate: string
+  /**
+   * Warehouse the components are transferred OUT of. Only meaningful for
+   * `resupply` — on `basic` the vendor uses its own stock and on `dropship` a
+   * third party ships direct, so no company warehouse is involved either way.
+   */
+  sourceWarehouseId?: string
+  sourceWarehouseName?: string
+  /** The vendor's own location the transfer is addressed to — resupply only. */
+  subconWarehouseId?: string
+  subconWarehouseName?: string
+  /** Warehouse the vendor's output is received back INTO. Always required. */
+  receivingWarehouseId: string
+  receivingWarehouseName: string
+  /** Subcon order this work order is tied to, once it has been raised. */
+  subconOrderNumber?: string
+  /**
+   * Documents actually raised from this work order, so its Documents table can
+   * link straight to each one instead of only offering to create it again.
+   */
+  raisedDocuments?: RaisedSubconDocument[]
+  /**
+   * A deliberate reduction of the finished-good quantity, so a work order the
+   * vendor under-delivered can still be closed. Recorded rather than applied
+   * silently — the gap between what was ordered and what was accepted is the
+   * whole point of keeping it.
+   */
+  qtyAdjustment?: { from: number; to: number; reason: string; date: string }
+}
+
+/** A document created from a subcon work order, and where its detail page lives. */
+export interface RaisedSubconDocument {
+  /** Matches SubconDocKind — which planned step this satisfied. */
+  kind: string
+  /** Record id, for the detail route. */
+  id: string
+  /** Display number, e.g. "Purchase Request #90042". */
+  number: string
+  /** Route prefix the detail page lives under. */
+  route: string
+  /** ISO date the document was raised. Absent on records created before the
+   *  Documents tab started listing dates — rendered as "—" in that case. */
+  raisedAt?: string
 }
 
 export interface WorkOrderMaterialReservation {
@@ -121,6 +185,36 @@ const SEED: Array<Omit<WorkOrder, 'id' | 'number' | 'bomId' | 'bomName'> & { bom
   { bomIndex: 0, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'canceled', producedQty: 0, plannedQty: 100, planStartDate: isoOffset(-5), planEndDate: isoOffset(0),  endDate: isoOffset(-3) },
   { bomIndex: 1, category: 'Standard', type: 'Disassembly', trackRouting: true, status: 'canceled', producedQty: 0, plannedQty: 60,  planStartDate: isoOffset(-4), planEndDate: isoOffset(1),  endDate: isoOffset(-2), parentNumber: 'WO-2026-0021' },
   { bomIndex: 9, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'canceled', producedQty: 0, plannedQty: 160, planStartDate: isoOffset(-3), planEndDate: isoOffset(2),  endDate: isoOffset(-1) },
+
+  // ── Subcontracting ───────────────────────────────────────────────────────
+  // Two rows so the Subcontracting section is demonstrable in both its states:
+  // a draft (supply documents still blocked) and a started order (raisable).
+  {
+    bomIndex: 0, category: 'Subcontracting', type: 'Assembly', trackRouting: false,
+    status: 'not started', producedQty: 0, plannedQty: 500,
+    planStartDate: isoOffset(1), planEndDate: isoOffset(14),
+    subcon: {
+      scope: 'finished-good', split: 'full', method: 'resupply',
+      vendorId: 'sv-01', vendorName: 'PT Roastery Nusantara Mandiri',
+      promisedDate: isoOffset(20),
+      sourceWarehouseId: 'wh-001', sourceWarehouseName: 'Gudang Jakarta Pusat',
+      subconWarehouseId: 'wh-sub-01', subconWarehouseName: 'WH Subcon · PT Roastery Nusantara Mandiri',
+      receivingWarehouseId: 'wh-005', receivingWarehouseName: 'Gudang Semarang Industrial',
+    },
+  },
+  {
+    bomIndex: 2, category: 'Subcontracting', type: 'Assembly', trackRouting: false,
+    status: 'in progress', producedQty: 180, plannedQty: 300,
+    planStartDate: isoOffset(-6), planEndDate: isoOffset(4), startDate: isoOffset(-6),
+    subcon: {
+      scope: 'component', split: 'partial', method: 'dropship',
+      vendorId: 'sv-03', vendorName: 'PT Java Roasting Works',
+      promisedDate: isoOffset(6),
+      // Dropship — a third party ships direct, so there is no source warehouse.
+      receivingWarehouseId: 'wh-005', receivingWarehouseName: 'Gudang Semarang Industrial',
+      subconOrderNumber: 'SC-2026-0004',
+    },
+  },
 ]
 
 function buildSeed(): WorkOrder[] {
@@ -134,12 +228,12 @@ function buildSeed(): WorkOrder[] {
 }
 
 // Persisted as a full snapshot (seed + user-created) — mirrors outgoing.ts.
-const workOrderSnapshot = loadSnapshot<WorkOrder>('workOrders')
+const workOrderSnapshot = loadSnapshot<WorkOrder>('workOrders-v2')
 export const workOrders = reactive<WorkOrder[]>(workOrderSnapshot ?? buildSeed())
 
 /** Persist the work-order snapshot (call after any mutation). */
 export function persistWorkOrders(): void {
-  saveSnapshot('workOrders', workOrders)
+  saveSnapshot('workOrders-v2', workOrders)
 }
 
 let woAddSeq = workOrders.length
@@ -151,6 +245,65 @@ function nextWorkOrderNumber(): string {
     if (m) max = Math.max(max, parseInt(m[1]!, 10))
   }
   return `WO-2026-${String(max + 1).padStart(4, '0')}`
+}
+
+/**
+ * Record a document raised from a subcon work order. Called by the purchase
+ * request and warehouse transfer forms once the record actually exists, so the
+ * work order can link to it. Re-raising the same step appends rather than
+ * replaces — a chain can legitimately have two receipts, or a re-issued PR.
+ */
+export function recordSubconDocument(workOrderId: string, doc: RaisedSubconDocument): void {
+  const wo = workOrders.find(w => w.id === workOrderId)
+  if (!wo?.subcon) return
+  const existing = wo.subcon.raisedDocuments ?? []
+  if (existing.some(d => d.id === doc.id)) return
+  wo.subcon.raisedDocuments = [...existing, { raisedAt: new Date().toISOString().slice(0, 10), ...doc }]
+  persistWorkOrders()
+}
+
+/**
+ * The work order a document was raised from, found by that document's id. Lets a
+ * downstream form (purchase order, purchase delivery) rediscover the work order
+ * from its own parent document, so the link does not have to be threaded through
+ * every query string in the chain.
+ */
+export function workOrderForDocument(documentId: string): WorkOrder | undefined {
+  return workOrders.find(w => (w.subcon?.raisedDocuments ?? []).some(d => d.id === documentId))
+}
+
+/**
+ * Record finished goods produced by a vendor delivery. Each delivery adds to the
+ * work order's produced quantity; the order stays `partially produced` until the
+ * total reaches what was planned, so several deliveries can close it out
+ * together.
+ */
+export function recordSubconProduction(workOrderId: string, qty: number): void {
+  const wo = workOrders.find(w => w.id === workOrderId)
+  if (!wo || qty <= 0) return
+  wo.producedQty = Math.min(wo.plannedQty, wo.producedQty + qty)
+  if (wo.status === 'not started' || wo.status === 'in progress' || wo.status === 'partially produced') {
+    wo.status = wo.producedQty >= wo.plannedQty ? 'partially completed' : 'partially produced'
+  }
+  persistWorkOrders()
+}
+
+/**
+ * Reduce a work order's finished-good quantity to what was actually produced, so
+ * a short delivery can be completed without pretending the rest arrived. The
+ * original figure is kept alongside the reason.
+ */
+export function adjustSubconWorkOrderQty(workOrderId: string, newQty: number, reason: string): void {
+  const wo = workOrders.find(w => w.id === workOrderId)
+  if (!wo?.subcon || newQty <= 0 || newQty > wo.plannedQty) return
+  wo.subcon.qtyAdjustment = {
+    from: wo.plannedQty,
+    to: newQty,
+    reason,
+    date: new Date().toISOString().slice(0, 10),
+  }
+  wo.plannedQty = newQty
+  persistWorkOrders()
 }
 
 /** Create a new work order from the New work order form — must reference an existing BOM. */

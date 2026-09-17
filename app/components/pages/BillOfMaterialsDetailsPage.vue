@@ -17,6 +17,7 @@ import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpIcon, MpButton, css, toast,
+  MpBadge,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
@@ -68,7 +69,7 @@ function productName(id: string) { return catalogProduct(id)?.name ?? '—' }
 function productSku(id: string) { return catalogProduct(id)?.sku ?? '—' }
 
 // ── Collapsible sections ────────────────────────────────────────────────────────
-const collapsed = reactive<Record<string, boolean>>({ raw: false, cost: false, routing: false, finished: false })
+const collapsed = reactive<Record<string, boolean>>({ raw: false, cost: false, routing: false, subconCost: false, finished: false })
 
 // ── Attachments (representative) ────────────────────────────────────────────────
 const attachments = [
@@ -94,7 +95,17 @@ const productionCostSubtotal = computed(() => (bom.value?.productionCost ?? []).
 // ── Routing — the sequence of operations, each mapped to a routing-cost account. ──
 const routing = computed(() => bom.value?.routing ?? [])
 const routingSubtotal = computed(() => routing.value.reduce((s, r) => s + r.amount, 0))
-const totalProductionCost = computed(() => rawSubtotal.value + productionCostSubtotal.value + routingSubtotal.value)
+// ── Subcontracting ───────────────────────────────────────────────────────────
+// A Subcontracting BOM buys the work instead of running it, so its cost lines are
+// the vendor's charges (non-track service products) rather than in-house
+// production cost + routing.
+const isSubconBom = computed(() => bom.value?.category === 'Subcontracting')
+const subconCostLines = computed(() => bom.value?.subconCost ?? [])
+const subconCostSubtotal = computed(() => subconCostLines.value.reduce((s, l) => s + l.amount, 0))
+
+const totalProductionCost = computed(() => (isSubconBom.value
+  ? rawSubtotal.value + subconCostSubtotal.value
+  : rawSubtotal.value + productionCostSubtotal.value + routingSubtotal.value))
 
 // ── Finished goods — main output absorbs whatever isn't allocated to other outputs/waste. ──
 const otherOutputs = computed(() => bom.value?.otherOutputs ?? [])
@@ -219,8 +230,8 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
         </template>
       </section>
 
-      <!-- ── Production cost ── -->
-      <section class="bom-section">
+      <!-- ── Production cost — in-house only; a subcon BOM shows Subcon cost ── -->
+      <section v-if="!isSubconBom" class="bom-section">
         <button class="bom-section-head" @click="collapsed.cost = !collapsed.cost">
           <h2 class="bom-section-title">{{ t('Production cost') }}</h2>
           <svg class="bom-chevron" :class="{ 'bom-chevron--open': !collapsed.cost }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -255,7 +266,7 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
       </section>
 
       <!-- ── Routing ── -->
-      <section class="bom-section">
+      <section v-if="!isSubconBom" class="bom-section">
         <button class="bom-section-head" @click="collapsed.routing = !collapsed.routing">
           <h2 class="bom-section-title">{{ t('Routing') }}</h2>
           <svg class="bom-chevron" :class="{ 'bom-chevron--open': !collapsed.routing }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -283,12 +294,55 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
           </div>
           <div class="bom-subtotal-row"><span>{{ t('Routing cost subtotal') }}</span><span class="bom-amount">{{ formatIDR(routingSubtotal) }}</span></div>
         </template>
+      </section>
 
-        <!-- Cost summary -->
+      <!-- ── Subcon cost — the vendor's charges, in place of production + routing ── -->
+      <section v-if="isSubconBom" class="bom-section">
+        <button class="bom-section-head btn-enterprise" @click="collapsed.subconCost = !collapsed.subconCost">
+          <h2 class="bom-section-title">{{ t('Subcon cost') }}</h2>
+          <svg class="bom-chevron" :class="{ 'bom-chevron--open': !collapsed.subconCost }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <template v-if="!collapsed.subconCost">
+          <div class="bom-table-scroll">
+            <table class="bom-table">
+              <thead>
+                <tr>
+                  <th class="bom-th">{{ t('Service product') }}</th>
+                  <th class="bom-th">{{ t('SKU') }}</th>
+                  <th class="bom-th">{{ t('Type') }}</th>
+                  <th class="bom-th">{{ t('Cost driver') }}</th>
+                  <th class="bom-th">{{ t('Account mapping') }}</th>
+                  <th class="bom-th bom-th--num">{{ t('Amount') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="l in subconCostLines" :key="l.productId" class="bom-tr">
+                  <td class="bom-td">{{ l.name }}</td>
+                  <td class="bom-td">{{ l.sku }}</td>
+                  <!-- Stated per row: these lines carry cost, never stock. -->
+                  <td class="bom-td"><MpBadge for="tableStatus" type="announcement">{{ t('Non-track') }}</MpBadge></td>
+                  <td class="bom-td">{{ l.costDriver }}</td>
+                  <td class="bom-td">{{ l.accountMapping }}</td>
+                  <td class="bom-td bom-td--num">{{ formatIDR(l.amount) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="bom-subtotal-row"><span>{{ t('Subcon cost subtotal') }}</span><span class="bom-amount">{{ formatIDR(subconCostSubtotal) }}</span></div>
+        </template>
+      </section>
+
+      <!-- ── Cost summary — rows follow whichever cost structure applies ── -->
+      <section class="bom-section">
         <div class="bom-summary">
           <div class="bom-summary-row"><span>{{ t('Estimated raw materials subtotal') }}</span><span>{{ formatIDR(rawSubtotal) }}</span></div>
-          <div class="bom-summary-row"><span>{{ t('Production cost subtotal') }}</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
-          <div class="bom-summary-row"><span>{{ t('Routing cost subtotal') }}</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
+          <template v-if="isSubconBom">
+            <div class="bom-summary-row"><span>{{ t('Subcon cost subtotal') }}</span><span>{{ formatIDR(subconCostSubtotal) }}</span></div>
+          </template>
+          <template v-else>
+            <div class="bom-summary-row"><span>{{ t('Production cost subtotal') }}</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
+            <div class="bom-summary-row"><span>{{ t('Routing cost subtotal') }}</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
+          </template>
           <div class="bom-summary-row bom-summary-row--total"><span>{{ t('Estimated total production cost') }}</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
         </div>
       </section>

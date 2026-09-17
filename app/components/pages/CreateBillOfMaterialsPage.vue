@@ -19,8 +19,14 @@ import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpAutocomplete, MpInput, MpInputGroup, MpInputLeftAddon, MpInputRightAddon, MpTextarea,
   MpButton, MpIcon, MpCheckbox, toast,
+  MpBadge, MpTooltip,
 } from '@mekari/pixel3'
-import { CATALOG } from '~/data/catalog'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import {
+  SUBCON_SERVICE_PRODUCTS, subconServiceProduct,
+  SUBCON_COST_DRIVERS, SUBCON_ACCOUNT_MAPPINGS,
+} from '~/data/subcon'
+import { FULL_CATALOG } from '~/data/catalog'
 import {
   addBillOfMaterials, billOfMaterials, catalogProduct,
   type BillOfMaterials, type BomRawMaterial, type BomProductionCost,
@@ -44,13 +50,16 @@ const editingArchived = ref(false)
 const CATEGORY_OPTIONS = [
   { id: 'Standard', name: 'Standard' },
   { id: 'Custom', name: 'Custom' },
+  // Subcontracting adds the outsourced-process section below. The recipe only
+  // names the process — the vendor and supply method are decided per work order.
+  { id: 'Subcontracting', name: 'Subcontracting' },
 ]
 const COSTING_OPTIONS = [
   { id: 'Actual cost', name: 'Actual cost' },
   { id: 'Standard cost', name: 'Standard cost' },
 ]
-const productOptions = CATALOG.map(p => ({ id: p.id, name: p.name, unit: p.unit, price: p.price, sku: p.sku }))
-const UNIT_OPTIONS = [...new Set(CATALOG.map(p => p.unit))].map(u => ({ id: u, name: u }))
+const productOptions = FULL_CATALOG.map(p => ({ id: p.id, name: p.name, unit: p.unit, price: p.price, sku: p.sku }))
+const UNIT_OPTIONS = [...new Set(FULL_CATALOG.map(p => p.unit))].map(u => ({ id: u, name: u }))
 const COST_ACCOUNT_OPTIONS = [
   { id: 'labour', name: 'Direct labor' },
   { id: 'worker', name: 'Worker' },
@@ -89,6 +98,50 @@ const bomName = ref('')
 const bomNameError = ref(false)
 const category = ref('')
 const categoryError = ref(false)
+
+// ── Subcontracting process ───────────────────────────────────────────────────
+// Only for Category = Subcontracting. Deliberately vendor-agnostic: a recipe is
+// reused across vendors, so the vendor and the supply method are chosen on the
+// work order, not here.
+const isSubconBom = computed(() => category.value === 'Subcontracting')
+
+// The vendor's charges, replacing Production cost + Routing. Each line is a
+// NON-TRACK service product: bought like a product so it can sit on a purchase
+// request, but a service, so no inventory is ever recorded against it.
+interface SubconCostRow {
+  id: number
+  productId: string
+  costDriver: string
+  accountMapping: string
+  amount: string
+}
+let subconCostSeq = 0
+function makeSubconCostRow(partial: Partial<SubconCostRow> = {}): SubconCostRow {
+  return { id: subconCostSeq++, productId: '', costDriver: '', accountMapping: '', amount: '', ...partial }
+}
+const subconCostRows = ref<SubconCostRow[]>([makeSubconCostRow()])
+
+const SUBCON_PRODUCT_OPTIONS = SUBCON_SERVICE_PRODUCTS.map(p => ({
+  id: p.id, name: `${p.name} · ${p.sku}`,
+}))
+const SUBCON_DRIVER_OPTIONS = SUBCON_COST_DRIVERS.map(d => ({ id: d, name: d }))
+const SUBCON_MAPPING_OPTIONS = SUBCON_ACCOUNT_MAPPINGS.map(a => ({ id: a, name: a }))
+
+/** Picking the service fills its usual driver, account and price — all still editable. */
+function onSubconProduct(row: SubconCostRow, id: string) {
+  const p = subconServiceProduct(id)
+  if (p) {
+    row.costDriver = p.defaultCostDriver
+    row.accountMapping = p.accountMapping
+    if (!row.amount) row.amount = String(p.defaultPrice)
+    appendIfLast(subconCostRows, row.id, makeSubconCostRow)
+  }
+}
+
+const subconCostSubtotal = computed(() => subconCostRows.value.reduce((s, r) => s + num(r.amount), 0))
+
+// On a subcon BOM the vendor's fee stands in for production + routing cost.
+const totalSubconBomCost = computed(() => rawSubtotal.value + subconCostSubtotal.value)
 const costingReference = ref('')
 const costingError = ref(false)
 const description = ref('')
@@ -130,7 +183,7 @@ let rawSeq = 0
 const makeRaw = (): RawRow => ({ id: rawSeq++, productId: '', sku: '', needed: '', unit: '', purchaseCost: 0 })
 const rawRows = ref<RawRow[]>([makeRaw()])
 function onRawProduct(row: RawRow, id: string) {
-  const p = CATALOG.find(c => c.id === id)
+  const p = FULL_CATALOG.find(c => c.id === id)
   row.purchaseCost = p?.price ?? 0
   row.sku = p?.sku ?? ''
   if (p && !row.unit) row.unit = p.unit
@@ -208,12 +261,12 @@ const makeOther = (): OutputRow => ({ id: otherSeq++, productId: '', sku: '', pr
 // Main output is a single row (the BOM's primary output).
 const mainRow = ref<OutputRow>(makeMain())
 function onMainProduct(id: string) {
-  const p = CATALOG.find(c => c.id === id)
+  const p = FULL_CATALOG.find(c => c.id === id)
   if (p) { mainRow.value.sku = p.sku; if (!mainRow.value.unit) mainRow.value.unit = p.unit }
 }
 const otherRows = ref<OutputRow[]>([makeOther()])
 function onOtherProduct(row: OutputRow, id: string) {
-  const p = CATALOG.find(c => c.id === id)
+  const p = FULL_CATALOG.find(c => c.id === id)
   if (p) { row.sku = p.sku; if (!row.unit) row.unit = p.unit }
   appendIfLast(otherRows, row.id, makeOther)
 }
@@ -382,7 +435,22 @@ function buildBomPayload() {
 
   return {
     name: bomName.value.trim(),
-    category: category.value as 'Standard' | 'Custom',
+    category: category.value as 'Standard' | 'Custom' | 'Subcontracting',
+    subconCost: isSubconBom.value
+      ? subconCostRows.value
+          .filter(r => r.productId)
+          .map(r => {
+            const p = subconServiceProduct(r.productId)
+            return {
+              productId: r.productId,
+              name: p?.name ?? '',
+              sku: p?.sku ?? '',
+              costDriver: r.costDriver,
+              accountMapping: r.accountMapping,
+              amount: num(r.amount),
+            }
+          })
+      : undefined,
     costingReference: costingReference.value as 'Actual cost' | 'Standard cost',
     finishedGoodId: mainRow.value.productId,
     finishedGoodQty: num(mainRow.value.producedQty) || 1,
@@ -635,8 +703,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
           </div>
         </section>
 
-        <!-- ══ Production cost ══════════════════════════════════════════════ -->
-        <section class="bf-section">
+        <!-- ══ Production cost ══════════════════════════════════════════════
+             In-house cost structure. A Subcontracting BOM has none — the work is
+             bought from a vendor — so this and Routing give way to Subcon cost. -->
+        <section v-if="!isSubconBom" class="bf-section">
           <h2 class="bf-section-title">{{ t('Production cost') }}</h2>
           <div class="bf-table-scroll">
             <table class="bf-table">
@@ -680,7 +750,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
         </section>
 
         <!-- ══ Routing ══════════════════════════════════════════════════════ -->
-        <section class="bf-section">
+        <section v-if="!isSubconBom" class="bf-section">
           <h2 class="bf-section-title">{{ t('Routing') }}</h2>
           <div class="bf-table-scroll">
             <table class="bf-table">
@@ -720,13 +790,109 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <span>{{ t('Routing cost subtotal') }}</span>
             <span class="bf-subtotal-amount">{{ formatIDR(routingSubtotal) }}</span>
           </div>
+        </section>
 
-          <!-- Cost summary -->
+        <!-- ══ Subcon cost ══════════════════════════════════════════════════
+             Replaces Production cost + Routing on a Subcontracting BOM. Every
+             line is a NON-TRACK service product: purchased like a product so it
+             can sit on a purchase request, but a service, so it never carries
+             inventory. The vendor is chosen per work order, not here. ═══════ -->
+        <section v-if="isSubconBom" class="bf-section">
+          <h2 class="bf-section-title">{{ t('Subcon cost') }}</h2>
+          <p class="bf-section-desc">
+            {{ t('What the vendor charges for the outsourced work. Each line is a non-track service product — it carries cost, never stock.') }}
+          </p>
+          <div class="bf-table-scroll">
+            <table class="bf-table">
+              <colgroup>
+                <col class="bf-col-svc" /><col class="bf-col-type" /><col class="bf-col-driver" />
+                <col class="bf-col-map" /><col class="bf-col-amt" /><col class="bf-col-del" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th class="bf-th">{{ t('Service product') }}</th>
+                  <th class="bf-th">{{ t('Type') }}</th>
+                  <th class="bf-th">{{ t('Cost driver') }}</th>
+                  <th class="bf-th">{{ t('Account mapping') }}</th>
+                  <th class="bf-th bf-th--right">{{ t('Amount') }}</th>
+                  <th class="bf-th bf-th--del" />
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in subconCostRows" :key="row.id" class="bf-tr">
+                  <td class="bf-td bf-td--input">
+                    <MpAutocomplete
+                      :id="`subcon-prod-${row.id}`"
+                      v-model="row.productId"
+                      :data="SUBCON_PRODUCT_OPTIONS"
+                      label-prop="name" value-prop="id"
+                      :placeholder="t('Select non-track product')"
+                      is-searchable is-clearable use-portal is-full-width
+                      @update:model-value="(v: string) => onSubconProduct(row, v)"
+                    />
+                  </td>
+                  <!-- Stated on every row: the reason these lines never touch stock. -->
+                  <td class="bf-td">
+                    <MpBadge v-if="row.productId" for="tableStatus" type="announcement">{{ t('Non-track') }}</MpBadge>
+                  </td>
+                  <td class="bf-td bf-td--input">
+                    <MpAutocomplete
+                      v-if="row.productId"
+                      :id="`subcon-drv-${row.id}`"
+                      v-model="row.costDriver"
+                      :data="SUBCON_DRIVER_OPTIONS"
+                      label-prop="name" value-prop="id"
+                      :placeholder="t('Select cost driver')"
+                      is-searchable is-clearable use-portal is-full-width
+                    />
+                  </td>
+                  <td class="bf-td bf-td--input">
+                    <MpAutocomplete
+                      v-if="row.productId"
+                      :id="`subcon-map-${row.id}`"
+                      v-model="row.accountMapping"
+                      :data="SUBCON_MAPPING_OPTIONS"
+                      label-prop="name" value-prop="id"
+                      :placeholder="t('Select account mapping')"
+                      is-searchable is-clearable use-portal is-full-width
+                    />
+                  </td>
+                  <td class="bf-td bf-td--input bf-td--num-input">
+                    <MpInputGroup v-if="row.productId" :id="`subcon-amt-group-${row.id}`" is-full-width>
+                      <MpInputLeftAddon>Rp</MpInputLeftAddon>
+                      <MpInput :id="`subcon-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width />
+                    </MpInputGroup>
+                  </td>
+                  <td class="bf-td bf-td--del">
+                    <MpTooltip v-if="row.productId" :label="t('Remove')" placement="top" use-portal>
+                      <button class="bf-del-btn btn-enterprise" type="button" :aria-label="t('Remove')" @click="removeRow(subconCostRows, row.id)">
+                        <MpIcon name="minus-circular" size="sm" />
+                      </button>
+                    </MpTooltip>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="bf-subtotal-row">
+            <span>{{ t('Subcon cost subtotal') }}</span>
+            <span class="bf-subtotal-amount">{{ formatIDR(subconCostSubtotal) }}</span>
+          </div>
+        </section>
+
+        <!-- ══ Cost summary — rows follow whichever cost structure applies ═══ -->
+        <section class="bf-section">
           <div class="bf-summary">
             <div class="bf-summary-row"><span>{{ t('Estimated raw materials subtotal') }}</span><span>{{ formatIDR(rawSubtotal) }}</span></div>
-            <div class="bf-summary-row"><span>{{ t('Production cost subtotal') }}</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
-            <div class="bf-summary-row"><span>{{ t('Routing cost subtotal') }}</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
-            <div class="bf-summary-row bf-summary-row--total"><span>{{ t('Estimated total production cost') }}</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
+            <template v-if="isSubconBom">
+              <div class="bf-summary-row"><span>{{ t('Subcon cost subtotal') }}</span><span>{{ formatIDR(subconCostSubtotal) }}</span></div>
+              <div class="bf-summary-row bf-summary-row--total"><span>{{ t('Estimated total production cost') }}</span><span>{{ formatIDR(totalSubconBomCost) }}</span></div>
+            </template>
+            <template v-else>
+              <div class="bf-summary-row"><span>{{ t('Production cost subtotal') }}</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
+              <div class="bf-summary-row"><span>{{ t('Routing cost subtotal') }}</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
+              <div class="bf-summary-row bf-summary-row--total"><span>{{ t('Estimated total production cost') }}</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
+            </template>
           </div>
         </section>
 
@@ -933,6 +1099,19 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .bf-section { padding: var(--mp-spacing-8) 0; border-bottom: 1px dashed var(--mp-border-default); }
 .bf-section:first-child { padding-top: 0; }
 .bf-section--last { border-bottom: none; }
+/* Subcon cost column widths — token scale, so the table reads like every other. */
+.bf-col-svc    { width: var(--mp-sizes-80, 320px); }
+.bf-col-type   { width: var(--mp-sizes-28, 112px); }
+.bf-col-driver { width: var(--mp-sizes-40, 160px); }
+.bf-col-map    { width: var(--mp-sizes-56, 224px); }
+.bf-col-amt    { width: var(--mp-sizes-50, 200px); }
+.bf-col-del    { width: var(--mp-sizes-11, 44px);  }
+
+.bf-section-desc {
+  margin: calc(-1 * var(--mp-spacing-3)) 0 var(--mp-spacing-4);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md);
+}
+
 .bf-section-title {
   margin: 0 0 var(--mp-spacing-5);
   font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold);

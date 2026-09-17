@@ -16,13 +16,30 @@ import {
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
+import SubconMethodChip from '~/components/patterns/SubconMethodChip.vue'
+import SubconStageChain from '~/components/patterns/SubconStageChain.vue'
+import StartSubconWorkOrderModal from '~/components/patterns/StartSubconWorkOrderModal.vue'
+import SubconShortfallModal from '~/components/patterns/SubconShortfallModal.vue'
+import CompleteSubconWorkOrderModal, { type SubconComponentUsage } from '~/components/patterns/CompleteSubconWorkOrderModal.vue'
+import {
+  buildDocumentPlan, SUBCON_SCOPE_LABEL,
+  SUBCON_SERVICE_FEE, SUBCON_HANDLING_FEE, SUBCON_BATCH_QTY,
+  encodeSubconPrefill, subconVendorWarehouse, SUBCON_DOC_TYPE_LABEL,
+  type SubconDocKind, type SubconPrefillLine,
+} from '~/data/subcon'
+import { purchaseRequests } from '~/data/purchaseRequests'
+import { purchaseOrders } from '~/data/purchaseOrders'
+import { purchaseDeliveries } from '~/data/purchaseDeliveries'
+import { purchaseInvoices } from '~/data/purchaseInvoices'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import CompleteWorkOrderModal, { type CompleteWorkOrderRow } from '~/components/patterns/CompleteWorkOrderModal.vue'
 import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
 import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
 import { formatDate } from '~/utils/date'
-import { workOrders, persistWorkOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
+import { successToast } from '~/utils/toasts'
+import { workOrders, persistWorkOrders, adjustSubconWorkOrderQty, recordSubconDocument, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
+import { warehouseTransfers, addTransfer } from '~/data/warehouseTransfers'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 import { recordsForWorkOrder, addMaterialConsumeReturnRecord, remainingReservation } from '~/data/materialConsumeReturn'
@@ -31,11 +48,226 @@ import { warehouses } from '~/data/warehouses'
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
+
 const router = useRouter()
 const route = useRoute()
 
 const wo = computed<WorkOrder | undefined>(() => workOrders.find(w => w.id === props.orderId))
 const bom = computed(() => wo.value ? billOfMaterials.find(b => b.id === wo.value!.bomId) : undefined)
+// ── Subcontracting ───────────────────────────────────────────────────────────
+// Present only on a Subcontracting work order. The documents it raises are the
+// substance of the arrangement, so they get their own section rather than being
+// buried in the Linked transactions tab.
+const subcon = computed(() => wo.value?.subcon)
+
+/**
+ * A subcon work order can only raise its supply documents once it has actually
+ * started — a not-started work order is still a draft arrangement. The plan is
+ * therefore shown as "planned" until then, and as raised documents afterwards.
+ */
+const subconStarted = computed(() => !!wo.value && wo.value.status !== 'not started' && wo.value.status !== 'canceled')
+
+/**
+ * The Documents table, grouped the way the chain actually behaves.
+ *
+ * Every Purchases-module document — request, order, delivery — is ONE row: they
+ * are a single commercial thread (the request is ordered, the order is
+ * delivered), and splitting them made the table read like three unrelated jobs.
+ * Each raised document still appears under it with its own type tag and title,
+ * so nothing is lost by dropping the "What it does" column.
+ *
+ * The warehouse transfer stays its own row: it moves company stock, which is a
+ * different act from buying the vendor's service.
+ */
+const subconPlan = computed(() => {
+  const c = subcon.value
+  if (!c) return []
+  const raised = c.raisedDocuments ?? []
+  const plan = buildDocumentPlan(c.scope, c.split, c.method)
+
+  const entriesFor = (steps: typeof plan) => steps.flatMap(step => {
+    const docs = raised.filter(d => d.kind === step.kind)
+    // Planned but not yet raised → one placeholder entry naming what it will be.
+    return docs.length
+      ? docs.map(d => ({ kind: step.kind, title: step.title, tag: step.tag, doc: d }))
+      : [{ kind: step.kind, title: step.title, tag: step.tag, doc: undefined }]
+  })
+
+  const purchaseSteps = plan.filter(p => p.module === 'Purchases')
+  const transferSteps = plan.filter(p => p.module === 'Warehouse')
+
+  const rows: {
+    key: string
+    label: string
+    module: string
+    entries: ReturnType<typeof entriesFor>
+    /** What can be raised from this row right now, in chain order. */
+    actions: { kind: SubconDocKind; label: string }[]
+  }[] = []
+
+  if (purchaseSteps.length) {
+    /**
+     * The purchase thread is a chain — request, order, delivery, invoice — and
+     * each document is raised against the one before it. So rather than a fixed
+     * "Create purchase request" button, the row offers whatever the chain is
+     * actually ready for, which is how the work order stays the one place the
+     * run is driven from instead of sending the user off to find each form.
+     */
+    const isRaised = (kind: SubconDocKind) => raised.some(d => d.kind === kind)
+    const requestSteps = purchaseSteps.filter(p => p.tag === 'PR')
+    const pendingRequest = requestSteps.find(p => !isRaised(p.kind))
+    const anyRequestRaised = requestSteps.some(p => isRaised(p.kind))
+
+    const actions: { kind: SubconDocKind; label: string }[] = []
+    if (pendingRequest) actions.push({ kind: pendingRequest.kind, label: t('Create purchase request') })
+    if (anyRequestRaised && !isRaised('purchaseOrder')) {
+      actions.push({ kind: 'purchaseOrder', label: t('Create purchase order') })
+    }
+    if (isRaised('purchaseOrder')) {
+      // Deliveries repeat — several of them close one work order out — so this
+      // one stays on offer. The invoice only follows once the vendor has actually
+      // delivered against the order, and is raised once.
+      actions.push({ kind: 'purchaseDelivery', label: t('Create purchase delivery') })
+      if (isRaised('purchaseDelivery') && !isRaised('purchaseInvoice')) {
+        actions.push({ kind: 'purchaseInvoice', label: t('Create purchase invoice') })
+      }
+    }
+
+    rows.push({
+      key: 'purchase',
+      label: t('Purchase transaction'),
+      module: t('Purchases'),
+      entries: entriesFor(purchaseSteps),
+      actions,
+    })
+  }
+  if (transferSteps.length) {
+    rows.push({
+      key: 'transfer',
+      label: t('Warehouse transfer'),
+      module: t('Warehouse'),
+      entries: entriesFor(transferSteps),
+      actions: [{ kind: transferSteps[0]!.kind, label: t('Create transfer') }],
+    })
+  }
+  return rows
+})
+
+/**
+ * A raised document's OWN status, read from the store it lives in, so the list
+ * reports where each transaction actually stands (an order awaiting its invoice,
+ * a delivery still in transit) rather than just restating that it was raised.
+ * Undefined when the record cannot be found — the row falls back to "Raised".
+ */
+function documentStatus(doc: { kind: string; id: string }): string | undefined {
+  switch (doc.kind) {
+    case 'purchaseOrder':
+      return purchaseOrders.find(o => o.id === doc.id)?.status
+    case 'purchaseDelivery':
+      // Fulfillment is the delivery's own progress; billing is the invoice's job.
+      return purchaseDeliveries.find(d => d.id === doc.id)?.fulfillmentStatus
+    case 'purchaseInvoice':
+      return purchaseInvoices.find(i => i.id === doc.id)?.status
+    case 'transfer':
+    case 'rawTransfer':
+    case 'receipt':
+      return warehouseTransfers.find(tr => tr.id === doc.id)?.status
+    default:
+      // Every remaining kind is one of the purchase-request variants.
+      return purchaseRequests.find(r => r.id === doc.id)?.status
+  }
+}
+
+/**
+ * Every transaction in this work order's run, one row each — the Transactions
+ * tab's list. Flat rather than grouped by thread: the tab has the room to read
+ * the run document by document, and a step still to come sits in chain order
+ * among the raised ones so what is left is obvious.
+ */
+const subconTransactions = computed(() =>
+  subconPlan.value.flatMap(row =>
+    row.entries.map((entry, i) => ({
+      key: `${row.key}-${entry.kind}-${entry.doc?.id ?? `planned-${i}`}`,
+      tag: entry.tag,
+      type: SUBCON_DOC_TYPE_LABEL[entry.tag],
+      title: entry.title,
+      module: row.module,
+      doc: entry.doc,
+      status: entry.doc ? documentStatus(entry.doc) : undefined,
+    })),
+  ),
+)
+
+/** Everything that can be raised right now, across both threads. */
+const subconCreateActions = computed(() => subconPlan.value.flatMap(row => row.actions))
+
+/** Where the work order sits on the five-stage subcon chain. */
+const subconStage = computed<1 | 2 | 3 | 4 | 5>(() => {
+  const w = wo.value
+  if (!w || !w.subcon) return 1
+  if (w.status === 'completed') return 5
+  if (w.producedQty > 0) return 4
+  if (!subconStarted.value) return 1
+  return w.subcon.method === 'basic' ? 3 : 2
+})
+
+/**
+ * Subcon cost — the vendor's charges, which stand in for Production cost and
+ * Routing on a Subcontracting work order (the work is not performed in-house, so
+ * there is no labour, overhead or routing to report). Derived from the order's
+ * scope and quantity, the same figures the create form quoted.
+ */
+const subconCostLines = computed(() => {
+  const c = subcon.value
+  const w = wo.value
+  if (!c || !w) return []
+  const factor = (w.plannedQty / SUBCON_BATCH_QTY) * (c.split === 'partial' ? 0.5 : 1)
+
+  // A Subcontracting BOM defines its own services — those are THE subcon cost for
+  // this work order, and they win. The scope-derived pair below is only the
+  // fallback for a BOM that predates the Subcon cost section.
+  const fromBom = bom.value?.subconCost ?? []
+  if (fromBom.length) {
+    return fromBom.map(l => ({
+      account: l.name,
+      driver: t(l.costDriver),
+      chargedBy: c.vendorName,
+      amount: l.amount * factor,
+    }))
+  }
+
+  return [
+    {
+      account: t(SUBCON_SERVICE_FEE[c.scope].name),
+      driver: t('Unit'),
+      chargedBy: c.vendorName,
+      amount: SUBCON_SERVICE_FEE[c.scope].amount * factor,
+    },
+    {
+      account: t(SUBCON_HANDLING_FEE.name),
+      driver: t('Amount'),
+      chargedBy: c.vendorName,
+      amount: SUBCON_HANDLING_FEE.amount * factor,
+    },
+  ]
+})
+const subconCostSubtotal = computed(() => subconCostLines.value.reduce((s, l) => s + l.amount, 0))
+
+/**
+ * The vendor location a transfer is addressed to. Falls back to the vendor's own
+ * warehouse when the setup predates the field, so an order saved before it
+ * existed still resolves rather than opening a transfer with no destination.
+ */
+const subconDestination = computed(() => {
+  const c = subcon.value
+  if (!c) return undefined
+  if (c.subconWarehouseId) return { id: c.subconWarehouseId, name: c.subconWarehouseName ?? '' }
+  const v = subconVendorWarehouse(c.vendorId)
+  return v?.warehouseId ? { id: v.warehouseId, name: v.warehouseName ?? '' } : undefined
+})
+
+/** Which warehouse the components leave from, given the supply method. */
+
 
 function goList() { router.push('/work-orders') }
 function goNewRecord() { router.push(`/work-orders/${props.orderId}/material-record/new`) }
@@ -52,14 +284,28 @@ const flowOptions: { value: Flow; label: string }[] = [
 const fromProductionRequest = computed(() => flow.value === 'production-request')
 
 // ── Bottom tabs ──────────────────────────────────────────────────────────────
-const bottomTabs = computed(() =>
-  fromProductionRequest.value ? ['Partial production', 'Linked transactions'] : ['Partial production'],
-)
+/**
+ * A subcon work order produces nothing in-house — the vendor's deliveries are
+ * what produce it — so "Partial production" never has anything to show. Its slot
+ * is given to Transactions, which is where the whole document run is listed and
+ * raised from.
+ */
+const bottomTabs = computed(() => {
+  const first = subcon.value ? 'Transactions' : 'Partial production'
+  return fromProductionRequest.value ? [first, 'Linked transactions'] : [first]
+})
 const activeBottomTab = ref('Partial production')
+watch(bottomTabs, (tabs) => {
+  if (!tabs.includes(activeBottomTab.value)) activeBottomTab.value = tabs[0]!
+}, { immediate: true })
 
 // ── Top-level tabs (Overview / Material consume & return) ────────────────────
-const topTabs = ['Overview', 'Material consume & return'] as const
-type TopTab = typeof topTabs[number]
+// A subcon work order has no in-house consumption to record: the materials go to
+// the vendor on a transfer and come back as finished output on a receipt, so the
+// partial consume/return flow does not apply and its tab is not offered.
+const ALL_TOP_TABS = ['Overview', 'Material consume & return'] as const
+type TopTab = typeof ALL_TOP_TABS[number]
+const topTabs = computed<readonly TopTab[]>(() => (subcon.value ? ['Overview'] : ALL_TOP_TABS))
 const activeTopTab = ref<TopTab>(route.query.tab === 'material-consume-return' ? 'Material consume & return' : 'Overview')
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -99,7 +345,7 @@ const attachments = [
 
 // ── Collapsible sections ──────────────────────────────────────────────────────
 const collapsed = reactive<Record<string, boolean>>({
-  raw: false, cost: false, routing: false, finished: false,
+  raw: false, cost: false, routing: false, subconCost: false, finished: false,
 })
 
 // ── Line-item status derivation (from the work order status) ─────────────────────
@@ -114,6 +360,37 @@ function consumedFor(productId: string): number {
     .filter(r => r.productId === productId)
     .reduce((s, r) => s + r.qty, 0))
 }
+/**
+ * Subcon: the figure beside each raw material is what was SENT to the vendor, not
+ * what was consumed — the work happens at the vendor, so the company never
+ * consumes these itself. It is read off the warehouse transfers this work order
+ * raised, so the number always matches what was actually transferred rather than
+ * what the BOM planned.
+ *
+ * Only `resupply` moves company stock: on `basic` the vendor uses its own, and on
+ * `dropship` a third party ships direct, so neither has a quantity to report.
+ */
+const sentToVendorBySku = computed<Record<string, number>>(() => {
+  const c = subcon.value
+  if (!c || c.method !== 'resupply') return {}
+  const transferIds = (c.raisedDocuments ?? [])
+    .filter(d => d.route === '/warehouse-transfers')
+    .map(d => d.id)
+  const totals: Record<string, number> = {}
+  for (const id of transferIds) {
+    const transfer = warehouseTransfers.find(t => t.id === id)
+    for (const line of transfer?.lines ?? []) {
+      totals[line.sku] = (totals[line.sku] ?? 0) + line.qty
+    }
+  }
+  return totals
+})
+
+/** True when this work order reports sent-to-vendor instead of consumed qty. */
+const reportsSentQty = computed(() => !!subcon.value)
+/** …and actually has a quantity to report (resupply only). */
+const sendsCompanyStock = computed(() => subcon.value?.method === 'resupply')
+
 // Actual start/end shown only when the work order has reached that stage.
 const showStart = computed(() => !['not started', 'canceled'].includes(wo.value?.status ?? ''))
 const showEnd = computed(() => ['partially completed', 'completed', 'canceled'].includes(wo.value?.status ?? ''))
@@ -124,10 +401,30 @@ const showEnd = computed(() => ['partially completed', 'completed', 'canceled'].
 const EXECUTION_WAREHOUSE = 'Production Jakarta'
 const rawMaterials = computed(() => (bom.value?.rawMaterials ?? []).map(r => {
   const p = catalogProduct(r.productId)
-  return { productId: r.productId, product: p?.name ?? '—', sku: p?.sku ?? '—', purchaseCost: r.purchaseCost, warehouse: EXECUTION_WAREHOUSE, needed: r.needed, unit: r.unit }
+  // The warehouse the line is actually drawn from, as chosen on the work order
+  // form. EXECUTION_WAREHOUSE is only the fallback for records saved before that
+  // was persisted.
+  const wh = wo.value?.componentWarehouses?.[r.productId]
+  return {
+    productId: r.productId, product: p?.name ?? '—', sku: p?.sku ?? '—',
+    purchaseCost: r.purchaseCost, warehouse: wh?.name ?? EXECUTION_WAREHOUSE,
+    warehouseId: wh?.id, needed: r.needed, unit: r.unit,
+  }
 }))
 const rawEst = (r: { purchaseCost: number; needed: number }) => r.purchaseCost * r.needed
 const rawSubtotal = computed(() => rawMaterials.value.reduce((s, r) => s + rawEst(r), 0))
+
+/**
+ * Where a subcon transfer draws FROM — the warehouse the components themselves
+ * name. The subcon setup no longer asks for it separately: the component lines
+ * already say where each material comes from, and two sources of truth would
+ * only disagree.
+ */
+const subconOrigin = computed(() => {
+  const first = rawMaterials.value.find(r => r.warehouseId)
+  return first?.warehouseId ? { id: first.warehouseId, name: first.warehouse } : undefined
+})
+
 
 // ── Complete work order — blocked by unconsumed raw material qty ────────────
 // Clicking "Complete work order" while any raw material still has qty left to
@@ -207,8 +504,249 @@ function onAutoConsumeAndComplete() {
   })
   completeWorkOrder()
 }
+// ── Start work order ─────────────────────────────────────────────────────────
+// A plain work order just starts. A SUBCON one also unlocks the documents that
+// get materials to the vendor, so it asks which to raise and opens that form
+// prefilled — otherwise the user is left hunting for the right form in another
+// module and retyping what the work order already knows.
+const showStartModal = ref(false)
+const showShortfallModal = ref(false)
+const showCompleteSubconModal = ref(false)
+
+/**
+ * What was sent to the vendor, per component, so completing can reconcile it.
+ * Empty for `basic`/`dropship` — neither puts company stock at the vendor.
+ */
+const subconComponentUsage = computed<SubconComponentUsage[]>(() =>
+  rawMaterials.value
+    .map(r => ({
+      sku: r.sku,
+      product: r.product,
+      unit: r.unit,
+      sent: sentToVendorBySku.value[r.sku] ?? 0,
+      originWarehouseId: r.warehouseId,
+      originWarehouseName: r.warehouse,
+    }))
+    .filter(c => c.sent > 0),
+)
+
+/**
+ * Complete, returning whatever the vendor did not use. The return is a real
+ * warehouse transfer FROM the vendor location back to each component's origin —
+ * the same document that sent the stock out, run in reverse — so the custody
+ * balance closes instead of being written off silently.
+ */
+function completeSubconWorkOrder(unused: { sku: string; qty: number }[]) {
+  const w = wo.value
+  const c = subcon.value
+  if (!w || !c) return
+  showCompleteSubconModal.value = false
+
+  if (unused.length) {
+    const origin = subconDestination.value                       // the vendor location
+    const destination = subconOrigin.value                       // where components came from
+    const transfer = addTransfer({
+      date: new Date().toISOString().slice(0, 10),
+      originId: origin?.id ?? '',
+      originName: origin?.name ?? '',
+      destinationId: destination?.id ?? '',
+      destinationName: destination?.name ?? '',
+      tags: [],
+      memo: `${t('Unused components returned from')} ${w.number}`,
+      lines: unused,
+    })
+    recordSubconDocument(w.id, {
+      kind: 'transfer', id: transfer.id, number: transfer.number, route: '/warehouse-transfers',
+    })
+  }
+  completeWorkOrder()
+}
+
+/** How much the vendor still owes against what the work order needs. */
+const subconShortfall = computed(() => {
+  const w = wo.value
+  return w && subcon.value ? Math.max(0, w.plannedQty - w.producedQty) : 0
+})
+
+/** Close the order short: reduce what it needs to what actually arrived. */
+function adjustAndComplete(reason: string) {
+  const w = wo.value
+  if (!w) return
+  showShortfallModal.value = false
+  adjustSubconWorkOrderQty(w.id, w.producedQty, reason.trim() || t('Closed short — vendor under-delivered'))
+  completeWorkOrder()
+}
+
+/** Raise another delivery for the balance instead of closing short. */
+function deliverBalance() {
+  showShortfallModal.value = false
+  const po = (subcon.value?.raisedDocuments ?? []).find(d => d.kind === 'purchaseOrder')
+  router.push(po
+    ? { path: '/purchase-deliveries/new', query: { fromPo: po.id } }
+    : { path: '/purchase-deliveries/new' })
+}
+
+function startWorkOrder() {
+  const w = wo.value
+  if (!w) return
+  w.status = 'in progress'
+  w.startDate = new Date().toISOString().slice(0, 10)
+  persistWorkOrders()
+}
+
+/** Where each document's form lives. */
+/**
+ * The form each document opens in. Only the documents the work order raises
+ * itself are listed — the order, delivery and invoice are raised against their
+ * parent instead (see `createDocument`), so they have no entry here.
+ */
+const DOC_ROUTE: Partial<Record<SubconDocKind, string>> = {
+  componentPr: '/purchase-requests/new',
+  subconPr: '/purchase-requests/new',
+  processPr: '/purchase-requests/new',
+  rawPr: '/purchase-requests/new',
+  purchasePr: '/purchase-requests/new',
+  transfer: '/warehouse-transfers/new',
+  rawTransfer: '/warehouse-transfers/new',
+  receipt: '/warehouse-transfers/new',
+}
+
+/**
+ * The lines the chosen document opens with.
+ *  • A transfer moves the BOM's components out of the source warehouse.
+ *  • A PR buys the vendor's service, and carries the output as a tracked line so
+ *    the goods receipt has something to receive against.
+ */
+function prefillLines(kind: SubconDocKind): SubconPrefillLine[] {
+  const w = wo.value
+  const c = subcon.value
+  if (!w || !c) return []
+
+  if (kind === 'transfer' || kind === 'rawTransfer') {
+    const components = kind === 'rawTransfer' ? rawMaterials.value.slice(0, 1) : rawMaterials.value
+    // A second transfer carries what is still OUTSTANDING, not the full BOM
+    // quantity again — otherwise re-opening the form offers to send everything a
+    // second time. Lines already fully sent drop out entirely.
+    return components
+      .map(r => {
+        const remaining = Math.max(0, r.needed - (sentToVendorBySku.value[r.sku] ?? 0))
+        return {
+          name: r.product, sku: r.sku, qty: remaining, unit: r.unit,
+          unitCost: r.purchaseCost, maxQty: remaining,
+        }
+      })
+      .filter(l => l.qty > 0)
+  }
+
+  // A component PR / raw PR buys the components from a third party instead.
+  if (kind === 'componentPr' || kind === 'rawPr' || kind === 'purchasePr') {
+    const components = kind === 'rawPr' ? rawMaterials.value.slice(0, 1) : rawMaterials.value
+    return components.map(r => ({
+      name: r.product, sku: r.sku, qty: r.needed, unit: r.unit, unitCost: r.purchaseCost,
+    }))
+  }
+
+  // Subcon / process PR — exactly the Subcon cost lines shown on this page, and
+  // nothing else. What you read in the Subcon cost section is what lands on the
+  // purchase request; the output is not a line here, it arrives on the goods
+  // receipt.
+  return subconCostLines.value.map(l => ({
+    name: l.account,
+    sku: 'SVC',
+    qty: 1,
+    unit: 'Service',
+    unitCost: Math.round(l.amount),
+    nonTrack: true,
+  }))
+}
+
+/** Open a raised document's detail page. */
+function openRaisedDocument(doc: { route: string; id: string }) {
+  router.push(`${doc.route}/${doc.id}`)
+}
+
+/** Open a document's form, prefilled from this work order. */
+function createDocument(kind: SubconDocKind) {
+  const w = wo.value
+  const c = subcon.value
+  if (!w || !c) return
+
+  /**
+   * Documents downstream of the request are raised AGAINST their parent, not from
+   * the work order's own prefill: the order is built from the request, and the
+   * delivery and the invoice are both built from the order. Routing them through
+   * the same entry points the Purchases module uses means they arrive with the
+   * parent's real lines and money, and the link back is recorded there too.
+   */
+  const raised = c.raisedDocuments ?? []
+  if (kind === 'purchaseOrder') {
+    const request = raised.find(d => d.route === '/purchase-requests')
+    if (request) { router.push({ path: '/purchase-orders', query: { fromPr: request.id } }); return }
+  }
+  if (kind === 'purchaseDelivery' || kind === 'purchaseInvoice') {
+    const order = raised.find(d => d.kind === 'purchaseOrder')
+    if (order) {
+      const path = kind === 'purchaseDelivery' ? '/purchase-deliveries/new' : '/purchase-invoices/new'
+      router.push({ path, query: { fromPo: order.id } })
+      return
+    }
+  }
+
+  const prefill = encodeSubconPrefill({
+    kind,
+    workOrderId: w.id,
+    workOrderNumber: w.number,
+    bomNumber: bom.value?.number ?? '',
+    vendorName: c.vendorName,
+    requiredDate: c.promisedDate,
+    originWarehouseId: subconOrigin.value?.id ?? c.sourceWarehouseId,
+    originWarehouseName: subconOrigin.value?.name ?? c.sourceWarehouseName,
+    receivingWarehouseId: c.receivingWarehouseId,
+    receivingWarehouseName: c.receivingWarehouseName,
+    destinationWarehouseId: subconDestination.value?.id,
+    destinationWarehouseName: subconDestination.value?.name,
+    lines: prefillLines(kind),
+    memo: `${t('Raised from')} ${w.number} · ${t('subcon')} · ${c.vendorName}`,
+  })
+  const path = DOC_ROUTE[kind]
+  if (!path) return
+  router.push({ path, query: { subcon: prefill } })
+}
+
+/** Modal path: start the order first, then open the chosen document. */
+function startAndCreate(kind: SubconDocKind) {
+  showStartModal.value = false
+  startWorkOrder()
+  createDocument(kind)
+}
+
+function startOnly() {
+  showStartModal.value = false
+  startWorkOrder()
+  successToast(t('Work order started'))
+}
+
 function handlePrimaryAction() {
+  if (primaryAction.value === 'Start work order') {
+    // Only a subcon order has documents to choose between.
+    if (subcon.value) { showStartModal.value = true; return }
+    startWorkOrder()
+    successToast(t('Work order started'))
+    return
+  }
   if (primaryAction.value !== 'Complete work order') return
+  // A subcon order is finished when the vendor's deliveries add up to what it
+  // needs. Short of that, ask: deliver the balance, or close it short on the
+  // record. (The unconsumed-material guard below is about in-house consumption,
+  // which a subcon order does not have.)
+  if (subcon.value) {
+    if (subconShortfall.value > 0) { showShortfallModal.value = true; return }
+    // Delivered in full — but the components sent to the vendor are still on the
+    // company's books until they are accounted for, so completing asks how much
+    // was used and returns the rest.
+    showCompleteSubconModal.value = true
+    return
+  }
   if (remainingRawMaterials.value.length > 0) { showCompleteModal.value = true; return }
   completeWorkOrder()
 }
@@ -311,7 +849,11 @@ const routing = computed(() => (bom.value?.routing ?? []).map(r => ({
   planStart: wo.value?.planStartDate ?? '', planEnd: wo.value?.planEndDate ?? '', amount: r.amount,
 })))
 const routingSubtotal = computed(() => routing.value.reduce((s, r) => s + r.amount, 0))
-const totalProductionCost = computed(() => rawSubtotal.value + productionCostSubtotal.value + routingSubtotal.value)
+
+// On a subcon work order the vendor's fee replaces production + routing cost.
+const totalProductionCost = computed(() => (subcon.value
+  ? rawSubtotal.value + subconCostSubtotal.value
+  : rawSubtotal.value + productionCostSubtotal.value + routingSubtotal.value))
 
 const otherOutputs = computed(() => (bom.value?.otherOutputs ?? []).map(o => {
   const p = catalogProduct(o.productId)
@@ -331,7 +873,9 @@ const mainOutput = computed(() => {
   return {
     product: fg?.name ?? wo.value?.bomName ?? '—',
     sku: fg?.sku ?? '—',
-    qty: wo.value?.producedQty || bom.value?.finishedGoodQty || 0,
+    qty: wo.value?.producedQty ?? 0,
+    /** What the work order needs — the denominator a subcon order reports against. */
+    needed: wo.value?.plannedQty ?? bom.value?.finishedGoodQty ?? 0,
     unit: bom.value?.finishedGoodUnit ?? 'Pcs',
     percentage: bom.value?.finishedGoodPercentage ?? 100,
     estCost,
@@ -429,7 +973,7 @@ function suppressFabClick(e: MouseEvent) {
             <MpPopoverList>
               <MpPopoverListItem
                 v-for="item in actionItems" :key="item"
-                :class="item === 'Delete' ? css({ color: 'var(--mp-text-critical)' }) : ''"
+                :class="item === 'Delete' ? css({ color: 'var(--mp-text-critical, var(--mp-text-danger, #a8352d))' }) : ''"
               >{{ t(item) }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
@@ -492,6 +1036,53 @@ function suppressFabClick(e: MouseEvent) {
         </div>
       </section>
 
+      <!-- ── Subcontracting — only on a Subcontracting work order ── -->
+      <section v-if="subcon" class="wod-section">
+        <div class="wod-section-head-static">
+          <h2 class="wod-section-title">{{ t('Subcontracting') }}</h2>
+          <SubconMethodChip :method="subcon.method" badge-for="additionalInformation" />
+        </div>
+
+        <div class="wod-info-grid">
+          <div class="content-list-col">
+            <ContentList :label="t('Subcon vendor')" :value="subcon.vendorName" />
+            <ContentList :label="t('Scope')" :value="t(SUBCON_SCOPE_LABEL[subcon.scope])" />
+          </div>
+          <div class="content-list-col">
+            <ContentList :label="t('Quantity')" :value="subcon.split === 'partial' ? t('Partial (split)') : t('Full quantity')" />
+            <ContentList
+              v-if="subconDestination"
+              :label="t('Transfer components to')"
+              :value="subconDestination.name"
+            />
+            <!-- Closed short: the original quantity and the reason stay visible,
+                 otherwise the adjustment would erase the very thing it records. -->
+            <ContentList v-if="subcon.qtyAdjustment" :label="t('Quantity adjusted')">
+              {{ subcon.qtyAdjustment.from.toLocaleString('id-ID') }} →
+              {{ subcon.qtyAdjustment.to.toLocaleString('id-ID') }} · {{ subcon.qtyAdjustment.reason }}
+            </ContentList>
+          </div>
+          <div class="content-list-col">
+            <ContentList :label="t('Promised return date')" :value="subcon.promisedDate ? formatDate(subcon.promisedDate) : '—'" />
+            <ContentList :label="t('Receive output into')" :value="subcon.receivingWarehouseName" />
+          </div>
+          <div class="content-list-col">
+            <ContentList :label="t('Subcon order')" :value="subcon.subconOrderNumber ?? '—'" />
+          </div>
+        </div>
+
+        <!-- Where this work order sits on the subcon chain -->
+        <div class="wod-subcon-progress">
+          <SubconStageChain :stage="subconStage" :method="subcon.method" />
+          <span class="wod-subcon-progress__text">
+            {{ subconStarted
+              ? t('Work order started — raise its documents from the Transactions tab below.')
+              : t('Still a draft. Start the work order before any supply document can be raised.') }}
+          </span>
+        </div>
+
+      </section>
+
       <!-- ── Raw materials ── -->
       <section class="wod-section">
         <button class="wod-section-head" @click="collapsed.raw = !collapsed.raw">
@@ -507,7 +1098,9 @@ function suppressFabClick(e: MouseEvent) {
                   <th class="wod-th wod-th--num">{{ t('Purchase cost') }}</th>
                   <th class="wod-th">{{ t('Warehouse') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Needed qty') }}</th>
-                  <th class="wod-th wod-th--num">{{ t('Consumed qty') }}</th>
+                  <!-- Subcon reports what LEFT for the vendor; a normal work
+                       order reports what was consumed in-house. -->
+                  <th class="wod-th wod-th--num">{{ reportsSentQty ? t('Sent to vendor') : t('Consumed qty') }}</th>
                   <th class="wod-th">{{ t('Unit') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Estimated cost') }}</th>
                 </tr>
@@ -520,7 +1113,11 @@ function suppressFabClick(e: MouseEvent) {
                   <td class="wod-td wod-td--num">{{ formatIDR(r.purchaseCost) }}</td>
                   <td class="wod-td">{{ r.warehouse }}</td>
                   <td class="wod-td wod-td--num">{{ num(r.needed) }}</td>
-                  <td class="wod-td wod-td--num">{{ num(consumedFor(r.productId)) }}/{{ num(r.needed) }}</td>
+                  <td class="wod-td wod-td--num">
+                    <template v-if="!reportsSentQty">{{ num(consumedFor(r.productId)) }}/{{ num(r.needed) }}</template>
+                    <template v-else-if="sendsCompanyStock">{{ num(sentToVendorBySku[r.sku] ?? 0) }}/{{ num(r.needed) }}</template>
+                    <span v-else class="wod-muted">—</span>
+                  </td>
                   <td class="wod-td">{{ r.unit }}</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(rawEst(r)) }}</td>
                 </tr>
@@ -532,7 +1129,8 @@ function suppressFabClick(e: MouseEvent) {
       </section>
 
       <!-- ── Production cost ── -->
-      <section class="wod-section">
+      <!-- In-house cost structure — replaced by Subcon cost on a subcon WO. -->
+      <section v-if="!subcon" class="wod-section">
         <button class="wod-section-head" @click="collapsed.cost = !collapsed.cost">
           <h2 class="wod-section-title">{{ t('Production cost') }}</h2>
           <svg class="wod-chevron" :class="{ 'wod-chevron--open': !collapsed.cost }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -565,7 +1163,7 @@ function suppressFabClick(e: MouseEvent) {
       </section>
 
       <!-- ── Routing ── -->
-      <section class="wod-section">
+      <section v-if="!subcon" class="wod-section">
         <button class="wod-section-head" @click="collapsed.routing = !collapsed.routing">
           <h2 class="wod-section-title">{{ t('Routing') }}</h2>
           <svg class="wod-chevron" :class="{ 'wod-chevron--open': !collapsed.routing }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -601,12 +1199,50 @@ function suppressFabClick(e: MouseEvent) {
           </div>
           <div class="wod-subtotal-row"><span>{{ t('Routing cost subtotal') }}</span><span class="wod-amount">{{ formatIDR(routingSubtotal) }}</span></div>
         </template>
+      </section>
 
-        <!-- Cost summary -->
+      <!-- ── Subcon cost — the vendor's charges, in place of production + routing ── -->
+      <section v-if="subcon" class="wod-section">
+        <button class="wod-section-head btn-enterprise" @click="collapsed.subconCost = !collapsed.subconCost">
+          <h2 class="wod-section-title">{{ t('Subcon cost') }}</h2>
+          <svg class="wod-chevron" :class="{ 'wod-chevron--open': !collapsed.subconCost }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <template v-if="!collapsed.subconCost">
+          <div class="wod-table-scroll">
+            <table class="wod-table">
+              <thead>
+                <tr>
+                  <th class="wod-th">{{ t('Cost component') }}</th>
+                  <th class="wod-th">{{ t('Charged by') }}</th>
+                  <th class="wod-th">{{ t('Cost driver') }}</th>
+                  <th class="wod-th wod-th--num">{{ t('Amount') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="l in subconCostLines" :key="l.account" class="wod-tr">
+                  <td class="wod-td">{{ l.account }}</td>
+                  <td class="wod-td">{{ l.chargedBy }}</td>
+                  <td class="wod-td">{{ l.driver }}</td>
+                  <td class="wod-td wod-td--num">{{ formatIDR(l.amount) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="wod-subtotal-row"><span>{{ t('Subcon cost subtotal') }}</span><span class="wod-amount">{{ formatIDR(subconCostSubtotal) }}</span></div>
+        </template>
+      </section>
+
+      <!-- ── Cost summary — rows follow whichever cost structure applies ── -->
+      <section class="wod-section">
         <div class="wod-summary">
           <div class="wod-summary-row"><span>{{ t('Estimated raw materials subtotal') }}</span><span>{{ formatIDR(rawSubtotal) }}</span></div>
-          <div class="wod-summary-row"><span>{{ t('Production cost subtotal') }}</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
-          <div class="wod-summary-row"><span>{{ t('Routing cost subtotal') }}</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
+          <template v-if="subcon">
+            <div class="wod-summary-row"><span>{{ t('Subcon cost subtotal') }}</span><span>{{ formatIDR(subconCostSubtotal) }}</span></div>
+          </template>
+          <template v-else>
+            <div class="wod-summary-row"><span>{{ t('Production cost subtotal') }}</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
+            <div class="wod-summary-row"><span>{{ t('Routing cost subtotal') }}</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
+          </template>
           <div class="wod-summary-row wod-summary-row--total"><span>{{ t('Estimated total production cost') }}</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
         </div>
       </section>
@@ -637,7 +1273,13 @@ function suppressFabClick(e: MouseEvent) {
                 <tr class="wod-tr">
                   <td class="wod-td">{{ mainOutput.product }}</td>
                   <td class="wod-td">{{ mainOutput.sku }}</td>
-                  <td class="wod-td wod-td--num">{{ num(mainOutput.qty) }}</td>
+                  <!-- Subcon reports produced/needed: the numerator is the total
+                       across the vendor's deliveries, so the gap is the balance
+                       still to be delivered. -->
+                  <td class="wod-td wod-td--num">
+                    <template v-if="subcon">{{ num(mainOutput.qty) }}/{{ num(mainOutput.needed) }}</template>
+                    <template v-else>{{ num(mainOutput.qty) }}</template>
+                  </td>
                   <td class="wod-td">{{ mainOutput.unit }}</td>
                   <td class="wod-td wod-td--num">{{ mainOutput.percentage }}%</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(mainOutput.estCost) }}</td>
@@ -743,6 +1385,77 @@ function suppressFabClick(e: MouseEvent) {
             </table>
           </div>
         </div>
+        <!-- Subcon: the whole document run, listed and raised from one place. -->
+        <template v-else-if="activeBottomTab === 'Transactions'">
+          <div class="wod-tx-head">
+            <p class="wod-tx-caption">
+              {{ subconStarted
+                ? t('Every document raised for this work order, and what is still to come.')
+                : t('Start the work order to raise its documents.') }}
+            </p>
+            <!-- Always rendered once started, never disabled: when nothing is
+                 ready the menu says so rather than the button going grey
+                 (rule/btn-no-disabled-validation). -->
+            <MpPopover v-if="subconStarted" placement="bottom-end">
+              <MpPopoverTrigger>
+                <MpButton variant="primary" is-rounded>{{ t('Create transaction') }}</MpButton>
+              </MpPopoverTrigger>
+              <MpPopoverContent>
+                <MpPopoverList>
+                  <MpPopoverListItem
+                    v-for="action in subconCreateActions"
+                    :key="action.kind"
+                    @click="createDocument(action.kind)"
+                  >{{ action.label }}</MpPopoverListItem>
+                  <MpPopoverListItem v-if="!subconCreateActions.length" class="wod-tx-menu-empty">
+                    {{ t('Nothing left to raise') }}
+                  </MpPopoverListItem>
+                </MpPopoverList>
+              </MpPopoverContent>
+            </MpPopover>
+          </div>
+
+          <div class="wod-table-scroll">
+            <table class="wod-table">
+              <thead>
+                <tr>
+                  <th class="wod-th">{{ t('Type') }}</th>
+                  <th class="wod-th">{{ t('Transaction no.') }}</th>
+                  <th class="wod-th">{{ t('Module') }}</th>
+                  <th class="wod-th">{{ t('Date') }}</th>
+                  <th class="wod-th">{{ t('Status') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="tx in subconTransactions" :key="tx.key" class="wod-tr">
+                  <td class="wod-td">{{ t(tx.type) }}</td>
+                  <td class="wod-td">
+                    <a v-if="tx.doc" class="cell-link" @click.prevent="openRaisedDocument(tx.doc)">{{ tx.doc.number }}</a>
+                    <span v-else class="wod-subcon-muted">{{ t(tx.title) }}</span>
+                  </td>
+                  <td class="wod-td">{{ tx.module }}</td>
+                  <td class="wod-td">{{ tx.doc?.raisedAt ? formatDate(tx.doc.raisedAt) : '—' }}</td>
+                  <!-- A raised transaction shows its own status, badged the same
+                       way its index and detail pages badge it. A step not raised
+                       yet has no record to have a status, so it says where the
+                       chain stands instead. -->
+                  <td class="wod-td">
+                    <ErpStatusBadge v-if="tx.status" :status="tx.status" />
+                    <span v-else-if="tx.doc" class="wod-subcon-status wod-subcon-status--done">{{ t('Raised') }}</span>
+                    <span
+                      v-else
+                      class="wod-subcon-status"
+                      :class="subconStarted ? 'wod-subcon-status--ready' : 'wod-subcon-status--blocked'"
+                    >
+                      {{ subconStarted ? t('Ready to raise') : t('Waiting for start') }}
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
+
         <div v-else class="wod-empty">
           <p class="wod-empty-title">{{ t('No partial production') }}</p>
           <p class="wod-empty-desc">{{ t('Partial production records will appear here.') }}</p>
@@ -894,6 +1607,50 @@ function suppressFabClick(e: MouseEvent) {
       </MpPopoverContent>
     </MpPopover>
 
+    <!-- Start work order — subcon orders pick which document to raise first. -->
+
+    <CompleteSubconWorkOrderModal
+      v-if="subcon && wo"
+      v-model:is-open="showCompleteSubconModal"
+      :produced-qty="wo.producedQty"
+      :produced-unit="mainOutput.unit"
+      :product-name="mainOutput.product"
+      :components="subconComponentUsage"
+      :subcon-warehouse-name="subconDestination?.name"
+      @complete="completeSubconWorkOrder"
+    />
+
+    <SubconShortfallModal
+      v-if="subcon && wo"
+      v-model:is-open="showShortfallModal"
+      :produced="wo.producedQty"
+      :planned="wo.plannedQty"
+      :unit="mainOutput.unit"
+      @adjust="adjustAndComplete"
+      @deliver="deliverBalance"
+    />
+
+    <StartSubconWorkOrderModal
+
+      v-if="subcon"
+
+      v-model:is-open="showStartModal"
+
+      :scope="subcon.scope"
+
+      :split="subcon.split"
+
+      :method="subcon.method"
+
+      :vendor-name="subcon.vendorName"
+
+      @start="startAndCreate"
+
+      @start-only="startOnly"
+
+    />
+
+
     <CompleteWorkOrderModal
       v-model:is-open="showCompleteModal"
       :rows="remainingRawMaterials"
@@ -951,6 +1708,25 @@ function suppressFabClick(e: MouseEvent) {
    1400) — without this it'd render behind that modal instead of on top of it. */
 :deep(.psn-overlay), :deep(.pbd-overlay) { z-index: 1500; }
 
+/* ── Transactions tab (subcon) ────────────────────────────────────────────── */
+.wod-tx-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mp-spacing-4);
+  margin-bottom: var(--mp-spacing-4);
+}
+.wod-tx-caption {
+  margin: 0;
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-secondary);
+}
+/* A menu line that reports state rather than offering an action. */
+.wod-tx-menu-empty {
+  color: var(--mp-text-secondary);
+  pointer-events: none;
+}
+
 /* ── Bottom tabs (Partial production / Linked transactions) ───────────────── */
 .wod-section--tabs { border-bottom: none; }
 .wod-bottom-tabs { display: flex; align-items: center; gap: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-border-default); margin-bottom: var(--mp-spacing-4); }
@@ -989,7 +1765,7 @@ function suppressFabClick(e: MouseEvent) {
   width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3);
   background: var(--mp-background-neutral);
   border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle);
+  border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle, #75808f);
 }
 .filter-search-input {
   flex: 1; border: none; outline: none; background: transparent;
@@ -1081,6 +1857,70 @@ function suppressFabClick(e: MouseEvent) {
   background: none; border: none; padding: 0; cursor: pointer; color: var(--mp-text-secondary);
   margin-bottom: var(--mp-spacing-5);
 }
+/* ── Subcontracting ──────────────────────────────────────────────────────── */
+.wod-subcon-progress {
+  display: flex; align-items: center; gap: var(--mp-spacing-4);
+  margin-top: var(--mp-spacing-4);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  border: 1px solid var(--mp-border-default);
+  border-radius: var(--mp-radii-md);
+  background: var(--mp-background-default, #fff);
+}
+.wod-subcon-progress__text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
+.wod-subcon-subtitle {
+  margin: var(--mp-spacing-6) 0 var(--mp-spacing-3);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+.wod-subcon-table { width: 100%; border-collapse: collapse; }
+.wod-subcon-th {
+  background: var(--mp-background-neutral-subtle);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  text-align: left; white-space: nowrap;
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+  border-bottom: 1px solid var(--mp-border-default);
+}
+.wod-subcon-td {
+  padding: var(--mp-spacing-3);
+  border-bottom: 1px solid var(--mp-border-default);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  vertical-align: top; white-space: nowrap;
+}
+.wod-subcon-td--wrap { white-space: normal; }
+.wod-subcon-tr:last-child .wod-subcon-td { border-bottom: none; }
+.wod-subcon-td__title { display: block; font-weight: var(--mp-font-weights-semi-bold); }
+.wod-subcon-td__module { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.wod-subcon-th--action { width: var(--mp-sizes-60, 240px); }
+.wod-subcon-td--action { text-align: right; }
+/* Several documents can be ready at once (a repeatable delivery alongside the
+   invoice), so the buttons wrap toward the right rather than widening the cell. */
+.wod-subcon-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--mp-spacing-2);
+}
+.wod-subcon-status { font-size: var(--mp-font-sizes-md); }
+.wod-subcon-status--ready { color: var(--mp-text-success, #18794e); }
+.wod-subcon-status--done { color: var(--mp-text-link); }
+.wod-subcon-muted,
+.wod-muted { color: var(--mp-text-secondary); }
+.wod-subcon-docs { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.wod-subcon-doc { display: flex; align-items: center; gap: var(--mp-spacing-2); white-space: nowrap; }
+.wod-subcon-doc__tag {
+  flex: none;
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  border-radius: var(--mp-radii-sm); padding: 0 var(--mp-spacing-1\.5);
+}
+.wod-subcon-doc__tag--pr { background: var(--mp-background-information, #eef0fc); color: var(--mp-text-link); }
+.wod-subcon-doc__tag--transfer { background: var(--mp-background-warning-subtle, #fffaea); color: var(--mp-text-warning, #b54708); }
+.wod-subcon-doc__tag--receipt,
+.wod-subcon-doc__tag--pd { background: var(--mp-background-success-subtle, #e8f4ef); color: var(--mp-text-success, #18794e); }
+.wod-subcon-doc__tag--po { background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); }
+.wod-subcon-status--blocked { color: var(--mp-text-secondary); }
+
 .wod-section-title {
   margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-xl, 32px); color: var(--mp-text-default);

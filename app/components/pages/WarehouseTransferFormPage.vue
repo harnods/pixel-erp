@@ -15,6 +15,8 @@ import SelectProductDrawer, { type PickerProduct } from '~/components/patterns/S
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { warehouses } from '~/data/warehouses'
+import { decodeSubconPrefill, SUBCON_VENDOR_WAREHOUSES } from '~/data/subcon'
+import { recordSubconDocument } from '~/data/workOrders'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { addTransfer, updateTransfer, getTransfer, transferLineItems, transferMemo, warehouseTransfers } from '~/data/warehouseTransfers'
@@ -46,7 +48,19 @@ const todayDisplay = toDisplayDate(new Date().toISOString().slice(0, 10))
 const warehouseOptions = computed(() =>
   warehouses.filter(w => w.status === 'active').map(w => ({ id: w.id, name: w.name })),
 )
-function warehouseName(id: string) { return warehouseOptions.value.find(w => w.id === id)?.name ?? '' }
+/**
+ * Destinations additionally include subcon vendor locations. Stock sent to a
+ * vendor is in their custody but still on the company's books, so it is a real
+ * destination — but never an ORIGIN, which is why the two pickers no longer
+ * share one list.
+ */
+const destinationOptions = computed(() => [
+  ...warehouseOptions.value,
+  ...SUBCON_VENDOR_WAREHOUSES.map(w => ({ id: w.id, name: w.name })),
+])
+function warehouseName(id: string) {
+  return destinationOptions.value.find(w => w.id === id)?.name ?? ''
+}
 
 // ── Form state ───────────────────────────────────────────────────────────────────
 const transactionDate = ref(todayDisplay)
@@ -349,9 +363,59 @@ function prefillFromMisplaced() {
     return row
   })
 }
+/**
+ * Prefill from a subcontracting work order ("Start work order" → Warehouse
+ * transfer). The origin is the warehouse the work order nominated; the
+ * DESTINATION is deliberately left for the operator, because the goods go to the
+ * vendor's own location, which is not one of the company's warehouses — the memo
+ * names the vendor so it is clear where this is headed.
+ *
+ * Lines carry their own name/unit from the query rather than a SKU lookup: the
+ * apparel components live outside the stocked catalog (see catalog.ts), so
+ * `productBySku` comes back empty for exactly the rows this flow creates.
+ */
+const subconSource = ref<ReturnType<typeof decodeSubconPrefill>>(null)
+/** SKU → outstanding qty for the originating subcon work order. */
+const subconMaxBySku = ref<Record<string, number>>({})
+const subconFullySent = ref(false)
+
+function prefillFromSubcon(): boolean {
+  const p = decodeSubconPrefill(route.query.subcon)
+  if (!p) return false
+  subconSource.value = p
+
+  if (p.originWarehouseId) originId.value = p.originWarehouseId
+  // The vendor's own location — an addressable destination, not a company warehouse.
+  if (p.destinationWarehouseId) destId.value = p.destinationWarehouseId
+  memo.value = p.memo
+
+  // Cap each line at the work order's outstanding quantity, so a second transfer
+  // cannot send more than the order still requires.
+  subconMaxBySku.value = Object.fromEntries(
+    p.lines.filter(l => typeof l.maxQty === 'number').map(l => [l.sku, l.maxQty as number]),
+  )
+  // Nothing outstanding — the work order has already had everything transferred.
+  // Say so, rather than opening an empty table the operator has to interpret.
+  subconFullySent.value = p.lines.length === 0
+  rows.value = p.lines.map(l => {
+    const known = productBySku(l.sku)
+    return {
+      id: rowSeq++,
+      sku: l.sku,
+      productName: known?.name ?? l.name,
+      desc: known?.desc ?? '',
+      img: known?.img ?? '',
+      unit: known?.unit ?? l.unit,
+      qty: String(l.qty),
+      qtyError: false,
+    }
+  })
+  return true
+}
+
 onMounted(() => {
   if (isEdit.value) prefill()
-  else prefillFromMisplaced()
+  else if (!prefillFromSubcon()) prefillFromMisplaced()
 })
 
 // ── Navigation + save ──────────────────────────────────────────────────────────────
@@ -378,11 +442,24 @@ async function handleSave() {
     if (isBatchTrackedSku(row.sku)) {
       if (!batchHasCounts(row)) { row.qtyError = true; valid = false; formError.value = formError.value || t('You must fill in batch details for all batch-tracked products') }
       else if (batchTotal(row) > availableFor(row.sku)) { row.qtyError = true; valid = false; formError.value = formError.value || t('Transfer qty cannot exceed available stock') }
+      else if (typeof subconMaxBySku.value[row.sku] === 'number' && batchTotal(row) > subconMaxBySku.value[row.sku]!) {
+        row.qtyError = true; valid = false
+        formError.value = formError.value
+          || `${t('Transfer qty cannot exceed what the work order still needs')} (${subconMaxBySku.value[row.sku]} ${row.unit} ${t('outstanding')})`
+      }
       else row.qtyError = false
     } else {
       const qty = Number(row.qty)
+      const outstanding = subconMaxBySku.value[row.sku]
       if (!qty || qty < 1) { row.qtyError = true; valid = false }
       else if (qty > availableFor(row.sku)) { row.qtyError = true; valid = false; formError.value = formError.value || t('Transfer qty cannot exceed available stock') }
+      // Outstanding beats stock as a limit: there may be plenty on hand, but the
+      // work order only still needs so much.
+      else if (typeof outstanding === 'number' && qty > outstanding) {
+        row.qtyError = true; valid = false
+        formError.value = formError.value
+          || `${t('Transfer qty cannot exceed what the work order still needs')} (${outstanding} ${row.unit} ${t('outstanding')})`
+      }
       else {
         row.qtyError = false
         if (isSerialTrackedSku(row.sku)) {
@@ -422,7 +499,13 @@ async function handleSave() {
     toast.notify({ variant: 'success', title: t('Warehouse transfer updated') , maxWidth: 'max-content'})
     router.push(`/warehouse-transfers/${props.orderId}`)
   } else {
-    addTransfer(input)
+    const created = addTransfer(input)
+    // Raised from a subcon work order → link it back (see the PR form).
+    if (subconSource.value?.workOrderId) {
+      recordSubconDocument(subconSource.value.workOrderId, {
+        kind: subconSource.value.kind, id: created.id, number: created.number, route: '/warehouse-transfers',
+      })
+    }
     toast.notify({ variant: 'success', title: t('Warehouse transfer created') , maxWidth: 'max-content'})
     // Came from a misplaced-serial note (Cycle count review) — resolve it off
     // that record now that the transfer moving it actually exists, and land
@@ -515,7 +598,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <MpFormControl id="wtf-dest" class="wtf-f-dest" is-required :is-invalid="destError">
             <MpFormLabel>{{ t('Destination warehouse') }}</MpFormLabel>
             <MpAutocomplete
-              id="wtf-dest-ac" v-model="destId" :data="warehouseOptions" label-prop="name" value-prop="id"
+              id="wtf-dest-ac" v-model="destId" :data="destinationOptions" label-prop="name" value-prop="id"
               :placeholder="t('Select warehouse')"
               is-searchable use-portal is-full-width :is-invalid="destError"
               @update:model-value="destError = false"
@@ -539,6 +622,14 @@ onUnmounted(() => { stageObserver?.disconnect() })
           </div>
           <button class="wtf-import-btn" type="button" @click="importProducts">{{ t('Import') }}</button>
         </div>
+
+        <!-- Nothing outstanding on the originating work order: say so, rather
+             than opening an empty table the operator has to interpret. -->
+        <MpBanner v-if="subconFullySent" variant="info" class="wtf-subcon-banner">
+          <MpBannerDescription>
+            {{ t('Every component this work order needs has already been transferred. Add products below only if you are sending extra.') }}
+          </MpBannerDescription>
+        </MpBanner>
 
         <!-- Product table -->
         <div class="wtf-table-section">
@@ -928,6 +1019,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wtf-import-btn:hover { opacity: 0.9; }
 
 /* ── Table ─────────────────────────────────────────────────────────────────── */
+.wtf-subcon-banner { margin-bottom: var(--mp-spacing-4); }
 .wtf-table-section { margin-top: var(--mp-spacing-5); }
 .wtf-table-scroll { overflow-x: auto; }
 .wtf-table { width: 100%; table-layout: auto; border-collapse: collapse; border-spacing: 0; min-width: 860px; }

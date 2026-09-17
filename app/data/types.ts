@@ -84,6 +84,12 @@ export interface PurchaseInvoice {
   itemCount: number
   hasAttachment?: boolean
   tags?: string[]
+  /** Source purchase order number, when the invoice was billed against one. */
+  referenceNo?: string
+  /** Real lines, set when the invoice was created through the form. Seeded
+   *  invoices leave this undefined and the detail page synthesizes lines from the
+   *  amount instead — same arrangement as `PurchaseOrder.lineItems`. */
+  lineItems?: PurchaseOrderLine[]
 }
 
 export interface BillAttachment {
@@ -330,4 +336,26 @@ export interface PurchaseOrder {
   sentToFulfillment?: boolean
   /** Set when this order is rejected — drives the persistent rejection banner. */
   rejection?: { user: string; date: string; reason: string }
+  /**
+   * The order's real line items, set when the order was actually created through
+   * the form (raised from purchase requests, or duplicated). Seeded orders leave
+   * this undefined and the detail page synthesizes plausible lines from the
+   * total instead — see `getPurchaseOrderDetail`. Without this a subcon order
+   * raised from a service PR came back showing generic stock parts.
+   */
+  lineItems?: PurchaseOrderLine[]
+}
+
+/** One line of a purchase order. Mirrors the detail page's `POLineItem`. */
+export interface PurchaseOrderLine {
+  product: string
+  sku: string
+  description: string
+  qty: number
+  unit: string
+  unitPrice: number
+  discountPct: number
+  taxLabel: string
+  amount: number
+  dimensions?: Record<string, string>
 }

@@ -3,7 +3,7 @@ import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
-  MpSpinner, css,
+  MpSpinner, MpIcon, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'

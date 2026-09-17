@@ -11,7 +11,7 @@
  * one that really exists in that warehouse. This module owns (a); `warehouseDetails`
  * owns the bin placement (b) and reads its product list + pricing from here.
  */
-import { CATALOG } from './catalog'
+import { CATALOG, SUBCON_CATALOG } from './catalog'
 import { warehouses } from './warehouses'
 
 /** A product master row — basics + the full pricing triple. */
@@ -47,6 +47,15 @@ export interface Product {
  * (buy ≈ 58%, average ≈ 60%, last purchase ≈ 62% of sell) and stored here so every
  * view reads the SAME numbers instead of re-deriving them inconsistently.
  */
+/** The apparel line as Products — stocked, but never part of the order pool. */
+export const SUBCON_PRODUCTS: readonly Product[] = SUBCON_CATALOG.map((c) => ({
+  id: c.id, sku: c.sku, name: c.name, desc: c.desc, img: c.img, category: c.category, unit: c.unit,
+  sellPrice: c.price,
+  buyPrice: c.price,
+  averageCost: c.price,
+  lastPurchaseCost: c.price,
+}))
+
 export const PRODUCTS: readonly Product[] = CATALOG.map((c) => ({
   id: c.id,
   sku: c.sku,
@@ -145,7 +154,11 @@ export function warehouseProducts(warehouseId: string): Product[] {
   if (!wh || wh.isDefault || !wh.skuTotal) return []
   const pool = warehouseOrderPool(warehouseId)
   const inPool = new Set(pool.map((p) => p.sku))
-  return [...pool, ...PRODUCTS.filter((p) => !inPool.has(p.sku))]
+  // The apparel line is APPENDED LAST and never enters the order pool: stock
+  // generation keys off a product's index, so appending leaves every existing
+  // figure byte-identical while still giving these SKUs real on-hand to
+  // transfer. They are out of CATALOG on purpose — see catalog.ts.
+  return [...pool, ...PRODUCTS.filter((p) => !inPool.has(p.sku)), ...SUBCON_PRODUCTS]
 }
 
 /** SKUs a warehouse stocks. */

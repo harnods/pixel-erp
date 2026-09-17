@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import {
   MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink, toast, css,
+  // The footer's Print & share / Actions menus use these. Without the imports Vue
+  // renders <MpPopover> as an unknown element, so both menus spilled their items
+  // into the footer as inline text instead of opening as dropdowns.
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
@@ -12,6 +16,11 @@ import { getPurchaseRequestDetail } from '~/data/purchaseRequestDetails'
 import { purchaseRequests } from '~/data/purchaseRequests'
 
 const props = defineProps<{ orderId: string }>()
+
+// Create a purchase order from this request — the shell already owns the flow
+// (it jumps to Purchase orders with the form pre-loaded from these request ids).
+const createPurchaseOrderFromRequests = inject<(ids: string[]) => void>('createPurchaseOrderFromRequests')
+function createPurchaseOrder() { createPurchaseOrderFromRequests?.([props.orderId]) }
 
 const { t } = useLocale()
 
@@ -344,7 +353,7 @@ function goBack() { router.push('/purchase-requests') }
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
               <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Create purchase order') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="createPurchaseOrder">{{ t('Create purchase order') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Void') }}</MpPopoverListItem>
               <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>

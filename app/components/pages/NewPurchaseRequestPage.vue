@@ -11,15 +11,23 @@ import {
   MpButton, MpButtonGroup, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput,
   MpDatePicker, MpAutocomplete, MpTooltip,
   MpIcon, MpTextlink, toast, css,
+  // The line-items product picker is an MpPopover menu. Without these imports Vue
+  // renders <MpPopover> as an unknown element, so the match list spills inline into
+  // the row instead of opening as a dropdown and no product can be selected.
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
 } from '@mekari/pixel3'
 import {
-  products, purchaseRequests,
+  products,
   WAREHOUSES, UNIT_OPTIONS,
 } from '~/data'
-import type { PurchaseRequest, PurchaseRequestLine, UrgencyLevel } from '~/data/types'
+import { addPurchaseRequest } from '~/data/purchaseRequests'
+import type { PurchaseRequestLine, UrgencyLevel } from '~/data/types'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import { decodeSubconPrefill } from '~/data/subcon'
+import { recordSubconDocument } from '~/data/workOrders'
 
 const router = useRouter()
+const route = useRoute()
 const { t } = useLocale()
 
 function todayISO() { return new Date().toISOString().slice(0, 10) }
@@ -66,6 +74,33 @@ function productMatches(query: string) {
   const q = query.trim().toLowerCase()
   if (!q) return products
   return products.filter(p => p.name.toLowerCase().includes(q))
+}
+
+// ── Subcon prefill ────────────────────────────────────────────────────────────
+// Opened from "Start work order" on a subcontracting work order, which passes
+// everything this form needs as one `?subcon=` param (see data/subcon.ts). Lines
+// carry their own name/unit/cost because a subcon fee is a non-track service and
+// the apparel components sit outside the stocked catalog — neither resolves
+// through a SKU lookup here.
+const subconPrefill = decodeSubconPrefill(route.query.subcon)
+if (subconPrefill) {
+  requiredDate.value = isoToDMY(subconPrefill.requiredDate)
+  urgency.value = 'High'
+  // This form's WAREHOUSES list is a legacy string array unrelated to the real
+  // warehouse store, so the name is set directly rather than matched against it.
+  warehouse.value = subconPrefill.receivingWarehouseName
+  items.value = subconPrefill.lines.map(l => ({
+    _key: ++_seq,
+    product: l.name,
+    sku: l.sku,
+    description: l.nonTrack ? t('Non-track service — cost only, no stock recorded') : '',
+    qty: l.qty,
+    unit: l.unit,
+    unitCost: l.unitCost,
+    availableQty: 0,
+    productError: false,
+    qtyError: false,
+  }))
 }
 
 const NEW_ROW_KEY = -1
@@ -120,16 +155,6 @@ function validate(): boolean {
   return ok
 }
 
-function nextRequestNumber(): number {
-  return purchaseRequests.reduce((max, r) => Math.max(max, r.number), 90009) + 1
-}
-function nextRequestId(): string {
-  const n = purchaseRequests.reduce((max, r) => {
-    const num = parseInt(r.id.replace(/\D/g, ''), 10)
-    return Number.isNaN(num) ? max : Math.max(max, num)
-  }, 0) + 1
-  return `PR${String(n).padStart(3, '0')}`
-}
 
 function onCancel() { router.push('/purchase-requests') }
 
@@ -146,10 +171,11 @@ function onSave() {
     unitCost: it.unitCost,
     taxLabel: 'PPN 11%',
   }))
-  const id = nextRequestId()
-  const request: PurchaseRequest = {
-    id,
-    number: nextRequestNumber(),
+  // addPurchaseRequest() rather than a raw push: it is the store's own creator and
+  // it PERSISTS. The raw push did not, so a request created here vanished on the
+  // next refresh — and any link to it (see the subcon work order's Documents
+  // table) dead-ended on the detail page's index-0 fallback.
+  const request = addPurchaseRequest({
     date: dmyToIso(requestDate.value),
     procurementStaff: procurementStaff.value.trim(),
     requiredDate: dmyToIso(requiredDate.value || requestDate.value),
@@ -157,8 +183,20 @@ function onSave() {
     totalProducts: lines.length,
     urgency: urgency.value.toLowerCase() as UrgencyLevel,
     lines,
+  })
+  const id = request.id
+  // Raised from a subcon work order → link it back, so that work order's
+  // Documents table can open this request instead of only offering to create one.
+  if (subconPrefill?.workOrderId) {
+    recordSubconDocument(subconPrefill.workOrderId, {
+      kind: subconPrefill.kind,
+      id,
+      // Same label the PR detail page and index use, so the link reads the same
+      // wherever it appears.
+      number: `${t('Purchase Request')} #${request.number}`,
+      route: '/purchase-requests',
+    })
   }
-  purchaseRequests.push(request)
   toast.notify({ variant: 'success', title: t('Purchase request created'), rootProps: { class: 'toast-enterprise' } })
   router.push(`/purchase-requests/${id}`)
 }
