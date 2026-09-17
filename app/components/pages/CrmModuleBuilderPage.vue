@@ -209,10 +209,12 @@ function removeStage(id: string) {
 //    (all records, the module's stored display); "+ New view" opens the drawer
 //    to name a view and pick which records it shows. Switching views swaps the
 //    Stage/Card properties panel to that view's own config. ──
-interface PipeBoardView { id: string; name: string; filters: CrmPipelineViewValue; display: DealPipelineDisplay }
+// hiddenStageIds = stages hidden IN THIS VIEW (per-view show/hide); the stages
+// themselves are shared pipeline structure, only their visibility is per-view.
+interface PipeBoardView { id: string; name: string; filters: CrmPipelineViewValue; display: DealPipelineDisplay; hiddenStageIds: string[] }
 const baseDisplay = (): DealPipelineDisplay => JSON.parse(JSON.stringify(stores.value.display))
 const pipeViews = ref<PipeBoardView[]>([
-  { id: 'default', name: t('Default view'), filters: emptyPipelineView(), display: baseDisplay() },
+  { id: 'default', name: t('Default view'), filters: emptyPipelineView(), display: baseDisplay(), hiddenStageIds: [] },
 ])
 const activePipeViewId = ref('default')
 const activePipeView = computed<PipeBoardView>(() => pipeViews.value.find((v) => v.id === activePipeViewId.value) ?? pipeViews.value[0]!)
@@ -223,14 +225,24 @@ const disp = computed<DealPipelineDisplay>(() => activePipeView.value.display)
 const enabledCardFields = computed(() => disp.value.cardFields.filter((f) => f.on))
 const ownerFieldOn = computed(() => disp.value.cardFields.some((f) => f.key === 'owner' && f.on))
 
+// Per-view stage visibility — each view can show/hide any stage independently
+// via the eye toggle on the lane header. Hidden lanes render dimmed in the
+// builder (still editable); the flag is what a view would apply in use.
+function isStageVisible(id: string): boolean { return !activePipeView.value.hiddenStageIds.includes(id) }
+function setStageVisible(id: string, show: boolean) {
+  const v = activePipeView.value
+  if (show) v.hiddenStageIds = v.hiddenStageIds.filter((x) => x !== id)
+  else if (!v.hiddenStageIds.includes(id)) v.hiddenStageIds = [...v.hiddenStageIds, id]
+}
+
 const newViewOpen = ref(false)
 const newViewDraft = ref<CrmPipelineViewValue>(emptyPipelineView())
 let pipeViewSeq = 0
 function saveNewView(v: CrmPipelineViewValue) {
   const id = `view-${++pipeViewSeq}`
-  // New view inherits the default view's display as a starting point; it can then
-  // be configured independently in the Stage/Card properties panel.
-  pipeViews.value.push({ id, name: v.name.trim() || `${t('View')} ${pipeViews.value.length}`, filters: v, display: baseDisplay() })
+  // New view inherits the default view's display + stage visibility as a starting
+  // point; it can then be configured independently in the properties panel.
+  pipeViews.value.push({ id, name: v.name.trim() || `${t('View')} ${pipeViews.value.length}`, filters: v, display: baseDisplay(), hiddenStageIds: [...activePipeView.value.hiddenStageIds] })
   activePipeViewId.value = id
 }
 // Owner / customer options for the New view filter drawer, from the live deals DB.
@@ -989,7 +1001,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                   <div
                     v-for="(s, i) in pipeStages" :key="s.id"
                     class="pipe-lane"
-                    :class="{ 'is-dragging': laneDragIndex === i, [`pipe-lane--${s.kind}`]: disp.colorColumns }"
+                    :class="{ 'is-dragging': laneDragIndex === i, 'pipe-lane--hidden': !isStageVisible(s.id), [`pipe-lane--${s.kind}`]: disp.colorColumns }"
                   >
                     <div class="pipe-lane-head">
                       <span
@@ -1006,6 +1018,13 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                           <button class="pipe-lane-edit" type="button" :aria-label="t('Rename stage')" @click="editStage(s.id)"><MpIcon name="edit" size="sm" /></button>
                         </template>
                       </div>
+                      <MpTooltip :id="`stage-vis-${s.id}`" :label="isStageVisible(s.id) ? t('Hide stage in this view') : t('Show stage in this view')" placement="top" use-portal>
+                        <button
+                          class="pipe-lane-vis" type="button"
+                          :aria-label="isStageVisible(s.id) ? t('Hide stage in this view') : t('Show stage in this view')"
+                          @click="setStageVisible(s.id, !isStageVisible(s.id))"
+                        ><MpIcon :name="isStageVisible(s.id) ? 'show' : 'hide'" size="sm" /></button>
+                      </MpTooltip>
                     </div>
 
                     <!-- Preview cards — placeholder field labels (a layout preview,
@@ -1577,6 +1596,17 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
 /* The rename pencil only reveals on swimlane hover (or keyboard focus). */
 .pipe-lane:hover .pipe-lane-edit, .pipe-lane-edit:focus-visible { opacity: 1; }
 .pipe-lane-edit:hover { color: var(--mp-colors-text-default, #080d0e); }
+/* Per-view show/hide eye, top-right of the lane header. */
+.pipe-lane-vis {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px); padding: 0;
+  border: none; background: none; cursor: pointer; border-radius: var(--mp-radii-sm, 4px);
+  color: var(--mp-colors-icon-subtle, #97a0af);
+}
+.pipe-lane-vis:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); color: var(--mp-colors-text-default, #080d0e); }
+/* Hidden-in-this-view lane: dimmed so it reads as excluded, still editable here. */
+.pipe-lane--hidden { opacity: 0.5; }
+.pipe-lane--hidden .pipe-lane-vis { opacity: 1; color: var(--mp-colors-text-default, #080d0e); }
 
 /* Card list grows to fill the lane so the total + delete pin to the bottom. */
 .pipe-lane-cards { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }

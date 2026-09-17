@@ -471,6 +471,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Back to Modules': 'Kembali ke Modul',
   'A pipeline must keep at least one stage.': 'Pipeline harus memiliki minimal satu stage.',
   'Stage properties': 'Properti stage',
+  'Hide stage in this view': 'Sembunyikan stage di view ini',
+  'Show stage in this view': 'Tampilkan stage di view ini',
   'Card properties': 'Properti kartu',
   'Color stage columns': 'Beri warna kolom stage',
   'Company name': 'Nama perusahaan',
