@@ -213,9 +213,12 @@ function removeStage(id: string) {
 // themselves are shared pipeline structure, only their visibility is per-view.
 interface PipeBoardView { id: string; name: string; filters: CrmPipelineViewValue; display: DealPipelineDisplay; hiddenStageIds: string[] }
 const baseDisplay = (): DealPipelineDisplay => JSON.parse(JSON.stringify(stores.value.display))
-const pipeViews = ref<PipeBoardView[]>([
-  { id: 'default', name: t('Default view'), filters: emptyPipelineView(), display: baseDisplay(), hiddenStageIds: [] },
-])
+// Load saved views from the module's store (name + per-view hidden stages). The
+// per-view card display is session-local for now; it seeds from the module display.
+const pipeViews = ref<PipeBoardView[]>(
+  (stores.value.views?.length ? stores.value.views : [{ id: 'default', name: 'Default view', hiddenStageIds: [] }])
+    .map((v) => ({ id: v.id, name: v.name, filters: emptyPipelineView(), display: baseDisplay(), hiddenStageIds: [...v.hiddenStageIds] })),
+)
 const activePipeViewId = ref('default')
 const activePipeView = computed<PipeBoardView>(() => pipeViews.value.find((v) => v.id === activePipeViewId.value) ?? pipeViews.value[0]!)
 const pipeViewOptions = computed(() => pipeViews.value.map((v) => ({ value: v.id, label: v.name })))
@@ -692,6 +695,10 @@ function saveChanges() {
     s.persistPipelines()
     Object.assign(s.display, JSON.parse(JSON.stringify(pipeViews.value[0]!.display)))
     s.persistDisplay()
+    // Persist saved views (name + per-view hidden stages) so the module's Kanban
+    // board can render one tab per view and apply each view's stage visibility.
+    s.views.splice(0, s.views.length, ...pipeViews.value.map((v) => ({ id: v.id, name: v.name, hiddenStageIds: [...v.hiddenStageIds] })))
+    s.persistViews()
     Object.assign(s.setup, JSON.parse(JSON.stringify(setup)))
     s.persistSetup()
     s.properties.splice(0, s.properties.length, ...JSON.parse(JSON.stringify(propList.value)))

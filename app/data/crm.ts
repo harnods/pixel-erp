@@ -1295,6 +1295,15 @@ export const dealPipelineDisplay = reactive<DealPipelineDisplay>(
 )
 export function persistDealPipelineDisplay() { saveSnapshot('crm-deal-pipeline-display-v1', [dealPipelineDisplay]) }
 
+/** Saved pipeline VIEWS — named board configs created in the module builder
+ *  (Settings ▸ Deals ▸ Pipeline). Each view can hide stages independently; the
+ *  module's Kanban board renders one tab per view. The first ('default') is the
+ *  built-in Default view (all stages shown). Persisted per module. */
+export interface DealPipelineView { id: string; name: string; hiddenStageIds: string[] }
+const DEAL_PIPELINE_VIEWS_SEED: DealPipelineView[] = [{ id: 'default', name: 'Default view', hiddenStageIds: [] }]
+export const dealPipelineViews = reactive<DealPipelineView[]>(load('crm-deal-pipeline-views-v1', DEAL_PIPELINE_VIEWS_SEED))
+export function persistDealPipelineViews() { saveSnapshot('crm-deal-pipeline-views-v1', dealPipelineViews) }
+
 /** Deals module Setup-tab settings (base currency, default close date). */
 export interface DealModuleSetup {
   baseCurrency: string
@@ -1681,6 +1690,9 @@ export const servicePipelineDisplay = reactive<DealPipelineDisplay>(
 )
 export function persistServicePipelineDisplay() { saveSnapshot('crm-service-pipeline-display-v1', [servicePipelineDisplay]) }
 
+export const servicePipelineViews = reactive<DealPipelineView[]>(load('crm-service-pipeline-views-v1', DEAL_PIPELINE_VIEWS_SEED))
+export function persistServicePipelineViews() { saveSnapshot('crm-service-pipeline-views-v1', servicePipelineViews) }
+
 const SERVICE_MODULE_SETUP_SEED: DealModuleSetup = {
   baseCurrency: 'IDR', applyCloseDate: true, closeMode: 'period',
   closePeriod: 'this-month', closeAmount: 1, closeUnit: 'days',
@@ -1742,6 +1754,7 @@ function newStageId(): string { return `stage-${genericStageSeq++}` }
 export interface GenericModuleConfig {
   pipelines: DealPipeline[]
   display: DealPipelineDisplay
+  views: DealPipelineView[]
   setup: DealModuleSetup
   properties: DealProperty[]
   detailLayout: DealDetailLayout
@@ -1781,13 +1794,17 @@ function newGenericModuleConfig(moduleId: string): GenericModuleConfig {
       ],
     }],
     display: JSON.parse(JSON.stringify(DEAL_PIPELINE_DISPLAY_SEED)),
+    views: JSON.parse(JSON.stringify(DEAL_PIPELINE_VIEWS_SEED)),
     setup: { baseCurrency: 'IDR', applyCloseDate: true, closeMode: 'period', closePeriod: 'this-month', closeAmount: 30, closeUnit: 'days' },
     properties: defaultDealProperties(),
     detailLayout: genericDetailLayoutSeed(moduleId),
   }
 }
 function ensureGenericModuleConfig(moduleId: string): GenericModuleConfig {
-  return genericModuleConfigs[moduleId] ?? (genericModuleConfigs[moduleId] = newGenericModuleConfig(moduleId))
+  const cfg = genericModuleConfigs[moduleId] ?? (genericModuleConfigs[moduleId] = newGenericModuleConfig(moduleId))
+  // Back-fill `views` for snapshots saved before per-view boards existed.
+  if (!Array.isArray(cfg.views)) cfg.views = JSON.parse(JSON.stringify(DEAL_PIPELINE_VIEWS_SEED))
+  return cfg
 }
 /** Discard an in-memory (unsaved) scratch config — used for the 'new' module id so a
  *  fresh module-creation session always starts from a clean seed, not a prior attempt. */
@@ -1808,6 +1825,7 @@ export function moduleStores(id: string) {
     return {
       pipelines: servicePipelines, persistPipelines: persistServicePipelines,
       display: servicePipelineDisplay, persistDisplay: persistServicePipelineDisplay,
+      views: servicePipelineViews, persistViews: persistServicePipelineViews,
       setup: serviceModuleSetup, persistSetup: persistServiceModuleSetup,
       properties: serviceProperties, persistProperties: persistServiceProperties,
       detailLayout: serviceDetailLayout, persistDetailLayout: persistServiceDetailLayout,
@@ -1817,6 +1835,7 @@ export function moduleStores(id: string) {
     return {
       pipelines: dealPipelines, persistPipelines: persistDealPipelines,
       display: dealPipelineDisplay, persistDisplay: persistDealPipelineDisplay,
+      views: dealPipelineViews, persistViews: persistDealPipelineViews,
       setup: dealModuleSetup, persistSetup: persistDealModuleSetup,
       properties: dealProperties, persistProperties: persistDealProperties,
       detailLayout: dealDetailLayout, persistDetailLayout: persistDealDetailLayout,
@@ -1826,6 +1845,7 @@ export function moduleStores(id: string) {
   return {
     pipelines: cfg.pipelines, persistPipelines: persistGenericModuleConfigs,
     display: cfg.display, persistDisplay: persistGenericModuleConfigs,
+    views: cfg.views, persistViews: persistGenericModuleConfigs,
     setup: cfg.setup, persistSetup: persistGenericModuleConfigs,
     properties: cfg.properties, persistProperties: persistGenericModuleConfigs,
     detailLayout: cfg.detailLayout, persistDetailLayout: persistGenericModuleConfigs,

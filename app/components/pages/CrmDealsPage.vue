@@ -17,6 +17,7 @@ import { ref, reactive, computed, watch, inject, onMounted } from 'vue'
 import {
   MpButton, MpButtonGroup, MpIcon, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+  MpTabs, MpTabList, MpTab,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
@@ -41,7 +42,7 @@ import {
   archiveDeal, restoreDeal, deleteDeal, bulkChangeOwner, bulkChangeStage, convertDeal,
   dealConversionTarget, dealExpectedValue, isDealOpen, getDeal, dealDraftSeed, dealNo,
   CRM_OWNERS, crmCustomers, dealStageBadgeType, dealStageLabel, getCrmModule,
-  dealPipelineDisplay,
+  dealPipelineDisplay, dealPipelineViews, dealPipelines,
   type Deal, type DealStage, type DealDraftSeed,
 } from '~/data/crm'
 import { pinsForModule, metricPinValue, unpinReportMetric } from '~/data/crmReports'
@@ -110,6 +111,23 @@ const pinnedDealMetrics = computed(() => pinsForModule('deals'))
 const SAVED_VIEWS = ['All records', 'My records', 'Recently created', 'Recently modified', 'Won', 'Lost', 'Archived'] as const
 type SavedView = typeof SAVED_VIEWS[number]
 const savedView = ref<SavedView>('All records')
+
+// ── Saved pipeline views (configured in the module builder) — one Kanban tab
+//    per view; the active view hides its stages from the board. Deals stages map
+//    to the pipeline stages by position (both ordered identically). ──
+const pipelineViewTabs = computed(() => dealPipelineViews)
+const activePipelineViewId = ref('default')
+watch(pipelineViewTabs, (tabs) => {
+  if (!tabs.some((v) => v.id === activePipelineViewId.value)) activePipelineViewId.value = tabs[0]?.id ?? 'default'
+}, { immediate: true })
+const activePipelineViewIndex = computed(() => Math.max(0, pipelineViewTabs.value.findIndex((v) => v.id === activePipelineViewId.value)))
+const hiddenDealStages = computed<Set<DealStage>>(() => {
+  const v = pipelineViewTabs.value.find((x) => x.id === activePipelineViewId.value)
+  const stages = dealPipelines.find((p) => p.id === 'default')?.stages ?? dealPipelines[0]?.stages ?? []
+  const hidden = new Set<DealStage>()
+  if (v) stages.forEach((s, i) => { if (v.hiddenStageIds.includes(s.id) && DEAL_STAGES[i]) hidden.add(DEAL_STAGES[i]!) })
+  return hidden
+})
 
 // ── View toggle (list default per PRD) ──
 const view = ref<'table' | 'board'>('table')
@@ -222,7 +240,7 @@ function clearFilters() {
 interface BoardColumn { stage: DealStage; cards: Deal[]; total: number }
 const boardColumns = computed<BoardColumn[]>(() => {
   const s = search.value.trim().toLowerCase()
-  return DEAL_STAGES.map((stage) => {
+  return DEAL_STAGES.filter((stage) => !hiddenDealStages.value.has(stage)).map((stage) => {
     const cards = deals.filter((d) =>
       d.stage === stage && matchesView(d) && matchesMetric(d) &&
       (!statusFilter.value || d.stage === statusFilter.value) &&
@@ -575,6 +593,19 @@ const toggleAirene = inject<() => void>('toggleAirene')
           </div>
         </div>
       </div>
+
+      <!-- ── Saved view tabs (board only) — one tab per pipeline view configured
+           in the module builder; the active view hides its stages. ── -->
+      <MpTabs
+        v-if="view === 'board' && pipelineViewTabs.length > 1"
+        id="deal-view-tabs" class="deal-view-tabs" variant-color="green" is-manual
+        :model-value="activePipelineViewIndex"
+        @change="(i: number) => (activePipelineViewId = pipelineViewTabs[i]?.id ?? 'default')"
+      >
+        <MpTabList>
+          <MpTab v-for="v in pipelineViewTabs" :key="v.id">{{ v.name }}</MpTab>
+        </MpTabList>
+      </MpTabs>
 
       <!-- ── Board view ── -->
       <div v-if="view === 'board'" class="kanban">
