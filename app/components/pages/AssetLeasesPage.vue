@@ -28,12 +28,9 @@ const totals = computed(() => ({
 <template>
   <div class="ls">
     <header class="ls__head">
-      <div>
-        <h2 class="ls__title">{{ t('Leases') }}</h2>
-        <p class="ls__sub">
-          {{ t('PSAK 73 · each lease creates a right-of-use asset in the register, depreciating through the normal engine') }}
-        </p>
-      </div>
+      <p class="ls__sub">
+        {{ t('PSAK 73 · each lease creates a right-of-use asset in the register, depreciating through the normal engine') }}
+      </p>
       <MpButton variant="secondary" @click="infoToast(t('Adding a lease is not part of this screen yet.'))">
         {{ t('New lease') }}
       </MpButton>
@@ -86,13 +83,17 @@ const totals = computed(() => ({
 
 <style scoped>
 .ls { padding: 4px 0 32px; }
-.ls__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.ls__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; min-height: 32px; }
 .ls__title { font-size: 18px; font-weight: 600; color: #1e2e2b; margin: 0; }
-.ls__sub { font-size: 13px; color: #758195; margin: 4px 0 0; max-width: 620px; }
+.ls__sub { font-size: 13px; color: #758195; margin: 0; max-width: 720px; }
 
-.ls__totals { display: flex; gap: 32px; padding: 4px 0 16px; }
+.ls__totals {
+  display: flex; gap: 32px; flex-wrap: wrap;
+  padding: 14px 16px; margin-bottom: 16px;
+  border: 1px solid #e2e7ed; border-radius: 10px; background: #fff;
+}
 .ls__totallabel { font-size: 12px; color: #758195; }
-.ls__totalvalue { font-size: 18px; font-weight: 600; color: #1e2e2b; }
+.ls__totalvalue { font-size: 18px; font-weight: 600; color: #1e2e2b; font-variant-numeric: tabular-nums; }
 
 .ls__card { border: 1px solid #e2e7ed; border-radius: 10px; background: #fff; overflow: hidden; }
 .ls__table { width: 100%; border-collapse: collapse; }

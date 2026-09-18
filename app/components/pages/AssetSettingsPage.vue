@@ -17,12 +17,9 @@ const { t } = useLocale()
 <template>
   <div class="st">
     <header class="st__head">
-      <div>
-        <h2 class="st__title">{{ t('Asset settings') }}</h2>
-        <p class="st__sub">
-          {{ t('The class master sets an asset up correctly at creation. Every field here has a statutory consequence.') }}
-        </p>
-      </div>
+      <p class="st__sub">
+        {{ t('The class master sets an asset up correctly at creation. Every field here has a statutory consequence.') }}
+      </p>
       <MpButton variant="secondary" @click="infoToast(t('Editing settings is not part of this screen yet.'))">
         {{ t('Edit') }}
       </MpButton>
@@ -83,9 +80,9 @@ const { t } = useLocale()
 
 <style scoped>
 .st { padding: 4px 0 32px; }
-.st__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.st__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; min-height: 32px; }
 .st__title { font-size: 18px; font-weight: 600; color: #1e2e2b; margin: 0; }
-.st__sub { font-size: 13px; color: #758195; margin: 4px 0 0; max-width: 640px; }
+.st__sub { font-size: 13px; color: #758195; margin: 0; max-width: 720px; }
 
 .st__card { border: 1px solid #e2e7ed; border-radius: 10px; background: #fff; overflow: hidden; margin-bottom: 16px; }
 .st__cardhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #eef1f4; }

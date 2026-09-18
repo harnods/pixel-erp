@@ -12,7 +12,7 @@
  * fixed answer serves one.
  */
 import { computed } from 'vue'
-import { MpButton, MpIcon } from '@mekari/pixel3'
+import { MpButton } from '@mekari/pixel3'
 import { infoToast, successToast } from '~/utils/toasts'
 import { approvalRows } from '~/data/fixedAssetScreens'
 
@@ -29,13 +29,10 @@ function decide(id: string, approve: boolean) {
 <template>
   <div class="ap">
     <header class="ap__head">
-      <div>
-        <h2 class="ap__title">{{ t('Asset approvals') }}</h2>
-        <p class="ap__sub">
-          {{ awaiting.length }} {{ t(awaiting.length === 1 ? 'decision awaiting you' : 'decisions awaiting you') }}
-          · {{ t('disposal, write-off and value change') }}
-        </p>
-      </div>
+      <p class="ap__sub">
+        {{ awaiting.length }} {{ t(awaiting.length === 1 ? 'decision awaiting you' : 'decisions awaiting you') }}
+        · {{ t('disposal, write-off and value change') }}
+      </p>
     </header>
 
     <div v-if="!approvalRows.length" class="ap__empty">
@@ -68,9 +65,9 @@ function decide(id: string, approve: boolean) {
 
 <style scoped>
 .ap { padding: 4px 0 32px; max-width: 880px; }
-.ap__head { margin-bottom: 16px; }
+.ap__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; min-height: 32px; }
 .ap__title { font-size: 18px; font-weight: 600; color: #1e2e2b; margin: 0; }
-.ap__sub { font-size: 13px; color: #758195; margin: 4px 0 0; }
+.ap__sub { font-size: 13px; color: #758195; margin: 0; max-width: 720px; }
 
 .ap__empty { border: 1px dashed #e2e7ed; border-radius: 10px; padding: 40px; text-align: center; color: #758195; font-size: 14px; }
 

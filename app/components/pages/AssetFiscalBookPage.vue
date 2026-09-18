@@ -16,7 +16,7 @@
  * different statement from recognising nothing.
  */
 import { computed, ref } from 'vue'
-import { MpButton, MpIcon, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription } from '@mekari/pixel3'
+import { MpButton, MpSegmentedControl, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import { infoToast } from '~/utils/toasts'
 import {
@@ -29,6 +29,10 @@ const { t } = useLocale()
 /** Group the depreciation lines by class or by the statutory group. */
 type Grouping = 'class' | 'taxGroup'
 const grouping = ref<Grouping>('class')
+const groupingOptions = [
+  { id: 'grp-class', value: 'class', label: 'By class' },
+  { id: 'grp-tax', value: 'taxGroup', label: 'By tax group' },
+]
 const depreciationRows = computed<ImpactRow[]>(() =>
   grouping.value === 'class' ? impactByClass : impactByTaxGroup,
 )
@@ -65,20 +69,17 @@ function exportStatement() {
 <template>
   <div class="fb">
     <header class="fb__head">
-      <div>
-        <h2 class="fb__title">{{ t('Asset profit and loss impact') }}</h2>
-        <p class="fb__sub">
-          {{ t('FY2026 to 30 September 2026 · commercial against fiscal · PT Sinar Kencana Utama') }}
-        </p>
-      </div>
+      <p class="fb__sub">
+        {{ t('Asset profit and loss impact · FY2026 to 30 September 2026 · PT Sinar Kencana Utama') }}
+      </p>
       <MpButton variant="secondary" left-icon="download" @click="exportStatement">
         {{ t('Export') }}
       </MpButton>
     </header>
 
     <!-- What this statement leaves out, said before the numbers rather than after. -->
-    <MpBanner v-if="unclassified.length" type="warning" is-rounded class="fb__note">
-      <MpBannerIcon />
+    <MpBanner v-if="unclassified.length" id="fb__note-banner" variant="warning" class="fb__note">
+      <MpBannerIcon id="b-icon" />
       <MpBannerTitle>
         {{ unclassified.length }}
         {{ t(unclassified.length === 1 ? 'asset is outside this statement' : 'assets are outside this statement') }}
@@ -94,16 +95,7 @@ function exportStatement() {
     <div class="fb__card">
       <div class="fb__cardhead">
         <span class="fb__cardtitle">{{ t('Depreciation') }}</span>
-        <div class="fb__seg" role="group" :aria-label="t('Group by')">
-          <button
-            type="button" class="fb__segbtn" :class="{ 'fb__segbtn--on': grouping === 'class' }"
-            :aria-pressed="grouping === 'class'" @click="grouping = 'class'"
-          >{{ t('By class') }}</button>
-          <button
-            type="button" class="fb__segbtn" :class="{ 'fb__segbtn--on': grouping === 'taxGroup' }"
-            :aria-pressed="grouping === 'taxGroup'" @click="grouping = 'taxGroup'"
-          >{{ t('By tax group') }}</button>
-        </div>
+        <MpSegmentedControl id="fb-grouping" name="fb-grouping" v-model="grouping" :data="groupingOptions" />
       </div>
 
       <table class="fb__table">
@@ -237,9 +229,9 @@ function exportStatement() {
 
 <style scoped>
 .fb { padding: 4px 0 32px; }
-.fb__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.fb__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; min-height: 32px; }
 .fb__title { font-size: 18px; font-weight: 600; color: #1e2e2b; margin: 0; }
-.fb__sub { font-size: 13px; color: #758195; margin: 4px 0 0; }
+.fb__sub { font-size: 13px; color: #758195; margin: 0; max-width: 720px; }
 .fb__note { margin-bottom: 16px; }
 
 .fb__card { border: 1px solid #e2e7ed; border-radius: 10px; background: #fff; margin-bottom: 16px; overflow: hidden; }
@@ -247,10 +239,6 @@ function exportStatement() {
 .fb__cardtitle { font-size: 14px; font-weight: 600; color: #1e2e2b; }
 .fb__hint { font-size: 12px; color: #758195; }
 
-.fb__seg { display: inline-flex; border: 1px solid #e2e7ed; border-radius: 8px; overflow: hidden; }
-.fb__segbtn { border: 0; background: transparent; padding: 5px 12px; font-size: 12px; color: #3a4749; cursor: pointer; }
-.fb__segbtn + .fb__segbtn { border-left: 1px solid #e2e7ed; }
-.fb__segbtn--on { background: #e8f4ef; color: #027a4f; font-weight: 600; }
 
 .fb__table { width: 100%; border-collapse: collapse; }
 .fb__th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #758195; background: #f8fafb; padding: 8px 16px; border-bottom: 1px solid #eef1f4; }

@@ -24,7 +24,7 @@
  *     and show "—" for book value rather than a stale number.
  */
 import { computed, ref } from 'vue'
-import { MpButton, MpIcon, MpTooltip, MpButtonGroup, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem } from '@mekari/pixel3'
+import { MpButton, MpIcon, MpTooltip, MpButtonGroup, MpSegmentedControl, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -49,10 +49,11 @@ const toggleAirene = inject<() => void>('toggleAirene')
 // differ, and hiding one hides the reason this module exists.
 type BookView = 'both' | 'commercial' | 'fiscal'
 const book = ref<BookView>('both')
-const bookOptions: { value: BookView; label: string }[] = [
-  { value: 'both', label: 'Both books' },
-  { value: 'commercial', label: 'Commercial' },
-  { value: 'fiscal', label: 'Fiscal' },
+/** Shape MpSegmentedControl expects: an id and a value per option. */
+const bookOptions = [
+  { id: 'book-both', value: 'both', label: 'Both books' },
+  { id: 'book-commercial', value: 'commercial', label: 'Commercial' },
+  { id: 'book-fiscal', value: 'fiscal', label: 'Fiscal' },
 ]
 
 // ── Filters ─────────────────────────────────────────────────────────────────
@@ -248,17 +249,12 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
       <div class="filter-right">
         <!-- The book switcher. Sits with the filters because that is what it is:
              it narrows what the table reports, not what it contains. -->
-        <div class="book-switch" role="group" :aria-label="t('Book')">
-          <button
-            v-for="opt in bookOptions"
-            :key="opt.value"
-            type="button"
-            class="book-switch__btn"
-            :class="{ 'book-switch__btn--active': book === opt.value }"
-            :aria-pressed="book === opt.value"
-            @click="book = opt.value"
-          >{{ t(opt.label) }}</button>
-        </div>
+        <MpSegmentedControl
+          id="asset-book-switch"
+          name="asset-book-switch"
+          v-model="book"
+          :data="bookOptions"
+        />
 
         <MpButtonGroup class="filter-btn-group">
           <MpTooltip :label="t('Ask Airene')" placement="bottom">
@@ -280,8 +276,8 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
     <!-- ── The blocking condition, stated rather than hidden ── -->
     <template #stats>
       <div v-if="unclassified.length" class="asset-alert">
-        <MpBanner type="warning" is-rounded>
-          <MpBannerIcon />
+        <MpBanner id="asset-unclassified-banner" variant="warning">
+          <MpBannerIcon id="asset-unclassified-icon" />
           <MpBannerTitle>
             {{ unclassified.length }}
             {{ t(unclassified.length === 1 ? 'asset cannot be depreciated on the tax basis' : 'assets cannot be depreciated on the tax basis') }}
@@ -290,11 +286,17 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
             {{ unclassified.map((a) => `${a.id} ${a.name}`).join(', ') }}
             {{ t(unclassified.length === 1 ? 'has no tax group, so it is excluded from the fiscal book, from the difference total, and from Lampiran 9.' : 'have no tax group, so they are excluded from the fiscal book, from the difference total, and from Lampiran 9.') }}
           </MpBannerDescription>
-          <MpBannerLink @click="assignTaxGroup">{{ t('Assign a tax group') }}</MpBannerLink>
-          <MpBannerLink @click="applyClassDefault">{{ t('Apply the class default') }}</MpBannerLink>
         </MpBanner>
+        <!-- The two ways out sit under the banner as real buttons. As banner
+             links they read as body copy and nobody finds them. -->
+        <div class="asset-alert__actions">
+          <MpButton size="sm" variant="secondary" @click="assignTaxGroup">{{ t('Assign a tax group') }}</MpButton>
+          <MpButton size="sm" variant="secondary" @click="applyClassDefault">{{ t('Apply the class default') }}</MpButton>
+        </div>
       </div>
 
+      <!-- The totals sit in a card so they read as a summary of the table
+           below rather than as text floating above it. -->
       <div class="asset-totals">
         <div class="asset-total">
           <div class="asset-total__label">{{ t('Assets') }}</div>
@@ -402,42 +404,28 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
 </template>
 
 <style scoped>
-.filter-left { display: flex; align-items: center; gap: 8px; }
-.filter-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-
-/* Book switcher — a segmented control, because the three options are mutually
-   exclusive views of the same rows rather than independent filters. */
-.book-switch {
-  display: inline-flex;
-  border: 1px solid var(--mp-border-neutral, #e2e7ed);
-  border-radius: 8px;
-  overflow: hidden;
-  background: #fff;
-}
-.book-switch__btn {
-  border: 0;
-  background: transparent;
-  padding: 6px 12px;
-  font-size: 13px;
-  line-height: 20px;
-  color: #3a4749;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.book-switch__btn + .book-switch__btn { border-left: 1px solid var(--mp-border-neutral, #e2e7ed); }
-.book-switch__btn:hover { background: #f4f6f8; }
-.book-switch__btn--active { background: #e8f4ef; color: #027a4f; font-weight: 600; }
+.filter-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* The book switcher and the icon tools share the right edge. min-width:0 lets
+   the group shrink instead of pushing the switcher off the row. */
+.filter-right { display: flex; align-items: center; gap: 8px; margin-left: auto; min-width: 0; flex: none; }
 
 .asset-alert { margin-bottom: 12px; }
+.asset-alert__actions { display: flex; gap: 8px; margin-top: 8px; }
 
+/* Totals read as a summary of the table, so they sit in the same kind of
+   surface rather than floating on the page background. */
 .asset-totals {
   display: flex;
   gap: 32px;
-  padding: 12px 0 16px;
   flex-wrap: wrap;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  border: 1px solid #e2e7ed;
+  border-radius: 10px;
+  background: #fff;
 }
 .asset-total__label { font-size: 12px; color: #758195; line-height: 18px; }
-.asset-total__value { font-size: 18px; font-weight: 600; color: #1e2e2b; line-height: 26px; }
+.asset-total__value { font-size: 18px; font-weight: 600; color: #1e2e2b; line-height: 26px; font-variant-numeric: tabular-nums; }
 .asset-total__note { font-size: 11px; color: #a8352d; line-height: 16px; }
 
 .asset-name {

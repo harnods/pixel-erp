@@ -13,7 +13,7 @@
  * promise something the product deliberately does not do.
  */
 import { computed } from 'vue'
-import { MpButton, MpIcon, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription } from '@mekari/pixel3'
+import { MpButton, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import { infoToast } from '~/utils/toasts'
 import { fixedAssets } from '~/data/fixedAssets'
@@ -86,20 +86,17 @@ const annualOutstanding = computed(() =>
 <template>
   <div class="im">
     <header class="im__head">
-      <div>
-        <h2 class="im__title">{{ t('Impairment tests') }}</h2>
-        <p class="im__sub">
-          {{ t('PSAK 48 · the obligation is to test, so a test that finds nothing is retained as the evidence it happened') }}
-        </p>
-      </div>
+      <p class="im__sub">
+        {{ t('PSAK 48 · the obligation is to test, so a test that finds nothing is retained as the evidence it happened') }}
+      </p>
       <MpButton @click="infoToast(t('Recording a test is not part of this screen yet.'))">
         {{ t('Record a test') }}
       </MpButton>
     </header>
 
     <!-- The annual obligation, raised rather than remembered. -->
-    <MpBanner v-if="annualOutstanding.length" type="warning" is-rounded class="im__note">
-      <MpBannerIcon />
+    <MpBanner v-if="annualOutstanding.length" id="im__note-banner" variant="warning" class="im__note">
+      <MpBannerIcon id="b-icon" />
       <MpBannerTitle>
         {{ annualOutstanding.length }}
         {{ t(annualOutstanding.length === 1 ? 'asset is due its annual test' : 'assets are due their annual test') }}
@@ -160,9 +157,9 @@ const annualOutstanding = computed(() =>
 
 <style scoped>
 .im { padding: 4px 0 32px; max-width: 980px; }
-.im__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.im__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; min-height: 32px; }
 .im__title { font-size: 18px; font-weight: 600; color: #1e2e2b; margin: 0; }
-.im__sub { font-size: 13px; color: #758195; margin: 4px 0 0; max-width: 640px; }
+.im__sub { font-size: 13px; color: #758195; margin: 0; max-width: 720px; }
 .im__note { margin-bottom: 16px; }
 
 .im__card { border: 1px solid #e2e7ed; border-radius: 10px; background: #fff; padding: 16px; margin-bottom: 12px; }

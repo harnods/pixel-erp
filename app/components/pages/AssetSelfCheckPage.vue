@@ -98,11 +98,8 @@ const stateIcon: Record<CheckState, string> = {
 <template>
   <div class="sc">
     <header class="sc__head">
-      <div>
-        <h2 class="sc__title">{{ t('Period self-check') }}</h2>
-        <p class="sc__sub">{{ t('September 2026 · closed 30/09/2026 · retained against the period') }}</p>
-      </div>
-      <MpButton variant="secondary" left-icon="refresh-cw" @click="infoToast(t('Re-running the check is not part of this screen yet.'))">
+      <p class="sc__sub">{{ t('September 2026 · closed 30/09/2026 · the result is retained against the period') }}</p>
+      <MpButton variant="secondary" @click="infoToast(t('Re-running the check is not part of this screen yet.'))">
         {{ t('Run again') }}
       </MpButton>
     </header>
@@ -171,9 +168,9 @@ const stateIcon: Record<CheckState, string> = {
 
 <style scoped>
 .sc { padding: 4px 0 32px; }
-.sc__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.sc__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; min-height: 32px; }
 .sc__title { font-size: 18px; font-weight: 600; color: #1e2e2b; margin: 0; }
-.sc__sub { font-size: 13px; color: #758195; margin: 4px 0 0; }
+.sc__sub { font-size: 13px; color: #758195; margin: 0; max-width: 720px; }
 
 .sc__summary { display: flex; align-items: flex-start; gap: 12px; padding: 16px; border-radius: 10px; margin-bottom: 16px; border: 1px solid; }
 .sc__summary--passed { background: #e8f4ef; border-color: #b8e2d1; color: #027a4f; }

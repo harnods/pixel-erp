@@ -10,7 +10,7 @@
  * appearing out of balance.
  */
 import { computed, ref } from 'vue'
-import { MpButton, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription } from '@mekari/pixel3'
+import { MpButton, MpSegmentedControl, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import { infoToast, successToast } from '~/utils/toasts'
 import {
@@ -22,6 +22,10 @@ const { t } = useLocale()
 
 type Period = 'sep' | 'ytd'
 const period = ref<Period>('sep')
+const periodOptions = [
+  { id: 'per-sep', value: 'sep', label: 'September' },
+  { id: 'per-ytd', value: 'ytd', label: 'FY2026 to date' },
+]
 const charges = computed(() => (period.value === 'sep' ? assetChargeSeptember : assetChargeYtd))
 
 interface Row {
@@ -60,23 +64,17 @@ function post() {
 <template>
   <div class="ds">
     <header class="ds__head">
-      <div>
-        <h2 class="ds__title">{{ t('Depreciation schedule') }}</h2>
-        <p class="ds__sub">
-          {{ t('September 2026 · draft, not yet posted · the journal date follows company policy') }}
-        </p>
-      </div>
+      <p class="ds__sub">
+        {{ t('September 2026 · draft, not yet posted · the journal date follows company policy') }}
+      </p>
       <div class="ds__actions">
-        <div class="ds__seg" role="group" :aria-label="t('Period')">
-          <button type="button" class="ds__segbtn" :class="{ 'ds__segbtn--on': period === 'sep' }"
-            :aria-pressed="period === 'sep'" @click="period = 'sep'">{{ t('September') }}</button>
-          <button type="button" class="ds__segbtn" :class="{ 'ds__segbtn--on': period === 'ytd' }"
-            :aria-pressed="period === 'ytd'" @click="period = 'ytd'">{{ t('FY2026 to date') }}</button>
-        </div>
+        <MpSegmentedControl id="ds-period" name="ds-period" v-model="period" :data="periodOptions" />
         <MpButton @click="post">{{ t('Post depreciation') }}</MpButton>
       </div>
     </header>
 
+    <!-- Totals in a card, so they read as a summary of the run rather than
+         as text floating above the table. -->
     <div class="ds__totals">
       <div class="ds__total">
         <div class="ds__totallabel">{{ t('Commercial charge') }}</div>
@@ -97,8 +95,8 @@ function post() {
       </div>
     </div>
 
-    <MpBanner v-if="uncomputed.length" type="warning" is-rounded class="ds__note">
-      <MpBannerIcon />
+    <MpBanner v-if="uncomputed.length" id="ds__note-banner" variant="warning" class="ds__note">
+      <MpBannerIcon id="b-icon" />
       <MpBannerTitle>
         {{ uncomputed.length }}
         {{ t(uncomputed.length === 1 ? 'asset has no fiscal charge' : 'assets have no fiscal charge') }}
@@ -160,17 +158,17 @@ function post() {
 
 <style scoped>
 .ds { padding: 4px 0 32px; }
-.ds__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.ds__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; min-height: 32px; }
 .ds__title { font-size: 18px; font-weight: 600; color: #1e2e2b; margin: 0; }
-.ds__sub { font-size: 13px; color: #758195; margin: 4px 0 0; }
+.ds__sub { font-size: 13px; color: #758195; margin: 0; max-width: 720px; }
 .ds__actions { display: flex; align-items: center; gap: 8px; flex: none; }
 
-.ds__seg { display: inline-flex; border: 1px solid #e2e7ed; border-radius: 8px; overflow: hidden; background: #fff; }
-.ds__segbtn { border: 0; background: transparent; padding: 6px 12px; font-size: 13px; color: #3a4749; cursor: pointer; white-space: nowrap; }
-.ds__segbtn + .ds__segbtn { border-left: 1px solid #e2e7ed; }
-.ds__segbtn--on { background: #e8f4ef; color: #027a4f; font-weight: 600; }
 
-.ds__totals { display: flex; gap: 40px; padding: 4px 0 16px; }
+.ds__totals {
+  display: flex; gap: 40px; flex-wrap: wrap;
+  padding: 14px 16px; margin-bottom: 16px;
+  border: 1px solid #e2e7ed; border-radius: 10px; background: #fff;
+}
 .ds__totallabel { font-size: 12px; color: #758195; }
 .ds__totalvalue { font-size: 18px; font-weight: 600; color: #1e2e2b; font-variant-numeric: tabular-nums; }
 .ds__totalnote { font-size: 11px; color: #758195; }

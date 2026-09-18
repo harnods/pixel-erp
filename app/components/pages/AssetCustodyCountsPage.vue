@@ -13,7 +13,7 @@
  * not counting at all.
  */
 import { computed } from 'vue'
-import { MpIcon, MpButton, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription } from '@mekari/pixel3'
+import { MpButton, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription } from '@mekari/pixel3'
 import { infoToast } from '~/utils/toasts'
 import { countRows, countSession, custodyRows, varianceRows, type CountTone } from '~/data/fixedAssetScreens'
 
@@ -42,10 +42,7 @@ function closeSession() {
 <template>
   <div class="cc">
     <header class="cc__head">
-      <div>
-        <h2 class="cc__title">{{ t('Custody and counts') }}</h2>
-        <p class="cc__sub">{{ countSession }}</p>
-      </div>
+      <p class="cc__sub">{{ countSession }}</p>
       <div class="cc__actions">
         <MpButton variant="secondary" @click="infoToast(t('Starting a session is not part of this screen yet.'))">
           {{ t('New count session') }}
@@ -56,8 +53,8 @@ function closeSession() {
       </div>
     </header>
 
-    <MpBanner v-if="!canClose" type="warning" is-rounded class="cc__note">
-      <MpBannerIcon />
+    <MpBanner v-if="!canClose" id="cc__note-banner" variant="warning" class="cc__note">
+      <MpBannerIcon id="b-icon" />
       <MpBannerTitle>
         {{ open.length }} {{ t(open.length === 1 ? 'variance is unresolved' : 'variances are unresolved') }}
       </MpBannerTitle>
@@ -164,9 +161,9 @@ function closeSession() {
 
 <style scoped>
 .cc { padding: 4px 0 32px; }
-.cc__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.cc__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; min-height: 32px; }
 .cc__title { font-size: 18px; font-weight: 600; color: #1e2e2b; margin: 0; }
-.cc__sub { font-size: 12px; color: #758195; margin: 4px 0 0; }
+.cc__sub { font-size: 13px; color: #758195; margin: 0; max-width: 720px; }
 .cc__actions { display: flex; gap: 8px; flex: none; }
 .cc__note { margin-bottom: 16px; }
 
@@ -183,7 +180,9 @@ function closeSession() {
 .cc__th--num { text-align: right; }
 .cc__td { font-size: 13px; color: #232933; padding: 10px 16px; border-bottom: 1px solid #f4f6f8; vertical-align: top; }
 .cc__td--num { text-align: right; font-variant-numeric: tabular-nums; }
-.cc__td--mono { font-variant-numeric: tabular-nums; color: #3a4749; }
+/* A tag is one token. Wrapping it across lines makes it unreadable and
+   misaligns every row it appears in. */
+.cc__td--mono { font-variant-numeric: tabular-nums; color: #3a4749; white-space: nowrap; }
 .cc__td--wrap { max-width: 320px; }
 .cc__muted { color: #9aa5b1; }
 .cc__where { display: block; font-size: 11px; color: #758195; margin-top: 2px; }
