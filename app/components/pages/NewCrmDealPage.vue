@@ -28,8 +28,9 @@ import {
   crmCustomers, createDeal, updateDeal, getDeal,
   addDealAttachment, crmContactPeople, getContactPerson, companiesOfContact,
   defaultDealStage, CRM_OWNERS, dealModuleSetup,
-  type DealInput, type DealLineItem, type CrmCompany,
+  type DealInput, type DealLineItem, type CrmCompany, type CrmContactPerson,
 } from '~/data/crm'
+import CrmQuickContactModal from '~/components/patterns/CrmQuickContactModal.vue'
 // Products come from the shared product DB (catalog.ts) — CRM cannot create products.
 import { CATALOG, type CatalogItem } from '~/data/catalog'
 import { availableForSku, totalAvailableForSku } from '~/data/warehouseDetails'
@@ -116,6 +117,17 @@ const priceIncludesTax = ref(false)
 
 function onEmailChange(data: DataInterface[]) { emailTags.value = data }
 function onTagsChange(data: DataInterface[])  { tagsList.value = data }
+
+// Quick-add contact from the picker (the "+ New contact" / "Add '<x>' …" action).
+const quickContactOpen = ref(false)
+const quickContactName = ref('')
+// MpAutocomplete emits (suggestions, currentSearch) positionally — the typed text is the 2nd arg.
+function openAddContact(_suggestions: unknown, currentSearch?: string) { quickContactName.value = (currentSearch || '').trim(); quickContactOpen.value = true }
+function onContactCreated(c: CrmContactPerson) {
+  contactId.value = c.id
+  onContactChange(c.id)
+  quickContactOpen.value = false
+}
 
 // Picking a contact seeds the email chips and defaults the company pick (when the
 // contact belongs to several companies).
@@ -456,8 +468,14 @@ function onSave() {
             id="f-contact-inp" v-model="contactId" :data="contactOptions"
             label-prop="name" value-prop="id" is-searchable use-portal is-full-width
             :placeholder="t('Select contact')" :is-invalid="contactError"
+            is-show-button-action
             @update:model-value="onContactChange"
-          />
+            @button-action="openAddContact"
+          >
+            <template #buttonAction="suggestions, currentSearch">
+              {{ currentSearch ? `${t('Add')} "${currentSearch}" ${t('as new contact')}` : `+ ${t('New contact')}` }}
+            </template>
+          </MpAutocomplete>
           <MpFormErrorMessage>{{ t('You must select a contact') }}</MpFormErrorMessage>
         </MpFormControl>
 
@@ -876,6 +894,14 @@ function onSave() {
       :next-number="nextTxNo"
       :existing-formats="txNoFormats"
       @save="onNoFormatSave"
+    />
+
+    <!-- Quick-add contact from the Contact picker. -->
+    <CrmQuickContactModal
+      :open="quickContactOpen"
+      :initial-name="quickContactName"
+      @close="quickContactOpen = false"
+      @created="onContactCreated"
     />
   </div>
 </template>
