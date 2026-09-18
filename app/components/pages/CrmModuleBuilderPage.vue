@@ -379,6 +379,9 @@ const propTypeOptions = computed(() => {
 function propCreatedByLabel(p: DealProperty): string {
   return (p.isDefault || p.system) ? 'System' : (p.createdBy || CRM_CURRENT_USER)
 }
+function canManageProperty(p: DealProperty): boolean {
+  return propCreatedByLabel(p) !== 'System' && !isRelatedListType(p.type)
+}
 const propCreatedByFilter = ref('')
 const propCreatedByOptions = computed(() => {
   const names = new Set(propList.value.map(propCreatedByLabel))
@@ -990,7 +993,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
 
               <!-- Default properties (from the master library) + related lists are non-editable. -->
               <template #actions="{ row }">
-                <MpPopover v-if="!(row as unknown as DealProperty).isDefault && !isRelatedListType((row as unknown as DealProperty).type)" :id="`prop-actions-${(row as unknown as DealProperty).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                <MpPopover v-if="canManageProperty(row as unknown as DealProperty)" :id="`prop-actions-${(row as unknown as DealProperty).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                   <MpPopoverTrigger>
                     <MpButton class="builder-kebab" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
                   </MpPopoverTrigger>
