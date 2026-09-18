@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-settings-properties-hidden',
+    title: 'Settings Properties page hidden',
+    description:
+      'The standalone CRM Settings Properties page is hidden from Settings. Property management stays inside each module under Settings > Modules.',
+    date: '2026-09-18',
+    files: ['CrmSidebar.vue', '[...slug].vue'],
+  },
+  {
     id: 'crm-company-property-label',
     title: 'Customer property is now Company',
     description:

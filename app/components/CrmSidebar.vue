@@ -60,7 +60,6 @@ const navGroups = computed<Item[][]>(() => [
       { name: 'Teams',            to: '/crm/settings/teams' },
       { name: 'Modules',          to: '/crm/settings/modules' },
       { name: 'ERP integrations', to: '/crm/settings/erp-integrations' },
-      { name: 'Properties',       to: '/crm/settings/properties' },
     ] },
   ],
 ])
@@ -123,6 +122,7 @@ function navIcon(item: Item): string { return item.to === '/crm/deals' ? (getCrm
           :key="item.name"
           class="nav-item"
           :class="{ active: activeItem === item.name }"
+          :data-devchange="item.name === 'Settings' ? 'crm-settings-properties-hidden' : undefined"
           :title="navLabel(item)"
           type="button"
           @click="handleNavClick(item)"
