@@ -133,6 +133,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Sign out': 'Sign out',
   'Reset demo data': 'Reset data demo',
   'Review mode': 'Mode tinjau',
+  'Changes': 'Changes',
   'On': 'Aktif',
   'Select scenario': 'Pilih skenario',
   'Scenario': 'Skenario',

@@ -74,3 +74,4 @@ Local mirrors of Confluence PRDs, for reference. Re-fetch from Confluence for th
 | Toast | [Toast.md](patterns/Toast.md) | Success/error feedback, Pixel icon rule, UXW copy rule, implementation checklist |
 | Modal | [Modal.md](patterns/Modal.md) | Centered dialog for focused/interrupting tasks |
 | Drawer | [Drawer.md](patterns/Drawer.md) | Side panel for contextual detail/edit without leaving the page |
+| Dev Changes overlay | [dev-changes-overlay.md](patterns/dev-changes-overlay.md) | Engineer-facing "what changed & where" layer — tag a changed element + add a registry entry per push; per-user resolve/dismiss, on by default |
