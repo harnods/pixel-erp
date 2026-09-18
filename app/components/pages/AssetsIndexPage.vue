@@ -45,15 +45,22 @@ const { t } = useLocale()
 const toggleAirene = inject<() => void>('toggleAirene')
 
 // ── Which book is on screen ─────────────────────────────────────────────────
-// Both is the default: the whole point of the register is that the two numbers
-// differ, and hiding one hides the reason this module exists.
-type BookView = 'both' | 'commercial' | 'fiscal'
-const book = ref<BookView>('both')
+// Accounting is the default. It is the day-to-day view, and showing both books
+// at once puts two large IDR figures on every row for a comparison most
+// readers are not making.
+//
+// The labels name what each number is FOR, not the method behind it:
+// "accounting" goes in the financial statements, "tax" goes in the tax return.
+// The statutory vocabulary (komersial / fiskal) is correct but names the
+// method, which only a tax preparer reads fluently — and the register is where
+// general affairs, internal audit and accounting all land.
+type BookView = 'accounting' | 'tax' | 'both'
+const book = ref<BookView>('accounting')
 /** Shape MpSegmentedControl expects: an id and a value per option. */
 const bookOptions = [
-  { id: 'book-both', value: 'both', label: 'Both books' },
-  { id: 'book-commercial', value: 'commercial', label: 'Commercial' },
-  { id: 'book-fiscal', value: 'fiscal', label: 'Fiscal' },
+  { id: 'book-accounting', value: 'accounting', label: 'Accounting' },
+  { id: 'book-tax', value: 'tax', label: 'Tax' },
+  { id: 'book-both', value: 'both', label: 'Both' },
 ]
 
 // ── Filters ─────────────────────────────────────────────────────────────────
@@ -168,11 +175,14 @@ const allColumns = computed<TableColumn[]>(() => {
     { key: 'acquired', label: t('Acquired'), kind: 'date', sortable: true, sortType: 'date', align: 'left' },
     { key: 'cost', label: t('Acquisition cost'), kind: 'amount', sortable: true, sortType: 'number', align: 'right' },
   ]
-  if (book.value !== 'fiscal') {
+  // The tax column only appears when the tax view is on, so a reader in the
+  // accounting view is never looking at an empty column wondering whether the
+  // data failed to load.
+  if (book.value !== 'tax') {
     cols.push({ key: 'bookValueCommercial', label: t('Book value'), kind: 'amount', sortable: true, sortType: 'number', align: 'right' })
   }
-  if (book.value !== 'commercial') {
-    cols.push({ key: 'bookValueFiscal', label: t('Fiscal book value'), kind: 'amount', sortable: true, sortType: 'number', align: 'right' })
+  if (book.value !== 'accounting') {
+    cols.push({ key: 'bookValueFiscal', label: t('Tax book value'), kind: 'amount', sortable: true, sortType: 'number', align: 'right' })
     cols.push({ key: 'taxGroup', label: t('Tax group'), kind: 'default', sortable: true, sortType: 'text' })
   }
   cols.push({ key: 'branch', label: t('Branch'), kind: 'default', sortable: true, sortType: 'text' })
@@ -323,14 +333,14 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
             <div class="stat-amount">{{ formatIDR(totals.cost) }}</div>
           </div>
 
-          <div v-if="book !== 'fiscal'" class="stat-card stat-card--bordered">
+          <div v-if="book !== 'tax'" class="stat-card stat-card--bordered">
             <div class="stat-title">{{ t('Book value') }}</div>
-            <div class="stat-period">{{ t('Commercial · at 30/09/2026') }}</div>
+            <div class="stat-period">{{ t('Accounting · at 30/09/2026') }}</div>
             <div class="stat-amount">{{ formatIDR(totals.bookValueCommercial) }}</div>
           </div>
 
-          <div v-if="book !== 'commercial'" class="stat-card">
-            <div class="stat-title">{{ t('Fiscal book value') }}</div>
+          <div v-if="book !== 'accounting'" class="stat-card">
+            <div class="stat-title">{{ t('Tax book value') }}</div>
             <div class="stat-period">{{ t('Tax basis · at 30/09/2026') }}</div>
             <!-- When every filtered asset is unclassified there is no fiscal
                  total to state. Rp0,00 would claim the population is worth
@@ -448,6 +458,14 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
    CashManagementPage. No card: index pages do not box their stats. */
 .stats-wrap { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
 .stats-switch { display: flex; }
+/* erp.css gives segments `flex: 1 1 0; min-width: 0` so they share the track
+   equally. With a long label ("Accounting" needs 110px including the pill's
+   own padding) the zero floor lets the segment shrink under its text, and the
+   root's `width: fit-content` then measures the collapsed basis rather than
+   the content — the label renders wider than its own pill. Flooring each
+   segment at its content width keeps the equal-width behaviour and stops the
+   overflow. */
+.stats-switch :deep(.mp-segmented-control__item) { min-width: max-content; }
 .stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
 .stat-card {
   flex: 1;

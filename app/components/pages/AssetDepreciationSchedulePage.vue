@@ -77,12 +77,12 @@ function post() {
          as text floating above the table. -->
     <div class="ds__totals">
       <div class="ds__total">
-        <div class="ds__totallabel">{{ t('Commercial charge') }}</div>
+        <div class="ds__totallabel">{{ t('Accounting charge') }}</div>
         <div class="ds__totalvalue">{{ formatIDR(totals.commercial) }}</div>
         <div class="ds__totalnote">{{ t('posts to the general ledger') }}</div>
       </div>
       <div class="ds__total">
-        <div class="ds__totallabel">{{ t('Fiscal charge') }}</div>
+        <div class="ds__totallabel">{{ t('Tax charge') }}</div>
         <div class="ds__totalvalue">{{ formatIDR(totals.fiscal ?? 0) }}</div>
         <!-- Stated on the screen, not only in a document: this number is
              computed and reported, and reaches no ledger. -->
@@ -91,7 +91,7 @@ function post() {
       <div class="ds__total">
         <div class="ds__totallabel">{{ t('Difference') }}</div>
         <div class="ds__totalvalue">{{ formatIDR(totals.commercial - (totals.fiscal ?? 0)) }}</div>
-        <div class="ds__totalnote">{{ t('accumulates to the fiscal correction') }}</div>
+        <div class="ds__totalnote">{{ t('accumulates to the tax correction') }}</div>
       </div>
     </div>
 
@@ -99,11 +99,11 @@ function post() {
       <MpBannerIcon id="b-icon" />
       <MpBannerTitle>
         {{ uncomputed.length }}
-        {{ t(uncomputed.length === 1 ? 'asset has no fiscal charge' : 'assets have no fiscal charge') }}
+        {{ t(uncomputed.length === 1 ? 'asset has no tax charge' : 'assets have no tax charge') }}
       </MpBannerTitle>
       <MpBannerDescription>
         {{ uncomputed.map((r) => `${r.asset.id} ${r.asset.name}`).join(', ') }}
-        {{ t('carries a commercial charge with no fiscal counterpart, because it has no statutory group. The fiscal total above excludes it.') }}
+        {{ t('carries an accounting charge with no tax counterpart, because it has no statutory group. The tax total above excludes it.') }}
       </MpBannerDescription>
     </MpBanner>
 
@@ -113,8 +113,8 @@ function post() {
           <tr>
             <th class="ds__th">{{ t('Asset') }}</th>
             <th class="ds__th">{{ t('Basis') }}</th>
-            <th class="ds__th ds__th--num">{{ t('Commercial') }}</th>
-            <th class="ds__th ds__th--num">{{ t('Fiscal') }}</th>
+            <th class="ds__th ds__th--num">{{ t('Accounting') }}</th>
+            <th class="ds__th ds__th--num">{{ t('Tax') }}</th>
             <th class="ds__th ds__th--num">{{ t('Difference') }}</th>
           </tr>
         </thead>
@@ -126,10 +126,10 @@ function post() {
             </td>
             <td class="ds__td ds__td--basis">
               <template v-if="r.asset.indefiniteLife">
-                {{ t('Indefinite life commercially') }}
+                {{ t('Indefinite life') }}
               </template>
               <template v-else-if="r.asset.commercialLifeMonths">
-                {{ Math.round(r.asset.commercialLifeMonths / 12) }} {{ t('yr commercial') }}
+                {{ Math.round(r.asset.commercialLifeMonths / 12) }} {{ t('yr accounting') }}
               </template>
               <template v-if="r.asset.taxGroup">
                 · {{ r.asset.taxGroup }}

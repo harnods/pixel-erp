@@ -35,8 +35,8 @@ const { t } = useLocale()
           <tr>
             <th class="st__th">{{ t('Class') }}</th>
             <th class="st__th">{{ t('Statutory group') }}</th>
-            <th class="st__th">{{ t('Fiscal life') }}</th>
-            <th class="st__th">{{ t('Commercial life') }}</th>
+            <th class="st__th">{{ t('Tax life') }}</th>
+            <th class="st__th">{{ t('Accounting life') }}</th>
             <th class="st__th">{{ t('Method') }}</th>
             <th class="st__th">{{ t('Accounts') }}</th>
           </tr>

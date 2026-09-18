@@ -143,7 +143,7 @@ const annualOutstanding = computed(() =>
             <template v-else>{{ t('No impairment') }}</template>
           </div>
           <div v-if="x.loss" class="im__note2">
-            {{ t('commercial only · fiscal does not recognise it until realised') }}
+            {{ t('accounting only · tax does not recognise it until realised') }}
           </div>
         </div>
       </div>

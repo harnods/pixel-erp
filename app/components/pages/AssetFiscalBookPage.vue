@@ -86,7 +86,7 @@ function exportStatement() {
       </MpBannerTitle>
       <MpBannerDescription>
         {{ unclassified.map((a) => `${a.id} ${a.name}`).join(', ') }}
-        {{ t('has no statutory group, so it has no fiscal figure to compare against. Its commercial charge of') }}
+        {{ t('has no statutory group, so there is no tax figure to compare against. Its accounting charge of') }}
         {{ formatIDR(unclassifiedCharge) }}
         {{ t('is excluded from both columns so the two describe the same population.') }}
       </MpBannerDescription>
@@ -102,8 +102,8 @@ function exportStatement() {
         <thead>
           <tr>
             <th class="fb__th">{{ grouping === 'class' ? t('Asset class') : t('Statutory group') }}</th>
-            <th class="fb__th fb__th--num">{{ t('Commercial') }}</th>
-            <th class="fb__th fb__th--num">{{ t('Fiscal') }}</th>
+            <th class="fb__th fb__th--num">{{ t('Accounting') }}</th>
+            <th class="fb__th fb__th--num">{{ t('Tax') }}</th>
             <th class="fb__th fb__th--num">{{ t('Difference') }}</th>
           </tr>
         </thead>
@@ -142,8 +142,8 @@ function exportStatement() {
         <thead>
           <tr>
             <th class="fb__th">{{ t('Asset') }}</th>
-            <th class="fb__th fb__th--num">{{ t('Commercial') }}</th>
-            <th class="fb__th fb__th--num">{{ t('Fiscal') }}</th>
+            <th class="fb__th fb__th--num">{{ t('Accounting') }}</th>
+            <th class="fb__th fb__th--num">{{ t('Tax') }}</th>
             <th class="fb__th fb__th--num">{{ t('Difference') }}</th>
           </tr>
         </thead>
@@ -181,8 +181,8 @@ function exportStatement() {
         <thead>
           <tr>
             <th class="fb__th">{{ t('Event') }}</th>
-            <th class="fb__th fb__th--num">{{ t('Commercial') }}</th>
-            <th class="fb__th fb__th--num">{{ t('Fiscal') }}</th>
+            <th class="fb__th fb__th--num">{{ t('Accounting') }}</th>
+            <th class="fb__th fb__th--num">{{ t('Tax') }}</th>
             <th class="fb__th fb__th--num">{{ t('Difference') }}</th>
           </tr>
         </thead>

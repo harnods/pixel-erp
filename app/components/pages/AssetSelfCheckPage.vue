@@ -54,21 +54,21 @@ const checks = computed<Check[]>(() => {
     },
     {
       id: 'C3',
-      name: t('Fiscal book coverage'),
-      what: t('The fiscal book population against the register population'),
+      name: t('Tax book coverage'),
+      what: t('The tax book population against the register population'),
       state: unclassified.value.length ? 'failed' : 'passed',
       detail: unclassified.value.length
-        ? `${unclassified.value.length} ${t('asset in the register is not in the fiscal book:')} ${unclassified.value.map((a) => a.id).join(', ')}`
+        ? `${unclassified.value.length} ${t('asset in the register is not in the tax book:')} ${unclassified.value.map((a) => a.id).join(', ')}`
         : t('Every asset is on both books'),
     },
     {
       id: 'C4',
       name: t('Export coverage'),
-      what: t('The statutory export population against the fiscal book'),
+      what: t('The statutory export population against the tax book'),
       state: unclassified.value.length ? 'incomplete' : 'passed',
       detail: unclassified.value.length
         ? t('Cannot run until every asset carries a statutory group')
-        : t('The export covers the whole fiscal book'),
+        : t('The export covers the whole tax book'),
     },
   ]
 })

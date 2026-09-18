@@ -100,7 +100,7 @@ const pageRegistry: Record<string, Component> = {
   // below match what pathToLabel() produces, not what the sidebar displays.
   'Assets':            defineAsyncComponent(() => import('~/components/pages/AssetsIndexPage.vue')),
   'Depreciation schedule': defineAsyncComponent(() => import('~/components/pages/AssetDepreciationSchedulePage.vue')),
-  'Fiscal book':       defineAsyncComponent(() => import('~/components/pages/AssetFiscalBookPage.vue')),
+  'Tax book':          defineAsyncComponent(() => import('~/components/pages/AssetFiscalBookPage.vue')),
   'Impairment tests':  defineAsyncComponent(() => import('~/components/pages/AssetImpairmentPage.vue')),
   'Period self check': defineAsyncComponent(() => import('~/components/pages/AssetSelfCheckPage.vue')),
   'Custody and counts': defineAsyncComponent(() => import('~/components/pages/AssetCustodyCountsPage.vue')),

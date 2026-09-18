@@ -418,7 +418,7 @@ const erpNavGroups: NavItem[][] = [
           { label: 'Fixed assets', children: [
             { label: 'Assets' },
             { label: 'Depreciation schedule' },
-            { label: 'Fiscal book' },
+            { label: 'Tax book' },
             { label: 'Impairment tests' },
             { label: 'Period self-check' },
             { label: 'Custody & counts' },

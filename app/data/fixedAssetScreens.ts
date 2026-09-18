@@ -54,18 +54,18 @@ export const impactByTaxGroup: ImpactRow[] = [
  * nothing. Rendering 0 would claim the opposite.
  */
 export const amortisationYtd: ImpactRow[] = [
-  { label: 'FA-0091 Goodwill — PT Mitra Logistik', basis: 'Indefinite life commercially · Tax group 4, 20 years fiscally', commercial: null, fiscal: 90000000 },
-  { label: 'FA-0093 Registered brand — Sinar Kencana', basis: 'Indefinite life commercially · Tax group 4, 20 years fiscally', commercial: null, fiscal: 33750000 },
-  { label: 'FA-0092 Software licence — WMS', basis: '5 years commercially · Tax group 1, 4 years fiscally', commercial: 72000000, fiscal: 90000000 },
-  { label: 'FA-0094 Patent — conveyor mechanism', basis: '10 years commercially · Tax group 2, 8 years fiscally', commercial: 24000000, fiscal: 30000000 },
+  { label: 'FA-0091 Goodwill — PT Mitra Logistik', basis: 'Indefinite life accountingly · Tax group 4, 20 years taxly', commercial: null, fiscal: 90000000 },
+  { label: 'FA-0093 Registered brand — Sinar Kencana', basis: 'Indefinite life accountingly · Tax group 4, 20 years taxly', commercial: null, fiscal: 33750000 },
+  { label: 'FA-0092 Software licence — WMS', basis: '5 years accountingly · Tax group 1, 4 years taxly', commercial: 72000000, fiscal: 90000000 },
+  { label: 'FA-0094 Patent — conveyor mechanism', basis: '10 years accountingly · Tax group 2, 8 years taxly', commercial: 24000000, fiscal: 30000000 },
 ]
 
 /** The same four intangibles, September only. */
 export const amortisationSeptember: ImpactRow[] = [
-  { label: 'FA-0091 Goodwill — PT Mitra Logistik', basis: 'Indefinite life commercially · Tax group 4, 20 years fiscally', commercial: null, fiscal: 10000000 },
-  { label: 'FA-0093 Registered brand — Sinar Kencana', basis: 'Indefinite life commercially · Tax group 4, 20 years fiscally', commercial: null, fiscal: 3750000 },
-  { label: 'FA-0092 Software licence — WMS', basis: '5 years commercially · Tax group 1, 4 years fiscally', commercial: 8000000, fiscal: 10000000 },
-  { label: 'FA-0094 Patent — conveyor mechanism', basis: '10 years commercially · Tax group 2, 8 years fiscally', commercial: 2666667, fiscal: 3333333 },
+  { label: 'FA-0091 Goodwill — PT Mitra Logistik', basis: 'Indefinite life accountingly · Tax group 4, 20 years taxly', commercial: null, fiscal: 10000000 },
+  { label: 'FA-0093 Registered brand — Sinar Kencana', basis: 'Indefinite life accountingly · Tax group 4, 20 years taxly', commercial: null, fiscal: 3750000 },
+  { label: 'FA-0092 Software licence — WMS', basis: '5 years accountingly · Tax group 1, 4 years taxly', commercial: 8000000, fiscal: 10000000 },
+  { label: 'FA-0094 Patent — conveyor mechanism', basis: '10 years accountingly · Tax group 2, 8 years taxly', commercial: 2666667, fiscal: 3333333 },
 ]
 
 // ── Commercial to fiscal difference ─────────────────────────────────────────
@@ -87,63 +87,63 @@ export const differenceByAsset: DifferenceRow[] = [
     id: 'FA-0071',
     name: 'Cummins 250kVA Generator',
     difference: 122343750,
-    reason: 'Commercial gain of 51.250.000 against a fiscal loss of 71.093.750 — the fiscal basis was far higher at disposal',
+    reason: 'Accounting gain of 51.250.000 against a tax loss of 71.093.750 — the tax basis was far higher at disposal',
     tag: 'Disposal',
   },
   {
     id: 'FA-0012',
     name: 'Head Office Building',
     difference: 36000000,
-    reason: 'Fiscal life shorter than commercial — 20 years against 25',
+    reason: 'Tax life shorter than accounting — 20 years against 25',
     tag: null,
   },
   {
     id: 'FA-0004',
     name: 'Building Central AC',
     difference: 22500000,
-    reason: 'Commercial life exhausted in 2024, fiscal still depreciating until 2027',
+    reason: 'Accounting life exhausted in 2024, tax still depreciating until 2027',
     tag: null,
   },
   {
     id: 'FA-0021',
     name: 'Medan Partitions & Desks',
     difference: 3796875,
-    reason: 'Tax group 1 gives 4 fiscal years against 8 commercial',
+    reason: 'Tax group 1 gives 4 tax years against 8 accounting',
     tag: null,
   },
   {
     id: 'FA-0068',
     name: 'Forklift Toyota 3T',
     difference: 1125000,
-    reason: 'Post-impairment commercial charge of 4.000.000 runs below the fiscal 4.375.000',
+    reason: 'Post-impairment accounting charge of 4.000.000 runs below the tax 4.375.000',
     tag: null,
   },
   {
     id: 'FA-0068',
     name: 'Forklift Toyota 3T',
     difference: -17250000,
-    reason: 'Impairment to 184.000.000 recognised commercially only — not deductible',
+    reason: 'Impairment to 184.000.000 recognised accountingly only — not deductible',
     tag: 'Impairment',
   },
   {
     id: 'FA-0071',
     name: 'Cummins 250kVA Generator',
     difference: -16875000,
-    reason: 'Depreciation to disposal — fiscal life 16 years against 10 commercial',
+    reason: 'Depreciation to disposal — tax life 16 years against 10 accounting',
     tag: null,
   },
   {
     id: 'FA-0031',
     name: 'Production Machine Line A',
     difference: -35156250,
-    reason: 'Fiscal life longer than commercial — 16 years against 10',
+    reason: 'Tax life longer than accounting — 16 years against 10',
     tag: null,
   },
   {
     id: 'FA-0047',
     name: 'Toyota Innova B 1234 XYZ',
     difference: -21656250,
-    reason: 'Fiscal life longer than commercial — 8 years against 5',
+    reason: 'Tax life longer than accounting — 8 years against 5',
     tag: null,
   },
 ]
@@ -242,8 +242,8 @@ export const varianceRows = [
 
 /** Authorisation attaches to the decision, not to the asset. */
 export const approvalRows = [
-  { id: 'AP-0031', what: 'Disposal · FA-0071 Cummins 250kVA Generator', raisedBy: 'Rizal Candra', raisedOn: '15/08/2026', detail: 'Proceeds 400.000.000 · commercial gain 51.250.000, fiscal loss 71.093.750', status: 'Awaiting you' },
-  { id: 'AP-0032', what: 'Write-off · FA-0004 Building Central AC', raisedBy: 'Fitri Handayani', raisedOn: '03/09/2026', detail: 'Book value 0 · 10.000.000 still on the fiscal basis', status: 'Awaiting you' },
+  { id: 'AP-0031', what: 'Disposal · FA-0071 Cummins 250kVA Generator', raisedBy: 'Rizal Candra', raisedOn: '15/08/2026', detail: 'Proceeds 400.000.000 · accounting gain 51.250.000, tax loss 71.093.750', status: 'Awaiting you' },
+  { id: 'AP-0032', what: 'Write-off · FA-0004 Building Central AC', raisedBy: 'Fitri Handayani', raisedOn: '03/09/2026', detail: 'Book value 0 · 10.000.000 still on the tax basis', status: 'Awaiting you' },
   { id: 'AP-0033', what: 'Partial disposal · FA-0051 Office Chairs (6 of 60)', raisedBy: 'Rudi Santoso', raisedOn: '10/09/2026', detail: 'Raised from count session SO-2026-03', status: 'Awaiting you' },
 ]
 
@@ -354,10 +354,10 @@ export const derivationPeriods = {
 /** The headline figures on FA-0031, with how each was derived. */
 export const assetDetailFigures = [
   { label: 'Acquisition cost', value: '1.250.000.000', note: 'Both books' },
-  { label: 'Accumulated · commercial', value: '406.250.000', note: '39 months × 10.416.667' },
-  { label: 'Book value · commercial', value: '843.750.000', note: 'Straight line, 10 years' },
-  { label: 'Accumulated · fiscal', value: '253.906.250', note: '39 months × 6.510.417' },
-  { label: 'Fiscal book value', value: '996.093.750', note: 'Tax group 3, Straight line, 16 years' },
+  { label: 'Accumulated · accounting', value: '406.250.000', note: '39 months × 10.416.667' },
+  { label: 'Book value · accounting', value: '843.750.000', note: 'Straight line, 10 years' },
+  { label: 'Accumulated · tax', value: '253.906.250', note: '39 months × 6.510.417' },
+  { label: 'Tax book value', value: '996.093.750', note: 'Tax group 3, Straight line, 16 years' },
   { label: 'Cumulative difference', value: '152.343.750', note: 'Deferred tax liability 33.515.625' },
 ]
 
@@ -378,11 +378,11 @@ export const assetDetailPanes = [
     ],
   },
   {
-    head: 'Fiscal parameters · Tax Manager',
+    head: 'Tax parameters · Tax Manager',
     fields: [
       { k: 'Tax group', v: 'Tax group 3 — 16 years' },
-      { k: 'Fiscal method', v: 'Straight line (6,25%)' },
-      { k: 'Fiscal depreciation starts', v: '01/08/2023' },
+      { k: 'Tax method', v: 'Straight line (6,25%)' },
+      { k: 'Tax depreciation starts', v: '01/08/2023' },
       { k: 'Migration position', v: 'Computed in full from acquisition' },
       { k: 'In Lampiran 9', v: 'Yes — Tax group 3 line' },
     ],
