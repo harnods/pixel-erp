@@ -3943,12 +3943,16 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'band': 'rentang',
   'cycles': 'siklus',
   'Volatility threshold': 'Ambang fluktuasi',
+  'When a product\'s day-to-day sales vary more than this (coefficient of variation), it is tagged "Volatile" in the worklist\'s Demand signal column and its spikes are damped in the average. Raise it to flag fewer products.':
+    'Ketika penjualan harian produk bervariasi lebih dari ini (koefisien variasi), produk diberi tag "Volatile" di kolom Sinyal permintaan pada worklist dan lonjakannya diredam dalam rata-rata. Naikkan untuk menandai lebih sedikit produk.',
   'Cold-start demand by category': 'Permintaan produk baru per kategori',
   'New products (cold-start)': 'Produk baru (cold-start)',
   'A product with less sales history than the threshold is never given a guessed demand. It goes to Needs setup until it builds enough real sales, or someone enters an expected daily demand for that specific product by hand.':
     'Produk dengan riwayat penjualan kurang dari batas tidak pernah diberi perkiraan permintaan. Produk masuk ke Perlu disiapkan sampai punya cukup penjualan nyata, atau seseorang mengisi perkiraan permintaan harian untuk produk itu secara manual.',
   'Days of sales history a product needs before it is measured from its own sales. Below this, it goes to Needs setup unless someone sets its demand by hand.':
     'Jumlah hari riwayat penjualan yang dibutuhkan produk sebelum dihitung dari penjualannya sendiri. Di bawah ini, produk masuk ke Perlu disiapkan kecuali permintaannya diisi manual.',
+  'Days after a product\'s first sale during which it counts as a launch: it is tagged "Provisional" in the worklist and its order is held to the reorder point (no extra coverage). After this it graduates to the normal average automatically.':
+    'Jumlah hari setelah penjualan pertama produk saat produk dianggap masa peluncuran: produk diberi tag "Provisional" di worklist dan pesanannya dibatasi sampai titik pemesanan ulang (tanpa cakupan tambahan). Setelah itu produk otomatis beralih ke rata-rata normal.',
   'Until a product has enough sales history, its demand is taken from these per-category seeds. The moment it crosses the history threshold the system switches to its real sales automatically — no action needed. Leave a category empty and its new products go to Needs setup instead of receiving an estimate.':
     'Sebelum sebuah produk punya cukup riwayat penjualan, permintaannya diambil dari nilai awal per kategori ini. Begitu melewati batas riwayat, sistem otomatis beralih ke penjualan sebenarnya — tanpa perlu tindakan. Kosongkan satu kategori dan produk barunya masuk ke Perlu disiapkan, bukan diberi perkiraan.',
   'Days of sales history a product needs before it is measured from its own sales. Below this, it uses the seed below.':

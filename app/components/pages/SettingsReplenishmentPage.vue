@@ -190,7 +190,7 @@ const BOUNDARY_OPTIONS = [
         <div class="rs-label">
           <span class="rs-label-text">{{ t('Volatility threshold') }}</span>
           <span class="rs-label-desc">
-            {{ t('Coefficient of variation above which demand is flagged volatile and spikes are damped.') }}
+            {{ t('When a product\'s day-to-day sales vary more than this (coefficient of variation), it is tagged "Volatile" in the worklist\'s Demand signal column and its spikes are damped in the average. Raise it to flag fewer products.') }}
           </span>
         </div>
         <div class="rs-control">
@@ -210,7 +210,7 @@ const BOUNDARY_OPTIONS = [
         <div class="rs-label">
           <span class="rs-label-text">{{ t('Cold-start threshold') }}</span>
           <span class="rs-label-desc">
-            {{ t('Days of sales history a product needs before it is measured from its own sales. Below this, it goes to Needs setup unless someone sets its demand by hand.') }}
+            {{ t('Days after a product\'s first sale during which it counts as a launch: it is tagged "Provisional" in the worklist and its order is held to the reorder point (no extra coverage). After this it graduates to the normal average automatically.') }}
           </span>
         </div>
         <div class="rs-control">
