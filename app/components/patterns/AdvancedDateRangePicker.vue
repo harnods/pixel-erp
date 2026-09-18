@@ -41,6 +41,11 @@ const props = withDefaults(defineProps<{
    *  existing caller keeps its current label. Used by the Multidimensional
    *  report (Figma 4836-56598). */
   labelPrefixMode?: boolean
+  /** Opt-in: replace the sidebar quick presets with an explicit list (e.g. the
+   *  Deals close-date filter: Today / This week / This month / Next month). When
+   *  set, the only granularity option is Custom date range. Existing callers that
+   *  omit this keep their direction/periodMode presets unchanged. */
+  presets?: { key: Mode; label: string }[]
 }>(), {
   direction: 'past',
   periodMode: false,
@@ -48,7 +53,7 @@ const props = withDefaults(defineProps<{
 })
 const emit = defineEmits<{ 'update:modelValue': [Date[]] }>()
 
-type Mode = 'today' | 'last7' | 'last14' | 'last30' | 'next7' | 'next14' | 'next30' | 'day' | 'week' | 'month' | 'year' | 'custom' | 'thisMonth' | 'thisQuarter' | 'thisYear'
+type Mode = 'today' | 'last7' | 'last14' | 'last30' | 'next7' | 'next14' | 'next30' | 'day' | 'week' | 'month' | 'year' | 'custom' | 'thisMonth' | 'thisQuarter' | 'thisYear' | 'thisWeek' | 'nextMonth'
 
 const open = ref(false)
 const mode = ref<Mode>(props.direction === 'future' ? 'next30' : 'last30')
@@ -86,7 +91,9 @@ function presetBounds(key: Mode): [Date, Date] {
     case 'next7':  return [today, addDays(today, 6)]
     case 'next14': return [today, addDays(today, 13)]
     case 'next30': return [today, addDays(today, 29)]
+    case 'thisWeek':    return [startOfWeek(today), endOfWeek(today)]
     case 'thisMonth':   return [startOfMonth(today), endOfMonth(today)]
+    case 'nextMonth': { const n = new Date(today.getFullYear(), today.getMonth() + 1, 1); return [startOfMonth(n), endOfMonth(n)] }
     case 'thisQuarter': return [startOfQuarter(today), endOfQuarter(today)]
     case 'thisYear':    return [new Date(today.getFullYear(), 0, 1), new Date(today.getFullYear(), 11, 31)]
     default:       return [today, today]
@@ -132,6 +139,8 @@ const labelText = computed(() => {
     case 'month': return `${MONTHS_LONG[range.value[0].getMonth()]} ${range.value[0].getFullYear()}`
     case 'year': return `${range.value[0].getFullYear()}`
     case 'custom': return 'Custom'
+    case 'thisWeek': return 'This week'
+    case 'nextMonth': return 'Next month'
     case 'thisMonth': return 'This month'
     case 'thisQuarter': return 'This quarter'
     case 'thisYear': return 'This year'
@@ -154,7 +163,9 @@ const labelPrefix = computed(() => {
 
 // ─── Sidebar selection ──────────────────────────────────────────────────────────
 
-const topPresets = computed<{ key: Mode; label: string }[]>(() => props.periodMode
+const topPresets = computed<{ key: Mode; label: string }[]>(() => props.presets
+  ? props.presets
+  : props.periodMode
   ? [
       { key: 'thisMonth', label: 'This month' },
       { key: 'thisQuarter', label: 'This quarter' },
@@ -174,7 +185,9 @@ const topPresets = computed<{ key: Mode; label: string }[]>(() => props.periodMo
       ])
 // `instant` items commit immediately (like the top presets); the rest open a
 // calendar granularity view.
-const granularityPresets = computed<{ key: Mode; label: string; instant?: boolean }[]>(() => props.periodMode
+const granularityPresets = computed<{ key: Mode; label: string; instant?: boolean }[]>(() => props.presets
+  ? [{ key: 'custom', label: 'Custom date range' }]
+  : props.periodMode
   ? [
       { key: 'month', label: 'Per month' },
       { key: 'year', label: 'Per year' },

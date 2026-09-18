@@ -193,6 +193,14 @@ function matchesTagComparator(rowValue: string, comparator: string, picked: stri
   if (comparator === 'isNoneOf') return !picked.includes(rowValue)
   return picked.includes(rowValue)   // isAnyOf / isAllOf collapse to membership for a single-value field
 }
+// AdvancedDateRangePicker emits a [start, end] Date pair (or null = not applied).
+function dayStart(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
+function matchesDateRange(iso: string, range: Date[] | null): boolean {
+  if (!range) return true
+  if (!iso) return false
+  const t = dayStart(new Date(iso)).getTime()
+  return t >= dayStart(range[0]!).getTime() && t <= dayStart(range[1]!).getTime()
+}
 
 // ── Table state (search + Stage filter + saved view + metric + drawer + sort) ──
 const source = computed<Deal[]>(() => deals.filter((d) => matchesView(d) && matchesMetric(d)))
@@ -220,8 +228,9 @@ const {
     const matchesValue = matchesAmountFilter(dealExpectedValue(row), f.valueComparator, f.value, f.valueMin, f.valueMax)
     const matchesOwner = matchesTagComparator(row.owner, f.ownerComparator, f.owners)
     const matchesCustomer = matchesTagComparator(row.company, f.customerComparator, f.customers)
+    const matchesCloseDate = matchesDateRange(row.expectedCloseDate, f.closeDate)
 
-    return matchesStage && matchesSearch && matchesKeyword && matchesValue && matchesOwner && matchesCustomer
+    return matchesStage && matchesSearch && matchesKeyword && matchesValue && matchesOwner && matchesCustomer && matchesCloseDate
   },
 })
 watch(appliedFilters, () => setPage(1))
@@ -233,6 +242,7 @@ const drawerFilterCount = computed(() => {
   if (f.value !== '' || f.valueMin !== '' || f.valueMax !== '') n++
   if (f.owners.length > 0) n++
   if (f.customers.length > 0) n++
+  if (f.closeDate) n++
   return n
 })
 
