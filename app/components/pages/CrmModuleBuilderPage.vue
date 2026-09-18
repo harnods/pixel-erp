@@ -983,7 +983,10 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
               </template>
 
               <template #cell-name="{ row }">
-                <span class="prop-namecell">
+                <span
+                  class="prop-namecell"
+                  :data-devchange="(row as unknown as DealProperty).id === 'customer' ? 'crm-company-property-label' : undefined"
+                >
                   <span class="prop-name">{{ (row as unknown as DealProperty).name }}</span>
                   <span class="prop-varname">{{ (row as unknown as DealProperty).variableName }}</span>
                 </span>

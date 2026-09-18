@@ -1200,7 +1200,7 @@ const MODULES_SEED: CrmModule[] = [
     sections: ['Deal information', 'Products & value'],
     fields: [
       { id: 'name',     label: 'Deal name',          type: 'text',         required: true,  system: true, isPrimary: true, section: 'Deal information', column: 1 },
-      { id: 'customer', label: 'Customer',           type: 'customer',     required: true,  system: true,  section: 'Deal information', column: 1 },
+      { id: 'customer', label: 'Company',            type: 'customer',     required: true,  system: true,  section: 'Deal information', column: 1 },
       { id: 'stage',    label: 'Stage',              type: 'pick-list',    required: true,  system: true,  options: DEAL_STAGE_OPTIONS, section: 'Deal information', column: 2 },
       { id: 'owner',    label: 'Owner',              type: 'user',         required: true,  system: true,  section: 'Deal information', column: 2 },
       { id: 'priority', label: 'Priority',           type: 'pick-list',    required: false, system: false, options: ['Low', 'Medium', 'High', 'Critical'], section: 'Deal information', column: 2 },
@@ -1226,7 +1226,7 @@ const MODULES_SEED: CrmModule[] = [
     sections: ['Service information', 'Scope & value'],
     fields: [
       { id: 'name',     label: 'Service name',       type: 'text',      required: true,  system: true, isPrimary: true, section: 'Service information', column: 1 },
-      { id: 'customer', label: 'Customer',           type: 'customer',  required: true,  system: true,  section: 'Service information', column: 1 },
+      { id: 'customer', label: 'Company',            type: 'customer',  required: true,  system: true,  section: 'Service information', column: 1 },
       { id: 'stage',    label: 'Stage',              type: 'pick-list', required: true,  system: true,  options: ['Inquiry', 'Scoping', 'Proposal', 'In progress', 'Completed', 'Cancelled'], section: 'Service information', column: 2 },
       { id: 'owner',    label: 'Owner',              type: 'user',      required: true,  system: true,  section: 'Service information', column: 2 },
       { id: 'type',     label: 'Service type',       type: 'pick-list', required: false, system: false, options: ['Consultation', 'Machine service', 'Training', 'Installation'], section: 'Service information', column: 2 },
@@ -1510,7 +1510,7 @@ export function defaultPropertyIcon(fieldType: string): string {
 // them). Association types (Company / Contact) reference another record — their
 // linkedFields live on that record, not on the module.
 export const DEFAULT_PROPERTIES: DefaultProperty[] = [
-  { id: 'customer', name: 'Customer', fieldType: 'Company', variableName: 'customer', description: 'The company this record belongs to. Links to a Company record; its own fields live on the company.', dataSource: { label: 'Companies (crmCustomers)', origin: 'crm' }, linkedFields: [
+  { id: 'customer', name: 'Company', fieldType: 'Company', variableName: 'customer', description: 'The company this record belongs to. Links to a Company record; its own fields live on the company.', dataSource: { label: 'Companies (crmCustomers)', origin: 'crm' }, linkedFields: [
     { name: 'Company name', type: 'Single-line text', variableName: 'company_name' }, { name: 'Industry', type: 'Dropdown select', variableName: 'industry' },
     { name: 'Address', type: 'Multi-line text', variableName: 'address' }, { name: 'Country', type: 'Dropdown select', variableName: 'country' },
     { name: 'Tax number (NPWP)', type: 'Single-line text', variableName: 'tax_number' }, { name: 'Company owner', type: 'User', variableName: 'company_owner' },
@@ -1679,7 +1679,10 @@ const DEAL_PROPERTIES_SEED: DealProperty[] = withDefaultProperties(
     id: propId(name), name, variableName: toVariableName(name), type, system: true, fillRate,
   })),
 )
-export const dealProperties = reactive<DealProperty[]>(load('crm-deal-properties-v8', DEAL_PROPERTIES_SEED))
+function normalizeDealProperties(list: DealProperty[]): DealProperty[] {
+  return list.map((p) => (p.id === 'customer' && p.name === 'Customer' ? { ...p, name: 'Company' } : p))
+}
+export const dealProperties = reactive<DealProperty[]>(normalizeDealProperties(load('crm-deal-properties-v8', DEAL_PROPERTIES_SEED)))
 export function persistDealProperties() { saveSnapshot('crm-deal-properties-v8', dealProperties) }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1737,7 +1740,7 @@ const SERVICE_PROPERTIES_SEED: DealProperty[] = withDefaultProperties(
     id: propId(name), name, variableName: toVariableName(name), type, system: true, fillRate,
   })),
 )
-export const serviceProperties = reactive<DealProperty[]>(load('crm-service-properties-v3', SERVICE_PROPERTIES_SEED))
+export const serviceProperties = reactive<DealProperty[]>(normalizeDealProperties(load('crm-service-properties-v3', SERVICE_PROPERTIES_SEED)))
 export function persistServiceProperties() { saveSnapshot('crm-service-properties-v3', serviceProperties) }
 
 const SERVICE_DETAIL_LAYOUT_SEED: DealDetailLayout = {

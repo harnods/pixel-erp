@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-company-property-label',
+    title: 'Customer property is now Company',
+    description:
+      'The CRM module property formerly labelled Customer is now labelled Company, matching its Company association type and the company-first CRM model.',
+    date: '2026-09-18',
+    files: ['crm.ts', 'CrmModuleBuilderPage.vue'],
+  },
+  {
     id: 'crm-system-property-actions-removed',
     title: 'System properties are read-only',
     description:
