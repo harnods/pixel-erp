@@ -188,6 +188,26 @@ const BOUNDARY_OPTIONS = [
 
       <div class="rs-field">
         <div class="rs-label">
+          <span class="rs-label-text">{{ t('Volatility threshold') }}</span>
+          <span class="rs-label-desc">
+            {{ t('Coefficient of variation above which demand is flagged volatile and spikes are damped.') }}
+          </span>
+        </div>
+        <div class="rs-control">
+          <MpInput
+            v-if="isEditing"
+            id="rs-cv"
+            v-model="draft.volatileCvThreshold"
+            type="number"
+            step="0.1"
+            :class="css({ width: '96px' })"
+          />
+          <span v-else class="rs-value">{{ committed.volatileCvThreshold }}</span>
+        </div>
+      </div>
+
+      <div class="rs-field">
+        <div class="rs-label">
           <span class="rs-label-text">{{ t('Cold-start threshold') }}</span>
           <span class="rs-label-desc">
             {{ t('Days of sales history a product needs before it is measured from its own sales. Below this, it goes to Needs setup unless someone sets its demand by hand.') }}
@@ -484,25 +504,6 @@ const BOUNDARY_OPTIONS = [
         </div>
       </div>
 
-      <div class="rs-field">
-        <div class="rs-label">
-          <span class="rs-label-text">{{ t('Volatility threshold') }}</span>
-          <span class="rs-label-desc">
-            {{ t('Coefficient of variation above which demand is flagged volatile and spikes are damped.') }}
-          </span>
-        </div>
-        <div class="rs-control">
-          <MpInput
-            v-if="isEditing"
-            id="rs-cv"
-            v-model="draft.volatileCvThreshold"
-            type="number"
-            step="0.1"
-            :class="css({ width: '96px' })"
-          />
-          <span v-else class="rs-value">{{ committed.volatileCvThreshold }}</span>
-        </div>
-      </div>
 
       <!-- ── Automation ── -->
       <h3 class="rs-sub rs-sub--spaced">{{ t('Automation') }}</h3>
