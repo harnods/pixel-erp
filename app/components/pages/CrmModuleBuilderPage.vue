@@ -30,7 +30,7 @@ import {
   CRM_FIELD_TYPE_LABELS, CRM_MODULE_ICONS,
   moduleStores, isDealLikeModule, resetGenericModuleDraft, canEditModule,
   DEAL_PROPERTY_TYPE_ICON, isRelatedListType,
-  deals,
+  deals, CRM_CURRENT_USER,
   crmTeams, teamsForModule, setModuleTeams,
   publishCrmModule, unpublishCrmModule,
   type DealProperty, type DealPropertyType, type DealPropertyConfig, type Deal,
@@ -376,17 +376,30 @@ const propTypeOptions = computed(() => {
     .filter((p) => (seen.has(p.type) ? false : (seen.add(p.type), true)))
     .map((p) => ({ value: p.type, label: p.type }))
 })
+function propCreatedByLabel(p: DealProperty): string {
+  return (p.isDefault || p.system) ? 'System' : (p.createdBy || CRM_CURRENT_USER)
+}
+const propCreatedByFilter = ref('')
+const propCreatedByOptions = computed(() => {
+  const names = new Set(propList.value.map(propCreatedByLabel))
+  return [...names].map((name) => ({ value: name, label: t(name) }))
+})
+const propFilteredByCreator = computed(() => {
+  if (!propCreatedByFilter.value) return propList.value
+  return propList.value.filter((p) => propCreatedByLabel(p) === propCreatedByFilter.value)
+})
 const {
   search: propSearch, statusFilter: propTypeFilter, paginated: propPaginated, total: propTotal,
   currentPage: propPage, perPage: propPerPage, sortKey: propSortKey, sortDir: propSortDir,
   setPage: propSetPage, setPerPage: propSetPerPage, toggleSort: propToggleSort, setSort: propSetSort,
-} = useTableState<DealProperty>(propList, {
+} = useTableState<DealProperty>(propFilteredByCreator, {
   filterFn: (row, s, status) =>
     (!s || row.name.toLowerCase().includes(s)) && (!status || row.type === status),
   defaultSort: { key: 'name', dir: 'asc' },
 })
-const propHasFilter = computed(() => !!propSearch.value || !!propTypeFilter.value)
-function clearPropFilters() { propSearch.value = ''; propTypeFilter.value = '' }
+watch(propCreatedByFilter, () => propSetPage(1))
+const propHasFilter = computed(() => !!propSearch.value || !!propTypeFilter.value || !!propCreatedByFilter.value)
+function clearPropFilters() { propSearch.value = ''; propTypeFilter.value = ''; propCreatedByFilter.value = '' }
 const PROP_COLUMNS: TableColumn[] = [
   // Explicit 360px width for this table only (escape hatch) — property names run long.
   { key: 'name',      label: 'Name',       width: '360px', sortable: true, sortType: 'text' },
@@ -411,7 +424,8 @@ function onPropertySave(payload: { name: string; variableName: string; type: Dea
   } else {
     propList.value = [...propList.value, {
       id: `p-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
-      name: payload.name, variableName: payload.variableName, type: payload.type, system: false, fillRate: 0, config: payload.config,
+      name: payload.name, variableName: payload.variableName, type: payload.type, system: false, fillRate: 0,
+      createdBy: CRM_CURRENT_USER, config: payload.config,
     }]
   }
   propDrawerOpen.value = false
@@ -422,7 +436,8 @@ function onPropertySave(payload: { name: string; variableName: string; type: Dea
 function createDealProperty(payload: { name: string; variableName: string; type: DealPropertyType; config: DealPropertyConfig }): DealProperty {
   const np: DealProperty = {
     id: `p-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
-    name: payload.name, variableName: payload.variableName, type: payload.type, system: false, fillRate: 0, config: payload.config,
+    name: payload.name, variableName: payload.variableName, type: payload.type, system: false, fillRate: 0,
+    createdBy: CRM_CURRENT_USER, config: payload.config,
   }
   propList.value = [...propList.value, np]
   return np
@@ -942,6 +957,13 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                     :options="propTypeOptions"
                     @update:model-value="(v: string) => (propTypeFilter = v)"
                   />
+                  <ErpFilterSelect
+                    id="prop-created-by-filter"
+                    :model-value="propCreatedByFilter"
+                    :placeholder="t('Created by')"
+                    :options="propCreatedByOptions"
+                    @update:model-value="(v: string) => (propCreatedByFilter = v)"
+                  />
                 </div>
                 <div class="filter-right">
                   <div class="filter-search">
@@ -962,7 +984,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
               <template #cell-type="{ row }">
                 <span class="prop-type"><MpIcon :name="DEAL_PROPERTY_TYPE_ICON[(row as unknown as DealProperty).type]" size="sm" class="prop-type-icon" />{{ (row as unknown as DealProperty).type }}</span>
               </template>
-              <template #cell-createdBy="{ row }">{{ t(((row as unknown as DealProperty).isDefault || (row as unknown as DealProperty).system) ? 'System' : 'You') }}</template>
+              <template #cell-createdBy="{ row }">{{ t(propCreatedByLabel(row as unknown as DealProperty)) }}</template>
               <template #cell-fillRate="{ row }">{{ (row as unknown as DealProperty).fillRate }}%</template>
 
               <!-- Default properties (from the master library) + related lists are non-editable. -->

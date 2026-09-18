@@ -1585,6 +1585,8 @@ export interface DealProperty {
   /** True for the predefined DEFAULT properties (from DEFAULT_PROPERTIES) that every
    *  module gets — non-editable in the module builder, listed in Settings ▸ Properties. */
   isDefault?: boolean
+  /** User who created a custom property. System/default properties omit this. */
+  createdBy?: string
   config?: DealPropertyConfig
 }
 function propId(name: string): string { return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }
