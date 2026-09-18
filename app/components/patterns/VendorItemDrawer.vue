@@ -31,6 +31,7 @@ import { toast, MpIcon, MpInput, MpSelect, css } from '@mekari/pixel3'
 import {
   vendorItemsForSku, upsertVendorItem, setPreferredVendor, deactivateVendorItem,
 } from '~/data/vendorItems'
+import { recommendPreferredVendor } from '~/data/vendorRecommendation'
 import { vendors } from '~/data/vendors'
 import { productBySku } from '~/data/inventory'
 import { unitOptionsForSku, factorFor, baseUnitFor } from '~/data/productUnits'
@@ -64,6 +65,34 @@ const addableVendors = computed(() => {
   return vendors.filter((v) => !taken.has(v.id))
 })
 
+// ── Airene: preferred-vendor recommendation ───────────────────────────────────
+// The list of vendors here grows on its own as purchases are made, so with more
+// than one linked vendor the buyer can be unsure which to prefer. Airene scores
+// them on lead time, price, MOQ and purchase history and names one, live off the
+// current (possibly edited-but-unsaved) terms.
+const showReasons = ref(false)
+const recommendation = computed(() => {
+  if (!props.sku || rows.value.length < 2) return null
+  return recommendPreferredVendor(props.sku, rows.value.map((r) => ({
+    vendorId: r.vendorId,
+    leadTimeDays: Number(r.leadTimeDays) || 0,
+    moq: Number(r.moq) || 0,
+    unitCost: Number(r.unitCost) || 0,
+    unitsPerPurchaseUnit: r.unitsPerPurchaseUnit,
+  })))
+})
+const recommendedRow = computed(() => recommendation.value?.scores.find((s) => s.isRecommended) ?? null)
+const recommendedIsDefault = computed(() => {
+  const id = recommendation.value?.recommendedVendorId
+  return !!id && rows.value.some((r) => r.vendorId === id && r.isPreferred)
+})
+function applyRecommendation() {
+  const id = recommendation.value?.recommendedVendorId
+  if (!id) return
+  const i = rows.value.findIndex((r) => r.vendorId === id)
+  if (i >= 0) makeDefault(i)
+}
+
 function load() {
   if (!props.sku) return
   rows.value = vendorItemsForSku(props.sku).map((v) => ({
@@ -80,6 +109,7 @@ function load() {
   }))
   removed.value = []
   error.value = ''
+  showReasons.value = false
 }
 watch(() => props.isOpen, (open) => { if (open) load() })
 
@@ -241,7 +271,34 @@ function save() {
             {{ t('No vendor supplies this product yet, so it cannot be ordered. Add one to include it in the worklist.') }}
           </p>
 
-          <table v-else class="rp-vi-table">
+          <!-- Airene preferred-vendor recommendation — only with something to choose between. -->
+          <div v-if="recommendation && recommendedRow" class="rp-vi-ai">
+            <div class="rp-vi-ai-head">
+              <MpIcon name="airene-brand" size="sm" class="rp-vi-ai-icon" />
+              <span class="rp-vi-ai-text">
+                {{ t('Airene recommends') }}
+                <strong>{{ recommendedRow.vendorName }}</strong>
+                {{ t('as the preferred vendor') }}
+              </span>
+              <button type="button" class="rp-vi-ai-why" @click="showReasons = !showReasons">
+                {{ showReasons ? t('Hide') : t('Why?') }}
+              </button>
+              <button
+                v-if="!recommendedIsDefault"
+                type="button"
+                class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+                @click="applyRecommendation"
+              >{{ t('Set as preferred') }}</button>
+            </div>
+            <ul v-if="showReasons" class="rp-vi-ai-reasons">
+              <li v-for="reason in recommendedRow.reasons" :key="reason">{{ reason }}</li>
+              <li class="rp-vi-ai-weights">
+                {{ t('Weighed lead time, price, minimum order and purchase history.') }}
+              </li>
+            </ul>
+          </div>
+
+          <table v-if="rows.length" class="rp-vi-table">
             <thead>
               <tr>
                 <th class="rp-vi-th">{{ t('Vendor') }}</th>
@@ -268,6 +325,13 @@ function save() {
                   </MpSelect>
                   <template v-else>
                     <span class="rp-vi-vendor">{{ vendors.find(v => v.id === row.vendorId)?.name ?? row.vendorId }}</span>
+                    <span
+                      v-if="recommendation && row.vendorId === recommendation.recommendedVendorId"
+                      class="rp-vi-ai-chip"
+                      :title="t('Airene\'s recommended preferred vendor')"
+                    >
+                      <MpIcon name="airene-brand" size="sm" /> {{ t('AI pick') }}
+                    </span>
                   </template>
                 </td>
                 <td class="rp-vi-td rp-vi-td--num">
@@ -394,6 +458,40 @@ function save() {
   background: var(--mp-background-neutral-subtle);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
 }
+
+/* ── Airene recommendation ── */
+.rp-vi-ai {
+  margin-bottom: var(--mp-spacing-4);
+  border: 1px solid var(--mp-border-info, #b9d6ff);
+  border-radius: var(--mp-radii-md);
+  background: var(--mp-background-info-subtle, #f0f6ff);
+  padding: var(--mp-spacing-3);
+}
+.rp-vi-ai-head { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
+.rp-vi-ai-icon { color: var(--mp-icon-info, #2d6cdf); flex-shrink: 0; }
+.rp-vi-ai-text { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
+.rp-vi-ai-why {
+  border: none; background: none; cursor: pointer; padding: 0;
+  color: var(--mp-text-link); font-size: var(--mp-font-sizes-sm);
+}
+.rp-vi-ai-why:hover { text-decoration: underline; }
+.rp-vi-ai-head .btn-enterprise { margin-left: auto; }
+.rp-vi-ai-reasons {
+  margin: var(--mp-spacing-2) 0 0; padding-left: var(--mp-spacing-5);
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
+}
+.rp-vi-ai-reasons li { margin-top: 2px; }
+.rp-vi-ai-weights { color: var(--mp-text-tertiary, var(--mp-text-secondary)); }
+.rp-vi-ai-chip {
+  display: inline-flex; align-items: center; gap: 2px; margin-left: var(--mp-spacing-2);
+  padding: 0 var(--mp-spacing-1\.5, 6px); height: 20px;
+  border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-info-subtle, #f0f6ff);
+  color: var(--mp-text-info, #2d6cdf);
+  font-size: var(--mp-font-sizes-xs, 12px); font-weight: var(--mp-font-weights-medium, 500);
+  white-space: nowrap; vertical-align: middle;
+}
+.rp-vi-ai-chip :deep(svg) { width: 12px; height: 12px; }
 
 .rp-vi-table { width: 100%; border-collapse: collapse; }
 .rp-vi-th {

@@ -3767,6 +3767,15 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'No vendor': 'Tanpa vendor',
   'Volatile': 'Fluktuatif',
   'Provisional': 'Sementara',
+  // ── Vendor drawer — Airene preferred-vendor recommendation ──────────────────
+  'Airene recommends': 'Airene merekomendasikan',
+  'as the preferred vendor': 'sebagai vendor pilihan',
+  'Why?': 'Kenapa?',
+  'Set as preferred': 'Jadikan pilihan utama',
+  'AI pick': 'Pilihan AI',
+  "Airene's recommended preferred vendor": 'Vendor pilihan yang direkomendasikan Airene',
+  'Weighed lead time, price, minimum order and purchase history.':
+    'Menimbang waktu tunggu, harga, pesanan minimum, dan riwayat pembelian.',
   'Volatile demand': 'Permintaan fluktuatif',
   'On order': 'Dalam pemesanan',
   'No recent sales': 'Belum ada penjualan terbaru',
