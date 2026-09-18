@@ -632,6 +632,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
     :product-name="viewBatchItem.productName"
     :product-img="viewBatchItem.image"
     :verified-qty="verifiedCount(viewBatchItem)"
+    :verified-batches="verifiedBatchQty[viewBatchItem.key] ?? {}"
     @scan="handleScan"
     @update:open="viewBatchItem = null"
   />

@@ -88,6 +88,13 @@ const props = defineProps<{
    *  this line. When provided, the drawer shows a scan bar (emits 'scan') and a
    *  "Verified x/y" stat so the operator confirms each batch matches the pick. */
   verifiedQty?: number
+  /** Packing match-order verify mode: the PER-BATCH breakdown of verifiedQty
+   *  (batchNo → units scanned so far). When given, the table gains a "Packed qty"
+   *  column beside "Picked qty" that starts at 0 and climbs as each batch is
+   *  matched — the same two-number shape picking already shows (Qty to pick vs
+   *  Picked qty). Without it the drawer can only report a line total, which says
+   *  how much is left to match but not WHICH batch still needs scanning. */
+  verifiedBatches?: Record<string, number>
   /** Count mode only — hides the On hand qty stat/column (and Difference, which is
    *  derived from it) while a cycle count is still blind — the operator shouldn't
    *  be able to see the system's on-hand record before the count reaches Awaiting
@@ -99,6 +106,9 @@ const emit = defineEmits<{ 'update:open': [boolean]; scan: [string] }>()
 const { t } = useLocale()
 function onScan(raw: string) { emit('scan', raw) }
 const isVerify = computed(() => props.verifiedQty !== undefined)
+/** Verify mode with the per-batch breakdown to render — a caller that only tracks a
+ *  line total keeps the single-column table it had. */
+const hasVerifiedCol = computed(() => isVerify.value && props.verifiedBatches !== undefined)
 const qtyLabel = computed(() => props.qtyLabel ?? 'Picked qty')
 const plannedQtyLabel = computed(() => props.plannedQtyLabel ?? 'Qty to pick')
 // batchPicks is ONE field, not "plan" + "actual" side by side — endPicking/
@@ -129,6 +139,7 @@ interface BatchRow {
   onHand: number
   value: number        // counted qty (count mode), delta (in-out mode), OR picked qty (packing) — THIS ROW's own bin, if split
   plannedValue: number // packing + plannedBatches only: this batch's original planned qty (merges across a batch's own bin-rows)
+  verifiedValue: number // packing verify only: units of THIS batch scanned/matched so far (0 until it is)
   newOnHand: number    // only used in in-out mode
   unit: string
   location?: string
@@ -157,17 +168,27 @@ function expandByBin(
   const bins = (destLocations ?? []).filter((d) => d.qty > 0)
   if (!bins.length) {
     return [{
-      batchNo, expiryDate, desc, onHand: 0, value: fallbackValue, plannedValue, newOnHand: 0,
+      batchNo, expiryDate, desc, onHand: 0, value: fallbackValue, plannedValue, verifiedValue: 0, newOnHand: 0,
       unit, location: fallbackLocation, bin: fallbackLocation ?? null, groupIndex: 0, groupSize: 1,
     }]
   }
   return bins.map((d, bIdx) => ({
-    batchNo, expiryDate, desc, onHand: 0, value: d.qty, plannedValue, newOnHand: 0,
+    batchNo, expiryDate, desc, onHand: 0, value: d.qty, plannedValue, verifiedValue: 0, newOnHand: 0,
     unit, bin: d.locationId, groupIndex: bIdx, groupSize: bins.length,
   }))
 }
 
+/** Rows as built by the branches below, with each batch's verified (scanned) qty
+ *  attached. Kept as a wrapper so every packing branch — planned/picked union or
+ *  plain picked list — picks it up without repeating the lookup. */
 const rows = computed<BatchRow[]>(() => {
+  const built = buildRows()
+  if (!hasVerifiedCol.value) return built
+  const verified = props.verifiedBatches ?? {}
+  return built.map(r => ({ ...r, verifiedValue: verified[r.batchNo] ?? 0 }))
+})
+
+function buildRows(): BatchRow[] {
   // Packing: show the exact batches picked for this line, as-is — no derivation
   // from live warehouse stock, no on-hand/new-on-hand concept.
   if (isPacking.value) {
@@ -220,6 +241,7 @@ const rows = computed<BatchRow[]>(() => {
         onHand: b.onHand,
         value: delta,
         plannedValue: 0,
+        verifiedValue: 0,
         newOnHand: b.onHand + delta,
         unit,
         bin: null, groupIndex: 0, groupSize: 1,
@@ -236,11 +258,12 @@ const rows = computed<BatchRow[]>(() => {
     onHand: b.onHand,
     value: totalOnHand > 0 ? Math.round((b.onHand / totalOnHand) * counted) : 0,
     plannedValue: 0,
+    verifiedValue: 0,
     newOnHand: 0,
     unit,
     bin: null, groupIndex: 0, groupSize: 1,
   }))
-})
+}
 
 // Column separators only when a batch actually splits across 2+ bins (put-away) —
 // a non-split table (count / in-out / single-bin) must have no left/right borders.
@@ -369,6 +392,7 @@ function close() { emit('update:open', false) }
                 <col v-if="hasPlanned" class="vbd-col-num" />
               </template>
               <col class="vbd-col-num" />
+              <col v-if="hasVerifiedCol" class="vbd-col-num" />
               <template v-if="isInOut"><col class="vbd-col-num" /></template>
               <col class="vbd-col-unit" />
             </colgroup>
@@ -387,6 +411,7 @@ function close() { emit('update:open', false) }
                   <th v-if="hasPlanned" class="vbd-th vbd-th--num">{{ t(plannedQtyLabel) }}</th>
                 </template>
                 <th v-if="isPacking" class="vbd-th vbd-th--num">{{ t(hasPlanned ? qtyLabel : tableQtyLabel) }}</th>
+                <th v-if="hasVerifiedCol" class="vbd-th vbd-th--num">{{ t('Packed qty') }}</th>
                 <th v-if="!isPacking && !isInOut" class="vbd-th vbd-th--num">{{ t('Counted qty') }}</th>
                 <template v-if="!isPacking && isInOut">
                   <th class="vbd-th vbd-th--num">{{ t('Stock in/out qty') }}</th>
@@ -410,6 +435,9 @@ function close() { emit('update:open', false) }
                   <td v-if="hasPlanned && row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--num">{{ fmt(row.plannedValue) }}</td>
                 </template>
                 <td v-if="isPacking || !isInOut" class="vbd-td vbd-td--num">{{ fmt(row.value) }}</td>
+                <td v-if="hasVerifiedCol" class="vbd-td vbd-td--num">
+                  <span :class="row.verifiedValue >= row.value ? 'vbd-qty--done' : 'vbd-qty--pending'">{{ fmt(row.verifiedValue) }}</span>
+                </td>
                 <template v-if="!isPacking && isInOut">
                   <td class="vbd-td vbd-td--num" :class="{ 'vbd-diff--pos': row.value > 0, 'vbd-diff--neg': row.value < 0 }">
                     {{ fmtDelta(row.value) }}
@@ -419,7 +447,7 @@ function close() { emit('update:open', false) }
                 <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted vbd-td--unit">{{ row.unit }}</td>
               </tr>
               <tr v-if="!rows.length" class="vbd-tr">
-                <td :colspan="isPacking ? (hasPlanned ? 7 : (isVerify ? 5 : 6)) : (isInOut ? 7 : 6)" class="vbd-td vbd-td--empty">{{ t('No batch data available.') }}</td>
+                <td :colspan="(isPacking ? (hasPlanned ? 7 : (isVerify ? 5 : 6)) : (isInOut ? 7 : 6)) + (hasVerifiedCol ? 1 : 0)" class="vbd-td vbd-td--empty">{{ t('No batch data available.') }}</td>
               </tr>
             </tbody>
           </table>
@@ -433,6 +461,10 @@ function close() { emit('update:open', false) }
 </template>
 
 <style scoped>
+/* Matched qty: green once this batch is fully accounted for, muted while it still
+   owes a scan — same read as the packed/picked qty states on the task pages. */
+.vbd-qty--done { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium, 500); }
+.vbd-qty--pending { color: var(--mp-text-placeholder); }
 .vbd-enter-active,
 .vbd-leave-active { transition: background-color 250ms ease; }
 .vbd-enter-from, .vbd-leave-to { background-color: transparent; }
