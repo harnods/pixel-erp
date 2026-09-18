@@ -11,20 +11,42 @@
 
       <!-- Nav groups -->
       <div v-for="(group, gi) in navGroups" :key="gi" class="nav-group">
-        <button
-          v-for="item in group"
-          :key="item.name"
-          class="nav-item"
-          :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
-          v-tooltip="{ label: navItemTooltip(item) || '', placement: 'right' }"
-          @click="() => handleNavClick(item)"
-          @mouseenter="(e) => handleItemMouseEnter(e, item)"
-          @mouseleave="scheduleClose"
-        >
-          <img :src="`https://cdn.mekari.design/icons/${item.iconLine ?? item.icon + '-outline'}.svg`" class="nav-icon-line" alt="" />
-          <img :src="`https://cdn.mekari.design/icons/${item.iconFill ?? item.icon + '-fill'}.svg`" class="nav-icon-fill" alt="" />
-          <span class="nav-label">{{ t(item.name) }}</span>
-        </button>
+        <template v-for="item in group" :key="item.name">
+          <!-- Collapsed rail: styled Pixel tooltip on hover. Rendered only when a
+               tooltip is wanted (see navItemTooltip) so an excluded/active item
+               carries no tooltip node at all — avoids a stale empty tooltip box. -->
+          <MpTooltip
+            v-if="navItemTooltip(item)"
+            :id="`erp-nav-tt-${item.name}`"
+            :label="navItemTooltip(item)!"
+            placement="right"
+            use-portal
+          >
+            <button
+              class="nav-item"
+              :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
+              @click="() => handleNavClick(item)"
+              @mouseenter="(e) => handleItemMouseEnter(e, item)"
+              @mouseleave="scheduleClose"
+            >
+              <img :src="`https://cdn.mekari.design/icons/${item.iconLine ?? item.icon + '-outline'}.svg`" class="nav-icon-line" alt="" />
+              <img :src="`https://cdn.mekari.design/icons/${item.iconFill ?? item.icon + '-fill'}.svg`" class="nav-icon-fill" alt="" />
+              <span class="nav-label">{{ t(item.name) }}</span>
+            </button>
+          </MpTooltip>
+          <button
+            v-else
+            class="nav-item"
+            :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
+            @click="() => handleNavClick(item)"
+            @mouseenter="(e) => handleItemMouseEnter(e, item)"
+            @mouseleave="scheduleClose"
+          >
+            <img :src="`https://cdn.mekari.design/icons/${item.iconLine ?? item.icon + '-outline'}.svg`" class="nav-icon-line" alt="" />
+            <img :src="`https://cdn.mekari.design/icons/${item.iconFill ?? item.icon + '-fill'}.svg`" class="nav-icon-fill" alt="" />
+            <span class="nav-label">{{ t(item.name) }}</span>
+          </button>
+        </template>
       </div>
     </nav>
 
@@ -120,7 +142,7 @@
 </template>
 
 <script setup lang="ts">
-import { MpIcon, MpBadge } from '@mekari/pixel3'
+import { MpIcon, MpBadge, MpTooltip } from '@mekari/pixel3'
 import toggleIconUrl from '~/assets/images/sidebar-toggle.svg?url'
 import shortcutIconUrl from '~/assets/images/shortcut-icon.svg?url'
 import { receiptCountsByStage } from '~/data/receipts'
@@ -312,7 +334,7 @@ const flyoutGroups = computed<SubItem[][]>(
   () => flyoutItem.value?.submenu ?? (flyoutItem.value?.panelSubmenu as SubItem[][] | undefined) ?? [],
 )
 
-// Collapsed-rail hover tooltip (Pixel v-tooltip directive). Only relevant while the
+// Collapsed-rail hover tooltip (Pixel MpTooltip component). Only relevant while the
 // nav is collapsed to icons — once expanded the label is already visible next to
 // the icon. Skipped for the active item when it owns a level-2 menu (submenu or
 // panelSubmenu): that item already has its flyout/panel open showing its name,
