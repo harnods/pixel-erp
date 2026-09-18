@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-property-created-by-filter',
+    title: 'Filter properties by creator',
+    description:
+      'Module Properties now has a Created by filter. System/default properties stay grouped as System, while custom properties are tracked by creator name so admins can filter properties made by each user.',
+    date: '2026-09-18',
+    files: ['CrmModuleBuilderPage.vue', 'crm.ts'],
+  },
+  {
     id: 'deal-unit-readonly',
     title: 'Unit column is now read-only',
     description:

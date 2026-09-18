@@ -959,6 +959,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                   />
                   <ErpFilterSelect
                     id="prop-created-by-filter"
+                    data-devchange="crm-property-created-by-filter"
                     :model-value="propCreatedByFilter"
                     :placeholder="t('Created by')"
                     :options="propCreatedByOptions"
