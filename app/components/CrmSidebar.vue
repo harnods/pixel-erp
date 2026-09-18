@@ -103,6 +103,18 @@ function handleNavClick(item: Item) { router.push(item.children?.length ? item.c
 const dealsModuleName = computed(() => getCrmModule('deals')?.name || t('Deals'))
 function navLabel(item: Item): string { return item.to === '/crm/deals' ? dealsModuleName.value : t(item.name) }
 function navIcon(item: Item): string { return item.to === '/crm/deals' ? (getCrmModule('deals')?.icon || item.icon) : item.icon }
+
+// Collapsed-rail hover tooltip. Only relevant while the rail is collapsed to
+// icons (navExpanded false) — once expanded the label is already visible. The
+// active item is skipped when it has a level-2 panel (children): that panel is
+// already open naming it, so the tooltip would be redundant. An inactive item
+// with children still gets the tooltip.
+function navItemTooltip(item: Item): string | undefined {
+  if (navExpanded.value) return undefined
+  const isActive = activeItem.value === item.name
+  if (isActive && item.children?.length) return undefined
+  return navLabel(item)
+}
 </script>
 
 <template>
@@ -123,7 +135,7 @@ function navIcon(item: Item): string { return item.to === '/crm/deals' ? (getCrm
           class="nav-item"
           :class="{ active: activeItem === item.name }"
           :data-devchange="item.name === 'Settings' ? 'crm-settings-properties-hidden' : undefined"
-          :title="navLabel(item)"
+          :title="navItemTooltip(item)"
           type="button"
           @click="handleNavClick(item)"
         >

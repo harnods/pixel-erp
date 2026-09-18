@@ -16,7 +16,7 @@
           :key="item.name"
           class="nav-item"
           :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
-          :title="t(item.name)"
+          :title="navItemTooltip(item)"
           @click="() => handleNavClick(item)"
           @mouseenter="(e) => handleItemMouseEnter(e, item)"
           @mouseleave="scheduleClose"
@@ -311,6 +311,20 @@ const arrowPointsLeft = computed(() => navExpanded.value || (!!activePanel.value
 const flyoutGroups = computed<SubItem[][]>(
   () => flyoutItem.value?.submenu ?? (flyoutItem.value?.panelSubmenu as SubItem[][] | undefined) ?? [],
 )
+
+// Collapsed-rail hover tooltip (native title attribute). Only relevant while the
+// nav is collapsed to icons — once expanded the label is already visible next to
+// the icon. Skipped for the active item when it owns a level-2 menu (submenu or
+// panelSubmenu): that item already has its flyout/panel open showing its name,
+// so a duplicate tooltip is redundant. An inactive item with a level-2 menu still
+// gets the tooltip, since nothing else is naming it yet.
+function navItemTooltip(item: NavItem) {
+  if (navExpanded.value) return undefined
+  const hasLevel2 = !!(item.submenu || item.panelSubmenu)
+  const isActive = activeItem.value === item.name
+  if (isActive && hasLevel2) return undefined
+  return t(item.name)
+}
 
 // ─── Nav data ────────────────────────────────────────────────────────────────
 

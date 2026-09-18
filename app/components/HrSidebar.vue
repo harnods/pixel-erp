@@ -109,6 +109,18 @@ function handlePanelSubItemClick(sub: SubItem) {
   router.push(sub.to)
 }
 
+// Collapsed-rail hover tooltip. Only relevant while the rail is collapsed to
+// icons (railExpanded false) — once expanded the label is already visible. The
+// active item is skipped when it has a level-2 submenu: its flyout/panel is
+// already open naming it, so the tooltip would be redundant. An inactive item
+// with a submenu still gets the tooltip.
+function navItemTooltip(item: Item): string | undefined {
+  if (railExpanded.value) return undefined
+  const isActive = activeItem.value === item.name
+  if (isActive && item.submenu) return undefined
+  return item.name
+}
+
 // ── Employee-profile level-2 menu (shown when viewing an employee detail) ──────
 interface ProfileItem { label: string; view?: string; children?: { label: string; view: string }[] }
 const PROFILE_MENU: ProfileItem[] = [
@@ -198,7 +210,7 @@ function goView(view?: string) {
           :key="item.name"
           class="nav-item"
           :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
-          :title="item.name"
+          :title="navItemTooltip(item)"
           @click="handleNavClick(item)"
           @mouseenter="(e) => handleItemMouseEnter(e, item)"
           @mouseleave="scheduleClose"
