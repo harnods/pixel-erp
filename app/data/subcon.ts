@@ -97,6 +97,7 @@ export type SubconDocKind =
   | 'purchaseOrder' // the PR, approved and ordered from the vendor
   | 'purchaseDelivery' // the vendor's delivery back — each one produces FG
   | 'purchaseInvoice'  // the vendor's bill for the subcon work, raised against the PO
+  | 'componentIssue'   // stock adjustment OUT — components issued into the vendor's process
   | 'receipt'       // goods receipt back from the vendor
 
 export interface SubconDocStep {
@@ -104,7 +105,7 @@ export interface SubconDocStep {
   /** Short document-type tag. With the "What it does" column gone from the work
    *  order's Documents table, this is what tells the three purchase documents
    *  apart at a glance. */
-  tag: 'PR' | 'PO' | 'PD' | 'PI' | 'Transfer' | 'Receipt'
+  tag: 'PR' | 'PO' | 'PD' | 'PI' | 'SA' | 'Transfer' | 'Receipt'
   title: string
   /** One line explaining what this document does in the chain. */
   detail: string
@@ -122,6 +123,7 @@ export const SUBCON_DOC_TYPE_LABEL: Record<SubconDocStep['tag'], string> = {
   PO: 'Purchase Order',
   PD: 'Purchase Delivery',
   PI: 'Purchase Invoice',
+  SA: 'Stock Adjustment',
   Transfer: 'Warehouse Transfer',
   Receipt: 'Goods Receipt',
 }
@@ -177,6 +179,11 @@ const DOC_STEPS: Record<SubconDocKind, Omit<SubconDocStep, 'kind'>> = {
     title: 'Purchase invoice',
     detail: "The vendor's bill for the subcon work, raised once the order is closed",
   },
+  componentIssue: {
+    tag: 'SA', module: 'Warehouse',
+    title: 'Component stock issue',
+    detail: 'Components issued out of the subcon warehouse when the work order starts',
+  },
   receipt: {
     tag: 'Receipt', module: 'Warehouse',
     title: 'Goods receipt',
@@ -203,15 +210,22 @@ export function buildDocumentPlan(
   const kinds: SubconDocKind[] = []
 
   if (scope === 'finished-good') {
+    // Supply first: the vendor cannot start without materials, and the service
+    // request is for work on materials that are already there.
     if (method === 'dropship') kinds.push('componentPr')
-    kinds.push('subconPr')
     if (method === 'resupply') kinds.push('transfer')
+    kinds.push('subconPr')
   } else {
     if (split === 'partial') kinds.push('purchasePr')
     if (method === 'dropship') kinds.push('rawPr')
     if (method === 'resupply') kinds.push('rawTransfer')
     kinds.push('processPr')
   }
+  // Starting the order issues the components into the vendor's process — a stock
+  // adjustment OUT of the subcon warehouse. A `basic` order has none: the vendor
+  // works from its own stock, so there is no company inventory to issue.
+  if (method !== 'basic') kinds.push('componentIssue')
+
   // The service PR does not end the chain: it is ordered, the vendor delivers
   // against that order, and finally bills for it. Each delivery produces finished
   // goods on the work order — which is also the goods coming back, so there is no
@@ -302,7 +316,33 @@ export function decodeSubconPrefill(raw: unknown): SubconDocPrefill | null {
  * purchase request, and the delivery from that order. The work order lists them
  * but never offers a Create button for them.
  */
-export const RAISED_ELSEWHERE: SubconDocKind[] = ['purchaseOrder', 'purchaseDelivery', 'purchaseInvoice']
+export const RAISED_ELSEWHERE: SubconDocKind[] = [
+  'purchaseOrder', 'purchaseDelivery', 'purchaseInvoice',
+  // Posted by starting the work order, not chosen from a Create menu.
+  'componentIssue',
+]
+
+/**
+ * The document that puts components into the vendor's hands. Exactly one of
+ * these appears in any plan (none on `basic`, where the vendor uses its own
+ * stock), and it must be raised BEFORE the work order starts: the vendor cannot
+ * begin without materials, and the subcon service request is for work done on
+ * materials that are already there.
+ */
+const COMPONENT_SUPPLY: SubconDocKind[] = ['transfer', 'rawTransfer', 'componentPr', 'rawPr']
+
+export function isComponentSupply(kind: SubconDocKind): boolean {
+  return COMPONENT_SUPPLY.includes(kind)
+}
+
+/** The plan's component-supply step, if this configuration has one. */
+export function componentSupplyStep(
+  scope: SubconScope,
+  split: SubconSplit,
+  method: SubconMethod,
+): SubconDocStep | undefined {
+  return buildDocumentPlan(scope, split, method).find(d => isComponentSupply(d.kind))
+}
 
 /**
  * The component-supply purchase requests — material bought from a 3rd-party

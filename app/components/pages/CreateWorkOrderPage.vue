@@ -200,7 +200,7 @@ function warehouseName(id: string) {
 }
 
 /** A subcon work order cannot raise its supply documents while it is still a draft. */
-const subconGateText = t('Saving this work order creates it as a draft. Start the work order before the subcon purchase request and warehouse transfer can be raised — no supply documents exist until then.')
+const subconGateText = t('Saving this work order creates it as a draft. Supply the vendor first — raise the component transfer or purchase request — then start the work order, which issues the components and unlocks the rest of the run.')
 
 
 const bomNo = computed(() => BOM_OPTIONS.value.find(b => b.id === bomId.value)?.no ?? '')

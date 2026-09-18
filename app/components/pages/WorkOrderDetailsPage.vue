@@ -12,21 +12,23 @@ import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
   MpIcon, MpSelect, MpDatePicker, MpButton, css, toast,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import SubconMethodChip from '~/components/patterns/SubconMethodChip.vue'
 import SubconStageChain from '~/components/patterns/SubconStageChain.vue'
-import StartSubconWorkOrderModal from '~/components/patterns/StartSubconWorkOrderModal.vue'
 import SubconShortfallModal from '~/components/patterns/SubconShortfallModal.vue'
 import CompleteSubconWorkOrderModal, { type SubconComponentUsage } from '~/components/patterns/CompleteSubconWorkOrderModal.vue'
 import {
   buildDocumentPlan, SUBCON_SCOPE_LABEL,
   SUBCON_SERVICE_FEE, SUBCON_HANDLING_FEE, SUBCON_BATCH_QTY,
   encodeSubconPrefill, subconVendorWarehouse, SUBCON_DOC_TYPE_LABEL,
+  isComponentSupply, componentSupplyStep,
   type SubconDocKind, type SubconPrefillLine,
 } from '~/data/subcon'
+import { addAdjustment, stockAdjustments } from '~/data/stockAdjustments'
 import { purchaseRequests } from '~/data/purchaseRequests'
 import { purchaseOrders } from '~/data/purchaseOrders'
 import { purchaseDeliveries } from '~/data/purchaseDeliveries'
@@ -94,7 +96,10 @@ const subconPlan = computed(() => {
   })
 
   const purchaseSteps = plan.filter(p => p.module === 'Purchases')
+  // The stock issue is posted by starting the order, never raised from a menu,
+  // so it is listed but drives no action of its own.
   const transferSteps = plan.filter(p => p.module === 'Warehouse')
+  const started = subconStarted.value
 
   const rows: {
     key: string
@@ -119,17 +124,26 @@ const subconPlan = computed(() => {
     const anyRequestRaised = requestSteps.some(p => isRaised(p.kind))
 
     const actions: { kind: SubconDocKind; label: string }[] = []
-    if (pendingRequest) actions.push({ kind: pendingRequest.kind, label: t('Create purchase request') })
-    if (anyRequestRaised && !isRaised('purchaseOrder')) {
-      actions.push({ kind: 'purchaseOrder', label: t('Create purchase order') })
-    }
-    if (isRaised('purchaseOrder')) {
-      // Deliveries repeat — several of them close one work order out — so this
-      // one stays on offer. The invoice only follows once the vendor has actually
-      // delivered against the order, and is raised once.
-      actions.push({ kind: 'purchaseDelivery', label: t('Create purchase delivery') })
-      if (isRaised('purchaseDelivery') && !isRaised('purchaseInvoice')) {
-        actions.push({ kind: 'purchaseInvoice', label: t('Create purchase invoice') })
+    if (!started) {
+      // Before the order starts, the only thing that can be raised is the request
+      // that supplies the vendor — and it is not always first in the plan (a
+      // partial split buys its in-house half first), so it is looked up by role
+      // rather than by position.
+      const pendingSupply = requestSteps.find(p => isComponentSupply(p.kind) && !isRaised(p.kind))
+      if (pendingSupply) actions.push({ kind: pendingSupply.kind, label: t('Create purchase request') })
+    } else {
+      if (pendingRequest) actions.push({ kind: pendingRequest.kind, label: t('Create purchase request') })
+      if (anyRequestRaised && !isRaised('purchaseOrder')) {
+        actions.push({ kind: 'purchaseOrder', label: t('Create purchase order') })
+      }
+      if (isRaised('purchaseOrder')) {
+        // Deliveries repeat — several of them close one work order out — so this
+        // one stays on offer. The invoice only follows once the vendor has actually
+        // delivered against the order, and is raised once.
+        actions.push({ kind: 'purchaseDelivery', label: t('Create purchase delivery') })
+        if (isRaised('purchaseDelivery') && !isRaised('purchaseInvoice')) {
+          actions.push({ kind: 'purchaseInvoice', label: t('Create purchase invoice') })
+        }
       }
     }
 
@@ -147,7 +161,11 @@ const subconPlan = computed(() => {
       label: t('Warehouse transfer'),
       module: t('Warehouse'),
       entries: entriesFor(transferSteps),
-      actions: [{ kind: transferSteps[0]!.kind, label: t('Create transfer') }],
+      // The transfer IS the supply document, so it is raisable from the start —
+      // that is what unblocks starting the order.
+      actions: transferSteps
+        .filter(step => isComponentSupply(step.kind) && !raised.some(d => d.kind === step.kind))
+        .map(step => ({ kind: step.kind, label: t('Create transfer') })),
     })
   }
   return rows
@@ -172,6 +190,8 @@ function documentStatus(doc: { kind: string; id: string }): string | undefined {
     case 'rawTransfer':
     case 'receipt':
       return warehouseTransfers.find(tr => tr.id === doc.id)?.status
+    case 'componentIssue':
+      return stockAdjustments.find(a => a.id === doc.id)?.status
     default:
       // Every remaining kind is one of the purchase-request variants.
       return purchaseRequests.find(r => r.id === doc.id)?.status
@@ -509,7 +529,6 @@ function onAutoConsumeAndComplete() {
 // get materials to the vendor, so it asks which to raise and opens that form
 // prefilled — otherwise the user is left hunting for the right form in another
 // module and retyping what the work order already knows.
-const showStartModal = ref(false)
 const showShortfallModal = ref(false)
 const showCompleteSubconModal = ref(false)
 
@@ -586,12 +605,76 @@ function deliverBalance() {
     : { path: '/purchase-deliveries/new' })
 }
 
+/**
+ * The document that has to exist before a subcon order can start — the transfer
+ * or component request that puts materials in the vendor's hands. `undefined` on
+ * a `basic` order, which has no company materials to supply.
+ */
+const subconSupplyStep = computed(() => {
+  const c = subcon.value
+  return c ? componentSupplyStep(c.scope, c.split, c.method) : undefined
+})
+
+const subconSupplyRaised = computed(() => {
+  const step = subconSupplyStep.value
+  if (!step) return true
+  return (subcon.value?.raisedDocuments ?? []).some(d => d.kind === step.kind)
+})
+
+/** Blocked until the components are on their way to the vendor. */
+const canStartSubcon = computed(() => !subcon.value || subconSupplyRaised.value)
+
+/** Shown in place of opening the Start modal when the supply document is missing. */
+const startBlockedMessage = ref('')
+
+/**
+ * Issue the components into the vendor's process — a stock adjustment OUT of the
+ * subcon warehouse, posted when the order starts.
+ *
+ * The transfer (or dropship purchase) MOVED the stock to the vendor's site; this
+ * is what CONSUMES it there, so the two are different events and both belong on
+ * the record. A `basic` order posts nothing: the vendor is working from its own
+ * stock, so there is no company inventory to issue.
+ */
+function postComponentIssue() {
+  const w = wo.value
+  const c = subcon.value
+  if (!w || !c || c.method === 'basic') return
+  const warehouse = subconDestination.value
+  if (!warehouse) return
+
+  const lines = rawMaterials.value
+    .filter(r => r.needed > 0)
+    // Negative qty is stock OUT — the same convention the Stock in/out form uses.
+    .map(r => ({ sku: r.sku, qty: -r.needed }))
+  if (!lines.length) return
+
+  const adj = addAdjustment({
+    kind: 'in-out',
+    date: new Date().toISOString().slice(0, 10),
+    warehouseId: warehouse.id,
+    warehouseName: warehouse.name,
+    category: 'General',
+    tags: [],
+    memo: `${t('Components issued to the subcon vendor for')} ${w.number}`,
+    lines,
+  })
+
+  recordSubconDocument(w.id, {
+    kind: 'componentIssue',
+    id: adj.id,
+    number: adj.number,
+    route: '/stock-adjustments',
+  })
+}
+
 function startWorkOrder() {
   const w = wo.value
   if (!w) return
   w.status = 'in progress'
   w.startDate = new Date().toISOString().slice(0, 10)
   persistWorkOrders()
+  postComponentIssue()
 }
 
 /** Where each document's form lives. */
@@ -713,23 +796,21 @@ function createDocument(kind: SubconDocKind) {
   router.push({ path, query: { subcon: prefill } })
 }
 
-/** Modal path: start the order first, then open the chosen document. */
-function startAndCreate(kind: SubconDocKind) {
-  showStartModal.value = false
-  startWorkOrder()
-  createDocument(kind)
-}
-
-function startOnly() {
-  showStartModal.value = false
-  startWorkOrder()
-  successToast(t('Work order started'))
-}
-
 function handlePrimaryAction() {
   if (primaryAction.value === 'Start work order') {
-    // Only a subcon order has documents to choose between.
-    if (subcon.value) { showStartModal.value = true; return }
+    // A subcon order cannot start until its components are on their way: the
+    // vendor has nothing to work on otherwise. The button stays live and explains
+    // itself rather than going grey (rule/btn-no-disabled-validation).
+    //
+    // Nothing is asked at this point — the supply document already exists, and
+    // the rest of the run is raised from the Transactions tab — so starting is a
+    // plain action, not a choice.
+    if (subcon.value && !canStartSubcon.value) {
+      const step = subconSupplyStep.value
+      startBlockedMessage.value = `${t('The components must be with')} ${subcon.value.vendorName} ${t('before this order can start. Raise the')} ${t(step?.title ?? 'component supply document').toLowerCase()} ${t('from the Transactions tab below.')}`
+      return
+    }
+    startBlockedMessage.value = ''
     startWorkOrder()
     successToast(t('Work order started'))
     return
@@ -1077,9 +1158,20 @@ function suppressFabClick(e: MouseEvent) {
           <span class="wod-subcon-progress__text">
             {{ subconStarted
               ? t('Work order started — raise its documents from the Transactions tab below.')
-              : t('Still a draft. Start the work order before any supply document can be raised.') }}
+              : subconSupplyStep && !subconSupplyRaised
+                ? `${t('Raise the')} ${t(subconSupplyStep.title).toLowerCase()} ${t('first, then start the work order.')}`
+                : t('Ready to start — the components are on their way to the vendor.') }}
           </span>
         </div>
+
+        <!-- Set when Start was pressed with no supply document yet. The button
+             stays live and says why here (rule/btn-no-disabled-validation,
+             rule/form-errors-inline). -->
+        <MpBanner v-if="startBlockedMessage" variant="danger" align-items="center" class="wod-subcon-blocked">
+          <MpBannerIcon />
+          <MpBannerTitle>{{ t('Supply the vendor first') }}</MpBannerTitle>
+          <MpBannerDescription>{{ startBlockedMessage }}</MpBannerDescription>
+        </MpBanner>
 
       </section>
 
@@ -1391,12 +1483,14 @@ function suppressFabClick(e: MouseEvent) {
             <p class="wod-tx-caption">
               {{ subconStarted
                 ? t('Every document raised for this work order, and what is still to come.')
-                : t('Start the work order to raise its documents.') }}
+                : subconSupplyStep && !subconSupplyRaised
+                  ? t('Supply the vendor first — the rest of the run unlocks once the work order starts.')
+                  : t('Start the work order to raise the rest of its documents.') }}
             </p>
             <!-- Always rendered once started, never disabled: when nothing is
                  ready the menu says so rather than the button going grey
                  (rule/btn-no-disabled-validation). -->
-            <MpPopover v-if="subconStarted" placement="bottom-end">
+            <MpPopover placement="bottom-end">
               <MpPopoverTrigger>
                 <MpButton variant="primary" is-rounded>{{ t('Create transaction') }}</MpButton>
               </MpPopoverTrigger>
@@ -1630,25 +1724,6 @@ function suppressFabClick(e: MouseEvent) {
       @deliver="deliverBalance"
     />
 
-    <StartSubconWorkOrderModal
-
-      v-if="subcon"
-
-      v-model:is-open="showStartModal"
-
-      :scope="subcon.scope"
-
-      :split="subcon.split"
-
-      :method="subcon.method"
-
-      :vendor-name="subcon.vendorName"
-
-      @start="startAndCreate"
-
-      @start-only="startOnly"
-
-    />
 
 
     <CompleteWorkOrderModal
@@ -1896,6 +1971,8 @@ function suppressFabClick(e: MouseEvent) {
 .wod-subcon-td--action { text-align: right; }
 /* Several documents can be ready at once (a repeatable delivery alongside the
    invoice), so the buttons wrap toward the right rather than widening the cell. */
+.wod-subcon-blocked { margin-top: var(--mp-spacing-4); }
+
 .wod-subcon-actions {
   display: flex;
   flex-wrap: wrap;
