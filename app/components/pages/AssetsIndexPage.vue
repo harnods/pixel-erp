@@ -186,16 +186,23 @@ const columnItems = computed(() => allColumns.value.map((c) => ({ key: c.key, la
 const totals = computed(() => registerTotals(filtered.value))
 
 // ── The unclassified asset ──────────────────────────────────────────────────
-// Surfaced rather than filtered: an asset that cannot be depreciated on the tax
-// basis is a blocker for the whole fiscal output, so the register is where it
-// has to be visible and where it will be fixed.
+// Reported in the stats row rather than in a banner: it is one row out of
+// twenty-four, and the place to act on it is the filtered table.
 const unclassified = computed(() => fixedAssets.filter((a) => a.taxGroup === null))
 
+/** Filter the table down to the assets the fiscal total had to leave out. */
+function showUnclassified() {
+  clearFilters()
+  statusFilter.value = 'Incomplete'
+}
+
+/**
+ * Setting the statutory group is a per-asset fix, so it lives on the row and in
+ * the bulk bar — not as a page-level button. One asset's problem does not need
+ * a control at the top of the screen.
+ */
 function assignTaxGroup() {
   infoToast(t('Assigning a tax group is not part of this screen yet.'))
-}
-function applyClassDefault() {
-  infoToast(t('Applying the class default is not part of this screen yet.'))
 }
 
 // ── Row actions ─────────────────────────────────────────────────────────────
@@ -281,34 +288,19 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
       </div>
     </template>
 
-    <!-- ── The blocking condition, stated rather than hidden ── -->
+    <!-- ── Stats ── -->
+    <!-- Divider-separated columns on the stage, matching Expenses and Cash
+         management. No card: no other index page boxes its stats.
+         The unclassified asset is reported here as a drillable link rather
+         than as a banner — it is one row out of 24, and the place to act on
+         it is the filtered table, not a page-level alert. -->
     <template #stats>
-      <div v-if="unclassified.length" class="asset-alert">
-        <MpBanner id="asset-unclassified-banner" variant="warning">
-          <MpBannerIcon id="asset-unclassified-icon" />
-          <MpBannerTitle>
-            {{ unclassified.length }}
-            {{ t(unclassified.length === 1 ? 'asset cannot be depreciated on the tax basis' : 'assets cannot be depreciated on the tax basis') }}
-          </MpBannerTitle>
-          <MpBannerDescription>
-            {{ unclassified.map((a) => `${a.id} ${a.name}`).join(', ') }}
-            {{ t(unclassified.length === 1 ? 'has no tax group, so it is excluded from the fiscal book, from the difference total, and from Lampiran 9.' : 'have no tax group, so they are excluded from the fiscal book, from the difference total, and from Lampiran 9.') }}
-          </MpBannerDescription>
-        </MpBanner>
-        <!-- The two ways out sit under the banner as real buttons. As banner
-             links they read as body copy and nobody finds them. -->
-        <div class="asset-alert__actions">
-          <MpButton variant="secondary" is-rounded @click="assignTaxGroup">{{ t('Assign a tax group') }}</MpButton>
-          <MpButton variant="secondary" is-rounded @click="applyClassDefault">{{ t('Apply the class default') }}</MpButton>
-        </div>
-      </div>
-
-      <!-- Totals in a card, with the book switcher above them: the switcher
-           governs which of these figures appear, so it reads as a heading for
-           them rather than as another filter. Two rows, because four large
-           figures and a three-segment switcher do not fit on one. -->
-      <div class="asset-summary">
-        <div class="asset-summary__switch">
+      <!-- The switcher sits above the figures it governs. Four IDR amounts and
+           a three-segment control do not fit on one row at this width, and
+           shrinking the amounts to fit would make the register's primary
+           numbers the smallest thing on the screen. -->
+      <div class="stats-wrap">
+        <div class="stats-switch">
           <MpSegmentedControl
             id="asset-book-switch"
             name="asset-book-switch"
@@ -316,30 +308,51 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
             :data="bookOptions"
           />
         </div>
-        <div class="asset-totals">
-          <div class="asset-total">
-            <div class="asset-total__label">{{ t('Assets') }}</div>
-            <div class="asset-total__value">{{ totals.count }}</div>
+
+        <div class="stats-section">
+          <div class="stat-card stat-card--bordered">
+            <div class="stat-title">{{ t('Assets') }}</div>
+            <div class="stat-period">{{ t('In the register') }}</div>
+            <div class="stat-amount">{{ totals.count }}</div>
+            <span class="stat-link" @click="clearFilters">{{ t('Show all') }}</span>
           </div>
-          <div class="asset-total">
-            <div class="asset-total__label">{{ t('Acquisition cost') }}</div>
-            <div class="asset-total__value">{{ formatIDR(totals.cost) }}</div>
+
+          <div class="stat-card stat-card--bordered">
+            <div class="stat-title">{{ t('Acquisition cost') }}</div>
+            <div class="stat-period">{{ t('Held assets') }}</div>
+            <div class="stat-amount">{{ formatIDR(totals.cost) }}</div>
           </div>
-          <div v-if="book !== 'fiscal'" class="asset-total">
-            <div class="asset-total__label">{{ t('Book value') }}</div>
-            <div class="asset-total__value">{{ formatIDR(totals.bookValueCommercial) }}</div>
+
+          <div v-if="book !== 'fiscal'" class="stat-card stat-card--bordered">
+            <div class="stat-title">{{ t('Book value') }}</div>
+            <div class="stat-period">{{ t('Commercial · at 30/09/2026') }}</div>
+            <div class="stat-amount">{{ formatIDR(totals.bookValueCommercial) }}</div>
           </div>
-          <div v-if="book !== 'commercial'" class="asset-total">
-            <div class="asset-total__label">{{ t('Fiscal book value') }}</div>
-            <div class="asset-total__value">{{ formatIDR(totals.bookValueFiscal) }}</div>
-            <!-- A fiscal total that silently omits an asset is the same mistake
-                 as a fiscal cell showing 0. Say what is missing and why. -->
-            <div v-if="totals.unclassified" class="asset-total__note">
-              {{ t('excludes') }} {{ totals.unclassified }}
-              {{ t(totals.unclassified === 1 ? 'asset with no tax group' : 'assets with no tax group') }}
+
+          <div v-if="book !== 'commercial'" class="stat-card">
+            <div class="stat-title">{{ t('Fiscal book value') }}</div>
+            <div class="stat-period">{{ t('Tax basis · at 30/09/2026') }}</div>
+            <!-- When every filtered asset is unclassified there is no fiscal
+                 total to state. Rp0,00 would claim the population is worth
+                 nothing on the tax basis; it has no tax basis at all. -->
+            <div v-if="totals.count && !totals.unclassified || totals.bookValueFiscal" class="stat-amount">
+              {{ formatIDR(totals.bookValueFiscal) }}
             </div>
+            <div v-else class="stat-amount stat-amount--absent">{{ t('Not computed') }}</div>
+            <!-- The exclusion is the link, so naming the problem and reaching it
+                 are the same action. -->
+            <span
+              v-if="totals.unclassified"
+              class="stat-link stat-link--warn"
+              @click="showUnclassified"
+            >
+              {{ totals.unclassified }}
+              {{ t(totals.unclassified === 1 ? 'asset excluded, no tax group' : 'assets excluded, no tax group') }}
+            </span>
           </div>
         </div>
+
+        <!-- The book switcher moved above the figures; see the comment there. -->
       </div>
     </template>
 
@@ -431,27 +444,52 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); flex: 0 1 auto; min-width: 0; }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-left: auto; flex: none; }
 
-.asset-alert { margin-bottom: var(--mp-spacing-3); }
-.asset-alert__actions { display: flex; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); }
-
-/* Totals read as a summary of the table, so they sit in the same kind of
-   surface rather than floating on the page background. */
-.asset-summary {
-  padding: var(--mp-spacing-4);
-  margin-bottom: var(--mp-spacing-4);
-  border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral);
-}
-.asset-summary__switch { margin-bottom: var(--mp-spacing-4); }
-.asset-totals {
+/* Stats — divider-separated columns, matching BillsIndexPage and
+   CashManagementPage. No card: index pages do not box their stats. */
+.stats-wrap { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
+.stats-switch { display: flex; }
+.stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
+.stat-card {
+  flex: 1;
+  min-width: 0;
   display: flex;
-  gap: var(--mp-spacing-8);
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: var(--mp-spacing-1);
+  padding-right: var(--mp-spacing-6);
+  align-self: stretch;
 }
-.asset-total__label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm); }
-.asset-total__value { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-lg); font-variant-numeric: tabular-nums; }
-.asset-total__note { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-critical); line-height: var(--mp-line-heights-sm); }
+.stat-card--bordered { border-right: 1px solid var(--mp-border-default); }
+.stat-title {
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-default);
+  line-height: var(--mp-line-heights-md);
+  white-space: nowrap;
+}
+.stat-period {
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+  line-height: var(--mp-line-heights-sm);
+  white-space: nowrap;
+}
+.stat-amount {
+  font-size: var(--mp-font-sizes-xl);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+  line-height: var(--mp-line-heights-2xl);
+  white-space: nowrap;
+}
+/* A total that cannot be computed says so. Never Rp0,00. */
+.stat-amount--absent { color: var(--mp-text-critical); }
+.stat-link {
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-link);
+  line-height: var(--mp-line-heights-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.stat-link:hover { text-decoration: underline; }
+/* The exclusion reads as something to act on, not as decoration. */
+.stat-link--warn { color: var(--mp-text-critical); }
 
 /* rule/table-name-link-span — a span styled as a link, not a button. */
 .asset-name {

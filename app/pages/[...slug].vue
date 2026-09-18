@@ -1852,6 +1852,13 @@ function startResize(e: MouseEvent) {
         <!-- Sales deliveries: no title-bar New/Import — a delivery is created from a
              sales order (fulfillment), never standalone. -->
         <div v-else-if="currentPageKey === 'Sales deliveries'" class="page-title-actions" />
+        <!-- Accounting › Fixed assets › Assets. rule/btn-icon-add-only — the
+             create button is the one button that carries a leading icon. -->
+        <div v-else-if="currentPageKey === 'Assets'" class="page-title-actions">
+          <MpButton is-rounded left-icon="add" @click="infoToast(t('Creating an asset is not part of this prototype yet.'))">
+            {{ t('New asset') }}
+          </MpButton>
+        </div>
         <div v-else-if="currentPageKey === 'Cash management'" class="page-title-actions">
           <!-- Secondary: "+ New account" -->
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="router.push('/cash-management/new')">
