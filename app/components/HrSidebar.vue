@@ -197,7 +197,7 @@ function goView(view?: string) {
 <template>
   <div class="sidebar-wrapper">
     <nav class="sidebar hr-sidebar" :class="{ 'is-expanded': railExpanded }" aria-label="HR navigation">
-      <div class="sidebar-header">
+      <div class="sidebar-header" data-devchange="sidebar-collapsed-tooltip">
         <button class="sidebar-toggle" title="Toggle sidebar" @click="expanded = !expanded">
           <img :src="toggleIcon" alt="Toggle sidebar">
         </button>

@@ -122,7 +122,7 @@ function navItemTooltip(item: Item): string | undefined {
   <div class="sidebar-wrapper">
     <nav class="sidebar" :class="{ 'is-expanded': navExpanded }" aria-label="CRM navigation">
       <!-- Toggle -->
-      <div class="sidebar-header">
+      <div class="sidebar-header" data-devchange="sidebar-collapsed-tooltip">
         <button class="sidebar-toggle" type="button" title="Toggle sidebar" @click="handleToggle">
           <img :src="toggleIcon" alt="Toggle sidebar">
         </button>

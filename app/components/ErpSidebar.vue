@@ -3,7 +3,7 @@
     <!-- Main nav (52px collapsed, 216px expanded) -->
     <nav class="sidebar" :class="{ 'is-expanded': navExpanded, 'arrow-left': arrowPointsLeft }" aria-label="Main navigation">
       <!-- Toggle -->
-      <div class="sidebar-header">
+      <div class="sidebar-header" data-devchange="sidebar-collapsed-tooltip">
         <button class="sidebar-toggle" @click="handleToggle" title="Toggle sidebar">
           <img :src="toggleIcon" alt="Toggle sidebar" />
         </button>
