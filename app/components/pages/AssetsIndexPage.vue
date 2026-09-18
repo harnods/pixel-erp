@@ -389,7 +389,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
     <template #actions="{ row }">
       <MpPopover :id="`asset-row-${(row as unknown as FixedAsset).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <MpButton variant="ghost" left-icon="ellipsis-vertical" :aria-label="t('Actions')" is-rounded />
+          <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
         </MpPopoverTrigger>
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
