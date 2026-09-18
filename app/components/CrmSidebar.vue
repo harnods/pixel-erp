@@ -7,6 +7,7 @@
  * secondary panel and the rail collapses to icons, exactly like Sales in the ERP.
  */
 import { ref, computed } from 'vue'
+import { MpTooltip } from '@mekari/pixel3'
 import { useLocale } from '~/composables/useLocale'
 import { getCrmModule, crmModules, isModuleVisibleToCurrentUser } from '~/data/crm'
 import toggleIcon from '~/assets/images/sidebar-toggle.svg?url'
@@ -103,13 +104,25 @@ function handleNavClick(item: Item) { router.push(item.children?.length ? item.c
 const dealsModuleName = computed(() => getCrmModule('deals')?.name || t('Deals'))
 function navLabel(item: Item): string { return item.to === '/crm/deals' ? dealsModuleName.value : t(item.name) }
 function navIcon(item: Item): string { return item.to === '/crm/deals' ? (getCrmModule('deals')?.icon || item.icon) : item.icon }
+
+// Collapsed-rail hover tooltip. Only relevant while the rail is collapsed to
+// icons (navExpanded false) — once expanded the label is already visible. The
+// active item is skipped when it has a level-2 panel (children): that panel is
+// already open naming it, so the tooltip would be redundant. An inactive item
+// with children still gets the tooltip.
+function navItemTooltip(item: Item): string | undefined {
+  if (navExpanded.value) return undefined
+  const isActive = activeItem.value === item.name
+  if (isActive && item.children?.length) return undefined
+  return navLabel(item)
+}
 </script>
 
 <template>
   <div class="sidebar-wrapper">
     <nav class="sidebar" :class="{ 'is-expanded': navExpanded }" aria-label="CRM navigation">
       <!-- Toggle -->
-      <div class="sidebar-header">
+      <div class="sidebar-header" data-devchange="sidebar-collapsed-tooltip">
         <button class="sidebar-toggle" type="button" title="Toggle sidebar" @click="handleToggle">
           <img :src="toggleIcon" alt="Toggle sidebar">
         </button>
@@ -117,20 +130,42 @@ function navIcon(item: Item): string { return item.to === '/crm/deals' ? (getCrm
 
       <!-- Level-1 nav rail -->
       <div v-for="(group, gi) in navGroups" :key="gi" class="nav-group">
-        <button
-          v-for="item in group"
-          :key="item.name"
-          class="nav-item"
-          :class="{ active: activeItem === item.name }"
-          :data-devchange="item.name === 'Settings' ? 'crm-settings-properties-hidden' : undefined"
-          :title="navLabel(item)"
-          type="button"
-          @click="handleNavClick(item)"
-        >
-          <img :src="`https://cdn.mekari.design/icons/${navIcon(item)}-outline.svg`" class="nav-icon-line" alt="">
-          <img :src="`https://cdn.mekari.design/icons/${navIcon(item)}-fill.svg`" class="nav-icon-fill" alt="">
-          <span class="nav-label">{{ navLabel(item) }}</span>
-        </button>
+        <template v-for="item in group" :key="item.name">
+          <!-- Collapsed rail: styled Pixel tooltip on hover. Rendered only when a
+               tooltip is wanted (see navItemTooltip) so an excluded/active item
+               carries no tooltip node at all — avoids a stale empty tooltip box. -->
+          <MpTooltip
+            v-if="navItemTooltip(item)"
+            :id="`crm-nav-tt-${item.name}`"
+            :label="navItemTooltip(item)!"
+            placement="right"
+            use-portal
+          >
+            <button
+              class="nav-item"
+              :class="{ active: activeItem === item.name }"
+              :data-devchange="item.name === 'Settings' ? 'crm-settings-properties-hidden' : undefined"
+              type="button"
+              @click="handleNavClick(item)"
+            >
+              <img :src="`https://cdn.mekari.design/icons/${navIcon(item)}-outline.svg`" class="nav-icon-line" alt="">
+              <img :src="`https://cdn.mekari.design/icons/${navIcon(item)}-fill.svg`" class="nav-icon-fill" alt="">
+              <span class="nav-label">{{ navLabel(item) }}</span>
+            </button>
+          </MpTooltip>
+          <button
+            v-else
+            class="nav-item"
+            :class="{ active: activeItem === item.name }"
+            :data-devchange="item.name === 'Settings' ? 'crm-settings-properties-hidden' : undefined"
+            type="button"
+            @click="handleNavClick(item)"
+          >
+            <img :src="`https://cdn.mekari.design/icons/${navIcon(item)}-outline.svg`" class="nav-icon-line" alt="">
+            <img :src="`https://cdn.mekari.design/icons/${navIcon(item)}-fill.svg`" class="nav-icon-fill" alt="">
+            <span class="nav-label">{{ navLabel(item) }}</span>
+          </button>
+        </template>
       </div>
     </nav>
 

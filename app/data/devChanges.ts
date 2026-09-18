@@ -28,6 +28,15 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'sidebar-collapsed-tooltip',
+    title: 'Collapsed sidebar shows menu tooltips',
+    description:
+      'When the nav rail is collapsed to icons, hovering a menu now shows a Pixel tooltip with its name. Items that already reveal a flyout on hover, and the active item whose level-2 panel is open, intentionally show no tooltip.',
+    date: '2026-09-18',
+    pr: '#85',
+    files: ['ErpSidebar.vue', 'CrmSidebar.vue', 'HrSidebar.vue'],
+  },
+  {
     id: 'crm-settings-properties-hidden',
     title: 'Settings Properties page hidden',
     description:
