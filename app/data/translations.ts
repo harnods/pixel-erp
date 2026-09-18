@@ -1404,7 +1404,10 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Picking task not found": "Tugas pengambilan tidak ditemukan",
   "Picking lists": "Daftar pengambilan",
   "Picking no.": "Nomor pengambilan",
-  "Not packable": "Tidak dapat dikemas",
+  // Not everything this picking list picked can go into a packing task — the
+  // tooltip names which orders and why.
+  "Some not packable": "Sebagian tidak dapat dikemas",
+  "can only be packed once every SKU on it is picked in full — some are still short across its picking lists": "hanya bisa dikemas setelah semua SKU-nya diambil lengkap — sebagian masih kurang di daftar pengambilannya",
   "Ready to pack": "Siap dikemas",
   "Items to pack": "Item untuk dikemas",
   "Note:": "Catatan:",
