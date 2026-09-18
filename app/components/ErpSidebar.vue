@@ -336,12 +336,18 @@ const flyoutGroups = computed<SubItem[][]>(
 
 // Collapsed-rail hover tooltip (Pixel MpTooltip component). Only relevant while the
 // nav is collapsed to icons — once expanded the label is already visible next to
-// the icon. Skipped for the active item when it owns a level-2 menu (submenu or
-// panelSubmenu): that item already has its flyout/panel open showing its name,
-// so a duplicate tooltip is redundant. An inactive item with a level-2 menu still
-// gets the tooltip, since nothing else is naming it yet.
+// the icon. Suppressed in two cases:
+//  1. The item reveals a flyout on hover (a `submenu`, or a `panelSubmenu` that
+//     opted into a hover preview via flyoutOnHover, e.g. Reports). The flyout
+//     already names the section, and a tooltip would collide with it.
+//  2. The active item that owns a level-2 panel — its panel is already open and
+//     naming it, so a tooltip would be redundant.
+// A panel-only item that shows nothing on hover (e.g. Inventory, Settings) still
+// gets the tooltip when it isn't the active one.
 function navItemTooltip(item: NavItem) {
   if (navExpanded.value) return undefined
+  const opensFlyout = !!item.submenu || (!!item.panelSubmenu && !!item.flyoutOnHover)
+  if (opensFlyout) return undefined
   const hasLevel2 = !!(item.submenu || item.panelSubmenu)
   const isActive = activeItem.value === item.name
   if (isActive && hasLevel2) return undefined

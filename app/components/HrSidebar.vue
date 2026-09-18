@@ -110,14 +110,13 @@ function handlePanelSubItemClick(sub: SubItem) {
 }
 
 // Collapsed-rail hover tooltip. Only relevant while the rail is collapsed to
-// icons (railExpanded false) — once expanded the label is already visible. The
-// active item is skipped when it has a level-2 submenu: its flyout/panel is
-// already open naming it, so the tooltip would be redundant. An inactive item
-// with a submenu still gets the tooltip.
+// icons (railExpanded false) — once expanded the label is already visible. An
+// item with a `submenu` reveals a flyout on hover (see handleItemMouseEnter),
+// so it gets no tooltip — the flyout already names the section and a tooltip
+// would collide with it. Plain items (no submenu) still get the tooltip.
 function navItemTooltip(item: Item): string | undefined {
   if (railExpanded.value) return undefined
-  const isActive = activeItem.value === item.name
-  if (isActive && item.submenu) return undefined
+  if (item.submenu) return undefined
   return item.name
 }
 
