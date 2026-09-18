@@ -15,6 +15,16 @@ import { computed } from 'vue'
 import { MpButton } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import { infoToast } from '~/utils/toasts'
+
+const router = useRouter()
+/**
+ * A right-of-use asset lives in the ordinary register and depreciates through
+ * the ordinary engine. It is not in the sample register yet, so say that
+ * plainly rather than routing to a page that will not find it.
+ */
+function openRou(id: string) {
+  infoToast(`${id} — the right-of-use asset is not in the sample register`)
+}
 import { leaseRows } from '~/data/fixedAssetScreens'
 
 const { t } = useLocale()
@@ -31,23 +41,30 @@ const totals = computed(() => ({
       <p class="ls__sub">
         {{ t('PSAK 73 · each lease creates a right-of-use asset in the register, depreciating through the normal engine') }}
       </p>
-      <MpButton variant="secondary" is-rounded @click="infoToast(t('Adding a lease is not part of this screen yet.'))">
+      <MpButton variant="secondary" is-rounded @click="infoToast(t('Adding a lease is not part of this prototype.'))">
         {{ t('New lease') }}
       </MpButton>
     </header>
 
-    <div class="ls__totals">
-      <div class="ls__total">
-        <div class="ls__totallabel">{{ t('Leases') }}</div>
-        <div class="ls__totalvalue">{{ leaseRows.length }}</div>
+    <!-- Same divider-separated stats pattern as the register: no box, and the
+         qualifier above the figure. -->
+    <div class="stats-section">
+      <div class="stat-card stat-card--bordered">
+        <div class="stat-title">{{ t('Leases') }}</div>
+        <div class="stat-period">{{ t('Recognised under PSAK 73') }}</div>
+        <div class="stat-amount">{{ leaseRows.length }}</div>
       </div>
-      <div class="ls__total">
-        <div class="ls__totallabel">{{ t('Lease liability') }}</div>
-        <div class="ls__totalvalue">{{ formatIDR(totals.liability) }}</div>
+
+      <div class="stat-card stat-card--bordered">
+        <div class="stat-title">{{ t('Lease liability') }}</div>
+        <div class="stat-period">{{ t('Outstanding · at 30/09/2026') }}</div>
+        <div class="stat-amount">{{ formatIDR(totals.liability) }}</div>
       </div>
-      <div class="ls__total">
-        <div class="ls__totallabel">{{ t('Right-of-use book value') }}</div>
-        <div class="ls__totalvalue">{{ formatIDR(totals.rou) }}</div>
+
+      <div class="stat-card">
+        <div class="stat-title">{{ t('Right-of-use book value') }}</div>
+        <div class="stat-period">{{ t('Accounting · at 30/09/2026') }}</div>
+        <div class="stat-amount">{{ formatIDR(totals.rou) }}</div>
       </div>
     </div>
 
@@ -71,7 +88,11 @@ const totals = computed(() => ({
             <td class="ls__td">{{ l.term }}</td>
             <!-- The ROU asset is a register asset, not a lease-module concept.
                  Naming it here is what makes that visible. -->
-            <td class="ls__td ls__td--mono">{{ l.rouAsset }}</td>
+            <!-- The right-of-use asset is a register asset. Linking to it is
+                 what makes that concrete rather than asserted. -->
+            <td class="ls__td ls__td--mono">
+              <span class="ls__roulink" @click="openRou(String(l.rouAsset))">{{ l.rouAsset }}</span>
+            </td>
             <td class="ls__td ls__td--num">{{ formatIDR(Number(l.liability)) }}</td>
             <td class="ls__td ls__td--num">{{ formatIDR(Number(l.rouBookValue)) }}</td>
           </tr>
@@ -87,13 +108,15 @@ const totals = computed(() => ({
 .ls__title { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
 .ls__sub { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0; max-width: 720px; }
 
-.ls__totals {
-  display: flex; gap: var(--mp-spacing-8); flex-wrap: wrap;
-  padding: var(--mp-spacing-4) var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4);
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral);
+.stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; margin-bottom: var(--mp-spacing-6); }
+.stat-card {
+  flex: 1; min-width: 0; display: flex; flex-direction: column;
+  gap: var(--mp-spacing-1); padding-right: var(--mp-spacing-6); align-self: stretch;
 }
-.ls__totallabel { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.ls__totalvalue { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
+.stat-card--bordered { border-right: 1px solid var(--mp-border-default); }
+.stat-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); white-space: nowrap; }
+.stat-period { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm); white-space: nowrap; }
+.stat-amount { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-2xl); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 .ls__card { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); overflow: hidden; }
 .ls__table { width: 100%; border-collapse: collapse; }
@@ -102,6 +125,8 @@ const totals = computed(() => ({
 .ls__td { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
 .ls__td--num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ls__td--mono { font-variant-numeric: tabular-nums; color: var(--mp-text-default); }
+.ls__roulink { color: var(--mp-text-link); cursor: pointer; }
+.ls__roulink:hover { text-decoration: underline; }
 .ls__name { display: block; font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ls__id { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); }
 </style>
