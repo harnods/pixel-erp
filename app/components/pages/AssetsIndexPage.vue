@@ -206,7 +206,11 @@ function fiscalBookValue(a: FixedAsset): { text: string; muted: boolean } {
   return { text: formatIDR(a.bookValueFiscal), muted: false }
 }
 function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
-  if (a.status === 'Disposed') return { text: '—', muted: true }
+  // A disposed asset has no book value — the company no longer holds it, which
+  // is a different statement from holding something worth nothing.
+  if (a.status === 'Disposed' || a.bookValueCommercial === null) {
+    return { text: '—', muted: true }
+  }
   return { text: formatIDR(a.bookValueCommercial), muted: false }
 }
 </script>

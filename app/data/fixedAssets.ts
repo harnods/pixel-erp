@@ -53,8 +53,10 @@ export interface FixedAsset {
   /** Fiscal life in months, fixed by the tax group. `null` when unclassified. */
   fiscalLifeMonths: number | null
   branch: string
-  /** Book value at 30/09/2026, commercial basis. */
-  bookValueCommercial: number
+  /** Book value at 30/09/2026, commercial basis. `null` once disposed: the
+   *  company no longer holds it, which is different from holding something
+   *  worth nothing. */
+  bookValueCommercial: number | null
   /** Book value at 30/09/2026, fiscal basis. `null` when it cannot be
    *  computed (no tax group) — render 'Not computed', never 0. */
   bookValueFiscal: number | null
@@ -692,7 +694,7 @@ export function registerTotals(rows: FixedAsset[]) {
   return {
     count: rows.length,
     cost: held.reduce((s, a) => s + a.cost, 0),
-    bookValueCommercial: held.reduce((s, a) => s + a.bookValueCommercial, 0),
+    bookValueCommercial: held.reduce((s, a) => s + (a.bookValueCommercial ?? 0), 0),
     bookValueFiscal: classified.reduce((s, a) => s + (a.bookValueFiscal as number), 0),
     /** How many held assets could not contribute to the fiscal total. */
     unclassified: held.filter(isUnclassified).length,
