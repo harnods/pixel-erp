@@ -3649,6 +3649,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Reorder point': 'Titik pemesanan ulang',
   'Lead time': 'Waktu tunggu',
   'Demand velocity': 'Laju permintaan',
+  'Demand signal': 'Sinyal permintaan',
   'Safety days': 'Hari pengaman',
   'Max level': 'Level maksimum',
   'Missing': 'Belum lengkap',

@@ -193,6 +193,9 @@ const ALL_COLUMNS: TableColumn[] = [
   { key: 'productName',   label: 'Product',        width: '280px', sortable: true, sortType: 'text' },
   { key: 'sku',           label: 'SKU',            width: '104px', sortable: true, sortType: 'text' },
   { key: 'fsnClass',      label: 'FSN',            width: '116px', sortable: true, sortType: 'text' },
+  // Demand-reading flags (Volatile / Provisional) — a classification of the demand
+  // pattern, distinct from FSN's movement class, so it gets its own column.
+  { key: 'demandSignal',  label: 'Demand signal',  width: '150px' },
   { key: 'warehouseName', label: 'Warehouse',      width: '170px', sortable: true, sortType: 'text' },
   // The stock group, in StockTables.vue's vocabulary and widths so it reads as
   // the same table the user already knows. `available` is what days-of-cover
@@ -228,6 +231,7 @@ const sortableRows = computed(() =>
   paginated.value.map((row) => ({
     ...row,
     fsnClass: row.fsn.committed,
+    demandSignal: row.flags.provisional ? 'provisional' : row.flags.volatile ? 'volatile' : '',
     onHandQty: row.atp.onHand,
     reservedQty: row.atp.reserved,
     availableQty: row.atp.available,
@@ -577,13 +581,21 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
           for="additionalInformation"
           :type="FSN_BADGE[(row as any).fsn.committed]?.type ?? 'announcement'"
         >{{ t(FSN_BADGE[(row as any).fsn.committed]?.label ?? 'Unclassified') }}</MpBadge>
-        <MpBadge v-if="(row as any).flags.volatile" for="additionalInformation" type="information">
-          {{ t('Volatile') }}
-        </MpBadge>
+      </div>
+    </template>
+
+    <!-- Demand-reading flags — how reliable / early the demand figure is, separate
+         from FSN's movement class. -->
+    <template #cell-demandSignal="{ row }">
+      <div v-if="(row as any).flags.volatile || (row as any).flags.provisional" class="rp-badges">
         <MpBadge v-if="(row as any).flags.provisional" for="additionalInformation" type="information">
           {{ t('Provisional') }}
         </MpBadge>
+        <MpBadge v-if="(row as any).flags.volatile" for="additionalInformation" type="information">
+          {{ t('Volatile') }}
+        </MpBadge>
       </div>
+      <span v-else class="rp-signal-none">—</span>
     </template>
 
     <!-- ── Warehouse ── -->
@@ -876,6 +888,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
 
 .rp-vendor { display: flex; flex-direction: column; min-width: 0; }
 .rp-badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.rp-signal-none { color: var(--mp-text-tertiary, var(--mp-text-secondary)); }
 
 :deep(.erp-tr:hover .erp-td) { background: var(--mp-background-neutral); }
 
