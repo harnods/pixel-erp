@@ -89,7 +89,7 @@ const annualOutstanding = computed(() =>
       <p class="im__sub">
         {{ t('PSAK 48 · the obligation is to test, so a test that finds nothing is retained as the evidence it happened') }}
       </p>
-      <MpButton @click="infoToast(t('Recording a test is not part of this screen yet.'))">
+      <MpButton is-rounded @click="infoToast(t('Recording a test is not part of this screen yet.'))">
         {{ t('Record a test') }}
       </MpButton>
     </header>
@@ -156,32 +156,32 @@ const annualOutstanding = computed(() =>
 </template>
 
 <style scoped>
-.im { padding: 4px 0 32px; max-width: 980px; }
-.im__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; min-height: 32px; }
-.im__title { font-size: 18px; font-weight: 600; color: #1e2e2b; margin: 0; }
-.im__sub { font-size: 13px; color: #758195; margin: 0; max-width: 720px; }
-.im__note { margin-bottom: 16px; }
+.im { max-width: 980px; }
+.im__head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); min-height: 32px; }
+.im__title { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
+.im__sub { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0; max-width: 720px; }
+.im__note { margin-bottom: var(--mp-spacing-4); }
 
-.im__card { border: 1px solid #e2e7ed; border-radius: 10px; background: #fff; padding: 16px; margin-bottom: 12px; }
+.im__card { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); padding: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-3); }
 /* A test that found nothing is not a lesser record — it is the evidence. It is
    toned down, not hidden. */
-.im__card--nil { background: #fcfdfd; }
+.im__card--nil { background: var(--mp-background-neutral-subtle); }
 
-.im__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
-.im__id { font-size: 11px; color: #758195; font-variant-numeric: tabular-nums; }
-.im__asset { font-size: 14px; font-weight: 600; color: #1e2e2b; margin-top: 2px; }
-.im__badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; flex: none; }
-.im__badge--hit { background: #fdf9c4; color: #7a5700; }
-.im__badge--nil { background: #e8f4ef; color: #027a4f; }
+.im__top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-4); }
+.im__id { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); font-variant-numeric: tabular-nums; }
+.im__asset { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin-top: var(--mp-spacing-1); }
+.im__badge { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); padding: var(--mp-spacing-1) var(--mp-spacing-2); border-radius: var(--mp-radii-full); flex: none; }
+.im__badge--hit { background: var(--mp-background-warning-subtle); color: var(--mp-text-warning); }
+.im__badge--nil { background: var(--mp-background-success-subtle); color: var(--mp-text-success); }
 
-.im__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.im__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--mp-spacing-4); }
 @media (max-width: 900px) { .im__grid { grid-template-columns: repeat(2, 1fr); } }
-.im__k { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #758195; }
-.im__v { font-size: 14px; color: #232933; margin-top: 3px; }
-.im__v--num { font-variant-numeric: tabular-nums; font-weight: 600; }
-.im__v--loss { color: #a8352d; }
-.im__note2 { font-size: 11px; color: #758195; margin-top: 3px; line-height: 15px; }
+.im__k { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); letter-spacing: 0.04em; text-transform: uppercase; color: var(--mp-text-secondary); }
+.im__v { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); margin-top: var(--mp-spacing-1); }
+.im__v--num { font-variant-numeric: tabular-nums; font-weight: var(--mp-font-weights-semi-bold); }
+.im__v--loss { color: var(--mp-text-critical); }
+.im__note2 { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); line-height: var(--mp-line-heights-sm); }
 
-.im__foot { font-size: 12px; color: #758195; margin-top: 14px; padding-top: 10px; border-top: 1px solid #f4f6f8; }
-.im__foot strong { color: #3a4749; font-weight: 600; }
+.im__foot { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-4); padding-top: var(--mp-spacing-3); border-top: 1px solid var(--mp-border-default); }
+.im__foot strong { color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); }
 </style>

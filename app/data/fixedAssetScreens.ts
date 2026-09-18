@@ -301,8 +301,38 @@ export const classMaster = [
   { class: 'Furniture', defaultTaxGroup: 'Tax group 1', fiscalLife: '4 yr', commercialLife: '8 yr', method: 'Straight line', accounts: '1-1660 / 6-5160' },
 ]
 
-/** Behaviour switches, grouped as the settings screen presents them. */
-export const settingToggles = [{'head': 'Depreciation policy', 'items': [{'k': 'Journal date is the last day of the period', 'v': 'Alternative: the date the run is posted', 'box': 'width:16px;height:16px;border-radius:4px;background:#029861;flex:none;margin-top:2px'}, {'k': 'Post automatically after review', 'v': 'A draft is always created first', 'box': 'width:16px;height:16px;border-radius:4px;background:#029861;flex:none;margin-top:2px'}, {'k': 'Pro-rata the first period by day', 'v': 'Off: a full month from the in-service date', 'box': 'width:16px;height:16px;border:1px solid #8C9596;border-radius:4px;background:#fff;flex:none;margin-top:2px'}]}, {'head': 'Approval rules', 'items': [{'k': 'Disposal needs approval', 'v': 'Approver: Finance Controller', 'box': 'width:16px;height:16px;border-radius:4px;background:#029861;flex:none;margin-top:2px'}, {'k': 'Write-off needs approval', 'v': 'Approver: Finance Controller', 'box': 'width:16px;height:16px;border-radius:4px;background:#029861;flex:none;margin-top:2px'}, {'k': 'Impairment needs approval', 'v': 'Off by default', 'box': 'width:16px;height:16px;border:1px solid #8C9596;border-radius:4px;background:#fff;flex:none;margin-top:2px'}]}]
+/**
+ * Behaviour switches, grouped as the settings screen presents them.
+ *
+ * `isOn` is derived here rather than in the component: the design carried
+ * the state inside a CSS string, and a screen should not have to parse a
+ * colour to know whether a setting is enabled.
+ */
+export interface SettingToggle {
+  label: string
+  /** What the alternative is, so the reader knows what the switch costs. */
+  detail: string
+  isOn: boolean
+}
+
+export const settingToggles: { head: string; items: SettingToggle[] }[] = [
+  {
+    head: 'Depreciation policy',
+    items: [
+      { label: 'Journal date is the last day of the period', detail: 'Alternative: the date the run is posted', isOn: true },
+      { label: 'Post automatically after review', detail: 'A draft is always created first', isOn: true },
+      { label: 'Pro-rata the first period by day', detail: 'Off: a full month from the in-service date', isOn: false },
+    ],
+  },
+  {
+    head: 'Approval rules',
+    items: [
+      { label: 'Disposal needs approval', detail: 'Approver: Finance Controller', isOn: true },
+      { label: 'Write-off needs approval', detail: 'Approver: Finance Controller', isOn: true },
+      { label: 'Impairment needs approval', detail: 'Off by default', isOn: false },
+    ],
+  },
+]
 
 // ── Derivation ──────────────────────────────────────────────────────────────
 

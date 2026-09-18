@@ -20,7 +20,7 @@ const { t } = useLocale()
       <p class="st__sub">
         {{ t('The class master sets an asset up correctly at creation. Every field here has a statutory consequence.') }}
       </p>
-      <MpButton variant="secondary" @click="infoToast(t('Editing settings is not part of this screen yet.'))">
+      <MpButton variant="secondary" is-rounded @click="infoToast(t('Editing settings is not part of this screen yet.'))">
         {{ t('Edit') }}
       </MpButton>
     </header>
@@ -62,15 +62,12 @@ const { t } = useLocale()
       </div>
       <div class="st__toggles">
         <div v-for="(item, ii) in g.items" :key="ii" class="st__toggle">
-          <!-- On or off is carried by the design's own box styling; a filled box
-               is on. Reading it from the style string keeps this screen faithful
-               without inventing a state the design did not specify. -->
-          <span class="st__box" :class="{ 'st__box--on': String(item.box).includes('#029861') }">
-            <MpIcon v-if="String(item.box).includes('#029861')" name="check" size="xs" />
+          <span class="st__box" :class="{ 'st__box--on': item.isOn }">
+            <MpIcon v-if="item.isOn" name="check" size="xs" />
           </span>
           <div>
-            <div class="st__togglek">{{ item.k }}</div>
-            <div class="st__togglev">{{ item.v }}</div>
+            <div class="st__togglek">{{ item.label }}</div>
+            <div class="st__togglev">{{ item.detail }}</div>
           </div>
         </div>
       </div>
@@ -79,28 +76,28 @@ const { t } = useLocale()
 </template>
 
 <style scoped>
-.st { padding: 4px 0 32px; }
-.st__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; min-height: 32px; }
-.st__title { font-size: 18px; font-weight: 600; color: #1e2e2b; margin: 0; }
-.st__sub { font-size: 13px; color: #758195; margin: 0; max-width: 720px; }
 
-.st__card { border: 1px solid #e2e7ed; border-radius: 10px; background: #fff; overflow: hidden; margin-bottom: 16px; }
-.st__cardhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #eef1f4; }
-.st__cardtitle { font-size: 14px; font-weight: 600; color: #1e2e2b; }
-.st__hint { font-size: 12px; color: #758195; }
+.st__head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); min-height: 32px; }
+.st__title { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
+.st__sub { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0; max-width: 720px; }
+
+.st__card { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); overflow: hidden; margin-bottom: var(--mp-spacing-4); }
+.st__cardhead { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.st__cardtitle { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.st__hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 .st__table { width: 100%; border-collapse: collapse; }
-.st__th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #758195; background: #f8fafb; padding: 8px 16px; border-bottom: 1px solid #eef1f4; }
-.st__td { font-size: 13px; color: #232933; padding: 10px 16px; border-bottom: 1px solid #f4f6f8; }
-.st__td--strong { font-weight: 600; color: #1e2e2b; }
+.st__th { text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); letter-spacing: 0.04em; text-transform: uppercase; color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-2) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.st__td { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.st__td--strong { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .st__td--num { font-variant-numeric: tabular-nums; }
-.st__td--mono { font-variant-numeric: tabular-nums; color: #758195; }
+.st__td--mono { font-variant-numeric: tabular-nums; color: var(--mp-text-secondary); }
 
 .st__toggles { display: flex; flex-direction: column; }
-.st__toggle { display: flex; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #f4f6f8; }
+.st__toggle { display: flex; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
 .st__toggle:last-child { border-bottom: 0; }
-.st__box { width: 16px; height: 16px; border-radius: 4px; border: 1px solid #8c9596; background: #fff; flex: none; margin-top: 2px; display: inline-flex; align-items: center; justify-content: center; color: #fff; }
-.st__box--on { background: #029861; border-color: #029861; }
-.st__togglek { font-size: 13px; color: #232933; }
-.st__togglev { font-size: 12px; color: #758195; margin-top: 2px; }
+.st__box { width: var(--mp-sizes-4); height: var(--mp-sizes-4); border-radius: var(--mp-radii-sm); border: 1px solid var(--mp-border-bold); background: var(--mp-background-neutral); flex: none; margin-top: var(--mp-spacing-1); display: inline-flex; align-items: center; justify-content: center; color: var(--mp-background-neutral); }
+.st__box--on { background: var(--mp-background-success-bold); border-color: var(--mp-background-success-bold); }
+.st__togglek { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.st__togglev { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); }
 </style>

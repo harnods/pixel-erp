@@ -56,30 +56,30 @@ function decide(id: string, approve: boolean) {
       </div>
 
       <div class="ap__actions">
-        <MpButton size="sm" variant="secondary" @click="decide(String(a.id), false)">{{ t('Send back') }}</MpButton>
-        <MpButton size="sm" @click="decide(String(a.id), true)">{{ t('Approve') }}</MpButton>
+        <MpButton variant="secondary" is-rounded @click="decide(String(a.id), false)">{{ t('Send back') }}</MpButton>
+        <MpButton is-rounded @click="decide(String(a.id), true)">{{ t('Approve') }}</MpButton>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.ap { padding: 4px 0 32px; max-width: 880px; }
-.ap__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; min-height: 32px; }
-.ap__title { font-size: 18px; font-weight: 600; color: #1e2e2b; margin: 0; }
-.ap__sub { font-size: 13px; color: #758195; margin: 0; max-width: 720px; }
+.ap { max-width: 880px; }
+.ap__head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); min-height: 32px; }
+.ap__title { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
+.ap__sub { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0; max-width: 720px; }
 
-.ap__empty { border: 1px dashed #e2e7ed; border-radius: 10px; padding: 40px; text-align: center; color: #758195; font-size: 14px; }
+.ap__empty { border: 1px dashed var(--mp-border-default); border-radius: var(--mp-radii-md); padding: var(--mp-spacing-10); text-align: center; color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-md); }
 
-.ap__card { border: 1px solid #e2e7ed; border-radius: 10px; background: #fff; padding: 16px; margin-bottom: 12px; }
-.ap__cardtop { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.ap__what { display: flex; flex-direction: column; gap: 2px; }
-.ap__id { font-size: 11px; color: #758195; font-variant-numeric: tabular-nums; }
-.ap__title2 { font-size: 14px; font-weight: 600; color: #1e2e2b; }
-.ap__status { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: #fdf9c4; color: #7a5700; white-space: nowrap; flex: none; }
+.ap__card { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); padding: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-3); }
+.ap__cardtop { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-3); }
+.ap__what { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.ap__id { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); font-variant-numeric: tabular-nums; }
+.ap__title2 { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.ap__status { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); padding: var(--mp-spacing-1) var(--mp-spacing-2); border-radius: var(--mp-radii-full); background: var(--mp-background-warning-subtle); color: var(--mp-text-warning); white-space: nowrap; flex: none; }
 
-.ap__detail { font-size: 13px; color: #3a4749; margin-top: 10px; padding: 10px 12px; background: #f8fafb; border-radius: 8px; }
-.ap__meta { display: flex; gap: 16px; font-size: 12px; color: #758195; margin-top: 10px; }
-.ap__meta strong { color: #3a4749; font-weight: 600; }
-.ap__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.ap__detail { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); margin-top: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-3); background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-md); }
+.ap__meta { display: flex; gap: var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-3); }
+.ap__meta strong { color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); }
+.ap__actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-3); }
 </style>

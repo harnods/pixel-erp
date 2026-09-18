@@ -31,7 +31,7 @@ const totals = computed(() => ({
       <p class="ls__sub">
         {{ t('PSAK 73 · each lease creates a right-of-use asset in the register, depreciating through the normal engine') }}
       </p>
-      <MpButton variant="secondary" @click="infoToast(t('Adding a lease is not part of this screen yet.'))">
+      <MpButton variant="secondary" is-rounded @click="infoToast(t('Adding a lease is not part of this screen yet.'))">
         {{ t('New lease') }}
       </MpButton>
     </header>
@@ -82,26 +82,26 @@ const totals = computed(() => ({
 </template>
 
 <style scoped>
-.ls { padding: 4px 0 32px; }
-.ls__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; min-height: 32px; }
-.ls__title { font-size: 18px; font-weight: 600; color: #1e2e2b; margin: 0; }
-.ls__sub { font-size: 13px; color: #758195; margin: 0; max-width: 720px; }
+
+.ls__head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); min-height: 32px; }
+.ls__title { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
+.ls__sub { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0; max-width: 720px; }
 
 .ls__totals {
-  display: flex; gap: 32px; flex-wrap: wrap;
-  padding: 14px 16px; margin-bottom: 16px;
-  border: 1px solid #e2e7ed; border-radius: 10px; background: #fff;
+  display: flex; gap: var(--mp-spacing-8); flex-wrap: wrap;
+  padding: var(--mp-spacing-4) var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4);
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral);
 }
-.ls__totallabel { font-size: 12px; color: #758195; }
-.ls__totalvalue { font-size: 18px; font-weight: 600; color: #1e2e2b; font-variant-numeric: tabular-nums; }
+.ls__totallabel { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.ls__totalvalue { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 
-.ls__card { border: 1px solid #e2e7ed; border-radius: 10px; background: #fff; overflow: hidden; }
+.ls__card { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); overflow: hidden; }
 .ls__table { width: 100%; border-collapse: collapse; }
-.ls__th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #758195; background: #f8fafb; padding: 8px 16px; border-bottom: 1px solid #eef1f4; }
+.ls__th { text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); letter-spacing: 0.04em; text-transform: uppercase; color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-2) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
 .ls__th--num { text-align: right; }
-.ls__td { font-size: 13px; color: #232933; padding: 10px 16px; border-bottom: 1px solid #f4f6f8; }
+.ls__td { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
 .ls__td--num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.ls__td--mono { font-variant-numeric: tabular-nums; color: #3a4749; }
-.ls__name { display: block; font-weight: 600; color: #1e2e2b; }
-.ls__id { display: block; font-size: 11px; color: #758195; margin-top: 2px; }
+.ls__td--mono { font-variant-numeric: tabular-nums; color: var(--mp-text-default); }
+.ls__name { display: block; font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.ls__id { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); }
 </style>

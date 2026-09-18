@@ -72,7 +72,7 @@ function exportStatement() {
       <p class="fb__sub">
         {{ t('Asset profit and loss impact · FY2026 to 30 September 2026 · PT Sinar Kencana Utama') }}
       </p>
-      <MpButton variant="secondary" left-icon="download" @click="exportStatement">
+      <MpButton variant="secondary" is-rounded @click="exportStatement">
         {{ t('Export') }}
       </MpButton>
     </header>
@@ -228,37 +228,37 @@ function exportStatement() {
 </template>
 
 <style scoped>
-.fb { padding: 4px 0 32px; }
-.fb__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; min-height: 32px; }
-.fb__title { font-size: 18px; font-weight: 600; color: #1e2e2b; margin: 0; }
-.fb__sub { font-size: 13px; color: #758195; margin: 0; max-width: 720px; }
-.fb__note { margin-bottom: 16px; }
 
-.fb__card { border: 1px solid #e2e7ed; border-radius: 10px; background: #fff; margin-bottom: 16px; overflow: hidden; }
-.fb__cardhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #eef1f4; }
-.fb__cardtitle { font-size: 14px; font-weight: 600; color: #1e2e2b; }
-.fb__hint { font-size: 12px; color: #758195; }
+.fb__head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); min-height: 32px; }
+.fb__title { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
+.fb__sub { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0; max-width: 720px; }
+.fb__note { margin-bottom: var(--mp-spacing-4); }
+
+.fb__card { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); margin-bottom: var(--mp-spacing-4); overflow: hidden; }
+.fb__cardhead { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.fb__cardtitle { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.fb__hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 
 .fb__table { width: 100%; border-collapse: collapse; }
-.fb__th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #758195; background: #f8fafb; padding: 8px 16px; border-bottom: 1px solid #eef1f4; }
+.fb__th { text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); letter-spacing: 0.04em; text-transform: uppercase; color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-2) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
 .fb__th--num { text-align: right; }
-.fb__td { font-size: 13px; color: #232933; padding: 10px 16px; border-bottom: 1px solid #f4f6f8; vertical-align: top; }
+.fb__td { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); vertical-align: top; }
 .fb__td--num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.fb__tr--total .fb__td { font-weight: 600; background: #fafbfc; border-top: 1px solid #e2e7ed; }
-.fb__count, .fb__basis { display: block; font-size: 11px; color: #758195; margin-top: 2px; }
+.fb__tr--total .fb__td { font-weight: var(--mp-font-weights-semi-bold); background: var(--mp-background-neutral-subtle); border-top: 1px solid var(--mp-border-default); }
+.fb__count, .fb__basis { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); }
 
 /* A figure that is legitimately absent. Never a zero — a zero would say the
    basis recognised the event and valued it at nothing. */
-.fb__td--absent { color: #7a5700; font-weight: 600; }
-.fb__td--pos { color: #027a4f; }
-.fb__td--neg { color: #a8352d; }
+.fb__td--absent { color: var(--mp-text-warning); font-weight: var(--mp-font-weights-semi-bold); }
+.fb__td--pos { color: var(--mp-text-success); }
+.fb__td--neg { color: var(--mp-text-critical); }
 
-.fb__foot { border: 1px solid #e2e7ed; border-radius: 10px; background: #fff; padding: 4px 16px; }
-.fb__footrow { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 12px 0; }
-.fb__footrow + .fb__footrow { border-top: 1px solid #f4f6f8; }
-.fb__footlabel { font-size: 13px; color: #3a4749; }
-.fb__footnote { display: block; font-size: 11px; color: #758195; }
-.fb__footvalue { font-size: 16px; font-weight: 600; color: #1e2e2b; font-variant-numeric: tabular-nums; }
-.fb__footrow--strong .fb__footvalue { font-size: 18px; }
+.fb__foot { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); padding: var(--mp-spacing-1) var(--mp-spacing-4); }
+.fb__footrow { display: flex; align-items: baseline; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-3) 0; }
+.fb__footrow + .fb__footrow { border-top: 1px solid var(--mp-border-default); }
+.fb__footlabel { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.fb__footnote { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.fb__footvalue { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
+.fb__footrow--strong .fb__footvalue { font-size: var(--mp-font-sizes-xl); }
 </style>

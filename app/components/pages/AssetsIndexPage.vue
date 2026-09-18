@@ -57,13 +57,22 @@ const bookOptions = [
 ]
 
 // ── Filters ─────────────────────────────────────────────────────────────────
+// Two filters stay inline; branch and tax group live in the All filters drawer
+// (rule/filter-bar-anatomy — the left group is inline filters + All filters,
+// and four dropdowns plus the book switcher will not fit on one row).
 const search = ref('')
 const classFilter = ref('')
 const branchFilter = ref('')
 const statusFilter = ref('')
 const taxGroupFilter = ref('')
+const filtersOpen = ref(false)
 
 const statusOptions = ['Active', 'Impaired', 'Disposed', 'Fully depreciated', 'Incomplete']
+
+/** How many of the drawer-held filters are set, for the button's count. */
+const activeDrawerFilters = computed(() =>
+  [branchFilter.value, taxGroupFilter.value].filter(Boolean).length,
+)
 
 const hasActiveFilter = computed(() =>
   !!(search.value || classFilter.value || branchFilter.value || statusFilter.value || taxGroupFilter.value),
@@ -238,24 +247,23 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
     @clear-filters="clearFilters"
   >
     <!-- ── Filters ── -->
+    <!-- rule/filter-bar-anatomy — left: inline filters + All filters.
+         right: icon tools, then search as the rightmost element.
+         The book switcher is deliberately NOT here: at three segments it is
+         306px wide and the bar has no room for it beside two filters, the
+         All filters button and the search pill. It sits above the table with
+         the totals it governs, where it also reads as what it is — a choice
+         about which figures the whole screen reports. -->
     <template #filters>
       <div class="filter-left">
         <ErpFilterSelect id="asset-class" v-model="classFilter" :placeholder="t('Class')" :options="assetClasses" />
-        <ErpFilterSelect id="asset-branch" v-model="branchFilter" :placeholder="t('Branch')" :options="assetBranches" />
         <ErpFilterSelect id="asset-status" v-model="statusFilter" :placeholder="t('Status')" :options="statusOptions" />
-        <ErpFilterSelect id="asset-taxgroup" v-model="taxGroupFilter" :placeholder="t('Tax group')" :options="assetTaxGroups" />
+        <MpButton class="filter-all-btn" is-rounded variant="secondary" @click="filtersOpen = true">
+          {{ t('All filters') }}{{ activeDrawerFilters ? ` (${activeDrawerFilters})` : '' }}
+        </MpButton>
       </div>
 
       <div class="filter-right">
-        <!-- The book switcher. Sits with the filters because that is what it is:
-             it narrows what the table reports, not what it contains. -->
-        <MpSegmentedControl
-          id="asset-book-switch"
-          name="asset-book-switch"
-          v-model="book"
-          :data="bookOptions"
-        />
-
         <MpButtonGroup class="filter-btn-group">
           <MpTooltip :label="t('Ask Airene')" placement="bottom">
             <MpButton class="filter-airene-btn" variant="ghost" left-icon="airene-brand" :aria-label="t('Ask Airene')" is-rounded @click="toggleAirene?.()" />
@@ -290,34 +298,46 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
         <!-- The two ways out sit under the banner as real buttons. As banner
              links they read as body copy and nobody finds them. -->
         <div class="asset-alert__actions">
-          <MpButton size="sm" variant="secondary" @click="assignTaxGroup">{{ t('Assign a tax group') }}</MpButton>
-          <MpButton size="sm" variant="secondary" @click="applyClassDefault">{{ t('Apply the class default') }}</MpButton>
+          <MpButton variant="secondary" is-rounded @click="assignTaxGroup">{{ t('Assign a tax group') }}</MpButton>
+          <MpButton variant="secondary" is-rounded @click="applyClassDefault">{{ t('Apply the class default') }}</MpButton>
         </div>
       </div>
 
-      <!-- The totals sit in a card so they read as a summary of the table
-           below rather than as text floating above it. -->
-      <div class="asset-totals">
-        <div class="asset-total">
-          <div class="asset-total__label">{{ t('Assets') }}</div>
-          <div class="asset-total__value">{{ totals.count }}</div>
+      <!-- Totals in a card, with the book switcher above them: the switcher
+           governs which of these figures appear, so it reads as a heading for
+           them rather than as another filter. Two rows, because four large
+           figures and a three-segment switcher do not fit on one. -->
+      <div class="asset-summary">
+        <div class="asset-summary__switch">
+          <MpSegmentedControl
+            id="asset-book-switch"
+            name="asset-book-switch"
+            v-model="book"
+            :data="bookOptions"
+          />
         </div>
-        <div class="asset-total">
-          <div class="asset-total__label">{{ t('Acquisition cost') }}</div>
-          <div class="asset-total__value">{{ formatIDR(totals.cost) }}</div>
-        </div>
-        <div v-if="book !== 'fiscal'" class="asset-total">
-          <div class="asset-total__label">{{ t('Book value') }}</div>
-          <div class="asset-total__value">{{ formatIDR(totals.bookValueCommercial) }}</div>
-        </div>
-        <div v-if="book !== 'commercial'" class="asset-total">
-          <div class="asset-total__label">{{ t('Fiscal book value') }}</div>
-          <div class="asset-total__value">{{ formatIDR(totals.bookValueFiscal) }}</div>
-          <!-- A fiscal total that silently omits an asset is the same mistake as
-               a fiscal cell showing 0. Say what is missing and why. -->
-          <div v-if="totals.unclassified" class="asset-total__note">
-            {{ t('excludes') }} {{ totals.unclassified }}
-            {{ t(totals.unclassified === 1 ? 'asset with no tax group' : 'assets with no tax group') }}
+        <div class="asset-totals">
+          <div class="asset-total">
+            <div class="asset-total__label">{{ t('Assets') }}</div>
+            <div class="asset-total__value">{{ totals.count }}</div>
+          </div>
+          <div class="asset-total">
+            <div class="asset-total__label">{{ t('Acquisition cost') }}</div>
+            <div class="asset-total__value">{{ formatIDR(totals.cost) }}</div>
+          </div>
+          <div v-if="book !== 'fiscal'" class="asset-total">
+            <div class="asset-total__label">{{ t('Book value') }}</div>
+            <div class="asset-total__value">{{ formatIDR(totals.bookValueCommercial) }}</div>
+          </div>
+          <div v-if="book !== 'commercial'" class="asset-total">
+            <div class="asset-total__label">{{ t('Fiscal book value') }}</div>
+            <div class="asset-total__value">{{ formatIDR(totals.bookValueFiscal) }}</div>
+            <!-- A fiscal total that silently omits an asset is the same mistake
+                 as a fiscal cell showing 0. Say what is missing and why. -->
+            <div v-if="totals.unclassified" class="asset-total__note">
+              {{ t('excludes') }} {{ totals.unclassified }}
+              {{ t(totals.unclassified === 1 ? 'asset with no tax group' : 'assets with no tax group') }}
+            </div>
           </div>
         </div>
       </div>
@@ -325,13 +345,15 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
 
     <!-- ── Cells ── -->
     <template #cell-name="{ row }">
-      <button type="button" class="asset-name" @click="openAsset(row as unknown as FixedAsset)">
+      <!-- rule/table-name-link-span — a clickable name in a cell is a span
+           styled as a link, not a button and not MpTextlink. -->
+      <span class="asset-name" @click="openAsset(row as unknown as FixedAsset)">
         <span class="asset-name__label">{{ (row as unknown as FixedAsset).name }}</span>
         <span class="asset-name__sub">
           {{ (row as unknown as FixedAsset).id }}
           <template v-if="(row as unknown as FixedAsset).tag"> · {{ (row as unknown as FixedAsset).tag }}</template>
         </span>
-      </button>
+      </span>
     </template>
 
     <template #cell-cost="{ row }">
@@ -367,7 +389,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
     <template #actions="{ row }">
       <MpPopover :id="`asset-row-${(row as unknown as FixedAsset).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <MpButton variant="ghost" left-icon="ellipsis-vertical" :aria-label="t('Actions')" is-rounded size="sm" />
+          <MpButton variant="ghost" left-icon="ellipsis-vertical" :aria-label="t('Actions')" is-rounded />
         </MpPopoverTrigger>
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
@@ -397,46 +419,46 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
     <template #empty>
       <div class="asset-empty">
         <div class="asset-empty__title">{{ t('Nothing matches these filters') }}</div>
-        <MpButton variant="secondary" size="sm" @click="clearFilters">{{ t('Clear filters') }}</MpButton>
+        <MpButton variant="secondary" is-rounded @click="clearFilters">{{ t('Clear filters') }}</MpButton>
       </div>
     </template>
   </ErpTablePage>
 </template>
 
 <style scoped>
-.filter-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-/* The book switcher and the icon tools share the right edge. min-width:0 lets
-   the group shrink instead of pushing the switcher off the row. */
-.filter-right { display: flex; align-items: center; gap: 8px; margin-left: auto; min-width: 0; flex: none; }
+/* rule/filter-bar-anatomy — left: inline filters + All filters; right: tools
+   then search. rule/filter-bar-left-gap — the left gap is always 16px. */
+.filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); flex: 0 1 auto; min-width: 0; }
+.filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-left: auto; flex: none; }
 
-.asset-alert { margin-bottom: 12px; }
-.asset-alert__actions { display: flex; gap: 8px; margin-top: 8px; }
+.asset-alert { margin-bottom: var(--mp-spacing-3); }
+.asset-alert__actions { display: flex; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); }
 
 /* Totals read as a summary of the table, so they sit in the same kind of
    surface rather than floating on the page background. */
+.asset-summary {
+  padding: var(--mp-spacing-4);
+  margin-bottom: var(--mp-spacing-4);
+  border: 1px solid var(--mp-border-default);
+  border-radius: var(--mp-radii-md);
+  background: var(--mp-background-neutral);
+}
+.asset-summary__switch { margin-bottom: var(--mp-spacing-4); }
 .asset-totals {
   display: flex;
-  gap: 32px;
+  gap: var(--mp-spacing-8);
   flex-wrap: wrap;
-  padding: 14px 16px;
-  margin-bottom: 16px;
-  border: 1px solid #e2e7ed;
-  border-radius: 10px;
-  background: #fff;
 }
-.asset-total__label { font-size: 12px; color: #758195; line-height: 18px; }
-.asset-total__value { font-size: 18px; font-weight: 600; color: #1e2e2b; line-height: 26px; font-variant-numeric: tabular-nums; }
-.asset-total__note { font-size: 11px; color: #a8352d; line-height: 16px; }
+.asset-total__label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm); }
+.asset-total__value { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-lg); font-variant-numeric: tabular-nums; }
+.asset-total__note { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-critical); line-height: var(--mp-line-heights-sm); }
 
+/* rule/table-name-link-span — a span styled as a link, not a button. */
 .asset-name {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
-  border: 0;
-  background: transparent;
-  padding: 0;
-  text-align: left;
+  gap: var(--mp-spacing-1);
   cursor: pointer;
   /* The name cell carries two lines. Without this the sub-line escapes the
      cell box and collides with the next column. */
@@ -445,17 +467,17 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
   overflow: hidden;
 }
 .asset-name__label {
-  font-weight: 600;
-  color: #1e2e2b;
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-link);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
 }
-.asset-name:hover .asset-name__label { color: #027a4f; text-decoration: underline; }
+.asset-name:hover .asset-name__label { text-decoration: underline; }
 .asset-name__sub {
-  font-size: 12px;
-  color: #758195;
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -464,16 +486,16 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
 
 /* A figure that is absent for a stated reason, not a zero. Red carries the
    same weight as the Incomplete badge on the same row. */
-.cell-absent { color: #a8352d; font-weight: 600; }
+.cell-absent { color: var(--mp-text-critical); font-weight: var(--mp-font-weights-semi-bold); }
 /* A figure that no longer applies — a disposed asset has no book value. */
-.cell-muted { color: #9aa5b1; }
+.cell-muted { color: var(--mp-text-subtle); }
 
 .asset-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 48px 0;
+  gap: var(--mp-spacing-3);
+  padding: var(--mp-spacing-10) 0;
 }
-.asset-empty__title { font-size: 14px; color: #758195; }
+.asset-empty__title { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 </style>

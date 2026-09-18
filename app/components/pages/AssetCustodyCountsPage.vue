@@ -30,9 +30,16 @@ const toneClass: Record<CountTone, string> = {
   muted: 'cc__res--muted',
 }
 
+/**
+ * Closing is always clickable (rule/btn-no-disabled-validation) — a disabled
+ * button tells the user they cannot proceed without telling them why. Validate
+ * on click and name what is in the way.
+ */
 function closeSession() {
   if (!canClose.value) {
-    infoToast(t(`${open.value.length} variances are still open. Resolve them before closing.`))
+    infoToast(
+      t(`${open.value.length} ${open.value.length === 1 ? 'variance is' : 'variances are'} still open. Resolve each one before closing the session.`),
+    )
     return
   }
   infoToast(t('Closing the session is not part of this screen yet.'))
@@ -44,12 +51,12 @@ function closeSession() {
     <header class="cc__head">
       <p class="cc__sub">{{ countSession }}</p>
       <div class="cc__actions">
-        <MpButton variant="secondary" @click="infoToast(t('Starting a session is not part of this screen yet.'))">
+        <MpButton variant="secondary" is-rounded @click="infoToast(t('Starting a session is not part of this screen yet.'))">
           {{ t('New count session') }}
         </MpButton>
         <!-- Disabled rather than hidden: the reader should see that closing is
              possible and understand why it is not available yet. -->
-        <MpButton :is-disabled="!canClose" @click="closeSession">{{ t('Close session') }}</MpButton>
+        <MpButton is-rounded @click="closeSession">{{ t('Close session') }}</MpButton>
       </div>
     </header>
 
@@ -160,36 +167,36 @@ function closeSession() {
 </template>
 
 <style scoped>
-.cc { padding: 4px 0 32px; }
-.cc__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; min-height: 32px; }
-.cc__title { font-size: 18px; font-weight: 600; color: #1e2e2b; margin: 0; }
-.cc__sub { font-size: 13px; color: #758195; margin: 0; max-width: 720px; }
-.cc__actions { display: flex; gap: 8px; flex: none; }
-.cc__note { margin-bottom: 16px; }
 
-.cc__grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; margin-bottom: 16px; }
+.cc__head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); min-height: 32px; }
+.cc__title { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
+.cc__sub { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0; max-width: 720px; }
+.cc__actions { display: flex; gap: var(--mp-spacing-2); flex: none; }
+.cc__note { margin-bottom: var(--mp-spacing-4); }
+
+.cc__grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); }
 @media (max-width: 1100px) { .cc__grid { grid-template-columns: 1fr; } }
 
-.cc__card { border: 1px solid #e2e7ed; border-radius: 10px; background: #fff; overflow: hidden; margin-bottom: 16px; }
-.cc__cardhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #eef1f4; }
-.cc__cardtitle { font-size: 14px; font-weight: 600; color: #1e2e2b; }
-.cc__hint { font-size: 12px; color: #758195; }
+.cc__card { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); overflow: hidden; margin-bottom: var(--mp-spacing-4); }
+.cc__cardhead { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.cc__cardtitle { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.cc__hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 .cc__table { width: 100%; border-collapse: collapse; }
-.cc__th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #758195; background: #f8fafb; padding: 8px 16px; border-bottom: 1px solid #eef1f4; }
+.cc__th { text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); letter-spacing: 0.04em; text-transform: uppercase; color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-2) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
 .cc__th--num { text-align: right; }
-.cc__td { font-size: 13px; color: #232933; padding: 10px 16px; border-bottom: 1px solid #f4f6f8; vertical-align: top; }
+.cc__td { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); vertical-align: top; }
 .cc__td--num { text-align: right; font-variant-numeric: tabular-nums; }
 /* A tag is one token. Wrapping it across lines makes it unreadable and
    misaligns every row it appears in. */
-.cc__td--mono { font-variant-numeric: tabular-nums; color: #3a4749; white-space: nowrap; }
+.cc__td--mono { font-variant-numeric: tabular-nums; color: var(--mp-text-default); white-space: nowrap; }
 .cc__td--wrap { max-width: 320px; }
-.cc__muted { color: #9aa5b1; }
-.cc__where { display: block; font-size: 11px; color: #758195; margin-top: 2px; }
+.cc__muted { color: var(--mp-text-subtle); }
+.cc__where { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); }
 
-.cc__res { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
-.cc__res--ok { background: #e8f4ef; color: #027a4f; }
-.cc__res--warn { background: #fdf9c4; color: #7a5700; }
-.cc__res--bad { background: #fceeed; color: #a8352d; }
-.cc__res--muted { background: #f4f4f4; color: #3a4749; }
+.cc__res { display: inline-block; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); padding: var(--mp-spacing-1) var(--mp-spacing-2); border-radius: var(--mp-radii-full); white-space: nowrap; }
+.cc__res--ok { background: var(--mp-background-success-subtle); color: var(--mp-text-success); }
+.cc__res--warn { background: var(--mp-background-warning-subtle); color: var(--mp-text-warning); }
+.cc__res--bad { background: var(--mp-background-critical-subtle); color: var(--mp-text-critical); }
+.cc__res--muted { background: var(--mp-background-neutral-subtle); color: var(--mp-text-default); }
 </style>

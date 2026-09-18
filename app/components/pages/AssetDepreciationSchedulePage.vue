@@ -69,7 +69,7 @@ function post() {
       </p>
       <div class="ds__actions">
         <MpSegmentedControl id="ds-period" name="ds-period" v-model="period" :data="periodOptions" />
-        <MpButton @click="post">{{ t('Post depreciation') }}</MpButton>
+        <MpButton is-rounded @click="post">{{ t('Post depreciation') }}</MpButton>
       </div>
     </header>
 
@@ -157,33 +157,33 @@ function post() {
 </template>
 
 <style scoped>
-.ds { padding: 4px 0 32px; }
-.ds__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; min-height: 32px; }
-.ds__title { font-size: 18px; font-weight: 600; color: #1e2e2b; margin: 0; }
-.ds__sub { font-size: 13px; color: #758195; margin: 0; max-width: 720px; }
-.ds__actions { display: flex; align-items: center; gap: 8px; flex: none; }
+
+.ds__head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); min-height: 32px; }
+.ds__title { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
+.ds__sub { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0; max-width: 720px; }
+.ds__actions { display: flex; align-items: center; gap: var(--mp-spacing-2); flex: none; }
 
 
 .ds__totals {
-  display: flex; gap: 40px; flex-wrap: wrap;
-  padding: 14px 16px; margin-bottom: 16px;
-  border: 1px solid #e2e7ed; border-radius: 10px; background: #fff;
+  display: flex; gap: var(--mp-spacing-10); flex-wrap: wrap;
+  padding: var(--mp-spacing-4) var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4);
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral);
 }
-.ds__totallabel { font-size: 12px; color: #758195; }
-.ds__totalvalue { font-size: 18px; font-weight: 600; color: #1e2e2b; font-variant-numeric: tabular-nums; }
-.ds__totalnote { font-size: 11px; color: #758195; }
-.ds__totalnote--muted { font-style: italic; }
-.ds__note { margin-bottom: 16px; }
+.ds__totallabel { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.ds__totalvalue { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
+.ds__totalnote { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.ds__totalnote--muted { }
+.ds__note { margin-bottom: var(--mp-spacing-4); }
 
-.ds__card { border: 1px solid #e2e7ed; border-radius: 10px; background: #fff; overflow: hidden; }
+.ds__card { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); overflow: hidden; }
 .ds__table { width: 100%; border-collapse: collapse; }
-.ds__th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #758195; background: #f8fafb; padding: 8px 16px; border-bottom: 1px solid #eef1f4; }
+.ds__th { text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); letter-spacing: 0.04em; text-transform: uppercase; color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-2) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
 .ds__th--num { text-align: right; }
-.ds__td { font-size: 13px; color: #232933; padding: 10px 16px; border-bottom: 1px solid #f4f6f8; vertical-align: top; }
+.ds__td { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); vertical-align: top; }
 .ds__td--num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.ds__td--basis { font-size: 12px; color: #758195; }
-.ds__td--absent { color: #a8352d; font-weight: 600; }
-.ds__tr--total .ds__td { font-weight: 600; background: #fafbfc; border-top: 1px solid #e2e7ed; }
-.ds__name { display: block; font-weight: 600; color: #1e2e2b; }
-.ds__id { display: block; font-size: 11px; color: #758195; margin-top: 2px; }
+.ds__td--basis { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.ds__td--absent { color: var(--mp-text-critical); font-weight: var(--mp-font-weights-semi-bold); }
+.ds__tr--total .ds__td { font-weight: var(--mp-font-weights-semi-bold); background: var(--mp-background-neutral-subtle); border-top: 1px solid var(--mp-border-default); }
+.ds__name { display: block; font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.ds__id { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); }
 </style>
