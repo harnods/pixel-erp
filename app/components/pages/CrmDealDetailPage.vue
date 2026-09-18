@@ -417,16 +417,10 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
           <!-- ── Deal details ── -->
           <MpTabPanel value="details">
             <section class="detail-summary">
-              <!-- Primary row: Customer · Contact person · emphasised Deal value -->
+              <!-- Primary row: Contact (primary) · its Company · emphasised Deal value -->
               <div class="content-list-grid">
-                <div class="content-list-col">
-                  <ContentList :label="t('Customer')">
-                    <a v-if="customer" class="cell-link" @click="goCustomer(customer.id)">{{ deal.company }}</a>
-                    <span v-else>{{ deal.company }}</span>
-                  </ContentList>
-                </div>
                 <div class="content-list-col deal-contact-col">
-                  <ContentList :label="t('Contact person')">
+                  <ContentList :label="t('Contact')">
                     <div v-if="deal.contacts?.length" class="deal-contacts">
                       <div v-for="(cp, i) in deal.contacts" :key="i" class="deal-contact">
                         <span class="deal-contact-name">{{ cp.name }}</span>
@@ -434,7 +428,15 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                         <span v-if="cp.phone" class="deal-contact-line">{{ cp.phone }}</span>
                       </div>
                     </div>
+                    <template v-else-if="deal.picName">{{ deal.picName }}</template>
                     <template v-else>—</template>
+                  </ContentList>
+                </div>
+                <div class="content-list-col">
+                  <!-- Company shown only when the contact has one associated. -->
+                  <ContentList :label="t('Company')">
+                    <a v-if="customer" class="cell-link" @click="goCustomer(customer.id)">{{ deal.company }}</a>
+                    <span v-else>{{ deal.company || '—' }}</span>
                   </ContentList>
                 </div>
                 <div class="detail-primary-total">

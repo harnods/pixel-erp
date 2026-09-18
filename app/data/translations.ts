@@ -3722,4 +3722,5 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Default": "Default",
   "available": "tersedia",
   "in all warehouses": "di semua gudang",
+  "You must select a contact": "Pilih kontak terlebih dahulu",
 }
