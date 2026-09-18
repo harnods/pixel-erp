@@ -211,6 +211,10 @@ const SEED: Array<Omit<WorkOrder, 'id' | 'number' | 'bomId' | 'bomName'> & { bom
       vendorId: 'sv-03', vendorName: 'PT Java Roasting Works',
       promisedDate: isoOffset(6),
       // Dropship — a third party ships direct, so there is no source warehouse.
+      // The subcon warehouse is still set: it is where those components are
+      // delivered (the vendor is the consignee), and it is what the component
+      // purchase request is addressed to.
+      subconWarehouseId: 'wh-sub-03', subconWarehouseName: 'WH Subcon · PT Java Roasting Works',
       receivingWarehouseId: 'wh-005', receivingWarehouseName: 'Gudang Semarang Industrial',
       subconOrderNumber: 'SC-2026-0004',
     },

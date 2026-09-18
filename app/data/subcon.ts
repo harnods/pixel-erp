@@ -304,6 +304,22 @@ export function decodeSubconPrefill(raw: unknown): SubconDocPrefill | null {
  */
 export const RAISED_ELSEWHERE: SubconDocKind[] = ['purchaseOrder', 'purchaseDelivery', 'purchaseInvoice']
 
+/**
+ * The component-supply purchase requests — material bought from a 3rd-party
+ * vendor and shipped STRAIGHT to the subcon vendor, which is named as consignee
+ * (CID). These only ever appear in a `dropship` plan.
+ *
+ * They are the one case where a purchase request does not deliver into a company
+ * warehouse: the goods never touch our sites, so the request is addressed to the
+ * subcon vendor's warehouse — the "Transfer components to" location on the work
+ * order's subcon setup.
+ */
+const SHIPPED_TO_VENDOR: SubconDocKind[] = ['componentPr', 'rawPr']
+
+export function shipsToSubconVendor(kind: SubconDocKind): boolean {
+  return SHIPPED_TO_VENDOR.includes(kind)
+}
+
 /** Which documents a work order can raise the moment it starts. The goods
  *  receipt is deliberately excluded — it is raised when the vendor returns the
  *  goods, not when the order begins. */

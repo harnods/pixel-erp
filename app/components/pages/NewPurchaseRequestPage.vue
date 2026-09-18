@@ -23,7 +23,7 @@ import {
 import { addPurchaseRequest } from '~/data/purchaseRequests'
 import type { PurchaseRequestLine, UrgencyLevel } from '~/data/types'
 import ProductCell from '~/components/patterns/ProductCell.vue'
-import { decodeSubconPrefill } from '~/data/subcon'
+import { decodeSubconPrefill, shipsToSubconVendor } from '~/data/subcon'
 import { recordSubconDocument } from '~/data/workOrders'
 
 const router = useRouter()
@@ -49,6 +49,18 @@ const requestDate      = ref(isoToDMY(todayISO()))
 const requiredDate     = ref('')
 const urgency          = ref('Medium')
 const warehouse        = ref('')
+/**
+ * Warehouse options. This form's `WAREHOUSES` is a short legacy demo list that
+ * shares no names with the real warehouse store, so a prefilled warehouse — a
+ * receiving warehouse, or a subcon vendor's own site on a dropship request — is
+ * not among them and MpAutocomplete renders the field blank. Merging the
+ * prefilled value in is what makes it actually show.
+ */
+const warehouseOptions = computed(() =>
+  warehouse.value && !WAREHOUSES.includes(warehouse.value)
+    ? [warehouse.value, ...WAREHOUSES]
+    : WAREHOUSES,
+)
 
 const URGENCY_OPTIONS = ['Low', 'Medium', 'High']
 
@@ -86,9 +98,14 @@ const subconPrefill = decodeSubconPrefill(route.query.subcon)
 if (subconPrefill) {
   requiredDate.value = isoToDMY(subconPrefill.requiredDate)
   urgency.value = 'High'
-  // This form's WAREHOUSES list is a legacy string array unrelated to the real
-  // warehouse store, so the name is set directly rather than matched against it.
-  warehouse.value = subconPrefill.receivingWarehouseName
+  // Where this request delivers. A dropship component request never touches our
+  // sites — the 3rd-party vendor ships straight to the subcon vendor, which is
+  // the consignee — so it is addressed to the subcon warehouse ("Transfer
+  // components to" on the work order). Everything else still delivers into our
+  // own receiving warehouse.
+  warehouse.value = shipsToSubconVendor(subconPrefill.kind)
+    ? subconPrefill.destinationWarehouseName || subconPrefill.receivingWarehouseName
+    : subconPrefill.receivingWarehouseName
   items.value = subconPrefill.lines.map(l => ({
     _key: ++_seq,
     product: l.name,
@@ -183,6 +200,7 @@ function onSave() {
     totalProducts: lines.length,
     urgency: urgency.value.toLowerCase() as UrgencyLevel,
     lines,
+    ...(warehouse.value ? { warehouse: warehouse.value } : {}),
   })
   const id = request.id
   // Raised from a subcon work order → link it back, so that work order's
@@ -253,7 +271,7 @@ function onSave() {
 
           <MpFormControl id="f-warehouse" class="si-field">
             <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
-            <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width />
+            <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="warehouseOptions" use-portal is-clearable is-full-width />
           </MpFormControl>
         </div>
       </section>

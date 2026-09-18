@@ -244,6 +244,13 @@ export interface PurchaseRequest {
   attachment?: boolean                    // has a supporting document attached
   awaitingApproval?: boolean              // sits in the "Awaiting approval" queue
   lines: PurchaseRequestLine[]            // requested products
+  /**
+   * Where the request delivers, when it was chosen on the form. Seeded requests
+   * leave this undefined and the detail page picks a plausible one instead.
+   * A dropship component request carries the SUBCON VENDOR's warehouse here —
+   * those goods never reach a company site.
+   */
+  warehouse?: string
 }
 
 export interface SalesQuote {

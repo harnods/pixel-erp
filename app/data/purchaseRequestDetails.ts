@@ -66,7 +66,9 @@ function buildDetail(base: PurchaseRequest, idx: number): PurchaseRequestDetail 
   return {
     ...base,
     department: pick(DEPARTMENTS, idx),
-    warehouse: pick(WAREHOUSES, idx),
+    // A request created through the form carries its own; only seeded ones fall
+    // back to the generated list.
+    warehouse: base.warehouse ?? pick(WAREHOUSES, idx),
     deliverTo: pick(DELIVER_TO, idx),
     note: pick(NOTES, idx),
     attachments: base.attachment ? [{ name: `PR-${base.number}.pdf`, sizeKB: 48 }] : [],
