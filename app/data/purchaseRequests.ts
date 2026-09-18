@@ -10,7 +10,8 @@ import { CATALOG } from './catalog'
  * snapshot so any future create/edit survives a refresh and `resetDb()` clears it.
  */
 
-const SNAPSHOT_KEY = 'purchase-requests-v2'
+// Bumped to v3 — seeds a replenishment origin on ~1 in 4 requests (Source column).
+const SNAPSHOT_KEY = 'purchase-requests-v3'
 
 // Procurement staff pool — the Figma placeholders plus a couple more, so the
 // column reads like a small procurement team.
@@ -84,6 +85,21 @@ function build(): PurchaseRequest[] {
       attachment: i % 6 === 0,
       // A handful sit in the approval queue (open requests awaiting sign-off).
       awaitingApproval: status === 'open' && i % 20 === 3,
+      // ~1 in 4 was raised by the replenishment worklist rather than by hand, so
+      // the Source column has both origins to show. (Runtime-created PRs from the
+      // worklist carry the full origin; this seed only needs it flagged.)
+      ...(i % 4 === 0
+        ? {
+            replenishment: {
+              source: 'replenishment' as const,
+              asOf: '2026-06-26',
+              runNo: 1,
+              warehouseId: 'wh-001',
+              createdBy: STAFF[i % STAFF.length]!,
+              lines: [],
+            },
+          }
+        : {}),
       lines,
     })
   }

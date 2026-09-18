@@ -881,6 +881,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Postal code': 'Kode pos',
   'Detailed address': 'Alamat lengkap',
   'Source': 'Sumber',
+  'Manual': 'Manual',
   'Select source': 'Pilih sumber',
   'Source detail': 'Detail sumber',
   'Title': 'Sapaan',

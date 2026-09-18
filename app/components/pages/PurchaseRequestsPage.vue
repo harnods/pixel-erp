@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {
   MpButton, MpButtonGroup, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, toast, css,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpBadge, toast, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -35,6 +35,7 @@ const columns: TableColumn[] = [
   { key: 'number',           label: t('Number'),           kind: 'number', sortable: true,                 sortType: 'number' },
   { key: 'attachment',       label: '',                    width: '52px',  noHeader: true, align: 'center' },
   { key: 'procurementStaff', label: t('Procurement staff'), kind: 'name', sortable: true,                sortType: 'text'   },
+  { key: 'source',           label: t('Source'),           kind: 'status'                                                     },
   { key: 'requiredDate',     label: t('Required date'),    kind: 'date',                                   sortType: 'date'   },
   { key: 'status',           label: t('Status'),           kind: 'status',                                 sortType: 'text'   },
   { key: 'totalProducts',    label: t('Total products'),                                   sortable: true,  sortType: 'number' },
@@ -337,6 +338,14 @@ const exportColumns = computed(() => [
       <ErpStatusBadge :status="value as string" />
     </template>
 
+    <!-- ── Cell: Source — replenishment-raised vs manual ── -->
+    <template #cell-source="{ row }">
+      <MpBadge v-if="(row as PurchaseRequest).replenishment" for="tableStatus" type="information">
+        {{ t('Replenishment') }}
+      </MpBadge>
+      <span v-else class="pr-source-manual">{{ t('Manual') }}</span>
+    </template>
+
     <!-- ── Cell: Total products ── -->
     <template #cell-totalProducts="{ value }">
       {{ value }}
@@ -426,6 +435,9 @@ const exportColumns = computed(() => [
 .urgency { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .urgency__ic { flex-shrink: 0; }
 .urgency__label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+
+/* Source: manual PRs read as muted text against the Replenishment badge */
+.pr-source-manual { color: var(--mp-text-subtle); }
 
 .row-kebab {
   display: inline-flex; align-items: center; justify-content: center;
