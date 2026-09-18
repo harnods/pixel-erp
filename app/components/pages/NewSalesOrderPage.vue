@@ -21,7 +21,7 @@ import { formatIDR } from '~/utils/currency'
 import type { DataInterface } from '@mekari/pixel3'
 import {
   customers, products, salesOrders,
-  PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS,
+  PAYMENT_TERMS, WAREHOUSES, TAX_OPTIONS,
 } from '~/data'
 import type { SalesOrder, SalesOrderItem } from '~/data/types'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
@@ -214,7 +214,6 @@ function onDrop(ev: DragEvent, toIdx: number) {
 }
 function onDragEnd() { dragSrcIndex.value = null; dragOverIndex.value = null }
 
-const unitOptions = computed(() => Array.from(new Set([...UNIT_OPTIONS, ...items.value.map(i => i.unit)])))
 const taxOptions  = computed(() => Array.from(new Set([...TAX_OPTIONS, ...items.value.map(i => i.taxLabel)])))
 
 // Banner above the table whenever any line cell is flagged — same convention as
@@ -540,7 +539,7 @@ function onSave() {
                 <th class="si-th">{{ t('Product') }}</th>
                 <th class="si-th">{{ t('Description') }}</th>
                 <th class="si-th">{{ t('Qty') }}</th>
-                <th class="si-th">{{ t('Unit') }}</th>
+                <th class="si-th" data-devchange="deal-unit-readonly">{{ t('Unit') }}</th>
                 <th class="si-th">{{ t('Unit price') }}</th>
                 <th class="si-th">{{ t('Discount') }}</th>
                 <th class="si-th">{{ t('Tax') }}</th>
@@ -617,8 +616,9 @@ function onSave() {
                     @update:model-value="(v) => { item.qty = Number(v); item.qtyError = false }" />
                 </td>
 
-                <td class="si-td si-td--input si-td--border">
-                  <MpAutocomplete v-model="item.unit" :data="unitOptions" use-portal is-full-width />
+                <!-- Unit is fixed by the product (not selectable) — read-only, filled like the Amount cell. -->
+                <td class="si-td si-td--border si-td--affix si-td--calc">
+                  <div class="si-affix-cell"><span class="si-unit-ro">{{ item.unit }}</span></div>
                 </td>
 
                 <!-- Prefix box is a plain span, not MpInputLeftAddon — see
@@ -995,6 +995,7 @@ function onSave() {
   vertical-align: top;
 }
 .si-td--border { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
+.si-unit-ro { flex: 1; display: flex; align-items: center; padding: 0 var(--mp-spacing-2); color: var(--mp-text-secondary, #64748b); }
 .si-tr--dragging { opacity: 0.4; }
 .si-tr--dragging .si-td--drag { cursor: grabbing; }
 .si-tr--dragover > .si-td { border-top: 2px solid var(--mp-border-focused, #2563eb); }
