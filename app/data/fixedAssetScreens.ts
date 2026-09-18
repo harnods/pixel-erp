@@ -54,18 +54,18 @@ export const impactByTaxGroup: ImpactRow[] = [
  * nothing. Rendering 0 would claim the opposite.
  */
 export const amortisationYtd: ImpactRow[] = [
-  { label: 'FA-0091 Goodwill — PT Mitra Logistik', basis: 'Indefinite life accountingly · Tax group 4, 20 years taxly', commercial: null, fiscal: 90000000 },
-  { label: 'FA-0093 Registered brand — Sinar Kencana', basis: 'Indefinite life accountingly · Tax group 4, 20 years taxly', commercial: null, fiscal: 33750000 },
-  { label: 'FA-0092 Software licence — WMS', basis: '5 years accountingly · Tax group 1, 4 years taxly', commercial: 72000000, fiscal: 90000000 },
-  { label: 'FA-0094 Patent — conveyor mechanism', basis: '10 years accountingly · Tax group 2, 8 years taxly', commercial: 24000000, fiscal: 30000000 },
+  { label: 'FA-0091 Goodwill — PT Mitra Logistik', basis: 'Indefinite life accounting · Tax group 4, 20 yr tax', commercial: null, fiscal: 90000000 },
+  { label: 'FA-0093 Registered brand — Central Perk', basis: 'Indefinite life accounting · Tax group 4, 20 yr tax', commercial: null, fiscal: 33750000 },
+  { label: 'FA-0092 Software licence — WMS', basis: '5 yr accounting · Tax group 1, 4 yr tax', commercial: 72000000, fiscal: 90000000 },
+  { label: 'FA-0094 Patent — conveyor mechanism', basis: '10 yr accounting · Tax group 2, 8 yr tax', commercial: 24000000, fiscal: 30000000 },
 ]
 
 /** The same four intangibles, September only. */
 export const amortisationSeptember: ImpactRow[] = [
-  { label: 'FA-0091 Goodwill — PT Mitra Logistik', basis: 'Indefinite life accountingly · Tax group 4, 20 years taxly', commercial: null, fiscal: 10000000 },
-  { label: 'FA-0093 Registered brand — Sinar Kencana', basis: 'Indefinite life accountingly · Tax group 4, 20 years taxly', commercial: null, fiscal: 3750000 },
-  { label: 'FA-0092 Software licence — WMS', basis: '5 years accountingly · Tax group 1, 4 years taxly', commercial: 8000000, fiscal: 10000000 },
-  { label: 'FA-0094 Patent — conveyor mechanism', basis: '10 years accountingly · Tax group 2, 8 years taxly', commercial: 2666667, fiscal: 3333333 },
+  { label: 'FA-0091 Goodwill — PT Mitra Logistik', basis: 'Indefinite life accounting · Tax group 4, 20 yr tax', commercial: null, fiscal: 10000000 },
+  { label: 'FA-0093 Registered brand — Central Perk', basis: 'Indefinite life accounting · Tax group 4, 20 yr tax', commercial: null, fiscal: 3750000 },
+  { label: 'FA-0092 Software licence — WMS', basis: '5 yr accounting · Tax group 1, 4 yr tax', commercial: 8000000, fiscal: 10000000 },
+  { label: 'FA-0094 Patent — conveyor mechanism', basis: '10 yr accounting · Tax group 2, 8 yr tax', commercial: 2666667, fiscal: 3333333 },
 ]
 
 // ── Commercial to fiscal difference ─────────────────────────────────────────
@@ -122,7 +122,7 @@ export const differenceByAsset: DifferenceRow[] = [
     id: 'FA-0068',
     name: 'Forklift Toyota 3T',
     difference: -17250000,
-    reason: 'Impairment to 184.000.000 recognised accountingly only — not deductible',
+    reason: 'Impairment to 184.000.000 recognised in the accounts only — not deductible',
     tag: 'Impairment',
   },
   {

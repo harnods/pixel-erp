@@ -1,7 +1,7 @@
 /**
  * Fixed assets — the register behind Accounting › Fixed assets › Assets.
  *
- * Sample company: PT Sinar Kencana Utama · FY2026 (Jan–Dec) · IDR · three
+ * Sample company: PT Central Perk Indonesia · FY2026 (Jan–Dec) · IDR · three
  * branches (Central Jakarta, Surabaya, Medan). "Today" is September 2026,
  * closing 30/09/2026.
  *
@@ -498,7 +498,7 @@ export const fixedAssets: FixedAsset[] = [
   },
   {
     id: 'FA-0093',
-    name: 'Registered brand — Sinar Kencana',
+    name: 'Registered brand — Central Perk',
     class: 'Intangible assets',
     acquired: '01/06/2023',
     cost: 900000000,

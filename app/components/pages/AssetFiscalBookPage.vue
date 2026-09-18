@@ -18,7 +18,8 @@
 import { computed, ref } from 'vue'
 import { MpButton, MpSegmentedControl, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
-import { infoToast } from '~/utils/toasts'
+import { infoToast, successToast } from '~/utils/toasts'
+import ExportModal from '~/components/patterns/ExportModal.vue'
 import {
   impactByClass, impactByTaxGroup, amortisationYtd, type ImpactRow,
 } from '~/data/fixedAssetScreens'
@@ -61,8 +62,20 @@ function diff(a: number | null, b: number | null) {
   return a - b
 }
 
-function exportStatement() {
-  infoToast(t('Export is not part of this screen yet.'))
+// rule/export-modal — export opens the shared modal, never a silent download.
+const exportOpen = ref(false)
+const exportColumns = [
+  { key: 'label', label: t('Line') },
+  { key: 'accounting', label: t('Accounting') },
+  { key: 'tax', label: t('Tax') },
+  { key: 'difference', label: t('Difference') },
+  { key: 'taxGroup', label: t('Statutory group') },
+  { key: 'assets', label: t('Assets') },
+]
+function exportStatement() { exportOpen.value = true }
+function onExport() {
+  exportOpen.value = false
+  successToast(t('Export ready — check your downloads'))
 }
 </script>
 
@@ -70,7 +83,7 @@ function exportStatement() {
   <div class="fb">
     <header class="fb__head">
       <p class="fb__sub">
-        {{ t('Asset profit and loss impact · FY2026 to 30 September 2026 · PT Sinar Kencana Utama') }}
+        {{ t('Asset profit and loss impact · FY2026 to 30 September 2026 · PT Central Perk Indonesia') }}
       </p>
       <MpButton variant="secondary" is-rounded @click="exportStatement">
         {{ t('Export') }}
@@ -224,6 +237,16 @@ function exportStatement() {
         <span class="fb__footvalue">{{ formatIDR(H.deferredTaxAt22pct) }}</span>
       </div>
     </div>
+
+    <ExportModal
+      :open="exportOpen"
+      :title="t('Export the profit and loss impact')"
+      :entity-label="t('lines')"
+      :columns="exportColumns"
+      :total="impactByClass.length + amortisationYtd.length + 2"
+      @close="exportOpen = false"
+      @export="onExport"
+    />
   </div>
 </template>
 
