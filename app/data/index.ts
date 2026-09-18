@@ -92,6 +92,7 @@ export * from './bankStatementReviewFiles'
 
 // ── Expenses (bills / uploaded files review) ────────────────────────────────
 export * from './bills'
+export * from './fixedAssets'
 export * from './reviewFiles'
 
 // ── HR (Employees) ──────────────────────────────────────────────────────────

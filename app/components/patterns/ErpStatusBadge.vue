@@ -88,6 +88,16 @@ const statusConfig: Record<string, StatusConfig> = {
   low:        { type: 'critical',     label: 'Low'        },
   'needs review':{ type: 'critical',  label: 'Needs review' },
 
+  // ── Fixed assets ──────────────────────────────────────
+  // An asset's status says where it is in its life, so the colour follows what
+  // the reader must do about it: green = depreciating normally, yellow = value
+  // has been written down, blue = reached the end of its life as planned, gray
+  // = no longer held, red = cannot reach the fiscal book until it is fixed.
+  impaired:   { type: 'warning',      label: 'Impaired'   },
+  disposed:   { type: 'announcement', label: 'Disposed'   },
+  'fully depreciated': { type: 'information', label: 'Fully depreciated' },
+  incomplete: { type: 'critical',     label: 'Incomplete' },
+
   // ── announcement — GRAY (neutral / final / inactive) ──
   draft:      { type: 'announcement', label: 'Draft'      },
   'awaiting approval':{ type: 'announcement', label: 'Draft' },
