@@ -462,7 +462,7 @@ function onSave() {
       <!-- ── Header section 1: Contact (primary) + its Company + Deal value ── -->
       <section class="si-header1 si-dashed-divider">
         <MpFormControl id="f-contact" class="si-field" is-required :is-invalid="contactError">
-          <MpFormLabel>{{ t('Contact') }}</MpFormLabel>
+          <MpFormLabel data-devchange="deal-quick-add-contact">{{ t('Contact') }}</MpFormLabel>
           <MpAutocomplete
             id="f-contact-inp" v-model="contactId" :data="contactOptions"
             label-prop="name" value-prop="id" is-searchable use-portal is-full-width
@@ -481,7 +481,7 @@ function onSave() {
         <!-- Company — derived from the contact. One → read-only; several → pick one;
              none → hidden (a contact may have no associated company). -->
         <MpFormControl v-if="contactId && contactCompanies.length" id="f-company" class="si-field">
-          <MpFormLabel>{{ t('Company') }}</MpFormLabel>
+          <MpFormLabel data-devchange="deal-contact-first">{{ t('Company') }}</MpFormLabel>
           <MpAutocomplete
             v-if="contactCompanies.length > 1"
             id="f-company-inp" v-model="chosenCompanyId" :data="companyOptions"
@@ -572,7 +572,7 @@ function onSave() {
           </MpFormControl>
 
           <MpFormControl id="f-warehouse" class="si-field">
-            <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
+            <MpFormLabel data-devchange="deal-product-stock">{{ t('Warehouse') }}</MpFormLabel>
             <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSE_OPTIONS" :placeholder="t('Select warehouse')" use-portal is-clearable is-full-width />
           </MpFormControl>
         </div>
