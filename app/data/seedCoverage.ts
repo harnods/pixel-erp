@@ -49,9 +49,9 @@ function completedPacking(o: OutgoingOrder) {
   startPacking(pk.id); endPacking(pk.id, { [`${o.id}::${SKU}`]: 1 })
   return pk
 }
-function readyToShip(o: OutgoingOrder) {
+function readyToShip(o: OutgoingOrder, courier = 'JNE REG') {
   const pk = completedPacking(o)
-  return addDeliveryTaskFromPackingTasks([getPackingTask(pk.id)!], { assignee: BY, courier: 'JNE REG' })
+  return addDeliveryTaskFromPackingTasks([getPackingTask(pk.id)!], { assignee: BY, courier })
 }
 
 function seedOutbound() {
@@ -118,12 +118,47 @@ function seedInbound() {
   })
 }
 
+// ── One warehouse, several couriers: the split-on-save demo ───────────────────
+/**
+ * Five ready-to-ship packages in ONE warehouse, deliberately bound for THREE
+ * different couriers, so the New shipment flow can be walked end to end:
+ *
+ *   scan all five into ONE draft  ->  Save  ->  THREE shipment documents.
+ *
+ * The split is the point. A shipment document travels with one courier, but the
+ * operator at the outbound door doesn't sort parcels by courier first — they scan
+ * whatever is in front of them. So the draft is deliberately mixed and
+ * handoverToCourierBulk() groups it at save time (one doc per distinct courier)
+ * instead of making the operator keep three drafts open.
+ *
+ * Named by courier so the result can be checked at a glance: the two JNE packages
+ * must land on ONE shipment no., and neither of the others on it.
+ */
+const SHIP_SPLIT_SENTINEL = 'SHIP-SPLIT-JNE-1'
+const SHIP_SPLIT: { salesNo: string; courier: string }[] = [
+  { salesNo: SHIP_SPLIT_SENTINEL, courier: 'JNE REG' },
+  { salesNo: 'SHIP-SPLIT-JNE-2', courier: 'JNE REG' },
+  { salesNo: 'SHIP-SPLIT-SICEPAT-1', courier: 'SiCepat BEST' },
+  { salesNo: 'SHIP-SPLIT-SICEPAT-2', courier: 'SiCepat BEST' },
+  { salesNo: 'SHIP-SPLIT-ANTERAJA-1', courier: 'AnterAja REG' },
+]
+
+function seedShipmentCourierSplit(): void {
+  for (const s of SHIP_SPLIT) {
+    step(`ready to ship ${s.salesNo}`, () => { readyToShip(order(s.salesNo), s.courier) })
+  }
+}
+
 /** Run once per fresh DB (guarded by the sentinel order). */
 export function ensureSeedCoverage(): void {
-  if (outgoingOrders.some((o) => o.salesNo === SENTINEL)) return
   if (receipts.length === 0) return // base seed not ready yet — bail (shouldn't happen)
-  seedOutbound()
-  seedInbound()
+  // Each block carries its OWN sentinel, so a DB seeded by an earlier build picks up
+  // a newly added block without needing a reset — and never re-runs one it has.
+  if (!outgoingOrders.some((o) => o.salesNo === SENTINEL)) {
+    seedOutbound()
+    seedInbound()
+  }
+  if (!outgoingOrders.some((o) => o.salesNo === SHIP_SPLIT_SENTINEL)) seedShipmentCourierSplit()
 }
 
 ensureSeedCoverage()
