@@ -19,16 +19,21 @@ import {
 import { formatIDR } from '~/utils/currency'
 import type { DataInterface } from '@mekari/pixel3'
 import {
-  PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS,
+  PAYMENT_TERMS, UNIT_OPTIONS, TAX_OPTIONS,
 } from '~/data'
+// Warehouses come from the single warehouse DB (warehouses.ts) — same source the
+// stock lookup uses, so no name→id bridging.
+import { warehouses } from '~/data/warehouses'
 import {
-  crmCustomers, crmProducts, createDeal, updateDeal, getDeal,
+  crmCustomers, createDeal, updateDeal, getDeal,
   addDealAttachment, addCrmCustomer, crmCompanies, contactsOfCompany,
   defaultDealStage, CRM_OWNERS, dealModuleSetup,
-  type CrmProduct, type DealInput, type DealLineItem, type CrmCompany,
+  type DealInput, type DealLineItem, type CrmCompany,
 } from '~/data/crm'
+// Products come from the shared product DB (catalog.ts) — CRM cannot create products.
+import { CATALOG, type CatalogItem } from '~/data/catalog'
+import { availableForSku, totalAvailableForSku } from '~/data/warehouseDetails'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
-import ProductCell from '~/components/patterns/ProductCell.vue'
 import CrmCompanyFormDrawer from '~/components/patterns/CrmCompanyFormDrawer.vue'
 
 // Standalone page: orderId = 'new' (create) or an existing deal id (edit via
@@ -108,7 +113,7 @@ const shipVia        = ref('')
 const paymentTerms   = ref('')
 const trackingNo     = ref('')
 const referenceNo    = ref('')
-const warehouse      = ref('Default warehouse')
+const warehouse      = ref('')  // no auto-fill — user picks a warehouse (or leaves it to see all-warehouse stock)
 const tagsList       = ref<DataInterface[]>([])
 
 // ── Transaction no. settings (auto-numbering) — shared global component ────────
@@ -189,19 +194,43 @@ function lineAmount(item: LineItem) {
   return Math.round(item.qty * item.unitPrice * (1 - item.discountPct / 100))
 }
 
+// Match on product name OR SKU against the shared product DB (catalog.ts).
 function productMatches(query: string) {
   const q = query.trim().toLowerCase()
-  if (!q) return crmProducts
-  return crmProducts.filter(p => p.name.toLowerCase().includes(q))
+  if (!q) return CATALOG
+  return CATALOG.filter(p => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q))
+}
+// An ERP product can carry multiple categories; show only the first.
+function firstCategory(category: string): string { return category.split(',')[0]!.trim() }
+// Dropdown caption line: "SKU, First category".
+function productMeta(p: CatalogItem): string { return `${p.sku}, ${firstCategory(p.category)}` }
+
+// Warehouse options + id lookup both read the warehouse DB, so stock resolves
+// against the exact warehouse the user picked (no bridging).
+const WAREHOUSE_OPTIONS = warehouses.filter((w) => w.status === 'active').map((w) => w.name)
+const warehouseId = computed(() => warehouses.find((w) => w.name === warehouse.value)?.id ?? '')
+// Selected warehouse → that warehouse's stock; no warehouse → total across all.
+function availableStock(p: CatalogItem): number {
+  return warehouseId.value ? availableForSku(warehouseId.value, p.sku) : totalAvailableForSku(p.sku)
 }
 
 const NEW_ROW_KEY = -1
 const openProductRow = ref<number | null>(null)
 
-function selectProduct(item: LineItem, p: CrmProduct) {
+// Popover product list is lazy-loaded 5 at a time (don't render the whole catalog).
+const PRODUCT_PAGE = 5
+const productLimit = ref(PRODUCT_PAGE)
+watch(openProductRow, () => { productLimit.value = PRODUCT_PAGE })   // reset each time a picker opens
+function visibleProducts(query: string): CatalogItem[] { return productMatches(query).slice(0, productLimit.value) }
+function onProductScroll(e: Event) {
+  const el = e.target as HTMLElement
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 24) productLimit.value += PRODUCT_PAGE
+}
+
+function selectProduct(item: LineItem, p: CatalogItem) {
   item.productId = p.id
   item.product = p.name
-  item.sku = ''
+  item.sku = p.sku
   item.unit = p.unit
   item.unitPrice = p.price
   item.productError = false
@@ -209,13 +238,12 @@ function selectProduct(item: LineItem, p: CrmProduct) {
 }
 
 const newRowSearch = ref('')
-function onProductAdd(_search?: string) { /* open create-product flow here (rule/select-quick-add) */ void _search }
-function selectNewProduct(p: CrmProduct) {
+function selectNewProduct(p: CatalogItem) {
   items.value.push({
     _key: ++_seq,
     productId: p.id,
     product: p.name,
-    sku: '',
+    sku: p.sku,
     description: '',
     qty: 1,
     unit: p.unit,
@@ -550,7 +578,7 @@ function onSave() {
 
           <MpFormControl id="f-warehouse" class="si-field">
             <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
-            <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width />
+            <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSE_OPTIONS" :placeholder="t('Select warehouse')" use-portal is-clearable is-full-width />
           </MpFormControl>
         </div>
       </section>
@@ -625,13 +653,17 @@ function onSave() {
                     <MpPopoverTrigger>
                       <MpInput :id="`f-product-${item._key}`" v-model="item.product" is-full-width @focus="openProductRow = item._key" />
                     </MpPopoverTrigger>
-                    <MpPopoverContent :class="css({ minWidth: '220px', maxHeight: '240px', overflowY: 'auto' })" @blur="openProductRow = null">
+                    <MpPopoverContent :class="css({ minWidth: '220px', maxHeight: '240px', overflowY: 'auto' })" @blur="openProductRow = null" @scroll="onProductScroll">
                       <MpPopoverList>
-                        <MpPopoverListItem v-for="p in productMatches(item.product)" :key="p.id" @click="selectProduct(item, p)">
-                          <ProductCell :name="p.name" :desc="p.category" />
-                        </MpPopoverListItem>
-                        <MpPopoverListItem class="si-quickadd" @click="onProductAdd(item.product)">
-                          {{ item.product ? `${t('Add')} "${item.product}" ${t('as a new product')}` : t('Add new product') }}
+                        <MpPopoverListItem v-for="p in visibleProducts(item.product)" :key="p.id" @click="selectProduct(item, p)">
+                          <div class="si-prod-opt">
+                            <img v-if="p.img" class="si-prod-thumb" :src="p.img" :alt="p.name" loading="lazy" width="40" height="40" >
+                            <div class="si-prod-text">
+                              <span class="si-prod-name">{{ p.name }}</span>
+                              <span class="si-prod-meta">{{ productMeta(p) }}</span>
+                              <span class="si-prod-stock" :class="{ 'si-prod-stock--out': availableStock(p) <= 0 }">{{ availableStock(p) }} {{ p.unit }} {{ warehouseId ? t('available') : t('in all warehouses') }}</span>
+                            </div>
+                          </div>
                         </MpPopoverListItem>
                       </MpPopoverList>
                     </MpPopoverContent>
@@ -714,13 +746,17 @@ function onSave() {
                         @focus="openProductRow = NEW_ROW_KEY"
                       />
                     </MpPopoverTrigger>
-                    <MpPopoverContent :class="css({ minWidth: '220px', maxHeight: '240px', overflowY: 'auto' })" @blur="openProductRow = null">
+                    <MpPopoverContent :class="css({ minWidth: '220px', maxHeight: '240px', overflowY: 'auto' })" @blur="openProductRow = null" @scroll="onProductScroll">
                       <MpPopoverList>
-                        <MpPopoverListItem v-for="p in productMatches(newRowSearch)" :key="p.id" @click="selectNewProduct(p)">
-                          <ProductCell :name="p.name" :desc="p.category" />
-                        </MpPopoverListItem>
-                        <MpPopoverListItem class="si-quickadd" @click="onProductAdd(newRowSearch)">
-                          {{ newRowSearch ? `${t('Add')} "${newRowSearch}" ${t('as a new product')}` : t('Add new product') }}
+                        <MpPopoverListItem v-for="p in visibleProducts(newRowSearch)" :key="p.id" @click="selectNewProduct(p)">
+                          <div class="si-prod-opt">
+                            <img v-if="p.img" class="si-prod-thumb" :src="p.img" :alt="p.name" loading="lazy" width="40" height="40" >
+                            <div class="si-prod-text">
+                              <span class="si-prod-name">{{ p.name }}</span>
+                              <span class="si-prod-meta">{{ productMeta(p) }}</span>
+                              <span class="si-prod-stock" :class="{ 'si-prod-stock--out': availableStock(p) <= 0 }">{{ availableStock(p) }} {{ p.unit }} {{ warehouseId ? t('available') : t('in all warehouses') }}</span>
+                            </div>
+                          </div>
                         </MpPopoverListItem>
                       </MpPopoverList>
                     </MpPopoverContent>
@@ -984,6 +1020,15 @@ function onSave() {
    Column widths are the Figma's exact values and sum to the 1340px stage width;
    Description is the one flexible column so the table still fills a wider stage. */
 .si-items-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
+/* Product option: photo + a text block (name, then "SKU, Category", then the
+   available stock for the selected warehouse — each on its own line). */
+.si-prod-opt { display: flex; align-items: center; gap: var(--mp-spacing-3); width: 100%; }
+.si-prod-thumb { width: 40px; height: 40px; flex-shrink: 0; border-radius: var(--mp-radii-md, 8px); object-fit: cover; }
+.si-prod-text { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5, 2px); min-width: 0; }
+.si-prod-name { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-default); }
+.si-prod-meta { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
+.si-prod-stock { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
+.si-prod-stock--out { color: var(--mp-text-danger, #a8352d); }
 .si-items-header-row { display: flex; justify-content: flex-end; }
 .si-items-error-banner { margin-bottom: var(--mp-spacing-2); }
 .si-items-scroll { overflow-x: auto; }
@@ -1048,7 +1093,6 @@ function onSave() {
 }
 .si-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
 .si-select--product :deep(.mp-input__control)::placeholder { color: var(--mp-text-placeholder); }
-.si-quickadd :deep(*), .si-quickadd { color: var(--mp-colors-text-link, #165082); }
 
 /* Line-item validation — cell tint + inset red underline + tooltip, the same
    convention as NewExpensePage's .ex-td--error. */

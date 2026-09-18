@@ -30,6 +30,17 @@ Start here. This is the home for ERP UI/UX documentation.
 | Page recipes | [page-recipes.md](patterns/page-recipes.md) | Routing only — sends you to index-page-format.md / Form.md / details-page-format.md per page type; no scaffolds live here anymore |
 | Tabs | [tabs.md](patterns/tabs.md) | Status tabs (outside stage, via `pageTabs`) vs in-page detail tabs (`MpTabs`); correct active color |
 
+## PRD (product specs)
+
+Local mirrors of Confluence PRDs, for reference. Re-fetch from Confluence for the latest.
+
+| PRD | Doc | Covers |
+|---|---|---|
+| CRM — ERP Transaction Conversion | [prd/crm-erp-conversion-settings-prd.md](prd/crm-erp-conversion-settings-prd.md) · [gap analysis](prd/crm-erp-conversion-settings-gap.md) | Settings → ERP Integration Settings (per-module enable + SQ/SO target + field mapping + readiness) and runtime manual read-only conversion of a CRM record → one ERP transaction (exactly-once). The gap doc maps PRD areas to prototype surfaces + our build plan. **Our prototype is the PRD's cited design reference.** |
+| WMS — Inbound | [prd/wms-inbound-prd.md](prd/wms-inbound-prd.md) | Inbound backbone (PO/ASN intake → receiving + QC → put-away → close) |
+| WMS — Outbound | [prd/wms-outbound-prd.md](prd/wms-outbound-prd.md) | Outbound fulfilment lifecycle |
+| WMS — Reports & Analytics | [prd/wms-reports-analytics-prd.md](prd/wms-reports-analytics-prd.md) | WMS reporting/analytics |
+
 ## Flows / Scenarios
 
 | Topic | Doc | Covers |

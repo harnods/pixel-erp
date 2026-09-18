@@ -1149,9 +1149,12 @@ export interface CrmModuleView {
 }
 
 export type CrmModuleStatus = 'published' | 'draft' | 'incomplete'
-export type CrmConversionTarget = 'sales-quote' | 'sales-order' | 'expense' | null
+// PRD "ERP Transaction Conversion Settings V1": targets are Sales Quote + Sales
+// Order ONLY. Expense is fully deferred and intentionally NOT a member here — the
+// module has no Expense conversion entry point anywhere.
+export type CrmConversionTarget = 'sales-quote' | 'sales-order' | null
 export const CRM_CONVERSION_LABELS: Record<Exclude<CrmConversionTarget, null>, string> = {
-  'sales-quote': 'Sales Quote', 'sales-order': 'Sales Order', expense: 'Expense',
+  'sales-quote': 'Sales Quote', 'sales-order': 'Sales Order',
 }
 
 export interface CrmModule {
@@ -1204,6 +1207,7 @@ const MODULES_SEED: CrmModule[] = [
       { id: 'products', label: 'Products',           type: 'product-list', required: false, system: true,  section: 'Products & value', column: 1 },
       { id: 'value',    label: 'Value',              type: 'currency',     required: false, system: false, section: 'Products & value', column: 2 },
       { id: 'closeDate',label: 'Expected close date',type: 'date',         required: false, system: false, section: 'Products & value', column: 2 },
+      { id: 'dueDate',  label: 'Due date',           type: 'date',         required: false, system: false, section: 'Products & value', column: 2 },
       { id: 'source',   label: 'Lead source',        type: 'radio',        required: false, system: false, options: ['Referral', 'Website', 'Outbound', 'Event'] }, // in Unused Fields (no section)
     ],
     layoutDriver: 'stage',
@@ -1240,8 +1244,8 @@ const MODULES_SEED: CrmModule[] = [
   },
 ]
 
-export const crmModules = reactive<CrmModule[]>(load('crm-modules-v2', MODULES_SEED))
-export function persistCrmModules() { saveSnapshot('crm-modules-v2', crmModules) }
+export const crmModules = reactive<CrmModule[]>(load('crm-modules-v3', MODULES_SEED))
+export function persistCrmModules() { saveSnapshot('crm-modules-v3', crmModules) }
 
 // ── Deal pipelines (Settings ▸ Deals ▸ Pipeline) ─────────────────────────────
 // A pipeline = an ordered list of OPEN stages that flow left→right, plus exactly
@@ -2316,11 +2320,14 @@ export const CRM_PERMISSION_GROUPS: CrmPermGroup[] = [
     { type: 'checkbox',   label: 'Can view module management', key: 'settingsModules.view' },
     { type: 'permission', label: 'Permission', capabilityLabel: 'Can edit custom modules', capabilityKeys: ['settingsModules.edit'] },
   ] },
-  { group: 'Settings / ERP conversion', controls: [
-    { type: 'checkbox',   label: 'Can view ERP conversion settings', key: 'settingsConversion.view' },
-    { type: 'permission', label: 'Permission', capabilityLabel: 'Can edit ERP conversion settings', capabilityKeys: ['settingsConversion.edit'] },
+  // PRD §CRM Access list — ERP Integration Settings capabilities. View ≠ Manage;
+  // Manage ≠ any conversion permission; each conversion target is its own capability.
+  { group: 'Settings / ERP integrations', controls: [
+    { type: 'checkbox',   label: 'Can view ERP integration settings', key: 'settingsConversion.view' },
+    { type: 'permission', label: 'Permission', capabilityLabel: 'Can manage ERP integration settings', capabilityKeys: ['settingsConversion.edit'] },
     { type: 'checkbox',   label: 'Can convert to Sales Quote', key: 'conversion.quote' },
     { type: 'checkbox',   label: 'Can convert to Sales Order', key: 'conversion.order' },
+    { type: 'checkbox',   label: 'Can retry a failed conversion', key: 'conversion.retry' },
   ] },
 ]
 export const CRM_PERM_KEYS: string[] = CRM_PERMISSION_GROUPS.flatMap((g) => g.controls.flatMap((c) =>
