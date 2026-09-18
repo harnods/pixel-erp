@@ -135,7 +135,7 @@ function navItemTooltip(item: Item): string | undefined {
           class="nav-item"
           :class="{ active: activeItem === item.name }"
           :data-devchange="item.name === 'Settings' ? 'crm-settings-properties-hidden' : undefined"
-          :title="navItemTooltip(item)"
+          v-tooltip="{ label: navItemTooltip(item) || '', placement: 'right' }"
           type="button"
           @click="handleNavClick(item)"
         >

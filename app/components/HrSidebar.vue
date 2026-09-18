@@ -210,7 +210,7 @@ function goView(view?: string) {
           :key="item.name"
           class="nav-item"
           :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
-          :title="navItemTooltip(item)"
+          v-tooltip="{ label: navItemTooltip(item) || '', placement: 'right' }"
           @click="handleNavClick(item)"
           @mouseenter="(e) => handleItemMouseEnter(e, item)"
           @mouseleave="scheduleClose"

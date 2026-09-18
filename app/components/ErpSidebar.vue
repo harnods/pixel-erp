@@ -16,7 +16,7 @@
           :key="item.name"
           class="nav-item"
           :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
-          :title="navItemTooltip(item)"
+          v-tooltip="{ label: navItemTooltip(item) || '', placement: 'right' }"
           @click="() => handleNavClick(item)"
           @mouseenter="(e) => handleItemMouseEnter(e, item)"
           @mouseleave="scheduleClose"
@@ -312,7 +312,7 @@ const flyoutGroups = computed<SubItem[][]>(
   () => flyoutItem.value?.submenu ?? (flyoutItem.value?.panelSubmenu as SubItem[][] | undefined) ?? [],
 )
 
-// Collapsed-rail hover tooltip (native title attribute). Only relevant while the
+// Collapsed-rail hover tooltip (Pixel v-tooltip directive). Only relevant while the
 // nav is collapsed to icons — once expanded the label is already visible next to
 // the icon. Skipped for the active item when it owns a level-2 menu (submenu or
 // panelSubmenu): that item already has its flyout/panel open showing its name,
