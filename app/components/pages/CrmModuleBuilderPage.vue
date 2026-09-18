@@ -403,6 +403,9 @@ const {
 watch(propCreatedByFilter, () => propSetPage(1))
 const propHasFilter = computed(() => !!propSearch.value || !!propTypeFilter.value || !!propCreatedByFilter.value)
 function clearPropFilters() { propSearch.value = ''; propTypeFilter.value = ''; propCreatedByFilter.value = '' }
+const systemActionDevChangePropertyId = computed(() =>
+  propPaginated.value.find((p) => propCreatedByLabel(p) === 'System' && !isRelatedListType(p.type))?.id ?? '',
+)
 const PROP_COLUMNS: TableColumn[] = [
   // Explicit 360px width for this table only (escape hatch) — property names run long.
   { key: 'name',      label: 'Name',       width: '360px', sortable: true, sortType: 'text' },
@@ -1004,6 +1007,12 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                     </MpPopoverList>
                   </MpPopoverContent>
                 </MpPopover>
+                <span
+                  v-else-if="(row as unknown as DealProperty).id === systemActionDevChangePropertyId"
+                  class="prop-action-devchange-anchor"
+                  data-devchange="crm-system-property-actions-removed"
+                  aria-hidden="true"
+                />
               </template>
             </ErpTablePage>
           </div>
@@ -1577,6 +1586,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
 .prop-varname { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); font-family: var(--mp-fonts-mono, ui-monospace, SFMono-Regular, Menlo, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .prop-type { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-colors-text-default, #080d0e); }
 .prop-type-icon { color: var(--mp-colors-icon-default, #536062); flex-shrink: 0; }
+.prop-action-devchange-anchor { display: inline-flex; width: var(--mp-sizes-8); height: var(--mp-sizes-8); pointer-events: none; }
 /* Properties filter bar (mirrors the standard ErpFilterBar layout). */
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }

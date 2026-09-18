@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-system-property-actions-removed',
+    title: 'System properties are read-only',
+    description:
+      'System-created module properties no longer show the row action menu. Their edit/delete actions are removed so built-in CRM fields stay protected.',
+    date: '2026-09-18',
+    files: ['CrmModuleBuilderPage.vue'],
+  },
+  {
     id: 'crm-property-created-by-filter',
     title: 'Filter properties by creator',
     description:
