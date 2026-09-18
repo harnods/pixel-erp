@@ -36,6 +36,42 @@ export const DEV_CHANGES: DevChange[] = [
     pr: '#82',
     files: ['NewCrmDealPage.vue', 'NewSalesOrderPage.vue'],
   },
+  {
+    id: 'deal-quick-add-contact',
+    title: 'Quick-add contact from the deal Contact picker',
+    description:
+      'The Contact picker now has a bottom action: click "+ New contact", or search a name that isn\'t found → "Add \'<name>\' as new contact". Both open a quick-add modal (Display name, Full name Mr/Mrs/Ms, Email, Mobile) that creates a real contact and selects it.',
+    date: '2026-09-18',
+    pr: '#81',
+    files: ['NewCrmDealPage.vue', 'CrmQuickContactModal.vue'],
+  },
+  {
+    id: 'deal-contact-first',
+    title: 'Deals are contact-first (company derived)',
+    description:
+      'Pick the Contact first; the Company is derived from it and shown beside — one company is read-only, several become a picker, none is hidden (not every contact has a company). Applies to create deal, edit deal, and the deal detail header.',
+    date: '2026-09-18',
+    pr: '#80',
+    files: ['NewCrmDealPage.vue', 'CrmDealDetailPage.vue'],
+  },
+  {
+    id: 'crm-erp-conversion-settings',
+    title: 'ERP integration (transaction conversion) settings',
+    description:
+      'New Settings → ERP integrations surface: per-module enable + SQ/SO target, read-only field mapping (mandatory/optional) and readiness, with manual read-only conversion of a CRM record into one ERP transaction. Only published modules can be integrated.',
+    date: '2026-09-18',
+    pr: '#79',
+    files: ['CrmErpIntegrationsPage.vue', 'CrmErpIntegrationEditorPage.vue', 'crmConversion.ts'],
+  },
+  {
+    id: 'deal-product-stock',
+    title: 'Deal product picker: catalog + per-warehouse stock',
+    description:
+      'The product dropdown now sources from the product DB ([photo] Name / SKU · first category) — no ad-hoc "add product". Available stock shows per selected warehouse (or total across all warehouses when none is picked); the warehouse list comes from the warehouse DB.',
+    date: '2026-09-18',
+    pr: '#79',
+    files: ['NewCrmDealPage.vue', 'NewSalesOrderPage.vue', 'warehouseDetails.ts'],
+  },
 ]
 
 const byId = new Map(DEV_CHANGES.map(c => [c.id, c]))

@@ -434,7 +434,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                 </div>
                 <div class="content-list-col">
                   <!-- Company shown only when the contact has one associated. -->
-                  <ContentList :label="t('Company')">
+                  <ContentList :label="t('Company')" data-devchange="deal-contact-first">
                     <a v-if="customer" class="cell-link" @click="goCustomer(customer.id)">{{ deal.company }}</a>
                     <span v-else>{{ deal.company || '—' }}</span>
                   </ContentList>

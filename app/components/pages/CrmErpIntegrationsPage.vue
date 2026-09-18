@@ -122,7 +122,7 @@ watch(statusFilter, () => setPage(1))
     <header class="detail-bar">
       <div class="detail-bar-left">
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">{{ t('ERP integrations') }}</h1>
+          <h1 class="detail-title" data-devchange="crm-erp-conversion-settings">{{ t('ERP integrations') }}</h1>
         </div>
       </div>
     </header>
