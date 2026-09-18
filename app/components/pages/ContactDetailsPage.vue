@@ -14,7 +14,7 @@ import { ref, reactive, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpBadge, MpIcon, MpButton,
-  MpInput, MpAutocomplete,
+  MpInput, MpAutocomplete, MpSelect,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   toast, css,
 } from '@mekari/pixel3'
@@ -27,6 +27,7 @@ import { salesInvoices } from '~/data/salesInvoices'
 import { vendorItemsForVendor, upsertVendorItem } from '~/data/vendorItems'
 import { supplementalSupply } from '~/data/vendorSuppliedProducts'
 import { productBySku } from '~/data/inventory'
+import { unitOptionsForSku, largestUnitFor } from '~/data/productUnits'
 import { CATALOG } from '~/data/catalog'
 import { formatIDR } from '~/utils/currency'
 
@@ -166,13 +167,24 @@ const vendorProducts = computed(() => {
 
 // ── Add / edit products supplied (writes to the engine store) ─────────────────
 const productsEditing = ref(false)
-// Per-SKU drafts of the three editable fields, held until Save.
-const prodDraft = reactive<Record<string, { moq: string; packSize: string; unitCost: string }>>({})
+// Per-SKU drafts of the editable fields, held until Save.
+const prodDraft = reactive<Record<string, { moq: string; packSize: string; unitCost: string; purchaseUnit: string }>>({})
+
+/** The purchase-unit options for a SKU — its base unit plus every multi-unit
+ *  registered on the product's Unit conversions tab. Picking one re-derives the
+ *  conversion factor at save (upsertVendorItem), so the unit can never disagree
+ *  with the product's own conversions. */
+function unitOptions(sku: string) {
+  return unitOptionsForSku(sku)
+}
 
 function startEditProducts(): void {
   for (const k of Object.keys(prodDraft)) delete prodDraft[k]
   for (const p of vendorProducts.value) {
-    prodDraft[p.sku] = { moq: String(p.moq), packSize: String(p.packSize), unitCost: String(p.unitCost) }
+    prodDraft[p.sku] = {
+      moq: String(p.moq), packSize: String(p.packSize), unitCost: String(p.unitCost),
+      purchaseUnit: p.purchaseUnit,
+    }
   }
   productsEditing.value = true
 }
@@ -189,8 +201,11 @@ function saveProducts(): void {
     const moq = Math.max(0, Math.round(Number(d.moq) || 0))
     const packSize = Math.max(1, Math.round(Number(d.packSize) || 1))
     const unitCost = Math.max(0, Math.round(Number(d.unitCost) || 0))
-    if (moq === p.moq && packSize === p.packSize && unitCost === p.unitCost) continue
-    upsertVendorItem({ vendorId: masterId, sku: p.sku, moq, packSize, unitCost })
+    const purchaseUnit = d.purchaseUnit
+    if (moq === p.moq && packSize === p.packSize && unitCost === p.unitCost && purchaseUnit === p.purchaseUnit) continue
+    // upsertVendorItem re-derives unitsPerPurchaseUnit from the chosen unit via the
+    // product's conversion table, so the factor always agrees with the unit.
+    upsertVendorItem({ vendorId: masterId, sku: p.sku, moq, packSize, unitCost, purchaseUnit })
   }
   productsEditing.value = false
   showAddRow.value = false
@@ -200,16 +215,24 @@ function saveProducts(): void {
 // Add a product this vendor supplies — picks from the catalogue SKUs not already
 // linked, and captures the same three fields the replenishment rule reads.
 const showAddRow = ref(false)
-const addForm = reactive({ sku: '', moq: '1', packSize: '1', unitCost: '' })
+const addForm = reactive({ sku: '', moq: '1', packSize: '1', unitCost: '', purchaseUnit: '' })
 const availableSkus = computed(() => {
   const taken = new Set(vendorProducts.value.map((p) => p.sku))
   return CATALOG.filter((c) => !taken.has(c.sku)).map((c) => ({ label: `${c.name} (${c.sku})`, value: c.sku }))
 })
+// Purchase-unit choices follow the picked product's registered conversions.
+const addUnitOptions = computed(() => (addForm.sku ? unitOptionsForSku(addForm.sku) : []))
+function onAddSkuChange(sku: string): void {
+  addForm.sku = sku
+  // Default to the largest registered unit — the natural bulk-buy unit.
+  addForm.purchaseUnit = sku ? largestUnitFor(sku).name : ''
+}
 function openAddRow(): void {
   addForm.sku = ''
   addForm.moq = '1'
   addForm.packSize = '1'
   addForm.unitCost = ''
+  addForm.purchaseUnit = ''
   showAddRow.value = true
 }
 function confirmAddProduct(): void {
@@ -224,6 +247,7 @@ function confirmAddProduct(): void {
     moq: Math.max(0, Math.round(Number(addForm.moq) || 0)),
     packSize: Math.max(1, Math.round(Number(addForm.packSize) || 1)),
     unitCost: addForm.unitCost === '' ? undefined : Math.max(0, Math.round(Number(addForm.unitCost))),
+    purchaseUnit: addForm.purchaseUnit || undefined,
   })
   showAddRow.value = false
   toast.notify({ variant: 'success', title: t('Product added'), maxWidth: 'max-content' })
@@ -486,7 +510,17 @@ function confirmDelete() {
                       />
                       <template v-else>{{ p.packSize.toLocaleString('id-ID') }}</template>
                     </td>
-                    <td>{{ p.purchaseUnit }}</td>
+                    <td>
+                      <MpSelect
+                        v-if="productsEditing && prodDraft[p.sku]"
+                        :id="`cd-unit-${p.sku}`"
+                        v-model="prodDraft[p.sku]!.purchaseUnit"
+                        :class="css({ width: '120px' })"
+                      >
+                        <option v-for="o in unitOptions(p.sku)" :key="o.name" :value="o.name">{{ o.name }}</option>
+                      </MpSelect>
+                      <template v-else>{{ p.purchaseUnit }}</template>
+                    </td>
                     <td class="cd-td--right">
                       <MpInput
                         v-if="productsEditing && prodDraft[p.sku]" :id="`cd-cost-${p.sku}`"
@@ -500,9 +534,10 @@ function confirmDelete() {
                   <tr v-if="showAddRow" class="cd-add-row">
                     <td>
                       <MpAutocomplete
-                        id="cd-add-sku" v-model="addForm.sku" :data="availableSkus"
+                        id="cd-add-sku" :model-value="addForm.sku" :data="availableSkus"
                         label-prop="label" value-prop="value" is-searchable use-portal is-full-width
                         :placeholder="t('Choose a product')"
+                        @update:model-value="(v: string) => onAddSkuChange(v)"
                       />
                     </td>
                     <td>{{ addForm.sku || '—' }}</td>
@@ -512,7 +547,17 @@ function confirmDelete() {
                     <td class="cd-td--right">
                       <MpInput id="cd-add-pack" v-model="addForm.packSize" type="number" :class="css({ width: '84px' })" />
                     </td>
-                    <td>—</td>
+                    <td>
+                      <MpSelect
+                        v-if="addForm.sku"
+                        id="cd-add-unit"
+                        v-model="addForm.purchaseUnit"
+                        :class="css({ width: '120px' })"
+                      >
+                        <option v-for="o in addUnitOptions" :key="o.name" :value="o.name">{{ o.name }}</option>
+                      </MpSelect>
+                      <template v-else>—</template>
+                    </td>
                     <td class="cd-td--right">
                       <div class="cd-add-actions">
                         <MpInput id="cd-add-cost" v-model="addForm.unitCost" type="number" :placeholder="t('Price')" :class="css({ width: '132px' })" />
