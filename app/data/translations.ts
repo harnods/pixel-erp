@@ -3723,4 +3723,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "available": "tersedia",
   "in all warehouses": "di semua gudang",
   "You must select a contact": "Pilih kontak terlebih dahulu",
+  "as new contact": "sebagai kontak baru",
+  "Add contact": "Tambah kontak",
+  "Display name is required": "Nama tampilan wajib diisi",
 }
