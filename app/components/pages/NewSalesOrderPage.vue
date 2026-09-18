@@ -26,6 +26,7 @@ import {
 import type { SalesOrder, SalesOrderItem } from '~/data/types'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import ProductThumb from '~/components/patterns/ProductThumb.vue'
 // CRM Deal "Add product" (productsOnly) shows photo + SKU/category + per-warehouse
 // stock, all from the same product/warehouse DB.
 import { CATALOG } from '~/data/catalog'
@@ -138,7 +139,9 @@ function productMatches(query: string) {
 // ── CRM Deal "Add product" (productsOnly) — DB-sourced photo, SKU/category, and
 // per-warehouse available stock. The warehouse comes from the deal prefill. ──
 const CATALOG_IMG = new Map(CATALOG.map(c => [c.id, c.img]))
+const CATALOG_HUE = new Map(CATALOG.map(c => [c.id, c.hue]))
 function productImg(p: typeof products[number]): string | undefined { return CATALOG_IMG.get(p.id) }
+function productHue(p: typeof products[number]): number | undefined { return CATALOG_HUE.get(p.id) }
 function firstCategory(category: string): string { return category.split(',')[0]!.trim() }
 function productMeta(p: typeof products[number]): string { return `${p.code}, ${firstCategory(p.category)}` }
 const warehouseId = computed(() => warehouses.find(w => w.name === warehouse.value)?.id ?? '')
@@ -581,7 +584,7 @@ function onSave() {
                       <MpPopoverList>
                         <MpPopoverListItem v-for="p in visibleProducts(item.product)" :key="p.id" @click="selectProduct(item, p)">
                           <div v-if="productsOnly" class="si-prod-opt">
-                            <img v-if="productImg(p)" class="si-prod-thumb" :src="productImg(p)" :alt="p.name" loading="lazy" width="40" height="40" >
+                            <ProductThumb class="si-prod-thumb" :src="productImg(p)" :name="p.name" :hue="productHue(p)" />
                             <div class="si-prod-text">
                               <span class="si-prod-name">{{ p.name }}</span>
                               <span class="si-prod-meta">{{ productMeta(p) }}</span>
@@ -681,7 +684,7 @@ function onSave() {
                       <MpPopoverList>
                         <MpPopoverListItem v-for="p in visibleProducts(newRowSearch)" :key="p.id" @click="selectNewProduct(p)">
                           <div v-if="productsOnly" class="si-prod-opt">
-                            <img v-if="productImg(p)" class="si-prod-thumb" :src="productImg(p)" :alt="p.name" loading="lazy" width="40" height="40" >
+                            <ProductThumb class="si-prod-thumb" :src="productImg(p)" :name="p.name" :hue="productHue(p)" />
                             <div class="si-prod-text">
                               <span class="si-prod-name">{{ p.name }}</span>
                               <span class="si-prod-meta">{{ productMeta(p) }}</span>

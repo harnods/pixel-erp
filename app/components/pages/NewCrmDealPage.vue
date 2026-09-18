@@ -31,6 +31,7 @@ import {
   type DealInput, type DealLineItem, type CrmCompany, type CrmContactPerson,
 } from '~/data/crm'
 import CrmQuickContactModal from '~/components/patterns/CrmQuickContactModal.vue'
+import ProductThumb from '~/components/patterns/ProductThumb.vue'
 // Products come from the shared product DB (catalog.ts) — CRM cannot create products.
 import { CATALOG, type CatalogItem } from '~/data/catalog'
 import { availableForSku, totalAvailableForSku } from '~/data/warehouseDetails'
@@ -652,7 +653,7 @@ function onSave() {
                       <MpPopoverList>
                         <MpPopoverListItem v-for="p in visibleProducts(item.product)" :key="p.id" @click="selectProduct(item, p)">
                           <div class="si-prod-opt">
-                            <img v-if="p.img" class="si-prod-thumb" :src="p.img" :alt="p.name" loading="lazy" width="40" height="40" >
+                            <ProductThumb class="si-prod-thumb" :src="p.img" :name="p.name" :hue="p.hue" />
                             <div class="si-prod-text">
                               <span class="si-prod-name">{{ p.name }}</span>
                               <span class="si-prod-meta">{{ productMeta(p) }}</span>
@@ -746,7 +747,7 @@ function onSave() {
                       <MpPopoverList>
                         <MpPopoverListItem v-for="p in visibleProducts(newRowSearch)" :key="p.id" @click="selectNewProduct(p)">
                           <div class="si-prod-opt">
-                            <img v-if="p.img" class="si-prod-thumb" :src="p.img" :alt="p.name" loading="lazy" width="40" height="40" >
+                            <ProductThumb class="si-prod-thumb" :src="p.img" :name="p.name" :hue="p.hue" />
                             <div class="si-prod-text">
                               <span class="si-prod-name">{{ p.name }}</span>
                               <span class="si-prod-meta">{{ productMeta(p) }}</span>
