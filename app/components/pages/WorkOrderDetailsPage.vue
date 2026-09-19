@@ -29,6 +29,15 @@ import {
   type SubconDocKind, type SubconPrefillLine,
 } from '~/data/subcon'
 import { addAdjustment, stockAdjustments } from '~/data/stockAdjustments'
+import SubconJournalPreview from '~/components/patterns/SubconJournalPreview.vue'
+import SubconCostSummaryPanel from '~/components/patterns/SubconCostSummaryPanel.vue'
+import SubconAdjustComponentModal from '~/components/patterns/SubconAdjustComponentModal.vue'
+import SubconAddCostLineModal from '~/components/patterns/SubconAddCostLineModal.vue'
+import {
+  buildSubconJournals, wipBalanceFrom, subconCostSummary,
+  type SubconAccountingInput, type SubconCostLineInput, type SubconComponentInput,
+  type SubconCostDriver,
+} from '~/data/subconAccounting'
 import { purchaseRequests } from '~/data/purchaseRequests'
 import { purchaseOrders } from '~/data/purchaseOrders'
 import { purchaseDeliveries } from '~/data/purchaseDeliveries'
@@ -40,7 +49,7 @@ import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer
 import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
 import { formatDate } from '~/utils/date'
 import { successToast } from '~/utils/toasts'
-import { workOrders, persistWorkOrders, adjustSubconWorkOrderQty, recordSubconDocument, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
+import { workOrders, persistWorkOrders, adjustSubconWorkOrderQty, recordSubconDocument, setSubconComponentQty, addSubconCostLine, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 import { warehouseTransfers, addTransfer } from '~/data/warehouseTransfers'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
@@ -246,14 +255,24 @@ const subconCostLines = computed(() => {
   // A Subcontracting BOM defines its own services — those are THE subcon cost for
   // this work order, and they win. The scope-derived pair below is only the
   // fallback for a BOM that predates the Subcon cost section.
+  const extras = (c.extraCostLines ?? []).map(l => ({
+    account: l.name,
+    driver: t(l.costDriver),
+    chargedBy: c.vendorName,
+    amount: l.amount,
+  }))
+
   const fromBom = bom.value?.subconCost ?? []
   if (fromBom.length) {
-    return fromBom.map(l => ({
-      account: l.name,
-      driver: t(l.costDriver),
-      chargedBy: c.vendorName,
-      amount: l.amount * factor,
-    }))
+    return [
+      ...fromBom.map(l => ({
+        account: l.name,
+        driver: t(l.costDriver),
+        chargedBy: c.vendorName,
+        amount: l.amount * factor,
+      })),
+      ...extras,
+    ]
   }
 
   return [
@@ -269,9 +288,182 @@ const subconCostLines = computed(() => {
       chargedBy: c.vendorName,
       amount: SUBCON_HANDLING_FEE.amount * factor,
     },
+    ...extras,
   ]
 })
 const subconCostSubtotal = computed(() => subconCostLines.value.reduce((s, l) => s + l.amount, 0))
+
+// ── Accounting ────────────────────────────────────────────────────────────────
+/**
+ * Everything that has happened on this order, in the shape the accounting module
+ * wants. The rules live entirely in `subconAccounting.ts`; this is only the
+ * translation from the app's stores into its input, so there is exactly one
+ * version of the rules and the finance fixtures test the same code the page runs.
+ */
+const accountingCostLines = computed<SubconCostLineInput[]>(() => {
+  const w = wo.value
+  const c = subcon.value
+  if (!w || !c) return []
+  const factor = (w.plannedQty / SUBCON_BATCH_QTY) * (c.split === 'partial' ? 0.5 : 1)
+  const fromBom = (bom.value?.subconCost ?? []).map(l => ({
+    id: l.productId,
+    name: l.name,
+    costDriver: l.costDriver as SubconCostDriver,
+    amount: Math.round(l.amount * factor),
+  }))
+  const base: SubconCostLineInput[] = fromBom.length ? fromBom : [
+    { id: 'svc-fee', name: t(SUBCON_SERVICE_FEE[c.scope].name), costDriver: 'Unit', amount: Math.round(SUBCON_SERVICE_FEE[c.scope].amount * factor) },
+    { id: 'svc-handling', name: t(SUBCON_HANDLING_FEE.name), costDriver: 'Amount', amount: Math.round(SUBCON_HANDLING_FEE.amount * factor) },
+  ]
+  // Charges agreed after the order was created sit alongside the BOM's own.
+  return [
+    ...base,
+    ...(c.extraCostLines ?? []).map(l => ({
+      id: l.id, name: l.name, costDriver: l.costDriver as SubconCostDriver, amount: l.amount,
+    })),
+  ]
+})
+
+const accountingComponents = computed<SubconComponentInput[]>(() =>
+  rawMaterials.value.map(r => ({
+    sku: r.sku,
+    name: r.product,
+    plannedQty: subcon.value?.componentAdjustments?.[r.sku] ?? r.needed,
+    unitCost: r.purchaseCost,
+  })),
+)
+
+/** The stock issue posted when the order started — the materials handover. */
+const accountingHandovers = computed(() =>
+  (subcon.value?.raisedDocuments ?? [])
+    .filter(d => d.kind === 'componentIssue')
+    .map((d) => {
+      const adj = stockAdjustments.find(a => a.id === d.id)
+      return {
+        id: d.id,
+        date: d.raisedAt ?? adj?.date ?? '',
+        documentNumber: d.number,
+        // The adjustment records an issue as a negative delta; a handover is the
+        // positive quantity that left.
+        lines: (adj?.lines ?? []).map(l => ({ sku: l.sku, qty: Math.abs(l.qty) })),
+      }
+    })
+    .filter(h => h.lines.length > 0),
+)
+
+/** Dropship only — the 3rd-party purchase that lands components at the vendor. */
+const accountingComponentPurchases = computed(() => {
+  if (subcon.value?.method !== 'dropship') return []
+  return (subcon.value.raisedDocuments ?? [])
+    .filter(d => d.kind === 'componentPr' || d.kind === 'rawPr')
+    .map((d) => {
+      const pr = purchaseRequests.find(r => r.id === d.id)
+      return {
+        id: d.id,
+        date: d.raisedAt ?? pr?.date ?? '',
+        documentNumber: d.number,
+        lines: (pr?.lines ?? []).map(l => ({ sku: l.sku, qty: l.requestedQty })),
+      }
+    })
+    .filter(p => p.lines.length > 0)
+})
+
+const accountingReceipts = computed(() =>
+  (subcon.value?.raisedDocuments ?? [])
+    .filter(d => d.kind === 'purchaseDelivery' && (d.qty ?? 0) > 0)
+    .map(d => ({ id: d.id, date: d.raisedAt ?? '', documentNumber: d.number, qty: d.qty! })),
+)
+
+const accountingInvoices = computed(() =>
+  (subcon.value?.raisedDocuments ?? [])
+    .filter(d => d.kind === 'purchaseInvoice')
+    .map((d) => {
+      const inv = purchaseInvoices.find(i => i.id === d.id)
+      return {
+        id: d.id,
+        date: d.raisedAt ?? inv?.date ?? '',
+        documentNumber: d.number,
+        // Invoice lines carry the service product's name, which is what the cost
+        // line is called — match on that, and fall back to the SKU.
+        lines: (inv?.lineItems ?? []).map((li) => {
+          const match = accountingCostLines.value.find(c => c.name === li.product)
+          return { costLineId: match?.id ?? li.sku, amount: li.amount }
+        }),
+      }
+    })
+    .filter(i => i.lines.length > 0),
+)
+
+const accountingInput = computed<SubconAccountingInput | null>(() => {
+  const w = wo.value
+  const c = subcon.value
+  if (!w || !c) return null
+  return {
+    workOrderNumber: w.number,
+    method: c.method,
+    plannedOutputQty: w.plannedQty,
+    // A basic order runs on the vendor's own materials — we hold none.
+    components: c.method === 'basic' ? [] : accountingComponents.value,
+    costLines: accountingCostLines.value,
+    componentPurchases: accountingComponentPurchases.value,
+    handovers: accountingHandovers.value,
+    receipts: accountingReceipts.value,
+    invoices: accountingInvoices.value,
+    closedShort: w.status === 'completed' && w.producedQty < w.plannedQty,
+  }
+})
+
+const subconJournals = computed(() => accountingInput.value ? buildSubconJournals(accountingInput.value) : [])
+/** Value currently in the vendor's hands. */
+const subconWipBalanceValue = computed(() => wipBalanceFrom(subconJournals.value))
+const subconCosts = computed(() => accountingInput.value ? subconCostSummary(accountingInput.value) : null)
+
+// ── Accounting actions ────────────────────────────────────────────────────────
+/** The component row the adjust dialog is open on. */
+const adjustingSku = ref<string | null>(null)
+const adjustTarget = computed(() => {
+  const sku = adjustingSku.value
+  if (!sku) return null
+  const row = rawMaterials.value.find(r => r.sku === sku)
+  if (!row) return null
+  return {
+    componentName: row.product,
+    sku: row.sku,
+    unit: row.unit,
+    plannedQty: subcon.value?.componentAdjustments?.[row.sku] ?? row.needed,
+    alreadySentQty: sentToVendorBySku.value[row.sku] ?? 0,
+  }
+})
+
+function saveComponentQty(qty: number) {
+  const w = wo.value
+  const target = adjustTarget.value
+  if (!w || !target) return
+  setSubconComponentQty(w.id, target.sku, qty)
+  adjustingSku.value = null
+  successToast(t('Component quantity updated'))
+}
+
+const addingCostLine = ref(false)
+function saveCostLine(line: { name: string; costDriver: SubconCostDriver; amount: number }) {
+  const w = wo.value
+  if (!w) return
+  addSubconCostLine(w.id, {
+    id: `extra-${Date.now()}`,
+    name: line.name,
+    costDriver: line.costDriver,
+    amount: line.amount,
+  })
+  addingCostLine.value = false
+  successToast(t('Subcon cost added'))
+}
+
+/** Adjusting components is meaningless on a basic order and once the order closes. */
+const canAdjustComponents = computed(() =>
+  !!subcon.value && subcon.value.method !== 'basic'
+  && !['completed', 'canceled'].includes(wo.value?.status ?? ''))
+const canAddCostLine = computed(() =>
+  !!subcon.value && !['completed', 'canceled'].includes(wo.value?.status ?? ''))
 
 /**
  * The vendor location a transfer is addressed to. Falls back to the vendor's own
@@ -365,7 +557,7 @@ const attachments = [
 
 // ── Collapsible sections ──────────────────────────────────────────────────────
 const collapsed = reactive<Record<string, boolean>>({
-  raw: false, cost: false, routing: false, subconCost: false, finished: false,
+  raw: false, cost: false, routing: false, subconCost: false, accounting: false, finished: false,
 })
 
 // ── Line-item status derivation (from the work order status) ─────────────────────
@@ -432,7 +624,17 @@ const rawMaterials = computed(() => (bom.value?.rawMaterials ?? []).map(r => {
   }
 }))
 const rawEst = (r: { purchaseCost: number; needed: number }) => r.purchaseCost * r.needed
-const rawSubtotal = computed(() => rawMaterials.value.reduce((s, r) => s + rawEst(r), 0))
+
+/**
+ * The quantity this work order actually plans to consume. A subcon order can
+ * revise a component after the fact; the BOM itself is untouched, because it is
+ * the shared recipe and other orders are built from it.
+ */
+function plannedQtyFor(r: { sku: string; needed: number }): number {
+  return subcon.value?.componentAdjustments?.[r.sku] ?? r.needed
+}
+const rawSubtotal = computed(() =>
+  rawMaterials.value.reduce((s, r) => s + r.purchaseCost * plannedQtyFor(r), 0))
 
 /**
  * Where a subcon transfer draws FROM — the warehouse the components themselves
@@ -1195,6 +1397,7 @@ function suppressFabClick(e: MouseEvent) {
                   <th class="wod-th wod-th--num">{{ reportsSentQty ? t('Sent to vendor') : t('Consumed qty') }}</th>
                   <th class="wod-th">{{ t('Unit') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Estimated cost') }}</th>
+                  <th v-if="canAdjustComponents" class="wod-th wod-th--action" />
                 </tr>
               </thead>
               <tbody>
@@ -1204,14 +1407,22 @@ function suppressFabClick(e: MouseEvent) {
                   </td>
                   <td class="wod-td wod-td--num">{{ formatIDR(r.purchaseCost) }}</td>
                   <td class="wod-td">{{ r.warehouse }}</td>
-                  <td class="wod-td wod-td--num">{{ num(r.needed) }}</td>
+                  <!-- Revised quantities show the BOM figure they replaced, so an
+                       adjustment never silently rewrites the recipe. -->
                   <td class="wod-td wod-td--num">
-                    <template v-if="!reportsSentQty">{{ num(consumedFor(r.productId)) }}/{{ num(r.needed) }}</template>
-                    <template v-else-if="sendsCompanyStock">{{ num(sentToVendorBySku[r.sku] ?? 0) }}/{{ num(r.needed) }}</template>
+                    {{ num(plannedQtyFor(r)) }}
+                    <span v-if="plannedQtyFor(r) !== r.needed" class="wod-product-sub">{{ t('was') }} {{ num(r.needed) }}</span>
+                  </td>
+                  <td class="wod-td wod-td--num">
+                    <template v-if="!reportsSentQty">{{ num(consumedFor(r.productId)) }}/{{ num(plannedQtyFor(r)) }}</template>
+                    <template v-else-if="sendsCompanyStock">{{ num(sentToVendorBySku[r.sku] ?? 0) }}/{{ num(plannedQtyFor(r)) }}</template>
                     <span v-else class="wod-muted">—</span>
                   </td>
                   <td class="wod-td">{{ r.unit }}</td>
-                  <td class="wod-td wod-td--num">{{ formatIDR(rawEst(r)) }}</td>
+                  <td class="wod-td wod-td--num">{{ formatIDR(r.purchaseCost * plannedQtyFor(r)) }}</td>
+                  <td v-if="canAdjustComponents" class="wod-td wod-td--action">
+                    <MpButton variant="secondary" is-rounded @click="adjustingSku = r.sku">{{ t('Adjust') }}</MpButton>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -1321,6 +1532,29 @@ function suppressFabClick(e: MouseEvent) {
             </table>
           </div>
           <div class="wod-subtotal-row"><span>{{ t('Subcon cost subtotal') }}</span><span class="wod-amount">{{ formatIDR(subconCostSubtotal) }}</span></div>
+          <div v-if="canAddCostLine" class="wod-section-action">
+            <MpButton variant="secondary" is-rounded left-icon="plus" @click="addingCostLine = true">
+              {{ t('Add subcon cost') }}
+            </MpButton>
+          </div>
+        </template>
+      </section>
+
+      <!-- ── Accounting — what the run costs and what it has posted ── -->
+      <section v-if="subcon && subconCosts" class="wod-section">
+        <button class="wod-section-head btn-enterprise" @click="collapsed.accounting = !collapsed.accounting">
+          <h2 class="wod-section-title">{{ t('Accounting') }}</h2>
+          <svg class="wod-chevron" :class="{ 'wod-chevron--open': !collapsed.accounting }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <template v-if="!collapsed.accounting">
+          <SubconCostSummaryPanel
+            :summary="subconCosts"
+            :wip-balance="subconWipBalanceValue"
+            :planned-qty="wo.plannedQty"
+          />
+
+          <h3 class="wod-subsection-title">{{ t('Journal entries') }}</h3>
+          <SubconJournalPreview :entries="subconJournals" />
         </template>
       </section>
 
@@ -1683,6 +1917,28 @@ function suppressFabClick(e: MouseEvent) {
       </ErpTablePage>
     </div>
 
+    <SubconAdjustComponentModal
+      v-if="subcon && adjustTarget"
+      :is-open="!!adjustingSku"
+      :method="subcon.method"
+      :component-name="adjustTarget.componentName"
+      :sku="adjustTarget.sku"
+      :unit="adjustTarget.unit"
+      :planned-qty="adjustTarget.plannedQty"
+      :already-sent-qty="adjustTarget.alreadySentQty"
+      @update:is-open="v => { if (!v) adjustingSku = null }"
+      @save="saveComponentQty"
+    />
+
+    <SubconAddCostLineModal
+      v-if="subcon && subconCosts"
+      v-model:is-open="addingCostLine"
+      :current-total="subconCosts.plannedTotal"
+      :planned-qty="wo.plannedQty"
+      :vendor-name="subcon.vendorName"
+      @save="saveCostLine"
+    />
+
     <!-- ── Demo flow scenario switcher ── -->
     <MpPopover id="wod-flow-fab" is-close-on-select use-portal placement="top-end">
       <MpPopoverTrigger>
@@ -2012,6 +2268,16 @@ function suppressFabClick(e: MouseEvent) {
   display: flex; align-items: center; justify-content: space-between; width: 100%;
   margin-bottom: var(--mp-spacing-5);
 }
+/* Trailing per-row action, hugging the right edge. */
+.wod-th--action, .wod-td--action { width: var(--mp-sizes-24, 96px); text-align: right; }
+
+/* A single action under a section's own table. */
+.wod-section-action {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: var(--mp-spacing-4);
+}
+
 .wod-subsection-title {
   margin: var(--mp-spacing-6) 0 var(--mp-spacing-3);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);

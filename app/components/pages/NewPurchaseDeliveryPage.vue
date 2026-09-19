@@ -342,14 +342,16 @@ function onSave() {
   // stays "partially produced" until the deliveries add up to the planned qty.
   const wo = subconWorkOrder.value
   if (wo) {
+    const deliveredQty = items.value.reduce((sum, it) => sum + (Number(it.qty) || 0), 0)
     recordSubconDocument(wo.id, {
       kind: 'purchaseDelivery',
       id: delivery.id,
       // Same label the delivery's own detail page uses.
       number: `${t('Purchase Delivery')} #${delivery.number}`,
       route: '/purchase-deliveries',
+      qty: deliveredQty,
     })
-    recordSubconProduction(wo.id, items.value.reduce((sum, it) => sum + (Number(it.qty) || 0), 0))
+    recordSubconProduction(wo.id, deliveredQty)
   }
   // The goods are in, so the order it was raised against is now waiting on the
   // vendor's bill — which is what makes "Create purchase invoice" the next step.

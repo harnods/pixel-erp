@@ -100,6 +100,18 @@ export interface WorkOrderSubconSetup {
    * whole point of keeping it.
    */
   qtyAdjustment?: { from: number; to: number; reason: string; date: string }
+  /**
+   * Component planned quantities revised after the work order was created, by SKU.
+   * Held here rather than edited into the BOM: the BOM is the recipe and is shared
+   * by every work order built from it, while this is one order's own revision.
+   */
+  componentAdjustments?: Record<string, number>
+  /**
+   * Subcon charges agreed after the order was created — a finishing step the
+   * vendor added, say. They behave exactly like the BOM's own cost lines from
+   * the invoice onward, each with its own clearing account.
+   */
+  extraCostLines?: { id: string; name: string; costDriver: string; amount: number }[]
 }
 
 /** A document created from a subcon work order, and where its detail page lives. */
@@ -115,6 +127,13 @@ export interface RaisedSubconDocument {
   /** ISO date the document was raised. Absent on records created before the
    *  Documents tab started listing dates — rendered as "—" in that case. */
   raisedAt?: string
+  /**
+   * Units this document moved, when that matters to accounting: the finished
+   * goods a purchase delivery brought back. The work order only accumulates a
+   * running `producedQty`, so without this the per-receipt split needed to
+   * allocate subcon cost across staged receipts is unrecoverable.
+   */
+  qty?: number
 }
 
 export interface WorkOrderMaterialReservation {
@@ -297,6 +316,25 @@ export function recordSubconProduction(workOrderId: string, qty: number): void {
  * a short delivery can be completed without pretending the rest arrived. The
  * original figure is kept alongside the reason.
  */
+/** Revise one component's planned quantity on this work order only. */
+export function setSubconComponentQty(workOrderId: string, sku: string, qty: number): void {
+  const wo = workOrders.find(w => w.id === workOrderId)
+  if (!wo?.subcon) return
+  wo.subcon.componentAdjustments = { ...(wo.subcon.componentAdjustments ?? []), [sku]: qty }
+  persistWorkOrders()
+}
+
+/** Add a subcon charge agreed after the order was created. */
+export function addSubconCostLine(
+  workOrderId: string,
+  line: { id: string; name: string; costDriver: string; amount: number },
+): void {
+  const wo = workOrders.find(w => w.id === workOrderId)
+  if (!wo?.subcon) return
+  wo.subcon.extraCostLines = [...(wo.subcon.extraCostLines ?? []), line]
+  persistWorkOrders()
+}
+
 export function adjustSubconWorkOrderQty(workOrderId: string, newQty: number, reason: string): void {
   const wo = workOrders.find(w => w.id === workOrderId)
   if (!wo?.subcon || newQty <= 0 || newQty > wo.plannedQty) return
