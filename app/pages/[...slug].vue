@@ -268,6 +268,7 @@ const PutAwayItemsPage = asyncPage(() => import('~/components/pages/PutAwayItems
 const CreateWorkOrderPage = asyncPage(() => import('~/components/pages/CreateWorkOrderPage.vue'))
 const WorkOrderDetailsPage = asyncPage(() => import('~/components/pages/WorkOrderDetailsPage.vue'))
 const NewMaterialRecordPage = asyncPage(() => import('~/components/pages/NewMaterialRecordPage.vue'))
+const AdjustSubconWorkOrderPage = asyncPage(() => import('~/components/pages/AdjustSubconWorkOrderPage.vue'))
 const BillOfMaterialsDetailsPage = asyncPage(() => import('~/components/pages/BillOfMaterialsDetailsPage.vue'))
 const CreateBillOfMaterialsPage = asyncPage(() => import('~/components/pages/CreateBillOfMaterialsPage.vue'))
 const SubconOrderDetailsPage = asyncPage(() => import('~/components/pages/SubconOrderDetailsPage.vue'))
@@ -669,6 +670,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /work-orders/:id/material-record/new → new consume/return record (full page)
   if (segs.length >= 4 && segs[0] === 'work-orders' && segs[2] === 'material-record' && segs[3] === 'new') {
     return { component: NewMaterialRecordPage, id: segs[1]! }
+  }
+  // /work-orders/:id/adjust → restate the order's own numbers (full page)
+  if (segs.length >= 3 && segs[0] === 'work-orders' && segs[2] === 'adjust') {
+    return { component: AdjustSubconWorkOrderPage, id: segs[1]! }
   }
   // /work-orders/:id → work order detail (read-only, status-aware)
   if (segs.length >= 2 && segs[0] === 'work-orders') {

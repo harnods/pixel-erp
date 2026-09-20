@@ -30,8 +30,8 @@ import {
 } from '~/data/subcon'
 import { addAdjustment, stockAdjustments } from '~/data/stockAdjustments'
 import SubconJournalModal from '~/components/patterns/SubconJournalModal.vue'
+import ConfirmWorkOrderAdjustmentModal from '~/components/patterns/ConfirmWorkOrderAdjustmentModal.vue'
 import SubconCostSummaryPanel from '~/components/patterns/SubconCostSummaryPanel.vue'
-import SubconAdjustComponentModal from '~/components/patterns/SubconAdjustComponentModal.vue'
 import SubconAddCostLineModal from '~/components/patterns/SubconAddCostLineModal.vue'
 import {
   buildSubconJournals, wipBalanceFrom, subconCostSummary, accountLabel,
@@ -420,6 +420,21 @@ const subconCosts = computed(() => accountingInput.value ? subconCostSummary(acc
 
 const showJournalModal = ref(false)
 
+/** The completion fork, and whether it has already been answered this visit. */
+const showConfirmAdjust = ref(false)
+const confirmedNoDifferences = ref(false)
+
+function goAdjust() {
+  showConfirmAdjust.value = false
+  router.push(`/work-orders/${props.orderId}/adjust`)
+}
+
+function proceedToComplete() {
+  showConfirmAdjust.value = false
+  confirmedNoDifferences.value = true
+  handlePrimaryAction()
+}
+
 /** The stock movements this work order produced, for the modal's second tab. */
 const subconStockMovements = computed(() =>
   (subcon.value?.raisedDocuments ?? [])
@@ -446,31 +461,6 @@ const journalIsStale = computed(() =>
   Object.keys(subcon.value?.componentAdjustments ?? {}).length > 0)
 
 // ── Accounting actions ────────────────────────────────────────────────────────
-/** The component row the adjust dialog is open on. */
-const adjustingSku = ref<string | null>(null)
-const adjustTarget = computed(() => {
-  const sku = adjustingSku.value
-  if (!sku) return null
-  const row = rawMaterials.value.find(r => r.sku === sku)
-  if (!row) return null
-  return {
-    componentName: row.product,
-    sku: row.sku,
-    unit: row.unit,
-    plannedQty: subcon.value?.componentAdjustments?.[row.sku] ?? row.needed,
-    alreadySentQty: sentToVendorBySku.value[row.sku] ?? 0,
-  }
-})
-
-function saveComponentQty(qty: number) {
-  const w = wo.value
-  const target = adjustTarget.value
-  if (!w || !target) return
-  setSubconComponentQty(w.id, target.sku, qty)
-  adjustingSku.value = null
-  successToast(t('Component quantity updated'))
-}
-
 const addingCostLine = ref(false)
 function saveCostLine(line: { name: string; costDriver: SubconCostDriver; amount: number }) {
   const w = wo.value
@@ -485,10 +475,6 @@ function saveCostLine(line: { name: string; costDriver: SubconCostDriver; amount
   successToast(t('Subcon cost added'))
 }
 
-/** Adjusting components is meaningless on a basic order and once the order closes. */
-const canAdjustComponents = computed(() =>
-  !!subcon.value && subcon.value.method !== 'basic'
-  && !['completed', 'canceled'].includes(wo.value?.status ?? ''))
 const canAddCostLine = computed(() =>
   !!subcon.value && !['completed', 'canceled'].includes(wo.value?.status ?? ''))
 
@@ -573,8 +559,15 @@ const actionItems = computed(() => {
   const s = wo.value?.status
   if (s === 'completed') return ['Print']
   if (s === 'canceled') return ['Print', 'Delete']
-  return ['Edit', 'Replace attachment', 'Print', 'Delete']
+  // A subcon order is restated through the adjust form rather than edited: its
+  // numbers have documents behind them.
+  const first = subcon.value ? 'Adjust work order' : 'Edit'
+  return [first, 'Replace attachment', 'Print', 'Delete']
 })
+
+function onActionItem(item: string) {
+  if (item === 'Adjust work order') router.push(`/work-orders/${props.orderId}/adjust`)
+}
 
 // ── Attachments (representative) ────────────────────────────────────────────────
 const attachments = [
@@ -1045,6 +1038,9 @@ function handlePrimaryAction() {
     return
   }
   if (primaryAction.value !== 'Complete work order') return
+  // Offer the fork before any of the completion dialogs: correcting the order is
+  // a different job from closing it, and it has to happen first.
+  if (subcon.value && !confirmedNoDifferences.value) { showConfirmAdjust.value = true; return }
   // A subcon order is finished when the vendor's deliveries add up to what it
   // needs. Short of that, ask: deliver the balance, or close it short on the
   // record. (The unconsumed-material guard below is about in-house consumption,
@@ -1284,6 +1280,7 @@ function suppressFabClick(e: MouseEvent) {
               <MpPopoverListItem
                 v-for="item in actionItems" :key="item"
                 :class="item === 'Delete' ? css({ color: 'var(--mp-text-critical, var(--mp-text-danger, #a8352d))' }) : ''"
+                @click="onActionItem(item)"
               >{{ t(item) }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
@@ -1430,7 +1427,6 @@ function suppressFabClick(e: MouseEvent) {
                   <th class="wod-th wod-th--num">{{ reportsSentQty ? t('Sent to vendor') : t('Consumed qty') }}</th>
                   <th class="wod-th">{{ t('Unit') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Estimated cost') }}</th>
-                  <th v-if="canAdjustComponents" class="wod-th wod-th--action" />
                 </tr>
               </thead>
               <tbody>
@@ -1453,9 +1449,6 @@ function suppressFabClick(e: MouseEvent) {
                   </td>
                   <td class="wod-td">{{ r.unit }}</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(r.purchaseCost * plannedQtyFor(r)) }}</td>
-                  <td v-if="canAdjustComponents" class="wod-td wod-td--action">
-                    <MpButton variant="secondary" is-rounded @click="adjustingSku = r.sku">{{ t('Adjust') }}</MpButton>
-                  </td>
                 </tr>
               </tbody>
             </table>
@@ -1948,6 +1941,13 @@ function suppressFabClick(e: MouseEvent) {
       </ErpTablePage>
     </div>
 
+    <ConfirmWorkOrderAdjustmentModal
+      v-if="subcon"
+      v-model:is-open="showConfirmAdjust"
+      @adjust="goAdjust"
+      @proceed="proceedToComplete"
+    />
+
     <SubconJournalModal
       v-if="subcon"
       v-model:is-open="showJournalModal"
@@ -1957,18 +1957,6 @@ function suppressFabClick(e: MouseEvent) {
       :is-stale="journalIsStale"
     />
 
-    <SubconAdjustComponentModal
-      v-if="subcon && adjustTarget"
-      :is-open="!!adjustingSku"
-      :method="subcon.method"
-      :component-name="adjustTarget.componentName"
-      :sku="adjustTarget.sku"
-      :unit="adjustTarget.unit"
-      :planned-qty="adjustTarget.plannedQty"
-      :already-sent-qty="adjustTarget.alreadySentQty"
-      @update:is-open="v => { if (!v) adjustingSku = null }"
-      @save="saveComponentQty"
-    />
 
     <SubconAddCostLineModal
       v-if="subcon && subconCosts"
