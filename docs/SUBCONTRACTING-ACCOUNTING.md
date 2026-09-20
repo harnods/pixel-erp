@@ -145,8 +145,13 @@ really been posted — materials issued, subcon cost capitalised.
 
 **They legitimately diverge.** Reducing a component's planned quantity after part of
 it has gone to the vendor changes the plan and posts nothing; the materials already
-issued stay in WIP. A variance is information, not an error, and is stated plainly
-rather than flagged.
+issued stay in WIP. A variance is information, not an error.
+
+**Not currently shown on the work order.** `subconCostSummary()` and
+`subconWipBalance()` compute both, and the tests exercise them, but the panel that
+displayed them was removed from the work order detail — the journal and the stock
+movements carry the same story through the screen the product already had. Bring the
+panel back if a running WIP figure is wanted on the page itself.
 
 ---
 

@@ -31,10 +31,9 @@ import {
 import { addAdjustment, stockAdjustments } from '~/data/stockAdjustments'
 import SubconJournalModal from '~/components/patterns/SubconJournalModal.vue'
 import ConfirmWorkOrderAdjustmentModal from '~/components/patterns/ConfirmWorkOrderAdjustmentModal.vue'
-import SubconCostSummaryPanel from '~/components/patterns/SubconCostSummaryPanel.vue'
 import SubconAddCostLineModal from '~/components/patterns/SubconAddCostLineModal.vue'
 import {
-  buildSubconJournals, wipBalanceFrom, subconCostSummary, accountLabel,
+  buildSubconJournals, accountLabel,
   type SubconAccountingInput, type SubconCostLineInput, type SubconComponentInput,
   type SubconCostDriver,
 } from '~/data/subconAccounting'
@@ -415,8 +414,8 @@ const accountingInput = computed<SubconAccountingInput | null>(() => {
 
 const subconJournals = computed(() => accountingInput.value ? buildSubconJournals(accountingInput.value) : [])
 /** Value currently in the vendor's hands. */
-const subconWipBalanceValue = computed(() => wipBalanceFrom(subconJournals.value))
-const subconCosts = computed(() => accountingInput.value ? subconCostSummary(accountingInput.value) : null)
+/** Planned cost of the run — what the Add-subcon-cost dialog compares against. */
+const subconPlannedTotal = computed(() => rawSubtotal.value + subconCostSubtotal.value)
 
 const showJournalModal = ref(false)
 
@@ -577,7 +576,7 @@ const attachments = [
 
 // ── Collapsible sections ──────────────────────────────────────────────────────
 const collapsed = reactive<Record<string, boolean>>({
-  raw: false, cost: false, routing: false, subconCost: false, accounting: false, finished: false,
+  raw: false, cost: false, routing: false, subconCost: false, finished: false,
 })
 
 // ── Line-item status derivation (from the work order status) ─────────────────────
@@ -1566,22 +1565,6 @@ function suppressFabClick(e: MouseEvent) {
         </template>
       </section>
 
-      <!-- ── Accounting — what the run costs and what it has posted ── -->
-      <section v-if="subcon && subconCosts" class="wod-section">
-        <button class="wod-section-head btn-enterprise" @click="collapsed.accounting = !collapsed.accounting">
-          <h2 class="wod-section-title">{{ t('Accounting') }}</h2>
-          <svg class="wod-chevron" :class="{ 'wod-chevron--open': !collapsed.accounting }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-        <template v-if="!collapsed.accounting">
-          <SubconCostSummaryPanel
-            :summary="subconCosts"
-            :wip-balance="subconWipBalanceValue"
-            :planned-qty="wo.plannedQty"
-          />
-
-        </template>
-      </section>
-
       <!-- ── Cost summary — rows follow whichever cost structure applies ── -->
       <section class="wod-section">
         <div class="wod-summary">
@@ -1959,9 +1942,9 @@ function suppressFabClick(e: MouseEvent) {
 
 
     <SubconAddCostLineModal
-      v-if="subcon && subconCosts"
+      v-if="subcon"
       v-model:is-open="addingCostLine"
-      :current-total="subconCosts.plannedTotal"
+      :current-total="subconPlannedTotal"
       :planned-qty="wo.plannedQty"
       :vendor-name="subcon.vendorName"
       @save="saveCostLine"
