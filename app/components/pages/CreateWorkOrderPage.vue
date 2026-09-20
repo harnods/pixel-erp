@@ -10,6 +10,7 @@
  */
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { formatIDR } from '~/utils/currency'
+import { priceSubconOrder, SUBCON_PRICE_BASIS_SHORT, SUBCON_PRICE_STATE_LABEL } from '~/data/subconPricing'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpAutocomplete, MpInput, MpInputGroup, MpInputRightAddon, MpDatePicker, MpButton, MpIcon,
@@ -407,7 +408,38 @@ function onSubconCostProduct(row: SubconCostRow, id: string) {
   if (!row.amount) row.amount = String(p.defaultPrice)
   appendIfLast(subconCostRows, row.id, makeSubconCost)
 }
-const subconCostSubtotal = computed(() => subconCostRows.value.reduce((s, r) => s + num(r.amount), 0))
+/** The contract value — the charges as entered, before any gross-up. */
+const subconContractValue = computed(() => subconCostRows.value.reduce((s, r) => s + num(r.amount), 0))
+
+/**
+ * Pricing at the ESTIMATED state: no purchase order exists yet, so the basis is
+ * the vendor's default. Picking a different vendor changes it, which is the point
+ * of showing it here — on a Net basis the company bears the withholding, and that
+ * makes the run cost more than the charges as typed.
+ */
+const subconPricing = computed(() => {
+  if (!isSubcon.value) return null
+  return priceSubconOrder({
+    method: subconMethod.value,
+    basis: subconVendor.value.defaultPriceBasis,
+    vendorHasNpwp: subconVendor.value.hasNpwp,
+    lines: subconCostRows.value
+      .filter(r => r.productId)
+      .map(r => ({ id: String(r.id), name: r.productId, contractValue: num(r.amount) })),
+    vatRate: 0.11,
+    vatCreditable: true,
+    bomMaterialValue: rawSubtotal.value,
+  })
+})
+
+/** The gross-up as a derived row — absent on a Gross basis. */
+const subconGrossUp = computed(() => {
+  const p = subconPricing.value
+  return p && p.grossUp > 0 ? p.grossUp : 0
+})
+
+/** Contract value plus any gross-up. */
+const subconCostSubtotal = computed(() => subconContractValue.value + subconGrossUp.value)
 
 // ── Cost summary ─────────────────────────────────────────────────────────────
 // On a subcon work order the vendor's fee stands in for production + routing.
@@ -1130,11 +1162,32 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     </MpTooltip>
                   </td>
                 </tr>
+
+                <!-- Derived, not entered. Shown as soon as a vendor whose prices
+                     are agreed net is chosen, so the planner sees the real cost
+                     while configuring rather than discovering it on the invoice.
+                     Absent on a Gross basis. -->
+                <tr v-if="subconGrossUp > 0" class="wo-tr wo-tr--derived">
+                  <td class="wo-td">
+                    {{ t('Withholding borne by company') }}
+                    <span class="wo-derived-note">{{ t('Arises because the vendor price is agreed net.') }}</span>
+                  </td>
+                  <td class="wo-td" />
+                  <td class="wo-td">{{ subconVendor.name }}</td>
+                  <td class="wo-td">{{ t(SUBCON_PRICE_BASIS_SHORT[subconVendor.defaultPriceBasis]) }}</td>
+                  <td class="wo-td wo-td--num">{{ formatIDR(subconGrossUp) }}</td>
+                  <td class="wo-td wo-td--del" />
+                </tr>
               </tbody>
             </table>
           </div>
           <div class="wo-subtotal-row">
-            <span>{{ t('Subcon cost subtotal') }}</span>
+            <span>
+              {{ t('Subcon cost subtotal') }}
+              <!-- No purchase order exists yet, so this is a forecast from the
+                   vendor's usual basis. -->
+              <span v-if="subconGrossUp > 0" class="wo-price-state">{{ t(SUBCON_PRICE_STATE_LABEL.estimated) }}</span>
+            </span>
             <span class="wo-subtotal-amount">{{ formatIDR(subconCostSubtotal) }}</span>
           </div>
         </section>
@@ -1589,6 +1642,24 @@ onUnmounted(() => { stageObserver?.disconnect() })
 }
 
 /* ── Subtotal + summary ──────────────────────────────────────────────────── */
+/* A derived row reads as calculated, not entered. */
+.wo-tr--derived .wo-td { color: var(--mp-text-secondary); font-style: italic; }
+.wo-derived-note {
+  display: block;
+  font-style: normal;
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+}
+.wo-price-state {
+  margin-left: var(--mp-spacing-2);
+  padding: 0 var(--mp-spacing-1\.5);
+  border-radius: var(--mp-radii-sm);
+  background: var(--mp-background-neutral-subtle, #f5f6f7);
+  font-size: var(--mp-font-sizes-sm);
+  font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-secondary);
+}
+
 .wo-subtotal-row {
   display: flex; justify-content: flex-end; align-items: center; gap: var(--mp-spacing-8);
   padding: var(--mp-spacing-3) var(--mp-spacing-2) 0;
