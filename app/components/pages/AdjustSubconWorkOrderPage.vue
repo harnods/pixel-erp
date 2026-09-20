@@ -19,11 +19,11 @@
 import { MpButton, MpIcon, MpInput } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import { successToast } from '~/utils/toasts'
-import { workOrders, setSubconComponentQty, persistWorkOrders } from '~/data/workOrders'
+import { workOrders, setSubconComponentQty, setSubconCostLineAmount, addSubconCostLine, persistWorkOrders } from '~/data/workOrders'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 import { warehouseTransfers } from '~/data/warehouseTransfers'
 import { evaluateComponentAdjustment } from '~/data/subconAccounting'
-import { SUBCON_BATCH_QTY, SUBCON_SERVICE_FEE, SUBCON_HANDLING_FEE } from '~/data/subcon'
+import { SUBCON_BATCH_QTY, SUBCON_SERVICE_FEE, SUBCON_HANDLING_FEE, SUBCON_COST_DRIVERS } from '~/data/subcon'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -69,7 +69,8 @@ interface ComponentRow {
 
 const components = ref<ComponentRow[]>([])
 const outputQty = ref('')
-const costLines = ref<{ id: string; name: string; driver: string; draft: string }[]>([])
+/** `isNew` lines do not exist on the order yet — they are created on save. */
+const costLines = ref<{ id: string; name: string; driver: string; draft: string; isNew?: boolean; baseline: number }[]>([])
 
 /** Load the form from the order. Runs once — this is an edit form, not a live view. */
 onMounted(() => {
@@ -97,18 +98,51 @@ onMounted(() => {
   outputQty.value = String(w.plannedQty)
 
   const factor = (w.plannedQty / SUBCON_BATCH_QTY) * (c.split === 'partial' ? 0.5 : 1)
-  const fromBom = (bom.value?.subconCost ?? []).map(l => ({
-    id: l.productId, name: l.name, driver: l.costDriver, draft: String(Math.round(l.amount * factor)),
-  }))
+  // A revised amount wins over the BOM's — see `costLineOverrides`.
+  const amountFor = (id: string, fallback: number) => c.costLineOverrides?.[id] ?? fallback
+  const fromBom = (bom.value?.subconCost ?? []).map((l) => {
+    const amount = amountFor(l.productId, Math.round(l.amount * factor))
+    return { id: l.productId, name: l.name, driver: l.costDriver, draft: String(amount), baseline: amount }
+  })
   const base = fromBom.length ? fromBom : [
-    { id: 'svc-fee', name: t(SUBCON_SERVICE_FEE[c.scope].name), driver: 'Unit', draft: String(Math.round(SUBCON_SERVICE_FEE[c.scope].amount * factor)) },
-    { id: 'svc-handling', name: t(SUBCON_HANDLING_FEE.name), driver: 'Amount', draft: String(Math.round(SUBCON_HANDLING_FEE.amount * factor)) },
+    { id: 'svc-fee', name: t(SUBCON_SERVICE_FEE[c.scope].name), driver: 'Unit',
+      draft: String(amountFor('svc-fee', Math.round(SUBCON_SERVICE_FEE[c.scope].amount * factor))),
+      baseline: amountFor('svc-fee', Math.round(SUBCON_SERVICE_FEE[c.scope].amount * factor)) },
+    { id: 'svc-handling', name: t(SUBCON_HANDLING_FEE.name), driver: 'Amount',
+      draft: String(amountFor('svc-handling', Math.round(SUBCON_HANDLING_FEE.amount * factor))),
+      baseline: amountFor('svc-handling', Math.round(SUBCON_HANDLING_FEE.amount * factor)) },
   ]
   costLines.value = [
     ...base,
-    ...(c.extraCostLines ?? []).map(l => ({ id: l.id, name: l.name, driver: l.costDriver, draft: String(l.amount) })),
+    ...(c.extraCostLines ?? []).map(l => ({
+      id: l.id, name: l.name, driver: l.costDriver, draft: String(l.amount), baseline: l.amount,
+    })),
   ]
 })
+
+/**
+ * A charge agreed after the order was created. It is added here rather than from
+ * the work order itself: this is the one place the order's numbers are restated,
+ * and the running totals below already show what it does to cost per unit.
+ */
+let newLineSeq = 0
+function addCostLine() {
+  costLines.value.push({
+    id: `extra-${Date.now()}-${++newLineSeq}`,
+    name: '',
+    driver: 'Amount',
+    draft: '',
+    isNew: true,
+    baseline: 0,
+  })
+}
+function removeCostLine(id: string) {
+  costLines.value = costLines.value.filter(l => l.id !== id)
+}
+
+/** A new line needs a name and an amount before it can be saved. */
+const incompleteNewLines = computed(() =>
+  costLines.value.filter(l => l.isNew && (!l.name.trim() || costAmount(l) <= 0)))
 
 function qtyOf(row: ComponentRow) {
   const n = Number(row.draft)
@@ -157,7 +191,7 @@ const attempted = ref(false)
 function onSave() {
   attempted.value = true
   // Errors surface inline on the offending rows, never as a toast.
-  if (blockedRows.value.length) return
+  if (blockedRows.value.length || incompleteNewLines.value.length) return
 
   const w = wo.value
   const c = subcon.value
@@ -167,13 +201,15 @@ function onSave() {
     if (qtyOf(row) !== row.planned) setSubconComponentQty(w.id, row.sku, qtyOf(row))
   }
 
-  // Charges edited to a different amount are recorded as an override on the
-  // order, leaving the BOM — the shared recipe — untouched.
-  const existing = new Map((c.extraCostLines ?? []).map(l => [l.id, l]))
   for (const line of costLines.value) {
     const amount = costAmount(line)
-    const prior = existing.get(line.id)
-    if (prior) { prior.amount = amount; continue }
+    if (line.isNew) {
+      addSubconCostLine(w.id, { id: line.id, name: line.name.trim(), costDriver: line.driver, amount })
+      continue
+    }
+    // A revised amount is recorded as an override on this order, leaving the
+    // BOM — the shared recipe every other order is built from — untouched.
+    if (amount !== line.baseline) setSubconCostLineAmount(w.id, line.id, amount)
   }
 
   if (producedQty.value !== w.plannedQty) {
@@ -271,19 +307,51 @@ function onSave() {
                 <th class="awo-th">{{ t('Charged by') }}</th>
                 <th class="awo-th">{{ t('Cost driver') }}</th>
                 <th class="awo-th awo-th--num">{{ t('Amount') }}</th>
+                <th class="awo-th awo-th--action" />
               </tr>
             </thead>
             <tbody>
               <tr v-for="line in costLines" :key="line.id" class="awo-tr">
-                <td class="awo-td">{{ line.name }}</td>
+                <td class="awo-td">
+                  <!-- A charge from the BOM is named already; a new one is typed. -->
+                  <MpInput
+                    v-if="line.isNew" :id="`awo-cost-name-${line.id}`" v-model="line.name"
+                    :placeholder="t('Finishing &amp; packing')" is-full-width
+                    :is-invalid="attempted && !line.name.trim()"
+                  />
+                  <template v-else>{{ line.name }}</template>
+                </td>
                 <td class="awo-td">{{ subcon.vendorName }}</td>
-                <td class="awo-td">{{ t(line.driver) }}</td>
+                <td class="awo-td">
+                  <span v-if="!line.isNew">{{ t(line.driver) }}</span>
+                  <span v-else class="awo-drivers">
+                    <button
+                      v-for="d in SUBCON_COST_DRIVERS" :key="d" type="button"
+                      class="awo-driver btn-enterprise" :class="{ 'awo-driver--on': line.driver === d }"
+                      @click="line.driver = d"
+                    >{{ t(d) }}</button>
+                  </span>
+                </td>
                 <td class="awo-td awo-td--num">
-                  <MpInput :id="`awo-cost-${line.id}`" v-model="line.draft" type="number" min="0" class="awo-qty" />
+                  <MpInput
+                    :id="`awo-cost-${line.id}`" v-model="line.draft" type="number" min="0" class="awo-qty"
+                    :is-invalid="attempted && line.isNew && costAmount(line) <= 0"
+                  />
+                </td>
+                <td class="awo-td awo-td--action">
+                  <button
+                    v-if="line.isNew" type="button" class="awo-remove btn-enterprise"
+                    :aria-label="t('Remove cost component')" @click="removeCostLine(line.id)"
+                  ><MpIcon name="close" size="sm" /></button>
                 </td>
               </tr>
             </tbody>
           </table>
+        </div>
+        <div class="awo-add">
+          <MpButton variant="secondary" is-rounded left-icon="add" @click="addCostLine">
+            {{ t('Add subcon cost') }}
+          </MpButton>
         </div>
         <div class="awo-subtotal">
           <span>{{ t('Subtotal subcon cost') }}</span>
@@ -330,6 +398,9 @@ function onSave() {
 
       <p v-if="attempted && blockedRows.length" class="awo-blocked">
         {{ t('Fix the highlighted quantities before saving — they are below what has already gone to the vendor.') }}
+      </p>
+      <p v-if="attempted && incompleteNewLines.length" class="awo-blocked">
+        {{ t('Every new subcon cost needs a name and an amount.') }}
       </p>
 
       <footer class="awo-footer">
@@ -407,6 +478,31 @@ function onSave() {
 }
 .awo-note-text { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .awo-note-text--bad { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
+
+.awo-add { padding: var(--mp-spacing-3) var(--mp-spacing-3) 0; }
+.awo-th--action, .awo-td--action { width: var(--mp-sizes-10, 40px); }
+.awo-remove {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
+  padding: 0; border: none; border-radius: var(--mp-radii-md);
+  background: transparent; color: var(--mp-text-secondary); cursor: pointer;
+}
+.awo-remove:hover { background: var(--mp-background-neutral-hovered); }
+.awo-drivers { display: flex; gap: var(--mp-spacing-2); }
+.awo-driver {
+  padding: var(--mp-spacing-1) var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-default);
+  border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-default, #fff);
+  color: var(--mp-text-default);
+  font-size: var(--mp-font-sizes-sm);
+  cursor: pointer;
+}
+.awo-driver--on {
+  border-color: var(--mp-border-selected, #029861);
+  background: var(--mp-background-information, #eef0fc);
+  font-weight: var(--mp-font-weights-semi-bold);
+}
 
 .awo-subtotal {
   display: flex; justify-content: space-between;

@@ -112,6 +112,12 @@ export interface WorkOrderSubconSetup {
    * the invoice onward, each with its own clearing account.
    */
   extraCostLines?: { id: string; name: string; costDriver: string; amount: number }[]
+  /**
+   * Cost line amounts revised on this order, by line id. Held here for the same
+   * reason `componentAdjustments` is: the BOM is the shared recipe, and one
+   * order's renegotiated price must not rewrite it for every other order.
+   */
+  costLineOverrides?: Record<string, number>
 }
 
 /** A document created from a subcon work order, and where its detail page lives. */
@@ -321,6 +327,14 @@ export function setSubconComponentQty(workOrderId: string, sku: string, qty: num
   const wo = workOrders.find(w => w.id === workOrderId)
   if (!wo?.subcon) return
   wo.subcon.componentAdjustments = { ...(wo.subcon.componentAdjustments ?? []), [sku]: qty }
+  persistWorkOrders()
+}
+
+/** Revise one cost line's amount on this work order only. */
+export function setSubconCostLineAmount(workOrderId: string, lineId: string, amount: number): void {
+  const wo = workOrders.find(w => w.id === workOrderId)
+  if (!wo?.subcon) return
+  wo.subcon.costLineOverrides = { ...(wo.subcon.costLineOverrides ?? {}), [lineId]: amount }
   persistWorkOrders()
 }
 

@@ -31,7 +31,6 @@ import {
 import { addAdjustment, stockAdjustments } from '~/data/stockAdjustments'
 import SubconJournalModal from '~/components/patterns/SubconJournalModal.vue'
 import ConfirmWorkOrderAdjustmentModal from '~/components/patterns/ConfirmWorkOrderAdjustmentModal.vue'
-import SubconAddCostLineModal from '~/components/patterns/SubconAddCostLineModal.vue'
 import {
   buildSubconJournals, accountLabel,
   type SubconAccountingInput, type SubconCostLineInput, type SubconComponentInput,
@@ -254,11 +253,14 @@ const subconCostLines = computed(() => {
   // A Subcontracting BOM defines its own services — those are THE subcon cost for
   // this work order, and they win. The scope-derived pair below is only the
   // fallback for a BOM that predates the Subcon cost section.
+  /** A revised amount wins over the BOM's — see `costLineOverrides`. */
+  const amountFor = (id: string, fallback: number) => c.costLineOverrides?.[id] ?? fallback
+
   const extras = (c.extraCostLines ?? []).map(l => ({
     account: l.name,
     driver: t(l.costDriver),
     chargedBy: c.vendorName,
-    amount: l.amount,
+    amount: amountFor(l.id, l.amount),
   }))
 
   const fromBom = bom.value?.subconCost ?? []
@@ -268,7 +270,7 @@ const subconCostLines = computed(() => {
         account: l.name,
         driver: t(l.costDriver),
         chargedBy: c.vendorName,
-        amount: l.amount * factor,
+        amount: amountFor(l.productId, Math.round(l.amount * factor)),
       })),
       ...extras,
     ]
@@ -279,13 +281,13 @@ const subconCostLines = computed(() => {
       account: t(SUBCON_SERVICE_FEE[c.scope].name),
       driver: t('Unit'),
       chargedBy: c.vendorName,
-      amount: SUBCON_SERVICE_FEE[c.scope].amount * factor,
+      amount: amountFor('svc-fee', Math.round(SUBCON_SERVICE_FEE[c.scope].amount * factor)),
     },
     {
       account: t(SUBCON_HANDLING_FEE.name),
       driver: t('Amount'),
       chargedBy: c.vendorName,
-      amount: SUBCON_HANDLING_FEE.amount * factor,
+      amount: amountFor('svc-handling', Math.round(SUBCON_HANDLING_FEE.amount * factor)),
     },
     ...extras,
   ]
@@ -304,21 +306,22 @@ const accountingCostLines = computed<SubconCostLineInput[]>(() => {
   const c = subcon.value
   if (!w || !c) return []
   const factor = (w.plannedQty / SUBCON_BATCH_QTY) * (c.split === 'partial' ? 0.5 : 1)
+  const amountFor = (id: string, fallback: number) => c.costLineOverrides?.[id] ?? fallback
   const fromBom = (bom.value?.subconCost ?? []).map(l => ({
     id: l.productId,
     name: l.name,
     costDriver: l.costDriver as SubconCostDriver,
-    amount: Math.round(l.amount * factor),
+    amount: amountFor(l.productId, Math.round(l.amount * factor)),
   }))
   const base: SubconCostLineInput[] = fromBom.length ? fromBom : [
-    { id: 'svc-fee', name: t(SUBCON_SERVICE_FEE[c.scope].name), costDriver: 'Unit', amount: Math.round(SUBCON_SERVICE_FEE[c.scope].amount * factor) },
-    { id: 'svc-handling', name: t(SUBCON_HANDLING_FEE.name), costDriver: 'Amount', amount: Math.round(SUBCON_HANDLING_FEE.amount * factor) },
+    { id: 'svc-fee', name: t(SUBCON_SERVICE_FEE[c.scope].name), costDriver: 'Unit', amount: amountFor('svc-fee', Math.round(SUBCON_SERVICE_FEE[c.scope].amount * factor)) },
+    { id: 'svc-handling', name: t(SUBCON_HANDLING_FEE.name), costDriver: 'Amount', amount: amountFor('svc-handling', Math.round(SUBCON_HANDLING_FEE.amount * factor)) },
   ]
   // Charges agreed after the order was created sit alongside the BOM's own.
   return [
     ...base,
     ...(c.extraCostLines ?? []).map(l => ({
-      id: l.id, name: l.name, costDriver: l.costDriver as SubconCostDriver, amount: l.amount,
+      id: l.id, name: l.name, costDriver: l.costDriver as SubconCostDriver, amount: amountFor(l.id, l.amount),
     })),
   ]
 })
@@ -413,9 +416,6 @@ const accountingInput = computed<SubconAccountingInput | null>(() => {
 })
 
 const subconJournals = computed(() => accountingInput.value ? buildSubconJournals(accountingInput.value) : [])
-/** Value currently in the vendor's hands. */
-/** Planned cost of the run — what the Add-subcon-cost dialog compares against. */
-const subconPlannedTotal = computed(() => rawSubtotal.value + subconCostSubtotal.value)
 
 const showJournalModal = ref(false)
 
@@ -458,24 +458,6 @@ const subconStockMovements = computed(() =>
  */
 const journalIsStale = computed(() =>
   Object.keys(subcon.value?.componentAdjustments ?? {}).length > 0)
-
-// ── Accounting actions ────────────────────────────────────────────────────────
-const addingCostLine = ref(false)
-function saveCostLine(line: { name: string; costDriver: SubconCostDriver; amount: number }) {
-  const w = wo.value
-  if (!w) return
-  addSubconCostLine(w.id, {
-    id: `extra-${Date.now()}`,
-    name: line.name,
-    costDriver: line.costDriver,
-    amount: line.amount,
-  })
-  addingCostLine.value = false
-  successToast(t('Subcon cost added'))
-}
-
-const canAddCostLine = computed(() =>
-  !!subcon.value && !['completed', 'canceled'].includes(wo.value?.status ?? ''))
 
 /**
  * The vendor location a transfer is addressed to. Falls back to the vendor's own
@@ -1557,11 +1539,6 @@ function suppressFabClick(e: MouseEvent) {
             </table>
           </div>
           <div class="wod-subtotal-row"><span>{{ t('Subcon cost subtotal') }}</span><span class="wod-amount">{{ formatIDR(subconCostSubtotal) }}</span></div>
-          <div v-if="canAddCostLine" class="wod-section-action">
-            <MpButton variant="secondary" is-rounded left-icon="plus" @click="addingCostLine = true">
-              {{ t('Add subcon cost') }}
-            </MpButton>
-          </div>
         </template>
       </section>
 
@@ -1941,14 +1918,6 @@ function suppressFabClick(e: MouseEvent) {
     />
 
 
-    <SubconAddCostLineModal
-      v-if="subcon"
-      v-model:is-open="addingCostLine"
-      :current-total="subconPlannedTotal"
-      :planned-qty="wo.plannedQty"
-      :vendor-name="subcon.vendorName"
-      @save="saveCostLine"
-    />
 
     <!-- ── Demo flow scenario switcher ── -->
     <MpPopover id="wod-flow-fab" is-close-on-select use-portal placement="top-end">
