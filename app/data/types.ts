@@ -344,6 +344,14 @@ export interface PurchaseOrder {
   /** Set when this order is rejected — drives the persistent rejection banner. */
   rejection?: { user: string; date: string; reason: string }
   /**
+   * ISO date the order was approved. A durable fact rather than a reading of
+   * `status`, which moves on afterwards (a delivery takes it to "awaiting
+   * invoice", the invoice to "closed"). Subcon accounting recognises the
+   * vendor's charge on approval, so it needs to know that approval happened at
+   * all, not merely that the order is in the approved state right now.
+   */
+  approvedAt?: string
+  /**
    * The order's real line items, set when the order was actually created through
    * the form (raised from purchase requests, or duplicated). Seeded orders leave
    * this undefined and the detail page synthesizes plausible lines from the

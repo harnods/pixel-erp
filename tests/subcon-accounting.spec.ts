@@ -178,7 +178,8 @@ describe('Test 2 — materials 60/40, receipts of 300 then 200', () => {
       { id: 'h1', date: '2026-09-18', lines: shareOfComponents(0.6) },
       { id: 'h2', date: '2026-09-19', lines: shareOfComponents(0.4) },
     ],
-    // Billed twice, once per receipt.
+    // Two approved purchase orders — the vendor's charge is recognised on
+    // approval, so each one posts its own clearing/VAT/withholding entry.
     invoices: [
       { id: 'inv1', date: '2026-09-22', lines: [
         { costLineId: 'svc-sew', amount: 7_500_000 },
@@ -232,9 +233,9 @@ describe('Test 2 — materials 60/40, receipts of 300 then 200', () => {
     expect(wipBalanceFrom(upToReceipt1)).toBe(3_880_000)
   })
 
-  it('billing twice produces two withholding entries, never one rolled up', () => {
+  it('two approved orders produce two withholding entries, never one rolled up', () => {
     const withholdingLines = entries
-      .filter(e => e.event === 'vendorInvoice')
+      .filter(e => e.event === 'vendorInvoice')   // the charge-recognised entry
       .flatMap(e => e.lines.filter(l => l.role === 'withholdingTaxPayable'))
     expect(withholdingLines).toHaveLength(2)
     expect(withholdingLines.map(l => l.credit)).toEqual([157_200, 104_800])

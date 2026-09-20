@@ -45,6 +45,7 @@ import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
 import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
 import { purchaseOrders, purchaseInvoicesAwaitingApproval } from '~/data'
+import { approvePurchaseOrderRecord } from '~/data/purchaseOrders'
 import { loadSnapshot, saveSnapshot } from '~/data/persist'
 
 const { pageTitle, currentPageKey } = useNavigation()
@@ -314,8 +315,9 @@ const showPurchaseOrderForm   = computed(() => currentPageKey.value === 'Purchas
 provide('openPurchaseOrder',  (id: string) => { poDetailOrderId.value = id })
 provide('closePurchaseOrder', ()           => { poDetailOrderId.value = null })
 provide('approvePurchaseOrder', (id: string) => {
-  const o = purchaseOrders.find(x => x.id === id)
-  if (o) o.status = 'approved'
+  // Records the approval date and persists — a subcon work order recognises the
+  // vendor's charge on approval, so this has to survive a reload.
+  approvePurchaseOrderRecord(id)
   poDetailOrderId.value = null
 })
 provide('rejectPurchaseOrder', (id: string, reason: string) => {

@@ -90,6 +90,15 @@ export function setPurchaseOrderStatus(id: string, status: PurchaseOrder['status
   persist()
 }
 
+/** Approve an order, recording WHEN — see `PurchaseOrder.approvedAt`. */
+export function approvePurchaseOrderRecord(id: string): void {
+  const order = purchaseOrders.find(o => o.id === id)
+  if (!order) return
+  order.status = 'approved'
+  order.approvedAt = new Date().toISOString().slice(0, 10)
+  persist()
+}
+
 /** Add an order to the store, newest first — same shape as `addPurchaseRequest`. */
 export function addPurchaseOrder(order: PurchaseOrder): PurchaseOrder {
   purchaseOrders.unshift(order)

@@ -376,24 +376,38 @@ const accountingReceipts = computed(() =>
     .map(d => ({ id: d.id, date: d.raisedAt ?? '', documentNumber: d.number, qty: d.qty! })),
 )
 
-const accountingInvoices = computed(() =>
+/**
+ * The vendor's charge, recognised when the PURCHASE ORDER IS APPROVED rather than
+ * when the invoice arrives. Approving the order is the point the price is agreed
+ * and committed, so that is where the clearing, VAT, withholding and payable
+ * entries are posted; the invoice that follows records the document, and posts
+ * nothing further, so the charge is never counted twice.
+ */
+const accountingVendorCharges = computed(() =>
   (subcon.value?.raisedDocuments ?? [])
-    .filter(d => d.kind === 'purchaseInvoice')
+    .filter(d => d.kind === 'purchaseOrder')
     .map((d) => {
-      const inv = purchaseInvoices.find(i => i.id === d.id)
+      const po = purchaseOrders.find(o => o.id === d.id)
+      if (!po) return null
+      // `approvedAt` is the record; an order approved before that field existed
+      // still shows the approved status, so fall back to it and date the charge
+      // from the order itself.
+      const approvedOn = po.approvedAt ?? (po.status === 'approved' ? po.date : undefined)
+      // Not approved yet → nothing is recognised.
+      if (!approvedOn) return null
       return {
         id: d.id,
-        date: d.raisedAt ?? inv?.date ?? '',
+        date: approvedOn,
         documentNumber: d.number,
-        // Invoice lines carry the service product's name, which is what the cost
+        // Order lines carry the service product's name, which is what the cost
         // line is called — match on that, and fall back to the SKU.
-        lines: (inv?.lineItems ?? []).map((li) => {
+        lines: (po.lineItems ?? []).map((li) => {
           const match = accountingCostLines.value.find(c => c.name === li.product)
           return { costLineId: match?.id ?? li.sku, amount: li.amount }
         }),
       }
     })
-    .filter(i => i.lines.length > 0),
+    .filter((c): c is NonNullable<typeof c> => !!c && c.lines.length > 0),
 )
 
 const accountingInput = computed<SubconAccountingInput | null>(() => {
@@ -410,7 +424,7 @@ const accountingInput = computed<SubconAccountingInput | null>(() => {
     componentPurchases: accountingComponentPurchases.value,
     handovers: accountingHandovers.value,
     receipts: accountingReceipts.value,
-    invoices: accountingInvoices.value,
+    invoices: accountingVendorCharges.value,
     closedShort: w.status === 'completed' && w.producedQty < w.plannedQty,
   }
 })

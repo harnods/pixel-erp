@@ -178,7 +178,13 @@ export interface SubconReceiptInput {
   qty: number
 }
 
-/** The vendor's bill. Amounts are per cost line, before VAT. */
+/**
+ * The vendor's charge, per cost line, before VAT.
+ *
+ * Recognised when the PURCHASE ORDER IS APPROVED — that is the point the price is
+ * agreed and committed. The invoice that follows records the document and posts
+ * nothing further, so the charge is never counted twice.
+ */
 export interface SubconInvoiceInput {
   id: string
   date: string
@@ -195,6 +201,7 @@ export interface SubconAccountingInput {
   componentPurchases?: SubconComponentPurchaseInput[]
   handovers?: SubconHandoverInput[]
   receipts?: SubconReceiptInput[]
+  /** One per APPROVED purchase order — see `SubconInvoiceInput`. */
   invoices?: SubconInvoiceInput[]
   /**
    * Units the order was closed short by. Whatever is left in WIP once every
@@ -352,7 +359,7 @@ export function buildSubconJournals(input: SubconAccountingInput): SubconJournal
     })
   }
 
-  // 3. The vendor's invoice.
+  // 3. The vendor's charge, recognised on approval of the order.
   const takesWithholding = withholdingApplies(input.method)
   for (const invoice of input.invoices ?? []) {
     const service = invoice.lines.reduce((s, l) => s + l.amount, 0)
@@ -373,9 +380,9 @@ export function buildSubconJournals(input: SubconAccountingInput): SubconJournal
       id: `${invoice.id}-invoice`,
       event: 'vendorInvoice',
       date: invoice.date,
-      // Withholding is computed per invoice: a vendor billing twice produces two
+      // Withholding is computed per charge: two approved orders produce two
       // withholding entries, never one rolled-up figure.
-      description: `Subcon vendor invoice — ${doc}`,
+      description: `Subcon vendor charge recognised — ${doc}`,
       documentNumber: invoice.documentNumber,
       lines,
     })

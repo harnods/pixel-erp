@@ -62,12 +62,19 @@ summary groups them back into one row per account.
 |---|---|---|
 | 1 | Warehouse transfer to the vendor | **none** — the goods change location, not owner |
 | 2 | Materials issued into the vendor's process | `Dr wip / Cr materialInventory`, one credit per component |
-| 3 | Vendor invoice | `Dr subconClearing` (per line), `Dr vatInput` / `Cr withholdingTaxPayable`, `Cr accountsPayable` |
+| 3 | **Purchase order approved** | `Dr subconClearing` (per line), `Dr vatInput` / `Cr withholdingTaxPayable`, `Cr accountsPayable` |
 | 4 | Purchase delivery | `Dr wip / Cr subconClearing` — capitalisation, at delivery |
 | 5 | Goods received | `Dr finishedGoods / Cr wip` |
 | 6 | Closed short | `Dr wasteAccount / Cr wip` for whatever is left |
 
 AP = service + VAT − withholding.
+
+**The charge is recognised when the purchase order is APPROVED**, not when the
+invoice arrives: approval is the point the price is agreed and committed. The
+invoice that follows records the document and posts nothing further, so the charge
+is never counted twice. Approval is recorded as `PurchaseOrder.approvedAt` — a
+durable fact, because the order's `status` moves on afterwards (a delivery takes it
+to *awaiting invoice*, the invoice to *closed*).
 
 Step 2 is posted on **handover**, not on consumption — once materials are in the
 vendor's process they are work in progress. In this build that handover is the stock
@@ -83,13 +90,15 @@ pass through material inventory and out again on handover.
 
 | # | Event | Entry |
 |---|---|---|
-| 1 | Vendor invoice (material **and** service) | `Dr subconClearing`, `Dr vatInput` / `Cr accountsPayable` |
+| 1 | **Purchase order approved** (material **and** service) | `Dr subconClearing`, `Dr vatInput` / `Cr accountsPayable` |
 | 2 | Capitalisation | `Dr wip / Cr subconClearing` |
 | 3 | Goods received | `Dr finishedGoods / Cr wip` |
 
 **No withholding tax.** Under PMK 141/2015 this is a purchase of goods, not jasa
 maklon: the vendor supplies the materials and owns the output until handover.
 Withholding applies to Resupply and Dropship only.
+
+Basic's order covers material and service together, folded into the cost line.
 
 ---
 
@@ -112,8 +121,8 @@ Cost allocation per receipt:
 delivered order absorbs any rounding drift so the clearing accounts land exactly
 on zero.
 
-Withholding is computed **per invoice**: a vendor billing twice produces two
-withholding entries, never one rolled-up figure.
+Withholding is computed **per approved order**: two orders produce two withholding
+entries, never one rolled-up figure.
 
 ---
 
