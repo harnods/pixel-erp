@@ -997,7 +997,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
             <!-- VIEW mode: ContentList read-only -->
             <div v-if="viewMode" class="setup-view">
               <ContentList :label="t('Module name')">
-                <span style="display:inline-flex;align-items:center;gap:8px"><MpIcon :name="mod!.icon ?? 'pipeline'" size="sm" /> {{ mod!.name }}</span>
+                <span class="mod-name-inline"><MpIcon :name="mod!.icon ?? 'pipeline'" size="sm" /> {{ mod!.name }}</span>
               </ContentList>
               <ContentList :label="t('Base currency')" :value="setup.baseCurrency === 'IDR' ? 'Indonesian Rupiah (Rp)' : setup.baseCurrency" />
               <ContentList :label="t('Default close date')" :value="viewCloseDateLabel" />
@@ -1243,7 +1243,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                         />
                         <template v-else>
                           <span class="pipe-lane-name">{{ s.name }}</span>
-                          <button v-if="!viewMode" class="pipe-lane-edit" type="button" :aria-label="t('Rename stage')" @click="editStage(s.id)"><MpIcon name="edit" size="sm" /></button>
+                          <button v-if="!viewMode" class="pipe-lane-edit" type="button" :aria-label="t('Rename stage')" @click="editStage(s.id)"><MpIcon name="edit" size="sm" /></button><!-- pixel-police-allow — icon-only edit affordance, styled via .pipe-lane-edit -->
                         </template>
                       </div>
                       <MpTooltip v-if="!viewMode" :id="`stage-vis-${s.id}`" :label="isStageVisible(s.id) ? t('Hide stage in this view') : t('Show stage in this view')" placement="top" use-portal>
@@ -1281,7 +1281,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                       <span class="pipe-lane-total-label">{{ t('Total deal value') }}</span>
                     </div>
 
-                    <button v-if="!viewMode" class="pipe-lane-delete" type="button" @click="removeStage(s.id)">
+                    <button v-if="!viewMode" class="pipe-lane-delete" type="button" @click="removeStage(s.id)"><!-- pixel-police-allow — styled delete affordance -->
                       <MpIcon name="delete" size="sm" /><span>{{ t('Delete stage') }}</span>
                     </button>
                   </div>
@@ -1832,6 +1832,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
 
 .pipe-lane-head { display: flex; align-items: center; gap: var(--mp-spacing-3); min-height: 36px; }
 .pipe-lane-drag { display: inline-flex; align-items: center; color: var(--mp-colors-icon-subtle, #97a0af); cursor: grab; flex-shrink: 0; }
+.mod-name-inline { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); }
 .pipe-lane-label { display: flex; align-items: center; gap: var(--mp-spacing-1); min-width: 0; flex: 1; }
 .pipe-lane-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pipe-lane-input { flex: 1; min-width: 0; }

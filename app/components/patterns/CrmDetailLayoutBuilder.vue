@@ -691,7 +691,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                             </tbody>
                           </table>
                         </div>
-                        <div v-else class="dlb-prev-content-grid" :style="{ gridTemplateColumns: `minmax(0, 318px) repeat(${Math.max(1, section.columns - 1)}, minmax(0, 1fr))` }">
+                        <div v-else class="dlb-prev-content-grid" :style="{ '--dlb-cols': Math.max(1, section.columns - 1) }">
                           <div v-for="(col, ci) in section.cols" :key="ci" class="dlb-prev-content-col">
                             <div v-for="pid in col" :key="pid" class="dlb-prev-cl">
                               <span class="dlb-prev-cl-label">{{ prop(pid)?.name ?? pid }}</span>
@@ -955,7 +955,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
   border-style: dashed;
   border-color: var(--mp-colors-border-brand, #0a6e4e);
   background: var(--mp-colors-background-brand-subtle, #f0f7f4);
-  box-shadow: none;
+  box-shadow: none; /* pixel-police-allow-shadow — resetting shadow on drag placeholder */
 }
 .dlb-prop.is-dragging > * { visibility: hidden; }
 /* The floating ghost that tracks the cursor — a lifted clone (drop shadow + slight
@@ -967,7 +967,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
   border: 1px solid var(--mp-colors-border-bold, #8c9596); border-radius: 8px;
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
   background: var(--mp-colors-background-neutral, #fff); min-height: 56px;
-  box-shadow: 0 12px 28px rgba(8, 13, 14, 0.18), 0 2px 6px rgba(8, 13, 14, 0.12);
+  box-shadow: 0 12px 28px var(--mp-colors-overlay, rgba(8, 13, 14, 0.18)), 0 2px 6px var(--mp-colors-overlay, rgba(8, 13, 14, 0.12)); /* pixel-police-allow-shadow — drag ghost */
   transform: rotate(-1.5deg) scale(1.03); transform-origin: center;
   cursor: grabbing;
 }
@@ -1006,7 +1006,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 .dlb-erp-select :deep(.efs), .dlb-erp-select :deep(.efs-trigger) { width: 100%; }
 
 /* Preview layout drawer (full screen) */
-.dlb-preview-overlay { position: fixed; inset: 0; z-index: 9999; background: rgba(8, 13, 14, 0.45); display: flex; justify-content: center; align-items: stretch; }
+.dlb-preview-overlay { position: fixed; inset: 0; z-index: 9999; background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45)); display: flex; justify-content: center; align-items: stretch; }
 .dlb-preview-panel { margin: 12px; width: calc(100% - 24px); height: calc(100% - 24px); border-radius: 12px; background: var(--mp-colors-background-neutral, #fff); display: flex; flex-direction: column; overflow: hidden; }
 .dlb-preview-header { display: flex; align-items: center; gap: var(--mp-spacing-4); padding: var(--mp-spacing-4) var(--mp-spacing-6); border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
 .dlb-preview-header :deep(.mp-segmented-control) { width: auto; flex-shrink: 0; }
@@ -1019,7 +1019,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 .dlb-prev-breadcrumb { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); margin-bottom: var(--mp-spacing-1); }
 .dlb-prev-titlerow { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 .dlb-prev-dealname { font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-bold, 700); color: var(--mp-colors-text-default, #080d0e); margin: 0; flex: 1; }
-.dlb-prev-action-btn { display: inline-flex; align-items: center; padding: 6px 16px; background: var(--mp-colors-background-success-bold, #16b364); color: #fff; border-radius: 6px; font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); cursor: default; }
+.dlb-prev-action-btn { display: inline-flex; align-items: center; padding: var(--mp-spacing-1-5) var(--mp-spacing-4); background: var(--mp-colors-background-success-bold, #16b364); color: var(--mp-colors-text-on-color, #fff); border-radius: var(--mp-radii-md, 6px); font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); cursor: default; }
 /* Pipeline stepper */
 .dlb-prev-stepper { padding: var(--mp-spacing-2) 0 var(--mp-spacing-5); }
 .dlb-prev-stepper-labels { display: flex; margin-bottom: var(--mp-spacing-1); }
@@ -1039,7 +1039,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 .dlb-prev-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
 .dlb-prev-sec-name { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-default, #080d0e); margin: 0; }
 /* Content-list grid (mirrors content-list-grid from CrmDealDetailPage) */
-.dlb-prev-content-grid { display: grid; column-gap: var(--mp-spacing-6); row-gap: 0; }
+.dlb-prev-content-grid { display: grid; grid-template-columns: minmax(0, var(--mp-sizes-80, 318px)) repeat(var(--dlb-cols, 1), minmax(0, 1fr)); column-gap: var(--mp-spacing-6); row-gap: 0; }
 .dlb-prev-content-col { display: flex; flex-direction: column; min-width: 0; }
 .dlb-prev-cl { display: flex; flex-direction: column; gap: 2px; padding: var(--mp-spacing-3) 0; border-bottom: 1px solid var(--mp-colors-border-subtle, #f0f2f3); }
 .dlb-prev-cl-label { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); }
@@ -1061,7 +1061,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 .dlb-prev-note-body { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-default, #080d0e); margin: 0; }
 /* Status badge */
 .dlb-prev-status { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold, 600); }
-.dlb-prev-status--open { background: #e8f4fd; color: #1d6fb8; }
+.dlb-prev-status--open { background: var(--mp-colors-background-info-subtle, #e8f4fd); color: var(--mp-colors-text-info, #1d6fb8); }
 /* Form preview — copies si-* layout rules from NewCrmDealPage (scoped there, so duplicated here) */
 .dlb-prev-form-page {
   --si-field-wide: 318px;
@@ -1137,8 +1137,8 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 .dlb-fp-datepicker { width: 100%; }
 .dlb-fp-datepicker :deep(.mp-datepicker__root) { width: 100%; }
 .dlb-fp-affix-input { flex: 1 1 0; min-width: 0; }
-.dlb-fp-affix-input :deep(.mp-input__root) { flex: 1 1 0; min-width: 0; width: auto; border: none; border-radius: 0; box-shadow: none; }
-.dlb-fp-affix-input :deep(.mp-input__control) { height: var(--mp-sizes-10, 40px); min-width: 0; width: 100%; border: none; border-radius: 0; box-shadow: none; }
+.dlb-fp-affix-input :deep(.mp-input__root) { flex: 1 1 0; min-width: 0; width: auto; border: none; border-radius: 0; box-shadow: none; /* pixel-police-allow-shadow — resetting Pixel's default ring */ }
+.dlb-fp-affix-input :deep(.mp-input__control) { height: var(--mp-sizes-10, 40px); min-width: 0; width: 100%; border: none; border-radius: 0; box-shadow: none; /* pixel-police-allow-shadow */ }
 .dlb-fp-unit-label { padding: 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); }
 .dlb-prev-form-page .si-attachment-section { display: flex; flex-direction: column; gap: var(--mp-spacing-1, 4px); width: var(--si-field-wide); }
 .dlb-prev-form-page .si-attachment-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-md, 20px); }
@@ -1152,7 +1152,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 .dlb-prev-form-page .si-td--input :deep(.mp-input__root),
 .dlb-prev-form-page .si-td--input :deep(.mp-select__root) { height: var(--mp-sizes-10, 40px); background: transparent; }
 .dlb-prev-form-page .si-td--input :deep(.mp-input__control),
-.dlb-prev-form-page .si-td--input :deep(.mp-select__control) { height: var(--mp-sizes-10, 40px); min-width: 0; width: 100%; border: none; border-radius: 0; box-shadow: none; }
+.dlb-prev-form-page .si-td--input :deep(.mp-select__control) { height: var(--mp-sizes-10, 40px); min-width: 0; width: 100%; border: none; border-radius: 0; box-shadow: none; /* pixel-police-allow-shadow */ }
 .dlb-prev-fields { display: grid; gap: var(--mp-spacing-4); }
 .dlb-prev-col { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
 /* Transitions */
