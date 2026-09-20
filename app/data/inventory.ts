@@ -70,8 +70,18 @@ export const PRODUCTS: readonly Product[] = CATALOG.map((c) => ({
   lastPurchaseCost: Math.round(c.price * 0.62),
 }))
 
-const BY_SKU = new Map(PRODUCTS.map((p) => [p.sku, p]))
-/** Product master row for a SKU (undefined if the SKU isn't in the catalog). */
+/**
+ * SKU → product, across BOTH catalogs.
+ *
+ * The subcon products are deliberately kept out of `PRODUCTS` itself: several seed
+ * generators index that array modulo its length, so lengthening it reshuffles
+ * orders and receipts away from the data they were tuned against (see catalog.ts).
+ * A lookup map has no such problem — nothing iterates it by position — so this is
+ * the one place the two catalogs are safely merged, and it is what lets a document
+ * carrying an apparel SKU resolve its product at all.
+ */
+const BY_SKU = new Map([...PRODUCTS, ...SUBCON_PRODUCTS].map((p) => [p.sku, p]))
+/** Product master row for a SKU (undefined if the SKU isn't in either catalog). */
 export function productBySku(sku: string): Product | undefined {
   return BY_SKU.get(sku)
 }

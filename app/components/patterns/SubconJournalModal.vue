@@ -37,6 +37,14 @@ const props = defineProps<{
 const emit = defineEmits<{ (e: 'update:isOpen', v: boolean): void }>()
 
 const { t } = useLocale()
+const router = useRouter()
+
+/** Open a movement's own record. The modal closes on the way — leaving an
+ *  overlay up over a page the user has navigated to would trap them. */
+function openAdjustment(id: string) {
+  emit('update:isOpen', false)
+  router.push(`/stock-adjustments/${id}`)
+}
 
 const tab = ref<'journal' | 'stock'>('journal')
 watch(() => props.isOpen, (open) => { if (open) tab.value = 'journal' })
@@ -92,7 +100,9 @@ function close() { emit('update:isOpen', false) }
                 </thead>
                 <tbody>
                   <tr v-for="row in rows" :key="row.code" class="sjm-tr">
-                    <td class="sjm-td"><a class="cell-link" @click.prevent>{{ row.code }} – {{ row.name }}</a></td>
+                    <!-- Plain text, not a link: there is no per-account view to
+                         open, and styling it as a link would promise one. -->
+                    <td class="sjm-td">{{ row.code }} – {{ row.name }}</td>
                     <td class="sjm-td sjm-td--num">{{ formatIDR(row.debit) }}</td>
                     <td class="sjm-td sjm-td--num">{{ formatIDR(row.credit) }}</td>
                   </tr>
@@ -122,8 +132,10 @@ function close() { emit('update:isOpen', false) }
                 </thead>
                 <tbody>
                   <tr v-for="adj in stockAdjustments" :key="adj.id" class="sjm-tr">
-                    <td class="sjm-td"><a class="cell-link" @click.prevent>{{ adj.number }}</a></td>
-                    <td class="sjm-td"><a class="cell-link" @click.prevent>{{ adj.account }}</a></td>
+                    <td class="sjm-td">
+                      <a class="cell-link" @click.prevent="openAdjustment(adj.id)">{{ adj.number }}</a>
+                    </td>
+                    <td class="sjm-td">{{ adj.account }}</td>
                     <td class="sjm-td">{{ adj.date ? formatDate(adj.date) : '—' }}</td>
                     <td class="sjm-td">{{ adj.warehouse }}</td>
                   </tr>

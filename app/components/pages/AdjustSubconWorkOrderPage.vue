@@ -258,7 +258,7 @@ function onSave() {
             <tbody>
               <template v-for="row in components" :key="row.sku">
                 <tr class="awo-tr">
-                  <td class="awo-td"><a class="cell-link" @click.prevent>{{ row.product }}</a></td>
+                  <td class="awo-td">{{ row.product }}</td>
                   <td class="awo-td">{{ row.sku }}</td>
                   <td class="awo-td awo-td--num">{{ formatIDR(row.unitCost) }}</td>
                   <td class="awo-td">{{ row.warehouse }}</td>
@@ -375,7 +375,7 @@ function onSave() {
             </thead>
             <tbody>
               <tr class="awo-tr">
-                <td class="awo-td"><a class="cell-link" @click.prevent>{{ wo.bomName }}</a></td>
+                <td class="awo-td">{{ wo.bomName }}</td>
                 <td class="awo-td">{{ subcon.receivingWarehouseName }}</td>
                 <td class="awo-td awo-td--num">
                   <MpInput id="awo-output-qty" v-model="outputQty" type="number" min="1" class="awo-qty" />
