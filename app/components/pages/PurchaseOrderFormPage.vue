@@ -14,7 +14,11 @@ import { MpAutocomplete } from '@mekari/pixel3'
 import { getPurchaseOrderDetail, purchaseOrders, PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS, products, getPurchaseRequest, vendors, addPurchaseOrder } from '~/data'
 import type { POAttachment } from '~/data/purchaseOrderDetails'
 import { recordSubconDocument, workOrderForDocument } from '~/data/workOrders'
-import { SUBCON_VENDORS } from '~/data/subcon'
+import { SUBCON_VENDORS, type SubconPriceBasis } from '~/data/subcon'
+import {
+  priceSubconOrder, withholdingCaption, isVatCreditable,
+  SUBCON_PRICE_BASIS_LABEL, SUBCON_PRICING_SETTINGS,
+} from '~/data/subconPricing'
 import type { PurchaseOrder, PurchaseRequestLine } from '~/data/types'
 import AddPurchaseRequestDrawer from '~/components/patterns/AddPurchaseRequestDrawer.vue'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
@@ -70,6 +74,28 @@ const subconWorkOrder = computed(() => {
 })
 
 const vendor       = ref(source.value?.vendor.name ?? subconWorkOrder.value?.subcon?.vendorName ?? '')
+
+// ── Vendor price basis ────────────────────────────────────────────────────────
+/**
+ * The subcon vendor's own record, for the two things pricing needs: whether it is
+ * NPWP-registered (which sets the PPh 23 rate) and how it normally agrees prices.
+ */
+const subconVendorRecord = computed(() => {
+  const name = subconWorkOrder.value?.subcon?.vendorName
+  return name ? SUBCON_VENDORS.find(v => v.name === name) : undefined
+})
+
+/**
+ * Price basis defaults from the vendor but belongs to THIS order — it is a
+ * commercial term of this purchase, not a permanent property of the vendor.
+ * Changing it needs no approval today; see
+ * `SUBCON_PRICING_SETTINGS.priceBasisChangeNeedsApproval`, which is open with
+ * Finance.
+ */
+const priceBasis = ref<SubconPriceBasis>(
+  source.value?.priceBasis ?? subconVendorRecord.value?.defaultPriceBasis ?? 'gross',
+)
+const priceBasisOptions = (['net', 'gross'] as const).map(v => ({ id: v, name: SUBCON_PRICE_BASIS_LABEL[v] }))
 // Vendor is a searchable select over the vendor master with quick-add — same
 // behaviour as New sales invoice's Customer / New expense's Beneficiary picker.
 // Subcontractors live in their own master (they are not trade vendors), so they
@@ -217,9 +243,64 @@ const globalDiscountAmount = computed(() => {
   return globalDiscountValue.value
 })
 
-const taxAmount   = computed(() => Math.round((subtotal.value - discountTotal.value - globalDiscountAmount.value) * 0.11))
+const taxBaseValue = computed(() => subtotal.value - discountTotal.value - globalDiscountAmount.value)
+/**
+ * VAT. On a subcon order it comes from the pricing module, because a Net basis
+ * raises the service value that VAT is charged on — computing it here from the
+ * pre-gross-up subtotal would leave the totals column not adding up.
+ */
+const taxAmount   = computed(() => subconPricing.value
+  ? subconPricing.value.vat
+  : Math.round(taxBaseValue.value * 0.11))
 const shippingFee = ref(source.value?.totals.shippingFee ?? 0)
-const grandTotal  = computed(() => subtotal.value - discountTotal.value - globalDiscountAmount.value + taxAmount.value + shippingFee.value)
+const grandTotal  = computed(() => subconPricing.value
+  // Shipping is not part of the service the vendor is withheld on, so it rides
+  // on top of the priced document rather than through it.
+  ? subconPricing.value.documentTotal + shippingFee.value
+  : taxBaseValue.value + taxAmount.value + shippingFee.value)
+
+/** What the vendor actually receives, shipping included. */
+const paidToVendor = computed(() => subconPricing.value
+  ? subconPricing.value.paidToVendor + shippingFee.value
+  : grandTotal.value)
+
+/**
+ * Subcon pricing for this order. Everything below — the gross-up, withholding,
+ * what the vendor is paid and what capitalises into the product — comes from
+ * `subconPricing.ts`; this page reads, it does not calculate.
+ *
+ * Non-subcon orders get `null` and none of the extra rows render.
+ */
+/** How much a document-level discount takes off every line, proportionally. */
+const globalDiscountFactor = computed(() => {
+  const beforeGlobal = subtotal.value - discountTotal.value
+  return beforeGlobal > 0 ? (beforeGlobal - globalDiscountAmount.value) / beforeGlobal : 1
+})
+
+const subconPricing = computed(() => {
+  const wo = subconWorkOrder.value
+  const c = wo?.subcon
+  if (!c) return null
+  // Every line's tax code has to agree before the document can claim its VAT is
+  // creditable; a single non-creditable line makes the whole VAT a real cost.
+  const vatCreditable = allLines.value.every(l => isVatCreditable(l.taxLabel))
+  return priceSubconOrder({
+    method: c.method,
+    basis: priceBasis.value,
+    vendorHasNpwp: subconVendorRecord.value?.hasNpwp ?? true,
+    // Each line's agreed value, net of its own discount and its share of any
+    // document-level one — the gross-up is then spread across these, so the cost
+    // drivers stay intact. With no global discount the factor is 1 and each line
+    // passes through untouched.
+    lines: allLines.value.map(l => ({
+      id: String(l._key), name: l.product,
+      contractValue: Math.round(lineAmount(l) * globalDiscountFactor.value),
+    })),
+    vatRate: 0.11,
+    vatCreditable,
+    bomMaterialValue: 0,
+  })
+})
 
 const fmt = formatIDR
 
@@ -295,6 +376,7 @@ function createDuplicateOrder(overrides?: Partial<PurchaseOrder>): string | null
     hasAttachment: attachments.value.length > 0,
     tags: tagsList.value.map(t => String(t.value)),
     duplicatedFromId: props.duplicateOrderId,
+    ...(subconPricing.value ? { priceBasis: priceBasis.value } : {}),
     // Persist the real lines — the detail page only synthesizes lines for seeded
     // orders that have none (see getPurchaseOrderDetail).
     lineItems: allLines.value.map(l => ({
@@ -415,6 +497,25 @@ function onSendToFulfillment() {
               <MpFormLabel>Payment terms</MpFormLabel>
               <MpAutocomplete id="f-payment-inp" v-model="paymentTerms" :data="PAYMENT_TERMS" use-portal is-clearable is-full-width placeholder="Select payment terms" />
             </MpFormControl>
+
+            <!-- Subcon only. NOT the same thing as "Price includes tax" below,
+                 which is about VAT-inclusive unit pricing. -->
+            <MpFormControl v-if="subconPricing" id="f-price-basis" class="po-field">
+              <MpFormLabel>Vendor price basis</MpFormLabel>
+              <MpAutocomplete
+                id="f-price-basis-inp" v-model="priceBasis" :data="priceBasisOptions"
+                label-prop="name" value-prop="id" use-portal is-full-width
+              />
+              <span class="po-field-hint">Default from the vendor. Applies to this purchase order only.</span>
+            </MpFormControl>
+
+            <!-- Read-only, and shown on BOTH bases: the basis changes who bears
+                 the withholding, never whether it is deducted. -->
+            <div v-if="subconPricing" class="po-field po-readout">
+              <span class="po-readout__label">Withholding tax</span>
+              <span class="po-readout__value">{{ withholdingCaption(subconPricing) }}</span>
+              <span class="po-field-hint">Set by the toll manufacturing method and the vendor NPWP.</span>
+            </div>
 
             <div class="po-field po-field--checkbox">
               <MpCheckbox v-model:is-checked="requiresShipping">Requires shipping</MpCheckbox>
@@ -566,6 +667,11 @@ function onSendToFulfillment() {
                     </td>
                     <td class="pit-td pit-td--input pit-td--border">
                       <MpAutocomplete :id="`po-tax-${line._key}`" v-model="line.taxLabel" :data="taxData" label-prop="name" value-prop="name" is-searchable use-portal is-full-width />
+                      <!-- Non-creditable VAT is a real cost and capitalises into
+                           the product; creditable VAT is reclaimed and does not. -->
+                      <span v-if="subconPricing" class="pit-tax-note">
+                        {{ isVatCreditable(line.taxLabel) ? 'Creditable' : 'Not creditable' }}
+                      </span>
                     </td>
                     <td v-if="showDimensionsColumn" class="pit-td pit-td--border pit-td--dimensions">
                       <ErpLineDimensionsCell
@@ -653,6 +759,9 @@ function onSendToFulfillment() {
                   </td>
                   <td class="pit-td pit-td--input pit-td--border">
                     <MpAutocomplete :id="`po-btax-${line._key}`" v-model="line.taxLabel" :data="taxData" label-prop="name" value-prop="name" is-searchable use-portal is-full-width />
+                    <span v-if="subconPricing" class="pit-tax-note">
+                      {{ isVatCreditable(line.taxLabel) ? 'Creditable' : 'Not creditable' }}
+                    </span>
                   </td>
                   <td v-if="showDimensionsColumn" class="pit-td pit-td--border pit-td--dimensions">
                     <ErpLineDimensionsCell
@@ -767,6 +876,16 @@ function onSendToFulfillment() {
               </div>
             </div>
 
+            <!-- Net basis only: the price is raised so the vendor still receives
+                 the agreed amount after tax is deducted. -->
+            <div v-if="subconPricing && subconPricing.grossUp > 0" class="si-totals-row si-totals-row--stacked">
+              <span class="si-inline-field-label">
+                <span>Gross-up for withholding</span>
+                <span class="po-row-caption">Net basis, so the price is grossed up before tax is deducted.</span>
+              </span>
+              <span>{{ fmt(subconPricing.grossUp) }}</span>
+            </div>
+
             <div class="si-totals-row">
               <span>PPN 11%</span>
               <span>{{ fmt(taxAmount) }}</span>
@@ -784,6 +903,32 @@ function onSendToFulfillment() {
             <div class="si-totals-row si-totals-row--h3">
               <span>Total</span>
               <span>{{ fmt(grandTotal) }}</span>
+            </div>
+
+            <!-- Shown on both bases — the deduction happens either way. -->
+            <template v-if="subconPricing?.tollManufacturing">
+              <div class="si-totals-row">
+                <span>PPh 23 withheld {{ (subconPricing.withholdingRate * 100).toFixed(0) }}%</span>
+                <span class="si-deduction">({{ fmt(subconPricing.withholding) }})</span>
+              </div>
+            </template>
+            <div v-if="subconPricing" class="si-totals-row si-totals-row--h3">
+              <span>Paid to vendor</span>
+              <span>{{ fmt(paidToVendor) }}</span>
+            </div>
+
+            <!-- What actually capitalises. Withholding is a tax remitted on the
+                 vendor's behalf, so it is never in here. -->
+            <div v-if="subconPricing" class="po-product-cost">
+              <div class="po-product-cost__row">
+                <span>Goes into product cost</span>
+                <span class="po-product-cost__amount">{{ fmt(subconPricing.productCost) }}</span>
+              </div>
+              <span class="po-row-caption">
+                {{ subconPricing.vatCreditable
+                  ? 'Service value only; neither tax is capitalised'
+                  : 'Includes non-creditable VAT' }}
+              </span>
             </div>
           </div>
         </section>
@@ -1118,6 +1263,49 @@ function onSendToFulfillment() {
   color: var(--mp-text-default); line-height: var(--mp-line-heights-md, 20px);
 }
 .si-attachment-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-1); }
+
+.po-field-hint {
+  display: block;
+  margin-top: var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+}
+/* A read-only value styled to sit level with the inputs beside it. */
+.po-readout { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.po-readout__label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.po-readout__value {
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-default);
+  padding: var(--mp-spacing-2) 0;
+}
+.po-row-caption {
+  display: block;
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+}
+.pit-tax-note {
+  display: block;
+  margin-top: var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+}
+/* The figure the rest of the chain depends on — highlighted so it is not read
+   as just another total. */
+.po-product-cost {
+  margin-top: var(--mp-spacing-4);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  border-radius: var(--mp-radii-md);
+  background: var(--mp-background-information, #eef0fc);
+}
+.po-product-cost__row {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+.po-product-cost__amount { font-variant-numeric: tabular-nums; }
+.si-totals-row--stacked { align-items: flex-start; }
 
 .si-totals-col { margin-left: auto; width: 428px; flex-shrink: 0; display: flex; flex-direction: column; }
 .si-totals-row {

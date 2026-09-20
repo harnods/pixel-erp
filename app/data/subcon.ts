@@ -379,6 +379,15 @@ export function raisableDocuments(
  * contacts store is snapshot-persisted — appending seeds there would not reach
  * anyone whose snapshot predates this feature.
  */
+/**
+ * How the agreed price relates to withholding tax.
+ *  • `gross` — the price already contains the tax we withhold.
+ *  • `net`   — the vendor must receive the agreed price in full, so the price is
+ *              grossed up before the tax is deducted.
+ * It changes who BEARS the withholding, never whether it exists.
+ */
+export type SubconPriceBasis = 'gross' | 'net'
+
 export interface SubconVendor {
   id: string
   name: string
@@ -386,6 +395,13 @@ export interface SubconVendor {
   address: string
   /** `subcon` takes the process work; `supplier` only sells components. */
   role: 'subcon' | 'supplier'
+  /**
+   * Whether the vendor is NPWP-registered. Drives the PPh 23 rate on toll
+   * manufacturing — 2% with, 4% without — and is never entered as a rate.
+   */
+  hasNpwp: boolean
+  /** How this vendor normally agrees prices. A purchase order may override it. */
+  defaultPriceBasis: SubconPriceBasis
   /**
    * The vendor's own location, as a warehouse the transfer can be addressed to.
    * Stock sent here is in the vendor's custody but still on the company's books —
@@ -399,21 +415,21 @@ export interface SubconVendor {
 }
 
 export const SUBCON_VENDORS: readonly SubconVendor[] = [
-  { id: 'sv-01', name: 'PT Roastery Nusantara Mandiri', address: 'Jl. Industri Raya No. 8, Bandung',      role: 'subcon',
+  { id: 'sv-01', name: 'PT Roastery Nusantara Mandiri', address: 'Jl. Industri Raya No. 8, Bandung',      role: 'subcon', hasNpwp: true, defaultPriceBasis: 'net',
     warehouseId: 'wh-sub-01', warehouseName: 'WH Subcon · PT Roastery Nusantara Mandiri' },
-  { id: 'sv-02', name: 'CV Kopi Sangrai Sejahtera',     address: 'Jl. Kaligawe Km 5, Semarang',           role: 'subcon',
+  { id: 'sv-02', name: 'CV Kopi Sangrai Sejahtera',     address: 'Jl. Kaligawe Km 5, Semarang',           role: 'subcon', hasNpwp: true, defaultPriceBasis: 'gross',
     warehouseId: 'wh-sub-02', warehouseName: 'WH Subcon · CV Kopi Sangrai Sejahtera' },
-  { id: 'sv-03', name: 'PT Java Roasting Works',        address: 'Jl. Rungkut Industri III/22, Surabaya', role: 'subcon',
+  { id: 'sv-03', name: 'PT Java Roasting Works',        address: 'Jl. Rungkut Industri III/22, Surabaya', role: 'subcon', hasNpwp: true, defaultPriceBasis: 'gross',
     warehouseId: 'wh-sub-03', warehouseName: 'WH Subcon · PT Java Roasting Works' },
-  { id: 'sv-04', name: 'UD Karya Sangrai Utama',        address: 'Jl. Raya Bogor Km 32, Bogor',           role: 'subcon',
+  { id: 'sv-04', name: 'UD Karya Sangrai Utama',        address: 'Jl. Raya Bogor Km 32, Bogor',           role: 'subcon', hasNpwp: false, defaultPriceBasis: 'net',
     warehouseId: 'wh-sub-04', warehouseName: 'WH Subcon · UD Karya Sangrai Utama' },
-  { id: 'sv-05', name: 'CV Sumber Biji Nusantara',      address: 'Jl. Soekarno Hatta No. 114, Medan',     role: 'supplier' },
+  { id: 'sv-05', name: 'CV Sumber Biji Nusantara',      address: 'Jl. Soekarno Hatta No. 114, Medan',     role: 'supplier', hasNpwp: true, defaultPriceBasis: 'gross' },
   // ── Apparel line — konveksi partners for the garment scenario ──
-  { id: 'sv-06', name: 'PT Mitra Jaya Konveksi',       address: 'Jl. Industri Raya No. 8, Bandung',       role: 'subcon',
+  { id: 'sv-06', name: 'PT Mitra Jaya Konveksi',       address: 'Jl. Industri Raya No. 8, Bandung',       role: 'subcon', hasNpwp: true, defaultPriceBasis: 'net',
     warehouseId: 'wh-sub-06', warehouseName: 'WH Subcon · PT Mitra Jaya Konveksi' },
-  { id: 'sv-07', name: 'CV Garmen Sejahtera',          address: 'Jl. Cibaduyut Raya No. 45, Bandung',     role: 'subcon',
+  { id: 'sv-07', name: 'CV Garmen Sejahtera',          address: 'Jl. Cibaduyut Raya No. 45, Bandung',     role: 'subcon', hasNpwp: false, defaultPriceBasis: 'gross',
     warehouseId: 'wh-sub-07', warehouseName: 'WH Subcon · CV Garmen Sejahtera' },
-  { id: 'sv-08', name: 'CV Sumber Kain Tekstil',       address: 'Jl. Otista No. 210, Bandung',            role: 'supplier' },
+  { id: 'sv-08', name: 'CV Sumber Kain Tekstil',       address: 'Jl. Otista No. 210, Bandung',            role: 'supplier', hasNpwp: true, defaultPriceBasis: 'gross' },
 ]
 
 /** Vendor locations a transfer can be addressed to, for a destination picker. */

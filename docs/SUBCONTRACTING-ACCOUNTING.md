@@ -217,3 +217,113 @@ Materials 9,700,000 + subcon 13,100,000 = **22,800,000**, cost per unit **45,600
 - **Test 3** — adjustments. Materials 9,700,000 → 9,825,000, subcon → 13,850,000,
   total → 23,675,000, cost per unit → 47,350. The kancing decrease produces **zero**
   journal entries; a decrease below what was sent is rejected.
+
+---
+
+## 10. Vendor price basis
+
+Withholding tax (PPh 23) is deducted on toll manufacturing — **Resupply** and
+**Dropship**. **Basic** is a purchase of goods and carries none.
+
+The price basis changes **who bears** that tax, never whether it exists.
+
+| | Gross | Net |
+|---|---|---|
+| Meaning | The agreed price already contains the withholding | The vendor must receive the agreed price in full |
+| Vendor receives | Less than the contract value | Exactly the contract value |
+| Our cost | The contract value | The contract value plus the gross-up |
+| Withholding shown | Yes | Yes |
+| Gross-up line | Absent | Shown |
+
+Which is why the withholding field is **never** gated on the basis — only the
+gross-up line is. Hiding withholding on a Gross order would silently drop a
+deduction that is still happening.
+
+### The rate is derived, never entered
+
+| Case | `t` |
+|---|---|
+| Basic | 0 |
+| Toll manufacturing, vendor has NPWP | 0.02 |
+| Toll manufacturing, vendor has no NPWP | 0.04 |
+
+It appears as a read-only caption and is never an input field anywhere in the UI.
+
+### The calculation
+
+`app/data/subconPricing.ts`, pure, covered by `tests/subcon-pricing.spec.ts`:
+
+```
+f = 1                     Gross
+f = 1 / (1 - t)           Net
+
+S_i = round(K_i * f, 2)   spread per line, so cost drivers stay intact
+S   = round(sum(S_i))     to the rupiah — see Open questions
+VAT = round((S + M) * v)  from the TOTAL, never summed per line
+WHT = round(S * t)        same
+
+documentTotal = S + M + VAT
+paidToVendor  = S + M + VAT - WHT
+productCost   = B + S + (1 - c) * VAT
+```
+
+**Two invariants, both asserted:**
+
+1. On a Net basis, `S - WHT` equals the contract value **exactly** — the vendor
+   receives what was agreed.
+2. **Withholding never reaches product cost.** It is a tax remitted on the
+   vendor's behalf, not a cost of the goods. Non-creditable VAT does capitalise.
+
+### Where it shows
+
+**Purchase order** — a basis select beside Payment terms (defaults from the
+vendor, overridable per order), a read-only withholding caption next to it,
+per-line "Creditable / Not creditable" under the tax code, and the summary gains
+Gross-up (Net only) → PPh 23 withheld → Paid to vendor → a highlighted **Goes into
+product cost**.
+
+PPN and Total on a subcon order are taken from the pricing module rather than from
+the pre-gross-up subtotal. They have to be: a Net basis raises the value VAT is
+charged on, and leaving them as they were made the column stop adding up, with
+*Paid to vendor* exceeding *Total*.
+
+**Work order** — the BOM figure is **never mutated**; it is the negotiated price
+and must stay readable as such. The difference appears as one derived row,
+*Withholding borne by company*, rendered muted and italic so it reads as
+calculated rather than entered, linking the purchase order when one exists. It is
+absent on a Gross basis. The subtotal, total production cost and cost per unit all
+include it, so the chain from BOM to product cost stays unbroken.
+
+The figure carries a state, since the work order usually exists before the order:
+
+| State | When |
+|---|---|
+| Estimated | No purchase order yet; computed from the vendor's default basis |
+| Committed | A purchase order exists; the figure follows it |
+| Actual | The vendor has invoiced |
+
+A cost-per-unit strip shows planned (from the BOM) against current (including the
+gross-up), so a rise is visible before the order closes.
+
+### Open questions
+
+1. **Rounding order.** §2 of the brief spreads the gross-up per line at 2 decimals
+   and takes VAT and withholding from the total. Those two rules do not quite
+   meet: the 2-decimal line sum is 13,367,346.94 on the reference fixture, and
+   `S - WHT` then lands 0.06 short of the contract value rather than exactly on
+   it — which the same brief requires. The module keeps the per-line spread at 2
+   decimals for display and rounds the **total** to the rupiah before deriving
+   anything from it. That reproduces every published figure exactly and makes the
+   invariant hold. Finance has not confirmed the order, and a tax invoice may have
+   its own rule.
+
+2. **Does changing the basis on a purchase order need approval?** Implemented as
+   no — the basis is a commercial term the buyer owns. It moves real money, so it
+   may warrant the same gate as a price change. See
+   `SUBCON_PRICING_SETTINGS.priceBasisChangeNeedsApproval`.
+
+3. **Naming collision.** "Vendor price basis" and the existing "Price includes
+   tax" checkbox are different concepts — the first is about withholding, the
+   second about VAT-inclusive unit pricing — but both read as "is tax in the
+   price?". They are not adjacent on the form, and neither was renamed. Worth a
+   copy decision.

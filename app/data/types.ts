@@ -323,6 +323,10 @@ export interface PurchaseDelivery {
   tags?: string[]
 }
 
+/** Mirrors `SubconPriceBasis` in subcon.ts; declared here to keep types.ts free
+ *  of module imports. */
+export type SubconPriceBasis = 'gross' | 'net'
+
 export type PurchaseOrderStatus = 'open' | 'partially-processed' | 'awaiting invoice' | 'closed' | 'voided' | 'draft' | 'rejected' | 'approved'
 
 export interface PurchaseOrder {
@@ -351,6 +355,12 @@ export interface PurchaseOrder {
    * all, not merely that the order is in the approved state right now.
    */
   approvedAt?: string
+  /**
+   * How this order's price relates to withholding tax. Defaults from the vendor
+   * and is overridable per order — it is a commercial term of this purchase, not
+   * a permanent property of the vendor. Absent on non-subcon orders.
+   */
+  priceBasis?: SubconPriceBasis
   /**
    * The order's real line items, set when the order was actually created through
    * the form (raised from purchase requests, or duplicated). Seeded orders leave

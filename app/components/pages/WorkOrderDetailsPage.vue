@@ -24,11 +24,15 @@ import CompleteSubconWorkOrderModal, { type SubconComponentUsage } from '~/compo
 import {
   buildDocumentPlan, SUBCON_SCOPE_LABEL,
   SUBCON_SERVICE_FEE, SUBCON_HANDLING_FEE, SUBCON_BATCH_QTY,
-  encodeSubconPrefill, subconVendorWarehouse, SUBCON_DOC_TYPE_LABEL,
+  encodeSubconPrefill, subconVendorWarehouse, SUBCON_DOC_TYPE_LABEL, SUBCON_VENDORS,
   isComponentSupply, componentSupplyStep,
   type SubconDocKind, type SubconPrefillLine,
 } from '~/data/subcon'
 import { addAdjustment, stockAdjustments } from '~/data/stockAdjustments'
+import {
+  priceSubconOrder, subconCostPerUnit, SUBCON_PRICE_STATE_LABEL,
+  SUBCON_PRICE_BASIS_SHORT, type SubconPriceState,
+} from '~/data/subconPricing'
 import SubconJournalModal from '~/components/patterns/SubconJournalModal.vue'
 import ConfirmWorkOrderAdjustmentModal from '~/components/patterns/ConfirmWorkOrderAdjustmentModal.vue'
 import {
@@ -292,7 +296,92 @@ const subconCostLines = computed(() => {
     ...extras,
   ]
 })
-const subconCostSubtotal = computed(() => subconCostLines.value.reduce((s, l) => s + l.amount, 0))
+/**
+ * ── Vendor price basis ───────────────────────────────────────────────────────
+ *
+ * The BOM holds the CONTRACT value — what was negotiated — and must stay readable
+ * as such, so it is never mutated. On a Net basis the company also bears the
+ * withholding, which makes the real cost higher; that difference is surfaced here
+ * as a derived line rather than being left to appear only in the journals, where
+ * a planner would find it too late.
+ */
+const subconVendorRecord = computed(() => {
+  const id = subcon.value?.vendorId
+  return id ? SUBCON_VENDORS.find(v => v.id === id) : undefined
+})
+
+/** The purchase order this work order raised, once it has one. */
+const subconRaisedOrder = computed(() => {
+  const doc = (subcon.value?.raisedDocuments ?? []).find(d => d.kind === 'purchaseOrder')
+  return doc ? { doc, order: purchaseOrders.find(o => o.id === doc.id) } : undefined
+})
+
+/**
+ * Where the figure stands. The work order usually exists before the purchase
+ * order, so the basis is a forecast until one is raised and a fact once the
+ * vendor has invoiced — the same estimated/actual shape as produced/needed.
+ */
+const subconPriceState = computed<SubconPriceState>(() => {
+  const raised = subcon.value?.raisedDocuments ?? []
+  if (raised.some(d => d.kind === 'purchaseInvoice')) return 'actual'
+  if (subconRaisedOrder.value?.order) return 'committed'
+  return 'estimated'
+})
+
+const subconVendorDefaultBasis = computed(() => subconVendorRecord.value?.defaultPriceBasis ?? 'gross')
+/** The order's basis once committed; the vendor's default before that. */
+const subconEffectiveBasis = computed(() =>
+  subconRaisedOrder.value?.order?.priceBasis ?? subconVendorDefaultBasis.value)
+/** True when the purchase order was agreed on a different basis than the vendor's usual. */
+const subconBasisDiffersFromDefault = computed(() =>
+  subconPriceState.value !== 'estimated'
+  && subconEffectiveBasis.value !== subconVendorDefaultBasis.value)
+
+/** Pricing for this work order — read from the module, never recomputed here. */
+const subconPricing = computed(() => {
+  const c = subcon.value
+  if (!c) return null
+  return priceSubconOrder({
+    method: c.method,
+    basis: subconEffectiveBasis.value,
+    vendorHasNpwp: subconVendorRecord.value?.hasNpwp ?? true,
+    lines: accountingCostLines.value.map(l => ({
+      id: l.id, name: l.name, contractValue: l.amount,
+    })),
+    vatRate: 0.11,
+    vatCreditable: true,
+    bomMaterialValue: rawSubtotal.value,
+  })
+})
+
+/** The gross-up as a derived cost row — absent on a Gross basis. */
+const subconGrossUpRow = computed(() => {
+  const p = subconPricing.value
+  if (!p || p.grossUp <= 0) return null
+  return {
+    account: t('Withholding borne by company'),
+    chargedBy: subcon.value?.vendorName ?? '',
+    driver: t(SUBCON_PRICE_BASIS_SHORT[p.basis]),
+    amount: p.grossUp,
+  }
+})
+
+/** Contract value plus any gross-up — what the run actually costs in services. */
+const subconCostSubtotal = computed(() =>
+  subconPricing.value?.serviceValue
+  ?? subconCostLines.value.reduce((s, l) => s + l.amount, 0))
+
+/** Planned from the BOM, against where the cost stands now. */
+const subconPlannedPerUnit = computed(() => {
+  const w = wo.value
+  if (!w?.plannedQty) return 0
+  return (rawSubtotal.value + subconCostLines.value.reduce((s, l) => s + l.amount, 0)) / w.plannedQty
+})
+const subconCurrentPerUnit = computed(() => {
+  const p = subconPricing.value
+  const w = wo.value
+  return p && w?.plannedQty ? subconCostPerUnit(p, w.plannedQty) : 0
+})
 
 // ── Accounting ────────────────────────────────────────────────────────────────
 /**
@@ -1549,10 +1638,56 @@ function suppressFabClick(e: MouseEvent) {
                   <td class="wod-td">{{ l.driver }}</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(l.amount) }}</td>
                 </tr>
+
+                <!-- Derived, not entered: the BOM holds the negotiated price, and
+                     this is what a Net basis adds on top. Absent on Gross. -->
+                <tr v-if="subconGrossUpRow" class="wod-tr wod-tr--derived">
+                  <td class="wod-td">
+                    {{ subconGrossUpRow.account }}
+                    <span class="wod-derived-note">
+                      {{ t('Arises because the vendor price is agreed net.') }}
+                      <a
+                        v-if="subconRaisedOrder?.doc"
+                        class="cell-link"
+                        @click.prevent="openRaisedDocument(subconRaisedOrder.doc)"
+                      >{{ t('See') }} {{ subconRaisedOrder.doc.number }}</a>
+                    </span>
+                  </td>
+                  <td class="wod-td">{{ subconGrossUpRow.chargedBy }}</td>
+                  <td class="wod-td">{{ subconGrossUpRow.driver }}</td>
+                  <td class="wod-td wod-td--num">{{ formatIDR(subconGrossUpRow.amount) }}</td>
+                </tr>
               </tbody>
             </table>
           </div>
-          <div class="wod-subtotal-row"><span>{{ t('Subcon cost subtotal') }}</span><span class="wod-amount">{{ formatIDR(subconCostSubtotal) }}</span></div>
+          <div class="wod-subtotal-row">
+            <span>
+              {{ t('Subcon cost subtotal') }}
+              <!-- Where the figure stands: a forecast until a purchase order
+                   exists, a fact once the vendor has invoiced. -->
+              <span class="wod-price-state">{{ t(SUBCON_PRICE_STATE_LABEL[subconPriceState]) }}</span>
+            </span>
+            <span class="wod-amount">{{ formatIDR(subconCostSubtotal) }}</span>
+          </div>
+
+          <p v-if="subconBasisDiffersFromDefault" class="wod-basis-note">
+            {{ t('This order was agreed on a different basis than the vendor’s usual') }} —
+            {{ t(SUBCON_PRICE_BASIS_SHORT[subconEffectiveBasis]) }}.
+          </p>
+
+          <!-- Planned against current, so a rise shows before the order closes. -->
+          <div v-if="subconPricing" class="wod-perunit">
+            <span class="wod-perunit__label">{{ t('Cost per unit') }}</span>
+            <span class="wod-perunit__pair">
+              <span class="wod-perunit__planned">{{ formatIDR(Math.round(subconPlannedPerUnit)) }}</span>
+              <span class="wod-perunit__arrow" aria-hidden="true">→</span>
+              <span
+                class="wod-perunit__current"
+                :class="{ 'wod-perunit__current--up': subconCurrentPerUnit > subconPlannedPerUnit }"
+              >{{ formatIDR(Math.round(subconCurrentPerUnit)) }}</span>
+            </span>
+            <span class="wod-perunit__caption">{{ t('Planned from the BOM, against the current cost including the gross-up.') }}</span>
+          </div>
         </template>
       </section>
 
@@ -2267,6 +2402,48 @@ function suppressFabClick(e: MouseEvent) {
 
 /* A single action under a section's own table. */
 .wod-head-links { display: flex; align-items: center; gap: var(--mp-spacing-4); }
+
+/* A derived row reads as calculated, not entered. */
+.wod-tr--derived .wod-td { color: var(--mp-text-secondary); font-style: italic; }
+.wod-derived-note {
+  display: block;
+  font-style: normal;
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+}
+.wod-price-state {
+  margin-left: var(--mp-spacing-2);
+  padding: 0 var(--mp-spacing-1\.5);
+  border-radius: var(--mp-radii-sm);
+  background: var(--mp-background-neutral-subtle, #f5f6f7);
+  font-size: var(--mp-font-sizes-sm);
+  font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-secondary);
+}
+.wod-basis-note {
+  margin: var(--mp-spacing-2) 0 0;
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+}
+.wod-perunit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-0\.5);
+  margin-top: var(--mp-spacing-4);
+  padding-top: var(--mp-spacing-3);
+  border-top: 1px solid var(--mp-border-default);
+}
+.wod-perunit__label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.wod-perunit__pair {
+  display: flex; align-items: baseline; gap: var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-lg);
+  font-variant-numeric: tabular-nums;
+}
+.wod-perunit__planned { color: var(--mp-text-secondary); }
+.wod-perunit__arrow { color: var(--mp-text-secondary); }
+.wod-perunit__current { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.wod-perunit__current--up { color: var(--mp-text-warning, #b54708); }
+.wod-perunit__caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 .wod-section-action {
   display: flex;
