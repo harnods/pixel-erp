@@ -29,12 +29,12 @@ import {
   type SubconDocKind, type SubconPrefillLine,
 } from '~/data/subcon'
 import { addAdjustment, stockAdjustments } from '~/data/stockAdjustments'
-import SubconJournalPreview from '~/components/patterns/SubconJournalPreview.vue'
+import SubconJournalModal from '~/components/patterns/SubconJournalModal.vue'
 import SubconCostSummaryPanel from '~/components/patterns/SubconCostSummaryPanel.vue'
 import SubconAdjustComponentModal from '~/components/patterns/SubconAdjustComponentModal.vue'
 import SubconAddCostLineModal from '~/components/patterns/SubconAddCostLineModal.vue'
 import {
-  buildSubconJournals, wipBalanceFrom, subconCostSummary,
+  buildSubconJournals, wipBalanceFrom, subconCostSummary, accountLabel,
   type SubconAccountingInput, type SubconCostLineInput, type SubconComponentInput,
   type SubconCostDriver,
 } from '~/data/subconAccounting'
@@ -417,6 +417,33 @@ const subconJournals = computed(() => accountingInput.value ? buildSubconJournal
 /** Value currently in the vendor's hands. */
 const subconWipBalanceValue = computed(() => wipBalanceFrom(subconJournals.value))
 const subconCosts = computed(() => accountingInput.value ? subconCostSummary(accountingInput.value) : null)
+
+const showJournalModal = ref(false)
+
+/** The stock movements this work order produced, for the modal's second tab. */
+const subconStockMovements = computed(() =>
+  (subcon.value?.raisedDocuments ?? [])
+    .filter(d => d.kind === 'componentIssue')
+    .map((d) => {
+      const adj = stockAdjustments.find(a => a.id === d.id)
+      return {
+        id: d.id,
+        number: d.number,
+        account: accountLabel('wip'),
+        date: d.raisedAt ?? adj?.date ?? '',
+        warehouse: adj?.warehouseName ?? t('Unassigned'),
+      }
+    }),
+)
+
+/**
+ * The plan has moved since the entries were posted — a component quantity was
+ * revised after material had already gone out. The figures are still what was
+ * posted; they just no longer match the plan, which is exactly what the journal's
+ * staleness warning is for.
+ */
+const journalIsStale = computed(() =>
+  Object.keys(subcon.value?.componentAdjustments ?? {}).length > 0)
 
 // ── Accounting actions ────────────────────────────────────────────────────────
 /** The component row the adjust dialog is open on. */
@@ -1283,9 +1310,15 @@ function suppressFabClick(e: MouseEvent) {
       <section class="wod-section">
         <div class="wod-section-head-static">
           <h2 class="wod-section-title">{{ t('Work order info') }}</h2>
-          <MpButton variant="ghost" size="sm" left-icon="hierarchy" class="wod-hierarchy-link">
-            {{ t('View work order hierarchy') }}
-          </MpButton>
+          <span class="wod-head-links">
+            <!-- Same entry point a standard work order uses for its accounting. -->
+            <a v-if="subcon" class="cell-link" @click.prevent="showJournalModal = true">
+              {{ t('View journal entry & stock adjustment') }}
+            </a>
+            <MpButton variant="ghost" size="sm" left-icon="hierarchy" class="wod-hierarchy-link">
+              {{ t('View work order hierarchy') }}
+            </MpButton>
+          </span>
         </div>
         <div class="wod-info-grid">
           <div class="content-list-col">
@@ -1553,8 +1586,6 @@ function suppressFabClick(e: MouseEvent) {
             :planned-qty="wo.plannedQty"
           />
 
-          <h3 class="wod-subsection-title">{{ t('Journal entries') }}</h3>
-          <SubconJournalPreview :entries="subconJournals" />
         </template>
       </section>
 
@@ -1917,6 +1948,15 @@ function suppressFabClick(e: MouseEvent) {
       </ErpTablePage>
     </div>
 
+    <SubconJournalModal
+      v-if="subcon"
+      v-model:is-open="showJournalModal"
+      :work-order-number="wo.number"
+      :entries="subconJournals"
+      :stock-adjustments="subconStockMovements"
+      :is-stale="journalIsStale"
+    />
+
     <SubconAdjustComponentModal
       v-if="subcon && adjustTarget"
       :is-open="!!adjustingSku"
@@ -2272,6 +2312,8 @@ function suppressFabClick(e: MouseEvent) {
 .wod-th--action, .wod-td--action { width: var(--mp-sizes-24, 96px); text-align: right; }
 
 /* A single action under a section's own table. */
+.wod-head-links { display: flex; align-items: center; gap: var(--mp-spacing-4); }
+
 .wod-section-action {
   display: flex;
   justify-content: flex-start;

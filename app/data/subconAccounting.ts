@@ -34,9 +34,11 @@
  *     that cost per unit drifts if goods are received before materials finish
  *     arriving. Finance has not ruled on which side should give.
  *
- *  3. The clearing account is named `Expense Subcon - <line>` per the brief, but
- *     it behaves as a clearing account, not an expense — it nets to zero. See
- *     SUBCON_ACCOUNTING_SETTINGS; a rename is expected.
+ *  3. SETTLED, but noted: the clearing account. The brief seeded it as
+ *     `Expense Subcon - <line>`; the product's own chart already carries
+ *     `5-50202 Beban Vendor`, which is the same thing, so that is what is used.
+ *     It still behaves as a clearing account rather than an expense — it nets to
+ *     zero — which may matter to how it is reported.
  */
 
 import type { SubconMethod } from './subcon'
@@ -70,27 +72,31 @@ export interface SubconAccount {
  *
  * Codes follow the chart already in use (1- asset, 2- liability, 5-/6- expense).
  */
-const ACCOUNT_SEED: Record<SubconAccountRole, { code: string; name: (key?: string) => string }> = {
-  materialInventory:     { code: '1-30100', name: (k) => `Persediaan Bahan Baku${k ? ` - ${k}` : ''}` },
-  wip:                   { code: '1-30200', name: () => 'WIP' },
-  finishedGoods:         { code: '1-30300', name: () => 'Persediaan Barang Jadi' },
-  vatInput:              { code: '1-40100', name: () => 'PPN Masukan' },
-  accountsPayable:       { code: '2-10000', name: () => 'Utang Usaha' },
-  withholdingTaxPayable: { code: '2-20100', name: () => 'Utang PPh 23' },
-  subconClearing:        { code: '5-20100', name: (k) => `Expense Subcon${k ? ` - ${k}` : ''}` },
-  wasteAccount:          { code: '6-30100', name: () => 'Kerugian Scrap' },
+const ACCOUNT_SEED: Record<SubconAccountRole, { code: string; name: string }> = {
+  materialInventory:     { code: '1-10200', name: 'Raw Material Inventory' },
+  wip:                   { code: '1-10201', name: 'WIP Inventory' },
+  finishedGoods:         { code: '1-10202', name: 'Finish Goods Inventory' },
+  vatInput:              { code: '1-40100', name: 'PPN Masukan' },
+  accountsPayable:       { code: '2-10000', name: 'Utang Usaha' },
+  withholdingTaxPayable: { code: '2-20100', name: 'Utang PPh 23' },
+  subconClearing:        { code: '5-50202', name: 'Beban Vendor' },
+  wasteAccount:          { code: '6-30100', name: 'Kerugian Scrap' },
 }
 
-/** Resolve a role (plus the component/cost-line name, where the role is per-thing). */
+/**
+ * Resolve a role. `key` names the component or cost line for the two per-thing
+ * roles: it distinguishes the lines WITHIN an entry, while the account code stays
+ * the same, so a summary that groups by code merges them back into one row.
+ */
 export function subconAccount(role: SubconAccountRole, key?: string): SubconAccount {
   const seed = ACCOUNT_SEED[role]
-  return { code: seed.code, name: seed.name(key) }
+  return { code: seed.code, name: key ? `${seed.name} - ${key}` : seed.name }
 }
 
-/** "1-30200 WIP" — the format `JournalEntryRow.account` expects. */
+/** "1-10201 – WIP Inventory" — the chart's own display format. */
 export function accountLabel(role: SubconAccountRole, key?: string): string {
   const a = subconAccount(role, key)
-  return `${a.code} ${a.name}`
+  return `${a.code} – ${a.name}`
 }
 
 // ── Settings still open with Finance (§6 of the brief) ────────────────────────
@@ -477,6 +483,41 @@ export function wipBalanceFrom(entries: SubconJournalEntry[]): number {
 /** Convenience: the WIP balance for an input, without building entries twice. */
 export function subconWipBalance(input: SubconAccountingInput): number {
   return wipBalanceFrom(buildSubconJournals(input))
+}
+
+export interface SubconAccountTotal {
+  code: string
+  name: string
+  role: SubconAccountRole
+  debit: number
+  credit: number
+}
+
+/**
+ * The journal summarised one row per ACCOUNT — what the work order's journal view
+ * shows. Lines are grouped by account CODE, so the per-component material lines
+ * and the per-cost-line clearing lines merge back into a single row each; the
+ * individual movements stay visible on the documents themselves.
+ *
+ * Debit and credit are both carried rather than netted: an account that was
+ * debited and credited over the run (WIP always is) should show both sides, which
+ * is also why the totals of the two columns agree.
+ */
+export function accountTotals(entries: SubconJournalEntry[]): SubconAccountTotal[] {
+  const byCode = new Map<string, SubconAccountTotal>()
+  for (const entry of entries) {
+    for (const line of entry.lines) {
+      const account = subconAccount(line.role)
+      const row = byCode.get(account.code) ?? {
+        code: account.code, name: account.name, role: line.role, debit: 0, credit: 0,
+      }
+      row.debit += line.debit ?? 0
+      row.credit += line.credit ?? 0
+      byCode.set(account.code, row)
+    }
+  }
+  // Chart order — assets, then liabilities, then expenses.
+  return [...byCode.values()].sort((a, b) => a.code.localeCompare(b.code))
 }
 
 /** True when every entry's debits equal its credits. */

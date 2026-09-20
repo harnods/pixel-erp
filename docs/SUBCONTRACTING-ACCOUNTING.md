@@ -36,16 +36,21 @@ Journals address accounts by **role**, never by name, and a company maps roles o
 its own chart. Two roles are per-thing: material inventory is held per component,
 and each subcon cost line gets its own clearing account.
 
-| Role | Seed account |
+| Role | Account |
 |---|---|
-| `materialInventory` | `1-30100 Persediaan Bahan Baku - <component>` |
-| `wip` | `1-30200 WIP` |
-| `finishedGoods` | `1-30300 Persediaan Barang Jadi` |
-| `vatInput` | `1-40100 PPN Masukan` |
-| `accountsPayable` | `2-10000 Utang Usaha` |
-| `withholdingTaxPayable` | `2-20100 Utang PPh 23` |
-| `subconClearing` | `5-20100 Expense Subcon - <cost line>` |
-| `wasteAccount` | `6-30100 Kerugian Scrap` |
+| `materialInventory` | `1-10200 – Raw Material Inventory` |
+| `wip` | `1-10201 – WIP Inventory` |
+| `finishedGoods` | `1-10202 – Finish Goods Inventory` |
+| `vatInput` | `1-40100 – PPN Masukan` |
+| `accountsPayable` | `2-10000 – Utang Usaha` |
+| `withholdingTaxPayable` | `2-20100 – Utang PPh 23` |
+| `subconClearing` | `5-50202 – Beban Vendor` |
+| `wasteAccount` | `6-30100 – Kerugian Scrap` |
+
+The first three and `subconClearing` are the product's own chart, taken from the
+existing work-order journal screen. The per-thing roles append the component or
+cost-line name **within** an entry while keeping the same code, so the journal
+summary groups them back into one row per account.
 
 ---
 
@@ -162,9 +167,10 @@ Raised rather than guessed at. All three are visible in the module's doc comment
    drifts if goods arrive before materials finish. Finance has not ruled on which
    side should give.
 
-3. **Clearing account naming.** `Expense Subcon - <line>` per the brief, but it
-   behaves as a clearing account, not an expense — it nets to zero. A rename is
-   expected.
+3. **Clearing account naming.** ~~`Expense Subcon - <line>`~~ — **settled**: the
+   product's chart already carries `5-50202 Beban Vendor`, which is what this is,
+   so the module uses it. It still behaves as a clearing account rather than an
+   expense (it nets to zero), which may matter to how it is reported.
 
 ---
 
