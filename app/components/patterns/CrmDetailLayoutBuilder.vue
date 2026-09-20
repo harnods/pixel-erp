@@ -15,7 +15,8 @@ import {
   MpButton, MpIcon, MpInput, MpSegmentedControl, MpTooltip, MpDatePicker, css,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  MpButtonGroup,
+  MpButtonGroup, MpCheckbox, MpTextarea, MpAutocomplete, MpUpload,
+  MpFormControl, MpFormLabel, MpInputGroup, MpInputLeftAddon,
 } from '@mekari/pixel3'
 import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
 import CrmPropertyDrawer from '~/components/patterns/CrmPropertyDrawer.vue'
@@ -24,19 +25,75 @@ import {
   DEAL_PROPERTY_TYPE_ICON, newDetailSectionId, isRelatedListType, sectionAllProps, distributeCols,
   type DealDetailLayout, type DetailLayoutSection, type DetailLayoutTab,
   type DealProperty, type DealPropertyType, type DealPropertyConfig, type PropertyCondition,
+  type CrmConversionTarget,
 } from '~/data/crm'
 
 type NewPropertyPayload = { name: string; variableName: string; type: DealPropertyType; config: DealPropertyConfig }
 
-// `properties` = the parent's editable property list (draft clone), so newly
-// created properties appear here immediately. moduleIcon kept for API compat.
 const props = withDefaults(defineProps<{
   detail: DealDetailLayout
   properties: DealProperty[]
   createProperty: (payload: NewPropertyPayload) => DealProperty
   moduleIcon?: string
-}>(), { moduleIcon: 'pipeline' })
+  moduleId?: string
+  readonly?: boolean
+}>(), { moduleIcon: 'pipeline', moduleId: '', readonly: false })
+const emit = defineEmits<{ 'update:erp-target': [target: CrmConversionTarget] }>()
 const { t } = useLocale()
+
+// ── ERP transaction target (orders tab) ─────────────────────────────────────────
+const ERP_TARGET_OPTIONS = [
+  { value: 'sales-order', label: 'Sales order list' },
+  { value: 'sales-quote', label: 'Sales quote list' },
+]
+function ordersTab(): DetailLayoutTab | undefined { return props.detail.tabs.find((tp) => tp.key === 'orders') }
+function onErpTargetChange(val: string) {
+  const tab = ordersTab()
+  const target = (val as CrmConversionTarget) || null
+  if (tab) {
+    tab.erpTarget = target
+    tab.label = target === 'sales-order' ? 'Sales order list' : target === 'sales-quote' ? 'Sales quote list' : 'ERP transactions'
+  }
+  emit('update:erp-target', target)
+}
+
+// ── Preview layout drawer ───────────────────────────────────────────────────────
+const previewOpen = ref(false)
+const previewMode = ref<'form' | 'details'>('details')
+const PREVIEW_MODES = [
+  { id: 'prev-form', label: 'Form', value: 'form' },
+  { id: 'prev-details', label: 'Details record', value: 'details' },
+]
+const DUMMY_DATA: Record<string, string> = {
+  'deal-name': 'Annual espresso contract', 'deal-value': 'Rp 19.200.000', 'company': 'Kopi Kenangan Pusat',
+  'contact-person': 'Ratna Sari', 'contact-person-email': 'buyer@kopikenangan.com', 'contact-person-phone': '+62 811 5550 006',
+  'owner': 'Dewi Lestari', 'currency': 'IDR', 'billing-address': 'Jl. Menteng Raya No. 42, Jakarta',
+  'transaction-date': '15/09/2026', 'due-date': '15/10/2026', 'close-date': '30/09/2026',
+  'transaction-no': 'TXN-0913', 'reference-no': 'RFQ-8815', 'payment-terms': 'Net 30',
+  'exchange-rate': '1.00', 'warehouse': 'Gudang Utama', 'shipping-address': 'Jl. Menteng Raya No. 42',
+  'shipping-date': '16/09/2026', 'delivery-date': '18/09/2026', 'ship-via': 'JNE Regular',
+  'tracking-no': 'JNE-88150913', 'shipping-fee': 'Rp 150.000',
+  'discount': '5%', 'global-discount': '0%', 'tax': 'PPN 11%', 'tax-inclusive': 'No', 'tax-after-discount': 'Yes',
+  'memo': 'Twelve-month espresso bean supply across all outlets.', 'attachment': '—', 'message': '—',
+  'service-type': 'Consultation', 'priority': 'High',
+  'record-name': 'Annual espresso contract', 'record-value': 'Rp 19.200.000',
+}
+const PREVIEW_STAGES = ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation', 'Won']
+const previewActiveTab = ref('details')
+const previewTabs = computed(() => {
+  const editable = props.detail.tabs.filter((tp) => tp.editable && tp.visible)
+  const system: { key: string; label: string }[] = []
+  for (const tp of props.detail.tabs) {
+    if (tp.editable || !tp.visible) continue
+    if (tp.key === 'orders' && !tp.erpTarget) continue
+    system.push({ key: tp.key, label: tp.key === 'orders' ? (tp.erpTarget === 'sales-order' ? 'Sales order list' : 'Sales quote list') : tp.label })
+  }
+  return [...editable.map((tp) => ({ key: tp.key, label: tp.label })), ...system]
+})
+function detailsTabSections() {
+  const tp = props.detail.tabs.find((t) => t.editable && t.visible)
+  return tp?.sections ?? []
+}
 
 const SECTION_NAME_MAX = 30
 const COL_OPTIONS = [
@@ -326,11 +383,16 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 </script>
 
 <template>
-  <div class="dlb">
+  <div class="dlb" :class="{ 'dlb--readonly': readonly }">
     <!-- Title block -->
-    <div class="dlb-titleblock">
-      <h3 class="dlb-title">{{ t('Edit layout') }}</h3>
-      <p class="dlb-desc">{{ t('Applies to the deal details page and the creation form.') }}</p>
+    <div class="dlb-titleblock" data-devchange="crm-layout-preview">
+      <div class="dlb-title-row">
+        <div>
+          <h3 class="dlb-title">{{ readonly ? t('Layout') : t('Edit layout') }}</h3>
+          <p class="dlb-desc">{{ t('Applies to the record details page and the creation form.') }}</p>
+        </div>
+        <MpButton v-if="!readonly" variant="secondary" is-rounded left-icon="show" @click="previewOpen = true">{{ t('Preview layout') }}</MpButton>
+      </div>
     </div>
 
     <!-- Text tab strip (green underline) — a FIXED set of tabs (no add / delete).
@@ -432,6 +494,47 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
           <MpButton variant="secondary" is-rounded left-icon="add" @click="addSection">{{ t('New section') }}</MpButton>
         </div>
       </template>
+
+      <!-- Non-editable system tabs (Activity, Notes, Files, ERP transactions) -->
+      <template v-else-if="activeTab">
+        <div v-if="activeTab.key === 'activity'" class="dlb-system-tab" data-devchange="crm-layout-system-tabs">
+          <MpIcon name="chart-line" size="md" class="dlb-system-icon" />
+          <p class="dlb-system-label">{{ t('Activity log') }}</p>
+          <p class="dlb-system-desc">{{ t('Shows a chronological log of all record activities. This section is fixed and cannot be customized.') }}</p>
+        </div>
+        <div v-else-if="activeTab.key === 'notes'" class="dlb-system-tab">
+          <MpIcon name="textarea" size="md" class="dlb-system-icon" />
+          <p class="dlb-system-label">{{ t('Notes') }}</p>
+          <p class="dlb-system-desc">{{ t('A collaborative notes area for the record. This section is fixed and cannot be customized.') }}</p>
+        </div>
+        <div v-else-if="activeTab.key === 'files'" class="dlb-system-tab">
+          <MpIcon name="attachment" size="md" class="dlb-system-icon" />
+          <p class="dlb-system-label">{{ t('Files') }}</p>
+          <p class="dlb-system-desc">{{ t('Uploaded files and attachments for this record. This section is fixed and cannot be customized.') }}</p>
+        </div>
+        <div v-else-if="activeTab.key === 'orders'" class="dlb-system-tab" data-devchange="crm-layout-erp-target">
+          <MpIcon name="sales" size="md" class="dlb-system-icon" />
+          <p class="dlb-system-label">{{ t('ERP transactions') }}</p>
+          <template v-if="readonly">
+            <p class="dlb-system-desc">{{ activeTab.erpTarget ? t(ERP_TARGET_OPTIONS.find(o => o.value === activeTab.erpTarget)?.label ?? 'ERP transactions') : t('No transaction type selected.') }}</p>
+          </template>
+          <template v-else>
+            <p class="dlb-system-desc">{{ t('Choose which ERP transaction list to show on this tab. This determines the conversion target for records in this module.') }}</p>
+            <div class="dlb-erp-picker">
+              <span class="dlb-erp-picker-label">{{ t('Transaction type') }}</span>
+              <ErpFilterSelect
+                id="dlb-erp-target"
+                class="dlb-erp-select"
+                :placeholder="t('Select transaction type')"
+                :model-value="activeTab.erpTarget ?? ''"
+                :options="ERP_TARGET_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) }))"
+                :is-clearable="false"
+                @update:model-value="onErpTargetChange"
+              />
+            </div>
+          </template>
+        </div>
+      </template>
     </div>
 
     <!-- Add-property drawer (two-pane pick-many, same as Setup ▸ Access) -->
@@ -526,8 +629,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
       <MpModalOverlay />
     </MpModal>
 
-    <!-- Floating drag ghost — a lifted clone that follows the cursor while a
-         property card is being dragged (the in-list card becomes a dashed slot). -->
+    <!-- Floating drag ghost -->
     <Teleport to="body">
       <div v-if="ghost" class="dlb-ghost" :style="{ left: `${ghost.x}px`, top: `${ghost.y}px`, width: `${ghost.w}px` }">
         <span class="dlb-drag"><MpIcon name="drag" size="sm" /></span>
@@ -538,6 +640,277 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
         </div>
       </div>
     </Teleport>
+
+    <!-- Preview layout drawer (full screen) -->
+    <Teleport to="body">
+      <Transition name="dlb-preview">
+        <div v-if="previewOpen" class="dlb-preview-overlay" data-devchange="crm-layout-preview">
+          <div class="dlb-preview-panel" role="dialog">
+            <header class="dlb-preview-header">
+              <h3 class="dlb-preview-title">{{ t('Preview layout') }}</h3>
+              <MpSegmentedControl id="dlb-preview-mode" name="dlb-preview-mode" v-model="previewMode" :data="PREVIEW_MODES" />
+              <span class="dlb-spacer" />
+              <MpButton variant="ghost" is-rounded left-icon="close" :aria-label="t('Close')" @click="previewOpen = false" />
+            </header>
+            <div class="dlb-preview-body">
+              <!-- Details record preview -->
+              <template v-if="previewMode === 'details'">
+                <div class="dlb-prev-record">
+                  <!-- Title bar -->
+                  <div class="dlb-prev-titlebar">
+                    <div class="dlb-prev-breadcrumb">{{ t('Deals') }}</div>
+                    <div class="dlb-prev-titlerow">
+                      <h2 class="dlb-prev-dealname">{{ DUMMY_DATA['deal-name'] || DUMMY_DATA['record-name'] || 'Deal name' }}</h2>
+                      <span class="dlb-prev-action-btn">{{ t('Mark as won') }}</span>
+                    </div>
+                  </div>
+                  <!-- Pipeline stepper -->
+                  <div class="dlb-prev-stepper">
+                    <div class="dlb-prev-stepper-labels">
+                      <span v-for="(s, i) in PREVIEW_STAGES" :key="i" class="dlb-prev-step-label" :class="{ 'dlb-prev-step-label--active': i === 2 }">{{ t(s) }}</span>
+                    </div>
+                    <div class="dlb-prev-stepper-bar">
+                      <span v-for="(_, i) in PREVIEW_STAGES" :key="i" class="dlb-prev-bar-seg" :class="{ 'dlb-prev-bar-seg--filled': i <= 2 }" />
+                    </div>
+                  </div>
+                  <!-- Tabs -->
+                  <div class="dlb-prev-tabs">
+                    <button v-for="tb in previewTabs" :key="tb.key" class="dlb-prev-tab-btn" :class="{ 'dlb-prev-tab-btn--active': previewActiveTab === tb.key }" @click="previewActiveTab = tb.key">{{ t(tb.label) }}</button>
+                  </div>
+                  <!-- Tab content -->
+                  <div class="dlb-prev-tab-content">
+                    <!-- Editable details tab -->
+                    <template v-if="previewActiveTab === 'details'">
+                      <div v-for="section in detailsTabSections()" :key="section.id" class="dlb-prev-section">
+                        <h5 v-if="section.name" class="dlb-prev-sec-name">{{ t(section.name) }}</h5>
+                        <div v-if="section.kind === 'products'" class="dlb-prev-products">
+                          <table class="dlb-prev-table">
+                            <thead><tr><th>{{ t('Product') }}</th><th>{{ t('Description') }}</th><th class="dlb-prev-th--num">{{ t('Qty') }}</th><th>{{ t('Unit') }}</th><th class="dlb-prev-th--num">{{ t('Unit price') }}</th><th class="dlb-prev-th--num">{{ t('Discount') }}</th><th>{{ t('Tax') }}</th></tr></thead>
+                            <tbody>
+                              <tr><td>Espresso Blend 1kg</td><td class="dlb-prev-td--muted">Premium single-origin</td><td class="dlb-prev-td--num">60</td><td>bag</td><td class="dlb-prev-td--num">Rp 320.000</td><td class="dlb-prev-td--num">0%</td><td>PPN 11%</td></tr>
+                            </tbody>
+                          </table>
+                        </div>
+                        <div v-else class="dlb-prev-content-grid" :style="{ gridTemplateColumns: `minmax(0, 318px) repeat(${Math.max(1, section.columns - 1)}, minmax(0, 1fr))` }">
+                          <div v-for="(col, ci) in section.cols" :key="ci" class="dlb-prev-content-col">
+                            <div v-for="pid in col" :key="pid" class="dlb-prev-cl">
+                              <span class="dlb-prev-cl-label">{{ prop(pid)?.name ?? pid }}</span>
+                              <span class="dlb-prev-cl-value">{{ DUMMY_DATA[pid] || '—' }}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </template>
+                    <!-- System tabs with dummy data -->
+                    <template v-else-if="previewActiveTab === 'activity'">
+                      <table class="dlb-prev-table">
+                        <thead><tr><th>{{ t('Date') }}</th><th>{{ t('User') }}</th><th>{{ t('Action') }}</th></tr></thead>
+                        <tbody>
+                          <tr><td>20 Sep 2026, 14:30</td><td>Dewi Lestari</td><td>{{ t('Moved stage from Open Lead to 1st Meeting') }}</td></tr>
+                          <tr><td>18 Sep 2026, 09:15</td><td>Rizal Candra</td><td>{{ t('Created deal') }}</td></tr>
+                        </tbody>
+                      </table>
+                    </template>
+                    <template v-else-if="previewActiveTab === 'notes'">
+                      <div class="dlb-prev-notes-list">
+                        <div class="dlb-prev-note">
+                          <div class="dlb-prev-note-header"><strong>Dewi Lestari</strong><span class="dlb-prev-note-date">20 Sep 2026, 14:30</span></div>
+                          <p class="dlb-prev-note-body">{{ t('Follow up call scheduled for next week. Client interested in premium blend.') }}</p>
+                        </div>
+                        <div class="dlb-prev-note">
+                          <div class="dlb-prev-note-header"><strong>Rizal Candra</strong><span class="dlb-prev-note-date">18 Sep 2026, 09:15</span></div>
+                          <p class="dlb-prev-note-body">{{ t('Initial meeting went well. Sent catalog and price list.') }}</p>
+                        </div>
+                      </div>
+                    </template>
+                    <template v-else-if="previewActiveTab === 'files'">
+                      <table class="dlb-prev-table">
+                        <thead><tr><th>{{ t('File name') }}</th><th>{{ t('Size') }}</th><th>{{ t('Uploaded by') }}</th><th>{{ t('Date') }}</th></tr></thead>
+                        <tbody>
+                          <tr><td>Proposal_Espresso_2026.pdf</td><td>2.4 MB</td><td>Dewi Lestari</td><td>19 Sep 2026</td></tr>
+                          <tr><td>Price_List_Q4.xlsx</td><td>156 KB</td><td>Rizal Candra</td><td>18 Sep 2026</td></tr>
+                        </tbody>
+                      </table>
+                    </template>
+                    <template v-else-if="previewActiveTab === 'orders'">
+                      <table class="dlb-prev-table">
+                        <thead><tr><th>{{ t('Transaction no.') }}</th><th>{{ t('Date') }}</th><th>{{ t('Customer') }}</th><th>{{ t('Amount') }}</th><th>{{ t('Status') }}</th></tr></thead>
+                        <tbody>
+                          <tr><td>SO-20260920-001</td><td>20 Sep 2026</td><td>Kopi Kenangan Pusat</td><td>Rp 19.200.000</td><td><span class="dlb-prev-status dlb-prev-status--open">Open</span></td></tr>
+                        </tbody>
+                      </table>
+                    </template>
+                  </div>
+                </div>
+              </template>
+              <!-- Form preview — hardcoded copy of NewCrmDealPage structure -->
+              <template v-else>
+                <div class="si-form-page dlb-prev-form-page">
+                  <div class="si-form-stage">
+                    <!-- Section 1: Deal name — standalone, dashed divider -->
+                    <section class="si-header1 si-dashed-divider">
+                      <MpFormControl id="fp-deal-name" class="si-field" style="flex:0 0 var(--si-field-wide)">
+                        <MpFormLabel>{{ t('Deal name') }}</MpFormLabel>
+                        <MpInput id="fp-deal-name-inp" is-full-width disabled />
+                      </MpFormControl>
+                    </section>
+
+                    <!-- Section 2: Contact + Company + Deal value -->
+                    <section class="si-header1 si-dashed-divider">
+                      <MpFormControl id="fp-contact" class="si-field" style="flex:0 0 var(--si-field-wide)" is-required>
+                        <MpFormLabel>{{ t('Contact') }}</MpFormLabel>
+                        <MpAutocomplete id="fp-contact-inp" :data="[]" :placeholder="t('Select contact')" is-full-width use-portal disabled />
+                      </MpFormControl>
+                      <MpFormControl id="fp-company" class="si-field" style="flex:0 0 var(--si-field-wide)">
+                        <MpFormLabel>{{ t('Company') }}</MpFormLabel>
+                        <MpAutocomplete id="fp-company-inp" :data="[]" :placeholder="t('Select company')" is-full-width use-portal disabled />
+                      </MpFormControl>
+                      <div class="si-header1-total">
+                        <h3 class="si-header1-total-value">{{ t('Deal value') }} Rp 0</h3>
+                      </div>
+                    </section>
+
+                    <!-- Section 3: Header fields — 4 columns like the real form -->
+                    <section class="si-header2">
+                      <!-- Col 1: Billing address + Requires shipping -->
+                      <div class="si-header2-col">
+                        <MpFormControl id="fp-billing" class="si-field">
+                          <MpFormLabel>{{ t('Billing address') }}</MpFormLabel>
+                          <MpTextarea id="fp-billing-inp" is-full-width disabled />
+                        </MpFormControl>
+                        <MpCheckbox id="fp-requires-shipping" :is-checked="false" disabled>{{ t('Requires shipping') }}</MpCheckbox>
+                      </div>
+                      <!-- Col 2: Dates + terms -->
+                      <div class="si-header2-col">
+                        <MpFormControl id="fp-tx-date" class="si-field">
+                          <MpFormLabel>{{ t('Transaction date') }}</MpFormLabel>
+                          <MpDatePicker id="fp-tx-date-inp" class="dlb-fp-datepicker" format="DD/MM/YYYY" value-type="format" use-portal disabled />
+                        </MpFormControl>
+                        <MpFormControl id="fp-close-date" class="si-field">
+                          <MpFormLabel>{{ t('Close date') }}</MpFormLabel>
+                          <MpDatePicker id="fp-close-date-inp" class="dlb-fp-datepicker" format="DD/MM/YYYY" value-type="format" use-portal disabled />
+                        </MpFormControl>
+                        <MpFormControl id="fp-payment" class="si-field">
+                          <MpFormLabel>{{ t('Payment terms') }}</MpFormLabel>
+                          <MpAutocomplete id="fp-payment-inp" :data="[]" is-full-width use-portal disabled />
+                        </MpFormControl>
+                      </div>
+                      <!-- Col 3: References -->
+                      <div class="si-header2-col">
+                        <MpFormControl id="fp-tx-no" class="si-field">
+                          <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
+                          <MpInput id="fp-tx-no-inp" :placeholder="t('Auto')" is-disabled is-full-width />
+                        </MpFormControl>
+                        <MpFormControl id="fp-ref" class="si-field">
+                          <MpFormLabel>{{ t('Reference no.') }}</MpFormLabel>
+                          <MpInput id="fp-ref-inp" is-full-width disabled />
+                        </MpFormControl>
+                        <MpFormControl id="fp-warehouse" class="si-field">
+                          <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
+                          <MpAutocomplete id="fp-warehouse-inp" :data="[]" :placeholder="t('Select warehouse')" is-full-width use-portal disabled />
+                        </MpFormControl>
+                      </div>
+                    </section>
+
+                    <!-- Line items -->
+                    <section class="si-items-section">
+                      <div class="si-items-header-row">
+                        <MpCheckbox id="fp-price-incl-tax" :is-checked="false" disabled>{{ t('Price includes tax') }}</MpCheckbox>
+                      </div>
+                      <div class="si-items-scroll">
+                        <table class="si-items-table">
+                          <colgroup>
+                            <col class="si-col-drag" /><col class="si-col-product" /><col class="si-col-desc" />
+                            <col class="si-col-qty" /><col class="si-col-unit" /><col class="si-col-price" />
+                            <col class="si-col-discount" /><col class="si-col-tax" /><col class="si-col-amount" />
+                            <col class="si-col-del" />
+                          </colgroup>
+                          <thead>
+                            <tr>
+                              <th class="si-th si-th--drag" />
+                              <th class="si-th">{{ t('Product') }}</th>
+                              <th class="si-th">{{ t('Description') }}</th>
+                              <th class="si-th">{{ t('Qty') }}</th>
+                              <th class="si-th">{{ t('Unit') }}</th>
+                              <th class="si-th">{{ t('Unit price') }}</th>
+                              <th class="si-th">{{ t('Discount') }}</th>
+                              <th class="si-th">{{ t('Tax') }}</th>
+                              <th class="si-th">{{ t('Amount') }}</th>
+                              <th class="si-th si-th--del" />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td class="si-td si-td--drag si-td--border"><MpIcon name="drag" size="sm" /></td>
+                              <td class="si-td si-td--input si-td--border"><MpInput is-full-width disabled :placeholder="t('Select product')" /></td>
+                              <td class="si-td si-td--input si-td--border"><MpInput is-full-width disabled /></td>
+                              <td class="si-td si-td--input si-td--border"><MpInput type="number" model-value="1" is-full-width disabled /></td>
+                              <td class="si-td si-td--border si-td--affix si-td--calc"><div class="si-affix-cell"><span class="si-unit-ro">—</span></div></td>
+                              <td class="si-td si-td--input si-td--border si-td--affix"><div class="si-affix-cell"><span class="si-affix">Rp</span><MpInput type="number" model-value="0" is-full-width disabled class="dlb-fp-affix-input" /></div></td>
+                              <td class="si-td si-td--input si-td--border si-td--affix"><div class="si-affix-cell"><MpInput type="number" model-value="0" is-full-width disabled class="dlb-fp-affix-input" /><span class="si-affix">%</span></div></td>
+                              <td class="si-td si-td--input si-td--border"><MpAutocomplete :data="[]" is-full-width use-portal disabled /></td>
+                              <td class="si-td si-td--border si-td--affix si-td--calc"><div class="si-affix-cell"><span class="si-affix">Rp</span><span class="si-affix-value">0</span></div></td>
+                              <td class="si-td si-td--del" />
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+
+                    <!-- Bottom: Message + Memo + Attachment (left) | Totals (right) -->
+                    <section class="si-bottom-section">
+                      <div class="si-notes-col">
+                        <MpFormControl id="fp-message" class="si-note-field">
+                          <MpFormLabel>{{ t('Message') }}</MpFormLabel>
+                          <MpTextarea id="fp-message-inp" is-full-width disabled />
+                        </MpFormControl>
+                        <MpFormControl id="fp-memo" class="si-note-field">
+                          <MpFormLabel>{{ t('Memo') }}</MpFormLabel>
+                          <MpTextarea id="fp-memo-inp" is-full-width disabled />
+                          <span class="si-field-caption">{{ t('Only visible to you and your team') }}</span>
+                        </MpFormControl>
+                        <div class="si-attachment-section">
+                          <span class="si-attachment-label">{{ t('Attachment') }}</span>
+                          <MpUpload id="fp-attachment" :button-text="t('Choose file')" :placeholder="t('or drag and drop here')" is-full-width disabled />
+                          <p class="si-field-caption">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP format, with a maximum size of 10 MB per file and 5 files per transaction') }}</p>
+                        </div>
+                      </div>
+                      <div class="si-totals-col">
+                        <div class="si-totals-row si-totals-row--h3"><span>{{ t('Subtotal') }}</span><span>Rp 0</span></div>
+                        <div class="si-discount-block">
+                          <div class="si-discount-rows">
+                            <div class="si-totals-row"><span>{{ t('Discount per line') }}</span><span class="si-deduction">(Rp 0)</span></div>
+                            <div class="si-totals-row">
+                              <span class="si-inline-field-label">
+                                <span>{{ t('Global discount') }}</span>
+                                <MpInputGroup id="fp-global-discount-group" class="si-unit-field">
+                                  <MpInputLeftAddon has-background class="si-unit-addon"><span class="dlb-fp-unit-label">Rp</span></MpInputLeftAddon>
+                                  <MpInput type="number" model-value="0" is-full-width disabled />
+                                </MpInputGroup>
+                              </span>
+                              <span class="si-deduction">(Rp 0)</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="si-totals-row"><span>{{ t('Tax') }}</span><span>Rp 0</span></div>
+                        <div class="si-total-rule" />
+                        <div class="si-totals-row si-totals-row--h3"><span>{{ t('Total') }}</span><span>Rp 0</span></div>
+                      </div>
+                    </section>
+
+                    <!-- Footer -->
+                    <MpButtonGroup class="erp-action-footer si-form-footer">
+                      <MpButton variant="ghost" is-rounded disabled>{{ t('Cancel') }}</MpButton>
+                      <MpButton variant="primary" is-rounded disabled>{{ t('Save') }}</MpButton>
+                    </MpButtonGroup>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -546,6 +919,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 
 /* Title block */
 .dlb-titleblock { display: flex; flex-direction: column; gap: 2px; }
+.dlb-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4); }
 .dlb-title { font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-bold, 700); color: var(--mp-colors-text-default, #080d0e); margin: 0; }
 .dlb-desc { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); margin: 0; }
 
@@ -621,7 +995,172 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 
 .dlb-add-section { padding-top: var(--mp-spacing-2); }
 
-/* System tab */
+/* System tabs (Activity / Notes / Files / ERP transactions) */
+.dlb-system-tab { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-10, 40px) var(--mp-spacing-6); text-align: center; }
+.dlb-system-icon { color: var(--mp-colors-icon-default, #536062); }
+.dlb-system-label { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-default, #080d0e); margin: 0; }
+.dlb-system-desc { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); margin: 0; max-width: 360px; }
+.dlb-erp-picker { display: flex; flex-direction: column; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-4); width: 100%; max-width: 320px; text-align: left; }
+.dlb-erp-picker-label { font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-secondary, #6b7678); }
+.dlb-erp-select { width: 100%; }
+.dlb-erp-select :deep(.efs), .dlb-erp-select :deep(.efs-trigger) { width: 100%; }
+
+/* Preview layout drawer (full screen) */
+.dlb-preview-overlay { position: fixed; inset: 0; z-index: 9999; background: rgba(8, 13, 14, 0.45); display: flex; justify-content: center; align-items: stretch; }
+.dlb-preview-panel { margin: 12px; width: calc(100% - 24px); height: calc(100% - 24px); border-radius: 12px; background: var(--mp-colors-background-neutral, #fff); display: flex; flex-direction: column; overflow: hidden; }
+.dlb-preview-header { display: flex; align-items: center; gap: var(--mp-spacing-4); padding: var(--mp-spacing-4) var(--mp-spacing-6); border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
+.dlb-preview-header :deep(.mp-segmented-control) { width: auto; flex-shrink: 0; }
+.dlb-preview-title { font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-bold, 700); color: var(--mp-colors-text-default, #080d0e); margin: 0; }
+.dlb-preview-body { flex: 1; overflow-y: auto; padding: var(--mp-spacing-6) var(--mp-spacing-8); }
+/* Preview record — mirrors CrmDealDetailPage layout */
+.dlb-prev-record { display: flex; flex-direction: column; gap: 0; }
+/* Title bar */
+.dlb-prev-titlebar { padding-bottom: var(--mp-spacing-4); }
+.dlb-prev-breadcrumb { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); margin-bottom: var(--mp-spacing-1); }
+.dlb-prev-titlerow { display: flex; align-items: center; gap: var(--mp-spacing-4); }
+.dlb-prev-dealname { font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-bold, 700); color: var(--mp-colors-text-default, #080d0e); margin: 0; flex: 1; }
+.dlb-prev-action-btn { display: inline-flex; align-items: center; padding: 6px 16px; background: var(--mp-colors-background-success-bold, #16b364); color: #fff; border-radius: 6px; font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); cursor: default; }
+/* Pipeline stepper */
+.dlb-prev-stepper { padding: var(--mp-spacing-2) 0 var(--mp-spacing-5); }
+.dlb-prev-stepper-labels { display: flex; margin-bottom: var(--mp-spacing-1); }
+.dlb-prev-step-label { flex: 1; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); }
+.dlb-prev-step-label--active { font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-default, #080d0e); }
+.dlb-prev-stepper-bar { display: flex; gap: 2px; }
+.dlb-prev-bar-seg { flex: 1; height: 12px; background: var(--mp-color-neutral-40, #d0d5dd); }
+.dlb-prev-bar-seg--filled { background: var(--mp-border-selected, #029861); }
+/* Tabs (styled like MpTabs in the detail page) */
+.dlb-prev-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); margin-bottom: var(--mp-spacing-5); }
+.dlb-prev-tab-btn { background: none; border: none; border-bottom: 2px solid transparent; padding: var(--mp-spacing-3) var(--mp-spacing-4); font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #6b7678); cursor: pointer; white-space: nowrap; }
+.dlb-prev-tab-btn:hover { color: var(--mp-colors-text-default, #080d0e); }
+.dlb-prev-tab-btn--active { color: var(--mp-colors-text-default, #080d0e); font-weight: var(--mp-font-weights-semi-bold, 600); border-bottom-color: var(--mp-colors-background-success-bold, #16b364); }
+/* Tab content area */
+.dlb-prev-tab-content { display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
+/* Sections */
+.dlb-prev-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
+.dlb-prev-sec-name { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-default, #080d0e); margin: 0; }
+/* Content-list grid (mirrors content-list-grid from CrmDealDetailPage) */
+.dlb-prev-content-grid { display: grid; column-gap: var(--mp-spacing-6); row-gap: 0; }
+.dlb-prev-content-col { display: flex; flex-direction: column; min-width: 0; }
+.dlb-prev-cl { display: flex; flex-direction: column; gap: 2px; padding: var(--mp-spacing-3) 0; border-bottom: 1px solid var(--mp-colors-border-subtle, #f0f2f3); }
+.dlb-prev-cl-label { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); }
+.dlb-prev-cl-value { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-default, #080d0e); }
+/* Placeholder for system tabs */
+.dlb-prev-placeholder { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #6b7678); margin: 0; padding: var(--mp-spacing-10) 0; text-align: center; border: 1px dashed var(--mp-colors-border-default, #e3e7e9); border-radius: 8px; }
+/* Product table */
+.dlb-prev-products { border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: 0; overflow: hidden; }
+.dlb-prev-table { width: 100%; border-collapse: collapse; font-size: var(--mp-font-sizes-md, 14px); }
+.dlb-prev-table th { text-align: left; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-colors-background-neutral-subtle, #f7f8f8); font-weight: var(--mp-font-weights-semi-bold, 600); font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
+.dlb-prev-table td { padding: var(--mp-spacing-2) var(--mp-spacing-3); color: var(--mp-colors-text-default, #080d0e); vertical-align: top; }
+.dlb-prev-th--num, .dlb-prev-td--num { text-align: right; }
+.dlb-prev-td--muted { color: var(--mp-colors-text-secondary, #6b7678); }
+/* Notes tab dummy */
+.dlb-prev-notes-list { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
+.dlb-prev-note { display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding: var(--mp-spacing-3) 0; border-bottom: 1px solid var(--mp-colors-border-subtle, #f0f2f3); }
+.dlb-prev-note-header { display: flex; align-items: center; gap: var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm, 12px); }
+.dlb-prev-note-date { color: var(--mp-colors-text-secondary, #6b7678); }
+.dlb-prev-note-body { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-default, #080d0e); margin: 0; }
+/* Status badge */
+.dlb-prev-status { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold, 600); }
+.dlb-prev-status--open { background: #e8f4fd; color: #1d6fb8; }
+/* Form preview — copies si-* layout rules from NewCrmDealPage (scoped there, so duplicated here) */
+.dlb-prev-form-page {
+  --si-field-wide: 318px;
+  --si-field: 228px;
+  height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+}
+.dlb-prev-form-page .si-form-stage {
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
+  padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
+  display: flex; flex-direction: column; gap: var(--mp-spacing-6);
+}
+.dlb-prev-form-page .si-dashed-divider { padding-bottom: var(--mp-spacing-5); border-bottom: 1px dashed var(--mp-border-default, #e3e7e9); }
+.dlb-prev-form-page .si-header1 { display: flex; align-items: flex-start; gap: 16px 24px; flex-wrap: wrap; }
+.dlb-prev-form-page .si-header1 > .si-field { flex: 0 0 var(--si-field-wide); }
+.dlb-prev-form-page .si-header1-total { margin-left: auto; align-self: flex-end; padding-bottom: var(--mp-spacing-2); }
+.dlb-prev-form-page .si-header1-total-value { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); white-space: nowrap; }
+.dlb-prev-form-page .si-header2 { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 16px 24px; }
+.dlb-prev-form-page .si-header2-col { flex: 0 0 var(--si-field-wide); min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
+.dlb-prev-form-page .si-field { min-width: 0; }
+.dlb-prev-form-page .si-items-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
+.dlb-prev-form-page .si-items-header-row { display: flex; justify-content: flex-end; }
+.dlb-prev-form-page .si-items-scroll { overflow-x: auto; }
+.dlb-prev-form-page .si-items-table { width: 100%; min-width: 1340px; table-layout: fixed; border-collapse: collapse; border-spacing: 0; }
+.dlb-prev-form-page .si-col-drag { width: 44px; }
+.dlb-prev-form-page .si-col-product { width: 280px; }
+.dlb-prev-form-page .si-col-desc { width: auto; }
+.dlb-prev-form-page .si-col-qty { width: 64px; }
+.dlb-prev-form-page .si-col-unit { width: 104px; }
+.dlb-prev-form-page .si-col-price { width: 164px; }
+.dlb-prev-form-page .si-col-discount { width: 88px; }
+.dlb-prev-form-page .si-col-tax { width: 128px; }
+.dlb-prev-form-page .si-col-amount { width: 164px; }
+.dlb-prev-form-page .si-col-del { width: 52px; }
+.dlb-prev-form-page .si-th {
+  height: var(--mp-sizes-7, 28px); text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-2);
+  background: var(--mp-background-neutral, #fff); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  text-transform: uppercase; letter-spacing: var(--mp-letter-spacings-normal); color: var(--mp-text-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); white-space: nowrap;
+}
+.dlb-prev-form-page .si-th--drag, .dlb-prev-form-page .si-th--del { padding: 0; }
+.dlb-prev-form-page .si-td {
+  height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); vertical-align: middle;
+}
+.dlb-prev-form-page .si-td--border { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
+.dlb-prev-form-page .si-td--drag { padding: 0; text-align: center; color: var(--mp-text-placeholder); cursor: grab; }
+.dlb-prev-form-page .si-td--del { padding: 0; text-align: center; }
+.dlb-prev-form-page .si-td--input { padding: 0; }
+.dlb-prev-form-page .si-td--affix { padding: 0; }
+.dlb-prev-form-page .si-td--calc, .dlb-prev-form-page .si-td--calc .si-affix, .dlb-prev-form-page .si-td--calc .si-affix-value { background: var(--mp-background-neutral-strong, #f1f3f5); }
+.dlb-prev-form-page .si-affix-cell { display: flex; align-items: stretch; height: 100%; min-height: var(--mp-sizes-10, 40px); }
+.dlb-prev-form-page .si-affix {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center; padding: 0 var(--mp-spacing-2);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
+}
+.dlb-prev-form-page .si-affix-value { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: flex-end; padding: 0 var(--mp-spacing-2); white-space: nowrap; }
+.dlb-prev-form-page .si-unit-ro { flex: 1; display: flex; align-items: center; padding: 0 var(--mp-spacing-2); color: var(--mp-text-secondary, #64748b); }
+.dlb-prev-form-page .si-bottom-section { display: flex; align-items: flex-start; gap: var(--mp-spacing-6); }
+.dlb-prev-form-page .si-notes-col { display: flex; flex-direction: column; gap: 20px; width: 432px; flex-shrink: 0; }
+.dlb-prev-form-page .si-note-field { display: flex; flex-direction: column; }
+.dlb-prev-form-page .si-field-caption { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1, 4px); }
+.dlb-prev-form-page .si-totals-col { margin-left: auto; width: 428px; flex-shrink: 0; display: flex; flex-direction: column; }
+.dlb-prev-form-page .si-totals-row { display: flex; justify-content: space-between; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.dlb-prev-form-page .si-totals-row--h3 { font-weight: var(--mp-font-weights-semi-bold); font-size: var(--mp-font-sizes-lg); }
+.dlb-prev-form-page .si-deduction { color: var(--mp-text-secondary); white-space: nowrap; }
+.dlb-prev-form-page .si-total-rule {
+  height: var(--mp-border-width-sm, 1px); margin: var(--mp-spacing-2) 0;
+  background: repeating-linear-gradient(to right, var(--mp-border-default) 0, var(--mp-border-default) 4px, transparent 4px, transparent 8px);
+}
+.dlb-prev-form-page .si-form-footer { margin-top: auto; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); padding-top: var(--mp-spacing-6); }
+/* Form preview extras */
+.dlb-fp-datepicker { width: 100%; }
+.dlb-fp-datepicker :deep(.mp-datepicker__root) { width: 100%; }
+.dlb-fp-affix-input { flex: 1 1 0; min-width: 0; }
+.dlb-fp-affix-input :deep(.mp-input__root) { flex: 1 1 0; min-width: 0; width: auto; border: none; border-radius: 0; box-shadow: none; }
+.dlb-fp-affix-input :deep(.mp-input__control) { height: var(--mp-sizes-10, 40px); min-width: 0; width: 100%; border: none; border-radius: 0; box-shadow: none; }
+.dlb-fp-unit-label { padding: 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); }
+.dlb-prev-form-page .si-attachment-section { display: flex; flex-direction: column; gap: var(--mp-spacing-1, 4px); width: var(--si-field-wide); }
+.dlb-prev-form-page .si-attachment-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-md, 20px); }
+.dlb-prev-form-page .si-discount-block { position: relative; }
+.dlb-prev-form-page .si-discount-rows { display: flex; flex-direction: column; }
+.dlb-prev-form-page .si-inline-field-label { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.dlb-prev-form-page .si-unit-field { width: 180px; flex-shrink: 0; }
+.dlb-prev-form-page .si-unit-addon :deep(.mp-input-addon__root) { padding: 0; background: var(--mp-background-neutral-subtle, #f8f9f9); border-radius: var(--mp-radii-md); }
+.dlb-prev-form-page .si-td--input :deep([class*='input']),
+.dlb-prev-form-page .si-td--input :deep([class*='select']) { border-radius: 0; border-color: transparent; }
+.dlb-prev-form-page .si-td--input :deep(.mp-input__root),
+.dlb-prev-form-page .si-td--input :deep(.mp-select__root) { height: var(--mp-sizes-10, 40px); background: transparent; }
+.dlb-prev-form-page .si-td--input :deep(.mp-input__control),
+.dlb-prev-form-page .si-td--input :deep(.mp-select__control) { height: var(--mp-sizes-10, 40px); min-width: 0; width: 100%; border: none; border-radius: 0; box-shadow: none; }
+.dlb-prev-fields { display: grid; gap: var(--mp-spacing-4); }
+.dlb-prev-col { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
+/* Transitions */
+.dlb-preview-enter-active, .dlb-preview-leave-active { transition: opacity 0.2s ease; }
+.dlb-preview-enter-active .dlb-preview-panel, .dlb-preview-leave-active .dlb-preview-panel { transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1); }
+.dlb-preview-enter-from, .dlb-preview-leave-to { opacity: 0; }
+.dlb-preview-enter-from .dlb-preview-panel { transform: scale(0.96); }
+.dlb-preview-leave-to .dlb-preview-panel { transform: scale(0.96); }
 
 /* Add-property picker (modal) */
 
@@ -644,4 +1183,12 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 .dlb-cond-then { display: flex; flex-direction: column; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-5); }
 .dlb-cond-sentence { margin: var(--mp-spacing-5) 0 0; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #6b7678); line-height: 1.5; }
 .dlb-cond-sentence strong { color: var(--mp-colors-text-default, #080d0e); font-weight: var(--mp-font-weights-semi-bold, 600); }
+
+/* ── Readonly mode — hide interactive affordances ── */
+.dlb--readonly .dlb-drag,
+.dlb--readonly .dlb-kebab,
+.dlb--readonly .dlb-tab-kebab,
+.dlb--readonly .dlb-add-section { display: none; }
+.dlb--readonly .dlb-prop { cursor: default; }
+.dlb--readonly .dlb-section { cursor: default; }
 </style>

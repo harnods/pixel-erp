@@ -20,10 +20,10 @@
  *  • All edits happen on a local `draft`; Save applies to the real config.
  */
 import { computed, reactive, ref, watch } from 'vue'
-import { MpButton, MpIcon, MpToggle, MpRadio, MpTextlink, MpFormControl, MpFormLabel, MpModal, MpModalOverlay, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter } from '@mekari/pixel3'
+import { MpButton, MpIcon, MpToggle, MpRadio, MpFormControl, MpFormLabel, MpModal, MpModalOverlay, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import CrmMappingRow from '~/components/patterns/CrmMappingRow.vue'
-import { getCrmModule, type CrmModule } from '~/data/crm'
+import { getCrmModule, moduleStores, type CrmModule } from '~/data/crm'
 import {
   ensureConversionConfig, getConversionConfig, saveConfig,
   erpTargetFields, evalEntry,
@@ -39,6 +39,7 @@ const router = useRouter()
 
 const mod = computed<CrmModule | undefined>(() => getCrmModule(props.orderId))
 const isDeals = computed(() => props.orderId === 'deals')
+const modProperties = computed(() => moduleStores(props.orderId).properties)
 
 // ── Local editable draft (applied on Save) ──────────────────────────────────
 const draft = reactive<{ enabled: boolean; target: ConvTarget; mappings: MappingEntry[]; criterion: BlockingCriterion | null }>({
@@ -103,7 +104,7 @@ watch(criterionEnabled, (on) => { if (on) ensureCriterion(); else draft.criterio
 const validationErrors = computed(() => {
   const errs: string[] = []
   for (const f of allFields.value) {
-    const r = evalEntry(entryFor(f.key), f, mod.value ?? ({ fields: [] } as unknown as CrmModule))
+    const r = evalEntry(entryFor(f.key), f, mod.value ?? ({ fields: [] } as unknown as CrmModule), modProperties.value)
     if (r.status === 'missing' || r.status === 'incompatible') errs.push(r.message ?? `${t(f.label)} is not mapped correctly.`)
   }
   return errs
@@ -112,8 +113,6 @@ const validationErrors = computed(() => {
 // ── Actions ──────────────────────────────────────────────────────────────────
 const saveError = ref('')
 const enableConfirmOpen = ref(false)
-const previewOpen = ref(false)
-
 function goBack() { router.push('/crm/settings/erp-integrations') }
 
 function applySave() {
@@ -137,14 +136,6 @@ function onSave() {
 }
 function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
 
-// Preview: resolve each target field to its source description for a sample record.
-function sourceSummary(e: MappingEntry): string {
-  if (e.strategy === 'unmapped') return t('Not mapped')
-  if (e.strategy === 'crm-field') return mod.value?.fields.find((f) => f.id === e.sourceFieldId)?.label ?? '—'
-  if (e.strategy === 'system') return t('System value')
-  if (e.strategy === 'fixed') return e.fixedLabel ?? '—'
-  return t('ERP default')
-}
 </script>
 
 <template>
@@ -212,7 +203,6 @@ function sourceSummary(e: MappingEntry): string {
                 <h2 class="ed-section-title">{{ t('Mappings') }}</h2>
                 <p class="ed-headerlist-desc">{{ t('Every required and conditional ERP field must map to a compatible source.') }}</p>
               </div>
-              <MpTextlink class="ed-preview-link" @click="previewOpen = true">{{ t('Preview') }}</MpTextlink>
             </div>
             <div class="ed-body">
               <!-- Mandatory fields -->
@@ -230,6 +220,7 @@ function sourceSummary(e: MappingEntry): string {
                     :field="f"
                     :entry="entryFor(f.key)"
                     :mod="mod"
+                    :properties="modProperties"
                     @update:entry="setEntry"
                   />
                 </div>
@@ -250,6 +241,7 @@ function sourceSummary(e: MappingEntry): string {
                     :field="f"
                     :entry="entryFor(f.key)"
                     :mod="mod"
+                    :properties="modProperties"
                     @update:entry="setEntry"
                   />
                 </div>
@@ -323,26 +315,6 @@ function sourceSummary(e: MappingEntry): string {
       </MpModalContent>
     </MpModal>
 
-    <!-- Preview: how each ERP field resolves for a sample record (read-only). -->
-    <MpModal :is-open="previewOpen" @close="previewOpen = false">
-      <MpModalOverlay />
-      <MpModalContent>
-        <MpModalHeader>{{ t('Mapping preview') }}</MpModalHeader>
-        <MpModalBody>
-          <p class="prev-cap">{{ t('How each ERP field would be filled when a record is converted.') }}</p>
-          <ul class="prev-list">
-            <li v-for="f in allFields" :key="f.key">
-              <span class="prev-target">{{ t(f.label) }}</span>
-              <span class="prev-arrow"><MpIcon name="arrows-right" size="sm" /></span>
-              <span class="prev-source">{{ sourceSummary(entryFor(f.key)) }}</span>
-            </li>
-          </ul>
-        </MpModalBody>
-        <MpModalFooter>
-          <MpButton variant="primary" is-rounded @click="previewOpen = false">{{ t('Close') }}</MpButton>
-        </MpModalFooter>
-      </MpModalContent>
-    </MpModal>
   </div>
 </template>
 
@@ -367,9 +339,7 @@ function sourceSummary(e: MappingEntry): string {
 .ed-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
 /* Header list: H2 title over its description, ZERO gap between them. */
 .ed-headerlist { display: flex; flex-direction: column; gap: 0; }
-/* Mappings header row: the header-list on the left, a Preview text link on the right. */
 .ed-maphead { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4); }
-.ed-preview-link { flex-shrink: 0; }
 .ed-headerlist-desc { margin: 0; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-secondary); }
 /* Section headings are H2 → xl/20px semibold (rule/type-scale: H1 24, H2 20, H3 16). */
 .ed-section-title { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-xl, 28px); color: var(--mp-text-default); }
@@ -406,11 +376,4 @@ function sourceSummary(e: MappingEntry): string {
    Negative margins bleed it to the stage edges (the stage has spacing-6 padding);
    margin-top pushes it below the content with a divider. */
 .ed-footer { position: sticky; bottom: calc(-1 * var(--mp-spacing-6)); margin: var(--mp-spacing-6) calc(-1 * var(--mp-spacing-6)) calc(-1 * var(--mp-spacing-6)); display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-6); background: var(--mp-background-stage, #ffffff); border-top: 1px solid var(--mp-border-subtle, #e6e8eb); }
-
-.prev-cap { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
-.prev-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.prev-list li { display: grid; grid-template-columns: 1fr 24px 1fr; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm, 14px); }
-.prev-target { color: var(--mp-text-default); }
-.prev-arrow { color: var(--mp-text-subtle); display: flex; justify-content: center; }
-.prev-source { color: var(--mp-text-secondary); }
 </style>

@@ -54,11 +54,10 @@ const columns: TableColumn[] = [
   { key: 'updatedAt',   label: 'Last updated', kind: 'date',   sortable: true, sortType: 'date'   },
 ]
 
-// Status badge: published=green, draft=gray, incomplete=yellow.
+// Status badge: published=green, draft=gray.
 const STATUS_BADGE: Record<string, { status: string; label: string }> = {
   published:  { status: 'active',  label: 'Published' },
   draft:      { status: 'draft',   label: 'Draft' },
-  incomplete: { status: 'pending', label: 'Incomplete' },
 }
 function statusBadge(s: string): { status: string; label: string } {
   return STATUS_BADGE[s] ?? { status: 'draft', label: s }
@@ -67,7 +66,6 @@ function statusBadge(s: string): { status: string; label: string } {
 const statusFilterOptions = [
   { value: 'published', label: 'Published' },
   { value: 'draft', label: 'Draft' },
-  { value: 'incomplete', label: 'Incomplete' },
 ]
 
 const {

@@ -365,7 +365,6 @@ const CrmTasksPage = asyncPage(() => import('~/components/pages/CrmTasksPage.vue
 const CrmCustomersPage = asyncPage(() => import('~/components/pages/CrmCustomersPage.vue'))
 const CrmProductsPage = asyncPage(() => import('~/components/pages/CrmProductsPage.vue'))
 const CrmSettingsPage = asyncPage(() => import('~/components/pages/CrmSettingsPage.vue'))
-const CrmInviteUserPage = asyncPage(() => import('~/components/pages/CrmInviteUserPage.vue'))
 const CrmReportsPage = asyncPage(() => import('~/components/pages/CrmReportsPage.vue'))
 const CrmReportBuilderPage = asyncPage(() => import('~/components/pages/CrmReportBuilderPage.vue'))
 const CrmReportViewerPage = asyncPage(() => import('~/components/pages/CrmReportViewerPage.vue'))
@@ -498,7 +497,6 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (sub === 'reports' && id) return { component: CrmReportViewerPage, id }
     if (sub === 'reports') return { component: CrmReportsPage, id: id ?? '' }
     if (sub === 'activity') return { component: CrmActivityLogPage, id: id ?? '' }
-    if (sub === 'settings' && id === 'users' && segs[3] === 'invite') return { component: CrmInviteUserPage, id: 'invite' }
     // Deals settings = the module builder for the 'deals' system module, as its own level-2 menu.
     if (sub === 'settings' && id === 'deals') return { component: CrmModuleBuilderPage, id: 'deals' }
     // "New module" is also handled by the builder — orderId 'new' — so every

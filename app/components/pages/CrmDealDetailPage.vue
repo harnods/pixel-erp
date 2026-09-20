@@ -37,7 +37,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import { formatMoney } from '~/utils/currency'
 import { successToast, infoToast } from '~/utils/toasts'
 import {
-  getDeal, ONGOING_STAGES, moveDealStage, archiveDeal, restoreDeal, deleteDeal,
+  getDeal, moduleStores, ONGOING_STAGES, moveDealStage, archiveDeal, restoreDeal, deleteDeal,
   dealTotals, dealExpectedValue, dealDaysInStage, dealStageAgingDays, formatAging,
   dealActivityLog, addDealAttachment, removeDealAttachment, setDealProductsFull,
   getDealSalesOrder,
@@ -64,6 +64,9 @@ const deal = computed(() => getDeal(props.orderId))
 const money = (n: number) => formatMoney(n, deal.value?.currency ?? 'IDR')
 const totals = computed(() => (deal.value ? dealTotals(deal.value) : null))
 void lineSubtotal
+
+const ordersTabTarget = computed(() => moduleStores('deals').detailLayout.tabs.find(t => t.key === 'orders')?.erpTarget ?? null)
+const ordersTabLabel = computed(() => ordersTabTarget.value === 'sales-order' ? 'Sales orders' : ordersTabTarget.value === 'sales-quote' ? 'Sales quotes' : null)
 
 // ── Linked records ──
 const customer = computed(() => (deal.value ? crmCustomers.find((c) => c.id === deal.value!.customerId) : undefined))
@@ -409,7 +412,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
           <MpTab id="deal-tab-details" value="details">{{ t('Deal details') }}</MpTab>
           <MpTab id="deal-tab-notes" value="notes">{{ t('Notes') }}</MpTab>
           <MpTab id="deal-tab-files" value="files">{{ t('Files') }}</MpTab>
-          <MpTab id="deal-tab-orders" value="orders">{{ t('ERP transactions') }}</MpTab>
+          <MpTab v-if="ordersTabLabel" id="deal-tab-orders" value="orders">{{ t(ordersTabLabel) }}</MpTab>
           <MpTab id="deal-tab-activity" value="activity">{{ t('Activity') }}</MpTab>
         </MpTabList>
         <MpTabPanels>
@@ -636,9 +639,9 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
             <p v-else class="detail-tab-empty">{{ t('No files attached to this deal yet. Upload one above.') }}</p>
           </MpTabPanel>
 
-          <!-- ── ERP transactions — the linked ERP sales order, same table as the ERP index ── -->
-          <MpTabPanel value="orders">
-            <h3 class="detail-tab-heading">{{ t('ERP transactions') }}</h3>
+          <!-- ── Sales orders/quotes — the linked ERP transaction, same table as the ERP index ── -->
+          <MpTabPanel v-if="ordersTabLabel" value="orders">
+            <h3 class="detail-tab-heading">{{ t(ordersTabLabel) }}</h3>
             <table v-if="linkedOrder" class="detail-linked">
               <colgroup>
                 <col class="detail-linked-col--date" />

@@ -836,6 +836,9 @@ export function moveDealStage(id: string, stage: DealStage, opts: { lostReason?:
   if (!d.stageHistory) d.stageHistory = synthStageHistory({ ...d, stage: from })
   d.stageHistory.push({ stage, at: DEAL_TODAY })
   persistCrmDeals()
+  const details: CrmActivityDetail[] = [{ label: 'Stage', from, to: stage }]
+  if (stage === 'Lost' && d.lostReason) details.push({ label: 'Lost reason', text: d.lostReason })
+  addActivityEntry('Update', 'Deals', details, { recordLabel: `Deal ${dealNo(d.id)}`, recordLink: `/crm/deals/${d.id}` })
   return { ok: true }
 }
 /** Legacy kanban entry point — now routes through moveDealStage. Returns the result
@@ -847,11 +850,17 @@ export function setDealStage(id: string, stage: DealStage, opts: { lostReason?: 
 // ── Archive / restore (PRD: no permanent delete in V1) ──
 export function archiveDeal(id: string): DealOpResult {
   const d = getDeal(id); if (!d) return { ok: false, error: 'Deal not found.' }
-  d.archived = true; d.lastActivity = DEAL_TODAY; persistCrmDeals(); return { ok: true }
+  d.archived = true; d.lastActivity = DEAL_TODAY; persistCrmDeals()
+  addActivityEntry('Update', 'Deals', [{ label: 'Status', from: 'Active', to: 'Archived' }],
+    { recordLabel: `Deal ${dealNo(d.id)}`, recordLink: `/crm/deals/${d.id}` })
+  return { ok: true }
 }
 export function restoreDeal(id: string): DealOpResult {
   const d = getDeal(id); if (!d) return { ok: false, error: 'Deal not found.' }
-  d.archived = false; d.lastActivity = DEAL_TODAY; persistCrmDeals(); return { ok: true }
+  d.archived = false; d.lastActivity = DEAL_TODAY; persistCrmDeals()
+  addActivityEntry('Update', 'Deals', [{ label: 'Status', from: 'Archived', to: 'Active' }],
+    { recordLabel: `Deal ${dealNo(d.id)}`, recordLink: `/crm/deals/${d.id}` })
+  return { ok: true }
 }
 /** Payload from the Deal "Add product" full-screen editor (the embedded sales-order
  *  line-items + totals form). */
@@ -910,6 +919,9 @@ export function removeDealAttachment(id: string, index: number): DealOpResult {
 export function deleteDeal(id: string): DealOpResult {
   const i = deals.findIndex((d) => d.id === id)
   if (i === -1) return { ok: false, error: 'Deal not found.' }
+  const d = deals[i]!
+  addActivityEntry('Delete', 'Deals', [{ label: 'Deal name', text: d.name }, { label: 'Customer', text: d.company }],
+    { recordLabel: `Deal ${dealNo(d.id)}` })
   deals.splice(i, 1); persistCrmDeals(); return { ok: true }
 }
 
@@ -951,12 +963,41 @@ export function createDeal(input: DealInput, author = 'You'): Deal {
     conversion: 'none', priority: input.priority ?? 'medium',
     stageHistory: [{ stage: input.stage, at: DEAL_TODAY }],
   }
-  deals.unshift(d); persistCrmDeals(); return d
+  deals.unshift(d); persistCrmDeals()
+  const money = (n: number) => formatMoney(n, d.currency)
+  addActivityEntry('Create', 'Deals', [
+    { label: 'Deal name', text: d.name }, { label: 'Deal number', text: dealNo(d.id) },
+    { label: 'Customer', text: d.company }, { label: 'Owner', text: d.owner },
+    { label: 'Stage', text: d.stage }, { label: 'Deal value', text: money(d.value) },
+  ], { recordLabel: `Deal ${dealNo(d.id)}`, recordLink: `/crm/deals/${d.id}`, user: author })
+  if (d.notes) addCrmNote('deal', d.id, d.notes, author, new Date().toISOString())
+  return d
 }
 export function updateDeal(id: string, patch: Partial<DealInput>, author = 'You'): Deal | undefined {
   const d = getDeal(id); if (!d) return undefined
+  const changes: CrmActivityDetail[] = []
+  const money = (n: number) => formatMoney(n, d.currency)
+  if (patch.name !== undefined && patch.name !== d.name) changes.push({ label: 'Deal name', from: d.name, to: patch.name })
+  if (patch.stage !== undefined && patch.stage !== d.stage) {
+    changes.push({ label: 'Stage', from: d.stage, to: patch.stage })
+    if (!d.stageHistory) d.stageHistory = []
+    d.stageHistory.push({ stage: patch.stage, at: DEAL_TODAY })
+  }
+  if (patch.value !== undefined && patch.value !== d.value) changes.push({ label: 'Deal value', from: money(d.value), to: money(patch.value) })
+  if (patch.owner !== undefined && patch.owner !== d.owner) changes.push({ label: 'Owner', from: d.owner, to: patch.owner })
+  if (patch.company !== undefined && patch.company !== d.company) changes.push({ label: 'Customer', from: d.company, to: patch.company })
+  if (patch.expectedCloseDate !== undefined && patch.expectedCloseDate !== d.expectedCloseDate) changes.push({ label: 'Due date', from: d.expectedCloseDate, to: patch.expectedCloseDate })
+  if (patch.priority !== undefined && patch.priority !== d.priority) changes.push({ label: 'Priority', from: d.priority ?? '', to: patch.priority ?? '' })
+  if (patch.currency !== undefined && patch.currency !== d.currency) changes.push({ label: 'Currency', from: d.currency, to: patch.currency })
+  if (patch.paymentTerms !== undefined && patch.paymentTerms !== d.paymentTerms) changes.push({ label: 'Payment terms', from: d.paymentTerms ?? '', to: patch.paymentTerms ?? '' })
+  if (patch.notes !== undefined && patch.notes !== d.notes) changes.push({ label: 'Memo', from: d.notes ?? '', to: patch.notes ?? '' })
+  if (patch.description !== undefined && patch.description !== d.description) changes.push({ label: 'Message', from: d.description ?? '', to: patch.description ?? '' })
   Object.assign(d, patch, { lastActivity: DEAL_TODAY, lastModifiedBy: author })
-  persistCrmDeals(); return d
+  persistCrmDeals()
+  if (changes.length) {
+    addActivityEntry('Update', 'Deals', changes, { recordLabel: `Deal ${dealNo(d.id)}`, recordLink: `/crm/deals/${d.id}`, user: author })
+  }
+  return d
 }
 
 /**
@@ -983,6 +1024,10 @@ export function convertDeal(id: string): { ok: boolean; salesOrderId?: string; t
   persistCrmOrders()
   d.conversion = 'converted'; d.salesOrderId = txnId; d.convertedTarget = target; d.lastActivity = DEAL_TODAY
   persistCrmDeals()
+  addActivityEntry('Convert', 'Deals', [
+    { label: 'Deal', text: d.name }, { label: 'Customer', text: d.company },
+    { label: target, text: `#${txnId}` },
+  ], { recordLabel: `Deal ${dealNo(d.id)}`, recordLink: `/crm/deals/${d.id}` })
   return { ok: true, salesOrderId: txnId, target }
 }
 /** Back-compat alias for the old SO-only convert entry point. */
@@ -1148,7 +1193,7 @@ export interface CrmModuleView {
   visibility: CrmModuleViewVisibility
 }
 
-export type CrmModuleStatus = 'published' | 'draft' | 'incomplete'
+export type CrmModuleStatus = 'published' | 'draft'
 // PRD "ERP Transaction Conversion Settings V1": targets are Sales Quote + Sales
 // Order ONLY. Expense is fully deferred and intentionally NOT a member here — the
 // module has no Expense conversion entry point anywhere.
@@ -1238,14 +1283,14 @@ const MODULES_SEED: CrmModule[] = [
       { id: 'all',  name: 'All services', type: 'list',   visibility: 'everyone' },
       { id: 'mine', name: 'My pipeline',  type: 'kanban', categorizeBy: 'stage', visibility: 'private' },
     ],
-    conversionTarget: 'sales-order',
-    recordCount: 5,
+    conversionTarget: null,
+    recordCount: 0,
     updatedAt: '2026-09-09T10:00:00', updatedBy: 'Rizal Candra', createdBy: 'Rizal Candra',
   },
 ]
 
-export const crmModules = reactive<CrmModule[]>(load('crm-modules-v3', MODULES_SEED))
-export function persistCrmModules() { saveSnapshot('crm-modules-v3', crmModules) }
+export const crmModules = reactive<CrmModule[]>(load('crm-modules-v4', MODULES_SEED))
+export function persistCrmModules() { saveSnapshot('crm-modules-v4', crmModules) }
 
 // ── Deal pipelines (Settings ▸ Deals ▸ Pipeline) ─────────────────────────────
 // A pipeline = an ordered list of OPEN stages that flow left→right, plus exactly
@@ -1294,15 +1339,15 @@ const DEAL_PIPELINE_DISPLAY_SEED: DealPipelineDisplay = {
     { key: 'contactPerson', label: 'Contact person', on: false },
     { key: 'dealValue',     label: 'Deal value',     on: true },
     { key: 'owner',         label: 'Owner',          on: true },
-    { key: 'date',          label: 'Date',           on: false },
-    { key: 'note',          label: 'Note',           on: false },
+    { key: 'closeDate',     label: 'Close date',     on: false },
+    { key: 'memo',          label: 'Memo',           on: false },
   ],
 }
 export const dealPipelineDisplay = reactive<DealPipelineDisplay>(
-  loadSnapshot<DealPipelineDisplay>('crm-deal-pipeline-display-v1')?.[0]
+  loadSnapshot<DealPipelineDisplay>('crm-deal-pipeline-display-v2')?.[0]
     ?? JSON.parse(JSON.stringify(DEAL_PIPELINE_DISPLAY_SEED)),
 )
-export function persistDealPipelineDisplay() { saveSnapshot('crm-deal-pipeline-display-v1', [dealPipelineDisplay]) }
+export function persistDealPipelineDisplay() { saveSnapshot('crm-deal-pipeline-display-v2', [dealPipelineDisplay]) }
 
 /** Saved pipeline VIEWS — named board configs created in the module builder
  *  (Settings ▸ Deals ▸ Pipeline). Each view can hide stages independently; the
@@ -1390,6 +1435,7 @@ export interface DetailLayoutTab {
   editable: boolean              // true only for the property-grid tab ('details')
   visible: boolean
   sections?: DetailLayoutSection[]
+  erpTarget?: 'sales-order' | 'sales-quote' | null
 }
 export interface DealDetailLayout { tabs: DetailLayoutTab[] }
 let detailSectionSeq = 1
@@ -1400,34 +1446,25 @@ const DEAL_DETAIL_LAYOUT_SEED: DealDetailLayout = {
     {
       id: 'tab-details', key: 'details', label: 'Deal details', editable: true, visible: true,
       sections: [
-        { id: 'sec-overview', name: 'Overview', columns: 3, cols: [['customer'], ['primary-contact'], ['deal-value']] },
-        { id: 'sec-transaction', name: 'Transaction data', columns: 4, cols: distributeCols(['billing-address', 'transaction-date', 'ship-date', 'transaction-no', 'ship-to', 'due-date', 'ship-via', 'reference-no', 'payment-terms', 'tracking-no', 'warehouse'], 4) },
-        { id: 'sec-products', name: 'Products', columns: 1, cols: [['products']] },
+        { id: 'sec-overview', name: 'Overview', columns: 3, cols: [['deal-name', 'company', 'billing-address'], ['contact-person', 'contact-person-email', 'contact-person-phone'], ['deal-value', 'owner', 'currency']] },
+        { id: 'sec-transaction', name: 'Transaction', columns: 4, cols: distributeCols(['transaction-date', 'due-date', 'close-date', 'transaction-no', 'reference-no', 'payment-terms', 'exchange-rate'], 4) },
+        { id: 'sec-shipping', name: 'Shipping & delivery', columns: 4, cols: distributeCols(['warehouse', 'shipping-address', 'shipping-date', 'delivery-date', 'ship-via', 'tracking-no', 'shipping-fee'], 4) },
+        { id: 'sec-products', name: 'Products', columns: 1, cols: [['product-lines']], kind: 'products', system: true },
+        { id: 'sec-pricing', name: 'Pricing', columns: 4, cols: distributeCols(['discount', 'global-discount', 'tax', 'tax-inclusive', 'tax-after-discount'], 4) },
+        { id: 'sec-additional', name: 'Additional info', columns: 2, cols: [['memo', 'attachment'], ['message']] },
       ],
     },
-    {
-      id: 'tab-activity', key: 'activity', label: 'Activity', editable: true, visible: true,
-      sections: [{ id: 'sec-activity', name: 'Activity', columns: 1, cols: [['activity-log']] }],
-    },
-    {
-      id: 'tab-notes', key: 'notes', label: 'Notes', editable: true, visible: true,
-      sections: [{ id: 'sec-notes', name: 'Notes', columns: 1, cols: [['notes']] }],
-    },
-    {
-      id: 'tab-files', key: 'files', label: 'Files', editable: true, visible: true,
-      sections: [{ id: 'sec-files', name: 'Files', columns: 1, cols: [['files']] }],
-    },
-    {
-      id: 'tab-orders', key: 'orders', label: 'ERP transactions', editable: true, visible: true,
-      sections: [{ id: 'sec-orders', name: 'ERP transactions', columns: 1, cols: [['erp-transactions']] }],
-    },
+    { id: 'tab-notes', key: 'notes', label: 'Notes', editable: false, visible: true },
+    { id: 'tab-files', key: 'files', label: 'Files', editable: false, visible: true },
+    { id: 'tab-orders', key: 'orders', label: 'ERP transactions', editable: false, visible: true, erpTarget: 'sales-order' },
+    { id: 'tab-activity', key: 'activity', label: 'Activity', editable: false, visible: true },
   ],
 }
 export const dealDetailLayout = reactive<DealDetailLayout>(
-  loadSnapshot<DealDetailLayout>('crm-deal-detail-layout-v6')?.[0]
+  loadSnapshot<DealDetailLayout>('crm-deal-detail-layout-v8')?.[0]
     ?? JSON.parse(JSON.stringify(DEAL_DETAIL_LAYOUT_SEED)),
 )
-export function persistDealDetailLayout() { saveSnapshot('crm-deal-detail-layout-v6', [dealDetailLayout]) }
+export function persistDealDetailLayout() { saveSnapshot('crm-deal-detail-layout-v8', [dealDetailLayout]) }
 
 // ── Deals module PROPERTIES (the Properties tab) ─────────────────────────────
 // The module's field catalogue. Field types mirror the standard CRM property
@@ -1509,31 +1546,86 @@ export function defaultPropertyIcon(fieldType: string): string {
 // module's Properties tab always agree. ids are stable (layout `cols` reference
 // them). Association types (Company / Contact) reference another record — their
 // linkedFields live on that record, not on the module.
+//
+// These properties auto-map to ERP Sales Quote / Sales Order fields during
+// conversion (see crmConversion.ts COMMON_ERP_FIELDS for the target catalog).
 export const DEFAULT_PROPERTIES: DefaultProperty[] = [
-  { id: 'customer', name: 'Company', fieldType: 'Company', variableName: 'customer', description: 'The company this record belongs to. Links to a Company record; its own fields live on the company.', dataSource: { label: 'Companies (crmCustomers)', origin: 'crm' }, linkedFields: [
-    { name: 'Company name', type: 'Single-line text', variableName: 'company_name' }, { name: 'Industry', type: 'Dropdown select', variableName: 'industry' },
-    { name: 'Address', type: 'Multi-line text', variableName: 'address' }, { name: 'Country', type: 'Dropdown select', variableName: 'country' },
-    { name: 'Tax number (NPWP)', type: 'Single-line text', variableName: 'tax_number' }, { name: 'Company owner', type: 'User', variableName: 'company_owner' },
-  ] },
-  { id: 'primary-contact', name: 'Contact person', fieldType: 'Contact', variableName: 'contact_person', description: 'The person associated with this record. Links to a Contact record; its own fields live on the contact.', dataSource: { label: 'Contacts (CrmContactPerson)', origin: 'crm' }, linkedFields: [
+  // ── Core record fields ──
+  { id: 'deal-name', name: 'Deal name', fieldType: 'Single-line text', variableName: 'record_name', description: 'The name/title of the record.' },
+  { id: 'deal-value', name: 'Deal value', fieldType: 'Number', variableName: 'record_value', description: 'The monetary value of the record, in the transaction currency.' },
+  { id: 'owner', name: 'Owner', fieldType: 'User', variableName: 'deal_owner', description: 'The user responsible for this record.' },
+
+  // ── Contact & Company ──
+  { id: 'contact-person', name: 'Contact person', fieldType: 'Contact', variableName: 'contact_person', description: 'The person associated with this record. Links to a Contact record.', dataSource: { label: 'Contacts (CrmContactPerson)', origin: 'crm' }, linkedFields: [
     { name: 'Name', type: 'Single-line text', variableName: 'name' }, { name: 'Email', type: 'Email', variableName: 'email' },
     { name: 'Phone number', type: 'Phone number', variableName: 'phone_number' }, { name: 'Associated company', type: 'Company', variableName: 'associated_company' },
-    { name: 'Address', type: 'Multi-line text', variableName: 'address' }, { name: 'Country', type: 'Dropdown select', variableName: 'country' },
   ] },
-  { id: 'deal-value', name: 'Deal value', fieldType: 'Number', variableName: 'deal_value', description: 'The monetary value of the record, in the base currency.' },
-  { id: 'currency', name: 'Currency', fieldType: 'Dropdown select', variableName: 'currency', description: 'The currency the record is transacted in.', dataSource: { label: 'Deal currencies', origin: 'none', note: 'CRM-only list — no shared ERP currency master exists yet.' } },
-  { id: 'transaction-date', name: 'Transaction date', fieldType: 'Date picker', variableName: 'transaction_date', description: 'The date the record was transacted.' },
-  { id: 'due-date', name: 'Due date', fieldType: 'Date picker', variableName: 'due_date', description: 'The date the record is due to close.' },
-  { id: 'transaction-no', name: 'Transaction no.', fieldType: 'Single-line text', variableName: 'transaction_no', description: 'The unique document number for the record.' },
-  { id: 'reference-no', name: 'Reference no.', fieldType: 'Single-line text', variableName: 'reference_no', description: 'An external reference number.' },
-  { id: 'payment-terms', name: 'Payment terms', fieldType: 'Dropdown select', variableName: 'payment_terms', description: 'The payment terms for the record (e.g. Net 30).', dataSource: { label: 'Payment terms', origin: 'erp', note: 'Shared with Purchase Orders.' } },
-  { id: 'description', name: 'Description', fieldType: 'Multi-line text', variableName: 'description', description: 'A free-text description of the record.' },
-  { id: 'memo', name: 'Memo', fieldType: 'Multi-line text', variableName: 'memo', description: 'An internal memo/note on the record.' },
-  { id: 'products', name: 'Products', fieldType: 'Product list', variableName: 'products', description: 'The line items (products) attached to the record.', dataSource: { label: 'Product catalog', origin: 'catalog' } },
-  { id: 'files', name: 'Files', fieldType: 'Related list', variableName: 'files', description: 'Files and attachments on the record.' },
-  { id: 'notes', name: 'Notes', fieldType: 'Related list', variableName: 'notes', description: 'Notes logged against the record.' },
-  { id: 'activity-log', name: 'Activity log', fieldType: 'Related list', variableName: 'activity_log', description: 'The timeline of activity on the record.' },
-  { id: 'erp-transactions', name: 'ERP transactions', fieldType: 'Related list', variableName: 'erp_transactions', description: 'Linked ERP transactions (sales orders, invoices).', dataSource: { label: 'Sales orders', origin: 'erp' } },
+  { id: 'contact-person-email', name: 'Contact person email', fieldType: 'Email', variableName: 'contact_person_email', description: 'Primary email address of the contact person. Auto-filled from the linked Contact record.' },
+  { id: 'contact-person-phone', name: 'Contact person phone', fieldType: 'Phone number', variableName: 'contact_person_phone', description: 'Primary phone number of the contact person. Auto-filled from the linked Contact record.' },
+  { id: 'company', name: 'Company', fieldType: 'Company', variableName: 'company_name', description: 'The company this record belongs to. Links to a Company record.', dataSource: { label: 'Companies (crmCustomers)', origin: 'crm' }, linkedFields: [
+    { name: 'Company name', type: 'Single-line text', variableName: 'company_name' }, { name: 'Industry', type: 'Dropdown select', variableName: 'industry' },
+    { name: 'Country', type: 'Dropdown select', variableName: 'country' }, { name: 'Tax number (NPWP)', type: 'Single-line text', variableName: 'tax_number' },
+    { name: 'Company owner', type: 'User', variableName: 'company_owner' },
+  ] },
+  { id: 'billing-address', name: 'Billing address', fieldType: 'Multi-line text', variableName: 'company_billing_address', description: 'Billing address for the transaction. Auto-filled from the Company record; editable per record.' },
+  { id: 'shipping-address', name: 'Shipping address', fieldType: 'Multi-line text', variableName: 'company_shipping_address', description: 'Shipping/delivery address. Auto-filled from the Company record; editable per record.' },
+
+  // ── Dates ──
+  { id: 'transaction-date', name: 'Transaction date', fieldType: 'Date picker', variableName: 'transaction_date', description: 'The date the transaction is created. Auto-maps to Sales Quote/Order transaction date.' },
+  { id: 'due-date', name: 'Due date', fieldType: 'Date picker', variableName: 'due_date', description: 'Payment due date. Auto-maps to Sales Quote expiry / Sales Order due date.' },
+  { id: 'close-date', name: 'Close date', fieldType: 'Date picker', variableName: 'close_date', description: 'Expected or actual close date of the record.' },
+
+  // ── Transaction details ──
+  { id: 'payment-terms', name: 'Payment terms', fieldType: 'Dropdown select', variableName: 'payment_terms', description: 'Payment terms (e.g. Net 30, COD). Auto-maps to ERP payment term.', dataSource: { label: 'Payment terms', origin: 'erp', note: 'Shared with Purchase Orders.' } },
+  { id: 'product-lines', name: 'Product lines', fieldType: 'Product list', variableName: 'product_lines', description: 'Line items (products) on the record. Auto-maps to Sales Quote/Order line items.', dataSource: { label: 'Product catalog', origin: 'catalog' } },
+  { id: 'currency', name: 'Currency', fieldType: 'Dropdown select', variableName: 'currency', description: 'Transaction currency code. Auto-maps to ERP transaction currency.', dataSource: { label: 'Currencies', origin: 'erp' } },
+  { id: 'transaction-no', name: 'Transaction no.', fieldType: 'Single-line text', variableName: 'transaction_no', description: 'Unique document number for the record.' },
+  { id: 'reference-no', name: 'Reference no.', fieldType: 'Single-line text', variableName: 'reference_no', description: 'External reference number (e.g. customer PO number).' },
+
+  // ── Shipping & logistics ──
+  { id: 'warehouse', name: 'Warehouse', fieldType: 'Dropdown select', variableName: 'warehouse', description: 'Source warehouse for the products. Auto-maps to ERP warehouse.', dataSource: { label: 'Warehouses', origin: 'erp' } },
+  { id: 'shipping-date', name: 'Shipping date', fieldType: 'Date picker', variableName: 'shipping_date', description: 'Date the shipment is dispatched.' },
+  { id: 'delivery-date', name: 'Delivery date', fieldType: 'Date picker', variableName: 'delivery_date', description: 'Expected delivery date at the destination.' },
+  { id: 'ship-via', name: 'Ship via', fieldType: 'Dropdown select', variableName: 'courier', description: 'Shipping method or courier. Auto-maps to ERP Ship via.', dataSource: { label: 'Shipping methods', origin: 'erp' } },
+  { id: 'tracking-no', name: 'Tracking no.', fieldType: 'Single-line text', variableName: 'awb', description: 'Shipment tracking/AWB number.' },
+  { id: 'shipping-fee', name: 'Shipping fee', fieldType: 'Number', variableName: 'shipping_fee', description: 'Flat shipping charge added to the transaction total. Auto-maps to ERP shipping fee.' },
+  { id: 'exchange-rate', name: 'Exchange rate', fieldType: 'Number', variableName: 'exchange_rate', description: 'Currency exchange rate to the company base currency. Required when the transaction currency differs from the base.' },
+
+  // ── Pricing & tax ──
+  { id: 'discount', name: 'Discount', fieldType: 'Number', variableName: 'discount', description: 'Line-level discount percentage applied to product lines.' },
+  { id: 'tax', name: 'Tax', fieldType: 'Dropdown select', variableName: 'tax', description: 'Tax code applied to the transaction.', dataSource: { label: 'Tax codes', origin: 'erp' } },
+  { id: 'global-discount', name: 'Global discount', fieldType: 'Number', variableName: 'global_discount', description: 'Order-level discount amount applied after line totals. Auto-maps to ERP global discount.' },
+  { id: 'tax-inclusive', name: 'Tax inclusive', fieldType: 'Single checkbox', variableName: 'tax_inclusive', description: 'When checked, product prices already include tax.' },
+  { id: 'tax-after-discount', name: 'Tax after discount', fieldType: 'Single checkbox', variableName: 'tax_after_discount', description: 'When checked, tax is calculated on the discounted amount rather than the original price.' },
+
+  // ── Additional info ──
+  { id: 'memo', name: 'Memo', fieldType: 'Multi-line text', variableName: 'memo', description: 'Internal memo/note carried to ERP. Not visible to the customer.' },
+  { id: 'message', name: 'Message', fieldType: 'Multi-line text', variableName: 'message', description: 'Customer-facing message printed on the transaction document.' },
+  { id: 'attachment', name: 'Attachment', fieldType: 'File', variableName: 'attachment', description: 'File attachment on the record (e.g. supporting document, quotation PDF).' },
+
+  // ── System (related lists — power the detail-page tabs) ──
+  { id: 'files', name: 'Files', fieldType: 'Related list', variableName: 'files', description: 'Files and attachments on the record. Attachments added during record creation are auto-stored here.' },
+  { id: 'notes', name: 'Notes', fieldType: 'Related list', variableName: 'notes', description: 'Notes logged against the record. Memo entered during record creation is auto-stored as the first note.' },
+  { id: 'activity-log', name: 'Activity log', fieldType: 'Related list', variableName: 'activity_log', description: 'Full audit trail: creation, stage changes, field edits (from → to), conversions, and deletions.' },
+  { id: 'sales-order-list', name: 'Sales order list', fieldType: 'Related list', variableName: 'sales_order_list', description: 'Linked Sales Orders created from this record.', dataSource: { label: 'Sales orders', origin: 'erp' } },
+  { id: 'sales-quote-list', name: 'Sales quote list', fieldType: 'Related list', variableName: 'sales_quote_list', description: 'Linked Sales Quotes created from this record.', dataSource: { label: 'Sales quotes', origin: 'erp' } },
+
+  // ── CRM analytics & computed fields ──
+  { id: 'requires-shipping', name: 'Requires shipping', fieldType: 'Single checkbox', variableName: 'requires_shipping', description: 'Whether this record requires physical shipment.' },
+  { id: 'closed-lost-reason', name: 'Closed lost reason', fieldType: 'Multi-line text', variableName: 'closed_lost_reason', description: 'Reason why the record was lost.' },
+  { id: 'created-by-user-id', name: 'Created by user ID', fieldType: 'Number', variableName: 'created_by_user_id', description: 'ID of the user who created this record.' },
+  { id: 'deal-stage', name: 'Deal stage', fieldType: 'Radio select', variableName: 'deal_stage', description: 'Current pipeline stage of the record.' },
+  { id: 'deal-type', name: 'Deal type', fieldType: 'Radio select', variableName: 'deal_type', description: 'Classification of the record (e.g. New business, Existing).' },
+  { id: 'team', name: 'Team', fieldType: 'Dropdown select', variableName: 'team', description: 'Team assigned to this record.' },
+  { id: 'last-activity-date', name: 'Last activity date', fieldType: 'Date and time picker', variableName: 'last_activity_date', description: 'Date/time of the most recent activity on this record.' },
+  { id: 'owner-assigned-date', name: 'Owner assigned date', fieldType: 'Date and time picker', variableName: 'owner_assigned_date', description: 'Date when the current owner was assigned.' },
+  { id: 'pipeline', name: 'Pipeline', fieldType: 'Dropdown select', variableName: 'pipeline', description: 'The pipeline this record belongs to.' },
+  { id: 'record-id', name: 'Record ID', fieldType: 'Number', variableName: 'record_id', description: 'Unique numeric identifier for this record.' },
+  { id: 'record-source', name: 'Record source', fieldType: 'Dropdown select', variableName: 'record_source', description: 'Where this record originated from.' },
+  { id: 'record-source-detail-1', name: 'Record source detail 1', fieldType: 'Single-line text', variableName: 'record_source_detail_1', description: 'Additional detail about the record source.' },
+  { id: 'record-source-detail-2', name: 'Record source detail 2', fieldType: 'Single-line text', variableName: 'record_source_detail_2', description: 'Additional detail about the record source.' },
+  { id: 'record-source-detail-3', name: 'Record source detail 3', fieldType: 'Single-line text', variableName: 'record_source_detail_3', description: 'Additional detail about the record source.' },
+  { id: 'updated-by-user-id', name: 'Updated by user ID', fieldType: 'Number', variableName: 'updated_by_user_id', description: 'ID of the user who last updated this record.' },
 ]
 /** Unique field-type labels present in DEFAULT_PROPERTIES — for the index filter. */
 export const DEFAULT_PROPERTY_FIELD_TYPES: string[] = [...new Set(DEFAULT_PROPERTIES.map((p) => p.fieldType))]
@@ -1545,7 +1637,7 @@ export const DEFAULT_PROPERTY_IDS = new Set(DEFAULT_PROPERTIES.map((p) => p.id))
 export function defaultDealProperties(): DealProperty[] {
   return DEFAULT_PROPERTIES.map((p) => ({
     id: p.id, name: p.name, variableName: p.variableName, type: p.fieldType as DealPropertyType,
-    system: true, isDefault: true, fillRate: isRelatedListType(p.fieldType as DealPropertyType) ? 100 : 0,
+    system: true, isDefault: true, fillRate: 0,
   }))
 }
 
@@ -1594,78 +1686,9 @@ function propId(name: string): string { return name.toLowerCase().replace(/[^a-z
 export function toVariableName(name: string): string {
   return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
 }
-// Deal-SPECIFIC properties only — the shared defaults (Customer, Contact person,
-// Deal value, Currency, Transaction date, Due date, Transaction no., Reference no.,
-// Payment terms, Description, Memo, Products, Files, Notes, Activity log, ERP
-// transactions) come from DEFAULT_PROPERTIES via defaultDealProperties(), so they
-// are NOT re-listed here.
-const DEAL_PROPERTIES_RAW: [string, DealPropertyType, number][] = [
-  ['Requires shipping', 'Single checkbox', 0],
-  ['Shipping fee', 'Number', 0],
-  ['Ship to', 'Multi-line text', 0],
-  ['Billing address', 'Multi-line text', 0],
-  ['Ship date', 'Date picker', 0],
-  ['Ship via', 'Dropdown select', 0],
-  ['Tracking no.', 'Single-line text', 0],
-  ['Warehouse', 'Dropdown select', 0],
-  ['Attachment', 'File', 0],
-  // ── Remaining catalogue properties (dedup'd: Amount→Deal value, Create date→
-  //    Transaction date, Deal description→Description removed) ──
-  ['Amount in company currency', 'Calculation', 95],
-  ['Amount in dollar', 'Single-line text', 40],
-  ['Annual contract value', 'Number', 30],
-  ['Annual recurring revenue', 'Number', 25],
-  ['Campaign of last booking in meetings tool', 'Single-line text', 10],
-  ['Close date', 'Date and time picker', 90],
-  ['Closed lost reason', 'Multi-line text', 20],
-  ['Closed won count', 'Calculation', 100],
-  ['Closed won reason', 'Multi-line text', 22],
-  ['Created by user ID', 'Number', 100],
-  ['Date of last meeting booked in meetings tool', 'Date and time picker', 15],
-  ['Days to close', 'Calculation', 88],
-  ['Deal collaborator', 'User', 35],
-  ['Deal name', 'Single-line text', 100],
-  ['Owner', 'User', 100],
-  ['Deal probability', 'Number', 80],
-  ['Deal stage', 'Radio select', 100],
-  ['Deal type', 'Radio select', 45],
-  ['Exchange rate', 'Number', 100],
-  ['Forecast amount', 'Number', 70],
-  ['Forecast category', 'Dropdown select', 65],
-  ['Forecast probability', 'Number', 68],
-  ['Team', 'Dropdown select', 55],
-  ['Is closed (numeric)', 'Calculation', 100],
-  ['Is deal closed?', 'Calculation', 100],
-  ['Is open (numeric)', 'Calculation', 100],
-  ['Last activity date', 'Date and time picker', 85],
-  ['Last contacted', 'Date and time picker', 78],
-  ['Medium of last booking in meetings tool', 'Single-line text', 8],
-  ['Merged deal IDs', 'Single-line text', 5],
-  ['Monthly recurring revenue', 'Number', 22],
-  ['Next activity', 'Single-line text', 40],
-  ['Next activity date', 'Date and time picker', 42],
-  ['Next meeting', 'Number', 30],
-  ['Next meeting name', 'Single-line text', 28],
-  ['Next meeting start time', 'Date and time picker', 27],
-  ['Next step', 'Multi-line text', 33],
-  ['Number of associated contacts', 'Rollup', 90],
-  ['Number of associated line items', 'Number', 92],
-  ['Number of sales activities', 'Number', 84],
-  ['Number of times contacted', 'Number', 80],
-  ['Owner assigned date', 'Date and time picker', 100],
-  ['Pipeline', 'Dropdown select', 100],
-  ['Priority', 'Dropdown select', 62],
-  ['Record ID', 'Number', 100],
-  ['Record source', 'Dropdown select', 100],
-  ['Record source detail 1', 'Single-line text', 30],
-  ['Record source detail 2', 'Single-line text', 18],
-  ['Record source detail 3', 'Single-line text', 9],
-  ['Source of last booking in meetings tool', 'Single-line text', 7],
-  ['Total contract value', 'Number', 35],
-  ['Updated by user ID', 'Number', 100],
-  ['Weighted amount', 'Calculation', 80],
-  ['Weighted amount in company currency', 'Calculation', 80],
-]
+// All shared properties now live in DEFAULT_PROPERTIES. This array is kept empty
+// so withDefaultProperties() still works; Deals adds no module-specific extras.
+const DEAL_PROPERTIES_RAW: [string, DealPropertyType][] = []
 /** A module's property list = the shared DEFAULT properties + the module's own
  *  extras, deduped by id (a default wins over a same-id extra). */
 function withDefaultProperties(extras: DealProperty[]): DealProperty[] {
@@ -1675,15 +1698,21 @@ function withDefaultProperties(extras: DealProperty[]): DealProperty[] {
   return out
 }
 const DEAL_PROPERTIES_SEED: DealProperty[] = withDefaultProperties(
-  DEAL_PROPERTIES_RAW.map(([name, type, fillRate]) => ({
-    id: propId(name), name, variableName: toVariableName(name), type, system: true, fillRate,
+  DEAL_PROPERTIES_RAW.map(([name, type]) => ({
+    id: propId(name), name, variableName: toVariableName(name), type, system: true, fillRate: 0,
   })),
 )
+const PROPERTY_ID_MIGRATION: Record<string, string> = { customer: 'company', 'primary-contact': 'contact-person', products: 'product-lines' }
 function normalizeDealProperties(list: DealProperty[]): DealProperty[] {
-  return list.map((p) => (p.id === 'customer' && p.name === 'Customer' ? { ...p, name: 'Company' } : p))
+  return list.map((p) => {
+    const newId = PROPERTY_ID_MIGRATION[p.id]
+    if (newId) { const dp = DEFAULT_PROPERTIES.find((d) => d.id === newId); if (dp) return { ...p, id: newId, name: dp.name, variableName: dp.variableName } }
+    if (p.id === 'customer' && p.name === 'Customer') return { ...p, name: 'Company' }
+    return p
+  })
 }
-export const dealProperties = reactive<DealProperty[]>(normalizeDealProperties(load('crm-deal-properties-v8', DEAL_PROPERTIES_SEED)))
-export function persistDealProperties() { saveSnapshot('crm-deal-properties-v8', dealProperties) }
+export const dealProperties = reactive<DealProperty[]>(normalizeDealProperties(load('crm-deal-properties-v13', DEAL_PROPERTIES_SEED)))
+export function persistDealProperties() { saveSnapshot('crm-deal-properties-v13', dealProperties) }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVICES module — a second Deals-like module for service (non-shipping) deals:
@@ -1709,10 +1738,10 @@ export const servicePipelines = reactive<DealPipeline[]>(load('crm-service-pipel
 export function persistServicePipelines() { saveSnapshot('crm-service-pipelines-v1', servicePipelines) }
 
 export const servicePipelineDisplay = reactive<DealPipelineDisplay>(
-  loadSnapshot<DealPipelineDisplay>('crm-service-pipeline-display-v1')?.[0]
+  loadSnapshot<DealPipelineDisplay>('crm-service-pipeline-display-v2')?.[0]
     ?? JSON.parse(JSON.stringify(DEAL_PIPELINE_DISPLAY_SEED)),
 )
-export function persistServicePipelineDisplay() { saveSnapshot('crm-service-pipeline-display-v1', [servicePipelineDisplay]) }
+export function persistServicePipelineDisplay() { saveSnapshot('crm-service-pipeline-display-v2', [servicePipelineDisplay]) }
 
 export const servicePipelineViews = reactive<DealPipelineView[]>(
   backfillViewDisplays(load('crm-service-pipeline-views-v1', DEAL_PIPELINE_VIEWS_SEED), servicePipelineDisplay),
@@ -1729,41 +1758,40 @@ export const serviceModuleSetup = reactive<DealModuleSetup>(
 )
 export function persistServiceModuleSetup() { saveSnapshot('crm-service-module-setup-v1', [serviceModuleSetup]) }
 
-// Service-SPECIFIC properties only — the shared defaults come from
-// defaultDealProperties(); Service just adds "Service type" (and, unlike Deals, has
-// no shipping/logistics fields).
-const SERVICE_PROPERTIES_RAW: [string, DealPropertyType, number][] = [
-  ['Service type', 'Dropdown select', 0],
-]
+// Service-SPECIFIC properties — currently none; all shared properties come from
+// defaultDealProperties() via DEFAULT_PROPERTIES.
+const SERVICE_PROPERTIES_RAW: [string, DealPropertyType][] = []
 const SERVICE_PROPERTIES_SEED: DealProperty[] = withDefaultProperties(
-  SERVICE_PROPERTIES_RAW.map(([name, type, fillRate]) => ({
-    id: propId(name), name, variableName: toVariableName(name), type, system: true, fillRate,
+  SERVICE_PROPERTIES_RAW.map(([name, type]) => ({
+    id: propId(name), name, variableName: toVariableName(name), type, system: true, fillRate: 0,
   })),
 )
-export const serviceProperties = reactive<DealProperty[]>(normalizeDealProperties(load('crm-service-properties-v3', SERVICE_PROPERTIES_SEED)))
-export function persistServiceProperties() { saveSnapshot('crm-service-properties-v3', serviceProperties) }
+export const serviceProperties = reactive<DealProperty[]>(normalizeDealProperties(load('crm-service-properties-v8', SERVICE_PROPERTIES_SEED)))
+export function persistServiceProperties() { saveSnapshot('crm-service-properties-v8', serviceProperties) }
 
 const SERVICE_DETAIL_LAYOUT_SEED: DealDetailLayout = {
   tabs: [
     {
       id: 'stab-details', key: 'details', label: 'Service details', editable: true, visible: true,
       sections: [
-        { id: 'ssec-overview', name: 'Overview', columns: 3, cols: [['customer'], ['primary-contact'], ['deal-value']] },
-        { id: 'ssec-service', name: 'Service info', columns: 3, cols: distributeCols(['service-type', 'transaction-date', 'due-date', 'payment-terms', 'transaction-no', 'reference-no', 'currency'], 3) },
-        { id: 'ssec-products', name: 'Products', columns: 1, cols: [['products']] },
+        { id: 'ssec-overview', name: 'Overview', columns: 3, cols: [['deal-name', 'company'], ['contact-person', 'contact-person-email', 'contact-person-phone'], ['deal-value', 'owner', 'currency']] },
+        { id: 'ssec-service', name: 'Service info', columns: 3, cols: distributeCols(['service-type', 'transaction-date', 'due-date', 'close-date', 'payment-terms', 'transaction-no', 'reference-no', 'exchange-rate'], 3) },
+        { id: 'ssec-products', name: 'Products', columns: 1, cols: [['product-lines']], kind: 'products', system: true },
+        { id: 'ssec-pricing', name: 'Pricing', columns: 4, cols: distributeCols(['discount', 'global-discount', 'tax', 'tax-inclusive', 'tax-after-discount'], 4) },
+        { id: 'ssec-additional', name: 'Additional info', columns: 2, cols: [['memo', 'attachment'], ['message']] },
       ],
     },
-    { id: 'stab-activity', key: 'activity', label: 'Activity', editable: true, visible: true, sections: [{ id: 'ssec-activity', name: 'Activity', columns: 1, cols: [['activity-log']] }] },
-    { id: 'stab-notes', key: 'notes', label: 'Notes', editable: true, visible: true, sections: [{ id: 'ssec-notes', name: 'Notes', columns: 1, cols: [['notes']] }] },
-    { id: 'stab-files', key: 'files', label: 'Files', editable: true, visible: true, sections: [{ id: 'ssec-files', name: 'Files', columns: 1, cols: [['files']] }] },
-    { id: 'stab-orders', key: 'orders', label: 'ERP transactions', editable: true, visible: true, sections: [{ id: 'ssec-orders', name: 'ERP transactions', columns: 1, cols: [['erp-transactions']] }] },
+    { id: 'stab-notes', key: 'notes', label: 'Notes', editable: false, visible: true },
+    { id: 'stab-files', key: 'files', label: 'Files', editable: false, visible: true },
+    { id: 'stab-orders', key: 'orders', label: 'ERP transactions', editable: false, visible: true, erpTarget: null },
+    { id: 'stab-activity', key: 'activity', label: 'Activity', editable: false, visible: true },
   ],
 }
 export const serviceDetailLayout = reactive<DealDetailLayout>(
-  loadSnapshot<DealDetailLayout>('crm-service-detail-layout-v3')?.[0]
+  loadSnapshot<DealDetailLayout>('crm-service-detail-layout-v5')?.[0]
     ?? JSON.parse(JSON.stringify(SERVICE_DETAIL_LAYOUT_SEED)),
 )
-export function persistServiceDetailLayout() { saveSnapshot('crm-service-detail-layout-v3', [serviceDetailLayout]) }
+export function persistServiceDetailLayout() { saveSnapshot('crm-service-detail-layout-v5', [serviceDetailLayout]) }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // GENERIC custom modules — any module created via "+ New module" (Settings ▸
@@ -1797,14 +1825,17 @@ function genericDetailLayoutSeed(moduleId: string): DealDetailLayout {
   return {
     tabs: [
       { id: `${moduleId}-tab-details`, key: 'details', label: 'Details', editable: true, visible: true, sections: [
-        { id: newDetailSectionId(), name: 'Overview', columns: 3, cols: [['customer'], ['primary-contact'], ['deal-value']] },
-        { id: newDetailSectionId(), name: 'Info', columns: 3, cols: distributeCols(['currency', 'transaction-date', 'due-date', 'payment-terms', 'transaction-no', 'reference-no'], 3) },
-        { id: newDetailSectionId(), name: 'Products', columns: 1, cols: [['products']] },
+        { id: newDetailSectionId(), name: 'Overview', columns: 3, cols: [['deal-name', 'company', 'billing-address'], ['contact-person', 'contact-person-email', 'contact-person-phone'], ['deal-value', 'owner', 'currency']] },
+        { id: newDetailSectionId(), name: 'Transaction', columns: 4, cols: distributeCols(['transaction-date', 'due-date', 'close-date', 'transaction-no', 'reference-no', 'payment-terms', 'exchange-rate'], 4) },
+        { id: newDetailSectionId(), name: 'Shipping & delivery', columns: 4, cols: distributeCols(['warehouse', 'shipping-address', 'shipping-date', 'delivery-date', 'ship-via', 'tracking-no', 'shipping-fee'], 4) },
+        { id: newDetailSectionId(), name: 'Products', columns: 1, cols: [['product-lines']], kind: 'products', system: true },
+        { id: newDetailSectionId(), name: 'Pricing', columns: 4, cols: distributeCols(['discount', 'global-discount', 'tax', 'tax-inclusive', 'tax-after-discount'], 4) },
+        { id: newDetailSectionId(), name: 'Additional info', columns: 2, cols: [['memo', 'attachment'], ['message']] },
       ] },
-      { id: `${moduleId}-tab-activity`, key: 'activity', label: 'Activity', editable: true, visible: true, sections: [{ id: newDetailSectionId(), name: 'Activity', columns: 1, cols: [['activity-log']] }] },
-      { id: `${moduleId}-tab-notes`, key: 'notes', label: 'Notes', editable: true, visible: true, sections: [{ id: newDetailSectionId(), name: 'Notes', columns: 1, cols: [['notes']] }] },
-      { id: `${moduleId}-tab-files`, key: 'files', label: 'Files', editable: true, visible: true, sections: [{ id: newDetailSectionId(), name: 'Files', columns: 1, cols: [['files']] }] },
-      { id: `${moduleId}-tab-orders`, key: 'orders', label: 'ERP transactions', editable: true, visible: true, sections: [{ id: newDetailSectionId(), name: 'ERP transactions', columns: 1, cols: [['erp-transactions']] }] },
+      { id: `${moduleId}-tab-notes`, key: 'notes', label: 'Notes', editable: false, visible: true },
+      { id: `${moduleId}-tab-files`, key: 'files', label: 'Files', editable: false, visible: true },
+      { id: `${moduleId}-tab-orders`, key: 'orders', label: 'ERP transactions', editable: false, visible: true, erpTarget: null },
+      { id: `${moduleId}-tab-activity`, key: 'activity', label: 'Activity', editable: false, visible: true },
     ],
   }
 }
@@ -1929,6 +1960,7 @@ export function genericStageBadgeType(moduleId: string, stage: string): 'complet
 }
 export function createGenericRecord(moduleId: string): GenericModuleRecord {
   const list = genericRecordsFor(moduleId)
+  const mod = getCrmModule(moduleId)
   const stages = moduleStores(moduleId).pipelines[0]?.stages ?? []
   const stage = stages.find((s) => s.kind === 'open' && s.isDefault)?.name ?? stages[0]?.name ?? 'Open'
   const rec: GenericModuleRecord = {
@@ -1937,12 +1969,23 @@ export function createGenericRecord(moduleId: string): GenericModuleRecord {
   }
   list.unshift(rec)
   persistGenericModuleRecords()
+  const feature = mod?.name ?? moduleId
+  addActivityEntry('Create', feature, [
+    { label: 'Name', text: rec.name }, { label: 'Stage', text: rec.stage }, { label: 'Owner', text: rec.owner },
+  ], { recordLabel: `${feature} ${rec.id}` })
   return rec
 }
 export function persistGenericRecordEdit(): void { persistGenericModuleRecords() }
 export function moveGenericRecordStage(moduleId: string, id: string, stage: string): void {
   const r = getGenericRecord(moduleId, id)
-  if (r) { r.stage = stage; persistGenericModuleRecords() }
+  if (!r) return
+  const mod = getCrmModule(moduleId)
+  const oldStage = r.stage
+  r.stage = stage
+  persistGenericModuleRecords()
+  addActivityEntry('Update', mod?.name ?? moduleId, [
+    { label: 'Stage', from: oldStage, to: stage },
+  ], { recordLabel: `${mod?.name ?? moduleId} ${r.id}` })
 }
 
 // ── Custom module creation ("+ New module", Settings ▸ Modules) ──────────────────
@@ -2067,16 +2110,7 @@ const SVC = {
   annual:    (q: number): DealLineItem => ({ productId: 'svc-annual',    productName: 'Annual maintenance contract',      description: 'Per machine, per year',              unit: 'Machine', quantity: q, originalPrice: 4_500_000,  discountType: 'none', discount: 0 }),
 }
 const SC = { currency: 'IDR' as DealCurrency }
-const SERVICE_DEALS_SEED: ServiceDeal[] = [
-  { id: 'SV-1001', name: 'Cafe opening consultation — Kopi Kenangan', company: 'Kopi Kenangan Pusat',     contact: 'Ratna Sari',      stage: 'Proposal',    owner: 'Dewi Lestari',  ...SC, value: 45_000_000, serviceType: 'Consultation',   transactionNo: 'SRV-260901', referenceNo: 'SQ-4471', transactionDate: '2026-09-01', dueDate: '2026-10-15', paymentTerms: 'Net 30', products: [SVC.consult(10), SVC.training(2)], description: 'End-to-end consulting to open a new flagship cafe.', memo: 'Client wants a soft-launch by mid-October.', files: [{ name: 'Cafe-opening-brief.pdf', sizeKB: 820, uploadedBy: 'Dewi Lestari', uploadedAt: '2026-09-01T10:20:00' }], createdAt: '2026-08-28', createdBy: 'Dewi Lestari', lastActivity: '2026-09-06' },
-  { id: 'SV-1002', name: 'Espresso machine service contract',         company: 'Anomali Coffee',          contact: 'Rudi Hartono',    stage: 'In progress', owner: 'Fajar Nugroho', ...SC, value: 18_000_000, serviceType: 'Machine service', transactionNo: 'SRV-260902', referenceNo: 'PO-8830',  transactionDate: '2026-08-20', dueDate: '2026-09-30', paymentTerms: 'Net 14', products: [SVC.machine(6)], description: 'Quarterly preventive maintenance for 6 machines.', memo: 'Second visit scheduled for late September.', createdAt: '2026-08-18', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-05' },
-  { id: 'SV-1003', name: 'Barista training — new outlet team',        company: 'Maxx Coffee Lippo Mall',  contact: 'Yuliana Tan',     stage: 'Scoping',     owner: 'Dewi Lestari',  ...SC, value: 12_500_000, serviceType: 'Training',       transactionNo: 'SRV-260903', referenceNo: '',         transactionDate: '2026-09-03', dueDate: '2026-09-25', paymentTerms: 'Net 30', products: [SVC.training(2), SVC.install(1)], description: 'Two-week barista onboarding program for 8 staff.', createdAt: '2026-09-01', createdBy: 'Dewi Lestari', lastActivity: '2026-09-04' },
-  { id: 'SV-1004', name: 'Grinder calibration + install',            company: 'Coffee Cult Bali',        contact: 'Made Sudarsana',  stage: 'Inquiry',     owner: 'Fajar Nugroho', ...SC, value: 6_500_000,  serviceType: 'Installation',   transactionNo: 'SRV-260904', referenceNo: '',         transactionDate: '2026-09-05', dueDate: '2026-09-18', paymentTerms: 'Due on receipt', products: [SVC.install(1), SVC.calibrate(2)], description: 'Install and calibrate 3 new grinders.', createdAt: '2026-09-04', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-05' },
-  { id: 'SV-1005', name: 'Menu engineering workshop',                company: 'Excelso Grand Indonesia', contact: 'Bambang Sutrisno', stage: 'Completed',  owner: 'Rizal Candra',  ...SC, value: 22_000_000, serviceType: 'Consultation',   transactionNo: 'SRV-260905', referenceNo: 'SQ-4402', transactionDate: '2026-07-10', dueDate: '2026-08-01', paymentTerms: 'Net 30', products: [SVC.workshop(1), SVC.consult(2)], description: 'Signature drinks + costing workshop for the barista team.', memo: 'Delivered on schedule. Invoice settled.', files: [{ name: 'Workshop-deck.pdf', sizeKB: 1240, uploadedBy: 'Rizal Candra', uploadedAt: '2026-07-11T09:00:00' }, { name: 'Costing-sheet.xlsx', sizeKB: 96, uploadedBy: 'Rizal Candra', uploadedAt: '2026-07-30T14:30:00' }], linkedTransaction: { id: 'INV-2041', number: 'INV-2041', type: 'Sales Invoice', date: '2026-08-05', dueDate: '2026-09-04', status: 'paid', total: 22_000_000, balanceDue: 0 }, createdAt: '2026-07-05', createdBy: 'Rizal Candra', lastActivity: '2026-08-05' },
-  { id: 'SV-1006', name: 'Annual service — 12 machines',             company: 'Hotel Mulia Senayan',     contact: 'Sinta Dewanti',   stage: 'Proposal',    owner: 'Fajar Nugroho', ...SC, value: 54_000_000, serviceType: 'Machine service', transactionNo: 'SRV-260906', referenceNo: 'SQ-4480', transactionDate: '2026-09-06', dueDate: '2026-11-01', paymentTerms: 'Net 45', products: [SVC.annual(12)], description: 'Full-year maintenance across banquet + lounge machines.', memo: 'Awaiting F&B manager sign-off on the annual scope.', createdAt: '2026-09-02', createdBy: 'Fajar Nugroho', lastActivity: '2026-09-06' },
-  { id: 'SV-1007', name: 'Mobile coffee cart setup',                 company: 'Kopi Kenangan Pusat',     contact: 'Ratna Sari',      stage: 'In progress', owner: 'Rizal Candra',  ...SC, value: 7_500_000,  serviceType: 'Installation',   transactionNo: 'SRV-260907', referenceNo: '',         transactionDate: '2026-08-29', dueDate: '2026-09-20', paymentTerms: 'Net 14', products: [SVC.install(3)], description: 'Set up and commission 3 mobile coffee carts for events.', createdAt: '2026-08-27', createdBy: 'Rizal Candra', lastActivity: '2026-09-03' },
-  { id: 'SV-1008', name: 'Staff refresher training',                 company: 'Tanamera Coffee Roastery', contact: 'Agus Priyanto',  stage: 'Completed',   owner: 'Dewi Lestari',  ...SC, value: 15_000_000, serviceType: 'Training',       transactionNo: 'SRV-260908', referenceNo: 'PO-8812',  transactionDate: '2026-08-15', dueDate: '2026-09-15', paymentTerms: 'Net 30', products: [SVC.training(3)], description: 'Quarterly barista refresher for the roastery cafe team.', linkedTransaction: { id: 'INV-2047', number: 'INV-2047', type: 'Sales Invoice', date: '2026-08-28', dueDate: '2026-09-27', status: 'awaiting-payment', total: 15_000_000, balanceDue: 15_000_000 }, createdAt: '2026-08-12', createdBy: 'Dewi Lestari', lastActivity: '2026-08-28' },
-]
+const SERVICE_DEALS_SEED: ServiceDeal[] = []
 export const serviceDeals = reactive<ServiceDeal[]>(load('crm-service-deals-v2', SERVICE_DEALS_SEED))
 export function persistServiceDeals() { saveSnapshot('crm-service-deals-v2', serviceDeals) }
 export function getServiceDeal(id: string): ServiceDeal | undefined { return serviceDeals.find((d) => d.id === id) }
@@ -2104,11 +2138,32 @@ export function addServiceDeal(input: ServiceDealInput): ServiceDeal {
   const rec: ServiceDeal = { ...input, id: nextServiceId(), transactionNo: nextServiceTxNo(), createdAt: now, createdBy: input.owner, lastActivity: now }
   serviceDeals.unshift(rec)
   persistServiceDeals()
+  const money = (n: number) => formatMoney(n, rec.currency)
+  addActivityEntry('Create', 'Service deals', [
+    { label: 'Name', text: rec.name }, { label: 'Record number', text: serviceNo(rec.id) },
+    { label: 'Customer', text: rec.company }, { label: 'Owner', text: rec.owner },
+    { label: 'Service type', text: rec.serviceType }, { label: 'Value', text: money(rec.value) },
+  ], { recordLabel: serviceNo(rec.id), recordLink: `/crm/services/${rec.id}`, user: rec.owner })
+  if (rec.memo) addCrmNote('service', rec.id, rec.memo, rec.owner, new Date().toISOString())
   return rec
 }
-export function updateServiceDeal(id: string, patch: Partial<ServiceDeal>): void {
+export function updateServiceDeal(id: string, patch: Partial<ServiceDeal>, author?: string): void {
   const d = getServiceDeal(id)
-  if (d) { Object.assign(d, patch, { lastActivity: DEAL_TODAY }); persistServiceDeals() }
+  if (!d) return
+  const user = author ?? CRM_CURRENT_USER
+  const changes: CrmActivityDetail[] = []
+  const money = (n: number) => formatMoney(n, d.currency)
+  if (patch.name !== undefined && patch.name !== d.name) changes.push({ label: 'Name', from: d.name, to: patch.name })
+  if (patch.stage !== undefined && patch.stage !== d.stage) changes.push({ label: 'Stage', from: d.stage, to: patch.stage })
+  if (patch.value !== undefined && patch.value !== d.value) changes.push({ label: 'Value', from: money(d.value), to: money(patch.value) })
+  if (patch.owner !== undefined && patch.owner !== d.owner) changes.push({ label: 'Owner', from: d.owner, to: patch.owner })
+  if (patch.company !== undefined && patch.company !== d.company) changes.push({ label: 'Customer', from: d.company, to: patch.company })
+  if (patch.memo !== undefined && patch.memo !== d.memo) changes.push({ label: 'Memo', from: d.memo ?? '', to: patch.memo ?? '' })
+  Object.assign(d, patch, { lastActivity: DEAL_TODAY })
+  persistServiceDeals()
+  if (changes.length) {
+    addActivityEntry('Update', 'Service deals', changes, { recordLabel: serviceNo(d.id), recordLink: `/crm/services/${d.id}`, user })
+  }
 }
 export function archiveServiceDeal(id: string): void { const d = getServiceDeal(id); if (d) { d.archived = true; persistServiceDeals() } }
 export function restoreServiceDeal(id: string): void { const d = getServiceDeal(id); if (d) { d.archived = false; persistServiceDeals() } }
@@ -2150,7 +2205,18 @@ export function serviceActivityLog(d: ServiceDeal): { date: string; user: string
 export function serviceStages(): { name: string; kind: DealStageKind }[] {
   return (servicePipelines[0]?.stages ?? []).map((s) => ({ name: s.name, kind: s.kind }))
 }
-export function moveServiceDealStage(id: string, stage: string) { const d = getServiceDeal(id); if (d) { d.stage = stage; persistServiceDeals() } }
+export function moveServiceDealStage(id: string, stage: string) {
+  const d = getServiceDeal(id)
+  if (!d) return
+  const from = d.stage
+  d.stage = stage
+  d.lastActivity = DEAL_TODAY
+  persistServiceDeals()
+  if (from !== stage) {
+    addActivityEntry('Update', 'Service deals', [{ label: 'Stage', from, to: stage }],
+      { recordLabel: serviceNo(d.id), recordLink: `/crm/services/${d.id}` })
+  }
+}
 /** Service-stage → `ErpStatusBadge` colour `type` (parallels `dealStageBadgeType`).
  *  won → completed (green), lost → announcement (gray), open stages ramp from
  *  information (blue, early) to warning (yellow, near close) by pipeline position,
@@ -2268,6 +2334,20 @@ const ACTIVITY_SEED: CrmActivityEntry[] = [
 ]
 
 export const crmActivityLog = reactive<CrmActivityEntry[]>(load('crm-activity-v1', ACTIVITY_SEED))
+function persistActivityLog() { saveSnapshot('crm-activity-v1', crmActivityLog) }
+export function addActivityEntry(
+  action: CrmAction, feature: string, details: CrmActivityDetail[],
+  opts?: { recordLabel?: string; recordLink?: string; user?: string },
+): CrmActivityEntry {
+  const entry: CrmActivityEntry = {
+    id: nextId('AL', crmActivityLog), date: new Date().toISOString(),
+    user: opts?.user ?? CRM_CURRENT_USER, action, feature,
+    recordLabel: opts?.recordLabel, recordLink: opts?.recordLink, details,
+  }
+  crmActivityLog.unshift(entry)
+  persistActivityLog()
+  return entry
+}
 
 // ── User permissions — NO roles: a grouped checklist ──────────────────────────
 // A user's access is a set of individually-tickable permissions, grouped by CRM

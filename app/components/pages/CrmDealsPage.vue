@@ -658,14 +658,14 @@ const toggleAirene = inject<() => void>('toggleAirene')
                   <p v-if="cardFieldOn('contactPerson') && d.picName" class="deal__sub">{{ d.picName }}</p>
                 </div>
                 <div v-if="cardFieldOn('dealValue')" class="deal__value">{{ formatMoney(dealExpectedValue(d), d.currency) }}</div>
-                <p v-if="cardFieldOn('date') && d.expectedCloseDate" class="deal__sub">{{ d.expectedCloseDate }}</p>
-                <p v-if="cardFieldOn('note') && d.description" class="deal__sub deal__note">{{ d.description }}</p>
-                <div v-if="cardFieldOn('owner') || (activeViewDisplay.showAging && isDealOpen(d))" class="deal__foot">
-                  <span v-if="cardFieldOn('owner')" class="deal__owner">
-                    <span class="deal__avatar" :style="ownerAvatarStyle(d.owner)">{{ ownerInitials(d.owner) }}</span>
-                    {{ d.owner }}
-                  </span>
-                  <span v-if="dealPipelineDisplay.showAging && isDealOpen(d)" class="deal__aging" :class="`deal__aging--${agingTone(agingDays(d))}`" :title="`${t('Open for')} ${agingDays(d)} ${t('days')}`">{{ agingDays(d) }}d</span>
+                <p v-if="cardFieldOn('closeDate') && d.expectedCloseDate" class="deal__sub">{{ d.expectedCloseDate }}</p>
+                <p v-if="cardFieldOn('memo') && d.notes" class="deal__sub deal__note">{{ d.notes }}</p>
+                <span v-if="cardFieldOn('owner')" class="deal__owner">
+                  <span class="deal__avatar" :style="ownerAvatarStyle(d.owner)">{{ ownerInitials(d.owner) }}</span>
+                  {{ d.owner }}
+                </span>
+                <div v-if="dealPipelineDisplay.showAging && isDealOpen(d)" class="deal__foot deal__foot--end" data-devchange="crm-aging-always-bottom-right">
+                  <span class="deal__aging" :class="`deal__aging--${agingTone(agingDays(d))}`" :title="`${t('Open for')} ${agingDays(d)} ${t('days')}`">{{ agingDays(d) }}d</span>
                 </div>
               </article>
               <p v-if="!col.cards.length" class="kcol__empty">{{ t('No deals') }}</p>
@@ -1067,6 +1067,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
 .kcol--open { background: var(--mp-colors-background-information-subtle, #eaf1fb); border-color: var(--mp-colors-border-information, #2f6fd0); }
 .deal__value { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 .deal__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
+.deal__foot--end { justify-content: flex-end; }
 .deal__owner { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .deal__avatar { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 22px; height: 22px; border-radius: var(--mp-radii-full, 999px); font-size: 10px; font-weight: var(--mp-font-weights-semi-bold); line-height: 1; letter-spacing: 0.2px; }
 .deal__aging { flex-shrink: 0; font-size: var(--mp-font-sizes-sm); font-variant-numeric: tabular-nums; color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle, #f0f1f3); border-radius: var(--mp-radii-full, 999px); padding: 1px var(--mp-spacing-2); }
