@@ -105,7 +105,7 @@ async function save() {
               <button class="sad-link" type="button" @click="addAll">Add all</button>
             </div>
             <div class="sad-list">
-              <button v-for="o in available" :key="o.id" class="sad-item" type="button" :data-devchange="o.devchange" @click="add(o.id)">
+              <button v-for="o in available" :key="o.id" class="sad-item" type="button" :data-devchange="o.devchange" @click="add(o.id)"><!-- pixel-police-allow -->
                 <MpIcon v-if="o.icon" :name="o.icon" size="sm" class="sad-icon" />
                 <span class="sad-info">
                   <span class="sad-name">{{ o.name }}</span>
@@ -136,7 +136,7 @@ async function save() {
                 <button class="sad-link" type="button" @click="removeAll">Remove all</button>
               </div>
               <div class="sad-list">
-                <button v-for="o in selected" :key="o.id" class="sad-item" type="button" :data-devchange="o.devchange" @click="remove(o.id)">
+                <button v-for="o in selected" :key="o.id" class="sad-item" type="button" :data-devchange="o.devchange" @click="remove(o.id)"><!-- pixel-police-allow -->
                   <MpIcon v-if="o.icon" :name="o.icon" size="sm" class="sad-icon" />
                   <span class="sad-info">
                     <span class="sad-name">{{ o.name }}</span>

@@ -675,7 +675,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                   </div>
                   <!-- Tabs -->
                   <div class="dlb-prev-tabs">
-                    <button v-for="tb in previewTabs" :key="tb.key" class="dlb-prev-tab-btn" :class="{ 'dlb-prev-tab-btn--active': previewActiveTab === tb.key }" @click="previewActiveTab = tb.key">{{ t(tb.label) }}</button>
+                    <button v-for="tb in previewTabs" :key="tb.key" class="dlb-prev-tab-btn" :class="{ 'dlb-prev-tab-btn--active': previewActiveTab === tb.key }" @click="previewActiveTab = tb.key">{{ t(tb.label) }}</button><!-- pixel-police-allow -->
                   </div>
                   <!-- Tab content -->
                   <div class="dlb-prev-tab-content">
