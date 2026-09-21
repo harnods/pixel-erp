@@ -9,9 +9,12 @@
  * keep their filters, search, sort and page in useBatchTraceabilityReportState, so the
  * detail page's breadcrumb returns to the report exactly as it was (story 7).
  *
- * By batch (stories 2, 3): Product, Batch number and Warehouse sit in the filter bar; the
- * attribute filters (Vendor, Grade, the three dates) live behind All filters. Rows come
- * straight from `searchBatches()` — this page only maps, searches, sorts and exports.
+ * By batch (stories 2, 3) is filter-first, like General ledger: pick Product, Batch number
+ * (each has an "All" option) or Warehouse — at least one — then click Filter; a filter left
+ * empty means all of it. Nothing lists before that.
+ * The bar edits a draft; Filter applies it. The attribute filters (Vendor, Grade, the three
+ * dates) were dropped from this search (product decision, 2026-09-21). Rows come straight
+ * from `searchBatches()` — this page only maps, searches and exports.
  *
  * Full-bleed (resolved via detailMatch in [...slug].vue), so it draws its own title bar
  * and stage, like DualUnitInventoryReportPage.
@@ -27,8 +30,9 @@
  *   Widths still come from the column-kind standard (columnWidths.ts).
  * - Order is fixed at Product A–Z then Batch A–Z, as the PRD specifies — grouped rows
  *   don't sort by column (neither does the Production request table).
- * - A greyed-out filter for a missing add-on (PRD story 1) — not a disabled button for
- *   validation (rule/btn-no-disabled-validation), but an entitlement the user can't lift.
+ * - A Filter button instead of All filters (rule/filter-bar-all-filters-drawer): the
+ *   search runs on demand. It's never disabled — clicking it with no filter picked shows an
+ *   inline error (rule/btn-no-disabled-validation, rule/form-errors-inline).
  */
 import { computed, nextTick, onMounted, reactive, ref, toRef, watch } from 'vue'
 import { MpButton, MpButtonGroup, MpIcon, MpSegmentedControl, MpSkeleton, MpTooltip } from '@mekari/pixel3'
@@ -39,16 +43,13 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import MultiSelectDropdown from '~/components/patterns/MultiSelectDropdown.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
-import BatchTraceabilityFiltersDrawer, {
-  countBatchAttributeFilters, type BatchAttributeFiltersValue,
-} from '~/components/patterns/BatchTraceabilityFiltersDrawer.vue'
 import BatchTraceabilityByTransaction from '~/components/patterns/BatchTraceabilityByTransaction.vue'
 import {
-  searchBatches, traceProductOptions, traceBatchNumberOptions, canViewBatchTraceability, isAttributeAvailable,
+  searchBatches, traceProductOptions, traceBatchNumberOptions, canViewBatchTraceability, productTraceAttributes,
   type BatchSearchFilter, type BatchSearchRow, type TraceabilityAccess,
 } from '~/data/batchTraceability'
 import {
-  MAX_BATCH_ATTRIBUTES, batchAttributeDef, getBatchAttributeConfig, type BatchAttributeKey,
+  MAX_BATCH_ATTRIBUTES, batchAttributeDef, type BatchAttributeKey,
 } from '~/data/batchAttributes'
 import { TRACE_ATTRIBUTE_COLUMNS, useTraceabilityCells } from '~/composables/useTraceabilityCells'
 import { productIndexRows } from '~/data/productsIndex'
@@ -56,13 +57,13 @@ import { warehouses } from '~/data/warehouses'
 import { successToast } from '~/utils/toasts'
 import { useBatchTraceabilityReportState } from '~/composables/useBatchTraceabilityReportState'
 import {
-  buildExportDocument, describeDateCondition, downloadExport, type ExportFilter, type ExportFormat,
+  buildExportDocument, downloadExport, type ExportFilter, type ExportFormat,
 } from '~/utils/traceabilityExport'
-import { formatDate, formatDateTime } from '~/utils/date'
+import { formatDateTime } from '~/utils/date'
 
 const { t } = useLocale()
 const router = useRouter()
-const { attributeSortValue, attributeText, qtyText, qtyCellText, vendorName, gradeName } = useTraceabilityCells()
+const { attributeSortValue, attributeText, qtyText, qtyCellText } = useTraceabilityCells()
 
 // ─── Scenario (demo) ────────────────────────────────────────────────────────────
 // The two entitlement scenarios preview what a Jurnal company sees (PRD story 1).
@@ -102,7 +103,7 @@ function setMode(next: string) {
 // mapped back to ids for the query.
 const productOptions = computed(() => traceProductOptions())
 const productOptionNames = computed(() => productOptions.value.map((p) => p.name))
-const batchNumberOptions = computed(() => traceBatchNumberOptions())
+const batchNumberOptions = computed(() => traceBatchNumberOptions(draftSkus.value))
 const activeWarehouses = computed(() => warehouses.filter((w) => !w.isDefault && w.status === 'active'))
 const warehouseOptionNames = computed(() => activeWarehouses.value.map((w) => w.name))
 
@@ -110,29 +111,48 @@ const productNames = toRef(reportState.batch, 'productNames')
 const batchNos = toRef(reportState.batch, 'batchNos')
 // Empty or every warehouse ticked = All warehouse: one summed line per batch.
 const warehouseNames = toRef(reportState.batch, 'warehouseNames')
-const attributeFilters = toRef(reportState.batch, 'attributeFilters')
-const filtersOpen = ref(false)
-const drawerFilterCount = computed(() => countBatchAttributeFilters(attributeFilters.value, access.value))
+/** What the last Filter click applied — null until the user has filtered once. */
+const applied = toRef(reportState.batch, 'applied')
 
-function applyAttributeFilters(v: BatchAttributeFiltersValue) { attributeFilters.value = v }
-
-const query = computed<BatchSearchFilter>(() => {
+// Batch numbers follow the products picked; a batch that no longer fits drops out.
+const draftSkus = computed(() => {
   const skuByName = new Map(productOptions.value.map((p) => [p.name, p.sku]))
-  const idByName = new Map(activeWarehouses.value.map((w) => [w.name, w.id]))
-  const allWarehouses = warehouseNames.value.length === 0 || warehouseNames.value.length === warehouseOptionNames.value.length
-  return {
-    productSkus: productNames.value.map((n) => skuByName.get(n)).filter((s): s is string => !!s),
-    batchNos: batchNos.value,
-    warehouseIds: allWarehouses ? 'all' : warehouseNames.value.map((n) => idByName.get(n)).filter((s): s is string => !!s),
-    vendorIds: attributeFilters.value.vendorIds,
-    gradeIds: attributeFilters.value.gradeIds,
-    expiry: attributeFilters.value.expiry ?? undefined,
-    manufacturing: attributeFilters.value.manufacturing ?? undefined,
-    bestBefore: attributeFilters.value.bestBefore ?? undefined,
-  }
+  return productNames.value.map((n) => skuByName.get(n)).filter((s): s is string => !!s)
+})
+watch(batchNumberOptions, (options) => {
+  const kept = batchNos.value.filter((b) => options.includes(b))
+  if (kept.length !== batchNos.value.length) batchNos.value = kept
 })
 
-const hasBarFilter = computed(() => productNames.value.length > 0 || batchNos.value.length > 0 || warehouseNames.value.length > 0)
+/** Filter — apply the bar. Needs at least one filter; one left empty means all of it. */
+const filterError = ref('')
+const hasDraftFilter = computed(() => productNames.value.length > 0 || batchNos.value.length > 0 || warehouseNames.value.length > 0)
+function runFilter() {
+  if (!hasDraftFilter.value) {
+    filterError.value = t('Select at least one filter, then click Filter.')
+    return
+  }
+  filterError.value = ''
+  applied.value = { productNames: [...productNames.value], batchNos: [...batchNos.value], warehouseNames: [...warehouseNames.value] }
+  search.value = ''
+  currentPage.value = 1
+}
+watch(hasDraftFilter, (has) => { if (has) filterError.value = '' })
+
+/** The applied selection as a search — "All" (every option ticked) searches everything. */
+const query = computed<BatchSearchFilter | null>(() => {
+  const a = applied.value
+  if (!a) return null
+  const skuByName = new Map(productOptions.value.map((p) => [p.name, p.sku]))
+  const idByName = new Map(activeWarehouses.value.map((w) => [w.name, w.id]))
+  const allWarehouses = a.warehouseNames.length === 0 || a.warehouseNames.length === warehouseOptionNames.value.length
+  const allProducts = !a.productNames.length || a.productNames.length === productOptionNames.value.length
+  return {
+    productSkus: allProducts ? [] : a.productNames.map((n) => skuByName.get(n)).filter((s): s is string => !!s),
+    batchNos: a.batchNos,
+    warehouseIds: allWarehouses ? 'all' : a.warehouseNames.map((n) => idByName.get(n)).filter((s): s is string => !!s),
+  }
+})
 
 // ─── Rows ───────────────────────────────────────────────────────────────────────
 /** A flat row: sortable plain values per column, with the source line kept for cells. */
@@ -155,7 +175,7 @@ interface ReportRow extends Record<string, unknown> {
 const imageBySku = computed(() => new Map(productIndexRows().map((r) => [r.sku, r.img])))
 
 const rows = computed<ReportRow[]>(() => {
-  if (scenario.value === 'empty') return []
+  if (scenario.value === 'empty' || !query.value) return []
   return searchBatches(query.value, access.value).map((r) => {
     const row: ReportRow = {
       key: r.key,
@@ -195,19 +215,13 @@ interface ProductGroup {
   lines: ReportRow[]
 }
 
-/** A product's attributes as the report shows them: its configured set (max 3), minus
- *  the ones the company isn't entitled to; Expiry date when that leaves nothing. */
-function productAttributes(sku: string): BatchAttributeKey[] {
-  const keys = getBatchAttributeConfig(sku).map((a) => a.key).filter((k) => isAttributeAvailable(k, access.value))
-  return keys.length ? keys : ['expiry_date']
-}
 
 const groups = computed<ProductGroup[]>(() => {
   const bySku = new Map<string, ProductGroup>()
   for (const row of rows.value) {
     let g = bySku.get(row.source.sku)
     if (!g) {
-      g = { sku: row.source.sku, productName: row.productName, productImg: row.productImg, attributes: productAttributes(row.source.sku), lines: [] }
+      g = { sku: row.source.sku, productName: row.productName, productImg: row.productImg, attributes: productTraceAttributes(row.source.sku, access.value), lines: [] }
       bySku.set(row.source.sku, g)
     }
     g.lines.push(row)
@@ -371,21 +385,16 @@ const exportOpen = ref(false)
 const exportColumns = computed(() => allColumns.value.map((c, i) => ({ key: c.key, label: c.label, required: i < 2 })))
 const EXPORT_FORMATS: ExportFormat[] = ['xlsx', 'csv']
 
-/** The filters behind the current result, as the file header lists them. Greyed-out
- *  attribute filters (no add-on) aren't applied, so they aren't listed either. */
+/** The filters behind the current result (the applied ones), as the file header lists them. */
 const appliedFilters = computed<ExportFilter[]>(() => {
-  const f = attributeFilters.value
-  const addOn = access.value.batchAttribute
-  const dateLabels = { between: t('Is between'), before: t('Is before'), after: t('Is after') }
+  const a = applied.value
   const out: ExportFilter[] = []
-  if (productNames.value.length) out.push({ label: t('Product'), value: productNames.value.join(', ') })
-  if (batchNos.value.length) out.push({ label: t('Batch number'), value: batchNos.value.join(', ') })
-  if (query.value.warehouseIds !== 'all') out.push({ label: t('Warehouse'), value: warehouseNames.value.join(', ') })
-  if (addOn && f.vendorIds.length) out.push({ label: t('Vendor'), value: f.vendorIds.map(vendorName).join(', ') })
-  if (addOn && f.gradeIds.length) out.push({ label: t('Grade'), value: f.gradeIds.map(gradeName).join(', ') })
-  if (f.expiry) out.push({ label: t('Expiry date'), value: describeDateCondition(f.expiry, dateLabels, formatDate) })
-  if (addOn && f.manufacturing) out.push({ label: t('Manufacturing date'), value: describeDateCondition(f.manufacturing, dateLabels, formatDate) })
-  if (addOn && f.bestBefore) out.push({ label: t('Best before date'), value: describeDateCondition(f.bestBefore, dateLabels, formatDate) })
+  if (!a) return out
+  const all = (picked: string[], options: string[], label: string) =>
+    !picked.length || picked.length === options.length ? label : picked.join(', ')
+  out.push({ label: t('Product'), value: all(a.productNames, productOptionNames.value, t('All product')) })
+  out.push({ label: t('Batch number'), value: all(a.batchNos, traceBatchNumberOptions(query.value?.productSkus ?? []), t('All batch')) })
+  if (query.value?.warehouseIds !== 'all') out.push({ label: t('Warehouse'), value: a.warehouseNames.join(', ') })
   if (search.value.trim()) out.push({ label: t('Search keyword'), value: search.value.trim() })
   return out
 })
@@ -439,16 +448,19 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <!-- ── Filter bar ── -->
         <div class="bt-filter-bar">
           <div class="filter-left">
-            <MultiSelectDropdown id="bt-product" v-model="productNames" :options="productOptionNames" :placeholder="t('Product')" />
-            <MultiSelectDropdown id="bt-batch-number" v-model="batchNos" :options="batchNumberOptions" :placeholder="t('Batch number')" />
+            <MultiSelectDropdown
+              id="bt-product" v-model="productNames" :options="productOptionNames" :placeholder="t('Product')"
+              :select-all-label="t('All product')" :all-selected-label="t('All product')"
+            />
+            <MultiSelectDropdown
+              id="bt-batch-number" v-model="batchNos" :options="batchNumberOptions" :placeholder="t('Batch number')"
+              :select-all-label="t('All batch')" :all-selected-label="t('All batch')"
+            />
             <MultiSelectDropdown
               id="bt-warehouse" v-model="warehouseNames" :options="warehouseOptionNames"
               :placeholder="t('All warehouse')" :select-all-label="t('All warehouse')" :all-selected-label="t('All warehouse')"
             />
-            <MpButton is-rounded class="bt-all-filters" :class="{ 'bt-all-filters--active': drawerFilterCount > 0 }" @click="filtersOpen = true">
-              <MpIcon name="filter" size="sm" />
-              {{ t('All filters') }}{{ drawerFilterCount > 0 ? ` (${drawerFilterCount})` : '' }}
-            </MpButton>
+            <button type="button" class="btn-enterprise btn-enterprise--primary bt-filter-btn" @click="runFilter">{{ t('Filter') }}</button>
           </div>
 
           <div class="filter-right">
@@ -474,8 +486,27 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </div>
         </div>
 
+        <p v-if="filterError" class="bt-filter-error" role="alert">
+          <MpIcon name="warning-triangle" size="sm" />{{ filterError }}
+        </p>
+
+        <!-- ── No batch stock at all ── -->
+        <div v-if="scenario === 'empty'" class="empty-full">
+          <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240">
+          <p class="empty-full-title">{{ t('No batches') }}</p>
+          <p class="empty-full-desc">{{ t('Batches with stock will appear here.') }}</p>
+          <MpButton variant="secondary" is-rounded @click="router.push('/product-list')">{{ t('View products') }}</MpButton>
+        </div>
+
+        <!-- ── Filter first — nothing lists until Filter is clicked ── -->
+        <div v-else-if="!applied" class="empty-full">
+          <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240">
+          <p class="empty-full-title">{{ t('Filter to see batches') }}</p>
+          <p class="empty-full-desc">{{ t('Select a product, batch number or warehouse, then click Filter.') }}</p>
+        </div>
+
         <!-- ── Grouped table: product parent rows, batch child rows ── -->
-        <template v-if="loading || pagedGroups.length">
+        <template v-else-if="loading || pagedGroups.length">
           <div class="bt-table-wrap">
             <table class="bt-table">
               <colgroup>
@@ -561,34 +592,19 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           />
         </template>
 
-        <!-- ── Filtered empty — search or a filter removed every batch ── -->
-        <div v-else-if="hasBarFilter || drawerFilterCount > 0 || !!search.trim()" class="empty-full">
+        <!-- ── Filtered empty — the filter or search found no batch ── -->
+        <div v-else class="empty-full">
           <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240">
           <p class="empty-full-title">{{ search.trim() ? `"${search.trim()}" ${t('not found')}` : t('No batches match your filters') }}</p>
           <p class="empty-full-desc">{{ search.trim() ? t('Recheck the keywords you have typed and try searching again.') : t('Recheck the filters you have applied and try filtering again.') }}</p>
           <a class="empty-clear" @click="resetFilters">{{ t('Clear all filters') }}</a>
         </div>
 
-        <!-- ── Empty state (no batch stock at all) ── -->
-        <div v-else class="empty-full">
-          <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240">
-          <p class="empty-full-title">{{ t('No batches') }}</p>
-          <p class="empty-full-desc">{{ t('Batches with stock will appear here.') }}</p>
-          <MpButton variant="secondary" is-rounded @click="router.push('/product-list')">{{ t('View products') }}</MpButton>
-        </div>
       </section>
 
       <!-- ── By transaction (stories 4, 5) ── -->
       <BatchTraceabilityByTransaction v-else :access="access" :empty="scenario === 'empty'" />
     </div>
-
-    <BatchTraceabilityFiltersDrawer
-      id="bt-filters"
-      v-model:is-open="filtersOpen"
-      :model-value="attributeFilters"
-      :access="access"
-      @apply="applyAttributeFilters"
-    />
 
     <ExportModal
       :open="exportOpen"
@@ -658,20 +674,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   min-width: 0 !important; padding: 0 !important;
 }
 
-/* All filters — secondary look; the (N) is the active signal, never a brand colour
-   (rule/filter-all-filters-active-count). */
-.bt-all-filters {
-  display: inline-flex !important; align-items: center; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3) !important;
-  background: var(--mp-background-neutral, #ffffff) !important;
-  border: 1px solid var(--mp-colors-border-bold, #8c9596) !important;
-  border-radius: var(--mp-radii-full, 999px) !important;
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-md); color: var(--mp-colors-text-default, #232933);
-  white-space: nowrap; cursor: pointer;
+/* Filter — primary pill, applies the bar (btn-enterprise--primary from erp.css). */
+.bt-filter-btn { white-space: nowrap; }
+.bt-filter-error {
+  display: flex; align-items: center; gap: var(--mp-spacing-1);
+  margin: calc(-1 * var(--mp-spacing-3)) 0 var(--mp-spacing-4);
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-critical, #d93b3b);
 }
-.bt-all-filters:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; }
-.bt-all-filters--active { background: var(--mp-background-neutral-subtle, #f8f9f9) !important; }
 
 /* ── By batch: filter bar above the grouped table ── */
 .bt-section { display: flex; flex-direction: column; min-width: 0; }

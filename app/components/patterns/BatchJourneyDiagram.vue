@@ -5,8 +5,8 @@
  *
  * Built for the two traceability questions: recall ("who got it?") and root cause
  * ("where did it come from?"). So a node is a party — a vendor, a customer, a Work
- * order — not a transaction type, and the link to the batch is drawn as thick as the
- * quantity that moved, so where most of the batch went reads at a glance.
+ * order — not a transaction type — each linked to the batch by one thin line, with the
+ * quantity on the node (biggest first), so where most of the batch went reads at a glance.
  * - The batch card in the middle carries the totals (In · Out · On hand), the on-hand
  *   split by warehouse, the moves between warehouses and the attribute changes.
  * - A Work order node lists the batches on its other side; each opens its detail page.
@@ -94,12 +94,8 @@ const root = ref<HTMLElement | null>(null)
 const size = ref({ width: 0, height: 0 })
 const links = ref<Link[]>([])
 
-const MIN_WIDTH = 2
-const MAX_WIDTH = 18
-const maxQty = computed(() => Math.max(1, ...props.graph.incoming.map((p) => p.qty), ...props.graph.outgoing.map((p) => p.qty)))
-function strokeWidth(qty: number): number {
-  return Math.max(MIN_WIDTH, Math.round((qty / maxQty.value) * MAX_WIDTH))
-}
+/** Every link is the same single line — quantity reads from the node, not the stroke. */
+const LINK_WIDTH = 1.5
 
 function measure() {
   const el = root.value
@@ -111,24 +107,18 @@ function measure() {
   const cardMid = c.top - box.top + c.height / 2
   const next: Link[] = []
   for (const side of [props.graph.incoming, props.graph.outgoing]) {
-    // Links meet the card stacked by thickness, centred on it — a Sankey-style join.
-    const widths = side.map((p) => strokeWidth(p.qty))
-    const gap = 2
-    let y = cardMid - (widths.reduce((a, b) => a + b, 0) + gap * (widths.length - 1)) / 2
-    side.forEach((p, i) => {
+    // Every link meets the card at one point — its vertical middle.
+    for (const p of side) {
       const node = el.querySelector<HTMLElement>(`[data-flow-key="${CSS.escape(p.key)}"] .bjd-node-head`)
-      if (!node) return
+      if (!node) continue
       const n = node.getBoundingClientRect()
-      const w = widths[i]!
-      const joinY = y + w / 2
-      y += w + gap
       const nodeY = n.top - box.top + n.height / 2
       const [x1, y1, x2, y2] = p.direction === 'in'
-        ? [n.right - box.left, nodeY, c.left - box.left, joinY]
-        : [c.right - box.left, joinY, n.left - box.left, nodeY]
+        ? [n.right - box.left, nodeY, c.left - box.left, cardMid]
+        : [c.right - box.left, cardMid, n.left - box.left, nodeY]
       const mid = (x1 + x2) / 2
-      next.push({ key: p.key, width: w, direction: p.direction, d: `M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2},${y2}` })
-    })
+      next.push({ key: p.key, width: LINK_WIDTH, direction: p.direction, d: `M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2},${y2}` })
+    }
   }
   links.value = next
 }
@@ -231,7 +221,7 @@ watch(() => [props.graph, props.batchNo], () => { void nextTick(measure) })
     <div class="bjd-legend">
       <span><span class="bjd-swatch bjd-swatch--in" />{{ t('Came in') }}</span>
       <span><span class="bjd-swatch bjd-swatch--out" />{{ t('Went out') }}</span>
-      <span class="bjd-legend-hint">{{ t('Line thickness shows quantity. Select a party to see its transactions.') }}</span>
+      <span class="bjd-legend-hint">{{ t('Select a party to see its transactions.') }}</span>
     </div>
   </div>
 </template>
@@ -250,7 +240,7 @@ watch(() => [props.graph, props.batchNo], () => { void nextTick(measure) })
   background: var(--mp-background-neutral-subtle, #f8f9f9);
 }
 .bjd-links { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
-.bjd-link { fill: none; stroke-opacity: 0.35; }
+.bjd-link { fill: none; stroke-opacity: 0.6; }
 .bjd-link--in { stroke: var(--mp-icon-success, #29a36a); }
 .bjd-link--out { stroke: var(--mp-icon-information, #4b61dd); }
 

@@ -2,57 +2,55 @@
 /**
  * Batch Traceability Report — the By transaction search (PRD stories 4, 5; plan Phase 2).
  *
- * Two stacked results:
- *  1. Transactions matching the filters, one line per transaction, newest first. Lines
- *     are ticked to pick them.
- *  2. Batches in the selected transactions, one line per transaction + product + batch,
- *     carrying the attribute values RECORDED on that transaction and its signed mutation.
+ * Same grouped table as By batch (the Production request structure): one parent row per
+ * transaction — number, date, type, warehouses — and its batches as child rows under an
+ * empty lane, each with the attribute values RECORDED on that transaction and its signed
+ * mutation. A parent row folds its batches away; pagination counts transactions.
  *
- * Selection is kept here, keyed by transaction number, not by ErpTablePage: its own
- * checkboxes track row positions on the current page and clear whenever the rows
- * change. The PRD needs the opposite — the selection survives paging, "select all"
- * picks every transaction in the filter result (not just this page), and it resets only
- * when a filter or the search changes. So the checkbox is drawn in the first cell and
- * the select-all in that column's header slot (rule/table-checkbox-first-cell).
+ * Attribute columns are Attribute 1–N, named on the transaction row (as By batch names
+ * them on the product row). One transaction can carry products with different attribute
+ * sets, so its row names the UNION of its batches' attributes; a batch whose product
+ * doesn't use one shows NA there (the PRD's "not used" state). N is the widest
+ * transaction in the result.
  *
- * Filters, search, sort, page and the selection live in useBatchTraceabilityReportState,
- * so a batch's detail page can send the user back here exactly as they left it
- * (story 7); switching modes resets that state (story 6).
+ * Filter-first, like By batch: Transaction type (with "All transaction type") and the
+ * date edit a draft, and nothing lists until Filter applies it. Filter needs at least
+ * one of them — without, it shows an inline error, never a disabled button
+ * (rule/btn-no-disabled-validation, rule/form-errors-inline).
+ *
+ * Filters, search, page and folded rows live in useBatchTraceabilityReportState, so a
+ * batch's detail page can send the user back here exactly as they left it (story 7);
+ * switching modes resets that state (story 6).
  *
  * Deliberate departures from docs/design/RULES.md:
- * - No row [...] actions and no row hover on either table (a report line has nothing to
- *   act on) — rule/table-actions-column, rule/table-no-hover-no-actions.
- * - The batches table keeps the PRD's Product A–Z, Batch A–Z order instead of
- *   rule/table-default-newest-first; its date column is named `transactionDate` so
- *   useTableState doesn't re-sort it newest first.
- * - Empty states have no CTA (rule/empty-state-structure): a report has nothing to
- *   create, and the selection hint IS the next action.
+ * - Hand-rolled grouped <table>, not ErpTablePage (rule/table-use-erptablepage) — the
+ *   parent/child rows ErpTablePage can't draw; widths still follow rule/table-column-kind.
+ * - No row [...] actions (a report line has nothing to act on) — rule/table-actions-column.
+ * - Newest transaction first; batches within one keep Product A–Z, Batch A–Z. No
+ *   per-column sort on grouped rows (as By batch).
  * - Transaction numbers are plain text for now: the seeded report transactions aren't
  *   records in the Sales/Purchase/Inventory modules, so a link would open "not found".
  */
 import { computed, nextTick, onMounted, ref, toRef, watch } from 'vue'
-import { MpButton, MpButtonGroup, MpCheckbox, MpIcon, MpTooltip } from '@mekari/pixel3'
-import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import { MpButton, MpButtonGroup, MpIcon, MpSkeleton, MpTooltip } from '@mekari/pixel3'
+import type { TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import ErpPagination from '~/components/patterns/ErpPagination.vue'
+import { columnWidth } from '~/components/patterns/columnWidths'
 import MultiSelectDropdown from '~/components/patterns/MultiSelectDropdown.vue'
 import DateConditionField from '~/components/patterns/DateConditionField.vue'
-import ProductCell from '~/components/patterns/ProductCell.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
-import BatchTransactionFiltersDrawer, {
-  countTransactionDrawerFilters, type TransactionDrawerFiltersValue,
-} from '~/components/patterns/BatchTransactionFiltersDrawer.vue'
 import {
-  TRACE_TX_TYPES, searchTransactions, batchesInTransactions,
-  type DateCondition, type TraceTxType, type TraceabilityAccess,
+  TRACE_TX_TYPES, searchTransactions, batchesInTransactions, productTraceAttributes,
+  type TraceTxType, type TraceabilityAccess,
   type TransactionRow, type TransactionBatchRow, type TransactionSearchFilter,
 } from '~/data/batchTraceability'
+import { MAX_BATCH_ATTRIBUTES, batchAttributeDef, type BatchAttributeKey } from '~/data/batchAttributes'
 import { TRACE_ATTRIBUTE_COLUMNS, useTraceabilityCells } from '~/composables/useTraceabilityCells'
 import { productIndexRows } from '~/data/productsIndex'
 import { warehouses } from '~/data/warehouses'
 import { formatDate, formatDateTime } from '~/utils/date'
-import { customerName } from '~/data/customers'
 import {
-  buildExportDocument, describeDateCondition, downloadExport,
-  type ExportFilter, type ExportFormat, type ExportSection,
+  buildExportDocument, describeDateCondition, downloadExport, type ExportFilter, type ExportFormat,
 } from '~/utils/traceabilityExport'
 import { successToast } from '~/utils/toasts'
 import { useBatchTraceabilityReportState } from '~/composables/useBatchTraceabilityReportState'
@@ -65,466 +63,437 @@ const props = defineProps<{
 
 const { t } = useLocale()
 const router = useRouter()
-const { attributeSortValue, attributeText, mutationText, vendorName } = useTraceabilityCells()
+const { attributeText, mutationText } = useTraceabilityCells()
 
-const activeWarehouses = computed(() => warehouses.filter((w) => !w.isDefault && w.status === 'active'))
 function warehouseName(id: string | null): string {
   return id ? warehouses.find((w) => w.id === id)?.name ?? id : ''
 }
 
-// ─── Filters ────────────────────────────────────────────────────────────────────
+// ─── Filters (draft → Filter → applied) ─────────────────────────────────────────
 // Transaction type sits in the bar as translated labels; mapped back to the type key.
 const typeByLabel = computed(() => new Map(TRACE_TX_TYPES.map((type) => [t(type), type])))
 const typeOptions = computed(() => [...typeByLabel.value.keys()])
 const { state: reportState, resetTransactionSearch } = useBatchTraceabilityReportState()
 const typeLabels = toRef(reportState.transaction, 'typeLabels')
 const dateCondition = toRef(reportState.transaction, 'dateCondition')
-const drawerFilters = toRef(reportState.transaction, 'drawerFilters')
-const filtersOpen = ref(false)
-const drawerFilterCount = computed(() => countTransactionDrawerFilters(drawerFilters.value))
+/** What the last Filter click applied — null until the user has filtered once. */
+const applied = toRef(reportState.transaction, 'applied')
 
-function applyDrawerFilters(v: TransactionDrawerFiltersValue) { drawerFilters.value = v }
-
-/** None ticked = no constraint; every active warehouse ticked = All warehouse. */
-function warehouseQuery(ids: string[]): 'all' | string[] | undefined {
-  if (!ids.length) return undefined
-  return ids.length === activeWarehouses.value.length ? 'all' : ids
+const filterError = ref('')
+const hasDraftFilter = computed(() => typeLabels.value.length > 0 || dateCondition.value !== null)
+function runFilter() {
+  if (!hasDraftFilter.value) {
+    filterError.value = t('Select at least one filter, then click Filter.')
+    return
+  }
+  filterError.value = ''
+  applied.value = {
+    typeLabels: [...typeLabels.value],
+    dateCondition: dateCondition.value ? { ...dateCondition.value } : null,
+  }
+  search.value = ''
+  currentPage.value = 1
 }
+watch(hasDraftFilter, (has) => { if (has) filterError.value = '' })
 
-const query = computed<TransactionSearchFilter>(() => ({
-  types: typeLabels.value.map((label) => typeByLabel.value.get(label)).filter((type): type is TraceTxType => !!type),
-  numbers: drawerFilters.value.numbers,
-  customerIds: drawerFilters.value.customerIds,
-  vendorIds: drawerFilters.value.vendorIds,
-  date: dateCondition.value ?? undefined,
-  originWarehouseIds: warehouseQuery(drawerFilters.value.originWarehouseIds),
-  destinationWarehouseIds: warehouseQuery(drawerFilters.value.destinationWarehouseIds),
-}))
-
-// ─── Transactions table ─────────────────────────────────────────────────────────
-interface TxRow extends Record<string, unknown> {
-  source: TransactionRow
-  /** Named `date` on purpose: useTableState's default newest-first applies (PRD story 5). */
-  date: string
-  number: string
-  type: string
-  originWarehouse: string
-  destinationWarehouse: string
-}
-
-const txRows = computed<TxRow[]>(() => {
-  if (props.empty) return []
-  return searchTransactions(query.value).map((r) => ({
-    source: r,
-    date: r.date,
-    number: r.number,
-    type: t(r.type),
-    originWarehouse: warehouseName(r.originWarehouseId),
-    destinationWarehouse: warehouseName(r.destinationWarehouseId),
-  }))
+/** The applied selection as a search; null before the first Filter. */
+const query = computed<TransactionSearchFilter | null>(() => {
+  const a = applied.value
+  if (!a) return null
+  return {
+    types: a.typeLabels.map((label) => typeByLabel.value.get(label)).filter((type): type is TraceTxType => !!type),
+    date: a.dateCondition ?? undefined,
+  }
 })
 
-function matchesSearch(row: TxRow, s: string): boolean {
-  return !s || row.number.toLowerCase().includes(s)
+// ─── Rows: transactions, each with its batches ──────────────────────────────────
+interface BatchLine {
+  key: string
+  source: TransactionBatchRow
+  productImg: string
+}
+interface TxGroup {
+  number: string
+  /** Named `date` on purpose: useTableState's default newest-first applies (PRD story 5). */
+  date: string
+  source: TransactionRow
+  lines: BatchLine[]
+  /** Union of the lines' products' attribute sets, first-seen order — Attribute 1–N. */
+  attributes: BatchAttributeKey[]
+}
+
+const imageBySku = computed(() => new Map(productIndexRows().map((r) => [r.sku, r.img])))
+const transactions = computed(() => (props.empty || !query.value ? [] : searchTransactions(query.value)))
+
+const groups = computed<TxGroup[]>(() => {
+  const list = transactions.value
+  const bySku = new Map<string, BatchAttributeKey[]>()
+  const linesByNumber = new Map<string, BatchLine[]>()
+  for (const r of batchesInTransactions(list.map((tx) => tx.number), props.access)) {
+    if (!bySku.has(r.sku)) bySku.set(r.sku, productTraceAttributes(r.sku, props.access))
+    const line: BatchLine = { key: r.key, source: r, productImg: imageBySku.value.get(r.sku) ?? '' }
+    linesByNumber.set(r.number, [...(linesByNumber.get(r.number) ?? []), line])
+  }
+  return list.map((tx) => {
+    const lines = linesByNumber.get(tx.number) ?? []
+    const attributes = [...new Set(lines.flatMap((l) => bySku.get(l.source.sku) ?? []))]
+    return { number: tx.number, date: tx.date, source: tx, lines, attributes }
+  })
+})
+
+function matchesSearch(g: TxGroup, s: string): boolean {
+  return !s || g.number.toLowerCase().includes(s) || g.lines.some((l) => l.source.batchNo.toLowerCase().includes(s))
 }
 
 const {
-  search, currentPage: txPage, paginated: txPaginated, total: txTotal, perPage: txPerPage,
-  setPage: setTxPage, setPerPage: setTxPerPage, sortKey: txSortKey, sortDir: txSortDir,
-  toggleSort: toggleTxSort, setSort: setTxSort,
-} = useTableState<TxRow>(txRows, { perPage: 25, filterFn: (row, s) => matchesSearch(row, s) })
+  search, currentPage, paginated, total, perPage, setPage, setPerPage, sortKey, sortDir,
+} = useTableState<TxGroup>(groups, { perPage: 25, filterFn: (g, s) => matchesSearch(g, s) })
+const pagedGroups = computed(() => paginated.value as TxGroup[])
+const matchingGroups = computed(() => {
+  const s = search.value.trim().toLowerCase()
+  return groups.value.filter((g) => matchesSearch(g, s)).sort((a, b) => b.date.localeCompare(a.date))
+})
 
-// Restore the transactions table as the user left it, then keep the store in step. The
-// page comes back a tick later: restoring search / per-page resets it to 1 first.
+// Restore the table as the user left it, then keep the store in step. The page comes
+// back a tick later: restoring search / per-page resets it to 1 first.
 {
   const saved = { ...reportState.transaction.table }
   search.value = saved.search
-  txSortKey.value = saved.sortKey
-  txSortDir.value = saved.sortDir
-  txPerPage.value = saved.perPage
-  void nextTick(() => { txPage.value = saved.page })
+  sortKey.value = saved.sortKey
+  sortDir.value = saved.sortDir
+  perPage.value = saved.perPage
+  void nextTick(() => { currentPage.value = saved.page })
 }
-watch([search, txSortKey, txSortDir, txPage, txPerPage], ([s, key, dir, page, size]) => {
+watch([search, sortKey, sortDir, currentPage, perPage], ([s, key, dir, page, size]) => {
   Object.assign(reportState.transaction.table, { search: s, sortKey: key, sortDir: dir, page, perPage: size })
 })
-
-const txColumns = computed<TableColumn[]>(() => [
-  // The label is the select-all checkbox's own label (header slot), so no plain header.
-  { key: 'date', label: t('Transaction date'), kind: 'date', sortable: true, sortType: 'date', noHeader: true },
-  { key: 'number', label: t('Transaction number'), kind: 'number', sortable: true, sortType: 'text' },
-  { key: 'type', label: t('Transaction type'), sortable: true, sortType: 'text' },
-  { key: 'originWarehouse', label: t('Warehouse origin'), kind: 'name', sortable: true, sortType: 'text' },
-  { key: 'destinationWarehouse', label: t('Warehouse destination'), kind: 'name', sortable: true, sortType: 'text' },
-])
-
-const hasFilter = computed(() => typeLabels.value.length > 0 || dateCondition.value !== null || drawerFilterCount.value > 0)
 
 function resetFilters() {
   resetTransactionSearch()
   search.value = ''
 }
 
-// ─── Selection ──────────────────────────────────────────────────────────────────
-const selected = ref(new Set<string>(reportState.transaction.selected))
+// ─── Expand / collapse ──────────────────────────────────────────────────────────
+// Open by default, like By batch; the folded ones are kept in the report state.
+const collapsed = toRef(reportState.transaction, 'collapsed')
+function isOpen(number: string) { return !collapsed.value.includes(number) }
+function toggleGroup(number: string) {
+  collapsed.value = isOpen(number) ? [...collapsed.value, number] : collapsed.value.filter((n) => n !== number)
+}
 
-/** Every transaction the filters + search match — what "select all" picks. */
-const matchingNumbers = computed(() => {
-  const s = search.value.trim().toLowerCase()
-  return txRows.value.filter((r) => matchesSearch(r, s)).map((r) => r.number)
+// ─── Columns ────────────────────────────────────────────────────────────────────
+/** As many Attribute columns as the widest transaction in the result (at least 3). */
+const attributeSlots = computed(() => {
+  const widest = Math.max(MAX_BATCH_ATTRIBUTES, ...groups.value.map((g) => g.attributes.length))
+  return Array.from({ length: widest }, (_, i) => i)
 })
-const allSelected = computed(() => matchingNumbers.value.length > 0 && matchingNumbers.value.every((n) => selected.value.has(n)))
-const someSelected = computed(() => selected.value.size > 0 && !allSelected.value)
-
-function toggleAll() {
-  selected.value = allSelected.value ? new Set() : new Set(matchingNumbers.value)
-}
-function toggleOne(number: string) {
-  const next = new Set(selected.value)
-  if (next.has(number)) next.delete(number)
-  else next.add(number)
-  selected.value = next
-}
-function clearSelection() { selected.value = new Set() }
-
-// Changing a filter or the search resets the selection; paging and sorting don't. The
-// selection is mirrored into the report state so it survives a trip to a batch's page.
-watch([query, search], clearSelection)
-watch(selected, (s) => { reportState.transaction.selected = [...s] })
-
-const selectedLabel = computed(() => {
-  const n = selected.value.size
-  return n === 1 ? t('1 transaction selected') : t('{n} transactions selected').replace('{n}', String(n))
-})
-
-// ─── Batches in selected transactions ───────────────────────────────────────────
-interface BatchLine extends Record<string, unknown> {
-  key: string
-  source: TransactionBatchRow
-  transactionDate: string
-  transactionNumber: string
-  productName: string
-  productImg: string
-  batchNo: string
-  expiryDate: string
-  manufacturingDate: string
-  bestBeforeDate: string
-  vendor: string
-  grade: string
-  mutation: number
-  mutationSecondary: number | null
-}
-
-const imageBySku = computed(() => new Map(productIndexRows().map((r) => [r.sku, r.img])))
-
-const batchLines = computed<BatchLine[]>(() =>
-  batchesInTransactions([...selected.value], props.access).map((r) => {
-    const line: BatchLine = {
-      key: r.key,
-      source: r,
-      transactionDate: r.date,
-      transactionNumber: r.number,
-      productName: r.productName,
-      productImg: imageBySku.value.get(r.sku) ?? '',
-      batchNo: r.batchNo,
-      expiryDate: '',
-      manufacturingDate: '',
-      bestBeforeDate: '',
-      vendor: '',
-      grade: '',
-      mutation: r.baseDelta,
-      mutationSecondary: r.secondaryDelta.state === 'value' ? r.secondaryDelta.value : null,
-    }
-    for (const a of TRACE_ATTRIBUTE_COLUMNS) line[a.column] = attributeSortValue(r.attributes[a.key], a.key)
-    return line
-  }),
-)
-
-const {
-  currentPage: batchPage, paginated: batchPaginated, total: batchTotal, perPage: batchPerPage,
-  setPage: setBatchPage, setPerPage: setBatchPerPage, sortKey: batchSortKey, sortDir: batchSortDir,
-  toggleSort: toggleBatchSort,
-} = useTableState<BatchLine>(batchLines, { perPage: 25 })
-
-// No filter bar on this table, so no sort menu either — its "Hide column" could never
-// be undone. Header clicks still sort (PRD: sortable per column).
-const batchColumns = computed<TableColumn[]>(() => [
-  { key: 'transactionDate', label: t('Transaction date'), kind: 'date', sortable: true },
-  { key: 'transactionNumber', label: t('Transaction number'), kind: 'number', sortable: true },
-  { key: 'productName', label: t('Product'), kind: 'name', sortable: true },
-  { key: 'batchNo', label: t('Batch number'), kind: 'number', sortable: true },
-  ...TRACE_ATTRIBUTE_COLUMNS.map((a): TableColumn => ({
-    key: a.column, label: t(a.label), kind: a.key === 'supplier' ? 'name' : a.key === 'grade' ? undefined : 'date', sortable: true,
-  })),
-  { key: 'mutation', label: t('Mutation'), align: 'right', sortable: true },
-  { key: 'mutationSecondary', label: t('Mutation (secondary unit)'), align: 'right', sortable: true },
+const slotKey = (i: number) => `attribute${i + 1}`
+/** The columns after the merged Transaction / Batch number column. */
+const valueColumns = computed<TableColumn[]>(() => [
+  { key: 'productName', label: t('Product'), kind: 'name' },
+  { key: 'date', label: t('Transaction date'), kind: 'date' },
+  { key: 'type', label: t('Transaction type') },
+  { key: 'originWarehouse', label: t('Warehouse origin'), kind: 'name' },
+  { key: 'destinationWarehouse', label: t('Warehouse destination'), kind: 'name' },
+  ...attributeSlots.value.map((i): TableColumn => ({ key: slotKey(i), label: `${t('Attribute')} ${i + 1}` })),
+  { key: 'mutation', label: t('Mutation'), align: 'right' },
+  { key: 'mutationSecondary', label: t('Mutation (secondary unit)'), align: 'right' },
 ])
+const mainColWidth = columnWidth('number').maxWidth
+function colWidth(c: TableColumn): string { return columnWidth(c.kind).maxWidth }
 
-function attributeCellText(line: BatchLine, column: string): string {
-  const a = TRACE_ATTRIBUTE_COLUMNS.find((c) => c.column === column)!
-  return attributeText(line.source.attributes[a.key], a.key)
+/** The attribute a slot column holds for this transaction, if it has that many. */
+function slotAttribute(g: TxGroup, column: string): BatchAttributeKey | null {
+  const i = attributeSlots.value.findIndex((n) => slotKey(n) === column)
+  return i < 0 ? null : g.attributes[i] ?? null
 }
-function isNa(line: BatchLine, column: string): boolean {
-  const a = TRACE_ATTRIBUTE_COLUMNS.find((c) => c.column === column)
-  if (a) return line.source.attributes[a.key].state === 'na'
-  return column === 'mutationSecondary' && line.source.secondaryDelta.state === 'na'
+
+/** Parent row: the transaction's own fields and its attribute names; batch columns blank. */
+function parentCell(g: TxGroup, column: string): string {
+  const slot = slotAttribute(g, column)
+  if (slot) return t(batchAttributeDef(slot).label)
+  if (column === 'date') return formatDate(g.date)
+  if (column === 'type') return t(g.source.type)
+  if (column === 'originWarehouse') return warehouseName(g.source.originWarehouseId)
+  if (column === 'destinationWarehouse') return warehouseName(g.source.destinationWarehouseId)
+  return ''
 }
 function secondaryMutationText(line: BatchLine): string {
   const cell = line.source.secondaryDelta
   if (cell.state !== 'value') return t('NA')
   return mutationText(line.source.direction, cell.value, line.source.secondaryUnit)
 }
+function isNa(g: TxGroup, line: BatchLine, column: string): boolean {
+  const slot = slotAttribute(g, column)
+  if (slot) return line.source.attributes[slot].state === 'na'
+  return column === 'mutationSecondary' && line.source.secondaryDelta.state === 'na'
+}
 
 /** Opens the batch's traceability detail with this transaction highlighted in its journey. */
 function openBatch(line: BatchLine) {
   router.push({
-    path: `/inventory-report/batch-traceability/${line.source.sku}/${encodeURIComponent(line.batchNo)}`,
-    query: { transaction: line.transactionNumber },
+    path: `/inventory-report/batch-traceability/${line.source.sku}/${encodeURIComponent(line.source.batchNo)}`,
+    query: { transaction: line.source.number },
   })
 }
 
-const asTx = (row: unknown) => row as TxRow
-const asLine = (row: unknown) => row as BatchLine
-
-// ─── Loading (first paint) ─────────────────────────────────────────────────────
+// ─── Loading (first paint of a result) ──────────────────────────────────────────
 const loading = ref(true)
 onMounted(() => { setTimeout(() => { loading.value = false }, 400) })
 
 // ─── Export (story 12) ──────────────────────────────────────────────────────────
-// The transactions list (all / page / selected), plus — when anything is selected —
-// the batches in the selected transactions. File header lists the applied filters.
+// Flat: one line per transaction + batch, one column per attribute type (the file mixes
+// products, so Attribute 1–3 would mean different things per line).
 const exportOpen = ref(false)
-const exportColumns = computed(() => txColumns.value.map((c, i) => ({ key: c.key, label: c.label, required: i < 2 })))
 const EXPORT_FORMATS: ExportFormat[] = ['xlsx', 'csv']
+const exportColumnDefs = computed(() => [
+  { key: 'date', label: t('Transaction date') },
+  { key: 'number', label: t('Transaction number') },
+  { key: 'type', label: t('Transaction type') },
+  { key: 'originWarehouse', label: t('Warehouse origin') },
+  { key: 'destinationWarehouse', label: t('Warehouse destination') },
+  { key: 'productName', label: t('Product') },
+  { key: 'batchNo', label: t('Batch number') },
+  ...TRACE_ATTRIBUTE_COLUMNS.map((a) => ({ key: a.column, label: t(a.label) })),
+  { key: 'mutation', label: t('Mutation') },
+  { key: 'mutationSecondary', label: t('Mutation (secondary unit)') },
+])
+const exportColumns = computed(() => exportColumnDefs.value.map((c, i) => ({ ...c, required: i < 2 })))
 
-function warehouseListText(ids: string[]): string {
-  return ids.length === activeWarehouses.value.length ? t('All warehouse') : ids.map(warehouseName).join(', ')
+function exportCell(g: TxGroup, line: BatchLine, key: string): string {
+  const attribute = TRACE_ATTRIBUTE_COLUMNS.find((a) => a.column === key)
+  if (attribute) return attributeText(line.source.attributes[attribute.key], attribute.key)
+  if (key === 'number') return g.number
+  if (key === 'productName') return line.source.productName
+  if (key === 'batchNo') return line.source.batchNo
+  if (key === 'mutation') return mutationText(line.source.direction, line.source.qty, line.source.unit)
+  if (key === 'mutationSecondary') return secondaryMutationText(line)
+  return parentCell(g, key)
 }
 
-/** The filters behind the current result, as the file header lists them. */
+/** The filters behind the current result (the applied ones), as the file header lists them. */
 const appliedFilters = computed<ExportFilter[]>(() => {
-  const d = drawerFilters.value
-  const dateLabels = { between: t('Is between'), before: t('Is before'), after: t('Is after') }
+  const a = applied.value
   const out: ExportFilter[] = []
-  if (typeLabels.value.length) out.push({ label: t('Transaction type'), value: typeLabels.value.join(', ') })
-  if (dateCondition.value) out.push({ label: t('Transaction date'), value: describeDateCondition(dateCondition.value, dateLabels, formatDate) })
-  if (d.numbers.length) out.push({ label: t('Transaction number'), value: d.numbers.join(', ') })
-  if (d.customerIds.length) out.push({ label: t('Customer'), value: d.customerIds.map(customerName).join(', ') })
-  if (d.vendorIds.length) out.push({ label: t('Vendor'), value: d.vendorIds.map(vendorName).join(', ') })
-  if (d.originWarehouseIds.length) out.push({ label: t('Warehouse origin'), value: warehouseListText(d.originWarehouseIds) })
-  if (d.destinationWarehouseIds.length) out.push({ label: t('Warehouse destination'), value: warehouseListText(d.destinationWarehouseIds) })
+  if (!a) return out
+  const dateLabels = { between: t('Is between'), before: t('Is before'), after: t('Is after') }
+  if (a.typeLabels.length) {
+    out.push({
+      label: t('Transaction type'),
+      value: a.typeLabels.length === typeOptions.value.length ? t('All transaction type') : a.typeLabels.join(', '),
+    })
+  }
+  if (a.dateCondition) out.push({ label: t('Transaction date'), value: describeDateCondition(a.dateCondition, dateLabels, formatDate) })
   if (search.value.trim()) out.push({ label: t('Search keyword'), value: search.value.trim() })
   return out
 })
 
-function txCellText(row: TxRow, key: string): string {
-  return key === 'date' ? formatDate(row.date) : String(row[key] ?? '')
-}
-function batchLineText(line: BatchLine, key: string): string {
-  if (key === 'transactionDate') return formatDate(line.transactionDate)
-  if (key === 'mutation') return mutationText(line.source.direction, line.source.qty, line.source.unit)
-  if (key === 'mutationSecondary') return secondaryMutationText(line)
-  if (TRACE_ATTRIBUTE_COLUMNS.some((a) => a.column === key)) return attributeCellText(line, key)
-  return String(line[key] ?? '')
-}
-
 async function onExport(payload: { scope: 'all' | 'page' | 'selected'; columns: string[]; format?: ExportFormat }) {
   exportOpen.value = false
-  const s = search.value.trim().toLowerCase()
-  const lines = payload.scope === 'page'
-    ? (txPaginated.value as TxRow[])
-    : payload.scope === 'selected'
-      ? txRows.value.filter((r) => selected.value.has(r.number))
-      : txRows.value.filter((r) => matchesSearch(r, s))
-  const cols = txColumns.value.filter((c) => payload.columns.includes(c.key))
-  const sections: ExportSection[] = [
-    { name: t('Transactions'), columns: cols.map((c) => c.label), rows: lines.map((r) => cols.map((c) => txCellText(r, c.key))) },
-  ]
-  if (selected.value.size) {
-    sections.push({
-      name: t('Batches in selected transactions'),
-      columns: batchColumns.value.map((c) => c.label),
-      rows: batchLines.value.map((line) => batchColumns.value.map((c) => batchLineText(line, c.key))),
-    })
-  }
+  const list = payload.scope === 'page' ? pagedGroups.value : matchingGroups.value
+  const cols = exportColumnDefs.value.filter((c) => payload.columns.includes(c.key))
   const doc = buildExportDocument({
     title: `${t('Batch traceability')} — ${t('By transaction')}`,
     exportedOn: formatDateTime(new Date().toISOString()),
     filters: appliedFilters.value,
     labels: { exportedOn: t('Exported on'), appliedFilters: t('Applied filters'), noFilters: t('No filters applied') },
-    sections,
+    sections: [{
+      name: t('Transactions'),
+      columns: cols.map((c) => c.label),
+      rows: list.flatMap((g) => g.lines.map((line) => cols.map((c) => exportCell(g, line, c.key)))),
+    }],
   })
   await downloadExport(doc, 'batch-traceability-by-transaction', payload.format ?? 'xlsx')
   successToast(t('Transactions exported'))
+}
+
+function countText(n: number): string {
+  return n === 1 ? t('1 batch') : t('{n} batches').replace('{n}', String(n))
 }
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
 
 <template>
-  <div class="btx">
-    <ErpTablePage
-      :columns="txColumns"
-      :rows="(txPaginated as unknown as Record<string, unknown>[])"
-      :total="txTotal"
-      :current-page="txPage"
-      :per-page="txPerPage"
-      :sort-key="txSortKey"
-      :sort-dir="txSortDir"
-      :loading="loading"
-      :search="search"
-      :has-active-search="!!search.trim()"
-      :has-active-filter="hasFilter || !!search.trim()"
-      filter-empty-label="transactions"
-      no-row-hover
-      @page-change="setTxPage"
-      @per-page-change="setTxPerPage"
-      @sort="toggleTxSort"
-      @sort-change="setTxSort"
-      @clear-filters="resetFilters"
-    >
-      <!-- ── Filter bar ── -->
-      <template #filters>
-        <div class="filter-left">
-          <MultiSelectDropdown id="btx-type" v-model="typeLabels" :options="typeOptions" :placeholder="t('Transaction type')" />
-          <div class="btx-date">
-            <DateConditionField id="btx-date" v-model="dateCondition" />
-          </div>
-          <MpButton is-rounded class="bt-all-filters" :class="{ 'bt-all-filters--active': drawerFilterCount > 0 }" @click="filtersOpen = true">
-            <MpIcon name="filter" size="sm" />
-            {{ t('All filters') }}{{ drawerFilterCount > 0 ? ` (${drawerFilterCount})` : '' }}
-          </MpButton>
+  <section class="btx">
+    <!-- ── Filter bar ── -->
+    <div class="btx-filter-bar">
+      <div class="filter-left">
+        <MultiSelectDropdown
+          id="btx-type" v-model="typeLabels" :options="typeOptions" :placeholder="t('Transaction type')"
+          :select-all-label="t('All transaction type')" :all-selected-label="t('All transaction type')"
+        />
+        <div class="btx-date">
+          <DateConditionField id="btx-date" v-model="dateCondition" />
         </div>
-
-        <div class="filter-right">
-          <MpButtonGroup class="filter-btn-group">
-            <MpTooltip id="tt-btx-export" :label="t('Export')" placement="bottom" use-portal>
-              <MpButton
-                variant="ghost" is-rounded class="filter-icon-btn"
-                left-icon="download" :aria-label="t('Export')" @click="exportOpen = true"
-              />
-            </MpTooltip>
-          </MpButtonGroup>
-
-          <div class="filter-search">
-            <MpIcon name="search" size="sm" />
-            <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search transaction number')">
-            <MpButton
-              v-if="search" variant="ghost" class="filter-search-clear"
-              left-icon="close" :aria-label="t('Clear search')" @click="search = ''"
-            />
-          </div>
-        </div>
-      </template>
-
-      <!-- ── Select all — the first column's own header, labelled like a header ── -->
-      <template #header-date>
-        <MpCheckbox
-          id="btx-select-all" class="btx-head-check"
-          :is-checked="allSelected" :is-indeterminate="someSelected"
-          @change="toggleAll" @click.stop
-        >{{ t('Transaction date') }}</MpCheckbox>
-      </template>
-
-      <template #cell-date="{ row }">
-        <MpCheckbox
-          :id="`btx-row-${asTx(row).number}`"
-          :is-checked="selected.has(asTx(row).number)"
-          @change="() => toggleOne(asTx(row).number)"
-        >{{ formatDate(asTx(row).date) }}</MpCheckbox>
-      </template>
-
-      <template #empty>
-        <div class="empty-full">
-          <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240">
-          <p class="empty-full-title">{{ t('No transactions') }}</p>
-          <p class="empty-full-desc">{{ t('Transactions that moved batch stock will appear here.') }}</p>
-        </div>
-      </template>
-    </ErpTablePage>
-
-    <!-- ── Batches in the selected transactions ── -->
-    <section class="btx-section">
-      <div class="btx-section-head">
-        <h2 class="btx-section-title">{{ t('Batches in selected transactions') }}</h2>
-        <template v-if="selected.size">
-          <span class="btx-selected">{{ selectedLabel }}</span>
-          <MpButton variant="textLink" is-rounded class="btx-clear" @click="clearSelection">{{ t('Clear selection') }}</MpButton>
-        </template>
+        <button type="button" class="btn-enterprise btn-enterprise--primary btx-filter-btn" @click="runFilter">{{ t('Filter') }}</button>
       </div>
 
-      <ErpTablePage
-        :columns="batchColumns"
-        :rows="(batchPaginated as unknown as Record<string, unknown>[])"
-        :total="batchTotal"
-        :current-page="batchPage"
-        :per-page="batchPerPage"
-        :sort-key="batchSortKey"
-        :sort-dir="batchSortDir"
-        no-row-hover
-        @page-change="setBatchPage"
-        @per-page-change="setBatchPerPage"
-        @sort="toggleBatchSort"
-      >
-        <template #cell-transactionDate="{ row }">{{ formatDate(asLine(row).transactionDate) }}</template>
+      <div class="filter-right">
+        <MpButtonGroup class="filter-btn-group">
+          <MpTooltip id="tt-btx-export" :label="t('Export')" placement="bottom" use-portal>
+            <MpButton
+              variant="ghost" is-rounded class="filter-icon-btn"
+              left-icon="download" :aria-label="t('Export')" @click="exportOpen = true"
+            />
+          </MpTooltip>
+        </MpButtonGroup>
 
-        <template #cell-productName="{ row }">
-          <ProductCell :name="asLine(row).productName" :desc="asLine(row).source.sku" :image="asLine(row).productImg" />
-        </template>
+        <div class="filter-search">
+          <MpIcon name="search" size="sm" />
+          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search transaction or batch number')">
+          <MpButton
+            v-if="search" variant="ghost" class="filter-search-clear"
+            left-icon="close" :aria-label="t('Clear search')" @click="search = ''"
+          />
+        </div>
+      </div>
+    </div>
 
-        <template #cell-batchNo="{ row }">
-          <span
-            class="cell-link" role="button" tabindex="0"
-            @click.stop="openBatch(asLine(row))" @keydown.enter="openBatch(asLine(row))"
-          >{{ asLine(row).batchNo }}</span>
-        </template>
+    <p v-if="filterError" class="btx-filter-error" role="alert">
+      <MpIcon name="warning-triangle" size="sm" />{{ filterError }}
+    </p>
 
-        <template v-for="a in TRACE_ATTRIBUTE_COLUMNS" :key="a.column" #[`cell-${a.column}`]="{ row }">
-          <span :class="{ 'bt-na': isNa(asLine(row), a.column) }">{{ attributeCellText(asLine(row), a.column) }}</span>
-        </template>
+    <!-- ── No transactions at all ── -->
+    <div v-if="props.empty" class="empty-full">
+      <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240">
+      <p class="empty-full-title">{{ t('No transactions') }}</p>
+      <p class="empty-full-desc">{{ t('Transactions that moved batch stock will appear here.') }}</p>
+    </div>
 
-        <template #cell-mutation="{ row }">
-          <span class="bt-num">{{ mutationText(asLine(row).source.direction, asLine(row).source.qty, asLine(row).source.unit) }}</span>
-        </template>
+    <!-- ── Filter first — nothing lists until Filter is clicked ── -->
+    <div v-else-if="!applied" class="empty-full">
+      <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240">
+      <p class="empty-full-title">{{ t('Filter to see transactions') }}</p>
+      <p class="empty-full-desc">{{ t('Select a transaction type or date, then click Filter.') }}</p>
+    </div>
 
-        <template #cell-mutationSecondary="{ row }">
-          <span class="bt-num" :class="{ 'bt-na': isNa(asLine(row), 'mutationSecondary') }">{{ secondaryMutationText(asLine(row)) }}</span>
-        </template>
+    <!-- ── Grouped table: transaction parent rows, batch child rows ── -->
+    <template v-else-if="loading || pagedGroups.length">
+      <div class="btx-table-wrap">
+        <table class="btx-table">
+          <colgroup>
+            <col style="width: 56px">
+            <col :style="{ width: mainColWidth }">
+            <col v-for="c in valueColumns" :key="c.key" :style="{ width: colWidth(c) }">
+          </colgroup>
+          <thead>
+            <tr>
+              <th class="btx-th" colspan="2">{{ t('Transaction number') }}/{{ t('Batch number') }}</th>
+              <th
+                v-for="c in valueColumns" :key="c.key"
+                class="btx-th" :class="{ 'btx-th--right': c.align === 'right' }"
+              >{{ c.label }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Loading — 3 solid skeleton rows, one bar per column (ErpTablePage standard) -->
+            <template v-if="loading">
+              <tr v-for="n in 3" :key="`sk-${n}`" class="btx-parent btx-parent--skeleton">
+                <td class="btx-td" colspan="2">
+                  <MpSkeleton class="btx-skel" height="14px" rounded="sm" duration="0s" width="72px" />
+                </td>
+                <td v-for="c in valueColumns" :key="c.key" class="btx-td" :class="{ 'btx-td--right': c.align === 'right' }">
+                  <MpSkeleton class="btx-skel" height="14px" rounded="sm" duration="0s" :width="c.align === 'right' ? '56px' : '72px'" />
+                </td>
+              </tr>
+            </template>
 
-        <template #empty>
-          <div class="empty-full">
-            <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240">
-            <p class="empty-full-title">{{ t('No transaction selected') }}</p>
-            <p class="empty-full-desc">{{ t('Select a transaction to see its batches.') }}</p>
-          </div>
-        </template>
-      </ErpTablePage>
-    </section>
+            <template v-for="g in pagedGroups" v-else :key="g.number">
+              <!-- Parent (transaction) row — the number cell folds its batches -->
+              <tr class="btx-parent">
+                <td
+                  class="btx-td btx-parent-cell" colspan="2" role="button" tabindex="0"
+                  :aria-expanded="isOpen(g.number)"
+                  @click="toggleGroup(g.number)" @keydown.enter="toggleGroup(g.number)"
+                >
+                  <div class="btx-tx">
+                    <div class="btx-tx-main">
+                      <span class="btx-tx-number">{{ g.number }}</span>
+                      <span class="btx-expand" :class="{ 'btx-expand--open': isOpen(g.number) }" aria-hidden="true">
+                        <MpIcon name="chevrons-down" size="sm" />
+                      </span>
+                    </div>
+                    <span class="btx-tx-meta">{{ countText(g.lines.length) }}</span>
+                  </div>
+                </td>
+                <td
+                  v-for="c in valueColumns" :key="c.key"
+                  class="btx-td" :class="{ 'btx-td--right': c.align === 'right', 'btx-attr-name': !!slotAttribute(g, c.key) }"
+                >
+                  {{ parentCell(g, c.key) }}
+                </td>
+              </tr>
 
-    <BatchTransactionFiltersDrawer
-      id="btx-filters"
-      v-model:is-open="filtersOpen"
-      :model-value="drawerFilters"
-      @apply="applyDrawerFilters"
-    />
+              <!-- Child (batch) rows under an empty lane -->
+              <template v-if="isOpen(g.number)">
+                <tr v-for="(line, li) in g.lines" :key="line.key" class="btx-child">
+                  <td v-if="li === 0" class="btx-td btx-child-lane" :rowspan="g.lines.length" />
+                  <td class="btx-td btx-child-td">
+                    <span
+                      class="cell-link" role="button" tabindex="0"
+                      @click.stop="openBatch(line)" @keydown.enter="openBatch(line)"
+                    >{{ line.source.batchNo }}</span>
+                  </td>
+                  <td
+                    v-for="c in valueColumns" :key="c.key"
+                    class="btx-td btx-child-td" :class="{ 'btx-td--right bt-num': c.align === 'right', 'bt-na': isNa(g, line, c.key) }"
+                  >
+                    <div v-if="c.key === 'productName'" class="btx-product">
+                      <img v-if="line.productImg" class="btx-thumb" :src="line.productImg" :alt="line.source.productName" loading="lazy" width="32" height="32">
+                      <div class="btx-product-body">
+                        <span class="btx-product-name">{{ line.source.productName }}</span>
+                        <span class="btx-product-sku">SKU: {{ line.source.sku }}</span>
+                      </div>
+                    </div>
+                    <!-- The attribute is named on the transaction row above. -->
+                    <template v-else-if="slotAttribute(g, c.key)">{{ attributeText(line.source.attributes[slotAttribute(g, c.key)!], slotAttribute(g, c.key)!) }}</template>
+                    <template v-else-if="c.key === 'mutation'">{{ mutationText(line.source.direction, line.source.qty, line.source.unit) }}</template>
+                    <template v-else-if="c.key === 'mutationSecondary'">{{ secondaryMutationText(line) }}</template>
+                  </td>
+                </tr>
+              </template>
+            </template>
+          </tbody>
+        </table>
+      </div>
+
+      <ErpPagination
+        v-if="!loading"
+        :current-page="currentPage" :per-page="perPage" :total="total"
+        @page-change="setPage" @per-page-change="setPerPage"
+      />
+    </template>
+
+    <!-- ── Filtered empty — the filter or search found no transaction ── -->
+    <div v-else class="empty-full">
+      <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240">
+      <p class="empty-full-title">{{ search.trim() ? `"${search.trim()}" ${t('not found')}` : t('No transactions match your filters') }}</p>
+      <p class="empty-full-desc">{{ search.trim() ? t('Recheck the keywords you have typed and try searching again.') : t('Recheck the filters you have applied and try filtering again.') }}</p>
+      <a class="empty-clear" @click="resetFilters">{{ t('Clear all filters') }}</a>
+    </div>
 
     <ExportModal
       :open="exportOpen"
       :formats="EXPORT_FORMATS"
-      :selected-count="selected.size"
       :title="t('Export transactions')"
       :entity-label="t('transactions')"
       :columns="exportColumns"
-      :total="txTotal"
+      :total="matchingGroups.length"
       @close="exportOpen = false"
       @export="onExport"
     />
-  </div>
+  </section>
 </template>
 
 <style scoped>
-.btx { display: flex; flex-direction: column; gap: var(--mp-spacing-8, 32px); }
+.btx { display: flex; flex-direction: column; min-width: 0; }
 
 /* ── Filter bar ── */
+.btx-filter-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3);
+  margin-bottom: var(--mp-spacing-5);
+}
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); flex-wrap: wrap; }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-left: auto; }
 .filter-btn-group { display: flex; align-items: center; }
@@ -546,36 +515,80 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 /* Comparator + picker sit side by side; fixed so picking a range never reflows the bar. */
 .btx-date { width: 360px; flex-shrink: 0; }
-
-/* All filters — secondary look; the (N) is the active signal (rule/filter-all-filters-active-count). */
-.bt-all-filters {
-  display: inline-flex !important; align-items: center; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3) !important;
-  background: var(--mp-background-neutral, #ffffff) !important;
-  border: 1px solid var(--mp-colors-border-bold, #8c9596) !important;
-  border-radius: var(--mp-radii-full, 999px) !important;
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-md); color: var(--mp-colors-text-default, #232933);
-  white-space: nowrap; cursor: pointer;
+.btx-filter-btn { white-space: nowrap; }
+.btx-filter-error {
+  display: flex; align-items: center; gap: var(--mp-spacing-1);
+  margin: calc(-1 * var(--mp-spacing-3)) 0 var(--mp-spacing-4);
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-critical, #d93b3b);
 }
-.bt-all-filters:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; }
-.bt-all-filters--active { background: var(--mp-background-neutral-subtle, #f8f9f9) !important; }
 
-/* Select-all label reads as the column header (rule/table-header-uppercase). */
-.btx-head-check {
+/* ── Grouped table (By batch / Production request structure) ── */
+.btx-table-wrap { overflow-x: auto; }
+.btx-table { width: 100%; min-width: max-content; border-collapse: collapse; table-layout: fixed; }
+.btx-th {
+  position: sticky; top: 0; z-index: 2;
+  height: var(--mp-sizes-7, 28px);
+  padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  text-transform: uppercase; color: var(--mp-colors-text-secondary, #626b79);
+  text-transform: uppercase; color: var(--mp-text-default); text-align: left;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.btx-th--right { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
+.btx-td {
+  height: var(--mp-sizes-10, 40px);
+  padding: var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-2);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: inherit;
+}
+.btx-td--right { text-align: right; padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-4); }
+.btx-th, .btx-td { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
+.btx-th:last-child, .btx-td:last-child { border-right: none; }
+
+.btx-parent--skeleton .btx-td { background: var(--mp-background-neutral, #ffffff); }
+.btx-skel {
+  display: inline-block; vertical-align: middle;
+  background-image: none !important; background-color: var(--mp-border-default, #e3e7e9) !important; animation: none !important;
 }
 
-/* ── Second table ── */
-.btx-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
-.btx-section-head { display: flex; align-items: baseline; gap: var(--mp-spacing-3); flex-wrap: wrap; }
-.btx-section-title {
-  margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-xl, 32px); color: var(--mp-colors-text-default, #232933);
+/* Parent (transaction) row — the number cell folds the group */
+.btx-parent { background: var(--mp-background-neutral, #ffffff); }
+.btx-parent:hover .btx-td { background: var(--mp-background-neutral-hovered, #eef0f3); }
+.btx-parent-cell { white-space: normal; cursor: pointer; }
+.btx-parent-cell:hover .btx-tx-number { color: var(--mp-text-selected); }
+.btx-parent-cell:hover .btx-expand { color: var(--mp-text-default); }
+.btx-tx { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: 0; }
+.btx-tx-main { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
+.btx-tx-number {
+  flex: 1; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium); color: var(--mp-text-default);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.btx-selected { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-secondary, #626b79); }
-.btx-clear { padding: 0 !important; }
+.btx-tx-meta { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
+.btx-expand {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: var(--mp-sizes-6, 24px); height: var(--mp-sizes-6, 24px);
+  border-radius: var(--mp-radii-sm); color: var(--mp-text-secondary);
+  transition: transform 120ms ease;
+}
+.btx-expand--open { transform: rotate(180deg); }
+
+/* Child (batch) rows */
+.btx-child > .btx-child-td { background: var(--mp-background-neutral, #ffffff); }
+.btx-child:hover > .btx-child-td { background: var(--mp-background-neutral-hovered, #eef0f3); }
+.btx-child-lane { background: var(--mp-background-neutral, #ffffff); }
+.btx-product { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
+.btx-thumb {
+  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); flex-shrink: 0; object-fit: cover;
+  border-radius: var(--mp-radii-md); border: 1px solid var(--mp-border-subtle, #eef0f3);
+}
+.btx-product-body { display: flex; flex-direction: column; min-width: 0; }
+.btx-product-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btx-product-sku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+/* Attribute name on the transaction row — labels the slot for its batches (as By batch). */
+.btx-attr-name { font-weight: var(--mp-font-weights-semi-bold); }
 
 /* ── Cells ── */
 .bt-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -592,4 +605,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   margin-top: var(--mp-spacing-0\.5); margin-bottom: var(--mp-spacing-3);
   font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-secondary, #626b79);
 }
+.empty-clear { color: var(--mp-text-link); cursor: pointer; font-size: var(--mp-font-sizes-md); }
+.empty-clear:hover { text-decoration: underline; text-underline-offset: 2px; }
 </style>

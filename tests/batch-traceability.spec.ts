@@ -413,6 +413,40 @@ describe('attribute change trail', () => {
   })
 })
 
+describe('bundled transactions', () => {
+  it('has deliveries carrying several products and batches, each from one warehouse to one customer', () => {
+    const tx = api.searchTransactions({ types: ['Sales delivery'] })
+    const lines = api.batchesInTransactions(tx.map((t) => t.number))
+    const byNumber = new Map<string, typeof lines>()
+    for (const l of lines) byNumber.set(l.number, [...(byNumber.get(l.number) ?? []), l])
+    const multi = [...byNumber.entries()].filter(([, ls]) => ls.length > 1 && new Set(ls.map((l) => l.sku)).size > 1)
+    expect(multi.length).toBeGreaterThan(5)
+    for (const [number] of multi) {
+      const movements = api.batchJourney(multi[0]![1][0]!.sku, multi[0]![1][0]!.batchNo).filter((r) => r.number === number)
+      for (const r of movements) expect(r.counterparty?.kind).toBe('customer')
+    }
+    const row = tx.find((t) => t.number === multi[0]![0])!
+    expect(row.originWarehouseId).not.toBeNull()
+  })
+
+  it('numbers bundled types without gaps, oldest first', () => {
+    for (const [type, prefix] of [['Sales delivery', 'SD'], ['Warehouse transfer', 'WT'], ['Purchase delivery', 'PD']] as const) {
+      const tx = api.searchTransactions({ types: [type] }).sort((a, b) => a.date.localeCompare(b.date) || a.number.localeCompare(b.number))
+      expect(tx.map((t) => t.number)).toEqual(tx.map((_, i) => `${prefix}-2026-${1001 + i}`))
+    }
+  })
+})
+
+describe('batch number options', () => {
+  it('lists every batch number, or only the picked products\' batches', () => {
+    const all = api.traceBatchNumberOptions()
+    const one = api.traceBatchNumberOptions(['1101'])
+    expect(one.length).toBeGreaterThan(0)
+    expect(one.every((b) => all.includes(b))).toBe(true)
+    expect(one).toEqual([...new Set(api.getProductBatches('1101').filter((b) => !b.archived).map((b) => b.batchNo))].sort())
+  })
+})
+
 describe('visual journey — flow by counterparty', () => {
   it('puts every in/out line in exactly one party node, and every neutral line in the batch', () => {
     for (const { sku, batch } of stockedBatches().slice(0, 15)) {

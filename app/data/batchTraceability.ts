@@ -132,6 +132,14 @@ export function isAttributeAvailable(key: BatchAttributeKey, access: Traceabilit
   return key === 'expiry_date' || access.batchAttribute
 }
 
+/** A product's attributes as the report's Attribute 1–3 columns show them: its configured
+ *  set (max 3), minus the ones the company isn't entitled to; Expiry date when that
+ *  leaves nothing. */
+export function productTraceAttributes(sku: string, access: TraceabilityAccess = FULL_ACCESS): BatchAttributeKey[] {
+  const keys = getBatchAttributeConfig(sku).map((a) => a.key).filter((k) => isAttributeAvailable(k, access))
+  return keys.length ? keys : ['expiry_date']
+}
+
 /** The PRD's three cell states: NA (not used / no access), empty (used, no value), value. */
 export type AttributeCell = { state: 'na' } | { state: 'empty' } | { state: 'value'; value: string }
 export type QtyCell = { state: 'na' } | { state: 'empty' } | { state: 'value'; value: number }
@@ -362,6 +370,10 @@ function buildLedger(): Ledger {
 
     const receiptDate = outputLink?.date ?? shiftDays(TODAY_ISO, -(90 + (h % 30)))
     const day = (offset: number) => shiftDays(receiptDate, offset)
+    // Receipts, transfers and deliveries run on shared days, so batches that move on the
+    // same day through the same warehouse land in one transaction (bundled below).
+    // Receipts only move earlier and the rest only later, so each batch's order holds.
+    const receiptDay = snapDay(day(0), 7, 'down')
     const vendorId = current.supplier ?? coffeeVendorIds[h % coffeeVendorIds.length]!
     const homeCustomer = customerIds[h % customerIds.length]!
     const secondCustomer = customerIds[(h >>> 1) % customerIds.length]!
@@ -389,15 +401,15 @@ function buildLedger(): Ledger {
       outputLink.outputQty = receiptQty
       add({ type: 'Work order', number: outputLink.number, date: outputLink.date, warehouseId: home, role: 'output', direction: 'in', qty: receiptQty, attributes: receiptAttributes })
     } else {
-      add({ type: 'Purchase delivery', number: nextNumber('PD'), date: day(0), warehouseId: home, vendorId, direction: 'in', qty: receiptQty, attributes: receiptAttributes })
+      add({ type: 'Purchase delivery', number: nextNumber('PD'), date: receiptDay, warehouseId: home, vendorId, direction: 'in', qty: receiptQty, attributes: receiptAttributes })
     }
     if (purchaseReturnQty) add({ type: 'Purchase return', number: nextNumber('PR'), date: day(3), warehouseId: home, vendorId, direction: 'out', qty: purchaseReturnQty })
-    if (transferQty) add({ type: 'Warehouse transfer', number: nextNumber('WT'), date: day(7), warehouseId: home, toWarehouseId: second, direction: 'neutral', qty: transferQty })
-    if (homeSalesQty) add({ type: 'Sales delivery', number: nextNumber('SD'), date: day(15), warehouseId: home, customerId: homeCustomer, direction: 'out', qty: homeSalesQty })
+    if (transferQty) add({ type: 'Warehouse transfer', number: nextNumber('WT'), date: snapDay(day(7), 7, 'up'), warehouseId: home, toWarehouseId: second, direction: 'neutral', qty: transferQty })
+    if (homeSalesQty) add({ type: 'Sales delivery', number: nextNumber('SD'), date: snapDay(day(15), 14, 'up'), warehouseId: home, customerId: homeCustomer, direction: 'out', qty: homeSalesQty })
     for (const c of consumed) {
       add({ type: 'Work order', number: c.link.number, date: c.link.date, warehouseId: home, role: 'input', direction: 'out', qty: c.qty })
     }
-    if (secondSalesQty) add({ type: 'Sales delivery', number: nextNumber('SD'), date: day(30), warehouseId: second, customerId: secondCustomer, direction: 'out', qty: secondSalesQty })
+    if (secondSalesQty) add({ type: 'Sales delivery', number: nextNumber('SD'), date: snapDay(day(30), 14, 'up'), warehouseId: second, customerId: secondCustomer, direction: 'out', qty: secondSalesQty })
     if (returnQty) add({ type: 'Sales return', number: nextNumber('SR'), date: day(38), warehouseId: home, customerId: homeCustomer, direction: 'in', qty: returnQty })
     if (adjustment) {
       add({ type: 'Stock in/out', number: nextNumber('SA'), date: day(45), warehouseId: second, direction: mutationDirection('Stock in/out', { delta: adjustment }), qty: Math.abs(adjustment) })
@@ -415,7 +427,44 @@ function buildLedger(): Ledger {
     })
   }
 
+  bundleTransactions(movements)
   return { movements, links, changes }
+}
+
+/** Move an ISO date onto a shared `every`-day grid, earlier ('down') or later ('up'). */
+function snapDay(iso: string, every: number, way: 'down' | 'up'): string {
+  const index = Math.round(Date.parse(`${iso}T00:00:00Z`) / 86_400_000)
+  const rest = ((index % every) + every) % every
+  return shiftDays(iso, way === 'down' ? -rest : (every - rest) % every)
+}
+
+/**
+ * Lines of one type, on one day, through the same warehouse(s) become ONE transaction —
+ * so a delivery or transfer can carry several products and batches (By transaction).
+ * A sales delivery goes to one customer (the first line's); a purchase delivery only
+ * bundles lines from the same vendor. Numbers are then reissued in date order.
+ */
+function bundleTransactions(movements: TraceMovement[]) {
+  const BUNDLED: Partial<Record<TraceTxType, string>> = {
+    'Purchase delivery': 'PD', 'Warehouse transfer': 'WT', 'Sales delivery': 'SD',
+  }
+  const firstOf = new Map<string, TraceMovement>()
+  for (const m of [...movements].sort((a, b) => a.date.localeCompare(b.date) || a.number.localeCompare(b.number))) {
+    if (!BUNDLED[m.type]) continue
+    const key = [m.type, m.date, m.warehouseId, m.toWarehouseId ?? '', m.type === 'Purchase delivery' ? m.vendorId : ''].join('|')
+    const first = firstOf.get(key)
+    if (!first) { firstOf.set(key, m); continue }
+    m.number = first.number
+    if (m.type === 'Sales delivery') m.customerId = first.customerId
+  }
+  // Reissue each bundled prefix 1001, 1002, … oldest first, so no numbers go missing.
+  for (const [type, prefix] of Object.entries(BUNDLED) as [TraceTxType, string][]) {
+    const ofType = movements.filter((m) => m.type === type)
+    const order = [...new Map(ofType.map((m) => [m.number, m.date])).entries()]
+      .sort(([na, da], [nb, db]) => da.localeCompare(db) || na.localeCompare(nb))
+    const renumber = new Map(order.map(([number], i) => [number, `${prefix}-2026-${1001 + i}`]))
+    for (const m of ofType) m.number = renumber.get(m.number)!
+  }
 }
 
 /** Move a batch's per-warehouse balances by one movement. */
@@ -491,9 +540,12 @@ export function traceProductOptions(): { sku: string; name: string }[] {
     .sort((a, b) => collator.compare(a.name, b.name))
 }
 
-/** Batch number filter: distinct batch numbers across the company, A–Z. */
-export function traceBatchNumberOptions(): string[] {
-  const numbers = new Set(tracedBatches().filter((r) => !r.batch.archived).map((r) => r.batch.batchNo))
+/** Batch number filter: distinct batch numbers, A–Z — across the company, or only the
+ *  given products' batches when some are picked. */
+export function traceBatchNumberOptions(productSkus: readonly string[] = []): string[] {
+  const numbers = new Set(tracedBatches()
+    .filter((r) => !r.batch.archived && (!productSkus.length || productSkus.includes(r.sku)))
+    .map((r) => r.batch.batchNo))
   return [...numbers].sort(collator.compare)
 }
 
