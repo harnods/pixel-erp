@@ -673,6 +673,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Module published': 'Modul berhasil dipublikasikan',
   'Module saved as draft': 'Modul disimpan sebagai draft',
   'Module unpublished': 'Modul dikembalikan ke draft',
+  'Module deactivated': 'Modul dinonaktifkan',
+  'Deactivate the module before deleting.': 'Nonaktifkan modul terlebih dahulu sebelum menghapus.',
   'Publish this module?': 'Publikasikan modul ini?',
   'Once published, this module appears in the CRM nav for anyone with access.': 'Setelah dipublikasikan, modul ini akan muncul di navigasi CRM untuk siapa pun yang punya akses.',
   'Choose whether this module is company-wide or limited to specific teams.': 'Pilih apakah modul ini berlaku untuk seluruh perusahaan atau terbatas pada tim tertentu.',

@@ -2009,6 +2009,13 @@ export function genericPipelineFieldId(moduleId: string): string | null {
   return cfg?.pipelineFieldId ?? null
 }
 
+/** Transfer only the pipelineFieldId — used when the caller already transferred
+ *  pipelines and properties separately (e.g. saveNewModule). */
+export function transferGenericPipelineFieldId(moduleId: string, fieldId: string | null): void {
+  const cfg = ensureGenericModuleConfig(moduleId)
+  cfg.pipelineFieldId = fieldId
+  persistGenericModuleConfigs()
+}
 /** Set the pipeline-driving field for a generic module. When a picklist field is
  *  assigned, derives pipeline stages from its options. When cleared (null), empties
  *  the pipeline. */

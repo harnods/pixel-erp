@@ -30,7 +30,7 @@ import {
   CRM_FIELD_TYPE_LABELS, CRM_MODULE_ICONS,
   moduleStores, isDealLikeModule, resetGenericModuleDraft, canEditModule,
   DEAL_PROPERTY_TYPE_ICON, isRelatedListType,
-  genericPipelineFieldId, setGenericPipelineField, isPicklistType,
+  genericPipelineFieldId, setGenericPipelineField, transferGenericPipelineFieldId, isPicklistType,
   deals, serviceDeals, genericRecordsFor, CRM_CURRENT_USER, notesFor,
   type ServiceDeal, type GenericModuleRecord,
   crmTeams, teamsForModule, setModuleTeams,
@@ -90,11 +90,12 @@ if (!isCreating) {
 // New modules go straight to edit.
 const viewMode = ref(!isCreating)
 function enterEdit() { viewMode.value = false }
-// Deals module cannot be deleted or unpublished.
+// Deals module cannot be deleted or deactivated.
 const isDealSystem = computed(() => mod.value?.id === 'deals')
 const deleteConfirmOpen = ref(false)
 function deleteModule() {
   if (!mod.value || isDealSystem.value) return
+  if (mod.value.status === 'published') { infoToast(t('Deactivate the module before deleting.')); return }
   const idx = crmModules.findIndex((m) => m.id === mod.value!.id)
   if (idx !== -1) { crmModules.splice(idx, 1); persistCrmModules() }
   successToast(t('Module deleted'))
@@ -195,7 +196,7 @@ const CLOSE_UNIT_OPTIONS = [
   { value: 'months', label: t('Months') },
 ]
 function publishModule() { if (mod.value) { publishCrmModule(mod.value.id); successToast(t('Module published')) } }
-function unpublishModule() { if (mod.value) { unpublishCrmModule(mod.value.id); successToast(t('Module unpublished')) } }
+function deactivateModule() { if (mod.value) { unpublishCrmModule(mod.value.id); successToast(t('Module deactivated')) } }
 
 // View-mode helpers
 const viewCloseDateLabel = computed(() => {
@@ -229,7 +230,7 @@ const statusBadge = computed(() => STATUS_BADGE[mod.value?.status ?? 'draft'] ??
 // Deals gets Pipeline + Layout; custom modules keep Fields & layout + Views.
 const isDeals = computed(() => isDealLikeModule(mod.value?.id ?? ''))
 const tabs = computed(() => isDeals.value
-  ? [{ key: 'setup', label: 'Setup' }, { key: 'properties', label: 'Properties' }, { key: 'pipeline', label: 'Pipeline' }, { key: 'layout', label: 'Layout' }]
+  ? [{ key: 'setup', label: 'Setup' }, { key: 'properties', label: 'Properties' }, { key: 'layout', label: 'Layout' }, { key: 'pipeline', label: 'Pipeline' }]
   : [{ key: 'fields', label: 'Fields & layout' }, { key: 'views', label: 'Views' }])
 const activeTab = ref<string>(isDealLikeModule(props.orderId) ? 'setup' : 'fields')
 const isLayoutTab = computed(() => activeTab.value === 'fields' || activeTab.value === 'layout')
@@ -916,6 +917,9 @@ function saveNewModule(status: 'draft' | 'published') {
     teamError.value = t('Select at least one team.')
     return
   }
+  // Capture the pipeline field from the 'new' scratch config BEFORE createCustomModule
+  // (which calls ensureGenericModuleConfig(realId) seeding a FRESH config with null).
+  const draftPipelineFieldId = genericPipelineFieldId('new')
   const id = createCustomModule(draft.name.trim(), draft.icon, draft.accessLevel, draft.teamIds, status)
   // Commit whatever was configured in THIS creation session (Properties/Pipeline/
   // Layout/Setup) into the freshly-created module's real stores — overwriting the
@@ -931,6 +935,11 @@ function saveNewModule(status: 'draft' | 'published') {
   s.persistProperties()
   Object.assign(s.detailLayout, JSON.parse(JSON.stringify(draft.detailLayout)))
   s.persistDetailLayout()
+  // Transfer the pipeline-driving field AFTER properties/pipelines are committed,
+  // so the workspace kanban + stage filter see both the field ID and the stages.
+  if (draftPipelineFieldId) {
+    transferGenericPipelineFieldId(id, draftPipelineFieldId)
+  }
   const created = getCrmModule(id)
   if (created) { created.conversionTarget = draftConversionTarget.value; persistCrmModule(created, AUTHOR, nowStamp()) }
   resetGenericModuleDraft('new')
@@ -965,7 +974,6 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
         </div>
       </div>
       <div v-if="viewMode && mod" class="cd-bar-actions" data-devchange="crm-module-view-mode">
-        <MpButton v-if="!isDealSystem && mod.status === 'published'" variant="secondary" is-rounded @click="unpublishModule">{{ t('Unpublish') }}</MpButton>
         <MpPopover id="module-actions-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
             <MpButton variant="secondary" is-rounded right-icon="caret-down">{{ t('Actions') }}</MpButton>
@@ -973,6 +981,8 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
               <MpPopoverListItem @click="enterEdit">{{ t('Edit') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="!isDealSystem && mod.status === 'draft'" @click="publishModule">{{ t('Publish') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="!isDealSystem && mod.status === 'published'" @click="deactivateModule">{{ t('Deactivate') }}</MpPopoverListItem>
               <MpPopoverListItem v-if="!isDealSystem" @click="deleteConfirmOpen = true">{{ t('Delete') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
