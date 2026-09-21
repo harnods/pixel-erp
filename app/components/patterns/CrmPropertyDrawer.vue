@@ -18,7 +18,7 @@ import AdvanceDateFilter from '~/components/patterns/AdvanceDateFilter.vue'
 import { TODAY } from '~/data/master'
 import type { DateFilterValue } from '~/utils/dateFilter'
 import {
-  NEW_PROPERTY_TYPES, DEAL_PROPERTY_TYPE_ICON, toVariableName, DATA_SOURCES, dataSourceByKey,
+  NEW_PROPERTY_TYPES, DEAL_PROPERTY_TYPE_ICON, toVariableName,
   type DealProperty, type DealPropertyType, type DealPropertyConfig, type DealPropertyOption,
 } from '~/data/crm'
 
@@ -86,20 +86,6 @@ const defaultOptionOptions = computed(() =>
   (config.options ?? []).filter((o) => o.label.trim()).map((o) => ({ value: o.value, label: o.label })),
 )
 
-// Options SOURCE — bind to a real ERP list instead of typing values by hand. A
-// one-time copy into `config.options` (tagged via `config.sourceKey`), not a live
-// binding — the editor below stays fully editable afterward.
-const optionsSourceOptions = computed(() => [
-  { value: 'custom', label: t('Type your own') },
-  ...DATA_SOURCES.map((d) => ({ value: d.key, label: d.label })),
-])
-function onOptionsSourceChange(v: string) {
-  if (v === 'custom') { config.sourceKey = undefined; return }
-  const src = dataSourceByKey(v)
-  if (!src) return
-  config.sourceKey = v
-  config.options = src.values.map((val) => ({ label: val, value: toVariableName(val), inForms: true }))
-}
 
 function close() { emit('update:open', false) }
 function save() {
@@ -262,13 +248,6 @@ function save() {
             <!-- Multiple checkboxes / Radio / Dropdown — options editor -->
             <template v-if="isOptionType">
               <div class="cpd-field">
-                <span class="cpd-label">{{ t('Options source') }}</span>
-                <ErpFilterSelect
-                  id="cpd-opt-source" class="cpd-half" :model-value="config.sourceKey ?? 'custom'" :options="optionsSourceOptions"
-                  :is-clearable="false" is-full-width @update:model-value="onOptionsSourceChange"
-                />
-              </div>
-              <div class="cpd-field">
                 <span class="cpd-label">{{ t('Default value') }}</span>
                 <ErpFilterSelect
                   id="cpd-def-option" class="cpd-half" :model-value="config.defaultOption || ''" :options="defaultOptionOptions"
@@ -283,13 +262,11 @@ function save() {
                 <div class="cpd-opt-cols">
                   <span class="cpd-opt-col">{{ t('Label') }}</span>
                   <span class="cpd-opt-col">{{ t('Variable name') }}</span>
-                  <span class="cpd-opt-col cpd-opt-col--forms">{{ t('In forms') }}</span>
                   <span class="cpd-opt-col--x" aria-hidden="true" />
                 </div>
                 <div v-for="(opt, i) in (config.options ?? [])" :key="i" class="cpd-opt-row">
                   <MpInput :id="`cpd-opt-label-${i}`" v-model="opt.label" is-full-width :aria-label="t('Label')" />
                   <MpInput :id="`cpd-opt-value-${i}`" v-model="opt.value" is-full-width :aria-label="t('Variable name')" />
-                  <span class="cpd-opt-forms"><MpCheckbox :id="`cpd-opt-forms-${i}`" :is-checked="opt.inForms" @change="opt.inForms = !opt.inForms" /></span>
                   <MpTooltip :id="`cpd-opt-rm-${i}`" :label="t('Remove')" placement="top" use-portal>
                     <button type="button" class="cpd-opt-remove" :aria-label="t('Remove')" @click="removeOption(i)"><MpIcon name="minus-circular" size="md" /></button>
                   </MpTooltip>
@@ -347,10 +324,8 @@ function save() {
 .cpd-opt-head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
 .cpd-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-link, #165082); }
 .cpd-link:hover { text-decoration: underline; text-underline-offset: 2px; }
-.cpd-opt-cols, .cpd-opt-row { display: grid; grid-template-columns: 1fr 1fr 64px 32px; gap: var(--mp-spacing-2); align-items: center; }
+.cpd-opt-cols, .cpd-opt-row { display: grid; grid-template-columns: 1fr 1fr 32px; gap: var(--mp-spacing-2); align-items: center; }
 .cpd-opt-col { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); }
-.cpd-opt-col--forms { text-align: center; }
-.cpd-opt-forms { display: flex; justify-content: center; }
 .cpd-opt-remove { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); padding: 0; border: none; background: transparent; cursor: pointer; border-radius: var(--mp-radii-sm); color: var(--mp-colors-text-secondary, #3a4749); }
 .cpd-opt-remove:hover { background: var(--mp-colors-background-neutral-subtle, #f8f9f9); color: var(--mp-colors-text-danger, #a8352d); }
 .cpd-add-opt { align-self: flex-start; margin-top: var(--mp-spacing-1); }
