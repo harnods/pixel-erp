@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-field-driven-pipeline',
+    title: 'Custom modules: field-driven Kanban pipeline',
+    description:
+      'New custom modules start with an empty pipeline. In the Pipeline tab, a "Group by" picker lists only Picklist properties (Dropdown/Radio select) whose options become Kanban columns. Deals module stays hardcoded with predefined stages.',
+    date: '2026-09-21',
+    files: ['crm.ts', 'CrmModuleBuilderPage.vue', 'CrmGenericModulePage.vue'],
+  },
+  {
+    id: 'crm-deal-detail-layout-sync',
+    title: 'Deal details: layout matches module config',
+    description:
+      'Deal details tab now mirrors the module Layout configuration: Overview section (Deal name/Company/Billing | Contact person/Email/Phone | Value/Owner/Currency), Transaction section, and Shipping & delivery section with matching column order.',
+    date: '2026-09-21',
+    files: ['CrmDealDetailPage.vue'],
+  },
+  {
     id: 'crm-pipeline-no-custom-views',
     title: 'Pipeline: removed custom views',
     description:

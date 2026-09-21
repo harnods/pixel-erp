@@ -21,7 +21,7 @@ import { formatMoney } from '~/utils/currency'
 import { CATALOG } from './catalog'
 import { salesOrders } from './salesOrders'
 import type { SalesOrder } from './types'
-import { WAREHOUSES, PAYMENT_TERMS, UNIT_OPTIONS, TAX_OPTIONS } from './purchaseOrderDetails'
+import { WAREHOUSES, PAYMENT_TERMS, UNIT_OPTIONS, TAX_OPTIONS, SHIP_VIA } from './purchaseOrderDetails'
 
 // Central Perk sales & marketing owners (subset of employees.ts).
 export const CRM_OWNERS = ['Dewi Lestari', 'Fajar Nugroho', 'Rizal Candra'] as const
@@ -1334,10 +1334,24 @@ const DEAL_PIPELINE_DISPLAY_SEED: DealPipelineDisplay = {
   colorColumns: false,
   showAging: true,
   cardFields: [
-    { key: 'company',       label: 'Company name',   on: true },
+    { key: 'company',       label: 'Company',        on: true },
     { key: 'dealName',      label: 'Deal name',      on: true },
     { key: 'contactPerson', label: 'Contact person', on: false },
     { key: 'dealValue',     label: 'Deal value',     on: true },
+    { key: 'owner',         label: 'Owner',          on: true },
+    { key: 'closeDate',     label: 'Close date',     on: false },
+    { key: 'memo',          label: 'Memo',           on: false },
+  ],
+}
+const GENERIC_PIPELINE_DISPLAY_SEED: DealPipelineDisplay = {
+  stageTotal: true,
+  colorColumns: false,
+  showAging: true,
+  cardFields: [
+    { key: 'company',       label: 'Company',        on: true },
+    { key: 'dealName',      label: 'Record name',    on: true },
+    { key: 'contactPerson', label: 'Contact person', on: false },
+    { key: 'dealValue',     label: 'Value',           on: true },
     { key: 'owner',         label: 'Owner',          on: true },
     { key: 'closeDate',     label: 'Close date',     on: false },
     { key: 'memo',          label: 'Memo',           on: false },
@@ -1525,10 +1539,12 @@ export interface DataSourceOption {
   values: readonly string[]
 }
 export const DATA_SOURCES: DataSourceOption[] = [
-  { key: 'erp-warehouses',    label: 'Warehouses',    origin: 'erp', values: WAREHOUSES },
-  { key: 'erp-payment-terms', label: 'Payment terms', origin: 'erp', values: PAYMENT_TERMS },
-  { key: 'erp-units',         label: 'Units',         origin: 'erp', values: UNIT_OPTIONS },
-  { key: 'erp-tax',           label: 'Tax',           origin: 'erp', values: TAX_OPTIONS },
+  { key: 'erp-warehouses',       label: 'Warehouses',        origin: 'erp', values: WAREHOUSES },
+  { key: 'erp-payment-terms',    label: 'Payment terms',     origin: 'erp', values: PAYMENT_TERMS },
+  { key: 'erp-units',            label: 'Units',             origin: 'erp', values: UNIT_OPTIONS },
+  { key: 'erp-tax',              label: 'Tax codes',         origin: 'erp', values: TAX_OPTIONS },
+  { key: 'erp-currencies',       label: 'Currencies',        origin: 'erp', values: DEAL_CURRENCIES },
+  { key: 'erp-shipping-methods', label: 'Shipping methods',  origin: 'erp', values: SHIP_VIA },
 ]
 export function dataSourceByKey(key?: string): DataSourceOption | undefined {
   return DATA_SOURCES.find((d) => d.key === key)
@@ -1631,14 +1647,39 @@ export const DEFAULT_PROPERTIES: DefaultProperty[] = [
 export const DEFAULT_PROPERTY_FIELD_TYPES: string[] = [...new Set(DEFAULT_PROPERTIES.map((p) => p.fieldType))]
 /** ids of the default properties — used to flag/seed module property lists. */
 export const DEFAULT_PROPERTY_IDS = new Set(DEFAULT_PROPERTIES.map((p) => p.id))
+/** Picklist property types whose options can drive a Kanban pipeline. */
+const PICKLIST_TYPES: DealPropertyType[] = ['Dropdown select', 'Radio select']
 /** The default properties as module `DealProperty` rows (system + isDefault). Both
  *  the Deals and Service module property lists prepend these, so the master library
  *  and every module stay in sync by construction. */
+const DEFAULT_PICKLIST_OPTIONS: Record<string, readonly string[]> = {
+  'deal-stage': DEAL_STAGES as unknown as string[],
+  'deal-type': ['New business', 'Existing business'],
+  'team': ['Sales', 'Marketing', 'Enterprise Sales', 'Customer Success', 'Partnerships', 'Inbound SDR'],
+  'pipeline': ['Default pipeline'],
+  'record-source': ['Organic search', 'Paid search', 'Email marketing', 'Referral', 'Social media', 'Direct traffic', 'Offline sources', 'Other'],
+}
+function optionsForDefaultProp(p: DefaultProperty): DealPropertyOption[] | undefined {
+  const type = p.fieldType as DealPropertyType
+  if (!PICKLIST_TYPES.includes(type)) return undefined
+  const hardcoded = DEFAULT_PICKLIST_OPTIONS[p.id]
+  if (hardcoded) return hardcoded.map((v) => ({ label: v, value: v.toLowerCase().replace(/[^a-z0-9]+/g, '_'), inForms: true }))
+  if (p.dataSource) {
+    const ds = DATA_SOURCES.find((d) => d.label === p.dataSource!.label)
+    if (ds) return ds.values.map((v) => ({ label: v, value: v.toLowerCase().replace(/[^a-z0-9]+/g, '_'), inForms: true }))
+  }
+  return undefined
+}
 export function defaultDealProperties(): DealProperty[] {
-  return DEFAULT_PROPERTIES.map((p) => ({
-    id: p.id, name: p.name, variableName: p.variableName, type: p.fieldType as DealPropertyType,
-    system: true, isDefault: true, fillRate: 0,
-  }))
+  return DEFAULT_PROPERTIES.map((p) => {
+    const opts = optionsForDefaultProp(p)
+    const prop: DealProperty = {
+      id: p.id, name: p.name, variableName: p.variableName, type: p.fieldType as DealPropertyType,
+      system: true, isDefault: true, fillRate: 0,
+    }
+    if (opts) prop.config = { options: opts }
+    return prop
+  })
 }
 
 /** Field types offered when CREATING a property (drawer). Subset of the catalogue —
@@ -1712,6 +1753,7 @@ function normalizeDealProperties(list: DealProperty[]): DealProperty[] {
   })
 }
 export const dealProperties = reactive<DealProperty[]>(normalizeDealProperties(load('crm-deal-properties-v13', DEAL_PROPERTIES_SEED)))
+backfillDefaultPropertyOptions(dealProperties)
 export function persistDealProperties() { saveSnapshot('crm-deal-properties-v13', dealProperties) }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1767,6 +1809,7 @@ const SERVICE_PROPERTIES_SEED: DealProperty[] = withDefaultProperties(
   })),
 )
 export const serviceProperties = reactive<DealProperty[]>(normalizeDealProperties(load('crm-service-properties-v8', SERVICE_PROPERTIES_SEED)))
+backfillDefaultPropertyOptions(serviceProperties)
 export function persistServiceProperties() { saveSnapshot('crm-service-properties-v8', serviceProperties) }
 
 const SERVICE_DETAIL_LAYOUT_SEED: DealDetailLayout = {
@@ -1806,6 +1849,7 @@ let genericStageSeq = 1
 function newStageId(): string { return `stage-${genericStageSeq++}` }
 
 export interface GenericModuleConfig {
+  pipelineFieldId: string | null
   pipelines: DealPipeline[]
   display: DealPipelineDisplay
   views: DealPipelineView[]
@@ -1841,28 +1885,36 @@ function genericDetailLayoutSeed(moduleId: string): DealDetailLayout {
 }
 function newGenericModuleConfig(moduleId: string): GenericModuleConfig {
   return {
-    pipelines: [{
-      id: 'default', name: 'Default pipeline',
-      stages: [
-        { id: newStageId(), name: 'Open', kind: 'open', isDefault: true },
-        { id: newStageId(), name: 'In progress', kind: 'open' },
-        { id: newStageId(), name: 'Won', kind: 'won' },
-        { id: newStageId(), name: 'Lost', kind: 'lost' },
-      ],
-    }],
-    display: JSON.parse(JSON.stringify(DEAL_PIPELINE_DISPLAY_SEED)),
+    pipelineFieldId: null,
+    pipelines: [],
+    display: JSON.parse(JSON.stringify(GENERIC_PIPELINE_DISPLAY_SEED)),
     views: JSON.parse(JSON.stringify(DEAL_PIPELINE_VIEWS_SEED)),
     setup: { baseCurrency: 'IDR', applyCloseDate: true, closeMode: 'period', closePeriod: 'this-month', closeAmount: 30, closeUnit: 'days' },
     properties: defaultDealProperties(),
     detailLayout: genericDetailLayoutSeed(moduleId),
   }
 }
+function backfillDefaultPropertyOptions(props: DealProperty[]): void {
+  const defaults = new Map(DEFAULT_PROPERTIES.map((p) => [p.id, p]))
+  for (const p of props) {
+    if (!p.isDefault || !PICKLIST_TYPES.includes(p.type)) continue
+    if (p.config?.options?.length) continue
+    const dp = defaults.get(p.id)
+    if (!dp) continue
+    const opts = optionsForDefaultProp(dp)
+    if (opts) p.config = { ...p.config, options: opts }
+  }
+}
 function ensureGenericModuleConfig(moduleId: string): GenericModuleConfig {
   const cfg = genericModuleConfigs[moduleId] ?? (genericModuleConfigs[moduleId] = newGenericModuleConfig(moduleId))
+  // Back-fill `pipelineFieldId` for snapshots saved before field-driven pipelines.
+  if (cfg.pipelineFieldId === undefined) (cfg as GenericModuleConfig).pipelineFieldId = null
   // Back-fill `views` for snapshots saved before per-view boards existed.
   if (!Array.isArray(cfg.views)) cfg.views = JSON.parse(JSON.stringify(DEAL_PIPELINE_VIEWS_SEED))
   // Back-fill each view's `display` (added after views), seeding from module display.
   backfillViewDisplays(cfg.views, cfg.display)
+  // Back-fill options on default picklist properties (snapshots before options were seeded).
+  backfillDefaultPropertyOptions(cfg.properties)
   return cfg
 }
 /** Discard an in-memory (unsaved) scratch config — used for the 'new' module id so a
@@ -1943,13 +1995,64 @@ export function genericRecordsFor(moduleId: string): GenericModuleRecord[] {
 export function getGenericRecord(moduleId: string, id: string): GenericModuleRecord | undefined {
   return genericRecordsFor(moduleId).find((r) => r.id === id)
 }
+export function isPicklistType(t: DealPropertyType): boolean { return PICKLIST_TYPES.includes(t) }
+
+/** Return the picklist properties available for pipeline assignment in a generic module. */
+export function genericPicklistProperties(moduleId: string): DealProperty[] {
+  return moduleStores(moduleId).properties.filter((p) => isPicklistType(p.type))
+}
+
+/** Get the pipeline-driving field for a generic module (null = not assigned). */
+export function genericPipelineFieldId(moduleId: string): string | null {
+  if (moduleId === 'deals' || moduleId === 'services') return null
+  const cfg = genericModuleConfigs[moduleId]
+  return cfg?.pipelineFieldId ?? null
+}
+
+/** Set the pipeline-driving field for a generic module. When a picklist field is
+ *  assigned, derives pipeline stages from its options. When cleared (null), empties
+ *  the pipeline. */
+export function setGenericPipelineField(moduleId: string, fieldId: string | null, draftOptions?: DealPropertyOption[]): void {
+  const cfg = ensureGenericModuleConfig(moduleId)
+  cfg.pipelineFieldId = fieldId
+  if (!fieldId) { cfg.pipelines = []; persistGenericModuleConfigs(); return }
+  const prop = cfg.properties.find((p) => p.id === fieldId)
+  const options = draftOptions ?? prop?.config?.options ?? []
+  cfg.pipelines = [{
+    id: 'default', name: 'Default pipeline',
+    stages: options.map((o, i) => ({ id: `field-${i}`, name: o.label, kind: 'open' as DealStageKind, isDefault: i === 0 })),
+  }]
+  persistGenericModuleConfigs()
+}
+
+/** Sync pipeline stages from the assigned picklist field's current options.
+ *  Called after property options change. */
+export function syncGenericPipelineFromField(moduleId: string): void {
+  const cfg = genericModuleConfigs[moduleId]
+  if (!cfg?.pipelineFieldId) return
+  const prop = cfg.properties.find((p) => p.id === cfg.pipelineFieldId)
+  const options = prop?.config?.options ?? []
+  cfg.pipelines = [{
+    id: 'default', name: 'Default pipeline',
+    stages: options.map((o, i) => ({ id: `field-${i}`, name: o.label, kind: 'open' as DealStageKind, isDefault: i === 0 })),
+  }]
+  persistGenericModuleConfigs()
+}
+
 /** Stages of a generic module's pipeline, as [{name, kind}] — same shape as
- *  `serviceStages()`, used to drive the kanban + stage badges + stage picker. */
+ *  `serviceStages()`, used to drive the kanban + stage badges + stage picker.
+ *  For generic modules with a pipelineFieldId, derives from the picklist options. */
 export function genericModuleStages(moduleId: string): { name: string; kind: DealStageKind }[] {
-  return (moduleStores(moduleId).pipelines[0]?.stages ?? []).map((s) => ({ name: s.name, kind: s.kind }))
+  const stores = moduleStores(moduleId)
+  const cfg = genericModuleConfigs[moduleId]
+  if (cfg?.pipelineFieldId) {
+    const prop = stores.properties.find((p) => p.id === cfg.pipelineFieldId)
+    return (prop?.config?.options ?? []).map((o) => ({ name: o.label, kind: 'open' as DealStageKind }))
+  }
+  return (stores.pipelines[0]?.stages ?? []).map((s) => ({ name: s.name, kind: s.kind }))
 }
 export function genericStageBadgeType(moduleId: string, stage: string): 'completed' | 'announcement' | 'information' | 'warning' {
-  const stages = moduleStores(moduleId).pipelines[0]?.stages ?? []
+  const stages = genericModuleStages(moduleId)
   const st = stages.find((s) => s.name === stage)
   if (!st) return 'information'
   if (st.kind === 'won') return 'completed'
@@ -1961,8 +2064,8 @@ export function genericStageBadgeType(moduleId: string, stage: string): 'complet
 export function createGenericRecord(moduleId: string): GenericModuleRecord {
   const list = genericRecordsFor(moduleId)
   const mod = getCrmModule(moduleId)
-  const stages = moduleStores(moduleId).pipelines[0]?.stages ?? []
-  const stage = stages.find((s) => s.kind === 'open' && s.isDefault)?.name ?? stages[0]?.name ?? 'Open'
+  const stages = genericModuleStages(moduleId)
+  const stage = stages[0]?.name ?? 'Uncategorized'
   const rec: GenericModuleRecord = {
     id: `REC-${Date.now().toString(36)}`, name: 'Untitled', stage, owner: CRM_CURRENT_USER, values: {},
     createdAt: new Date().toISOString().slice(0, 10),

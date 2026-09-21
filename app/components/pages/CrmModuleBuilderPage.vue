@@ -30,6 +30,7 @@ import {
   CRM_FIELD_TYPE_LABELS, CRM_MODULE_ICONS,
   moduleStores, isDealLikeModule, resetGenericModuleDraft, canEditModule,
   DEAL_PROPERTY_TYPE_ICON, isRelatedListType,
+  genericPipelineFieldId, setGenericPipelineField, isPicklistType,
   deals, serviceDeals, genericRecordsFor, CRM_CURRENT_USER, notesFor,
   type ServiceDeal, type GenericModuleRecord,
   crmTeams, teamsForModule, setModuleTeams,
@@ -232,6 +233,45 @@ const tabs = computed(() => isDeals.value
   : [{ key: 'fields', label: 'Fields & layout' }, { key: 'views', label: 'Views' }])
 const activeTab = ref<string>(isDealLikeModule(props.orderId) ? 'setup' : 'fields')
 const isLayoutTab = computed(() => activeTab.value === 'fields' || activeTab.value === 'layout')
+
+// ── Generic vs predefined module detection ──
+const isGenericModule = computed(() => {
+  const id = mod.value?.id ?? ''
+  return id !== 'deals' && id !== 'services' && isDeals.value
+})
+
+// ── Pipeline field picker (generic modules only) ──
+const pipelineFieldId = ref<string | null>(genericPipelineFieldId(props.orderId))
+const picklistProperties = computed(() => propList.value.filter((p) => isPicklistType(p.type)))
+const pipelineFieldOptions = computed(() =>
+  picklistProperties.value.map((p) => ({ value: p.id, label: p.name })),
+)
+const selectedPipeFieldId = ref<string>(pipelineFieldId.value ?? '')
+const assignedFieldLabel = computed(() => {
+  if (!pipelineFieldId.value) return null
+  return picklistProperties.value.find((p) => p.id === pipelineFieldId.value)?.name ?? null
+})
+const fieldDerivedStages = computed(() => {
+  if (!pipelineFieldId.value) return []
+  const prop = picklistProperties.value.find((p) => p.id === pipelineFieldId.value)
+  return prop?.config?.options ?? []
+})
+const { dragIndex: gmLaneDragIndex, ghost: gmLaneGhost, start: gmLaneStart } = usePointerSortable({
+  axis: 'x', itemSelector: '.pipe-lane',
+  move: (from, to) => {
+    const prop = picklistProperties.value.find((p) => p.id === pipelineFieldId.value)
+    if (!prop?.config?.options) return
+    const arr = [...prop.config.options]; const [m] = arr.splice(from, 1); arr.splice(to, 0, m!); prop.config.options = arr
+  },
+})
+const draggedGmStage = computed(() => (gmLaneDragIndex.value !== null ? fieldDerivedStages.value[gmLaneDragIndex.value] : null))
+function applyPipelineField() {
+  const val = selectedPipeFieldId.value || null
+  pipelineFieldId.value = val
+  const draftProp = val ? propList.value.find((p) => p.id === val) : undefined
+  setGenericPipelineField(mod.value?.id ?? '', val, draftProp?.config?.options)
+  pipeDraft.value = JSON.parse(JSON.stringify(stores.value.pipelines))
+}
 
 // ── Pipeline config (deals only) — a local editable clone; Save changes applies it. ──
 const pipeDraft = ref<DealPipeline[]>(JSON.parse(JSON.stringify(stores.value.pipelines)))
@@ -566,7 +606,7 @@ function deleteProperty(id: string) {
   propList.value = propList.value.filter((x) => x.id !== id)
 }
 
-// Single-choice fields feed the Layout driver + Kanban "Categorize by".
+// Single-choice fields feed the Layout driver + Kanban "Group by".
 const choiceFieldOptions = computed(() =>
   draft.fields.filter((f) => hasOptions(f.type)).map((f) => ({ value: f.id, label: f.label })),
 )
@@ -1167,8 +1207,138 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
           </div>
 
           <!-- ════════ PIPELINE (Deals) — swimlane editor + settings sidebar ════════ -->
-          <div v-show="activeTab === 'pipeline'" class="builder-panel builder-panel--pipeline" data-devchange="crm-pipeline-no-custom-views">
-            <template v-if="currentPipe">
+          <div v-show="activeTab === 'pipeline'" class="builder-panel builder-panel--pipeline" :data-devchange="isGenericModule ? 'crm-field-driven-pipeline' : 'crm-pipeline-no-custom-views'">
+
+            <!-- ── Generic module: field picker + derived Kanban ── -->
+            <template v-if="isGenericModule">
+              <div class="pipe-field-picker" data-devchange="crm-field-driven-pipeline">
+                <h3 class="pipe-field-picker__title">{{ t('Group by') }}</h3>
+                <p class="pipe-field-picker__desc">{{ t('Select a property to group records into Kanban columns.') }}</p>
+                <div v-if="!viewMode" class="pipe-field-picker__row">
+                  <ErpFilterSelect
+                    id="pipe-field-select"
+                    :model-value="selectedPipeFieldId"
+                    :placeholder="t('Select a field…')"
+                    :options="pipelineFieldOptions"
+                    :is-clearable="false"
+                    width="100%"
+                    class="pipe-field-picker__select"
+                    @update:model-value="(v: string) => (selectedPipeFieldId = v)"
+                  />
+                  <MpButton variant="primary" is-rounded @click="applyPipelineField">{{ t('Apply') }}</MpButton>
+                </div>
+                <p v-else-if="assignedFieldLabel" class="pipe-field-picker__value">{{ assignedFieldLabel }}</p>
+                <p v-else class="pipe-field-picker__empty">{{ t('No field assigned') }}</p>
+              </div>
+
+              <!-- Empty state: no field assigned yet -->
+              <div v-if="!pipelineFieldId" class="pipe-empty">
+                <img src="/illustrations/empty-folder.png" alt="" class="pipe-empty__illustration" width="288" height="240" />
+                <p class="pipe-empty__title">{{ t('No pipeline configured') }}</p>
+                <p class="pipe-empty__desc">{{ t('Select a property above and click Apply to generate Kanban columns from its options.') }}</p>
+              </div>
+
+              <!-- Field-derived Kanban preview -->
+              <div v-else-if="fieldDerivedStages.length" class="pipe-layout">
+                <div class="pipe-board">
+                  <TransitionGroup name="lane" tag="div" class="pipe-lanes">
+                    <div
+                      v-for="(opt, i) in fieldDerivedStages" :key="opt.value"
+                      class="pipe-lane"
+                      :class="{ 'is-dragging': gmLaneDragIndex === i, 'pipe-lane--hidden': !isStageVisible(opt.value), [`pipe-lane--${i < fieldDerivedStages.length - 1 ? 'open' : 'closed'}`]: disp.colorColumns }"
+                    >
+                      <div class="pipe-lane-head">
+                        <span
+                          v-if="!viewMode"
+                          class="pipe-lane-drag" :aria-label="t('Drag to reorder')"
+                          @pointerdown="gmLaneStart(i, $event)"
+                        ><MpIcon name="drag" size="md" /></span>
+                        <div class="pipe-lane-label"><span class="pipe-lane-name">{{ opt.label }}</span></div>
+                        <MpTooltip v-if="!viewMode" :id="`gm-stage-vis-${opt.value}`" :label="isStageVisible(opt.value) ? t('Hide stage in this view') : t('Show stage in this view')" placement="top" use-portal>
+                          <button
+                            class="pipe-lane-vis" type="button"
+                            :aria-label="isStageVisible(opt.value) ? t('Hide stage in this view') : t('Show stage in this view')"
+                            @click="setStageVisible(opt.value, !isStageVisible(opt.value))"
+                          ><MpIcon :name="isStageVisible(opt.value) ? 'show' : 'hide'" size="sm" /></button>
+                        </MpTooltip>
+                      </div>
+                      <div class="pipe-lane-cards">
+                        <template v-if="i === 0">
+                          <div v-for="n in 2" :key="n" class="pipe-card">
+                            <template v-for="f in enabledCardFields" :key="f.key">
+                              <span v-if="f.key === 'company'" class="pipe-card-company">{{ t('Company') }}</span>
+                              <span v-else-if="f.key === 'dealName'" class="pipe-card-deal">{{ t('Record name') }}</span>
+                              <span v-else-if="f.key === 'contactPerson'" class="pipe-card-sub">{{ t('Contact person') }}</span>
+                              <span v-else-if="f.key === 'dealValue'" class="pipe-card-value">{{ t('Value') }}</span>
+                              <span v-else-if="f.key === 'owner'" class="pipe-card-owner">{{ t('Owner') }}</span>
+                              <span v-else-if="f.key === 'closeDate'" class="pipe-card-sub">{{ t('Expected close date') }}</span>
+                              <span v-else-if="f.key === 'memo'" class="pipe-card-sub">{{ t('Memo') }}</span>
+                              <span v-else class="pipe-card-sub">{{ t(f.label) }}</span>
+                            </template>
+                            <div v-if="disp.showAging" class="pipe-card-foot pipe-card-foot--end">
+                              <span class="pipe-card-aging">2d</span>
+                            </div>
+                          </div>
+                        </template>
+                      </div>
+                      <div v-if="disp.stageTotal" class="pipe-lane-total">
+                        <span class="pipe-lane-total-label">{{ t('Total value') }}</span>
+                      </div>
+                    </div>
+                  </TransitionGroup>
+                </div>
+
+                <!-- Settings sidebar (same as Deals pipeline) -->
+                <aside v-if="!viewMode" class="pipe-sidebar">
+                  <section class="pipe-side-section">
+                    <h3 class="pipe-side-title">{{ t('Stage properties') }}</h3>
+                    <div class="pipe-side-row">
+                      <MpToggle id="gm-disp-total" :is-checked="disp.stageTotal" :aria-label="t('Total value')" @update:is-checked="(v: boolean) => (disp.stageTotal = v)" />
+                      <span class="pipe-side-rowlabel">{{ t('Total value') }}</span>
+                    </div>
+                    <div class="pipe-side-row">
+                      <MpToggle id="gm-disp-color" :is-checked="disp.colorColumns" :aria-label="t('Color stage columns')" @update:is-checked="(v: boolean) => (disp.colorColumns = v)" />
+                      <span class="pipe-side-rowlabel">{{ t('Color stage columns') }}</span>
+                    </div>
+                  </section>
+
+                  <section class="pipe-side-section">
+                    <h3 class="pipe-side-title">{{ t('Card properties') }}</h3>
+                    <TransitionGroup name="row" tag="div" class="pipe-side-rows">
+                      <div
+                        v-for="(f, i) in disp.cardFields" :key="f.key"
+                        class="pipe-side-row pipe-side-row--drag"
+                        :class="{ 'is-dragging': fieldDragIndex === i }"
+                      >
+                        <MpToggle :id="`gm-disp-${f.key}`" :is-checked="f.on" :aria-label="t(f.label)" @update:is-checked="(v: boolean) => (f.on = v)" />
+                        <span class="pipe-side-rowlabel">{{ t(f.label) }}</span>
+                        <span
+                          class="pipe-side-drag" :aria-label="t('Drag to reorder')"
+                          @pointerdown="fieldStart(i, $event)"
+                        ><MpIcon name="drag" size="md" /></span>
+                      </div>
+                    </TransitionGroup>
+                    <div class="pipe-side-row pipe-side-row--sep">
+                      <MpToggle id="gm-disp-aging" :is-checked="disp.showAging" :aria-label="t('Rotting in (days)')" @update:is-checked="(v: boolean) => (disp.showAging = v)" />
+                      <span class="pipe-side-rowlabel">{{ t('Rotting in (days)') }}</span>
+                    </div>
+                    <div class="pipe-side-addprop">
+                      <MpButton variant="ghost" is-rounded left-icon="add" @click="cardPropsDrawerOpen = true">{{ t('Add property') }}</MpButton>
+                    </div>
+                  </section>
+                </aside>
+              </div>
+
+              <!-- Field assigned but has no columns yet -->
+              <div v-else class="pipe-empty">
+                <img src="/illustrations/empty-folder.png" alt="" class="pipe-empty__illustration" width="288" height="240" />
+                <p class="pipe-empty__title">{{ t('No options found') }}</p>
+                <p class="pipe-empty__desc">{{ t('The selected field has no options yet. Add options to it in the Properties tab to create Kanban columns.') }}</p>
+              </div>
+            </template>
+
+            <!-- ── Predefined module (Deals/Services): direct stage editing ── -->
+            <template v-else-if="currentPipe">
               <div class="pipe-layout">
                 <!-- Board: one Kanban lane per stage, cards = live deals in it -->
                 <div class="pipe-board">
@@ -1210,7 +1380,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                       <template v-if="i === 0">
                         <div v-for="n in 2" :key="n" class="pipe-card">
                           <template v-for="f in enabledCardFields" :key="f.key">
-                            <span v-if="f.key === 'company'" class="pipe-card-company">{{ t('Company name') }}</span>
+                            <span v-if="f.key === 'company'" class="pipe-card-company">{{ t('Company') }}</span>
                             <span v-else-if="f.key === 'dealName'" class="pipe-card-deal">{{ t('Deal name') }}</span>
                             <span v-else-if="f.key === 'contactPerson'" class="pipe-card-sub">{{ t('Contact person') }}</span>
                             <span v-else-if="f.key === 'dealValue'" class="pipe-card-value">{{ t('Value') }}</span>
@@ -1602,7 +1772,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
             </div>
 
             <div v-if="viewForm.type === 'kanban'" class="builder-form-field">
-              <span class="builder-form-label">{{ t('Categorize by') }}</span>
+              <span class="builder-form-label">{{ t('Group by') }}</span>
               <ErpFilterSelect
                 id="cmb-view-categorize"
                 :model-value="viewForm.categorizeBy"
@@ -1645,6 +1815,12 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
       <div v-if="laneGhost && draggedStage" class="dnd-ghost dnd-ghost--lane" :style="{ left: `${laneGhost.x}px`, top: `${laneGhost.y}px`, width: `${laneGhost.w}px` }">
         <MpIcon name="drag" size="md" />
         <span class="dnd-ghost-label">{{ draggedStage.name }}</span>
+      </div>
+    </Teleport>
+    <Teleport to="body">
+      <div v-if="gmLaneGhost && draggedGmStage" class="dnd-ghost dnd-ghost--lane" :style="{ left: `${gmLaneGhost.x}px`, top: `${gmLaneGhost.y}px`, width: `${gmLaneGhost.w}px` }">
+        <MpIcon name="drag" size="md" />
+        <span class="dnd-ghost-label">{{ draggedGmStage.label }}</span>
       </div>
     </Teleport>
     <Teleport to="body">
@@ -1740,6 +1916,19 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
   color: var(--mp-colors-icon-default, #536062); border-radius: var(--mp-radii-full, 999px) !important;
 }
 .search-clear-btn:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); }
+/* ── Field-driven pipeline picker (generic modules) ── */
+.pipe-field-picker { display: flex; flex-direction: column; gap: var(--mp-spacing-2); padding-bottom: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); margin-bottom: var(--mp-spacing-4); }
+.pipe-field-picker__title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.pipe-field-picker__desc { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pipe-field-picker__row { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.pipe-field-picker__select { flex: 1; max-width: 320px; }
+.pipe-field-picker__value { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-weight: var(--mp-font-weights-medium, 500); }
+.pipe-field-picker__empty { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); font-style: italic; }
+.pipe-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-1); padding: var(--mp-spacing-10, 40px) 0; text-align: center; }
+.pipe-empty__illustration { width: 288px; height: 240px; object-fit: contain; margin-bottom: var(--mp-spacing-1); }
+.pipe-empty__title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.pipe-empty__desc { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); max-width: 400px; }
+
 .pipe-layout { display: flex; align-items: stretch; gap: 0; flex: 1; min-height: 0; }
 .builder-panel--pipeline .pipe-board { flex: 1; min-height: 0; }
 

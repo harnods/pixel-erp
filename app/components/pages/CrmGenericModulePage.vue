@@ -24,6 +24,7 @@ import { successToast } from '~/utils/toasts'
 import {
   getCrmModule, genericRecordsFor, genericModuleStages, genericStageBadgeType,
   moveGenericRecordStage, createGenericRecord, CRM_CURRENT_USER,
+  genericPipelineFieldId,
   type GenericModuleRecord,
 } from '~/data/crm'
 
@@ -77,6 +78,7 @@ const columns: TableColumn[] = [
 const hasActiveFilter = computed(() => !!statusFilter.value)
 
 // ── Kanban ──
+const hasPipelineField = computed(() => !!genericPipelineFieldId(moduleId.value) || stages.value.length > 0)
 interface Col { stage: string; kind: string; cards: GenericModuleRecord[]; total: number }
 const boardColumns = computed<Col[]>(() => {
   const s = search.value.trim().toLowerCase()
@@ -124,8 +126,11 @@ function ownerInitials(name: string) { return name.split(' ').map((p) => p[0]).s
         </div>
       </div>
 
-      <div v-if="view === 'board'" class="kanban">
-        <div class="kanban__board">
+      <div v-if="view === 'board'" class="kanban" data-devchange="crm-field-driven-pipeline">
+        <div v-if="!hasPipelineField" class="kanban-empty">
+          <p class="kanban-empty__text">{{ t('No Kanban grouping configured. Go to Settings → Modules to assign a property.') }}</p>
+        </div>
+        <div v-else class="kanban__board">
           <section
             v-for="col in boardColumns" :key="col.stage" class="kcol"
             :class="{ 'kcol--over': dragOverStage === col.stage }"
@@ -191,6 +196,10 @@ function ownerInitials(name: string) { return name.split(' ').map((p) => p[0]).s
 .gmp-search { flex: 1; max-width: 320px; margin-left: auto; }
 .cell-link { color: var(--mp-colors-text-link, #165082); cursor: pointer; }
 .cell-link:hover { text-decoration: underline; }
+
+/* Kanban empty state (no pipeline field assigned) */
+.kanban-empty { display: flex; align-items: center; justify-content: center; flex: 1; min-height: 200px; }
+.kanban-empty__text { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); text-align: center; max-width: 400px; }
 
 /* Kanban — same standard as CrmServicesPage.vue / CrmDealsPage.vue */
 .kanban { flex: 1; min-height: 0; overflow-x: auto; overflow-y: hidden; padding-bottom: var(--mp-spacing-3); }
