@@ -932,7 +932,10 @@ async function saveBatchLocDrawer() {
 
 // Trailing-row colspan = every data column except the leading "select batch" cell:
 // expiry, desc, (location if picking), (on hand + after if stats shown), counted, unit.
-const trailingColspan = computed(() => 5 + deliveryAttrKeys.value.length + (isPicking.value ? 1 : 0) + (showOnHandColumn.value ? 1 : 0) + (showAfterStats.value ? 1 : 0) + (showPlannedQty.value ? 1 : 0))
+// A delivery has no Description column (it sits under the batch number), so it spans
+// one fewer — an overshoot here adds a phantom, width-less column that swallows the
+// table's spare width and leaves every data row short of the right edge.
+const trailingColspan = computed(() => (isDelivery.value ? 4 : 5) + deliveryAttrKeys.value.length + (isPicking.value ? 1 : 0) + (showOnHandColumn.value ? 1 : 0) + (showAfterStats.value ? 1 : 0) + (showPlannedQty.value ? 1 : 0))
 
 // ── Footer actions ────────────────────────────────────────────────────────────────
 const isSaving = ref(false)
@@ -986,7 +989,7 @@ function fmtNum(n: number | null): string {
 <template>
   <Transition name="mbd">
   <div v-if="open" class="mbd-overlay">
-    <div class="mbd-panel" role="dialog" aria-label="Manage batch">
+    <div class="mbd-panel" :class="{ 'mbd-panel--delivery': isDelivery }" role="dialog" aria-label="Manage batch">
 
       <!-- Header -->
       <header class="mbd-header">
@@ -1298,7 +1301,10 @@ function fmtNum(n: number | null): string {
 
           <!-- ── Other modes: existing table ── -->
           <template v-else>
-          <table class="mbd-table" :class="{ 'mbd-table--split': showLocSplit, 'mbd-table--delivery': isDelivery }">
+          <table
+            class="mbd-table" :class="{ 'mbd-table--split': showLocSplit, 'mbd-table--delivery': isDelivery }"
+            :style="isDelivery ? { '--mbd-attr-count': String(deliveryAttrKeys.length) } : undefined"
+          >
             <colgroup>
               <col class="mbd-col-batch" />
               <!-- A delivery shows its description under the batch number; the WMS kinds
@@ -2045,7 +2051,10 @@ function fmtNum(n: number | null): string {
 }
 .mbd-del-btn {
   display: flex; align-items: center; justify-content: center;
-  width: 44px; height: var(--mp-sizes-10, 40px);
+  /* Fill the cell rather than repeat its 44px: the collapsed left border shifts the
+     content half a pixel, so a fixed 44px button overhangs the table by 0.5px and
+     gives the table wrap a 1px horizontal scroll. */
+  width: 100%; height: var(--mp-sizes-10, 40px);
   border: none; background: none; cursor: pointer; color: var(--mp-text-secondary);
 }
 .mbd-del-btn:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-danger, #dc2626); }
@@ -2193,7 +2202,17 @@ function fmtNum(n: number | null): string {
 /* Purchase delivery adds Vendor + Grade columns — widen so they scroll rather than
    squeeze the text columns into each other (rule/table-form-cell-no-border keeps the
    controls borderless; the cell draws the border). */
-.mbd-table--delivery { min-width: 1460px; }
+/* Delivery sizes to its real columns instead of a fixed floor: batch (flexible,
+   ≥ 12rem) + expiry 16.5rem + one 11rem column per batch attribute + received qty
+   10rem + unit 4.875rem + remove 2.75rem. With the table at 100%, the batch column
+   takes whatever is left, so the rows always reach the table's right edge. */
+.mbd-table--delivery {
+  min-width: calc(12rem + 16.5rem + var(--mbd-attr-count, 0) * var(--mp-sizes-44, 11rem) + 10rem + 4.875rem + 2.75rem);
+}
+/* Pixel's 2xl drawer/modal size (sm 330 · md 448 · lg 684 · xl 920 · 2xl 1152px).
+   It holds the widest delivery table — two attributes — without scrolling. The WMS
+   kinds keep the shared panel width, since their widest layouts need more. */
+.mbd-panel--delivery { max-width: 72rem; }
 /* With no Description column, the batch column is the flexible one that absorbs the
    leftover width under table-layout:fixed (see .mbd-col-desc for why one must). */
 .mbd-table--delivery .mbd-col-batch { width: auto; }
