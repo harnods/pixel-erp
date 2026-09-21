@@ -10,25 +10,21 @@
  * Route: /{customers|vendors|other-contacts}/:id — the first segment only picks
  * the breadcrumb; the record is the same either way.
  */
-import { ref, reactive, computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpBadge, MpIcon, MpButton,
-  MpInput, MpAutocomplete, MpSelect,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   toast, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import VendorProductsTab from '~/components/patterns/VendorProductsTab.vue'
+import ScenarioFab, { type Scenario } from '~/components/patterns/ScenarioFab.vue'
 import { columnWidth, type ColumnKind } from '~/components/patterns/columnWidths'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { getContact, deleteContact, nitkuFull, type ContactType } from '~/data/contacts'
 import { salesInvoices } from '~/data/salesInvoices'
-import { vendorItemsForVendor, upsertVendorItem } from '~/data/vendorItems'
-import { supplementalSupply } from '~/data/vendorSuppliedProducts'
-import { productBySku } from '~/data/inventory'
-import { unitOptionsForSku, largestUnitFor } from '~/data/productUnits'
-import { CATALOG } from '~/data/catalog'
 import { formatIDR } from '~/utils/currency'
 
 const props = defineProps<{ orderId: string }>()
@@ -108,150 +104,24 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-// ── Products tab — what this vendor supplies, with MOQ and price ──────────────
-// Joined from the vendor master via `vendorMasterId` (see contacts.ts): each row
-// is a product this supplier is set up to sell us, carrying the agreed minimum
-// order quantity and unit price. Operating-expense vendors (logistics, utilities,
-// rent, software) supply no catalogue product, so their list is empty by design.
-// The engine (vendorItems) is a reactive array; upsertVendorItem mutates it, so
-// this recomputes after every add/edit without extra plumbing.
-const vendorEngineRows = computed(() => {
-  const masterId = contact.value?.vendorMasterId
-  return masterId
-    ? vendorItemsForVendor(masterId).filter((vi) => vi.active !== false)
-    : []
-})
+// ── Products tab — the Vendor Supply Profile ──────────────────────────────────
+// Owned by VendorProductsTab.vue. The list is DERIVED from approved supplier
+// invoices rather than maintained here, so this page holds no product state at
+// all — only the demo scenario the ScenarioFab switches between.
+//
+// Note on what moved out: the agreed unit cost the replenishment engine orders at
+// (`vendorItem.unitCost`) is no longer edited on this tab. The tab now shows the
+// price actually PAID, read off the source invoice, which is a different figure
+// with a different provenance. The agreed cost stays editable where it is used —
+// Product detail › Vendors › Edit vendors (VendorItemDrawer).
+const PRODUCT_SCENARIOS: Scenario[] = [
+  { label: 'Default', value: 'data' },
+  { label: 'Empty vendor', value: 'empty' },
+  { label: 'No price permission', value: 'no-price-permission' },
+  { label: 'Backfill running', value: 'backfill' },
+]
+const productsScenario = ref<'data' | 'empty' | 'no-price-permission' | 'backfill'>('data')
 
-// Editing writes to the engine store (which the replenishment rule reads), so it
-// is offered only where that store backs the list — the coffee/packaging/
-// equipment suppliers. The two demo distributors (CT007, V008) show a supplemental
-// read-only price list and can't be edited here.
-const usingSupplemental = computed(() =>
-  vendorEngineRows.value.length === 0
-  && supplementalSupply(contact.value?.vendorMasterId ?? contact.value?.id ?? '').length > 0)
-const canEditProducts = computed(() =>
-  !!contact.value?.vendorMasterId && !usingSupplemental.value)
-
-const vendorProducts = computed(() => {
-  const c = contact.value
-  if (!c) return []
-  const masterId = c.vendorMasterId
-
-  let rows = vendorEngineRows.value.map((vi) => ({
-    id: vi.id,
-    sku: vi.sku,
-    name: productBySku(vi.sku)?.name ?? vi.sku,
-    moq: vi.moq,
-    packSize: vi.packSize,
-    unitCost: vi.unitCost,
-    purchaseUnit: vi.purchaseUnit,
-  }))
-
-  // Fall back to the demo-only supplemental list for the distributor / logistics
-  // vendors the engine doesn't cover (keyed by master id, or contact id when a
-  // contact has no master link).
-  if (!rows.length) {
-    rows = supplementalSupply(masterId ?? c.id).map((s) => ({
-      id: `sup-${masterId ?? c.id}-${s.sku}`,
-      sku: s.sku,
-      name: productBySku(s.sku)?.name ?? s.sku,
-      moq: s.moq,
-      packSize: s.packSize,
-      unitCost: s.unitCost,
-      purchaseUnit: s.purchaseUnit,
-    }))
-  }
-
-  return rows.sort((a, b) => a.name.localeCompare(b.name))
-})
-
-// ── Add / edit products supplied (writes to the engine store) ─────────────────
-const productsEditing = ref(false)
-// Per-SKU drafts of the editable fields, held until Save.
-const prodDraft = reactive<Record<string, { moq: string; packSize: string; unitCost: string; purchaseUnit: string }>>({})
-
-/** The purchase-unit options for a SKU — its base unit plus every multi-unit
- *  registered on the product's Unit conversions tab. Picking one re-derives the
- *  conversion factor at save (upsertVendorItem), so the unit can never disagree
- *  with the product's own conversions. */
-function unitOptions(sku: string) {
-  return unitOptionsForSku(sku)
-}
-
-function startEditProducts(): void {
-  for (const k of Object.keys(prodDraft)) delete prodDraft[k]
-  for (const p of vendorProducts.value) {
-    prodDraft[p.sku] = {
-      moq: String(p.moq), packSize: String(p.packSize), unitCost: String(p.unitCost),
-      purchaseUnit: p.purchaseUnit,
-    }
-  }
-  productsEditing.value = true
-}
-function cancelEditProducts(): void {
-  productsEditing.value = false
-  showAddRow.value = false
-}
-function saveProducts(): void {
-  const masterId = contact.value?.vendorMasterId
-  if (!masterId) return
-  for (const p of vendorProducts.value) {
-    const d = prodDraft[p.sku]
-    if (!d) continue
-    const moq = Math.max(0, Math.round(Number(d.moq) || 0))
-    const packSize = Math.max(1, Math.round(Number(d.packSize) || 1))
-    const unitCost = Math.max(0, Math.round(Number(d.unitCost) || 0))
-    const purchaseUnit = d.purchaseUnit
-    if (moq === p.moq && packSize === p.packSize && unitCost === p.unitCost && purchaseUnit === p.purchaseUnit) continue
-    // upsertVendorItem re-derives unitsPerPurchaseUnit from the chosen unit via the
-    // product's conversion table, so the factor always agrees with the unit.
-    upsertVendorItem({ vendorId: masterId, sku: p.sku, moq, packSize, unitCost, purchaseUnit })
-  }
-  productsEditing.value = false
-  showAddRow.value = false
-  toast.notify({ variant: 'success', title: t('Products updated'), maxWidth: 'max-content' })
-}
-
-// Add a product this vendor supplies — picks from the catalogue SKUs not already
-// linked, and captures the same three fields the replenishment rule reads.
-const showAddRow = ref(false)
-const addForm = reactive({ sku: '', moq: '1', packSize: '1', unitCost: '', purchaseUnit: '' })
-const availableSkus = computed(() => {
-  const taken = new Set(vendorProducts.value.map((p) => p.sku))
-  return CATALOG.filter((c) => !taken.has(c.sku)).map((c) => ({ label: `${c.name} (${c.sku})`, value: c.sku }))
-})
-// Purchase-unit choices follow the picked product's registered conversions.
-const addUnitOptions = computed(() => (addForm.sku ? unitOptionsForSku(addForm.sku) : []))
-function onAddSkuChange(sku: string): void {
-  addForm.sku = sku
-  // Default to the largest registered unit — the natural bulk-buy unit.
-  addForm.purchaseUnit = sku ? largestUnitFor(sku).name : ''
-}
-function openAddRow(): void {
-  addForm.sku = ''
-  addForm.moq = '1'
-  addForm.packSize = '1'
-  addForm.unitCost = ''
-  addForm.purchaseUnit = ''
-  showAddRow.value = true
-}
-function confirmAddProduct(): void {
-  const masterId = contact.value?.vendorMasterId
-  if (!masterId || !addForm.sku) {
-    toast.notify({ variant: 'error', title: t('Choose a product to add.'), maxWidth: 'max-content' })
-    return
-  }
-  upsertVendorItem({
-    vendorId: masterId,
-    sku: addForm.sku,
-    moq: Math.max(0, Math.round(Number(addForm.moq) || 0)),
-    packSize: Math.max(1, Math.round(Number(addForm.packSize) || 1)),
-    unitCost: addForm.unitCost === '' ? undefined : Math.max(0, Math.round(Number(addForm.unitCost))),
-    purchaseUnit: addForm.purchaseUnit || undefined,
-  })
-  showAddRow.value = false
-  toast.notify({ variant: 'success', title: t('Product added'), maxWidth: 'max-content' })
-}
 /** Related-records column width — from the shared standard, never hardcoded.
  *  Columns grow to their max (the trailing spacer <col> soaks up the rest). */
 function colStyle(kind: ColumnKind) {
@@ -447,128 +317,19 @@ function confirmDelete() {
             </div>
           </MpTabPanel>
 
-          <!-- ─────────── Products (vendors only) ─────────── -->
+          <!-- ─────────── Products (vendors only) ───────────
+               The Vendor Supply Profile surface (PRD v1.0). Lives in its own
+               component: it carries a searchable, paged table plus an add/edit/
+               remove/audit/import surface, which is more than a detail-page panel
+               should hold inline. -->
           <MpTabPanel v-if="isVendor" value="products">
             <section class="cd-section cd-section--last">
-              <div class="cd-section-head">
-                <h2 class="cd-section-title cd-section-title--inline">{{ t('Products supplied') }}</h2>
-                <div v-if="canEditProducts" class="cd-prod-actions">
-                  <template v-if="productsEditing">
-                    <MpButton variant="ghost" size="sm" is-rounded @click="cancelEditProducts">{{ t('Cancel') }}</MpButton>
-                    <MpButton variant="primary" size="sm" is-rounded @click="saveProducts">{{ t('Save changes') }}</MpButton>
-                  </template>
-                  <template v-else>
-                    <MpButton variant="ghost" size="sm" is-rounded @click="startEditProducts">
-                      <MpIcon name="edit" size="sm" /> {{ t('Edit') }}
-                    </MpButton>
-                    <MpButton variant="secondary" size="sm" is-rounded @click="openAddRow">
-                      + {{ t('Product') }}
-                    </MpButton>
-                  </template>
-                </div>
-              </div>
-              <!-- MOQ is the minimum the replenishment rule ever orders; the purchase
-                   multiple ("kelipatan pembelian") is what it rounds the quantity up to. -->
-              <p class="cd-prod-hint">{{ t('Replenishment never orders below the MOQ, and rounds each order up to the purchase multiplier.') }}</p>
-
-              <table v-if="vendorProducts.length || showAddRow" class="cd-table">
-                <colgroup>
-                  <col :style="colStyle('name')" />
-                  <col :style="colStyle('number')" />
-                  <col />
-                  <col />
-                  <col :style="colStyle('unit')" />
-                  <col :style="colStyle('amount')" />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th>{{ t('Product') }}</th>
-                    <th>{{ t('SKU') }}</th>
-                    <th class="cd-td--right">{{ t('MOQ') }}</th>
-                    <th class="cd-td--right">{{ t('Purchase multiplier') }}</th>
-                    <th>{{ t('Purchase unit') }}</th>
-                    <th class="cd-td--right">{{ t('Last Price') }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="p in vendorProducts" :key="p.id">
-                    <td>
-                      <a class="cd-link" @click="router.push(`/product-list/${p.sku}`)">{{ p.name }}</a>
-                    </td>
-                    <td>{{ p.sku }}</td>
-                    <td class="cd-td--right">
-                      <MpInput
-                        v-if="productsEditing && prodDraft[p.sku]" :id="`cd-moq-${p.sku}`"
-                        v-model="prodDraft[p.sku]!.moq" type="number" :class="css({ width: '84px' })"
-                      />
-                      <template v-else>{{ p.moq.toLocaleString('id-ID') }}</template>
-                    </td>
-                    <td class="cd-td--right">
-                      <MpInput
-                        v-if="productsEditing && prodDraft[p.sku]" :id="`cd-pack-${p.sku}`"
-                        v-model="prodDraft[p.sku]!.packSize" type="number" :class="css({ width: '84px' })"
-                      />
-                      <template v-else>{{ p.packSize.toLocaleString('id-ID') }}</template>
-                    </td>
-                    <td>
-                      <MpSelect
-                        v-if="productsEditing && prodDraft[p.sku]"
-                        :id="`cd-unit-${p.sku}`"
-                        v-model="prodDraft[p.sku]!.purchaseUnit"
-                        :class="css({ width: '120px' })"
-                      >
-                        <option v-for="o in unitOptions(p.sku)" :key="o.name" :value="o.name">{{ o.name }}</option>
-                      </MpSelect>
-                      <template v-else>{{ p.purchaseUnit }}</template>
-                    </td>
-                    <td class="cd-td--right">
-                      <MpInput
-                        v-if="productsEditing && prodDraft[p.sku]" :id="`cd-cost-${p.sku}`"
-                        v-model="prodDraft[p.sku]!.unitCost" type="number" :class="css({ width: '132px' })"
-                      />
-                      <template v-else>{{ formatIDR(p.unitCost) }}</template>
-                    </td>
-                  </tr>
-
-                  <!-- Add-product row -->
-                  <tr v-if="showAddRow" class="cd-add-row">
-                    <td>
-                      <MpAutocomplete
-                        id="cd-add-sku" :model-value="addForm.sku" :data="availableSkus"
-                        label-prop="label" value-prop="value" is-searchable use-portal is-full-width
-                        :placeholder="t('Choose a product')"
-                        @update:model-value="(v: string) => onAddSkuChange(v)"
-                      />
-                    </td>
-                    <td>{{ addForm.sku || '—' }}</td>
-                    <td class="cd-td--right">
-                      <MpInput id="cd-add-moq" v-model="addForm.moq" type="number" :class="css({ width: '84px' })" />
-                    </td>
-                    <td class="cd-td--right">
-                      <MpInput id="cd-add-pack" v-model="addForm.packSize" type="number" :class="css({ width: '84px' })" />
-                    </td>
-                    <td>
-                      <MpSelect
-                        v-if="addForm.sku"
-                        id="cd-add-unit"
-                        v-model="addForm.purchaseUnit"
-                        :class="css({ width: '120px' })"
-                      >
-                        <option v-for="o in addUnitOptions" :key="o.name" :value="o.name">{{ o.name }}</option>
-                      </MpSelect>
-                      <template v-else>—</template>
-                    </td>
-                    <td class="cd-td--right">
-                      <div class="cd-add-actions">
-                        <MpInput id="cd-add-cost" v-model="addForm.unitCost" type="number" :placeholder="t('Price')" :class="css({ width: '132px' })" />
-                        <MpButton variant="primary" size="sm" is-rounded @click="confirmAddProduct">{{ t('Add') }}</MpButton>
-                        <MpButton variant="ghost" size="sm" is-rounded @click="showAddRow = false">{{ t('Cancel') }}</MpButton>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-              <p v-else class="cd-empty">{{ t('This vendor supplies no catalogue products yet.') }}</p>
+              <VendorProductsTab
+                :vendor-master-id="contact.vendorMasterId ?? ''"
+                :contact-id="contact.id"
+                :vendor-name="contact.displayName"
+                :scenario="productsScenario"
+              />
             </section>
           </MpTabPanel>
 
@@ -625,6 +386,16 @@ function confirmDelete() {
         </MpTabPanels>
       </div>
     </MpTabs>
+
+    <!-- Demo scenario switcher for the Products tab's reachable states
+         (rule/detail-scenario-fab). Only shown while that tab is open, since the
+         scenarios it toggles have no meaning on the other three. -->
+    <ScenarioFab
+      v-if="isVendor && TAB_NAMES[activeTabIndex] === 'products'"
+      v-model="productsScenario"
+      :scenarios="PRODUCT_SCENARIOS"
+      :aria-label="t('Products tab scenarios')"
+    />
 
     <ConfirmModal
       v-model:is-open="isDeleteModalOpen"

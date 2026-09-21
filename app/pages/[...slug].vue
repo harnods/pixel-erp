@@ -197,6 +197,7 @@ const PurchaseInvoiceDetailsPage = asyncPage(() => import('~/components/pages/Pu
 const PurchaseRequestDetailsPage = asyncPage(() => import('~/components/pages/PurchaseRequestDetailsPage.vue'))
 const NewPurchaseRequestPage = asyncPage(() => import('~/components/pages/NewPurchaseRequestPage.vue'))
 const ImportWarehousesPage = asyncPage(() => import('~/components/pages/ImportWarehousesPage.vue'))
+const ImportVendorTermsPage = asyncPage(() => import('~/components/pages/ImportVendorTermsPage.vue'))
 const NewWarehousePage = asyncPage(() => import('~/components/pages/NewWarehousePage.vue'))
 const WarehouseDetailsPage = asyncPage(() => import('~/components/pages/WarehouseDetailsPage.vue'))
 const ConfigureWarehousePage = asyncPage(() => import('~/components/pages/ConfigureWarehousePage.vue'))
@@ -536,6 +537,9 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     const id = segs[1]
     if (id === 'new') return { component: NewContactPage, id: 'new' }
     if (id && segs[2] === 'edit') return { component: NewContactPage, id }
+    // Bulk import of a vendor's ordering terms (TS-011) — a full page, not a
+    // modal: it has a preview-before-commit step with its own table.
+    if (id && segs[2] === 'import-terms') return { component: ImportVendorTermsPage, id }
     if (id) return { component: ContactDetailsPage, id }
   }
   // /cowork-chats → the full-stage Cowork chat (owns its title bar + stage).
