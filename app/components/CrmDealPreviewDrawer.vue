@@ -18,7 +18,7 @@ import { formatMoney } from '~/utils/currency'
 import { formatDate, formatDateTime } from '~/utils/date'
 import { CATALOG } from '~/data/catalog'
 import {
-  crmCustomers, dealExpectedValue, lineSubtotal, skuFor, DEAL_STAGES,
+  crmCustomers, dealExpectedValue, dealTotals, lineSubtotal, skuFor, DEAL_STAGES,
   dealComments, addDealComment, dealNo, dealStageBadgeType, dealStageLabel,
   type Deal, type DealStage,
 } from '~/data/crm'
@@ -56,6 +56,7 @@ function addNote() {
 }
 
 const d = computed(() => props.deal)
+const totals = computed(() => (d.value ? dealTotals(d.value) : null))
 const money = (n: number) => formatMoney(n, d.value?.currency ?? 'IDR')
 const customer = computed(() => (d.value ? crmCustomers.find((c) => c.id === d.value!.customerId) : undefined))
 const productCount = computed(() => d.value?.products?.length ?? 0)
@@ -157,7 +158,15 @@ function stampTime(id: string): string {
                   <span class="cdp-num">{{ money(lineSubtotal(li)) }}</span>
                 </div>
               </div>
-              <p v-else class="cdp-empty">No products on this deal.</p>
+              <div v-if="totals && productCount" class="cdp-totals" data-devchange="deal-preview-totals">
+                <div class="cdp-totals-row"><span>Subtotal</span><span class="cdp-num">{{ money(totals.subtotal) }}</span></div>
+                <div v-if="totals.discountPerLine" class="cdp-totals-row cdp-totals-dim"><span>Discount per line</span><span class="cdp-num">−{{ money(totals.discountPerLine) }}</span></div>
+                <div v-if="totals.globalDiscount" class="cdp-totals-row cdp-totals-dim"><span>Global discount</span><span class="cdp-num">−{{ money(totals.globalDiscount) }}</span></div>
+                <div v-if="totals.taxAmount" class="cdp-totals-row"><span>{{ totals.taxLabel }}</span><span class="cdp-num">{{ money(totals.taxAmount) }}</span></div>
+                <div v-if="totals.shippingFee" class="cdp-totals-row"><span>{{ t('Shipping fee') }}</span><span class="cdp-num">{{ money(totals.shippingFee) }}</span></div>
+                <div class="cdp-totals-row cdp-totals-total"><span>{{ t('Total') }}</span><span class="cdp-num">{{ money(totals.total) }}</span></div>
+              </div>
+              <p v-else-if="!productCount" class="cdp-empty">No products on this deal.</p>
             </section>
 
             <!-- Notes / comments -->
@@ -262,6 +271,11 @@ function stampTime(id: string): string {
 .cdp-pname { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cdp-psku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); font-variant-numeric: tabular-nums; }
 .cdp-empty { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-subtle); }
+
+.cdp-totals { display: flex; flex-direction: column; gap: var(--mp-spacing-1); margin-top: var(--mp-spacing-2); padding-top: var(--mp-spacing-2); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+.cdp-totals-row { display: flex; justify-content: space-between; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.cdp-totals-dim { color: var(--mp-text-subtle); }
+.cdp-totals-total { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); padding-top: var(--mp-spacing-1); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 
 /* Notes / comments */
 .cdp-note-add { display: flex; flex-direction: column; align-items: flex-end; gap: var(--mp-spacing-2); }

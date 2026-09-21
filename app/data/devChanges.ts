@@ -233,6 +233,15 @@ export const DEV_CHANGES: DevChange[] = [
     pr: '#79',
     files: ['NewCrmDealPage.vue', 'NewSalesOrderPage.vue', 'warehouseDetails.ts'],
   },
+  {
+    id: 'deal-preview-totals',
+    title: 'Deal preview: totals breakdown',
+    description:
+      'The deal preview drawer now shows Subtotal, PPN, Shipping fee, and Total below the product table — the "Expected deal value" in Overview now reconciles with the visible line items. Seed values updated to match the calculated total (subtotal + PPN 11% + shipping).',
+    date: '2026-09-21',
+    pr: '#86',
+    files: ['CrmDealPreviewDrawer.vue', 'crm.ts'],
+  },
 ]
 
 const byId = new Map(DEV_CHANGES.map(c => [c.id, c]))
