@@ -3,43 +3,40 @@
  * Inventory › Grades — the company's Grade List (Batch Attribute PRD stories 3 / 3a,
  * plan Phase 1, docs/prd/batch-attribute-plan.md).
  *
- * The list must keep 1–10 active grades and a grade used by any batch can't be
- * deleted, so every status/delete path either confirms or explains the block — the
- * action is never hidden. Blocked attempts still go through grades.ts so the failed
- * action lands in the activity log (story 3a).
+ * The list keeps 1–10 grades and a grade used by any batch can't be deleted, so the
+ * delete path either confirms or explains the block — the action is never hidden.
+ * Blocked attempts still go through grades.ts so the failed action lands in the
+ * activity log (story 3a). Rank is set on creation and never changes, and grades
+ * have no Active/Inactive status (design review, 21 Sep 2026).
  *
  * Deliberate departures from docs/design/RULES.md:
  * - Default sort is Rank ascending, not alphabetical (rule/table-default-sort-alpha):
  *   rank IS the order of a grade list.
  * - Name/description caps are 50/256 from the PRD, not the counter defaults 60/250
  *   (rule/input-char-counter) — same counter pattern, product-specified limits.
- * - The activity log opens from each row's Last updated cell. rule/activity-log-trigger
- *   describes a detail page's provenance link; grades have no detail page, and that
- *   cell is the same "last updated by" line for its grade.
+ * - The activity log opens from a "Last updated by …" line above the table: an index
+ *   page has no detail summary to put rule/activity-log-trigger's line under.
  * - The row menu has no "View details" (index-page-format): there is no detail page.
  * - The Empty state scenario (rule/index-scenario-fab) previews a state real data
- *   can't reach — a Grade List always keeps at least one active grade.
+ *   can't reach — a Grade List always keeps at least one grade.
  */
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import {
-  MpButton, MpButtonGroup, MpIcon, MpText, MpTooltip,
+  MpButton, MpButtonGroup, MpIcon, MpText,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea, MpTextlink, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
-import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
-import ExportModal from '~/components/patterns/ExportModal.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import { formatDateTimeLong } from '~/utils/date'
 import { successToast } from '~/utils/toasts'
 import { useGradeModal } from '~/composables/useGradeModal'
 import {
-  grades, activeGrades, gradeById, gradeActivity,
-  createGrade, updateGrade, setGradeStatus, deleteGrade, reorderGrades,
+  grades, gradeById, gradeActivity,
+  createGrade, updateGrade, deleteGrade,
   GRADE_NAME_MAX, GRADE_DESCRIPTION_MAX, MIN_ACTIVE_GRADES,
   type Grade, type GradeError,
 } from '~/data/grades'
@@ -51,18 +48,13 @@ const { t } = useLocale()
 const scenario = ref('data')
 
 // ─── Columns ────────────────────────────────────────────────────────────────────
-// Name first: the identity column is the one pinned on horizontal scroll
-// (rule/table-sticky-first-col). Rank is numeric, so it right-aligns.
-const allColumns: TableColumn[] = [
+// Rank leads — it IS the list's order. Rank is numeric, so it right-aligns. Three
+// columns, so there's no column-settings menu to hide any of them.
+const columns: TableColumn[] = [
   { key: 'rank', label: t('Rank'), align: 'right', sortable: true, sortType: 'number' },
   { key: 'name', label: t('Name'), kind: 'name', sortable: true, sortType: 'text' },
   { key: 'description', label: t('Description'), kind: 'address' },
-  { key: 'status', label: t('Status'), kind: 'status', sortable: true, sortType: 'text' },
 ]
-const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allColumns.map(c => [c.key, true])))
-const columnItems = allColumns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
-const visibleColumns = computed(() => allColumns.filter(c => columnVisibility[c.key]))
-function hideColumn(key: string) { columnVisibility[key] = false }
 
 // ─── Rows / table state ─────────────────────────────────────────────────────────
 const rows = computed<Grade[]>(() => (scenario.value === 'empty' ? [] : grades()))
@@ -76,22 +68,6 @@ const {
   filterFn: (row, s) =>
     !s || row.name.toLowerCase().includes(s) || row.description.toLowerCase().includes(s),
 })
-
-// ── Reorder (drag) ─────────────────────────────────────────────────────────────
-// Dragging sets the rank, so it is only offered while the list IS in rank order:
-// another sort, a search, a status filter or a second page would all make the drop
-// position mean something different from where the row lands.
-const canReorder = computed(() =>
-  sortKey.value === 'rank' && sortDir.value === 'asc'
-  && !search.value.trim() && total.value <= perPage.value,
-)
-function onReorder(from: number, to: number) {
-  const ids = paginated.value.map((g) => g.id)
-  const [moved] = ids.splice(from, 1)
-  if (!moved) return
-  ids.splice(to, 0, moved)
-  reorderGrades(ids)
-}
 
 function clearFilters() {
   search.value = ''
@@ -126,8 +102,8 @@ function errorText(e: GradeError): string {
   switch (e.code) {
     case 'name-required': return t('You must fill in name')
     case 'name-taken': return t('Name already taken')
-    case 'max-active': return t('The list already has 10 active grades. Please deactivate a grade before adding another')
-    case 'last-active': return t('At least one grade must stay active. Activate or add another grade first.')
+    case 'max-active': return t('The list already has 10 grades. Delete a grade before adding another')
+    case 'last-active': return t('A grade list must keep at least one grade.')
     case 'in-use': return t('This grade is used by batches, so it cannot be deleted.')
     // Name/description lengths are capped by maxlength, and a vanished grade can't be
     // edited from this page — kept so every code maps to readable copy.
@@ -159,70 +135,21 @@ async function saveForm() {
   closeForm()
 }
 
-// ─── Status & delete ───────────────────────────────────────────────────────────
+// ─── Delete ────────────────────────────────────────────────────────────────────
 /** A block the user can only acknowledge (no alternative action to offer). */
 const blocked = ref<{ title: string; body: string } | null>(null)
 
-const deactivateTarget = ref<Grade | null>(null)
 const deleteTarget = ref<Grade | null>(null)
-/** An active grade that's used by batches: offer Deactivate instead of Delete. */
-const deactivateInsteadTarget = ref<Grade | null>(null)
-
-const confirmOpen = (target: typeof deactivateTarget) => computed({
-  get: () => !!target.value,
-  set: (v: boolean) => { if (!v) target.value = null },
+const deleteOpen = computed({
+  get: () => !!deleteTarget.value,
+  set: (v: boolean) => { if (!v) deleteTarget.value = null },
 })
-const deactivateOpen = confirmOpen(deactivateTarget)
-const deleteOpen = confirmOpen(deleteTarget)
-const deactivateInsteadOpen = confirmOpen(deactivateInsteadTarget)
-
-function isLastActive(g: Grade): boolean {
-  return g.status === 'active' && activeGrades().length <= MIN_ACTIVE_GRADES
-}
-
-function requestDeactivate(g: Grade) {
-  if (isLastActive(g)) {
-    // Recorded as a failed attempt, then explained.
-    setGradeStatus(g.id, 'inactive')
-    blocked.value = {
-      title: t('Grade cannot be deactivated'),
-      body: t('At least one grade must stay active. Activate or add another grade first.'),
-    }
-    return
-  }
-  deactivateTarget.value = g
-}
-
-function deactivate(g: Grade) {
-  const result = setGradeStatus(g.id, 'inactive')
-  if (result.ok) {
-    successToast(t('Grade deactivated'))
-    return
-  }
-  blocked.value = { title: t('Grade cannot be deactivated'), body: errorText(result.errors[0]!) }
-}
-
-function activate(g: Grade) {
-  const result = setGradeStatus(g.id, 'active')
-  if (result.ok) {
-    successToast(t('Grade activated'))
-    return
-  }
-  blocked.value = {
-    title: t('Grade cannot be activated'),
-    body: t('A grade list can have up to 10 active grades. Deactivate another grade first.'),
-  }
-}
 
 function requestDelete(g: Grade) {
-  const inUse = countBatchesUsingGrade(g.id) > 0
-  if (inUse && !isLastActive(g) && g.status === 'active') {
-    deleteGrade(g.id) // recorded as a failed attempt
-    deactivateInsteadTarget.value = g
-    return
-  }
-  if (inUse || isLastActive(g)) {
-    const result = deleteGrade(g.id) // recorded as a failed attempt
+  // Used by batches, or the list's only grade: explain the block. The attempt still
+  // goes through deleteGrade so it's recorded in the activity log (story 3a).
+  if (countBatchesUsingGrade(g.id) > 0 || grades().length <= MIN_ACTIVE_GRADES) {
+    const result = deleteGrade(g.id)
     blocked.value = {
       title: t('Grade cannot be deleted'),
       body: result.ok ? '' : errorText(result.errors[0]!),
@@ -274,27 +201,13 @@ const listActivityEntries = computed<ActivityEntry[]>(() => {
   return [...recorded, ...seeded].sort((a, b) => b.date.localeCompare(a.date))
 })
 
-// ─── Export ─────────────────────────────────────────────────────────────────────
-const exportOpen = ref(false)
-const exportColumns = [
-  { key: 'name', label: t('Name'), required: true },
-  { key: 'rank', label: t('Rank') },
-  { key: 'description', label: t('Description') },
-  { key: 'status', label: t('Status') },
-  { key: 'updatedAt', label: t('Last updated') },
-]
-function onExport() {
-  exportOpen.value = false
-  successToast(t('Grades exported'))
-}
-
 const emptyIllustration = '/illustrations/empty-folder.png'
 const asGrade = (row: unknown) => row as Grade
 </script>
 
 <template>
   <ErpTablePage
-    :columns="visibleColumns"
+    :columns="columns"
     :rows="(paginated as unknown as Record<string, unknown>[])"
     :total="total"
     :current-page="currentPage"
@@ -305,15 +218,12 @@ const asGrade = (row: unknown) => row as Grade
     :search="search"
     :has-active-search="!!search.trim()"
     filter-empty-label="grade"
-    :sortable-rows="canReorder"
     bulk-label="grade"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
     @sort-change="setSort"
-    @hide-column="hideColumn"
     @clear-filters="clearFilters"
-    @reorder="onReorder"
   >
     <!-- ── Filter bar ── -->
     <template #filters>
@@ -328,17 +238,6 @@ const asGrade = (row: unknown) => row as Grade
         </MpTextlink>
       </div>
       <div class="filter-right">
-        <!-- rule/filter-bar-icon-group: ghost icon tools in one group, each tooltipped. -->
-        <MpButtonGroup class="filter-btn-group">
-          <ColumnSettingsMenu id="grade-columns" :items="columnItems" :visibility="columnVisibility" :tooltip="t('Column settings')" />
-          <MpTooltip id="tt-grade-export" :label="t('Export')" placement="bottom" use-portal>
-            <MpButton
-              variant="ghost" is-rounded class="filter-icon-btn"
-              left-icon="download" :aria-label="t('Export')" @click="exportOpen = true"
-            />
-          </MpTooltip>
-        </MpButtonGroup>
-
         <div class="filter-search">
           <MpIcon name="search" size="sm" />
           <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')">
@@ -362,10 +261,6 @@ const asGrade = (row: unknown) => row as Grade
       <span class="grade-wrap">{{ value || '—' }}</span>
     </template>
 
-    <template #cell-status="{ value }">
-      <ErpStatusBadge :status="String(value)" :label="value === 'active' ? t('Active') : t('Inactive')" />
-    </template>
-
     <!-- ── Row actions (no tooltip on the kebab — rule/table-actions-no-tooltip) ── -->
     <template #actions="{ row }">
       <MpPopover
@@ -378,10 +273,6 @@ const asGrade = (row: unknown) => row as Grade
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="openEdit(asGrade(row).id)">{{ t('Edit') }}</MpPopoverListItem>
-            <MpPopoverListItem v-if="asGrade(row).status === 'active'" @click="requestDeactivate(asGrade(row))">
-              {{ t('Deactivate') }}
-            </MpPopoverListItem>
-            <MpPopoverListItem v-else @click="activate(asGrade(row))">{{ t('Activate') }}</MpPopoverListItem>
             <MpPopoverListItem
               :class="css({ color: 'var(--mp-colors-text-critical, #d93b3b)' })"
               @click="requestDelete(asGrade(row))"
@@ -453,16 +344,6 @@ const asGrade = (row: unknown) => row as Grade
     <MpModalOverlay />
   </MpModal>
 
-  <!-- ── Deactivate (not destructive — primary, not danger) ── -->
-  <ConfirmModal
-    v-model:is-open="deactivateOpen"
-    :title="t('Deactivate grade?')"
-    :description="t('Inactive grades can\'t be selected for new batches. Batches that already use this grade keep it.')"
-    :confirm-label="t('Deactivate grade')"
-    :is-danger="false"
-    @confirm="deactivateTarget && deactivate(deactivateTarget)"
-  />
-
   <!-- ── Delete an unused grade ── -->
   <ConfirmModal
     v-model:is-open="deleteOpen"
@@ -472,23 +353,14 @@ const asGrade = (row: unknown) => row as Grade
     @confirm="confirmDelete"
   />
 
-  <!-- ── Delete a grade batches use → offer Deactivate instead (PRD story 3) ── -->
-  <ConfirmModal
-    v-model:is-open="deactivateInsteadOpen"
-    :title="t('Deactivate grade instead?')"
-    :description="t('This grade is used by batches, so it cannot be deleted. Deactivate it to stop it from being selected for new batches.')"
-    :confirm-label="t('Deactivate grade')"
-    :is-danger="false"
-    @confirm="deactivateInsteadTarget && deactivate(deactivateInsteadTarget)"
-  />
-
-  <!-- ── A block with nothing else to offer — acknowledge only ── -->
+  <!-- ── A block with nothing else to offer — acknowledge only. Closes only on its
+       own controls (rule/modal-drawer-close-explicit-only). ── -->
   <MpModal
     id="grade-blocked-modal" :is-open="!!blocked" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="blocked = null"
+    :is-close-on-esc="false" :is-close-on-overlay-click="false" :is-keep-alive="false" @close="blocked = null"
   >
     <MpModalContent>
-      <MpModalHeader>{{ blocked?.title }}</MpModalHeader>
+      <MpModalHeader>{{ blocked?.title }}<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
         <MpText>{{ blocked?.body }}</MpText>
       </MpModalBody>
@@ -506,16 +378,6 @@ const asGrade = (row: unknown) => row as Grade
     :subject="t('Grades')"
     :entries="listActivityEntries"
     @close="listActivityOpen = false"
-  />
-
-  <ExportModal
-    :open="exportOpen"
-    :title="t('Export grades')"
-    :entity-label="t('grades')"
-    :columns="exportColumns"
-    :total="total"
-    @close="exportOpen = false"
-    @export="onExport"
   />
 
   <ScenarioFab v-model="scenario" />
@@ -547,9 +409,12 @@ const asGrade = (row: unknown) => row as Grade
 .grade-wrap { white-space: normal; }
 .grade-updated { font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
 
+/* rule/table-actions-column: a single 38px button in the 44px column, top-aligned.
+   At 38px, a top-aligned kebab lands on a single-line row's middle; a smaller one
+   sits high, which is what made this column look off-centre. */
 .row-kebab {
   display: inline-flex !important; align-items: center; justify-content: center;
-  width: var(--mp-sizes-7, 28px) !important; height: var(--mp-sizes-5, 20px) !important;
+  width: var(--mp-sizes-9\.5, 38px) !important; height: var(--mp-sizes-9\.5, 38px) !important;
   min-width: 0 !important; padding: 0 !important;
   margin-left: auto;
 }

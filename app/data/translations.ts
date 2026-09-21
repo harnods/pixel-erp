@@ -3445,6 +3445,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Grade cannot be deactivated": "Grade tidak dapat dinonaktifkan",
   "Grade cannot be activated": "Grade tidak dapat diaktifkan",
   "At least one grade must stay active. Activate or add another grade first.": "Minimal satu grade harus tetap aktif. Aktifkan atau tambahkan grade lain terlebih dahulu.",
+  "A grade list must keep at least one grade.": "Daftar grade harus memiliki minimal satu grade.",
+  "The list already has 10 grades. Delete a grade before adding another": "Daftar sudah memiliki 10 grade. Hapus salah satu grade sebelum menambah grade lain",
   "A grade list can have up to 10 active grades. Deactivate another grade first.": "Daftar grade dapat memiliki maksimal 10 grade aktif. Nonaktifkan grade lain terlebih dahulu.",
   "The list already has 10 active grades. Please deactivate a grade before adding another": "Daftar sudah memiliki 10 grade aktif. Silakan nonaktifkan salah satu grade sebelum menambah grade lain",
   "Something went wrong, please try again": "Terjadi kesalahan, silakan coba lagi",

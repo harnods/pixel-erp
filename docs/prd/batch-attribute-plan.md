@@ -139,7 +139,7 @@
   - Title-bar primary: `[add] New grade` (`rule/copy-add-noun-only`). Clicking it at 10 active grades shows an inline alert/modal explaining the limit; don't disable the button (`rule/btn-no-disabled-validation`).
 - **Create / edit modal** (`MpModal` md, `rule/modal-use-mpmodal`):
   - Name: required, max 50, unique in the list including inactive, with a char counter (`rule/input-char-counter`).
-  - ~~Rank: prefilled with `nextRank()` and **read-only**, with a caption saying rank can't be changed later (PRD *needs design emphasis*).~~ **Superseded 17 Sep 2026 (design review):** rank is no longer in the form at all — it is set by **dragging a row** in the table (see the Phase 1 as-built note).
+  - Rank: assigned by `nextRank()` on creation and **never changes** (PRD). It is not shown in the form at all — only in the table (design review, 17 Sep 2026).
   - Description: optional, max 256.
   - Status isn't shown on create; new grades are always Active.
   - Errors show inline on Save (`rule/form-errors-inline`). Buttons: "Save" / "Save changes" (`rule/form-edit-save-changes`).
@@ -147,15 +147,17 @@
 - **Delete:** unused → confirm → soft-delete. **Used** → blocked modal: "This grade is used by N batches. Deactivate it instead?" with a primary **Deactivate** button (PRD *needs design emphasis*).
 - **Activity log:** a `.detail-updated`-style "Last updated by … on …" link under the table opens `ActivityLogModal` with grade create/update/delete entries, including failed actions.
 
-**As built (Phase 1, revised 17 Sep 2026 — design review):**
+**As built (Phase 1, revised 21 Sep 2026 — design review):**
 
-- **Rank is mutable, and the table sets it.** The read-only Rank field is gone from the create/edit modal; rows carry a drag handle and dropping a row renumbers every rank to match (`reorderGrades`). Each moved grade logs its own `Rank: 2 → 1`, so the change shows up in that grade's own trail.
-  - This **supersedes the PRD's "rank can't be changed"** — tracked in §8 for PM.
-  - Built to `rule/dnd-live-sortable`: handle-initiated (never whole-row `draggable`), pointer-based via `usePointerSortable`, a floating ghost, a dashed drop-slot and a `TransitionGroup` tbody. `ErpTablePage` gained an opt-in `sortableRows` prop for it; every other table renders the plain tbody it always did.
-  - The handle only appears while the list **is** in rank order — another sort, a search or a second page hides it, since the drop position would otherwise mean something other than where the row lands.
-- **Columns:** Rank · Name · Description · Status. Rank leads (it is what dragging sets); **Last updated was removed**.
-- **Status filter removed** — search still covers name and description, and the Status column still shows which grades are inactive.
-- **Activity log** is the whole list's, opened from the `.detail-updated`-style "Last updated by … on …" line **above** the table (the plan said under it). It reports the most recent change across the grades, and derives creation entries for the seeded A/B/C so the trail starts at creation. The per-row log went with the Last updated cell that used to trigger it.
+- **Rank is fixed.** Assigned on creation and never changed; it shows in the table only, not in the create/edit form. (A drag-to-reorder built on 17 Sep was removed on 21 Sep — rank can't be adjusted.)
+- **Columns:** Rank · Name · Description. Rank leads, since it is the list's order.
+- **No Active/Inactive status.** The Status column, the Activate/Deactivate row actions and the "Deactivate grade instead?" offer are gone. The row menu is **Edit · Delete**.
+  - Deleting a grade that batches use is blocked with an acknowledge-only modal ("This grade is used by batches, so it cannot be deleted").
+  - The list still keeps at least one grade, and holds up to **10 grades** (was "10 active grades"); the copy no longer tells users to (de)activate.
+  - This **departs from PRD story 3**, which specifies activate/deactivate — tracked in §8.
+- **No export and no column settings** in the filter bar; search is the only tool.
+- **Activity log** is the whole list's, opened from the `.detail-updated`-style "Last updated by … on …" line **above** the table. It reports the most recent change across the grades, and derives creation entries for the seeded A/B/C so the trail starts at creation.
+- **Row actions** use the standard 38px kebab (`rule/table-actions-column`), which lands on a single-line row's middle; the page had shrunk it to 20px, which sat it high.
 
 ### Phase 2 — Attribute set on the product (story 5 web, 6, 6a)
 
@@ -368,7 +370,7 @@ Both rounds are answered (§1, A1–A9). Nothing blocks the build. These items a
 |------|------------------------------------|------------|
 | PRD still says "Supplier" (A6) | UI says **Vendor** | PM updating the PRD |
 | Import error copy for Unassigned batch rows (A7) | Row rejected, with the proposed EN/ID copy in Phase 4 | PM confirming the wording |
-| Rank became editable (17 Sep 2026) | Rank is **set by dragging** a row in the Grades table; the PRD and this plan previously said it can never change | PM confirming that grades may be reordered after creation |
+| Grades have no Active/Inactive status (21 Sep 2026) | No status column, no Activate/Deactivate; a grade batches use simply can't be deleted. The PRD's story 3 specifies activate/deactivate, a "1–10 active" limit and a "Grade is not active" import error — the import still rejects inactive grades, but none can become inactive now | PM confirming grades drop the status lifecycle |
 | Renaming a batch that's already used (A9) | **Locked:** the number is read-only once the batch has movements | PM's final call. Unlocking it later is a one-line change to the `batchHasMovements` guard, because the stable batch ID already supports renames. |
 
 ---
