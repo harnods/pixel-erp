@@ -3,7 +3,9 @@
  * Batch traceability detail — one product + one batch (PRD stories 7, 8, 10; plan
  * Phase 3). Route: /inventory-report/batch-traceability/:sku/:batchNo.
  *
- * Four sections, in the PRD's order:
+ * Batch information on top; the other three sections are tabs under it (Stock position ·
+ * Batch journey · Related batch). Batch journey switches between the diagram (Journey)
+ * and the ledger (History table). In the PRD's order:
  *  1. Batch information — identity, the transaction that created the batch, and the
  *     attributes as they stand on the batch master today (labelled as such). The
  *     "Last updated by …" line opens the Activity log (rule/activity-log-trigger).
@@ -33,8 +35,11 @@
  * - Transaction numbers are plain text (plan open question 9).
  */
 import { computed, ref, watch } from 'vue'
-import { MpButton, MpCheckbox, MpIcon, MpTooltip } from '@mekari/pixel3'
+import {
+  MpButton, MpCheckbox, MpIcon, MpSegmentedControl, MpTab, MpTabList, MpTabPanel, MpTabPanels, MpTabs, MpTooltip,
+} from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import { columnWidth } from '~/components/patterns/columnWidths'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import BatchStorageLocationsDrawer from '~/components/patterns/BatchStorageLocationsDrawer.vue'
@@ -44,6 +49,7 @@ import { buildExportDocument, downloadExport, type ExportFormat, type ExportSect
 import { successToast } from '~/utils/toasts'
 import {
   getBatchTrace, batchStockPosition, batchJourney, batchJourneyTimeline, batchJourneyGraph, batchAttributeChanges, relatedBatches, attributeCell,
+  canViewBatchTraceability,
   type AttributeChangeMarker, type JourneyRow, type RelatedBatchRow, type TraceabilityAccess,
 } from '~/data/batchTraceability'
 import { TRACE_ATTRIBUTE_COLUMNS, useTraceabilityCells } from '~/composables/useTraceabilityCells'
@@ -71,7 +77,11 @@ const scenarios = [
   { label: 'Without Batch Attribute add-on', value: 'no-batch-attribute' },
   { label: 'Without Dual Unit Inventory', value: 'no-dual-unit' },
   { label: 'Reconciliation mismatch', value: 'mismatch' },
+  { label: 'Without report access', value: 'no-access' },
 ]
+// Story 1: the detail page is part of the report, so the same roles apply. The demo
+// viewer is an Owner unless the scenario says not.
+const canView = computed(() => canViewBatchTraceability(scenario.value === 'no-access' ? [] : ['owner']))
 const access = computed<TraceabilityAccess>(() => ({
   batchAttribute: scenario.value !== 'no-batch-attribute',
   dualUnit: scenario.value !== 'no-dual-unit',
@@ -123,6 +133,35 @@ function backToReport() { router.push('/inventory-report/batch-traceability') }
 // ─── Entry-point highlight ──────────────────────────────────────────────────────
 const highlightWarehouse = computed(() => (typeof route.query.warehouse === 'string' ? route.query.warehouse : ''))
 const highlightTransaction = computed(() => (typeof route.query.transaction === 'string' ? route.query.transaction : ''))
+
+// ─── Tabs & journey view ──────────────────────────────────────────────────────────
+// Stock position, Batch journey and Related batch share one tab set under Batch
+// information. The entry context picks where the page opens (story 7): a transaction
+// from By transaction lands on its highlighted row in the History table; otherwise
+// Stock position (where a By batch warehouse line is highlighted). `?section=` /
+// `?view=` open a tab or view directly.
+const DETAIL_TABS = [
+  { value: 'position', label: t('Stock position') },
+  { value: 'journey', label: t('Batch journey') },
+  { value: 'related', label: t('Related batch') },
+] as const
+type JourneyView = 'journey' | 'history'
+const journeyViewOptions = [
+  { id: 'btd-view-journey', label: t('Journey'), value: 'journey' },
+  { id: 'btd-view-history', label: t('History table'), value: 'history' },
+]
+function initialTab(): number {
+  const section = typeof route.query.section === 'string' ? route.query.section : ''
+  const i = DETAIL_TABS.findIndex((tab) => tab.value === section)
+  if (i >= 0) return i
+  return highlightTransaction.value ? 1 : 0
+}
+const activeTab = ref(initialTab())
+const journeyView = ref<JourneyView>(
+  route.query.view === 'history' || route.query.view === 'journey'
+    ? route.query.view
+    : highlightTransaction.value ? 'history' : 'journey',
+)
 
 // ─── Batch information ──────────────────────────────────────────────────────────
 function formatAttribute(key: BatchAttributeKey): string {
@@ -370,7 +409,7 @@ defineExpose({ buildSections })
 </script>
 
 <template>
-  <div v-if="trace && position" class="btd-page">
+  <div v-if="canView && trace && position" class="btd-page">
     <!-- ── Title bar ── -->
     <header class="btd-bar">
       <div class="btd-bar-left">
@@ -414,30 +453,44 @@ defineExpose({ buildSections })
         </a>
       </section>
 
-      <!-- 2. Stock position -->
+      <!-- 2–4 as tabs: Stock position · Batch journey · Related batch -->
+      <MpTabs id="btd-tabs" v-model="activeTab" is-manual variant-color="green" class="btd-tabs">
+        <MpTabList>
+          <MpTab v-for="tab in DETAIL_TABS" :id="`btd-tab-${tab.value}`" :key="tab.value" :value="tab.value">{{ tab.label }}</MpTab>
+        </MpTabList>
+        <MpTabPanels>
+      <MpTabPanel value="position">
       <section class="btd-section">
-        <h2 class="btd-section-title">{{ t('Stock position') }}</h2>
-        <div class="btd-position">
-          <div class="btd-total">
-            <span class="btd-total-label">{{ t('Total on hand') }}</span>
-            <span class="btd-total-value">{{ qtyText(shownOnHand, unit) }}</span>
-            <span class="btd-total-secondary">{{ secondaryQtyText(shownOnHand) }}</span>
+        <!-- Totals read like Batch information: ContentList key/value columns. -->
+        <div class="btd-info btd-reconcile">
+          <div class="btd-info-col">
+            <ContentList :label="t('Total received')" :value="qtyText(position.received, unit)" />
+            <ContentList :label="t('Total issued')" :value="qtyText(position.issued, unit)" />
           </div>
-          <div class="btd-reconcile">
-            <span>{{ t('Total received') }} {{ qtyText(position.received, unit) }}</span>
-            <span class="btd-reconcile-op">−</span>
-            <span>{{ t('Total issued') }} {{ qtyText(position.issued, unit) }}</span>
-            <span class="btd-reconcile-op">=</span>
-            <span>{{ qtyText(expectedOnHand, unit) }}</span>
-            <span v-if="difference !== 0" class="btd-mismatch" role="alert">
-              <MpIcon name="warning-triangle" size="sm" />
-              {{ t("Doesn't match on hand") }} · {{ t('Difference') }} {{ qtyText(difference, unit) }}
-            </span>
+          <div class="btd-info-col">
+            <ContentList :label="t('Total on hand')">
+              <span class="btd-num">{{ qtyText(shownOnHand, unit) }}</span>
+              <span v-if="difference !== 0" class="btd-mismatch" role="alert">
+                <MpIcon name="warning-triangle" size="sm" />
+                {{ t("Doesn't match on hand") }} · {{ t('Difference') }} {{ qtyText(difference, unit) }}
+              </span>
+            </ContentList>
+            <ContentList :label="t('Total on hand (secondary unit)')">
+              <span class="btd-num" :class="{ 'btd-na': perBase === null }">{{ secondaryQtyText(shownOnHand) }}</span>
+            </ContentList>
           </div>
         </div>
 
         <div class="btd-table-scroll">
-          <table class="btd-table">
+          <table class="btd-table btd-table--position">
+            <!-- Column-kind widths (columnWidths.ts): name 280, default 240; View locations
+                 takes what's left and stays flush right. -->
+            <colgroup>
+              <col :style="{ width: columnWidth('name').maxWidth }">
+              <col :style="{ width: columnWidth().maxWidth }">
+              <col :style="{ width: columnWidth().maxWidth }">
+              <col>
+            </colgroup>
             <thead>
               <tr>
                 <th class="btd-th">{{ t('Warehouse') }}</th>
@@ -468,10 +521,26 @@ defineExpose({ buildSections })
           </div>
         </div>
       </section>
+      </MpTabPanel>
 
-      <!-- 3. Batch journey -->
+      <!-- 3. Batch journey — the diagram (Journey) or the ledger (History table) -->
+      <MpTabPanel value="journey">
       <section class="btd-section">
-        <h2 class="btd-section-title">{{ t('Batch journey') }}</h2>
+        <div class="btd-journey-bar">
+          <MpSegmentedControl
+            id="btd-journey-view" name="btd-journey-view" class="btd-journey-view"
+            :model-value="journeyView" :data="journeyViewOptions"
+            @update:model-value="journeyView = $event as JourneyView"
+          />
+          <!-- Wrapped: MpCheckbox puts id/class on its hidden input, so layout lives on this div. -->
+          <div v-if="journeyView === 'history' && changeCount" class="btd-changes-toggle">
+            <MpCheckbox
+              id="btd-show-changes"
+              :is-checked="showChanges" @change="showChanges = !showChanges"
+            >{{ t('Show attribute changes') }} ({{ changeCount }})</MpCheckbox>
+          </div>
+        </div>
+        <template v-if="journeyView === 'journey'">
         <BatchJourneyDiagram
           v-if="journeyRows.length"
           :graph="graph"
@@ -481,14 +550,11 @@ defineExpose({ buildSections })
           :unit="unit"
           @open-batch="openRelated"
         />
-        <!-- Wrapped: MpCheckbox puts id/class on its hidden input, so layout lives on this div. -->
-        <div v-if="changeCount" class="btd-changes-toggle">
-          <MpCheckbox
-            id="btd-show-changes"
-            :is-checked="showChanges" @change="showChanges = !showChanges"
-          >{{ t('Show attribute changes') }} ({{ changeCount }})</MpCheckbox>
+        <div v-else class="btd-empty">
+          <p class="btd-empty-title">{{ t('No transactions for this batch yet') }}</p>
         </div>
-        <div class="btd-table-scroll">
+        </template>
+        <div v-else class="btd-table-scroll">
           <table class="btd-table btd-table--journey">
             <thead>
               <tr>
@@ -588,10 +654,11 @@ defineExpose({ buildSections })
           </div>
         </div>
       </section>
+      </MpTabPanel>
 
       <!-- 4. Related batch -->
+      <MpTabPanel value="related">
       <section class="btd-section">
-        <h2 class="btd-section-title">{{ t('Related batch') }}</h2>
         <div v-for="group in (['sources', 'results'] as const)" :key="group" class="btd-related">
           <h3 class="btd-related-title">{{ group === 'sources' ? t('Source batch') : t('Result batch') }}</h3>
           <p class="btd-related-caption">
@@ -626,6 +693,9 @@ defineExpose({ buildSections })
           </div>
         </div>
       </section>
+      </MpTabPanel>
+        </MpTabPanels>
+      </MpTabs>
     </div>
 
     <BatchStorageLocationsDrawer
@@ -657,6 +727,17 @@ defineExpose({ buildSections })
       @export="onExport"
     />
 
+    <ScenarioFab v-model="scenario" :scenarios="scenarios" />
+  </div>
+
+  <!-- ── No access (story 1) ── -->
+  <div v-else-if="!canView" class="btd-page">
+    <div class="btd-notfound btd-no-access">
+      <img src="/illustrations/empty-folder.png" alt="" class="btd-notfound-illustration" width="288" height="240">
+      <p class="btd-empty-title">{{ t("You don't have access to this report") }}</p>
+      <p class="btd-empty-desc">{{ t('Batch traceability is available to the Owner, Ultimate and Stockist roles. Ask your Owner to give you one of them.') }}</p>
+      <MpButton variant="secondary" is-rounded @click="router.push('/inventory-report')">{{ t('Back to reports') }}</MpButton>
+    </div>
     <ScenarioFab v-model="scenario" :scenarios="scenarios" />
   </div>
 
@@ -717,18 +798,9 @@ defineExpose({ buildSections })
 .btd-updated:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 /* ── Stock position ── */
-.btd-position { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.btd-total { display: flex; align-items: baseline; gap: var(--mp-spacing-3); flex-wrap: wrap; }
-.btd-total-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.btd-total-value { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
-.btd-total-secondary { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); font-variant-numeric: tabular-nums; }
-.btd-reconcile {
-  display: flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap;
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums;
-}
-.btd-reconcile-op { color: var(--mp-text-secondary); }
+.btd-num { font-variant-numeric: tabular-nums; }
 .btd-mismatch {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-1);
+  display: flex; margin-top: var(--mp-spacing-1); align-items: center; gap: var(--mp-spacing-1);
   color: var(--mp-colors-text-critical, #d93b3b); font-weight: var(--mp-font-weights-semi-bold);
 }
 
@@ -744,7 +816,10 @@ defineExpose({ buildSections })
   border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .btd-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
-.btd-th--action, .btd-td--action { width: 1%; }
+/* Fixed layout + colgroup: a % width on an auto-layout, max-content table blew it up
+   to ~12,000px (122px ÷ 1%), pushing On hand off screen. */
+.btd-table--position { table-layout: fixed; min-width: 900px; } /* 280 + 240 + 240 + View locations */
+.btd-th--action, .btd-td--action { text-align: right; }
 .btd-th--icon, .btd-td--icon { width: var(--mp-sizes-8, 32px); }
 .btd-td {
   padding: var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-2);
@@ -783,7 +858,17 @@ defineExpose({ buildSections })
 .btd-snapshot-value { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 
 /* ── Attribute change markers (story 9) — quieter than a movement: no stock moved ── */
-.btd-changes-toggle { align-self: flex-start; }
+.btd-changes-toggle { align-self: center; }
+.btd-journey-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); flex-wrap: wrap; }
+.btd-journey-view { width: 280px; }
+
+/* Tabs — the ProductDetailsPage / WarehouseDetailsPage detail-tab look */
+.btd-tabs :deep(.mp-tab--isSelected_true),
+.btd-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
+.btd-tabs :deep(.mp-tab--isSelected_true .mp-tab-selected-border) {
+  background-color: var(--mp-border-selected, #029861) !important;
+}
+.btd-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
 .btd-change { white-space: normal; background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .btd-change-line { display: flex; align-items: center; gap: var(--mp-spacing-2) var(--mp-spacing-3); flex-wrap: wrap; }
 .btd-change-icon { color: var(--mp-icon-default, var(--mp-text-secondary)); flex-shrink: 0; }
@@ -803,4 +888,5 @@ defineExpose({ buildSections })
 .btd-empty-line { margin: 0; padding: var(--mp-spacing-3) 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .btd-notfound { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-10, 40px) 0; }
 .btd-notfound-illustration { width: 288px; height: 240px; object-fit: contain; }
+.btd-no-access { text-align: center; }
 </style>

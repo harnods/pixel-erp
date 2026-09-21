@@ -1049,3 +1049,12 @@ export function batchJourneyGraph(sku: string, batchNo: string, access: Traceabi
     outgoing: all.filter((g) => g.direction === 'out'),
   }
 }
+
+// ── Access (PRD story 1) ────────────────────────────────────────────────────────
+/** Roles that can read, filter and export the report: Owner, Ultimate and Stockist. */
+export const BATCH_TRACEABILITY_ROLES = ['owner', 'ultimate', 'stockist'] as const
+
+/** Whether a user holding these roles can open the report (and a batch's detail page). */
+export function canViewBatchTraceability(roleIds: readonly string[]): boolean {
+  return roleIds.some((id) => (BATCH_TRACEABILITY_ROLES as readonly string[]).includes(id))
+}

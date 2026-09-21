@@ -28,7 +28,7 @@ import {
   type ProductBatchSummary,
 } from '~/data/productDetails'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
-import { getBatchTrace } from '~/data/batchTraceability'
+import { getBatchTrace, batchAttributeChanges } from '~/data/batchTraceability'
 import { batchAttributeDef, formatExpiry, getBatchAttributeConfig, type BatchAttributeKey } from '~/data/batchAttributes'
 import { batchActivityFor } from '~/data/batchStore'
 import { gradeById } from '~/data/grades'
@@ -173,7 +173,22 @@ const activityEntries = computed<ActivityEntry[]>(() => {
       ],
     })
   }
-  return entries
+  // The seeded regrade behind a graded batch's receipt (Batch Traceability story 9) —
+  // listed here too, so this trail and the traceability journey tell the same story.
+  if (!warehouseId.value) {
+    for (const marker of batchAttributeChanges(sku.value, b.batchNo).filter(m => m.id.endsWith('::regrade'))) {
+      entries.push({
+        date: marker.date,
+        user: marker.user,
+        activity: 'Updated',
+        details: marker.changes.map(c => ({
+          label: changeLabel(c.key),
+          value: `${formatAttributeValue(c.key, c.from)} → ${formatAttributeValue(c.key, c.to)}`,
+        })),
+      })
+    }
+  }
+  return entries.sort((a, z) => z.date.localeCompare(a.date))
 })
 
 // empty-state illustration (runtime public path, not a build-time import)

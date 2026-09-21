@@ -185,7 +185,7 @@ The PRD made this story conditional on Batch Attribute keeping a change log. It 
 
 **Tests:** data spec (regrade sits between receipt and the next movement with matching from/to; markers don't move the balance and don't drop movements; recorded web + import edits with user and from/to; number/description edits excluded) · detail spec (marker line renders between transactions, toggle hides it and keeps every movement, no marker/toggle for an unchanged batch, trail exported with the journey).
 
-**Not built:** the seeded regrade doesn't appear on the product-side Batch details page's Activity log (that page reads only the persisted batch activity).
+**Follow-up done (21 Sep 2026):** the product-side Batch details page's Activity log lists the seeded regrade too (newest first with the recorded entries), so both trails tell the same story.
 
 ## 3g. Story 11 — visual journey, as built
 
@@ -202,6 +202,18 @@ The PRD left it open whether this ships in v1 and recommended the table first. T
 **Tests:** data spec (every journey line lands in exactly one node, node keys unique; incoming − outgoing = on hand; Work order nodes carry the same batches as `relatedBatches` in both directions; no Work order node for an unroasted batch) · detail spec (three column titles and a node per group, expanding a node lists its transactions, a source batch opens with the trail).
 
 **Not built:** transaction nodes don't link to transaction detail pages (open question 9) · no zoom/pan — grouping by type keeps the diagram bounded instead.
+
+## 3h. Story 1 — report access, as built (21 Sep 2026)
+
+PRD story 1 gives the report (read, filter, export) to **Owner, Ultimate and Stockist** only. It was missing from the earlier phases.
+
+- **Rule** — `canViewBatchTraceability(roleIds)` / `BATCH_TRACEABILITY_ROLES` in `batchTraceability.ts`: true when the user holds `owner`, `ultimate` or `stockist`. A Report reader (who can "view all reports") is deliberately **not** included — the PRD names the three roles.
+- **Role catalogue** — the Stockist system role (`usersRoles.ts`) now lists *View and export the Batch traceability report.* Owner and Ultimate already cover every page. No new authority-matrix row: adding one would change the matrix keys the seeded custom roles grant.
+- **Page state** — the report and the batch detail page render a **no-access** state instead of their content (illustration · *You don't have access to this report* · which roles have it and to ask the Owner · secondary *Back to reports*). A page state, not a hidden route or card, per `docs/design/reachable-states.md` › permission-gated.
+- **Demo** — the prototype has no signed-in ERP role, so the viewer is an Owner; the scenario FAB's **Without report access** previews the denied state on both pages.
+- **Not simulated** — the SCM = TRUE / AVG-costing entitlement (story 1) stays an ERP-brand given, as in the Batch Attribute plan (D3).
+
+**Tests:** data spec (Owner / Ultimate / Stockist allowed; Sales, Report reader and no role denied) · detail spec (the no-access scenario replaces the four sections with the no-access state).
 
 ## 4. Decisions — recommended answers adopted (15 Sep 2026)
 

@@ -3,7 +3,7 @@
  * Batch traceability detail page (PRD stories 7, 8, 10; plan Phase 3).
  *
  * Mounts the page for a real seeded batch and checks what the report promises:
- * the four sections in order, the Received − Issued = On hand line, the journey
+ * Batch information above the section tabs, the Journey / History table switch, the Received − Issued = On hand line, the journey
  * expanding to the values recorded on a transaction, the entry-point highlight,
  * and related-batch drill-through keeping the breadcrumb chain.
  */
@@ -50,25 +50,32 @@ async function mountPage(orderId: string) {
 }
 
 describe('Batch traceability detail', () => {
-  it('renders the four sections in order with no runtime errors', async () => {
+  it('renders Batch information above the three section tabs with no runtime errors', async () => {
     const w = await mountPage('1001::Batch #001')
-    expect(w.findAll('.btd-section-title').map((h) => h.text())).toEqual([
-      'Batch information', 'Stock position', 'Batch journey', 'Related batch',
+    expect(w.findAll('.btd-section-title').map((h) => h.text())).toEqual(['Batch information'])
+    expect(w.findAllComponents({ name: 'MpTab' }).map((tab) => tab.text())).toEqual([
+      'Stock position', 'Batch journey', 'Related batch',
     ])
+    // Opens on Stock position, with the journey showing the diagram.
+    expect(w.findComponent({ name: 'MpTabs' }).props('modelValue')).toBe(0)
+    expect(w.find('.btd-journey-row').exists()).toBe(false)
     expect(vueErrors).toEqual([])
   })
 
   it('reconciles Total received − Total issued with on hand', async () => {
     const w = await mountPage('1001::Batch #001')
     const position = batchStockPosition('1001', 'Batch #001')!
-    const line = w.find('.btd-reconcile').text().replace(/\s+/g, ' ')
-    expect(line).toContain(`Total received ${position.received} Sack`)
-    expect(line).toContain(`Total issued ${position.issued} Sack`)
+    const fields = w.find('.btd-reconcile').findAll('.content-list').map((f) => f.text().replace(/\s+/g, ' '))
+    expect(fields).toContain(`Total received${position.received} Sack`)
+    expect(fields).toContain(`Total issued${position.issued} Sack`)
+    expect(fields).toContain(`Total on hand${position.received - position.issued} Sack`)
     expect(w.find('.btd-mismatch').exists()).toBe(false)
   })
 
-  it('lists every journey line and expands one to its recorded values', async () => {
+  it('switches Batch journey to the History table, which lists every line and expands one', async () => {
     const w = await mountPage('1001::Batch #001')
+    w.findComponent({ name: 'MpSegmentedControl' }).vm.$emit('update:modelValue', 'history')
+    await flushPromises()
     const rows = w.findAll('.btd-journey-row')
     expect(rows).toHaveLength(batchJourney('1001', 'Batch #001').length)
     expect(w.find('.btd-snapshot-row').exists()).toBe(false)
@@ -82,6 +89,8 @@ describe('Batch traceability detail', () => {
     const number = batchJourney('1001', 'Batch #001')[1]!.number
     query = { transaction: number }
     const w = await mountPage('1001::Batch #001')
+    // A transaction entry opens Batch journey on the History table.
+    expect(w.findComponent({ name: 'MpTabs' }).props('modelValue')).toBe(1)
     const highlighted = w.findAll('.btd-journey-row.btd-row--highlight')
     expect(highlighted).toHaveLength(1)
     expect(highlighted[0]!.text()).toContain(number)
@@ -136,6 +145,7 @@ describe('Batch traceability detail — export', () => {
 
 describe('Batch traceability detail — attribute change trail', () => {
   it('shows the regrade as a marker line between transactions, hidden by the toggle', async () => {
+    query = { view: 'history' }
     const w = await mountPage('1001::Batch #001')
     const markers = w.findAll('.btd-change-row')
     expect(markers).toHaveLength(1)
@@ -154,6 +164,7 @@ describe('Batch traceability detail — attribute change trail', () => {
   })
 
   it('has no marker or toggle for a batch whose attributes never changed', async () => {
+    query = { view: 'history' }
     const w = await mountPage('1004::Batch #001')
     expect(w.findAll('.btd-change-row')).toHaveLength(0)
     expect(w.find('#btd-show-changes').exists()).toBe(false)
@@ -199,5 +210,19 @@ describe('Batch traceability detail — visual journey', () => {
       path: `/inventory-report/batch-traceability/${source.sku}/${encodeURIComponent(source.batchNo)}`,
       query: { trail: '1101::Batch #001' },
     })
+  })
+})
+
+describe('Batch traceability detail — access (story 1)', () => {
+  it('shows a no-access page instead of the batch for a viewer without the role', async () => {
+    const w = await mountPage('1001::Batch #001')
+    expect(w.find('.btd-no-access').exists()).toBe(false)
+    const fab = w.findAllComponents({ name: 'ScenarioFab' })[0]!
+    fab.vm.$emit('update:modelValue', 'no-access')
+    await flushPromises()
+    expect(w.find('.btd-no-access').exists()).toBe(true)
+    expect(w.text()).toContain("You don't have access to this report")
+    expect(w.find('.btd-section-title').exists()).toBe(false)
+    expect(vueErrors).toEqual([])
   })
 })

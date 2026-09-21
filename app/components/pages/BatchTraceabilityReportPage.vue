@@ -20,17 +20,23 @@
  * - No row [...] actions column (rule/table-actions-column): a report line has nothing to
  *   act on. Rows don't hover either (rule/table-no-hover-no-actions); the batch number
  *   is the link.
- * - Default order is Product A–Z then Batch A–Z, as the PRD specifies — the table keeps
- *   the data layer's order until the user sorts a column.
+ * - Hand-rolled grouped <table>, not ErpTablePage (rule/table-use-erptablepage): rows group
+ *   by product the way the Production request table does (ProductionRequestIndexPage) —
+ *   a product parent row with the on-hand totals, its batch lines as child rows under an
+ *   empty thumbnail lane, pagination by product. ErpTablePage has no parent/child rows.
+ *   Widths still come from the column-kind standard (columnWidths.ts).
+ * - Order is fixed at Product A–Z then Batch A–Z, as the PRD specifies — grouped rows
+ *   don't sort by column (neither does the Production request table).
  * - A greyed-out filter for a missing add-on (PRD story 1) — not a disabled button for
  *   validation (rule/btn-no-disabled-validation), but an entitlement the user can't lift.
  */
 import { computed, nextTick, onMounted, reactive, ref, toRef, watch } from 'vue'
-import { MpButton, MpButtonGroup, MpIcon, MpSegmentedControl, MpTooltip } from '@mekari/pixel3'
-import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import { MpButton, MpButtonGroup, MpIcon, MpSegmentedControl, MpSkeleton, MpTooltip } from '@mekari/pixel3'
+import type { TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import ErpPagination from '~/components/patterns/ErpPagination.vue'
+import { columnWidth } from '~/components/patterns/columnWidths'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import MultiSelectDropdown from '~/components/patterns/MultiSelectDropdown.vue'
-import ProductCell from '~/components/patterns/ProductCell.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import BatchTraceabilityFiltersDrawer, {
@@ -38,9 +44,12 @@ import BatchTraceabilityFiltersDrawer, {
 } from '~/components/patterns/BatchTraceabilityFiltersDrawer.vue'
 import BatchTraceabilityByTransaction from '~/components/patterns/BatchTraceabilityByTransaction.vue'
 import {
-  searchBatches, traceProductOptions, traceBatchNumberOptions,
+  searchBatches, traceProductOptions, traceBatchNumberOptions, canViewBatchTraceability, isAttributeAvailable,
   type BatchSearchFilter, type BatchSearchRow, type TraceabilityAccess,
 } from '~/data/batchTraceability'
+import {
+  MAX_BATCH_ATTRIBUTES, batchAttributeDef, getBatchAttributeConfig, type BatchAttributeKey,
+} from '~/data/batchAttributes'
 import { TRACE_ATTRIBUTE_COLUMNS, useTraceabilityCells } from '~/composables/useTraceabilityCells'
 import { productIndexRows } from '~/data/productsIndex'
 import { warehouses } from '~/data/warehouses'
@@ -53,7 +62,7 @@ import { formatDate, formatDateTime } from '~/utils/date'
 
 const { t } = useLocale()
 const router = useRouter()
-const { attributeSortValue, attributeText, qtyCellText, vendorName, gradeName } = useTraceabilityCells()
+const { attributeSortValue, attributeText, qtyText, qtyCellText, vendorName, gradeName } = useTraceabilityCells()
 
 // ─── Scenario (demo) ────────────────────────────────────────────────────────────
 // The two entitlement scenarios preview what a Jurnal company sees (PRD story 1).
@@ -63,7 +72,11 @@ const scenarios = [
   { label: 'Empty state', value: 'empty' },
   { label: 'Without Batch Attribute add-on', value: 'no-batch-attribute' },
   { label: 'Without Dual Unit Inventory', value: 'no-dual-unit' },
+  { label: 'Without report access', value: 'no-access' },
 ]
+// Story 1: only Owner, Ultimate and Stockist can open the report. The prototype has
+// no signed-in ERP role, so the demo viewer is an Owner unless the scenario says not.
+const canView = computed(() => canViewBatchTraceability(scenario.value === 'no-access' ? [] : ['owner']))
 const access = computed<TraceabilityAccess>(() => ({
   batchAttribute: scenario.value !== 'no-batch-attribute',
   dualUnit: scenario.value !== 'no-dual-unit',
@@ -171,10 +184,69 @@ function matchesSearch(row: ReportRow, s: string): boolean {
     || row.batchNo.toLowerCase().includes(s)
 }
 
+// ─── Product groups (Production request table structure) ──────────────────────
+/** One parent row per product; its batch lines are the child rows. */
+interface ProductGroup {
+  sku: string
+  productName: string
+  productImg: string
+  /** The product's own attribute set, in its order — fills Attribute 1–3. */
+  attributes: BatchAttributeKey[]
+  lines: ReportRow[]
+}
+
+/** A product's attributes as the report shows them: its configured set (max 3), minus
+ *  the ones the company isn't entitled to; Expiry date when that leaves nothing. */
+function productAttributes(sku: string): BatchAttributeKey[] {
+  const keys = getBatchAttributeConfig(sku).map((a) => a.key).filter((k) => isAttributeAvailable(k, access.value))
+  return keys.length ? keys : ['expiry_date']
+}
+
+const groups = computed<ProductGroup[]>(() => {
+  const bySku = new Map<string, ProductGroup>()
+  for (const row of rows.value) {
+    let g = bySku.get(row.source.sku)
+    if (!g) {
+      g = { sku: row.source.sku, productName: row.productName, productImg: row.productImg, attributes: productAttributes(row.source.sku), lines: [] }
+      bySku.set(row.source.sku, g)
+    }
+    g.lines.push(row)
+  }
+  return [...bySku.values()]
+})
+
+// Search matches a product (every batch stays) or a batch number (only those batches).
+// Pagination counts products, like the Production request table.
 const {
   search, currentPage, paginated, total, perPage,
-  setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
-} = useTableState<ReportRow>(rows, { perPage: 25, filterFn: (row, s) => matchesSearch(row, s) })
+  setPage, setPerPage, sortKey, sortDir,
+} = useTableState<ProductGroup>(groups, {
+  perPage: 25,
+  filterFn: (g, s) => g.lines.some((r) => matchesSearch(r, s)),
+})
+
+function visibleLines(g: ProductGroup): ReportRow[] {
+  const s = search.value.trim().toLowerCase()
+  if (!s || g.productName.toLowerCase().includes(s) || g.sku.toLowerCase().includes(s)) return g.lines
+  return g.lines.filter((r) => r.batchNo.toLowerCase().includes(s))
+}
+const pagedGroups = computed(() => (paginated.value as ProductGroup[]).map((g) => ({ ...g, lines: visibleLines(g) })))
+/** Every line the search keeps, product by product — what "All" exports. */
+const matchingLines = computed(() => {
+  const s = search.value.trim().toLowerCase()
+  return groups.value.filter((g) => g.lines.some((r) => matchesSearch(r, s))).flatMap(visibleLines)
+})
+
+// ─── Expand / collapse ──────────────────────────────────────────────────────────
+// A report is read, so products open expanded; a parent row folds its batches away.
+const closedSkus = ref(new Set<string>())
+function isOpen(sku: string) { return !closedSkus.value.has(sku) }
+function toggleGroup(sku: string) {
+  const next = new Set(closedSkus.value)
+  if (next.has(sku)) next.delete(sku)
+  else next.add(sku)
+  closedSkus.value = next
+}
 
 // Restore the table as the user left it, then keep the store in step. The page comes
 // back a tick later: restoring search / per-page makes useTableState reset it to 1 first.
@@ -196,22 +268,62 @@ function resetFilters() {
 }
 
 // ─── Columns ────────────────────────────────────────────────────────────────────
-const allColumns = computed<TableColumn[]>(() => [
-  { key: 'productName', label: t('Product'), kind: 'name', sortable: true, sortType: 'text' },
-  { key: 'batchNo', label: t('Batch number'), kind: 'number', sortable: true, sortType: 'text' },
-  { key: 'expiryDate', label: t('Expiry date'), kind: 'date', sortable: true, sortType: 'date' },
-  { key: 'manufacturingDate', label: t('Manufacturing date'), kind: 'date', sortable: true, sortType: 'date' },
-  { key: 'bestBeforeDate', label: t('Best before date'), kind: 'date', sortable: true, sortType: 'date' },
-  { key: 'vendor', label: t('Vendor'), kind: 'name', sortable: true, sortType: 'text' },
-  { key: 'grade', label: t('Grade'), sortable: true, sortType: 'text' },
-  { key: 'warehouse', label: t('Warehouse'), kind: 'name', sortable: true, sortType: 'text' },
-  { key: 'onHand', label: t('On hand'), align: 'right', sortable: true, sortType: 'number' },
-  { key: 'onHandSecondary', label: t('On hand (secondary unit)'), align: 'right', sortable: true, sortType: 'number' },
+// Each product has its own attribute set, so the table heads the attribute columns
+// Attribute 1–3 and names them on the product row. The export stays flat — one column
+// per attribute type (allColumns) — since its rows mix products.
+const ATTRIBUTE_SLOTS = Array.from({ length: MAX_BATCH_ATTRIBUTES }, (_, i) => i)
+const slotKey = (i: number) => `attribute${i + 1}`
+const tableColumns = computed<TableColumn[]>(() => [
+  { key: 'productName', label: t('Product'), kind: 'name' },
+  { key: 'batchNo', label: t('Batch number'), kind: 'number' },
+  ...ATTRIBUTE_SLOTS.map((i): TableColumn => ({ key: slotKey(i), label: `${t('Attribute')} ${i + 1}` })),
+  { key: 'warehouse', label: t('Warehouse'), kind: 'name' },
+  { key: 'onHand', label: t('On hand'), align: 'right' },
+  { key: 'onHandSecondary', label: t('On hand (secondary unit)'), align: 'right' },
 ])
-const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allColumns.value.map((c) => [c.key, true])))
-const columnItems = computed(() => allColumns.value.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 })))
-const visibleColumns = computed(() => allColumns.value.filter((c) => columnVisibility[c.key]))
-function hideColumn(key: string) { columnVisibility[key] = false }
+/** The attribute a slot column holds for this product, if it has that many. */
+function slotAttribute(g: ProductGroup, column: string): BatchAttributeKey | null {
+  const i = ATTRIBUTE_SLOTS.findIndex((n) => slotKey(n) === column)
+  return i < 0 ? null : g.attributes[i] ?? null
+}
+const allColumns = computed<TableColumn[]>(() => [
+  { key: 'productName', label: t('Product'), kind: 'name' },
+  { key: 'batchNo', label: t('Batch number'), kind: 'number' },
+  { key: 'expiryDate', label: t('Expiry date'), kind: 'date' },
+  { key: 'manufacturingDate', label: t('Manufacturing date'), kind: 'date' },
+  { key: 'bestBeforeDate', label: t('Best before date'), kind: 'date' },
+  { key: 'vendor', label: t('Vendor'), kind: 'name' },
+  { key: 'grade', label: t('Grade') },
+  { key: 'warehouse', label: t('Warehouse'), kind: 'name' },
+  { key: 'onHand', label: t('On hand'), align: 'right' },
+  { key: 'onHandSecondary', label: t('On hand (secondary unit)'), align: 'right' },
+])
+const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(tableColumns.value.map((c) => [c.key, true])))
+// Product and Batch number share the first column (product on the parent, batch on
+// the child), so neither can be hidden.
+const columnItems = computed(() => tableColumns.value.map((c, i) => ({ key: c.key, label: c.label, disabled: i < 2 })))
+/** colgroup width — the column-kind standard's max (the table is layout-fixed). */
+function colWidth(c: TableColumn): string { return columnWidth(c.kind).maxWidth }
+const productColWidth = columnWidth('name').maxWidth
+/** The value columns after the merged Product / Batch number column. */
+const valueColumns = computed(() => tableColumns.value.slice(2).filter((c) => columnVisibility[c.key]))
+
+/** Parent row: each attribute slot's name, and on hand summed per unit. */
+function parentCell(g: ProductGroup, column: string): string {
+  const slot = slotAttribute(g, column)
+  if (slot) return t(batchAttributeDef(slot).label)
+  const first = g.lines[0]
+  if (!first) return ''
+  if (column === 'onHand') return qtyText(g.lines.reduce((sum, r) => sum + r.onHand, 0), first.source.unit)
+  if (column === 'onHandSecondary') {
+    if (g.lines.every((r) => r.source.onHandSecondary.state === 'na')) return t('NA')
+    return qtyText(g.lines.reduce((sum, r) => sum + (r.onHandSecondary ?? 0), 0), first.source.secondaryUnit)
+  }
+  return ''
+}
+function parentIsNa(g: ProductGroup, column: string): boolean {
+  return column === 'onHandSecondary' && g.lines.every((r) => r.source.onHandSecondary.state === 'na')
+}
 
 // ─── Cells (formatting shared with By transaction — useTraceabilityCells) ────────
 /** Plain text per column — what the table shows and what the export writes. */
@@ -223,13 +335,23 @@ function cellText(row: ReportRow, column: string): string {
   return String(row[column] ?? '')
 }
 
+/** A batch row's cell — slot columns resolve to the product's attribute in that slot. */
+function childCell(g: ProductGroup, row: ReportRow, column: string): string {
+  const slot = slotAttribute(g, column)
+  if (slot) return attributeText(row.source.attributes[slot], slot)
+  return ATTRIBUTE_SLOTS.some((i) => slotKey(i) === column) ? '' : cellText(row, column)
+}
+function childIsNa(g: ProductGroup, row: ReportRow, column: string): boolean {
+  const slot = slotAttribute(g, column)
+  if (slot) return row.source.attributes[slot].state === 'na'
+  return isNa(row, column)
+}
+
 function isNa(row: ReportRow, column: string): boolean {
   const attribute = TRACE_ATTRIBUTE_COLUMNS.find((a) => a.column === column)
   if (attribute) return row.source.attributes[attribute.key].state === 'na'
   return column === 'onHandSecondary' && row.source.onHandSecondary.state === 'na'
 }
-
-const asRow = (row: unknown) => row as ReportRow
 
 /** Opens the batch's traceability detail; a warehouse line highlights that warehouse there. */
 function openBatch(row: ReportRow) {
@@ -270,8 +392,7 @@ const appliedFilters = computed<ExportFilter[]>(() => {
 
 async function onExport(payload: { scope: 'all' | 'page' | 'selected'; columns: string[]; format?: ExportFormat }) {
   exportOpen.value = false
-  const s = search.value.trim().toLowerCase()
-  const lines = payload.scope === 'page' ? (paginated.value as ReportRow[]) : rows.value.filter((r) => matchesSearch(r, s))
+  const lines = payload.scope === 'page' ? pagedGroups.value.flatMap((g) => g.lines) : matchingLines.value
   const cols = allColumns.value.filter((c) => payload.columns.includes(c.key))
   const doc = buildExportDocument({
     title: `${t('Batch traceability')} — ${t('By batch')}`,
@@ -298,36 +419,25 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </header>
 
     <!-- ── Stage ── -->
-    <div class="bt-stage">
+    <!-- ── No access (story 1) — a page state, not a hidden route ── -->
+    <div v-if="!canView" class="bt-stage">
+      <div class="empty-full bt-no-access">
+        <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240">
+        <p class="empty-full-title">{{ t("You don't have access to this report") }}</p>
+        <p class="empty-full-desc">{{ t('Batch traceability is available to the Owner, Ultimate and Stockist roles. Ask your Owner to give you one of them.') }}</p>
+        <MpButton variant="secondary" is-rounded @click="router.push('/inventory-report')">{{ t('Back to reports') }}</MpButton>
+      </div>
+    </div>
+
+    <div v-else class="bt-stage">
       <MpSegmentedControl
         id="bt-mode" name="bt-mode" class="bt-mode"
         :model-value="mode" :data="modeOptions" @update:model-value="setMode"
       />
 
-      <ErpTablePage
-        v-if="mode === 'batch'"
-        :columns="visibleColumns"
-        :rows="(paginated as unknown as Record<string, unknown>[])"
-        :total="total"
-        :current-page="currentPage"
-        :per-page="perPage"
-        :sort-key="sortKey"
-        :sort-dir="sortDir"
-        :loading="loading"
-        :search="search"
-        :has-active-search="!!search.trim()"
-        :has-active-filter="hasBarFilter || drawerFilterCount > 0 || !!search.trim()"
-        filter-empty-label="batches"
-        no-row-hover
-        @page-change="setPage"
-        @per-page-change="setPerPage"
-        @sort="toggleSort"
-        @sort-change="setSort"
-        @hide-column="hideColumn"
-        @clear-filters="resetFilters"
-      >
+      <section v-if="mode === 'batch'" class="bt-section">
         <!-- ── Filter bar ── -->
-        <template #filters>
+        <div class="bt-filter-bar">
           <div class="filter-left">
             <MultiSelectDropdown id="bt-product" v-model="productNames" :options="productOptionNames" :placeholder="t('Product')" />
             <MultiSelectDropdown id="bt-batch-number" v-model="batchNos" :options="batchNumberOptions" :placeholder="t('Batch number')" />
@@ -362,42 +472,111 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               />
             </div>
           </div>
+        </div>
+
+        <!-- ── Grouped table: product parent rows, batch child rows ── -->
+        <template v-if="loading || pagedGroups.length">
+          <div class="bt-table-wrap">
+            <table class="bt-table">
+              <colgroup>
+                <col style="width: 56px">
+                <col :style="{ width: productColWidth }">
+                <col v-for="c in valueColumns" :key="c.key" :style="{ width: colWidth(c) }">
+              </colgroup>
+              <thead>
+                <tr>
+                  <th class="bt-th" colspan="2">{{ t('Product') }}/{{ t('Batch number') }}</th>
+                  <th
+                    v-for="c in valueColumns" :key="c.key"
+                    class="bt-th" :class="{ 'bt-th--right': c.align === 'right' }"
+                  >{{ c.label }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <!-- Loading — 3 solid skeleton rows, one bar per column (ErpTablePage standard) -->
+                <template v-if="loading">
+                  <tr v-for="n in 3" :key="`sk-${n}`" class="bt-parent bt-parent--skeleton">
+                    <td class="bt-td" colspan="2">
+                      <MpSkeleton class="bt-skel" height="14px" rounded="sm" duration="0s" width="72px" />
+                    </td>
+                    <td v-for="c in valueColumns" :key="c.key" class="bt-td" :class="{ 'bt-td--right': c.align === 'right' }">
+                      <MpSkeleton class="bt-skel" height="14px" rounded="sm" duration="0s" :width="c.align === 'right' ? '56px' : '72px'" />
+                    </td>
+                  </tr>
+                </template>
+
+                <template v-for="g in pagedGroups" v-else :key="g.sku">
+                  <!-- Parent (product) row — the whole product cell folds its batches -->
+                  <tr class="bt-parent">
+                    <td
+                      class="bt-td bt-parent-cell" colspan="2" role="button" tabindex="0"
+                      :aria-expanded="isOpen(g.sku)"
+                      @click="toggleGroup(g.sku)" @keydown.enter="toggleGroup(g.sku)"
+                    >
+                      <div class="bt-product">
+                        <img class="bt-thumb" :src="g.productImg" :alt="g.productName" loading="lazy" width="40" height="40">
+                        <div class="bt-product-body">
+                          <div class="bt-product-main">
+                            <span class="bt-product-name">{{ g.productName }}</span>
+                            <span class="bt-expand" :class="{ 'bt-expand--open': isOpen(g.sku) }" aria-hidden="true">
+                              <MpIcon name="chevrons-down" size="sm" />
+                            </span>
+                          </div>
+                          <span class="bt-product-sku">SKU: {{ g.sku }} · {{ g.lines.length }} {{ g.lines.length === 1 ? t('batch') : t('batches') }}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td
+                      v-for="c in valueColumns" :key="c.key"
+                      class="bt-td"
+                      :class="{ 'bt-td--right bt-num': c.align === 'right', 'bt-na': parentIsNa(g, c.key), 'bt-attr-name': !!slotAttribute(g, c.key) }"
+                    >{{ parentCell(g, c.key) }}</td>
+                  </tr>
+
+                  <!-- Child (batch) rows under an empty thumbnail lane -->
+                  <template v-if="isOpen(g.sku)">
+                    <tr v-for="(r, ri) in g.lines" :key="r.key" class="bt-child">
+                      <td v-if="ri === 0" class="bt-td bt-child-lane" :rowspan="g.lines.length" />
+                      <td class="bt-td bt-child-td">
+                        <span
+                          class="cell-link" role="button" tabindex="0"
+                          @click.stop="openBatch(r)" @keydown.enter="openBatch(r)"
+                        >{{ r.batchNo }}</span>
+                      </td>
+                      <td
+                        v-for="c in valueColumns" :key="c.key"
+                        class="bt-td bt-child-td" :class="{ 'bt-td--right bt-num': c.align === 'right', 'bt-na': childIsNa(g, r, c.key) }"
+                      >{{ childCell(g, r, c.key) }}</td>
+                    </tr>
+                  </template>
+                </template>
+              </tbody>
+            </table>
+          </div>
+
+          <ErpPagination
+            v-if="!loading"
+            :current-page="currentPage" :per-page="perPage" :total="total"
+            @page-change="setPage" @per-page-change="setPerPage"
+          />
         </template>
 
-        <!-- ── Cells ── -->
-        <template #cell-productName="{ row }">
-          <ProductCell :name="asRow(row).productName" :desc="asRow(row).source.sku" :image="asRow(row).productImg" />
-        </template>
-
-        <template #cell-batchNo="{ row }">
-          <span
-            class="cell-link" role="button" tabindex="0"
-            @click.stop="openBatch(asRow(row))" @keydown.enter="openBatch(asRow(row))"
-          >{{ asRow(row).batchNo }}</span>
-        </template>
-
-        <template v-for="a in TRACE_ATTRIBUTE_COLUMNS" :key="a.column" #[`cell-${a.column}`]="{ row }">
-          <span :class="{ 'bt-na': isNa(asRow(row), a.column) }">{{ cellText(asRow(row), a.column) }}</span>
-        </template>
-
-        <template #cell-onHand="{ row }">
-          <span class="bt-num">{{ cellText(asRow(row), 'onHand') }}</span>
-        </template>
-
-        <template #cell-onHandSecondary="{ row }">
-          <span class="bt-num" :class="{ 'bt-na': isNa(asRow(row), 'onHandSecondary') }">{{ cellText(asRow(row), 'onHandSecondary') }}</span>
-        </template>
+        <!-- ── Filtered empty — search or a filter removed every batch ── -->
+        <div v-else-if="hasBarFilter || drawerFilterCount > 0 || !!search.trim()" class="empty-full">
+          <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240">
+          <p class="empty-full-title">{{ search.trim() ? `"${search.trim()}" ${t('not found')}` : t('No batches match your filters') }}</p>
+          <p class="empty-full-desc">{{ search.trim() ? t('Recheck the keywords you have typed and try searching again.') : t('Recheck the filters you have applied and try filtering again.') }}</p>
+          <a class="empty-clear" @click="resetFilters">{{ t('Clear all filters') }}</a>
+        </div>
 
         <!-- ── Empty state (no batch stock at all) ── -->
-        <template #empty>
-          <div class="empty-full">
-            <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240">
-            <p class="empty-full-title">{{ t('No batches') }}</p>
-            <p class="empty-full-desc">{{ t('Batches with stock will appear here.') }}</p>
-            <MpButton variant="secondary" is-rounded @click="router.push('/product-list')">{{ t('View products') }}</MpButton>
-          </div>
-        </template>
-      </ErpTablePage>
+        <div v-else class="empty-full">
+          <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240">
+          <p class="empty-full-title">{{ t('No batches') }}</p>
+          <p class="empty-full-desc">{{ t('Batches with stock will appear here.') }}</p>
+          <MpButton variant="secondary" is-rounded @click="router.push('/product-list')">{{ t('View products') }}</MpButton>
+        </div>
+      </section>
 
       <!-- ── By transaction (stories 4, 5) ── -->
       <BatchTraceabilityByTransaction v-else :access="access" :empty="scenario === 'empty'" />
@@ -417,7 +596,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       :title="t('Export batches')"
       :entity-label="t('batches')"
       :columns="exportColumns"
-      :total="total"
+      :total="matchingLines.length"
       @close="exportOpen = false"
       @export="onExport"
     />
@@ -494,6 +673,81 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .bt-all-filters:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; }
 .bt-all-filters--active { background: var(--mp-background-neutral-subtle, #f8f9f9) !important; }
 
+/* ── By batch: filter bar above the grouped table ── */
+.bt-section { display: flex; flex-direction: column; min-width: 0; }
+.bt-filter-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3);
+  margin-bottom: var(--mp-spacing-5);
+}
+
+/* ── Grouped table (Production request structure — ProductionRequestIndexPage) ── */
+.bt-table-wrap { overflow-x: auto; }
+/* max-content keeps the fixed column widths stable as groups fold and unfold. */
+.bt-table { width: 100%; min-width: max-content; border-collapse: collapse; table-layout: fixed; }
+.bt-th {
+  position: sticky; top: 0; z-index: 2;
+  height: var(--mp-sizes-7, 28px);
+  padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  text-transform: uppercase; color: var(--mp-text-default); text-align: left; white-space: nowrap;
+}
+.bt-th--right { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
+.bt-td {
+  height: var(--mp-sizes-10, 40px);
+  padding: var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-2);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: inherit;
+}
+.bt-td--right { text-align: right; padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-4); }
+/* Merged (colspan / rowspan) cells → vertical separators on every column. */
+.bt-th, .bt-td { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
+.bt-th:last-child, .bt-td:last-child { border-right: none; }
+
+.bt-parent--skeleton .bt-td { background: var(--mp-background-neutral, #ffffff); }
+.bt-skel {
+  display: inline-block; vertical-align: middle;
+  background-image: none !important; background-color: var(--mp-border-default, #e3e7e9) !important; animation: none !important;
+}
+
+/* Parent (product) row — the product cell folds the group */
+.bt-parent { background: var(--mp-background-neutral, #ffffff); }
+.bt-parent:hover .bt-td { background: var(--mp-background-neutral-hovered, #eef0f3); }
+.bt-parent-cell { white-space: normal; cursor: pointer; }
+.bt-parent-cell:hover .bt-product-name { color: var(--mp-text-selected); }
+.bt-parent-cell:hover .bt-expand { color: var(--mp-text-default); }
+.bt-product { display: flex; align-items: center; gap: var(--mp-spacing-3); min-width: 0; }
+.bt-thumb {
+  width: var(--mp-sizes-10, 40px); height: var(--mp-sizes-10, 40px);
+  border-radius: var(--mp-radii-md); flex-shrink: 0; object-fit: cover;
+  background: var(--mp-background-neutral, #ffffff); border: 1px solid var(--mp-border-subtle, #e5e7e7);
+}
+.bt-product-body { flex: 1; display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: 0; }
+.bt-product-main { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
+.bt-product-name {
+  flex: 1; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium); color: var(--mp-text-default);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bt-product-sku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
+.bt-expand {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: var(--mp-sizes-6, 24px); height: var(--mp-sizes-6, 24px);
+  border-radius: var(--mp-radii-sm); color: var(--mp-text-secondary);
+  transition: transform 120ms ease;
+}
+.bt-expand--open { transform: rotate(180deg); }
+
+/* Attribute name on the product row — labels the slot for this product's batches */
+.bt-attr-name { font-weight: var(--mp-font-weights-semi-bold); }
+
+/* Child (batch) rows */
+.bt-child > .bt-child-td { background: var(--mp-background-neutral, #ffffff); }
+.bt-child:hover > .bt-child-td { background: var(--mp-background-neutral-hovered, #eef0f3); }
+.bt-child-lane { background: var(--mp-background-neutral, #ffffff); }
+
 /* ── Cells ── */
 .bt-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bt-na { color: var(--mp-colors-text-secondary, #626b79); }
@@ -505,6 +759,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-colors-text-default, #232933);
 }
+.bt-no-access { padding: var(--mp-spacing-10, 40px) 0; text-align: center; }
+.empty-clear { color: var(--mp-text-link); cursor: pointer; font-size: var(--mp-font-sizes-md); }
+.empty-clear:hover { text-decoration: underline; text-underline-offset: 2px; }
 .empty-full-desc {
   margin-top: var(--mp-spacing-0\.5); margin-bottom: var(--mp-spacing-3);
   font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-secondary, #626b79);

@@ -4186,4 +4186,13 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Moved within the batch": "Dipindahkan tanpa mengubah total batch",
   "1 transaction": "1 transaksi",
   "{n} transactions": "{n} transaksi",
+  // Batch traceability — report access (story 1)
+  "You don't have access to this report": "Anda tidak memiliki akses ke laporan ini",
+  "Batch traceability is available to the Owner, Ultimate and Stockist roles. Ask your Owner to give you one of them.": "Penelusuran batch tersedia untuk peran Owner, Ultimate, dan Stockist. Minta Owner untuk memberikan salah satu peran tersebut.",
+  "Back to reports": "Kembali ke laporan",
+  "Without report access": "Tanpa akses laporan",
+  "No batches match your filters": "Tidak ada batch yang sesuai dengan filter",
+  "Total on hand (secondary unit)": "Total stok fisik (satuan sekunder)",
+  "Journey": "Perjalanan",
+  "History table": "Tabel riwayat",
 }

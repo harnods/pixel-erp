@@ -446,3 +446,14 @@ describe('link from the product batch page (decision Q8)', () => {
     if (lot) expect(api.getBatchTrace('1001', lot.batchNo)).toBeUndefined()
   })
 })
+
+describe('report access (story 1)', () => {
+  it('opens for Owner, Ultimate and Stockist only', () => {
+    expect(api.canViewBatchTraceability(['owner'])).toBe(true)
+    expect(api.canViewBatchTraceability(['ultimate'])).toBe(true)
+    expect(api.canViewBatchTraceability(['sales', 'stockist'])).toBe(true)
+    expect(api.canViewBatchTraceability(['sales'])).toBe(false)
+    expect(api.canViewBatchTraceability(['report-reader'])).toBe(false)
+    expect(api.canViewBatchTraceability([])).toBe(false)
+  })
+})

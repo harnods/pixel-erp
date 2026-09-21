@@ -169,6 +169,7 @@ export const SYSTEM_ROLES: SystemRole[] = [
       'View product list and quantity.',
       'View and adjust product stock (stock opname).',
       'View all product reports.',
+      'View and export the Batch traceability report.',
       'View pages of other lists and product settings.',
       'Edit and delete product data if ticking List manager.',
     ],
