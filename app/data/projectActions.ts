@@ -944,33 +944,36 @@ export function addPunchItem(projectId: string, wpId: string, description: strin
   persistProjects()
 }
 
-export function closeBlockers(projectId: string): string[] {
+export interface CloseBlocker { n?: number; label: string; detail?: string }
+
+/** Close gate (Story 16). Returned as count + label so the UI can translate it. */
+export function closeBlockers(projectId: string): CloseBlocker[] {
   const p = getProject(projectId)!
-  const out: string[] = []
+  const out: CloseBlocker[] = []
   const wps = projectWorkPackages(projectId).filter(w => w.status !== 'technically_complete')
-  if (wps.length) out.push(`${wps.length} work package(s) not technically complete`)
+  if (wps.length) out.push({ n: wps.length, label: 'work package(s) not technically complete' })
   const { vos, ecos } = pendingChanges(projectId)
-  if (vos.length) out.push(`${vos.length} change order(s) pending`)
-  if (ecos.length) out.push(`${ecos.length} engineering change(s) pending`)
+  if (vos.length) out.push({ n: vos.length, label: 'change order(s) pending' })
+  if (ecos.length) out.push({ n: ecos.length, label: 'engineering change(s) pending' })
   const openPunch = punchItems.filter(x => x.projectId === projectId && x.status === 'open')
-  if (openPunch.length) out.push(`${openPunch.length} punch item(s) open`)
+  if (openPunch.length) out.push({ n: openPunch.length, label: 'punch item(s) open' })
   if (p.method !== 'tm') {
     const pc = percentComplete(p) ?? 0
-    if (pc < 100) out.push(`Recognition not final (${pct(pc)} complete)`)
-  } else if (tmEntries(projectId).some(l => !l.tm?.invoiceNo)) out.push('Unbilled T&M entries remain')
+    if (pc < 100) out.push({ label: 'Recognition not final', detail: `${pct(pc)}` })
+  } else if (tmEntries(projectId).some(l => !l.tm?.invoiceNo)) out.push({ label: 'Unbilled T&M entries remain' })
   const unpaid = projectInvoices.filter(i => i.projectId === projectId && i.status === 'unpaid')
-  if (unpaid.length) out.push(`${unpaid.length} invoice(s) not collected`)
+  if (unpaid.length) out.push({ n: unpaid.length, label: 'invoice(s) not collected' })
   const uninvoicedTerms = billingTerms.filter(t => t.projectId === projectId && !termInvoice(t.id))
-  if (uninvoicedTerms.length) out.push(`${uninvoicedTerms.length} contract term(s) not invoiced`)
-  const heldDocs = approvals.filter(a => a.projectId === projectId && a.status === 'pending')
-  if (heldDocs.length) out.push(`${heldDocs.length} approval request(s) pending`)
+  if (uninvoicedTerms.length) out.push({ n: uninvoicedTerms.length, label: 'contract term(s) not invoiced' })
+  const pendingReq = approvals.filter(a => a.projectId === projectId && a.status === 'pending')
+  if (pendingReq.length) out.push({ n: pendingReq.length, label: 'approval request(s) pending' })
   return out
 }
 
 export function closeProject(projectId: string, actor: Actor): Result {
   const p = getProject(projectId)!
   const blockers = closeBlockers(projectId)
-  if (blockers.length) return { ok: false, error: `Can’t close yet: ${blockers.join('; ')}.` }
+  if (blockers.length) return { ok: false, error: `Can’t close yet: ${blockers.map(b => `${b.n ?? ''} ${b.label}${b.detail ? ` (${b.detail})` : ''}`.trim()).join('; ')}.` }
   let releasedRes = 0
   for (const r of reservations.filter(x => x.projectId === projectId && (x.status === 'reserved' || x.status === 'picked'))) {
     r.status = 'released'; r.releasedAt = TODAY_ISO; r.releaseReason = 'Project closed — unconsumed'; releasedRes++

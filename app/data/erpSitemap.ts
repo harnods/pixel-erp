@@ -98,6 +98,16 @@ export const BUILT_KEYS = new Set<string>([
   // the /put-away/:id detail route; the "Put-away" leaf resolves to "Put away".
   'Put away',
 
+  // ── Projects module (detailMatch → ProjectsRouter) ──
+  'Projects',
+  'Project approvals',
+  'Project new document',
+  'Stock availability',
+  'Site change capture',
+  'Project audit log',
+  'Budget setup',
+  'Project settings',
+
   // ── tabComponents index pages ──
   'Overview',
   'Inbound delivery',
@@ -368,6 +378,19 @@ export const SITEMAP: SitemapModule[] = [
       leaf('Production request'),
       leaf('Work orders'),
       leaf('Bill of materials'),
+    ],
+  },
+  {
+    module: 'Projects',
+    items: [
+      leaf('Projects'),
+      leaf('Approvals', { to: 'Project approvals' }),
+      leaf('New document', { to: 'Project new document' }),
+      leaf('Stock availability'),
+      leaf('Site change capture'),
+      leaf('Budget setup'),
+      leaf('Audit log', { to: 'Project audit log' }),
+      leaf('Project settings'),
     ],
   },
   {
