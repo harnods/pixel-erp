@@ -41,10 +41,19 @@ export interface VendorItem {
   purchaseUnit: string
   /** Stocking units per 1 purchase unit (1 Pallet = 20 Sack ⇒ 20). */
   unitsPerPurchaseUnit: number
-  /** Minimum order quantity, in PURCHASE units. */
+  /** Minimum order quantity. Counted in `moqUnit` when set, else `purchaseUnit`. */
   moq: number
-  /** Orders round up to a multiple of this, in PURCHASE units. */
+  /** Orders round up to a multiple of this. Counted in `multipleUnit` when set,
+   *  else `purchaseUnit`. */
   packSize: number
+  /** Unit the MOQ is quoted in. A vendor can set a minimum in one unit ("1 Pallet")
+   *  while stepping the order in another ("+1 Carton"), so the two are stored
+   *  separately instead of both inheriting `purchaseUnit`. Optional: unset means
+   *  "same as the purchase unit", which is the common case and what every
+   *  pre-existing row means. */
+  moqUnit?: string
+  /** Unit the order step is quoted in. See `moqUnit`. */
+  multipleUnit?: string
   /** Cost per PURCHASE unit, IDR. */
   unitCost: number
   /** The supplier's own item code, shown on the PO line. */

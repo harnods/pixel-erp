@@ -758,12 +758,18 @@ const bulkCountLabel = computed(() => {
               :colspan="totalCols"
             >
               <!-- Inline empty — search/filter eliminated all results (same illustration as
-                   the full empty state, so both empty states read consistently) -->
-              <div v-if="hasActiveFilter" class="empty-inline">
+                   the full empty state, so both empty states read consistently).
+                   Gated on search OR filter: a table whose only control is a search
+                   box (e.g. a detail-page tab) would otherwise fall through to the
+                   never-had-data slot and tell the user to create their first record
+                   when they have simply mistyped. `isFullEmpty` already counts both. -->
+              <div v-if="hasActiveFilter || hasActiveSearch" class="empty-inline">
                 <img src="/illustrations/empty-folder.png" alt="" class="empty-inline-illustration" width="288" height="240" />
                 <p class="empty-inline-title">{{ props.search ? `"${props.search}" not found` : `No ${props.filterEmptyLabel ?? 'results'} match your filters` }}</p>
                 <p class="empty-inline-desc">{{ props.search ? 'Recheck the keywords you have typed and try searching again.' : 'Recheck the filters you have applied and try filtering again.' }}</p>
-                <a class="empty-inline-clear" @click="emit('clearFilters')">Clear all filters</a>
+                <!-- Offer the reset that matches what is actually narrowing the list. -->
+                <a v-if="hasActiveFilter" class="empty-inline-clear" @click="emit('clearFilters')">Clear all filters</a>
+                <a v-else class="empty-inline-clear" @click="emit('clearSearch')">Clear search</a>
               </div>
               <slot v-else name="empty">
                 <!-- Full empty — no data ever; module supplies illustration + title + CTA -->
