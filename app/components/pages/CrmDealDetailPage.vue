@@ -443,7 +443,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                   </ContentList>
                 </div>
                 <div class="detail-primary-total">
-                  <span class="detail-total-label">{{ t('Deal value') }}</span>
+                  <span class="detail-total-label">{{ t('Value') }}</span>
                   <span class="detail-total-amount">{{ money(dealExpectedValue(deal)) }}</span>
                 </div>
               </div>
@@ -458,7 +458,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                 </div>
                 <div class="content-list-col">
                   <ContentList :label="t('Transaction date')" :value="fmtDate(deal.transactionDate || deal.createdAt)" />
-                  <ContentList :label="t('Close date')" :value="fmtDate(deal.expectedCloseDate)" />
+                  <ContentList :label="t('Expected close date')" :value="fmtDate(deal.expectedCloseDate)" />
                   <ContentList :label="t('Payment terms')" :value="deal.paymentTerms || '—'" />
                 </div>
                 <div class="content-list-col">

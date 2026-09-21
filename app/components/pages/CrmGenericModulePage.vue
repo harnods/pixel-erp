@@ -68,7 +68,7 @@ const { search, statusFilter, currentPage, perPage, sortKey, sortDir, total, pag
   })
 const columns: TableColumn[] = [
   { key: 'name', label: t('Name'), kind: 'name', sortable: true, sortType: 'text' },
-  { key: 'customer', label: t('Customer'), kind: 'name' },
+  { key: 'customer', label: t('Company'), kind: 'name' },
   { key: 'contactPerson', label: t('Contact person'), kind: 'name' },
   { key: 'stage', label: t('Stage'), kind: 'status' },
   { key: 'value', label: t('Value'), kind: 'amount', align: 'right', sortable: true, sortType: 'number' },

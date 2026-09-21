@@ -173,7 +173,7 @@ const appliedFilters = reactive<CrmDealsFiltersValue>(emptyCrmDealsFilters())
 const keywordColumns = [
   { key: 'name',            label: t('Deal name') },
   { key: 'id',              label: t('Deal number') },
-  { key: 'company',         label: t('Customer') },
+  { key: 'company',         label: t('Company') },
   { key: 'owner',           label: t('Owner') },
   { key: 'referenceNumber', label: t('Reference number') },
 ]
@@ -466,10 +466,10 @@ function onImportUpload(files: File[]) {
 const exportOpen = ref(false)
 const selectedCount = ref(0)
 const exportColumns = [
-  { key: 'name', label: t('Deal name') }, { key: 'stage', label: t('Stage') }, { key: 'company', label: t('Customer') },
+  { key: 'name', label: t('Deal name') }, { key: 'stage', label: t('Stage') }, { key: 'company', label: t('Company') },
   { key: 'picName', label: t('Contact person') },
-  { key: 'owner', label: t('Owner') }, { key: 'value', label: t('Expected deal value') }, { key: 'currency', label: t('Currency') },
-  { key: 'expectedCloseDate', label: t('Close date') }, { key: 'conversion', label: t('Conversion status') },
+  { key: 'owner', label: t('Owner') }, { key: 'value', label: t('Value') }, { key: 'currency', label: t('Currency') },
+  { key: 'expectedCloseDate', label: t('Expected close date') }, { key: 'conversion', label: t('Conversion status') },
   { key: 'salesOrderId', label: t('Linked ERP transaction') }, { key: 'lastActivity', label: t('Last updated') },
 ]
 function onExport() { exportOpen.value = false; successToast(t('Export ready — check your downloads')) }
@@ -485,12 +485,12 @@ function stageBadge(stage: DealStage): { type: 'completed' | 'announcement' | 'i
 const baseColumns: TableColumn[] = [
   { key: 'id',            label: t('Number'),         kind: 'default', sortable: true, sortType: 'text'   },
   { key: 'name',          label: t('Deal name'),      kind: 'name',    sortable: true, sortType: 'text'   },
-  { key: 'company',       label: t('Customer'),       kind: 'name',    sortable: true, sortType: 'text'   },
+  { key: 'company',       label: t('Company'),        kind: 'name',    sortable: true, sortType: 'text'   },
   { key: 'contactPerson', label: t('Contact person'), kind: 'name',    sortable: true, sortType: 'text'   },
   { key: 'stage',         label: t('Stage'),          kind: 'status',  sortable: true, sortType: 'text'   },
   { key: 'owner',         label: t('Owner'),          kind: 'name',    sortable: true, sortType: 'text'   },
-  { key: 'expectedCloseDate', label: t('Close date'), kind: 'date',    sortable: true, sortType: 'text'   },
-  { key: 'value',         label: t('Deal value'),     kind: 'amount',  align: 'right', sortable: true, sortType: 'number' },
+  { key: 'expectedCloseDate', label: t('Expected close date'), kind: 'date', sortable: true, sortType: 'text' },
+  { key: 'value',         label: t('Value'),          kind: 'amount',  align: 'right', sortable: true, sortType: 'number' },
 ]
 const optionalColumns: TableColumn[] = [
   { key: 'lastActivity',      label: t('Last updated'), kind: 'default', sortable: true, sortType: 'text' },

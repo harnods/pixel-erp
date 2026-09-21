@@ -1264,9 +1264,9 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                             <span v-if="f.key === 'company'" class="pipe-card-company">{{ t('Company name') }}</span>
                             <span v-else-if="f.key === 'dealName'" class="pipe-card-deal">{{ t('Deal name') }}</span>
                             <span v-else-if="f.key === 'contactPerson'" class="pipe-card-sub">{{ t('Contact person') }}</span>
-                            <span v-else-if="f.key === 'dealValue'" class="pipe-card-value">{{ t('Deal value') }}</span>
+                            <span v-else-if="f.key === 'dealValue'" class="pipe-card-value">{{ t('Value') }}</span>
                             <span v-else-if="f.key === 'owner'" class="pipe-card-owner">{{ t('Owner') }}</span>
-                            <span v-else-if="f.key === 'closeDate'" class="pipe-card-sub">{{ t('Close date') }}</span>
+                            <span v-else-if="f.key === 'closeDate'" class="pipe-card-sub">{{ t('Expected close date') }}</span>
                             <span v-else-if="f.key === 'memo'" class="pipe-card-sub">{{ t('Memo') }}</span>
                             <span v-else class="pipe-card-sub">{{ t(f.label) }}</span>
                           </template>

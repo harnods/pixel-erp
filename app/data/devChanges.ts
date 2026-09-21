@@ -234,6 +234,15 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['NewCrmDealPage.vue', 'NewSalesOrderPage.vue', 'warehouseDetails.ts'],
   },
   {
+    id: 'crm-label-alignment',
+    title: 'UI labels match DEFAULT_PROPERTIES',
+    description:
+      'All CRM UI labels now match the labels defined in DEFAULT_PROPERTIES: "Customer" → "Company", "Deal value" → "Value", "Close date" → "Expected close date". Applied across preview drawer, detail page, index pages, filters, export columns, and pipeline card fields.',
+    date: '2026-09-21',
+    pr: '#86',
+    files: ['CrmDealPreviewDrawer.vue', 'CrmDealDetailPage.vue', 'CrmDealsPage.vue', 'CrmServicesPage.vue', 'CrmGenericModulePage.vue', 'CrmModuleBuilderPage.vue', 'CrmDealsFiltersDrawer.vue'],
+  },
+  {
     id: 'deal-preview-totals',
     title: 'Deal preview: totals breakdown',
     description:

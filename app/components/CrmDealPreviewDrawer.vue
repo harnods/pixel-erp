@@ -103,18 +103,17 @@ function stampTime(id: string): string {
             <section class="cdp-section">
               <h3 class="cdp-section-title">Overview</h3>
               <div class="cdp-grid">
-                <ContentList label="Expected deal value" :value="money(dealExpectedValue(d))" />
+                <ContentList label="Value" :value="money(dealExpectedValue(d))" />
                 <ContentList label="Owner">
                   <span class="cdp-owner">
                     <span class="cdp-avatar" :style="ownerAvatarStyle(d.owner)">{{ ownerInitials(d.owner) }}</span>
                     {{ d.owner }}
                   </span>
                 </ContentList>
-                <ContentList label="Customer" :value="d.company" />
+                <ContentList label="Company" :value="d.company" />
                 <ContentList label="Stage"><ErpStatusBadge v-bind="stageBadge(d.stage)" /></ContentList>
-                <ContentList label="Created" :value="`${formatDate(d.createdAt)}, ${stampTime(d.id)}`" />
-                <ContentList label="Close date" :value="d.expectedCloseDate ? formatDate(d.expectedCloseDate) : '—'" />
-                <ContentList label="Reference number" :value="d.referenceNumber || '—'" />
+                <ContentList label="Priority" :value="d.priority ? d.priority.charAt(0).toUpperCase() + d.priority.slice(1) : '—'" />
+                <ContentList label="Expected close date" :value="d.expectedCloseDate ? formatDate(d.expectedCloseDate) : '—'" />
                 <ContentList v-if="d.stage === 'Lost'" label="Lost reason" :value="d.lostReason || '—'" />
               </div>
             </section>
