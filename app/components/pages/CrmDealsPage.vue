@@ -42,7 +42,7 @@ import {
   archiveDeal, restoreDeal, deleteDeal, bulkChangeOwner, bulkChangeStage, convertDeal,
   dealConversionTarget, dealExpectedValue, isDealOpen, getDeal, dealDraftSeed, dealNo,
   CRM_OWNERS, crmCustomers, dealStageBadgeType, dealStageLabel, getCrmModule,
-  dealPipelineDisplay, dealPipelineViews, dealPipelines,
+  dealPipelineDisplay, dealPipelines,
   type Deal, type DealStage, type DealDraftSeed,
 } from '~/data/crm'
 import { pinsForModule, metricPinValue, unpinReportMetric } from '~/data/crmReports'
@@ -59,7 +59,7 @@ function stageKind(c: DealStage): 'open' | 'won' | 'lost' {
   return c === 'Won' ? 'won' : c === 'Lost' ? 'lost' : 'open'
 }
 // Card field / display toggles from the module builder's right-hand panel.
-const cardFieldOn = (key: string) => activeViewDisplay.value.cardFields.some((f) => f.key === key && f.on)
+const cardFieldOn = (key: string) => dealPipelineDisplay.cardFields.some((f) => f.key === key && f.on)
 function asDeal(row: unknown): Deal { return row as Deal }
 function goDetail(id: string) { router.push(`/crm/deals/${id}`) }
 function goOrder(id: string) { router.push(`/crm/orders/${id}`) }
@@ -112,28 +112,8 @@ const SAVED_VIEWS = ['All records', 'My records', 'Recently created', 'Recently 
 type SavedView = typeof SAVED_VIEWS[number]
 const savedView = ref<SavedView>('All records')
 
-// ── Saved pipeline views (configured in the module builder) — one Kanban tab
-//    per view; the active view hides its stages from the board. Deals stages map
-//    to the pipeline stages by position (both ordered identically). ──
-const pipelineViewTabs = computed(() => dealPipelineViews)
-const activePipelineViewId = ref('default')
-watch(pipelineViewTabs, (tabs) => {
-  if (!tabs.some((v) => v.id === activePipelineViewId.value)) activePipelineViewId.value = tabs[0]?.id ?? 'default'
-}, { immediate: true })
-const activePipelineViewIndex = computed(() => Math.max(0, pipelineViewTabs.value.findIndex((v) => v.id === activePipelineViewId.value)))
-// The active view's board display (total/card fields/aging/color) drives the
-// board; falls back to the module's shared display for the default/legacy case.
-const activeViewDisplay = computed(() => {
-  const v = pipelineViewTabs.value.find((x) => x.id === activePipelineViewId.value)
-  return v?.display ?? dealPipelineDisplay
-})
-const hiddenDealStages = computed<Set<DealStage>>(() => {
-  const v = pipelineViewTabs.value.find((x) => x.id === activePipelineViewId.value)
-  const stages = dealPipelines.find((p) => p.id === 'default')?.stages ?? dealPipelines[0]?.stages ?? []
-  const hidden = new Set<DealStage>()
-  if (v) stages.forEach((s, i) => { if (v.hiddenStageIds.includes(s.id) && DEAL_STAGES[i]) hidden.add(DEAL_STAGES[i]!) })
-  return hidden
-})
+// ── Pipeline display — the module's shared display drives the board. ──
+const hiddenDealStages = computed<Set<DealStage>>(() => new Set<DealStage>())
 
 // ── View toggle (list default per PRD) ──
 const view = ref<'table' | 'board'>('table')
@@ -610,19 +590,6 @@ const toggleAirene = inject<() => void>('toggleAirene')
         </div>
       </div>
 
-      <!-- ── Saved view tabs (board only) — one tab per pipeline view configured
-           in the module builder; the active view hides its stages. ── -->
-      <MpTabs
-        v-if="view === 'board' && pipelineViewTabs.length > 1"
-        id="deal-view-tabs" class="deal-view-tabs" variant-color="green" is-manual
-        :model-value="activePipelineViewIndex"
-        @change="(i: number) => (activePipelineViewId = pipelineViewTabs[i]?.id ?? 'default')"
-      >
-        <MpTabList>
-          <MpTab v-for="v in pipelineViewTabs" :key="v.id">{{ v.name }}</MpTab>
-        </MpTabList>
-      </MpTabs>
-
       <!-- ── Board view ── -->
       <div v-if="view === 'board'" class="kanban">
         <div class="kanban__board">
@@ -630,7 +597,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
             v-for="col in boardColumns"
             :key="col.stage"
             class="kcol"
-            :class="{ 'kcol--over': dragOverStage === col.stage, [`kcol--${stageKind(col.stage)}`]: activeViewDisplay.colorColumns }"
+            :class="{ 'kcol--over': dragOverStage === col.stage, [`kcol--${stageKind(col.stage)}`]: dealPipelineDisplay.colorColumns }"
             @dragover.prevent="dragOverStage = col.stage"
             @dragleave="dragOverStage === col.stage && (dragOverStage = null)"
             @drop="onDrop(col.stage)"
@@ -670,7 +637,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
               </article>
               <p v-if="!col.cards.length" class="kcol__empty">{{ t('No deals') }}</p>
             </div>
-            <footer v-if="activeViewDisplay.stageTotal" class="kcol__foot">
+            <footer v-if="dealPipelineDisplay.stageTotal" class="kcol__foot">
               <span class="kcol__total-k">{{ t('Total:') }}</span>
               <span class="kcol__total-v">{{ formatMoney(col.total, 'IDR') }}</span>
             </footer>

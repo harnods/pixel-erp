@@ -9,7 +9,7 @@
  */
 import { computed, onMounted, reactive, ref } from 'vue'
 import {
-  MpIcon, MpButton, MpButtonGroup, css, toast,
+  MpIcon, MpButton, MpButtonGroup, css,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
 } from '@mekari/pixel3'
@@ -24,7 +24,7 @@ import { useTableState } from '~/composables/useTableState'
 import { successToast } from '~/utils/toasts'
 import {
   crmReports, reportSourceModules, reportIsMine, reportIsSharedWithMe, reportIsAccessibleToMe,
-  cloneCrmReport, archiveCrmReport, restoreCrmReport, deleteCrmReport, canManageReport,
+  cloneCrmReport, archiveCrmReport, restoreCrmReport, canManageReport,
   transferCrmReport, setCrmReportVisibility,
   REPORT_OWNER_OPTIONS, type CrmReport, type ReportVisibility,
 } from '~/data/crmReports'
@@ -156,22 +156,16 @@ const archiveTitle = computed(() => archiveTarget.value?.status === 'archived' ?
 const archiveDescription = computed(() => archiveTarget.value?.status === 'archived' ? t('This report will be restored to the active list.') : t('This report will be archived. You can restore it later.'))
 const archiveConfirmLabel = computed(() => archiveTarget.value?.status === 'archived' ? t('Restore report') : t('Archive report'))
 
-// Delete — permanent, danger-confirmed (rule/btn-danger-confirm).
-const deleteTarget = ref<CrmReport | null>(null)
-function openDelete(r: CrmReport) { deleteTarget.value = r }
-function confirmDelete() {
-  if (!deleteTarget.value) return
-  deleteCrmReport(deleteTarget.value.id)
-  toast.notify({ variant: 'success', title: t('Report deleted'), maxWidth: 'max-content' })
-  deleteTarget.value = null
-}
 
 // Transfer ownership modal
 const transferTarget = ref<CrmReport | null>(null)
 const transferTo = ref('')
-function openTransfer(r: CrmReport) { transferTarget.value = r; transferTo.value = '' }
+const transferError = ref('')
+function openTransfer(r: CrmReport) { transferTarget.value = r; transferTo.value = ''; transferError.value = '' }
 function confirmTransfer() {
-  if (!transferTarget.value || !transferTo.value) return
+  if (!transferTarget.value) return
+  if (!transferTo.value) { transferError.value = t('Select a new owner before transferring.'); return }
+  transferError.value = ''
   transferCrmReport(transferTarget.value.id, transferTo.value)
   successToast(t('Report ownership transferred'))
   transferTarget.value = null
@@ -273,12 +267,9 @@ const emptyCopy = computed(() => {
                 <MpPopoverListItem @click="duplicate(row as unknown as CrmReport)">{{ t('Duplicate') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="openVisibility(row as unknown as CrmReport)">{{ t('Change visibility') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="openTransfer(row as unknown as CrmReport)">{{ t('Transfer ownership') }}</MpPopoverListItem>
-                <template v-if="canManageReport(row as unknown as CrmReport)">
-                  <MpPopoverListItem @click="openArchive(row as unknown as CrmReport)">
-                    {{ (row as unknown as CrmReport).status === 'archived' ? t('Restore') : t('Archive') }}
-                  </MpPopoverListItem>
-                  <MpPopoverListItem @click="openDelete(row as unknown as CrmReport)">{{ t('Delete') }}</MpPopoverListItem>
-                </template>
+                <MpPopoverListItem v-if="canManageReport(row as unknown as CrmReport)" data-devchange="crm-reports-no-delete" @click="openArchive(row as unknown as CrmReport)">
+                  {{ (row as unknown as CrmReport).status === 'archived' ? t('Restore') : t('Archive') }}
+                </MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
@@ -321,17 +312,6 @@ const emptyCopy = computed(() => {
       @confirm="confirmArchive"
     />
 
-    <!-- Delete confirmation (permanent) -->
-    <ConfirmModal
-      :is-open="!!deleteTarget"
-      :title="t('Delete report?')"
-      :description="t('Deleted report cannot be restored.')"
-      :confirm-label="t('Delete report')"
-      :is-danger="true"
-      @update:is-open="(v) => { if (!v) deleteTarget = null }"
-      @confirm="confirmDelete"
-    />
-
     <!-- ── Transfer ownership ── -->
     <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="rpt-transfer-modal" :is-open="!!transferTarget" size="md" :is-keep-alive="false" @close="transferTarget = null">
       <MpModalContent>
@@ -339,10 +319,11 @@ const emptyCopy = computed(() => {
         <MpModalBody>
           <p class="rpt-modal-desc">{{ t('The new owner can edit, share, and manage this report. This does not change its visibility or shared audience.') }}</p>
           <ErpFilterSelect id="rpt-transfer-to" v-model="transferTo" :placeholder="t('New owner')" :options="ownerSelectOptions" width="100%" />
+          <p v-if="transferError" class="rpt-modal-error">{{ transferError }}</p>
         </MpModalBody>
         <MpModalFooter>
           <button class="btn-enterprise btn-enterprise--ghost" @click="transferTarget = null">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" :disabled="!transferTo" @click="confirmTransfer">{{ t('Transfer') }}</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="confirmTransfer">{{ t('Transfer') }}</button>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />
@@ -402,6 +383,7 @@ const emptyCopy = computed(() => {
 .filter-search-clear { display: inline-flex !important; align-items: center; justify-content: center; width: 20px !important; height: 20px !important; min-width: 0 !important; padding: 0 !important; color: var(--mp-text-subtle); }
 
 .rpt-modal-desc { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0 0 var(--mp-spacing-3); }
+.rpt-modal-error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); margin: var(--mp-spacing-2) 0 0; }
 
 .cell-link { color: var(--mp-text-link); cursor: pointer; white-space: normal; word-break: break-word; }
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }

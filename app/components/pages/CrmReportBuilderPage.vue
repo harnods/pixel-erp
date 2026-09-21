@@ -11,7 +11,10 @@
 import { computed, reactive, ref } from 'vue'
 import { MpButton, MpInput, MpTextarea, MpFormControl, MpFormLabel, MpFormErrorMessage, MpIcon, MpCheckbox, MpRadio } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { successToast } from '~/utils/toasts'
+import { formatDate } from '~/utils/date'
+import { formatIDR } from '~/utils/currency'
 import {
   getCrmReport, addCrmReport, updateCrmReport, reportSourceModules, reportableFieldsFor,
   moduleHasProductList, OPERATORS_BY_TYPE, runCrmReport, measureKey, REPORT_NAME_MAX, DESCRIPTION_MAX,
@@ -105,7 +108,10 @@ function moveColumn(id: string, dir: -1 | 1) {
 // ─── Filters ────────────────────────────────────────────────────────────────
 function fieldType(id: string) { return allFields.value.find((f) => f.id === id)?.type ?? 'text' }
 function operatorsFor(id: string) { return OPERATORS_BY_TYPE[fieldType(id)] ?? [] }
+const filterError = ref('')
 function addCriterion() {
+  if (!primaryModuleId.value) { filterError.value = t('Select a source module first.'); return }
+  filterError.value = ''
   const first = allFields.value[0]
   if (!first) return
   criteria.push({ id: `c-${Date.now()}-${criteria.length}`, fieldId: first.id, operator: operatorsFor(first.id)[0]?.value ?? 'equals' })
@@ -149,6 +155,14 @@ const previewResult = computed(() => {
   return runCrmReport({ ...draftDefinition.value, id: 'preview', ownerId: CRM_CURRENT_USER, status: 'active', createdAt: '', updatedAt: '', updatedBy: '' }, { limit: 50 })
 })
 
+function previewCellText(col: string, value: unknown): string {
+  if (value == null || value === '') return '—'
+  const type = fieldType(col)
+  if (type === 'date') return formatDate(String(value))
+  if (type === 'currency') return formatIDR(Number(value))
+  return String(value)
+}
+
 // ─── Validation ─────────────────────────────────────────────────────────────
 const canPreview = computed(() => !!primaryModuleId.value && (columns.length > 0 || measures.length > 0))
 const nameError = ref('')
@@ -159,8 +173,15 @@ function validateName(): boolean {
   return !nameError.value
 }
 
+// ─── Unsaved-changes guard ──────────────────────────────────────────────────
+const discardConfirmOpen = ref(false)
+function discardAndLeave() {
+  if (dirty.value) { discardConfirmOpen.value = true; return }
+  router.push('/crm/reports')
+}
+function confirmDiscard() { discardConfirmOpen.value = false; router.push('/crm/reports') }
+
 // ─── Save ───────────────────────────────────────────────────────────────────
-function discardAndLeave() { router.push('/crm/reports') }
 function save() {
   if (!validateName()) { stage.value = 'save'; return }
   if (!canPreview.value) { saveError.value = t('Select a source and at least one column before saving.'); stage.value = 'columns'; return }
@@ -203,7 +224,8 @@ function moduleLabel(id: string) { return moduleOptions.value.find((m) => m.valu
       <section v-show="stage === 'source'" class="rb-section">
         <h2 class="rb-section-title">{{ t('Choose a primary source') }}</h2>
         <p class="rb-section-desc">{{ t('Your report starts from one authorized module.') }}</p>
-        <ErpFilterSelect id="rb-module" :model-value="primaryModuleId" :placeholder="t('Primary module')" :options="moduleOptions" width="320px" @update:model-value="selectModule" />
+        <ErpFilterSelect id="rb-module" :model-value="primaryModuleId" :placeholder="t('Primary module')" :options="moduleOptions" width="320px" :is-disabled="isEdit" @update:model-value="selectModule" />
+        <p v-if="isEdit" class="rb-hint" data-devchange="crm-reports-builder-source-lock">{{ t('The primary source cannot be changed after a report is saved. Use Create report for a different source.') }}</p>
 
         <div v-if="showGrainToggle" class="rb-grain">
           <h3 class="rb-subtitle">{{ t('Result grain') }}</h3>
@@ -268,10 +290,11 @@ function moduleLabel(id: string) { return moduleOptions.value.find((m) => m.valu
           <input v-if="needsSecondValue(c)" v-model="c.value2" class="rb-value-input" type="text" :placeholder="t('And')" @input="markDirty">
           <button class="rb-icon-btn" type="button" :aria-label="t('Remove filter')" @click="removeCriterion(c.id)"><MpIcon name="close" size="sm" /></button>
         </div>
-        <button class="btn-enterprise btn-enterprise--secondary rb-add-btn" type="button" :disabled="!primaryModuleId" @click="addCriterion">
+        <button class="btn-enterprise btn-enterprise--secondary rb-add-btn" type="button" @click="addCriterion">
           <MpIcon name="add" size="sm" /> {{ t('Add filter') }}
         </button>
-        <p v-if="!criteria.length" class="rb-hint">{{ t('No filters — every authorized record is included.') }}</p>
+        <p v-if="filterError" class="rb-error">{{ filterError }}</p>
+        <p v-else-if="!criteria.length" class="rb-hint">{{ t('No filters — every authorized record is included.') }}</p>
       </section>
 
       <!-- ── Group & summarize ── -->
@@ -316,7 +339,7 @@ function moduleLabel(id: string) { return moduleOptions.value.find((m) => m.valu
               </thead>
               <tbody>
                 <tr v-for="row in previewResult.rows" :key="row.key">
-                  <td v-for="col in previewResult.columns" :key="col">{{ row.cells[col] ?? '—' }}</td>
+                  <td v-for="col in previewResult.columns" :key="col">{{ previewCellText(col, row.cells[col]) }}</td>
                 </tr>
                 <tr v-if="!previewResult.rows.length"><td :colspan="previewResult.columns.length || 1" class="rb-empty-cell">{{ t('No records match this definition yet.') }}</td></tr>
               </tbody>
@@ -373,6 +396,16 @@ function moduleLabel(id: string) { return moduleOptions.value.find((m) => m.valu
         <MpButton v-else variant="primary" is-rounded @click="save">{{ t('Save') }}</MpButton>
       </div>
     </div>
+
+    <ConfirmModal
+      :is-open="discardConfirmOpen"
+      :title="t('Discard changes?')"
+      :description="t('You have unsaved changes. If you leave now, they will be lost.')"
+      :confirm-label="t('Discard')"
+      :is-danger="true"
+      @update:is-open="(v) => { if (!v) discardConfirmOpen = false }"
+      @confirm="confirmDiscard"
+    />
   </div>
 </template>
 

@@ -437,13 +437,21 @@ function onExportConfirm(payload: { scope: 'all' | 'page' | 'selected'; columns:
             </div>
           </MpTabPanel>
 
-          <!-- ── Report details tab — a horizontal ContentList grid ── -->
+          <!-- ── Report details tab — horizontal ContentList (label left / value right) ── -->
           <MpTabPanel>
-            <div class="rv-info-grid">
-              <ContentList :label="t('Description')" :value="report.description || t('No description')" />
-              <ContentList :label="t('Module')" :value="getCrmModule(report.primaryModuleId)?.name ?? report.primaryModuleId" />
-              <ContentList :label="t('Owner')" :value="report.ownerId" />
-              <ContentList :label="t('Visibility')" :value="visibilityLabel(report.visibility)" />
+            <div class="rv-info-list" data-devchange="crm-reports-detail-tab">
+              <ContentList horizontal :label="t('Description')" :value="report.description || t('No description')" />
+              <ContentList horizontal :label="t('Module')" :value="getCrmModule(report.primaryModuleId)?.name ?? report.primaryModuleId" />
+              <ContentList horizontal :label="t('Owner')" :value="report.ownerId" />
+              <ContentList horizontal :label="t('Visibility')" :value="visibilityLabel(report.visibility)" />
+              <ContentList horizontal :label="t('Status')" :value="report.status === 'active' ? t('Active') : t('Archived')" />
+              <ContentList horizontal :label="t('Result grain')" :value="report.grain === 'product-line' ? t('Product List line') : t('CRM record')" />
+              <ContentList horizontal :label="t('Columns')" :value="String(report.columns.length)" />
+              <ContentList horizontal :label="t('Saved filters')" :value="report.criteria.length ? String(report.criteria.length) + ' (' + report.criteriaLogic + ')' : t('None')" />
+              <ContentList horizontal :label="t('Grouping')" :value="report.grouping ? colLabel(report.grouping.fieldId) + (report.grouping.dateBucket ? ' (' + report.grouping.dateBucket + ')' : '') : t('None')" />
+              <ContentList horizontal :label="t('Summaries')" :value="report.measures.length ? report.measures.map(measureLabel).join(', ') : t('None')" />
+              <ContentList horizontal :label="t('Sort')" :value="report.sort ? colLabel(report.sort.fieldId) + ' (' + report.sort.direction + ')' : t('Default')" />
+              <ContentList horizontal :label="t('Created')" :value="formatDate(report.createdAt)" />
             </div>
             <a class="rv-updated" role="button" tabindex="0" @click.prevent="activityOpen = true" @keydown.enter="activityOpen = true">{{ lastUpdatedDisplay }}</a>
           </MpTabPanel>
@@ -585,8 +593,8 @@ function onExportConfirm(payload: { scope: 'all' | 'page' | 'selected'; columns:
 .rv-tabs :deep(.mp-tab-selected-border--isSelected_true) { background-color: var(--mp-border-selected, #029861) !important; }
 .rv-tabs :deep([data-pixel-component="MpTabList"]) { margin: 0 var(--mp-spacing-6) !important; margin-bottom: 0 !important; border-bottom: none !important; box-shadow: none !important; } /* pixel-police-allow-shadow: removes Pixel's default shadow, doesn't add one */
 
-/* Report details tab — a horizontal ContentList grid. */
-.rv-info-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: var(--mp-spacing-6); max-width: 960px; }
+/* Report details tab — horizontal ContentList stack (label left / value right). */
+.rv-info-list { display: flex; flex-direction: column; gap: var(--mp-spacing-3); max-width: 640px; }
 /* rule/activity-log-trigger — opens ActivityLogModal, the only affordance for it. */
 .rv-updated { display: inline-block; margin-top: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-5); font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer; text-decoration: none; }
 .rv-updated:hover { text-decoration: underline; text-underline-offset: 2px; }

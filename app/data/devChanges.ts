@@ -28,6 +28,62 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-pipeline-no-custom-views',
+    title: 'Pipeline: removed custom views',
+    description:
+      'Removed the "New view" button and view dropdown from the Pipeline tab in Settings/Modules. Custom pipeline views are deferred; only the default display is used.',
+    date: '2026-09-21',
+    files: ['CrmModuleBuilderPage.vue', 'CrmDealsPage.vue', 'CrmPipelineViewDrawer.vue'],
+  },
+  {
+    id: 'crm-reports-no-delete',
+    title: 'Reports: removed permanent delete action',
+    description:
+      'Removed the "Delete" row action from the Reports library per PRD requirement — V1 has no permanent user-facing deletion, only archive/restore.',
+    date: '2026-09-21',
+    files: ['CrmReportsPage.vue'],
+  },
+  {
+    id: 'crm-reports-detail-tab',
+    title: 'Reports: enhanced Report details tab',
+    description:
+      'Added 12 fields (Description through Created date) to the Report details tab using horizontal ContentList layout (label left / value right) for full definition visibility.',
+    date: '2026-09-21',
+    files: ['CrmReportViewerPage.vue'],
+  },
+  {
+    id: 'crm-reports-builder-source-lock',
+    title: 'Reports: source locked in edit mode',
+    description:
+      'Primary source module selector is now disabled when editing an existing report, per PRD: the primary source cannot be changed in-place after save.',
+    date: '2026-09-21',
+    files: ['CrmReportBuilderPage.vue'],
+  },
+  {
+    id: 'crm-reports-builder-discard-guard',
+    title: 'Reports: unsaved-changes confirmation',
+    description:
+      'Clicking Cancel in the report builder with unsaved changes now shows a "Discard changes?" confirmation dialog instead of navigating away immediately.',
+    date: '2026-09-21',
+    files: ['CrmReportBuilderPage.vue'],
+  },
+  {
+    id: 'crm-reports-builder-preview-format',
+    title: 'Reports: preview cell formatting',
+    description:
+      'Builder preview table now formats date and currency cells (formatDate, formatIDR) instead of showing raw values.',
+    date: '2026-09-21',
+    files: ['CrmReportBuilderPage.vue'],
+  },
+  {
+    id: 'crm-reports-no-disabled-buttons',
+    title: 'Reports: removed disabled button states',
+    description:
+      'Transfer ownership modal and Add filter button no longer use disabled states — inline error messages appear instead, per design rules.',
+    date: '2026-09-21',
+    files: ['CrmReportsPage.vue', 'CrmReportBuilderPage.vue'],
+  },
+  {
     id: 'crm-invite-user-redirect',
     title: 'Invite user redirects to ERP',
     description:

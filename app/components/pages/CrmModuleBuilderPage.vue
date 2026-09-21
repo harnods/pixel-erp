@@ -43,7 +43,6 @@ import {
 } from '~/data/crm'
 import ContentList from '~/components/patterns/ContentList.vue'
 import CrmDetailLayoutBuilder from '~/components/patterns/CrmDetailLayoutBuilder.vue'
-import CrmPipelineViewDrawer, { emptyPipelineView, type CrmPipelineViewValue } from '~/components/patterns/CrmPipelineViewDrawer.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ActivityLogModal, { type ActivityEntry, type ActivityDetail } from '~/components/patterns/ActivityLogModal.vue'
 import { usePointerSortable } from '~/composables/usePointerSortable'
@@ -282,52 +281,20 @@ function removeStage(id: string) {
 // ── Board DISPLAY settings (right-hand panel) — a local editable clone; Save
 //    changes applies it. Drives which fields show on cards + stage/column props. ──
 // ── Board saved VIEWS — a view = a named record filter PLUS its own board
-//    display config (stage + card properties). Starts with one "Default view"
-//    (all records, the module's stored display); "+ New view" opens the drawer
-//    to name a view and pick which records it shows. Switching views swaps the
-//    Stage/Card properties panel to that view's own config. ──
-// hiddenStageIds = stages hidden IN THIS VIEW (per-view show/hide); the stages
-// themselves are shared pipeline structure, only their visibility is per-view.
-interface PipeBoardView { id: string; name: string; filters: CrmPipelineViewValue; display: DealPipelineDisplay; hiddenStageIds: string[] }
-const baseDisplay = (): DealPipelineDisplay => JSON.parse(JSON.stringify(stores.value.display))
-// Load saved views from the module's store (name + per-view hidden stages + the
-// per-view board display). Filters are session-local for now.
-const pipeViews = ref<PipeBoardView[]>(
-  (stores.value.views?.length ? stores.value.views : [{ id: 'default', name: 'Default view', hiddenStageIds: [], display: baseDisplay() }])
-    .map((v) => ({ id: v.id, name: v.name, filters: emptyPipelineView(), display: v.display ? clone(v.display) : baseDisplay(), hiddenStageIds: [...v.hiddenStageIds] })),
-)
-const activePipeViewId = ref('default')
-const activePipeView = computed<PipeBoardView>(() => pipeViews.value.find((v) => v.id === activePipeViewId.value) ?? pipeViews.value[0]!)
-const pipeViewOptions = computed(() => pipeViews.value.map((v) => ({ value: v.id, label: v.name })))
-
-// The active view's display drives the board + the Stage/Card properties panel.
-const disp = computed<DealPipelineDisplay>(() => activePipeView.value.display)
+//    display config (stage + card properties). Custom views are deferred —
+//    the builder shows only the module's single default display for now. ──
+const disp = computed<DealPipelineDisplay>(() => stores.value.display)
 const enabledCardFields = computed(() => disp.value.cardFields.filter((f) => f.on))
 const ownerFieldOn = computed(() => disp.value.cardFields.some((f) => f.key === 'owner' && f.on))
 
-// Per-view stage visibility — each view can show/hide any stage independently
-// via the eye toggle on the lane header. Hidden lanes render dimmed in the
-// builder (still editable); the flag is what a view would apply in use.
-function isStageVisible(id: string): boolean { return !activePipeView.value.hiddenStageIds.includes(id) }
+// Stage visibility — the eye toggle on the lane header hides/shows stages on
+// the board. Hidden lanes render dimmed in the builder (still editable).
+const hiddenStageIds = ref<string[]>([...(stores.value.views?.[0]?.hiddenStageIds ?? [])])
+function isStageVisible(id: string): boolean { return !hiddenStageIds.value.includes(id) }
 function setStageVisible(id: string, show: boolean) {
-  const v = activePipeView.value
-  if (show) v.hiddenStageIds = v.hiddenStageIds.filter((x) => x !== id)
-  else if (!v.hiddenStageIds.includes(id)) v.hiddenStageIds = [...v.hiddenStageIds, id]
+  if (show) hiddenStageIds.value = hiddenStageIds.value.filter((x) => x !== id)
+  else if (!hiddenStageIds.value.includes(id)) hiddenStageIds.value = [...hiddenStageIds.value, id]
 }
-
-const newViewOpen = ref(false)
-const newViewDraft = ref<CrmPipelineViewValue>(emptyPipelineView())
-let pipeViewSeq = 0
-function saveNewView(v: CrmPipelineViewValue) {
-  const id = `view-${++pipeViewSeq}`
-  // New view inherits the default view's display + stage visibility as a starting
-  // point; it can then be configured independently in the properties panel.
-  pipeViews.value.push({ id, name: v.name.trim() || `${t('View')} ${pipeViews.value.length}`, filters: v, display: baseDisplay(), hiddenStageIds: [...activePipeView.value.hiddenStageIds] })
-  activePipeViewId.value = id
-}
-// Owner / customer options for the New view filter drawer, from the live deals DB.
-const pipeOwnerOptions = computed(() => [...new Set(deals.map((d) => d.owner))].sort())
-const pipeCustomerOptions = computed(() => [...new Set(deals.map((d) => d.company))].sort())
 
 // Drag-reorder the card-property rows (order = the order fields stack on a card) —
 // same ERP pointer sortable, vertical axis. rule/dnd-live-sortable.
@@ -862,11 +829,8 @@ function saveChanges() {
     const s = stores.value
     s.pipelines.splice(0, s.pipelines.length, ...JSON.parse(JSON.stringify(pipeDraft.value)))
     s.persistPipelines()
-    Object.assign(s.display, JSON.parse(JSON.stringify(pipeViews.value[0]!.display)))
     s.persistDisplay()
-    // Persist saved views (name + per-view hidden stages) so the module's Kanban
-    // board can render one tab per view and apply each view's stage visibility.
-    s.views.splice(0, s.views.length, ...pipeViews.value.map((v) => ({ id: v.id, name: v.name, hiddenStageIds: [...v.hiddenStageIds], display: clone(v.display) })))
+    if (s.views?.[0]) { s.views[0].hiddenStageIds = [...hiddenStageIds.value] }
     s.persistViews()
     Object.assign(s.setup, JSON.parse(JSON.stringify(setup)))
     s.persistSetup()
@@ -1203,23 +1167,8 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
           </div>
 
           <!-- ════════ PIPELINE (Deals) — swimlane editor + settings sidebar ════════ -->
-          <div v-show="activeTab === 'pipeline'" class="builder-panel builder-panel--pipeline">
+          <div v-show="activeTab === 'pipeline'" class="builder-panel builder-panel--pipeline" data-devchange="crm-pipeline-no-custom-views">
             <template v-if="currentPipe">
-              <!-- View bar — saved-view selector + New view (opens All-filters drawer) -->
-              <div class="pipe-viewbar">
-                <div class="filter-left">
-                  <ErpFilterSelect
-                    id="pipe-view-select"
-                    :model-value="activePipeViewId"
-                    :placeholder="t('View')"
-                    :options="pipeViewOptions"
-                    :is-clearable="false"
-                    @update:model-value="(v: string) => (activePipeViewId = v)"
-                  />
-                  <MpButton v-if="!viewMode" variant="secondary" is-rounded left-icon="add" @click="newViewDraft = emptyPipelineView(); newViewOpen = true">{{ t('New view') }}</MpButton>
-                </div>
-              </div>
-
               <div class="pipe-layout">
                 <!-- Board: one Kanban lane per stage, cards = live deals in it -->
                 <div class="pipe-board">
@@ -1332,16 +1281,6 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                 </aside>
               </div>
 
-              <!-- New view — names the view + defines which records it shows -->
-              <CrmPipelineViewDrawer
-                id="pipe-new-view"
-                :is-open="newViewOpen"
-                :model-value="newViewDraft"
-                :owner-options="pipeOwnerOptions"
-                :customer-options="pipeCustomerOptions"
-                @update:is-open="newViewOpen = $event"
-                @apply="saveNewView"
-              />
             </template>
           </div>
 
@@ -1801,8 +1740,6 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
   color: var(--mp-colors-icon-default, #536062); border-radius: var(--mp-radii-full, 999px) !important;
 }
 .search-clear-btn:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); }
-/* View bar above the board — saved-view selector + New view button. */
-.pipe-viewbar { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
 .pipe-layout { display: flex; align-items: stretch; gap: 0; flex: 1; min-height: 0; }
 .builder-panel--pipeline .pipe-board { flex: 1; min-height: 0; }
 
