@@ -20,7 +20,7 @@ import CompletionTab from '../tabs/CompletionTab.vue'
 import { getProject, methodLabel, weightTotal } from '~/data/projects'
 import { getBudget } from '~/data/projectBudgets'
 import { projectSummary } from '~/data/projectSummary'
-import { pendingApprovals } from '~/data/projectApprovals'
+import { pendingChanges } from '~/data/projectChanges'
 import { approveProject, reopenProject } from '~/data/projectActions'
 import { rp, pct } from '~/utils/projectFormat'
 import { notifyResult } from '~/utils/projectToast'
@@ -33,6 +33,11 @@ const { current, asActor } = useProjectRole()
 
 const project = computed(() => getProject(props.projectId))
 const summary = computed(() => project.value ? projectSummary(project.value.id) : undefined)
+const changesPending = computed(() => {
+  if (!project.value) return 0
+  const { vos, ecos } = pendingChanges(project.value.id)
+  return vos.length + ecos.length
+})
 
 const TABS = computed(() => {
   const p = project.value
@@ -117,13 +122,13 @@ const actions = computed<PmMenuItem[]>(() => {
     <div class="pm-tabs" role="tablist">
       <button v-for="tab in TABS" :key="tab.key" class="pm-tab" :class="{ 'pm-tab--active': activeTab === tab.key }" role="tab" :aria-selected="activeTab === tab.key" @click="setTab(tab.key)">
         {{ t(tab.label) }}
-        <span v-if="tab.key === 'changes' && summary.pendingCount" class="pm-pill pm-pill--blue" style="height: 18px; padding: 0 6px">{{ pendingApprovals(project.id).length || summary.pendingCount }}</span>
+        <span v-if="tab.key === 'changes' && changesPending" class="pm-pill pm-pill--blue" style="height: 18px; padding: 0 6px">{{ changesPending }}</span>
       </button>
     </div>
 
     <div class="pm-stage">
-      <!-- KPI strip — same numbers on every tab -->
-      <div class="pm-grid-4" style="grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 20px">
+      <!-- KPI strip — same numbers on every tab (Recognition shows its own two-clock cards) -->
+      <div v-if="activeTab !== 'recognition'" class="pm-grid-4" style="grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 20px">
         <div class="pm-card pm-card--flat">
           <div class="pm-stat-label">{{ t('Contract value') }}</div>
           <div class="pm-stat-value" style="font-size: 16px">{{ rp(project.contractValue) }}</div>
