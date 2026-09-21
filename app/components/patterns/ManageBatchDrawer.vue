@@ -82,6 +82,14 @@ const props = defineProps<{
    *  (page-level scan of a tracked SKU's specific batch code) is replayed here
    *  on open, so that first scan isn't lost/needs re-scanning inside. */
   initialScan?: string | null
+  /** Stock Adjustment (count/in-out) only — how many lines the rest of the document
+   *  (every OTHER product/location row) already uses, out of documentLineCap. This
+   *  drawer's own row count is added on top live as batches are added/removed, so
+   *  the shared budget check reflects in-progress edits before Save. Omitted for
+   *  transfer/receiving/put-away/picking, which have no such document-wide cap. */
+  documentBaseLines?: number
+  /** Paired with documentBaseLines — the shared ceiling for the whole document. */
+  documentLineCap?: number
 }>()
 
 const emit = defineEmits<{
@@ -206,6 +214,15 @@ const isTransfer = computed(() => props.kind === 'transfer')
 const isReceiving = computed(() => props.kind === 'receiving')
 const isPutAway = computed(() => props.kind === 'put-away')
 const isPicking = computed(() => props.kind === 'picking')
+
+// ── Document-wide line budget (Stock Adjustment: count/in-out only) ──────────────
+// Live total = the rest of the document (documentBaseLines) + this drawer's own
+// working rows, so adding batches inside an open drawer counts against the shared
+// cap immediately, not just after Save.
+const liveDocumentLines = computed(() => (props.documentBaseLines ?? 0) + rows.value.length)
+const atLineCap = computed(() =>
+  props.documentLineCap !== undefined && liveDocumentLines.value >= props.documentLineCap,
+)
 // Below the warehouse's scan threshold, manual qty entry is disabled — the
 // operator must scan the batch barcode once per unit instead (handleDrawerScan
 // already only ever +1s an existing row, so it needs no changes). This typing-
@@ -334,6 +351,7 @@ const availableBatches = computed(() => {
 })
 
 function addWarehouseBatch(batchNo: string) {
+  if (atLineCap.value) return
   const wh = getWarehouseDetail(props.warehouseId)
   const si = wh?.stock.find(s => s.sku === props.sku)
   const b = si?.batches?.find(x => x.batchNo === batchNo)
@@ -358,6 +376,7 @@ function addWarehouseBatch(batchNo: string) {
 
 let newCounter = 0
 function addNewBatch() {
+  if (atLineCap.value) return
   newCounter++
   const unit = warehouseStock.value?.unit ?? productBySku(props.sku)?.unit ?? ''
   rows.value.push({
@@ -466,6 +485,10 @@ function handleDrawerScan(rawValue: string) {
           return
         }
       }
+      if (atLineCap.value) {
+        notifyScanError('Maximum 10,000 lines reached')
+        return
+      }
       const unit = warehouseStock.value?.unit ?? productBySku(props.sku)?.unit ?? ''
       const idx = rows.value.length
       rows.value.push({
@@ -497,6 +520,10 @@ function handleDrawerScan(rawValue: string) {
 
   // Genuinely unrecognized code — fall back to a blank row the operator fills in
   // manually (e.g. count mode cataloguing a batch not yet in the system).
+  if (atLineCap.value) {
+    notifyScanError('Maximum 10,000 lines reached')
+    return
+  }
   newCounter++
   const key = `__new__${newCounter}`
   const unit = warehouseStock.value?.unit ?? productBySku(props.sku)?.unit ?? ''
@@ -966,9 +993,10 @@ function fmtNum(n: number | null): string {
             <p v-if="isCountKind" class="mbd-empty-desc">Scan a batch barcode above.</p>
             <template v-else>
               <p class="mbd-empty-desc">Scan a batch barcode above, or add one manually.</p>
-              <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="addNewBatch">
+              <button class="btn-enterprise btn-enterprise--secondary" type="button" :disabled="atLineCap" @click="addNewBatch">
                 <MpIcon name="add" size="sm" /> Add new batch
               </button>
+              <p v-if="atLineCap" class="mbd-limit-msg">Maximum 10,000 lines reached. Remove a product or batch to add more.</p>
             </template>
           </div>
         </template>
@@ -1306,21 +1334,26 @@ function fmtNum(n: number | null): string {
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ minWidth: '280px', width: 'max-content' })">
                       <MpPopoverList>
-                        <MpPopoverListItem
-                          v-for="b in availableBatches"
-                          :key="b.batchNo"
-                          @click="addWarehouseBatch(b.batchNo)"
-                        >
-                          {{ b.batchNo }} — exp. {{ isoToDisplay(b.expiryDate) }}
+                        <MpPopoverListItem v-if="atLineCap" disabled>
+                          Maximum 10,000 lines reached
                         </MpPopoverListItem>
-                        <MpPopoverListItem v-if="!availableBatches.length" disabled>
-                          All batches added
-                        </MpPopoverListItem>
-                        <template v-if="props.kind !== 'transfer' && !isPicking">
-                          <div class="mbd-popover-divider" />
-                          <MpPopoverListItem @click="addNewBatch">
-                            <span class="mbd-popover-add-row"><MpIcon name="add" size="sm" />Add new batch</span>
+                        <template v-else>
+                          <MpPopoverListItem
+                            v-for="b in availableBatches"
+                            :key="b.batchNo"
+                            @click="addWarehouseBatch(b.batchNo)"
+                          >
+                            {{ b.batchNo }} — exp. {{ isoToDisplay(b.expiryDate) }}
                           </MpPopoverListItem>
+                          <MpPopoverListItem v-if="!availableBatches.length" disabled>
+                            All batches added
+                          </MpPopoverListItem>
+                          <template v-if="props.kind !== 'transfer' && !isPicking">
+                            <div class="mbd-popover-divider" />
+                            <MpPopoverListItem @click="addNewBatch">
+                              <span class="mbd-popover-add-row"><MpIcon name="add" size="sm" />Add new batch</span>
+                            </MpPopoverListItem>
+                          </template>
                         </template>
                       </MpPopoverList>
                     </MpPopoverContent>
@@ -1824,6 +1857,7 @@ function fmtNum(n: number | null): string {
   color: var(--mp-text-default); text-align: center;
 }
 .mbd-empty-desc { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); text-align: center; }
+.mbd-limit-msg { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); text-align: center; margin: 0; }
 
 /* Select batch row — same pattern as "Select product" in warehouse transfer */
 .mbd-td--select-cell { padding: 0; background: var(--mp-background-neutral, #fff); position: relative; }

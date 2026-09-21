@@ -4,7 +4,7 @@ export default defineNuxtConfig({
   ssr: false,
   compatibilityDate: "2025-07-15",
   devtools: { enabled: true },
-  devServer: { port: 4321 },
+  devServer: { port: Number(process.env.PORT) || 4321 },
 
   // Server-only secret for the Cowork (AI) feature. Value comes from
   // NUXT_GEMINI_API_KEY in .env.local (gitignored) — never hardcoded/committed.

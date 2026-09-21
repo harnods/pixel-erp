@@ -11,6 +11,8 @@ import SelectProductDrawer, { type PickerProduct } from '~/components/patterns/S
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
+import LineBudgetCounter from '~/components/patterns/LineBudgetCounter.vue'
+import { STOCK_ADJUSTMENT_LINE_CAP, STOCK_ADJUSTMENT_COUNTER_SHOW_FROM } from '~/utils/stockAdjustmentLimits'
 import { warehouses } from '~/data/warehouses'
 import { productBySku, PRODUCTS } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
@@ -112,6 +114,17 @@ function applyPicker(skus: string[]) {
 function removeRow(sku: string) { rows.value = rows.value.filter(r => r.sku !== sku) }
 function removeLocRow(row: ProductRow, idx: number) { row.locationRows.splice(idx, 1) }
 
+// ── Shared line budget (Stock Adjustment: pooled Product-Batch cap) ────────────────
+// One shared 10,000-line pool across the whole document — a batch-tracked location
+// row contributes its committed batch count, everything else contributes exactly 1.
+function locRowLineCount(sku: string, locRow: LocationRow): number {
+  return isBatchTrackedSku(sku) ? (locRow.batchLines?.length ?? 0) : 1
+}
+const usedLines = computed(() =>
+  rows.value.reduce((sum, r) => sum + r.locationRows.reduce((s, lr) => s + locRowLineCount(r.sku, lr), 0), 0),
+)
+const atLineCap = computed(() => usedLines.value >= STOCK_ADJUSTMENT_LINE_CAP)
+
 // ── Location picker (MpPopover pattern) ──────────────────────────────────────────
 const activeLocKey = ref<string | null>(null)
 const locSearch = ref('')
@@ -183,6 +196,12 @@ function saveBatchLines(batches: CommittedBatch[]) {
   if (!batchDrawerLocRow.value) return
   batchDrawerLocRow.value.batchLines = batches
 }
+// Rest-of-document line count with the currently-open drawer's own (pre-edit)
+// contribution excluded, so the drawer can add its own live working total on top
+// without double-counting against the shared cap.
+const batchDrawerBaseLines = computed(() =>
+  batchDrawerLocRow.value ? usedLines.value - (batchDrawerLocRow.value.batchLines?.length ?? 0) : 0,
+)
 function locBatchHasCounts(locRow: LocationRow): boolean {
   return (locRow.batchLines ?? []).some(b => b.counted !== null)
 }
@@ -411,6 +430,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <!-- Section toolbar: warehouse name + search + import -->
           <div class="sio-toolbar">
             <h2 class="sio-wh-name">{{ warehouseName(warehouseId) }}</h2>
+            <LineBudgetCounter :used="usedLines" :cap="STOCK_ADJUSTMENT_LINE_CAP" :show-from="STOCK_ADJUSTMENT_COUNTER_SHOW_FROM" />
             <div class="sio-toolbar-right">
               <div class="scf-search">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -426,10 +446,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
           </div>
 
           <!-- Select product pill -->
-          <button class="sio-select-prod-btn" type="button" @click="drawerOpen = true">
+          <button class="sio-select-prod-btn" type="button" :disabled="atLineCap" @click="drawerOpen = true">
             <MpIcon name="add" size="sm" />
             <span>Select product{{ rows.length ? ` (${rows.length})` : '' }}</span>
           </button>
+          <p v-if="atLineCap" class="sio-limit-msg">Maximum 10,000 lines reached. Remove a product or batch to add more.</p>
 
           <!-- Product groups -->
           <div v-if="displayRows.length" class="sio-product-list">
@@ -651,6 +672,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
       :warehouse-id="warehouseId"
       kind="in-out"
       :model-value="batchDrawerLocRow.batchLines ?? []"
+      :document-base-lines="batchDrawerBaseLines"
+      :document-line-cap="STOCK_ADJUSTMENT_LINE_CAP"
       @update:open="batchDrawerOpen = $event"
       @save="saveBatchLines"
     />
@@ -725,6 +748,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
 .sio-select-prod-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-1\.5) var(--mp-spacing-4); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px); background: none; cursor: pointer; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-default); }
 .sio-select-prod-btn:hover { background: var(--mp-background-neutral-subtle); }
+.sio-select-prod-btn:disabled { cursor: not-allowed; opacity: 0.5; }
+.sio-select-prod-btn:disabled:hover { background: none; }
+.sio-limit-msg { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
 
 /* ── Product group ──────────────────────────────────────────────────────────────── */
 .sio-product-list { margin-top: var(--mp-spacing-4); display: flex; flex-direction: column; gap: 0; }

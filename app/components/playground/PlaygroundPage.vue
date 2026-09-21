@@ -10,12 +10,14 @@ import TablePlayground from './TablePlayground.vue'
 import FilterBarPlayground from './FilterBarPlayground.vue'
 import PaginationPlayground from './PaginationPlayground.vue'
 import StatusBadgePlayground from './StatusBadgePlayground.vue'
+import LineBudgetPlayground from './LineBudgetPlayground.vue'
 
 const tabs = [
   { key: 'table',      label: 'Table',        comp: TablePlayground },
   { key: 'filterbar',  label: 'Filter Bar',   comp: FilterBarPlayground },
   { key: 'pagination', label: 'Pagination',   comp: PaginationPlayground },
   { key: 'badge',      label: 'Status Badge', comp: StatusBadgePlayground },
+  { key: 'linebudget', label: 'Line Budget',  comp: LineBudgetPlayground },
 ] as const
 
 const active = ref<(typeof tabs)[number]['key']>('table')

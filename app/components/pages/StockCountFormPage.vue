@@ -12,6 +12,8 @@ import SelectProductDrawer, { type PickerProduct } from '~/components/patterns/S
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
+import LineBudgetCounter from '~/components/patterns/LineBudgetCounter.vue'
+import { STOCK_ADJUSTMENT_LINE_CAP, STOCK_ADJUSTMENT_COUNTER_SHOW_FROM } from '~/utils/stockAdjustmentLimits'
 import { warehouses } from '~/data/warehouses'
 import { productBySku, PRODUCTS } from '~/data/inventory'
 import { getWarehouseDetail, getLocationStock } from '~/data/warehouseDetails'
@@ -86,6 +88,13 @@ function isSerialTrackedSku(sku: string): boolean {
   return p ? SERIAL_CATS.has(p.category) : false
 }
 
+// ── Shared line budget (Stock Adjustment: pooled Product-Batch cap) ────────────────
+// One shared 10,000-line pool across the whole document — a batch-tracked row
+// contributes its committed batch count, everything else contributes exactly 1.
+function productLineCount(sku: string, batchLines?: CommittedBatch[]): number {
+  return isBatchTrackedSku(sku) ? (batchLines?.length ?? 0) : 1
+}
+
 // ── Product rows (each a counted product) ──────────────────────────────────────────
 interface CountRow { sku: string; counted: string; countedError: boolean; avgMode: 'auto' | 'custom'; avgCostInput: string; batchLines?: CommittedBatch[]; serialLines?: string[] }
 const rows = ref<CountRow[]>([])
@@ -106,6 +115,11 @@ function saveBatchLines(batches: CommittedBatch[]) {
   if (!batchDrawerRow.value) return
   batchDrawerRow.value.batchLines = batches
 }
+// Rest-of-document line count with the currently-open drawer's own (pre-edit)
+// contribution excluded, so the drawer's live working total isn't double-counted.
+const batchDrawerBaseLines = computed(() =>
+  batchDrawerRow.value ? usedLines.value - (batchDrawerRow.value.batchLines?.length ?? 0) : 0,
+)
 function batchHasCounts(row: CountRow): boolean {
   return (row.batchLines ?? []).some(b => b.counted !== null)
 }
@@ -353,6 +367,11 @@ const locationDrawerOpen = ref(false)
 const selectedLocations = ref<LocEntry[]>([])
 watch(warehouseId, () => { selectedLocations.value = []; assigneeId.value = '' })
 
+const usedLines = computed(() => hasStorageLocs.value
+  ? selectedLocations.value.reduce((sum, loc) => sum + loc.rows.reduce((s, r) => s + productLineCount(r.sku, r.batchLines), 0), 0)
+  : rows.value.reduce((s, r) => s + productLineCount(r.sku, r.batchLines), 0))
+const atLineCap = computed(() => usedLines.value >= STOCK_ADJUSTMENT_LINE_CAP)
+
 // Builds location groups directly from a flat SKU list (used for preselect deep-links,
 // e.g. from Cycle count recommendations) — the location-grouped table is the only mode.
 function rebuildLocsBySkus(skus: string[]) {
@@ -489,6 +508,9 @@ function saveLocBatchLines(batches: CommittedBatch[]) {
   if (!locBatchDrawerRow.value) return
   locBatchDrawerRow.value.batchLines = batches
 }
+const locBatchDrawerBaseLines = computed(() =>
+  locBatchDrawerRow.value ? usedLines.value - (locBatchDrawerRow.value.batchLines?.length ?? 0) : 0,
+)
 function locBatchHasCounts(row: LocRow): boolean {
   return (row.batchLines ?? []).some(b => b.counted !== null)
 }
@@ -683,6 +705,7 @@ onMounted(() => {
 
         <!-- Product table toolbar -->
         <div class="scf-table-toolbar">
+          <LineBudgetCounter :used="usedLines" :cap="STOCK_ADJUSTMENT_LINE_CAP" :show-from="STOCK_ADJUSTMENT_COUNTER_SHOW_FROM" />
           <MpPopover v-if="!isWms" id="scf-progress" is-close-on-select>
             <MpPopoverTrigger>
               <button class="scf-progress-btn" :class="{ 'scf-progress-btn--placeholder': progress === '' }" type="button">
@@ -855,9 +878,10 @@ onMounted(() => {
                   </table>
                 </div>
                 <p class="scf-showing">{{ t('Showing') }} {{ locDisplayRows(loc).length }} {{ t('of') }} {{ loc.rows.length }} {{ t('products') }}</p>
-                <button class="scf-add-btn" type="button" @click="loc.productDrawerOpen = true">
+                <button class="scf-add-btn" type="button" :disabled="atLineCap" @click="loc.productDrawerOpen = true">
                   <MpIcon name="add" size="sm" /> {{ t('Select product') }}
                 </button>
+                <p v-if="atLineCap" class="scf-limit-msg">{{ t('Maximum 10.000 lines reached. Remove a product or batch to add more') }}</p>
 
                 <!-- Product drawer per location -->
                 <SelectProductDrawer
@@ -984,9 +1008,10 @@ onMounted(() => {
             </table>
           </div>
           <p class="scf-showing">{{ t('Showing') }} {{ displayRows.length }} {{ t('of') }} {{ rows.length }} {{ t('products') }}</p>
-          <button class="scf-add-btn" type="button" @click="drawerOpen = true">
-            <MpIcon name="add" size="sm" /> Select product
+          <button class="scf-add-btn" type="button" :disabled="atLineCap" @click="drawerOpen = true">
+            <MpIcon name="add" size="sm" /> {{ t('Select product') }}
           </button>
+          <p v-if="atLineCap" class="scf-limit-msg">{{ t('Maximum 10.000 lines reached. Remove a product or batch to add more') }}</p>
           <p v-if="formError" class="scf-form-error">{{ formError }}</p>
         </div>
 
@@ -1088,8 +1113,22 @@ onMounted(() => {
       :sku="batchDrawerRow.sku"
       :warehouse-id="warehouseId"
       :model-value="batchDrawerRow.batchLines ?? []"
+      :document-base-lines="batchDrawerBaseLines"
+      :document-line-cap="STOCK_ADJUSTMENT_LINE_CAP"
       @update:open="batchDrawerOpen = $event"
       @save="saveBatchLines"
+    />
+    <ManageBatchDrawer
+      v-if="locBatchDrawerRow"
+      :open="locBatchDrawerOpen"
+      :sku="locBatchDrawerRow.sku"
+      :warehouse-id="warehouseId"
+      :location-on-hand="locBatchDrawerRow.onHand"
+      :model-value="locBatchDrawerRow.batchLines ?? []"
+      :document-base-lines="locBatchDrawerBaseLines"
+      :document-line-cap="STOCK_ADJUSTMENT_LINE_CAP"
+      @update:open="locBatchDrawerOpen = $event"
+      @save="saveLocBatchLines"
     />
     <ManageSerialDrawer
       v-if="serialDrawerRow"
@@ -1227,6 +1266,9 @@ onMounted(() => {
 .scf-del-btn:hover { background: var(--mp-background-neutral-subtle); color: var(--mp-text-danger, #dc2626); }
 .scf-add-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-3); background: none; border: none; padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-full, 999px); cursor: pointer; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular, 400); color: var(--mp-text-default); }
 .scf-add-btn:hover { background: var(--mp-background-neutral-subtle); }
+.scf-add-btn:disabled { cursor: not-allowed; opacity: 0.5; }
+.scf-add-btn:disabled:hover { background: none; }
+.scf-limit-msg { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
 .scf-form-error { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
 
 .scf-section { display: flex; flex-direction: column; gap: var(--mp-spacing-2); max-width: 440px; padding: var(--mp-spacing-6) 0; }
