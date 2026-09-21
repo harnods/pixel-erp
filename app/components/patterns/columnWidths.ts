@@ -21,6 +21,7 @@ export type ColumnKind =
   | 'amount'   // any monetary amount (balance due, total, price …)
   | 'tags'     // tag chips
   | 'unit'     // unit of measurement (pcs, kg …)
+  | 'rank'     // a short ordinal — rank, sequence, position (1, 2 … 10)
   | 'address'  // address or any content that can wrap to multiple lines
   | 'default'  // anything not defined above
 
@@ -44,6 +45,7 @@ export const COLUMN_WIDTH: Record<ColumnKind, ColWidthRange> = {
   amount:  { minWidth: '160px', maxWidth: '240px' },
   tags:    { minWidth: '160px', maxWidth: '240px' },
   unit:    { minWidth: '128px', maxWidth: '128px' }, // fixed
+  rank:    { minWidth: '88px',  maxWidth: '88px' },  // fixed — fits the header + sort control
   address: { minWidth: '200px', maxWidth: '240px' },
   default: { minWidth: '160px', maxWidth: '240px' },
 }

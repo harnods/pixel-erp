@@ -48,10 +48,11 @@ const { t } = useLocale()
 const scenario = ref('data')
 
 // ─── Columns ────────────────────────────────────────────────────────────────────
-// Rank leads — it IS the list's order. Rank is numeric, so it right-aligns. Three
+// Rank leads — it IS the list's order. It's a short ordinal label, so it takes the
+// fixed `rank` width and reads left-aligned like the columns beside it. Three
 // columns, so there's no column-settings menu to hide any of them.
 const columns: TableColumn[] = [
-  { key: 'rank', label: t('Rank'), align: 'right', sortable: true, sortType: 'number' },
+  { key: 'rank', label: t('Rank'), kind: 'rank', sortable: true, sortType: 'number' },
   { key: 'name', label: t('Name'), kind: 'name', sortable: true, sortType: 'text' },
   { key: 'description', label: t('Description'), kind: 'address' },
 ]

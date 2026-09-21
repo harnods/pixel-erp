@@ -189,6 +189,7 @@ actions `[...]` column stays flush right. Fixed types set min = max.
 | `amount` | **160px** | **240px** | Any monetary amount (balance due, total, price) — right-aligned, IDR |
 | `tags` | **160px** | **240px** | Tag chips (`ErpTagList`) |
 | `unit` | **128px** | **128px** (fixed) | Unit of measurement (pcs, kg, …) |
+| `rank` | **88px** | **88px** (fixed) | A short ordinal — rank, sequence or position (1, 2 … 10). Left-aligned: it's a label, not a magnitude to compare |
 | `address` | **200px** | **240px** | Address, or any content that can wrap to multiple lines |
 | `default` (unset) | **160px** | **240px** | Anything not covered above |
 
