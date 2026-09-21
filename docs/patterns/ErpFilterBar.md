@@ -240,5 +240,5 @@ page uses the current hand-rolled pill search, add the explicit trailing
 ## Related
 
 - [ErpTablePage.md](ErpTablePage.md) — the `#filters` slot lives here
-- [page-recipes.md](page-recipes.md) — full index-page recipe
+- [index-page-format.md](index-page-format.md) — full index-page recipe
 - [docs/README.md](../README.md) — docs home

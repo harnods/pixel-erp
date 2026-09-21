@@ -4,6 +4,7 @@ import { MpToastManager } from '@mekari/pixel3'
 import { useProductMenu } from '~/composables/useProductMenu'
 import { useReportFullscreen } from '~/composables/useReportFullscreen'
 import { isHrPath } from '~/utils/hrRoutes'
+import DevChangesOverlay from '~/components/patterns/DevChangesOverlay.vue'
 
 // The module nav follows the active product: Talenta (HR) on /hr* + the HR module
 // pages (Employee directory, etc.), Qontak (CRM) on /crm*, ERP otherwise.
@@ -31,6 +32,7 @@ const { isReportFullscreen } = useReportFullscreen()
       </div>
     </div>
     <MpToastManager />
+    <DevChangesOverlay />
   </div>
 </template>
 
@@ -132,7 +134,7 @@ body {
   display: flex;
   flex: 1;
   overflow: hidden;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   border-left: 2px solid var(--mp-background-surface-bold);
   border-right: 2px solid var(--mp-background-surface-bold);
   border-radius: 12px 12px 0 0;
@@ -160,6 +162,6 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
 }
 </style>

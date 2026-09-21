@@ -3,7 +3,7 @@
     <!-- Main nav (52px collapsed, 216px expanded) -->
     <nav class="sidebar" :class="{ 'is-expanded': navExpanded, 'arrow-left': arrowPointsLeft }" aria-label="Main navigation">
       <!-- Toggle -->
-      <div class="sidebar-header">
+      <div class="sidebar-header" data-devchange="sidebar-collapsed-tooltip">
         <button class="sidebar-toggle" @click="handleToggle" title="Toggle sidebar">
           <img :src="toggleIcon" alt="Toggle sidebar" />
         </button>
@@ -11,20 +11,42 @@
 
       <!-- Nav groups -->
       <div v-for="(group, gi) in navGroups" :key="gi" class="nav-group">
-        <button
-          v-for="item in group"
-          :key="item.name"
-          class="nav-item"
-          :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
-          :title="t(item.name)"
-          @click="() => handleNavClick(item)"
-          @mouseenter="(e) => handleItemMouseEnter(e, item)"
-          @mouseleave="scheduleClose"
-        >
-          <img :src="`https://cdn.mekari.design/icons/${item.iconLine ?? item.icon + '-outline'}.svg`" class="nav-icon-line" alt="" />
-          <img :src="`https://cdn.mekari.design/icons/${item.iconFill ?? item.icon + '-fill'}.svg`" class="nav-icon-fill" alt="" />
-          <span class="nav-label">{{ t(item.name) }}</span>
-        </button>
+        <template v-for="item in group" :key="item.name">
+          <!-- Collapsed rail: styled Pixel tooltip on hover. Rendered only when a
+               tooltip is wanted (see navItemTooltip) so an excluded/active item
+               carries no tooltip node at all — avoids a stale empty tooltip box. -->
+          <MpTooltip
+            v-if="navItemTooltip(item)"
+            :id="`erp-nav-tt-${item.name}`"
+            :label="navItemTooltip(item)!"
+            placement="right"
+            use-portal
+          >
+            <button
+              class="nav-item"
+              :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
+              @click="() => handleNavClick(item)"
+              @mouseenter="(e) => handleItemMouseEnter(e, item)"
+              @mouseleave="scheduleClose"
+            >
+              <img :src="`https://cdn.mekari.design/icons/${item.iconLine ?? item.icon + '-outline'}.svg`" class="nav-icon-line" alt="" />
+              <img :src="`https://cdn.mekari.design/icons/${item.iconFill ?? item.icon + '-fill'}.svg`" class="nav-icon-fill" alt="" />
+              <span class="nav-label">{{ t(item.name) }}</span>
+            </button>
+          </MpTooltip>
+          <button
+            v-else
+            class="nav-item"
+            :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
+            @click="() => handleNavClick(item)"
+            @mouseenter="(e) => handleItemMouseEnter(e, item)"
+            @mouseleave="scheduleClose"
+          >
+            <img :src="`https://cdn.mekari.design/icons/${item.iconLine ?? item.icon + '-outline'}.svg`" class="nav-icon-line" alt="" />
+            <img :src="`https://cdn.mekari.design/icons/${item.iconFill ?? item.icon + '-fill'}.svg`" class="nav-icon-fill" alt="" />
+            <span class="nav-label">{{ t(item.name) }}</span>
+          </button>
+        </template>
       </div>
     </nav>
 
@@ -120,7 +142,7 @@
 </template>
 
 <script setup lang="ts">
-import { MpIcon, MpBadge } from '@mekari/pixel3'
+import { MpIcon, MpBadge, MpTooltip } from '@mekari/pixel3'
 import toggleIconUrl from '~/assets/images/sidebar-toggle.svg?url'
 import shortcutIconUrl from '~/assets/images/shortcut-icon.svg?url'
 import { receiptCountsByStage } from '~/data/receipts'
@@ -311,6 +333,26 @@ const arrowPointsLeft = computed(() => navExpanded.value || (!!activePanel.value
 const flyoutGroups = computed<SubItem[][]>(
   () => flyoutItem.value?.submenu ?? (flyoutItem.value?.panelSubmenu as SubItem[][] | undefined) ?? [],
 )
+
+// Collapsed-rail hover tooltip (Pixel MpTooltip component). Only relevant while the
+// nav is collapsed to icons — once expanded the label is already visible next to
+// the icon. Suppressed in two cases:
+//  1. The item reveals a flyout on hover (a `submenu`, or a `panelSubmenu` that
+//     opted into a hover preview via flyoutOnHover, e.g. Reports). The flyout
+//     already names the section, and a tooltip would collide with it.
+//  2. The active item that owns a level-2 panel — its panel is already open and
+//     naming it, so a tooltip would be redundant.
+// A panel-only item that shows nothing on hover (e.g. Inventory, Settings) still
+// gets the tooltip when it isn't the active one.
+function navItemTooltip(item: NavItem) {
+  if (navExpanded.value) return undefined
+  const opensFlyout = !!item.submenu || (!!item.panelSubmenu && !!item.flyoutOnHover)
+  if (opensFlyout) return undefined
+  const hasLevel2 = !!(item.submenu || item.panelSubmenu)
+  const isActive = activeItem.value === item.name
+  if (isActive && hasLevel2) return undefined
+  return t(item.name)
+}
 
 // ─── Nav data ────────────────────────────────────────────────────────────────
 

@@ -37,11 +37,12 @@ import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import CrmTeamFormDrawer, { type CrmTeamDraft } from '~/components/patterns/CrmTeamFormDrawer.vue'
 import CrmUserAccessDrawer from '~/components/patterns/CrmUserAccessDrawer.vue'
 import {
-  CRM_OWNERS,
+  CRM_SETTINGS_USERS,
   crmTeams, CRM_TEAM_MODULES, type CrmTeam,
   crmTeamMemberOptions, teamMemberNames, teamNamesForPerson,
   upsertCrmTeam, crmTeamNameExists, setCrmTeamStatus, persistCrmTeams,
   type CrmPermSet, fullPermSet, defaultPermSet, permSummary, crmUserPermSet, setUserPermSet,
+  canManageUserAccess, canAssignTeamMembers,
 } from '~/data/crm'
 import { infoToast, successToast } from '~/utils/toasts'
 import { formatDate } from '~/utils/date'
@@ -82,13 +83,12 @@ type CrmUser = {
 // Per-user perms live in the shared store (crm.ts) so the whole CRM enforces them.
 // Rizal Candra is the signed-in workspace owner → full access by default;
 // everyone else starts on the read-only baseline (until edited via the drawer).
+// The account owner (Rizal) is always full access and can't be restricted here;
+// everyone else uses their saved set, or the §5.5.1 activated-user default.
 function permSetOf(id: string, isOwner: boolean): CrmPermSet {
-  return crmUserPermSet[id] ?? (isOwner ? fullPermSet() : defaultPermSet())
+  if (isOwner) return fullPermSet()
+  return crmUserPermSet[id] ?? defaultPermSet()
 }
-
-// ERP role — sourced from the ERP account (read-only here). The workspace owner is
-// the Company Owner; everyone else cycles through the standard ERP roles.
-const ERP_ROLE_CYCLE = ['Sales', 'Sales Manager', 'Marketing', 'Admin']
 
 // A user's effective CRM access is Enabled unless every permission is off.
 function accessEnabled(perms: CrmPermSet): boolean {
@@ -108,26 +108,25 @@ function modulesForUser(empId: string, perms: CrmPermSet): string[] {
   return mods
 }
 
-// A user can belong to MANY teams — resolved from the real Teams store
-// (teamNamesForPerson), so this column always matches the Teams index.
+// The Users roster (CRM_SETTINGS_USERS) — the ERP accounts granted a CRM access
+// mode. Name/ERP-role/status/join-date come from the roster; teams resolve from
+// the real Teams store, modules + access from the per-user perm set.
 const crmUsers = computed<CrmUser[]>(() =>
-  CRM_OWNERS.map((name, i) => {
-    const id = `CU${String(i + 1).padStart(2, '0')}`
-    const perms = permSetOf(id, name === 'Rizal Candra')
-    const empId = empIdByName(name) ?? ''
+  CRM_SETTINGS_USERS.map((u) => {
+    const perms = permSetOf(u.id, u.name === 'Rizal Candra')
+    const empId = empIdByName(u.name) ?? ''
     return {
-      id,
-      name,
-      email: emailFor(name),
+      id: u.id,
+      name: u.name,
+      email: emailFor(u.name),
       empId,
-      role: i === 0 ? 'Business owner' : ERP_ROLE_CYCLE[(i - 1) % ERP_ROLE_CYCLE.length]!,
-      teams: teamNamesForPerson(name),
+      role: u.erpRole,
+      teams: teamNamesForPerson(u.name),
       modules: modulesForUser(empId, perms),
-      status: i % 5 === 3 ? 'invited' : (i % 5 === 4 ? 'inactive' : 'active'),
-      // deterministic, coherent mock (no Date.now)
-      joinDate: `202${4 + (i % 2)}-${String(1 + (i % 12)).padStart(2, '0')}-${String(1 + (i % 27)).padStart(2, '0')}`,
-      lastUpdated: `2026-0${1 + (i % 9)}-${String(1 + ((i * 7) % 27)).padStart(2, '0')}T${String(8 + (i % 9)).padStart(2, '0')}:${String((i * 13) % 60).padStart(2, '0')}:00`,
-      lastUpdatedBy: CRM_OWNERS[(i + 1) % CRM_OWNERS.length]!,
+      status: u.status,
+      joinDate: u.joinDate,
+      lastUpdated: crmUserPermSet[u.id] ? '2026-09-12T10:00:00' : `${u.joinDate}T09:00:00`,
+      lastUpdatedBy: 'Rizal Candra',
       perms,
       accessLabel: permSummary(perms),
     }
@@ -205,33 +204,40 @@ function saveAccess() {
   successToast(t('CRM access updated'))
 }
 
-// ── Manage teams modal — add/remove a user across all CRM teams ──
-const userTeamsModalOpen = ref(false)
-const userTeamsUser = ref<CrmUser | null>(null)
-// Draft membership: team.id → is this user a member?
-const userTeamsDraft = reactive<Record<string, boolean>>({})
-function openUserTeams(row: CrmUser) {
+// ── Assign to team drawer — add/remove a user across active CRM teams at once
+//    (two-pane "pick many" SelectAccessDrawer). Opened from the row menu + the
+//    Team cell. Only offered when the acting user can assign team members. ──
+const assignTeamOpen = ref(false)
+const assignTeamUser = ref<CrmUser | null>(null)
+const assignTeamOptions = computed(() =>
+  crmTeams.filter((tm) => tm.status === 'active').map((tm) => ({ id: tm.id, name: tm.name, subtitle: tm.description })),
+)
+// Teams the user currently belongs to (committed value the drawer reseeds from).
+const assignTeamSelected = computed<string[]>(() => {
+  const empId = assignTeamUser.value?.empId
+  return empId ? crmTeams.filter((tm) => tm.memberIds.includes(empId)).map((tm) => tm.id) : []
+})
+function openAssignTeam(row: CrmUser) {
   if (!row.empId) return
-  userTeamsUser.value = row
-  for (const k of Object.keys(userTeamsDraft)) delete userTeamsDraft[k]
-  for (const tm of crmTeams) userTeamsDraft[tm.id] = tm.memberIds.includes(row.empId)
-  userTeamsModalOpen.value = true
+  assignTeamUser.value = row
+  assignTeamOpen.value = true
 }
-function saveUserTeams() {
-  const u = userTeamsUser.value
-  if (!u || !u.empId) { userTeamsModalOpen.value = false; return }
+function saveAssignTeam(ids: string[]) {
+  const u = assignTeamUser.value
+  if (!u || !u.empId) { assignTeamOpen.value = false; return }
+  const want = new Set(ids)
   for (const tm of crmTeams) {
-    const shouldBeMember = !!userTeamsDraft[tm.id]
+    if (tm.status !== 'active') continue
     const isMember = tm.memberIds.includes(u.empId)
-    if (shouldBeMember && !isMember) {
+    if (want.has(tm.id) && !isMember) {
       tm.memberIds = [...tm.memberIds, u.empId]
-    } else if (!shouldBeMember && isMember) {
+    } else if (!want.has(tm.id) && isMember) {
       tm.memberIds = tm.memberIds.filter((id) => id !== u.empId)
       tm.adminIds = tm.adminIds.filter((id) => id !== u.empId)
     }
   }
   persistCrmTeams()
-  userTeamsModalOpen.value = false
+  assignTeamOpen.value = false
   successToast(t('Teams updated'))
 }
 
@@ -537,18 +543,20 @@ const integrations: Integration[] = [
           </template>
           <template #cell-role="{ row }">{{ t((row as CrmUser).role) }}</template>
           <template #cell-status="{ value }"><ErpStatusBadge :status="(value as string)" :label="STATUS_LABEL[value as string]" /></template>
-          <!-- Team — clickable, opens the Manage teams modal for this user -->
+          <!-- Team — clickable (when the actor can assign members), opens the
+               Assign-to-team drawer for this user -->
           <template #cell-teams="{ row }">
             <span
-              v-if="(row as CrmUser).empId"
-              class="cell-link"
+              v-if="(row as CrmUser).empId && canAssignTeamMembers() && (row as CrmUser).status === 'active'"
+              class="cell-teams-link"
               role="button"
               tabindex="0"
-              @click.stop="openUserTeams(row as CrmUser)"
-              @keydown.enter.stop="openUserTeams(row as CrmUser)"
+              :aria-label="`${t('Assign to team')} · ${(row as CrmUser).name}`"
+              @click.stop="openAssignTeam(row as CrmUser)"
+              @keydown.enter.stop="openAssignTeam(row as CrmUser)"
             >
               <ErpTagList v-if="(row as CrmUser).teams.length" :tags="(row as CrmUser).teams" />
-              <span v-else>{{ t('Manage teams') }}</span>
+              <span v-else class="cell-teams-empty">{{ t('Assign to team') }}</span>
             </span>
             <ErpTagList v-else-if="(row as CrmUser).teams.length" :tags="(row as CrmUser).teams" />
             <span v-else>—</span>
@@ -558,16 +566,22 @@ const integrations: Integration[] = [
             <LastUpdatedCell :at="(row as unknown as CrmUser).lastUpdated" :by="(row as unknown as CrmUser).lastUpdatedBy" />
           </template>
 
-          <!-- Row actions: Manage CRM access (the redundant enabled/disabled column
-               was removed — everyone in this list already has CRM access). -->
+          <!-- Row actions — each item appears only when the ACTING user has the
+               matching access: "Manage CRM permissions" needs Edit User Access
+               (owner), "Assign to team" needs Create/Edit Teams. No access to
+               either → no menu at all. Invited rows can't be team-assigned. -->
           <template #actions="{ row }">
-            <MpPopover :id="`cru-actions-${(row as CrmUser).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopover
+              v-if="canManageUserAccess() || canAssignTeamMembers()"
+              :id="`cru-actions-${(row as CrmUser).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end"
+            >
               <MpPopoverTrigger>
                 <MpButton class="row-kebab" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
               </MpPopoverTrigger>
               <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                 <MpPopoverList>
-                  <MpPopoverListItem @click="openAccess(row as CrmUser)">{{ t('Manage CRM access') }}</MpPopoverListItem>
+                  <MpPopoverListItem v-if="canManageUserAccess()" @click="openAccess(row as CrmUser)">{{ t('Manage CRM permissions') }}</MpPopoverListItem>
+                  <MpPopoverListItem v-if="canAssignTeamMembers() && (row as CrmUser).empId && (row as CrmUser).status === 'active'" @click="openAssignTeam(row as CrmUser)">{{ t('Assign to team') }}</MpPopoverListItem>
                 </MpPopoverList>
               </MpPopoverContent>
             </MpPopover>
@@ -710,39 +724,18 @@ const integrations: Integration[] = [
       @save="saveAccess"
     />
 
-    <!-- ── Users: Manage teams modal (add/remove this user across CRM teams) ── -->
-    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
-      id="cru-teams-modal"
-      :is-open="userTeamsModalOpen"
-      size="md"
-      :is-keep-alive="false"
-      @close="userTeamsModalOpen = false"
-    >
-      <MpModalContent>
-        <MpModalHeader>
-          {{ t('Manage teams') }} · {{ userTeamsUser?.name }}
-          <MpModalCloseButton />
-        </MpModalHeader>
-        <MpModalBody>
-          <ul class="cru-teams-list">
-            <li v-for="tm in crmTeams" :key="tm.id" class="cru-teams-row">
-              <MpCheckbox
-                :id="`cru-team-${tm.id}`"
-                :is-checked="userTeamsDraft[tm.id] ?? false"
-                @update:is-checked="(v: boolean) => (userTeamsDraft[tm.id] = v)"
-              >{{ tm.name }}</MpCheckbox>
-            </li>
-          </ul>
-        </MpModalBody>
-        <MpModalFooter>
-          <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="userTeamsModalOpen = false">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="saveUserTeams">{{ t('Save changes') }}</button>
-          </div>
-        </MpModalFooter>
-      </MpModalContent>
-      <MpModalOverlay />
-    </MpModal>
+    <!-- ── Users: Assign-to-team drawer (add this user to several teams at once) ── -->
+    <SelectAccessDrawer
+      :open="assignTeamOpen"
+      :title="assignTeamUser ? `${t('Assign to team')} · ${assignTeamUser.name}` : t('Assign to team')"
+      :list-title="t('Teams')"
+      :options="assignTeamOptions"
+      :model-value="assignTeamSelected"
+      :empty-title="t('No teams selected')"
+      :empty-caption="t('Pick teams from the left to add this user to them.')"
+      @update:open="assignTeamOpen = $event"
+      @save="saveAssignTeam"
+    />
 
     <!-- ── Teams: New/Edit drawer → swaps to the two-pane member picker ── -->
     <CrmTeamFormDrawer
@@ -871,6 +864,18 @@ const integrations: Integration[] = [
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .cell-link { color: var(--mp-colors-text-link, #165082); text-decoration: none; cursor: pointer; }
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+/* Team cell — the WHOLE cell is the click target (opens Assign-to-team), so a
+   click anywhere in the column works, not just exactly on a chip. */
+.cell-teams-link {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--mp-spacing-1);
+  width: 100%; min-height: var(--mp-sizes-8, 32px);
+  margin: calc(-1 * var(--mp-spacing-1)) calc(-1 * var(--mp-spacing-2));
+  padding: var(--mp-spacing-1) var(--mp-spacing-2);
+  border-radius: var(--mp-radii-md, 6px); cursor: pointer;
+}
+.cell-teams-link:hover { background: var(--mp-colors-background-neutral-subtle, #f8f9f9); }
+.cell-teams-empty { color: var(--mp-colors-text-link, #165082); }
+.cell-teams-link:hover .cell-teams-empty { text-decoration: underline; text-underline-offset: 2px; }
 .cru-action--danger :deep(*), .cru-action--danger { color: var(--mp-colors-text-danger, #a8352d); }
 
 /* Accessible-modules tag chips (Teams table) */

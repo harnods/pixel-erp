@@ -15,6 +15,8 @@ export interface CrmDealsFiltersValue {
   owners: string[]
   customerComparator: TagsComparator
   customers: string[]
+  /** AdvancedDateRangePicker range on the deal's expected close date — null = not applied. */
+  closeDate: Date[] | null
 }
 
 export function emptyCrmDealsFilters(): CrmDealsFiltersValue {
@@ -23,6 +25,7 @@ export function emptyCrmDealsFilters(): CrmDealsFiltersValue {
     valueComparator: 'gt', value: '', valueMin: '', valueMax: '',
     ownerComparator: 'isAnyOf', owners: [],
     customerComparator: 'isAnyOf', customers: [],
+    closeDate: null,
   }
 }
 </script>
@@ -39,6 +42,16 @@ import { reactive, ref, computed, watch } from 'vue'
 import { MpIcon, MpButton, MpFormControl, MpFormLabel, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 import AmountComparatorField from '~/components/patterns/AmountComparatorField.vue'
 import ErpTagComparatorField from '~/components/patterns/ErpTagComparatorField.vue'
+import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
+
+// Close-date quick presets (Figma / request): Today · This week · This month ·
+// Next month, plus Custom date range (the picker adds Custom automatically).
+const CLOSE_DATE_PRESETS = [
+  { key: 'today' as const, label: 'Today' },
+  { key: 'thisWeek' as const, label: 'This week' },
+  { key: 'thisMonth' as const, label: 'This month' },
+  { key: 'nextMonth' as const, label: 'Next month' },
+]
 
 const props = defineProps<{
   id: string
@@ -150,6 +163,22 @@ const keywordColumnLabel = computed(() =>
               :placeholder="customerPlaceholder || 'Type a customer…'"
               @update:comparator="draft.customerComparator = $event"
               @update:values="draft.customers = $event"
+            />
+          </div>
+
+          <!-- Close date — advanced date range picker (Today / This week / This
+               month / Next month / Custom date range). Self-contained trigger, so
+               it uses a plain bold field label, not MpFormControl. -->
+          <div class="cdf-field">
+            <span class="cdf-field-label">Close date</span>
+            <AdvancedDateRangePicker
+              :id="`${id}-closedate`"
+              :model-value="draft.closeDate"
+              :presets="CLOSE_DATE_PRESETS"
+              is-full-width
+              hide-label
+              placeholder="Select close date"
+              @update:model-value="draft.closeDate = $event"
             />
           </div>
         </div>

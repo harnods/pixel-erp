@@ -1020,13 +1020,18 @@ export interface CrmTeam {
 }
 
 const TEAMS_SEED: CrmTeam[] = [
-  { id: 'TEAM-01', name: 'Sales',     description: 'Owns the deal pipeline and closes accounts', memberIds: ['EMP-0001', 'EMP-0010', 'EMP-0005'], adminIds: ['EMP-0001'], modules: ['deals'], status: 'active', createdAt: '2026-06-01T09:00:00', createdBy: 'Rizal Candra', updatedAt: '2026-09-02T14:30:00', updatedBy: 'Rizal Candra' },
-  { id: 'TEAM-02', name: 'Marketing', description: 'Generates and nurtures new leads',           memberIds: ['EMP-0005'],                        adminIds: ['EMP-0005'], modules: [],        status: 'active', createdAt: '2026-07-15T10:00:00', createdBy: 'Dewi Lestari', updatedAt: '2026-08-28T09:15:00', updatedBy: 'Dewi Lestari' },
+  { id: 'TEAM-01', name: 'Sales',            description: 'Owns the deal pipeline and closes accounts',       memberIds: ['EMP-0001', 'EMP-0010', 'EMP-0008', 'EMP-0002'], adminIds: ['EMP-0001'],            modules: ['deals'], status: 'active',   createdAt: '2026-06-01T09:00:00', createdBy: 'Rizal Candra', updatedAt: '2026-09-02T14:30:00', updatedBy: 'Rizal Candra' },
+  { id: 'TEAM-02', name: 'Marketing',        description: 'Generates and nurtures new leads',                 memberIds: ['EMP-0005', 'EMP-0007', 'EMP-0009'],            adminIds: ['EMP-0005'],            modules: [],        status: 'active',   createdAt: '2026-07-15T10:00:00', createdBy: 'Dewi Lestari', updatedAt: '2026-08-28T09:15:00', updatedBy: 'Dewi Lestari' },
+  { id: 'TEAM-03', name: 'Enterprise Sales', description: 'Named accounts and large-deal pursuits',           memberIds: ['EMP-0012', 'EMP-0010', 'EMP-0015'],            adminIds: ['EMP-0012'],            modules: ['deals'], status: 'active',   createdAt: '2026-07-20T11:00:00', createdBy: 'Rizal Candra', updatedAt: '2026-09-04T16:00:00', updatedBy: 'Hendra Gunawan' },
+  { id: 'TEAM-04', name: 'Customer Success',  description: 'Onboards and retains existing customers',          memberIds: ['EMP-0004', 'EMP-0013', 'EMP-0011'],            adminIds: ['EMP-0004'],            modules: [],        status: 'active',   createdAt: '2026-08-01T09:30:00', createdBy: 'Dewi Lestari', updatedAt: '2026-09-01T10:20:00', updatedBy: 'Dewi Lestari' },
+  { id: 'TEAM-05', name: 'Partnerships',      description: 'Channel and reseller relationships',              memberIds: ['EMP-0002', 'EMP-0016'],                       adminIds: ['EMP-0002'],            modules: ['deals'], status: 'active',   createdAt: '2026-08-10T13:00:00', createdBy: 'Rizal Candra', updatedAt: '2026-08-30T09:00:00', updatedBy: 'Anita Wijaya' },
+  { id: 'TEAM-06', name: 'Inbound SDR',       description: 'Qualifies inbound leads for the sales teams',      memberIds: ['EMP-0008', 'EMP-0009'],                       adminIds: ['EMP-0008'],            modules: [],        status: 'inactive', createdAt: '2026-08-18T08:45:00', createdBy: 'Dewi Lestari', updatedAt: '2026-09-03T15:10:00', updatedBy: 'Dewi Lestari' },
 ]
 
-// Storage key bumped to v2 — the Team shape gained status/adminIds/createdAt.
-export const crmTeams = reactive<CrmTeam[]>(load('crm-teams-v2', TEAMS_SEED))
-export function persistCrmTeams() { saveSnapshot('crm-teams-v2', crmTeams) }
+// Storage key bumped to v3 — the seed gained more Teams (Enterprise Sales,
+// Customer Success, Partnerships, Inbound SDR) for a fuller demo roster.
+export const crmTeams = reactive<CrmTeam[]>(load('crm-teams-v3', TEAMS_SEED))
+export function persistCrmTeams() { saveSnapshot('crm-teams-v3', crmTeams) }
 
 /** Member picker options — active employees as { id, name, subtitle=jobPosition }. */
 export const crmTeamMemberOptions = computed(() =>
@@ -1144,9 +1149,12 @@ export interface CrmModuleView {
 }
 
 export type CrmModuleStatus = 'published' | 'draft' | 'incomplete'
-export type CrmConversionTarget = 'sales-quote' | 'sales-order' | 'expense' | null
+// PRD "ERP Transaction Conversion Settings V1": targets are Sales Quote + Sales
+// Order ONLY. Expense is fully deferred and intentionally NOT a member here — the
+// module has no Expense conversion entry point anywhere.
+export type CrmConversionTarget = 'sales-quote' | 'sales-order' | null
 export const CRM_CONVERSION_LABELS: Record<Exclude<CrmConversionTarget, null>, string> = {
-  'sales-quote': 'Sales Quote', 'sales-order': 'Sales Order', expense: 'Expense',
+  'sales-quote': 'Sales Quote', 'sales-order': 'Sales Order',
 }
 
 export interface CrmModule {
@@ -1192,13 +1200,14 @@ const MODULES_SEED: CrmModule[] = [
     sections: ['Deal information', 'Products & value'],
     fields: [
       { id: 'name',     label: 'Deal name',          type: 'text',         required: true,  system: true, isPrimary: true, section: 'Deal information', column: 1 },
-      { id: 'customer', label: 'Customer',           type: 'customer',     required: true,  system: true,  section: 'Deal information', column: 1 },
+      { id: 'customer', label: 'Company',            type: 'customer',     required: true,  system: true,  section: 'Deal information', column: 1 },
       { id: 'stage',    label: 'Stage',              type: 'pick-list',    required: true,  system: true,  options: DEAL_STAGE_OPTIONS, section: 'Deal information', column: 2 },
       { id: 'owner',    label: 'Owner',              type: 'user',         required: true,  system: true,  section: 'Deal information', column: 2 },
       { id: 'priority', label: 'Priority',           type: 'pick-list',    required: false, system: false, options: ['Low', 'Medium', 'High', 'Critical'], section: 'Deal information', column: 2 },
       { id: 'products', label: 'Products',           type: 'product-list', required: false, system: true,  section: 'Products & value', column: 1 },
       { id: 'value',    label: 'Value',              type: 'currency',     required: false, system: false, section: 'Products & value', column: 2 },
       { id: 'closeDate',label: 'Expected close date',type: 'date',         required: false, system: false, section: 'Products & value', column: 2 },
+      { id: 'dueDate',  label: 'Due date',           type: 'date',         required: false, system: false, section: 'Products & value', column: 2 },
       { id: 'source',   label: 'Lead source',        type: 'radio',        required: false, system: false, options: ['Referral', 'Website', 'Outbound', 'Event'] }, // in Unused Fields (no section)
     ],
     layoutDriver: 'stage',
@@ -1217,7 +1226,7 @@ const MODULES_SEED: CrmModule[] = [
     sections: ['Service information', 'Scope & value'],
     fields: [
       { id: 'name',     label: 'Service name',       type: 'text',      required: true,  system: true, isPrimary: true, section: 'Service information', column: 1 },
-      { id: 'customer', label: 'Customer',           type: 'customer',  required: true,  system: true,  section: 'Service information', column: 1 },
+      { id: 'customer', label: 'Company',            type: 'customer',  required: true,  system: true,  section: 'Service information', column: 1 },
       { id: 'stage',    label: 'Stage',              type: 'pick-list', required: true,  system: true,  options: ['Inquiry', 'Scoping', 'Proposal', 'In progress', 'Completed', 'Cancelled'], section: 'Service information', column: 2 },
       { id: 'owner',    label: 'Owner',              type: 'user',      required: true,  system: true,  section: 'Service information', column: 2 },
       { id: 'type',     label: 'Service type',       type: 'pick-list', required: false, system: false, options: ['Consultation', 'Machine service', 'Training', 'Installation'], section: 'Service information', column: 2 },
@@ -1235,8 +1244,8 @@ const MODULES_SEED: CrmModule[] = [
   },
 ]
 
-export const crmModules = reactive<CrmModule[]>(load('crm-modules-v2', MODULES_SEED))
-export function persistCrmModules() { saveSnapshot('crm-modules-v2', crmModules) }
+export const crmModules = reactive<CrmModule[]>(load('crm-modules-v3', MODULES_SEED))
+export function persistCrmModules() { saveSnapshot('crm-modules-v3', crmModules) }
 
 // ── Deal pipelines (Settings ▸ Deals ▸ Pipeline) ─────────────────────────────
 // A pipeline = an ordered list of OPEN stages that flow left→right, plus exactly
@@ -1294,6 +1303,25 @@ export const dealPipelineDisplay = reactive<DealPipelineDisplay>(
     ?? JSON.parse(JSON.stringify(DEAL_PIPELINE_DISPLAY_SEED)),
 )
 export function persistDealPipelineDisplay() { saveSnapshot('crm-deal-pipeline-display-v1', [dealPipelineDisplay]) }
+
+/** Saved pipeline VIEWS — named board configs created in the module builder
+ *  (Settings ▸ Deals ▸ Pipeline). Each view can hide stages independently; the
+ *  module's Kanban board renders one tab per view. The first ('default') is the
+ *  built-in Default view (all stages shown). Persisted per module. */
+export interface DealPipelineView { id: string; name: string; hiddenStageIds: string[]; display: DealPipelineDisplay }
+const DEAL_PIPELINE_VIEWS_SEED: DealPipelineView[] = [
+  { id: 'default', name: 'Default view', hiddenStageIds: [], display: JSON.parse(JSON.stringify(DEAL_PIPELINE_DISPLAY_SEED)) },
+]
+/** Back-fill `display` (per-view board config) for views saved before it existed,
+ *  seeding from the module's shared display so nothing visually changes on upgrade. */
+function backfillViewDisplays(views: DealPipelineView[], fallback: DealPipelineDisplay): DealPipelineView[] {
+  for (const v of views) { if (!v.display) v.display = JSON.parse(JSON.stringify(fallback)) }
+  return views
+}
+export const dealPipelineViews = reactive<DealPipelineView[]>(
+  backfillViewDisplays(load('crm-deal-pipeline-views-v1', DEAL_PIPELINE_VIEWS_SEED), dealPipelineDisplay),
+)
+export function persistDealPipelineViews() { saveSnapshot('crm-deal-pipeline-views-v1', dealPipelineViews) }
 
 /** Deals module Setup-tab settings (base currency, default close date). */
 export interface DealModuleSetup {
@@ -1482,7 +1510,7 @@ export function defaultPropertyIcon(fieldType: string): string {
 // them). Association types (Company / Contact) reference another record — their
 // linkedFields live on that record, not on the module.
 export const DEFAULT_PROPERTIES: DefaultProperty[] = [
-  { id: 'customer', name: 'Customer', fieldType: 'Company', variableName: 'customer', description: 'The company this record belongs to. Links to a Company record; its own fields live on the company.', dataSource: { label: 'Companies (crmCustomers)', origin: 'crm' }, linkedFields: [
+  { id: 'customer', name: 'Company', fieldType: 'Company', variableName: 'customer', description: 'The company this record belongs to. Links to a Company record; its own fields live on the company.', dataSource: { label: 'Companies (crmCustomers)', origin: 'crm' }, linkedFields: [
     { name: 'Company name', type: 'Single-line text', variableName: 'company_name' }, { name: 'Industry', type: 'Dropdown select', variableName: 'industry' },
     { name: 'Address', type: 'Multi-line text', variableName: 'address' }, { name: 'Country', type: 'Dropdown select', variableName: 'country' },
     { name: 'Tax number (NPWP)', type: 'Single-line text', variableName: 'tax_number' }, { name: 'Company owner', type: 'User', variableName: 'company_owner' },
@@ -1557,6 +1585,8 @@ export interface DealProperty {
   /** True for the predefined DEFAULT properties (from DEFAULT_PROPERTIES) that every
    *  module gets — non-editable in the module builder, listed in Settings ▸ Properties. */
   isDefault?: boolean
+  /** User who created a custom property. System/default properties omit this. */
+  createdBy?: string
   config?: DealPropertyConfig
 }
 function propId(name: string): string { return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }
@@ -1649,7 +1679,10 @@ const DEAL_PROPERTIES_SEED: DealProperty[] = withDefaultProperties(
     id: propId(name), name, variableName: toVariableName(name), type, system: true, fillRate,
   })),
 )
-export const dealProperties = reactive<DealProperty[]>(load('crm-deal-properties-v8', DEAL_PROPERTIES_SEED))
+function normalizeDealProperties(list: DealProperty[]): DealProperty[] {
+  return list.map((p) => (p.id === 'customer' && p.name === 'Customer' ? { ...p, name: 'Company' } : p))
+}
+export const dealProperties = reactive<DealProperty[]>(normalizeDealProperties(load('crm-deal-properties-v8', DEAL_PROPERTIES_SEED)))
 export function persistDealProperties() { saveSnapshot('crm-deal-properties-v8', dealProperties) }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1681,6 +1714,11 @@ export const servicePipelineDisplay = reactive<DealPipelineDisplay>(
 )
 export function persistServicePipelineDisplay() { saveSnapshot('crm-service-pipeline-display-v1', [servicePipelineDisplay]) }
 
+export const servicePipelineViews = reactive<DealPipelineView[]>(
+  backfillViewDisplays(load('crm-service-pipeline-views-v1', DEAL_PIPELINE_VIEWS_SEED), servicePipelineDisplay),
+)
+export function persistServicePipelineViews() { saveSnapshot('crm-service-pipeline-views-v1', servicePipelineViews) }
+
 const SERVICE_MODULE_SETUP_SEED: DealModuleSetup = {
   baseCurrency: 'IDR', applyCloseDate: true, closeMode: 'period',
   closePeriod: 'this-month', closeAmount: 1, closeUnit: 'days',
@@ -1702,7 +1740,7 @@ const SERVICE_PROPERTIES_SEED: DealProperty[] = withDefaultProperties(
     id: propId(name), name, variableName: toVariableName(name), type, system: true, fillRate,
   })),
 )
-export const serviceProperties = reactive<DealProperty[]>(load('crm-service-properties-v3', SERVICE_PROPERTIES_SEED))
+export const serviceProperties = reactive<DealProperty[]>(normalizeDealProperties(load('crm-service-properties-v3', SERVICE_PROPERTIES_SEED)))
 export function persistServiceProperties() { saveSnapshot('crm-service-properties-v3', serviceProperties) }
 
 const SERVICE_DETAIL_LAYOUT_SEED: DealDetailLayout = {
@@ -1742,6 +1780,7 @@ function newStageId(): string { return `stage-${genericStageSeq++}` }
 export interface GenericModuleConfig {
   pipelines: DealPipeline[]
   display: DealPipelineDisplay
+  views: DealPipelineView[]
   setup: DealModuleSetup
   properties: DealProperty[]
   detailLayout: DealDetailLayout
@@ -1781,13 +1820,19 @@ function newGenericModuleConfig(moduleId: string): GenericModuleConfig {
       ],
     }],
     display: JSON.parse(JSON.stringify(DEAL_PIPELINE_DISPLAY_SEED)),
+    views: JSON.parse(JSON.stringify(DEAL_PIPELINE_VIEWS_SEED)),
     setup: { baseCurrency: 'IDR', applyCloseDate: true, closeMode: 'period', closePeriod: 'this-month', closeAmount: 30, closeUnit: 'days' },
     properties: defaultDealProperties(),
     detailLayout: genericDetailLayoutSeed(moduleId),
   }
 }
 function ensureGenericModuleConfig(moduleId: string): GenericModuleConfig {
-  return genericModuleConfigs[moduleId] ?? (genericModuleConfigs[moduleId] = newGenericModuleConfig(moduleId))
+  const cfg = genericModuleConfigs[moduleId] ?? (genericModuleConfigs[moduleId] = newGenericModuleConfig(moduleId))
+  // Back-fill `views` for snapshots saved before per-view boards existed.
+  if (!Array.isArray(cfg.views)) cfg.views = JSON.parse(JSON.stringify(DEAL_PIPELINE_VIEWS_SEED))
+  // Back-fill each view's `display` (added after views), seeding from module display.
+  backfillViewDisplays(cfg.views, cfg.display)
+  return cfg
 }
 /** Discard an in-memory (unsaved) scratch config — used for the 'new' module id so a
  *  fresh module-creation session always starts from a clean seed, not a prior attempt. */
@@ -1808,6 +1853,7 @@ export function moduleStores(id: string) {
     return {
       pipelines: servicePipelines, persistPipelines: persistServicePipelines,
       display: servicePipelineDisplay, persistDisplay: persistServicePipelineDisplay,
+      views: servicePipelineViews, persistViews: persistServicePipelineViews,
       setup: serviceModuleSetup, persistSetup: persistServiceModuleSetup,
       properties: serviceProperties, persistProperties: persistServiceProperties,
       detailLayout: serviceDetailLayout, persistDetailLayout: persistServiceDetailLayout,
@@ -1817,6 +1863,7 @@ export function moduleStores(id: string) {
     return {
       pipelines: dealPipelines, persistPipelines: persistDealPipelines,
       display: dealPipelineDisplay, persistDisplay: persistDealPipelineDisplay,
+      views: dealPipelineViews, persistViews: persistDealPipelineViews,
       setup: dealModuleSetup, persistSetup: persistDealModuleSetup,
       properties: dealProperties, persistProperties: persistDealProperties,
       detailLayout: dealDetailLayout, persistDetailLayout: persistDealDetailLayout,
@@ -1826,6 +1873,7 @@ export function moduleStores(id: string) {
   return {
     pipelines: cfg.pipelines, persistPipelines: persistGenericModuleConfigs,
     display: cfg.display, persistDisplay: persistGenericModuleConfigs,
+    views: cfg.views, persistViews: persistGenericModuleConfigs,
     setup: cfg.setup, persistSetup: persistGenericModuleConfigs,
     properties: cfg.properties, persistProperties: persistGenericModuleConfigs,
     detailLayout: cfg.detailLayout, persistDetailLayout: persistGenericModuleConfigs,
@@ -2239,6 +2287,10 @@ export type CrmPermControl =
   | { type: 'checkbox'; label: string; key: string; sublabel?: string }
 export interface CrmPermGroup { group: string; subtitle?: string; controls: CrmPermControl[] }
 
+// Per-user CRM access, aligned to PRD §5.5.1 (V1 "pragmatic prototype" subset).
+// Scopes are All vs Only-my for now ("Own Teams" is a PRD future). Reassign
+// ownership and per-report scope/granularity are PRD-future and intentionally
+// omitted here. Settings-page groups gate the CRM Settings sidebar + actions.
 export const CRM_PERMISSION_GROUPS: CrmPermGroup[] = [
   { group: 'Records', subtitle: 'Deals and custom module records', controls: [
     { type: 'access',     label: 'Record access', allLabel: 'All records', mineLabel: 'Only my records', allKey: 'deals.readAll', mineKey: 'deals.readMine' },
@@ -2256,19 +2308,31 @@ export const CRM_PERMISSION_GROUPS: CrmPermGroup[] = [
     { type: 'checkbox',   sublabel: 'Export', label: 'Can export companies data', key: 'companies.export' },
   ] },
   { group: 'Reports', controls: [
-    { type: 'checkbox', label: 'Can view report', key: 'reports.view' },
+    { type: 'checkbox', label: 'Can view reports', key: 'reports.view' },
+    { type: 'checkbox', sublabel: 'Export', label: 'Can export reports', key: 'reports.export' },
   ] },
   { group: 'Settings / Company profile', controls: [
     { type: 'checkbox', label: 'Can view company profile', key: 'settingsCompany.view' },
   ] },
+  { group: 'Settings / Users', controls: [
+    { type: 'checkbox', label: 'Can view users list', key: 'settingsUsers.view' },
+  ] },
   { group: 'Settings / Teams', controls: [
-    { type: 'permission', label: 'Permission', capabilityLabel: 'Can create & edit', capabilityKeys: ['settingsTeams.create', 'settingsTeams.edit', 'settingsTeams.delete', 'settingsTeams.assign'] },
+    { type: 'checkbox',   label: 'Can view teams', key: 'settingsTeams.view' },
+    { type: 'permission', label: 'Permission', capabilityLabel: 'Can create & edit teams', capabilityKeys: ['settingsTeams.create', 'settingsTeams.edit'] },
   ] },
-  { group: 'Settings / Deals', controls: [
-    { type: 'permission', label: 'Permission', capabilityLabel: 'Can edit', capabilityKeys: ['settingsDeal.edit'] },
+  { group: 'Settings / Modules', controls: [
+    { type: 'checkbox',   label: 'Can view module management', key: 'settingsModules.view' },
+    { type: 'permission', label: 'Permission', capabilityLabel: 'Can edit custom modules', capabilityKeys: ['settingsModules.edit'] },
   ] },
-  { group: 'Settings / Custom module', controls: [
-    { type: 'permission', label: 'Permission', capabilityLabel: 'Can create & edit', capabilityKeys: ['settingsCustom.create', 'settingsCustom.edit'] },
+  // PRD §CRM Access list — ERP Integration Settings capabilities. View ≠ Manage;
+  // Manage ≠ any conversion permission; each conversion target is its own capability.
+  { group: 'Settings / ERP integrations', controls: [
+    { type: 'checkbox',   label: 'Can view ERP integration settings', key: 'settingsConversion.view' },
+    { type: 'permission', label: 'Permission', capabilityLabel: 'Can manage ERP integration settings', capabilityKeys: ['settingsConversion.edit'] },
+    { type: 'checkbox',   label: 'Can convert to Sales Quote', key: 'conversion.quote' },
+    { type: 'checkbox',   label: 'Can convert to Sales Order', key: 'conversion.order' },
+    { type: 'checkbox',   label: 'Can retry a failed conversion', key: 'conversion.retry' },
   ] },
 ]
 export const CRM_PERM_KEYS: string[] = CRM_PERMISSION_GROUPS.flatMap((g) => g.controls.flatMap((c) =>
@@ -2282,11 +2346,19 @@ export function emptyPermSet(): CrmPermSet {
 export function fullPermSet(): CrmPermSet {
   return Object.fromEntries(CRM_PERM_KEYS.map((k) => [k, true]))
 }
-/** Baseline for a new user: view/read-only across sections (no create/edit/delete). */
+/** Baseline for a newly-activated user, per PRD §5.5.1 default column:
+ *  Own-records scope, can create & edit, no export; can view reports; Teams and
+ *  Module Management viewable but not editable; convert to Sales Order allowed. */
 export function defaultPermSet(): CrmPermSet {
   const s = emptyPermSet()
-  // Read-only baseline: sees all records + contacts + companies, no create/edit/export.
-  for (const k of ['deals.readAll', 'contacts.readAll', 'companies.readAll']) s[k] = true
+  for (const k of [
+    'deals.readMine', 'deals.create', 'deals.edit',
+    'contacts.readMine', 'contacts.create', 'contacts.edit',
+    'companies.readMine', 'companies.create', 'companies.edit',
+    'reports.view',
+    'settingsTeams.view', 'settingsModules.view',
+    'conversion.order',
+  ]) s[k] = true
   return s
 }
 // ── Shared per-user permission store ────────────────────────────────────────
@@ -2298,10 +2370,26 @@ export const crmUserPermSet = reactive<Record<string, CrmPermSet>>(
     ? (() => { try { return JSON.parse(localStorage.getItem(CRM_PERMS_KEY) || '{}') } catch { return {} } })()
     : {},
 )
-/** CU id for an owner name (CU01 = first owner = workspace owner, full access). */
+/** CRM Settings › Users roster — the ERP accounts granted a CRM access mode. A
+ *  superset of the deal owners (CRM_OWNERS) plus other CRM-eligible staff. Each
+ *  maps to an employees.ts person by name; `id` (CU..) keys the per-user perm
+ *  store. Rizal Candra is the account owner (super admin, full CRM access). */
+export interface CrmSettingsUser { id: string; name: string; erpRole: string; status: 'active' | 'invited' | 'inactive'; joinDate: string }
+export const CRM_SETTINGS_USERS: CrmSettingsUser[] = [
+  { id: 'CU01', name: 'Rizal Candra',     erpRole: 'Account owner', status: 'active',   joinDate: '2024-01-08' },
+  { id: 'CU02', name: 'Dewi Lestari',     erpRole: 'CRM Manager',   status: 'active',   joinDate: '2024-02-14' },
+  { id: 'CU03', name: 'Fajar Nugroho',    erpRole: 'Sales',         status: 'active',   joinDate: '2024-03-02' },
+  { id: 'CU04', name: 'Anita Wijaya',     erpRole: 'Sales',         status: 'active',   joinDate: '2024-05-20' },
+  { id: 'CU05', name: 'Putri Ayu',        erpRole: 'Marketing',     status: 'active',   joinDate: '2025-01-13' },
+  { id: 'CU06', name: 'Rio Firmansyah',   erpRole: 'Sales',         status: 'active',   joinDate: '2025-03-04' },
+  { id: 'CU07', name: 'Maya Kusuma',      erpRole: 'Marketing',     status: 'invited',  joinDate: '2026-09-10' },
+  { id: 'CU08', name: 'Hendra Gunawan',   erpRole: 'Sales Manager', status: 'active',   joinDate: '2024-08-19' },
+  { id: 'CU09', name: 'Clara Tanuwijaya', erpRole: 'Sales',         status: 'inactive', joinDate: '2024-11-05' },
+  { id: 'CU10', name: 'Ratna Sari',       erpRole: 'Sales',         status: 'active',   joinDate: '2025-06-22' },
+]
+/** CU id for a roster user name (CU01 = Rizal Candra = account owner). */
 export function crmUserId(name: string): string {
-  const i = CRM_OWNERS.indexOf(name)
-  return `CU${String((i < 0 ? 0 : i) + 1).padStart(2, '0')}`
+  return CRM_SETTINGS_USERS.find((u) => u.name === name)?.id ?? 'CU00'
 }
 /** The workspace owner — the signed-in user (Rizal Candra, COO). Always has full
  *  CRM access; can't be restricted via the Manage-access drawer. */
@@ -2330,6 +2418,18 @@ export function can(key: string): boolean { return !!currentUserPerms()[key] }
 export function canEditModule(m: CrmModule): boolean {
   if (m.system) return true
   return CRM_CURRENT_USER === CRM_WORKSPACE_OWNER || m.createdBy === CRM_CURRENT_USER
+}
+
+/** Can the acting user open "Manage CRM access" (edit another user's permissions)?
+ *  Per PRD §5.5.3, Edit User Access requires an ERP Owner/Ultimate role — here the
+ *  workspace owner (Rizal) is the account owner and can always manage access. */
+export function canManageUserAccess(): boolean {
+  return CRM_CURRENT_USER === CRM_WORKSPACE_OWNER
+}
+/** Can the acting user assign users to Teams? Requires Create/Edit Teams
+ *  permission (which includes editing team members), or workspace-owner. */
+export function canAssignTeamMembers(): boolean {
+  return CRM_CURRENT_USER === CRM_WORKSPACE_OWNER || can('settingsTeams.edit') || can('settingsTeams.create')
 }
 
 /** One-line summary of a permission set for the User & roles index. */

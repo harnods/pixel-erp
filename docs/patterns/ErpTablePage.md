@@ -613,5 +613,5 @@ new Intl.DateTimeFormat('id-ID', {
 * [ErpFilterBar.md](ErpFilterBar.md) — `#filters` slot layout + real index-page pattern
 * [ErpPagination.md](ErpPagination.md) — built-in pagination bar
 * [ErpStatusBadge.md](ErpStatusBadge.md) — status cell rendering
-* [page-recipes.md](page-recipes.md) — full index-page recipe
+* [index-page-format.md](index-page-format.md) — full index-page recipe
 * [docs/README.md](../README.md) — docs home

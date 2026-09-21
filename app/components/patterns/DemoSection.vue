@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, onErrorCaptured } from 'vue'
-import { MpTooltip } from '@mekari/pixel3'
+import { ref, computed, onErrorCaptured } from 'vue'
+import { MpTooltip, MpButton } from '@mekari/pixel3'
 import { ruleMeaning } from '~/data/pixelRules'
 
-defineProps<{
+const props = defineProps<{
   /** Section heading, e.g. "Variants", "Sizes", "With icon" */
   title: string
   /** Description / when-this-applies sentence under the heading */
@@ -13,6 +13,23 @@ defineProps<{
   /** Code shown under "Show code" (for AI agents) */
   code?: string
 }>()
+
+// Deep-linkable anchor per variant/section: slug derived from the title so
+// every DemoSection across every /pixel/* page gets a shareable #anchor for
+// free, with no per-page wiring.
+const slug = computed(() =>
+  props.title.toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, ''),
+)
+const copied = ref(false)
+async function copyLink() {
+  const url = `${location.origin}${location.pathname}#${slug.value}`
+  history.replaceState(null, '', `#${slug.value}`)
+  try { await navigator.clipboard.writeText(url) } catch { /* clipboard unavailable; hash still updates */ }
+  copied.value = true
+  window.setTimeout(() => { copied.value = false }, 1500)
+}
 
 // Per-section error boundary: a broken example shows red, page survives.
 const err = ref(false)
@@ -25,8 +42,13 @@ onErrorCaptured((e) => {
 </script>
 
 <template>
-  <section class="ds">
-    <h2 class="ds__title">{{ title }}</h2>
+  <section :id="slug" class="ds">
+    <h2 class="ds__title">
+      {{ title }}
+      <MpTooltip :label="copied ? 'Link copied!' : 'Copy link to this variant'">
+        <MpButton class="ds__anchor" is-rounded :aria-label="`Copy link to ${title}`" @click="copyLink">#</MpButton>
+      </MpTooltip>
+    </h2>
     <p v-if="desc" class="ds__desc">{{ desc }}</p>
     <div v-if="rules && rules.length" class="ds__rules">
       <MpTooltip v-for="r in rules" :key="r" :label="ruleMeaning(r)">
@@ -56,9 +78,25 @@ onErrorCaptured((e) => {
   margin-top: var(--mp-spacing-5, 20px);
   padding-top: var(--mp-spacing-5, 20px);
   border-top: 1px solid var(--mp-border-subtle, #e5e7e7);
+  /* so a #slug jump lands with a little breathing room above the heading */
+  scroll-margin-top: var(--mp-spacing-5, 20px);
 }
 .ds:first-child { margin-top: 0; }
-.ds__title { font-size: var(--mp-font-sizes-xl, 1.5rem); font-weight: var(--mp-font-weights-semi-bold); }
+.ds__title {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-xl, 1.5rem); font-weight: var(--mp-font-weights-semi-bold);
+}
+/* Anchor link, revealed on heading hover (same convention as GitHub/doc sites). */
+.ds__anchor {
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-6, 24px) !important; height: var(--mp-sizes-6, 24px) !important; min-width: 0 !important;
+  padding: 0 !important; border: none !important; background: none !important;
+  font-family: var(--mp-font-families-mono, monospace); font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-regular); color: var(--mp-text-link, #0a6e4e);
+  opacity: 0; cursor: pointer;
+}
+.ds__title:hover .ds__anchor, .ds__anchor:focus-visible { opacity: 1; }
+.ds__anchor:hover { background: var(--mp-background-neutral-subtle, #f5f6f6) !important; }
 .ds__desc {
   margin-top: var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md);

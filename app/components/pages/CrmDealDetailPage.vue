@@ -5,12 +5,17 @@
  * (segmented bar) → tabs (Deal details · Activity · Notes · Files · Sales orders).
  *
  * Stage flow:
- *  • "Mark as won" (primary) → marks the deal Won → asks "Create sales order?" →
- *    full-screen CrmCreateTransactionDrawer (embedded ERP sales-order form, prefilled).
- *  • Split chevron → inline stage picker (no modal). Picking Proposal → asks
- *    "Create sales quote?" → the same drawer (embedded ERP sales-quote form).
- *  • "Mark as lost" → CrmDealStageModal (captures a Lost reason).
- * A Lost deal shows the terminal stepper node as red "Lost".
+ *  • "Mark as won" (primary) → marks the deal Won. Stage changes NEVER trigger a
+ *    conversion (PRD "ERP Transaction Conversion Settings V1" — manual-only).
+ *  • Split chevron → inline stage picker (no modal). "Mark as lost" →
+ *    CrmDealStageModal (captures a Lost reason). A Lost deal shows the terminal
+ *    stepper node as red "Lost" and cannot be converted.
+ *
+ * ERP conversion (PRD): a MANUAL "Create Sales Order/Quote" action (primary when
+ * Won, else in the kebab) opens CrmConversionReviewDrawer — a READ-ONLY review +
+ * explicit confirm that creates exactly one ERP transaction (see crmConversion.ts:
+ * dealConvEligibility / runDealConversion). One success per deal; a Failed attempt
+ * can be retried; a converted deal links to the ERP transaction (Open in ERP).
  */
 import { ref, computed } from 'vue'
 import {
@@ -23,7 +28,7 @@ import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import CrmDealStageModal from '~/components/patterns/CrmDealStageModal.vue'
-import CrmCreateTransactionDrawer from '~/components/patterns/CrmCreateTransactionDrawer.vue'
+import CrmConversionReviewDrawer from '~/components/patterns/CrmConversionReviewDrawer.vue'
 import ActivityLogTable from '~/components/patterns/ActivityLogTable.vue'
 import CrmNotesPanel from '~/components/patterns/CrmNotesPanel.vue'
 import FilePreviewModal from '~/components/patterns/FilePreviewModal.vue'
@@ -33,12 +38,13 @@ import { formatMoney } from '~/utils/currency'
 import { successToast, infoToast } from '~/utils/toasts'
 import {
   getDeal, ONGOING_STAGES, moveDealStage, archiveDeal, restoreDeal, deleteDeal,
-  dealConversionTarget, dealTotals, dealExpectedValue, dealDaysInStage, dealStageAgingDays, formatAging,
+  dealTotals, dealExpectedValue, dealDaysInStage, dealStageAgingDays, formatAging,
   dealActivityLog, addDealAttachment, removeDealAttachment, setDealProductsFull,
-  getDealSalesOrder, linkDealSalesOrder,
+  getDealSalesOrder,
   lineSubtotal, crmCustomers, dealNo, dealStageLabel,
   type DealStage, type DealLineItem, type DealAttachment, type DealProductsPayload,
 } from '~/data/crm'
+import { dealConvEligibility, dealTargetLabel, runDealConversion, dealErpTxn } from '~/data/crmConversion'
 
 const currentUser = 'Rizal Candra'
 
@@ -70,7 +76,11 @@ const isArchived = computed(() => !!deal.value?.archived)
 const isWon = computed(() => deal.value?.stage === 'Won')
 const isLost = computed(() => deal.value?.stage === 'Lost')
 const isOngoing = computed(() => !isWon.value && !isLost.value)
-const convTarget = computed(() => deal.value?.convertedTarget ?? dealConversionTarget.value)
+const convTarget = computed(() => deal.value?.convertedTarget ?? dealTargetLabel())
+// Manual conversion is available whenever the module config is Ready and the record
+// is eligible (PRD: never triggered by stage/status — only by this explicit action).
+const convEligible = computed(() => (deal.value ? dealConvEligibility(deal.value).ok : false))
+const erpTxn = computed(() => (deal.value ? dealErpTxn(deal.value) : undefined))
 const dealNumber = computed(() => (deal.value ? dealNo(deal.value.id) : ''))
 
 // ── Pipeline stepper (segmented bar) ──
@@ -102,12 +112,11 @@ function moveTo(stage: DealStage): boolean {
   successToast(`${t('Stage changed to')} ${stage}`)
   return true
 }
-// "Mark as won" → mark Won, then offer to create a sales order.
-function markWon() { if (moveTo('Won')) createSoAskOpen.value = true }
-// Stage picker (chevron popover) → move directly; Proposal offers a sales quote.
-function onPickStage(stage: DealStage) {
-  if (moveTo(stage) && stage === 'Proposal') createSqAskOpen.value = true
-}
+// "Mark as won" → mark Won only. Conversion is NEVER auto-triggered by stage
+// (PRD manual-only invariant) — the user converts via the explicit Create action.
+function markWon() { moveTo('Won') }
+// Stage picker (chevron popover) → move directly.
+function onPickStage(stage: DealStage) { moveTo(stage) }
 
 // Lost (needs a reason) / reopen — via CrmDealStageModal
 const stageModalOpen = ref(false)
@@ -134,25 +143,26 @@ function confirmReopen() {
   reopenConfirmOpen.value = false; pendingStage.value = null
 }
 
-// ── Create sales order / quote (full-screen drawer, embedded ERP form) ──
-const createSoAskOpen = ref(false)
-const createSqAskOpen = ref(false)
-const txDrawerOpen = ref(false)
-const txDrawerKind = ref<'sales-order' | 'sales-quote'>('sales-order')
-function openSoDrawer() { txDrawerKind.value = 'sales-order'; txDrawerOpen.value = true }
-function openSqDrawer() { txDrawerKind.value = 'sales-quote'; txDrawerOpen.value = true }
-// Won primary: open the linked order if converted, else start the create flow.
-function onCreateSalesOrder() {
-  if (isConverted.value && deal.value?.salesOrderId) { goOrder(deal.value.salesOrderId); return }
-  openSoDrawer()
+// ── Manual ERP conversion — read-only review + confirm (PRD) ──
+const reviewOpen = ref(false)
+// Open the read-only review; a blocked record surfaces an inline reason (no drawer).
+function openConvertReview() {
+  const d = deal.value; if (!d) return
+  const e = dealConvEligibility(d)
+  if (!e.ok) { infoToast(e.reason ?? t('This deal cannot be converted.')); return }
+  reviewOpen.value = true
 }
-function onTxCreated(payload?: { id?: string }) {
-  txDrawerOpen.value = false
-  // A created sales order links back to the deal so the Sales orders tab shows it.
-  if (txDrawerKind.value === 'sales-order' && payload?.id && deal.value) {
-    linkDealSalesOrder(deal.value.id, { id: payload.id })
-  }
+function onConfirmConversion() {
+  const d = deal.value; if (!d) return
+  const r = runDealConversion(d.id)
+  reviewOpen.value = false
+  if (r.ok) successToast(`${t(convTarget.value)} ${t('created')}`)
+  else infoToast(r.error ?? t('Conversion failed'))
 }
+// Open the created ERP transaction (converted deals).
+function openErpTxn() { if (erpTxn.value) router.push(erpTxn.value.route) }
+// Failed → retry replays the conversion (the one-success guard blocks a duplicate).
+function retryConversion() { openConvertReview() }
 
 // ── Archive / restore / delete ──
 const archiveConfirmOpen = ref(false)
@@ -268,7 +278,6 @@ function confirmDeleteFile() {
 }
 function fmtUploaded(iso?: string) { return iso ? formatDateTime(iso) : '—' }
 
-function goOrder(id: string) { router.push(`/crm/orders/${id}`) }
 function goSalesOrder(id: string) { router.push(`/sales-orders/${id}`) }
 function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
 </script>
@@ -308,9 +317,10 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
             </MpPopoverContent>
           </MpPopover>
         </div>
-        <!-- Won (not yet converted): create the sales order. A converted Won deal has
-             no primary — its sales order lives in the Sales orders tab. -->
-        <button v-else-if="!isArchived && isWon && !isConverted" class="btn-enterprise btn-enterprise--primary" @click="openSoDrawer">{{ t('Create sales order') }}</button>
+        <!-- Won & not converted: manual conversion via read-only review (PRD). -->
+        <button v-else-if="!isArchived && isWon && !isConverted" class="btn-enterprise btn-enterprise--primary" @click="openConvertReview">{{ t('Create') }} {{ t(convTarget) }}</button>
+        <!-- Converted: open the created ERP transaction. -->
+        <button v-else-if="!isArchived && isConverted && erpTxn" class="btn-enterprise btn-enterprise--secondary" @click="openErpTxn">{{ t('Open in ERP') }}</button>
         <!-- Lost: reopen -->
         <button v-else-if="!isArchived && isLost" class="btn-enterprise btn-enterprise--primary" @click="openReopen">{{ t('Reopen deal') }}</button>
         <!-- Archived: restore -->
@@ -335,6 +345,8 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
               </MpPopoverList>
               <div v-if="isWon" :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
               <MpPopoverList>
+                <!-- Manual convert available at any eligible stage (Won has its own primary button). -->
+                <MpPopoverListItem v-if="convEligible && !isWon" @click="openConvertReview">{{ t('Create') }} {{ t(convTarget) }}</MpPopoverListItem>
                 <MpPopoverListItem @click="router.push(`/crm/deals/${deal.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="archiveConfirmOpen = true">{{ t('Archive') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="deleteConfirmOpen = true">{{ t('Delete') }}</MpPopoverListItem>
@@ -356,10 +368,12 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
       <div v-else-if="isFailed" class="detail-banner detail-banner--warn">
         <MpIcon name="information" size="md" class="detail-banner-icon" />
         <span class="detail-banner-text">{{ deal.conversionError }}</span>
+        <MpTextlink v-if="convEligible" @click="retryConversion">{{ t('Retry conversion') }}</MpTextlink>
       </div>
       <div v-else-if="isConverted" class="detail-banner">
         <MpIcon name="information" size="md" class="detail-banner-icon" />
-        <span class="detail-banner-text">{{ t('This deal is linked to') }} {{ convTarget }} <template v-if="linkedOrder">#{{ linkedOrder.number }}</template>. {{ t('Editing the deal does not update the ERP transaction.') }}</span>
+        <span class="detail-banner-text">{{ t('This deal is linked to') }} {{ t(convTarget) }}<template v-if="erpTxn"> #{{ erpTxn.number }}</template>. {{ t('Editing the deal does not update the ERP transaction.') }}</span>
+        <MpTextlink v-if="erpTxn" @click="openErpTxn">{{ t('Open in ERP') }}</MpTextlink>
       </div>
       <div v-else-if="isLost" class="detail-banner detail-banner--warn">
         <MpIcon name="information" size="md" class="detail-banner-icon" />
@@ -403,16 +417,10 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
           <!-- ── Deal details ── -->
           <MpTabPanel value="details">
             <section class="detail-summary">
-              <!-- Primary row: Customer · Contact person · emphasised Deal value -->
+              <!-- Primary row: Contact (primary) · its Company · emphasised Deal value -->
               <div class="content-list-grid">
-                <div class="content-list-col">
-                  <ContentList :label="t('Customer')">
-                    <a v-if="customer" class="cell-link" @click="goCustomer(customer.id)">{{ deal.company }}</a>
-                    <span v-else>{{ deal.company }}</span>
-                  </ContentList>
-                </div>
                 <div class="content-list-col deal-contact-col">
-                  <ContentList :label="t('Contact person')">
+                  <ContentList :label="t('Contact')">
                     <div v-if="deal.contacts?.length" class="deal-contacts">
                       <div v-for="(cp, i) in deal.contacts" :key="i" class="deal-contact">
                         <span class="deal-contact-name">{{ cp.name }}</span>
@@ -420,7 +428,15 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                         <span v-if="cp.phone" class="deal-contact-line">{{ cp.phone }}</span>
                       </div>
                     </div>
+                    <template v-else-if="deal.picName">{{ deal.picName }}</template>
                     <template v-else>—</template>
+                  </ContentList>
+                </div>
+                <div class="content-list-col">
+                  <!-- Company shown only when the contact has one associated. -->
+                  <ContentList :label="t('Company')" data-devchange="deal-contact-first">
+                    <a v-if="customer" class="cell-link" @click="goCustomer(customer.id)">{{ deal.company }}</a>
+                    <span v-else>{{ deal.company || '—' }}</span>
                   </ContentList>
                 </div>
                 <div class="detail-primary-total">
@@ -692,31 +708,12 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
       @confirm="confirmReopen"
     />
 
-    <!-- ── Create sales order / quote — ask, then full-screen drawer ── -->
-    <ConfirmModal
-      v-model:is-open="createSoAskOpen"
-      :title="t('Create sales order?')"
-      :description="t('Start a sales order from this deal. It opens the sales order form, pre-filled from the deal and still editable.')"
-      :cancel-label="t('Later')"
-      :confirm-label="t('Create sales order')"
-      :is-danger="false"
-      @confirm="openSoDrawer"
-    />
-    <ConfirmModal
-      v-model:is-open="createSqAskOpen"
-      :title="t('Create sales quote?')"
-      :description="t('Start a sales quote from this deal. It opens the sales quote form, pre-filled from the deal and still editable.')"
-      :cancel-label="t('Later')"
-      :confirm-label="t('Create sales quote')"
-      :is-danger="false"
-      @confirm="openSqDrawer"
-    />
-    <CrmCreateTransactionDrawer
-      :open="txDrawerOpen"
-      :kind="txDrawerKind"
+    <!-- ── Manual ERP conversion — read-only review + confirm (PRD) ── -->
+    <CrmConversionReviewDrawer
+      :open="reviewOpen"
       :deal="deal"
-      @close="txDrawerOpen = false"
-      @created="onTxCreated"
+      @close="reviewOpen = false"
+      @confirm="onConfirmConversion"
     />
 
     <!-- ── Add / edit products (full-screen line-items + totals editor) ── -->

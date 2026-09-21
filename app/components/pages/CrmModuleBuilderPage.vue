@@ -30,7 +30,7 @@ import {
   CRM_FIELD_TYPE_LABELS, CRM_MODULE_ICONS,
   moduleStores, isDealLikeModule, resetGenericModuleDraft, canEditModule,
   DEAL_PROPERTY_TYPE_ICON, isRelatedListType,
-  deals,
+  deals, CRM_CURRENT_USER,
   crmTeams, teamsForModule, setModuleTeams,
   publishCrmModule, unpublishCrmModule,
   type DealProperty, type DealPropertyType, type DealPropertyConfig, type Deal,
@@ -40,6 +40,7 @@ import {
   type DealPipelineDisplay, type DealModuleSetup, type DealDetailLayout,
 } from '~/data/crm'
 import CrmDetailLayoutBuilder from '~/components/patterns/CrmDetailLayoutBuilder.vue'
+import CrmPipelineViewDrawer, { emptyPipelineView, type CrmPipelineViewValue } from '~/components/patterns/CrmPipelineViewDrawer.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { usePointerSortable } from '~/composables/usePointerSortable'
 import { successToast, infoToast } from '~/utils/toasts'
@@ -203,19 +204,63 @@ function removeStage(id: string) {
 
 // ── Board DISPLAY settings (right-hand panel) — a local editable clone; Save
 //    changes applies it. Drives which fields show on cards + stage/column props. ──
-const disp = reactive<DealPipelineDisplay>(JSON.parse(JSON.stringify(stores.value.display)))
-const enabledCardFields = computed(() => disp.cardFields.filter((f) => f.on))
-const ownerFieldOn = computed(() => disp.cardFields.some((f) => f.key === 'owner' && f.on))
+// ── Board saved VIEWS — a view = a named record filter PLUS its own board
+//    display config (stage + card properties). Starts with one "Default view"
+//    (all records, the module's stored display); "+ New view" opens the drawer
+//    to name a view and pick which records it shows. Switching views swaps the
+//    Stage/Card properties panel to that view's own config. ──
+// hiddenStageIds = stages hidden IN THIS VIEW (per-view show/hide); the stages
+// themselves are shared pipeline structure, only their visibility is per-view.
+interface PipeBoardView { id: string; name: string; filters: CrmPipelineViewValue; display: DealPipelineDisplay; hiddenStageIds: string[] }
+const baseDisplay = (): DealPipelineDisplay => JSON.parse(JSON.stringify(stores.value.display))
+// Load saved views from the module's store (name + per-view hidden stages + the
+// per-view board display). Filters are session-local for now.
+const pipeViews = ref<PipeBoardView[]>(
+  (stores.value.views?.length ? stores.value.views : [{ id: 'default', name: 'Default view', hiddenStageIds: [], display: baseDisplay() }])
+    .map((v) => ({ id: v.id, name: v.name, filters: emptyPipelineView(), display: v.display ? clone(v.display) : baseDisplay(), hiddenStageIds: [...v.hiddenStageIds] })),
+)
+const activePipeViewId = ref('default')
+const activePipeView = computed<PipeBoardView>(() => pipeViews.value.find((v) => v.id === activePipeViewId.value) ?? pipeViews.value[0]!)
+const pipeViewOptions = computed(() => pipeViews.value.map((v) => ({ value: v.id, label: v.name })))
+
+// The active view's display drives the board + the Stage/Card properties panel.
+const disp = computed<DealPipelineDisplay>(() => activePipeView.value.display)
+const enabledCardFields = computed(() => disp.value.cardFields.filter((f) => f.on))
+const ownerFieldOn = computed(() => disp.value.cardFields.some((f) => f.key === 'owner' && f.on))
+
+// Per-view stage visibility — each view can show/hide any stage independently
+// via the eye toggle on the lane header. Hidden lanes render dimmed in the
+// builder (still editable); the flag is what a view would apply in use.
+function isStageVisible(id: string): boolean { return !activePipeView.value.hiddenStageIds.includes(id) }
+function setStageVisible(id: string, show: boolean) {
+  const v = activePipeView.value
+  if (show) v.hiddenStageIds = v.hiddenStageIds.filter((x) => x !== id)
+  else if (!v.hiddenStageIds.includes(id)) v.hiddenStageIds = [...v.hiddenStageIds, id]
+}
+
+const newViewOpen = ref(false)
+const newViewDraft = ref<CrmPipelineViewValue>(emptyPipelineView())
+let pipeViewSeq = 0
+function saveNewView(v: CrmPipelineViewValue) {
+  const id = `view-${++pipeViewSeq}`
+  // New view inherits the default view's display + stage visibility as a starting
+  // point; it can then be configured independently in the properties panel.
+  pipeViews.value.push({ id, name: v.name.trim() || `${t('View')} ${pipeViews.value.length}`, filters: v, display: baseDisplay(), hiddenStageIds: [...activePipeView.value.hiddenStageIds] })
+  activePipeViewId.value = id
+}
+// Owner / customer options for the New view filter drawer, from the live deals DB.
+const pipeOwnerOptions = computed(() => [...new Set(deals.map((d) => d.owner))].sort())
+const pipeCustomerOptions = computed(() => [...new Set(deals.map((d) => d.company))].sort())
 
 // Drag-reorder the card-property rows (order = the order fields stack on a card) —
 // same ERP pointer sortable, vertical axis. rule/dnd-live-sortable.
 const { dragIndex: fieldDragIndex, ghost: fieldGhost, start: fieldStart } = usePointerSortable({
   axis: 'y', itemSelector: '.pipe-side-row--drag',
   move: (from, to) => {
-    const arr = [...disp.cardFields]; const [m] = arr.splice(from, 1); arr.splice(to, 0, m!); disp.cardFields = arr
+    const arr = [...disp.value.cardFields]; const [m] = arr.splice(from, 1); arr.splice(to, 0, m!); disp.value.cardFields = arr
   },
 })
-const draggedField = computed(() => (fieldDragIndex.value !== null ? disp.cardFields[fieldDragIndex.value] : null))
+const draggedField = computed(() => (fieldDragIndex.value !== null ? disp.value.cardFields[fieldDragIndex.value] : null))
 
 // ── "+ Add property" to the Kanban card (Pipeline ▸ Card properties) ──
 // A two-pane drawer (same as Access "Select users"); adds picked deal properties
@@ -226,25 +271,25 @@ const cardPropsDrawerOpen = ref(false)
 // "Deal value" doesn't also appear as its property twin.
 const cardPropOptions = computed(() => {
   const byId = new Map<string, { id: string; name: string; subtitle?: string; icon?: string }>()
-  const labels = new Set(disp.cardFields.map((f) => t(f.label).toLowerCase()))
-  for (const f of disp.cardFields) byId.set(f.key, { id: f.key, name: t(f.label) })
+  const labels = new Set(disp.value.cardFields.map((f) => t(f.label).toLowerCase()))
+  for (const f of disp.value.cardFields) byId.set(f.key, { id: f.key, name: t(f.label) })
   for (const p of propList.value) {
     if (byId.has(p.id) || labels.has(p.name.toLowerCase())) continue
     byId.set(p.id, { id: p.id, name: p.name, subtitle: p.variableName, icon: DEAL_PROPERTY_TYPE_ICON[p.type] })
   }
   return [...byId.values()]
 })
-const cardPropSelected = computed(() => disp.cardFields.map((f) => f.key))
+const cardPropSelected = computed(() => disp.value.cardFields.map((f) => f.key))
 function onCardPropsSaved(ids: string[]) {
   const idSet = new Set(ids)
   // Keep still-selected fields (preserving order + on/off state); append new picks.
-  const kept = disp.cardFields.filter((f) => idSet.has(f.key))
+  const kept = disp.value.cardFields.filter((f) => idSet.has(f.key))
   const keptKeys = new Set(kept.map((f) => f.key))
   const added = ids.filter((id) => !keptKeys.has(id)).map((id) => {
     const p = propList.value.find((x) => x.id === id)
     return { key: id, label: p ? p.name : id, on: true }
   })
-  disp.cardFields = [...kept, ...added]
+  disp.value.cardFields = [...kept, ...added]
   cardPropsDrawerOpen.value = false
 }
 
@@ -331,17 +376,36 @@ const propTypeOptions = computed(() => {
     .filter((p) => (seen.has(p.type) ? false : (seen.add(p.type), true)))
     .map((p) => ({ value: p.type, label: p.type }))
 })
+function propCreatedByLabel(p: DealProperty): string {
+  return (p.isDefault || p.system) ? 'System' : (p.createdBy || CRM_CURRENT_USER)
+}
+function canManageProperty(p: DealProperty): boolean {
+  return propCreatedByLabel(p) !== 'System' && !isRelatedListType(p.type)
+}
+const propCreatedByFilter = ref('')
+const propCreatedByOptions = computed(() => {
+  const names = new Set(propList.value.map(propCreatedByLabel))
+  return [...names].map((name) => ({ value: name, label: t(name) }))
+})
+const propFilteredByCreator = computed(() => {
+  if (!propCreatedByFilter.value) return propList.value
+  return propList.value.filter((p) => propCreatedByLabel(p) === propCreatedByFilter.value)
+})
 const {
   search: propSearch, statusFilter: propTypeFilter, paginated: propPaginated, total: propTotal,
   currentPage: propPage, perPage: propPerPage, sortKey: propSortKey, sortDir: propSortDir,
   setPage: propSetPage, setPerPage: propSetPerPage, toggleSort: propToggleSort, setSort: propSetSort,
-} = useTableState<DealProperty>(propList, {
+} = useTableState<DealProperty>(propFilteredByCreator, {
   filterFn: (row, s, status) =>
     (!s || row.name.toLowerCase().includes(s)) && (!status || row.type === status),
   defaultSort: { key: 'name', dir: 'asc' },
 })
-const propHasFilter = computed(() => !!propSearch.value || !!propTypeFilter.value)
-function clearPropFilters() { propSearch.value = ''; propTypeFilter.value = '' }
+watch(propCreatedByFilter, () => propSetPage(1))
+const propHasFilter = computed(() => !!propSearch.value || !!propTypeFilter.value || !!propCreatedByFilter.value)
+function clearPropFilters() { propSearch.value = ''; propTypeFilter.value = ''; propCreatedByFilter.value = '' }
+const systemActionDevChangePropertyId = computed(() =>
+  propPaginated.value.find((p) => propCreatedByLabel(p) === 'System' && !isRelatedListType(p.type))?.id ?? '',
+)
 const PROP_COLUMNS: TableColumn[] = [
   // Explicit 360px width for this table only (escape hatch) — property names run long.
   { key: 'name',      label: 'Name',       width: '360px', sortable: true, sortType: 'text' },
@@ -366,7 +430,8 @@ function onPropertySave(payload: { name: string; variableName: string; type: Dea
   } else {
     propList.value = [...propList.value, {
       id: `p-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
-      name: payload.name, variableName: payload.variableName, type: payload.type, system: false, fillRate: 0, config: payload.config,
+      name: payload.name, variableName: payload.variableName, type: payload.type, system: false, fillRate: 0,
+      createdBy: CRM_CURRENT_USER, config: payload.config,
     }]
   }
   propDrawerOpen.value = false
@@ -377,7 +442,8 @@ function onPropertySave(payload: { name: string; variableName: string; type: Dea
 function createDealProperty(payload: { name: string; variableName: string; type: DealPropertyType; config: DealPropertyConfig }): DealProperty {
   const np: DealProperty = {
     id: `p-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
-    name: payload.name, variableName: payload.variableName, type: payload.type, system: false, fillRate: 0, config: payload.config,
+    name: payload.name, variableName: payload.variableName, type: payload.type, system: false, fillRate: 0,
+    createdBy: CRM_CURRENT_USER, config: payload.config,
   }
   propList.value = [...propList.value, np]
   return np
@@ -648,8 +714,12 @@ function saveChanges() {
     const s = stores.value
     s.pipelines.splice(0, s.pipelines.length, ...JSON.parse(JSON.stringify(pipeDraft.value)))
     s.persistPipelines()
-    Object.assign(s.display, JSON.parse(JSON.stringify(disp)))
+    Object.assign(s.display, JSON.parse(JSON.stringify(pipeViews.value[0]!.display)))
     s.persistDisplay()
+    // Persist saved views (name + per-view hidden stages) so the module's Kanban
+    // board can render one tab per view and apply each view's stage visibility.
+    s.views.splice(0, s.views.length, ...pipeViews.value.map((v) => ({ id: v.id, name: v.name, hiddenStageIds: [...v.hiddenStageIds], display: clone(v.display) })))
+    s.persistViews()
     Object.assign(s.setup, JSON.parse(JSON.stringify(setup)))
     s.persistSetup()
     s.properties.splice(0, s.properties.length, ...JSON.parse(JSON.stringify(propList.value)))
@@ -729,14 +799,14 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
         <div class="detail-titlerow-left">
           <h1 v-if="isCreating || !mod || isDeals" class="detail-title">{{ isCreating ? t('New module') : mod ? mod.name : t('Module not found') }}</h1>
           <MpInput v-else id="builder-title" v-model="draft.name" class="builder-title-input" :aria-label="t('Module name')" />
-          <!-- Status badge + Publish/Unpublish — about draft/published lifecycle,
-               not about which builder UI the module uses, so it's keyed off
-               `!mod.system` (every module except the true Deals system module) —
-               NOT `!isDeals`, which is true for every deal-like module now. Hidden
-               while creating: the footer's Save as draft/Publish carry that action. -->
+          <!-- Status badge — about draft/published lifecycle, not about which
+               builder UI the module uses, so it's keyed off `!mod.system` (every
+               module except the true Deals system module) — NOT `!isDeals`,
+               which is true for every deal-like module now. Hidden while
+               creating. Publish/Unpublish itself is an action, not a page-title
+               affordance — it lives in the bottom footer, same as creation's
+               Save as draft/Publish. -->
           <ErpStatusBadge v-if="!isCreating && mod && !mod.system" :status="statusBadge.status" :label="t(statusBadge.label)" badge-for="additionalInformation" />
-          <MpButton v-if="!isCreating && mod && !mod.system && mod.status !== 'published'" variant="secondary" is-rounded @click="publishModule">{{ t('Publish') }}</MpButton>
-          <MpButton v-if="!isCreating && mod && !mod.system && mod.status === 'published'" variant="ghost" is-rounded @click="unpublishModule">{{ t('Unpublish') }}</MpButton>
         </div>
       </div>
     </header>
@@ -842,18 +912,21 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                   <MpRadio id="setup-access-team" name="setup-access-level" value="team" :is-checked="draft.accessLevel === 'team'" @change="draft.accessLevel = 'team'">{{ t('Team') }}</MpRadio>
                 </div>
                 <div v-if="draft.accessLevel === 'team'" class="setup-team-picked">
-                  <ul v-if="selectedTeams.length" class="setup-user-list">
-                    <li v-for="tm in selectedTeams" :key="tm.id" class="setup-user-row">
-                      <span class="setup-user-info">
-                        <span class="setup-user-name">{{ tm.name }}</span>
-                      </span>
-                      <MpTooltip :id="`team-rm-${tm.id}`" :label="t('Remove')" placement="top" use-portal>
-                        <button type="button" class="setup-user-remove" :aria-label="`${t('Remove')} ${tm.name}`" @click="removeDraftTeam(tm.id)">
-                          <MpIcon name="minus-circular" size="md" />
-                        </button>
-                      </MpTooltip>
-                    </li>
-                  </ul>
+                  <template v-if="selectedTeams.length">
+                    <h4 class="setup-teams-title">{{ t('Selected teams') }}</h4>
+                    <ul class="setup-user-list">
+                      <li v-for="tm in selectedTeams" :key="tm.id" class="setup-user-row">
+                        <span class="setup-user-info">
+                          <span class="setup-user-name">{{ tm.name }}</span>
+                        </span>
+                        <MpTooltip :id="`team-rm-${tm.id}`" :label="t('Remove')" placement="top" use-portal>
+                          <MpButton class="setup-user-remove" is-rounded :aria-label="`${t('Remove')} ${tm.name}`" @click="removeDraftTeam(tm.id)">
+                            <MpIcon name="minus-circular" size="md" />
+                          </MpButton>
+                        </MpTooltip>
+                      </li>
+                    </ul>
+                  </template>
                   <p v-else class="setup-access-empty">{{ t('No team selected') }}</p>
                   <MpButton class="setup-access-btn" variant="secondary" is-rounded left-icon="add" @click="teamDrawerOpen = true">{{ t('Select team') }}</MpButton>
                 </div>
@@ -872,8 +945,6 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
               :per-page="propPerPage"
               :sort-key="propSortKey"
               :sort-dir="propSortDir"
-              has-checkbox
-              bulk-label="property"
               filter-empty-label="property"
               :search="propSearch"
               :has-active-filter="propHasFilter"
@@ -892,6 +963,14 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                     :options="propTypeOptions"
                     @update:model-value="(v: string) => (propTypeFilter = v)"
                   />
+                  <ErpFilterSelect
+                    id="prop-created-by-filter"
+                    data-devchange="crm-property-created-by-filter"
+                    :model-value="propCreatedByFilter"
+                    :placeholder="t('Created by')"
+                    :options="propCreatedByOptions"
+                    @update:model-value="(v: string) => (propCreatedByFilter = v)"
+                  />
                 </div>
                 <div class="filter-right">
                   <div class="filter-search">
@@ -904,7 +983,10 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
               </template>
 
               <template #cell-name="{ row }">
-                <span class="prop-namecell">
+                <span
+                  class="prop-namecell"
+                  :data-devchange="(row as unknown as DealProperty).id === 'customer' ? 'crm-company-property-label' : undefined"
+                >
                   <span class="prop-name">{{ (row as unknown as DealProperty).name }}</span>
                   <span class="prop-varname">{{ (row as unknown as DealProperty).variableName }}</span>
                 </span>
@@ -912,12 +994,12 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
               <template #cell-type="{ row }">
                 <span class="prop-type"><MpIcon :name="DEAL_PROPERTY_TYPE_ICON[(row as unknown as DealProperty).type]" size="sm" class="prop-type-icon" />{{ (row as unknown as DealProperty).type }}</span>
               </template>
-              <template #cell-createdBy="{ row }">{{ t((row as unknown as DealProperty).isDefault ? 'Default' : (row as unknown as DealProperty).system ? 'System' : 'You') }}</template>
+              <template #cell-createdBy="{ row }">{{ t(propCreatedByLabel(row as unknown as DealProperty)) }}</template>
               <template #cell-fillRate="{ row }">{{ (row as unknown as DealProperty).fillRate }}%</template>
 
               <!-- Default properties (from the master library) + related lists are non-editable. -->
               <template #actions="{ row }">
-                <MpPopover v-if="!(row as unknown as DealProperty).isDefault && !isRelatedListType((row as unknown as DealProperty).type)" :id="`prop-actions-${(row as unknown as DealProperty).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                <MpPopover v-if="canManageProperty(row as unknown as DealProperty)" :id="`prop-actions-${(row as unknown as DealProperty).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                   <MpPopoverTrigger>
                     <MpButton class="builder-kebab" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
                   </MpPopoverTrigger>
@@ -928,6 +1010,12 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                     </MpPopoverList>
                   </MpPopoverContent>
                 </MpPopover>
+                <span
+                  v-else-if="(row as unknown as DealProperty).id === systemActionDevChangePropertyId"
+                  class="prop-action-devchange-anchor"
+                  data-devchange="crm-system-property-actions-removed"
+                  aria-hidden="true"
+                />
               </template>
             </ErpTablePage>
           </div>
@@ -935,6 +1023,21 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
           <!-- ════════ PIPELINE (Deals) — swimlane editor + settings sidebar ════════ -->
           <div v-show="activeTab === 'pipeline'" class="builder-panel builder-panel--pipeline">
             <template v-if="currentPipe">
+              <!-- View bar — saved-view selector + New view (opens All-filters drawer) -->
+              <div class="pipe-viewbar">
+                <div class="filter-left">
+                  <ErpFilterSelect
+                    id="pipe-view-select"
+                    :model-value="activePipeViewId"
+                    :placeholder="t('View')"
+                    :options="pipeViewOptions"
+                    :is-clearable="false"
+                    @update:model-value="(v: string) => (activePipeViewId = v)"
+                  />
+                  <MpButton variant="secondary" is-rounded left-icon="add" @click="newViewDraft = emptyPipelineView(); newViewOpen = true">{{ t('New view') }}</MpButton>
+                </div>
+              </div>
+
               <div class="pipe-layout">
                 <!-- Board: one Kanban lane per stage, cards = live deals in it -->
                 <div class="pipe-board">
@@ -943,7 +1046,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                   <div
                     v-for="(s, i) in pipeStages" :key="s.id"
                     class="pipe-lane"
-                    :class="{ 'is-dragging': laneDragIndex === i, [`pipe-lane--${s.kind}`]: disp.colorColumns }"
+                    :class="{ 'is-dragging': laneDragIndex === i, 'pipe-lane--hidden': !isStageVisible(s.id), [`pipe-lane--${s.kind}`]: disp.colorColumns }"
                   >
                     <div class="pipe-lane-head">
                       <span
@@ -960,6 +1063,13 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                           <button class="pipe-lane-edit" type="button" :aria-label="t('Rename stage')" @click="editStage(s.id)"><MpIcon name="edit" size="sm" /></button>
                         </template>
                       </div>
+                      <MpTooltip :id="`stage-vis-${s.id}`" :label="isStageVisible(s.id) ? t('Hide stage in this view') : t('Show stage in this view')" placement="top" use-portal>
+                        <button
+                          class="pipe-lane-vis" type="button"
+                          :aria-label="isStageVisible(s.id) ? t('Hide stage in this view') : t('Show stage in this view')"
+                          @click="setStageVisible(s.id, !isStageVisible(s.id))"
+                        ><MpIcon :name="isStageVisible(s.id) ? 'show' : 'hide'" size="sm" /></button>
+                      </MpTooltip>
                     </div>
 
                     <!-- Preview cards — placeholder field labels (a layout preview,
@@ -1042,6 +1152,17 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                   </section>
                 </aside>
               </div>
+
+              <!-- New view — names the view + defines which records it shows -->
+              <CrmPipelineViewDrawer
+                id="pipe-new-view"
+                :is-open="newViewOpen"
+                :model-value="newViewDraft"
+                :owner-options="pipeOwnerOptions"
+                :customer-options="pipeCustomerOptions"
+                @update:is-open="newViewOpen = $event"
+                @apply="saveNewView"
+              />
             </template>
           </div>
 
@@ -1168,11 +1289,20 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
       </template>
     </div>
 
-    <!-- Sticky action footer (rule/btn-responsive-footer): Cancel + Save changes -->
+    <!-- Sticky action footer (rule/btn-responsive-footer) — fixed button
+         positions regardless of draft/published state, so the layout never
+         flips: ghost Cancel, secondary "Save changes", then the rightmost
+         primary CTA. Publish/Unpublish is an action, not a page-title
+         affordance, so it lives here, not next to the H1. Only that last
+         button's label toggles Publish/Unpublish — its slot and variant
+         (primary, rightmost) never move. A system module (Deals, no
+         draft/publish lifecycle) just drops that last button. -->
     <footer v-if="mod && !isCreating" class="builder-footer">
       <MpButtonGroup class="erp-action-footer">
         <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
-        <MpButton variant="primary" is-rounded @click="saveChanges">{{ t('Save changes') }}</MpButton>
+        <MpButton :variant="mod.system ? 'primary' : 'secondary'" is-rounded @click="saveChanges">{{ t('Save changes') }}</MpButton>
+        <MpButton v-if="!mod.system && mod.status !== 'published'" variant="primary" is-rounded @click="publishModule">{{ t('Publish') }}</MpButton>
+        <MpButton v-if="!mod.system && mod.status === 'published'" variant="primary" is-rounded @click="unpublishModule">{{ t('Unpublish') }}</MpButton>
       </MpButtonGroup>
     </footer>
     <!-- Creation footer: module isn't persisted until Save as draft/Publish here. -->
@@ -1459,6 +1589,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
 .prop-varname { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); font-family: var(--mp-fonts-mono, ui-monospace, SFMono-Regular, Menlo, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .prop-type { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-colors-text-default, #080d0e); }
 .prop-type-icon { color: var(--mp-colors-icon-default, #536062); flex-shrink: 0; }
+.prop-action-devchange-anchor { display: inline-flex; width: var(--mp-sizes-8); height: var(--mp-sizes-8); pointer-events: none; }
 /* Properties filter bar (mirrors the standard ErpFilterBar layout). */
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
@@ -1469,6 +1600,8 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
   color: var(--mp-colors-icon-default, #536062); border-radius: var(--mp-radii-full, 999px) !important;
 }
 .search-clear-btn:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); }
+/* View bar above the board — saved-view selector + New view button. */
+.pipe-viewbar { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
 .pipe-layout { display: flex; align-items: stretch; gap: 0; flex: 1; min-height: 0; }
 .builder-panel--pipeline .pipe-board { flex: 1; min-height: 0; }
 
@@ -1509,6 +1642,17 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
 /* The rename pencil only reveals on swimlane hover (or keyboard focus). */
 .pipe-lane:hover .pipe-lane-edit, .pipe-lane-edit:focus-visible { opacity: 1; }
 .pipe-lane-edit:hover { color: var(--mp-colors-text-default, #080d0e); }
+/* Per-view show/hide eye, top-right of the lane header. */
+.pipe-lane-vis {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px); padding: 0;
+  border: none; background: none; cursor: pointer; border-radius: var(--mp-radii-sm, 4px);
+  color: var(--mp-colors-icon-subtle, #97a0af);
+}
+.pipe-lane-vis:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); color: var(--mp-colors-text-default, #080d0e); }
+/* Hidden-in-this-view lane: dimmed so it reads as excluded, still editable here. */
+.pipe-lane--hidden { opacity: 0.5; }
+.pipe-lane--hidden .pipe-lane-vis { opacity: 1; color: var(--mp-colors-text-default, #080d0e); }
 
 /* Card list grows to fill the lane so the total + delete pin to the bottom. */
 .pipe-lane-cards { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
@@ -1596,12 +1740,18 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
    list: name + (−) remove + "Remove" tooltip), not a chip/pill grid. */
 .setup-access-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-secondary, #3a4749); }
 .setup-radio-row { display: flex; align-items: center; gap: var(--mp-spacing-5); }
-.setup-team-picked { display: flex; flex-direction: column; margin-top: var(--mp-spacing-2); max-width: 320px; }
-.setup-user-list { list-style: none; margin: var(--mp-spacing-1) 0 0; padding: 0; }
-.setup-user-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
+.setup-team-picked { display: flex; flex-direction: column; margin-top: var(--mp-spacing-2); }
+.setup-teams-title { margin: 0 0 4px; font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
+.setup-user-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.setup-user-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); min-width: 0; padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
 .setup-user-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .setup-user-name { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.setup-user-remove { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); padding: 0; border: none; background: transparent; cursor: pointer; border-radius: var(--mp-radii-sm); color: var(--mp-colors-text-secondary, #3a4749); }
+.setup-user-remove {
+  display: inline-flex !important; align-items: center; justify-content: center; flex-shrink: 0;
+  width: var(--mp-sizes-8, 32px) !important; height: var(--mp-sizes-8, 32px) !important; min-width: 0 !important;
+  padding: 0 !important; border: none !important; background: transparent !important; cursor: pointer;
+  border-radius: var(--mp-radii-sm) !important; color: var(--mp-colors-text-secondary, #3a4749);
+}
 .setup-user-remove:hover { background: var(--mp-colors-background-neutral-subtle, #f8f9f9); color: var(--mp-colors-text-danger, #a8352d); }
 .setup-access-btn { align-self: flex-start; margin-top: var(--mp-spacing-2); }
 .pipe-side-section { display: flex; flex-direction: column; }
