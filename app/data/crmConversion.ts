@@ -21,7 +21,9 @@ import { reactive, computed } from 'vue'
 import { loadSnapshot, saveSnapshot } from '~/data/persist'
 import {
   crmModules, getCrmModule, getDeal, dealTotals, lineSubtotal, persistCrmDeals,
+  moduleStores,
   type CrmModule, type CrmModuleField, type CrmFieldType, type Deal,
+  type DealProperty, type DealPropertyType,
 } from '~/data/crm'
 import { salesOrders } from '~/data/salesOrders'
 import { salesQuotes } from '~/data/salesQuotes'
@@ -209,16 +211,21 @@ function dealsSeed(): ConversionConfig {
     lastSavedBy: 'Rizal Candra', lastSavedAt: '2026-09-10T14:30:00', lastValidatedAt: '2026-09-10T14:30:00',
     criterion: null,
     mappings: [
-      { targetKey: 'customer',     strategy: 'crm-field', sourceFieldId: 'customer' },
-      { targetKey: 'txDate',       strategy: 'crm-field', sourceFieldId: 'closeDate' },
-      { targetKey: 'dueDate',      strategy: 'crm-field', sourceFieldId: 'dueDate' },
-      { targetKey: 'paymentTerm',  strategy: 'erp-default' },
-      { targetKey: 'productLines', strategy: 'crm-field', sourceFieldId: 'products' },
-      { targetKey: 'currency',     strategy: 'system',    systemValue: 'base-currency' },
-      { targetKey: 'exchangeRate', strategy: 'system',    systemValue: 'rate-one' },
-      { targetKey: 'warehouse',    strategy: 'erp-default' },
-      { targetKey: 'referenceNo',  strategy: 'unmapped' },
-      { targetKey: 'memo',         strategy: 'unmapped' },
+      { targetKey: 'customer',     strategy: 'crm-field', sourceFieldId: 'company' },
+      { targetKey: 'txDate',       strategy: 'crm-field', sourceFieldId: 'transaction-date' },
+      { targetKey: 'dueDate',      strategy: 'crm-field', sourceFieldId: 'due-date' },
+      { targetKey: 'paymentTerm',  strategy: 'crm-field', sourceFieldId: 'payment-terms' },
+      { targetKey: 'productLines', strategy: 'crm-field', sourceFieldId: 'product-lines' },
+      { targetKey: 'currency',     strategy: 'crm-field', sourceFieldId: 'currency' },
+      { targetKey: 'exchangeRate', strategy: 'crm-field', sourceFieldId: 'exchange-rate' },
+      { targetKey: 'warehouse',    strategy: 'crm-field', sourceFieldId: 'warehouse' },
+      { targetKey: 'billingAddress', strategy: 'crm-field', sourceFieldId: 'billing-address' },
+      { targetKey: 'shippingAddress', strategy: 'crm-field', sourceFieldId: 'shipping-address' },
+      { targetKey: 'shipDate',     strategy: 'crm-field', sourceFieldId: 'shipping-date' },
+      { targetKey: 'shipVia',      strategy: 'crm-field', sourceFieldId: 'ship-via' },
+      { targetKey: 'referenceNo',  strategy: 'crm-field', sourceFieldId: 'reference-no' },
+      { targetKey: 'shippingFee',  strategy: 'crm-field', sourceFieldId: 'shipping-fee' },
+      { targetKey: 'memo',         strategy: 'crm-field', sourceFieldId: 'memo' },
     ],
   }
 }
@@ -228,21 +235,21 @@ function servicesSeed(): ConversionConfig {
     lastSavedBy: 'Rizal Candra', lastSavedAt: '2026-09-09T10:00:00',
     criterion: null,
     mappings: [
-      { targetKey: 'customer',     strategy: 'crm-field', sourceFieldId: 'customer' },
+      { targetKey: 'customer',     strategy: 'crm-field', sourceFieldId: 'company' },
       { targetKey: 'txDate',       strategy: 'system',    systemValue: 'conversion-date' },
-      { targetKey: 'dueDate',      strategy: 'crm-field', sourceFieldId: 'closeDate' },
+      { targetKey: 'dueDate',      strategy: 'crm-field', sourceFieldId: 'due-date' },
       // productLines intentionally UNMAPPED → this draft is incomplete.
       { targetKey: 'productLines', strategy: 'unmapped' },
-      { targetKey: 'currency',     strategy: 'system',    systemValue: 'base-currency' },
+      { targetKey: 'currency',     strategy: 'crm-field', sourceFieldId: 'currency' },
     ],
   }
 }
 
 const CONFIGS_SEED: ConversionConfig[] = [dealsSeed(), servicesSeed()]
 export const conversionConfigs = reactive<ConversionConfig[]>(
-  load('crm-conversion-configs-v3', CONFIGS_SEED),
+  load('crm-conversion-configs-v4', CONFIGS_SEED),
 )
-export function persistConversionConfigs() { saveSnapshot('crm-conversion-configs-v3', conversionConfigs) }
+export function persistConversionConfigs() { saveSnapshot('crm-conversion-configs-v4', conversionConfigs) }
 
 function load<T>(key: string, fallback: T): T {
   return (loadSnapshot<T>(key) as T) ?? fallback
@@ -273,7 +280,7 @@ const CATEGORY_CRM_TYPES: Record<ErpFieldCategory, CrmFieldType[]> = {
   date: ['date'],
   text: ['text', 'pick-list', 'radio'],
   'email-phone-url': ['text'],
-  'currency-code': [],          // system/fixed only in V1
+  'currency-code': ['pick-list', 'radio', 'text'],
   money: ['currency', 'number'],
   decimal: ['number'],
   percentage: ['number'],
@@ -295,13 +302,33 @@ export function allowedStrategies(field: ErpTargetField): SourceStrategy[] {
 export type EntryStatus = 'compatible' | 'missing' | 'incompatible' | 'unmapped-optional'
 export interface EntryEval { status: EntryStatus; message?: string }
 
-export function evalEntry(entry: MappingEntry, field: ErpTargetField, mod: CrmModule): EntryEval {
+const PROPERTY_TYPE_TO_CRM: Record<DealPropertyType, CrmFieldType | null> = {
+  'Single-line text': 'text', 'Multi-line text': 'text', 'URL': 'text', 'Email': 'text',
+  'Phone number': 'text', 'Number': 'number', 'Calculation': 'number', 'Rollup': 'number',
+  'Date picker': 'date', 'Date and time picker': 'date',
+  'Dropdown select': 'pick-list', 'Radio select': 'radio',
+  'Single checkbox': 'radio', 'Multiple checkboxes': 'pick-list',
+  'User': 'user', 'Product list': 'product-list',
+  'Company': 'customer', 'Contact': 'customer',
+  'Related list': null, 'File': null,
+}
+
+export function evalEntry(entry: MappingEntry, field: ErpTargetField, mod: CrmModule, properties?: DealProperty[]): EntryEval {
   const required = field.requirement === 'required'
   if (entry.strategy === 'unmapped') {
     if (required) return { status: 'missing', message: `${field.label} is required — map a source.` }
     return { status: 'unmapped-optional' }
   }
   if (entry.strategy === 'crm-field') {
+    const props = properties ?? moduleStores(mod.id).properties
+    const p = props.find((x) => x.id === entry.sourceFieldId)
+    if (p) {
+      const crmType = PROPERTY_TYPE_TO_CRM[p.type]
+      if (crmType && !compatibleCrmTypes(field.category).includes(crmType)) {
+        return { status: 'incompatible', message: `${p.name} (${p.type}) is not compatible with ${field.label}.` }
+      }
+      return { status: 'compatible' }
+    }
     const f = mod.fields.find((x) => x.id === entry.sourceFieldId)
     if (!f) return { status: 'incompatible', message: 'Mapped CRM field no longer exists.' }
     if (!compatibleCrmTypes(field.category).includes(f.type)) {
@@ -320,10 +347,11 @@ export function configState(cfg: ConversionConfig): ConfigState {
   }
   if (!cfg.mappings.length && !cfg.enabled) return 'not-configured'
 
+  const props = moduleStores(cfg.moduleId).properties
   const fields = erpTargetFields(cfg.target)
   const anyBroken = fields.some((f) => {
     const e = cfg.mappings.find((m) => m.targetKey === f.key)
-    const status = evalEntry(e ?? { targetKey: f.key, strategy: 'unmapped' }, f, mod ?? ({ fields: [] } as unknown as CrmModule)).status
+    const status = evalEntry(e ?? { targetKey: f.key, strategy: 'unmapped' }, f, mod ?? ({ fields: [] } as unknown as CrmModule), props).status
     return status === 'missing' || status === 'incompatible'
   })
 
@@ -345,11 +373,12 @@ export function isConfigReady(moduleId: string): boolean {
 /** Mapped / total counts for the readiness panel + list "Mapping readiness" cell. */
 export function readinessCounts(cfg: ConversionConfig): { mappedRequired: number; totalRequired: number; mappedOptional: number; totalOptional: number } {
   const mod = getCrmModule(cfg.moduleId) ?? ({ fields: [] } as unknown as CrmModule)
+  const props = moduleStores(cfg.moduleId).properties
   const fields = erpTargetFields(cfg.target)
   let mappedRequired = 0, totalRequired = 0, mappedOptional = 0, totalOptional = 0
   for (const f of fields) {
     const e = cfg.mappings.find((m) => m.targetKey === f.key) ?? { targetKey: f.key, strategy: 'unmapped' as SourceStrategy }
-    const ok = evalEntry(e, f, mod).status === 'compatible'
+    const ok = evalEntry(e, f, mod, props).status === 'compatible'
     if (f.requirement === 'optional') { totalOptional++; if (ok) mappedOptional++ }
     else { totalRequired++; if (ok) mappedRequired++ }
   }

@@ -144,7 +144,7 @@ function clearFilters() { search.value = ''; statusFilter.value = ''; metricFilt
 const baseColumns: TableColumn[] = [
   { key: 'id',          label: t('Number'),       kind: 'default', sortable: true, sortType: 'text' },
   { key: 'name',        label: t('Service name'), kind: 'name',    sortable: true, sortType: 'text' },
-  { key: 'company',     label: t('Customer'),     kind: 'name',    sortable: true, sortType: 'text' },
+  { key: 'company',     label: t('Company'),      kind: 'name',    sortable: true, sortType: 'text' },
   { key: 'stage',       label: t('Stage'),        kind: 'status',  sortable: true, sortType: 'text' },
   { key: 'owner',       label: t('Owner'),        kind: 'name',    sortable: true, sortType: 'text' },
   { key: 'value',       label: t('Value'),        kind: 'amount',  align: 'right', sortable: true, sortType: 'number' },
@@ -229,7 +229,7 @@ const importOpen = ref(false)
 function onImportUpload(files: File[]) { importOpen.value = false; successToast(`${files.length} ${files.length === 1 ? t('file') : t('files')} ${t('queued for import')}`) }
 const exportOpen = ref(false)
 const exportColumns = [
-  { key: 'name', label: t('Service name') }, { key: 'stage', label: t('Stage') }, { key: 'company', label: t('Customer') },
+  { key: 'name', label: t('Service name') }, { key: 'stage', label: t('Stage') }, { key: 'company', label: t('Company') },
   { key: 'owner', label: t('Owner') }, { key: 'value', label: t('Value') }, { key: 'serviceType', label: t('Service type') },
   { key: 'dueDate', label: t('Due date') },
 ]

@@ -16,9 +16,9 @@ import {
   SOURCE_STRATEGY_LABEL, SYSTEM_VALUE_LABEL, allowedStrategies, compatibleCrmTypes, evalEntry,
   type ErpTargetField, type MappingEntry, type SourceStrategy, type SystemValueKey,
 } from '~/data/crmConversion'
-import type { CrmModule } from '~/data/crm'
+import type { CrmModule, DealProperty } from '~/data/crm'
 
-const props = defineProps<{ field: ErpTargetField; entry: MappingEntry; mod: CrmModule }>()
+const props = defineProps<{ field: ErpTargetField; entry: MappingEntry; mod: CrmModule; properties?: DealProperty[] }>()
 const emit = defineEmits<{ 'update:entry': [MappingEntry] }>()
 const { t } = useLocale()
 
@@ -26,9 +26,16 @@ const strategyOptions = computed(() =>
   allowedStrategies(props.field).map((s) => ({ value: s, label: t(SOURCE_STRATEGY_LABEL[s]) })),
 )
 
-// The CRM field dropdown lists the module's own properties. Compatible types are
+// The CRM field dropdown lists all module properties. Compatible types are
 // offered first (an incompatible pick is still allowed but flagged by evalEntry).
 const fieldOptions = computed(() => {
+  if (props.properties?.length) {
+    const types = compatibleCrmTypes(props.field.category)
+    const rank = (t: string) => (types.includes(t as never) ? 0 : 1)
+    return [...props.properties]
+      .sort((a, b) => rank(a.type) - rank(b.type))
+      .map((p) => ({ value: p.id, label: p.name }))
+  }
   const types = compatibleCrmTypes(props.field.category)
   const rank = (t: string) => (types.includes(t as never) ? 0 : 1)
   return [...props.mod.fields]
@@ -42,13 +49,13 @@ const SYSTEM_VALUES: SystemValueKey[] = [
 ]
 const systemOptions = computed(() => SYSTEM_VALUES.map((v) => ({ value: v, label: t(SYSTEM_VALUE_LABEL[v]) })))
 
-const evalResult = computed(() => evalEntry(props.entry, props.field, props.mod))
+const evalResult = computed(() => evalEntry(props.entry, props.field, props.mod, props.properties))
 
 // Read-only summary of the resolved value (protected rows).
 const protectedValue = computed(() => {
   const e = props.entry
   if (e.systemValue) return t(SYSTEM_VALUE_LABEL[e.systemValue])
-  if (e.sourceFieldId) return props.mod.fields.find((f) => f.id === e.sourceFieldId)?.label ?? e.sourceFieldId
+  if (e.sourceFieldId) return props.properties?.find((p) => p.id === e.sourceFieldId)?.name ?? props.mod.fields.find((f) => f.id === e.sourceFieldId)?.label ?? e.sourceFieldId
   if (e.fixedLabel) return t(e.fixedLabel)
   return t('Not mapped')
 })

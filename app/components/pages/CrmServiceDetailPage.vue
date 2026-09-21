@@ -26,7 +26,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import { formatMoney } from '~/utils/currency'
 import { successToast, infoToast } from '~/utils/toasts'
 import {
-  getServiceDeal, serviceNo, serviceStages, serviceStageBadgeType, serviceActivityLog,
+  getServiceDeal, moduleStores, serviceNo, serviceStages, serviceStageBadgeType, serviceActivityLog,
   serviceProductsTotal, lineSubtotal, moveServiceDealStage,
   archiveServiceDeal, restoreServiceDeal, deleteServiceDeal, persistServiceDeals,
   type OrderStatus, type DealAttachment,
@@ -50,6 +50,9 @@ const { t } = useLocale()
 const deal = computed(() => getServiceDeal(props.orderId))
 const money = (n: number) => formatMoney(n, deal.value?.currency ?? 'IDR')
 const productsTotal = computed(() => (deal.value ? serviceProductsTotal(deal.value) : 0))
+
+const ordersTabTarget = computed(() => moduleStores('services').detailLayout.tabs.find(t => t.key === 'orders')?.erpTarget ?? null)
+const ordersTabLabel = computed(() => ordersTabTarget.value === 'sales-order' ? 'Sales orders' : ordersTabTarget.value === 'sales-quote' ? 'Sales quotes' : null)
 
 // ── Pipeline (from the module's configured servicePipelines) ──
 const stages = computed(() => serviceStages())
@@ -288,10 +291,10 @@ function goTransaction(id: string) { router.push(`/sales-orders/${id}`) }
       <MpTabs :key="deal.id" id="svc-tabs" :default-value="0" variant-color="green" class="detail-tabs">
         <MpTabList>
           <MpTab id="svc-tab-details" value="details">{{ t('Service details') }}</MpTab>
-          <MpTab id="svc-tab-activity" value="activity">{{ t('Activity') }}</MpTab>
           <MpTab id="svc-tab-notes" value="notes">{{ t('Notes') }}</MpTab>
           <MpTab id="svc-tab-files" value="files">{{ t('Files') }}</MpTab>
-          <MpTab id="svc-tab-orders" value="orders">{{ t('ERP transactions') }}</MpTab>
+          <MpTab v-if="ordersTabLabel" id="svc-tab-orders" value="orders">{{ t(ordersTabLabel) }}</MpTab>
+          <MpTab id="svc-tab-activity" value="activity">{{ t('Activity') }}</MpTab>
         </MpTabList>
         <MpTabPanels>
 
@@ -481,9 +484,9 @@ function goTransaction(id: string) { router.push(`/sales-orders/${id}`) }
             <p v-else class="detail-tab-empty">{{ t('No files attached to this service yet. Upload one above.') }}</p>
           </MpTabPanel>
 
-          <!-- ── ERP transactions ── -->
-          <MpTabPanel value="orders">
-            <h3 class="detail-tab-heading">{{ t('ERP transactions') }}</h3>
+          <!-- ── Sales orders/quotes ── -->
+          <MpTabPanel v-if="ordersTabLabel" value="orders">
+            <h3 class="detail-tab-heading">{{ t(ordersTabLabel) }}</h3>
             <table v-if="deal.linkedTransaction" class="detail-linked">
               <colgroup>
                 <col class="detail-linked-col--date" />

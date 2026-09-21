@@ -46,7 +46,7 @@ const route = useRoute()
 function scan() {
   if (typeof document === 'undefined') return
   const els = Array.from(document.querySelectorAll<HTMLElement>('[data-devchange]'))
-  const seen = new Map<string, number>()
+  const seen = new Set<string>()
   const present = new Set<string>()
   const next: Marker[] = []
   for (const el of els) {
@@ -58,13 +58,13 @@ function scan() {
     if (r.width === 0 && r.height === 0) continue // not rendered
     present.add(id)
     if (resolved.value.has(id)) continue // this user marked it resolved → hide
-    const n = (seen.get(id) ?? 0) + 1
-    seen.set(id, n)
+    if (seen.has(id)) continue // one marker per change ID is enough
+    seen.add(id)
     // Anchor the marker at the element's top-right corner, inset a touch.
     const x = Math.min(r.right - 6, window.innerWidth - 12)
     const y = Math.max(r.top + 6, 12)
     const visible = r.bottom > 0 && r.top < window.innerHeight && r.right > 0 && r.left < window.innerWidth
-    next.push({ key: `${id}#${n}`, change, x, y, visible })
+    next.push({ key: id, change, x, y, visible })
   }
   markers.value = next
   presentIds.value = present

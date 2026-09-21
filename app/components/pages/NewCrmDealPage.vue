@@ -75,6 +75,9 @@ function toTagData(values: string[]): DataInterface[] {
   return values.map((v, i) => ({ text: v, id: `${i}-${v}`, value: v, isInvalid: false, isReadOnly: false }))
 }
 
+// ── Deal name ──
+const dealName = ref('')
+
 // ── Header fields — CONTACT first; the company is derived from the contact's
 // associations (a contact may have 0, 1, or several companies). ──
 const contactId       = ref('')
@@ -355,6 +358,7 @@ onMounted(() => {
   }
   const d = getDeal(props.orderId)
   if (!d) return
+  dealName.value = d.name ?? ''
   suppressAddressFill.value = true
   nextTick(() => { suppressAddressFill.value = false })
   // Restore the contact from the deal's picName; prefer one associated with the
@@ -410,7 +414,7 @@ function onSave() {
     discount: it.discountPct,
   }))
   const input: DealInput = {
-    name: companyName || contact?.name || 'New deal',
+    name: dealName.value.trim() || companyName || contact?.name || 'New deal',
     customerId,
     company: companyName,
     stage: defaultDealStage(),
@@ -459,6 +463,14 @@ function onSave() {
 
     <!-- ── Scrollable stage ── -->
     <div class="si-form-stage">
+
+      <!-- ── Header section 0: Deal name ── -->
+      <section class="si-header1 si-dashed-divider">
+        <MpFormControl id="f-deal-name" class="si-field" style="flex:0 0 var(--si-field-wide)">
+          <MpFormLabel>{{ t('Deal name') }}</MpFormLabel>
+          <MpInput id="f-deal-name-inp" v-model="dealName" is-full-width :placeholder="t('Enter deal name')" />
+        </MpFormControl>
+      </section>
 
       <!-- ── Header section 1: Contact (primary) + its Company + Deal value ── -->
       <section class="si-header1 si-dashed-divider">

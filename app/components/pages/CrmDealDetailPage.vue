@@ -37,7 +37,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import { formatMoney } from '~/utils/currency'
 import { successToast, infoToast } from '~/utils/toasts'
 import {
-  getDeal, ONGOING_STAGES, moveDealStage, archiveDeal, restoreDeal, deleteDeal,
+  getDeal, moduleStores, ONGOING_STAGES, moveDealStage, archiveDeal, restoreDeal, deleteDeal,
   dealTotals, dealExpectedValue, dealDaysInStage, dealStageAgingDays, formatAging,
   dealActivityLog, addDealAttachment, removeDealAttachment, setDealProductsFull,
   getDealSalesOrder,
@@ -64,6 +64,9 @@ const deal = computed(() => getDeal(props.orderId))
 const money = (n: number) => formatMoney(n, deal.value?.currency ?? 'IDR')
 const totals = computed(() => (deal.value ? dealTotals(deal.value) : null))
 void lineSubtotal
+
+const ordersTabTarget = computed(() => moduleStores('deals').detailLayout.tabs.find(t => t.key === 'orders')?.erpTarget ?? null)
+const ordersTabLabel = computed(() => ordersTabTarget.value === 'sales-order' ? 'Sales orders' : ordersTabTarget.value === 'sales-quote' ? 'Sales quotes' : null)
 
 // ── Linked records ──
 const customer = computed(() => (deal.value ? crmCustomers.find((c) => c.id === deal.value!.customerId) : undefined))
@@ -409,64 +412,103 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
           <MpTab id="deal-tab-details" value="details">{{ t('Deal details') }}</MpTab>
           <MpTab id="deal-tab-notes" value="notes">{{ t('Notes') }}</MpTab>
           <MpTab id="deal-tab-files" value="files">{{ t('Files') }}</MpTab>
-          <MpTab id="deal-tab-orders" value="orders">{{ t('ERP transactions') }}</MpTab>
+          <MpTab v-if="ordersTabLabel" id="deal-tab-orders" value="orders">{{ t(ordersTabLabel) }}</MpTab>
           <MpTab id="deal-tab-activity" value="activity">{{ t('Activity') }}</MpTab>
         </MpTabList>
         <MpTabPanels>
 
-          <!-- ── Deal details ── -->
+          <!-- ── Deal details — sections mirror the module Layout config ── -->
           <MpTabPanel value="details">
-            <section class="detail-summary">
-              <!-- Primary row: Contact (primary) · its Company · emphasised Deal value -->
-              <div class="content-list-grid">
-                <div class="content-list-col deal-contact-col">
-                  <ContentList :label="t('Contact')">
+            <!-- §1 Overview (3 cols) — matches Layout: col1=Deal name/Company/Billing,
+                 col2=Contact/Email/Phone, col3=Value/Owner/Currency -->
+            <section class="detail-summary" data-devchange="crm-deal-detail-layout-sync">
+              <h3 class="detail-section-title">{{ t('Overview') }}</h3>
+              <div class="content-list-grid content-list-grid--3">
+                <div class="content-list-col">
+                  <ContentList :label="t('Deal name')" :value="deal.name" />
+                  <ContentList :label="t('Company')" data-devchange="deal-contact-first">
+                    <a v-if="customer" class="cell-link" @click="goCustomer(customer.id)">{{ deal.company }}</a>
+                    <span v-else>{{ deal.company || '—' }}</span>
+                  </ContentList>
+                  <ContentList :label="t('Billing address')" :value="deal.billingAddress || '—'" />
+                </div>
+                <div class="content-list-col">
+                  <ContentList :label="t('Contact person')">
                     <div v-if="deal.contacts?.length" class="deal-contacts">
                       <div v-for="(cp, i) in deal.contacts" :key="i" class="deal-contact">
                         <span class="deal-contact-name">{{ cp.name }}</span>
-                        <a v-if="cp.email" class="deal-contact-line cell-link" :href="`mailto:${cp.email}`">{{ cp.email }}</a>
-                        <span v-if="cp.phone" class="deal-contact-line">{{ cp.phone }}</span>
                       </div>
                     </div>
                     <template v-else-if="deal.picName">{{ deal.picName }}</template>
                     <template v-else>—</template>
                   </ContentList>
-                </div>
-                <div class="content-list-col">
-                  <!-- Company shown only when the contact has one associated. -->
-                  <ContentList :label="t('Company')" data-devchange="deal-contact-first">
-                    <a v-if="customer" class="cell-link" @click="goCustomer(customer.id)">{{ deal.company }}</a>
-                    <span v-else>{{ deal.company || '—' }}</span>
+                  <ContentList :label="t('Contact person email')">
+                    <template v-if="deal.contacts?.length">
+                      <a v-for="(cp, i) in deal.contacts.filter(c => c.email)" :key="i" class="cell-link" :href="`mailto:${cp.email}`">{{ cp.email }}</a>
+                      <span v-if="!deal.contacts.some(c => c.email)">—</span>
+                    </template>
+                    <template v-else-if="deal.email"><a class="cell-link" :href="`mailto:${deal.email}`">{{ deal.email }}</a></template>
+                    <template v-else>—</template>
+                  </ContentList>
+                  <ContentList :label="t('Contact person phone')">
+                    <template v-if="deal.contacts?.length">
+                      <span v-for="(cp, i) in deal.contacts.filter(c => c.phone)" :key="i">{{ cp.phone }}</span>
+                      <span v-if="!deal.contacts.some(c => c.phone)">—</span>
+                    </template>
+                    <template v-else-if="deal.phones?.length">{{ deal.phones[0] }}</template>
+                    <template v-else>—</template>
                   </ContentList>
                 </div>
-                <div class="detail-primary-total">
-                  <span class="detail-total-label">{{ t('Deal value') }}</span>
-                  <span class="detail-total-amount">{{ money(dealExpectedValue(deal)) }}</span>
+                <div class="content-list-col">
+                  <ContentList :label="t('Value')">
+                    <span class="detail-value-amount">{{ money(dealExpectedValue(deal)) }}</span>
+                  </ContentList>
+                  <ContentList :label="t('Owner')" :value="deal.owner || '—'" />
+                  <ContentList :label="t('Currency')" :value="deal.currency || '—'" />
                 </div>
               </div>
+            </section>
 
-              <div class="detail-divider" />
-
-              <!-- Detail grid: col 1 = 318px, col 2+ fill equally (max 5 cols) -->
-              <div class="content-list-grid">
-                <div class="content-list-col">
-                  <ContentList :label="t('Billing address')" :value="deal.billingAddress || '—'" />
-                  <ContentList :label="t('Ship to')" :value="deal.shipTo || '—'" />
-                </div>
+            <!-- §2 Transaction (4 cols) -->
+            <section class="detail-details-block">
+              <h3 class="detail-section-title">{{ t('Transaction') }}</h3>
+              <div class="content-list-grid content-list-grid--4">
                 <div class="content-list-col">
                   <ContentList :label="t('Transaction date')" :value="fmtDate(deal.transactionDate || deal.createdAt)" />
-                  <ContentList :label="t('Close date')" :value="fmtDate(deal.expectedCloseDate)" />
+                  <ContentList :label="t('Reference no.')" :value="deal.referenceNumber || '—'" />
+                </div>
+                <div class="content-list-col">
+                  <ContentList :label="t('Due date')" :value="fmtDate(deal.expectedCloseDate)" />
                   <ContentList :label="t('Payment terms')" :value="deal.paymentTerms || '—'" />
                 </div>
                 <div class="content-list-col">
-                  <ContentList :label="t('Ship date')" :value="fmtDate(deal.shipDate)" />
-                  <ContentList :label="t('Ship via')" :value="deal.shipVia || '—'" />
-                  <ContentList :label="t('Tracking no.')" :value="deal.trackingNo || '—'" />
+                  <ContentList :label="t('Expected close date')" :value="fmtDate(deal.expectedCloseDate)" />
+                  <ContentList :label="t('Exchange rate')" :value="deal.exchangeRate !== 1 ? String(deal.exchangeRate) : '—'" />
                 </div>
                 <div class="content-list-col">
                   <ContentList :label="t('Transaction no.')" :value="dealNumber" />
-                  <ContentList :label="t('Reference no.')" :value="deal.referenceNumber || '—'" />
+                </div>
+              </div>
+            </section>
+
+            <!-- §3 Shipping & delivery (4 cols) -->
+            <section class="detail-details-block">
+              <h3 class="detail-section-title">{{ t('Shipping & delivery') }}</h3>
+              <div class="content-list-grid content-list-grid--4">
+                <div class="content-list-col">
                   <ContentList :label="t('Warehouse')" :value="deal.warehouse || '—'" />
+                  <ContentList :label="t('Ship via')" :value="deal.shipVia || '—'" />
+                </div>
+                <div class="content-list-col">
+                  <ContentList :label="t('Shipping address')" :value="deal.shipTo || '—'" />
+                  <ContentList :label="t('Tracking no.')" :value="deal.trackingNo || '—'" />
+                </div>
+                <div class="content-list-col">
+                  <ContentList :label="t('Ship date')" :value="fmtDate(deal.shipDate)" />
+                  <ContentList :label="t('Shipping fee')" :value="deal.shippingFee ? money(deal.shippingFee) : '—'" />
+                </div>
+                <div class="content-list-col">
+                  <ContentList :label="t('Delivery date')" :value="'—'" />
                 </div>
               </div>
             </section>
@@ -636,9 +678,9 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
             <p v-else class="detail-tab-empty">{{ t('No files attached to this deal yet. Upload one above.') }}</p>
           </MpTabPanel>
 
-          <!-- ── ERP transactions — the linked ERP sales order, same table as the ERP index ── -->
-          <MpTabPanel value="orders">
-            <h3 class="detail-tab-heading">{{ t('ERP transactions') }}</h3>
+          <!-- ── Sales orders/quotes — the linked ERP transaction, same table as the ERP index ── -->
+          <MpTabPanel v-if="ordersTabLabel" value="orders">
+            <h3 class="detail-tab-heading">{{ t(ordersTabLabel) }}</h3>
             <table v-if="linkedOrder" class="detail-linked">
               <colgroup>
                 <col class="detail-linked-col--date" />
@@ -857,33 +899,23 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
 .deal-bar-seg--filled { background: var(--mp-border-selected, #029861); }
 .deal-bar-seg--lost { background: var(--mp-background-danger, #c9372c); }
 
-/* ── Header summary ── */
-.detail-summary { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
-.detail-primary-total {
-  grid-column: 3 / -1; justify-self: end; align-self: start;
-  padding-top: var(--mp-spacing-2);
-  display: flex; align-items: baseline; gap: var(--mp-spacing-2);
+/* ── Section headings inside Deal details tab ── */
+.detail-section-title {
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default); margin: 0 0 var(--mp-spacing-4) 0;
 }
-.detail-total-label, .detail-total-amount {
-  font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
-}
+.detail-summary { display: flex; flex-direction: column; }
+.detail-value-amount { font-size: var(--mp-font-sizes-lg, 18px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 
-/* dashed rule between header 1 and header 2 */
-.detail-divider {
-  height: var(--mp-border-width-sm, 1px);
-  background: repeating-linear-gradient(to right, var(--mp-border-default, #e3e7e9) 0, var(--mp-border-default, #e3e7e9) 4px, transparent 4px, transparent 8px);
-}
-
-/* Detail grid: col 1 = 318px, col 2+ fill equally */
+/* Detail grids — 3-col (Overview) and 4-col (Transaction / Shipping) */
 .content-list-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 318px) repeat(4, minmax(0, 1fr));
-  column-gap: var(--mp-spacing-6); row-gap: 0;
+  display: grid; column-gap: var(--mp-spacing-6); row-gap: 0;
 }
+.content-list-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.content-list-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .content-list-col { display: flex; flex-direction: column; min-width: 0; }
 
 /* Contact person — multiple contacts side by side inside one ContentList */
-.deal-contact-col { grid-column: span 1; }
 .deal-contacts { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-6); }
 .deal-contact { display: flex; flex-direction: column; min-width: 0; }
 .deal-contact-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }

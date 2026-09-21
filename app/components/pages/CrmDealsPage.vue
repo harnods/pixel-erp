@@ -42,7 +42,7 @@ import {
   archiveDeal, restoreDeal, deleteDeal, bulkChangeOwner, bulkChangeStage, convertDeal,
   dealConversionTarget, dealExpectedValue, isDealOpen, getDeal, dealDraftSeed, dealNo,
   CRM_OWNERS, crmCustomers, dealStageBadgeType, dealStageLabel, getCrmModule,
-  dealPipelineDisplay, dealPipelineViews, dealPipelines,
+  dealPipelineDisplay, dealPipelines,
   type Deal, type DealStage, type DealDraftSeed,
 } from '~/data/crm'
 import { pinsForModule, metricPinValue, unpinReportMetric } from '~/data/crmReports'
@@ -59,7 +59,7 @@ function stageKind(c: DealStage): 'open' | 'won' | 'lost' {
   return c === 'Won' ? 'won' : c === 'Lost' ? 'lost' : 'open'
 }
 // Card field / display toggles from the module builder's right-hand panel.
-const cardFieldOn = (key: string) => activeViewDisplay.value.cardFields.some((f) => f.key === key && f.on)
+const cardFieldOn = (key: string) => dealPipelineDisplay.cardFields.some((f) => f.key === key && f.on)
 function asDeal(row: unknown): Deal { return row as Deal }
 function goDetail(id: string) { router.push(`/crm/deals/${id}`) }
 function goOrder(id: string) { router.push(`/crm/orders/${id}`) }
@@ -112,28 +112,8 @@ const SAVED_VIEWS = ['All records', 'My records', 'Recently created', 'Recently 
 type SavedView = typeof SAVED_VIEWS[number]
 const savedView = ref<SavedView>('All records')
 
-// ── Saved pipeline views (configured in the module builder) — one Kanban tab
-//    per view; the active view hides its stages from the board. Deals stages map
-//    to the pipeline stages by position (both ordered identically). ──
-const pipelineViewTabs = computed(() => dealPipelineViews)
-const activePipelineViewId = ref('default')
-watch(pipelineViewTabs, (tabs) => {
-  if (!tabs.some((v) => v.id === activePipelineViewId.value)) activePipelineViewId.value = tabs[0]?.id ?? 'default'
-}, { immediate: true })
-const activePipelineViewIndex = computed(() => Math.max(0, pipelineViewTabs.value.findIndex((v) => v.id === activePipelineViewId.value)))
-// The active view's board display (total/card fields/aging/color) drives the
-// board; falls back to the module's shared display for the default/legacy case.
-const activeViewDisplay = computed(() => {
-  const v = pipelineViewTabs.value.find((x) => x.id === activePipelineViewId.value)
-  return v?.display ?? dealPipelineDisplay
-})
-const hiddenDealStages = computed<Set<DealStage>>(() => {
-  const v = pipelineViewTabs.value.find((x) => x.id === activePipelineViewId.value)
-  const stages = dealPipelines.find((p) => p.id === 'default')?.stages ?? dealPipelines[0]?.stages ?? []
-  const hidden = new Set<DealStage>()
-  if (v) stages.forEach((s, i) => { if (v.hiddenStageIds.includes(s.id) && DEAL_STAGES[i]) hidden.add(DEAL_STAGES[i]!) })
-  return hidden
-})
+// ── Pipeline display — the module's shared display drives the board. ──
+const hiddenDealStages = computed<Set<DealStage>>(() => new Set<DealStage>())
 
 // ── View toggle (list default per PRD) ──
 const view = ref<'table' | 'board'>('table')
@@ -173,7 +153,7 @@ const appliedFilters = reactive<CrmDealsFiltersValue>(emptyCrmDealsFilters())
 const keywordColumns = [
   { key: 'name',            label: t('Deal name') },
   { key: 'id',              label: t('Deal number') },
-  { key: 'company',         label: t('Customer') },
+  { key: 'company',         label: t('Company') },
   { key: 'owner',           label: t('Owner') },
   { key: 'referenceNumber', label: t('Reference number') },
 ]
@@ -466,10 +446,10 @@ function onImportUpload(files: File[]) {
 const exportOpen = ref(false)
 const selectedCount = ref(0)
 const exportColumns = [
-  { key: 'name', label: t('Deal name') }, { key: 'stage', label: t('Stage') }, { key: 'company', label: t('Customer') },
+  { key: 'name', label: t('Deal name') }, { key: 'stage', label: t('Stage') }, { key: 'company', label: t('Company') },
   { key: 'picName', label: t('Contact person') },
-  { key: 'owner', label: t('Owner') }, { key: 'value', label: t('Expected deal value') }, { key: 'currency', label: t('Currency') },
-  { key: 'expectedCloseDate', label: t('Close date') }, { key: 'conversion', label: t('Conversion status') },
+  { key: 'owner', label: t('Owner') }, { key: 'value', label: t('Value') }, { key: 'currency', label: t('Currency') },
+  { key: 'expectedCloseDate', label: t('Expected close date') }, { key: 'conversion', label: t('Conversion status') },
   { key: 'salesOrderId', label: t('Linked ERP transaction') }, { key: 'lastActivity', label: t('Last updated') },
 ]
 function onExport() { exportOpen.value = false; successToast(t('Export ready — check your downloads')) }
@@ -485,12 +465,12 @@ function stageBadge(stage: DealStage): { type: 'completed' | 'announcement' | 'i
 const baseColumns: TableColumn[] = [
   { key: 'id',            label: t('Number'),         kind: 'default', sortable: true, sortType: 'text'   },
   { key: 'name',          label: t('Deal name'),      kind: 'name',    sortable: true, sortType: 'text'   },
-  { key: 'company',       label: t('Customer'),       kind: 'name',    sortable: true, sortType: 'text'   },
+  { key: 'company',       label: t('Company'),        kind: 'name',    sortable: true, sortType: 'text'   },
   { key: 'contactPerson', label: t('Contact person'), kind: 'name',    sortable: true, sortType: 'text'   },
   { key: 'stage',         label: t('Stage'),          kind: 'status',  sortable: true, sortType: 'text'   },
   { key: 'owner',         label: t('Owner'),          kind: 'name',    sortable: true, sortType: 'text'   },
-  { key: 'expectedCloseDate', label: t('Close date'), kind: 'date',    sortable: true, sortType: 'text'   },
-  { key: 'value',         label: t('Deal value'),     kind: 'amount',  align: 'right', sortable: true, sortType: 'number' },
+  { key: 'expectedCloseDate', label: t('Expected close date'), kind: 'date', sortable: true, sortType: 'text' },
+  { key: 'value',         label: t('Value'),          kind: 'amount',  align: 'right', sortable: true, sortType: 'number' },
 ]
 const optionalColumns: TableColumn[] = [
   { key: 'lastActivity',      label: t('Last updated'), kind: 'default', sortable: true, sortType: 'text' },
@@ -610,19 +590,6 @@ const toggleAirene = inject<() => void>('toggleAirene')
         </div>
       </div>
 
-      <!-- ── Saved view tabs (board only) — one tab per pipeline view configured
-           in the module builder; the active view hides its stages. ── -->
-      <MpTabs
-        v-if="view === 'board' && pipelineViewTabs.length > 1"
-        id="deal-view-tabs" class="deal-view-tabs" variant-color="green" is-manual
-        :model-value="activePipelineViewIndex"
-        @change="(i: number) => (activePipelineViewId = pipelineViewTabs[i]?.id ?? 'default')"
-      >
-        <MpTabList>
-          <MpTab v-for="v in pipelineViewTabs" :key="v.id">{{ v.name }}</MpTab>
-        </MpTabList>
-      </MpTabs>
-
       <!-- ── Board view ── -->
       <div v-if="view === 'board'" class="kanban">
         <div class="kanban__board">
@@ -630,7 +597,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
             v-for="col in boardColumns"
             :key="col.stage"
             class="kcol"
-            :class="{ 'kcol--over': dragOverStage === col.stage, [`kcol--${stageKind(col.stage)}`]: activeViewDisplay.colorColumns }"
+            :class="{ 'kcol--over': dragOverStage === col.stage, [`kcol--${stageKind(col.stage)}`]: dealPipelineDisplay.colorColumns }"
             @dragover.prevent="dragOverStage = col.stage"
             @dragleave="dragOverStage === col.stage && (dragOverStage = null)"
             @drop="onDrop(col.stage)"
@@ -658,19 +625,19 @@ const toggleAirene = inject<() => void>('toggleAirene')
                   <p v-if="cardFieldOn('contactPerson') && d.picName" class="deal__sub">{{ d.picName }}</p>
                 </div>
                 <div v-if="cardFieldOn('dealValue')" class="deal__value">{{ formatMoney(dealExpectedValue(d), d.currency) }}</div>
-                <p v-if="cardFieldOn('date') && d.expectedCloseDate" class="deal__sub">{{ d.expectedCloseDate }}</p>
-                <p v-if="cardFieldOn('note') && d.description" class="deal__sub deal__note">{{ d.description }}</p>
-                <div v-if="cardFieldOn('owner') || (activeViewDisplay.showAging && isDealOpen(d))" class="deal__foot">
-                  <span v-if="cardFieldOn('owner')" class="deal__owner">
-                    <span class="deal__avatar" :style="ownerAvatarStyle(d.owner)">{{ ownerInitials(d.owner) }}</span>
-                    {{ d.owner }}
-                  </span>
-                  <span v-if="dealPipelineDisplay.showAging && isDealOpen(d)" class="deal__aging" :class="`deal__aging--${agingTone(agingDays(d))}`" :title="`${t('Open for')} ${agingDays(d)} ${t('days')}`">{{ agingDays(d) }}d</span>
+                <p v-if="cardFieldOn('closeDate') && d.expectedCloseDate" class="deal__sub">{{ d.expectedCloseDate }}</p>
+                <p v-if="cardFieldOn('memo') && d.notes" class="deal__sub deal__note">{{ d.notes }}</p>
+                <span v-if="cardFieldOn('owner')" class="deal__owner">
+                  <span class="deal__avatar" :style="ownerAvatarStyle(d.owner)">{{ ownerInitials(d.owner) }}</span>
+                  {{ d.owner }}
+                </span>
+                <div v-if="dealPipelineDisplay.showAging && isDealOpen(d)" class="deal__foot deal__foot--end" data-devchange="crm-aging-always-bottom-right">
+                  <span class="deal__aging" :class="`deal__aging--${agingTone(agingDays(d))}`" :title="`${t('Open for')} ${agingDays(d)} ${t('days')}`">{{ agingDays(d) }}d</span>
                 </div>
               </article>
               <p v-if="!col.cards.length" class="kcol__empty">{{ t('No deals') }}</p>
             </div>
-            <footer v-if="activeViewDisplay.stageTotal" class="kcol__foot">
+            <footer v-if="dealPipelineDisplay.stageTotal" class="kcol__foot">
               <span class="kcol__total-k">{{ t('Total:') }}</span>
               <span class="kcol__total-v">{{ formatMoney(col.total, 'IDR') }}</span>
             </footer>
@@ -1067,6 +1034,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
 .kcol--open { background: var(--mp-colors-background-information-subtle, #eaf1fb); border-color: var(--mp-colors-border-information, #2f6fd0); }
 .deal__value { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 .deal__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
+.deal__foot--end { justify-content: flex-end; }
 .deal__owner { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .deal__avatar { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 22px; height: 22px; border-radius: var(--mp-radii-full, 999px); font-size: 10px; font-weight: var(--mp-font-weights-semi-bold); line-height: 1; letter-spacing: 0.2px; }
 .deal__aging { flex-shrink: 0; font-size: var(--mp-font-sizes-sm); font-variant-numeric: tabular-nums; color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle, #f0f1f3); border-radius: var(--mp-radii-full, 999px); padding: 1px var(--mp-spacing-2); }

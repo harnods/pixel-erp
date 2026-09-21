@@ -154,13 +154,13 @@ const keywordColumnLabel = computed(() =>
 
           <!-- Customer / Contact person — comparator prefix + typeable tag input. -->
           <div class="cdf-field">
-            <span class="cdf-field-label">{{ customerLabel || 'Customer' }}</span>
+            <span class="cdf-field-label">{{ customerLabel || 'Company' }}</span>
             <ErpTagComparatorField
               :id="`${id}-customer`"
               :comparator="draft.customerComparator"
               :values="draft.customers"
               :options="customerOptions"
-              :placeholder="customerPlaceholder || 'Type a customer…'"
+              :placeholder="customerPlaceholder || 'Type a company…'"
               @update:comparator="draft.customerComparator = $event"
               @update:values="draft.customers = $event"
             />
