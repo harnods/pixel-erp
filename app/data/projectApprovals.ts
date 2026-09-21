@@ -38,6 +38,8 @@ export interface ApprovalItem {
   decidedBy?: string
   decidedAt?: string
   decisionNote?: string
+  /** budget_revision raised from Budget setup: the full proposed baseline, applied on approval */
+  payload?: { lines: { wpId: string; account: string; amount: number }[]; reserves: Record<string, number>; revenue: number }
 }
 
 const SEED: ApprovalItem[] = [

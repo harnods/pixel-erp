@@ -409,6 +409,10 @@ function applyOverage(a: ApprovalItem, approve: boolean, _actor: Actor) {
 }
 
 function applyBudgetRequest(a: ApprovalItem, actor: Actor) {
+  if (a.payload) {
+    saveBudgetRevision(a.projectId, a.payload, `${a.reason ?? ''} (${a.refNo}, raised by ${a.requestedBy})`, actor)
+    return
+  }
   // Seed request BR-2606-01 — move reserve to a line. Generic requests just log.
   if (a.refId === 'brq-1') {
     const b = getBudget('ps-2606')
@@ -845,11 +849,11 @@ export function linkBudgetPlan(projectId: string, data: { planRef: string; reven
   return { ok: true, message: 'Budget baseline saved.' }
 }
 
-export function requestBudgetRevision(projectId: string, input: { amount: number; reason: string; refNo?: string }, actor: Actor): Result {
+export function requestBudgetRevision(projectId: string, input: { amount: number; reason: string; refNo?: string; payload?: ApprovalItem['payload'] }, actor: Actor): Result {
   if (!input.reason.trim()) return { ok: false, error: 'A reason is required.' }
   const p = getProject(projectId)!
   const no = `BR-${p.code.replace('PS-', '')}-${String(approvals.filter(a => a.kind === 'budget_revision' && a.projectId === projectId).length + 1).padStart(2, '0')}`
-  addApproval({ kind: 'budget_revision', projectId, refId: newId('brq'), refNo: no, title: `Budget increase ${fmt(input.amount)}${input.refNo ? ` for ${input.refNo}` : ''}`, requestedBy: actor.name, requestedAt: TODAY_ISO, amount: input.amount, reason: input.reason.trim() })
+  addApproval({ kind: 'budget_revision', projectId, refId: newId('brq'), refNo: no, title: input.payload ? `Budget revision — net ${input.amount >= 0 ? '+' : ''}${fmt(input.amount)}` : `Budget increase ${fmt(input.amount)}${input.refNo ? ` for ${input.refNo}` : ''}`, requestedBy: actor.name, requestedAt: TODAY_ISO, amount: input.amount, reason: input.reason.trim(), payload: input.payload })
   logAudit({ actor: actor.name, role: actor.role, projectId, kind: 'budget_revision', summary: `Requested budget revision ${no} (${fmt(input.amount)})`, reason: input.reason.trim(), refNo: no })
   return { ok: true, message: `Budget revision request ${no} sent to Finance.` }
 }
