@@ -778,6 +778,44 @@ export function checkIssue(itemId: string, projectId: string, qty: number) {
   return { item, own, free, fromOthers, holders, policy: projectPolicy.reservationIssuePolicy }
 }
 
+/** Issue stock to a work package. Own reservation first, then free stock; taking stock reserved to another
+ *  project is blocked or warned per company policy, naming the holding project and its priority. */
+export function issueStock(itemId: string, wpId: string, qty: number, acknowledged: boolean, actor: Actor): Result {
+  const wp = getWorkPackage(wpId)
+  if (!wp) return { ok: false, error: 'Pick a work package.' }
+  const item = getStockItem(itemId)!
+  if (qty <= 0) return { ok: false, error: 'Enter a quantity.' }
+  if (qty > item.onHand) return { ok: false, error: `Only ${item.onHand} ${item.unit} on hand.` }
+  const c = checkIssue(itemId, wp.projectId, qty)
+  if (c.fromOthers > 0) {
+    const holders = c.holders.map(h => `${h.project.code} (priority ${h.project.priority})`).join(', ')
+    if (c.policy === 'block') return { ok: false, error: `${c.fromOthers} ${item.unit} of this is reserved to ${holders}. Request a release instead.` }
+    if (!acknowledged) return { ok: false, error: `${c.fromOthers} ${item.unit} of this is reserved to ${holders}. Confirm to issue anyway.` }
+  }
+  let left = qty
+  for (const r of reservations.filter(x => x.itemId === itemId && x.projectId === wp.projectId && (x.status === 'reserved' || x.status === 'picked'))) {
+    if (!left) break
+    const take = Math.min(r.qty, left)
+    if (take === r.qty) r.status = 'issued'
+    else { r.qty -= take; reservations.push({ ...r, id: newId('rs'), qty: take, status: 'issued' }) }
+    left -= take
+  }
+  left = Math.max(left - c.free, 0)
+  const taken: string[] = []
+  for (const r of reservations.filter(x => x.itemId === itemId && x.projectId !== wp.projectId && (x.status === 'reserved' || x.status === 'picked'))) {
+    if (!left) break
+    const take = Math.min(r.qty, left)
+    r.qty -= take
+    if (!r.qty) { r.status = 'released'; r.releasedAt = TODAY_ISO; r.releaseReason = `Issued to ${getProject(wp.projectId)?.code} over this reservation` }
+    taken.push(`${take} from ${getProject(r.projectId)?.code}`)
+    left -= take
+  }
+  item.onHand -= qty
+  persistReservations()
+  logAudit({ actor: actor.name, role: actor.role, projectId: wp.projectId, kind: 'reservation', summary: `Issued ${qty} ${item.unit} ${item.name} to ${wp.code} ${wp.name}${taken.length ? ` — WARNING: took ${taken.join(', ')} (reserved to another project)` : ''}` })
+  return { ok: true, message: `Issued ${qty} ${item.unit} ${item.name}.` }
+}
+
 export function requestRelease(input: { fromReservationId: string; toProjectId: string; toWpId: string; qty: number; reason: string }, actor: Actor): Result {
   const r = reservations.find(x => x.id === input.fromReservationId)
   if (!r) return { ok: false, error: 'Reservation not found' }
