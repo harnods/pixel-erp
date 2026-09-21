@@ -127,6 +127,7 @@ import { receiptCountsByStage } from '~/data/receipts'
 import { receivingOpenCount } from '~/data/receivingTasks'
 import { putAwayOpenCount } from '~/data/putAwayTasks'
 import { awaitingApprovalGroupCounts, awaitingApprovalTasks } from '~/data/tasks'
+import { pendingApprovals } from '~/data/projectApprovals'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -523,6 +524,28 @@ const erpNavGroups: NavItem[][] = [
       submenu: [
         [{ label: 'Production plans' }, { label: 'Production request' }, { label: 'Work orders' }, { label: 'Bill of materials' }],
         [{ label: 'Production reports', iconType: 'shortcut', shortcutTo: { nav: 'Reports', sub: 'Production' } }, { label: 'Production settings', iconType: 'settings' }],
+      ],
+    },
+    {
+      // Project MTO — job costing for custom make-to-order + service engagements.
+      // Rail per PRD: Projects · Approvals (badged) · New document · Stock
+      // availability · Site change capture, plus Audit log (P3), Budget setup (P4)
+      // and Project settings. The Approvals count is a getter so the (static) nav
+      // array still re-renders when the pending count changes.
+      name: 'Projects', icon: 'briefcase',
+      submenu: [
+        [{ label: 'Projects' }, { label: 'Approvals', to: 'Project approvals' }, { label: 'New document', to: 'Project new document' }],
+        [{ label: 'Stock availability' }, { label: 'Site change capture' }],
+        [{ label: 'Budget setup' }, { label: 'Audit log', to: 'Project audit log' }, { label: 'Project settings', iconType: 'settings' }],
+      ],
+      expandOnClick: [
+        [
+          { label: 'Projects' },
+          { label: 'Approvals', to: 'Project approvals', get count() { return pendingApprovals().length || undefined } },
+          { label: 'New document', to: 'Project new document' },
+        ],
+        [{ label: 'Stock availability' }, { label: 'Site change capture' }],
+        [{ label: 'Budget setup' }, { label: 'Audit log', to: 'Project audit log' }, { label: 'Project settings', iconType: 'settings' }],
       ],
     },
   ],

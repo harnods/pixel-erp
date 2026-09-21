@@ -39,6 +39,8 @@ export default defineNuxtConfig({
     "@/assets/css/erp.css",
     // Shared chrome for the full-bleed CRM list pages (title bar/filter/table/tags).
     "@/assets/css/crm-page.css",
+    // Projects module (Project MTO) — plain CSS, .pm- prefixed.
+    "@/assets/css/project-mto.css",
   ],
   postcss: {
     plugins: {

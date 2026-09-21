@@ -208,6 +208,10 @@ const CreateDeliveryOrderPage = asyncPage(() => import('~/components/pages/Creat
 const PutAwayDetailsPage = asyncPage(() => import('~/components/pages/PutAwayDetailsPage.vue'))
 const PutAwayItemsPage = asyncPage(() => import('~/components/pages/PutAwayItemsPage.vue'))
 const CreateWorkOrderPage = asyncPage(() => import('~/components/pages/CreateWorkOrderPage.vue'))
+// Projects module (Project MTO) — every route under these first segments renders
+// through ProjectsRouter, which owns its title bars (full-bleed, like CRM).
+const ProjectsRouter = asyncPage(() => import('~/components/projects/ProjectsRouter.vue'))
+const PROJECT_SEGMENTS = ['projects', 'project-approvals', 'project-new-document', 'stock-availability', 'site-change-capture', 'project-audit-log', 'budget-setup', 'project-settings']
 const WorkOrderDetailsPage = asyncPage(() => import('~/components/pages/WorkOrderDetailsPage.vue'))
 const NewMaterialRecordPage = asyncPage(() => import('~/components/pages/NewMaterialRecordPage.vue'))
 const BillOfMaterialsDetailsPage = asyncPage(() => import('~/components/pages/BillOfMaterialsDetailsPage.vue'))
@@ -453,6 +457,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /cash-management/:id → account detail page (balances, statement, transactions)
   if (segs.length >= 2 && segs[0] === 'cash-management') {
     return { component: CashManagementDetailPage, id: segs[1]! }
+  }
+  // Projects module — /projects[/:id[/…]], /project-approvals, /budget-setup[/:id], …
+  if (segs.length >= 1 && PROJECT_SEGMENTS.includes(segs[0]!)) {
+    return { component: ProjectsRouter, id: segs.join('/') }
   }
   // /work-orders/new → create a new work order (full page, brings its own title bar)
   if (segs.length >= 2 && segs[0] === 'work-orders' && segs[1] === 'new') {
