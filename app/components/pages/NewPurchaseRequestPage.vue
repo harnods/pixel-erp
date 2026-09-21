@@ -10,6 +10,7 @@ import {
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
   MpButton, MpButtonGroup, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput,
   MpDatePicker, MpAutocomplete, MpTooltip,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpIcon, MpTextlink, toast, css,
 } from '@mekari/pixel3'
 import {
@@ -18,8 +19,10 @@ import {
 } from '~/data'
 import type { PurchaseRequest, PurchaseRequestLine, UrgencyLevel } from '~/data/types'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import { shortfallLinesForRequest, shortfallLinesForProduct } from '~/data/stockRequests'
 
 const router = useRouter()
+const route = useRoute()
 const { t } = useLocale()
 
 function todayISO() { return new Date().toISOString().slice(0, 10) }
@@ -80,6 +83,44 @@ function selectProduct(item: LineItem, p: typeof products[number]) {
   item.productError = false
   openProductRow.value = null
 }
+
+/**
+ * Prefill from a stock request shortfall — "Create purchase request" on the Stock
+ * requests index or detail. Two scopes, matching the two groupings:
+ *   ?fromStockRequest=<id>   one request's short lines
+ *   ?fromComponent=<ids>     one or more components, summed across open requests
+ * Quantity is what is still missing at the destination warehouse, so the buyer
+ * sees exactly the gap rather than the whole requested amount.
+ */
+function prefillFromStockRequest() {
+  const q = route.query
+  const lines = typeof q.fromStockRequest === 'string'
+    ? shortfallLinesForRequest(q.fromStockRequest)
+    : typeof q.fromComponent === 'string'
+      ? q.fromComponent.split(',').filter(Boolean).flatMap(id => shortfallLinesForProduct(id))
+      : []
+  if (!lines.length) return
+
+  items.value = lines.map((l) => {
+    const p = products.find(pr => pr.code === l.sku)
+    return {
+      _key: ++_seq,
+      product: p?.name ?? l.product,
+      sku: l.sku,
+      description: '',
+      qty: l.qty,
+      unit: l.unit || p?.unit || '',
+      unitCost: p?.price ?? 0,
+      availableQty: p?.stock ?? 0,
+      productError: false,
+      qtyError: false,
+    }
+  })
+  // Every short line of one request shares a destination; take the first.
+  const destination = lines[0]!.destinationWarehouse
+  if (destination && WAREHOUSES.includes(destination)) warehouse.value = destination
+}
+onMounted(prefillFromStockRequest)
 
 const newRowSearch = ref('')
 function onProductAdd(_search?: string) { /* open create-product flow here (rule/select-quick-add) */ void _search }
@@ -261,6 +302,7 @@ function onSave() {
                   </MpTooltip>
                   <MpPopover
                     v-else
+                    :id="`f-product-pop-${item._key}`"
                     is-manual :is-open="openProductRow === item._key" is-close-on-select
                     use-portal :is-keep-alive="false" placement="bottom-start" is-adaptive-width
                     @close="openProductRow = null"
@@ -314,6 +356,7 @@ function onSave() {
               <tr class="si-tr">
                 <td class="si-td si-td--input si-td--border">
                   <MpPopover
+                    id="f-product-pop-new"
                     is-manual :is-open="openProductRow === NEW_ROW_KEY" is-close-on-select
                     use-portal :is-keep-alive="false" placement="bottom-start" is-adaptive-width
                     @close="openProductRow = null"

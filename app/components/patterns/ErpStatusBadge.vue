@@ -56,6 +56,7 @@ const statusConfig: Record<string, StatusConfig> = {
   high:       { type: 'completed',    label: 'High'       },
   fulfilled:  { type: 'completed',    label: 'Fulfilled'  },
   ready:      { type: 'completed',    label: 'Ready'      },
+  reserved:   { type: 'completed',    label: 'Reserved'   },
 
   // ── warning — yellow ──────────────────────────────
   open:       { type: 'warning',      label: 'Open'       },
@@ -74,6 +75,9 @@ const statusConfig: Record<string, StatusConfig> = {
   'on progress':{ type: 'warning',    label: 'On progress'},
   medium:     { type: 'warning',      label: 'Medium'     },
   recommended:{ type: 'warning',      label: 'Recommended'},
+  // Warehouses › Stock requests — raised from a work order, nothing reserved yet.
+  // PRD UC-11 W-3/W-5 wording: "Requested" (was "To reserve" in the early mockup).
+  requested:  { type: 'warning',      label: 'Requested'  },
   // Settings › Users & roles — invitation sent, account not yet accepted.
   invited:    { type: 'warning',      label: 'Invited'    },
 
@@ -99,6 +103,7 @@ const statusConfig: Record<string, StatusConfig> = {
   canceled:   { type: 'announcement', label: 'Canceled'   },
   'not started':{ type: 'announcement', label: 'Not started' },
   'not allocated':{ type: 'announcement', label: 'Not allocated' },
+  'issued / picked':{ type: 'announcement', label: 'Issued / picked' },
   not_started:{ type: 'warning',      label: 'Open'        },
   'to do':    { type: 'announcement', label: 'To do'      },
   direct:     { type: 'announcement', label: 'Direct'     },
@@ -119,6 +124,7 @@ const statusConfig: Record<string, StatusConfig> = {
   'partially packed': { type: 'information', label: 'Partially packed' },
   'partially shipped': { type: 'information', label: 'Partially shipped' },
   'partially fulfilled': { type: 'information', label: 'Partially fulfilled' },
+  'partially reserved': { type: 'information', label: 'Partially reserved' },
   'in progress':{ type: 'information',  label: 'In progress' },
   in_progress:{ type: 'information',  label: 'In progress' },
   'task created':{ type: 'information', label: 'Task created' },

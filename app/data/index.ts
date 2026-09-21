@@ -81,6 +81,7 @@ export * from './warehouseTransfers'
 
 // ── Manufacturing (BOM / work orders / production requests) ─────────────────
 export * from './billOfMaterials'
+export * from './stockRequests'
 export * from './workOrders'
 export * from './workOrderLinks'
 export * from './productionRequests'
