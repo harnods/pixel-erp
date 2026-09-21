@@ -184,7 +184,7 @@ async function save() {
   <!-- A form, so overlay clicks don't discard input (only × / Cancel / Esc close it). -->
   <MpModal
     id="batch-form-modal" :is-open="open" size="md"
-    is-close-on-esc :is-keep-alive="false" @close="emit('close')"
+    :is-close-on-esc="false" :is-close-on-overlay-click="false" :is-keep-alive="false" @close="emit('close')"
   >
     <MpModalContent>
       <MpModalHeader>

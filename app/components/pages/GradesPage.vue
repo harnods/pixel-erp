@@ -218,6 +218,7 @@ const asGrade = (row: unknown) => row as Grade
     :loading="loading"
     :search="search"
     :has-active-search="!!search.trim()"
+    :has-active-filter="!!search.trim()"
     filter-empty-label="grade"
     bulk-label="grade"
     @page-change="setPage"
@@ -297,7 +298,7 @@ const asGrade = (row: unknown) => row as Grade
   <!-- ── Create / edit grade — a form, so overlay clicks don't discard input ── -->
   <MpModal
     id="grade-form-modal" :is-open="formOpen" size="md"
-    is-close-on-esc :is-keep-alive="false" @close="closeForm"
+    :is-close-on-esc="false" :is-close-on-overlay-click="false" :is-keep-alive="false" @close="closeForm"
   >
     <MpModalContent>
       <MpModalHeader>
