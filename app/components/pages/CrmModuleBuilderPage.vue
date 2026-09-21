@@ -93,9 +93,13 @@ function enterEdit() { viewMode.value = false }
 // Deals module cannot be deleted or deactivated.
 const isDealSystem = computed(() => mod.value?.id === 'deals')
 const deleteConfirmOpen = ref(false)
-function deleteModule() {
+function requestDeleteModule() {
   if (!mod.value || isDealSystem.value) return
   if (mod.value.status === 'published') { infoToast(t('Deactivate the module before deleting.')); return }
+  deleteConfirmOpen.value = true
+}
+function deleteModule() {
+  if (!mod.value || isDealSystem.value) return
   const idx = crmModules.findIndex((m) => m.id === mod.value!.id)
   if (idx !== -1) { crmModules.splice(idx, 1); persistCrmModules() }
   successToast(t('Module deleted'))
@@ -983,7 +987,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
               <MpPopoverListItem @click="enterEdit">{{ t('Edit') }}</MpPopoverListItem>
               <MpPopoverListItem v-if="!isDealSystem && mod.status === 'draft'" @click="publishModule">{{ t('Publish') }}</MpPopoverListItem>
               <MpPopoverListItem v-if="!isDealSystem && mod.status === 'published'" @click="deactivateModule">{{ t('Deactivate') }}</MpPopoverListItem>
-              <MpPopoverListItem v-if="!isDealSystem" @click="deleteConfirmOpen = true">{{ t('Delete') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="!isDealSystem" @click="requestDeleteModule">{{ t('Delete') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>

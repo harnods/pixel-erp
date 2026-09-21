@@ -119,7 +119,7 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'crm-module-view-mode',
     title: 'Module settings open in view mode',
     description:
-      'Clicking a module in Settings now opens a read-only view first — Setup as ContentList, Properties table without add/edit, Pipeline without sidebar or drag, Layout without drag-and-drop. Header shows an Actions dropdown (Edit, Delete) and separate Unpublish button (non-Deals published). Deals module cannot be deleted or unpublished.',
+      'Clicking a module in Settings now opens a read-only view first — Setup as ContentList, Properties table without add/edit, Pipeline without sidebar or drag, Layout without drag-and-drop. Header shows an Actions dropdown: Draft modules get Edit/Publish/Delete; Published modules get Edit/Deactivate/Delete (Delete on a published module shows an info toast requiring deactivation first). Tab order: Setup → Properties → Layout → Pipeline. Deals module cannot be deleted or deactivated.',
     date: '2026-09-20',
     files: ['CrmModuleBuilderPage.vue', 'CrmDetailLayoutBuilder.vue'],
   },
