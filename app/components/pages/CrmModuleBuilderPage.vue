@@ -1227,7 +1227,6 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
             <template v-if="isGenericModule">
               <div class="pipe-field-picker" data-devchange="crm-field-driven-pipeline">
                 <h3 class="pipe-field-picker__title">{{ t('Group by') }}</h3>
-                <p class="pipe-field-picker__desc">{{ t('Select a property to group records into Kanban columns.') }}</p>
                 <div v-if="!viewMode" class="pipe-field-picker__row">
                   <ErpFilterSelect
                     id="pipe-field-select"
@@ -1235,7 +1234,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                     :placeholder="t('Select a field…')"
                     :options="pipelineFieldOptions"
                     :is-clearable="false"
-                    width="100%"
+                    width="160px"
                     class="pipe-field-picker__select"
                     @update:model-value="(v: string) => (selectedPipeFieldId = v)"
                   />
@@ -1309,10 +1308,6 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                     <div class="pipe-side-row">
                       <MpToggle id="gm-disp-total" :is-checked="disp.stageTotal" :aria-label="t('Total value')" @update:is-checked="(v: boolean) => (disp.stageTotal = v)" />
                       <span class="pipe-side-rowlabel">{{ t('Total value') }}</span>
-                    </div>
-                    <div class="pipe-side-row">
-                      <MpToggle id="gm-disp-color" :is-checked="disp.colorColumns" :aria-label="t('Color stage columns')" @update:is-checked="(v: boolean) => (disp.colorColumns = v)" />
-                      <span class="pipe-side-rowlabel">{{ t('Color stage columns') }}</span>
                     </div>
                   </section>
 
@@ -1431,10 +1426,6 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                     <div class="pipe-side-row">
                       <MpToggle id="disp-total" :is-checked="disp.stageTotal" :aria-label="t('Total deal value')" @update:is-checked="(v: boolean) => (disp.stageTotal = v)" />
                       <span class="pipe-side-rowlabel">{{ t('Total deal value') }}</span>
-                    </div>
-                    <div class="pipe-side-row">
-                      <MpToggle id="disp-color" :is-checked="disp.colorColumns" :aria-label="t('Color stage columns')" @update:is-checked="(v: boolean) => (disp.colorColumns = v)" />
-                      <span class="pipe-side-rowlabel">{{ t('Color stage columns') }}</span>
                     </div>
                   </section>
 
@@ -1931,11 +1922,10 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
 }
 .search-clear-btn:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); }
 /* ── Field-driven pipeline picker (generic modules) ── */
-.pipe-field-picker { display: flex; flex-direction: column; gap: var(--mp-spacing-2); padding-bottom: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); margin-bottom: var(--mp-spacing-4); }
+.pipe-field-picker { display: flex; flex-direction: column; gap: 4px; padding-bottom: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .pipe-field-picker__title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.pipe-field-picker__desc { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .pipe-field-picker__row { display: flex; align-items: center; gap: var(--mp-spacing-2); }
-.pipe-field-picker__select { flex: 1; max-width: 320px; }
+.pipe-field-picker__select { width: 160px; flex-shrink: 0; }
 .pipe-field-picker__value { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-weight: var(--mp-font-weights-medium, 500); }
 .pipe-field-picker__empty { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); font-style: italic; }
 .pipe-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-1); padding: var(--mp-spacing-10, 40px) 0; text-align: center; }
