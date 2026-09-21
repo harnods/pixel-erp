@@ -50,6 +50,12 @@ async function filterBy(w: VueWrapper, types: string[] | 'all') {
   await flushPromises()
   await w.find('.btx-filter-btn').trigger('click')
   await flushPromises()
+  // The first-load skeleton runs on a timer; under a busy full-suite run it can outlast
+  // the fixed wait below, so wait for the real rows instead.
+  for (let i = 0; i < 40 && w.find('.btx-parent--skeleton').exists(); i++) {
+    await new Promise((r) => setTimeout(r, 50))
+    await flushPromises()
+  }
 }
 
 async function mountView(types: string[] | 'all' | null = 'all') {
