@@ -6,7 +6,7 @@
 import { TODAY_ISO } from './master'
 import {
   projects, phases, workPackages, punchItems, getProject, getPhase, getWorkPackage, projectPhases, projectWorkPackages,
-  phaseWorkPackages, weightTotal, persistProjects, newId, type Project,
+  phaseWorkPackages, weightTotal, persistProjects, newId, clone, type Project,
 } from './projects'
 import {
   getBudget, addRevision, setBudgetLine, persistBudgets, createBudget, COGM_ACCOUNT, wpBudget, accountName,
@@ -545,7 +545,7 @@ export function createEco(input: { projectId: string; wpId: string; title: strin
   const id = newId('eco')
   const code = p.code.replace('PS-', '')
   const n = engineeringChanges.filter(e => e.projectId === p.id).length + 1
-  engineeringChanges.unshift({ id, no: `ECO-${code}-${String(n).padStart(2, '0')}`, projectId: p.id, wpId: wp.id, customBomId: b.id, title: input.title, reason: input.reason, status: 'draft', specificWoIds: [], baseVersion: cur.version, proposed: { components: structuredClone(cur.components), productionCost: structuredClone(cur.productionCost) }, voId: input.voId, raisedBy: actor.name, createdAt: TODAY_ISO })
+  engineeringChanges.unshift({ id, no: `ECO-${code}-${String(n).padStart(2, '0')}`, projectId: p.id, wpId: wp.id, customBomId: b.id, title: input.title, reason: input.reason, status: 'draft', specificWoIds: [], baseVersion: cur.version, proposed: { components: clone(cur.components), productionCost: clone(cur.productionCost) }, voId: input.voId, raisedBy: actor.name, createdAt: TODAY_ISO })
   persistChanges()
   return { ok: true, id }
 }
@@ -869,7 +869,7 @@ export function saveBudgetRevision(projectId: string, draft: { lines: BudgetLine
   }
   if (draft.revenue !== b.revenue) changes.push({ field: 'revenue', from: b.revenue, to: draft.revenue })
   if (!changes.length) return { ok: false, error: 'Nothing changed.' }
-  b.lines = structuredClone(draft.lines.filter(l => l.amount))
+  b.lines = clone(draft.lines.filter(l => l.amount))
   b.reserves = { ...draft.reserves }
   b.revenue = draft.revenue
   persistBudgets()

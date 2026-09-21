@@ -448,6 +448,11 @@ export function updateProject(id: string, data: Partial<Project>): void {
   persistProjects()
 }
 
+/** Deep copy that works on Vue reactive proxies (structuredClone throws DataCloneError on them). */
+export function clone<T>(v: T): T {
+  return JSON.parse(JSON.stringify(v)) as T
+}
+
 export function newId(prefix: string): string {
   return nextId(prefix)
 }

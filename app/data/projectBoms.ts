@@ -1,6 +1,9 @@
 import { reactive } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
 
+/** JSON deep copy — safe on Vue reactive proxies, unlike structuredClone. */
+const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T
+
 /**
  * Project custom BOMs (PRD §7, Stories 19 & 23, §8 ECO).
  *
@@ -147,7 +150,7 @@ export function copyMasterBom(masterId: string, projectId: string, wpId: string,
   const b: CustomBom = {
     id: `cbom-${Date.now().toString(36)}`, projectId, wpId, name: `${m.name} — ${projectCode}`,
     masterBomId: m.id, masterName: m.name, masterVersionAtCopy: m.version, copiedAt: today,
-    versions: [{ version: 1, createdAt: today, createdBy: by, source: 'copy', note: `Copied from ${m.name}`, components: structuredClone(m.components), productionCost: structuredClone(m.productionCost) }],
+    versions: [{ version: 1, createdAt: today, createdBy: by, source: 'copy', note: `Copied from ${m.name}`, components: clone(m.components), productionCost: clone(m.productionCost) }],
   }
   customBoms.push(b)
   persistBoms()
@@ -157,7 +160,7 @@ export function copyMasterBom(masterId: string, projectId: string, wpId: string,
 export function appendVersion(bomId: string, v: Omit<BomVersion, 'version'>): BomVersion | undefined {
   const b = getCustomBom(bomId)
   if (!b) return undefined
-  const nv: BomVersion = { ...structuredClone(v), version: b.versions.length + 1 }
+  const nv: BomVersion = { ...clone(v), version: b.versions.length + 1 }
   b.versions.push(nv)
   persistBoms()
   return nv
