@@ -186,17 +186,21 @@ function round2(n: number): number {
 
 const collator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' })
 
-/** Which green beans each roasted product is roasted from. 1106 takes two batches of
- *  the SAME green bean, so Related batch shows them as separate lines (PRD story 10).
- *  1003 and 1004 are never roasted — their batches have no related batch at all. */
+/** What each product is made from, one Work order per output batch (PRD story 10).
+ *  Roasted beans are roasted from green beans; 1106 (a retail 250g bag) is packed from
+ *  the 1102 roast — a second level, so a 1102 batch has both a source and a result batch
+ *  on Related batch. 1106 takes two batches of the SAME product, so Related batch shows
+ *  them as separate lines. Every green bean goes into at least one roast. */
 const ROAST_SOURCES: Record<string, string[]> = {
-  '1101': ['1001', '1002'],
+  '1101': ['1001', '1002', '1003'],
   '1102': ['1002', '1008'],
   '1103': ['1001'],
-  '1104': ['1005'],
-  '1105': ['1006'],
-  '1106': ['1007', '1007'],
+  '1104': ['1005', '1007'],
+  '1105': ['1006', '1004'],
+  '1106': ['1102', '1102'],
 }
+/** Made from something that is itself made — its Work order runs after the first level. */
+const isSecondLevel = (sku: string) => (ROAST_SOURCES[sku] ?? []).some((source) => source in ROAST_SOURCES)
 
 function activeWarehouses() {
   return warehouses.filter((w) => !w.isDefault && w.status === 'active')
@@ -311,11 +315,26 @@ function buildLedger(): Ledger {
     if (!inputs.length) continue
     links.push({
       number: nextNumber('WO'),
-      date: shiftDays(TODAY_ISO, -(60 + (hash(r.batch.id) % 20))),
+      // Roasting 60–79 days ago; packing the roast into retail bags 25–39 days ago.
+      date: isSecondLevel(r.sku)
+        ? shiftDays(TODAY_ISO, -(25 + (hash(r.batch.id) % 15)))
+        : shiftDays(TODAY_ISO, -(60 + (hash(r.batch.id) % 20))),
       output: r,
       outputQty: 0,
       inputs,
     })
+  }
+
+  // A product with more batches than its roasts would leave one unused — add it to a
+  // roast of that product so every source batch reaches Related batch.
+  for (const [greenSku, greens] of bySku) {
+    const users = links.filter((l) => ROAST_SOURCES[l.output.sku]?.includes(greenSku))
+    if (!users.length) continue
+    for (const g of greens) {
+      if (links.some((l) => l.inputs.some((i) => i.ref.batch.id === g.batch.id))) continue
+      const link = users[hash(g.batch.id) % users.length]!
+      link.inputs.push({ ref: g, qty: 2 + (hash(link.output.batch.id + g.batch.id) % 3) })
+    }
   }
 
   // Pass 2 — every stocked batch's own history, solved to end at its on-hand.
@@ -995,58 +1014,83 @@ export function batchJourneyTimeline(sku: string, batchNo: string, access: Trace
   return out
 }
 
-// ── Visual journey (PRD story 11) ───────────────────────────────────────────────
-/** One diagram node: every transaction of one type moving the batch the same way. */
-export interface JourneyGroup {
+// ── Visual journey (PRD story 11): flow by counterparty ─────────────────────────
+/** Who (or what) is on the other side of a flow node. */
+export type FlowPartyKind = 'vendor' | 'customer' | 'work-order' | 'other'
+
+/** One flow node: everything that moved between the batch and one party, one way. */
+export interface FlowParty {
   key: string
-  type: TraceTxType
-  direction: MutationDirection
-  count: number
-  /** Base-unit quantity across the group (moved quantity for a neutral group). */
+  kind: FlowPartyKind
+  /** Vendor / customer id, the Work order number, or the transaction type for `other`. */
+  refId: string
+  direction: 'in' | 'out'
+  /** Transaction types behind the node, first-seen order (e.g. Purchase delivery). */
+  types: TraceTxType[]
+  /** Base-unit quantity across the node. */
   qty: number
-  /** Oldest first — what the node lists when it's expanded. */
-  transactions: { id: string; number: string; date: string; qty: number }[]
-  /** Work order groups only: the batches on the other side of the link (story 10). */
+  /** Oldest first. */
+  transactions: { id: string; number: string; date: string; qty: number; type: TraceTxType }[]
+  /** Work order nodes only: the batches on the other side of that Work order (story 10). */
   batches: RelatedBatchRow[]
 }
 
-export interface JourneyGraph {
-  /** Where the batch came from — receipts, returns, Work order output, stock in. */
-  incoming: JourneyGroup[]
-  /** Movements that don't change the batch total — transfers, stock counts. */
-  internal: JourneyGroup[]
-  /** Where the batch went — deliveries, purchase returns, Work order consumption, stock out. */
-  outgoing: JourneyGroup[]
+export interface BatchFlowGraph {
+  /** Where the batch came from, biggest quantity first. */
+  incoming: FlowParty[]
+  /** Where the batch went, biggest quantity first. */
+  outgoing: FlowParty[]
+  /** Moves that don't change the batch total — transfers, stock counts — oldest first. */
+  internal: JourneyRow[]
+  received: number
+  issued: number
 }
 
 /**
- * The journey as a left-to-right picture (story 11): came from → this batch → went to.
- * A presentation of the journey (story 8) and related batches (story 10) — no new data,
- * so the table stays the source of truth. Transactions of one type moving the same way
- * collapse into one node with a count so a busy batch doesn't crowd the diagram.
+ * The journey as parties, not transaction types: who the batch came from and who it
+ * went to, sized by quantity — the recall question ("who got it?") and the root-cause
+ * one ("where did it come from?"). A presentation of the journey (story 8) and related
+ * batches (story 10): no new data, the History table stays the source of truth.
+ * - A vendor or customer is one node per direction (a purchase return is its own node
+ *   on the way out).
+ * - Each Work order is its own node, carrying the batches on its other side.
+ * - Lines with no counterparty (stock in/out, invoices, reversals) group by type.
  */
-export function batchJourneyGraph(sku: string, batchNo: string, access: TraceabilityAccess = FULL_ACCESS): JourneyGraph {
+export function batchFlowGraph(sku: string, batchNo: string, access: TraceabilityAccess = FULL_ACCESS): BatchFlowGraph {
   const rows = batchJourney(sku, batchNo, access)
   const related = relatedBatches(sku, batchNo)
-  const groups = new Map<string, JourneyGroup>()
+  const parties = new Map<string, FlowParty>()
+  const internal: JourneyRow[] = []
+  let received = 0
+  let issued = 0
   for (const row of rows) {
-    const key = `${row.direction}:${row.type}`
-    let group = groups.get(key)
-    if (!group) {
-      const batches = row.type === 'Work order' ? (row.direction === 'in' ? related.sources : related.results) : []
-      group = { key, type: row.type, direction: row.direction, count: 0, qty: 0, transactions: [], batches }
-      groups.set(key, group)
+    if (row.direction === 'neutral') { internal.push(row); continue }
+    if (row.direction === 'in') received += row.qty
+    else issued += row.qty
+    const kind: FlowPartyKind = row.type === 'Work order' ? 'work-order' : row.counterparty?.kind ?? 'other'
+    const refId = kind === 'work-order' ? row.number : row.counterparty?.id ?? row.type
+    const key = `${row.direction}:${kind}:${refId}`
+    let party = parties.get(key)
+    if (!party) {
+      const side = row.direction === 'in' ? related.sources : related.results
+      party = {
+        key, kind, refId, direction: row.direction, types: [], qty: 0, transactions: [],
+        batches: kind === 'work-order' ? side.filter((b) => b.workOrderNumber === row.number) : [],
+      }
+      parties.set(key, party)
     }
-    group.count++
-    group.qty += row.qty
-    group.transactions.push({ id: row.id, number: row.number, date: row.date, qty: row.qty })
+    if (!party.types.includes(row.type)) party.types.push(row.type)
+    party.qty += row.qty
+    party.transactions.push({ id: row.id, number: row.number, date: row.date, qty: row.qty, type: row.type })
   }
-  // Map keeps first-seen order, and rows are oldest first — so nodes read in journey order.
-  const all = [...groups.values()]
+  const all = [...parties.values()]
+  const bySize = (a: FlowParty, b: FlowParty) => b.qty - a.qty
   return {
-    incoming: all.filter((g) => g.direction === 'in'),
-    internal: all.filter((g) => g.direction === 'neutral'),
-    outgoing: all.filter((g) => g.direction === 'out'),
+    incoming: all.filter((p) => p.direction === 'in').sort(bySize),
+    outgoing: all.filter((p) => p.direction === 'out').sort(bySize),
+    internal,
+    received,
+    issued,
   }
 }
 

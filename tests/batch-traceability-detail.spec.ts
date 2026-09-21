@@ -3,7 +3,7 @@
  * Batch traceability detail page (PRD stories 7, 8, 10; plan Phase 3).
  *
  * Mounts the page for a real seeded batch and checks what the report promises:
- * Batch information above the section tabs, the Journey / History table switch, the Received − Issued = On hand line, the journey
+ * Batch information above the section tabs, the Journey map / Log switch, the Received − Issued = On hand line, the journey
  * expanding to the values recorded on a transaction, the entry-point highlight,
  * and related-batch drill-through keeping the breadcrumb chain.
  */
@@ -72,7 +72,7 @@ describe('Batch traceability detail', () => {
     expect(w.find('.btd-mismatch').exists()).toBe(false)
   })
 
-  it('switches Batch journey to the History table, which lists every line and expands one', async () => {
+  it('switches Batch journey to the Log, which lists every line and expands one', async () => {
     const w = await mountPage('1001::Batch #001')
     w.findComponent({ name: 'MpSegmentedControl' }).vm.$emit('update:modelValue', 'history')
     await flushPromises()
@@ -89,7 +89,7 @@ describe('Batch traceability detail', () => {
     const number = batchJourney('1001', 'Batch #001')[1]!.number
     query = { transaction: number }
     const w = await mountPage('1001::Batch #001')
-    // A transaction entry opens Batch journey on the History table.
+    // A transaction entry opens Batch journey on the Log.
     expect(w.findComponent({ name: 'MpTabs' }).props('modelValue')).toBe(1)
     const highlighted = w.findAll('.btd-journey-row.btd-row--highlight')
     expect(highlighted).toHaveLength(1)
@@ -179,27 +179,41 @@ describe('Batch traceability detail — attribute change trail', () => {
   })
 })
 
-import { batchJourneyGraph } from '~/data/batchTraceability'
+import { batchFlowGraph } from '~/data/batchTraceability'
 
 describe('Batch traceability detail — visual journey', () => {
-  it('draws came from, this batch and went to, one node per transaction group', async () => {
+  it('draws came from, this batch and went to, one node per party', async () => {
     const w = await mountPage('1101::Batch #001')
-    const graph = batchJourneyGraph('1101', 'Batch #001')
+    const graph = batchFlowGraph('1101', 'Batch #001')
     expect(w.findAll('.bjd-col-title').map((e) => e.text())).toEqual(['Came from', 'This batch', 'Went to'])
     expect(w.findAll('.bjd-col--in .bjd-node')).toHaveLength(graph.incoming.length)
-    expect(w.findAll('.bjd-col--center .bjd-node')).toHaveLength(graph.internal.length)
     expect(w.findAll('.bjd-col--out .bjd-node')).toHaveLength(graph.outgoing.length)
-    expect(w.find('.bjd-batch-card').text()).toContain('Batch #001')
+    const card = w.find('.bjd-batch-card').text()
+    expect(card).toContain('Batch #001')
+    expect(card).toContain(`In ${graph.received}`)
     expect(vueErrors).toEqual([])
   })
 
-  it('expands a node to the transactions it groups', async () => {
-    const w = await mountPage('1101::Batch #001')
-    const first = batchJourneyGraph('1101', 'Batch #001').incoming[0]!
-    expect(w.find('.bjd-tx').exists()).toBe(false)
-    await w.find('.bjd-col--in .bjd-node-head').trigger('click')
-    expect(w.findAll('.bjd-col--in .bjd-tx')).toHaveLength(first.count)
-    expect(w.find('.bjd-col--in .bjd-tx').text()).toContain(first.transactions[0]!.number)
+  it('opens the Log on the transactions of the party picked', async () => {
+    const w = await mountPage('1001::Batch #001')
+    const party = batchFlowGraph('1001', 'Batch #001').outgoing[0]!
+    await w.find('.bjd-col--out .bjd-node-head').trigger('click')
+    await flushPromises()
+    const rows = w.findAll('.btd-journey-row')
+    expect(rows).toHaveLength(party.transactions.length)
+    expect(rows[0]!.text()).toContain(party.transactions[0]!.number)
+    expect(w.find('.btd-history-filter').exists()).toBe(true)
+
+    await w.findAllComponents({ name: 'MpButton' }).find((b) => b.classes().includes('btd-history-filter-clear'))!.trigger('click')
+    await flushPromises()
+    expect(w.findAll('.btd-journey-row')).toHaveLength(batchJourney('1001', 'Batch #001').length)
+  })
+
+  it('tags customers who received the batch before its attribute changed', async () => {
+    const w = await mountPage('1001::Batch #001')
+    expect(w.find('.bjd-batch-card').text()).toContain('Attribute changes')
+    // 1001 Batch #001 was regraded the day after it arrived — before any of it left.
+    expect(w.findAll('.bjd-tag')).toHaveLength(0)
   })
 
   it('opens a source batch from the Work order node, keeping the breadcrumb chain', async () => {

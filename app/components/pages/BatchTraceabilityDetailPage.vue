@@ -4,8 +4,8 @@
  * Phase 3). Route: /inventory-report/batch-traceability/:sku/:batchNo.
  *
  * Batch information on top; the other three sections are tabs under it (Stock position ·
- * Batch journey · Related batch). Batch journey switches between the diagram (Journey)
- * and the ledger (History table). In the PRD's order:
+ * Batch journey · Related batch). Batch journey switches between the diagram (Journey map)
+ * and the ledger (Log). In the PRD's order:
  *  1. Batch information — identity, the transaction that created the batch, and the
  *     attributes as they stand on the batch master today (labelled as such). The
  *     "Last updated by …" line opens the Activity log (rule/activity-log-trigger).
@@ -48,7 +48,7 @@ import ExportModal from '~/components/patterns/ExportModal.vue'
 import { buildExportDocument, downloadExport, type ExportFormat, type ExportSection } from '~/utils/traceabilityExport'
 import { successToast } from '~/utils/toasts'
 import {
-  getBatchTrace, batchStockPosition, batchJourney, batchJourneyTimeline, batchJourneyGraph, batchAttributeChanges, relatedBatches, attributeCell,
+  getBatchTrace, batchStockPosition, batchJourney, batchJourneyTimeline, batchFlowGraph, batchAttributeChanges, relatedBatches, attributeCell,
   canViewBatchTraceability,
   type AttributeChangeMarker, type JourneyRow, type RelatedBatchRow, type TraceabilityAccess,
 } from '~/data/batchTraceability'
@@ -137,7 +137,7 @@ const highlightTransaction = computed(() => (typeof route.query.transaction === 
 // ─── Tabs & journey view ──────────────────────────────────────────────────────────
 // Stock position, Batch journey and Related batch share one tab set under Batch
 // information. The entry context picks where the page opens (story 7): a transaction
-// from By transaction lands on its highlighted row in the History table; otherwise
+// from By transaction lands on its highlighted row in the Log; otherwise
 // Stock position (where a By batch warehouse line is highlighted). `?section=` /
 // `?view=` open a tab or view directly.
 const DETAIL_TABS = [
@@ -147,8 +147,8 @@ const DETAIL_TABS = [
 ] as const
 type JourneyView = 'journey' | 'history'
 const journeyViewOptions = [
-  { id: 'btd-view-journey', label: t('Journey'), value: 'journey' },
-  { id: 'btd-view-history', label: t('History table'), value: 'history' },
+  { id: 'btd-view-journey', label: t('Journey map'), value: 'journey' },
+  { id: 'btd-view-history', label: t('Log'), value: 'history' },
 ]
 function initialTab(): number {
   const section = typeof route.query.section === 'string' ? route.query.section : ''
@@ -251,10 +251,28 @@ const newestFirst = ref(false)
 const showChanges = ref(true)
 const timeline = computed(() => batchJourneyTimeline(sku.value, batchNo.value, access.value))
 const changeCount = computed(() => timeline.value.filter((e) => e.kind === 'change').length)
-// The same journey as a left-to-right picture (story 11) — drawn above the table.
-const graph = computed(() => batchJourneyGraph(sku.value, batchNo.value, access.value))
+// The same journey as a flow between parties (story 11) — the Journey map view.
+const graph = computed(() => batchFlowGraph(sku.value, batchNo.value, access.value))
+const flowWarehouses = computed(() => position.value.warehouses.map((w) => ({
+  id: w.warehouseId, name: warehouseName(w.warehouseId), qty: w.onHandBase,
+})))
+const flowChanges = computed(() => timeline.value.flatMap((e) => (e.kind === 'change'
+  ? [{ id: e.change.id, date: e.change.date, summary: changeSummary(e.change) }]
+  : [])))
+
+// Selecting a party in the diagram opens the Log on that party's lines.
+const historyFilter = ref<{ label: string; ids: string[] } | null>(null)
+function showPartyTransactions(payload: { label: string; ids: string[] }) {
+  historyFilter.value = payload
+  journeyView.value = 'history'
+}
+watch(journeyView, (view) => { if (view === 'journey') historyFilter.value = null })
+watch(() => props.orderId, () => { historyFilter.value = null })
+
 const journeyEntries = computed(() => {
-  const list = showChanges.value ? timeline.value : timeline.value.filter((e) => e.kind === 'movement')
+  const filter = historyFilter.value
+  let list = showChanges.value && !filter ? timeline.value : timeline.value.filter((e) => e.kind === 'movement')
+  if (filter) list = list.filter((e) => e.kind === 'movement' && filter.ids.includes(e.row.id))
   return newestFirst.value ? [...list].reverse() : list
 })
 const journeyRows = computed(() => (newestFirst.value ? [...journey.value].reverse() : journey.value))
@@ -422,10 +440,7 @@ defineExpose({ buildSections })
             <MpButton variant="textLink" is-rounded class="btd-breadcrumb" @click="openTrail(i)">{{ item.batchNo }}</MpButton>
           </template>
         </nav>
-        <div class="btd-titlerow">
-          <h1 class="btd-title">{{ trace.batchNo }}</h1>
-          <span class="btd-title-product">{{ trace.productName }}</span>
-        </div>
+        <h1 class="btd-title">{{ trace.batchNo }}</h1>
       </div>
       <MpButton variant="secondary" is-rounded @click="exportOpen = true">{{ t('Export') }}</MpButton>
     </header>
@@ -523,7 +538,7 @@ defineExpose({ buildSections })
       </section>
       </MpTabPanel>
 
-      <!-- 3. Batch journey — the diagram (Journey) or the ledger (History table) -->
+      <!-- 3. Batch journey — the diagram (Journey map) or the ledger (Log) -->
       <MpTabPanel value="journey">
       <section class="btd-section">
         <div class="btd-journey-bar">
@@ -533,7 +548,15 @@ defineExpose({ buildSections })
             @update:model-value="journeyView = $event as JourneyView"
           />
           <!-- Wrapped: MpCheckbox puts id/class on its hidden input, so layout lives on this div. -->
-          <div v-if="journeyView === 'history' && changeCount" class="btd-changes-toggle">
+          <!-- A party picked in the Journey map narrows the table; × shows every line again. -->
+          <span v-if="journeyView === 'history' && historyFilter" class="btd-history-filter">
+            {{ t('Transactions with {party}').replace('{party}', historyFilter.label) }}
+            <MpButton
+              variant="ghost" class="btd-history-filter-clear" left-icon="close"
+              :aria-label="t('Show all transactions')" @click="historyFilter = null"
+            />
+          </span>
+          <div v-else-if="journeyView === 'history' && changeCount" class="btd-changes-toggle">
             <MpCheckbox
               id="btd-show-changes"
               :is-checked="showChanges" @change="showChanges = !showChanges"
@@ -548,7 +571,12 @@ defineExpose({ buildSections })
           :batch-no="trace.batchNo"
           :on-hand="position.totalBase"
           :unit="unit"
+          :warehouses="flowWarehouses"
+          :changes="flowChanges"
+          :warehouse-name="warehouseName"
+          :highlight-transaction="highlightTransaction"
           @open-batch="openRelated"
+          @show-transactions="showPartyTransactions"
         />
         <div v-else class="btd-empty">
           <p class="btd-empty-title">{{ t('No transactions for this batch yet') }}</p>
@@ -660,12 +688,14 @@ defineExpose({ buildSections })
       <MpTabPanel value="related">
       <section class="btd-section">
         <div v-for="group in (['sources', 'results'] as const)" :key="group" class="btd-related">
-          <h3 class="btd-related-title">{{ group === 'sources' ? t('Source batch') : t('Result batch') }}</h3>
-          <p class="btd-related-caption">
-            {{ group === 'sources'
-              ? t('Batches consumed by the work order that produced this batch')
-              : t('Batches produced by work orders that consumed this batch') }}
-          </p>
+          <div class="btd-related-head">
+            <h3 class="btd-related-title">{{ group === 'sources' ? t('Source batch') : t('Result batch') }}</h3>
+            <p class="btd-related-caption">
+              {{ group === 'sources'
+                ? t('Batches consumed by the work order that produced this batch')
+                : t('Batches produced by work orders that consumed this batch') }}
+            </p>
+          </div>
           <div class="btd-table-scroll">
             <table v-if="related[group].length" class="btd-table">
               <thead>
@@ -767,15 +797,10 @@ defineExpose({ buildSections })
   color: var(--mp-text-link) !important;
 }
 .btd-breadcrumb-sep { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.btd-titlerow { display: flex; align-items: baseline; gap: var(--mp-spacing-3); min-width: 0; }
 .btd-title {
   margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px);
   color: var(--mp-text-default); white-space: nowrap;
-}
-.btd-title-product {
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .btd-stage {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
@@ -861,6 +886,17 @@ defineExpose({ buildSections })
 .btd-changes-toggle { align-self: center; }
 .btd-journey-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); flex-wrap: wrap; }
 .btd-journey-view { width: 280px; }
+.btd-history-filter {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-1);
+  padding: var(--mp-spacing-1) var(--mp-spacing-1) var(--mp-spacing-1) var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.btd-history-filter-clear {
+  width: var(--mp-sizes-6, 24px) !important; height: var(--mp-sizes-6, 24px) !important;
+  min-width: 0 !important; padding: 0 !important;
+}
 
 /* Tabs — the ProductDetailsPage / WarehouseDetailsPage detail-tab look */
 .btd-tabs :deep(.mp-tab--isSelected_true),
@@ -876,10 +912,17 @@ defineExpose({ buildSections })
 .btd-change-meta { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* ── Related batch ── */
-.btd-related { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.btd-related + .btd-related { margin-top: var(--mp-spacing-4); }
-.btd-related-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.btd-related-caption { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+/* Heading block → table 12px (details-page-format §8); the two groups sit 32px apart
+   (region gap). Title over caption with no gap, like a ContentList label/value pair. */
+.btd-related { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
+.btd-related + .btd-related { margin-top: var(--mp-spacing-8); }
+.btd-related-head { display: flex; flex-direction: column; }
+/* H3 — lg/16 semibold (rule/type-scale, rule/type-heading-semibold); caption sm/12. */
+.btd-related-title {
+  margin: 0; font-size: var(--mp-font-sizes-lg, 16px); line-height: var(--mp-line-heights-lg, 24px);
+  font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
+}
+.btd-related-caption { margin: 0; font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm, 16px); color: var(--mp-text-secondary); }
 
 /* ── Empty / not found ── */
 .btd-empty { padding: var(--mp-spacing-6) 0; text-align: center; }

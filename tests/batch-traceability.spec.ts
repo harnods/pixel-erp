@@ -316,12 +316,32 @@ describe('batch detail', () => {
       .filter((b) => b.onHand > 0)
       .map((b) => api.relatedBatches('1106', b.batchNo).sources)
     const twin = lines.find((s) => s.length === 2)!
-    expect(twin.every((s) => s.sku === '1007')).toBe(true)
+    expect(twin.every((s) => s.sku === '1102')).toBe(true)
     expect(new Set(twin.map((s) => s.batchNo)).size).toBe(2)
   })
 
-  it('has no related batch for a green bean that is never roasted', () => {
-    expect(api.relatedBatches('1004', 'Batch #001')).toEqual({ sources: [], results: [] })
+  it('links a middle batch both ways: roasted from green beans, packed into retail bags', () => {
+    const middle = api.getProductBatches('1102').filter((b) => b.onHand > 0)
+      .map((b) => ({ b, rel: api.relatedBatches('1102', b.batchNo) }))
+      .find(({ rel }) => rel.sources.length && rel.results.length)!
+    expect(middle.rel.sources.every((r) => ['1002', '1008'].includes(r.sku))).toBe(true)
+    expect(middle.rel.results.every((r) => r.sku === '1106')).toBe(true)
+    // Packed after it was roasted.
+    const roastedOn = middle.rel.sources[0]!.workOrderDate
+    expect(middle.rel.results.every((r) => r.workOrderDate > roastedOn)).toBe(true)
+  })
+
+  it('gives every stocked green-bean batch a result batch', () => {
+    const greens = stockedBatches().filter(({ sku }) => sku.startsWith('10'))
+    for (const { sku, batch } of greens) {
+      expect(api.relatedBatches(sku, batch.batchNo).results.length, `${sku} ${batch.batchNo}`).toBeGreaterThan(0)
+    }
+  })
+
+  it('has no related batch for a batch no Work order touched', () => {
+    const created = api.createBatch('1004', { batchNo: 'TRACE-UNLINKED', description: '', attributes: {} })
+    expect(created.ok).toBe(true)
+    expect(api.relatedBatches('1004', 'TRACE-UNLINKED')).toEqual({ sources: [], results: [] })
   })
 })
 
@@ -393,43 +413,56 @@ describe('attribute change trail', () => {
   })
 })
 
-describe('visual journey graph', () => {
-  it('groups every journey line into exactly one node', () => {
+describe('visual journey — flow by counterparty', () => {
+  it('puts every in/out line in exactly one party node, and every neutral line in the batch', () => {
     for (const { sku, batch } of stockedBatches().slice(0, 15)) {
-      const graph = api.batchJourneyGraph(sku, batch.batchNo)
-      const nodes = [...graph.incoming, ...graph.internal, ...graph.outgoing]
+      const graph = api.batchFlowGraph(sku, batch.batchNo)
+      const parties = [...graph.incoming, ...graph.outgoing]
       const journey = api.batchJourney(sku, batch.batchNo)
-      expect(nodes.reduce((sum, g) => sum + g.count, 0), `${sku} ${batch.batchNo}`).toBe(journey.length)
-      expect(new Set(nodes.map((g) => g.key)).size).toBe(nodes.length)
-      for (const g of nodes) expect(g.transactions).toHaveLength(g.count)
+      const lines = parties.reduce((sum, p) => sum + p.transactions.length, 0) + graph.internal.length
+      expect(lines, `${sku} ${batch.batchNo}`).toBe(journey.length)
+      expect(new Set(parties.map((p) => p.key)).size).toBe(parties.length)
+      expect(graph.internal.every((r) => r.direction === 'neutral')).toBe(true)
     }
   })
 
-  it('balances: what came in minus what went out is on hand', () => {
+  it('balances: received minus issued is on hand, and parties are biggest first', () => {
     for (const { sku, batch } of stockedBatches().slice(0, 15)) {
-      const graph = api.batchJourneyGraph(sku, batch.batchNo)
-      const incoming = graph.incoming.reduce((sum, g) => sum + g.qty, 0)
-      const outgoing = graph.outgoing.reduce((sum, g) => sum + g.qty, 0)
-      expect(incoming - outgoing, `${sku} ${batch.batchNo}`).toBe(batch.onHand)
-      expect(graph.internal.every((g) => g.direction === 'neutral')).toBe(true)
+      const graph = api.batchFlowGraph(sku, batch.batchNo)
+      expect(graph.received - graph.issued, `${sku} ${batch.batchNo}`).toBe(batch.onHand)
+      expect(graph.incoming.reduce((sum, p) => sum + p.qty, 0)).toBe(graph.received)
+      expect(graph.outgoing.reduce((sum, p) => sum + p.qty, 0)).toBe(graph.issued)
+      for (const side of [graph.incoming, graph.outgoing]) {
+        expect(side.map((p) => p.qty)).toEqual([...side.map((p) => p.qty)].sort((a, b) => b - a))
+      }
     }
   })
 
-  it('hangs the related batches off the Work order nodes', () => {
+  it('names the party: a vendor or customer, not a transaction type', () => {
+    const graph = api.batchFlowGraph('1001', 'Batch #001')
+    const journey = api.batchJourney('1001', 'Batch #001')
+    const delivery = journey.find((r) => r.type === 'Purchase delivery')!
+    const vendorNode = graph.incoming.find((p) => p.kind === 'vendor' && p.refId === delivery.counterparty!.id)!
+    expect(vendorNode.types).toContain('Purchase delivery')
+    const sale = journey.find((r) => r.type === 'Sales delivery')!
+    expect(graph.outgoing.some((p) => p.kind === 'customer' && p.refId === sale.counterparty!.id)).toBe(true)
+  })
+
+  it('gives each Work order its own node, carrying the batches on its other side', () => {
     const roasted = api.getProductBatches('1101')[0]!
-    const roastedGraph = api.batchJourneyGraph('1101', roasted.batchNo)
-    const output = roastedGraph.incoming.find((g) => g.type === 'Work order')!
-    expect(output.batches).toEqual(api.relatedBatches('1101', roasted.batchNo).sources)
+    const output = api.batchFlowGraph('1101', roasted.batchNo).incoming.find((p) => p.kind === 'work-order')!
+    const sources = api.relatedBatches('1101', roasted.batchNo).sources
+    expect(output.batches).toEqual(sources.filter((b) => b.workOrderNumber === output.refId))
 
     const source = output.batches[0]!
-    const consumed = api.batchJourneyGraph(source.sku, source.batchNo).outgoing.find((g) => g.type === 'Work order')!
-    expect(consumed.batches.some((b) => b.sku === '1101' && b.batchNo === roasted.batchNo)).toBe(true)
+    const consumed = api.batchFlowGraph(source.sku, source.batchNo).outgoing.filter((p) => p.kind === 'work-order')
+    expect(consumed.some((p) => p.batches.some((b) => b.sku === '1101' && b.batchNo === roasted.batchNo))).toBe(true)
   })
 
-  it('has no Work order node for a batch that was never roasted', () => {
-    const graph = api.batchJourneyGraph('1004', 'Batch #001')
-    expect([...graph.incoming, ...graph.outgoing].some((g) => g.type === 'Work order')).toBe(false)
-    expect(graph.incoming.map((g) => g.type)).toContain('Purchase delivery')
+  it('has no Work order coming in for a green bean — it is bought, not made', () => {
+    const graph = api.batchFlowGraph('1004', 'Batch #001')
+    expect(graph.incoming.some((p) => p.kind === 'work-order')).toBe(false)
+    expect(graph.incoming.some((p) => p.kind === 'vendor')).toBe(true)
   })
 })
 
