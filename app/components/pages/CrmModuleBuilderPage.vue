@@ -1054,6 +1054,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
     <!-- Section tabs — OUTSIDE the white stage (rule/erp-tabs-pattern: section tabs
          sit on the neutral-subtle bar below the title, not as MpTabs in the stage). -->
     <div v-if="mod" class="page-tabs-bar">
+      <!-- pixel-police-allow: page-tab buttons follow rule/erp-tabs-pattern (custom styled, not MpButton) -->
       <button v-for="tab in tabs" :key="tab.key" type="button" class="page-tab" :class="{ 'page-tab--active': activeTab === tab.key }" @click="switchTab(tab.key)">{{ t(tab.label) }}</button>
     </div>
 
@@ -2175,10 +2176,11 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
 .builder-footer-wrap { position: relative; display: flex; justify-content: flex-end; }
 
 /* Unsaved-changes coachmark — anchored above Save button */
-.unsaved-coachmark { position: absolute; bottom: calc(100% + 12px); right: 0; width: 320px; padding: 24px; background: #fff; border: 1px solid var(--mp-border-bold); border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); z-index: 10; }
+/* pixel-police-allow: coachmark popover needs white bg + elevation shadow per design spec */
+.unsaved-coachmark { position: absolute; bottom: calc(100% + 12px); right: 0; width: 320px; padding: 24px; background: var(--mp-colors-background-stage, #fff); border: 1px solid var(--mp-border-bold); border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); z-index: 10; }
 .unsaved-coachmark-text { margin: 0 0 var(--mp-spacing-3); font-size: 13px; line-height: 1.4; color: var(--mp-text-default); }
 .unsaved-coachmark-actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); }
-.unsaved-coachmark-arrow { position: absolute; bottom: -6px; right: 24px; width: 12px; height: 12px; background: #fff; border-right: 1px solid var(--mp-border-bold); border-bottom: 1px solid var(--mp-border-bold); transform: rotate(45deg); }
+.unsaved-coachmark-arrow { position: absolute; bottom: -6px; right: 24px; width: 12px; height: 12px; background: var(--mp-colors-background-stage, #fff); border-right: 1px solid var(--mp-border-bold); border-bottom: 1px solid var(--mp-border-bold); transform: rotate(45deg); }
 .coachmark-fade-enter-active, .coachmark-fade-leave-active { transition: opacity 0.15s ease, transform 0.15s ease; }
 .coachmark-fade-enter-from, .coachmark-fade-leave-to { opacity: 0; transform: translateY(4px); }
 
