@@ -12,7 +12,7 @@
  *  • Created as Draft; method, measure and production flag lock at approval (Story 7).
  */
 import {
-  MpButton, MpIcon, MpInput, MpInputGroup, MpInputLeftAddon, MpInputRightAddon, MpRadio, MpCheckbox, MpSegmentedControl, MpDatePicker, MpTextlink,
+  MpButton, MpIcon, MpInput, MpInputGroup, MpInputLeftAddon, MpInputRightAddon, MpRadio, MpCheckbox, MpDatePicker, MpTextlink,
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpFormHelpText, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
 } from '@mekari/pixel3'
 import PmTitleBar from '../PmTitleBar.vue'
@@ -68,10 +68,6 @@ const priorityOptions = computed(() => [
   { value: 'medium', label: t('Medium') },
   { value: 'low', label: t('Low') },
 ])
-const measureOptions = computed(() => [
-  { id: 'pc-measure-milestone', label: t('Milestone — progress weight per phase'), value: 'milestone' },
-  { id: 'pc-measure-unit', label: t('Unit — confirmed ÷ planned units'), value: 'unit' },
-])
 const wpTypeOptions = computed(() => [
   { value: 'production', label: t('Production') },
   { value: 'service', label: t('Service') },
@@ -79,10 +75,11 @@ const wpTypeOptions = computed(() => [
 const customerOptions = computed(() => [...new Set([...projects.map(p => p.customer), ...customers.map(c => c.name)])])
 
 // ── Step 3: structure ──
-interface WpDraft { name: string; type: WorkPackageType; plannedUnits: string; unit: string }
+interface WpDraft { name: string; type: WorkPackageType | ''; plannedUnits: string; unit: string }
 interface PhaseDraft { name: string; rabValue: string; weight: string; wps: WpDraft[] }
 const phaseDrafts = ref<PhaseDraft[]>([])
-function newWp(): WpDraft { return { name: '', type: isProduction.value ? 'production' : 'service', plannedUnits: '', unit: 'Unit' } }
+// Every structure field starts empty — the placeholder hints what goes in it.
+function newWp(): WpDraft { return { name: '', type: '', plannedUnits: '', unit: '' } }
 function addPhase() { phaseDrafts.value.push({ name: '', rabValue: '', weight: '', wps: [newWp()] }) }
 const structureAction = useProjectAction()
 function removePhase(i: number) {
@@ -120,6 +117,8 @@ const step3Error = computed(() => {
   if (!phaseDrafts.value.length) return t('Add at least one phase.')
   if (phaseDrafts.value.some(p => !p.name.trim())) return t('Every phase needs a name.')
   if (phaseDrafts.value.some(p => p.wps.some(w => !w.name.trim()))) return t('Every work package needs a name, or remove the empty row.')
+  if (isProduction.value && phaseDrafts.value.some(p => p.wps.some(w => !w.type))) return t('Choose production or service for every work package.')
+  if (phaseDrafts.value.some(p => p.wps.some(w => parseAmount(w.plannedUnits) > 0 && !w.unit.trim()))) return t('Enter the unit for every work package with planned units.')
   if (isUnit.value && !phaseDrafts.value.some(p => p.wps.some(w => parseAmount(w.plannedUnits) > 0))) return t('Unit-measured Output needs planned units on at least one work package.')
   return ''
 })
@@ -134,6 +133,8 @@ function next() {
   touched.value = false
   step.value++
 }
+const wpTypeLabel = (v: string) => (v === 'production' ? t('Production') : v === 'service' ? t('Service') : '—')
+function fmtAmount(v: string) { const n = parseAmount(v); return n ? n.toLocaleString('id-ID') : '' }
 function back() { if (step.value > 1) step.value--; else router.push('/projects') }
 
 const methodText = computed(() => {
@@ -155,7 +156,7 @@ function create() {
       name: ph.name.trim(),
       progressWeightPct: isMilestone.value ? Number(ph.weight.replace(',', '.')) || 0 : undefined,
       rabValue: parseAmount(ph.rabValue) || undefined,
-      workPackages: ph.wps.filter(w => w.name.trim()).map(w => ({ name: w.name.trim(), type: w.type, plannedUnits: parseAmount(w.plannedUnits) || undefined, unit: parseAmount(w.plannedUnits) ? w.unit : undefined })),
+      workPackages: ph.wps.filter(w => w.name.trim()).map(w => ({ name: w.name.trim(), type: (w.type || (isProduction.value ? 'production' : 'service')) as WorkPackageType, plannedUnits: parseAmount(w.plannedUnits) || undefined, unit: parseAmount(w.plannedUnits) ? w.unit.trim() : undefined })),
     })) : [],
   }, TODAY_ISO)
   logAudit({ actor: actor.value, role: asActor.value.role, projectId: p.id, kind: 'structure', summary: `Created project ${p.code} as Draft — ${p.isProduction ? 'production' : 'service'}, depth ${p.depth}, ${methodText.value}` })
@@ -170,6 +171,16 @@ function create() {
 
     <div class="pm-stage">
       <div class="pm-form-width">
+        <div v-if="step === 4" class="pm-stack pm-gap-3 pm-mb-5">
+          <MpBanner id="pc-review-draft" variant="info">
+            <MpBannerIcon />
+            <MpBannerTitle>{{ t('The project is created as Draft') }}</MpBannerTitle>
+            <MpBannerDescription>{{ t('Nothing consumes budget until the project is approved. Set the budget baseline in Budget setup, then approve — the recognition method, measure and production flag lock at approval.') }}</MpBannerDescription>
+          </MpBanner>
+          <MpBanner v-if="weightWarning" id="pc-review-weight" variant="warning">
+            <MpBannerIcon /><MpBannerDescription>{{ weightWarning }}</MpBannerDescription>
+          </MpBanner>
+        </div>
         <!-- Stepper -->
         <div class="pm-steps">
           <template v-for="(s, i) in STEPS" :key="s">
@@ -186,18 +197,16 @@ function create() {
             <MpFormLabel>{{ t('Does this job involve physical production?') }}</MpFormLabel>
             <div class="pm-grid-2 pm-mt-2">
               <label class="pm-choice" :class="{ 'pm-choice--active': isProduction === true }">
-                <MpRadio id="pc-shape-yes" name="shape" :is-checked="isProduction === true" @change="isProduction = true" />
-                <div>
-                  <div class="pm-choice-title">{{ t('Yes — we make something') }}</div>
-                  <div class="pm-choice-desc">{{ t('Custom fabrication, karoseri, interior fit-out. Phases, work packages, BOM, production plan and stock reservation are available.') }}</div>
-                </div>
+                <MpRadio id="pc-shape-yes" name="shape" :is-checked="isProduction === true" @change="isProduction = true">
+                  <span class="pm-choice-title">{{ t('Yes — we make something') }}</span>
+                  <template #description>{{ t('Custom fabrication, karoseri, interior fit-out. Phases, work packages, BOM, production plan and stock reservation are available.') }}</template>
+                </MpRadio>
               </label>
               <label class="pm-choice" :class="{ 'pm-choice--active': isProduction === false }">
-                <MpRadio id="pc-shape-no" name="shape" :is-checked="isProduction === false" @change="isProduction = false" />
-                <div>
-                  <div class="pm-choice-title">{{ t('No — it’s a service engagement') }}</div>
-                  <div class="pm-choice-desc">{{ t('Audit, tax, advisory, retainer. No BOM, work orders or reservations. Created with one work package that mirrors the project.') }}</div>
-                </div>
+                <MpRadio id="pc-shape-no" name="shape" :is-checked="isProduction === false" @change="isProduction = false">
+                  <span class="pm-choice-title">{{ t('No — it’s a service engagement') }}</span>
+                  <template #description>{{ t('Audit, tax, advisory, retainer. No BOM, work orders or reservations. Created with one work package that mirrors the project.') }}</template>
+                </MpRadio>
               </label>
             </div>
           </MpFormControl>
@@ -207,44 +216,47 @@ function create() {
             <MpFormHelpText>{{ t('One method and one measure per project. It locks when the project is approved.') }}</MpFormHelpText>
             <div class="pm-grid-3 pm-mt-2">
               <label class="pm-choice" :class="{ 'pm-choice--active': method === 'tm' }">
-                <MpRadio id="pc-method-tm" name="method" :is-checked="method === 'tm'" @change="method = 'tm'" />
-                <div>
-                  <div class="pm-choice-title">{{ t('Time & materials') }}</div>
-                  <div class="pm-choice-desc">{{ t('Bill time and cost incurred. Each entry gets a bill / write-down / write-up decision.') }}</div>
-                </div>
+                <MpRadio id="pc-method-tm" name="method" :is-checked="method === 'tm'" @change="method = 'tm'">
+                  <span class="pm-choice-title">{{ t('Time & materials') }}</span>
+                  <template #description>{{ t('Bill time and cost incurred. Each entry gets a bill / write-down / write-up decision.') }}</template>
+                </MpRadio>
               </label>
               <label class="pm-choice" :class="{ 'pm-choice--active': method === 'input' }">
-                <MpRadio id="pc-method-input" name="method" :is-checked="method === 'input'" @change="method = 'input'" />
-                <div>
-                  <div class="pm-choice-title">{{ t('Input (cost-to-cost)') }}</div>
-                  <div class="pm-choice-desc">{{ t('% complete = actual cost ÷ budget, applied to contract value.') }}</div>
-                </div>
+                <MpRadio id="pc-method-input" name="method" :is-checked="method === 'input'" @change="method = 'input'">
+                  <span class="pm-choice-title">{{ t('Input (cost-to-cost)') }}</span>
+                  <template #description>{{ t('% complete = actual cost ÷ budget, applied to contract value.') }}</template>
+                </MpRadio>
               </label>
               <label class="pm-choice" :class="{ 'pm-choice--active': method === 'output' }">
-                <MpRadio id="pc-method-output" name="method" :is-checked="method === 'output'" @change="method = 'output'" />
-                <div>
-                  <div class="pm-choice-title">{{ t('Output') }}</div>
-                  <div class="pm-choice-desc">{{ t('% complete from achieved phases (by BAST) or confirmed units.') }}</div>
-                </div>
+                <MpRadio id="pc-method-output" name="method" :is-checked="method === 'output'" @change="method = 'output'">
+                  <span class="pm-choice-title">{{ t('Output') }}</span>
+                  <template #description>{{ t('% complete from achieved phases (by BAST) or confirmed units.') }}</template>
+                </MpRadio>
               </label>
             </div>
           </MpFormControl>
 
           <MpFormControl v-if="method === 'output'" id="pc-measure-fc" is-required>
             <MpFormLabel>{{ t('Output measure') }}</MpFormLabel>
-            <MpSegmentedControl id="pc-measure" name="pc-measure" v-model="measure" :data="measureOptions" />
-            <MpBanner v-if="measure === 'milestone'" id="pc-milestone-note" variant="info" class="pm-mt-2">
+            <div class="pm-stack pm-gap-3 pm-mt-2">
+              <MpRadio id="pc-measure-milestone" name="pc-measure" :is-checked="measure === 'milestone'" @change="measure = 'milestone'">
+                {{ t('Milestone') }}
+                <template #description>{{ t('Progress weight per phase; a phase is achieved by its BAST.') }}</template>
+              </MpRadio>
+              <MpRadio id="pc-measure-unit" name="pc-measure" :is-checked="measure === 'unit'" @change="measure = 'unit'">
+                {{ t('Unit') }}
+                <template #description>{{ t('Confirmed ÷ planned units across work packages.') }}</template>
+              </MpRadio>
+            </div>
+            <MpBanner v-if="measure === 'milestone'" id="pc-milestone-note" variant="info" class="pm-mt-3">
               <MpBannerIcon /><MpBannerDescription>{{ t('Milestone-measured Output must have phases — the progress weight lives on each phase and a depth-1 project can’t carry it. Phases are switched on below.') }}</MpBannerDescription>
             </MpBanner>
           </MpFormControl>
 
-          <MpFormControl v-if="isProduction === false" id="pc-phases-fc">
-            <label class="pm-check">
-              <MpCheckbox id="pc-use-phases" :is-checked="usePhases" :is-disabled="phasesRequired" @change="usePhases = !usePhases" />
-              <span>{{ t('Break this engagement into phases') }}</span>
-            </label>
-            <MpFormHelpText>{{ phasesRequired ? t('Required for milestone-measured Output.') : t('Optional. You can add the first phase later — the project is promoted without moving any cost.') }}</MpFormHelpText>
-          </MpFormControl>
+          <MpCheckbox v-if="isProduction === false" id="pc-use-phases" :is-checked="usePhases" :is-disabled="phasesRequired" @change="usePhases = !usePhases">
+            {{ t('Break this engagement into phases') }}
+            <template #description>{{ phasesRequired ? t('Required for milestone-measured Output.') : t('Optional. You can add the first phase later — the project is promoted without moving any cost.') }}</template>
+          </MpCheckbox>
 
           <PmActionError id="pc-step1-error" :error="touched ? step1Error : ''" />
         </div>
@@ -270,11 +282,10 @@ function create() {
             <MpFormControl id="pc-cv-fc" is-required :is-invalid="touched && !!step2Errors.contractValue">
               <MpFormLabel>{{ t('Contract value') }}</MpFormLabel>
               <MpInputGroup id="pc-cv-group">
-                <MpInputLeftAddon>Rp</MpInputLeftAddon>
-                <MpInput id="pc-cv" v-model="form.contractValue" inputmode="numeric" />
+                <MpInputLeftAddon id="pc-cv-addon" has-background>Rp</MpInputLeftAddon>
+                <MpInput id="pc-cv" v-model="form.contractValue" inputmode="numeric" @blur="form.contractValue = fmtAmount(form.contractValue)" />
               </MpInputGroup>
               <MpFormErrorMessage>{{ step2Errors.contractValue }}</MpFormErrorMessage>
-              <MpFormHelpText v-if="!(touched && step2Errors.contractValue) && parseAmount(form.contractValue)">{{ rp(parseAmount(form.contractValue)) }}</MpFormHelpText>
             </MpFormControl>
             <MpFormControl id="pc-pm-fc">
               <MpFormLabel>{{ t('Project manager') }}</MpFormLabel>
@@ -298,17 +309,16 @@ function create() {
               <MpFormLabel>{{ t('Default warehouse') }}</MpFormLabel>
               <ErpFilterSelect id="pc-wh" v-model="form.defaultWarehouse" :placeholder="t('Select warehouse')" :options="warehouseOptions" width="100%" :is-clearable="false" />
             </MpFormControl>
-            <label class="pm-check pm-row--end">
-              <MpCheckbox id="pc-long-term" :is-checked="form.longTerm" @change="form.longTerm = !form.longTerm" />
-              <span>{{ t('Long-term project (create an asset at technical completion)') }}</span>
-            </label>
           </div>
+          <MpCheckbox id="pc-long-term" :is-checked="form.longTerm" @change="form.longTerm = !form.longTerm">
+            {{ t('Long-term project (create an asset at technical completion)') }}
+          </MpCheckbox>
 
           <div>
             <h3 class="pm-h3">{{ t('Dimension defaults') }}</h3>
             <p class="pm-caption pm-m-0">{{ t('Pre-filled on every line tagged to this project. Dimensions are reporting axes only — there is no dimension-level budget.') }}</p>
           </div>
-          <div class="pm-grid-4">
+          <div class="pm-grid-2">
             <MpFormControl id="pc-b-fc"><MpFormLabel>{{ t('Branch') }}</MpFormLabel><MpInput id="pc-b" v-model="form.branch" /></MpFormControl>
             <MpFormControl id="pc-d-fc"><MpFormLabel>{{ t('Department') }}</MpFormLabel><MpInput id="pc-d" v-model="form.department" /></MpFormControl>
             <MpFormControl id="pc-c-fc"><MpFormLabel>{{ t('Cost center') }}</MpFormLabel><MpInput id="pc-c" v-model="form.costCenter" /></MpFormControl>
@@ -340,39 +350,42 @@ function create() {
             </MpBanner>
             <PmActionError id="pc-structure-error" :error="structureAction.error.value" />
 
-            <div v-for="(ph, pi) in phaseDrafts" :key="pi" class="pm-card">
-              <div class="pm-row pm-row--end pm-gap-3">
-                <MpFormControl :id="`pc-ph-${pi}-fc`" is-required class="pm-grow-2">
-                  <MpFormLabel>{{ t('Phase') }} {{ pi + 1 }}</MpFormLabel>
-                  <MpInput :id="`pc-ph-${pi}`" v-model="ph.name" />
-                </MpFormControl>
-                <MpFormControl v-if="isMilestone" :id="`pc-ph-rab-${pi}-fc`" class="pm-grow">
-                  <MpFormLabel>{{ t('Phase RAB value') }}</MpFormLabel>
-                  <MpInputGroup :id="`pc-ph-rab-${pi}-group`">
-                    <MpInputLeftAddon>Rp</MpInputLeftAddon>
-                    <MpInput :id="`pc-ph-rab-${pi}`" v-model="ph.rabValue" inputmode="numeric" />
-                  </MpInputGroup>
-                </MpFormControl>
-                <MpFormControl v-if="isMilestone" :id="`pc-ph-w-${pi}-fc`" class="pm-w-field">
-                  <MpFormLabel>{{ t('Progress weight') }}</MpFormLabel>
-                  <MpInputGroup :id="`pc-ph-w-${pi}-group`">
-                    <MpInput :id="`pc-ph-w-${pi}`" v-model="ph.weight" inputmode="decimal" />
-                    <MpInputRightAddon>%</MpInputRightAddon>
-                  </MpInputGroup>
-                </MpFormControl>
-                <MpButton :id="`pc-ph-remove-${pi}`" variant="ghost" is-rounded :aria-label="t('Remove phase')" @click="removePhase(pi)" left-icon="trash" />
-              </div>
-              <div class="pm-stack pm-gap-2 pm-mt-3 pm-pl-6">
-                <div v-for="(wp, wi) in ph.wps" :key="wi" class="pm-row pm-gap-2">
-                  <span class="pm-muted pm-small">{{ pi + 1 }}.{{ wi + 1 }}</span>
-                  <MpInput :id="`pc-wp-${pi}-${wi}`" v-model="wp.name" class="pm-grow-2" :aria-label="t('Work package name')" />
-                  <ErpFilterSelect v-if="isProduction" :id="`pc-wp-type-${pi}-${wi}`" :model-value="wp.type" :placeholder="t('Type')" :options="wpTypeOptions" :is-clearable="false" width="140px" @update:model-value="(v: string) => (wp.type = (v || 'production') as WorkPackageType)" />
-                  <MpInput v-if="isProduction || isUnit" :id="`pc-wp-units-${pi}-${wi}`" v-model="wp.plannedUnits" class="pm-w-narrow" inputmode="numeric" :aria-label="t('Planned units')" />
-                  <MpInput v-if="isProduction || isUnit" :id="`pc-wp-unit-${pi}-${wi}`" v-model="wp.unit" class="pm-w-narrow" :aria-label="t('Unit')" />
-                  <MpButton :id="`pc-wp-remove-${pi}-${wi}`" variant="ghost" is-rounded :aria-label="t('Remove work package')" @click="ph.wps.splice(wi, 1)" left-icon="minus-circular" />
+            <div v-for="(ph, pi) in phaseDrafts" :key="pi" class="pm-card pm-stack pm-gap-3">
+              <!-- Phase row — delete sits top-right, in the same column as each row's remove -->
+              <div class="pm-phase-row">
+                <div class="pm-phase-fields" :class="{ 'pm-phase-fields--weight': isMilestone }">
+                  <MpFormControl :id="`pc-ph-${pi}-fc`" is-required>
+                    <MpFormLabel>{{ t('Phase') }} {{ pi + 1 }}</MpFormLabel>
+                    <MpInput :id="`pc-ph-${pi}`" v-model="ph.name" :placeholder="t('e.g. Interior')" />
+                  </MpFormControl>
+                  <MpFormControl v-if="isMilestone" :id="`pc-ph-rab-${pi}-fc`">
+                    <MpFormLabel>{{ t('Phase RAB value') }}</MpFormLabel>
+                    <MpInputGroup :id="`pc-ph-rab-${pi}-group`">
+                      <MpInputLeftAddon :id="`pc-ph-rab-${pi}-addon`" has-background>Rp</MpInputLeftAddon>
+                      <MpInput :id="`pc-ph-rab-${pi}`" v-model="ph.rabValue" inputmode="numeric" placeholder="0" @blur="ph.rabValue = fmtAmount(ph.rabValue)" />
+                    </MpInputGroup>
+                  </MpFormControl>
+                  <MpFormControl v-if="isMilestone" :id="`pc-ph-w-${pi}-fc`">
+                    <MpFormLabel>{{ t('Progress weight') }}</MpFormLabel>
+                    <MpInputGroup :id="`pc-ph-w-${pi}-group`">
+                      <MpInput :id="`pc-ph-w-${pi}`" v-model="ph.weight" inputmode="decimal" placeholder="0" />
+                      <MpInputRightAddon :id="`pc-ph-w-${pi}-addon`" has-background>%</MpInputRightAddon>
+                    </MpInputGroup>
+                  </MpFormControl>
                 </div>
-                <div><MpButton :id="`pc-wp-add-${pi}`" variant="ghost" is-rounded left-icon="add" @click="ph.wps.push(newWp())">{{ t('Work package') }}</MpButton></div>
+                <MpButton :id="`pc-ph-remove-${pi}`" variant="ghost" is-rounded left-icon="delete" :aria-label="t('Remove phase')" class="pm-row-remove" @click="removePhase(pi)" />
               </div>
+
+              <!-- Work package rows: number · name · type · planned units · unit · remove -->
+              <div v-for="(wp, wi) in ph.wps" :key="wi" class="pm-wp-row" :class="{ 'pm-wp-row--units': isProduction || isUnit, 'pm-wp-row--type': isProduction }">
+                <span class="pm-wp-no">{{ pi + 1 }}.{{ wi + 1 }}</span>
+                <MpInput :id="`pc-wp-${pi}-${wi}`" v-model="wp.name" :placeholder="t('Work package name')" :aria-label="t('Work package name')" />
+                <ErpFilterSelect v-if="isProduction" :id="`pc-wp-type-${pi}-${wi}`" :model-value="wp.type" :placeholder="t('Type')" :options="wpTypeOptions" :is-clearable="false" width="100%" @update:model-value="(v: string) => (wp.type = v as WorkPackageType)" />
+                <MpInput v-if="isProduction || isUnit" :id="`pc-wp-units-${pi}-${wi}`" v-model="wp.plannedUnits" inputmode="numeric" :placeholder="t('Planned units')" :aria-label="t('Planned units')" />
+                <MpInput v-if="isProduction || isUnit" :id="`pc-wp-unit-${pi}-${wi}`" v-model="wp.unit" :placeholder="t('Unit')" :aria-label="t('Unit')" />
+                <MpButton :id="`pc-wp-remove-${pi}-${wi}`" variant="ghost" is-rounded left-icon="minus-circular" :aria-label="t('Remove work package')" class="pm-row-remove" @click="ph.wps.splice(wi, 1)" />
+              </div>
+              <div><MpButton :id="`pc-wp-add-${pi}`" variant="ghost" is-rounded left-icon="add" @click="ph.wps.push(newWp())">{{ t('Work package') }}</MpButton></div>
             </div>
             <div><MpButton id="pc-add-phase" variant="secondary" is-rounded left-icon="add" @click="addPhase">{{ t('New phase') }}</MpButton></div>
             <p v-if="isProduction" class="pm-caption pm-m-0">{{ t('Attach a BOM to each production work package from the Structure tab after the project is created — selecting a master BOM copies it into a custom BOM v1.') }}</p>
@@ -380,26 +393,68 @@ function create() {
           <PmActionError id="pc-step3-error" :error="touched ? step3Error : ''" />
         </div>
 
-        <!-- ── Step 4: review ── -->
-        <div v-else class="pm-stack pm-gap-4">
-          <div class="pm-card pm-grid-2">
-            <div><div class="pm-stat-label">{{ t('Project name') }}</div><div class="pm-body">{{ form.name }}</div></div>
-            <div><div class="pm-stat-label">{{ t('Customer') }}</div><div class="pm-body">{{ form.customer }}</div></div>
-            <div><div class="pm-stat-label">{{ t('Contract value') }}</div><div class="pm-body">{{ rp(parseAmount(form.contractValue)) }}</div></div>
-            <div><div class="pm-stat-label">{{ t('Project manager') }}</div><div class="pm-body">{{ form.pm }}</div></div>
-            <div><div class="pm-stat-label">{{ t('Shape') }}</div><div class="pm-body">{{ isProduction ? t('Production') : t('Service') }} · {{ t('Depth') }} {{ depth }}</div></div>
-            <div><div class="pm-stat-label">{{ t('Recognition') }}</div><div class="pm-body">{{ t(methodText) }}</div></div>
-            <div><div class="pm-stat-label">{{ t('Structure') }}</div><div class="pm-body">{{ usePhases ? `${phaseDrafts.length} ${t('phases')}, ${phaseDrafts.reduce((s, p) => s + Math.max(p.wps.filter(w => w.name.trim()).length, 1), 0)} ${t('work packages')}` : t('1 work package (auto)') }}</div></div>
-            <div><div class="pm-stat-label">{{ t('Pegging') }}</div><div class="pm-body">{{ t('Mandatory — every line on a project document names its project') }}</div></div>
-          </div>
-          <MpBanner v-if="weightWarning" id="pc-review-weight" variant="warning">
-            <MpBannerIcon /><MpBannerDescription>{{ weightWarning }}</MpBannerDescription>
-          </MpBanner>
-          <MpBanner id="pc-review-draft" variant="info">
-            <MpBannerIcon />
-            <MpBannerTitle>{{ t('The project is created as Draft') }}</MpBannerTitle>
-            <MpBannerDescription>{{ t('Nothing consumes budget until the project is approved. Set the budget baseline in Budget setup, then approve — the recognition method, measure and production flag lock at approval.') }}</MpBannerDescription>
-          </MpBanner>
+        <!-- ── Step 4: review (banners sit at the top of the stage, above the stepper) ── -->
+        <div v-else class="pm-stack pm-gap-5">
+          <section>
+            <h3 class="pm-h3 pm-mb-3">{{ t('Details') }}</h3>
+            <div class="pm-grid-2">
+              <div><div class="pm-stat-label">{{ t('Project name') }}</div><div class="pm-body">{{ form.name }}</div></div>
+              <div><div class="pm-stat-label">{{ t('Customer') }}</div><div class="pm-body">{{ form.customer }}</div></div>
+              <div><div class="pm-stat-label">{{ t('Contract value') }}</div><div class="pm-body">{{ rp(parseAmount(form.contractValue)) }}</div></div>
+              <div><div class="pm-stat-label">{{ t('Project manager') }}</div><div class="pm-body">{{ form.pm }}</div></div>
+              <div><div class="pm-stat-label">{{ t('Shape') }}</div><div class="pm-body">{{ isProduction ? t('Production') : t('Service') }} · {{ t('Depth') }} {{ depth }}</div></div>
+              <div><div class="pm-stat-label">{{ t('Recognition') }}</div><div class="pm-body">{{ t(methodText) }}</div></div>
+              <div><div class="pm-stat-label">{{ t('Pegging') }}</div><div class="pm-body">{{ t('Mandatory — every line on a project document names its project') }}</div></div>
+            </div>
+          </section>
+
+          <section>
+            <h3 class="pm-h3 pm-mb-3">{{ t('Structure') }}</h3>
+            <div class="pm-table-wrap">
+              <table class="pm-table">
+                <thead>
+                  <tr>
+                    <th>{{ t('Phase / work package') }}</th>
+                    <th v-if="isProduction">{{ t('Type') }}</th>
+                    <th v-if="isProduction || isUnit" class="pm-num">{{ t('Planned units') }}</th>
+                    <th v-if="isMilestone" class="pm-num">{{ t('Phase RAB value') }}</th>
+                    <th v-if="isMilestone" class="pm-num">{{ t('Progress weight') }}</th>
+                  </tr>
+                </thead>
+                <tbody v-if="usePhases">
+                  <template v-for="(ph, pi) in phaseDrafts" :key="pi">
+                    <tr class="pm-tr-sub">
+                      <td class="pm-strong">{{ pi + 1 }}. {{ ph.name }}</td>
+                      <td v-if="isProduction" />
+                      <td v-if="isProduction || isUnit" />
+                      <td v-if="isMilestone" class="pm-num">{{ parseAmount(ph.rabValue) ? rp(parseAmount(ph.rabValue)) : '—' }}</td>
+                      <td v-if="isMilestone" class="pm-num">{{ pct(Number(ph.weight.replace(',', '.')) || 0) }}</td>
+                    </tr>
+                    <tr v-for="(wp, wi) in ph.wps.filter(w => w.name.trim())" :key="wi">
+                      <td class="pm-pl-6">{{ pi + 1 }}.{{ wi + 1 }} {{ wp.name }}</td>
+                      <td v-if="isProduction">{{ wpTypeLabel(wp.type) }}</td>
+                      <td v-if="isProduction || isUnit" class="pm-num">{{ parseAmount(wp.plannedUnits) ? `${parseAmount(wp.plannedUnits)} ${wp.unit}` : '—' }}</td>
+                      <td v-if="isMilestone" />
+                      <td v-if="isMilestone" />
+                    </tr>
+                    <tr v-if="!ph.wps.some(w => w.name.trim())">
+                      <td class="pm-pl-6 pm-muted" :colspan="1 + (isProduction ? 1 : 0) + (isProduction || isUnit ? 1 : 0) + (isMilestone ? 2 : 0)">{{ pi + 1 }}.1 {{ ph.name }} ({{ t('created automatically') }})</td>
+                    </tr>
+                  </template>
+                </tbody>
+                <tbody v-else>
+                  <tr>
+                    <td>{{ form.name }} <span class="pm-muted">({{ t('1 work package (auto)') }})</span></td>
+                    <td v-if="isProduction">{{ t('Production') }}</td>
+                    <td v-if="isProduction || isUnit" class="pm-num">—</td>
+                  </tr>
+                </tbody>
+                <tfoot v-if="isMilestone && usePhases">
+                  <tr><td :colspan="1 + (isProduction ? 1 : 0) + (isProduction || isUnit ? 1 : 0)">{{ t('Total') }}</td><td class="pm-num">{{ rp(rabSum) }}</td><td class="pm-num" :class="{ 'pm-neg': weightSum !== 100 }">{{ pct(weightSum) }}</td></tr>
+                </tfoot>
+              </table>
+            </div>
+          </section>
         </div>
 
         <div class="pm-footer">

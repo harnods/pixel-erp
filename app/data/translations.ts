@@ -2854,6 +2854,12 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Min stock": "Stok minimum",
 
   // ── Projects module (Project MTO) ─────────────────────────────────────────
+  "Choose production or service for every work package.": "Pilih produksi atau jasa untuk setiap paket kerja.",
+  "Enter the unit for every work package with planned units.": "Isi satuan untuk setiap paket kerja yang punya unit rencana.",
+  "Milestone": "Milestone",
+  "Progress weight per phase; a phase is achieved by its BAST.": "Bobot progres per fase; fase tercapai lewat BAST-nya.",
+  "Confirmed ÷ planned units across work packages.": "Unit terkonfirmasi ÷ unit rencana di semua paket kerja.",
+  "created automatically": "dibuat otomatis",
   "No projects": "Belum ada proyek",
   "locked": "terkunci",
   "Summary": "Ringkasan",

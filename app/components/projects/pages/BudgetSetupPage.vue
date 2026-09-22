@@ -312,7 +312,7 @@ function goBack() { router.push(returnTo.value || (project.value ? `/projects/${
             <MpFormControl id="bs-rev-fc">
               <MpFormLabel>{{ t('Revenue (RAB)') }}</MpFormLabel>
               <MpInputGroup id="bs-rev-group">
-                <MpInputLeftAddon>Rp</MpInputLeftAddon>
+                <MpInputLeftAddon has-background>Rp</MpInputLeftAddon>
                 <MpInput id="bs-rev" v-model="draftRevenue" inputmode="numeric" @blur="draftRevenue = fmtIn(draftRevenue)" />
               </MpInputGroup>
               <MpFormHelpText>{{ t('Contract value') }} {{ rp(project.contractValue) }}</MpFormHelpText>

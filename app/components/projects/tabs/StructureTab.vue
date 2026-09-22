@@ -306,7 +306,7 @@ function doReconfirm() { pageAction.run(reconfirmWeights(props.project.id, asAct
                     :aria-label="`${t('Progress weight')} ${ph.name}`"
                     @update:model-value="(v: string) => (weightDraft[ph.id] = v)" @blur="commitWeight(ph)" @keydown.enter="commitWeight(ph)"
                   />
-                  <MpInputRightAddon>%</MpInputRightAddon>
+                  <MpInputRightAddon has-background>%</MpInputRightAddon>
                 </MpInputGroup>
                 <div v-if="!ph.verifiedAt && suggestedWeight(ph) !== undefined && suggestedWeight(ph) !== ph.progressWeightPct" class="pm-caption">{{ t('Suggested') }} {{ pct(suggestedWeight(ph)) }}</div>
               </template>
@@ -384,7 +384,7 @@ function doReconfirm() { pageAction.run(reconfirmWeights(props.project.id, asAct
         <MpFormControl id="ph-rab-fc">
           <MpFormLabel>{{ t('Phase RAB value') }}</MpFormLabel>
           <MpInputGroup id="ph-rab-group">
-            <MpInputLeftAddon>Rp</MpInputLeftAddon>
+            <MpInputLeftAddon has-background>Rp</MpInputLeftAddon>
             <MpInput id="ph-rab" v-model="phaseDrawer.rab" inputmode="numeric" />
           </MpInputGroup>
           <MpFormHelpText>{{ t('Contract-side value of this phase from the approved RAB. Used for the weight suggestion — never the internal cost plan (RAP).') }}</MpFormHelpText>
@@ -393,7 +393,7 @@ function doReconfirm() { pageAction.run(reconfirmWeights(props.project.id, asAct
           <MpFormLabel>{{ t('Progress weight') }}</MpFormLabel>
           <MpInputGroup id="ph-w-group" class="pm-maxw-short">
             <MpInput id="ph-w" v-model="phaseDrawer.weight" inputmode="decimal" />
-            <MpInputRightAddon>%</MpInputRightAddon>
+            <MpInputRightAddon has-background>%</MpInputRightAddon>
           </MpInputGroup>
           <MpFormHelpText v-if="phaseSuggestion !== undefined">
             {{ t('Suggested') }}: {{ pct(phaseSuggestion) }} ({{ t('phase RAB ÷ total RAB') }}).

@@ -143,7 +143,7 @@ function budgetSetupLink() {
               <MpFormLabel>{{ t('Quantity to produce') }}</MpFormLabel>
               <MpInputGroup id="wg-q-group">
                 <MpInput id="wg-q" v-model="qtyStr" inputmode="numeric" />
-                <MpInputRightAddon>{{ wp?.unit ?? t('Unit') }}</MpInputRightAddon>
+                <MpInputRightAddon has-background>{{ wp?.unit ?? t('Unit') }}</MpInputRightAddon>
               </MpInputGroup>
               <MpFormHelpText v-if="wp">{{ remainingUnits }} {{ t('remaining') }}</MpFormHelpText>
             </MpFormControl>
@@ -188,7 +188,7 @@ function budgetSetupLink() {
               <MpFormControl id="wg-b-fc" is-required class="pm-maxw-field pm-mt-5">
                 <MpFormLabel>{{ t('Budget for this work order') }}</MpFormLabel>
                 <MpInputGroup id="wg-b-group">
-                  <MpInputLeftAddon>Rp</MpInputLeftAddon>
+                  <MpInputLeftAddon has-background>Rp</MpInputLeftAddon>
                   <MpInput id="wg-b" v-model="setAsideStr" inputmode="numeric" @blur="setAsideStr = setAside ? setAside.toLocaleString('id-ID') : ''" />
                 </MpInputGroup>
                 <MpFormHelpText>{{ t('This amount is set aside on Cost of production — it’s what’s committed, and the work order’s baseline.') }}</MpFormHelpText>

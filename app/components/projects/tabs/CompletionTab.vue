@@ -190,7 +190,7 @@ function doTrueUp() { closeAction.run(finaliseRecognition(props.project.id, asAc
         <MpFormLabel>{{ t('Accepted percentage') }}</MpFormLabel>
         <MpInputGroup id="bast-p-group" class="pm-maxw-short">
           <MpInput id="bast-p" v-model="bast.pct" inputmode="numeric" />
-          <MpInputRightAddon>%</MpInputRightAddon>
+          <MpInputRightAddon has-background>%</MpInputRightAddon>
         </MpInputGroup>
         <MpFormHelpText>{{ t('Last accepted') }}: {{ bastWp?.bastPct ?? 0 }}%</MpFormHelpText>
       </MpFormControl>
@@ -218,7 +218,7 @@ function doTrueUp() { closeAction.run(finaliseRecognition(props.project.id, asAc
       <MpFormControl id="pn-c-fc">
         <MpFormLabel>{{ t('Rework cost') }}</MpFormLabel>
         <MpInputGroup id="pn-c-group" class="pm-maxw-field">
-          <MpInputLeftAddon>Rp</MpInputLeftAddon>
+          <MpInputLeftAddon has-background>Rp</MpInputLeftAddon>
           <MpInput id="pn-c" v-model="newPunch.cost" inputmode="numeric" />
         </MpInputGroup>
       </MpFormControl>

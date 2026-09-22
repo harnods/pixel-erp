@@ -264,14 +264,14 @@ function doSubmit() {
         <MpFormControl id="r-c-fc">
           <MpFormLabel>{{ t('Cost') }}</MpFormLabel>
           <MpInputGroup id="r-c-group">
-            <MpInputLeftAddon>Rp</MpInputLeftAddon>
+            <MpInputLeftAddon has-background>Rp</MpInputLeftAddon>
             <MpInput id="r-c" v-model="raise.cost" inputmode="numeric" @blur="raise.cost = parseAmount(raise.cost) ? parseAmount(raise.cost).toLocaleString('id-ID') : ''" />
           </MpInputGroup>
         </MpFormControl>
         <MpFormControl id="r-p-fc" is-required :is-invalid="raise.touched && !parseAmount(raise.price)">
           <MpFormLabel>{{ t('Customer price') }}</MpFormLabel>
           <MpInputGroup id="r-p-group">
-            <MpInputLeftAddon>Rp</MpInputLeftAddon>
+            <MpInputLeftAddon has-background>Rp</MpInputLeftAddon>
             <MpInput id="r-p" v-model="raise.price" inputmode="numeric" @blur="raise.price = parseAmount(raise.price) ? parseAmount(raise.price).toLocaleString('id-ID') : ''" />
           </MpInputGroup>
           <MpFormErrorMessage>{{ t('Enter the customer price.') }}</MpFormErrorMessage>
@@ -286,12 +286,16 @@ function doSubmit() {
         <MpFormLabel>{{ t('PSAK 72 treatment') }}</MpFormLabel>
         <div class="pm-stack pm-gap-2">
           <label class="pm-choice" :class="{ 'pm-choice--active': !raise.distinct }">
-            <MpRadio id="r-distinct-no" name="r-distinct" :is-checked="!raise.distinct" @change="raise.distinct = false" />
-            <div><div class="pm-choice-title">{{ t('Not distinct (default)') }}</div><div class="pm-choice-desc">{{ t('Part of the same performance obligation — a one-time cumulative catch-up in the current period, never a retrospective restatement.') }}</div></div>
+            <MpRadio id="r-distinct-no" name="r-distinct" :is-checked="!raise.distinct" @change="raise.distinct = false">
+              <span class="pm-choice-title">{{ t('Not distinct (default)') }}</span>
+              <template #description>{{ t('Part of the same performance obligation — a one-time cumulative catch-up in the current period, never a retrospective restatement.') }}</template>
+            </MpRadio>
           </label>
           <label class="pm-choice" :class="{ 'pm-choice--active': raise.distinct }">
-            <MpRadio id="r-distinct-yes" name="r-distinct" :is-checked="raise.distinct" @change="raise.distinct = true" />
-            <div><div class="pm-choice-title">{{ t('Distinct') }}</div><div class="pm-choice-desc">{{ t('A separate obligation — treated prospectively.') }}</div></div>
+            <MpRadio id="r-distinct-yes" name="r-distinct" :is-checked="raise.distinct" @change="raise.distinct = true">
+              <span class="pm-choice-title">{{ t('Distinct') }}</span>
+              <template #description>{{ t('A separate obligation — treated prospectively.') }}</template>
+            </MpRadio>
           </label>
         </div>
       </MpFormControl>
@@ -374,16 +378,22 @@ function doSubmit() {
           <MpFormHelpText>{{ t('Required. There is no default — choose explicitly.') }}</MpFormHelpText>
           <div class="pm-stack pm-gap-2 pm-mt-2">
             <label class="pm-choice" :class="{ 'pm-choice--active': editor.effectivity === 'new_only', 'pm-choice--disabled': !editable }">
-              <MpRadio id="eco-eff-new" name="eco-eff" :is-checked="editor.effectivity === 'new_only'" :is-disabled="!editable" @change="setEffectivity('new_only')" />
-              <div><div class="pm-choice-title">{{ t('New work orders only') }}</div><div class="pm-choice-desc">{{ t('Work orders created after approval use the new version; existing ones stay on') }} v{{ eco.baseVersion }}.</div></div>
+              <MpRadio id="eco-eff-new" name="eco-eff" :is-checked="editor.effectivity === 'new_only'" :is-disabled="!editable" @change="setEffectivity('new_only')">
+                <span class="pm-choice-title">{{ t('New work orders only') }}</span>
+                <template #description>{{ t('Work orders created after approval use the new version; existing ones stay on') }} v{{ eco.baseVersion }}.</template>
+              </MpRadio>
             </label>
             <label class="pm-choice" :class="{ 'pm-choice--active': editor.effectivity === 'all_open', 'pm-choice--disabled': !editable }">
-              <MpRadio id="eco-eff-all" name="eco-eff" :is-checked="editor.effectivity === 'all_open'" :is-disabled="!editable" @change="setEffectivity('all_open')" />
-              <div><div class="pm-choice-title">{{ t('All open work orders') }}</div><div class="pm-choice-desc">{{ t('Draft and Released work orders switch to the new version (In progress stays — open question 20).') }}</div></div>
+              <MpRadio id="eco-eff-all" name="eco-eff" :is-checked="editor.effectivity === 'all_open'" :is-disabled="!editable" @change="setEffectivity('all_open')">
+                <span class="pm-choice-title">{{ t('All open work orders') }}</span>
+                <template #description>{{ t('Draft and Released work orders switch to the new version (In progress stays — open question 20).') }}</template>
+              </MpRadio>
             </label>
             <label class="pm-choice" :class="{ 'pm-choice--active': editor.effectivity === 'specific', 'pm-choice--disabled': !editable }">
-              <MpRadio id="eco-eff-specific" name="eco-eff" :is-checked="editor.effectivity === 'specific'" :is-disabled="!editable" @change="setEffectivity('specific')" />
-              <div><div class="pm-choice-title">{{ t('Specific work orders') }}</div><div class="pm-choice-desc">{{ t('Pick the work orders below.') }}</div></div>
+              <MpRadio id="eco-eff-specific" name="eco-eff" :is-checked="editor.effectivity === 'specific'" :is-disabled="!editable" @change="setEffectivity('specific')">
+                <span class="pm-choice-title">{{ t('Specific work orders') }}</span>
+                <template #description>{{ t('Pick the work orders below.') }}</template>
+              </MpRadio>
             </label>
             <div v-if="editor.effectivity === 'specific'" class="pm-stack pm-gap-1 pm-pl-6">
               <label v-for="w in openWos" :key="w.id" class="pm-check">

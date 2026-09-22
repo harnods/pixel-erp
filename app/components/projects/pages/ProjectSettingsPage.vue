@@ -123,7 +123,7 @@ function resetDemo() {
               <MpFormLabel>{{ t('Escalation threshold (company)') }}</MpFormLabel>
               <MpInputGroup id="ps-th-group" class="pm-maxw-short">
                 <MpInput id="ps-th" v-model="draft.threshold" inputmode="decimal" />
-                <MpInputRightAddon>%</MpInputRightAddon>
+                <MpInputRightAddon has-background>%</MpInputRightAddon>
               </MpInputGroup>
               <MpFormErrorMessage>{{ thresholdError }}</MpFormErrorMessage>
               <MpFormHelpText v-if="!thresholdError">{{ t('At or under it the PM overrides with a reason; above it Finance must sign off. 5–50%.') }}</MpFormHelpText>
@@ -158,7 +158,7 @@ function resetDemo() {
                   <td>
                     <MpInputGroup :id="`ps-proj-group-${p.id}`" class="pm-w-field">
                       <MpInput :id="`ps-proj-${p.id}`" v-model="projDraft[p.id]" inputmode="decimal" :aria-label="`${t('Threshold')} ${p.code}`" @blur="saveProject(p.id)" @keydown.enter="saveProject(p.id)" />
-                      <MpInputRightAddon>%</MpInputRightAddon>
+                      <MpInputRightAddon has-background>%</MpInputRightAddon>
                     </MpInputGroup>
                   </td>
                   <td>{{ pct(p.escalationThresholdPct ?? projectPolicy.companyThresholdPct) }}<span v-if="p.escalationThresholdPct === undefined" class="pm-cell-sub">{{ t('company default') }}</span></td>

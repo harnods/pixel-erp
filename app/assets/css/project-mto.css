@@ -198,7 +198,7 @@
 .pm-sticky { position: sticky; top: 0; z-index: 2; }
 
 /* ── Radio / checkbox with title + caption (rule/checkbox-multiline-top) ──── */
-.pm-choice { display: flex; align-items: flex-start; gap: var(--mp-spacing-3, 12px); padding: var(--mp-spacing-3, 12px); border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: var(--mp-radii-md, 6px); cursor: pointer; }
+.pm-choice { display: block; padding: var(--mp-spacing-3, 12px) var(--mp-spacing-4, 16px); border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: var(--mp-radii-md, 6px); cursor: pointer; }
 .pm-choice--active { border-color: var(--mp-colors-border-selected, #029861); background: var(--mp-colors-background-brand-subtle, #ecf8f3); }
 .pm-choice--disabled { cursor: default; opacity: 0.6; }
 .pm-choice .mp-radio__root, .pm-choice .mp-checkbox__root { align-items: flex-start; }
@@ -254,3 +254,15 @@
 /* Project page tabs: labels stay on one line; the tab bar scrolls sideways when narrow. */
 #pm-detail-tabs [data-pixel-component="MpTabList"] { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; }
 #pm-detail-tabs [role="tab"] { white-space: nowrap; flex-shrink: 0; }
+
+/* ── New project › structure rows: fields grow, the remove/delete column stays pinned right ── */
+.pm-phase-row, .pm-wp-row { display: grid; gap: var(--mp-spacing-3, 12px); }
+.pm-phase-row { grid-template-columns: minmax(0, 1fr) var(--mp-sizes-10, 40px); align-items: start; }
+.pm-phase-fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--mp-spacing-3, 12px); }
+.pm-phase-fields--weight { grid-template-columns: minmax(0, 2fr) minmax(0, 1.4fr) minmax(0, 1fr); }
+.pm-wp-row { grid-template-columns: var(--mp-sizes-8, 32px) minmax(0, 1fr) var(--mp-sizes-10, 40px); align-items: center; }
+.pm-wp-row--units { grid-template-columns: var(--mp-sizes-8, 32px) minmax(0, 1fr) var(--mp-sizes-28, 112px) var(--mp-sizes-24, 96px) var(--mp-sizes-10, 40px); }
+.pm-wp-row--units.pm-wp-row--type { grid-template-columns: var(--mp-sizes-8, 32px) minmax(0, 1fr) var(--mp-sizes-36, 144px) var(--mp-sizes-28, 112px) var(--mp-sizes-24, 96px) var(--mp-sizes-10, 40px); }
+.pm-wp-no { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #3a4749); font-variant-numeric: tabular-nums; }
+.pm-row-remove { justify-self: end; }
+@media (max-width: 720px) { .pm-phase-fields--weight { grid-template-columns: minmax(0, 1fr); } }
