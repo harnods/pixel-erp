@@ -12,7 +12,10 @@
 import { outgoingOrders, addOutgoing, type OutgoingOrder } from './outgoing'
 import { addPickingTask, startPicking, endPicking } from './pickingTasks'
 import { addPackingTask, startPacking, endPacking, cancelPackingTask, getPackingTask } from './packingTasks'
-import { addDeliveryTaskFromPackingTasks, handoverToCourierBulk, cancelDeliveryTask } from './deliveryTasks'
+import {
+  addDeliveryTaskFromPackingTasks, handoverToCourierBulk, cancelDeliveryTask,
+  setWmsShipping, setWmsPackageShipping,
+} from './deliveryTasks'
 import { receipts, addReceipt } from './receipts'
 import { createReceivingTask, startReceiving, endReceiving, cancelReceivingTask } from './receivingTasks'
 import { addPutAwayTask, startPutAway, endPutAway, cancelPutAway } from './putAwayTasks'
@@ -149,6 +152,69 @@ function seedShipmentCourierSplit(): void {
   }
 }
 
+// ── Shipping details per outbound + package: one sample per case ──────────────
+/**
+ * Four outbounds that each split into TWO parcels, so every branch of the
+ * per-package courier/tracking rule can be seen without building the chain first.
+ * Two parcels is the smallest number that makes the question real — one parcel
+ * can't disagree with its parent.
+ *
+ *   PKG-SHIP-PARENT  — courier + AWB on the OUTBOUND. Printing asks nothing: both
+ *                      labels carry the parent's details. (The revision case.)
+ *   PKG-SHIP-ASK     — nothing anywhere. Printing opens the shipping-details modal
+ *                      with one courier/tracking pair PER PARCEL.
+ *   PKG-SHIP-SPLIT   — each parcel already has its OWN courier + AWB, so the two
+ *                      labels differ; the parent stays empty, proving the override
+ *                      is stored on the package and not written back up.
+ *   PKG-SHIP-PICKING — courier on the outbound, still at picking (no packing yet):
+ *                      printing from the picking board uses the parent, because no
+ *                      parcel exists there to have details of its own.
+ */
+const PKG_SHIP_SENTINEL = 'PKG-SHIP-PARENT'
+const PKG_SKU = '3005' // Paper filter — plain, untracked, deep enough stock to split
+const PKG_QTY = 2      // 1 per parcel
+
+function twoParcelOrder(salesNo: string) {
+  const o = addOutgoing({
+    salesNo, source: 'Manual', warehouseId: WH, warehouseName: WH_NAME,
+    skuQty: 1, orderQty: PKG_QTY, shippedQty: 0, status: 'open', dueDate: DUE,
+    lines: [{ sku: PKG_SKU, productName: productBySku(PKG_SKU)?.name ?? PKG_SKU, desc: '', img: '', unit: productBySku(PKG_SKU)?.unit ?? 'Unit', qty: PKG_QTY }],
+  })
+  // Two independent pick→pack cycles: one parcel each, which is what makes this an
+  // outbound with two packages rather than one package of two.
+  const parcels = [0, 1].map(() => {
+    const pick = addPickingTask({ salesOrderIds: [o.id], salesNos: [o.salesNo], warehouseId: WH, warehouseName: WH_NAME, assignee: BY })
+    startPicking(pick.id); endPicking(pick.id, { [`${o.id}::${PKG_SKU}`]: 1 })
+    const pack = addPackingTask({ salesOrderId: o.id, salesNo: o.salesNo, pickingTaskId: pick.id, pickingTaskNo: pick.taskNo, warehouseId: WH, warehouseName: WH_NAME, assignee: BY })
+    startPacking(pack.id); endPacking(pack.id, { [`${o.id}::${PKG_SKU}`]: 1 })
+    return getPackingTask(pack.id)!
+  })
+  return { order: o, parcels }
+}
+
+function seedPackageShippingCases(): void {
+  step('pkg shipping — parent carries both parcels', () => {
+    const { order: o } = twoParcelOrder(PKG_SHIP_SENTINEL)
+    setWmsShipping(o.id, { courier: 'JNE REG', trackingNo: 'SD0012001' })
+  })
+
+  step('pkg shipping — nothing yet, modal asks per parcel', () => {
+    twoParcelOrder('PKG-SHIP-ASK')
+  })
+
+  step('pkg shipping — a courier and AWB per parcel', () => {
+    const { parcels } = twoParcelOrder('PKG-SHIP-SPLIT')
+    setWmsPackageShipping(parcels[0]!.id, { courier: 'SiCepat BEST', trackingNo: 'SD0012002' })
+    setWmsPackageShipping(parcels[1]!.id, { courier: 'AnterAja REG', trackingNo: 'SD0012003' })
+  })
+
+  step('pkg shipping — picking board prints the parent', () => {
+    const o = order('PKG-SHIP-PICKING')
+    completedPicking(o) // picked, not packed: no parcel exists yet
+    setWmsShipping(o.id, { courier: 'Ninja Xpress', trackingNo: 'SD0012004' })
+  })
+}
+
 /** Run once per fresh DB (guarded by the sentinel order). */
 export function ensureSeedCoverage(): void {
   if (receipts.length === 0) return // base seed not ready yet — bail (shouldn't happen)
@@ -159,6 +225,7 @@ export function ensureSeedCoverage(): void {
     seedInbound()
   }
   if (!outgoingOrders.some((o) => o.salesNo === SHIP_SPLIT_SENTINEL)) seedShipmentCourierSplit()
+  if (!outgoingOrders.some((o) => o.salesNo === PKG_SHIP_SENTINEL)) seedPackageShippingCases()
 }
 
 ensureSeedCoverage()

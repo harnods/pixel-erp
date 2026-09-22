@@ -228,6 +228,28 @@ describe('the modal only asks for what is missing', () => {
     expect(wmsShippingForPackage(b.id, o.id)?.courier).toBe('AnterAja REG')
   })
 
+  it('a parcel’s label lists what is in THAT parcel, not the whole order', async () => {
+    // Two parcels of a 4-unit order carry 2 each — printing the order's own lines on
+    // both would tell the courier each box holds 4.
+    const o = order(4)
+    const a = packageFor(o, 2)
+    const b = packageFor(o, 2)
+    setWmsShipping(o.id, { courier: 'JNE REG', trackingNo: 'SD0008888' })
+
+    const flow = usePrintShippingLabel()
+    await flow.printShippingLabels([o], {
+      requireCourier: true,
+      packages: [a, b].map(t => ({ id: t.id, no: t.taskNo, orderId: o.id })),
+    })
+
+    const labels = lastLabels() as unknown as { packageNo?: string; lines?: { qty: number }[] }[]
+    expect(labels).toHaveLength(2)
+    for (const l of labels) {
+      expect(l.lines, l.packageNo).toBeTruthy()
+      expect(l.lines!.reduce((sum, x) => sum + x.qty, 0), l.packageNo).toBe(2)
+    }
+  })
+
   it('the picking board prints the parent, with no parcel on the label', async () => {
     const o = order(4)
     packageFor(o, 2)

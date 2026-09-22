@@ -27,6 +27,7 @@ import {
   setWmsShipping, setWmsPackageShipping, wmsShippingForOrder, wmsShippingForPackage, courierForOrder,
 } from '~/data/deliveryTasks'
 import { generateShippingLabelPdf, type ShippingLabelEntry } from '~/utils/shippingLabelPdf'
+import { getPackingTask, pickedLinesForPacking } from '~/data/packingTasks'
 
 export interface ShippingDetailsInput { courier: string; trackingNo: string }
 
@@ -69,12 +70,24 @@ export function usePrintShippingLabel() {
         order, info, packageNo: pkg.no,
         courier: ship?.courier || courierForOrder(order),
         trackingNo: ship?.trackingNo,
+        lines: packedLinesOf(pkg.id),
       }
     }
     const ship = wmsShippingForOrder(order.id)
     // courierForOrder covers both — a marketplace order's channel-fixed courier and
     // a WMS order's entered courier.
     return { order, info, courier: courierForOrder(order), trackingNo: ship?.trackingNo }
+  }
+
+  /** What is actually IN this parcel — the packed qty per SKU. Without it the label
+   *  would list the whole order on every parcel of a split shipment. */
+  function packedLinesOf(packageId: string) {
+    const pk = getPackingTask(packageId)
+    if (!pk) return undefined
+    const lines = pickedLinesForPacking(pk)
+      .map((l) => ({ sku: l.sku, name: l.product, qty: pk.packedByKey?.[l.key] ?? l.picked, unit: l.unit }))
+      .filter((l) => l.qty > 0)
+    return lines.length ? lines : undefined
   }
 
   /** Every parcel of one order in this print job (none = print the order itself). */
