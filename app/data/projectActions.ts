@@ -42,6 +42,9 @@ type Result = { ok: true; message?: string } | { ok: false; error: string }
 export function approveProject(projectId: string, actor: Actor): Result {
   const p = getProject(projectId)
   if (!p || p.status !== 'draft') return { ok: false, error: 'Only a draft project can be approved.' }
+  // OQ7 (provisional): project release is approved by Finance / Controller, never by the project's own PM.
+  if (actor.role !== 'Finance') return { ok: false, error: 'Finance / Controller approves project release. Switch “View as” to approve.' }
+  if (actor.name === p.pm) return { ok: false, error: 'You manage this project, so someone else must approve it.' }
   if (p.method === 'output' && p.measure === 'milestone' && weightTotal(p.id) !== 100) {
     return { ok: false, error: `Progress weights total ${pct(weightTotal(p.id))}. Set them to 100% before approving.` }
   }
@@ -373,6 +376,12 @@ export function decideApproval(id: string, approve: boolean, actor: Actor, note?
   const a = approvals.find(x => x.id === id)
   if (!a || a.status !== 'pending') return { ok: false, error: 'This request is no longer pending.' }
   if (a.requestedBy === actor.name) return { ok: false, error: 'You raised this request, so someone else must decide it.' }
+  // OQ23 (provisional): a customer-funded ECO applies after its change order — approve the VO first.
+  if (approve && a.kind === 'eco') {
+    const eco = engineeringChanges.find(e => e.id === a.refId)
+    const vo = eco?.voId ? changeOrders.find(v => v.id === eco.voId) : undefined
+    if (vo && vo.status !== 'approved') return { ok: false, error: `This engineering change is funded by ${vo.no}. Approve the change order first — its budget revision applies before this one.` }
+  }
   a.status = approve ? 'approved' : 'rejected'
   a.decidedBy = actor.name
   a.decidedAt = TODAY_ISO

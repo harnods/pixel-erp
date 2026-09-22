@@ -21,6 +21,7 @@ import { projects, getProject, projectWorkPackages, getWorkPackage } from '~/dat
 import { getBudget } from '~/data/projectBudgets'
 import { woGate, effectiveThreshold, type ProjectWoLine } from '~/data/projectTransactions'
 import { getCustomBom, currentVersion } from '~/data/projectBoms'
+import { engineeringChanges } from '~/data/projectChanges'
 import { suggestWoLines, createProjectWo } from '~/data/projectActions'
 import { rp, rpSigned, pct, parseAmount, num } from '~/utils/projectFormat'
 import { notifyResult } from '~/utils/projectToast'
@@ -39,6 +40,8 @@ const wpSel = ref(typeof route.query.wp === 'string' ? route.query.wp : '')
 watch(projectSel, () => { wpSel.value = '' })
 const wp = computed(() => (wpSel.value ? getWorkPackage(wpSel.value) : undefined))
 const bom = computed(() => getCustomBom(wp.value?.customBomId))
+// OQ21 (provisional): "new work orders only" means created after ECO approval — warn when an ECO is still pending.
+const pendingEco = computed(() => (bom.value ? engineeringChanges.find(e => e.customBomId === bom.value!.id && e.status === 'pending') : undefined))
 
 const gate = computed(() => (wp.value ? woGate(wp.value.id) : undefined))
 const setAsideStr = ref('')
@@ -147,6 +150,9 @@ function budgetSetupLink() {
             </div>
           </div>
 
+          <div v-if="pendingEco" class="pm-banner pm-banner--warn">
+            <div class="pm-banner-body">{{ pendingEco.no }} {{ t('is pending on this BOM. If it’s approved for new work orders only, this work order won’t get the change — it was created before approval.') }}</div>
+          </div>
           <div v-if="project?.status === 'draft'" class="pm-banner pm-banner--info"><div class="pm-banner-body">{{ t('This project is still Draft — the work order is saved as Draft and commits nothing until the project is approved.') }}</div></div>
 
           <div v-if="wp && gate" class="pm-card">

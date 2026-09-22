@@ -1994,6 +1994,10 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Min stock": "Stok minimum",
 
   // ── Projects module (Project MTO) ─────────────────────────────────────────
+  "Waiting for Finance approval": "Menunggu persetujuan Finance",
+  "Finance / Controller approves project release. Switch “View as” to approve.": "Finance / Controller yang menyetujui rilis proyek. Ganti “Lihat sebagai” untuk menyetujui.",
+  "You manage this project, so someone else must approve it.": "Anda mengelola proyek ini, jadi orang lain yang harus menyetujuinya.",
+  "is pending on this BOM. If it’s approved for new work orders only, this work order won’t get the change — it was created before approval.": "sedang menunggu di BOM ini. Jika disetujui hanya untuk perintah kerja baru, perintah kerja ini tidak ikut berubah — dibuat sebelum persetujuan.",
   "Changes — commercial & engineering": "Perubahan — komersial & teknis",
   "Completion": "Penyelesaian",
   "Production & materials": "Produksi & material",

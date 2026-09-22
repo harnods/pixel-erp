@@ -63,7 +63,14 @@ const STATUS_LABEL = { draft: 'Draft', active: 'Active', closed: 'Closed' } as c
 
 // ── Approval gate (Draft only, role-labelled) ──
 const approveOpen = ref(false)
-const approveLabel = computed(() => `${t('Approve as')} ${t(current.value.label)}`)
+// OQ7 (provisional): Finance / Controller approves project release; the button is still labelled by role.
+const { isFinance, actor } = useProjectRole()
+const approveLabel = computed(() => (isFinance.value ? `${t('Approve as')} ${t(current.value.label)}` : t('Waiting for Finance approval')))
+const approveRefusal = computed(() => {
+  if (!isFinance.value) return t('Finance / Controller approves project release. Switch “View as” to approve.')
+  if (project.value && actor.value === project.value.pm) return t('You manage this project, so someone else must approve it.')
+  return ''
+})
 const approveBlockers = computed(() => {
   const p = project.value
   if (!p) return []
@@ -174,9 +181,10 @@ const actions = computed<PmMenuItem[]>(() => {
         </div>
       </div>
       <div v-for="b in approveBlockers" :key="b" class="pm-banner pm-banner--warn"><div class="pm-banner-body">{{ b }}</div></div>
+      <div v-if="approveRefusal" class="pm-banner pm-banner--neutral"><div class="pm-banner-body">{{ approveRefusal }}</div></div>
       <template #footer>
         <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="approveOpen = false">{{ t('Cancel') }}</button>
-        <button class="btn-enterprise btn-enterprise--primary" type="button" @click="doApprove">{{ approveLabel }}</button>
+        <button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="!!approveRefusal" @click="doApprove">{{ isFinance ? approveLabel : t('Approve') }}</button>
       </template>
     </PmOverlay>
 
