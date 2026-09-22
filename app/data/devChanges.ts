@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-new-module-modal',
+    title: 'New module: creation modal with locked access level',
+    description:
+      'Clicking "+ New module" now opens a modal asking for Module name and Access level (Company or Team). After "Continue", the Setup page opens with the name prefilled and the access level locked — Company users cannot switch to Team and vice versa.',
+    date: '2026-09-21',
+    files: ['CrmModulesPage.vue', 'CrmModuleBuilderPage.vue'],
+  },
+  {
     id: 'crm-field-driven-pipeline',
     title: 'Custom modules: field-driven Kanban pipeline',
     description:
@@ -141,19 +149,19 @@ export const DEV_CHANGES: DevChange[] = [
   },
   {
     id: 'crm-layout-preview',
-    title: 'Preview layout drawer',
+    title: 'Preview layout drawer — Deal form & detail replicas',
     description:
-      'A "Preview layout" button in the Edit layout header opens a full-screen drawer that mirrors the actual record detail page format — title bar, pipeline stepper, tabs, ContentList key-value grid, and product table. Two switchable views: "Form" (empty form fields) and "Details record" (populated with dummy data).',
-    date: '2026-09-20',
+      'Preview layout drawer: for the Deals module, both Form and Details record previews are exact 100% replicas of their actual pages. Form preview replicates the New Deal page (header, deal name, contact, deal value, columns, line items, totals, footer). Details record preview replicates the Deal detail page (title bar, pipeline stepper, tabs, Overview/Transaction/Shipping sections, products table, totals). Custom modules keep their dynamic grid previews for both modes.',
+    date: '2026-09-22',
     files: ['CrmDetailLayoutBuilder.vue'],
   },
   {
     id: 'crm-record-name-value-rename',
-    title: 'Properties use "Deal name/value" for Deals module',
+    title: 'Generic modules use "Record" terminology for all properties',
     description:
-      'Default properties use "Deal name" and "Deal value" labels for the Deals module. The variable names remain module-neutral (record_name, record_value) so custom modules can relabel without changing the schema.',
-    date: '2026-09-20',
-    files: ['crm.ts', 'CrmModuleBuilderPage.vue', 'translations.ts'],
+      'Custom/generic modules now use "Record name", "Record value", "Record stage", "Record type" and variableName record_owner/record_stage/record_type instead of "Deal" prefixed labels. Only the Deals module keeps "Deal" terminology. Pipeline card preview and detail page also use the property\'s actual name.',
+    date: '2026-09-21',
+    files: ['crm.ts', 'CrmModuleBuilderPage.vue', 'CrmGenericRecordDetailPage.vue'],
   },
   {
     id: 'crm-module-name-mandatory',

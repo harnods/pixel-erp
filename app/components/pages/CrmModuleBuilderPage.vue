@@ -52,6 +52,7 @@ import { successToast, infoToast } from '~/utils/toasts'
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
 const router = useRouter()
+const route = useRoute()
 
 const AUTHOR = 'Rizal Candra'
 function nowStamp(): string { return new Date().toISOString().slice(0, 19) }
@@ -62,8 +63,13 @@ function clone<T>(v: T): T { return JSON.parse(JSON.stringify(v)) as T }
 const isCreating = props.orderId === 'new'
 if (isCreating) resetGenericModuleDraft('new')
 
+// Pre-fill from query params when coming from the creation modal.
+const qName = (isCreating && typeof route.query.name === 'string') ? route.query.name : ''
+const qAccess = (isCreating && route.query.accessLevel === 'team') ? 'team' as const : 'company' as const
+const accessLocked = isCreating && !!route.query.accessLevel
+
 const newModuleStub: CrmModule = reactive({
-  id: 'new', name: '', system: false, accessLevel: 'company', status: 'draft',
+  id: 'new', name: qName, system: false, accessLevel: qAccess, status: 'draft',
   sections: [], fields: [], views: [], layoutDriver: undefined, conversionTarget: null,
   recordCount: 0, icon: 'pipeline', updatedAt: '', updatedBy: '',
 })
@@ -155,7 +161,7 @@ interface Draft {
   accessLevel: 'company' | 'team'
   teamIds: string[] // team ids that can access this module — only meaningful when accessLevel === 'team'
 }
-const draft = reactive<Draft>({ name: '', icon: 'pipeline', sections: [], fields: [], views: [], layoutDriver: '', detailLayout: { tabs: [] }, accessLevel: 'company', teamIds: [] })
+const draft = reactive<Draft>({ name: qName, icon: 'pipeline', sections: [], fields: [], views: [], layoutDriver: '', detailLayout: { tabs: [] }, accessLevel: qAccess, teamIds: [] })
 const activeTeams = computed(() => crmTeams.filter((tm) => tm.status === 'active'))
 // Team picker — the same "pick many" drawer pattern as Add users, scoped to teams.
 const teamDrawerOpen = ref(false)
@@ -360,7 +366,7 @@ const BUILT_IN_CARD_FIELD_META: Record<string, { subtitle: string; icon: string;
   dealName: { subtitle: 'record_name', icon: 'text-editor-text' },
   contactPerson: { subtitle: 'contact_person', icon: 'profile' },
   dealValue: { subtitle: 'record_value', icon: 'number' },
-  owner: { subtitle: 'deal_owner', icon: 'profile' },
+  owner: { subtitle: 'record_owner', icon: 'profile' },
   closeDate: { subtitle: 'close_date', icon: 'calendar' },
   memo: { subtitle: 'memo', icon: 'textarea' },
 }
@@ -788,7 +794,7 @@ function saveSection() {
 function deleteSection(section: string) {
   const blocked = draft.fields.some((f) => f.section === section && isProtected(f))
   if (blocked) {
-    sectionDeleteError[section] = t('This section holds a system-required field and can’t be deleted.')
+    sectionDeleteError[section] = t('This section holds a system-required field and cannot be deleted.')
     return
   }
   delete sectionDeleteError[section]
@@ -1003,9 +1009,9 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
     <div class="detail-stage">
       <!-- ── Module not found ── -->
       <div v-if="!mod" class="builder-empty">
-        <MpIcon name="folder-close" size="xl" />
+        <img src="/illustrations/empty-folder.png" alt="" class="builder-empty-illustration" width="288" height="240" />
         <p class="builder-empty-title">{{ t('Module not found') }}</p>
-        <p class="builder-empty-caption">{{ t('This module doesn’t exist or was removed.') }}</p>
+        <p class="builder-empty-caption">{{ t('This module does not exist or was removed.') }}</p>
         <MpButton variant="secondary" is-rounded @click="cancel">{{ t('Back to Modules') }}</MpButton>
       </div>
 
@@ -1108,8 +1114,8 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                   <span class="setup-caption">{{ t('Choose whether this module is company-wide or limited to specific teams.') }}</span>
                 </div>
                 <div class="setup-radio-row">
-                  <MpRadio id="setup-access-company" name="setup-access-level" value="company" :is-checked="draft.accessLevel === 'company'" @change="draft.accessLevel = 'company'">{{ t('Company') }}</MpRadio>
-                  <MpRadio id="setup-access-team" name="setup-access-level" value="team" :is-checked="draft.accessLevel === 'team'" @change="draft.accessLevel = 'team'">{{ t('Team') }}</MpRadio>
+                  <MpRadio id="setup-access-company" name="setup-access-level" value="company" :is-checked="draft.accessLevel === 'company'" :is-disabled="accessLocked" @change="draft.accessLevel = 'company'">{{ t('Company') }}</MpRadio>
+                  <MpRadio id="setup-access-team" name="setup-access-level" value="team" :is-checked="draft.accessLevel === 'team'" :is-disabled="accessLocked" @change="draft.accessLevel = 'team'">{{ t('Team') }}</MpRadio>
                 </div>
                 <div v-if="draft.accessLevel === 'team'" class="setup-team-picked">
                   <template v-if="selectedTeams.length">
@@ -1390,7 +1396,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                         <div v-for="n in 2" :key="n" class="pipe-card">
                           <template v-for="f in enabledCardFields" :key="f.key">
                             <span v-if="f.key === 'company'" class="pipe-card-company">{{ t('Company') }}</span>
-                            <span v-else-if="f.key === 'dealName'" class="pipe-card-deal">{{ t('Deal name') }}</span>
+                            <span v-else-if="f.key === 'dealName'" class="pipe-card-deal">{{ propList.find((p) => p.id === 'deal-name')?.name ?? t('Record name') }}</span>
                             <span v-else-if="f.key === 'contactPerson'" class="pipe-card-sub">{{ t('Contact person') }}</span>
                             <span v-else-if="f.key === 'dealValue'" class="pipe-card-value">{{ t('Value') }}</span>
                             <span v-else-if="f.key === 'owner'" class="pipe-card-owner">{{ t('Owner') }}</span>
@@ -1663,7 +1669,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                 width="240px"
                 @update:model-value="onFieldTypeChange"
               />
-              <span v-if="typeLocked" class="builder-form-note">{{ t('This is a system field — its type can’t be changed.') }}</span>
+              <span v-if="typeLocked" class="builder-form-note">{{ t('This is a system field — its type cannot be changed.') }}</span>
             </div>
 
             <div class="builder-form-field builder-form-field--toggle">
@@ -2129,6 +2135,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
 
 /* ── Module not found ── */
 .builder-empty { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-12) var(--mp-spacing-6); text-align: center; color: var(--mp-text-secondary); }
+.builder-empty-illustration { max-width: 288px; height: auto; }
 .builder-empty-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .builder-empty-caption { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 

@@ -79,7 +79,7 @@ const paymentTermsOptions = (dataSourceByKey('erp-payment-terms')?.values ?? [])
           </div>
 
           <div class="grd-field">
-            <label class="grd-label">{{ t('Deal value') }}</label>
+            <label class="grd-label">{{ t('Record value') }}</label>
             <MpInput type="number" :model-value="rec.values.dealValue" is-full-width @update:model-value="(v: string) => { rec!.values.dealValue = Number(v) || 0; onFieldChange() }" />
           </div>
           <div class="grd-field">
@@ -123,8 +123,9 @@ const paymentTermsOptions = (dataSourceByKey('erp-payment-terms')?.values ?? [])
     </template>
 
     <div v-else class="grd-empty">
-      <MpIcon name="folder-close" size="xl" />
+      <img src="/illustrations/empty-folder.png" alt="" class="grd-empty-illustration" width="288" height="240" />
       <p class="grd-empty-title">{{ t('Record not found') }}</p>
+      <p class="grd-empty-caption">{{ t('This record does not exist or was removed.') }}</p>
       <MpButton variant="secondary" is-rounded @click="back">{{ t('Back') }}</MpButton>
     </div>
   </div>
@@ -151,5 +152,7 @@ const paymentTermsOptions = (dataSourceByKey('erp-payment-terms')?.values ?? [])
 .grd-label { font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-secondary, #6b7678); }
 
 .grd-empty { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-12) var(--mp-spacing-6); text-align: center; color: var(--mp-colors-text-secondary, #6b7678); }
+.grd-empty-illustration { max-width: 288px; height: auto; }
 .grd-empty-title { font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); margin: 0; }
+.grd-empty-caption { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 </style>

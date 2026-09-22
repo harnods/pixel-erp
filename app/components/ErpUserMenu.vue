@@ -88,10 +88,11 @@
           <button type="button" class="user-menu__row" @click="resetData(onClosePopover)">
             <span class="user-menu__label">{{ t('Reset demo data') }}</span>
           </button>
-          <button type="button" class="user-menu__row" @click="toggleChanges(onClosePopover)"> <!-- pixel-police-allow: matches the sibling .user-menu__row raw-button pattern -->
+          <!-- Changes overlay disabled — coachmarks were distracting during dev.
+          <button type="button" class="user-menu__row" @click="toggleChanges(onClosePopover)">
             <span class="user-menu__label">{{ t('Changes') }}</span>
             <span v-if="isChangesOn" class="user-menu__value">{{ t('On') }}</span>
-          </button>
+          </button> -->
         </nav>
 
         <p class="user-menu__company-id">{{ t('Company ID: 680128') }}</p>

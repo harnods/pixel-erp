@@ -151,8 +151,9 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
 
     <div class="detail-stage">
       <div v-if="!mod" class="editor-empty">
-        <MpIcon name="folder-close" size="xl" />
+        <img src="/illustrations/empty-folder.png" alt="" class="editor-empty-illustration" width="288" height="240" />
         <p class="editor-empty-title">{{ t('Module not found') }}</p>
+        <p class="editor-empty-caption">{{ t('This module does not exist or was removed.') }}</p>
         <MpButton class="btn-enterprise--secondary" is-rounded @click="goBack">{{ t('Back to ERP integrations') }}</MpButton>
       </div>
 
@@ -328,8 +329,10 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
 .detail-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
 .detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: var(--mp-spacing-6); display: flex; flex-direction: column; }
 
-.editor-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-10) 0; color: var(--mp-text-secondary); }
+.editor-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-10) 0; color: var(--mp-text-secondary); text-align: center; }
+.editor-empty-illustration { max-width: 288px; height: auto; }
 .editor-empty-title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.editor-empty-caption { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* Full-width single column (the readiness/dependencies side panel was removed). */
 .editor-main { display: flex; flex-direction: column; gap: var(--mp-spacing-6); min-width: 0; }

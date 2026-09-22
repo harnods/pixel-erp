@@ -1229,9 +1229,9 @@ export interface CrmModule {
 /** Icon choices offered by the module builder's Name-field icon picker — menu-bar
  *  appropriate glyphs from the Pixel library (all verified in the app nav). */
 export const CRM_MODULE_ICONS = [
-  'pipeline', 'reports', 'dashboard', 'stats', 'chart-bar',
+  'pipeline', 'reports', 'dashboard', 'chart-line', 'chart-bar',
   'contact', 'company', 'team', 'employee', 'partner',
-  'briefcase', 'sales', 'cart', 'products', 'box',
+  'briefcase', 'sales', 'cart', 'products', 'assets',
   'warehouse', 'fulfillment', 'billing', 'finance', 'wallet',
   'bank', 'book', 'calculator', 'promo', 'voucher',
   'broadcast', 'expenses', 'protection', 'location', 'time',
@@ -1463,9 +1463,8 @@ const DEAL_DETAIL_LAYOUT_SEED: DealDetailLayout = {
         { id: 'sec-overview', name: 'Overview', columns: 3, cols: [['deal-name', 'company', 'billing-address'], ['contact-person', 'contact-person-email', 'contact-person-phone'], ['deal-value', 'owner', 'currency']] },
         { id: 'sec-transaction', name: 'Transaction', columns: 4, cols: distributeCols(['transaction-date', 'due-date', 'close-date', 'transaction-no', 'reference-no', 'payment-terms', 'exchange-rate'], 4) },
         { id: 'sec-shipping', name: 'Shipping & delivery', columns: 4, cols: distributeCols(['warehouse', 'shipping-address', 'shipping-date', 'delivery-date', 'ship-via', 'tracking-no', 'shipping-fee'], 4) },
-        { id: 'sec-products', name: 'Products', columns: 1, cols: [['product-lines']], kind: 'products', system: true },
-        { id: 'sec-pricing', name: 'Pricing', columns: 4, cols: distributeCols(['discount', 'global-discount', 'tax', 'tax-inclusive', 'tax-after-discount'], 4) },
-        { id: 'sec-additional', name: 'Additional info', columns: 2, cols: [['memo', 'attachment'], ['message']] },
+        { id: 'sec-products', name: 'Products', columns: 1, cols: [['tax-inclusive', 'product-lines']], kind: 'products', system: true },
+        { id: 'sec-pricing', name: 'Pricing', columns: 3, cols: [['memo', 'attachment'], [], ['tax-after-discount', 'discount', 'global-discount', 'tax']] },
       ],
     },
     { id: 'tab-notes', key: 'notes', label: 'Notes', editable: false, visible: true },
@@ -1819,9 +1818,8 @@ const SERVICE_DETAIL_LAYOUT_SEED: DealDetailLayout = {
       sections: [
         { id: 'ssec-overview', name: 'Overview', columns: 3, cols: [['deal-name', 'company'], ['contact-person', 'contact-person-email', 'contact-person-phone'], ['deal-value', 'owner', 'currency']] },
         { id: 'ssec-service', name: 'Service info', columns: 3, cols: distributeCols(['service-type', 'transaction-date', 'due-date', 'close-date', 'payment-terms', 'transaction-no', 'reference-no', 'exchange-rate'], 3) },
-        { id: 'ssec-products', name: 'Products', columns: 1, cols: [['product-lines']], kind: 'products', system: true },
-        { id: 'ssec-pricing', name: 'Pricing', columns: 4, cols: distributeCols(['discount', 'global-discount', 'tax', 'tax-inclusive', 'tax-after-discount'], 4) },
-        { id: 'ssec-additional', name: 'Additional info', columns: 2, cols: [['memo', 'attachment'], ['message']] },
+        { id: 'ssec-products', name: 'Products', columns: 1, cols: [['tax-inclusive', 'product-lines']], kind: 'products', system: true },
+        { id: 'ssec-pricing', name: 'Pricing', columns: 3, cols: [['memo', 'attachment'], [], ['tax-after-discount', 'discount', 'global-discount', 'tax']] },
       ],
     },
     { id: 'stab-notes', key: 'notes', label: 'Notes', editable: false, visible: true },
@@ -1862,19 +1860,13 @@ const genericModuleConfigs = reactive<Record<string, GenericModuleConfig>>(
 )
 function persistGenericModuleConfigs() { saveSnapshot('crm-generic-module-configs-v1', [genericModuleConfigs]) }
 
-/** Generic detail layout: Overview/Info/Products + the 4 system tabs — same shape
- *  as the Service deals seed, with ids namespaced per module so multiple generic
- *  modules never collide. */
+/** Generic detail layout: minimal empty-state seed — one "Overview" section with
+ *  only "Record name". Users add more properties and sections from the builder. */
 function genericDetailLayoutSeed(moduleId: string): DealDetailLayout {
   return {
     tabs: [
       { id: `${moduleId}-tab-details`, key: 'details', label: 'Details', editable: true, visible: true, sections: [
-        { id: newDetailSectionId(), name: 'Overview', columns: 3, cols: [['deal-name', 'company', 'billing-address'], ['contact-person', 'contact-person-email', 'contact-person-phone'], ['deal-value', 'owner', 'currency']] },
-        { id: newDetailSectionId(), name: 'Transaction', columns: 4, cols: distributeCols(['transaction-date', 'due-date', 'close-date', 'transaction-no', 'reference-no', 'payment-terms', 'exchange-rate'], 4) },
-        { id: newDetailSectionId(), name: 'Shipping & delivery', columns: 4, cols: distributeCols(['warehouse', 'shipping-address', 'shipping-date', 'delivery-date', 'ship-via', 'tracking-no', 'shipping-fee'], 4) },
-        { id: newDetailSectionId(), name: 'Products', columns: 1, cols: [['product-lines']], kind: 'products', system: true },
-        { id: newDetailSectionId(), name: 'Pricing', columns: 4, cols: distributeCols(['discount', 'global-discount', 'tax', 'tax-inclusive', 'tax-after-discount'], 4) },
-        { id: newDetailSectionId(), name: 'Additional info', columns: 2, cols: [['memo', 'attachment'], ['message']] },
+        { id: newDetailSectionId(), name: 'Overview', columns: 2, cols: [['deal-name'], []] },
       ] },
       { id: `${moduleId}-tab-notes`, key: 'notes', label: 'Notes', editable: false, visible: true },
       { id: `${moduleId}-tab-files`, key: 'files', label: 'Files', editable: false, visible: true },
@@ -1884,13 +1876,26 @@ function genericDetailLayoutSeed(moduleId: string): DealDetailLayout {
   }
 }
 function newGenericModuleConfig(moduleId: string): GenericModuleConfig {
+  const props = defaultDealProperties()
+  const DEAL_TO_RECORD: Record<string, string> = {
+    'deal-name': 'Record name',
+    'deal-value': 'Record value',
+    'deal-stage': 'Record stage',
+    'deal-type': 'Record type',
+  }
+  for (const p of props) {
+    if (DEAL_TO_RECORD[p.id]) p.name = DEAL_TO_RECORD[p.id]
+    if (p.variableName === 'deal_owner') p.variableName = 'record_owner'
+    if (p.variableName === 'deal_stage') p.variableName = 'record_stage'
+    if (p.variableName === 'deal_type') p.variableName = 'record_type'
+  }
   return {
     pipelineFieldId: null,
     pipelines: [],
     display: JSON.parse(JSON.stringify(GENERIC_PIPELINE_DISPLAY_SEED)),
     views: JSON.parse(JSON.stringify(DEAL_PIPELINE_VIEWS_SEED)),
     setup: { baseCurrency: 'IDR', applyCloseDate: true, closeMode: 'period', closePeriod: 'this-month', closeAmount: 30, closeUnit: 'days' },
-    properties: defaultDealProperties(),
+    properties: props,
     detailLayout: genericDetailLayoutSeed(moduleId),
   }
 }
