@@ -10,7 +10,9 @@
  *    estimate) · Actual · Variance.
  *  • Any change deep-links into Budget setup and returns here.
  */
+import { MpButton, MpProgress, MpTextlink } from '@mekari/pixel3'
 import WoJournalOverlay from '../WoJournalOverlay.vue'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import type { Project } from '~/data/projects'
 import { getWorkPackage, projectPhases } from '~/data/projects'
 import { getBudget, budgetByAccount, accountName, COST_ACCOUNTS, COGM_ACCOUNT, phaseReserve } from '~/data/projectBudgets'
@@ -18,6 +20,7 @@ import { actualByAccount, projectCommitted, projectWos, woCommitted } from '~/da
 import { recognisedToDate } from '~/data/projectRecognition'
 import { rp, rpSigned, pct } from '~/utils/projectFormat'
 import { formatDate } from '~/utils/date'
+import { badgeProps } from '~/utils/projectStatus'
 
 const props = defineProps<{ project: Project }>()
 const { t } = useLocale()
@@ -53,16 +56,17 @@ const plannedMargin = computed(() => budget.value ? budget.value.revenue - total
 
 const wos = computed(() => projectWos(props.project.id))
 const journalWo = ref<string | undefined>()
-const WO_TONE: Record<string, string> = { Draft: 'pm-pill--gray', Released: 'pm-pill--blue', 'In progress': 'pm-pill--yellow', Completed: 'pm-pill--green' }
+function usedPct(r: { committed: number; actual: number; baseline?: number }) { return r.baseline ? (r.committed + r.actual) / r.baseline * 100 : 0 }
+function usedColor(v: number) { return v > 100 ? 'negative' : v > 90 ? 'warning' : 'positive' }
 </script>
 
 <template>
   <div>
     <!-- Not set -->
-    <div v-if="!budget" class="pm-card" style="text-align: center; padding: 40px 16px">
+    <div v-if="!budget" class="pm-card pm-empty-inline">
       <div class="pm-empty-title">{{ t('Budget not set') }}</div>
-      <p class="pm-desc" style="max-width: 560px; margin: 4px auto 16px">{{ t('A missing budget is not a zero budget. Link the approved RAB/RAP plan — or enter the baseline manually — in Budget setup. Until then every budget check on this project reads “not set”.') }}</p>
-      <button class="btn-enterprise btn-enterprise--primary" type="button" @click="openSetup">{{ t('Set up budget') }}</button>
+      <p class="pm-empty-desc">{{ t('A missing budget is not a zero budget. Link the approved RAB/RAP plan — or enter the baseline manually — in Budget setup. Until then every budget check on this project reads “not set”.') }}</p>
+      <MpButton id="pm-budget-setup" variant="primary" is-rounded @click="openSetup">{{ t('Set up budget') }}</MpButton>
     </div>
 
     <template v-else>
@@ -70,12 +74,9 @@ const WO_TONE: Record<string, string> = { Draft: 'pm-pill--gray', Released: 'pm-
         <div class="pm-section-head">
           <div>
             <h2 class="pm-h2">{{ t('Budget detail') }}</h2>
-            <p class="pm-desc">{{ t('Frozen baseline from') }} <strong>{{ budget.planRef }}</strong> · {{ t('approved by') }} {{ budget.approvedBy }} {{ t('on') }} {{ formatDate(budget.approvedAt) }}<template v-if="budget.revisions.length"> · {{ budget.revisions.length }} {{ t('revision(s)') }}</template></p>
+            <p class="pm-caption pm-m-0">{{ t('Frozen baseline from') }} <strong>{{ budget.planRef }}</strong> · {{ t('approved by') }} {{ budget.approvedBy }} {{ t('on') }} {{ formatDate(budget.approvedAt) }}<template v-if="budget.revisions.length"> · {{ budget.revisions.length }} {{ t('revision(s)') }}</template></p>
           </div>
-          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after" type="button" @click="openSetup">
-            {{ t('Revise in Budget setup') }}
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M7 17L17 7M9 7h8v8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
-          </button>
+          <MpButton id="pm-budget-revise" variant="secondary" is-rounded right-icon="newtab" @click="openSetup">{{ t('Revise in Budget setup') }}</MpButton>
         </div>
 
         <div class="pm-table-wrap">
@@ -87,7 +88,7 @@ const WO_TONE: Record<string, string> = { Draft: 'pm-pill--gray', Released: 'pm-
                 <th class="pm-num">{{ t('Committed') }}</th>
                 <th class="pm-num">{{ t('Actual') }}</th>
                 <th class="pm-num">{{ t('Available') }}</th>
-                <th style="width: 160px">{{ t('Used') }}</th>
+                <th class="pm-th-mid">{{ t('Used') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -102,7 +103,7 @@ const WO_TONE: Record<string, string> = { Draft: 'pm-pill--gray', Released: 'pm-
               <tr v-for="r in rows" :key="r.code" :class="{ 'pm-tr-warn': r.unbudgeted }">
                 <td class="pm-wrap">
                   {{ r.code }} {{ t(r.name) }}
-                  <span v-if="r.unbudgeted" class="pm-pill pm-pill--yellow" style="margin-left: 6px">{{ t('Unbudgeted') }}</span>
+                  <ErpStatusBadge v-if="r.unbudgeted" v-bind="badgeProps('flag', 'unbudgeted', t)" />
                   <span v-if="r.code === COGM_ACCOUNT" class="pm-cell-sub">{{ t('Consumed only through work orders — work-order cost never appears on any other row.') }}</span>
                   <span v-else-if="r.role === 'labour'" class="pm-cell-sub">{{ t('Non-production labour only (site supervision, PM time).') }}</span>
                   <span v-if="r.unbudgeted" class="pm-cell-sub">{{ t('Actuals with no baseline line — shown, never silently absorbed.') }}</span>
@@ -116,8 +117,8 @@ const WO_TONE: Record<string, string> = { Draft: 'pm-pill--gray', Released: 'pm-
                 <td class="pm-num" :class="r.available !== undefined && r.available < 0 ? 'pm-neg' : ''">{{ r.available !== undefined ? rp(r.available) : rpSigned(-(r.committed + r.actual)) }}</td>
                 <td>
                   <template v-if="r.baseline">
-                    <div class="pm-bar-track"><div class="pm-bar-fill" :class="{ 'pm-bar-fill--red': r.committed + r.actual > r.baseline, 'pm-bar-fill--warn': r.committed + r.actual > r.baseline * 0.9 && r.committed + r.actual <= r.baseline }" :style="{ width: Math.min((r.committed + r.actual) / r.baseline * 100, 100) + '%' }" /></div>
-                    <span class="pm-cell-sub">{{ pct((r.committed + r.actual) / r.baseline * 100, 0) }}</span>
+                    <MpProgress :value="String(Math.min(usedPct(r), 100))" size="sm" :color="usedColor(usedPct(r))" />
+                    <span class="pm-cell-sub">{{ pct(usedPct(r), 0) }}</span>
                   </template>
                 </td>
               </tr>
@@ -139,7 +140,7 @@ const WO_TONE: Record<string, string> = { Draft: 'pm-pill--gray', Released: 'pm-
               <tr>
                 <td>{{ t('Planned margin') }}</td>
                 <td class="pm-num" :class="plannedMargin < 0 ? 'pm-neg' : 'pm-pos'">{{ rp(plannedMargin) }}</td>
-                <td colspan="4" class="pm-muted" style="font-weight: 400">{{ pct(budget.revenue ? plannedMargin / budget.revenue * 100 : 0) }} {{ t('of revenue') }}</td>
+                <td colspan="4" class="pm-muted">{{ pct(budget.revenue ? plannedMargin / budget.revenue * 100 : 0) }} {{ t('of revenue') }}</td>
               </tr>
             </tfoot>
           </table>
@@ -150,12 +151,9 @@ const WO_TONE: Record<string, string> = { Draft: 'pm-pill--gray', Released: 'pm-
         <div class="pm-section-head">
           <div>
             <h2 class="pm-h2">{{ t('Production monitoring') }}</h2>
-            <p class="pm-desc">{{ t('Baseline is the budget set aside on the work order — not its cost estimate — so Variance reads actual against set-aside. Unused set-aside is released when the work order completes.') }}</p>
+            <p class="pm-caption pm-m-0">{{ t('Baseline is the budget set aside on the work order — not its cost estimate — so Variance reads actual against set-aside. Unused set-aside is released when the work order completes.') }}</p>
           </div>
-          <button v-if="project.status !== 'closed'" class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="router.push(`/projects/${project.id}/work-orders/new`)">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
-            {{ t('Work order') }}
-          </button>
+          <MpButton v-if="project.status !== 'closed'" id="pm-budget-new-wo" variant="secondary" is-rounded left-icon="add" @click="router.push(`/projects/${project.id}/work-orders/new`)">{{ t('New work order') }}</MpButton>
         </div>
         <div class="pm-table-wrap">
           <table class="pm-table">
@@ -176,15 +174,15 @@ const WO_TONE: Record<string, string> = { Draft: 'pm-pill--gray', Released: 'pm-
               <tr v-for="w in wos" :key="w.id">
                 <td>{{ w.number }}<span class="pm-cell-sub">{{ t('Estimate') }} {{ rp(w.estimate) }}</span></td>
                 <td>{{ getWorkPackage(w.wpId)?.code }} {{ getWorkPackage(w.wpId)?.name }}</td>
-                <td><span class="pm-pill" :class="WO_TONE[w.status]">{{ t(w.status) }}</span><span v-if="w.override" class="pm-cell-sub pm-warn">{{ t('Overridden') }}</span></td>
+                <td><ErpStatusBadge v-bind="badgeProps('wo', w.status, t)" /><span v-if="w.override" class="pm-cell-sub pm-warn">{{ t('Overridden') }}</span></td>
                 <td class="pm-num">{{ w.budgetSetAside ? rp(w.budgetSetAside) : t('Not set') }}</td>
                 <td class="pm-num">{{ rp(w.actual) }}</td>
                 <td class="pm-num" :class="w.actual > w.budgetSetAside ? 'pm-neg' : 'pm-pos'">{{ w.budgetSetAside ? rpSigned(w.budgetSetAside - w.actual) : '—' }}</td>
                 <td class="pm-num">{{ rp(woCommitted(w)) }}</td>
                 <td class="pm-num">{{ w.released ? rp(w.released) : '—' }}</td>
-                <td><button class="pm-link" type="button" @click="journalWo = w.id">{{ t('Journal') }}</button></td>
+                <td><MpTextlink :id="`pm-wo-journal-${w.id}`" as="a" @click.prevent="journalWo = w.id">{{ t('Journal') }}</MpTextlink></td>
               </tr>
-              <tr v-if="!wos.length"><td colspan="9"><div class="pm-empty">{{ t('No work orders yet.') }}</div></td></tr>
+              <tr v-if="!wos.length"><td colspan="9"><div class="pm-empty-inline">{{ t('No work orders yet.') }}</div></td></tr>
             </tbody>
           </table>
         </div>

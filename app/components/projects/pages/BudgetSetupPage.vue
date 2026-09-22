@@ -14,7 +14,15 @@
  *  • ?returnTo= carries the user back to where they came from (blocked
  *    document, project Budget tab) — the cross-module round trip.
  */
+import {
+  MpButton, MpIcon, MpInput, MpInputGroup, MpInputLeftAddon, MpTag, MpTextlink, MpFormControl, MpFormLabel, MpFormErrorMessage, MpFormHelpText,
+  MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
+} from '@mekari/pixel3'
 import PmTitleBar from '../PmTitleBar.vue'
+import PmActionError from '../PmActionError.vue'
+import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { projects, getProject, projectPhases, phaseWorkPackages, getWorkPackage, type WorkPackage } from '~/data/projects'
 import { getBudget, COST_ACCOUNTS, COGM_ACCOUNT, accountName, type BudgetLine } from '~/data/projectBudgets'
 import { projectBudgetTotal } from '~/data/projectBudgets'
@@ -24,13 +32,14 @@ import { approvals } from '~/data/projectApprovals'
 import { saveBudgetRevision, linkBudgetPlan, requestBudgetRevision } from '~/data/projectActions'
 import { rp, rpSigned, parseAmount } from '~/utils/projectFormat'
 import { formatDate } from '~/utils/date'
-import { notifyResult } from '~/utils/projectToast'
+import { badgeProps } from '~/utils/projectStatus'
 
 const props = defineProps<{ projectId?: string }>()
 const { t } = useLocale()
 const route = useRoute()
 const router = useRouter()
 const { asActor, isFinance } = useProjectRole()
+const action = useProjectAction()
 
 const project = computed(() => (props.projectId ? getProject(props.projectId) : undefined))
 const budget = computed(() => (project.value ? getBudget(project.value.id) : undefined))
@@ -42,11 +51,38 @@ const needCtx = computed(() => {
   return need || wp || doc ? { need, wp, doc } : null
 })
 
-// ── Index ──
-const indexRows = computed(() => projects.filter(p => p.status !== 'closed' || getBudget(p.id)).map(p => ({
-  p, b: getBudget(p.id), total: projectBudgetTotal(p.id), consumed: projectActual(p.id) + projectCommitted(p.id),
-  pending: approvals.filter(a => a.projectId === p.id && a.kind === 'budget_revision' && a.status === 'pending').length,
-})))
+// ── Index (ErpTablePage + useTableState — rule/table-use-erptablepage) ──
+interface IndexRow { id: string; code: string; name: string; baseline: string; revenue: number; total: number; consumed: number; lastRevision: string; pending: number; planRef: string; hasBudget: boolean }
+const loading = ref(true)
+onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
+const baselineFilter = ref('')
+const baselineOptions = computed(() => [{ value: 'set', label: t('Approved') }, { value: 'unset', label: t('Not set') }])
+const indexRows = computed<IndexRow[]>(() => projects.filter(p => p.status !== 'closed' || getBudget(p.id)).map(p => {
+  const b = getBudget(p.id)
+  return {
+    id: p.id, code: p.code, name: p.name, baseline: b ? 'set' : 'unset', hasBudget: !!b, planRef: b?.planRef ?? '',
+    revenue: b?.revenue ?? -1, total: projectBudgetTotal(p.id) ?? -1, consumed: projectActual(p.id) + projectCommitted(p.id),
+    lastRevision: b?.revisions[0]?.date ?? '', pending: approvals.filter(a => a.projectId === p.id && a.kind === 'budget_revision' && a.status === 'pending').length,
+  }
+}))
+const {
+  search, currentPage, paginated, total: indexTotal, perPage, setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
+} = useTableState<IndexRow>(indexRows, {
+  perPage: 25,
+  defaultSort: { key: 'code', dir: 'desc' },
+  filterFn: (r, q) => (!q || r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)) && (!baselineFilter.value || r.baseline === baselineFilter.value),
+})
+watch(baselineFilter, () => setPage(1))
+function clearFilters() { baselineFilter.value = ''; search.value = '' }
+const indexColumns = computed<TableColumn[]>(() => [
+  { key: 'code', label: t('Project'), kind: 'name', sortType: 'text' },
+  { key: 'baseline', label: t('Baseline'), kind: 'status', sortType: 'text' },
+  { key: 'revenue', label: t('Revenue'), kind: 'amount', align: 'right', sortType: 'number' },
+  { key: 'total', label: t('Cost budget'), kind: 'amount', align: 'right', sortType: 'number' },
+  { key: 'consumed', label: t('Committed + actual'), kind: 'amount', align: 'right', sortType: 'number' },
+  { key: 'lastRevision', label: t('Last revision'), kind: 'date', sortType: 'text' },
+])
+const asIndexRow = (r: unknown) => r as IndexRow
 
 // ── Editor draft ──
 const accounts = computed(() => COST_ACCOUNTS.filter(a => a.code !== '5-50700' && (project.value?.isProduction || a.code !== COGM_ACCOUNT)))
@@ -143,18 +179,20 @@ const dirty = computed(() => {
 })
 
 const saved = ref(false)
+function discard() { load(); action.clear() }
 function save() {
   touched.value = true
   if (!project.value) return
   if (!budget.value) {
     if (!planRef.value.trim()) return
-    if (notifyResult(linkBudgetPlan(project.value.id, { planRef: planRef.value, ...draftPayload.value }, asActor.value))) { saved.value = true; load() }
+    if (action.run(linkBudgetPlan(project.value.id, { planRef: planRef.value, ...draftPayload.value }, asActor.value))) { saved.value = true; load() }
     return
   }
+  if (!dirty.value) { action.fail(t('Nothing has changed yet. Edit a line, reserve or revenue before saving a revision.')); return }
   if (!reason.value.trim()) return
   if (isFinance.value) {
-    if (notifyResult(saveBudgetRevision(project.value.id, draftPayload.value, reason.value, asActor.value))) { saved.value = true; load() }
-  } else if (notifyResult(requestBudgetRevision(project.value.id, { amount: netChange.value, reason: reason.value, refNo: needCtx.value?.doc || undefined, payload: draftPayload.value }, asActor.value))) {
+    if (action.run(saveBudgetRevision(project.value.id, draftPayload.value, reason.value, asActor.value))) { saved.value = true; load() }
+  } else if (action.run(requestBudgetRevision(project.value.id, { amount: netChange.value, reason: reason.value, refNo: needCtx.value?.doc || undefined, payload: draftPayload.value }, asActor.value))) {
     saved.value = true
   }
 }
@@ -164,83 +202,121 @@ function goBack() { router.push(returnTo.value || (project.value ? `/projects/${
 <template>
   <!-- ── Index ── -->
   <div v-if="!project" class="pm-page">
-    <PmTitleBar :title="t('Budget setup')" :subtitle="t('Budget baselines for every project. The project page shows budget read-only; creation and revision happen here.')" />
+    <PmTitleBar :title="t('Budget setup')" />
     <div class="pm-stage">
-      <div class="pm-table-wrap">
-        <table class="pm-table">
-          <thead>
-            <tr>
-              <th>{{ t('Project') }}</th><th>{{ t('Baseline') }}</th><th class="pm-num">{{ t('Revenue') }}</th><th class="pm-num">{{ t('Cost budget') }}</th>
-              <th class="pm-num">{{ t('Committed + actual') }}</th><th>{{ t('Last revision') }}</th><th />
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="r in indexRows" :key="r.p.id" class="pm-tr-click" @click="router.push(`/budget-setup/${r.p.id}`)">
-              <td class="pm-wrap"><span class="pm-strong">{{ r.p.code }}</span><span class="pm-cell-sub" style="color: var(--mp-text-default)">{{ r.p.name }}</span></td>
-              <td>
-                <span v-if="r.b" class="pm-pill pm-pill--green">{{ t('Approved') }}</span>
-                <span v-else class="pm-pill pm-pill--yellow">{{ t('Not set') }}</span>
-                <span v-if="r.pending" class="pm-pill pm-pill--blue" style="margin-left: 4px">{{ r.pending }} {{ t('pending') }}</span>
-                <span v-if="r.b" class="pm-cell-sub">{{ r.b.planRef }}</span>
-              </td>
-              <td class="pm-num">{{ r.b ? rp(r.b.revenue) : '—' }}</td>
-              <td class="pm-num">{{ r.total !== undefined ? rp(r.total) : t('Not set') }}</td>
-              <td class="pm-num">{{ rp(r.consumed) }}</td>
-              <td>{{ r.b?.revisions[0] ? `#${r.b.revisions[0].no} · ${formatDate(r.b.revisions[0].date)}` : '—' }}</td>
-              <td><button class="pm-link" type="button" @click.stop="router.push(`/budget-setup/${r.p.id}`)">{{ r.b ? t('Revise') : t('Set up') }}</button></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <ErpTablePage
+        :columns="indexColumns"
+        :rows="(paginated as unknown as Record<string, unknown>[])"
+        :total="indexTotal"
+        :current-page="currentPage"
+        :per-page="perPage"
+        :sort-key="sortKey"
+        :sort-dir="sortDir"
+        :loading="loading"
+        :has-active-search="!!search"
+        :has-active-filter="!!baselineFilter"
+        :search="search"
+        filter-empty-label="project"
+        actions-align-top
+        @page-change="setPage"
+        @per-page-change="setPerPage"
+        @sort="toggleSort"
+        @sort-change="setSort"
+        @clear-filters="clearFilters"
+      >
+        <template #filters>
+          <div class="filter-left">
+            <ErpFilterSelect id="bs-baseline-filter" v-model="baselineFilter" :placeholder="t('Baseline')" :options="baselineOptions" />
+          </div>
+          <div class="filter-right">
+            <div class="filter-search">
+              <MpIcon name="search" size="sm" />
+              <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search project...')" />
+            </div>
+          </div>
+        </template>
+        <template #cell-code="{ row }">
+          <div>
+            <span class="pm-link" role="link" tabindex="0" @click.stop="router.push(`/budget-setup/${asIndexRow(row).id}`)">{{ asIndexRow(row).code }}</span>
+            <span class="pm-cell-sub">{{ asIndexRow(row).name }}</span>
+          </div>
+        </template>
+        <template #cell-baseline="{ row }">
+          <div class="pm-row pm-gap-1">
+            <ErpStatusBadge v-bind="badgeProps('flag', asIndexRow(row).hasBudget ? 'approved-baseline' : 'not-set', t)" />
+            <ErpStatusBadge v-if="asIndexRow(row).pending" v-bind="badgeProps('flag', 'pending', t)" :label="`${asIndexRow(row).pending} ${t('pending')}`" />
+          </div>
+          <span v-if="asIndexRow(row).planRef" class="pm-cell-sub">{{ asIndexRow(row).planRef }}</span>
+        </template>
+        <template #cell-revenue="{ row }">{{ asIndexRow(row).revenue >= 0 ? rp(asIndexRow(row).revenue) : '—' }}</template>
+        <template #cell-total="{ row }">
+          <template v-if="asIndexRow(row).total >= 0">{{ rp(asIndexRow(row).total) }}</template>
+          <span v-else class="pm-warn">{{ t('Not set') }}</span>
+        </template>
+        <template #cell-consumed="{ row }">{{ rp(asIndexRow(row).consumed) }}</template>
+        <template #cell-lastRevision="{ row }">{{ asIndexRow(row).lastRevision ? formatDate(asIndexRow(row).lastRevision) : '—' }}</template>
+        <template #actions="{ row }">
+          <MpButton :id="`bs-open-${asIndexRow(row).id}`" variant="ghost" is-rounded size="sm" @click.stop="router.push(`/budget-setup/${asIndexRow(row).id}`)">{{ asIndexRow(row).hasBudget ? t('Revise') : t('Set up') }}</MpButton>
+        </template>
+        <template #empty>
+          <div class="pm-empty-inline">
+            <div class="pm-empty-title">{{ t('No projects') }}</div>
+            <div class="pm-empty-desc">{{ t('Projects will appear here.') }}</div>
+          </div>
+        </template>
+      </ErpTablePage>
     </div>
   </div>
 
   <!-- ── Editor ── -->
   <div v-else class="pm-page">
-    <PmTitleBar :title="`${t('Budget')} · ${project.code}`" :breadcrumb="{ label: t('Budget setup'), to: '/budget-setup' }" :subtitle="project.name">
+    <PmTitleBar :title="`${t('Budget')} · ${project.code}`" :breadcrumb="{ label: t('Budget setup'), to: '/budget-setup' }" :meta="project.name">
       <template #badges>
-        <span v-if="budget" class="pm-pill pm-pill--green pm-pill--lg">{{ t('Approved baseline') }}</span>
-        <span v-else class="pm-pill pm-pill--yellow pm-pill--lg">{{ t('Not set') }}</span>
+        <ErpStatusBadge v-bind="badgeProps('flag', budget ? 'approved-baseline' : 'not-set', t)" badge-for="additionalInformation" />
       </template>
       <template #actions>
-        <button v-if="returnTo" class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="goBack">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
-          {{ t('Return') }}
-        </button>
-        <button v-else class="btn-enterprise btn-enterprise--secondary" type="button" @click="router.push(`/projects/${project.id}?tab=budget`)">{{ t('Open project') }}</button>
+        <MpButton v-if="returnTo" id="bs-return" variant="secondary" is-rounded @click="goBack">{{ t('Return') }}</MpButton>
+        <MpButton v-else id="bs-open-project" variant="secondary" is-rounded @click="router.push(`/projects/${project.id}?tab=budget`)">{{ t('Open project') }}</MpButton>
       </template>
     </PmTitleBar>
 
     <div class="pm-stage">
-      <div class="pm-stack" style="gap: 16px">
+      <div class="pm-stack pm-gap-4">
         <!-- Round-trip context -->
-        <div v-if="returnTo || needCtx" class="pm-banner pm-banner--info">
-          <div class="pm-banner-body">
-            <div class="pm-banner-title">{{ t('You came here to add budget') }}</div>
+        <MpBanner v-if="(returnTo || needCtx) && !saved" id="bs-roundtrip" variant="info">
+          <MpBannerIcon />
+          <MpBannerTitle>{{ t('You came here to add budget') }}</MpBannerTitle>
+          <MpBannerDescription>
             <template v-if="needCtx?.doc">{{ needCtx.doc }} {{ t('needs') }} <strong>{{ rp(needCtx.need) }}</strong> {{ t('more') }}<template v-if="needCtx.wp"> {{ t('on') }} {{ needCtx.wp.code }} {{ needCtx.wp.name }}</template>. </template>
             {{ t('Save the revision, then return — your document is waiting where you left it.') }}
-          </div>
-        </div>
-        <div v-if="saved && returnTo" class="pm-banner pm-banner--success">
-          <div class="pm-banner-body">{{ isFinance ? t('Revision saved.') : t('Revision sent to Finance for approval.') }}</div>
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" type="button" @click="goBack">{{ t('Return to where you were') }}</button>
-        </div>
+          </MpBannerDescription>
+        </MpBanner>
+        <MpBanner v-if="saved && returnTo" id="bs-saved-return" variant="info">
+          <MpBannerIcon />
+          <MpBannerDescription>
+            {{ isFinance ? t('Revision saved.') : t('Revision sent to Finance for approval.') }}
+            <MpTextlink id="bs-return-link" as="a" @click.prevent="goBack">{{ t('Return to where you were') }}</MpTextlink>
+          </MpBannerDescription>
+        </MpBanner>
 
         <!-- Plan / revenue -->
         <div class="pm-card">
           <div class="pm-grid-3">
-            <div class="pm-field">
-              <label class="pm-label" :class="{ 'pm-label-req': !budget }" for="bs-plan">{{ t('Approved plan (RAB/RAP)') }}</label>
-              <input id="bs-plan" v-model="planRef" class="pm-input" :disabled="!!budget" :aria-invalid="touched && !budget && !planRef.trim()" :placeholder="t('e.g. RAB_Project.pdf · RAP_Project.pdf')" />
-              <span v-if="touched && !budget && !planRef.trim()" class="pm-error">{{ t('Enter the plan reference.') }}</span>
-              <span v-else-if="budget" class="pm-help">{{ t('Approved by') }} {{ budget.approvedBy }} {{ t('on') }} {{ formatDate(budget.approvedAt) }}</span>
-              <span v-else class="pm-help">{{ t('No plan document? Enter the baseline manually below — it’s recorded the same way.') }}</span>
-            </div>
-            <div class="pm-field">
-              <label class="pm-label" for="bs-rev">{{ t('Revenue (RAB)') }}</label>
-              <div class="pm-input-group"><span class="pm-addon">Rp</span><input id="bs-rev" v-model="draftRevenue" @blur="draftRevenue = fmtIn(draftRevenue)" class="pm-input pm-input--num" inputmode="numeric" /></div>
-              <span class="pm-help">{{ t('Contract value') }} {{ rp(project.contractValue) }}</span>
-            </div>
+            <MpFormControl id="bs-plan-fc" :is-required="!budget" :is-invalid="touched && !budget && !planRef.trim()">
+              <MpFormLabel>{{ t('Approved plan (RAB/RAP)') }}</MpFormLabel>
+              <MpInput id="bs-plan" v-model="planRef" :is-read-only="!!budget" />
+              <MpFormErrorMessage>{{ t('Enter the plan reference.') }}</MpFormErrorMessage>
+              <MpFormHelpText v-if="budget">{{ t('Approved by') }} {{ budget.approvedBy }} {{ t('on') }} {{ formatDate(budget.approvedAt) }}</MpFormHelpText>
+              <MpFormHelpText v-else-if="!touched || planRef.trim()">{{ t('No plan document? Enter the baseline manually below — it’s recorded the same way.') }}</MpFormHelpText>
+            </MpFormControl>
+            <MpFormControl id="bs-rev-fc">
+              <MpFormLabel>{{ t('Revenue (RAB)') }}</MpFormLabel>
+              <MpInputGroup id="bs-rev-group">
+                <MpInputLeftAddon>Rp</MpInputLeftAddon>
+                <MpInput id="bs-rev" v-model="draftRevenue" inputmode="numeric" @blur="draftRevenue = fmtIn(draftRevenue)" />
+              </MpInputGroup>
+              <MpFormHelpText>{{ t('Contract value') }} {{ rp(project.contractValue) }}</MpFormHelpText>
+            </MpFormControl>
             <div>
               <div class="pm-stat-label">{{ t('Total cost budget') }}</div>
               <div class="pm-stat-value">{{ rp(grandTotal) }}</div>
@@ -254,21 +330,24 @@ function goBack() { router.push(returnTo.value || (project.value ? `/projects/${
           <table class="pm-table">
             <thead>
               <tr>
-                <th style="min-width: 240px">{{ t('Phase / work package') }}</th>
-                <th v-for="a in accounts" :key="a.code" class="pm-num" style="min-width: 150px">{{ t(a.name) }}</th>
-                <th class="pm-num" style="min-width: 150px">{{ t('Total') }}</th>
+                <th class="pm-th-wide">{{ t('Phase / work package') }}</th>
+                <th v-for="a in accounts" :key="a.code" class="pm-num pm-th-mid">{{ t(a.name) }}</th>
+                <th class="pm-num pm-th-mid">{{ t('Total') }}</th>
               </tr>
             </thead>
             <tbody>
               <template v-for="ph in projectPhases(project.id)" :key="ph.id">
                 <tr v-if="!ph.auto" class="pm-tr-sub">
                   <td>{{ ph.order }}. {{ ph.name }}</td>
-                  <td :colspan="accounts.length" class="pm-num" style="font-weight: 400">
-                    <div class="pm-row" style="justify-content: flex-start; gap: 16px">
-                      <span class="pm-muted">{{ t('Allocated') }} <span class="pm-pill pm-pill--gray" :title="t('Locked — always the sum of its work packages')">🔒 {{ rp(allocated(ph.id)) }}</span></span>
-                      <span class="pm-row" style="gap: 6px">
-                        <label class="pm-muted" :for="`res-${ph.id}`">{{ t('Reserve') }}</label>
-                        <input :id="`res-${ph.id}`" v-model="draftReserves[ph.id]" @blur="draftReserves[ph.id] = fmtIn(draftReserves[ph.id] ?? '')" class="pm-input pm-input--sm pm-input--num" style="width: 140px" inputmode="numeric" placeholder="0" />
+                  <td :colspan="accounts.length">
+                    <div class="pm-row pm-gap-4">
+                      <span class="pm-row pm-gap-2">
+                        <span class="pm-muted">{{ t('Allocated') }}</span>
+                        <MpTag :id="`bs-alloc-${ph.id}`">{{ rp(allocated(ph.id)) }} · {{ t('locked') }}</MpTag>
+                      </span>
+                      <span class="pm-row pm-gap-2">
+                        <span class="pm-muted">{{ t('Reserve') }}</span>
+                        <MpInput :id="`res-${ph.id}`" v-model="draftReserves[ph.id]" class="pm-w-cell" inputmode="numeric" :aria-label="`${t('Reserve')} ${ph.name}`" @blur="draftReserves[ph.id] = fmtIn(draftReserves[ph.id] ?? '')" />
                       </span>
                     </div>
                   </td>
@@ -276,23 +355,23 @@ function goBack() { router.push(returnTo.value || (project.value ? `/projects/${
                 </tr>
                 <tr v-if="!ph.auto && phaseExcess(ph.id) > 0" class="pm-tr-warn">
                   <td :colspan="accounts.length + 2">
-                    <div class="pm-row" style="gap: 10px">
-                      <span class="pm-warn">⚠ {{ t('Work packages in') }} {{ ph.name }} {{ t('now push the phase past its approved total') }} ({{ rp(approvedPhaseTotal(ph.id)) }}) {{ t('by') }} <strong>{{ rp(phaseExcess(ph.id)) }}</strong>.</span>
-                      <button v-if="reserveVal(ph.id)" class="btn-enterprise btn-enterprise--secondary btn-enterprise--xs" type="button" @click="takeFromReserve(ph.id)">{{ t('Take it from Reserve') }}</button>
+                    <div class="pm-row pm-gap-3">
+                      <span class="pm-warn">{{ t('Work packages in') }} {{ ph.name }} {{ t('now push the phase past its approved total') }} ({{ rp(approvedPhaseTotal(ph.id)) }}) {{ t('by') }} <strong>{{ rp(phaseExcess(ph.id)) }}</strong>.</span>
+                      <MpTextlink v-if="reserveVal(ph.id)" :id="`bs-take-reserve-${ph.id}`" as="a" @click.prevent="takeFromReserve(ph.id)">{{ t('Take it from Reserve') }}</MpTextlink>
                     </div>
                   </td>
                 </tr>
                 <tr v-for="w in phaseWorkPackages(ph.id)" :key="w.id">
-                  <td class="pm-wrap" :style="{ paddingLeft: ph.auto ? '8px' : '24px' }">
+                  <td class="pm-wrap" :class="{ 'pm-pl-6': !ph.auto }">
                     <span class="pm-muted">{{ w.auto ? '' : w.code }}</span> {{ w.name }}
                     <span v-if="suggestion(w) !== undefined" class="pm-cell-sub">
                       {{ t('Suggested') }} {{ rp(suggestion(w)) }} ({{ t('BOM × planned units') }}) ·
-                      <button class="pm-link pm-small" type="button" @click="useSuggestion(w)">{{ t('Use') }}</button>
+                      <MpTextlink :id="`bs-use-${w.id}`" as="a" @click.prevent="useSuggestion(w)">{{ t('Use') }}</MpTextlink>
                     </span>
                     <span v-else-if="w.type === 'production' && !w.customBomId" class="pm-cell-sub">{{ t('No BOM — no suggestion') }}</span>
                   </td>
                   <td v-for="a in accounts" :key="a.code" class="pm-num">
-                    <input v-model="draftLines[k(w.id, a.code)]" @blur="draftLines[k(w.id, a.code)] = fmtIn(draftLines[k(w.id, a.code)] ?? '')" class="pm-input pm-input--sm pm-input--num" style="width: 140px" inputmode="numeric" :aria-label="`${w.name} ${a.name}`" placeholder="—" />
+                    <MpInput :id="`bs-${w.id}-${a.code}`" v-model="draftLines[k(w.id, a.code)]" class="pm-w-cell" inputmode="numeric" :aria-label="`${w.name} ${t(a.name)}`" @blur="draftLines[k(w.id, a.code)] = fmtIn(draftLines[k(w.id, a.code)] ?? '')" />
                   </td>
                   <td class="pm-num">{{ rp(wpTotal(w.id)) }}</td>
                 </tr>
@@ -307,36 +386,36 @@ function goBack() { router.push(returnTo.value || (project.value ? `/projects/${
             </tfoot>
           </table>
         </div>
-        <p class="pm-help">{{ t('Cost of production is consumed only by work orders; Direct labour holds non-production labour. The two lines never overlap.') }}</p>
+        <p class="pm-caption pm-m-0">{{ t('Cost of production is consumed only by work orders; Direct labour holds non-production labour. The two lines never overlap.') }}</p>
 
         <!-- Save -->
-        <div class="pm-card">
-          <div class="pm-row" style="align-items: flex-end; gap: 12px">
-            <div v-if="budget" class="pm-field" style="flex: 1; min-width: 260px">
-              <label class="pm-label pm-label-req" for="bs-reason">{{ t('Reason for this revision') }}</label>
-              <input id="bs-reason" v-model="reason" class="pm-input" :aria-invalid="touched && !reason.trim()" />
-              <span v-if="touched && !reason.trim()" class="pm-error">{{ t('Enter a reason.') }}</span>
-            </div>
-            <div v-else class="pm-field" style="flex: 1"><span class="pm-help">{{ t('Saving sets the frozen baseline. Later changes are revisions with a reason.') }}</span></div>
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" :disabled="!dirty" @click="load">{{ t('Discard changes') }}</button>
-            <button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="!!budget && !dirty" @click="save">
-              {{ !budget ? t('Save baseline') : isFinance ? t('Save revision') : t('Submit revision for approval') }}
-            </button>
+        <div class="pm-card pm-stack">
+          <MpFormControl v-if="budget" id="bs-reason-fc" is-required :is-invalid="touched && dirty && !reason.trim()">
+            <MpFormLabel>{{ t('Reason for this revision') }}</MpFormLabel>
+            <MpInput id="bs-reason" v-model="reason" />
+            <MpFormErrorMessage>{{ t('Enter a reason.') }}</MpFormErrorMessage>
+            <MpFormHelpText v-if="!isFinance">{{ t('You’re viewing as a PM — the revision goes to Finance in the Approvals inbox.') }}</MpFormHelpText>
+          </MpFormControl>
+          <p v-else class="pm-caption pm-m-0">{{ t('Saving sets the frozen baseline. Later changes are revisions with a reason.') }}</p>
+          <PmActionError id="bs-error" :error="action.error.value" />
+          <div class="pm-row pm-row--end pm-gap-3">
+            <span class="pm-spacer" />
+            <MpButton id="bs-discard" variant="ghost" is-rounded @click="discard">{{ t('Discard changes') }}</MpButton>
+            <MpButton id="bs-save" variant="primary" is-rounded @click="save">{{ !budget ? t('Save baseline') : isFinance ? t('Save revision') : t('Submit revision for approval') }}</MpButton>
           </div>
-          <p v-if="budget && !isFinance" class="pm-help" style="margin-top: 8px">{{ t('You’re viewing as a PM — the revision goes to Finance in the Approvals inbox.') }}</p>
         </div>
 
         <!-- Revision log (lives here, not on the project page) -->
         <section v-if="budget" class="pm-section">
-          <h2 class="pm-h2" style="margin-bottom: 12px">{{ t('Revision log') }}</h2>
+          <h2 class="pm-h2 pm-mb-3">{{ t('Revision log') }}</h2>
           <div v-if="!budget.revisions.length" class="pm-muted">{{ t('No revisions — this is the approved baseline.') }}</div>
           <div class="pm-timeline">
-            <div v-for="r in budget.revisions" :key="r.id" class="pm-tl-item" style="grid-template-columns: 110px 16px minmax(0,1fr)">
+            <div v-for="r in budget.revisions" :key="r.id" class="pm-tl-item">
               <div class="pm-tl-date">{{ formatDate(r.date) }}</div>
               <span class="pm-tl-dot" />
               <div>
                 <div class="pm-tl-summary"><strong>#{{ r.no }}</strong> — {{ r.reason }}</div>
-                <div class="pm-tl-meta"><span>{{ r.by }}</span><span class="pm-pill pm-pill--gray">{{ t(r.source) }}</span><span v-if="r.refNo">{{ r.refNo }}</span></div>
+                <div class="pm-tl-meta"><span>{{ r.by }}</span><MpTag :id="`bs-rev-src-${r.id}`">{{ t(r.source) }}</MpTag><span v-if="r.refNo">{{ r.refNo }}</span></div>
                 <div class="pm-tl-reason">
                   <div v-for="(c, i) in r.changes" :key="i">
                     <template v-if="c.field === 'line'">{{ getWorkPackage(c.wpId!)?.code }} {{ getWorkPackage(c.wpId!)?.name }} · {{ t(accountName(c.account!)) }}</template>

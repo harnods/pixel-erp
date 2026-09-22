@@ -1,207 +1,264 @@
 <script setup lang="ts">
 /**
- * Projects — portfolio (Story 15). Service engagements and production jobs sit
- * in one list with the same columns and the same PS- series (Story 1). Drilling
- * in lands on the project's Budget tab, not a numberless accordion.
+ * Projects — portfolio (Story 15). Service engagements and production jobs sit in
+ * one list with the same columns and the same PS- series (Story 1). Drilling in
+ * lands on the project's Budget tab, not a numberless accordion.
+ *
+ * Index-page standard: ErpTablePage + useTableState (rule/table-use-erptablepage),
+ * filter bar with ErpFilterSelect + column settings + export + search
+ * (rule/filter-bar-anatomy), first-load skeleton, empty states, scenario FAB.
  */
+import { MpButton, MpButtonGroup, MpIcon, MpTooltip, MpProgress } from '@mekari/pixel3'
 import PmTitleBar from '../PmTitleBar.vue'
+import PmMenu from '../PmMenu.vue'
+import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import ExportModal from '~/components/patterns/ExportModal.vue'
 import { projects, methodLabel, type Project } from '~/data/projects'
-import { projectSummary } from '~/data/projectSummary'
+import { projectSummary, type ProjectSummary } from '~/data/projectSummary'
 import { pendingApprovals } from '~/data/projectApprovals'
 import { rp, rpShort, pct } from '~/utils/projectFormat'
+import { badgeProps } from '~/utils/projectStatus'
 
 const { t } = useLocale()
 const router = useRouter()
 
-const search = ref('')
-const statusFilter = ref<'' | Project['status']>('')
-const dimKey = ref<'' | 'branch' | 'department' | 'costCenter' | 'fundingSource'>('')
+type Dim = 'branch' | 'department' | 'costCenter' | 'fundingSource'
+const DIMENSIONS: { value: Dim; label: string }[] = [
+  { value: 'branch', label: 'Branch' },
+  { value: 'department', label: 'Department' },
+  { value: 'costCenter', label: 'Cost center' },
+  { value: 'fundingSource', label: 'Funding source' },
+]
+const statusFilter = ref('')
+const dimKey = ref<'' | Dim>('')
 const dimValue = ref('')
-
-const DIMENSIONS = [
-  { key: 'branch', label: 'Branch' },
-  { key: 'department', label: 'Department' },
-  { key: 'costCenter', label: 'Cost center' },
-  { key: 'fundingSource', label: 'Funding source' },
-] as const
-
-const dimOptions = computed(() => {
-  if (!dimKey.value) return []
+watch(dimKey, () => { dimValue.value = '' })
+const statusOptions = computed(() => [
+  { value: 'draft', label: t('Draft') }, { value: 'active', label: t('Active') }, { value: 'closed', label: t('Closed') },
+])
+const dimOptions = computed(() => DIMENSIONS.map(d => ({ value: d.value, label: t(d.label) })))
+const dimValueOptions = computed(() => {
   const k = dimKey.value
+  if (!k) return []
   return [...new Set(projects.map(p => p.dimensions[k]).filter(Boolean) as string[])].sort()
 })
-watch(dimKey, () => { dimValue.value = '' })
 
-const rows = computed(() => projects
-  .filter(p => !statusFilter.value || p.status === statusFilter.value)
-  .filter(p => !dimKey.value || !dimValue.value || p.dimensions[dimKey.value] === dimValue.value)
-  .filter(p => {
-    const s = search.value.trim().toLowerCase()
-    return !s || p.code.toLowerCase().includes(s) || p.name.toLowerCase().includes(s) || p.customer.toLowerCase().includes(s)
-  })
-  .map(p => projectSummary(p.id)!)
-  .sort((a, b) => b.project.code.localeCompare(a.project.code)))
+// Row = summary flattened so every column can sort.
+interface Row {
+  id: string; code: string; name: string; customer: string; pm: string; shape: string; depth: number
+  method: string; status: Project['status']; budget: number; committed: number; actual: number
+  consumedPct: number; percentComplete: number; billed: number; wip: number; flags: number
+  s: ProjectSummary
+}
+const scenario = ref('data')
+const loading = ref(true)
+onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
 
-const open = computed(() => projects.filter(p => p.status !== 'closed').map(p => projectSummary(p.id)!))
+const allRows = computed<Row[]>(() => projects.map(p => {
+  const s = projectSummary(p.id)!
+  return {
+    id: p.id, code: p.code, name: p.name, customer: p.customer, pm: p.pm,
+    shape: p.isProduction ? 'Production' : 'Service', depth: p.depth, method: methodLabel(p), status: p.status,
+    budget: s.budget ?? -1, committed: s.committed, actual: s.actual,
+    consumedPct: s.budget ? (s.consumed / s.budget) * 100 : -1, percentComplete: s.percentComplete ?? -1,
+    billed: s.billed, wip: s.wip, flags: s.overBudgetNodes.length + (s.coExposure ? 1 : 0) + s.pendingCount, s,
+  }
+}))
+const rows = computed(() => (scenario.value === 'empty' ? [] : allRows.value))
+
+const {
+  search, currentPage, paginated, total, perPage, setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
+} = useTableState<Row>(rows, {
+  perPage: 25,
+  defaultSort: { key: 'code', dir: 'desc' },
+  filterFn: (r, s) => {
+    const matches = !s || r.code.toLowerCase().includes(s) || r.name.toLowerCase().includes(s) || r.customer.toLowerCase().includes(s)
+    const byStatus = !statusFilter.value || r.status === statusFilter.value
+    const byDim = !dimKey.value || !dimValue.value || r.s.project.dimensions[dimKey.value] === dimValue.value
+    return matches && byStatus && byDim
+  },
+})
+watch([statusFilter, dimKey, dimValue], () => setPage(1))
+const hasActiveFilter = computed(() => !!statusFilter.value || !!dimValue.value)
+function clearFilters() { statusFilter.value = ''; dimKey.value = ''; dimValue.value = ''; search.value = '' }
+
+const columns: TableColumn[] = [
+  { key: 'code', label: 'Project', kind: 'name', sortType: 'text' },
+  { key: 'shape', label: 'Shape', kind: 'default', sortType: 'text' },
+  { key: 'method', label: 'Method · measure', kind: 'default', sortType: 'text' },
+  { key: 'status', label: 'Status', kind: 'status', sortType: 'text' },
+  { key: 'budget', label: 'Budget', kind: 'amount', align: 'right', sortType: 'number' },
+  { key: 'committed', label: 'Committed', kind: 'amount', align: 'right', sortType: 'number' },
+  { key: 'actual', label: 'Actual', kind: 'amount', align: 'right', sortType: 'number' },
+  { key: 'consumedPct', label: 'Consumed', kind: 'default', sortType: 'number' },
+  { key: 'percentComplete', label: '% complete', kind: 'number', align: 'right', sortType: 'number' },
+  { key: 'billed', label: 'Billed', kind: 'amount', align: 'right', sortType: 'number' },
+  { key: 'wip', label: 'WIP position', kind: 'amount', align: 'right', sortType: 'number' },
+  { key: 'flags', label: 'Flags', kind: 'tags', sortType: 'number' },
+]
+const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(columns.map(c => [c.key, true])))
+const columnItems = columns.map((c, i) => ({ key: c.key, label: t(c.label), disabled: i === 0 }))
+const visibleColumns = computed<TableColumn[]>(() => columns.filter(c => columnVisibility[c.key]).map(c => ({ ...c, label: t(c.label) })))
+function hideColumn(key: string) { columnVisibility[key] = false }
+
+const exportOpen = ref(false)
+const exportColumns = computed(() => columns.map(c => ({ key: c.key, label: t(c.label), ...(c.key === 'code' ? { required: true } : {}) })))
+
+const open = computed(() => allRows.value.filter(r => r.status !== 'closed'))
 const stats = computed(() => ({
   active: projects.filter(p => p.status === 'active').length,
   draft: projects.filter(p => p.status === 'draft').length,
-  contract: open.value.reduce((s, r) => s + r.project.contractValue, 0),
+  contract: open.value.reduce((s, r) => s + r.s.project.contractValue, 0),
   underbilled: open.value.filter(r => r.wip > 0).reduce((s, r) => s + r.wip, 0),
   overbilled: open.value.filter(r => r.wip < 0).reduce((s, r) => s - r.wip, 0),
-  overBudget: open.value.filter(r => r.overBudgetNodes.length).length,
-  exposure: open.value.reduce((s, r) => s + r.coExposure, 0),
+  overBudget: open.value.filter(r => r.s.overBudgetNodes.length).length,
+  exposure: open.value.reduce((s, r) => s + r.s.coExposure, 0),
   approvals: pendingApprovals().length,
 }))
 
-const STATUS_TONE: Record<Project['status'], string> = { draft: 'pm-pill--gray', active: 'pm-pill--green', closed: 'pm-pill--blue' }
-const STATUS_LABEL: Record<Project['status'], string> = { draft: 'Draft', active: 'Active', closed: 'Closed' }
-
 function openProject(id: string) { router.push(`/projects/${id}?tab=budget`) }
-function consumedTone(consumed: number, budget?: number) {
-  if (!budget) return ''
-  const r = consumed / budget
-  return r > 1 ? 'pm-bar-fill--red' : r > 0.9 ? 'pm-bar-fill--warn' : ''
-}
+const asRow = (r: unknown) => r as Row
+const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
 
 <template>
   <div class="pm-page">
-    <PmTitleBar :title="t('Projects')">
+    <PmTitleBar v-model:scenario="scenario" :title="t('Projects')" :scenarios="[{ label: 'Empty state', value: 'empty' }]">
       <template #actions>
-        <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" type="button" @click="router.push('/projects/new')">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
-          {{ t('Project') }}
-        </button>
+        <MpButton variant="primary" is-rounded left-icon="add" @click="router.push('/projects/new')">{{ t('New project') }}</MpButton>
       </template>
     </PmTitleBar>
 
     <div class="pm-stage">
-      <!-- Portfolio stats -->
-      <div class="pm-grid-4" style="margin-bottom: 20px">
-        <div class="pm-card">
-          <div class="pm-stat-label">{{ t('Open projects') }}</div>
-          <div class="pm-stat-value">{{ stats.active + stats.draft }}</div>
-          <div class="pm-stat-note">{{ stats.active }} {{ t('active') }} · {{ stats.draft }} {{ t('draft') }} · {{ rpShort(stats.contract) }} {{ t('contract value') }}</div>
-        </div>
-        <div class="pm-card">
-          <div class="pm-stat-label">{{ t('WIP position') }}</div>
-          <div class="pm-stat-value">
-            <span class="pm-pos">{{ rpShort(stats.underbilled) }}</span>
-            <span class="pm-muted" style="font-weight: 400"> / </span>
-            <span class="pm-neg">{{ rpShort(stats.overbilled) }}</span>
+      <ErpTablePage
+        :columns="visibleColumns"
+        :rows="(paginated as unknown as Record<string, unknown>[])"
+        :total="total"
+        :current-page="currentPage"
+        :per-page="perPage"
+        :sort-key="sortKey"
+        :sort-dir="sortDir"
+        :loading="loading"
+        :has-active-search="!!search"
+        :has-active-filter="hasActiveFilter"
+        :search="search"
+        filter-empty-label="project"
+        actions-align-top
+        @page-change="setPage"
+        @per-page-change="setPerPage"
+        @sort="toggleSort"
+        @sort-change="setSort"
+        @hide-column="hideColumn"
+        @clear-filters="clearFilters"
+      >
+        <template v-if="scenario !== 'empty'" #stats>
+          <div class="pm-grid-4 pm-stats">
+            <div class="pm-card">
+              <div class="pm-stat-label">{{ t('Open projects') }}</div>
+              <div class="pm-stat-value">{{ stats.active + stats.draft }}</div>
+              <div class="pm-stat-note">{{ stats.active }} {{ t('active') }} · {{ stats.draft }} {{ t('draft') }} · {{ rpShort(stats.contract) }} {{ t('contract value') }}</div>
+            </div>
+            <div class="pm-card">
+              <div class="pm-stat-label">{{ t('WIP position') }}</div>
+              <div class="pm-stat-value"><span class="pm-pos">{{ rpShort(stats.underbilled) }}</span> / <span class="pm-neg">{{ rpShort(stats.overbilled) }}</span></div>
+              <div class="pm-stat-note">{{ t('Underbilled (asset) / overbilled (liability)') }}</div>
+            </div>
+            <div class="pm-card">
+              <div class="pm-stat-label">{{ t('Over budget') }}</div>
+              <div class="pm-stat-value" :class="{ 'pm-neg': stats.overBudget }">{{ stats.overBudget }}</div>
+              <div class="pm-stat-note">{{ t('Projects with a work package over its budget') }}</div>
+            </div>
+            <div class="pm-card">
+              <div class="pm-stat-label">{{ t('Change-order exposure') }}</div>
+              <div class="pm-stat-value" :class="{ 'pm-warn': stats.exposure }">{{ rp(stats.exposure) }}</div>
+              <div class="pm-stat-note">{{ t('Executed but not signed off') }} · <span class="pm-link" role="link" tabindex="0" @click="router.push('/project-approvals')">{{ stats.approvals }} {{ t('approvals pending') }}</span></div>
+            </div>
           </div>
-          <div class="pm-stat-note">{{ t('Underbilled (asset) / overbilled (liability)') }}</div>
-        </div>
-        <div class="pm-card">
-          <div class="pm-stat-label">{{ t('Over budget') }}</div>
-          <div class="pm-stat-value" :class="{ 'pm-neg': stats.overBudget }">{{ stats.overBudget }}</div>
-          <div class="pm-stat-note">{{ t('Projects with a work package over its budget') }}</div>
-        </div>
-        <div class="pm-card">
-          <div class="pm-stat-label">{{ t('Change-order exposure') }}</div>
-          <div class="pm-stat-value" :class="{ 'pm-warn': stats.exposure }">{{ rp(stats.exposure) }}</div>
-          <div class="pm-stat-note">
-            {{ t('Executed but not signed off') }} ·
-            <button class="pm-link" type="button" @click="router.push('/project-approvals')">{{ stats.approvals }} {{ t('approvals pending') }}</button>
+        </template>
+
+        <template v-if="scenario !== 'empty'" #filters>
+          <div class="filter-left">
+            <ErpFilterSelect id="pm-status-filter" v-model="statusFilter" :placeholder="t('Status')" :options="statusOptions" />
+            <ErpFilterSelect id="pm-dim-filter" v-model="dimKey" :placeholder="t('Dimension')" :options="dimOptions" />
+            <ErpFilterSelect v-if="dimKey" id="pm-dim-value-filter" v-model="dimValue" :placeholder="t('Dimension value')" :options="dimValueOptions" />
           </div>
-        </div>
-      </div>
+          <div class="filter-right">
+            <MpButtonGroup class="filter-btn-group">
+              <ColumnSettingsMenu id="pm-columns" :items="columnItems" :visibility="columnVisibility" :tooltip="t('Column settings')" />
+              <MpTooltip :label="t('Export')" placement="bottom">
+                <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="exportOpen = true" />
+              </MpTooltip>
+            </MpButtonGroup>
+            <div class="filter-search">
+              <MpIcon name="search" size="sm" />
+              <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search project, customer...')" />
+            </div>
+          </div>
+        </template>
 
-      <!-- Filters -->
-      <div class="pm-filters">
-        <select v-model="statusFilter" class="pm-select" :aria-label="t('Status')">
-          <option value="">{{ t('All statuses') }}</option>
-          <option value="draft">{{ t('Draft') }}</option>
-          <option value="active">{{ t('Active') }}</option>
-          <option value="closed">{{ t('Closed') }}</option>
-        </select>
-        <select v-model="dimKey" class="pm-select" :aria-label="t('Dimension')">
-          <option value="">{{ t('Filter by dimension') }}</option>
-          <option v-for="d in DIMENSIONS" :key="d.key" :value="d.key">{{ t(d.label) }}</option>
-        </select>
-        <select v-if="dimKey" v-model="dimValue" class="pm-select" :aria-label="t('Dimension value')">
-          <option value="">{{ t('Any') }}</option>
-          <option v-for="o in dimOptions" :key="o" :value="o">{{ o }}</option>
-        </select>
-        <div class="pm-spacer" />
-        <label class="pm-search">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
-          <input v-model="search" type="text" :placeholder="t('Search project, customer...')" />
-        </label>
-      </div>
+        <template #cell-code="{ row }">
+          <div>
+            <span class="pm-link" role="link" tabindex="0" @click.stop="openProject(asRow(row).id)">{{ asRow(row).code }}</span>
+            <span class="pm-cell-sub">{{ asRow(row).name }}</span>
+            <span class="pm-cell-sub">{{ asRow(row).customer }} · PM {{ asRow(row).pm }}</span>
+          </div>
+        </template>
+        <template #cell-shape="{ row }">{{ t(asRow(row).shape) }} · {{ t('Depth') }} {{ asRow(row).depth }}</template>
+        <template #cell-method="{ row }">{{ t(asRow(row).method) }}</template>
+        <template #cell-status="{ row }"><ErpStatusBadge v-bind="badgeProps('project', asRow(row).status, t)" /></template>
+        <template #cell-budget="{ row }">
+          <template v-if="asRow(row).budget >= 0">{{ rp(asRow(row).budget) }}</template>
+          <span v-else class="pm-warn">{{ t('Not set') }}</span>
+        </template>
+        <template #cell-committed="{ row }">{{ rp(asRow(row).committed) }}</template>
+        <template #cell-actual="{ row }">{{ rp(asRow(row).actual) }}</template>
+        <template #cell-consumedPct="{ row }">
+          <div v-if="asRow(row).consumedPct >= 0">
+            <MpProgress :value="String(Math.min(asRow(row).consumedPct, 100))" size="sm" :color="asRow(row).consumedPct > 100 ? 'negative' : asRow(row).consumedPct > 90 ? 'warning' : 'positive'" />
+            <span class="pm-cell-sub">{{ pct(asRow(row).consumedPct, 0) }} {{ t('of budget') }}</span>
+          </div>
+          <span v-else class="pm-muted">—</span>
+        </template>
+        <template #cell-percentComplete="{ row }">{{ asRow(row).percentComplete >= 0 ? pct(asRow(row).percentComplete) : '—' }}</template>
+        <template #cell-billed="{ row }">{{ rp(asRow(row).billed) }}</template>
+        <template #cell-wip="{ row }">
+          <template v-if="asRow(row).wip">
+            <span :class="asRow(row).wip > 0 ? 'pm-pos' : 'pm-neg'">{{ rp(Math.abs(asRow(row).wip)) }}</span>
+            <span class="pm-cell-sub">{{ asRow(row).wip > 0 ? t('Underbilled') : t('Overbilled') }}</span>
+          </template>
+          <span v-else class="pm-muted">{{ rp(0) }}</span>
+        </template>
+        <template #cell-flags="{ row }">
+          <div class="pm-row pm-gap-1">
+            <ErpStatusBadge v-if="asRow(row).s.overBudgetNodes.length" v-bind="badgeProps('flag', 'over-budget', t)" :label="`${t('Over budget')} (${asRow(row).s.overBudgetNodes.length})`" />
+            <ErpStatusBadge v-if="asRow(row).s.coExposure" v-bind="badgeProps('flag', 'exposure', t)" :label="`${t('CO exposure')} ${rpShort(asRow(row).s.coExposure)}`" />
+            <ErpStatusBadge v-if="asRow(row).s.pendingCount" v-bind="badgeProps('flag', 'pending', t)" :label="`${asRow(row).s.pendingCount} ${t('pending')}`" />
+            <span v-if="!asRow(row).flags" class="pm-muted">—</span>
+          </div>
+        </template>
 
-      <div class="pm-table-wrap">
-        <table class="pm-table">
-          <thead>
-            <tr>
-              <th>{{ t('Project') }}</th>
-              <th>{{ t('Shape') }}</th>
-              <th>{{ t('Method · measure') }}</th>
-              <th>{{ t('Status') }}</th>
-              <th class="pm-num">{{ t('Budget') }}</th>
-              <th class="pm-num">{{ t('Committed') }}</th>
-              <th class="pm-num">{{ t('Actual') }}</th>
-              <th style="min-width: 130px">{{ t('Consumed') }}</th>
-              <th class="pm-num">{{ t('% complete') }}</th>
-              <th class="pm-num">{{ t('Billed') }}</th>
-              <th class="pm-num">{{ t('WIP position') }}</th>
-              <th>{{ t('Flags') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="r in rows" :key="r.project.id" class="pm-tr-click" @click="openProject(r.project.id)">
-              <td class="pm-wrap" style="min-width: 260px">
-                <button class="pm-link pm-strong" type="button" @click.stop="openProject(r.project.id)">{{ r.project.code }}</button>
-                <span class="pm-cell-sub" style="color: var(--mp-text-default)">{{ r.project.name }}</span>
-                <span class="pm-cell-sub">{{ r.project.customer }} · PM {{ r.project.pm }}</span>
-              </td>
-              <td>
-                <span class="pm-pill pm-pill--outline">{{ r.project.isProduction ? t('Production') : t('Service') }}</span>
-                <span class="pm-cell-sub">{{ t('Depth') }} {{ r.project.depth }}</span>
-              </td>
-              <td>{{ t(methodLabel(r.project)) }}</td>
-              <td><span class="pm-pill" :class="STATUS_TONE[r.project.status]">{{ t(STATUS_LABEL[r.project.status]) }}</span></td>
-              <td class="pm-num">
-                <template v-if="r.budget !== undefined">{{ rp(r.budget) }}</template>
-                <span v-else class="pm-warn">{{ t('Not set') }}</span>
-              </td>
-              <td class="pm-num">{{ rp(r.committed) }}</td>
-              <td class="pm-num">{{ rp(r.actual) }}</td>
-              <td>
-                <template v-if="r.budget">
-                  <div class="pm-bar-track"><div class="pm-bar-fill" :class="consumedTone(r.consumed, r.budget)" :style="{ width: Math.min(r.consumed / r.budget * 100, 100) + '%' }" /></div>
-                  <span class="pm-cell-sub">{{ pct(r.consumed / r.budget * 100, 0) }} {{ t('of budget') }}</span>
-                </template>
-                <span v-else class="pm-muted">—</span>
-              </td>
-              <td class="pm-num">
-                <template v-if="r.percentComplete !== undefined">{{ pct(r.percentComplete) }}</template>
-                <span v-else class="pm-muted" :title="r.project.method === 'tm' ? t('T&M has no % complete — revenue follows billed time') : t('Budget not set')">—</span>
-              </td>
-              <td class="pm-num">{{ rp(r.billed) }}</td>
-              <td class="pm-num">
-                <template v-if="r.wip">
-                  <span :class="r.wip > 0 ? 'pm-pos' : 'pm-neg'">{{ rp(Math.abs(r.wip)) }}</span>
-                  <span class="pm-cell-sub">{{ r.wip > 0 ? t('Underbilled') : t('Overbilled') }}</span>
-                </template>
-                <span v-else class="pm-muted">{{ rp(0) }}</span>
-              </td>
-              <td>
-                <div class="pm-row" style="gap: 4px">
-                  <span v-if="r.overBudgetNodes.length" class="pm-pill pm-pill--red" :title="r.overBudgetNodes.map(n => n.label).join(', ')">{{ t('Over budget') }} ({{ r.overBudgetNodes.length }})</span>
-                  <span v-if="r.coExposure" class="pm-pill pm-pill--yellow">{{ t('CO exposure') }} {{ rpShort(r.coExposure) }}</span>
-                  <span v-if="r.pendingCount" class="pm-pill pm-pill--blue">{{ r.pendingCount }} {{ t('pending') }}</span>
-                  <span v-if="!r.overBudgetNodes.length && !r.coExposure && !r.pendingCount" class="pm-muted">—</span>
-                </div>
-              </td>
-            </tr>
-            <tr v-if="!rows.length">
-              <td colspan="12"><div class="pm-empty"><div class="pm-empty-title">{{ t('No projects found') }}</div>{{ t('Try a different filter or search.') }}</div></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+        <template #actions="{ row }">
+          <PmMenu :id="`pm-row-${asRow(row).id}`" kebab :label="t('More actions')" :items="[
+            { label: t('View details'), action: () => router.push(`/projects/${asRow(row).id}`) },
+            { label: t('Open in Budget setup'), action: () => router.push(`/budget-setup/${asRow(row).id}`) },
+            { label: t('View history'), action: () => router.push(`/project-audit-log?project=${asRow(row).id}`) },
+          ]" />
+        </template>
+
+        <template #empty>
+          <div class="pm-empty-full">
+            <img :src="emptyIllustration" alt="" class="pm-empty-illustration" width="288" height="240" />
+            <p class="pm-empty-title">{{ t('No projects') }}</p>
+            <p class="pm-empty-desc">{{ t('Projects will appear here.') }}</p>
+            <MpButton variant="secondary" is-rounded left-icon="add" class="pm-empty-cta" @click="router.push('/projects/new')">{{ t('New project') }}</MpButton>
+          </div>
+        </template>
+      </ErpTablePage>
     </div>
+
+    <ExportModal :open="exportOpen" :title="t('Export projects')" :entity-label="t('projects')" :columns="exportColumns" :total="total" @close="exportOpen = false" @export="exportOpen = false" />
   </div>
 </template>

@@ -62,3 +62,15 @@ export function avatarColor(name: string): string {
   for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0
   return `hsl(${h % 360} 55% 45%)`
 }
+
+/** MpDatePicker (value-type="format", DD/MM/YYYY) ⇄ the ISO dates the data layer stores. */
+export function isoToDmy(iso?: string): string {
+  if (!iso) return ''
+  const [y, m, d] = iso.slice(0, 10).split('-')
+  return y && m && d ? `${d}/${m}/${y}` : ''
+}
+export function dmyToIso(dmy?: string | null): string {
+  if (!dmy) return ''
+  const [d, m, y] = dmy.split('/')
+  return y && m && d ? `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}` : ''
+}

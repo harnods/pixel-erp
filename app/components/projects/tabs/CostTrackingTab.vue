@@ -6,7 +6,10 @@
  * or any dimension. Ambiguous entries (scrap, consumables, factory overhead)
  * must be classified before they count toward project actual.
  */
+import { MpButton, MpButtonGroup, MpIcon, MpSegmentedControl, MpTextlink } from '@mekari/pixel3'
 import WoJournalOverlay from '../WoJournalOverlay.vue'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import type { Project } from '~/data/projects'
 import { getWorkPackage, projectWorkPackages } from '~/data/projects'
 import { accountName, COGM_ACCOUNT } from '~/data/projectBudgets'
@@ -14,7 +17,8 @@ import { projectCostLines, projectWos, countsAsProjectCost, woCommitted } from '
 import { classifyCost } from '~/data/projectActions'
 import { rp } from '~/utils/projectFormat'
 import { formatDate } from '~/utils/date'
-import { toast } from '@mekari/pixel3'
+import { badgeProps } from '~/utils/projectStatus'
+import { successToast } from '~/utils/toasts'
 
 const props = defineProps<{ project: Project }>()
 const { t } = useLocale()
@@ -23,6 +27,13 @@ const { asActor } = useProjectRole()
 type GroupBy = 'wp' | 'account' | 'doc' | 'branch' | 'department' | 'costCenter' | 'fundingSource'
 const groupBy = ref<GroupBy>('wp')
 const kindFilter = ref<'all' | 'actual' | 'committed'>('all')
+const groupOptions = computed(() => GROUPS.map(g => ({ value: g.key, label: t(g.label) })))
+const kindOptions = computed(() => [
+  { id: 'ct-kind-all', label: t('All'), value: 'all' },
+  { id: 'ct-kind-actual', label: t('Actual'), value: 'actual' },
+  { id: 'ct-kind-committed', label: t('Committed'), value: 'committed' },
+])
+function setGroup(v: string) { groupBy.value = (v || 'wp') as GroupBy }
 const GROUPS: { key: GroupBy; label: string }[] = [
   { key: 'wp', label: 'Work package' },
   { key: 'account', label: 'Cost account' },
@@ -88,19 +99,17 @@ function toggle(k: string) { const s = new Set(collapsed.value); s.has(k) ? s.de
 function classify(r: Row, c: 'project' | 'overhead') {
   if (!r.lineId) return
   classifyCost(r.lineId, c, asActor.value)
-  toast.notify({ variant: 'success', title: c === 'project' ? t('Counted as project cost') : t('Absorbed as overhead — not project cost') })
+  successToast(c === 'project' ? t('Counted as project cost') : t('Absorbed as overhead — not project cost'))
 }
 const journalWo = ref<string | undefined>()
 </script>
 
 <template>
-  <div class="pm-stack" style="gap: 16px">
-    <div v-if="needsClass.length" class="pm-card" style="border-color: #fbdca6; background: #fffaf0">
-      <div class="pm-row" style="margin-bottom: 8px">
-        <h3 class="pm-h3">{{ t('Needs classification') }} ({{ needsClass.length }})</h3>
-      </div>
-      <p class="pm-desc" style="margin: 0 0 10px">{{ t('Scrap, consumables and factory overhead don’t count toward project actual until someone decides: project cost, or absorbed as overhead.') }}</p>
-      <div class="pm-table-wrap" style="background: #fff">
+  <div class="pm-stack pm-gap-4">
+    <div v-if="needsClass.length" class="pm-card pm-card--warning">
+      <h3 class="pm-h3 pm-mb-2">{{ t('Needs classification') }} ({{ needsClass.length }})</h3>
+      <p class="pm-caption pm-mt-2 pm-mb-3">{{ t('Scrap, consumables and factory overhead don’t count toward project actual until someone decides: project cost, or absorbed as overhead.') }}</p>
+      <div class="pm-table-wrap">
         <table class="pm-table">
           <tbody>
             <tr v-for="r in needsClass" :key="r.id">
@@ -109,10 +118,11 @@ const journalWo = ref<string | undefined>()
               <td class="pm-wrap">{{ r.description }}<span class="pm-cell-sub">{{ t(r.ambiguous === 'scrap' ? 'Scrap' : r.ambiguous === 'consumables' ? 'Consumables' : 'Factory overhead') }} · {{ getWorkPackage(r.wpId)?.code }} {{ getWorkPackage(r.wpId)?.name }}</span></td>
               <td class="pm-num">{{ rp(r.amount) }}</td>
               <td>
-                <div class="pm-row" style="gap: 6px; flex-wrap: nowrap">
-                  <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" :disabled="project.status === 'closed'" @click="classify(r, 'project')">{{ t('Project cost') }}</button>
-                  <button class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" type="button" :disabled="project.status === 'closed'" @click="classify(r, 'overhead')">{{ t('Absorb as overhead') }}</button>
-                </div>
+                <MpButtonGroup v-if="project.status !== 'closed'" class="pm-cell-actions">
+                  <MpButton :id="`ct-classify-project-${r.id}`" variant="secondary" is-rounded size="sm" @click="classify(r, 'project')">{{ t('Project cost') }}</MpButton>
+                  <MpButton :id="`ct-classify-overhead-${r.id}`" variant="ghost" is-rounded size="sm" @click="classify(r, 'overhead')">{{ t('Absorb as overhead') }}</MpButton>
+                </MpButtonGroup>
+                <span v-else class="pm-caption">{{ t('Project is closed') }}</span>
               </td>
             </tr>
           </tbody>
@@ -123,22 +133,16 @@ const journalWo = ref<string | undefined>()
     <div class="pm-row">
       <div>
         <h2 class="pm-h2">{{ t('Cost tracking') }}</h2>
-        <p class="pm-desc">{{ t('Read-only. Cost is entered on real documents with the project on every line — there is no parallel entry surface here.') }}</p>
+        <p class="pm-caption pm-m-0">{{ t('Read-only. Cost is entered on real documents with the project on every line — there is no parallel entry surface here.') }}</p>
       </div>
     </div>
 
-    <div class="pm-filters" style="margin-bottom: 0">
-      <label class="pm-small pm-muted" for="ct-group">{{ t('Group by') }}</label>
-      <select id="ct-group" v-model="groupBy" class="pm-select">
-        <option v-for="g in GROUPS" :key="g.key" :value="g.key">{{ t(g.label) }}</option>
-      </select>
-      <div class="pm-seg">
-        <button type="button" :class="{ 'pm-seg--active': kindFilter === 'all' }" @click="kindFilter = 'all'">{{ t('All') }}</button>
-        <button type="button" :class="{ 'pm-seg--active': kindFilter === 'actual' }" @click="kindFilter = 'actual'">{{ t('Actual') }}</button>
-        <button type="button" :class="{ 'pm-seg--active': kindFilter === 'committed' }" @click="kindFilter = 'committed'">{{ t('Committed') }}</button>
-      </div>
+    <div class="pm-filters">
+      <span class="pm-small pm-muted">{{ t('Group by') }}</span>
+      <ErpFilterSelect id="ct-group" :model-value="groupBy" :placeholder="t('Group by')" :options="groupOptions" :is-clearable="false" @update:model-value="setGroup" />
+      <MpSegmentedControl id="ct-kind" name="ct-kind" v-model="kindFilter" :data="kindOptions" />
       <span class="pm-spacer" />
-      <span class="pm-small pm-muted">{{ t('Actual') }} <strong class="pm-strong" style="color: var(--mp-text-default)">{{ rp(totals.actual) }}</strong> · {{ t('Committed') }} <strong style="color: var(--mp-text-default)">{{ rp(totals.committed) }}</strong></span>
+      <span class="pm-small pm-muted">{{ t('Actual') }} <strong class="pm-strong">{{ rp(totals.actual) }}</strong> · {{ t('Committed') }} <strong class="pm-strong">{{ rp(totals.committed) }}</strong></span>
     </div>
 
     <div class="pm-table-wrap">
@@ -158,8 +162,11 @@ const journalWo = ref<string | undefined>()
           <template v-for="g in groups" :key="g.key">
             <tr class="pm-tr-sub pm-tr-click" @click="toggle(g.key)">
               <td :colspan="groupBy === 'wp' || groupBy === 'account' ? 5 : 6">
-                <span style="display: inline-block; width: 16px">{{ collapsed.has(g.key) ? '▸' : '▾' }}</span>{{ g.key }}
-                <span class="pm-muted" style="font-weight: 400"> · {{ g.items.length }} {{ t('entries') }}</span>
+                <span class="pm-row pm-row--nowrap pm-gap-1">
+                  <MpIcon :name="collapsed.has(g.key) ? 'chevrons-right' : 'chevrons-down'" size="sm" />
+                  <span>{{ g.key }}</span>
+                  <span class="pm-muted"> · {{ g.items.length }} {{ t('entries') }}</span>
+                </span>
               </td>
               <td class="pm-num">{{ rp(g.actual) }}<span v-if="g.committed" class="pm-cell-sub">+ {{ rp(g.committed) }} {{ t('committed') }}</span></td>
             </tr>
@@ -167,7 +174,7 @@ const journalWo = ref<string | undefined>()
               <tr v-for="r in g.items" :key="r.id">
                 <td>{{ formatDate(r.date) }}</td>
                 <td>
-                  <button v-if="r.woId" class="pm-link" type="button" @click="journalWo = r.woId">{{ r.docNo }}</button>
+                  <MpTextlink v-if="r.woId" :id="`ct-journal-${r.id}`" as="a" @click.prevent="journalWo = r.woId">{{ r.docNo }}</MpTextlink>
                   <template v-else>{{ r.docNo }}</template>
                   <span class="pm-cell-sub">{{ t(r.docType) }}</span>
                 </td>
@@ -175,7 +182,7 @@ const journalWo = ref<string | undefined>()
                 <td v-if="groupBy !== 'wp'">{{ getWorkPackage(r.wpId)?.auto ? '—' : `${getWorkPackage(r.wpId)?.code} ${getWorkPackage(r.wpId)?.name}` }}</td>
                 <td v-if="groupBy !== 'account'">{{ t(accountName(r.account)) }}</td>
                 <td>
-                  <span class="pm-pill" :class="r.kind === 'actual' ? 'pm-pill--green' : 'pm-pill--blue'">{{ r.kind === 'actual' ? t('Actual') : t('Committed') }}</span>
+                  <ErpStatusBadge v-bind="badgeProps('cost', r.kind, t)" />
                   <span v-if="r.ambiguous && !r.classification" class="pm-cell-sub pm-warn">{{ t('Not counted — classify first') }}</span>
                   <span v-else-if="r.classification === 'overhead'" class="pm-cell-sub">{{ t('Absorbed as overhead') }}</span>
                 </td>
@@ -183,7 +190,7 @@ const journalWo = ref<string | undefined>()
               </tr>
             </template>
           </template>
-          <tr v-if="!groups.length"><td colspan="7"><div class="pm-empty">{{ t('No cost recorded yet.') }}</div></td></tr>
+          <tr v-if="!groups.length"><td colspan="7"><div class="pm-empty-inline">{{ t('No cost recorded yet.') }}</div></td></tr>
         </tbody>
       </table>
     </div>

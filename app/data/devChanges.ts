@@ -52,6 +52,14 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['EcoDiff.vue', 'ChangesTab.vue', 'projectActions.ts'],
   },
   {
+    id: 'pm-pixel-rework',
+    title: 'Projects: rebuilt on Pixel components',
+    description:
+      'The whole Projects module now uses Pixel 3 / ERP patterns: MpTabs on the project page, ErpFilterSelect for every dropdown, MpBanner, ErpStatusBadge, MpProgress, MpModal and the custom drawer shell, ActivityLogModal from the “Last updated by” line, and ErpTablePage on Budget setup. Actions never disable for validation — they show an inline error instead — and success is a toast.',
+    date: '2026-09-22',
+    files: ['components/projects/**', 'project-mto.css', 'useProjectAction.ts', 'projectStatus.ts'],
+  },
+  {
     id: 'pm-release-approval',
     title: 'Projects: Finance approves project release (OQ7, provisional)',
     description:

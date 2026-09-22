@@ -1,45 +1,68 @@
 <script setup lang="ts">
 /**
- * Custom Teleport overlay for the Projects module — right-side drawer or
- * centered modal. MpDrawer / MpModal render without structural CSS in this
- * Pixel build (see ConfirmModal.vue), so the module ships its own shell.
+ * Projects overlay — one API for the module's two overlay kinds:
+ *   • variant="drawer" → the custom Teleport shell (rule/drawer-custom-shell, copied
+ *     from BillsFiltersDrawer). The overlay is only a backdrop: no click-to-close and
+ *     no Esc listener — close is × or an explicit footer action
+ *     (rule/modal-drawer-close-explicit-only).
+ *   • variant="modal" → Pixel MpModal (rule/modal-use-mpmodal) with Esc and overlay
+ *     dismissal switched off.
+ * Footer actions go in the `footer` slot and are laid out as the responsive
+ * action footer (rule/btn-responsive-footer).
  */
-const props = withDefaults(defineProps<{
+import {
+  MpButton, MpButtonGroup, MpIcon, MpModal, MpModalContent, MpModalHeader, MpModalBody,
+  MpModalFooter, MpModalCloseButton, MpModalOverlay,
+} from '@mekari/pixel3'
+
+withDefaults(defineProps<{
   open: boolean
   title: string
   subtitle?: string
   variant?: 'drawer' | 'modal'
   wide?: boolean
-}>(), { subtitle: '', variant: 'drawer', wide: false })
+  id?: string
+}>(), { subtitle: '', variant: 'drawer', wide: false, id: 'pm-overlay' })
 const emit = defineEmits<{ (e: 'close'): void }>()
-
-function onKey(e: KeyboardEvent) { if (e.key === 'Escape' && props.open) emit('close') }
-onMounted(() => window.addEventListener('keydown', onKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="pm-fade">
-      <div v-if="open" class="pm-overlay" :class="variant === 'drawer' ? 'pm-overlay--drawer' : 'pm-overlay--modal'" @mousedown.self="emit('close')">
-        <div
-          :class="[variant === 'drawer' ? 'pm-drawer' : 'pm-modal', wide && (variant === 'drawer' ? 'pm-drawer--wide' : 'pm-modal--wide')]"
-          role="dialog" aria-modal="true" :aria-label="title"
-        >
-          <header class="pm-ov-head">
+  <MpModal
+    v-if="variant === 'modal'" :id="id" :is-open="open" :size="wide ? 'lg' : 'md'" :is-keep-alive="false"
+    :is-close-on-esc="false" :is-close-on-overlay-click="false" @close="emit('close')"
+  >
+    <MpModalContent>
+      <MpModalHeader>
+        <div>
+          <div>{{ title }}</div>
+          <div v-if="subtitle" class="pm-caption">{{ subtitle }}</div>
+        </div>
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        <div class="pm-modal-body"><slot /></div>
+      </MpModalBody>
+      <MpModalFooter v-if="$slots.footer">
+        <MpButtonGroup class="erp-action-footer"><slot name="footer" /></MpButtonGroup>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
+
+  <Teleport v-else to="body">
+    <Transition name="pm-drawer">
+      <div v-if="open" class="pm-drawer-overlay">
+        <div class="pm-drawer-panel" :class="{ 'pm-drawer-panel--wide': wide }" role="dialog" aria-modal="true" :aria-label="title">
+          <header class="pm-drawer-header">
             <div>
-              <h2 class="pm-ov-title">{{ title }}</h2>
-              <div v-if="subtitle" class="pm-ov-sub">{{ subtitle }}</div>
+              <h2 class="pm-drawer-title">{{ title }}</h2>
+              <div v-if="subtitle" class="pm-drawer-sub">{{ subtitle }}</div>
             </div>
-            <button class="pm-icon-btn" type="button" aria-label="Close" @click="emit('close')">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
-            </button>
+            <MpButton variant="ghost" is-rounded aria-label="Close" @click="emit('close')"><MpIcon name="close" /></MpButton>
           </header>
-          <div class="pm-ov-body">
-            <slot />
-          </div>
-          <footer v-if="$slots.footer" class="pm-ov-foot">
-            <slot name="footer" />
+          <div class="pm-drawer-body"><slot /></div>
+          <footer v-if="$slots.footer" class="pm-drawer-footer">
+            <MpButtonGroup class="erp-action-footer"><slot name="footer" /></MpButtonGroup>
           </footer>
         </div>
       </div>

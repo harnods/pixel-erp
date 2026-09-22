@@ -1,15 +1,22 @@
 <script setup lang="ts">
 /**
- * Project page — header + tabs (PRD "Mockup & Design"):
- *   Structure · Budget · Cost tracking · Recognition & billing ·
- *   Changes — commercial & engineering · Production & materials (production only) · Completion
+ * Project page — header + in-page tabs (PRD "Mockup & Design"; tabs.md §2 → MpTabs
+ * inside the stage): Structure · Budget · Cost tracking · Recognition & billing ·
+ * Changes — commercial & engineering · Production & materials (production only) · Completion.
  *
- * Header: status pill (Draft / Active / Closed), role-labelled approval button
- * shown only while Draft (Story 7), and View history → audit page pre-filtered (D4).
+ * Header: status badge, role-labelled approval button while Draft (Story 7; OQ7:
+ * Finance approves), View history → the cross-project audit page (PRD D4), Actions.
+ * The record's Activity log opens from the "Last updated by … on …" line
+ * (rule/detail-activity-log-always, rule/activity-log-trigger).
  */
+import {
+  MpButton, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpBanner, MpBannerIcon, MpBannerDescription,
+  MpFormControl, MpFormLabel, MpTextarea, MpFormErrorMessage, MpTag,
+} from '@mekari/pixel3'
 import PmTitleBar from '../PmTitleBar.vue'
 import PmMenu, { type PmMenuItem } from '../PmMenu.vue'
 import PmOverlay from '../PmOverlay.vue'
+import PmActionError from '../PmActionError.vue'
 import StructureTab from '../tabs/StructureTab.vue'
 import BudgetTab from '../tabs/BudgetTab.vue'
 import CostTrackingTab from '../tabs/CostTrackingTab.vue'
@@ -17,22 +24,26 @@ import RecognitionTab from '../tabs/RecognitionTab.vue'
 import ChangesTab from '../tabs/ChangesTab.vue'
 import ProductionTab from '../tabs/ProductionTab.vue'
 import CompletionTab from '../tabs/CompletionTab.vue'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import { getProject, methodLabel, weightTotal } from '~/data/projects'
 import { getBudget } from '~/data/projectBudgets'
 import { projectSummary } from '~/data/projectSummary'
 import { pendingChanges } from '~/data/projectChanges'
+import { auditLog, AUDIT_KIND_LABELS } from '~/data/projectAudit'
 import { approveProject, reopenProject } from '~/data/projectActions'
 import { rp, pct } from '~/utils/projectFormat'
-import { notifyResult } from '~/utils/projectToast'
+import { formatDate } from '~/utils/date'
+import { badgeProps } from '~/utils/projectStatus'
 
 const props = defineProps<{ projectId: string }>()
 const { t } = useLocale()
 const route = useRoute()
 const router = useRouter()
-const { current, asActor } = useProjectRole()
+const { current, asActor, isFinance, actor } = useProjectRole()
 
 const project = computed(() => getProject(props.projectId))
-const summary = computed(() => project.value ? projectSummary(project.value.id) : undefined)
+const summary = computed(() => (project.value ? projectSummary(project.value.id) : undefined))
 const changesPending = computed(() => {
   if (!project.value) return 0
   const { vos, ecos } = pendingChanges(project.value.id)
@@ -40,7 +51,6 @@ const changesPending = computed(() => {
 })
 
 const TABS = computed(() => {
-  const p = project.value
   const list = [
     { key: 'structure', label: 'Structure' },
     { key: 'budget', label: 'Budget' },
@@ -48,30 +58,33 @@ const TABS = computed(() => {
     { key: 'recognition', label: 'Recognition & billing' },
     { key: 'changes', label: 'Changes — commercial & engineering' },
   ]
-  if (p?.isProduction) list.push({ key: 'production', label: 'Production & materials' })
+  if (project.value?.isProduction) list.push({ key: 'production', label: 'Production & materials' })
   list.push({ key: 'completion', label: 'Completion' })
   return list
 })
-const activeTab = computed(() => {
-  const q = String(route.query.tab ?? 'structure')
-  return TABS.value.some(x => x.key === q) ? q : 'structure'
+const activeTab = computed({
+  get: () => {
+    const q = String(route.query.tab ?? 'structure')
+    return TABS.value.some(x => x.key === q) ? q : 'structure'
+  },
+  set: (key: string) => { router.replace({ query: { ...route.query, tab: key } }) },
 })
-function setTab(key: string) { router.replace({ query: { ...route.query, tab: key } }) }
+// MpTabs' v-model is the tab index (same as WarehouseDetailsPage)
+const activeTabIndex = computed({
+  get: () => Math.max(0, TABS.value.findIndex(x => x.key === activeTab.value)),
+  set: (idx: number) => { activeTab.value = TABS.value[idx]?.key ?? 'structure' },
+})
 
-const STATUS_TONE = { draft: 'pm-pill--gray', active: 'pm-pill--green', closed: 'pm-pill--blue' } as const
-const STATUS_LABEL = { draft: 'Draft', active: 'Active', closed: 'Closed' } as const
-
-// ── Approval gate (Draft only, role-labelled) ──
+// ── Approval gate (Draft only, role-labelled; OQ7 provisional: Finance approves) ──
 const approveOpen = ref(false)
-// OQ7 (provisional): Finance / Controller approves project release; the button is still labelled by role.
-const { isFinance, actor } = useProjectRole()
+const approve = useProjectAction()
 const approveLabel = computed(() => (isFinance.value ? `${t('Approve as')} ${t(current.value.label)}` : t('Waiting for Finance approval')))
 const approveRefusal = computed(() => {
   if (!isFinance.value) return t('Finance / Controller approves project release. Switch “View as” to approve.')
   if (project.value && actor.value === project.value.pm) return t('You manage this project, so someone else must approve it.')
   return ''
 })
-const approveBlockers = computed(() => {
+const approveWarnings = computed(() => {
   const p = project.value
   if (!p) return []
   const out: string[] = []
@@ -79,18 +92,24 @@ const approveBlockers = computed(() => {
   if (p.method === 'output' && p.measure === 'milestone' && weightTotal(p.id) !== 100) out.push(`${t('Progress weights total')} ${pct(weightTotal(p.id))}, ${t('not 100%.')}`)
   return out
 })
+function openApprove() { approve.clear(); approveOpen.value = true }
 function doApprove() {
   if (!project.value) return
-  if (notifyResult(approveProject(project.value.id, asActor.value), t('Project approved'))) approveOpen.value = false
+  if (approveRefusal.value) { approve.fail(approveRefusal.value); return }
+  if (approve.run(approveProject(project.value.id, asActor.value), t('Project approved'))) approveOpen.value = false
 }
 
 // ── Re-open approval ──
 const reopenOpen = ref(false)
 const reopenReason = ref('')
+const reopenTouched = ref(false)
+const reopen = useProjectAction()
 function doReopen() {
-  if (!project.value) return
-  if (!reopenReason.value.trim()) return
-  if (notifyResult(reopenProject(project.value.id, reopenReason.value, asActor.value), t('Project re-opened to Draft'))) { reopenOpen.value = false; reopenReason.value = '' }
+  reopenTouched.value = true
+  if (!project.value || !reopenReason.value.trim()) return
+  if (reopen.run(reopenProject(project.value.id, reopenReason.value, asActor.value), t('Project re-opened to Draft'))) {
+    reopenOpen.value = false; reopenReason.value = ''; reopenTouched.value = false
+  }
 }
 
 const actions = computed<PmMenuItem[]>(() => {
@@ -101,108 +120,131 @@ const actions = computed<PmMenuItem[]>(() => {
     { label: t('New work order'), action: () => router.push(`/projects/${p.id}/work-orders/new`), disabledReason: !p.isProduction ? t('Service projects have no work orders') : closed ? t('Project is closed') : undefined },
     { label: t('New document'), action: () => router.push(`/project-new-document?project=${p.id}`), disabledReason: closed ? t('Project is closed') : undefined },
     { label: t('Capture site change'), action: () => router.push(`/site-change-capture?project=${p.id}`), disabledReason: closed ? t('Project is closed') : undefined },
-    { label: t('Open in Budget setup'), action: () => router.push(`/budget-setup/${p.id}?returnTo=${encodeURIComponent(`/projects/${p.id}?tab=budget`)}`), separatorBefore: true },
-    { label: t('Re-open approval'), action: () => { reopenOpen.value = true }, disabledReason: p.status !== 'active' ? t('Only an active project can be re-opened') : undefined, separatorBefore: true },
-    { label: t('Close project'), action: () => setTab('completion'), disabledReason: closed ? t('Already closed') : undefined },
+    { label: t('Open in Budget setup'), action: () => router.push(`/budget-setup/${p.id}?returnTo=${encodeURIComponent(`/projects/${p.id}?tab=budget`)}`) },
+    { label: t('Re-open approval'), action: () => { reopen.clear(); reopenOpen.value = true }, disabledReason: p.status !== 'active' ? t('Only an active project can be re-opened') : undefined },
+    { label: t('Close project'), action: () => { activeTab.value = 'completion' }, disabledReason: closed ? t('Already closed') : undefined },
   ]
 })
+
+// ── Activity log (this record's audit entries, newest first) ──
+const activityOpen = ref(false)
+const projectAudit = computed(() => (project.value ? auditLog.filter(e => e.projectId === project.value!.id).slice().sort((a, b) => b.at.localeCompare(a.at)) : []))
+const activityEntries = computed<ActivityEntry[]>(() => projectAudit.value.map(e => ({
+  date: e.at, user: e.actor, activity: t(AUDIT_KIND_LABELS[e.kind]),
+  details: [{ label: t('Summary'), value: e.summary }, ...(e.reason ? [{ label: t('Reason'), value: e.reason }] : []), ...(e.refNo ? [{ label: t('Document'), value: e.refNo }] : [])],
+})))
+const lastEntry = computed(() => projectAudit.value[0])
 </script>
 
 <template>
   <div v-if="project && summary" class="pm-page">
-    <PmTitleBar :title="`${project.code} · ${project.name}`" :breadcrumb="{ label: t('Projects'), to: '/projects' }" :subtitle="`${project.customer} · PM ${project.pm}${project.salesOrderNo ? ` · ${project.salesOrderNo}` : ''}`">
+    <PmTitleBar :title="`${project.code} · ${project.name}`" :breadcrumb="{ label: t('Projects'), to: '/projects' }" :meta="`${project.customer} · PM ${project.pm}${project.salesOrderNo ? ` · ${project.salesOrderNo}` : ''}`">
       <template #badges>
-        <span class="pm-pill pm-pill--lg" :class="STATUS_TONE[project.status]">{{ t(STATUS_LABEL[project.status]) }}</span>
-        <span class="pm-pill pm-pill--outline" :title="project.status === 'draft' ? t('Locks at approval') : t('Locked at approval')">
-          <svg v-if="project.status !== 'draft'" width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" stroke="currentColor" stroke-width="1.8" /><path d="M8 11V8a4 4 0 118 0v3" stroke="currentColor" stroke-width="1.8" /></svg>
-          {{ t(methodLabel(project)) }}
-        </span>
-        <span class="pm-pill pm-pill--outline">{{ project.isProduction ? t('Production') : t('Service') }} · {{ t('Depth') }} {{ project.depth }}</span>
+        <ErpStatusBadge v-bind="badgeProps('project', project.status, t)" badge-for="additionalInformation" />
+        <MpTag :id="`pm-method-${project.id}`">{{ t(methodLabel(project)) }} · {{ project.status === 'draft' ? t('Locks at approval') : t('Locked at approval') }}</MpTag>
+        <MpTag :id="`pm-shape-${project.id}`">{{ project.isProduction ? t('Production') : t('Service') }} · {{ t('Depth') }} {{ project.depth }}</MpTag>
       </template>
       <template #actions>
-        <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="router.push(`/project-audit-log?project=${project.id}`)">{{ t('View history') }}</button>
-        <PmMenu :items="actions" :label="t('Actions')" />
-        <button v-if="project.status === 'draft'" class="btn-enterprise btn-enterprise--primary" type="button" data-devchange="pm-release-approval" @click="approveOpen = true">{{ approveLabel }}</button>
+        <MpButton variant="secondary" is-rounded @click="router.push(`/project-audit-log?project=${project.id}`)">{{ t('View history') }}</MpButton>
+        <PmMenu id="pm-detail-actions" :items="actions" :label="t('Actions')" />
+        <MpButton v-if="project.status === 'draft'" variant="primary" is-rounded data-devchange="pm-release-approval" @click="openApprove">{{ approveLabel }}</MpButton>
       </template>
     </PmTitleBar>
 
-    <div class="pm-tabs" role="tablist">
-      <button v-for="tab in TABS" :key="tab.key" class="pm-tab" :class="{ 'pm-tab--active': activeTab === tab.key }" role="tab" :aria-selected="activeTab === tab.key" @click="setTab(tab.key)">
-        {{ t(tab.label) }}
-        <span v-if="tab.key === 'changes' && changesPending" class="pm-pill pm-pill--blue" style="height: 18px; padding: 0 6px">{{ changesPending }}</span>
-      </button>
-    </div>
-
     <div class="pm-stage">
       <!-- KPI strip — same numbers on every tab (Recognition shows its own two-clock cards) -->
-      <div v-if="activeTab !== 'recognition'" class="pm-grid-4" style="grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 20px">
+      <div v-if="activeTab !== 'recognition'" class="pm-grid-5 pm-mb-5">
         <div class="pm-card pm-card--flat">
           <div class="pm-stat-label">{{ t('Contract value') }}</div>
-          <div class="pm-stat-value" style="font-size: 16px">{{ rp(project.contractValue) }}</div>
+          <div class="pm-stat-value pm-stat-value--md">{{ rp(project.contractValue) }}</div>
         </div>
         <div class="pm-card pm-card--flat">
           <div class="pm-stat-label">{{ t('Budget (cost)') }}</div>
-          <div class="pm-stat-value" style="font-size: 16px">
+          <div class="pm-stat-value pm-stat-value--md">
             <template v-if="summary.budget !== undefined">{{ rp(summary.budget) }}</template>
             <span v-else class="pm-warn">{{ t('Not set') }}</span>
           </div>
         </div>
         <div class="pm-card pm-card--flat">
           <div class="pm-stat-label">{{ t('Committed + actual') }}</div>
-          <div class="pm-stat-value" style="font-size: 16px" :class="{ 'pm-neg': summary.budget !== undefined && summary.consumed > summary.budget }">{{ rp(summary.consumed) }}</div>
+          <div class="pm-stat-value pm-stat-value--md" :class="{ 'pm-neg': summary.budget !== undefined && summary.consumed > summary.budget }">{{ rp(summary.consumed) }}</div>
         </div>
         <div class="pm-card pm-card--flat">
           <div class="pm-stat-label">{{ t('% complete') }}</div>
-          <div class="pm-stat-value" style="font-size: 16px">{{ summary.percentComplete !== undefined ? pct(summary.percentComplete) : '—' }}</div>
+          <div class="pm-stat-value pm-stat-value--md">{{ summary.percentComplete !== undefined ? pct(summary.percentComplete) : '—' }}</div>
         </div>
         <div class="pm-card pm-card--flat">
           <div class="pm-stat-label">{{ t('WIP position') }}</div>
-          <div class="pm-stat-value" style="font-size: 16px" :class="summary.wip > 0 ? 'pm-pos' : summary.wip < 0 ? 'pm-neg' : ''">{{ rp(Math.abs(summary.wip)) }}</div>
+          <div class="pm-stat-value pm-stat-value--md" :class="summary.wip > 0 ? 'pm-pos' : summary.wip < 0 ? 'pm-neg' : ''">{{ rp(Math.abs(summary.wip)) }}</div>
           <div class="pm-stat-note">{{ summary.wip > 0 ? t('Underbilled (asset)') : summary.wip < 0 ? t('Overbilled (liability)') : t('Balanced') }}</div>
         </div>
       </div>
 
-      <StructureTab v-if="activeTab === 'structure'" :project="project" />
-      <BudgetTab v-else-if="activeTab === 'budget'" :project="project" />
-      <CostTrackingTab v-else-if="activeTab === 'cost'" :project="project" />
-      <RecognitionTab v-else-if="activeTab === 'recognition'" :project="project" />
-      <ChangesTab v-else-if="activeTab === 'changes'" :project="project" />
-      <ProductionTab v-else-if="activeTab === 'production'" :project="project" />
-      <CompletionTab v-else-if="activeTab === 'completion'" :project="project" />
+      <MpTabs id="pm-detail-tabs" data-devchange="pm-pixel-rework" v-model="activeTabIndex" is-manual variant-color="green" class="detail-tabs">
+        <MpTabList>
+          <MpTab v-for="tab in TABS" :id="`pm-tab-${tab.key}`" :key="tab.key" :value="tab.key">
+            {{ t(tab.label) }}<template v-if="tab.key === 'changes' && changesPending"> ({{ changesPending }})</template>
+          </MpTab>
+        </MpTabList>
+        <MpTabPanels>
+          <MpTabPanel v-for="tab in TABS" :key="tab.key" :value="tab.key">
+            <div v-if="activeTab === tab.key" class="pm-mt-5">
+              <StructureTab v-if="tab.key === 'structure'" :project="project" />
+              <BudgetTab v-else-if="tab.key === 'budget'" :project="project" />
+              <CostTrackingTab v-else-if="tab.key === 'cost'" :project="project" />
+              <RecognitionTab v-else-if="tab.key === 'recognition'" :project="project" />
+              <ChangesTab v-else-if="tab.key === 'changes'" :project="project" />
+              <ProductionTab v-else-if="tab.key === 'production'" :project="project" />
+              <CompletionTab v-else-if="tab.key === 'completion'" :project="project" />
+            </div>
+          </MpTabPanel>
+        </MpTabPanels>
+      </MpTabs>
+
+      <p class="pm-mt-5 pm-m-0">
+        <span class="pm-link" role="link" tabindex="0" @click="activityOpen = true" @keydown.enter="activityOpen = true">
+          <template v-if="lastEntry">{{ t('Last updated by') }} {{ lastEntry.actor }} {{ t('on') }} {{ formatDate(lastEntry.at) }}</template>
+          <template v-else>{{ t('Created by') }} {{ project.pm }} {{ t('on') }} {{ formatDate(project.createdAt) }}</template>
+        </span>
+      </p>
     </div>
 
+    <ActivityLogModal :is-open="activityOpen" :subject="`${project.code} · ${project.name}`" :entries="activityEntries" @close="activityOpen = false" />
+
     <!-- Approve -->
-    <PmOverlay :open="approveOpen" variant="modal" :title="t('Approve project')" :subtitle="`${project.code} · Draft → Active`" @close="approveOpen = false">
-      <p class="pm-desc" style="margin: 0">{{ t('On approval the recognition method, measure and production flag lock. Draft work orders and purchase requests can then go firm and start consuming budget.') }}</p>
-      <div class="pm-card pm-card--flat">
-        <div class="pm-kv" style="grid-template-columns: repeat(2, minmax(0, 1fr))">
-          <div><div class="pm-kv-label">{{ t('Recognition') }}</div><div class="pm-kv-value">{{ t(methodLabel(project)) }}</div></div>
-          <div><div class="pm-kv-label">{{ t('Shape') }}</div><div class="pm-kv-value">{{ project.isProduction ? t('Production') : t('Service') }}</div></div>
-        </div>
+    <PmOverlay id="pm-approve-modal" :open="approveOpen" variant="modal" :title="t('Approve project')" :subtitle="`${project.code} · Draft → Active`" @close="approveOpen = false">
+      <p class="pm-body">{{ t('On approval the recognition method, measure and production flag lock. Draft work orders and purchase requests can then go firm and start consuming budget.') }}</p>
+      <div class="pm-card pm-card--flat pm-grid-2">
+        <div><div class="pm-stat-label">{{ t('Recognition') }}</div><div class="pm-body">{{ t(methodLabel(project)) }}</div></div>
+        <div><div class="pm-stat-label">{{ t('Shape') }}</div><div class="pm-body">{{ project.isProduction ? t('Production') : t('Service') }}</div></div>
       </div>
-      <div v-for="b in approveBlockers" :key="b" class="pm-banner pm-banner--warn"><div class="pm-banner-body">{{ b }}</div></div>
-      <div v-if="approveRefusal" class="pm-banner pm-banner--neutral"><div class="pm-banner-body">{{ approveRefusal }}</div></div>
+      <MpBanner v-for="(w, i) in approveWarnings" :id="`pm-approve-warn-${i}`" :key="w" variant="warning">
+        <MpBannerIcon /><MpBannerDescription>{{ w }}</MpBannerDescription>
+      </MpBanner>
+      <PmActionError id="pm-approve-error" :error="approve.error.value || approveRefusal" />
       <template #footer>
-        <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="approveOpen = false">{{ t('Cancel') }}</button>
-        <button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="!!approveRefusal" @click="doApprove">{{ isFinance ? approveLabel : t('Approve') }}</button>
+        <MpButton variant="ghost" is-rounded @click="approveOpen = false">{{ t('Cancel') }}</MpButton>
+        <MpButton variant="primary" is-rounded @click="doApprove">{{ isFinance ? approveLabel : t('Approve') }}</MpButton>
       </template>
     </PmOverlay>
 
     <!-- Re-open -->
-    <PmOverlay :open="reopenOpen" variant="modal" :title="t('Re-open approval')" :subtitle="project.code" @close="reopenOpen = false">
-      <p class="pm-desc" style="margin: 0">{{ t('The project returns to Draft so the method, measure or production flag can change. This is written to the audit log.') }}</p>
-      <div class="pm-field">
-        <label class="pm-label pm-label-req" for="reopen-reason">{{ t('Reason') }}</label>
-        <textarea id="reopen-reason" v-model="reopenReason" class="pm-textarea" />
-      </div>
+    <PmOverlay id="pm-reopen-modal" :open="reopenOpen" variant="modal" :title="t('Re-open approval')" :subtitle="project.code" @close="reopenOpen = false">
+      <p class="pm-body">{{ t('The project returns to Draft so the method, measure or production flag can change. This is written to the audit log.') }}</p>
+      <MpFormControl id="reopen-reason-fc" :is-invalid="reopenTouched && !reopenReason.trim()" is-required>
+        <MpFormLabel>{{ t('Reason') }}</MpFormLabel>
+        <MpTextarea id="reopen-reason" v-model="reopenReason" />
+        <MpFormErrorMessage>{{ t('Enter a reason for re-opening.') }}</MpFormErrorMessage>
+      </MpFormControl>
+      <PmActionError id="pm-reopen-error" :error="reopen.error.value" />
       <template #footer>
-        <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="reopenOpen = false">{{ t('Cancel') }}</button>
-        <button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="!reopenReason.trim()" @click="doReopen">{{ t('Re-open') }}</button>
+        <MpButton variant="ghost" is-rounded @click="reopenOpen = false">{{ t('Cancel') }}</MpButton>
+        <MpButton variant="primary" is-rounded @click="doReopen">{{ t('Re-open') }}</MpButton>
       </template>
     </PmOverlay>
   </div>
   <div v-else class="pm-page">
     <PmTitleBar :title="t('Project not found')" :breadcrumb="{ label: t('Projects'), to: '/projects' }" />
-    <div class="pm-stage"><div class="pm-empty">{{ t('This project doesn’t exist or was removed.') }}</div></div>
+    <div class="pm-stage"><div class="pm-empty-inline">{{ t('This project doesn’t exist or was removed.') }}</div></div>
   </div>
 </template>

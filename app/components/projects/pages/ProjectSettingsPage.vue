@@ -7,13 +7,19 @@
  * Enforced/Optional setting exists. Also hosts the prototype's open-question
  * switches (OQ6, OQ10) and a demo-data reset.
  */
+import {
+  MpButton, MpInput, MpInputGroup, MpInputRightAddon, MpSegmentedControl, MpFormControl, MpFormLabel, MpFormErrorMessage, MpFormHelpText,
+  MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
+} from '@mekari/pixel3'
 import PmTitleBar from '../PmTitleBar.vue'
 import PmOverlay from '../PmOverlay.vue'
+import PmActionError from '../PmActionError.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { projects } from '~/data/projects'
 import { projectPolicy, type PeggedDocType, type PolicyMode } from '~/data/projectPolicy'
 import { setCompanyPolicy, setProjectThreshold } from '~/data/projectActions'
 import { pct } from '~/utils/projectFormat'
-import { toast } from '@mekari/pixel3'
+import { successToast } from '~/utils/toasts'
 
 const { t } = useLocale()
 const { isFinance, asActor } = useProjectRole()
@@ -31,23 +37,43 @@ const draft = reactive({
   qtyPocOption: projectPolicy.qtyPocOption,
   reservationIssuePolicy: projectPolicy.reservationIssuePolicy,
 })
+const companyAction = useProjectAction()
+const projectAction = useProjectAction()
+const financeOnly = computed(() => t('Only Finance / Controller can change policy. Switch “View as” to Finance / Controller.'))
+const policyOptions = computed(() => [
+  { value: 'block', label: t('Block (stored for later)') },
+  { value: 'warn', label: t('Warn + override') },
+  { value: 'off', label: t('Off') },
+])
+const issueOptions = computed(() => [
+  { id: 'ps-issue-warn', label: t('Warn'), value: 'warn' },
+  { id: 'ps-issue-block', label: t('Block'), value: 'block' },
+])
+const qtyOptions = computed(() => [
+  { id: 'ps-qty-a', label: t('A — all planned units count'), value: 'A' },
+  { id: 'ps-qty-b', label: t('B — production only'), value: 'B' },
+])
 const thresholdNum = computed(() => Number(draft.threshold))
 const thresholdError = computed(() => (Number.isNaN(thresholdNum.value) || thresholdNum.value < 5 || thresholdNum.value > 50 ? t('Enter a threshold between 5% and 50%.') : ''))
 function saveCompany() {
+  if (!isFinance.value) { companyAction.fail(financeOnly.value); return }
   if (thresholdError.value) return
+  companyAction.clear()
   setCompanyPolicy({ companyThresholdPct: thresholdNum.value, docPolicies: draft.docPolicies, qtyPocOption: draft.qtyPocOption, reservationIssuePolicy: draft.reservationIssuePolicy }, asActor.value)
-  toast.notify({ variant: 'success', title: t('Policy saved') })
+  successToast(t('Policy saved'))
 }
 
 const projDraft = reactive<Record<string, string>>(Object.fromEntries(projects.map(p => [p.id, p.escalationThresholdPct !== undefined ? String(p.escalationThresholdPct) : ''])))
 function saveProject(id: string) {
   const raw = projDraft[id]?.trim() ?? ''
   const v = raw === '' ? undefined : Number(raw)
-  if (v !== undefined && (Number.isNaN(v) || v < 5 || v > 50)) { toast.notify({ variant: 'error', title: t('Enter a threshold between 5% and 50%, or leave it empty for the company default.') }); return }
   const p = projects.find(x => x.id === id)!
   if (p.escalationThresholdPct === v) return
+  if (!isFinance.value) { projectAction.fail(financeOnly.value); projDraft[id] = p.escalationThresholdPct !== undefined ? String(p.escalationThresholdPct) : ''; return }
+  if (v !== undefined && (Number.isNaN(v) || v < 5 || v > 50)) { projectAction.fail(`${p.code}: ${t('Enter a threshold between 5% and 50%, or leave it empty for the company default.')}`); return }
+  projectAction.clear()
   setProjectThreshold(id, v, asActor.value)
-  toast.notify({ variant: 'success', title: `${p.code}: ${v === undefined ? t('uses the company threshold') : pct(v)}` })
+  successToast(`${p.code}: ${v === undefined ? t('uses the company threshold') : pct(v)}`)
 }
 
 const resetOpen = ref(false)
@@ -61,21 +87,22 @@ function resetDemo() {
 
 <template>
   <div class="pm-page">
-    <PmTitleBar :title="t('Project settings')" :subtitle="t('Company-level rules for every project. Only Finance / Controller can change them.')" />
+    <PmTitleBar :title="t('Project settings')" />
     <div class="pm-stage">
-      <div class="pm-stack" style="gap: 20px; max-width: 960px">
-        <div v-if="!isFinance" class="pm-banner pm-banner--neutral"><div class="pm-banner-body">{{ t('Read-only — switch “View as” to Finance / Controller to change policy.') }}</div></div>
+      <div class="pm-stack pm-gap-5 pm-narrow">
+        <MpBanner v-if="!isFinance" id="ps-readonly" variant="info">
+          <MpBannerIcon /><MpBannerDescription>{{ t('Read-only — switch “View as” to Finance / Controller to change policy.') }}</MpBannerDescription>
+        </MpBanner>
 
-        <div class="pm-banner pm-banner--info">
-          <div class="pm-banner-body">
-            <div class="pm-banner-title">{{ t('Pegging is mandatory') }}</div>
-            {{ t('There’s no Enforced/Optional setting. If any line on a document names a project, every line must; a document with no project on any line is an ordinary expense.') }}
-          </div>
-        </div>
+        <MpBanner id="ps-pegging" variant="info">
+          <MpBannerIcon />
+          <MpBannerTitle>{{ t('Pegging is mandatory') }}</MpBannerTitle>
+          <MpBannerDescription>{{ t('There’s no Enforced/Optional setting. If any line on a document names a project, every line must; a document with no project on any line is an ordinary expense.') }}</MpBannerDescription>
+        </MpBanner>
 
-        <section class="pm-card">
+        <section class="pm-card pm-stack">
           <h2 class="pm-h3">{{ t('Budget check policy') }}</h2>
-          <p class="pm-desc" style="margin-bottom: 12px">{{ t('Phase 1 ships warn + override with a mandatory reason for every document type. “Block” is stored now so hard block can be switched on later without migration — until then it behaves as warn.') }}</p>
+          <p class="pm-caption pm-m-0">{{ t('Phase 1 ships warn + override with a mandatory reason for every document type. “Block” is stored now so hard block can be switched on later without migration — until then it behaves as warn.') }}</p>
           <div class="pm-table-wrap">
             <table class="pm-table">
               <thead><tr><th>{{ t('Document type') }}</th><th>{{ t('Policy') }}</th><th>{{ t('Behaves as (phase 1)') }}</th></tr></thead>
@@ -83,11 +110,7 @@ function resetDemo() {
                 <tr v-for="d in DOCS" :key="d.key">
                   <td>{{ t(d.label) }}</td>
                   <td>
-                    <select v-model="draft.docPolicies[d.key]" class="pm-select pm-input--sm" style="width: 220px" :disabled="!isFinance">
-                      <option value="block">{{ t('Block (stored for later)') }}</option>
-                      <option value="warn">{{ t('Warn + override') }}</option>
-                      <option value="off">{{ t('Off') }}</option>
-                    </select>
+                    <ErpFilterSelect :id="`ps-policy-${d.key}`" :model-value="draft.docPolicies[d.key]" :placeholder="t('Policy')" :options="policyOptions" :is-clearable="false" width="220px" @update:model-value="(v: string) => (draft.docPolicies[d.key] = v as PolicyMode)" />
                   </td>
                   <td>{{ draft.docPolicies[d.key] === 'off' ? t('No check') : t('Warn + override with reason') }}</td>
                 </tr>
@@ -95,36 +118,37 @@ function resetDemo() {
             </table>
           </div>
 
-          <div class="pm-grid-2" style="margin-top: 16px">
-            <div class="pm-field">
-              <label class="pm-label" for="ps-th">{{ t('Escalation threshold (company)') }}</label>
-              <div class="pm-input-group" style="max-width: 160px"><input id="ps-th" v-model="draft.threshold" class="pm-input pm-input--num" inputmode="decimal" :disabled="!isFinance" :aria-invalid="!!thresholdError" /><span class="pm-addon">%</span></div>
-              <span v-if="thresholdError" class="pm-error">{{ thresholdError }}</span>
-              <span v-else class="pm-help">{{ t('At or under it the PM overrides with a reason; above it Finance must sign off. 5–50%.') }}</span>
-            </div>
-            <div class="pm-field">
-              <span class="pm-label">{{ t('Issuing stock reserved to another project') }}</span>
-              <div class="pm-seg">
-                <button type="button" :disabled="!isFinance" :class="{ 'pm-seg--active': draft.reservationIssuePolicy === 'warn' }" @click="draft.reservationIssuePolicy = 'warn'">{{ t('Warn') }}</button>
-                <button type="button" :disabled="!isFinance" :class="{ 'pm-seg--active': draft.reservationIssuePolicy === 'block' }" @click="draft.reservationIssuePolicy = 'block'">{{ t('Block') }}</button>
-              </div>
-              <span class="pm-help">{{ t('Open question 10 — whether enforcement at material issue is mandatory. Prototype switch.') }}</span>
-            </div>
-            <div class="pm-field">
-              <span class="pm-label">{{ t('Unit-measured Output × service work package') }}</span>
-              <div class="pm-seg">
-                <button type="button" :disabled="!isFinance" :class="{ 'pm-seg--active': draft.qtyPocOption === 'A' }" @click="draft.qtyPocOption = 'A'">{{ t('A — all planned units count') }}</button>
-                <button type="button" :disabled="!isFinance" :class="{ 'pm-seg--active': draft.qtyPocOption === 'B' }" @click="draft.qtyPocOption = 'B'">{{ t('B — production only') }}</button>
-              </div>
-              <span class="pm-help">{{ t('Open question 6. Under B, service cost still flows to WIP. Default A.') }}</span>
-            </div>
+          <div class="pm-grid-2">
+            <MpFormControl id="ps-th-fc" :is-invalid="!!thresholdError">
+              <MpFormLabel>{{ t('Escalation threshold (company)') }}</MpFormLabel>
+              <MpInputGroup id="ps-th-group" class="pm-maxw-short">
+                <MpInput id="ps-th" v-model="draft.threshold" inputmode="decimal" />
+                <MpInputRightAddon>%</MpInputRightAddon>
+              </MpInputGroup>
+              <MpFormErrorMessage>{{ thresholdError }}</MpFormErrorMessage>
+              <MpFormHelpText v-if="!thresholdError">{{ t('At or under it the PM overrides with a reason; above it Finance must sign off. 5–50%.') }}</MpFormHelpText>
+            </MpFormControl>
+            <MpFormControl id="ps-issue-fc">
+              <MpFormLabel>{{ t('Issuing stock reserved to another project') }}</MpFormLabel>
+              <MpSegmentedControl id="ps-issue" name="ps-issue" v-model="draft.reservationIssuePolicy" :data="issueOptions" />
+              <MpFormHelpText>{{ t('Open question 10 — whether enforcement at material issue is mandatory. Prototype switch.') }}</MpFormHelpText>
+            </MpFormControl>
+            <MpFormControl id="ps-qty-fc">
+              <MpFormLabel>{{ t('Unit-measured Output × service work package') }}</MpFormLabel>
+              <MpSegmentedControl id="ps-qty" name="ps-qty" v-model="draft.qtyPocOption" :data="qtyOptions" />
+              <MpFormHelpText>{{ t('Open question 6. Under B, service cost still flows to WIP. Default A.') }}</MpFormHelpText>
+            </MpFormControl>
           </div>
-          <div class="pm-form-footer"><button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="!isFinance" @click="saveCompany">{{ t('Save policy') }}</button></div>
+          <PmActionError id="ps-company-error" :error="companyAction.error.value" />
+          <div class="pm-footer">
+            <MpButton id="ps-save" variant="primary" is-rounded @click="saveCompany">{{ t('Save policy') }}</MpButton>
+          </div>
         </section>
 
-        <section class="pm-card">
+        <section class="pm-card pm-stack">
           <h2 class="pm-h3">{{ t('Escalation threshold per project') }}</h2>
-          <p class="pm-desc" style="margin-bottom: 12px">{{ t('Overrides the company threshold for one project. The policy itself can’t be overridden per project.') }}</p>
+          <p class="pm-caption pm-m-0">{{ t('Overrides the company threshold for one project. The policy itself can’t be overridden per project. Leave empty to use the company default.') }}</p>
+          <PmActionError id="ps-project-error" :error="projectAction.error.value" />
           <div class="pm-table-wrap">
             <table class="pm-table">
               <thead><tr><th>{{ t('Project') }}</th><th>{{ t('Threshold') }}</th><th>{{ t('Effective') }}</th></tr></thead>
@@ -132,10 +156,10 @@ function resetDemo() {
                 <tr v-for="p in projects.filter(x => x.status !== 'closed')" :key="p.id">
                   <td>{{ p.code }} · {{ p.name }}</td>
                   <td>
-                    <div class="pm-input-group" style="width: 150px">
-                      <input v-model="projDraft[p.id]" class="pm-input pm-input--sm pm-input--num" inputmode="decimal" :placeholder="t('Default')" :disabled="!isFinance" @blur="saveProject(p.id)" @keydown.enter="saveProject(p.id)" />
-                      <span class="pm-addon">%</span>
-                    </div>
+                    <MpInputGroup :id="`ps-proj-group-${p.id}`" class="pm-w-field">
+                      <MpInput :id="`ps-proj-${p.id}`" v-model="projDraft[p.id]" inputmode="decimal" :aria-label="`${t('Threshold')} ${p.code}`" @blur="saveProject(p.id)" @keydown.enter="saveProject(p.id)" />
+                      <MpInputRightAddon>%</MpInputRightAddon>
+                    </MpInputGroup>
                   </td>
                   <td>{{ pct(p.escalationThresholdPct ?? projectPolicy.companyThresholdPct) }}<span v-if="p.escalationThresholdPct === undefined" class="pm-cell-sub">{{ t('company default') }}</span></td>
                 </tr>
@@ -144,18 +168,18 @@ function resetDemo() {
           </div>
         </section>
 
-        <section class="pm-card">
+        <section class="pm-card pm-stack">
           <h2 class="pm-h3">{{ t('Prototype data') }}</h2>
-          <p class="pm-desc" style="margin-bottom: 12px">{{ t('Everything you do in the Projects module is saved in this browser. Reset to return to the IPB seed data.') }}</p>
-          <button class="btn-enterprise btn-enterprise--danger" type="button" @click="resetOpen = true">{{ t('Reset Projects demo data') }}</button>
+          <p class="pm-caption pm-m-0">{{ t('Everything you do in the Projects module is saved in this browser. Reset to return to the IPB seed data.') }}</p>
+          <div><MpButton id="ps-reset" variant="secondary" is-rounded @click="resetOpen = true">{{ t('Reset Projects demo data') }}</MpButton></div>
         </section>
       </div>
     </div>
-    <PmOverlay :open="resetOpen" variant="modal" :title="t('Reset demo data?')" @close="resetOpen = false">
-      <p class="pm-desc" style="margin: 0">{{ t('All projects, documents, approvals and audit entries return to the seed. This can’t be undone.') }}</p>
+    <PmOverlay id="ps-reset-modal" :open="resetOpen" variant="modal" :title="t('Reset demo data?')" @close="resetOpen = false">
+      <p class="pm-body pm-m-0">{{ t('All projects, documents, approvals and audit entries return to the seed. This can’t be undone.') }}</p>
       <template #footer>
-        <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="resetOpen = false">{{ t('Cancel') }}</button>
-        <button class="btn-enterprise btn-enterprise--danger" type="button" @click="resetDemo">{{ t('Reset') }}</button>
+        <MpButton variant="ghost" is-rounded @click="resetOpen = false">{{ t('Cancel') }}</MpButton>
+        <MpButton variant="danger" is-rounded @click="resetDemo">{{ t('Reset') }}</MpButton>
       </template>
     </PmOverlay>
   </div>

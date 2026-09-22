@@ -12,7 +12,14 @@
  * WIP = recognised − billed is the reconciling balance (underbilled asset /
  * overbilled liability) — so the DP-before-progress case is representable.
  */
+import {
+  MpButton, MpInput, MpTag, MpTextlink, MpFormControl, MpFormLabel, MpFormErrorMessage,
+  MpBanner, MpBannerIcon, MpBannerDescription,
+} from '@mekari/pixel3'
 import PmOverlay from '../PmOverlay.vue'
+import PmActionError from '../PmActionError.vue'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import type { Project } from '~/data/projects'
 import { projectPhases, projectWorkPackages, weightTotal } from '~/data/projects'
 import { projectBudgetTotal } from '~/data/projectBudgets'
@@ -25,12 +32,17 @@ import { projectPolicy } from '~/data/projectPolicy'
 import { verifyPhase, runRecognition, issueTermInvoice, setTmDecision, invoiceTm, markInvoicePaid } from '~/data/projectActions'
 import { rp, pct } from '~/utils/projectFormat'
 import { formatDate } from '~/utils/date'
-import { notifyResult } from '~/utils/projectToast'
+import { badgeProps } from '~/utils/projectStatus'
 
 const props = defineProps<{ project: Project }>()
 const { t } = useLocale()
 const router = useRouter()
 const { asActor } = useProjectRole()
+const recAction = useProjectAction()
+const tmAction = useProjectAction()
+const billAction = useProjectAction()
+const verifyAction = useProjectAction()
+const termAction = useProjectAction()
 
 const active = computed(() => props.project.status === 'active')
 const isMilestone = computed(() => props.project.method === 'output' && props.project.measure === 'milestone')
@@ -54,11 +66,15 @@ const verifyBlock = computed(() => {
   if (props.project.reweightRequired) return t('The contract value changed. Reconfirm the unverified weights on the Structure tab first.')
   return ''
 })
-function openVerify(phaseId: string) { Object.assign(verify, { open: true, phaseId, bastNo: '', touched: false }) }
+function openVerify(phaseId: string) {
+  if (verifyBlock.value) { recAction.fail(verifyBlock.value); return }
+  recAction.clear(); verifyAction.clear()
+  Object.assign(verify, { open: true, phaseId, bastNo: '', touched: false })
+}
 function doVerify() {
   verify.touched = true
   if (!verify.bastNo.trim()) return
-  if (notifyResult(verifyPhase(verify.phaseId, verify.bastNo, asActor.value))) verify.open = false
+  if (verifyAction.run(verifyPhase(verify.phaseId, verify.bastNo, asActor.value))) verify.open = false
 }
 
 // ── Term invoice ──
@@ -73,9 +89,14 @@ function triggerText(term: BillingTerm): string {
   if (term.trigger === 'progress') return `${t('Cumulative progress')} ≥ ${pct(term.triggerPct)}`
   return t('At handover (all work packages complete)')
 }
+function openIssue(term: BillingTerm) {
+  if (props.project.status === 'draft') { billAction.fail(t('Approve the project before issuing term invoices.')); return }
+  billAction.clear(); termAction.clear()
+  termConfirm.term = term; termConfirm.open = true
+}
 function doIssue() {
   if (!termConfirm.term) return
-  if (notifyResult(issueTermInvoice(termConfirm.term.id, asActor.value))) termConfirm.open = false
+  if (termAction.run(issueTermInvoice(termConfirm.term.id, asActor.value))) termConfirm.open = false
 }
 
 // ── T&M decisions ──
@@ -95,8 +116,29 @@ function applyTm(id: string) {
   if (!s.decision) return
   setTmDecision(id, s.decision, Number(s.amount.replace(/\D/g, '')) || 0, asActor.value)
 }
+function setDecision(id: string, v: string) {
+  if (!active.value) { tmAction.fail(t('Only an active project can recognise revenue.')); return }
+  tmState(id).decision = v as '' | 'bill' | 'write_down' | 'write_up'
+  applyTm(id)
+}
+const decisionOptions = computed(() => [
+  { value: 'bill', label: t('Bill') },
+  { value: 'write_down', label: t('Write-down') },
+  { value: 'write_up', label: t('Write-up') },
+])
 const tmPending = computed(() => tmRows.value.filter(l => l.tm?.decision === 'pending').length)
 const tmReady = computed(() => tmRows.value.filter(l => l.tm && l.tm.decision !== 'pending' && !l.tm.invoiceNo))
+function doInvoiceTm() {
+  if (!active.value) { tmAction.fail(t('Only an active project can recognise revenue.')); return }
+  if (!tmReady.value.length) { tmAction.fail(t('Decide at least one entry before invoicing.')); return }
+  tmAction.run(invoiceTm(props.project.id, asActor.value))
+}
+function doRun() {
+  if (!active.value) { recAction.fail(t('Only an active project can recognise revenue.')); return }
+  if (!due.value) { recAction.fail(t('Nothing to recognise — recognised revenue already matches % complete.')); return }
+  recAction.run(runRecognition(props.project.id, asActor.value))
+}
+function doPaid(id: string) { markInvoicePaid(id); billAction.clear() }
 
 const inputBudget = computed(() => projectBudgetTotal(props.project.id))
 const unit = computed(() => unitProgress(props.project.id))
@@ -104,7 +146,7 @@ const unitWps = computed(() => projectWorkPackages(props.project.id).filter(w =>
 </script>
 
 <template>
-  <div class="pm-stack" style="gap: 20px">
+  <div class="pm-stack pm-gap-5">
     <!-- Two clocks -->
     <div class="pm-grid-3">
       <div class="pm-card">
@@ -117,38 +159,46 @@ const unitWps = computed(() => projectWorkPackages(props.project.id).filter(w =>
         <div class="pm-stat-value">{{ rp(billed) }}</div>
         <div class="pm-stat-note">{{ t('Billing clock — contract terms') }}</div>
       </div>
-      <div class="pm-card" :style="{ borderColor: wip < 0 ? '#f6c3c7' : wip > 0 ? '#bfe7d1' : undefined }">
+      <div class="pm-card" :class="wip < 0 ? 'pm-card--negative' : wip > 0 ? 'pm-card--positive' : ''">
         <div class="pm-stat-label">{{ t('WIP position') }}</div>
         <div class="pm-stat-value" :class="wip > 0 ? 'pm-pos' : wip < 0 ? 'pm-neg' : ''">{{ rp(Math.abs(wip)) }}</div>
         <div class="pm-stat-note">{{ wip > 0 ? t('Underbilled — contract asset (recognised > billed)') : wip < 0 ? t('Overbilled — contract liability (billed > recognised)') : t('Recognised equals billed') }}</div>
       </div>
     </div>
-    <div class="pm-banner pm-banner--neutral">
-      <div class="pm-banner-body">{{ t('Recognition and billing are separate postings. Verifying progress recognises revenue and issues no invoice; issuing a term invoice bills the customer and recognises nothing. WIP is the reconciling balance.') }}</div>
-    </div>
+    <MpBanner id="pm-rec-separation" variant="info">
+      <MpBannerIcon />
+      <MpBannerDescription>{{ t('Recognition and billing are separate postings. Verifying progress recognises revenue and issues no invoice; issuing a term invoice bills the customer and recognises nothing. WIP is the reconciling balance.') }}</MpBannerDescription>
+    </MpBanner>
 
     <!-- ── Recognition ── -->
-    <section class="pm-section" style="padding-top: 0">
+    <section class="pm-section">
       <div class="pm-section-head">
         <div>
           <h2 class="pm-h2">{{ t('Recognition') }}</h2>
-          <p class="pm-desc">
+          <p class="pm-caption pm-m-0">
             <template v-if="isMilestone">{{ t('Output · milestone — % complete is the sum of achieved phases’ progress weights. A phase is achieved by its BAST, not by judgement.') }}</template>
             <template v-else-if="isUnit">{{ t('Output · unit — % complete = confirmed ÷ planned units across work packages.') }}</template>
             <template v-else-if="isInput">{{ t('Input (cost-to-cost) — % complete = actual cost ÷ budget, applied to contract value. Recalculates as cost posts.') }}</template>
             <template v-else>{{ t('Time & materials — each unbilled entry carries a bill / write-down / write-up decision before invoicing.') }}</template>
           </p>
         </div>
-        <span class="pm-pill pm-pill--outline">🔒 {{ t('Method locked at approval') }}</span>
+        <MpTag id="pm-method-locked">{{ t('Method locked at approval') }}</MpTag>
       </div>
 
-      <div v-if="project.status === 'draft'" class="pm-banner pm-banner--info" style="margin-bottom: 12px"><div class="pm-banner-body">{{ t('Approve the project before recognising revenue.') }}</div></div>
+      <MpBanner v-if="project.status === 'draft'" id="pm-rec-draft" variant="info" class="pm-mb-3">
+        <MpBannerIcon /><MpBannerDescription>{{ t('Approve the project before recognising revenue.') }}</MpBannerDescription>
+      </MpBanner>
+      <PmActionError id="pm-rec-error" :error="recAction.error.value" class="pm-mb-3" />
 
       <!-- Milestone -->
       <template v-if="isMilestone">
-        <div v-if="total !== 100" class="pm-banner pm-banner--error" style="margin-bottom: 12px">
-          <div class="pm-banner-body">{{ t('Progress weights total') }} {{ pct(total) }} — {{ t('verification is blocked until they total 100%.') }} <button class="pm-link" type="button" @click="router.replace({ query: { tab: 'structure' } })">{{ t('Fix on Structure tab') }}</button></div>
-        </div>
+        <MpBanner v-if="total !== 100" id="pm-rec-weights" variant="danger" class="pm-mb-3">
+          <MpBannerIcon />
+          <MpBannerDescription>
+            {{ t('Progress weights total') }} {{ pct(total) }} — {{ t('verification is blocked until they total 100%.') }}
+            <MpTextlink id="pm-rec-fix-structure" as="a" @click.prevent="router.replace({ query: { tab: 'structure' } })">{{ t('Fix on Structure tab') }}</MpTextlink>
+          </MpBannerDescription>
+        </MpBanner>
         <div class="pm-table-wrap">
           <table class="pm-table">
             <thead><tr><th>{{ t('Phase') }}</th><th class="pm-num">{{ t('Progress weight') }}</th><th class="pm-num">{{ t('Revenue at this weight') }}</th><th>{{ t('BAST') }}</th><th /></tr></thead>
@@ -158,18 +208,17 @@ const unitWps = computed(() => projectWorkPackages(props.project.id).filter(w =>
                 <td class="pm-num">{{ pct(ph.progressWeightPct) }}</td>
                 <td class="pm-num">{{ rp(((ph.progressWeightPct ?? 0) / 100) * project.contractValue) }}</td>
                 <td>
-                  <template v-if="ph.verifiedAt"><span class="pm-pill pm-pill--green">{{ t('Verified') }}</span><span class="pm-cell-sub">{{ ph.bastNo }} · {{ formatDate(ph.verifiedAt) }}</span></template>
+                  <template v-if="ph.verifiedAt"><ErpStatusBadge v-bind="badgeProps('flag', 'verified', t)" /><span class="pm-cell-sub">{{ ph.bastNo }} · {{ formatDate(ph.verifiedAt) }}</span></template>
                   <span v-else class="pm-muted">{{ t('Not yet') }}</span>
                 </td>
-                <td>
-                  <button v-if="!ph.verifiedAt" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" :disabled="!!verifyBlock" :title="verifyBlock" @click="openVerify(ph.id)">{{ t('Verify by BAST') }}</button>
+                <td class="pm-cell-actions">
+                  <MpButton v-if="!ph.verifiedAt" :id="`pm-verify-${ph.id}`" variant="secondary" is-rounded size="sm" @click="openVerify(ph.id)">{{ t('Verify by BAST') }}</MpButton>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
-        <p v-if="verifyBlock && active" class="pm-help" style="margin-top: 6px">{{ verifyBlock }}</p>
-        <p class="pm-help" style="margin-top: 6px">{{ t('With weight on the phase, revenue steps rather than glides — split a large phase to smooth it.') }}</p>
+        <p class="pm-caption pm-mt-2 pm-mb-2">{{ t('With weight on the phase, revenue steps rather than glides — split a large phase to smooth it.') }}</p>
       </template>
 
       <!-- Unit -->
@@ -189,19 +238,26 @@ const unitWps = computed(() => projectWorkPackages(props.project.id).filter(w =>
             <tfoot><tr><td colspan="2">{{ t('Total') }}</td><td class="pm-num">{{ unit.planned }}</td><td class="pm-num">{{ unit.confirmed }}</td><td class="pm-num">{{ pct(unit.pct) }}</td></tr></tfoot>
           </table>
         </div>
-        <p class="pm-help" style="margin-top: 6px">{{ t('Open question 6 — service work packages in a unit-measured project:') }} {{ projectPolicy.qtyPocOption === 'A' ? t('option A (all planned units count)') : t('option B (only production work packages count)') }}. <button class="pm-link pm-small" type="button" @click="router.push('/project-settings')">{{ t('Change in Project settings') }}</button></p>
+        <p class="pm-caption pm-mt-2">
+          {{ t('Open question 6 — service work packages in a unit-measured project:') }} {{ projectPolicy.qtyPocOption === 'A' ? t('option A (all planned units count)') : t('option B (only production work packages count)') }}.
+          <MpTextlink id="pm-rec-settings" as="a" @click.prevent="router.push('/project-settings')">{{ t('Change in Project settings') }}</MpTextlink>
+        </p>
       </template>
 
       <!-- Input -->
       <template v-else-if="isInput">
-        <div v-if="inputBudget === undefined" class="pm-banner pm-banner--warn">
-          <div class="pm-banner-body">{{ t('Budget not set — % complete can’t be computed for cost-to-cost until a baseline exists.') }} <button class="pm-link" type="button" @click="router.push(`/budget-setup/${project.id}`)">{{ t('Set up budget') }}</button></div>
-        </div>
+        <MpBanner v-if="inputBudget === undefined" id="pm-rec-no-budget" variant="warning">
+          <MpBannerIcon />
+          <MpBannerDescription>
+            {{ t('Budget not set — % complete can’t be computed for cost-to-cost until a baseline exists.') }}
+            <MpTextlink id="pm-rec-setup-budget" as="a" @click.prevent="router.push(`/budget-setup/${project.id}`)">{{ t('Set up budget') }}</MpTextlink>
+          </MpBannerDescription>
+        </MpBanner>
         <div v-else class="pm-card pm-card--flat">
           <div class="pm-grid-3">
-            <div><div class="pm-stat-label">{{ t('Actual cost') }}</div><div class="pm-stat-value" style="font-size: 16px">{{ rp(projectActual(project.id)) }}</div></div>
-            <div><div class="pm-stat-label">{{ t('Budget') }}</div><div class="pm-stat-value" style="font-size: 16px">{{ rp(inputBudget) }}</div></div>
-            <div><div class="pm-stat-label">{{ t('% complete') }}</div><div class="pm-stat-value" style="font-size: 16px">{{ pct(pc) }}</div></div>
+            <div><div class="pm-stat-label">{{ t('Actual cost') }}</div><div class="pm-stat-value pm-stat-value--md">{{ rp(projectActual(project.id)) }}</div></div>
+            <div><div class="pm-stat-label">{{ t('Budget') }}</div><div class="pm-stat-value pm-stat-value--md">{{ rp(inputBudget) }}</div></div>
+            <div><div class="pm-stat-label">{{ t('% complete') }}</div><div class="pm-stat-value pm-stat-value--md">{{ pct(pc) }}</div></div>
           </div>
         </div>
       </template>
@@ -220,56 +276,52 @@ const unitWps = computed(() => projectWorkPackages(props.project.id).filter(w =>
                 <td class="pm-num">{{ rp(l.tm!.hours * l.tm!.billRate) }}<span class="pm-cell-sub">{{ rp(l.tm!.billRate) }}/{{ t('hr') }}</span></td>
                 <td>
                   <template v-if="l.tm!.invoiceNo">{{ l.tm!.decision === 'bill' ? t('Bill') : l.tm!.decision === 'write_down' ? t('Write-down') : t('Write-up') }}</template>
-                  <select v-else v-model="tmState(l.id).decision" class="pm-select pm-input--sm" style="width: 140px" :disabled="!active" @change="applyTm(l.id)">
-                    <option value="" disabled>{{ t('Decide…') }}</option>
-                    <option value="bill">{{ t('Bill') }}</option>
-                    <option value="write_down">{{ t('Write-down') }}</option>
-                    <option value="write_up">{{ t('Write-up') }}</option>
-                  </select>
+                  <ErpFilterSelect v-else :id="`tm-decision-${l.id}`" :model-value="tmState(l.id).decision" :placeholder="t('Decide…')" :options="decisionOptions" :is-clearable="false" width="140px" @update:model-value="(v: string) => setDecision(l.id, v)" />
                   <span v-if="!l.tm!.invoiceNo && l.tm!.decision === 'pending'" class="pm-cell-sub pm-warn">{{ t('Awaiting decision') }}</span>
                 </td>
                 <td class="pm-num">
-                  <input v-if="!l.tm!.invoiceNo && (tmState(l.id).decision === 'write_down' || tmState(l.id).decision === 'write_up')" v-model="tmState(l.id).amount" class="pm-input pm-input--sm pm-input--num" style="width: 130px" inputmode="numeric" @blur="applyTm(l.id)" />
+                  <MpInput v-if="!l.tm!.invoiceNo && (tmState(l.id).decision === 'write_down' || tmState(l.id).decision === 'write_up')" :id="`tm-amount-${l.id}`" v-model="tmState(l.id).amount" class="pm-w-cell" inputmode="numeric" :aria-label="t('Bill amount')" @blur="applyTm(l.id)" />
                   <template v-else>{{ rp(l.tm!.billAmount ?? l.tm!.hours * l.tm!.billRate) }}</template>
                 </td>
                 <td>{{ l.tm!.invoiceNo ?? '—' }}</td>
               </tr>
-              <tr v-if="!tmRows.length"><td colspan="8"><div class="pm-empty">{{ t('No time entries yet.') }}</div></td></tr>
+              <tr v-if="!tmRows.length"><td colspan="8"><div class="pm-empty-inline">{{ t('No time entries yet.') }}</div></td></tr>
             </tbody>
           </table>
         </div>
-        <div class="pm-row" style="margin-top: 10px">
+        <PmActionError id="pm-tm-error" :error="tmAction.error.value" class="pm-mt-3" />
+        <div class="pm-row pm-mt-3">
           <span class="pm-muted pm-small">{{ tmPending }} {{ t('awaiting a decision') }} · {{ tmReady.length }} {{ t('ready to invoice') }}</span>
           <span class="pm-spacer" />
-          <button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="!active || !tmReady.length" @click="notifyResult(invoiceTm(project.id, asActor))">{{ t('Invoice decided entries') }}</button>
+          <MpButton id="pm-tm-invoice" variant="primary" is-rounded @click="doInvoiceTm">{{ t('Invoice decided entries') }}</MpButton>
         </div>
       </template>
 
       <!-- Run (Input / Unit) -->
-      <div v-if="(isUnit || isInput) && pc !== undefined" class="pm-card" style="margin-top: 12px">
+      <div v-if="(isUnit || isInput) && pc !== undefined" class="pm-card pm-mt-3">
         <div class="pm-row">
           <div>
             <div class="pm-strong">{{ t('Recognition due') }}: <span :class="due ? 'pm-info' : ''">{{ rp(due) }}</span></div>
-            <div class="pm-small pm-muted">{{ pct(pc) }} × {{ rp(project.contractValue) }} − {{ rp(recognised) }} {{ t('already recognised') }}</div>
+            <div class="pm-caption">{{ pct(pc) }} × {{ rp(project.contractValue) }} − {{ rp(recognised) }} {{ t('already recognised') }}</div>
           </div>
           <span class="pm-spacer" />
-          <button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="!active || !due" @click="notifyResult(runRecognition(project.id, asActor))">{{ t('Run recognition') }}</button>
+          <MpButton id="pm-rec-run" variant="primary" is-rounded @click="doRun">{{ t('Run recognition') }}</MpButton>
         </div>
       </div>
 
-      <h3 class="pm-h3" style="margin: 20px 0 8px">{{ t('Recognition postings') }}</h3>
+      <h3 class="pm-h3 pm-mt-5 pm-mb-2">{{ t('Recognition postings') }}</h3>
       <div class="pm-table-wrap">
         <table class="pm-table">
           <thead><tr><th>{{ t('Number') }}</th><th>{{ t('Date') }}</th><th>{{ t('Description') }}</th><th class="pm-num">{{ t('Cumulative %') }}</th><th class="pm-num">{{ t('Revenue') }}</th></tr></thead>
           <tbody>
             <tr v-for="r in projectRecognition(project.id)" :key="r.id">
-              <td>{{ r.no }}<span v-if="r.kind === 'catch_up'" class="pm-pill pm-pill--yellow" style="margin-left: 6px">{{ t('Catch-up') }}</span></td>
+              <td><span class="pm-row pm-row--nowrap pm-gap-2">{{ r.no }}<ErpStatusBadge v-if="r.kind === 'catch_up'" v-bind="badgeProps('flag', 'catch-up', t)" /></span></td>
               <td>{{ formatDate(r.date) }}</td>
               <td class="pm-wrap">{{ r.description }}<span class="pm-cell-sub">{{ r.by }}</span></td>
               <td class="pm-num">{{ r.cumulativePct !== undefined ? pct(r.cumulativePct) : '—' }}</td>
               <td class="pm-num">{{ rp(r.amount) }}</td>
             </tr>
-            <tr v-if="!projectRecognition(project.id).length"><td colspan="5"><div class="pm-empty">{{ t('Nothing recognised yet.') }}</div></td></tr>
+            <tr v-if="!projectRecognition(project.id).length"><td colspan="5"><div class="pm-empty-inline">{{ t('Nothing recognised yet.') }}</div></td></tr>
           </tbody>
           <tfoot v-if="projectRecognition(project.id).length"><tr><td colspan="4">{{ t('Recognised to date') }}</td><td class="pm-num">{{ rp(recognised) }}</td></tr></tfoot>
         </table>
@@ -281,9 +333,10 @@ const unitWps = computed(() => projectWorkPackages(props.project.id).filter(w =>
       <div class="pm-section-head">
         <div>
           <h2 class="pm-h2">{{ t('Billing') }}</h2>
-          <p class="pm-desc">{{ t('Terms come from the contract') }}<template v-if="project.salesOrderNo"> ({{ project.salesOrderNo }})</template>{{ t(', never from the structure. A trigger may reference cumulative progress; the amount always comes from the contract.') }}</p>
+          <p class="pm-caption pm-m-0">{{ t('Terms come from the contract') }}<template v-if="project.salesOrderNo"> ({{ project.salesOrderNo }})</template>{{ t(', never from the structure. A trigger may reference cumulative progress; the amount always comes from the contract.') }}</p>
         </div>
       </div>
+      <PmActionError id="pm-bill-error" :error="billAction.error.value" class="pm-mb-3" />
       <div v-if="!isTm" class="pm-table-wrap">
         <table class="pm-table">
           <thead><tr><th>{{ t('Term') }}</th><th class="pm-num">{{ t('Share') }}</th><th>{{ t('Trigger') }}</th><th class="pm-num">{{ t('Amount') }}</th><th>{{ t('Invoice') }}</th><th /></tr></thead>
@@ -297,16 +350,16 @@ const unitWps = computed(() => projectWorkPackages(props.project.id).filter(w =>
                 <template v-if="termInvoice(term.id)">{{ termInvoice(term.id)!.no }}<span class="pm-cell-sub">{{ formatDate(termInvoice(term.id)!.date) }}</span></template>
                 <span v-else class="pm-muted">—</span>
               </td>
-              <td>
-                <button v-if="!termInvoice(term.id)" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" :disabled="project.status === 'draft'" @click="termConfirm.term = term; termConfirm.open = true">{{ t('Issue term invoice') }}</button>
+              <td class="pm-cell-actions">
+                <MpButton v-if="!termInvoice(term.id)" :id="`pm-issue-${term.id}`" variant="secondary" is-rounded size="sm" @click="openIssue(term)">{{ t('Issue term invoice') }}</MpButton>
               </td>
             </tr>
-            <tr v-if="!projectTerms(project.id).length"><td colspan="6"><div class="pm-empty">{{ t('No billing terms on the linked contract.') }}</div></td></tr>
+            <tr v-if="!projectTerms(project.id).length"><td colspan="6"><div class="pm-empty-inline">{{ t('No billing terms on the linked contract.') }}</div></td></tr>
           </tbody>
         </table>
       </div>
 
-      <h3 class="pm-h3" style="margin: 20px 0 8px">{{ t('Invoices') }}</h3>
+      <h3 class="pm-h3 pm-mt-5 pm-mb-2">{{ t('Invoices') }}</h3>
       <div class="pm-table-wrap">
         <table class="pm-table">
           <thead><tr><th>{{ t('Number') }}</th><th>{{ t('Date') }}</th><th>{{ t('Description') }}</th><th class="pm-num">{{ t('Amount') }}</th><th>{{ t('Status') }}</th><th /></tr></thead>
@@ -316,10 +369,10 @@ const unitWps = computed(() => projectWorkPackages(props.project.id).filter(w =>
               <td>{{ formatDate(inv.date) }}</td>
               <td>{{ inv.description }}</td>
               <td class="pm-num">{{ rp(inv.amount) }}</td>
-              <td><span class="pm-pill" :class="inv.status === 'paid' ? 'pm-pill--green' : 'pm-pill--yellow'">{{ inv.status === 'paid' ? t('Paid') : t('Unpaid') }}</span></td>
-              <td><button v-if="inv.status === 'unpaid'" class="pm-link" type="button" @click="markInvoicePaid(inv.id)">{{ t('Record payment') }}</button></td>
+              <td><ErpStatusBadge v-bind="badgeProps('invoice', inv.status, t)" /></td>
+              <td><MpTextlink v-if="inv.status === 'unpaid'" :id="`pm-pay-${inv.id}`" as="a" @click.prevent="doPaid(inv.id)">{{ t('Record payment') }}</MpTextlink></td>
             </tr>
-            <tr v-if="!projectInvoiceList(project.id).length"><td colspan="6"><div class="pm-empty">{{ t('No invoices yet.') }}</div></td></tr>
+            <tr v-if="!projectInvoiceList(project.id).length"><td colspan="6"><div class="pm-empty-inline">{{ t('No invoices yet.') }}</div></td></tr>
           </tbody>
           <tfoot v-if="projectInvoiceList(project.id).length"><tr><td colspan="3">{{ t('Billed to date') }}</td><td class="pm-num">{{ rp(billed) }}</td><td colspan="2" /></tr></tfoot>
         </table>
@@ -327,39 +380,40 @@ const unitWps = computed(() => projectWorkPackages(props.project.id).filter(w =>
     </section>
 
     <!-- Verify modal -->
-    <PmOverlay :open="verify.open" variant="modal" :title="t('Verify progress by BAST')" :subtitle="verifyPhaseObj ? `${verifyPhaseObj.name} · ${pct(verifyPhaseObj.progressWeightPct)}` : ''" @close="verify.open = false">
-      <div class="pm-field">
-        <label class="pm-label pm-label-req" for="bast-no">{{ t('BAST number') }}</label>
-        <input id="bast-no" v-model="verify.bastNo" class="pm-input" placeholder="BAST/…" :aria-invalid="verify.touched && !verify.bastNo.trim()" />
-        <span v-if="verify.touched && !verify.bastNo.trim()" class="pm-error">{{ t('Enter the BAST number — a phase is achieved by third-party evidence.') }}</span>
+    <PmOverlay id="pm-verify-modal" :open="verify.open" variant="modal" :title="t('Verify progress by BAST')" :subtitle="verifyPhaseObj ? `${verifyPhaseObj.name} · ${pct(verifyPhaseObj.progressWeightPct)}` : ''" @close="verify.open = false">
+      <MpFormControl id="bast-no-fc" is-required :is-invalid="verify.touched && !verify.bastNo.trim()">
+        <MpFormLabel>{{ t('BAST number') }}</MpFormLabel>
+        <MpInput id="bast-no" v-model="verify.bastNo" />
+        <MpFormErrorMessage>{{ t('Enter the BAST number — a phase is achieved by third-party evidence.') }}</MpFormErrorMessage>
+      </MpFormControl>
+      <div v-if="verifyPhaseObj" class="pm-card pm-card--flat pm-grid-2">
+        <div><div class="pm-stat-label">{{ t('Revenue recognised') }}</div><div class="pm-strong">{{ rp(((verifyPhaseObj.progressWeightPct ?? 0) / 100) * project.contractValue) }}</div></div>
+        <div><div class="pm-stat-label">{{ t('Invoice issued') }}</div><div class="pm-body">{{ t('None — billing follows the contract terms') }}</div></div>
       </div>
-      <div v-if="verifyPhaseObj" class="pm-card pm-card--flat">
-        <div class="pm-kv" style="grid-template-columns: repeat(2, minmax(0, 1fr))">
-          <div><div class="pm-kv-label">{{ t('Revenue recognised') }}</div><div class="pm-kv-value pm-strong">{{ rp(((verifyPhaseObj.progressWeightPct ?? 0) / 100) * project.contractValue) }}</div></div>
-          <div><div class="pm-kv-label">{{ t('Invoice issued') }}</div><div class="pm-kv-value">{{ t('None — billing follows the contract terms') }}</div></div>
-        </div>
-      </div>
+      <PmActionError id="pm-verify-error" :error="verifyAction.error.value" />
       <template #footer>
-        <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="verify.open = false">{{ t('Cancel') }}</button>
-        <button class="btn-enterprise btn-enterprise--primary" type="button" @click="doVerify">{{ t('Verify and recognise') }}</button>
+        <MpButton variant="ghost" is-rounded @click="verify.open = false">{{ t('Cancel') }}</MpButton>
+        <MpButton variant="primary" is-rounded @click="doVerify">{{ t('Verify and recognise') }}</MpButton>
       </template>
     </PmOverlay>
 
     <!-- Term invoice confirm -->
-    <PmOverlay :open="termConfirm.open" variant="modal" :title="t('Issue term invoice')" :subtitle="termConfirm.term?.label" @close="termConfirm.open = false">
+    <PmOverlay id="pm-term-modal" :open="termConfirm.open" variant="modal" :title="t('Issue term invoice')" :subtitle="termConfirm.term?.label" @close="termConfirm.open = false">
       <template v-if="termConfirm.term">
-        <div class="pm-card pm-card--flat">
-          <div class="pm-kv" style="grid-template-columns: repeat(2, minmax(0, 1fr))">
-            <div><div class="pm-kv-label">{{ t('Amount billed') }}</div><div class="pm-kv-value pm-strong">{{ rp((termConfirm.term.pct / 100) * project.contractValue) }}</div></div>
-            <div><div class="pm-kv-label">{{ t('Revenue recognised') }}</div><div class="pm-kv-value">{{ t('None — recognition follows progress') }}</div></div>
-          </div>
+        <div class="pm-card pm-card--flat pm-grid-2">
+          <div><div class="pm-stat-label">{{ t('Amount billed') }}</div><div class="pm-strong">{{ rp((termConfirm.term.pct / 100) * project.contractValue) }}</div></div>
+          <div><div class="pm-stat-label">{{ t('Revenue recognised') }}</div><div class="pm-body">{{ t('None — recognition follows progress') }}</div></div>
         </div>
-        <div v-if="!triggerMet(termConfirm.term)" class="pm-banner pm-banner--warn"><div class="pm-banner-body">{{ t('This term’s trigger isn’t met yet') }} ({{ triggerText(termConfirm.term) }}). {{ t('You can still bill it if the customer agreed.') }}</div></div>
-        <p class="pm-desc" style="margin: 0">{{ t('WIP after this invoice') }}: <strong :class="wip - (termConfirm.term.pct / 100) * project.contractValue < 0 ? 'pm-neg' : 'pm-pos'">{{ rp(Math.abs(wip - (termConfirm.term.pct / 100) * project.contractValue)) }} {{ wip - (termConfirm.term.pct / 100) * project.contractValue < 0 ? t('overbilled') : t('underbilled') }}</strong></p>
+        <MpBanner v-if="!triggerMet(termConfirm.term)" id="pm-term-trigger" variant="warning">
+          <MpBannerIcon />
+          <MpBannerDescription>{{ t('This term’s trigger isn’t met yet') }} ({{ triggerText(termConfirm.term) }}). {{ t('You can still bill it if the customer agreed.') }}</MpBannerDescription>
+        </MpBanner>
+        <p class="pm-body pm-m-0">{{ t('WIP after this invoice') }}: <strong :class="wip - (termConfirm.term.pct / 100) * project.contractValue < 0 ? 'pm-neg' : 'pm-pos'">{{ rp(Math.abs(wip - (termConfirm.term.pct / 100) * project.contractValue)) }} {{ wip - (termConfirm.term.pct / 100) * project.contractValue < 0 ? t('overbilled') : t('underbilled') }}</strong></p>
+        <PmActionError id="pm-term-error" :error="termAction.error.value" />
       </template>
       <template #footer>
-        <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="termConfirm.open = false">{{ t('Cancel') }}</button>
-        <button class="btn-enterprise btn-enterprise--primary" type="button" @click="doIssue">{{ t('Issue invoice') }}</button>
+        <MpButton variant="ghost" is-rounded @click="termConfirm.open = false">{{ t('Cancel') }}</MpButton>
+        <MpButton variant="primary" is-rounded @click="doIssue">{{ t('Issue invoice') }}</MpButton>
       </template>
     </PmOverlay>
   </div>

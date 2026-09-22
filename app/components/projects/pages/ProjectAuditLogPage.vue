@@ -6,7 +6,9 @@
  * Finance see everything incl. policy changes; Warehouse sees reservation,
  * work-order, engineering-change and BAST entries.
  */
+import { MpIcon, MpTag, MpTextlink, MpBanner, MpBannerIcon, MpBannerDescription } from '@mekari/pixel3'
 import PmTitleBar from '../PmTitleBar.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { auditLog, AUDIT_KIND_LABELS, type AuditKind } from '~/data/projectAudit'
 import { projects, getProject } from '~/data/projects'
 import { formatDateTime } from '~/utils/date'
@@ -35,63 +37,59 @@ const rows = computed(() => visible.value
   })
   .slice().sort((a, b) => b.at.localeCompare(a.at)))
 
-const KIND_COLOR: Record<AuditKind, string> = {
-  budget_revision: '#4b61dc', override: '#e08a00', policy_change: '#7a4100', method_reopen: '#c8323b', approval: '#029861',
-  change_order: '#8a4fd6', eco: '#3a4fc5', reservation: '#0e7c86', recognition: '#029861', billing: '#186f4a',
-  structure: '#626b79', work_order: '#626b79', bast: '#0f6d4d', close: '#3f4a51',
-}
+const projectOptions = computed(() => [
+  { value: '__company', label: t('Company-level (policy)') },
+  ...projects.map(p => ({ value: p.id, label: `${p.code} · ${p.name}` })),
+])
+const kindOptions = computed(() => (Object.keys(AUDIT_KIND_LABELS) as AuditKind[]).map(k => ({ value: k, label: t(AUDIT_KIND_LABELS[k]) })))
+// Attention kinds (overrides, policy, re-open) get the solid dot; routine entries the muted one.
+const ATTENTION: AuditKind[] = ['override', 'policy_change', 'method_reopen', 'budget_revision']
 const selectedProject = computed(() => (projectFilter.value && projectFilter.value !== '__company' ? getProject(projectFilter.value) : undefined))
 </script>
 
 <template>
   <div class="pm-page">
-    <PmTitleBar :title="t('Audit log')" :breadcrumb="selectedProject ? { label: `${selectedProject.code} · ${selectedProject.name}`, to: `/projects/${selectedProject.id}` } : undefined" :subtitle="t('Every budget revision, override, policy change, method re-open, change order, engineering change and reservation release — across projects.')" />
+    <PmTitleBar :title="t('Audit log')" :breadcrumb="selectedProject ? { label: `${selectedProject.code} · ${selectedProject.name}`, to: `/projects/${selectedProject.id}` } : undefined" />
     <div class="pm-stage">
       <div class="pm-filters">
-        <select v-model="projectFilter" class="pm-select" :aria-label="t('Project')">
-          <option value="">{{ t('All projects') }}</option>
-          <option value="__company">{{ t('Company-level (policy)') }}</option>
-          <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.code }} · {{ p.name }}</option>
-        </select>
-        <select v-model="kindFilter" class="pm-select" :aria-label="t('Type')">
-          <option value="">{{ t('All types') }}</option>
-          <option v-for="(label, key) in AUDIT_KIND_LABELS" :key="key" :value="key">{{ t(label) }}</option>
-        </select>
-        <select v-model="actorFilter" class="pm-select" :aria-label="t('Actor')">
-          <option value="">{{ t('Anyone') }}</option>
-          <option v-for="a in actors" :key="a" :value="a">{{ a }}</option>
-        </select>
+        <ErpFilterSelect id="audit-project" v-model="projectFilter" :placeholder="t('All projects')" :options="projectOptions" width="240px" />
+        <ErpFilterSelect id="audit-kind" :model-value="kindFilter" :placeholder="t('All types')" :options="kindOptions" @update:model-value="(v: string) => (kindFilter = v as '' | AuditKind)" />
+        <ErpFilterSelect id="audit-actor" v-model="actorFilter" :placeholder="t('Anyone')" :options="actors" />
         <span class="pm-spacer" />
-        <label class="pm-search">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
-          <input v-model="search" type="text" :placeholder="t('Search summary, reason, document...')" />
-        </label>
+        <div class="filter-search">
+          <MpIcon name="search" size="sm" />
+          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search summary, reason, document...')" />
+        </div>
       </div>
 
-      <div v-if="role === 'warehouse'" class="pm-banner pm-banner--neutral" style="margin-bottom: 12px">
-        <div class="pm-banner-body">{{ t('Viewing as') }} {{ t(current.label) }} — {{ t('showing reservation, work-order, engineering-change and BAST entries.') }}</div>
-      </div>
+      <MpBanner v-if="role === 'warehouse'" id="audit-warehouse" variant="info" class="pm-mb-3">
+        <MpBannerIcon />
+        <MpBannerDescription>{{ t('Viewing as') }} {{ t(current.label) }} — {{ t('showing reservation, work-order, engineering-change and BAST entries.') }}</MpBannerDescription>
+      </MpBanner>
 
-      <div class="pm-card" style="padding: 4px 16px">
+      <div class="pm-card">
         <div class="pm-timeline">
           <div v-for="e in rows" :key="e.id" class="pm-tl-item">
             <div class="pm-tl-date">{{ formatDateTime(e.at) }}</div>
-            <span class="pm-tl-dot" :style="{ background: KIND_COLOR[e.kind] }" />
+            <span class="pm-tl-dot" :class="{ 'pm-tl-dot--muted': !ATTENTION.includes(e.kind) }" />
             <div>
               <div class="pm-tl-summary">{{ e.summary }}</div>
               <div class="pm-tl-meta">
-                <span class="pm-pill pm-pill--gray">{{ t(AUDIT_KIND_LABELS[e.kind]) }}</span>
+                <MpTag :id="`audit-kind-${e.id}`">{{ t(AUDIT_KIND_LABELS[e.kind]) }}</MpTag>
                 <span>{{ e.actor }} · {{ t(e.role) }}</span>
-                <button v-if="e.projectId && !projectFilter" class="pm-link pm-small" type="button" @click="router.push(`/projects/${e.projectId}`)">{{ getProject(e.projectId)?.code }}</button>
+                <MpTextlink v-if="e.projectId && !projectFilter" :id="`audit-project-${e.id}`" as="a" @click.prevent="router.push(`/projects/${e.projectId}`)">{{ getProject(e.projectId)?.code }}</MpTextlink>
                 <span v-if="e.refNo">{{ e.refNo }}</span>
               </div>
               <div v-if="e.reason" class="pm-tl-reason"><span class="pm-muted">{{ t('Reason') }}:</span> {{ e.reason }}</div>
             </div>
           </div>
-          <div v-if="!rows.length" class="pm-empty"><div class="pm-empty-title">{{ t('No entries') }}</div>{{ t('Nothing matches these filters.') }}</div>
+          <div v-if="!rows.length" class="pm-empty-inline">
+            <div class="pm-empty-title">{{ t('No entries') }}</div>
+            <div class="pm-empty-desc">{{ t('Nothing matches these filters.') }}</div>
+          </div>
         </div>
       </div>
-      <p class="pm-help" style="margin-top: 8px">{{ rows.length }} {{ t('entries') }} · {{ t('Entries are append-only.') }}</p>
+      <p class="pm-caption pm-mt-2">{{ rows.length }} {{ t('entries') }} · {{ t('Entries are append-only.') }}</p>
     </div>
   </div>
 </template>

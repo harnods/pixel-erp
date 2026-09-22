@@ -9,20 +9,32 @@
  *    reservations and unused work-order set-aside are released with audit
  *    entries; a long-term project gets an asset.
  */
+import {
+  MpButton, MpIcon, MpInput, MpInputGroup, MpInputLeftAddon, MpInputRightAddon, MpProgress, MpTextlink,
+  MpFormControl, MpFormLabel, MpFormErrorMessage, MpFormHelpText, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
+} from '@mekari/pixel3'
 import PmOverlay from '../PmOverlay.vue'
+import PmActionError from '../PmActionError.vue'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import type { Project } from '~/data/projects'
-import { projectWorkPackages, punchItems, getWorkPackage, wpStatusLabel } from '~/data/projects'
+import { projectWorkPackages, punchItems, getWorkPackage } from '~/data/projects'
 import { wpCommitted, projectWos, woCommitted } from '~/data/projectTransactions'
 import { projectReservations } from '~/data/projectReservations'
 import { recordBast, closePunchItem, addPunchItem, closeBlockers, closeProject, finaliseRecognition } from '~/data/projectActions'
 import { recognisedToDate, percentComplete } from '~/data/projectRecognition'
 import { rp, pct, parseAmount } from '~/utils/projectFormat'
 import { formatDate } from '~/utils/date'
-import { notifyResult } from '~/utils/projectToast'
+import { badgeProps } from '~/utils/projectStatus'
+import { successToast } from '~/utils/toasts'
 
 const props = defineProps<{ project: Project }>()
 const { t } = useLocale()
 const { asActor } = useProjectRole()
+const punchAction = useProjectAction()
+const closeAction = useProjectAction()
+const bastAction = useProjectAction()
+const confirmAction = useProjectAction()
 
 const active = computed(() => props.project.status === 'active')
 const wps = computed(() => projectWorkPackages(props.project.id))
@@ -35,19 +47,27 @@ const bast = reactive({ open: false, wpId: '', pct: '', no: '', touched: false }
 const bastWp = computed(() => getWorkPackage(bast.wpId))
 function openBast(wpId: string) {
   const wp = getWorkPackage(wpId)!
+  bastAction.clear()
   Object.assign(bast, { open: true, wpId, pct: String(Math.min(wp.bastPct + 50, 100)), no: '', touched: false })
 }
 function doBast() {
   bast.touched = true
   if (!bast.no.trim()) return
-  if (notifyResult(recordBast(bast.wpId, Number(bast.pct), bast.no, asActor.value), Number(bast.pct) === 100 ? t('Work package technically complete') : t('BAST recorded'))) bast.open = false
+  if (bastAction.run(recordBast(bast.wpId, Number(bast.pct), bast.no, asActor.value), Number(bast.pct) === 100 ? t('Work package technically complete') : t('BAST recorded'))) bast.open = false
 }
 
-const newPunch = reactive({ open: false, wpId: '', description: '', cost: '' })
+const newPunch = reactive({ open: false, wpId: '', description: '', cost: '', touched: false })
+const wpOptions = computed(() => wps.value.map(w => ({ value: w.id, label: w.auto ? props.project.name : `${w.code} ${w.name}` })))
+function openPunch() { Object.assign(newPunch, { open: true, wpId: wps.value[0]?.id ?? '', description: '', cost: '', touched: false }) }
 function savePunch() {
+  newPunch.touched = true
   if (!newPunch.description.trim() || !newPunch.wpId) return
   addPunchItem(props.project.id, newPunch.wpId, newPunch.description.trim(), parseAmount(newPunch.cost))
   newPunch.open = false
+  successToast(t('Punch item added'))
+}
+function doClosePunch(id: string, reworkCost?: number) {
+  punchAction.run(closePunchItem(id, asActor.value), reworkCost ? t('Closed — rework cost posted to the job') : t('Closed'))
 }
 // Completion true-up (Input / Output·unit): all work packages done but measured progress < 100%.
 const canTrueUp = computed(() => {
@@ -57,38 +77,46 @@ const canTrueUp = computed(() => {
 })
 const trueUpAmount = computed(() => props.project.contractValue - recognisedToDate(props.project.id))
 const closeOpen = ref(false)
-function doClose() { if (notifyResult(closeProject(props.project.id, asActor.value))) closeOpen.value = false }
-const STATUS_TONE: Record<string, string> = { not_started: 'pm-pill--gray', in_progress: 'pm-pill--yellow', technically_complete: 'pm-pill--green' }
+function openClose() {
+  if (!active.value) { closeAction.fail(t('Only an active project can be closed.')); return }
+  if (blockers.value.length) { closeAction.fail(t('Resolve the items above before closing the project.')); return }
+  closeAction.clear(); confirmAction.clear()
+  closeOpen.value = true
+}
+function doClose() { if (confirmAction.run(closeProject(props.project.id, asActor.value))) closeOpen.value = false }
+function doTrueUp() { closeAction.run(finaliseRecognition(props.project.id, asActor.value)) }
 </script>
 
 <template>
-  <div class="pm-stack" style="gap: 20px">
-    <div v-if="project.status === 'closed'" class="pm-banner pm-banner--success">
-      <div class="pm-banner-body"><div class="pm-banner-title">{{ t('Closed') }}<template v-if="project.closedAt"> {{ t('on') }} {{ formatDate(project.closedAt) }}</template></div><template v-if="project.assetNo">{{ t('Asset') }} {{ project.assetNo }} {{ t('created, linked to this project and its site.') }}</template></div>
-    </div>
+  <div class="pm-stack pm-gap-5">
+    <MpBanner v-if="project.status === 'closed'" id="pm-closed" variant="info">
+      <MpBannerIcon />
+      <MpBannerTitle>{{ t('Closed') }}<template v-if="project.closedAt"> {{ t('on') }} {{ formatDate(project.closedAt) }}</template></MpBannerTitle>
+      <MpBannerDescription v-if="project.assetNo">{{ t('Asset') }} {{ project.assetNo }} {{ t('created, linked to this project and its site.') }}</MpBannerDescription>
+    </MpBanner>
 
     <!-- BAST per work package -->
-    <section class="pm-section" style="padding-top: 0">
+    <section class="pm-section">
       <div class="pm-section-head">
         <div>
           <h2 class="pm-h2">{{ t('Work package completion') }}</h2>
-          <p class="pm-desc">{{ t('A partial BAST supports progress billing. A 100% BAST sets the work package technically complete and releases what’s still committed on it.') }}</p>
+          <p class="pm-caption pm-m-0">{{ t('A partial BAST supports progress billing. A 100% BAST sets the work package technically complete and releases what’s still committed on it.') }}</p>
         </div>
       </div>
       <div class="pm-table-wrap">
         <table class="pm-table">
-          <thead><tr><th>{{ t('Work package') }}</th><th>{{ t('Status') }}</th><th style="width: 200px">{{ t('BAST accepted') }}</th><th class="pm-num">{{ t('Still committed') }}</th><th>{{ t('Actual end') }}</th><th /></tr></thead>
+          <thead><tr><th>{{ t('Work package') }}</th><th>{{ t('Status') }}</th><th class="pm-th-mid">{{ t('BAST accepted') }}</th><th class="pm-num">{{ t('Still committed') }}</th><th>{{ t('Actual end') }}</th><th /></tr></thead>
           <tbody>
             <tr v-for="w in wps" :key="w.id">
               <td>{{ w.auto ? project.name : `${w.code} ${w.name}` }}</td>
-              <td><span class="pm-pill" :class="STATUS_TONE[w.status]">{{ t(wpStatusLabel(w.status)) }}</span></td>
+              <td><ErpStatusBadge v-bind="badgeProps('wp', w.status, t)" /></td>
               <td>
-                <div class="pm-bar-track"><div class="pm-bar-fill" :style="{ width: w.bastPct + '%' }" /></div>
+                <MpProgress :value="String(w.bastPct)" size="sm" color="positive" />
                 <span class="pm-cell-sub">{{ w.bastPct }}%</span>
               </td>
               <td class="pm-num">{{ rp(wpCommitted(w.id)) }}</td>
               <td>{{ w.actualEnd ? formatDate(w.actualEnd) : '—' }}</td>
-              <td><button v-if="active && w.status !== 'technically_complete'" class="pm-link" type="button" @click="openBast(w.id)">{{ t('Record BAST') }}</button></td>
+              <td><MpTextlink v-if="active && w.status !== 'technically_complete'" :id="`pm-bast-${w.id}`" as="a" @click.prevent="openBast(w.id)">{{ t('Record BAST') }}</MpTextlink></td>
             </tr>
           </tbody>
         </table>
@@ -100,13 +128,11 @@ const STATUS_TONE: Record<string, string> = { not_started: 'pm-pill--gray', in_p
       <div class="pm-section-head">
         <div>
           <h2 class="pm-h2">{{ t('QC & punch list') }}</h2>
-          <p class="pm-desc">{{ t('Closing an item posts its rework cost back to the job, so handover defects never disappear into overhead.') }}</p>
+          <p class="pm-caption pm-m-0">{{ t('Closing an item posts its rework cost back to the job, so handover defects never disappear into overhead.') }}</p>
         </div>
-        <button v-if="active" class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="Object.assign(newPunch, { open: true, wpId: wps[0]?.id ?? '', description: '', cost: '' })">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
-          {{ t('Punch item') }}
-        </button>
+        <MpButton v-if="active" id="pm-new-punch" variant="secondary" is-rounded left-icon="add" @click="openPunch">{{ t('New punch item') }}</MpButton>
       </div>
+      <PmActionError id="pm-punch-error" :error="punchAction.error.value" class="pm-mb-3" />
       <div class="pm-table-wrap">
         <table class="pm-table">
           <thead><tr><th>{{ t('Item') }}</th><th>{{ t('Work package') }}</th><th class="pm-num">{{ t('Rework cost') }}</th><th>{{ t('Status') }}</th><th /></tr></thead>
@@ -115,10 +141,10 @@ const STATUS_TONE: Record<string, string> = { not_started: 'pm-pill--gray', in_p
               <td class="pm-wrap">{{ p.description }}</td>
               <td>{{ getWorkPackage(p.wpId)?.code }} {{ getWorkPackage(p.wpId)?.name }}</td>
               <td class="pm-num">{{ p.reworkCost ? rp(p.reworkCost) : '—' }}</td>
-              <td><span class="pm-pill" :class="p.status === 'open' ? 'pm-pill--yellow' : 'pm-pill--green'">{{ p.status === 'open' ? t('Open') : t('Closed') }}</span><span v-if="p.closedAt" class="pm-cell-sub">{{ formatDate(p.closedAt) }}</span></td>
-              <td><button v-if="active && p.status === 'open'" class="pm-link" type="button" @click="notifyResult(closePunchItem(p.id, asActor), p.reworkCost ? t('Closed — rework cost posted to the job') : t('Closed'))">{{ t('Close item') }}</button></td>
+              <td><ErpStatusBadge v-bind="badgeProps('punch', p.status, t)" /><span v-if="p.closedAt" class="pm-cell-sub">{{ formatDate(p.closedAt) }}</span></td>
+              <td><MpTextlink v-if="active && p.status === 'open'" :id="`pm-punch-close-${p.id}`" as="a" @click.prevent="doClosePunch(p.id, p.reworkCost)">{{ t('Close item') }}</MpTextlink></td>
             </tr>
-            <tr v-if="!punch.length"><td colspan="5"><div class="pm-empty">{{ t('No punch items.') }}</div></td></tr>
+            <tr v-if="!punch.length"><td colspan="5"><div class="pm-empty-inline">{{ t('No punch items.') }}</div></td></tr>
           </tbody>
         </table>
       </div>
@@ -126,61 +152,88 @@ const STATUS_TONE: Record<string, string> = { not_started: 'pm-pill--gray', in_p
 
     <!-- Close -->
     <section v-if="project.status !== 'closed'" class="pm-section">
-      <h2 class="pm-h2" style="margin-bottom: 12px">{{ t('Close project') }}</h2>
-      <div class="pm-card">
-        <div v-if="blockers.length" class="pm-stack" style="gap: 6px">
+      <h2 class="pm-h2 pm-mb-3">{{ t('Close project') }}</h2>
+      <div class="pm-card pm-stack pm-gap-3">
+        <div v-if="blockers.length" class="pm-stack pm-gap-2">
           <div class="pm-strong">{{ t('Not ready to close') }}</div>
-          <div v-for="b in blockers" :key="b.label" class="pm-row" style="gap: 8px"><span class="pm-neg">✗</span><span>{{ b.n !== undefined ? `${b.n} ` : '' }}{{ t(b.label) }}<template v-if="b.detail"> ({{ b.detail }})</template></span></div>
-        </div>
-        <div v-else class="pm-row" style="gap: 8px"><span class="pm-pos">✓</span><span>{{ t('All checks pass — nothing pending, recognition final, invoices collected.') }}</span></div>
-        <div v-if="canTrueUp" class="pm-banner pm-banner--info" style="margin-top: 12px" data-devchange="pm-completion-true-up">
-          <div class="pm-banner-body">
-            <div class="pm-banner-title">{{ t('Every work package is complete, but measured progress is') }} {{ pct(percentComplete(project)) }}</div>
-            {{ t('The work is done, so the remaining contract value is recognised as a completion true-up.') }} {{ rp(trueUpAmount) }}
+          <div v-for="b in blockers" :key="b.label" class="pm-row pm-gap-2">
+            <span class="pm-neg pm-row"><MpIcon name="close" size="sm" /></span>
+            <span>{{ b.n !== undefined ? `${b.n} ` : '' }}{{ t(b.label) }}<template v-if="b.detail"> ({{ b.detail }})</template></span>
           </div>
-          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="notifyResult(finaliseRecognition(project.id, asActor))">{{ t('Recognise remaining revenue') }}</button>
         </div>
-        <div class="pm-small pm-muted" style="margin-top: 12px">
+        <div v-else class="pm-row pm-gap-2 pm-pos">{{ t('All checks pass — nothing pending, recognition final, invoices collected.') }}</div>
+        <MpBanner v-if="canTrueUp" id="pm-true-up" variant="info" data-devchange="pm-completion-true-up">
+          <MpBannerIcon />
+          <MpBannerTitle>{{ t('Every work package is complete, but measured progress is') }} {{ pct(percentComplete(project)) }}</MpBannerTitle>
+          <MpBannerDescription>
+            {{ t('The work is done, so the remaining contract value is recognised as a completion true-up.') }} {{ rp(trueUpAmount) }}
+            <MpTextlink id="pm-true-up-run" as="a" @click.prevent="doTrueUp">{{ t('Recognise remaining revenue') }}</MpTextlink>
+          </MpBannerDescription>
+        </MpBanner>
+        <p class="pm-caption pm-m-0">
           {{ t('On close') }}: {{ releaseRes.length }} {{ t('unconsumed reservation(s) released') }} · {{ rp(releaseSetAside) }} {{ t('unused work-order set-aside released') }}<template v-if="project.longTerm"> · {{ t('an asset is created') }}</template>. {{ t('Each release is written to the audit log.') }}
-        </div>
-        <div class="pm-form-footer">
-          <button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="!active || !!blockers.length" @click="closeOpen = true">{{ t('Close project') }}</button>
+        </p>
+        <PmActionError id="pm-close-error" :error="closeAction.error.value" />
+        <div class="pm-row"><span class="pm-spacer" />
+          <MpButton id="pm-close-project" variant="primary" is-rounded @click="openClose">{{ t('Close project') }}</MpButton>
         </div>
       </div>
     </section>
 
-    <PmOverlay :open="bast.open" variant="modal" :title="t('Record BAST')" :subtitle="bastWp ? `${bastWp.code} ${bastWp.name}` : ''" @close="bast.open = false">
-      <div class="pm-field">
-        <label class="pm-label pm-label-req" for="bast-n">{{ t('BAST number') }}</label>
-        <input id="bast-n" v-model="bast.no" class="pm-input" placeholder="BAST/…" :aria-invalid="bast.touched && !bast.no.trim()" />
-      </div>
-      <div class="pm-field">
-        <label class="pm-label pm-label-req" for="bast-p">{{ t('Accepted percentage') }}</label>
-        <div class="pm-input-group" style="max-width: 160px"><input id="bast-p" v-model="bast.pct" class="pm-input pm-input--num" inputmode="numeric" /><span class="pm-addon">%</span></div>
-        <span class="pm-help">{{ t('Last accepted') }}: {{ bastWp?.bastPct ?? 0 }}%</span>
-      </div>
-      <div v-if="Number(bast.pct) === 100 && bastWp" class="pm-banner pm-banner--info"><div class="pm-banner-body">{{ t('100% sets the work package technically complete and releases') }} {{ rp(wpCommitted(bastWp.id)) }} {{ t('still committed on it.') }}</div></div>
+    <PmOverlay id="pm-bast-modal" :open="bast.open" variant="modal" :title="t('Record BAST')" :subtitle="bastWp ? `${bastWp.code} ${bastWp.name}` : ''" @close="bast.open = false">
+      <MpFormControl id="bast-n-fc" is-required :is-invalid="bast.touched && !bast.no.trim()">
+        <MpFormLabel>{{ t('BAST number') }}</MpFormLabel>
+        <MpInput id="bast-n" v-model="bast.no" />
+        <MpFormErrorMessage>{{ t('Enter the BAST number.') }}</MpFormErrorMessage>
+      </MpFormControl>
+      <MpFormControl id="bast-p-fc" is-required>
+        <MpFormLabel>{{ t('Accepted percentage') }}</MpFormLabel>
+        <MpInputGroup id="bast-p-group" class="pm-maxw-short">
+          <MpInput id="bast-p" v-model="bast.pct" inputmode="numeric" />
+          <MpInputRightAddon>%</MpInputRightAddon>
+        </MpInputGroup>
+        <MpFormHelpText>{{ t('Last accepted') }}: {{ bastWp?.bastPct ?? 0 }}%</MpFormHelpText>
+      </MpFormControl>
+      <MpBanner v-if="Number(bast.pct) === 100 && bastWp" id="pm-bast-complete" variant="info">
+        <MpBannerIcon /><MpBannerDescription>{{ t('100% sets the work package technically complete and releases') }} {{ rp(wpCommitted(bastWp.id)) }} {{ t('still committed on it.') }}</MpBannerDescription>
+      </MpBanner>
+      <PmActionError id="pm-bast-error" :error="bastAction.error.value" />
       <template #footer>
-        <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="bast.open = false">{{ t('Cancel') }}</button>
-        <button class="btn-enterprise btn-enterprise--primary" type="button" @click="doBast">{{ t('Record') }}</button>
+        <MpButton variant="ghost" is-rounded @click="bast.open = false">{{ t('Cancel') }}</MpButton>
+        <MpButton variant="primary" is-rounded @click="doBast">{{ t('Record') }}</MpButton>
       </template>
     </PmOverlay>
 
-    <PmOverlay :open="newPunch.open" variant="modal" :title="t('Punch item')" @close="newPunch.open = false">
-      <div class="pm-field"><label class="pm-label pm-label-req" for="pn-w">{{ t('Work package') }}</label><select id="pn-w" v-model="newPunch.wpId" class="pm-select"><option v-for="w in wps" :key="w.id" :value="w.id">{{ w.auto ? project.name : `${w.code} ${w.name}` }}</option></select></div>
-      <div class="pm-field"><label class="pm-label pm-label-req" for="pn-d">{{ t('Defect') }}</label><input id="pn-d" v-model="newPunch.description" class="pm-input" /></div>
-      <div class="pm-field"><label class="pm-label" for="pn-c">{{ t('Rework cost') }}</label><div class="pm-input-group" style="max-width: 220px"><span class="pm-addon">Rp</span><input id="pn-c" v-model="newPunch.cost" class="pm-input pm-input--num" inputmode="numeric" /></div></div>
+    <PmOverlay id="pm-punch-modal" :open="newPunch.open" variant="modal" :title="t('New punch item')" @close="newPunch.open = false">
+      <MpFormControl id="pn-w-fc" is-required :is-invalid="newPunch.touched && !newPunch.wpId">
+        <MpFormLabel>{{ t('Work package') }}</MpFormLabel>
+        <ErpFilterSelect id="pn-w" v-model="newPunch.wpId" :placeholder="t('Select work package')" :options="wpOptions" width="100%" :is-clearable="false" />
+        <MpFormErrorMessage>{{ t('Select a work package.') }}</MpFormErrorMessage>
+      </MpFormControl>
+      <MpFormControl id="pn-d-fc" is-required :is-invalid="newPunch.touched && !newPunch.description.trim()">
+        <MpFormLabel>{{ t('Defect') }}</MpFormLabel>
+        <MpInput id="pn-d" v-model="newPunch.description" />
+        <MpFormErrorMessage>{{ t('Describe the defect.') }}</MpFormErrorMessage>
+      </MpFormControl>
+      <MpFormControl id="pn-c-fc">
+        <MpFormLabel>{{ t('Rework cost') }}</MpFormLabel>
+        <MpInputGroup id="pn-c-group" class="pm-maxw-field">
+          <MpInputLeftAddon>Rp</MpInputLeftAddon>
+          <MpInput id="pn-c" v-model="newPunch.cost" inputmode="numeric" />
+        </MpInputGroup>
+      </MpFormControl>
       <template #footer>
-        <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="newPunch.open = false">{{ t('Cancel') }}</button>
-        <button class="btn-enterprise btn-enterprise--primary" type="button" @click="savePunch">{{ t('Add') }}</button>
+        <MpButton variant="ghost" is-rounded @click="newPunch.open = false">{{ t('Cancel') }}</MpButton>
+        <MpButton variant="primary" is-rounded @click="savePunch">{{ t('Save') }}</MpButton>
       </template>
     </PmOverlay>
 
-    <PmOverlay :open="closeOpen" variant="modal" :title="t('Close project?')" :subtitle="project.code" @close="closeOpen = false">
-      <p class="pm-desc" style="margin: 0">{{ t('The project becomes read-only. Remaining reservations and unused work-order set-aside are released.') }}</p>
+    <PmOverlay id="pm-close-modal" :open="closeOpen" variant="modal" :title="t('Close project?')" :subtitle="project.code" @close="closeOpen = false">
+      <p class="pm-body pm-m-0">{{ t('The project becomes read-only. Remaining reservations and unused work-order set-aside are released.') }}</p>
+      <PmActionError id="pm-close-confirm-error" :error="confirmAction.error.value" />
       <template #footer>
-        <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="closeOpen = false">{{ t('Cancel') }}</button>
-        <button class="btn-enterprise btn-enterprise--primary" type="button" @click="doClose">{{ t('Close project') }}</button>
+        <MpButton variant="ghost" is-rounded @click="closeOpen = false">{{ t('Cancel') }}</MpButton>
+        <MpButton variant="primary" is-rounded @click="doClose">{{ t('Close project') }}</MpButton>
       </template>
     </PmOverlay>
   </div>

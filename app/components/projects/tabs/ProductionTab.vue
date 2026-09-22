@@ -10,7 +10,13 @@
  *    Reserved stock is not committed cost and never posts to the GL.
  *  • Work orders: advancing to Completed releases unused set-aside.
  */
+import {
+  MpButton, MpInput, MpTextlink, MpFormControl, MpFormLabel, MpFormErrorMessage, MpBanner, MpBannerIcon, MpBannerDescription,
+} from '@mekari/pixel3'
 import PmOverlay from '../PmOverlay.vue'
+import PmActionError from '../PmActionError.vue'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import BomDetailOverlay from '../BomDetailOverlay.vue'
 import type { Project } from '~/data/projects'
 import { projectWorkPackages, getWorkPackage } from '~/data/projects'
@@ -20,12 +26,16 @@ import { getCustomBom, currentVersion, masterDiverged } from '~/data/projectBoms
 import { mrpPreview, runMrp, advanceReservation, releaseReservation, advanceWo } from '~/data/projectActions'
 import { rp, num } from '~/utils/projectFormat'
 import { formatDate } from '~/utils/date'
-import { notifyResult } from '~/utils/projectToast'
+import { badgeProps } from '~/utils/projectStatus'
 
 const props = defineProps<{ project: Project }>()
 const { t } = useLocale()
 const router = useRouter()
 const { asActor } = useProjectRole()
+const mrpAction = useProjectAction()
+const resAction = useProjectAction()
+const woAction = useProjectAction()
+const releaseAction = useProjectAction()
 
 const active = computed(() => props.project.status === 'active')
 const wps = computed(() => projectWorkPackages(props.project.id).filter(w => w.type === 'production'))
@@ -38,38 +48,56 @@ const reservations = computed(() => projectReservations(props.project.id).slice(
 const wos = computed(() => projectWos(props.project.id))
 const drafts = computed(() => peggedDocuments.filter(d => d.status === 'draft' && d.lines.some(l => l.wpId && getWorkPackage(l.wpId)?.projectId === props.project.id)))
 
-const release = reactive({ open: false, id: '', reason: '' })
+const wpOptions = computed(() => wps.value.map(w => ({ value: w.id, label: `${w.code} ${w.name}${w.customBomId ? '' : ` — ${t('no BOM')}`}` })))
+function setWp(v: string) { if (v) { selWp.value = v; mrpAction.clear() } }
+function doRunMrp() {
+  if (!active.value) { mrpAction.fail(t('MRP runs once the project is approved — a draft project can’t reserve stock.')); return }
+  if (preview.value.error) { mrpAction.fail(preview.value.error); return }
+  if (!preview.value.rows.length) { mrpAction.fail(t('Nothing to plan — this work package has no remaining requirement.')); return }
+  mrpAction.run(runMrp(selWp.value, asActor.value))
+}
+function doAdvance(id: string, status: string) {
+  if (!active.value) { resAction.fail(t('Only an active project can pick or issue stock.')); return }
+  resAction.run(advanceReservation(id, asActor.value), status === 'reserved' ? t('Picked') : t('Issued to production'))
+}
+function doAdvanceWo(id: string, status: string) {
+  woAction.run(advanceWo(id, asActor.value), status === 'Released' ? t('Work order started') : t('Work order completed'))
+}
+
+const release = reactive({ open: false, id: '', reason: '', touched: false })
+function openRelease(id: string) { releaseAction.clear(); Object.assign(release, { open: true, id, reason: '', touched: false }) }
 function doRelease() {
+  release.touched = true
   if (!release.reason.trim()) return
-  if (notifyResult(releaseReservation(release.id, release.reason, asActor.value), t('Reservation released'))) release.open = false
+  if (releaseAction.run(releaseReservation(release.id, release.reason, asActor.value), t('Reservation released'))) release.open = false
 }
 const bomView = ref<string | undefined>()
-const RES_TONE: Record<string, string> = { reserved: 'pm-pill--blue', picked: 'pm-pill--yellow', issued: 'pm-pill--green', released: 'pm-pill--gray' }
-const RES_LABEL: Record<string, string> = { reserved: 'Reserved', picked: 'Picked', issued: 'Issued', released: 'Released' }
-const WO_TONE: Record<string, string> = { Draft: 'pm-pill--gray', Released: 'pm-pill--blue', 'In progress': 'pm-pill--yellow', Completed: 'pm-pill--green' }
 </script>
 
 <template>
-  <div class="pm-stack" style="gap: 20px">
+  <div class="pm-stack pm-gap-5">
     <!-- MRP -->
-    <section class="pm-section" style="padding-top: 0">
+    <section class="pm-section">
       <div class="pm-section-head">
         <div>
           <h2 class="pm-h2">{{ t('Production plan') }}</h2>
-          <p class="pm-desc">{{ t('Gross requirement from the work package’s custom BOM, netted against available stock (on hand − reserved to other projects). Running it creates reservations for what’s available, a draft purchase request for the shortfall and a draft work order — nothing firm.') }}</p>
+          <p class="pm-caption pm-m-0">{{ t('Gross requirement from the work package’s custom BOM, netted against available stock (on hand − reserved to other projects). Running it creates reservations for what’s available, a draft purchase request for the shortfall and a draft work order — nothing firm.') }}</p>
         </div>
       </div>
-      <div class="pm-row" style="margin-bottom: 12px">
-        <label class="pm-small pm-muted" for="mrp-wp">{{ t('Work package') }}</label>
-        <select id="mrp-wp" v-model="selWp" class="pm-select" style="width: 360px">
-          <option v-for="w in wps" :key="w.id" :value="w.id">{{ w.code }} {{ w.name }}{{ w.customBomId ? '' : ` — ${t('no BOM')}` }}</option>
-        </select>
+      <div class="pm-row pm-mb-3">
+        <span class="pm-small pm-muted">{{ t('Work package') }}</span>
+        <ErpFilterSelect id="mrp-wp" :model-value="selWp" :placeholder="t('Select work package')" :options="wpOptions" :is-clearable="false" width="360px" @update:model-value="setWp" />
         <span v-if="selected" class="pm-small pm-muted">{{ remaining }} {{ selected.unit }} {{ t('remaining') }} ({{ selected.confirmedUnits ?? 0 }}/{{ selected.plannedUnits ?? 0 }} {{ t('confirmed') }})</span>
         <span class="pm-spacer" />
-        <button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="!active || !!preview.error || !preview.rows.length" @click="notifyResult(runMrp(selWp, asActor))">{{ t('Run MRP') }}</button>
+        <MpButton id="pm-run-mrp" variant="primary" is-rounded @click="doRunMrp">{{ t('Run MRP') }}</MpButton>
       </div>
-      <div v-if="preview.error" class="pm-banner pm-banner--warn"><div class="pm-banner-body">{{ preview.error }}</div></div>
-      <div v-else-if="!active" class="pm-banner pm-banner--info" style="margin-bottom: 10px"><div class="pm-banner-body">{{ t('MRP runs once the project is approved — a draft project can’t reserve stock.') }}</div></div>
+      <PmActionError id="pm-mrp-error" :error="mrpAction.error.value" class="pm-mb-3" />
+      <MpBanner v-if="preview.error && !mrpAction.error.value" id="pm-mrp-preview-error" variant="warning" class="pm-mb-3">
+        <MpBannerIcon /><MpBannerDescription>{{ preview.error }}</MpBannerDescription>
+      </MpBanner>
+      <MpBanner v-else-if="!active" id="pm-mrp-draft" variant="info" class="pm-mb-3">
+        <MpBannerIcon /><MpBannerDescription>{{ t('MRP runs once the project is approved — a draft project can’t reserve stock.') }}</MpBannerDescription>
+      </MpBanner>
       <div v-if="preview.rows.length" class="pm-table-wrap">
         <table class="pm-table">
           <thead>
@@ -94,19 +122,20 @@ const WO_TONE: Record<string, string> = { Draft: 'pm-pill--gray', Released: 'pm-
           </tbody>
         </table>
       </div>
-      <p v-if="preview.rows.length" class="pm-help" style="margin-top: 6px">{{ t('Net need = gross − already reserved here. Reserve now = min(net need, available). Shortfall = net need − reserve now.') }}</p>
-      <div v-if="drafts.length" style="margin-top: 12px">
-        <h3 class="pm-h3" style="margin-bottom: 6px">{{ t('Draft purchase requests from MRP') }}</h3>
-        <div v-for="d in drafts" :key="d.id" class="pm-small" style="padding: 4px 0">
-          <span class="pm-pill pm-pill--blue">{{ t('Draft') }}</span> {{ d.docNo }} · {{ d.lines.map(l => l.description).join(', ') }} · {{ rp(d.lines.reduce((s, l) => s + l.amount, 0)) }}
-          <span class="pm-muted"> — {{ t('not firm, consumes no budget') }}</span>
+      <p v-if="preview.rows.length" class="pm-caption pm-mt-2">{{ t('Net need = gross − already reserved here. Reserve now = min(net need, available). Shortfall = net need − reserve now.') }}</p>
+      <div v-if="drafts.length" class="pm-mt-3">
+        <h3 class="pm-h3 pm-mb-2">{{ t('Draft purchase requests from MRP') }}</h3>
+        <div v-for="d in drafts" :key="d.id" class="pm-row pm-gap-2 pm-small pm-mb-2">
+          <ErpStatusBadge v-bind="badgeProps('doc', 'draft', t)" />
+          <span>{{ d.docNo }} · {{ d.lines.map(l => l.description).join(', ') }} · {{ rp(d.lines.reduce((s, l) => s + l.amount, 0)) }}</span>
+          <span class="pm-muted">— {{ t('not firm, consumes no budget') }}</span>
         </div>
       </div>
     </section>
 
     <!-- Custom BOMs -->
     <section class="pm-section">
-      <h2 class="pm-h2" style="margin-bottom: 12px">{{ t('Custom BOMs') }}</h2>
+      <h2 class="pm-h2 pm-mb-3">{{ t('Custom BOMs') }}</h2>
       <div class="pm-table-wrap">
         <table class="pm-table">
           <thead><tr><th>{{ t('Work package') }}</th><th>{{ t('Custom BOM') }}</th><th>{{ t('Version') }}</th><th>{{ t('Copied from') }}</th><th /></tr></thead>
@@ -114,15 +143,17 @@ const WO_TONE: Record<string, string> = { Draft: 'pm-pill--gray', Released: 'pm-
             <tr v-for="w in wps" :key="w.id">
               <td>{{ w.code }} {{ w.name }}</td>
               <td>
-                <button v-if="w.customBomId" class="pm-link" type="button" @click="bomView = w.customBomId">{{ getCustomBom(w.customBomId)?.name }}</button>
+                <MpTextlink v-if="w.customBomId" :id="`pm-prod-bom-${w.id}`" as="a" @click.prevent="bomView = w.customBomId">{{ getCustomBom(w.customBomId)?.name }}</MpTextlink>
                 <span v-else class="pm-warn">{{ t('No BOM yet') }}</span>
               </td>
               <td>{{ w.customBomId ? `v${currentVersion(getCustomBom(w.customBomId)!).version}` : '—' }}</td>
               <td>
-                <template v-if="w.customBomId">{{ getCustomBom(w.customBomId)?.masterName }} · {{ formatDate(getCustomBom(w.customBomId)?.copiedAt) }}</template>
-                <span v-if="w.customBomId && masterDiverged(getCustomBom(w.customBomId)!)" class="pm-pill pm-pill--blue" style="margin-left: 6px">{{ t('Master changed') }}</span>
+                <span class="pm-row pm-gap-2">
+                  <template v-if="w.customBomId">{{ getCustomBom(w.customBomId)?.masterName }} · {{ formatDate(getCustomBom(w.customBomId)?.copiedAt) }}</template>
+                  <ErpStatusBadge v-if="w.customBomId && masterDiverged(getCustomBom(w.customBomId)!)" v-bind="badgeProps('flag', 'master-changed', t)" />
+                </span>
               </td>
-              <td><button v-if="w.customBomId" class="pm-link" type="button" @click="router.replace({ query: { tab: 'changes' } })">{{ t('Raise engineering change') }}</button></td>
+              <td><MpTextlink v-if="w.customBomId" :id="`pm-prod-eco-${w.id}`" as="a" @click.prevent="router.replace({ query: { tab: 'changes' } })">{{ t('Raise engineering change') }}</MpTextlink></td>
             </tr>
           </tbody>
         </table>
@@ -134,29 +165,30 @@ const WO_TONE: Record<string, string> = { Draft: 'pm-pill--gray', Released: 'pm-
       <div class="pm-section-head">
         <div>
           <h2 class="pm-h2">{{ t('Stock reservations') }}</h2>
-          <p class="pm-desc">{{ t('Stock earmarked to a work package so it can’t quietly go to another job. A reservation never posts to the GL and is not committed cost.') }}</p>
+          <p class="pm-caption pm-m-0">{{ t('Stock earmarked to a work package so it can’t quietly go to another job. A reservation never posts to the GL and is not committed cost.') }}</p>
         </div>
-        <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="router.push('/stock-availability')">{{ t('Stock availability') }}</button>
+        <MpButton id="pm-stock-availability" variant="secondary" is-rounded @click="router.push('/stock-availability')">{{ t('Stock availability') }}</MpButton>
       </div>
+      <PmActionError id="pm-res-error" :error="resAction.error.value" class="pm-mb-3" />
       <div class="pm-table-wrap">
         <table class="pm-table">
           <thead><tr><th>{{ t('Item') }}</th><th>{{ t('Work package') }}</th><th class="pm-num">{{ t('Qty') }}</th><th>{{ t('Status') }}</th><th>{{ t('Source') }}</th><th>{{ t('Date') }}</th><th /></tr></thead>
           <tbody>
-            <tr v-for="r in reservations" :key="r.id" :style="{ opacity: r.status === 'released' ? 0.6 : 1 }">
+            <tr v-for="r in reservations" :key="r.id" :class="{ 'pm-tr-muted': r.status === 'released' }">
               <td>{{ getStockItem(r.itemId)?.name }}<span class="pm-cell-sub">{{ getStockItem(r.itemId)?.warehouse }}</span></td>
               <td>{{ getWorkPackage(r.wpId)?.code }} {{ getWorkPackage(r.wpId)?.name }}</td>
               <td class="pm-num">{{ num(r.qty) }} {{ getStockItem(r.itemId)?.unit }}</td>
-              <td><span class="pm-pill" :class="RES_TONE[r.status]">{{ t(RES_LABEL[r.status]!) }}</span><span v-if="r.releaseReason" class="pm-cell-sub">{{ r.releaseReason }}</span></td>
+              <td><ErpStatusBadge v-bind="badgeProps('res', r.status, t)" /><span v-if="r.releaseReason" class="pm-cell-sub">{{ r.releaseReason }}</span></td>
               <td>{{ t(r.source) }}</td>
               <td>{{ formatDate(r.releasedAt ?? r.createdAt) }}</td>
               <td>
-                <div v-if="r.status === 'reserved' || r.status === 'picked'" class="pm-row" style="gap: 8px; flex-wrap: nowrap">
-                  <button class="pm-link" type="button" :disabled="!active" @click="notifyResult(advanceReservation(r.id, asActor), r.status === 'reserved' ? t('Picked') : t('Issued to production'))">{{ r.status === 'reserved' ? t('Pick') : t('Issue') }}</button>
-                  <button class="pm-link" type="button" @click="Object.assign(release, { open: true, id: r.id, reason: '' })">{{ t('Release') }}</button>
-                </div>
+                <span v-if="r.status === 'reserved' || r.status === 'picked'" class="pm-row pm-row--nowrap pm-gap-3">
+                  <MpTextlink :id="`pm-res-advance-${r.id}`" as="a" @click.prevent="doAdvance(r.id, r.status)">{{ r.status === 'reserved' ? t('Pick') : t('Issue') }}</MpTextlink>
+                  <MpTextlink :id="`pm-res-release-${r.id}`" as="a" @click.prevent="openRelease(r.id)">{{ t('Release') }}</MpTextlink>
+                </span>
               </td>
             </tr>
-            <tr v-if="!reservations.length"><td colspan="7"><div class="pm-empty">{{ t('No reservations yet — run MRP on a work package.') }}</div></td></tr>
+            <tr v-if="!reservations.length"><td colspan="7"><div class="pm-empty-inline">{{ t('No reservations yet — run MRP on a work package.') }}</div></td></tr>
           </tbody>
         </table>
       </div>
@@ -166,11 +198,9 @@ const WO_TONE: Record<string, string> = { Draft: 'pm-pill--gray', Released: 'pm-
     <section class="pm-section">
       <div class="pm-section-head">
         <h2 class="pm-h2">{{ t('Work orders') }}</h2>
-        <button v-if="project.status !== 'closed'" class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="router.push(`/projects/${project.id}/work-orders/new`)">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
-          {{ t('Work order') }}
-        </button>
+        <MpButton v-if="project.status !== 'closed'" id="pm-prod-new-wo" variant="secondary" is-rounded left-icon="add" @click="router.push(`/projects/${project.id}/work-orders/new`)">{{ t('New work order') }}</MpButton>
       </div>
+      <PmActionError id="pm-wo-error" :error="woAction.error.value" class="pm-mb-3" />
       <div class="pm-table-wrap">
         <table class="pm-table">
           <thead><tr><th>{{ t('Work order') }}</th><th>{{ t('Work package') }}</th><th class="pm-num">{{ t('Qty') }}</th><th>{{ t('BOM version') }}</th><th>{{ t('Status') }}</th><th class="pm-num">{{ t('Set aside') }}</th><th class="pm-num">{{ t('Actual') }}</th><th /></tr></thead>
@@ -180,29 +210,31 @@ const WO_TONE: Record<string, string> = { Draft: 'pm-pill--gray', Released: 'pm-
               <td>{{ getWorkPackage(w.wpId)?.code }} {{ getWorkPackage(w.wpId)?.name }}</td>
               <td class="pm-num">{{ w.qty }} {{ w.unit }}</td>
               <td>{{ w.bomVersion ? `v${w.bomVersion}` : '—' }}</td>
-              <td><span class="pm-pill" :class="WO_TONE[w.status]">{{ t(w.status) }}</span></td>
+              <td><ErpStatusBadge v-bind="badgeProps('wo', w.status, t)" /></td>
               <td class="pm-num">{{ w.budgetSetAside ? rp(w.budgetSetAside) : t('Not set') }}</td>
               <td class="pm-num">{{ rp(w.actual) }}<span v-if="w.released" class="pm-cell-sub">{{ rp(w.released) }} {{ t('released') }}</span></td>
               <td>
-                <button v-if="active && (w.status === 'Released' || w.status === 'In progress')" class="pm-link" type="button" @click="notifyResult(advanceWo(w.id, asActor), t('Work order started'))">{{ w.status === 'Released' ? t('Start') : t('Complete') }}</button>
-                <button v-else-if="w.status === 'Draft' && !w.budgetSetAside" class="pm-link" type="button" @click="router.push(`/projects/${project.id}/work-orders/new?wp=${w.wpId}`)">{{ t('Set budget') }}</button>
+                <MpTextlink v-if="active && (w.status === 'Released' || w.status === 'In progress')" :id="`pm-wo-advance-${w.id}`" as="a" @click.prevent="doAdvanceWo(w.id, w.status)">{{ w.status === 'Released' ? t('Start') : t('Complete') }}</MpTextlink>
+                <MpTextlink v-else-if="w.status === 'Draft' && !w.budgetSetAside" :id="`pm-wo-budget-${w.id}`" as="a" @click.prevent="router.push(`/projects/${project.id}/work-orders/new?wp=${w.wpId}`)">{{ t('Set budget') }}</MpTextlink>
               </td>
             </tr>
-            <tr v-if="!wos.length"><td colspan="8"><div class="pm-empty">{{ t('No work orders yet.') }}</div></td></tr>
+            <tr v-if="!wos.length"><td colspan="8"><div class="pm-empty-inline">{{ t('No work orders yet.') }}</div></td></tr>
           </tbody>
         </table>
       </div>
     </section>
 
-    <PmOverlay :open="release.open" variant="modal" :title="t('Release reservation')" @close="release.open = false">
-      <p class="pm-desc" style="margin: 0">{{ t('The stock becomes available to other projects. This is written to the audit log.') }}</p>
-      <div class="pm-field">
-        <label class="pm-label pm-label-req" for="rel-r">{{ t('Reason') }}</label>
-        <input id="rel-r" v-model="release.reason" class="pm-input" />
-      </div>
+    <PmOverlay id="pm-release-modal" :open="release.open" variant="modal" :title="t('Release reservation')" @close="release.open = false">
+      <p class="pm-body pm-m-0">{{ t('The stock becomes available to other projects. This is written to the audit log.') }}</p>
+      <MpFormControl id="rel-r-fc" is-required :is-invalid="release.touched && !release.reason.trim()">
+        <MpFormLabel>{{ t('Reason') }}</MpFormLabel>
+        <MpInput id="rel-r" v-model="release.reason" />
+        <MpFormErrorMessage>{{ t('A reason is required.') }}</MpFormErrorMessage>
+      </MpFormControl>
+      <PmActionError id="pm-release-error" :error="releaseAction.error.value" />
       <template #footer>
-        <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="release.open = false">{{ t('Cancel') }}</button>
-        <button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="!release.reason.trim()" @click="doRelease">{{ t('Release') }}</button>
+        <MpButton variant="ghost" is-rounded @click="release.open = false">{{ t('Cancel') }}</MpButton>
+        <MpButton variant="primary" is-rounded @click="doRelease">{{ t('Release') }}</MpButton>
       </template>
     </PmOverlay>
     <BomDetailOverlay :open="!!bomView" :bom-id="bomView" @close="bomView = undefined" />
