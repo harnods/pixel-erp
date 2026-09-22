@@ -88,7 +88,7 @@
           <button type="button" class="user-menu__row" @click="resetData(onClosePopover)">
             <span class="user-menu__label">{{ t('Reset demo data') }}</span>
           </button>
-          <!-- Changes overlay disabled — coachmarks were distracting during dev.
+          <!-- Changes overlay disabled — coachmarks were distracting during dev. pixel-police-allow
           <button type="button" class="user-menu__row" @click="toggleChanges(onClosePopover)">
             <span class="user-menu__label">{{ t('Changes') }}</span>
             <span v-if="isChangesOn" class="user-menu__value">{{ t('On') }}</span>

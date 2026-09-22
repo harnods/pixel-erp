@@ -646,7 +646,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
               <template v-if="previewMode === 'details' && moduleId === 'deals'">
                 <div class="dlb-prev-detail-page">
                   <div class="dp-stage">
-                    <div class="dp-tabs">
+                    <div class="dp-tabs"><!-- pixel-police-allow: static preview replica tabs -->
                       <button class="dp-tab dp-tab--active">{{ t('Deal details') }}</button>
                       <button class="dp-tab" disabled>{{ t('Notes') }}</button>
                       <button class="dp-tab" disabled>{{ t('Files') }}</button>
@@ -1305,7 +1305,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 .dp-tab--active { color: var(--mp-text-selected, #029861); font-weight: var(--mp-font-weights-semi-bold); }
 .dp-tab--active::after {
   content: ''; position: absolute; bottom: -1px; left: 0; right: 0;
-  height: 2px; background: var(--mp-border-selected, #029861);
+  height: var(--mp-spacing-0\.5, 2px); background: var(--mp-border-selected, #029861);
 }
 .dp-section-title {
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
