@@ -20,6 +20,7 @@ import PmActionError from '../PmActionError.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { createProject, projects, type RecognitionMethod, type OutputMeasure, type WorkPackageType } from '~/data/projects'
 import { customers } from '~/data/customers'
+import { UNIT_OPTIONS } from '~/data/purchaseOrderDetails'
 import { logAudit } from '~/data/projectAudit'
 import { TODAY_ISO } from '~/data/master'
 import { rp, pct, parseAmount, isoToDmy, dmyToIso } from '~/utils/projectFormat'
@@ -133,6 +134,13 @@ function next() {
   touched.value = false
   step.value++
 }
+// Phase fields and work-package rows share one grid so the name inputs line up.
+// a: type + qty + unit · b: qty + unit · c: RAB + weight only · d: name only
+const rowClass = computed(() => (isProduction.value ? 'pm-srow--a' : isUnit.value ? 'pm-srow--b' : isMilestone.value ? 'pm-srow--c' : 'pm-srow--d'))
+const optionalCols = computed(() => (isProduction.value ? 3 : isUnit.value || isMilestone.value ? 2 : 0))
+const phaseFillers = computed(() => Math.max(optionalCols.value - (isMilestone.value ? 2 : 0), 0))
+const wpFillers = computed(() => Math.max(optionalCols.value - ((isProduction.value ? 1 : 0) + (isProduction.value || isUnit.value ? 2 : 0)), 0))
+const unitOptions = computed(() => ['Unit', 'Set', ...UNIT_OPTIONS])
 const wpTypeLabel = (v: string) => (v === 'production' ? t('Production') : v === 'service' ? t('Service') : '—')
 function fmtAmount(v: string) { const n = parseAmount(v); return n ? n.toLocaleString('id-ID') : '' }
 function back() { if (step.value > 1) step.value--; else router.push('/projects') }
@@ -171,16 +179,11 @@ function create() {
 
     <!-- Page banners sit between the title bar and the stage, full width; the wrapper is
          tinted to the top banner so the stage's rounded corners blend (BillDetailsPage). -->
-    <div class="pm-stage-wrap" :class="{ 'pm-stage-wrap--info': step === 4 && !weightWarning, 'pm-stage-wrap--warning': step === 4 && !!weightWarning }">
-    <template v-if="step === 4">
-      <MpBanner id="pc-review-draft" variant="info" is-inline class="pm-page-banner">
-        <MpBannerIcon />
-        <MpBannerDescription><strong>{{ t('The project is created as Draft') }}.</strong> {{ t('Nothing consumes budget until the project is approved. Set the budget baseline in Budget setup, then approve — the recognition method, measure and production flag lock at approval.') }}</MpBannerDescription>
-      </MpBanner>
-      <MpBanner v-if="weightWarning" id="pc-review-weight" variant="warning" is-inline class="pm-page-banner">
-        <MpBannerIcon /><MpBannerDescription>{{ weightWarning }}</MpBannerDescription>
-      </MpBanner>
-    </template>
+    <div class="pm-stage-wrap" :class="{ 'pm-stage-wrap--info': step === 4 }">
+    <MpBanner v-if="step === 4" id="pc-review-draft" variant="info" is-inline class="pm-page-banner">
+      <MpBannerIcon />
+      <MpBannerDescription><strong>{{ t('The project is created as Draft') }}.</strong> {{ t('Nothing consumes budget until the project is approved. Set the budget baseline in Budget setup, then approve — the recognition method, measure and production flag lock at approval.') }}</MpBannerDescription>
+    </MpBanner>
 
     <div class="pm-stage">
       <div class="pm-form-width">
@@ -360,39 +363,42 @@ function create() {
                 <MpButton :id="`pc-ph-remove-${pi}`" variant="ghost" is-rounded left-icon="delete" :aria-label="t('Remove phase')" @click="removePhase(pi)" />
               </div>
 
-              <!-- Phase fields — share the rows' grid so every input ends at the same edge -->
-              <div class="pm-phase-row">
-                <div class="pm-phase-fields" :class="{ 'pm-phase-fields--weight': isMilestone }">
-                  <MpFormControl :id="`pc-ph-${pi}-fc`" is-required>
-                    <MpFormLabel>{{ t('Phase name') }}</MpFormLabel>
-                    <MpInput :id="`pc-ph-${pi}`" v-model="ph.name" :placeholder="t('e.g. Interior')" />
-                  </MpFormControl>
-                  <MpFormControl v-if="isMilestone" :id="`pc-ph-rab-${pi}-fc`">
+              <!-- Phase fields and work-package rows share one grid (rowClass) -->
+              <div class="pm-srow" :class="rowClass">
+                <MpFormControl :id="`pc-ph-${pi}-fc`" is-required>
+                  <MpFormLabel>{{ t('Phase name') }}</MpFormLabel>
+                  <MpInput :id="`pc-ph-${pi}`" v-model="ph.name" :placeholder="t('e.g. Interior')" />
+                </MpFormControl>
+                <template v-if="isMilestone">
+                  <MpFormControl :id="`pc-ph-rab-${pi}-fc`">
                     <MpFormLabel>{{ t('Phase RAB value') }}</MpFormLabel>
                     <MpInputGroup :id="`pc-ph-rab-${pi}-group`">
                       <MpInputLeftAddon :id="`pc-ph-rab-${pi}-addon`" has-background>Rp</MpInputLeftAddon>
                       <MpInput :id="`pc-ph-rab-${pi}`" v-model="ph.rabValue" inputmode="numeric" placeholder="0" @blur="ph.rabValue = fmtAmount(ph.rabValue)" />
                     </MpInputGroup>
                   </MpFormControl>
-                  <MpFormControl v-if="isMilestone" :id="`pc-ph-w-${pi}-fc`">
+                  <MpFormControl :id="`pc-ph-w-${pi}-fc`">
                     <MpFormLabel>{{ t('Progress weight') }}</MpFormLabel>
                     <MpInputGroup :id="`pc-ph-w-${pi}-group`">
                       <MpInput :id="`pc-ph-w-${pi}`" v-model="ph.weight" inputmode="decimal" placeholder="0" />
                       <MpInputRightAddon :id="`pc-ph-w-${pi}-addon`" has-background>%</MpInputRightAddon>
                     </MpInputGroup>
                   </MpFormControl>
-                </div>
+                </template>
+                <span v-for="f in phaseFillers" :key="`phf-${f}`" />
+                <span />
               </div>
 
-              <!-- Work packages: "Phase N.M" label over the name · type · planned units · unit · remove -->
-              <div v-for="(wp, wi) in ph.wps" :key="wi" class="pm-wp-row" :class="{ 'pm-wp-row--units': isProduction || isUnit, 'pm-wp-row--type': isProduction }">
+              <!-- Work packages: "Phase N.M" label over the name · type · qty · unit · remove -->
+              <div v-for="(wp, wi) in ph.wps" :key="wi" class="pm-srow pm-srow--wp" :class="rowClass">
                 <MpFormControl :id="`pc-wp-${pi}-${wi}-fc`" is-required>
                   <MpFormLabel>{{ t('Phase') }} {{ pi + 1 }}.{{ wi + 1 }}</MpFormLabel>
                   <MpInput :id="`pc-wp-${pi}-${wi}`" v-model="wp.name" :placeholder="t('Work package name')" />
                 </MpFormControl>
                 <ErpFilterSelect v-if="isProduction" :id="`pc-wp-type-${pi}-${wi}`" :model-value="wp.type" :placeholder="t('Type')" :options="wpTypeOptions" :is-clearable="false" width="100%" @update:model-value="(v: string) => (wp.type = v as WorkPackageType)" />
-                <MpInput v-if="isProduction || isUnit" :id="`pc-wp-units-${pi}-${wi}`" v-model="wp.plannedUnits" inputmode="numeric" :placeholder="t('Planned units')" :aria-label="t('Planned units')" />
-                <MpInput v-if="isProduction || isUnit" :id="`pc-wp-unit-${pi}-${wi}`" v-model="wp.unit" :placeholder="t('Unit')" :aria-label="t('Unit')" />
+                <MpInput v-if="isProduction || isUnit" :id="`pc-wp-units-${pi}-${wi}`" v-model="wp.plannedUnits" inputmode="numeric" :placeholder="t('Qty')" :aria-label="t('Qty')" />
+                <ErpFilterSelect v-if="isProduction || isUnit" :id="`pc-wp-unit-${pi}-${wi}`" v-model="wp.unit" :placeholder="t('Unit')" :options="unitOptions" :is-clearable="false" width="100%" />
+                <span v-for="f in wpFillers" :key="`wpf-${f}`" />
                 <MpButton :id="`pc-wp-remove-${pi}-${wi}`" variant="ghost" is-rounded left-icon="minus-circular" :aria-label="t('Remove work package')" class="pm-row-remove" @click="ph.wps.splice(wi, 1)" />
               </div>
               <div><MpButton :id="`pc-wp-add-${pi}`" variant="ghost" is-rounded left-icon="add" @click="ph.wps.push(newWp())">{{ t('Work package') }}</MpButton></div>
@@ -420,13 +426,16 @@ function create() {
 
           <section>
             <h3 class="pm-h3 pm-mb-3">{{ t('Structure') }}</h3>
+            <MpBanner v-if="weightWarning" id="pc-review-weight" variant="warning" class="pm-mb-3">
+              <MpBannerIcon /><MpBannerDescription>{{ weightWarning }}</MpBannerDescription>
+            </MpBanner>
             <div class="pm-table-wrap">
               <table class="pm-table">
                 <thead>
                   <tr>
                     <th>{{ t('Phase / work package') }}</th>
                     <th v-if="isProduction">{{ t('Type') }}</th>
-                    <th v-if="isProduction || isUnit" class="pm-num">{{ t('Planned units') }}</th>
+                    <th v-if="isProduction || isUnit" class="pm-num">{{ t('Qty') }}</th>
                     <th v-if="isMilestone" class="pm-num">{{ t('Phase RAB value') }}</th>
                     <th v-if="isMilestone" class="pm-num">{{ t('Progress weight') }}</th>
                   </tr>

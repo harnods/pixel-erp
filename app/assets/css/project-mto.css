@@ -257,14 +257,13 @@
 
 /* ── New project › phase card: title row, then fields and work-package rows on one grid ── */
 .pm-phase-head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3, 12px); }
-.pm-phase-row, .pm-wp-row { display: grid; gap: var(--mp-spacing-3, 12px); }
-/* the empty last track mirrors the remove column, so phase inputs end where work-package inputs end */
-.pm-phase-row { grid-template-columns: minmax(0, 1fr) var(--mp-sizes-10, 40px); }
-.pm-phase-fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--mp-spacing-3, 12px); }
-.pm-phase-fields--weight { grid-template-columns: minmax(0, 2fr) minmax(0, 1.4fr) minmax(0, 1fr); }
-.pm-wp-row { grid-template-columns: minmax(0, 1fr) var(--mp-sizes-10, 40px); align-items: end; }
-.pm-wp-row--units { grid-template-columns: minmax(0, 1fr) var(--mp-sizes-28, 112px) var(--mp-sizes-24, 96px) var(--mp-sizes-10, 40px); }
-.pm-wp-row--units.pm-wp-row--type { grid-template-columns: minmax(0, 1fr) var(--mp-sizes-36, 144px) var(--mp-sizes-28, 112px) var(--mp-sizes-24, 96px) var(--mp-sizes-10, 40px); }
+/* One grid for the phase fields and its work-package rows, so the name inputs share a width.
+   a: type+qty+unit · b: qty+unit · c: RAB+weight only · d: name only. Last track = remove. */
+.pm-srow { display: grid; gap: var(--mp-spacing-3, 12px); align-items: end; }
+.pm-srow--a { grid-template-columns: minmax(0, 1fr) var(--mp-sizes-36, 144px) var(--mp-sizes-28, 112px) var(--mp-sizes-24, 96px) var(--mp-sizes-10, 40px); }
+.pm-srow--b { grid-template-columns: minmax(0, 1fr) var(--mp-sizes-28, 112px) var(--mp-sizes-24, 96px) var(--mp-sizes-10, 40px); }
+.pm-srow--c { grid-template-columns: minmax(0, 1fr) var(--mp-sizes-36, 144px) var(--mp-sizes-28, 112px) var(--mp-sizes-10, 40px); }
+.pm-srow--d { grid-template-columns: minmax(0, 1fr) var(--mp-sizes-10, 40px); }
 .pm-row-remove { justify-self: end; }
 
 /* ── Page banner between title bar and stage (BillDetailsPage .detail-stage-wrapper) ── */
@@ -272,4 +271,4 @@
 .pm-stage-wrap--info { background: var(--mp-colors-background-information, #eef0fc); }
 .pm-stage-wrap--warning { background: var(--mp-colors-background-warning, #fef3d6); }
 .pm-page-banner { border-radius: 0 !important; flex-shrink: 0; }
-@media (max-width: 720px) { .pm-phase-fields--weight { grid-template-columns: minmax(0, 1fr); } }
+
