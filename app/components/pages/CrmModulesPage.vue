@@ -48,7 +48,7 @@ function continueNewModule() {
   if (!newModuleName.value.trim()) { newModuleNameError.value = t('Enter a module name.'); return }
   newModuleOpen.value = false
   const id = createCustomModule(newModuleName.value.trim(), 'pipeline', newModuleAccess.value, [], 'draft')
-  router.push({ path: `/crm/settings/modules/${id}`, query: { edit: '1' } })
+  router.push({ path: `/crm/settings/modules/${id}`, query: { edit: '1', accessLocked: '1' } })
 }
 
 type ModuleRow = CrmModule & { access: string; conversionLabel: string }

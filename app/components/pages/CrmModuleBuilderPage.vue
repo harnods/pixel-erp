@@ -66,7 +66,7 @@ if (isCreating) resetGenericModuleDraft('new')
 // Pre-fill from query params when coming from the creation modal.
 const qName = (isCreating && typeof route.query.name === 'string') ? route.query.name : ''
 const qAccess = (isCreating && route.query.accessLevel === 'team') ? 'team' as const : 'company' as const
-const accessLocked = isCreating && !!route.query.accessLevel
+const accessLocked = (isCreating && !!route.query.accessLevel) || route.query.accessLocked === '1'
 
 const newModuleStub: CrmModule = reactive({
   id: 'new', name: qName, system: false, accessLevel: qAccess, status: 'draft',
