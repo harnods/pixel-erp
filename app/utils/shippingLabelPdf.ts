@@ -13,6 +13,8 @@ export interface ShippingLabelEntry {
   courier?: string
   /** this shipment's tracking / AWB — one label is one parcel is one tracking no. */
   trackingNo?: string
+  /** which parcel of the order this label is for, when it ships as several */
+  packageNo?: string
 }
 
 function toEntries(input: Array<ShippingLabelEntry | OutgoingOrder>): ShippingLabelEntry[] {
@@ -46,7 +48,7 @@ export async function generateShippingLabelPdf(
   const inner = { x: M, y: M, w: W - M * 2 }
 
   for (let i = 0; i < entries.length; i++) {
-    const { order, info } = entries[i]!
+    const { order, info, packageNo } = entries[i]!
     if (i > 0) doc.addPage([W, H], 'portrait')
 
     const customer = order.customerId ? customers.find((c) => c.id === order.customerId) : undefined
@@ -170,7 +172,9 @@ export async function generateShippingLabelPdf(
     // ── Total qty (bottom, bold) ──────────────────────────────────────────────
     doc.setLineWidth(0.3); doc.line(inner.x, totalRowY - 4.5, inner.x + inner.w, totalRowY - 4.5)
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5)
-    doc.text(order.number, L, totalRowY)
+    // The outbound, plus which parcel of it this sticker belongs on — two parcels of
+    // one order carry different AWBs, so the labels must be tellable apart.
+    doc.text(packageNo ? `${order.number} · ${packageNo}` : order.number, L, totalRowY)
     doc.text(`${lines.length} SKU · Total ${totalQty} pcs`, R, totalRowY, { align: 'right' })
   }
 

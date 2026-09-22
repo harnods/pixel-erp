@@ -192,9 +192,16 @@ async function printPackingList() {
 // rule) — the handler then toasts "Waiting for marketplace shipping label".
 const {
   pdfOpen: shipLabelOpen, pdfDoc: shipLabelDoc, pdfFilename: shipLabelName, printShippingLabels,
-  courierModalOpen, courierModalOrders, saveShippingDetailsAndPrint, cancelShippingDetails,
+  courierModalOpen, courierModalRows, saveShippingDetailsAndPrint, cancelShippingDetails,
 } = usePrintShippingLabel()
-function printShipLabel() { printShippingLabels(linkedOrder.value ? [linkedOrder.value] : [], { requireCourier: true }) }
+function printShipLabel() {
+  const t = task.value
+  printShippingLabels(linkedOrder.value ? [linkedOrder.value] : [], {
+    requireCourier: true,
+    // This task IS the parcel — its label carries its own courier/AWB.
+    packages: t ? [{ id: t.id, no: t.taskNo, orderId: t.salesOrderId }] : [],
+  })
+}
 // Finishing packing auto-creates the delivery (see PackItemsPage.vue) — a
 // completed task always has one to jump to.
 function viewDelivery() {
@@ -754,7 +761,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 
   <ShippingDetailsModal
     :is-open="courierModalOpen"
-    :orders="courierModalOrders"
+    :rows="courierModalRows"
     @close="cancelShippingDetails"
     @submit="saveShippingDetailsAndPrint"
   />

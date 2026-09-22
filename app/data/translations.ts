@@ -1259,6 +1259,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "You must select a courier": "Anda harus memilih kurir",
   "Shipping details": "Detail pengiriman",
   "This order has no courier yet. Add it to print the shipping label.": "Order ini belum punya kurir. Isi dulu untuk mencetak label pengiriman.",
+  // One outbound can leave as several parcels, each on its own AWB.
+  "Add a courier for each package to print the shipping label. Each package ships on its own tracking no.": "Isi kurir untuk setiap paket sebelum mencetak label pengiriman. Setiap paket dikirim dengan no. resi sendiri.",
   "Save & print": "Simpan & cetak",
   "You must select warehouse": "Anda harus memilih gudang",
   "You must select product": "Anda harus memilih produk",
