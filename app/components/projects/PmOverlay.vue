@@ -58,7 +58,7 @@ const emit = defineEmits<{ (e: 'close'): void }>()
               <h2 class="pm-drawer-title">{{ title }}</h2>
               <div v-if="subtitle" class="pm-drawer-sub">{{ subtitle }}</div>
             </div>
-            <MpButton variant="ghost" is-rounded aria-label="Close" @click="emit('close')"><MpIcon name="close" /></MpButton>
+            <MpButton variant="ghost" is-rounded aria-label="Close" @click="emit('close')" left-icon="close" />
           </header>
           <div class="pm-drawer-body"><slot /></div>
           <footer v-if="$slots.footer" class="pm-drawer-footer">

@@ -94,7 +94,7 @@ const columns: TableColumn[] = [
   { key: 'committed', label: 'Committed', kind: 'amount', align: 'right', sortType: 'number' },
   { key: 'actual', label: 'Actual', kind: 'amount', align: 'right', sortType: 'number' },
   { key: 'consumedPct', label: 'Consumed', kind: 'default', sortType: 'number' },
-  { key: 'percentComplete', label: '% complete', kind: 'number', align: 'right', sortType: 'number' },
+  { key: 'percentComplete', label: 'Completed', kind: 'number', align: 'right', sortType: 'number' },
   { key: 'billed', label: 'Billed', kind: 'amount', align: 'right', sortType: 'number' },
   { key: 'wip', label: 'WIP position', kind: 'amount', align: 'right', sortType: 'number' },
   { key: 'flags', label: 'Flags', kind: 'tags', sortType: 'number' },
@@ -155,26 +155,28 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         @clear-filters="clearFilters"
       >
         <template v-if="scenario !== 'empty'" #stats>
-          <div class="pm-grid-4 pm-stats">
-            <div class="pm-card">
-              <div class="pm-stat-label">{{ t('Open projects') }}</div>
-              <div class="pm-stat-value">{{ stats.active + stats.draft }}</div>
-              <div class="pm-stat-note">{{ stats.active }} {{ t('active') }} · {{ stats.draft }} {{ t('draft') }} · {{ rpShort(stats.contract) }} {{ t('contract value') }}</div>
+          <div class="pm-kpis">
+            <div class="pm-kpi pm-kpi--bordered">
+              <div class="pm-kpi-title">{{ t('Open projects') }}</div>
+              <div class="pm-kpi-period">{{ stats.active }} {{ t('active') }} · {{ stats.draft }} {{ t('draft') }}</div>
+              <div class="pm-kpi-amount">{{ stats.active + stats.draft }}</div>
+              <span class="pm-kpi-period">{{ rpShort(stats.contract) }} {{ t('contract value') }}</span>
             </div>
-            <div class="pm-card">
-              <div class="pm-stat-label">{{ t('WIP position') }}</div>
-              <div class="pm-stat-value"><span class="pm-pos">{{ rpShort(stats.underbilled) }}</span> / <span class="pm-neg">{{ rpShort(stats.overbilled) }}</span></div>
-              <div class="pm-stat-note">{{ t('Underbilled (asset) / overbilled (liability)') }}</div>
+            <div class="pm-kpi pm-kpi--bordered">
+              <div class="pm-kpi-title">{{ t('WIP position') }}</div>
+              <div class="pm-kpi-period">{{ t('Underbilled (asset) / overbilled (liability)') }}</div>
+              <div class="pm-kpi-amount"><span class="pm-pos">{{ rpShort(stats.underbilled) }}</span> / <span class="pm-neg">{{ rpShort(stats.overbilled) }}</span></div>
             </div>
-            <div class="pm-card">
-              <div class="pm-stat-label">{{ t('Over budget') }}</div>
-              <div class="pm-stat-value" :class="{ 'pm-neg': stats.overBudget }">{{ stats.overBudget }}</div>
-              <div class="pm-stat-note">{{ t('Projects with a work package over its budget') }}</div>
+            <div class="pm-kpi pm-kpi--bordered">
+              <div class="pm-kpi-title">{{ t('Over budget') }}</div>
+              <div class="pm-kpi-period">{{ t('Projects with a work package over its budget') }}</div>
+              <div class="pm-kpi-amount" :class="{ 'pm-neg': stats.overBudget }">{{ stats.overBudget }}</div>
             </div>
-            <div class="pm-card">
-              <div class="pm-stat-label">{{ t('Change-order exposure') }}</div>
-              <div class="pm-stat-value" :class="{ 'pm-warn': stats.exposure }">{{ rp(stats.exposure) }}</div>
-              <div class="pm-stat-note">{{ t('Executed but not signed off') }} · <span class="pm-link" role="link" tabindex="0" @click="router.push('/project-approvals')">{{ stats.approvals }} {{ t('approvals pending') }}</span></div>
+            <div class="pm-kpi">
+              <div class="pm-kpi-title">{{ t('Change-order exposure') }}</div>
+              <div class="pm-kpi-period">{{ t('Executed but not signed off') }}</div>
+              <div class="pm-kpi-amount" :class="{ 'pm-warn': stats.exposure }">{{ rp(stats.exposure) }}</div>
+              <a class="pm-kpi-link" role="link" tabindex="0" @click="router.push('/project-approvals')" @keydown.enter="router.push('/project-approvals')">{{ stats.approvals }} {{ t('approvals pending') }}</a>
             </div>
           </div>
         </template>
@@ -183,7 +185,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <div class="filter-left">
             <ErpFilterSelect id="pm-status-filter" v-model="statusFilter" :placeholder="t('Status')" :options="statusOptions" />
             <ErpFilterSelect id="pm-dim-filter" v-model="dimKey" :placeholder="t('Dimension')" :options="dimOptions" />
-            <ErpFilterSelect v-if="dimKey" id="pm-dim-value-filter" v-model="dimValue" :placeholder="t('Dimension value')" :options="dimValueOptions" />
+            <ErpFilterSelect id="pm-dim-value-filter" v-model="dimValue" :placeholder="t('Dimension value')" :options="dimValueOptions" :is-disabled="!dimKey" />
           </div>
           <div class="filter-right">
             <MpButtonGroup class="filter-btn-group">
@@ -217,7 +219,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <template #cell-actual="{ row }">{{ rp(asRow(row).actual) }}</template>
         <template #cell-consumedPct="{ row }">
           <div v-if="asRow(row).consumedPct >= 0">
-            <MpProgress :value="String(Math.min(asRow(row).consumedPct, 100))" size="sm" :color="asRow(row).consumedPct > 100 ? 'negative' : asRow(row).consumedPct > 90 ? 'warning' : 'positive'" />
+            <div class="pm-progress-line">
+              <MpProgress :value="String(Math.min(asRow(row).consumedPct, 100))" size="sm" :color="asRow(row).consumedPct > 100 ? 'negative' : asRow(row).consumedPct > 90 ? 'warning' : 'positive'" />
+            </div>
             <span class="pm-cell-sub">{{ pct(asRow(row).consumedPct, 0) }} {{ t('of budget') }}</span>
           </div>
           <span v-else class="pm-muted">—</span>

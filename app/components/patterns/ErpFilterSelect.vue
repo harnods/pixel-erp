@@ -22,7 +22,9 @@ const props = withDefaults(defineProps<{
   width?: string
   /** filter selects show an (×) to reset; set false for required form selects */
   isClearable?: boolean
-}>(), { width: '176px', isClearable: true })
+  /** dependent filters render but stay inert until their parent has a value */
+  isDisabled?: boolean
+}>(), { width: '176px', isClearable: true, isDisabled: false })
 
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
@@ -40,7 +42,7 @@ const filtered = computed<Opt[]>(() => {
   return q ? normalized.value.filter((o) => o.label.toLowerCase().includes(q)) : normalized.value
 })
 
-function focusOpen() { if (!open.value) { open.value = true; query.value = ''; nextTick(() => inputEl.value?.focus()) } }
+function focusOpen() { if (props.isDisabled) return; if (!open.value) { open.value = true; query.value = ''; nextTick(() => inputEl.value?.focus()) } }
 function onInput(e: Event) { query.value = (e.target as HTMLInputElement).value; if (!open.value) open.value = true }
 function onBlur() { window.setTimeout(() => { open.value = false; query.value = '' }, 120) }
 function close() { open.value = false; query.value = '' }
@@ -51,7 +53,7 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
 </script>
 
 <template>
-  <div class="efs" :class="{ 'efs--filled': !!modelValue && isClearable && !open }" :style="{ '--efs-w': width }">
+  <div class="efs" :class="{ 'efs--filled': !!modelValue && isClearable && !open && !isDisabled, 'efs--disabled': isDisabled }" :style="{ '--efs-w': width }">
     <MpPopover :id="id" is-manual :is-open="open" placement="bottom-start" use-portal is-adaptive-width :is-keep-alive="false" @close="close">
       <MpPopoverTrigger>
         <div class="efs-trigger" @click="focusOpen">
@@ -61,6 +63,8 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
             type="text"
             :value="open ? query : selectedLabel"
             :placeholder="modelValue ? selectedLabel : placeholder"
+            :disabled="isDisabled"
+            :aria-disabled="isDisabled"
             @focus="focusOpen"
             @input="onInput"
             @keydown.enter.prevent="enter"
@@ -91,6 +95,10 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
 
 <style scoped>
 .efs { position: relative; display: inline-flex; }
+.efs--disabled .efs-trigger { background: var(--mp-colors-background-disabled, #f1f5f9); border-color: var(--mp-colors-border-disabled, #e3e7e9); cursor: not-allowed; }
+.efs--disabled .efs-input { cursor: not-allowed; }
+.efs--disabled .efs-clear { display: none; }
+.efs--disabled .efs-input::placeholder, .efs--disabled .efs-chevron { color: var(--mp-colors-text-disabled, #8c9596); }
 .efs-trigger {
   /* Height + resting border MUST equal MpInput md (rule/select-field-metrics):
      38px tall (--mp-sizes-9.5), border = --mp-colors-border-form (#1d1f2429).

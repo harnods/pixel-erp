@@ -117,7 +117,7 @@ function usedColor(v: number) { return v > 100 ? 'negative' : v > 90 ? 'warning'
                 <td class="pm-num" :class="r.available !== undefined && r.available < 0 ? 'pm-neg' : ''">{{ r.available !== undefined ? rp(r.available) : rpSigned(-(r.committed + r.actual)) }}</td>
                 <td>
                   <template v-if="r.baseline">
-                    <MpProgress :value="String(Math.min(usedPct(r), 100))" size="sm" :color="usedColor(usedPct(r))" />
+                    <div class="pm-progress-line"><MpProgress :value="String(Math.min(usedPct(r), 100))" size="sm" :color="usedColor(usedPct(r))" /></div>
                     <span class="pm-cell-sub">{{ pct(usedPct(r), 0) }}</span>
                   </template>
                 </td>

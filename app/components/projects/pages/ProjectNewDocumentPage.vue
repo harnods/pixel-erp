@@ -180,7 +180,7 @@ const VERDICT = computed(() => ({
                 </td>
                 <td class="pm-num"><MpInput :id="`nd-amt-${i}`" v-model="l.amount" inputmode="numeric" :aria-label="t('Amount')" @blur="l.amount = parseAmount(l.amount) ? parseAmount(l.amount).toLocaleString('id-ID') : ''" /></td>
                 <td>
-                  <MpButton :id="`nd-remove-${i}`" variant="ghost" is-rounded :aria-label="t('Remove line')" @click="removeLine(i)"><MpIcon name="minus-circular" /></MpButton>
+                  <MpButton :id="`nd-remove-${i}`" variant="ghost" is-rounded :aria-label="t('Remove line')" @click="removeLine(i)" left-icon="minus-circular" />
                 </td>
               </tr>
             </tbody>

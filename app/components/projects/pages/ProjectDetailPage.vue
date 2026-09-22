@@ -170,7 +170,7 @@ const lastEntry = computed(() => projectAudit.value[0])
           <div class="pm-stat-value pm-stat-value--md" :class="{ 'pm-neg': summary.budget !== undefined && summary.consumed > summary.budget }">{{ rp(summary.consumed) }}</div>
         </div>
         <div class="pm-card pm-card--flat">
-          <div class="pm-stat-label">{{ t('% complete') }}</div>
+          <div class="pm-stat-label">{{ t('Completed') }}</div>
           <div class="pm-stat-value pm-stat-value--md">{{ summary.percentComplete !== undefined ? pct(summary.percentComplete) : '—' }}</div>
         </div>
         <div class="pm-card pm-card--flat">

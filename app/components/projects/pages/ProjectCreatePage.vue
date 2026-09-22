@@ -360,7 +360,7 @@ function create() {
                     <MpInputRightAddon>%</MpInputRightAddon>
                   </MpInputGroup>
                 </MpFormControl>
-                <MpButton :id="`pc-ph-remove-${pi}`" variant="ghost" is-rounded :aria-label="t('Remove phase')" @click="removePhase(pi)"><MpIcon name="trash" /></MpButton>
+                <MpButton :id="`pc-ph-remove-${pi}`" variant="ghost" is-rounded :aria-label="t('Remove phase')" @click="removePhase(pi)" left-icon="trash" />
               </div>
               <div class="pm-stack pm-gap-2 pm-mt-3 pm-pl-6">
                 <div v-for="(wp, wi) in ph.wps" :key="wi" class="pm-row pm-gap-2">
@@ -369,7 +369,7 @@ function create() {
                   <ErpFilterSelect v-if="isProduction" :id="`pc-wp-type-${pi}-${wi}`" :model-value="wp.type" :placeholder="t('Type')" :options="wpTypeOptions" :is-clearable="false" width="140px" @update:model-value="(v: string) => (wp.type = (v || 'production') as WorkPackageType)" />
                   <MpInput v-if="isProduction || isUnit" :id="`pc-wp-units-${pi}-${wi}`" v-model="wp.plannedUnits" class="pm-w-narrow" inputmode="numeric" :aria-label="t('Planned units')" />
                   <MpInput v-if="isProduction || isUnit" :id="`pc-wp-unit-${pi}-${wi}`" v-model="wp.unit" class="pm-w-narrow" :aria-label="t('Unit')" />
-                  <MpButton :id="`pc-wp-remove-${pi}-${wi}`" variant="ghost" is-rounded :aria-label="t('Remove work package')" @click="ph.wps.splice(wi, 1)"><MpIcon name="minus-circular" /></MpButton>
+                  <MpButton :id="`pc-wp-remove-${pi}-${wi}`" variant="ghost" is-rounded :aria-label="t('Remove work package')" @click="ph.wps.splice(wi, 1)" left-icon="minus-circular" />
                 </div>
                 <div><MpButton :id="`pc-wp-add-${pi}`" variant="ghost" is-rounded left-icon="add" @click="ph.wps.push(newWp())">{{ t('Work package') }}</MpButton></div>
               </div>

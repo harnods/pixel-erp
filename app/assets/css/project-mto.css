@@ -236,3 +236,17 @@
 .pm-tree-name > div { min-width: 0; overflow-wrap: anywhere; }
 /* ErpFilterSelect as a full-width form field: its root shrink-wraps, so let it fill the row. */
 .efs[style*="--efs-w: 100%"] { display: block; width: 100%; }
+
+/* ── Index summary (same anatomy as ProductsPage .stats-section: flat, divided, no card boxes) ── */
+.pm-kpis { display: flex; gap: var(--mp-spacing-6, 24px); align-items: flex-start; }
+.pm-kpi { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1, 4px); padding-right: var(--mp-spacing-6, 24px); align-self: stretch; }
+.pm-kpi--bordered { border-right: 1px solid var(--mp-colors-border-default, #e3e7e9); }
+.pm-kpi-title { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-default, #080d0e); line-height: var(--mp-line-heights-md, 20px); white-space: nowrap; }
+.pm-kpi-period { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #3a4749); line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pm-kpi-amount { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-default, #080d0e); line-height: var(--mp-line-heights-2xl, 32px); white-space: nowrap; }
+.pm-kpi-link { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-link, #165082); line-height: var(--mp-line-heights-md, 20px); cursor: pointer; }
+@media (max-width: 900px) { .pm-kpis { overflow-x: auto; } }
+
+/* Progress bar in a table cell: sit it on the first text line's midline, like the numbers beside it. */
+.pm-progress-line { height: var(--mp-sizes-5, 20px); display: flex; align-items: center; }
+.pm-progress-line > * { flex: 1; }

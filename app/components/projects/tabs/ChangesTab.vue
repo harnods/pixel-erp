@@ -358,7 +358,7 @@ function doSubmit() {
                   <td class="pm-num"><MpInput :id="`eco-c-qty-${i}`" class="pm-w-narrow" :model-value="numValue(i, 'qty', c)" inputmode="decimal" :aria-label="t('Qty')" @update:model-value="(v: string) => (numDraft[`${i}-qty`] = v)" @blur="commitNum(i, 'qty', c)" /></td>
                   <td><MpInput :id="`eco-c-unit-${i}`" class="pm-w-narrow" v-model="c.unit" :aria-label="t('Unit')" @blur="persistChanges()" /></td>
                   <td class="pm-num"><MpInput :id="`eco-c-cost-${i}`" class="pm-w-cell" :model-value="numValue(i, 'unitCost', c)" inputmode="numeric" :aria-label="t('Standard cost')" @update:model-value="(v: string) => (numDraft[`${i}-unitCost`] = v)" @blur="commitNum(i, 'unitCost', c)" /></td>
-                  <td><MpButton :id="`eco-c-remove-${i}`" variant="ghost" is-rounded :aria-label="t('Remove component')" @click="removeComponent(i)"><MpIcon name="minus-circular" /></MpButton></td>
+                  <td><MpButton :id="`eco-c-remove-${i}`" variant="ghost" is-rounded :aria-label="t('Remove component')" @click="removeComponent(i)" left-icon="minus-circular" /></td>
                 </tr>
               </tbody>
               <tfoot><tr><td colspan="5"><MpButton id="eco-add-component" variant="ghost" is-rounded left-icon="add" @click="addComponent">{{ t('Component') }}</MpButton></td></tr></tfoot>

@@ -7,7 +7,7 @@
  *   • kebab: the row […] trigger — aria-label only, no tooltip (rule/table-actions-no-tooltip).
  *   • default: a secondary "Actions" button with the dropdown chevron.
  */
-import { MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem } from '@mekari/pixel3'
+import { MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem } from '@mekari/pixel3'
 
 export interface PmMenuItem {
   label: string
@@ -27,7 +27,7 @@ function run(item: PmMenuItem) {
 <template>
   <MpPopover v-if="items.length" :id="id" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
     <MpPopoverTrigger>
-      <MpButton v-if="kebab" variant="ghost" is-rounded :aria-label="label"><MpIcon name="menu-kebab" /></MpButton>
+      <MpButton v-if="kebab" variant="ghost" left-icon="menu-kebab" is-rounded :aria-label="label" />
       <MpButton v-else variant="secondary" is-rounded right-icon="chevrons-down">{{ label }}</MpButton>
     </MpPopoverTrigger>
     <MpPopoverContent class="erp-dropdown-menu pm-menu-content">
