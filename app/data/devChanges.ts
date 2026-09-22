@@ -149,9 +149,9 @@ export const DEV_CHANGES: DevChange[] = [
   },
   {
     id: 'crm-layout-preview',
-    title: 'Preview layout drawer — Deal form & detail replicas',
+    title: 'Preview layout drawer — Deal & custom module replicas',
     description:
-      'Preview layout drawer: for the Deals module, both Form and Details record previews are exact 100% replicas of their actual pages. Form preview replicates the New Deal page (header, deal name, contact, deal value, columns, line items, totals, footer). Details record preview replicates the Deal detail page (title bar, pipeline stepper, tabs, Overview/Transaction/Shipping sections, products table, totals). Custom modules keep their dynamic grid previews for both modes.',
+      'Preview layout drawer: for all modules, both Form and Details record previews follow the same high-fidelity format. Deals module previews are exact replicas of their actual pages. Custom module previews use the same dp-*/si-* component structure — products table with thumbnail/SKU/search/add, memo/attachment + totals section, form with drag-handle line items table, checkbox fields, and section headers.',
     date: '2026-09-22',
     files: ['CrmDetailLayoutBuilder.vue'],
   },
