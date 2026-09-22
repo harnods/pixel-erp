@@ -122,7 +122,7 @@ const actions = computed<PmMenuItem[]>(() => {
       <template #actions>
         <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="router.push(`/project-audit-log?project=${project.id}`)">{{ t('View history') }}</button>
         <PmMenu :items="actions" :label="t('Actions')" />
-        <button v-if="project.status === 'draft'" class="btn-enterprise btn-enterprise--primary" type="button" @click="approveOpen = true">{{ approveLabel }}</button>
+        <button v-if="project.status === 'draft'" class="btn-enterprise btn-enterprise--primary" type="button" data-devchange="pm-release-approval" @click="approveOpen = true">{{ approveLabel }}</button>
       </template>
     </PmTitleBar>
 

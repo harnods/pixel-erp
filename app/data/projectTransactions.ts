@@ -230,6 +230,9 @@ export function woCommitted(w: ProjectWorkOrder): number {
 }
 
 export function wpActual(wpId: string, account?: string): number {
+  // Story 7: a Draft project consumes no budget — neither committed nor actual.
+  const wp = getWorkPackage(wpId)
+  if (wp && getProject(wp.projectId)?.status === 'draft') return 0
   const lines = costLines.filter(l => l.wpId === wpId && l.kind === 'actual' && countsAsProjectCost(l) && (!account || l.account === account))
   let sum = lines.reduce((s, l) => s + l.amount, 0)
   if (!account || account === COGM_ACCOUNT) sum += projectWorkOrders.filter(w => w.wpId === wpId && woConsumes(w)).reduce((s, w) => s + w.actual, 0)

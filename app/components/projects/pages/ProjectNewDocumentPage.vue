@@ -38,7 +38,9 @@ const DOC_TYPES: { key: DocType; label: string }[] = [
 ]
 const docType = ref<DocType>((['PR', 'PO', 'Expense', 'Timesheet'].includes(String(route.query.type)) ? route.query.type : 'PO') as DocType)
 const vendor = ref('')
-const nodes = computed(() => peggableNodes({ includeDraft: true }))
+// Draft projects stay pickable so a purchase request can be prepared early — it saves as a draft
+// and commits nothing until approval (Story 7). Firm documents to a Draft project are refused.
+const nodes = computed(() => peggableNodes({ includeDraft: true }).map(n => (getProject(n.projectId)?.status === 'draft' ? { ...n, label: `${n.label} (${t('Draft — purchase request only')})` } : n)))
 const presetProject = typeof route.query.project === 'string' ? getProject(route.query.project) : undefined
 const presetWp = typeof route.query.wp === 'string' ? route.query.wp : (presetProject ? nodes.value.find(n => n.projectId === presetProject.id)?.id : '')
 
@@ -93,7 +95,7 @@ const DOC_STATUS: Record<PeggedDocument['status'], { label: string; tone: string
   held: { label: 'Held for Finance', tone: 'pm-pill--yellow' },
   ordinary: { label: 'Ordinary expense', tone: 'pm-pill--gray' },
   rejected: { label: 'Rejected', tone: 'pm-pill--red' },
-  draft: { label: 'Draft (MRP)', tone: 'pm-pill--blue' },
+  draft: { label: 'Draft', tone: 'pm-pill--blue' },
 }
 </script>
 
@@ -102,10 +104,11 @@ const DOC_STATUS: Record<PeggedDocument['status'], { label: string; tone: string
     <PmTitleBar :title="t('New document')" :breadcrumb="presetProject ? { label: `${presetProject.code} · ${presetProject.name}`, to: `/projects/${presetProject.id}` } : undefined" :subtitle="t('Purchase request, purchase order, expense or timesheet — with the project on every line.')" />
     <div class="pm-stage">
       <div class="pm-stack" style="gap: 16px; max-width: 1180px">
-        <div v-if="result" class="pm-banner" :class="result.status === 'held' ? 'pm-banner--warn' : 'pm-banner--success'">
+        <div v-if="result" class="pm-banner" :class="result.status === 'held' ? 'pm-banner--warn' : result.status === 'draft' ? 'pm-banner--info' : 'pm-banner--success'">
           <div class="pm-banner-body">
             <div class="pm-banner-title">{{ result.docNo }} — {{ t(DOC_STATUS[result.status].label) }}</div>
             <template v-if="result.status === 'held'">{{ t('Finance sees it in the Approvals inbox; you can see its held state below.') }}</template>
+            <template v-else-if="result.status === 'draft'">{{ t('The project is still Draft, so this purchase request commits nothing until the project is approved.') }}</template>
             <template v-else-if="result.status === 'ordinary'">{{ t('No line named a project, so it saved as an ordinary expense and consumed no project budget.') }}</template>
             <template v-else>{{ t('Every line is pegged — the project’s Cost tracking and Budget tabs include it now.') }}</template>
           </div>
@@ -154,7 +157,7 @@ const DOC_STATUS: Record<PeggedDocument['status'], { label: string; tone: string
               <tr>
                 <th style="min-width: 260px">{{ t('Description') }}</th>
                 <th style="min-width: 180px">{{ t('Account') }}</th>
-                <th style="min-width: 300px">{{ t('Project') }}</th>
+                <th style="min-width: 300px" data-devchange="pm-draft-project-documents">{{ t('Project') }}</th>
                 <th>{{ t('Dimensions') }}</th>
                 <th class="pm-num" style="min-width: 170px">{{ t('Amount') }}</th>
                 <th />

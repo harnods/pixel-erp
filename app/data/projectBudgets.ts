@@ -112,10 +112,10 @@ const SEED: ProjectBudget[] = [
     reserves: {}, revisions: [],
   },
   {
-    projectId: 'ps-2606', planRef: 'RAB/RAP Grand Kamala rev.1', revenue: 640_000_000,
+    projectId: 'ps-2606', planRef: 'RAB/RAP Grand Kamala rev.1', revenue: 649_800_000,
     approvedBy: 'Maya Kartika', approvedAt: '2026-04-20',
     lines: [
-      { wpId: 'wp-2606-11', account: '5-50100', amount: 280_000_000 },
+      { wpId: 'wp-2606-11', account: '5-50100', amount: 286_300_000 },
       { wpId: 'wp-2606-11', account: '5-50200', amount: 8_000_000 },
       { wpId: 'wp-2606-12', account: '5-50100', amount: 132_000_000 },
       { wpId: 'wp-2606-12', account: '5-50200', amount: 4_000_000 },
@@ -123,7 +123,11 @@ const SEED: ProjectBudget[] = [
       { wpId: 'wp-2606-21', account: '5-50200', amount: 12_000_000 },
       { wpId: 'wp-2606-21', account: '5-50600', amount: 8_000_000 },
     ],
-    reserves: { 'ph-2606-1': 10_000_000 }, revisions: [],
+    reserves: { 'ph-2606-1': 10_000_000 },
+    revisions: [
+      { id: 'rev-2606-1', no: 1, date: '2026-06-12', by: 'Maya Kartika', reason: 'Change order VO-2606-01: Top table solid surface (tipe A)', source: 'change order', refNo: 'VO-2606-01',
+        changes: [{ wpId: 'wp-2606-11', account: '5-50100', field: 'line', from: 280_000_000, to: 286_300_000 }, { field: 'revenue', from: 640_000_000, to: 649_800_000 }] },
+    ],
   },
   {
     projectId: 'ps-2601', planRef: 'Engagement letter Koperasi Sejahtera', revenue: 45_000_000,

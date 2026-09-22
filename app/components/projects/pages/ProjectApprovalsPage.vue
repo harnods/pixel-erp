@@ -14,7 +14,7 @@ import { peggedDocuments, projectWorkOrders } from '~/data/projectTransactions'
 import { releaseRequests, getStockItem } from '~/data/projectReservations'
 import { accountName } from '~/data/projectBudgets'
 import { percentComplete, recognisedToDate } from '~/data/projectRecognition'
-import { decideApproval, effectivityText, ecoAffectedWos } from '~/data/projectActions'
+import { decideApproval, effectivityText, ecoAffectedWos, ecoDeltaUnits } from '~/data/projectActions'
 import { rp, rpSigned, pct } from '~/utils/projectFormat'
 import { formatDate } from '~/utils/date'
 import { notifyResult } from '~/utils/projectToast'
@@ -139,7 +139,7 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
                 <div><div class="pm-kv-label">{{ t('Affected work orders') }}</div><div class="pm-kv-value">{{ ecoAffectedWos(eco(a)!).map(w => w.number).join(', ') || t('None yet') }}</div></div>
                 <div><div class="pm-kv-label">{{ t('Customer-funded') }}</div><div class="pm-kv-value">{{ eco(a)!.voId ? changeOrders.find(v => v.id === eco(a)!.voId)?.no : t('No — the ECO never changes contract value') }}</div></div>
               </div>
-              <EcoDiff :bom-id="eco(a)!.customBomId" :base-version="eco(a)!.baseVersion" :proposed="eco(a)!.proposed" :units="Math.max((getWorkPackage(eco(a)!.wpId)?.plannedUnits ?? 0) - (getWorkPackage(eco(a)!.wpId)?.confirmedUnits ?? 0), 0)" />
+              <EcoDiff :bom-id="eco(a)!.customBomId" :base-version="eco(a)!.baseVersion" :proposed="eco(a)!.proposed" :units="ecoDeltaUnits(eco(a)!)" />
               <p class="pm-help">{{ t('On approval: a new immutable BOM version, a budget revision for the cost delta, and reservations adjust (removed components free theirs; added ones create requirements).') }}</p>
             </template>
 

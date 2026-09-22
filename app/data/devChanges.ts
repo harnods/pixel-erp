@@ -28,6 +28,38 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'pm-completion-true-up',
+    title: 'Projects: completion true-up before close',
+    description:
+      'When every work package is technically complete but a cost-to-cost or unit-measured project measured under 100%, "Recognise remaining revenue" posts the rest of the contract value. The close gate now checks recognised revenue against contract value, so a job finished under plan can close.',
+    date: '2026-09-22',
+    files: ['CompletionTab.vue', 'projectActions.ts'],
+  },
+  {
+    id: 'pm-draft-project-documents',
+    title: 'Projects: Draft projects accept only draft purchase requests',
+    description:
+      'Firm documents (PO, expense, timesheet) can no longer post to a Draft project, and Draft projects consume no actual cost (PRD Story 7). A purchase request to a Draft project saves as a draft that commits nothing.',
+    date: '2026-09-22',
+    files: ['ProjectNewDocumentPage.vue', 'projectActions.ts', 'projectTransactions.ts'],
+  },
+  {
+    id: 'pm-eco-affected-units',
+    title: 'Projects: ECO cost delta counts only affected units',
+    description:
+      'The ECO diff and the budget revision on approval now count only future work orders plus the work orders in the effectivity scope — in-progress and unselected work orders keep their BOM version. Affected work orders keep line budgets within their set-aside.',
+    date: '2026-09-22',
+    files: ['EcoDiff.vue', 'ChangesTab.vue', 'projectActions.ts'],
+  },
+  {
+    id: 'pm-release-approval',
+    title: 'Projects: Finance approves project release (OQ7, provisional)',
+    description:
+      'Draft → Active is approved by Finance / Controller only, never by the project’s own PM. Other roles see "Waiting for Finance approval" and the reason in the dialog.',
+    date: '2026-09-22',
+    files: ['ProjectDetailPage.vue', 'projectActions.ts'],
+  },
+  {
     id: 'crm-module-per-tab-save',
     title: 'Module builder: per-tab save with unsaved-changes prompt',
     description:

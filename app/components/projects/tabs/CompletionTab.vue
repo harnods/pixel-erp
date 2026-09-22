@@ -14,8 +14,9 @@ import type { Project } from '~/data/projects'
 import { projectWorkPackages, punchItems, getWorkPackage, wpStatusLabel } from '~/data/projects'
 import { wpCommitted, projectWos, woCommitted } from '~/data/projectTransactions'
 import { projectReservations } from '~/data/projectReservations'
-import { recordBast, closePunchItem, addPunchItem, closeBlockers, closeProject } from '~/data/projectActions'
-import { rp, parseAmount } from '~/utils/projectFormat'
+import { recordBast, closePunchItem, addPunchItem, closeBlockers, closeProject, finaliseRecognition } from '~/data/projectActions'
+import { recognisedToDate, percentComplete } from '~/data/projectRecognition'
+import { rp, pct, parseAmount } from '~/utils/projectFormat'
 import { formatDate } from '~/utils/date'
 import { notifyResult } from '~/utils/projectToast'
 
@@ -48,6 +49,13 @@ function savePunch() {
   addPunchItem(props.project.id, newPunch.wpId, newPunch.description.trim(), parseAmount(newPunch.cost))
   newPunch.open = false
 }
+// Completion true-up (Input / Output·unit): all work packages done but measured progress < 100%.
+const canTrueUp = computed(() => {
+  const p = props.project
+  if (p.status !== 'active' || p.method === 'tm' || (p.method === 'output' && p.measure === 'milestone')) return false
+  return wps.value.every(w => w.status === 'technically_complete') && recognisedToDate(p.id) < p.contractValue
+})
+const trueUpAmount = computed(() => props.project.contractValue - recognisedToDate(props.project.id))
 const closeOpen = ref(false)
 function doClose() { if (notifyResult(closeProject(props.project.id, asActor.value))) closeOpen.value = false }
 const STATUS_TONE: Record<string, string> = { not_started: 'pm-pill--gray', in_progress: 'pm-pill--yellow', technically_complete: 'pm-pill--green' }
@@ -125,6 +133,13 @@ const STATUS_TONE: Record<string, string> = { not_started: 'pm-pill--gray', in_p
           <div v-for="b in blockers" :key="b.label" class="pm-row" style="gap: 8px"><span class="pm-neg">✗</span><span>{{ b.n !== undefined ? `${b.n} ` : '' }}{{ t(b.label) }}<template v-if="b.detail"> ({{ b.detail }})</template></span></div>
         </div>
         <div v-else class="pm-row" style="gap: 8px"><span class="pm-pos">✓</span><span>{{ t('All checks pass — nothing pending, recognition final, invoices collected.') }}</span></div>
+        <div v-if="canTrueUp" class="pm-banner pm-banner--info" style="margin-top: 12px" data-devchange="pm-completion-true-up">
+          <div class="pm-banner-body">
+            <div class="pm-banner-title">{{ t('Every work package is complete, but measured progress is') }} {{ pct(percentComplete(project)) }}</div>
+            {{ t('The work is done, so the remaining contract value is recognised as a completion true-up.') }} {{ rp(trueUpAmount) }}
+          </div>
+          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="notifyResult(finaliseRecognition(project.id, asActor))">{{ t('Recognise remaining revenue') }}</button>
+        </div>
         <div class="pm-small pm-muted" style="margin-top: 12px">
           {{ t('On close') }}: {{ releaseRes.length }} {{ t('unconsumed reservation(s) released') }} · {{ rp(releaseSetAside) }} {{ t('unused work-order set-aside released') }}<template v-if="project.longTerm"> · {{ t('an asset is created') }}</template>. {{ t('Each release is written to the audit log.') }}
         </div>

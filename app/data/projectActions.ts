@@ -250,8 +250,22 @@ export function saveDocument(input: { docType: PeggedDocument['docType']; vendor
   if (!lines.length) return { ok: false, error: 'Add at least one line with a description and amount.' }
   const peg = peggingState(lines)
   if (peg.state === 'partial') return { ok: false, error: `${peg.untagged} of ${lines.length} lines have no project. Tag every line with a project, or remove the project from all lines to save as an ordinary expense.` }
+  // Story 7: nothing on a Draft project goes firm or consumes budget. A purchase request may be
+  // prepared as a draft (no cost lines); firm documents are refused until the project is approved.
+  const draftProjects = [...new Set(lines.filter(l => l.wpId).map(l => getProject(getWorkPackage(l.wpId!)!.projectId)!))].filter(p => p.status !== 'active')
+  if (draftProjects.length && input.docType !== 'PR') {
+    const p = draftProjects[0]!
+    return { ok: false, error: `${p.code} is ${p.status === 'closed' ? 'closed' : 'still Draft'}, so documents can’t post to it${p.status === 'draft' ? ' until it’s approved. You can save a purchase request as a draft instead' : ''}.` }
+  }
   const docNo = nextDocNo(input.docType)
   const doc: PeggedDocument = { id: newId('doc'), docType: input.docType, docNo, date: TODAY_ISO, vendor: input.vendor, status: 'ordinary', lines, createdBy: actor.name }
+  if (draftProjects.length) {
+    if (draftProjects.some(p => p.status === 'closed')) return { ok: false, error: `${draftProjects.find(p => p.status === 'closed')!.code} is closed, so documents can’t post to it.` }
+    doc.status = 'draft'
+    peggedDocuments.unshift(doc)
+    persistLedger()
+    return { ok: true, doc, message: `${docNo} saved as a draft — nothing is committed until ${draftProjects[0]!.code} is approved.` }
+  }
   if (peg.state === 'none') {
     peggedDocuments.unshift(doc)
     persistLedger()
@@ -307,6 +321,18 @@ export function suggestWoLines(customBomId: string | undefined, qty: number): Pr
     }),
     ...v.productionCost.map(pc => ({ kind: pc.kind, name: pc.name, qty, unit: 'Unit', unitCost: pc.perUnit, estimate: pc.perUnit * qty, budget: pc.perUnit * qty })),
   ]
+}
+
+/** Line budgets never exceed the set-aside (Story 18): when the estimate is higher, scale them down proportionally. */
+export function fitLineBudgets(lines: ProjectWoLine[], setAside: number): ProjectWoLine[] {
+  const est = lines.reduce((s, l) => s + l.estimate, 0)
+  if (!setAside || est <= setAside || est <= 0) return lines
+  let acc = 0
+  return lines.map((l, i) => {
+    const budget = i === lines.length - 1 ? setAside - acc : Math.floor(l.estimate * (setAside / est))
+    acc += budget
+    return { ...l, budget }
+  })
 }
 
 export function createProjectWo(input: { wpId: string; qty: number; budgetSetAside: number; lines: ProjectWoLine[]; overrideReason?: string }, actor: Actor): Result & { wo?: ProjectWorkOrder } {
@@ -381,6 +407,24 @@ export function decideApproval(id: string, approve: boolean, actor: Actor, note?
     const eco = engineeringChanges.find(e => e.id === a.refId)
     const vo = eco?.voId ? changeOrders.find(v => v.id === eco.voId) : undefined
     if (vo && vo.status !== 'approved') return { ok: false, error: `This engineering change is funded by ${vo.no}. Approve the change order first — its budget revision applies before this one.` }
+  }
+  // A budget-revision proposal is a full baseline snapshot: applying it after the budget moved
+  // would silently revert the revisions made in between. Refuse and ask for a resubmit.
+  if (approve && a.kind === 'budget_revision' && a.payload) {
+    const b = getBudget(a.projectId)
+    const current = b?.revisions.length ?? 0
+    if (a.payload.baseRevisionNo !== undefined && current !== a.payload.baseRevisionNo) {
+      return { ok: false, error: `The budget changed after this request was raised (now at revision #${current}). Reject it and ask ${a.requestedBy} to resubmit from Budget setup.` }
+    }
+  }
+  // A release request is decided against the reservation as it is now, not as it was when asked.
+  if (approve && a.kind === 'stock_release') {
+    const q = releaseRequests.find(x => x.id === a.refId)
+    const r = q ? reservations.find(x => x.id === q.fromReservationId) : undefined
+    if (q && (!r || (r.status !== 'reserved' && r.status !== 'picked') || r.qty < q.qty)) {
+      const item = getStockItem(q.itemId)
+      return { ok: false, error: `The reservation changed since this request — ${r ? `${r.qty} ${item?.unit ?? ''} ${r.status}` : 'it no longer exists'}. Reject it and raise a new release request.` }
+    }
   }
   a.status = approve ? 'approved' : 'rejected'
   a.decidedBy = actor.name
@@ -485,19 +529,24 @@ function applyVoApproval(voId: string, actor: Actor) {
   vo.status = 'approved'
   vo.decidedBy = actor.name
   vo.decidedAt = TODAY_ISO
-  // Budget: add the priced cost to the target work package through a revision
+  // Budget: the price always lifts the revenue baseline; a priced cost also lifts the target
+  // work package's line. Either way it's one revision with an audit entry.
   const b = getBudget(p.id)
-  if (b && vo.cost) {
+  if (b && (vo.price || vo.cost)) {
+    const changes: BudgetRevisionChange[] = []
     const account = wp.type === 'production' ? COGM_ACCOUNT : '5-50400'
-    const from = wpBudget(wp.id, account) ?? 0
-    setBudgetLine(p.id, wp.id, account, from + vo.cost)
-    b.revenue += vo.price ?? 0
+    const lineFrom = wpBudget(wp.id, account) ?? 0
+    if (vo.cost) {
+      setBudgetLine(p.id, wp.id, account, lineFrom + vo.cost)
+      changes.push({ wpId: wp.id, account, field: 'line', from: lineFrom, to: lineFrom + vo.cost })
+    }
+    if (vo.price) {
+      changes.push({ field: 'revenue', from: b.revenue, to: b.revenue + vo.price })
+      b.revenue += vo.price
+    }
     persistBudgets()
-    addRevision(p.id, { date: TODAY_ISO, by: actor.name, reason: `Change order ${vo.no}: ${vo.title}`, source: 'change order', refNo: vo.no, changes: [
-      { wpId: wp.id, account, field: 'line', from, to: from + vo.cost },
-      { field: 'revenue', from: b.revenue - (vo.price ?? 0), to: b.revenue },
-    ] })
-    logAudit({ actor: actor.name, role: actor.role, projectId: p.id, kind: 'budget_revision', summary: `Budget revision from ${vo.no}: ${wp.code} ${accountName(account)} ${fmt(from)} → ${fmt(from + vo.cost)}`, refNo: vo.no })
+    addRevision(p.id, { date: TODAY_ISO, by: actor.name, reason: `Change order ${vo.no}: ${vo.title}`, source: 'change order', refNo: vo.no, changes })
+    logAudit({ actor: actor.name, role: actor.role, projectId: p.id, kind: 'budget_revision', summary: `Budget revision from ${vo.no}: ${vo.cost ? `${wp.code} ${accountName(account)} ${fmt(lineFrom)} → ${fmt(lineFrom + vo.cost)}; ` : ''}revenue +${fmt(vo.price ?? 0)}`, refNo: vo.no })
   }
   // Recognition: not-distinct → one-time cumulative catch-up; distinct → prospective
   if (!vo.distinct) {
@@ -529,6 +578,11 @@ function rejectVo(voId: string, actor: Actor, note?: string) {
   vo.status = 'rejected'
   vo.decidedBy = actor.name
   vo.decidedAt = TODAY_ISO
+  // An ECO this VO was funding is no longer customer-funded — unlink it so it can still be decided on its own.
+  for (const e of engineeringChanges.filter(x => x.voId === vo.id && (x.status === 'draft' || x.status === 'pending'))) {
+    e.voId = undefined
+    logAudit({ actor: actor.name, role: actor.role, projectId: e.projectId, kind: 'eco', summary: `${e.no} is no longer customer-funded — ${vo.no} was rejected. Any cost delta is now absorbed by the project budget if approved.`, refNo: e.no })
+  }
   persistChanges()
   logAudit({ actor: actor.name, role: actor.role, projectId: vo.projectId, kind: 'change_order', summary: `Rejected ${vo.no}`, reason: note, refNo: vo.no })
 }
@@ -604,9 +658,18 @@ function applyEcoApproval(ecoId: string, actor: Actor) {
   const unitDelta = bomUnitCost(v) - bomUnitCost(before)
   const affected = ecoAffectedWos(e)
   const wp = getWorkPackage(e.wpId)!
-  const remainingUnits = Math.max((wp.plannedUnits ?? 0) - (wp.confirmedUnits ?? 0), 0)
-  const deltaTotal = Math.round(unitDelta * (e.effectivity === 'new_only' ? Math.max(remainingUnits - affectedQty(e.wpId), 0) : remainingUnits))
-  for (const w of affected) { w.bomVersion = v.version; w.lines = suggestWoLines(b.id, w.qty); w.estimate = w.lines.reduce((s, l) => s + l.estimate, 0) }
+  // Units that get the new version: future work orders (remaining units not yet on any open WO —
+  // they'll be built from the new current version) plus the work orders in the effectivity scope.
+  // In-progress / unselected work orders keep their version, so their units carry no delta.
+  const deltaTotal = Math.round(unitDelta * ecoDeltaUnits(e))
+  const overSetAside: string[] = []
+  for (const w of affected) {
+    w.bomVersion = v.version
+    w.lines = fitLineBudgets(suggestWoLines(b.id, w.qty), w.budgetSetAside)
+    w.estimate = w.lines.reduce((s, l) => s + l.estimate, 0)
+    if (w.budgetSetAside && w.estimate > w.budgetSetAside) overSetAside.push(`${w.number} estimate ${fmt(w.estimate)} > set-aside ${fmt(w.budgetSetAside)}`)
+  }
+  if (overSetAside.length) logAudit({ actor: 'System', role: 'System', projectId: e.projectId, kind: 'work_order', summary: `${e.no}: line budgets kept within set-aside; ${overSetAside.join('; ')}`, refNo: e.no })
   if (deltaTotal && getBudget(e.projectId)) {
     const from = wpBudget(e.wpId, COGM_ACCOUNT) ?? 0
     setBudgetLine(e.projectId, e.wpId, COGM_ACCOUNT, from + deltaTotal)
@@ -627,6 +690,17 @@ function applyEcoApproval(ecoId: string, actor: Actor) {
   }
   persistReservations(); persistLedger(); persistChanges(); persistBoms()
   logAudit({ actor: actor.name, role: actor.role, projectId: e.projectId, kind: 'eco', summary: `Approved ${e.no} — BOM v${before.version} → v${v.version}; effectivity ${effectivityText(e.effectivity, e.specificWoIds)}; ${affected.length} work order(s) updated; ${added.length} new requirement(s) for MRP`, refNo: e.no })
+}
+
+/** Units that receive an ECO's new version: future work orders (remaining units not yet on any
+ *  open WO — they're built from the new current version) plus the WOs in the effectivity scope.
+ *  In-progress and unselected WOs keep their version, so their units carry no cost delta. */
+export function ecoDeltaUnits(e: { wpId: string; effectivity?: EcoEffectivity; specificWoIds: string[] }): number {
+  const wp = getWorkPackage(e.wpId)
+  if (!wp) return 0
+  const remainingUnits = Math.max((wp.plannedUnits ?? 0) - (wp.confirmedUnits ?? 0), 0)
+  const futureUnits = Math.max(remainingUnits - affectedQty(e.wpId), 0)
+  return futureUnits + ecoAffectedWos(e).reduce((s, w) => s + w.qty, 0)
 }
 
 function affectedQty(wpId: string) {
@@ -900,7 +974,7 @@ export function requestBudgetRevision(projectId: string, input: { amount: number
   if (!input.reason.trim()) return { ok: false, error: 'A reason is required.' }
   const p = getProject(projectId)!
   const no = `BR-${p.code.replace('PS-', '')}-${String(approvals.filter(a => a.kind === 'budget_revision' && a.projectId === projectId).length + 1).padStart(2, '0')}`
-  addApproval({ kind: 'budget_revision', projectId, refId: newId('brq'), refNo: no, title: input.payload ? `Budget revision — net ${input.amount >= 0 ? '+' : ''}${fmt(input.amount)}` : `Budget increase ${fmt(input.amount)}${input.refNo ? ` for ${input.refNo}` : ''}`, requestedBy: actor.name, requestedAt: TODAY_ISO, amount: input.amount, reason: input.reason.trim(), payload: input.payload })
+  addApproval({ kind: 'budget_revision', projectId, refId: newId('brq'), refNo: no, title: input.payload ? `Budget revision — net ${input.amount >= 0 ? '+' : ''}${fmt(input.amount)}` : `Budget increase ${fmt(input.amount)}${input.refNo ? ` for ${input.refNo}` : ''}`, requestedBy: actor.name, requestedAt: TODAY_ISO, amount: input.amount, reason: input.reason.trim(), payload: input.payload ? { ...clone(input.payload), baseRevisionNo: getBudget(projectId)?.revisions.length ?? 0 } : undefined })
   logAudit({ actor: actor.name, role: actor.role, projectId, kind: 'budget_revision', summary: `Requested budget revision ${no} (${fmt(input.amount)})`, reason: input.reason.trim(), refNo: no })
   return { ok: true, message: `Budget revision request ${no} sent to Finance.` }
 }
@@ -919,8 +993,15 @@ export function recordBast(wpId: string, pctAccepted: number, bastNo: string, ac
     wp.status = 'technically_complete'
     wp.actualEnd = TODAY_ISO
     const open = costLines.filter(l => l.wpId === wpId && l.kind === 'committed')
-    const released = open.reduce((s, l) => s + l.amount, 0)
+    let released = open.reduce((s, l) => s + l.amount, 0)
     for (const l of open) costLines.splice(costLines.indexOf(l), 1)
+    // Open work orders are committed too (their unused set-aside): close them at their actual
+    // cost and release the rest — no cost is invented for work that was never consumed.
+    for (const w of projectWorkOrders.filter(x => x.wpId === wpId && (x.status === 'Released' || x.status === 'In progress'))) {
+      const unused = Math.max(w.budgetSetAside - w.actual, 0)
+      w.status = 'Completed'; w.completedAt = TODAY_ISO; w.released = unused
+      released += unused
+    }
     for (const r of reservations.filter(x => x.wpId === wpId && (x.status === 'reserved' || x.status === 'picked'))) {
       r.status = 'released'; r.releasedAt = TODAY_ISO; r.releaseReason = 'Work package technically complete — unconsumed'
     }
@@ -967,8 +1048,10 @@ export function closeBlockers(projectId: string): CloseBlocker[] {
   const openPunch = punchItems.filter(x => x.projectId === projectId && x.status === 'open')
   if (openPunch.length) out.push({ n: openPunch.length, label: 'punch item(s) open' })
   if (p.method !== 'tm') {
-    const pc = percentComplete(p) ?? 0
-    if (pc < 100) out.push({ label: 'Recognition not final', detail: `${pct(pc)}` })
+    // Final when everything contracted is recognised — not when % complete hits 100, which a
+    // cost-to-cost or unit project that finished under plan never reaches (see finaliseRecognition).
+    const recognised = recognisedToDate(projectId)
+    if (recognised < p.contractValue) out.push({ label: 'Recognition not final', detail: `${pct((recognised / p.contractValue) * 100)} recognised` })
   } else if (tmEntries(projectId).some(l => !l.tm?.invoiceNo)) out.push({ label: 'Unbilled T&M entries remain' })
   const unpaid = projectInvoices.filter(i => i.projectId === projectId && i.status === 'unpaid')
   if (unpaid.length) out.push({ n: unpaid.length, label: 'invoice(s) not collected' })
@@ -977,6 +1060,26 @@ export function closeBlockers(projectId: string): CloseBlocker[] {
   const pendingReq = approvals.filter(a => a.projectId === projectId && a.status === 'pending')
   if (pendingReq.length) out.push({ n: pendingReq.length, label: 'approval request(s) pending' })
   return out
+}
+
+/** Completion true-up (Input / Output·unit): once every work package is technically complete the
+ *  performance obligation is satisfied, so the rest of the contract value is recognised even when
+ *  cost or units came in under plan. Milestone projects finish by verifying each phase's BAST. */
+export function finaliseRecognition(projectId: string, actor: Actor): Result {
+  const p = getProject(projectId)!
+  if (p.status !== 'active') return { ok: false, error: 'Only an active project can recognise revenue.' }
+  if (p.method === 'tm') return { ok: false, error: 'T&M projects recognise revenue as time is billed.' }
+  if (p.method === 'output' && p.measure === 'milestone') return { ok: false, error: 'Milestone projects finish by verifying each phase by BAST.' }
+  const open = projectWorkPackages(projectId).filter(w => w.status !== 'technically_complete')
+  if (open.length) return { ok: false, error: `${open.length} work package(s) aren’t technically complete yet. Record their 100% BAST first.` }
+  const amount = p.contractValue - recognisedToDate(projectId)
+  if (amount <= 0) return { ok: false, error: 'Everything in the contract is already recognised.' }
+  const pc = percentComplete(p) ?? 0
+  const no = nextRecNo(projectId)
+  recognitionPostings.push({ id: newId('rec'), no, projectId, date: TODAY_ISO, kind: 'catch_up', description: `Completion true-up — all work packages complete at ${pct(pc)} measured progress`, cumulativePct: 100, amount, by: actor.name })
+  persistRecognition()
+  logAudit({ actor: actor.name, role: actor.role, projectId, kind: 'recognition', summary: `Completion true-up: recognised the remaining ${fmt(amount)} (measured progress was ${pct(pc)})`, refNo: no })
+  return { ok: true, message: `Recognised the remaining ${fmt(amount)}.` }
 }
 
 export function closeProject(projectId: string, actor: Actor): Result {

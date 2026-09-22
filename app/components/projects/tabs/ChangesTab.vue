@@ -20,8 +20,8 @@ import { projectChangeOrders, projectEcos, coExposure, engineeringChanges, persi
 import { projectWorkOrders } from '~/data/projectTransactions'
 import { getCustomBom, currentVersion, type BomComponent } from '~/data/projectBoms'
 import { percentComplete, recognisedToDate } from '~/data/projectRecognition'
-import { createOfficeVo, raiseVo, createEco, submitEco, effectivityText } from '~/data/projectActions'
-import { rp, rpSigned, pct, parseAmount } from '~/utils/projectFormat'
+import { createOfficeVo, raiseVo, createEco, submitEco, effectivityText, ecoDeltaUnits } from '~/data/projectActions'
+import { rp, rpSigned, pct, parseAmount, parseQty } from '~/utils/projectFormat'
 import { formatDate } from '~/utils/date'
 import { notifyResult } from '~/utils/projectToast'
 
@@ -98,11 +98,15 @@ function openEditor(id: string) {
 const openWos = computed(() => (eco.value ? projectWorkOrders.filter(w => w.wpId === eco.value!.wpId && w.status !== 'Completed') : []))
 function addComponent() { eco.value?.proposed.components.push({ name: '', qty: 1, unit: 'Pcs', unitCost: 0 }) }
 function removeComponent(i: number) { eco.value?.proposed.components.splice(i, 1); persistChanges() }
-function setNum(c: BomComponent, key: 'qty' | 'unitCost', v: string) { const n = Number(v.replace(/\./g, '').replace(',', '.')); c[key] = Number.isNaN(n) ? 0 : n; persistChanges() }
-const remainingUnits = computed(() => {
-  const w = eco.value ? getWorkPackage(eco.value.wpId) : undefined
-  return Math.max((w?.plannedUnits ?? 0) - (w?.confirmedUnits ?? 0), 0)
-})
+// Quantity is a decimal (accepts "1.5" or "1,5"); standard cost is whole rupiah where dots are
+// thousand separators ("285.000"). Parsing them the same way turned 1.5 into 15.
+function setNum(c: BomComponent, key: 'qty' | 'unitCost', v: string) {
+  const n = key === 'qty' ? parseQty(v) : parseAmount(v)
+  c[key] = Number.isFinite(n) && n >= 0 ? n : 0
+  persistChanges()
+}
+// Same unit count the approval uses for the budget revision (future WOs + WOs in scope).
+const remainingUnits = computed(() => (eco.value ? ecoDeltaUnits({ wpId: eco.value.wpId, effectivity: editor.effectivity || undefined, specificWoIds: editor.woIds }) : 0))
 const pendingOnBom = computed(() => eco.value ? engineeringChanges.find(x => x.id !== eco.value!.id && x.customBomId === eco.value!.customBomId && x.status === 'pending') : undefined)
 function doSubmit() {
   editor.touched = true
@@ -272,9 +276,9 @@ function doSubmit() {
               <tbody>
                 <tr v-for="(c, i) in eco.proposed.components" :key="i">
                   <td><input v-model="c.name" class="pm-input pm-input--sm" @blur="persistChanges()" /></td>
-                  <td class="pm-num"><input :value="c.qty" class="pm-input pm-input--sm pm-input--num" style="width: 90px" inputmode="decimal" @change="setNum(c, 'qty', ($event.target as HTMLInputElement).value)" /></td>
+                  <td class="pm-num"><input :value="String(c.qty).replace('.', ',')" class="pm-input pm-input--sm pm-input--num" style="width: 90px" inputmode="decimal" @change="setNum(c, 'qty', ($event.target as HTMLInputElement).value)" /></td>
                   <td><input v-model="c.unit" class="pm-input pm-input--sm" style="width: 90px" @blur="persistChanges()" /></td>
-                  <td class="pm-num"><input :value="c.unitCost ?? ''" class="pm-input pm-input--sm pm-input--num" style="width: 130px" inputmode="numeric" @change="setNum(c, 'unitCost', ($event.target as HTMLInputElement).value)" /></td>
+                  <td class="pm-num"><input :value="c.unitCost !== undefined ? c.unitCost.toLocaleString('id-ID') : ''" class="pm-input pm-input--sm pm-input--num" style="width: 130px" inputmode="numeric" @change="setNum(c, 'unitCost', ($event.target as HTMLInputElement).value)" /></td>
                   <td><button class="pm-icon-btn" type="button" :aria-label="t('Remove component')" @click="removeComponent(i)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg></button></td>
                 </tr>
               </tbody>

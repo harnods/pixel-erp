@@ -2854,6 +2854,12 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Min stock": "Stok minimum",
 
   // ── Projects module (Project MTO) ─────────────────────────────────────────
+  "The project is still Draft, so this purchase request commits nothing until the project is approved.": "Proyek masih Draf, jadi permintaan pembelian ini tidak mengkomitmenkan apa pun sampai proyek disetujui.",
+  "Draft — purchase request only": "Draf — hanya permintaan pembelian",
+  "Total delta on affected units": "Total selisih pada unit terdampak",
+  "Every work package is complete, but measured progress is": "Semua paket kerja selesai, tetapi progres terukur baru",
+  "The work is done, so the remaining contract value is recognised as a completion true-up.": "Pekerjaan sudah selesai, jadi sisa nilai kontrak diakui sebagai penyesuaian penyelesaian.",
+  "Recognise remaining revenue": "Akui sisa pendapatan",
   "Waiting for Finance approval": "Menunggu persetujuan Finance",
   "Finance / Controller approves project release. Switch “View as” to approve.": "Finance / Controller yang menyetujui rilis proyek. Ganti “Lihat sebagai” untuk menyetujui.",
   "You manage this project, so someone else must approve it.": "Anda mengelola proyek ini, jadi orang lain yang harus menyetujuinya.",

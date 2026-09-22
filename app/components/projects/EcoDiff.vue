@@ -47,7 +47,7 @@ const LABEL: Record<string, string> = { added: 'Added', removed: 'Removed', chan
         </tbody>
         <tfoot>
           <tr><td colspan="4">{{ t('Total delta per unit') }}</td><td class="pm-num" :class="unitDelta > 0 ? 'pm-neg' : unitDelta < 0 ? 'pm-pos' : ''">{{ rpSigned(unitDelta) }}</td></tr>
-          <tr v-if="units"><td colspan="4">{{ t('Total delta on remaining units') }} ({{ units }})</td><td class="pm-num" :class="unitDelta > 0 ? 'pm-neg' : unitDelta < 0 ? 'pm-pos' : ''">{{ rpSigned(unitDelta * units) }}</td></tr>
+          <tr v-if="units" data-devchange="pm-eco-affected-units"><td colspan="4">{{ t('Total delta on affected units') }} ({{ units }})</td><td class="pm-num" :class="unitDelta > 0 ? 'pm-neg' : unitDelta < 0 ? 'pm-pos' : ''">{{ rpSigned(unitDelta * units) }}</td></tr>
         </tfoot>
       </table>
     </div>

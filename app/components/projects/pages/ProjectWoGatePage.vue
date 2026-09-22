@@ -22,7 +22,7 @@ import { getBudget } from '~/data/projectBudgets'
 import { woGate, effectiveThreshold, type ProjectWoLine } from '~/data/projectTransactions'
 import { getCustomBom, currentVersion } from '~/data/projectBoms'
 import { engineeringChanges } from '~/data/projectChanges'
-import { suggestWoLines, createProjectWo } from '~/data/projectActions'
+import { suggestWoLines, createProjectWo, fitLineBudgets } from '~/data/projectActions'
 import { rp, rpSigned, pct, parseAmount, num } from '~/utils/projectFormat'
 import { notifyResult } from '~/utils/projectToast'
 
@@ -71,19 +71,9 @@ const step = ref(1)
 const lines = ref<(ProjectWoLine & { budgetStr: string })[]>([])
 function toStep2() {
   if (step1Block.value) return
-  lines.value = suggestWoLines(wp.value!.customBomId, qty.value).map(l => ({ ...l, budgetStr: l.budget.toLocaleString('id-ID') }))
-  // Suggested line budgets never exceed the set-aside: scale down proportionally when the estimate is higher.
-  const est = lines.value.reduce((s, l) => s + l.estimate, 0)
-  if (est > setAside.value && est > 0) {
-    const f = setAside.value / est
-    let acc = 0
-    lines.value.forEach((l, i) => {
-      const b = i === lines.value.length - 1 ? setAside.value - acc : Math.floor(l.estimate * f)
-      acc += b
-      l.budget = b
-      l.budgetStr = b.toLocaleString('id-ID')
-    })
-  }
+  // Suggested line budgets never exceed the set-aside (Story 18) — same rule the ECO approval applies.
+  lines.value = fitLineBudgets(suggestWoLines(wp.value!.customBomId, qty.value), setAside.value)
+    .map(l => ({ ...l, budgetStr: l.budget.toLocaleString('id-ID') }))
   step.value = 2
 }
 function lineBudget(l: { budgetStr: string }) { return parseAmount(l.budgetStr) }

@@ -45,6 +45,14 @@ export function parseAmount(s: string | number): number {
   return Number.isFinite(n) ? n : 0
 }
 
+/** Parse a user-typed decimal quantity ("1.5" or "1,5") → number. Unlike parseAmount, a dot is a
+ *  decimal point here, not a thousand separator — quantities per unit are small decimals. */
+export function parseQty(s: string | number): number {
+  if (typeof s === 'number') return s
+  const n = Number(s.trim().replace(',', '.'))
+  return Number.isFinite(n) ? n : 0
+}
+
 export function initials(name: string): string {
   return name.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join('')
 }

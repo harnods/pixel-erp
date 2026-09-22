@@ -65,6 +65,8 @@ const SEED_RECOGNITION: RecognitionPosting[] = [
   { id: 'rec-1', no: 'REC-2603-01', projectId: 'ps-2603', date: '2026-04-24', kind: 'milestone', phaseId: 'ph-2603-1', description: 'Phase achieved: Persiapan (BAST/IPB/01) — weight 2,0%', cumulativePct: 2, amount: 16_704_550, by: 'Rizal Candra' },
   { id: 'rec-2', no: 'REC-2603-02', projectId: 'ps-2603', date: '2026-05-29', kind: 'milestone', phaseId: 'ph-2603-2', description: 'Phase achieved: Pekerjaan sipil (BAST/IPB/02) — weight 15,0%', cumulativePct: 17, amount: 125_284_125, by: 'Rizal Candra' },
   { id: 'rec-3', no: 'REC-2606-01', projectId: 'ps-2606', date: '2026-05-31', kind: 'unit', description: 'Recognition run — 24 of 80 units confirmed', cumulativePct: 30, amount: 192_000_000, by: 'Maya Kartika' },
+  // VO-2606-01 (not distinct) approved 12 Jun: 30% × Rp649.800.000 − Rp192.000.000 recognised = one-time catch-up
+  { id: 'rec-6', no: 'REC-2606-02', projectId: 'ps-2606', date: '2026-06-12', kind: 'catch_up', description: 'Cumulative catch-up — VO-2606-01 (30% × new contract value)', cumulativePct: 30, amount: 2_940_000, by: 'Maya Kartika' },
   { id: 'rec-4', no: 'REC-2604-01', projectId: 'ps-2604', date: '2026-05-31', kind: 'tm', description: 'T&M — 2 entries billed (INV/2026/1012)', amount: 40_800_000, by: 'Maya Kartika' },
   { id: 'rec-5', no: 'REC-2601-01', projectId: 'ps-2601', date: '2026-03-31', kind: 'tm', description: 'T&M — final billing (INV/2026/0301)', amount: 42_000_000, by: 'Maya Kartika' },
 ]
@@ -72,7 +74,7 @@ const SEED_RECOGNITION: RecognitionPosting[] = [
 const SEED_INVOICES: ProjectInvoice[] = [
   { id: 'inv-1', no: 'INV/2026/0831', projectId: 'ps-2603', date: '2026-04-08', termId: 'bt-2603-1', description: 'Uang muka (DP) 30%', amount: 250_568_251, status: 'paid' },
   { id: 'inv-2', no: 'INV/2026/0902', projectId: 'ps-2606', date: '2026-04-22', termId: 'bt-2606-1', description: 'Uang muka (DP) 20%', amount: 128_000_000, status: 'paid' },
-  { id: 'inv-3', no: 'INV/2026/1140', projectId: 'ps-2606', date: '2026-06-22', termId: 'bt-2606-2', description: 'Termin progres 40%', amount: 256_000_000, status: 'unpaid' },
+  { id: 'inv-3', no: 'INV/2026/1140', projectId: 'ps-2606', date: '2026-06-22', termId: 'bt-2606-2', description: 'Termin progres 40%', amount: 259_920_000, status: 'unpaid' },
   { id: 'inv-4', no: 'INV/2026/1012', projectId: 'ps-2604', date: '2026-05-31', description: 'Jasa pendampingan pajak — Mei (60 jam)', amount: 40_800_000, status: 'paid' },
   { id: 'inv-5', no: 'INV/2026/0301', projectId: 'ps-2601', date: '2026-03-31', description: 'Audit internal Q1 — final', amount: 42_000_000, status: 'paid' },
 ]
