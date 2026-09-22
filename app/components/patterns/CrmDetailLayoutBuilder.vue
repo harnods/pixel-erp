@@ -991,14 +991,9 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
               <template v-else>
                 <div class="dlb-prev-form-page">
                   <header class="si-form-bar">
-                    <div class="si-bar-left">
-                      <MpIcon name="chevron-left" size="md" />
-                      <span class="si-bar-title">{{ t('New record') }}</span>
+                    <div class="si-form-bar-left">
+                      <h1 class="si-form-h1">{{ t('New record') }}</h1>
                     </div>
-                    <MpButtonGroup class="si-bar-actions">
-                      <MpButton variant="ghost" is-rounded disabled>{{ t('Cancel') }}</MpButton>
-                      <MpButton variant="primary" is-rounded disabled>{{ t('Save') }}</MpButton>
-                    </MpButtonGroup>
                   </header>
                   <div class="si-form-stage">
                     <template v-for="section in detailsTabSections()" :key="section.id">
@@ -1044,14 +1039,14 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                         <div class="si-generic-grid" :style="{ gridTemplateColumns: `repeat(${Math.min(section.columns, 3)}, minmax(0, 1fr))` }">
                           <template v-for="(col, ci) in section.cols" :key="ci">
                             <MpFormControl v-for="pid in col" :key="pid" :id="`fp-${pid}`" class="dlb-prev-form-field">
-                              <template v-if="prop(pid)?.fieldType === 'Single checkbox'">
+                              <template v-if="prop(pid)?.type === 'Single checkbox'">
                                 <MpCheckbox :is-checked="false" disabled>{{ prop(pid)?.name ?? pid }}</MpCheckbox>
                               </template>
                               <template v-else>
                                 <MpFormLabel>{{ prop(pid)?.name ?? pid }}</MpFormLabel>
-                                <MpTextarea v-if="prop(pid)?.fieldType === 'Multi-line text'" is-full-width disabled :rows="2" />
-                                <MpDatePicker v-else-if="prop(pid)?.fieldType === 'Date picker' || prop(pid)?.fieldType === 'Date and time picker'" class="dlb-fp-datepicker" format="DD/MM/YYYY" value-type="format" use-portal disabled />
-                                <MpInput v-else-if="prop(pid)?.fieldType === 'Number'" type="number" model-value="" is-full-width disabled />
+                                <MpTextarea v-if="prop(pid)?.type === 'Multi-line text'" is-full-width disabled :rows="2" />
+                                <MpDatePicker v-else-if="prop(pid)?.type === 'Date picker' || prop(pid)?.type === 'Date and time picker'" class="dlb-fp-datepicker" format="DD/MM/YYYY" value-type="format" use-portal disabled />
+                                <MpInput v-else-if="prop(pid)?.type === 'Number'" type="number" model-value="" is-full-width disabled />
                                 <MpInput v-else is-full-width disabled />
                               </template>
                             </MpFormControl>
@@ -1269,9 +1264,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
   background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
-.dlb-prev-form-page .si-form-bar-left, .dlb-prev-form-page .si-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
-.dlb-prev-form-page .si-bar-left { flex-direction: row; align-items: center; gap: var(--mp-spacing-2); }
-.dlb-prev-form-page .si-bar-title { font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.dlb-prev-form-page .si-form-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
 .dlb-prev-form-page .si-crumb {
   align-self: flex-start; background: none; border: none; padding: 0; cursor: default;
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); line-height: var(--mp-line-heights-sm, 16px);
