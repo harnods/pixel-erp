@@ -22,7 +22,7 @@ import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { crmModules, type CrmModule, CRM_CONVERSION_LABELS, genericRecordsFor, canEditModule } from '~/data/crm'
+import { crmModules, type CrmModule, CRM_CONVERSION_LABELS, genericRecordsFor, canEditModule, createCustomModule } from '~/data/crm'
 import { infoToast } from '~/utils/toasts'
 
 const { t } = useLocale()
@@ -47,7 +47,8 @@ function continueNewModule() {
   newModuleNameError.value = ''
   if (!newModuleName.value.trim()) { newModuleNameError.value = t('Enter a module name.'); return }
   newModuleOpen.value = false
-  router.push({ path: '/crm/settings/modules/new', query: { name: newModuleName.value.trim(), accessLevel: newModuleAccess.value } })
+  const id = createCustomModule(newModuleName.value.trim(), 'pipeline', newModuleAccess.value, [], 'draft')
+  router.push({ path: `/crm/settings/modules/${id}`, query: { edit: '1' } })
 }
 
 type ModuleRow = CrmModule & { access: string; conversionLabel: string }

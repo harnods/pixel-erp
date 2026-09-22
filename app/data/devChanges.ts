@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-module-per-tab-save',
+    title: 'Module builder: per-tab save with unsaved-changes prompt',
+    description:
+      'Save is now per-tab — switching tabs with unsaved changes shows a discard confirmation. "Save changes" renamed to "Save" (secondary). Publish button moved from footer to page title area (primary, top-right) for draft modules.',
+    date: '2026-09-22',
+    files: ['CrmModuleBuilderPage.vue'],
+  },
+  {
     id: 'crm-new-module-modal',
     title: 'New module: creation modal with locked access level',
     description:

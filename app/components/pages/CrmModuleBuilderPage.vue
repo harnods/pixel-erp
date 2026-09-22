@@ -13,7 +13,7 @@
  * a local editable deep-clone `draft`; "Save changes" applies it to the real
  * module + persists. Every dropdown is `ErpFilterSelect`; every modal is `MpModal`.
  */
-import { computed, reactive, ref, watch, onMounted } from 'vue'
+import { computed, reactive, ref, watch, onMounted, nextTick } from 'vue'
 import {
   MpButton, MpIcon, MpToggle, MpInput, MpInputGroup, MpInputLeftAddon, MpCheckbox, MpRadio, MpTooltip,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay,
@@ -93,9 +93,9 @@ if (!isCreating) {
 
 // ── View vs Edit mode ───────────────────────────────────────────────────────
 // Existing modules open in VIEW mode (read-only); click Edit to switch.
-// New modules go straight to edit.
-const viewMode = ref(!isCreating)
-function enterEdit() { viewMode.value = false }
+// New modules and ?edit=1 (freshly created from modal) go straight to edit.
+const viewMode = ref(!isCreating && route.query.edit !== '1')
+function enterEdit() { viewMode.value = false; nextTick(() => markClean()) }
 // Deals module cannot be deleted or deactivated.
 const isDealSystem = computed(() => mod.value?.id === 'deals')
 const deleteConfirmOpen = ref(false)
@@ -226,7 +226,7 @@ const viewAccessLabel = computed(() => {
   return t('Company')
 })
 
-onMounted(() => { loadDraft(); loadSetup(); loadProperties() })
+onMounted(() => { loadDraft(); loadSetup(); loadProperties(); nextTick(() => markClean()) })
 watch(() => props.orderId, () => { loadDraft(); loadSetup(); loadProperties() })
 
 // ── Header status badge ──────────────────────────────────────────────────────
@@ -244,6 +244,44 @@ const tabs = computed(() => isDeals.value
   : [{ key: 'fields', label: 'Fields & layout' }, { key: 'views', label: 'Views' }])
 const activeTab = ref<string>(isDealLikeModule(props.orderId) ? 'setup' : 'fields')
 const isLayoutTab = computed(() => activeTab.value === 'fields' || activeTab.value === 'layout')
+
+// ── Dirty tracking + tab-switch guard ──────────────────────────────────────
+const savedSnapshot = ref('')
+const savedDispClone = ref<string>('')
+const unsavedTabTarget = ref<string | null>(null)
+const unsavedConfirmOpen = ref(false)
+function switchTab(key: string) {
+  if (key === activeTab.value) return
+  if (!viewMode.value && activeTab.value !== 'properties' && isDirty.value) {
+    unsavedTabTarget.value = key
+    unsavedConfirmOpen.value = true
+    return
+  }
+  activeTab.value = key
+}
+function reloadAll() {
+  loadDraft(); loadSetup(); loadProperties()
+  pipeDraft.value = JSON.parse(JSON.stringify(stores.value.pipelines))
+  hiddenStageIds.value = [...(stores.value.views?.[0]?.hiddenStageIds ?? [])]
+  if (savedDispClone.value) Object.assign(disp.value, JSON.parse(savedDispClone.value))
+}
+function discardAndSwitch() {
+  unsavedConfirmOpen.value = false
+  reloadAll()
+  activeTab.value = unsavedTabTarget.value ?? activeTab.value
+  unsavedTabTarget.value = null
+  nextTick(() => markClean())
+}
+function stayOnTab() {
+  unsavedConfirmOpen.value = false
+  unsavedTabTarget.value = null
+}
+function saveAndSwitch() {
+  saveChanges()
+  unsavedConfirmOpen.value = false
+  activeTab.value = unsavedTabTarget.value ?? activeTab.value
+  unsavedTabTarget.value = null
+}
 
 // ── Generic vs predefined module detection ──
 const isGenericModule = computed(() => {
@@ -294,6 +332,8 @@ const pipeStages = computed<DealPipelineStage[]>(() => currentPipe.value?.stages
 let stageSeq = 100
 const newStageId = () => `s-new-${stageSeq++}`
 
+
+// (snapshot helpers moved after display/hiddenStageIds definitions)
 
 // Inline rename — the pencil toggles a stage's name into an editable field.
 const editingStageId = ref<string | null>(null)
@@ -346,6 +386,13 @@ function setStageVisible(id: string, show: boolean) {
   if (show) hiddenStageIds.value = hiddenStageIds.value.filter((x) => x !== id)
   else if (!hiddenStageIds.value.includes(id)) hiddenStageIds.value = [...hiddenStageIds.value, id]
 }
+
+// ── Snapshot helpers for dirty tracking (must be after pipeDraft, disp, hiddenStageIds) ──
+function takeSnapshot(): string {
+  return JSON.stringify({ draft: JSON.parse(JSON.stringify(draft)), setup: JSON.parse(JSON.stringify(setup)), props: JSON.parse(JSON.stringify(propList.value)), pipes: JSON.parse(JSON.stringify(pipeDraft.value)), disp: JSON.parse(JSON.stringify(disp.value)), hidden: JSON.parse(JSON.stringify(hiddenStageIds.value)) })
+}
+function markClean() { savedSnapshot.value = takeSnapshot(); savedDispClone.value = JSON.stringify(disp.value) }
+const isDirty = computed(() => savedSnapshot.value !== '' && savedSnapshot.value !== takeSnapshot())
 
 // Drag-reorder the card-property rows (order = the order fields stack on a card) —
 // same ERP pointer sortable, vertical axis. rule/dnd-live-sortable.
@@ -904,14 +951,15 @@ function saveChanges() {
   m.accessLevel = draft.accessLevel
   setModuleTeams(m.id, draft.accessLevel === 'team' ? draft.teamIds : [])
   persistCrmModule(m, AUTHOR, nowStamp())
-  successToast(t(isDealLikeModule(m.id) ? 'Pipeline saved' : 'Module saved'))
-  viewMode.value = true
+  const tabLabels: Record<string, string> = { setup: 'Setup saved', properties: 'Properties saved', layout: 'Layout saved', pipeline: 'Pipeline saved' }
+  successToast(t(tabLabels[activeTab.value] ?? 'Saved'))
+  nextTick(() => markClean())
 }
 // Every module (Deals system module included) is edited from the Modules index.
 function cancel() {
   if (!isCreating && !viewMode.value) {
     viewMode.value = true
-    loadDraft(); loadSetup(); loadProperties()
+    reloadAll()
     return
   }
   router.push('/crm/settings/modules')
@@ -998,12 +1046,15 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
           </MpPopoverContent>
         </MpPopover>
       </div>
+      <div v-if="!viewMode && mod && !mod.system && mod.status !== 'published'" class="cd-bar-actions">
+        <MpButton variant="primary" is-rounded @click="publishModule">{{ t('Publish') }}</MpButton>
+      </div>
     </header>
 
     <!-- Section tabs — OUTSIDE the white stage (rule/erp-tabs-pattern: section tabs
          sit on the neutral-subtle bar below the title, not as MpTabs in the stage). -->
     <div v-if="mod" class="page-tabs-bar">
-      <button v-for="tab in tabs" :key="tab.key" type="button" class="page-tab" :class="{ 'page-tab--active': activeTab === tab.key }" @click="activeTab = tab.key">{{ t(tab.label) }}</button>
+      <button v-for="tab in tabs" :key="tab.key" type="button" class="page-tab" :class="{ 'page-tab--active': activeTab === tab.key }" @click="switchTab(tab.key)">{{ t(tab.label) }}</button>
     </div>
 
     <div class="detail-stage">
@@ -1588,33 +1639,22 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
       </template>
     </div>
 
-    <!-- Sticky action footer (rule/btn-responsive-footer) — fixed button
-         positions regardless of draft/published state, so the layout never
-         flips: ghost Cancel, secondary "Save changes", then the rightmost
-         primary CTA. Publish/Unpublish is an action, not a page-title
-         affordance, so it lives here, not next to the H1. Only that last
-         button's label toggles Publish/Unpublish — its slot and variant
-         (primary, rightmost) never move. A system module (Deals, no
-         draft/publish lifecycle) just drops that last button. -->
-    <footer v-if="mod && !isCreating && !viewMode" class="builder-footer">
-      <MpButtonGroup class="erp-action-footer">
-        <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
-        <template v-if="mod.status === 'published'">
-          <MpButton variant="primary" is-rounded @click="saveChanges">{{ t('Save changes') }}</MpButton>
-        </template>
-        <template v-else>
-          <MpButton variant="secondary" is-rounded @click="saveChanges">{{ t('Save as draft') }}</MpButton>
-          <MpButton v-if="!mod.system" variant="primary" is-rounded @click="publishModule">{{ t('Publish') }}</MpButton>
-        </template>
-      </MpButtonGroup>
-    </footer>
-    <!-- Creation footer: module isn't persisted until Save as draft/Publish here. -->
-    <footer v-else-if="isCreating" class="builder-footer">
-      <MpButtonGroup class="erp-action-footer">
-        <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
-        <MpButton variant="secondary" is-rounded @click="saveNewModule('draft')">{{ t('Save as draft') }}</MpButton>
-        <MpButton variant="primary" is-rounded @click="askPublishNew">{{ t('Publish') }}</MpButton>
-      </MpButtonGroup>
+    <!-- Sticky action footer — per-tab save: Cancel + Save (secondary).
+         Publish moved to page header (primary, top-right). -->
+    <footer v-if="mod && !isCreating && !viewMode && activeTab !== 'properties' && (isDirty || unsavedConfirmOpen)" class="builder-footer" data-devchange="crm-module-per-tab-save">
+      <div class="builder-footer-wrap">
+        <Transition name="coachmark-fade">
+          <div v-if="unsavedConfirmOpen" class="unsaved-coachmark">
+            <p class="unsaved-coachmark-text">{{ t('You have unsaved changes on this tab. If you switch tabs now, your changes will be lost.') }}</p>
+            <div class="unsaved-coachmark-actions">
+              <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="discardAndSwitch">{{ t('Continue without saving') }}</button>
+              <button type="button" class="btn-enterprise btn-enterprise--primary" @click="saveAndSwitch">{{ t('Save') }}</button>
+            </div>
+            <div class="unsaved-coachmark-arrow" />
+          </div>
+        </Transition>
+        <MpButton variant="secondary" is-rounded @click="saveChanges">{{ t('Save') }}</MpButton>
+      </div>
     </footer>
 
     <!-- ════════ Team drawer (Setup ▸ Access level ▸ Team) ════════ -->
@@ -2132,6 +2172,15 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
 
 /* Sticky action footer — Cancel + Save changes, right-aligned, always visible. */
 .builder-footer { flex-shrink: 0; padding: var(--mp-spacing-3) var(--mp-spacing-6); background: var(--mp-colors-background-stage, #fff); border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); }
+.builder-footer-wrap { position: relative; display: flex; justify-content: flex-end; }
+
+/* Unsaved-changes coachmark — anchored above Save button */
+.unsaved-coachmark { position: absolute; bottom: calc(100% + 12px); right: 0; width: 320px; padding: 24px; background: #fff; border: 1px solid var(--mp-border-bold); border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); z-index: 10; }
+.unsaved-coachmark-text { margin: 0 0 var(--mp-spacing-3); font-size: 13px; line-height: 1.4; color: var(--mp-text-default); }
+.unsaved-coachmark-actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); }
+.unsaved-coachmark-arrow { position: absolute; bottom: -6px; right: 24px; width: 12px; height: 12px; background: #fff; border-right: 1px solid var(--mp-border-bold); border-bottom: 1px solid var(--mp-border-bold); transform: rotate(45deg); }
+.coachmark-fade-enter-active, .coachmark-fade-leave-active { transition: opacity 0.15s ease, transform 0.15s ease; }
+.coachmark-fade-enter-from, .coachmark-fade-leave-to { opacity: 0; transform: translateY(4px); }
 
 /* ── Module not found ── */
 .builder-empty { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-12) var(--mp-spacing-6); text-align: center; color: var(--mp-text-secondary); }
