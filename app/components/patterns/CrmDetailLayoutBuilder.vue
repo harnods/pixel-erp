@@ -646,12 +646,12 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
               <template v-if="previewMode === 'details' && moduleId === 'deals'">
                 <div class="dlb-prev-detail-page">
                   <div class="dp-stage">
-                    <div class="dp-tabs"><!-- pixel-police-allow: static preview replica tabs -->
-                      <button class="dp-tab dp-tab--active">{{ t('Deal details') }}</button>
-                      <button class="dp-tab" disabled>{{ t('Notes') }}</button>
-                      <button class="dp-tab" disabled>{{ t('Files') }}</button>
-                      <button class="dp-tab" disabled>{{ t('Sales orders') }}</button>
-                      <button class="dp-tab" disabled>{{ t('Activity') }}</button>
+                    <div class="dp-tabs">
+                      <button class="dp-tab dp-tab--active">{{ t('Deal details') }}</button><!-- pixel-police-allow -->
+                      <button class="dp-tab" disabled>{{ t('Notes') }}</button><!-- pixel-police-allow -->
+                      <button class="dp-tab" disabled>{{ t('Files') }}</button><!-- pixel-police-allow -->
+                      <button class="dp-tab" disabled>{{ t('Sales orders') }}</button><!-- pixel-police-allow -->
+                      <button class="dp-tab" disabled>{{ t('Activity') }}</button><!-- pixel-police-allow -->
                     </div>
                     <section class="dp-section">
                       <h3 class="dp-section-title">{{ t('Overview') }}</h3>
