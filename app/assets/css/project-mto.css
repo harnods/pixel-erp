@@ -250,3 +250,7 @@
 /* Progress bar in a table cell: sit it on the first text line's midline, like the numbers beside it. */
 .pm-progress-line { height: var(--mp-sizes-5, 20px); display: flex; align-items: center; }
 .pm-progress-line > * { flex: 1; }
+
+/* Project page tabs: labels stay on one line; the tab bar scrolls sideways when narrow. */
+#pm-detail-tabs [data-pixel-component="MpTabList"] { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; }
+#pm-detail-tabs [role="tab"] { white-space: nowrap; flex-shrink: 0; }

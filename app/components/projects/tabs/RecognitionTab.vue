@@ -148,21 +148,21 @@ const unitWps = computed(() => projectWorkPackages(props.project.id).filter(w =>
 <template>
   <div class="pm-stack pm-gap-5">
     <!-- Two clocks -->
-    <div class="pm-grid-3">
-      <div class="pm-card">
-        <div class="pm-stat-label">{{ t('Recognised to date') }}</div>
-        <div class="pm-stat-value">{{ rp(recognised) }}</div>
-        <div class="pm-stat-note">{{ pc !== undefined ? `${pct(pc)} ${t('complete')} · ` : '' }}{{ t('Revenue clock — progress') }}</div>
+    <div class="pm-kpis">
+      <div class="pm-kpi pm-kpi--bordered">
+        <div class="pm-kpi-title">{{ t('Recognised to date') }}</div>
+        <div class="pm-kpi-period">{{ pc !== undefined ? `${pct(pc)} ${t('complete')} · ` : '' }}{{ t('Revenue clock — progress') }}</div>
+        <div class="pm-kpi-amount">{{ rp(recognised) }}</div>
       </div>
-      <div class="pm-card">
-        <div class="pm-stat-label">{{ t('Billed to date') }}</div>
-        <div class="pm-stat-value">{{ rp(billed) }}</div>
-        <div class="pm-stat-note">{{ t('Billing clock — contract terms') }}</div>
+      <div class="pm-kpi pm-kpi--bordered">
+        <div class="pm-kpi-title">{{ t('Billed to date') }}</div>
+        <div class="pm-kpi-period">{{ t('Billing clock — contract terms') }}</div>
+        <div class="pm-kpi-amount">{{ rp(billed) }}</div>
       </div>
-      <div class="pm-card" :class="wip < 0 ? 'pm-card--negative' : wip > 0 ? 'pm-card--positive' : ''">
-        <div class="pm-stat-label">{{ t('WIP position') }}</div>
-        <div class="pm-stat-value" :class="wip > 0 ? 'pm-pos' : wip < 0 ? 'pm-neg' : ''">{{ rp(Math.abs(wip)) }}</div>
-        <div class="pm-stat-note">{{ wip > 0 ? t('Underbilled — contract asset (recognised > billed)') : wip < 0 ? t('Overbilled — contract liability (billed > recognised)') : t('Recognised equals billed') }}</div>
+      <div class="pm-kpi">
+        <div class="pm-kpi-title">{{ t('WIP position') }}</div>
+        <div class="pm-kpi-period">{{ wip > 0 ? t('Underbilled — contract asset (recognised > billed)') : wip < 0 ? t('Overbilled — contract liability (billed > recognised)') : t('Recognised equals billed') }}</div>
+        <div class="pm-kpi-amount" :class="wip > 0 ? 'pm-pos' : wip < 0 ? 'pm-neg' : ''">{{ rp(Math.abs(wip)) }}</div>
       </div>
     </div>
     <MpBanner id="pm-rec-separation" variant="info">

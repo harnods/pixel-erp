@@ -11,7 +11,7 @@
  */
 import {
   MpButton, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpBanner, MpBannerIcon, MpBannerDescription,
-  MpFormControl, MpFormLabel, MpTextarea, MpFormErrorMessage, MpTag,
+  MpFormControl, MpFormLabel, MpTextarea, MpFormErrorMessage,
 } from '@mekari/pixel3'
 import PmTitleBar from '../PmTitleBar.vue'
 import PmMenu, { type PmMenuItem } from '../PmMenu.vue'
@@ -141,8 +141,6 @@ const lastEntry = computed(() => projectAudit.value[0])
     <PmTitleBar :title="`${project.code} · ${project.name}`" :breadcrumb="{ label: t('Projects'), to: '/projects' }" :meta="`${project.customer} · PM ${project.pm}${project.salesOrderNo ? ` · ${project.salesOrderNo}` : ''}`">
       <template #badges>
         <ErpStatusBadge v-bind="badgeProps('project', project.status, t)" badge-for="additionalInformation" />
-        <MpTag :id="`pm-method-${project.id}`">{{ t(methodLabel(project)) }} · {{ project.status === 'draft' ? t('Locks at approval') : t('Locked at approval') }}</MpTag>
-        <MpTag :id="`pm-shape-${project.id}`">{{ project.isProduction ? t('Production') : t('Service') }} · {{ t('Depth') }} {{ project.depth }}</MpTag>
       </template>
       <template #actions>
         <MpButton variant="secondary" is-rounded @click="router.push(`/project-audit-log?project=${project.id}`)">{{ t('View history') }}</MpButton>
@@ -153,30 +151,34 @@ const lastEntry = computed(() => projectAudit.value[0])
 
     <div class="pm-stage">
       <!-- KPI strip — same numbers on every tab (Recognition shows its own two-clock cards) -->
-      <div v-if="activeTab !== 'recognition'" class="pm-grid-5 pm-mb-5">
-        <div class="pm-card pm-card--flat">
-          <div class="pm-stat-label">{{ t('Contract value') }}</div>
-          <div class="pm-stat-value pm-stat-value--md">{{ rp(project.contractValue) }}</div>
+      <div v-if="activeTab !== 'recognition'" class="pm-kpis pm-mb-5">
+        <div class="pm-kpi pm-kpi--bordered">
+          <div class="pm-kpi-title">{{ t('Contract value') }}</div>
+          <div class="pm-kpi-period">{{ t(methodLabel(project)) }} · {{ project.status === 'draft' ? t('Locks at approval') : t('Locked at approval') }}</div>
+          <div class="pm-kpi-amount">{{ rp(project.contractValue) }}</div>
         </div>
-        <div class="pm-card pm-card--flat">
-          <div class="pm-stat-label">{{ t('Budget (cost)') }}</div>
-          <div class="pm-stat-value pm-stat-value--md">
+        <div class="pm-kpi pm-kpi--bordered">
+          <div class="pm-kpi-title">{{ t('Budget (cost)') }}</div>
+          <div class="pm-kpi-period">{{ project.isProduction ? t('Production') : t('Service') }} · {{ t('Depth') }} {{ project.depth }}</div>
+          <div class="pm-kpi-amount">
             <template v-if="summary.budget !== undefined">{{ rp(summary.budget) }}</template>
             <span v-else class="pm-warn">{{ t('Not set') }}</span>
           </div>
         </div>
-        <div class="pm-card pm-card--flat">
-          <div class="pm-stat-label">{{ t('Committed + actual') }}</div>
-          <div class="pm-stat-value pm-stat-value--md" :class="{ 'pm-neg': summary.budget !== undefined && summary.consumed > summary.budget }">{{ rp(summary.consumed) }}</div>
+        <div class="pm-kpi pm-kpi--bordered">
+          <div class="pm-kpi-title">{{ t('Committed + actual') }}</div>
+          <div class="pm-kpi-period">{{ summary.budget ? `${pct(summary.consumed / summary.budget * 100, 0)} ${t('of budget')}` : t('Budget not set') }}</div>
+          <div class="pm-kpi-amount" :class="{ 'pm-neg': summary.budget !== undefined && summary.consumed > summary.budget }">{{ rp(summary.consumed) }}</div>
         </div>
-        <div class="pm-card pm-card--flat">
-          <div class="pm-stat-label">{{ t('Completed') }}</div>
-          <div class="pm-stat-value pm-stat-value--md">{{ summary.percentComplete !== undefined ? pct(summary.percentComplete) : '—' }}</div>
+        <div class="pm-kpi pm-kpi--bordered">
+          <div class="pm-kpi-title">{{ t('Completed') }}</div>
+          <div class="pm-kpi-period">{{ t(methodLabel(project)) }}</div>
+          <div class="pm-kpi-amount">{{ summary.percentComplete !== undefined ? pct(summary.percentComplete) : '—' }}</div>
         </div>
-        <div class="pm-card pm-card--flat">
-          <div class="pm-stat-label">{{ t('WIP position') }}</div>
-          <div class="pm-stat-value pm-stat-value--md" :class="summary.wip > 0 ? 'pm-pos' : summary.wip < 0 ? 'pm-neg' : ''">{{ rp(Math.abs(summary.wip)) }}</div>
-          <div class="pm-stat-note">{{ summary.wip > 0 ? t('Underbilled (asset)') : summary.wip < 0 ? t('Overbilled (liability)') : t('Balanced') }}</div>
+        <div class="pm-kpi">
+          <div class="pm-kpi-title">{{ t('WIP position') }}</div>
+          <div class="pm-kpi-period">{{ summary.wip > 0 ? t('Underbilled (asset)') : summary.wip < 0 ? t('Overbilled (liability)') : t('Balanced') }}</div>
+          <div class="pm-kpi-amount" :class="summary.wip > 0 ? 'pm-pos' : summary.wip < 0 ? 'pm-neg' : ''">{{ rp(Math.abs(summary.wip)) }}</div>
         </div>
       </div>
 
