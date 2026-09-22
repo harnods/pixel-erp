@@ -255,14 +255,21 @@
 #pm-detail-tabs [data-pixel-component="MpTabList"] { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; }
 #pm-detail-tabs [role="tab"] { white-space: nowrap; flex-shrink: 0; }
 
-/* ── New project › structure rows: fields grow, the remove/delete column stays pinned right ── */
+/* ── New project › phase card: title row, then fields and work-package rows on one grid ── */
+.pm-phase-head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3, 12px); }
 .pm-phase-row, .pm-wp-row { display: grid; gap: var(--mp-spacing-3, 12px); }
-.pm-phase-row { grid-template-columns: minmax(0, 1fr) var(--mp-sizes-10, 40px); align-items: start; }
+/* the empty last track mirrors the remove column, so phase inputs end where work-package inputs end */
+.pm-phase-row { grid-template-columns: minmax(0, 1fr) var(--mp-sizes-10, 40px); }
 .pm-phase-fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--mp-spacing-3, 12px); }
 .pm-phase-fields--weight { grid-template-columns: minmax(0, 2fr) minmax(0, 1.4fr) minmax(0, 1fr); }
-.pm-wp-row { grid-template-columns: var(--mp-sizes-8, 32px) minmax(0, 1fr) var(--mp-sizes-10, 40px); align-items: center; }
-.pm-wp-row--units { grid-template-columns: var(--mp-sizes-8, 32px) minmax(0, 1fr) var(--mp-sizes-28, 112px) var(--mp-sizes-24, 96px) var(--mp-sizes-10, 40px); }
-.pm-wp-row--units.pm-wp-row--type { grid-template-columns: var(--mp-sizes-8, 32px) minmax(0, 1fr) var(--mp-sizes-36, 144px) var(--mp-sizes-28, 112px) var(--mp-sizes-24, 96px) var(--mp-sizes-10, 40px); }
-.pm-wp-no { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #3a4749); font-variant-numeric: tabular-nums; }
+.pm-wp-row { grid-template-columns: minmax(0, 1fr) var(--mp-sizes-10, 40px); align-items: end; }
+.pm-wp-row--units { grid-template-columns: minmax(0, 1fr) var(--mp-sizes-28, 112px) var(--mp-sizes-24, 96px) var(--mp-sizes-10, 40px); }
+.pm-wp-row--units.pm-wp-row--type { grid-template-columns: minmax(0, 1fr) var(--mp-sizes-36, 144px) var(--mp-sizes-28, 112px) var(--mp-sizes-24, 96px) var(--mp-sizes-10, 40px); }
 .pm-row-remove { justify-self: end; }
+
+/* ── Page banner between title bar and stage (BillDetailsPage .detail-stage-wrapper) ── */
+.pm-stage-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border-radius: var(--mp-radii-xl, 12px) var(--mp-radii-xl, 12px) 0 0; background: var(--mp-colors-background-stage, #ffffff); }
+.pm-stage-wrap--info { background: var(--mp-colors-background-information, #eef0fc); }
+.pm-stage-wrap--warning { background: var(--mp-colors-background-warning, #fef3d6); }
+.pm-page-banner { border-radius: 0 !important; flex-shrink: 0; }
 @media (max-width: 720px) { .pm-phase-fields--weight { grid-template-columns: minmax(0, 1fr); } }
