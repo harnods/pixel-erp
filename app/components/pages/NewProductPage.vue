@@ -13,6 +13,7 @@ import BarcodeSettingsButton from '~/components/patterns/BarcodeSettingsButton.v
 import { PRODUCTS, type Product } from '~/data/inventory'
 import { customProducts, addCustomProduct, updateCustomProduct } from '~/data/customProducts'
 import { GOODS_CLASSIFICATION_CODES, SERVICE_CLASSIFICATION_CODES } from '~/data/taxClassificationCodes'
+import { getProductTaxInfo, setProductTaxInfo } from '~/data/productsIndex'
 
 const { t } = useLocale()
 
@@ -66,10 +67,27 @@ const productClassification = ref<'Goods' | 'Service' | ''>('')
 const classificationCode = ref('')
 const djpUnit = ref('')
 
+// The picker binds to the bare code ("090100") but tax info is STORED as the full
+// catalogue label ("090100 - Coffee, whether or not roasted…") — the description is
+// part of the DJP master entry, so keeping them together means the detail page and
+// the e-Faktur never have to re-look-up a description that's already known.
+// Resolve against the ACTIVE list only — 146 codes appear in both catalogues with
+// unrelated meanings (010100 is "Live horses…" for Goods but "General Construction
+// Services for Buildings" for Services), so searching both would silently save the
+// wrong description for every service that collides.
+function codeLabelOf(value: string): string {
+  if (!value) return ''
+  return classificationCodeOptions.value.find(c => c.value === value)?.label ?? value
+}
+function codeValueOf(label: string): string {
+  const sep = label.indexOf(' - ')
+  return sep === -1 ? label : label.slice(0, sep)
+}
+
 // Prefill in edit mode — only custom (user-created) products carry the full set
 // of form fields; a seed CATALOG product can still be opened for edit but only
 // its base fields prefill (accounts/toggles fall back to sensible defaults).
-onMounted(() => {
+onMounted(async () => {
   if (!isEdit.value) return
   const p = editingCustom.value ?? PRODUCTS.find(x => x.sku === props.orderId)
   if (!p) return
@@ -81,6 +99,18 @@ onMounted(() => {
   photoDataUrl.value = p.img
   purchaseCost.value = p.buyPrice ? String(p.buyPrice) : ''
   salesPrice.value = p.sellPrice ? String(p.sellPrice) : ''
+
+  // Tax info lives in its own SKU-keyed store, not on the product record (it
+  // applies to read-only CATALOG products too) — see productsIndex.ts.
+  const tax = getProductTaxInfo(p.sku)
+  if (!tax) return
+  productClassification.value = tax.productClassification as 'Goods' | 'Service' | ''
+  // Restore AFTER the classification watchers have flushed: setting the type
+  // re-runs preselectDjpUnit() and the code-list reconciler, both of which would
+  // otherwise stomp the values we just loaded.
+  await nextTick()
+  classificationCode.value = codeValueOf(tax.djpCode)
+  djpUnit.value = tax.djpUnit
 })
 
 // ── Options ────────────────────────────────────────────────────────────────────
@@ -133,24 +163,31 @@ const djpUnitOptions = computed(() =>
     .map(u => ({ label: u, value: u })),
 )
 
-// Base unit → DJP unit — when the product's base unit has an obvious DJP
-// equivalent, preselect it instead of making the user pick the same thing twice.
-const BASE_UNIT_TO_DJP_GOODS: Record<string, string> = {
-  Pcs: 'Piece', Piece: 'Piece', Kg: 'Kilogram', Kilogram: 'Kilogram', Box: 'Box', Unit: 'Unit',
-  Liter: 'Liter', Ltr: 'Liter', Gram: 'Gram', Meter: 'Meter', Dozen: 'Dozen', Set: 'Set',
-  Carton: 'Carton', Drum: 'Drum', Barrel: 'Barrel', Sheet: 'Sheet', Yard: 'Yard', Inch: 'Inch', Ampere: 'Ampere',
+// Base unit → DJP unit. Most base units ARE their DJP unit ("Box", "Hour",
+// "Kilogram"), so a name match against the active list does the bulk of the work
+// and only genuine aliases need listing here.
+const BASE_UNIT_ALIASES: Record<string, string> = {
+  Pcs: 'Piece', Kg: 'Kilogram', Ltr: 'Liter',
 }
+/** The active list's catch-all entry. Spelled "Others" for Goods but "Other" for
+ *  Services, so resolve it from the list rather than hardcoding either. */
+const djpUnitOther = computed(
+  () => djpUnitOptions.value.find(o => o.value === 'Others' || o.value === 'Other')?.value ?? '',
+)
 function preselectDjpUnit() {
-  // Switching Goods ↔ Service swaps the DJP unit list — drop a unit picked from
-  // the other list before (maybe) preselecting one that matches the base unit.
-  if (djpUnit.value && !djpUnitOptions.value.some(o => o.value === djpUnit.value)) {
-    djpUnit.value = ''
-  }
-  const mapped = productClassification.value === 'Service' ? undefined : BASE_UNIT_TO_DJP_GOODS[unit.value]
-  if (mapped && djpUnitOptions.value.some(o => o.value === mapped)) {
-    djpUnit.value = mapped
-  }
+  const opts = djpUnitOptions.value
+  const base = unit.value.trim()
+  // Direct name match first (case-insensitive), then the alias table.
+  const mapped = opts.find(o => o.value.toLowerCase() === base.toLowerCase())?.value
+    ?? opts.find(o => o.value === BASE_UNIT_ALIASES[base])?.value
+  // No DJP equivalent → default to the catch-all rather than leaving the field
+  // blank; an unset DJP unit blocks the e-Faktur, and "Others" is what DJP
+  // expects for a unit outside its master. The user can still override it.
+  djpUnit.value = mapped ?? djpUnitOther.value
 }
+// Re-derive whenever the base unit or the Goods/Service scope changes: switching
+// scope swaps the unit list wholesale, so a unit picked from the other list would
+// otherwise linger as an invalid selection.
 watch([unit, productClassification], preselectDjpUnit)
 
 // Switching Goods ↔ Service swaps the classification code list entirely — clear
@@ -338,19 +375,35 @@ async function save() {
 
   if (isEdit.value && editingCustom.value) {
     updateCustomProduct(props.orderId!, payload)
+    saveTaxInfo(payload.sku)
     toast.notify({ variant: 'success', title: t('Product changes saved'), maxWidth: 'max-content' })
     router.push(`/product-list/${payload.sku}`)
   } else if (isEdit.value) {
-    // Seed (CATALOG) product — read-only master data, nothing to persist.
+    // Seed (CATALOG) product — read-only master data, so the operational fields
+    // aren't persisted. Tax info still is: it lives in its own SKU-keyed store
+    // precisely so Tax/Finance can classify catalogue products they can't edit.
+    saveTaxInfo(props.orderId!)
     toast.notify({ variant: 'success', title: t('Product changes saved'), maxWidth: 'max-content' })
     router.push(`/product-list/${props.orderId}`)
   } else {
     // New product → whatever's in the field (free-typed or generated via the
     // settings icon); left blank, the product simply has no real barcode yet.
     const created = addCustomProduct({ ...payload, barcode: barcode.value.trim() || undefined })
+    saveTaxInfo(created.sku)
     toast.notify({ variant: 'success', title: t('Product saved'), maxWidth: 'max-content' })
     router.push(`/product-list/${created.sku}`)
   }
+}
+
+/** Persist the Tax info section. Written unconditionally — saving with the fields
+ *  blank is how a user records "this product is deliberately unclassified", which
+ *  has to stick rather than fall back to the seeded classification. */
+function saveTaxInfo(productSku: string) {
+  setProductTaxInfo(productSku, {
+    productClassification: productClassification.value,
+    djpCode: codeLabelOf(classificationCode.value),
+    djpUnit: djpUnit.value,
+  })
 }
 
 // Create mode only — persist then reset the form to add the next product.
@@ -358,7 +411,8 @@ async function saveAndAdd() {
   if (!validate()) return
   isSavingAndAdding.value = true
   await new Promise(r => setTimeout(r, 600))
-  addCustomProduct({ ...buildPayload(), barcode: barcode.value.trim() || undefined })
+  const created = addCustomProduct({ ...buildPayload(), barcode: barcode.value.trim() || undefined })
+  saveTaxInfo(created.sku)
   toast.notify({ variant: 'success', title: 'Product saved', maxWidth: 'max-content' })
   isSavingAndAdding.value = false
   resetForm()

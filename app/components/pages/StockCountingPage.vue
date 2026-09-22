@@ -522,7 +522,14 @@ function applyPicker(skus: string[]) {
   })
   addedByLoc.value = { ...addedByLoc.value, [loc]: next }
 }
+// Removing a product from the count is a drafting decision, so it's only offered
+// while the task is still Open. Once counting has started the line-up is fixed —
+// what's on the task is what gets counted, and an unwanted row is counted as 0
+// rather than quietly disappearing from the record.
+const isOpenForEditing = computed(() => adjustment.value?.status === 'not_started')
+
 function removeAddedRow(location: string, id: string) {
+  if (!isOpenForEditing.value) return
   addedByLoc.value = { ...addedByLoc.value, [location]: (addedByLoc.value[location] ?? []).filter(r => r.id !== id) }
 }
 function updateAddedQty(location: string, id: string, e: Event) {
@@ -947,12 +954,14 @@ onUnmounted(() => {
                         <td v-else class="sc-td sc-td--action" />
 
                         <td class="sc-td sc-td--del">
+                          <template v-if="isOpenForEditing">
                           <button class="sc-del-row-btn" type="button" :aria-label="t('Remove product')" @click="removeAddedRow(group.location, added.id)">
                             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                               <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/>
                               <path d="M5 8H11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                             </svg>
                           </button>
+                          </template>
                         </td>
                       </tr>
 
@@ -1003,11 +1012,10 @@ onUnmounted(() => {
   </div>
 
   <!-- ── Finish counting confirmation ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="sco-confirm"
     :is-open="showConfirm"
     size="md"
-    is-close-on-esc
     :is-keep-alive="false"
     @close="showConfirm = false"
   >
@@ -1039,7 +1047,7 @@ onUnmounted(() => {
 
   <!-- ── Add location drawer ── -->
   <Transition name="sc-loc-drw">
-    <div v-if="locDrawerOpen" class="loc-drw-overlay" @click.self="locDrawerOpen = false">
+    <div v-if="locDrawerOpen" class="loc-drw-overlay">
       <div class="loc-drw-panel" role="dialog" :aria-label="t('Add location')">
         <div class="loc-drw-header">
           <span class="loc-drw-title">{{ t('Add location') }}</span>

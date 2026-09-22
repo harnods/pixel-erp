@@ -4,7 +4,7 @@
  * single production request. Built as a self-contained Teleport overlay (this Pixel
  * build ships no MpDrawer structural CSS — see the pixel-overlay memory).
  */
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { MpText, MpButton } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
@@ -42,15 +42,12 @@ function openDetails(wo: WorkOrder) {
   emit('close')
 }
 
-function onEsc(e: KeyboardEvent) { if (e.key === 'Escape' && props.open) emit('close') }
-onMounted(() => window.addEventListener('keydown', onEsc))
-onUnmounted(() => window.removeEventListener('keydown', onEsc))
 </script>
 
 <template>
   <Teleport to="body">
     <Transition name="wod">
-      <div v-if="open && ctx" class="wod-overlay" @click.self="emit('close')">
+      <div v-if="open && ctx" class="wod-overlay">
         <aside class="wod-panel" role="dialog" aria-label="Work order preview">
           <header class="wod-header">
             <MpText weight="semiBold">Work order preview</MpText>
@@ -159,7 +156,7 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   gap: var(--mp-spacing-1);
   padding: var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-4);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 
 .wod-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--mp-spacing-6); }
@@ -178,8 +175,8 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
 .wod-th {
   height: var(--mp-sizes-7, 28px);
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   text-transform: uppercase; color: var(--mp-text-default); text-align: left; white-space: nowrap;
 }
@@ -187,13 +184,13 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
 .wod-td {
   height: var(--mp-sizes-10, 40px);
   padding: var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-2);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   white-space: nowrap; vertical-align: middle;
 }
 .wod-td--right { text-align: right; padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
 .wod-td--actions { text-align: center; padding: var(--mp-spacing-2\.5) var(--mp-spacing-2); }
-.wod-tr:hover .wod-td { background: var(--mp-background-neutral-hovered); }
+.wod-tr:hover .wod-td { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 .wod-open-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -201,7 +198,7 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
   border: none; border-radius: var(--mp-radii-md);
   background: transparent; color: var(--mp-text-secondary); cursor: pointer;
 }
-.wod-open-btn:hover { color: var(--mp-text-default); background: var(--mp-background-neutral-hovered); }
+.wod-open-btn:hover { color: var(--mp-text-default); background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* Transition — matches the pattern library: overlay fades, panel slides in from
    the right (Drawer.md / ManageBatchDrawer). */

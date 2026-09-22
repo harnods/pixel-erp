@@ -8,9 +8,12 @@
  * SelectProductDrawer's working-copy pattern.
  */
 import { ref, computed, watch } from 'vue'
-import { MpIcon, MpButton, MpTooltip } from '@mekari/pixel3'
+import {
+  MpIcon, MpButton, MpTooltip,
+  MpAccordion, MpAccordionItem, MpAccordionHeader, MpAccordionIcon, MpAccordionPanel,
+} from '@mekari/pixel3'
 
-export interface AccessOption { id: string; name: string; subtitle?: string }
+export interface AccessOption { id: string; name: string; subtitle?: string; icon?: string; devchange?: string }
 
 const props = defineProps<{
   open: boolean
@@ -23,6 +26,11 @@ const props = defineProps<{
   modelValue: string[]
   emptyTitle: string
   emptyCaption: string
+  /** Names of the records this access selection applies to (e.g. dimension
+   *  values), shown as a collapsed-by-default "Applies to N value(s)"
+   *  accordion above the footer (Figma 5162-22892). Omit to skip it entirely
+   *  — most consumers (e.g. the Cash Account picker) have no such grouping. */
+  applyTo?: string[]
 }>()
 const emit = defineEmits<{
   'update:open': [boolean]
@@ -52,6 +60,12 @@ function remove(id: string) { const s = new Set(sel.value); s.delete(id); sel.va
 function addAll() { const s = new Set(sel.value); for (const o of available.value) s.add(o.id); sel.value = s }
 function removeAll() { sel.value = new Set() }
 
+const { t } = useLocale()
+const applyToLabel = computed(() => {
+  const n = props.applyTo?.length ?? 0
+  return `${t('Applies to')} ${n} ${n === 1 ? t('value') : t('values')}`
+})
+
 const isSaving = ref(false)
 function close() { isSaving.value = false; emit('update:open', false) }
 async function save() {
@@ -65,7 +79,7 @@ async function save() {
 
 <template>
   <Transition name="sad">
-    <div v-if="open" class="sad-overlay" @click.self="close">
+    <div v-if="open" class="sad-overlay">
       <div class="sad-panel" role="dialog" :aria-label="title">
         <!-- Header -->
         <header class="sad-header">
@@ -78,7 +92,7 @@ async function save() {
           <!-- Available -->
           <section class="sad-col">
             <div class="sad-search">
-              <MpIcon name="search" size="sm" />
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               <input v-model="leftSearch" class="sad-search-input" type="text" placeholder="Search..." />
               <button v-if="leftSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="leftSearch = ''">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -87,11 +101,12 @@ async function save() {
               </button>
             </div>
             <div class="sad-col-head">
-              <h2 class="sad-col-title">{{ listTitle }}</h2>
+              <h3 class="sad-col-title">{{ listTitle }}</h3>
               <button class="sad-link" type="button" @click="addAll">Add all</button>
             </div>
             <div class="sad-list">
-              <button v-for="o in available" :key="o.id" class="sad-item" type="button" @click="add(o.id)">
+              <button v-for="o in available" :key="o.id" class="sad-item" type="button" :data-devchange="o.devchange" @click="add(o.id)"><!-- pixel-police-allow -->
+                <MpIcon v-if="o.icon" :name="o.icon" size="sm" class="sad-icon" />
                 <span class="sad-info">
                   <span class="sad-name">{{ o.name }}</span>
                   <span v-if="o.subtitle" class="sad-sub">{{ o.subtitle }}</span>
@@ -108,7 +123,7 @@ async function save() {
           <section class="sad-col">
             <template v-if="selectedCount">
               <div class="sad-search">
-                <MpIcon name="search" size="sm" />
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                 <input v-model="rightSearch" class="sad-search-input" type="text" placeholder="Search..." />
                 <button v-if="rightSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="rightSearch = ''">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -117,11 +132,12 @@ async function save() {
                 </button>
               </div>
               <div class="sad-col-head">
-                <h2 class="sad-col-title">Selected {{ listTitle.toLowerCase() }} ({{ selectedCount }})</h2>
+                <h3 class="sad-col-title">Selected {{ listTitle.toLowerCase() }} ({{ selectedCount }})</h3>
                 <button class="sad-link" type="button" @click="removeAll">Remove all</button>
               </div>
               <div class="sad-list">
-                <button v-for="o in selected" :key="o.id" class="sad-item" type="button" @click="remove(o.id)">
+                <button v-for="o in selected" :key="o.id" class="sad-item" type="button" :data-devchange="o.devchange" @click="remove(o.id)"><!-- pixel-police-allow -->
+                  <MpIcon v-if="o.icon" :name="o.icon" size="sm" class="sad-icon" />
                   <span class="sad-info">
                     <span class="sad-name">{{ o.name }}</span>
                     <span v-if="o.subtitle" class="sad-sub">{{ o.subtitle }}</span>
@@ -141,10 +157,30 @@ async function save() {
           </section>
         </div>
 
-        <!-- Footer -->
+        <!-- "Applies to N value(s)" — collapsed by default, sticky against the
+             footer with no gap (Figma 5162-22892). Only rendered when the
+             caller passes applyTo (e.g. the Dimensions bulk/per-value flow). -->
+        <MpAccordion v-if="applyTo?.length" is-allow-toggle class="sad-apply-accordion">
+          <MpAccordionItem id="sad-apply-to">
+            <MpAccordionHeader>
+              <MpAccordionIcon />
+              <span class="sad-apply-label">{{ applyToLabel }}</span>
+            </MpAccordionHeader>
+            <MpAccordionPanel>
+              <div class="sad-apply-tags">
+                <span v-for="name in applyTo" :key="name" class="sad-apply-tag">{{ name }}</span>
+              </div>
+            </MpAccordionPanel>
+          </MpAccordionItem>
+        </MpAccordion>
+
+        <!-- Footer — optional left action (e.g. "+ New …") + Cancel/Save -->
         <footer class="sad-footer">
-          <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
-          <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="save">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
+          <div class="sad-footer-left"><slot name="footer-left" /></div>
+          <div class="sad-footer-right">
+            <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
+            <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="save">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
+          </div>
         </footer>
       </div>
     </div>
@@ -170,16 +206,18 @@ async function save() {
 .sad-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  border-bottom: 1px solid var(--mp-border-default); background: var(--mp-background-neutral-subtle);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); background: var(--mp-background-neutral-subtle, #f8f9f9);
 }
 .sad-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .sad-close { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
-.sad-close:hover { background: var(--mp-background-neutral-hovered); }
+.sad-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 .sad-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1px 1fr; }
 .sad-col { display: flex; flex-direction: column; min-height: 0; padding: var(--mp-spacing-4); }
-.sad-divider { background: var(--mp-border-default); }
-.sad-search { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px); color: var(--mp-icon-default); flex-shrink: 0; }
+.sad-divider { background: var(--mp-border-default, #e3e7e9); }
+/* Matches the table filter-bar search: border-default pill + neutral focus ring. */
+.sad-search { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); flex-shrink: 0; }
+.sad-search:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .sad-search-input { flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .sad-search-input::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
@@ -189,11 +227,12 @@ async function save() {
   color: var(--mp-icon-default, var(--mp-text-secondary));
   border-radius: var(--mp-radii-full, 999px);
 }
-.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 /* 20px between the search box and the list header (design-doc rule). */
 .sad-col-head { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; margin-top: 20px; }
 /* H2 heading — Users / Roles / Selected … */
-.sad-col-title { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-xl, 32px); color: var(--mp-text-default); }
+/* H3 = 16px / semibold (the drawer title is the 20px h2 above). */
+.sad-col-title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-text-default); }
 .sad-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
 .sad-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
@@ -202,16 +241,18 @@ async function save() {
    (roles) land at 36px, two-line rows (user + role subtitle) at ~52px like Figma.
    min-height keeps single-line rows steady when the add/remove control appears. */
 .sad-item {
-  display: flex; align-items: center; gap: var(--mp-spacing-3); width: 100%; min-height: 36px; text-align: left;
+  display: flex; align-items: center; gap: var(--mp-spacing-3); width: 100%; min-height: 52px; flex-shrink: 0; text-align: left;
   padding: var(--mp-spacing-2) var(--mp-spacing-1); background: none; border: none; cursor: pointer;
-  border-bottom: 1px solid var(--mp-border-default); position: relative;
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); position: relative;
 }
-.sad-item:hover { background: var(--mp-background-neutral-subtle); }
+.sad-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.sad-icon { color: var(--mp-icon-default, #536062); flex-shrink: 0; }
 .sad-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .sad-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sad-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.sad-act { display: none; align-items: center; justify-content: center; flex-shrink: 0; width: 24px; height: 24px; }
-.sad-item:hover .sad-act { display: inline-flex; }
+.sad-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Always in layout (opacity, not display) so revealing it never reflows row height. */
+.sad-act { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 20px; height: 20px; opacity: 0; transition: opacity 0.1s ease; }
+.sad-item:hover .sad-act, .sad-item:focus-visible .sad-act { opacity: 1; }
 .sad-act--add { color: var(--mp-text-link); }
 .sad-act--remove { color: var(--mp-text-secondary); }
 .sad-remove-tip { display: inline-flex; }
@@ -223,5 +264,21 @@ async function save() {
 .sad-empty-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .sad-empty-caption { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
-.sad-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
+.sad-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+.sad-footer-left { display: inline-flex; }
+.sad-footer-right { display: inline-flex; gap: var(--mp-spacing-2); }
+
+/* "Applies to N value(s)" accordion — collapsed by default, sits flush above
+   the footer (no gap, same fixed/always-visible chrome as the footer itself)
+   rather than inside the scrolling body (Figma 5162-22892). */
+.sad-apply-accordion { flex-shrink: 0; background: var(--mp-background-neutral-subtle, #f0f1f3); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+.sad-apply-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.sad-apply-tags { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); }
+.sad-apply-tag {
+  display: inline-flex; align-items: center; max-height: 28px;
+  padding: var(--mp-spacing-1) var(--mp-spacing-2);
+  background: var(--mp-background-neutral, #fff);
+  border-radius: var(--mp-radii-sm, 4px);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
+}
 </style>

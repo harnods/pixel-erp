@@ -43,7 +43,7 @@ function clearAll() {
 
 <template>
   <Transition name="bf-filters">
-    <div v-if="isOpen" class="bf-filters-overlay" @click.self="close">
+    <div v-if="isOpen" class="bf-filters-overlay">
       <div class="bf-filters-panel" role="dialog" aria-label="All filters">
         <header class="bf-filters-header">
           <span class="bf-filters-title">All filters</span>

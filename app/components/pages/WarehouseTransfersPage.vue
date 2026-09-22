@@ -31,11 +31,11 @@ const viewAsOptions: { value: 'user' | 'manager'; label: string }[] = [
 
 // ─── Columns (checkbox is rendered by ErpTablePage as the first column) ──────────
 const columns: TableColumn[] = [
-  { key: 'number',          label: 'Number',      width: '240px', sortable: true, sortType: 'text' },
-  { key: 'date',            label: 'Date',        width: '130px', sortable: true, sortType: 'date' },
-  { key: 'originName',      label: 'Origin',      width: '220px', sortType: 'text' },
-  { key: 'destinationName', label: 'Destination', width: '220px', sortType: 'text' },
-  { key: 'lastUpdated',     label: 'Last updated', width: '220px' },
+  { key: 'number',          label: 'Number',      kind: 'number', sortable: true, sortType: 'text' },
+  { key: 'date',            label: 'Date',        kind: 'date',   sortable: true, sortType: 'date' },
+  { key: 'originName',      label: 'Origin',      kind: 'name',   sortType: 'text' },
+  { key: 'destinationName', label: 'Destination', kind: 'name',   sortType: 'text' },
+  { key: 'lastUpdated',     label: 'Last updated', kind: 'date' },
 ]
 
 // Column show/hide — first column stays on; the sort menu's "Hide column" flips
@@ -467,9 +467,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   />
 
   <!-- ── Cancel confirmation (single row + bulk share this) ── -->
-  <MpModal
-    id="wt-bulk-cancel" :is-open="bulkCancelOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="bulkCancelOpen = false"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="wt-bulk-cancel" :is-open="bulkCancelOpen" size="md" :is-keep-alive="false" @close="bulkCancelOpen = false"
   >
     <MpModalContent>
       <MpModalHeader>{{ t('Cancel') }} {{ bulkCancelIds.length > 1 ? bulkCancelIds.length + ' ' + t('warehouse transfers') : t('warehouse transfer') }}?<MpModalCloseButton /></MpModalHeader>

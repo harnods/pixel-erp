@@ -66,10 +66,6 @@
             <span class="user-menu__label">{{ t('Switch to WMS') }}</span>
             <MpIcon name="chevrons-right" size="md" color="icon.default" />
           </button>
-          <button type="button" class="user-menu__row" @click="toggleProductMenu(); onClosePopover()">
-            <span class="user-menu__label">{{ t('Show ERP Menu') }}</span>
-            <span v-if="showProductMenu" class="user-menu__value">{{ t('On') }}</span>
-          </button>
           <button type="button" class="user-menu__row" @click="view = 'scenario'">
             <span class="user-menu__label">{{ t('Scenario') }}</span>
             <span class="user-menu__value">{{ t(migrationScenario) }}</span>
@@ -80,7 +76,7 @@
             <span class="user-menu__value">{{ currentLanguage }}</span>
             <MpIcon name="chevrons-right" size="md" color="icon.default" />
           </button>
-          <button type="button" class="user-menu__row">
+          <button type="button" class="user-menu__row" @click="signOutAndReload(onClosePopover)">
             <span class="user-menu__label">{{ t('Sign out') }}</span>
           </button>
         </nav>
@@ -92,10 +88,11 @@
           <button type="button" class="user-menu__row" @click="resetData(onClosePopover)">
             <span class="user-menu__label">{{ t('Reset demo data') }}</span>
           </button>
-          <button type="button" class="user-menu__row" @click="toggleReview(onClosePopover)">
-            <span class="user-menu__label">{{ t('Review mode') }}</span>
-            <span v-if="isReviewMode" class="user-menu__value">{{ t('On') }}</span>
-          </button>
+          <!-- Changes overlay disabled — coachmarks were distracting during dev.
+          <button type="button" class="user-menu__row" @click="toggleChanges(onClosePopover)"> pixel-police-allow
+            <span class="user-menu__label">{{ t('Changes') }}</span>
+            <span v-if="isChangesOn" class="user-menu__value">{{ t('On') }}</span>
+          </button> -->
         </nav>
 
         <p class="user-menu__company-id">{{ t('Company ID: 680128') }}</p>
@@ -177,6 +174,21 @@
             />
           </button>
         </nav>
+
+        <!-- An operator with line-manager access gets the manager-only task actions
+             (Change assignee). Only meaningful in the Ops scenarios, where the
+             signed-in user is an operator — a manager already has them. -->
+        <nav v-if="isWarehouseOperator" class="user-menu__group">
+          <div class="user-menu__row">
+            <MpCheckbox
+              id="user-menu-lm-access"
+              :is-checked="hasLmAccess"
+              @change="setLmAccess(!hasLmAccess)"
+            >
+              {{ t('Line manager access') }}
+            </MpCheckbox>
+          </div>
+        </nav>
       </template>
 
       <!-- ── Scenario: pick the demo storyline ─────────────── -->
@@ -224,10 +236,11 @@ import {
   MpAvatar,
   MpText,
   MpIcon,
+  MpCheckbox,
 } from "@mekari/pixel3";
 import { picForWarehouse } from "~/data/warehouses";
 import { resetDb } from "~/data/persist";
-import { useReviewMode, clearDynamicAnnotations } from "@ds/proto-review";
+import { clearDynamicAnnotations } from "@ds/proto-review";
 
 // Public asset (place your attached megaphone here). Bound dynamically so a missing
 // file degrades to a 404 at runtime instead of breaking the Vite build.
@@ -270,9 +283,11 @@ function onPopoverClose() {
 // Scenarios the user can switch into. ERP is the default (no WMS selected initially).
 const scenarios: Scenario[] = ["ERP", "WMS Standalone", "WMS Ops", "WMS Ops 2"];
 const { activeScenario, setScenario } = useScenario();
+// Line-manager access — an add-on grant on an operator account, not a role. In the
+// Ops scenarios the signed-in user IS an operator, so this is what decides whether
+// they get manager-only actions such as changing a task's assignee.
+const { hasLmAccess, setLmAccess, isWarehouseOperator } = useLineManagerAccess();
 const { navigate } = useNavigation();
-// Product-switcher rail visibility (top-right "Show ERP Menu" toggle).
-const { showProductMenu, toggleProductMenu } = useProductMenu();
 
 // In an Ops scenario the signed-in user IS the warehouse operator (the assigned
 // warehouse's PIC) — Budi Santoso for Ops 1, Agus Firmansyah for Ops 2. ERP and
@@ -321,11 +336,20 @@ async function resetData(closePopover: () => void) {
   if (import.meta.client) window.location.reload();
 }
 
-// Flips the proto-review overlay on/off for the rest of this browser session
-// (persists across page navigation) without needing the ?review query param.
-const { isReviewMode, toggleReviewMode } = useReviewMode();
-function toggleReview(closePopover: () => void) {
-  toggleReviewMode();
+// End the @mekari.com session and return to the login screen. Reloading drops all
+// in-memory app state and lets the access gate re-resolve as anonymous.
+const { signOut } = useAuth();
+async function signOutAndReload(closePopover: () => void) {
+  await signOut();
+  closePopover();
+  if (import.meta.client) window.location.reload();
+}
+
+// Flips the engineer-facing "Changes" overlay (DevChangesOverlay) on/off for the
+// rest of this browser session. Replaces the old proto-review "Review mode" toggle.
+const { isActive: isChangesOn, toggle: toggleChangesOverlay } = useDevChanges();
+function toggleChanges(closePopover: () => void) {
+  toggleChangesOverlay();
   closePopover();
 }
 </script>

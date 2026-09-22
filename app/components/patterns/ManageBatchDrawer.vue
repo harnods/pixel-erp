@@ -826,7 +826,7 @@ function fmtNum(n: number | null): string {
 
 <template>
   <Transition name="mbd">
-  <div v-if="open" class="mbd-overlay" @click.self="handleCancel">
+  <div v-if="open" class="mbd-overlay">
     <div class="mbd-panel" role="dialog" aria-label="Manage batch">
 
       <!-- Header -->
@@ -1353,7 +1353,7 @@ function fmtNum(n: number | null): string {
 
   <!-- ── 2nd drawer: manage storage location per batch ───────────────────────── -->
   <Transition name="mbd-loc2">
-  <div v-if="batchLocRow" class="mbd-loc2-overlay" @click.self="closeBatchLocDrawer">
+  <div v-if="batchLocRow" class="mbd-loc2-overlay">
     <div class="mbd-loc2-panel" role="dialog" aria-label="Manage storage location">
       <header class="mbd-loc2-header">
         <h2 class="mbd-loc2-title">Manage storage location</h2>

@@ -496,9 +496,8 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
 
 
     <!-- ── Close receipt confirmation modal ── -->
-    <MpModal
-      id="prd-close-modal" :is-open="closeModalOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="dismissCloseModal"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="prd-close-modal" :is-open="closeModalOpen" size="md" :is-keep-alive="false" @close="dismissCloseModal"
     >
       <MpModalContent>
         <MpModalHeader>{{ t('Close receipt?') }}<MpModalCloseButton /></MpModalHeader>
@@ -562,7 +561,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none;
   padding-right: 34px;
 }
-.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-jump-search:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
   display: inline-flex; align-items: center; justify-content: center;

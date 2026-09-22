@@ -32,12 +32,28 @@ const props = withDefaults(defineProps<{
    *  backwards from today. 'future' → Next 7 / 14 / 30 days, resolving forwards
    *  (today → today+N) — used for forward-looking fields like Due date. */
   direction?: 'past' | 'future'
+  /** Report/period mode → the sidebar shows This month / This quarter / Per
+   *  month / Per year / Custom instead of the day-based presets. Used by the
+   *  Credit Memo report and other period reports. */
+  periodMode?: boolean
+  /** Names the label prefix after the granularity in play — "Month: December
+   *  2026", "Year: 2026" — instead of the fixed "Date range:". Opt-in, so every
+   *  existing caller keeps its current label. Used by the Multidimensional
+   *  report (Figma 4836-56598). */
+  labelPrefixMode?: boolean
+  /** Opt-in: replace the sidebar quick presets with an explicit list (e.g. the
+   *  Deals close-date filter: Today / This week / This month / Next month). When
+   *  set, the only granularity option is Custom date range. Existing callers that
+   *  omit this keep their direction/periodMode presets unchanged. */
+  presets?: { key: Mode; label: string }[]
 }>(), {
   direction: 'past',
+  periodMode: false,
+  labelPrefixMode: false,
 })
 const emit = defineEmits<{ 'update:modelValue': [Date[]] }>()
 
-type Mode = 'today' | 'last7' | 'last14' | 'last30' | 'next7' | 'next14' | 'next30' | 'day' | 'week' | 'month' | 'year' | 'custom'
+type Mode = 'today' | 'last7' | 'last14' | 'last30' | 'next7' | 'next14' | 'next30' | 'day' | 'week' | 'month' | 'year' | 'custom' | 'thisMonth' | 'thisQuarter' | 'thisYear' | 'thisWeek' | 'nextMonth'
 
 const open = ref(false)
 const mode = ref<Mode>(props.direction === 'future' ? 'next30' : 'last30')
@@ -49,6 +65,8 @@ function startOfWeek(d: Date) { return addDays(d, -d.getDay()) }
 function endOfWeek(d: Date) { return addDays(startOfWeek(d), 6) }
 function startOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth(), 1) }
 function endOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth() + 1, 0) }
+function startOfQuarter(d: Date) { return new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3, 1) }
+function endOfQuarter(d: Date) { return new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3 + 3, 0) }
 
 function fmtDMY(d: Date) {
   const dd = String(d.getDate()).padStart(2, '0')
@@ -73,6 +91,11 @@ function presetBounds(key: Mode): [Date, Date] {
     case 'next7':  return [today, addDays(today, 6)]
     case 'next14': return [today, addDays(today, 13)]
     case 'next30': return [today, addDays(today, 29)]
+    case 'thisWeek':    return [startOfWeek(today), endOfWeek(today)]
+    case 'thisMonth':   return [startOfMonth(today), endOfMonth(today)]
+    case 'nextMonth': { const n = new Date(today.getFullYear(), today.getMonth() + 1, 1); return [startOfMonth(n), endOfMonth(n)] }
+    case 'thisQuarter': return [startOfQuarter(today), endOfQuarter(today)]
+    case 'thisYear':    return [new Date(today.getFullYear(), 0, 1), new Date(today.getFullYear(), 11, 31)]
     default:       return [today, today]
   }
 }
@@ -116,31 +139,67 @@ const labelText = computed(() => {
     case 'month': return `${MONTHS_LONG[range.value[0].getMonth()]} ${range.value[0].getFullYear()}`
     case 'year': return `${range.value[0].getFullYear()}`
     case 'custom': return 'Custom'
+    case 'thisWeek': return 'This week'
+    case 'nextMonth': return 'Next month'
+    case 'thisMonth': return 'This month'
+    case 'thisQuarter': return 'This quarter'
+    case 'thisYear': return 'This year'
     default: return fieldText.value
+  }
+})
+
+// With `labelPrefixMode`, the prefix names the granularity the label describes
+// ("Month: December 2026") — anything else stays the generic "Date range:".
+const labelPrefix = computed(() => {
+  if (!props.labelPrefixMode) return 'Date range:'
+  switch (mode.value) {
+    case 'month': return 'Month:'
+    case 'year': return 'Year:'
+    case 'day': return 'Date:'
+    case 'week': return 'Week:'
+    default: return 'Date range:'
   }
 })
 
 // ─── Sidebar selection ──────────────────────────────────────────────────────────
 
-const topPresets = computed<{ key: Mode; label: string }[]>(() => props.direction === 'future'
+const topPresets = computed<{ key: Mode; label: string }[]>(() => props.presets
+  ? props.presets
+  : props.periodMode
   ? [
-      { key: 'next7', label: 'Next 7 days' },
-      { key: 'next14', label: 'Next 14 days' },
-      { key: 'next30', label: 'Next 30 days' },
+      { key: 'thisMonth', label: 'This month' },
+      { key: 'thisQuarter', label: 'This quarter' },
+      { key: 'thisYear', label: 'This year' },
+    ]
+  : props.direction === 'future'
+    ? [
+        { key: 'next7', label: 'Next 7 days' },
+        { key: 'next14', label: 'Next 14 days' },
+        { key: 'next30', label: 'Next 30 days' },
+      ]
+    : [
+        { key: 'today', label: 'Today' },
+        { key: 'last7', label: 'Last 7 days' },
+        { key: 'last14', label: 'Last 14 days' },
+        { key: 'last30', label: 'Last 30 days' },
+      ])
+// `instant` items commit immediately (like the top presets); the rest open a
+// calendar granularity view.
+const granularityPresets = computed<{ key: Mode; label: string; instant?: boolean }[]>(() => props.presets
+  ? [{ key: 'custom', label: 'Custom date range' }]
+  : props.periodMode
+  ? [
+      { key: 'month', label: 'Per month' },
+      { key: 'year', label: 'Per year' },
+      { key: 'custom', label: 'Custom' },
     ]
   : [
-      { key: 'today', label: 'Today' },
-      { key: 'last7', label: 'Last 7 days' },
-      { key: 'last14', label: 'Last 14 days' },
-      { key: 'last30', label: 'Last 30 days' },
+      { key: 'day', label: 'Per day' },
+      { key: 'week', label: 'Per week' },
+      { key: 'month', label: 'Per month' },
+      { key: 'year', label: 'Per year' },
+      { key: 'custom', label: 'Custom' },
     ])
-const granularityPresets: { key: Mode; label: string }[] = [
-  { key: 'day', label: 'Per day' },
-  { key: 'week', label: 'Per week' },
-  { key: 'month', label: 'Per month' },
-  { key: 'year', label: 'Per year' },
-  { key: 'custom', label: 'Custom' },
-]
 
 function selectInstant(key: Mode) {
   mode.value = key
@@ -212,7 +271,7 @@ function onYearClick(y: number) {
 <template>
   <div class="adr-wrap" :class="{ 'adr-wrap--full': isFullWidth }">
     <label v-if="hasValue && !hideLabel" class="adr-label">
-      <span class="adr-label-prefix">Date range:</span>
+      <span class="adr-label-prefix">{{ labelPrefix }}</span>
       <span class="adr-label-value">{{ labelText }}</span>
     </label>
 
@@ -238,20 +297,22 @@ function onYearClick(y: number) {
       <MpPopoverContent :class="css({ padding: '0' })" @blur="open = false" @escape="open = false">
         <div class="adr-popover">
           <div class="adr-sidebar">
-            <div class="adr-sidebar-title">Time range</div>
-            <button
-              v-for="opt in topPresets" :key="opt.key"
-              class="adr-sidebar-item adr-sidebar-item--preset" :class="{ 'adr-sidebar-item--active': mode === opt.key }"
-              @click.stop="selectInstant(opt.key)"
-            >
-              <span class="adr-preset-label">{{ opt.label }}</span>
-              <span class="adr-preset-range">{{ presetRangeText(opt.key) }}</span>
-            </button>
-            <div class="adr-sidebar-divider" />
+            <template v-if="topPresets.length">
+              <div class="adr-sidebar-title">Time range</div>
+              <button
+                v-for="opt in topPresets" :key="opt.key"
+                class="adr-sidebar-item adr-sidebar-item--preset" :class="{ 'adr-sidebar-item--active': mode === opt.key }"
+                @click.stop="selectInstant(opt.key)"
+              >
+                <span class="adr-preset-label">{{ opt.label }}</span>
+                <span class="adr-preset-range">{{ presetRangeText(opt.key) }}</span>
+              </button>
+              <div class="adr-sidebar-divider" />
+            </template>
             <button
               v-for="opt in granularityPresets" :key="opt.key"
               class="adr-sidebar-item" :class="{ 'adr-sidebar-item--active': mode === opt.key }"
-              @click.stop="selectGranularity(opt.key)"
+              @click.stop="opt.instant ? selectInstant(opt.key) : selectGranularity(opt.key)"
             >{{ opt.label }}</button>
           </div>
 
@@ -349,16 +410,16 @@ function onYearClick(y: number) {
 
 /* Rendered via MpButton, not a raw HTML control — default look reset so it
    can take on the field's own shape (see IconButton/.demo-fab precedent). */
-.adr-field { display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0 !important; width: 260px; height: var(--mp-sizes-9, 36px); padding: 0 var(--mp-spacing-3) !important; background: var(--mp-background-neutral) !important; border: 1px solid var(--mp-border-default) !important; border-radius: var(--mp-radii-md) !important; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); cursor: pointer; }
+.adr-field { display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0 !important; width: 260px; height: var(--mp-sizes-9, 36px); padding: 0 var(--mp-spacing-3) !important; background: var(--mp-background-neutral, #ffffff) !important; border: 1px solid var(--mp-border-default, #e3e7e9) !important; border-radius: var(--mp-radii-md) !important; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); cursor: pointer; }
 .adr-field--full { width: 100%; }
-.adr-field:hover { background: var(--mp-background-neutral-hovered); }
+.adr-field:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .adr-field svg { flex-shrink: 0; color: var(--mp-text-subtle); }
 .adr-field__value--placeholder { color: var(--mp-text-placeholder, #8690a2); }
 
 /* ── Popover: sidebar + calendar ── */
 .adr-popover { display: flex; }
 
-.adr-sidebar { width: var(--mp-sizes-85, 340px); padding: var(--mp-spacing-3) 0; border-right: 1px solid var(--mp-border-default); display: flex; flex-direction: column; }
+.adr-sidebar { width: var(--mp-sizes-85, 340px); padding: var(--mp-spacing-3) 0; border-right: 1px solid var(--mp-border-default, #e3e7e9); display: flex; flex-direction: column; }
 .adr-sidebar-title {
   padding: var(--mp-spacing-1) var(--mp-spacing-4);
   font-size: var(--mp-font-sizes-xs, 11px);
@@ -376,7 +437,7 @@ function onYearClick(y: number) {
   color: var(--mp-text-default);
   cursor: pointer;
 }
-.adr-sidebar-item:hover { background: var(--mp-background-neutral-hovered); }
+.adr-sidebar-item:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 /* Quick presets show their resolved range on the right (Today = a single date). */
 .adr-sidebar-item--preset {
   display: flex;
@@ -392,7 +453,7 @@ function onYearClick(y: number) {
   background: var(--mp-background-neutral-subtle, #f8f9f9);
   color: var(--mp-text-default);
 }
-.adr-sidebar-divider { height: 1px; background: var(--mp-border-default); margin: var(--mp-spacing-2) 0; }
+.adr-sidebar-divider { height: 1px; background: var(--mp-border-default, #e3e7e9); margin: var(--mp-spacing-2) 0; }
 
 .adr-calendar { width: 280px; padding: var(--mp-spacing-3); }
 
@@ -411,7 +472,7 @@ function onYearClick(y: number) {
   border: none !important; background: transparent !important; border-radius: var(--mp-radii-sm) !important;
   color: var(--mp-text-secondary); cursor: pointer;
 }
-.adr-cal-nav:hover { background: var(--mp-background-neutral-hovered) !important; }
+.adr-cal-nav:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; }
 
 .adr-cal-weekdays {
   display: grid;
@@ -432,7 +493,7 @@ function onYearClick(y: number) {
   color: var(--mp-text-default);
   cursor: pointer;
 }
-.adr-cal-day:hover { background: var(--mp-background-neutral-hovered); }
+.adr-cal-day:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .adr-cal-day--outside { color: var(--mp-text-placeholder); }
 .adr-cal-day--inrange { background: var(--mp-background-selected, #e5e2fb); }
 .adr-cal-day--edge { background: var(--mp-background-selected-strong, #c7c1f5); font-weight: var(--mp-font-weights-semi-bold); }
@@ -451,12 +512,12 @@ function onYearClick(y: number) {
 .adr-grid-cell {
   padding: var(--mp-spacing-2);
   border: none;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-default);
   cursor: pointer;
 }
-.adr-grid-cell:hover { background: var(--mp-background-neutral-hovered); }
+.adr-grid-cell:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .adr-grid-cell--current { background: var(--mp-background-warning, #fcefc2); font-weight: var(--mp-font-weights-semi-bold); }
 </style>

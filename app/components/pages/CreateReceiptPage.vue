@@ -12,9 +12,12 @@ import { couriers } from '~/data/couriers'
 import { addReceipt, nextReceiptNo, receipts, canEditReceipt } from '~/data/receipts'
 import { editInboundReceipt, proposeReceivingReduction } from '~/data/inboundSync'
 import { lineItemsForReceipt } from '~/data/receiptLineItems'
-import { lockedReceivingQtyForSku, openReceivingLinesForSku, getReceivingTask } from '~/data/receivingTasks'
+import { lockedReceivingQtyForSku, openReceivingLinesForSku, getReceivingTask, skusWithReceivingTask } from '~/data/receivingTasks'
 import { VENDORS } from '~/data/master'
 import { CATALOG } from '~/data/catalog'
+import NewProductModal from '~/components/patterns/NewProductModal.vue'
+import { customProducts } from '~/data/customProducts'
+import type { Product } from '~/data/inventory'
 import { scrollToFirstError } from '~/utils/form'
 import AcknowledgeReceivingReductionModal, { type ReceivingReductionGroup } from '~/components/AcknowledgeReceivingReductionModal.vue'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
@@ -110,11 +113,20 @@ interface LineRow {
   /** Edit mode — qty already physically received for this SKU: can't remove
    *  this row or set qty below it (PRD C2 AC#4). 0 = freely editable. */
   lockedQty: number
+  /** A receiving task already exists for this SKU (even an Open one) — the product
+   *  is settled, so the combobox is locked. */
+  productLocked: boolean
 }
 
 let rowSeq = 0
 function makeRow(): LineRow {
-  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, productError: false, qtyLocked: false, lockedQty: 0 }
+  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, productError: false, qtyLocked: false, lockedQty: 0, productLocked: false }
+}
+
+/** Tooltip text for the product cell — why it can't be edited, or what's wrong with it. */
+function productMsg(row: LineRow): string {
+  if (row.productLocked) return t('This SKU is already on a receiving task and can\'t be changed')
+  return t('You must select product')
 }
 
 /** Tooltip/error text for a qty cell locked by receiving state (edit mode). */
@@ -126,26 +138,60 @@ function qtyErrorMsg(row: LineRow): string {
 const rows = ref<LineRow[]>([makeRow()])
 const hasAnyProduct = computed(() => rows.value.some((r) => r.productId))
 
-const ALL_PRODUCT_OPTIONS = CATALOG.map((p) => ({ id: p.id, name: p.name, desc: p.desc, unit: p.unit, img: p.img, sku: p.sku }))
+// Inline-created products come first so one just added is the top hit.
+const ALL_PRODUCT_OPTIONS = computed(() =>
+  [...customProducts, ...CATALOG].map((p) => ({ id: p.id, name: p.name, desc: p.desc, unit: p.unit, img: p.img, sku: p.sku })),
+)
 const productFilter = ref('')
 const productOptions = computed(() => {
   const q = productFilter.value.trim().toLowerCase()
-  if (!q) return ALL_PRODUCT_OPTIONS
-  return ALL_PRODUCT_OPTIONS.filter((p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q))
+  if (!q) return ALL_PRODUCT_OPTIONS.value
+  return ALL_PRODUCT_OPTIONS.value.filter((p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q))
 })
 function onProductSearch(e: Event) {
   productFilter.value = (e.target as HTMLInputElement).value
 }
 
+// ── Inline "Add new product" from the product combobox ───────────────────────
+// What's being received isn't always in the catalogue yet, so the operator can
+// create it without leaving the receipt. The row that opened the modal takes
+// the new product straight away.
+const newProductOpen = ref(false)
+const newProductRow = ref<LineRow | null>(null)
+const newProductName = ref('')
+function openNewProduct(row: LineRow) {
+  newProductRow.value = row
+  newProductName.value = productFilter.value.trim()
+  newProductOpen.value = true
+}
+function onProductCreated(product: Product) {
+  const row = newProductRow.value
+  newProductRow.value = null
+  if (!row) return
+  row.productId = product.id
+  onProductSelect(row, product.id)
+}
+
+// WMS doesn't author product copy — a line's description is the product's own, read
+// from product details and shown as text. Only the ERP package, where a document
+// line can carry its own wording for the customer/vendor, keeps it editable.
+const { activeScenario } = useScenario()
+const isWms = computed(() => activeScenario.value.startsWith('WMS'))
+
 function onProductSelect(row: LineRow, id: string) {
+  // The combobox is disabled for a locked row; belt-and-braces so a stray event
+  // can't rewrite a line a receiving task is already pointing at.
+  if (row.productLocked) return
   row.productError = false
   productFilter.value = ''
-  const p = CATALOG.find((c) => c.id === id)
+  const p = [...customProducts, ...CATALOG].find((c) => c.id === id)
   if (!p) { row.productName = ''; row.productSku = ''; row.productImg = ''; row.description = ''; row.unit = ''; return }
   row.productName = p.name
   row.productSku = p.sku
   row.productImg = p.img
-  if (!row.description) row.description = p.desc
+  // WMS mirrors the product, always. ERP only fills a blank, so a line the user
+  // has worded themselves survives a product change.
+  if (isWms.value || !row.description) row.description = p.desc
   row.unit = p.unit
   const last = rows.value[rows.value.length - 1]
   if (last && last.id === row.id) rows.value.push(makeRow())
@@ -172,6 +218,10 @@ function prefillFromReceipt() {
   estimatedArrival.value = r.estimatedArrival ? toDisplayDate(r.estimatedArrival) : todayDisplay
   trackingNo.value = r.trackingNos[0] ?? ''
   memo.value = r.memo ?? ''
+  // A line the warehouse already holds a receiving task for keeps its product,
+  // whatever that task's status — an Open task is already a promise to receive
+  // THAT SKU.
+  const taskedSkus = skusWithReceivingTask(r.id)
   const lines = lineItemsForReceipt(r).map((l) => ({
     id: rowSeq++,
     productId: l.productId,
@@ -183,6 +233,7 @@ function prefillFromReceipt() {
     unit: l.unit,
     qtyError: false, productError: false, qtyLocked: false,
     lockedQty: lockedReceivingQtyForSku(r.id, l.sku),
+    productLocked: taskedSkus.has(l.sku),
   } as LineRow))
   rows.value = lines.length ? [...lines, makeRow()] : [makeRow()]
 }
@@ -615,9 +666,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <!-- Product -->
                   <td class="cr-td cr-td--input" :class="{ 'cr-td--prod-error': row.productError }">
                     <MpTooltip
-                      v-if="row.productError"
+                      v-if="row.productError || row.productLocked"
                       :id="`cr-prod-tooltip-${row.id}`"
-                      :label="t('You must select product')"
+                      :label="productMsg(row)"
                       placement="top"
                       use-portal
                       class="cr-qty-tooltip-wrap"
@@ -629,9 +680,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
                         label-prop="name"
                         value-prop="id"
                         is-searchable is-clearable use-portal is-full-width is-manual-filter
+                        is-show-button-action
+                        :is-disabled="row.productLocked"
                         @update:model-value="(v: string) => onProductSelect(row, v)"
                         @input="onProductSearch"
+                        @button-action="openNewProduct(row)"
                       >
+                        <template #buttonAction>{{ t('Add new product') }}</template>
                         <template #leftAddon>
                           <img v-if="row.productImg" class="cr-prod-thumb" :src="row.productImg" :alt="row.productName" loading="lazy" />
                           <span v-else-if="row.productId" class="cr-prod-thumb cr-prod-thumb--empty" />
@@ -656,9 +711,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       label-prop="name"
                       value-prop="id"
                       is-searchable is-clearable use-portal is-full-width is-manual-filter
+                      is-show-button-action
+                      :is-disabled="row.productLocked"
                       @update:model-value="(v: string) => onProductSelect(row, v)"
                       @input="onProductSearch"
+                      @button-action="openNewProduct(row)"
                     >
+                      <template #buttonAction>{{ t('Add new product') }}</template>
                       <template #leftAddon>
                         <img v-if="row.productImg" class="cr-prod-thumb" :src="row.productImg" :alt="row.productName" loading="lazy" />
                         <span v-else-if="row.productId" class="cr-prod-thumb cr-prod-thumb--empty" />
@@ -679,8 +738,17 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <!-- Row has product: SKU + all input cols -->
                   <template v-if="row.productId">
                     <td class="cr-td cr-td--sku">{{ row.productSku }}</td>
+                    <!-- Description: the product's own in WMS — disabled rather than
+                         removed, so the column keeps its width and the cell still
+                         reads as the field it is. Editable in ERP, where a document
+                         line legitimately carries its own wording. -->
                     <td class="cr-td cr-td--input">
-                      <MpInput :id="`cr-desc-${row.id}`" v-model="row.description" is-full-width />
+                      <MpInput
+                        :id="`cr-desc-${row.id}`"
+                        v-model="row.description"
+                        :is-disabled="isWms"
+                        is-full-width
+                      />
                     </td>
                     <td class="cr-td cr-td--input cr-td--qty-cell" :class="{ 'cr-td--qty-error': row.qtyError || row.qtyLocked }">
                       <MpTooltip
@@ -764,6 +832,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
       :next-number="nextTxNo"
       :existing-formats="txNoFormats"
       @save="onNoFormatSave"
+    />
+
+    <!-- Inline product creation from the product combobox (WMS fields only). -->
+    <NewProductModal
+      v-model:open="newProductOpen"
+      :initial-name="newProductName"
+      @created="onProductCreated"
     />
   </div>
 </template>

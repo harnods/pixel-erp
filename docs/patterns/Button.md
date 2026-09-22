@@ -1,8 +1,14 @@
 # Button
 
-ERP buttons use Pixel semantics and ERP visual rules. Prefer `MpButton` when it
-matches the required visual state. Use `.btn-enterprise` when a page needs the
-ERP custom button style defined in `app/assets/css/erp.css`.
+> **Source of truth: [`docs/design/RULES.md`](../design/RULES.md) `rule/btn-*`.**
+> New buttons use Pixel **`<MpButton>`** per the storybook — its secondary variant is
+> globally overridden in `erp.css` to the Enterprise look, so plain `MpButton` is
+> correct. **`.btn-enterprise` is LEGACY**: do not add new ones (existing usages are
+> tolerated and migrated when a file is next touched). The `.btn-enterprise` sections
+> below are kept for maintaining that legacy code, not as guidance for new work.
+
+ERP buttons use Pixel semantics and ERP visual rules. `.btn-enterprise` is the legacy
+custom button style defined in `app/assets/css/erp.css`.
 
 Token notation:
 
@@ -44,13 +50,18 @@ Examples:
 
 Visual rule:
 
-| Property | Pixel token | Custom CSS variable |
+| Property | Pixel token | Custom CSS variable (fully-qualified + fallback) |
 |---|---|---|
-| Fill | `background.neutral` | `var(--mp-background-neutral)` |
-| Border | `border.bold` | `var(--mp-border-bold)` |
-| Text | `text.default` | `var(--mp-text-default)` |
+| Fill | `background.neutral` | `var(--mp-colors-background-neutral, #fff)` |
+| Border | `border.bold` | `var(--mp-colors-border-bold, #8c9596)` |
+| Text | `text.default` | `var(--mp-colors-text-default, #080d0e)` |
 | Font weight | semibold |
-| Hover | `background.neutral.hovered` | `var(--mp-background-neutral-hovered)` |
+| Hover | `background.neutral.hovered` | `var(--mp-colors-background-neutral-hovered)` |
+
+> Always the fully-qualified `--mp-colors-*` names + a hex fallback — the short
+> `--mp-*` aliases can resolve **empty** in this Pixel build (`rule/style-with-css`).
+> Prefer `MpButton variant="secondary"` (erp.css applies this look automatically,
+> `rule/btn-secondary-black`); `.btn-enterprise--*` is legacy.
 
 Implementation:
 
@@ -95,13 +106,13 @@ Examples:
 
 Visual rule:
 
-| Property | Pixel token | Custom CSS variable |
+| Property | Pixel token | Custom CSS variable (fully-qualified + fallback) |
 |---|---|---|
 | Fill | transparent | transparent |
 | Border | transparent | transparent |
-| Text | `text.secondary` | `var(--mp-text-secondary)` |
+| Text | `text.secondary` | `var(--mp-colors-text-secondary, #5f6b6d)` |
 | Font weight | regular |
-| Hover | `background.neutral.hovered` | `var(--mp-background-neutral-hovered)` |
+| Hover | `background.neutral.hovered` | `var(--mp-colors-background-neutral-hovered)` |
 
 Implementation:
 

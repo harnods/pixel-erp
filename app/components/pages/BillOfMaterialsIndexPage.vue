@@ -18,12 +18,12 @@ const { t } = useLocale()
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'number',           label: t('Number'),             width: '200px', sortable: true },
-  { key: 'name',             label: t('Name'),               width: '200px', sortable: true },
-  { key: 'category',         label: t('Category'),           width: '130px' },
-  { key: 'costingReference', label: t('Costing reference'),  width: '170px' },
-  { key: 'finishedGood',     label: t('Finished goods'),     width: '180px' },
-  { key: 'description',      label: t('Description'),        width: '280px' },
+  { key: 'number',           label: t('Number'),             kind: 'number', sortable: true },
+  { key: 'name',             label: t('Name'),               kind: 'name', sortable: true },
+  { key: 'category',         label: t('Category') },
+  { key: 'costingReference', label: t('Costing reference'),  kind: 'number' },
+  { key: 'finishedGood',     label: t('Finished goods'),     kind: 'name' },
+  { key: 'description',      label: t('Description'),        kind: 'address' },
 ]
 
 // ─── Filters ───────────────────────────────────────────────────────────────────

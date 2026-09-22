@@ -30,12 +30,12 @@ function setDemoState(s: DemoState) {
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'purchaseNo',    label: 'Purchase no.',  width: '260px', sortType: 'text' },
-  { key: 'warehouseName', label: 'Warehouse',     width: '180px', sortType: 'text' },
-  { key: 'skuQty',        label: 'SKU qty',       width: '90px',  align: 'right', sortType: 'number' },
-  { key: 'purchaseQty',   label: 'Purchase qty',  width: '120px', align: 'right', sortType: 'number' },
-  { key: 'receivedQty',   label: 'Received',      width: '110px', align: 'right', sortType: 'number' },
-  { key: 'receivedDate',  label: 'Received date', width: '150px', sortType: 'date' },
+  { key: 'purchaseNo',    label: 'Purchase no.',  kind: 'number', sortType: 'text' },
+  { key: 'warehouseName', label: 'Warehouse',     kind: 'name', sortType: 'text' },
+  { key: 'skuQty',        label: 'SKU qty',       align: 'right', sortType: 'number' },
+  { key: 'purchaseQty',   label: 'Purchase qty',  align: 'right', sortType: 'number' },
+  { key: 'receivedQty',   label: 'Received',      align: 'right', sortType: 'number' },
+  { key: 'receivedDate',  label: 'Received date', kind: 'date', sortType: 'date' },
 ]
 // Column show/hide — first column stays on; the sort menu's "Hide column" flips
 // these off, the ColumnSettings menu turns them back on.

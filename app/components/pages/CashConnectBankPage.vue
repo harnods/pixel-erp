@@ -263,7 +263,11 @@ function goBack() { router.push(`/cash-management/${props.orderId}`) }
     <!-- ── Title bar ── -->
     <div class="cnb-titlebar">
       <div class="cnb-titlebar-left">
-        <button class="cnb-breadcrumb" @click="goBack">{{ t('Cash management') }} / {{ account?.code }} {{ account?.name }}</button>
+        <div class="cnb-breadcrumb-row">
+          <button class="cnb-breadcrumb" @click="router.push('/cash-management')">{{ t('Cash management') }}</button>
+          <span class="cnb-breadcrumb-sep">/</span>
+          <button class="cnb-breadcrumb" @click="goBack">{{ account?.code }} {{ account?.name }}</button>
+        </div>
         <div class="cnb-title-row">
           <h1 class="cnb-title">{{ stage === 'connected' ? t('Bank connection') : t('Connect to bank') }}</h1>
           <ErpStatusBadge v-if="stage === 'connected'" status="active" :label="t('Connected')" badge-for="additionalInformation" size="md" />
@@ -619,12 +623,14 @@ function goBack() { router.push(`/cash-management/${props.orderId}`) }
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); padding: 0 var(--mp-spacing-6);
 }
 .cnb-titlebar-left { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; }
+.cnb-breadcrumb-row { display: flex; align-items: center; gap: var(--mp-spacing-1, 4px); }
 .cnb-breadcrumb {
   background: none; border: none; cursor: pointer; padding: 0; font-size: 12px;
   font-weight: var(--mp-font-weights-regular); line-height: var(--mp-line-heights-md);
   color: var(--mp-text-link); font-family: inherit; white-space: nowrap;
 }
 .cnb-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
+.cnb-breadcrumb-sep { font-size: 12px; line-height: var(--mp-line-heights-md); color: var(--mp-text-secondary); }
 .cnb-title-row { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .cnb-title {
   margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold);

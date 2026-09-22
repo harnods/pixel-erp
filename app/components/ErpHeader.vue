@@ -28,7 +28,7 @@
         <!-- Quick-create (+) and the monitor/display shortcut are ERP-only -->
         <ErpQuickCreateMenu v-if="!isWms" />
         <IconButton icon="help" />
-        <IconButton v-if="!isWms" icon="desktop" />
+        <UploadActivityCenter v-if="!isWms" />
         <IconButton icon="inbox" @click="goToInbox" />
       </MpFlex>
 
@@ -41,6 +41,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { MpFlex } from "@mekari/pixel3";
+import UploadActivityCenter from "~/components/patterns/UploadActivityCenter.vue";
 import erpLogo from "~/assets/images/mekari-erp-logo.svg?url";
 
 // Brand lockup is always the Mekari ERP logo — the same across every view

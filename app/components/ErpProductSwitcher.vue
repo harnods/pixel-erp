@@ -39,6 +39,7 @@ const products: Product[] = [
 
 const activeKey = computed(() =>
   activeScenario.value === 'XPM' ? 'XPM'
+    : activeScenario.value === 'BUZZ' ? 'BUZZ'
     : isHrPath(route.path) ? 'HR'
     : route.path.startsWith('/crm') ? 'CRM'
     : route.path.startsWith('/tax') ? 'Tax'

@@ -541,12 +541,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <div class="rpt-filter-right">
           <div class="filter-btn-group">
             <MpTooltip v-if="!compact" id="tt-rpt-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
-              <button class="filter-icon-btn filter-icon-btn--airene" type="button" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                  <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
-                  <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
-                </svg>
-              </button>
+              <button class="filter-icon-btn filter-icon-btn--airene" type="button" :aria-label="t('Ask Airene')" @click="toggleAirene?.()"><MpIcon name="airene-brand" size="md" /></button>
             </MpTooltip>
             <ColumnSettingsMenu v-if="!compact" :id="`rpt-col-settings-${orderId}`" :items="columnItems" :visibility="colVis" />
             <MpTooltip id="tt-rpt-export" :label="t('Export')" placement="bottom" use-portal>
@@ -628,7 +623,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 /* ── Title bar (matches page-title-bar: 72px, neutral-subtle) ── */
 .rpt-titlebar {
   height: var(--mp-sizes-18, 72px);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 var(--mp-spacing-6); flex-shrink: 0;
 }
@@ -661,7 +656,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   height: 40px; padding: 0 var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px);
+  border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px);
   background: var(--mp-background-neutral, #fff); color: var(--mp-text-secondary); min-width: 220px;
 }
 /* Filter-bar action icon buttons (Export) — same as ReceivingIndexPage. */
@@ -672,7 +667,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   border: none; background: none; border-radius: var(--mp-radii-md);
   cursor: pointer; color: var(--mp-text-secondary); padding: var(--mp-spacing-2);
 }
-.filter-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
+.filter-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .filter-icon-btn--airene { color: var(--mp-airene-default); }
 .filter-search-input {
   flex: 1; min-width: 0; border: none; background: transparent; outline: none;
@@ -686,8 +681,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .search-clear-btn:hover { color: var(--mp-text-default); }
 .filter-trigger {
   display: inline-flex; align-items: center; justify-content: space-between; gap: 8px;
-  height: 40px; padding: 0 12px;
-  border: 1px solid var(--mp-border-form, var(--mp-border-default)); border-radius: 8px;
+  height: var(--mp-sizes-9\.5, 38px); padding: 0 12px;
+  border: 1px solid var(--mp-colors-border-form, #1d1f2429); border-radius: 8px;
   background: var(--mp-background-default, #fff);
   font-size: 14px; color: var(--mp-text-default); cursor: pointer; text-align: left;
 }
@@ -712,13 +707,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
   color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
 }
-.rpt-date-item:hover { background: var(--mp-background-neutral-hovered); }
+.rpt-date-item:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .rpt-date-item--active,
 .rpt-date-item--active:hover { background: var(--mp-background-neutral-subtle, #f0f1f3); }
 .rpt-date-item-label { white-space: nowrap; }
 .rpt-date-item-range { flex: 1; text-align: right; white-space: nowrap; color: var(--mp-text-default); }
-.rpt-date-divider { height: 1px; margin: var(--mp-spacing-2) 0; background: var(--mp-border-default); }
-.rpt-date-divider-v { width: 1px; flex-shrink: 0; margin: 0 var(--mp-spacing-3); background: var(--mp-border-default); }
+.rpt-date-divider { height: 1px; margin: var(--mp-spacing-2) 0; background: var(--mp-border-default, #e3e7e9); }
+.rpt-date-divider-v { width: 1px; flex-shrink: 0; margin: 0 var(--mp-spacing-3); background: var(--mp-border-default, #e3e7e9); }
 .rpt-date-months { display: flex; gap: var(--mp-spacing-5); }
 .rpt-cal { display: flex; flex-direction: column; }
 .rpt-cal-header { display: flex; align-items: center; gap: var(--mp-spacing-1); margin-bottom: var(--mp-spacing-2); }
@@ -727,7 +722,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
   border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-default);
 }
-.rpt-cal-nav:hover { background: var(--mp-background-neutral-hovered); }
+.rpt-cal-nav:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .rpt-cal-title {
   flex: 1; text-align: center; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
@@ -742,7 +737,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
-.rpt-cal-day:hover { background: var(--mp-background-neutral-hovered); }
+.rpt-cal-day:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .rpt-cal-day--muted { color: var(--mp-text-disabled, rgba(29, 31, 36, 0.32)); }
 /* Continuous light-green band between the two ends. */
 .rpt-cal-day--in-range { background: var(--mp-background-brand-selected, #d6f4e9); border-radius: 0; color: var(--mp-text-default); }
@@ -760,14 +755,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
   height: 40px;
   padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-bold);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-full, 999px);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-md); color: var(--mp-text-secondary);
   cursor: pointer; white-space: nowrap;
 }
-.filter-all-btn:hover { background: var(--mp-background-neutral-hovered); }
+.filter-all-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* Multi-select checkbox filter list (mirrors ReceivingIndexPage) */
 .checkbox-filter-list { display: flex; flex-direction: column; padding: var(--mp-spacing-1); }
@@ -776,7 +771,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   padding: var(--mp-spacing-2) 10px; border-radius: var(--mp-radii-md);
   cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
-.checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle); }
+.checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 
 /* ── Table ── */
 .rpt-table-section { display: flex; flex-direction: column; }
@@ -788,8 +783,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   position: sticky; top: 0;
   height: var(--mp-sizes-7, 28px);
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-3);
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   text-transform: uppercase; color: var(--mp-text-secondary); text-align: left; white-space: nowrap;
 }
@@ -801,13 +796,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .rpt-td {
   height: var(--mp-sizes-10, 40px);
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-3);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: middle; white-space: nowrap;
 }
 .rpt-td--right { text-align: right; padding: 10px var(--mp-spacing-3) 10px var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
 .rpt-td--muted { color: var(--mp-text-secondary); }
 .rpt-row:last-child .rpt-td { border-bottom: none; }
-.rpt-row:hover .rpt-td { background: var(--mp-background-neutral-subtle); }
+.rpt-row:hover .rpt-td { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 
 /* ── Empty state ── */
 .empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }

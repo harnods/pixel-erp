@@ -35,11 +35,11 @@ function setDemoState(s: DemoState) {
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'purchaseNo',    label: t('Purchase no.'),  width: '260px', sortType: 'text' },
-  { key: 'warehouseName', label: t('Warehouse'),     width: '180px', sortType: 'text' },
-  { key: 'skuQty',        label: t('SKU qty'),       width: '90px',  align: 'right', sortType: 'number' },
-  { key: 'purchaseQty',   label: t('Purchase qty'),  width: '120px', align: 'right', sortType: 'number' },
-  { key: 'receivedQty',   label: t('Received'),      width: '110px', align: 'right', sortType: 'number' },
+  { key: 'purchaseNo',    label: t('Purchase no.'),  kind: 'number', sortType: 'text' },
+  { key: 'warehouseName', label: t('Warehouse'),     kind: 'name', sortType: 'text' },
+  { key: 'skuQty',        label: t('SKU qty'),       align: 'right', sortType: 'number' },
+  { key: 'purchaseQty',   label: t('Purchase qty'),  align: 'right', sortType: 'number' },
+  { key: 'receivedQty',   label: t('Received'),      align: 'right', sortType: 'number' },
 ]
 // Column show/hide — first column stays on; the sort menu's "Hide column" flips
 // these off, the ColumnSettings menu turns them back on.
@@ -241,9 +241,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </ErpTablePage>
 
   <!-- ── Close confirmation modal ── -->
-  <MpModal
-    id="par-close-modal" :is-open="closeModalOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCloseModal"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="par-close-modal" :is-open="closeModalOpen" size="md" :is-keep-alive="false" @close="closeCloseModal"
   >
     <MpModalContent>
       <MpModalHeader>{{ t('Close') }} {{ receiptToClose?.purchaseNo }}?<MpModalCloseButton /></MpModalHeader>

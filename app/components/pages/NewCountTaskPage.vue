@@ -3,13 +3,14 @@ import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpAutocomplete, MpInput, MpTextarea, MpButton, MpIcon, MpCheckbox,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   toast,
 } from '@mekari/pixel3'
 import SelectProductDrawer, { type PickerProduct } from '~/components/patterns/SelectProductDrawer.vue'
 import { warehouses } from '~/data/warehouses'
 import { productBySku, PRODUCTS } from '~/data/inventory'
 import { getWarehouseDetail, getLocationStock } from '~/data/warehouseDetails'
-import { addWmsAdjustment } from '~/data/wmsStockAdjustments'
+import { addWmsAdjustment, updateWmsAdjustment, getWmsAdjustment } from '~/data/wmsStockAdjustments'
 import { getStorageTree, findLocation, type LocNode } from '~/data/storageLocations'
 import { getWarehouseOperators } from '~/data/warehouseTeam'
 import { scrollToFirstError } from '~/utils/form'
@@ -17,6 +18,13 @@ import { scrollToFirstError } from '~/utils/form'
 const router = useRouter()
 const route = useRoute()
 const { t } = useLocale()
+
+// The catch-all route binds the id as `orderId`: 'new' creates, a real id edits
+// an existing task. Only an Open task can be edited — once counting has started
+// the line-up is fixed, so anything else bounces back to its detail page.
+const props = defineProps<{ orderId?: string }>()
+const isEdit = computed(() => !!props.orderId && props.orderId !== 'new')
+const editing = computed(() => (isEdit.value ? getWmsAdjustment(props.orderId!) : undefined))
 
 // ── Warehouse + assignee ────────────────────────────────────────────────────────
 const realWarehouses = warehouses.filter(w => w.status === 'active' && !w.isDefault)
@@ -214,7 +222,35 @@ function confirmLocSelection() {
   locationDrawerOpen.value = false
 }
 function removeLoc(locId: string) { selectedLocations.value = selectedLocations.value.filter(l => l.locId !== locId) }
-function removeLocRow(loc: LocEntry, sku: string) { loc.rows = loc.rows.filter(r => r.sku !== sku) }
+function removeFromLocation(loc: LocEntry, sku: string) { loc.rows = loc.rows.filter(r => r.sku !== sku) }
+/** The row's delete button. A product in one location goes straight away; one
+ *  held in several is a task-wide removal, so it asks first (see below). */
+function removeLocRow(loc: LocEntry, sku: string) {
+  if (locsWithSku(sku).length > 1) { removeSkuTarget.value = sku; return }
+  removeFromLocation(loc, sku)
+}
+
+// ── Removing a product that's counted in more than one location ──────────────
+// A product can sit in several of this task's locations. Removing it is then a
+// task-wide action, not a per-location one, so ask first and name the locations
+// — otherwise the other cards would change behind the operator's back. With the
+// product in a single location there's nothing to warn about, so it just goes.
+const removeSkuTarget = ref<string | null>(null)
+function locsWithSku(sku: string): LocEntry[] {
+  return selectedLocations.value.filter(l => l.rows.some(r => r.sku === sku))
+}
+const removeSkuLocations = computed(() =>
+  removeSkuTarget.value ? locsWithSku(removeSkuTarget.value).map(l => l.fullPath) : [],
+)
+function confirmRemoveSku() {
+  const sku = removeSkuTarget.value
+  if (!sku) return
+  for (const loc of selectedLocations.value) loc.rows = loc.rows.filter(r => r.sku !== sku)
+  // Count by SKU keeps its own picker selection — drop it there too, or reopening
+  // the picker and saving would quietly put the product back in every location.
+  bySkuSelected.value = bySkuSelected.value.filter(s => s !== sku)
+  removeSkuTarget.value = null
+}
 function addProductsToLoc(loc: LocEntry, skus: string[]) {
   const existingSkus = new Set(loc.rows.map(r => r.sku))
   for (const sku of skus) {
@@ -271,6 +307,56 @@ function onFileChange(ev: Event) {
 }
 function removeFile(name: string) { attachedFiles.value = attachedFiles.value.filter(f => f.name !== name) }
 
+// ── Edit mode — rebuild the form from the saved task ─────────────────────────
+// Locations come straight off the saved lines' own `location`, so an edited task
+// keeps exactly the bins it was created with rather than re-deriving them from
+// the storage tree (which would silently drop a product placed in a second bin).
+async function prefillFromRecord() {
+  const rec = editing.value
+  if (!rec) return
+  warehouseId.value = rec.warehouseId
+  // Setting the warehouse fires the watcher that clears the whole form. It runs
+  // after this tick, so wait for it before filling anything else in — otherwise
+  // it wipes the locations we're about to restore.
+  await nextTick()
+  memo.value = rec.memo ?? ''
+  assigneeId.value = assigneeOptions.value.find(a => a.name === rec.assignee)?.id ?? ''
+
+  const lines = rec.lines ?? []
+  if (!hasStorageLocs.value) {
+    flatSkus.value = [...new Set(lines.map(l => l.sku))]
+    return
+  }
+  const byLoc = new Map<string, string[]>()
+  for (const l of lines) {
+    const loc = l.location ?? '—'
+    if (!byLoc.has(loc)) byLoc.set(loc, [])
+    if (!byLoc.get(loc)!.includes(l.sku)) byLoc.get(loc)!.push(l.sku)
+  }
+  const flat = flatStorageNodes()
+  selectedLocations.value = [...byLoc.entries()].map(([fullPath, skus], i) => {
+    const node = flat.find(n => (findLocation(warehouseId.value, n.id)?.path.map(p => p.name).join(' / ') ?? n.name) === fullPath)
+    return {
+      locId: node?.id ?? `saved-${i}`,
+      fullPath,
+      skuStart: node?.skuStart ?? 0,
+      skuQty: node?.skuQty ?? 0,
+      productDrawerOpen: false,
+      rows: skus.map(sku => ({ sku, onHand: onHandFor(sku) })),
+    }
+  })
+}
+onMounted(async () => {
+  if (!isEdit.value) return
+  if (!editing.value) { router.push('/cycle-counts'); return }
+  if (editing.value.status !== 'not_started') {
+    toast.notify({ variant: 'error', title: t('Only an Open count task can be edited'), maxWidth: 'max-content' })
+    router.push(`/cycle-counts/${props.orderId}`)
+    return
+  }
+  await prefillFromRecord()
+})
+
 // ── Navigation + save ──────────────────────────────────────────────────────────────
 function goBack() { router.push('/cycle-counts') }
 const formError = ref('')
@@ -280,14 +366,14 @@ async function handleSave() {
   let valid = true
   if (!warehouseId.value) { warehouseError.value = true; valid = false }
 
-  let lines: { sku: string; qty: number }[] = []
+  let lines: { sku: string; qty: number; location?: string }[] = []
   if (hasStorageLocs.value) {
     if (!selectedLocations.value.length || !selectedLocations.value.some(l => l.rows.length)) {
       formError.value = t('You must select at least one location with products to count')
       valid = false
     }
     for (const loc of selectedLocations.value) {
-      for (const r of loc.rows) lines.push({ sku: r.sku, qty: 0 })
+      for (const r of loc.rows) lines.push({ sku: r.sku, qty: 0, location: loc.fullPath })
     }
   } else {
     if (!flatSkus.value.length) { formError.value = t('You must add at least one product to count'); valid = false }
@@ -299,17 +385,24 @@ async function handleSave() {
   isSaving.value = true
   await new Promise(r => setTimeout(r, 600))
 
-  const adj = addWmsAdjustment({
-    kind: 'count',
-    date: new Date().toISOString().slice(0, 10),
+  const input = {
+    kind: 'count' as const,
+    date: editing.value?.date ?? new Date().toISOString().slice(0, 10),
     warehouseId: warehouseId.value,
     warehouseName: warehouseName(warehouseId.value),
-    category: 'Stock count',
-    tags: [],
+    category: 'Stock count' as const,
+    tags: editing.value?.tags ?? [],
     memo: memo.value.trim() || undefined,
     lines,
     assignee: assigneeLabel.value || undefined,
-  })
+  }
+  if (isEdit.value) {
+    updateWmsAdjustment(props.orderId!, input)
+    toast.notify({ variant: 'success', title: t('Count task updated'), maxWidth: 'max-content' })
+    router.push(`/cycle-counts/${props.orderId}`)
+    return
+  }
+  const adj = addWmsAdjustment(input)
   toast.notify({ variant: 'success', title: t('Count task created'), maxWidth: 'max-content' })
   router.push(`/cycle-counts/${adj.id}`)
 }
@@ -321,7 +414,7 @@ async function handleSave() {
       <div class="detail-bar-left">
         <button class="detail-breadcrumb" @click="goBack">{{ t('Cycle counts') }}</button>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">{{ t('New count task') }}</h1>
+          <h1 class="detail-title">{{ isEdit ? t('Edit count task') : t('New count task') }}</h1>
         </div>
       </div>
     </header>
@@ -557,9 +650,34 @@ async function handleSave() {
     <SelectProductDrawer v-model:open="bySkuDrawerOpen" :products="pickerProducts" :model-value="bySkuSelected" @save="applySkuPicker" />
     <SelectProductDrawer v-model:open="flatDrawerOpen" :products="pickerProducts" :model-value="flatSkus" @save="applyFlatPicker" />
 
+    <!-- Removing a product counted in several locations — a task-wide action, so
+         name the locations and let the button say what it actually does. -->
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="nct-remove-sku" :is-open="!!removeSkuTarget" size="md" :is-keep-alive="false" @close="removeSkuTarget = null"
+    >
+      <MpModalContent>
+        <MpModalHeader>{{ t('Remove this product from the count?') }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <p class="nct-remove-text">
+            <strong>{{ nameFor(removeSkuTarget ?? '') }}</strong>
+            {{ t('is included in') }} {{ removeSkuLocations.length }} {{ t('locations') }}:
+            {{ removeSkuLocations.join(', ') }}.
+            {{ t('Removing it here removes it from all of them.') }}
+          </p>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="nct-modal-btns">
+            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="removeSkuTarget = null">{{ t('Cancel') }}</button>
+            <button class="btn-enterprise btn-enterprise--danger" type="button" @click="confirmRemoveSku">{{ t('Remove from all locations') }}</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
     <!-- Select locations drawer -->
     <Transition name="scf-loc">
-      <div v-if="locationDrawerOpen" class="loc-spd-overlay" @click.self="locationDrawerOpen = false">
+      <div v-if="locationDrawerOpen" class="loc-spd-overlay">
         <div class="loc-spd-panel" role="dialog" :aria-label="t('Select locations')">
           <div class="loc-spd-header">
             <span class="loc-spd-title">{{ t('Select locations') }}</span>
@@ -699,6 +817,8 @@ async function handleSave() {
   display: flex; flex-direction: column; gap: var(--mp-spacing-3);
 }
 .scf-countby-popover-text { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.nct-remove-text { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-lg, 20px); }
+.nct-modal-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); }
 .scf-countby-popover-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); }
 .scf-countby-popover-arrow {
   position: absolute; bottom: -5px; left: 18px;
@@ -736,6 +856,7 @@ async function handleSave() {
 .loc-spd-close:hover { background: var(--mp-background-neutral-hovered); }
 .loc-spd-search-wrap { padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); position: relative; }
 .loc-spd-search-input { width: 100%; height: 36px; border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full); background: var(--mp-background-neutral); padding: 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; box-sizing: border-box; padding-right: 34px; }
+.loc-spd-search-input:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .search-clear-btn {
   display: inline-flex; align-items: center; justify-content: center;
   flex-shrink: 0; width: 18px; height: 18px; padding: 0;

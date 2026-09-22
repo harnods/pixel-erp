@@ -55,6 +55,30 @@ export function saveSnapshot<T>(key: string, items: T[]): void {
   }
 }
 
+/**
+ * Flag persistence — a single boolean under the same prefix, so "Reset demo
+ * data" (resetDb) clears it along with everything else. Used for one-way
+ * tenant-level switches like activating Dimensions, which must survive a
+ * refresh but should come back off after a reset.
+ */
+export function loadFlag(key: string): boolean {
+  if (!import.meta.client) return false
+  try {
+    return localStorage.getItem(PREFIX + key) === 'true'
+  } catch {
+    return false
+  }
+}
+
+export function saveFlag(key: string, value: boolean): void {
+  if (!import.meta.client) return
+  try {
+    localStorage.setItem(PREFIX + key, String(value))
+  } catch {
+    /* non-fatal for a prototype */
+  }
+}
+
 /** Wipe every store's created records, returning the app to its seed data. */
 export function resetDb(): void {
   if (!import.meta.client) return

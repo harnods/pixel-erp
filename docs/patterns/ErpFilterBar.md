@@ -44,7 +44,7 @@ the rare non-table case.
 
 ```vue
 <ErpFilterBar>
-  <!-- put MpInputGroup, MpSelect, MpButton here -->
+  <!-- put the search pill, ErpFilterSelect, MpButton here -->
 </ErpFilterBar>
 ```
 
@@ -64,15 +64,11 @@ index pages (e.g. Sales Orders):
 <template #filters>
   <!-- Left: status select + "All filters" pill -->
   <div class="filter-left">
-    <div class="filter-select-wrap">
-      <select class="filter-select" v-model="statusFilter">
-        <option value="">Status</option>
-        <option v-for="opt in statusOptions.slice(1)" :key="opt.value" :value="opt.value">
-          {{ opt.label }}
-        </option>
-      </select>
-      <!-- chevron svg -->
-    </div>
+    <ErpFilterSelect
+      id="status-filter" placeholder="Status"
+      :model-value="statusFilter" :options="statusOptions"
+      @update:model-value="v => (statusFilter = v)"
+    />
     <button class="filter-all-btn"><!-- icon -->All filters</button>
   </div>
 
@@ -80,7 +76,10 @@ index pages (e.g. Sales Orders):
   <div class="filter-right">
     <div class="filter-btn-group">
       <button class="filter-icon-btn filter-icon-btn--airene" @click="toggleAirene?.()"><!-- Airene --></button>
-      <button class="filter-icon-btn"><!-- column settings --></button>
+      <!-- Column settings — the shared ColumnSettingsMenu, not a raw button.
+           See ErpTablePage.md § "Column visibility (show/hide columns)" for
+           the full visibleColumns/hideColumn wiring. -->
+      <ColumnSettingsMenu id="my-page-columns" :items="columnItems" :visibility="columnVisibility" />
       <button class="filter-icon-btn"><!-- export --></button>
     </div>
     <div class="filter-search">
@@ -170,17 +169,16 @@ Recommended clear-button style:
 
 ## Verbal Shorthand
 
-> ⚠️ **Aspirational** — the Pixel `MpInputGroup`/`MpSelect`/`MpButton` mappings
-> below are the intended Pixel-native pattern, but current pages hand-roll the
-> controls shown in **Real index-page pattern** above. Prefer matching existing
-> pages for consistency until the Pixel controls are adopted project-wide.
+> ⚠️ Map the user's words to slot content using the **Real index-page pattern**
+> above (search pill + `ErpFilterSelect`). **Quick filters are always
+> `ErpFilterSelect`, never `MpSelect`/native `<select>`** (`rule/select-erpfilterselect`).
 
 When the user describes what should be in the filter bar, map their words to slot content. **Do not create a new component.**
 
 | User says | What to put in the slot |
 |---|---|
 | "search only" | `MpInputGroup` + `MpInputLeftAddon` (search icon) + `MpInput` |
-| "add status filter" | + `MpSelect` with status options after search |
+| "add status filter" | + `ErpFilterSelect` (placeholder = filter name, real values only) after search |
 | "add date filter" | + `MpDatePicker` after search |
 | "add create button" | + `MpButton variant="primary" left-icon="add-circular" style="margin-left:auto"` |
 | "hide the create button" | Remove the `MpButton` from slot |
@@ -224,11 +222,12 @@ page uses the current hand-rolled pill search, add the explicit trailing
       style="min-width: 240px; max-width: 320px" />
   </MpInputGroup>
 
-  <MpSelect id="status-filter" v-model="statusFilter" size="md">
-    <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">
-      {{ opt.label }}
-    </option>
-  </MpSelect>
+  <!-- Quick filter — ErpFilterSelect, NEVER MpSelect/native <select> (rule/select-erpfilterselect) -->
+  <ErpFilterSelect
+    id="status-filter" placeholder="Status"
+    :model-value="statusFilter" :options="statusOptions"
+    @update:model-value="v => (statusFilter = v)"
+  />
 
   <MpButton variant="primary" left-icon="add-circular" style="margin-left: auto">
     Create item
@@ -241,5 +240,5 @@ page uses the current hand-rolled pill search, add the explicit trailing
 ## Related
 
 - [ErpTablePage.md](ErpTablePage.md) — the `#filters` slot lives here
-- [page-recipes.md](page-recipes.md) — full index-page recipe
+- [index-page-format.md](index-page-format.md) — full index-page recipe
 - [docs/README.md](../README.md) — docs home

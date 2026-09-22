@@ -54,9 +54,11 @@ const hasChanges = computed(() =>
   draft.cycleCountRuleMin      !== committed.cycleCountRuleMin      ||
   draft.cycleCountRuleOrder.join(',') !== committed.cycleCountRuleOrder.join(',') ||
   draft.cycleCountNegLookbackDays    !== committed.cycleCountNegLookbackDays    ||
-  draft.cycleCountVarianceThreshold  !== committed.cycleCountVarianceThreshold  ||
   draft.cycleCountMinGuardDays       !== committed.cycleCountMinGuardDays       ||
-  draft.cycleCountWatchList.join(',') !== committed.cycleCountWatchList.join(',')
+  draft.cycleCountWatchList.join(',') !== committed.cycleCountWatchList.join(',') ||
+  draft.replenishmentEnabled          !== committed.replenishmentEnabled          ||
+  draft.replenishmentSafetyDays       !== committed.replenishmentSafetyDays       ||
+  draft.replenishmentIncludeInTransit !== committed.replenishmentIncludeInTransit
 )
 // The location priority order only decides where a NEW order reserves from —
 // orders already reserved (at their own creation time) keep their original bin,
@@ -154,8 +156,10 @@ type RuleKey = 'neg' | 'var' | 'min'
 const RULE_META: Record<RuleKey, {
   draftKey: 'cycleCountRuleNeg' | 'cycleCountRuleVar' | 'cycleCountRuleMin'
   title: string; desc: string; ariaLabel: string
-  inputKey: 'cycleCountNegLookbackDays' | 'cycleCountVarianceThreshold' | 'cycleCountMinGuardDays'
-  inputLabel: string; inputSuffix: string
+  // The Variance signal rule carries no input of its own — its tolerance is
+  // fixed in the scoring logic, so a configurable % had no effect on anything.
+  inputKey?: 'cycleCountNegLookbackDays' | 'cycleCountMinGuardDays'
+  inputLabel?: string; inputSuffix?: string
 }> = {
   neg: {
     draftKey: 'cycleCountRuleNeg', title: t('Negative stock'), ariaLabel: t('Negative stock rule'),
@@ -165,7 +169,6 @@ const RULE_META: Record<RuleKey, {
   var: {
     draftKey: 'cycleCountRuleVar', title: t('Variance signal'), ariaLabel: t('Variance signal rule'),
     desc: t('Flag SKUs whose last count exceeded the variance tolerance, likely to drift again.'),
-    inputKey: 'cycleCountVarianceThreshold', inputLabel: t('Variance threshold'), inputSuffix: '%',
   },
   min: {
     draftKey: 'cycleCountRuleMin', title: t('Min stock (watch list)'), ariaLabel: t('Min stock rule'),
@@ -191,16 +194,14 @@ function weightRankFor(ruleKey: RuleKey): number {
 
 // Shared inputs live below the card list (not per-card) — fixed left-to-right
 // order, independent of the cards' drag-reorder (that's priority rank, not layout).
-const INPUT_ORDER: RuleKey[] = ['neg', 'var', 'min']
+const INPUT_ORDER: RuleKey[] = ['neg', 'min']
 
-// Variance threshold only matters while the Variance signal rule itself is on.
 // Count guard window matters while EITHER Min stock or auto-create is on (it
 // drives both); Lookback window stays enabled regardless — it also scopes the
 // Variance signal's own lookback, so it still does useful work on its own.
 function inputDisabledFor(key: RuleKey): boolean {
   if (!isEditing.value) return true
   if (key === 'neg') return !draft.cycleCountRuleNeg && !draft.cycleCountRuleVar
-  if (key === 'var') return !draft.cycleCountRuleVar
   if (key === 'min') return !draft.cycleCountRuleMin && !draft.cycleCountAutoTask
   return false
 }
@@ -466,6 +467,49 @@ const toggleConfirmItems = computed((): string[] => {
           </div>
 
           <template v-if="activeScenario === 'WMS Standalone' || activeScenario === 'ERP'">
+            <h3 class="cw-subsection-title cw-subsection-title--spaced">{{ t('Replenishment') }}</h3>
+
+            <!-- Master toggle: off removes this warehouse from the worklist entirely,
+                 which is what produces the "not set up" empty state. -->
+            <div class="cw-toggle-row">
+              <div class="cw-toggle-info">
+                <span class="cw-toggle-title">{{ t('Replenishment worklist') }}</span>
+                <span class="cw-toggle-desc">{{ t('Show this warehouse in Inventory › Replenishment and calculate reorder points for its stock.') }}</span>
+              </div>
+              <MpToggle v-model:is-checked="draft.replenishmentEnabled" :is-disabled="!isEditing" :aria-label="t('Replenishment worklist')" />
+            </div>
+
+            <template v-if="draft.replenishmentEnabled">
+              <div class="cw-sub-row">
+                <span class="cw-sub-label">{{ t('Safety days') }}</span>
+                <template v-if="isEditing">
+                  <input
+                    class="cw-sub-input"
+                    type="number"
+                    min="0"
+                    max="365"
+                    :value="draft.replenishmentSafetyDays ?? ''"
+                    :placeholder="t('Company default')"
+                    @input="draft.replenishmentSafetyDays = ($event.target as HTMLInputElement).value === '' ? null : Math.max(0, parseInt(($event.target as HTMLInputElement).value) || 0)"
+                  />
+                  <span class="cw-sub-unit">{{ t('days') }}</span>
+                </template>
+                <span v-else class="cw-sub-value">
+                  {{ draft.replenishmentSafetyDays === null
+                    ? t('Company default')
+                    : `${draft.replenishmentSafetyDays} ${t('days')}` }}
+                </span>
+              </div>
+
+              <div class="cw-toggle-row">
+                <div class="cw-toggle-info">
+                  <span class="cw-toggle-title">{{ t('Count in-transit transfers as on order') }}</span>
+                  <span class="cw-toggle-desc">{{ t('Include stock already on its way from another warehouse when working out what is still needed.') }}</span>
+                </div>
+                <MpToggle v-model:is-checked="draft.replenishmentIncludeInTransit" :is-disabled="!isEditing" :aria-label="t('Count in-transit transfers as on order')" />
+              </div>
+            </template>
+
             <h3 class="cw-subsection-title cw-subsection-title--spaced">{{ t('Cycle counts') }}</h3>
 
             <!-- Cycle count recommendation master toggle -->
@@ -548,13 +592,13 @@ const toggleConfirmItems = computed((): string[] => {
                   <MpInputGroup :id="`cw-rec-input-group-${ruleKey}`" is-full-width class="cw-rec-input-group">
                     <MpInput
                       :id="`cw-rec-input-${ruleKey}`"
-                      :model-value="String(draft[RULE_META[ruleKey].inputKey])"
+                      :model-value="String(draft[RULE_META[ruleKey].inputKey!])"
                       type="number"
                       min="0"
                       is-full-width
                       :is-disabled="inputDisabledFor(ruleKey)"
                       :aria-label="`${RULE_META[ruleKey].title} — ${RULE_META[ruleKey].inputLabel}`"
-                      @update:model-value="(v: string) => draft[RULE_META[ruleKey].inputKey] = Math.max(0, parseInt(v) || 0)"
+                      @update:model-value="(v: string) => draft[RULE_META[ruleKey].inputKey!] = Math.max(0, parseInt(v) || 0)"
                     />
                     <MpInputRightAddon>{{ RULE_META[ruleKey].inputSuffix }}</MpInputRightAddon>
                   </MpInputGroup>
@@ -601,12 +645,10 @@ const toggleConfirmItems = computed((): string[] => {
     </div>
 
     <!-- ── Discard confirmation dialog ────────────────────────────────────── -->
-    <MpModal
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
       id="cw-discard-dialog"
       :is-open="discardOpen"
       size="md"
-      is-close-on-esc
-      is-close-on-overlay-click
       @close="discardOpen = false"
     >
       <MpModalContent>
@@ -626,12 +668,10 @@ const toggleConfirmItems = computed((): string[] => {
     </MpModal>
 
     <!-- ── Picking / Put-away toggle confirmation ─────────────────────────── -->
-    <MpModal
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
       id="cw-toggle-confirm-dialog"
       :is-open="toggleConfirmOpen"
       size="md"
-      is-close-on-esc
-      is-close-on-overlay-click
       @close="cancelToggleConfirm"
     >
       <MpModalContent>
@@ -653,12 +693,10 @@ const toggleConfirmItems = computed((): string[] => {
     </MpModal>
 
     <!-- ── Non-retroactive location priority change confirmation ────────────── -->
-    <MpModal
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
       id="cw-rule-confirm-dialog"
       :is-open="ruleConfirmOpen"
       size="md"
-      is-close-on-esc
-      is-close-on-overlay-click
       @close="ruleConfirmOpen = false"
     >
       <MpModalContent>

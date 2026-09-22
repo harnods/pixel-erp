@@ -81,9 +81,8 @@ function save() {
 </script>
 
 <template>
-  <MpModal
-    id="shipping-details-modal" :is-open="isOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="emit('close')"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="shipping-details-modal" :is-open="isOpen" size="md" :is-keep-alive="false" @close="emit('close')"
   >
     <MpModalContent>
       <MpModalHeader>{{ t('Shipping details') }}<MpModalCloseButton /></MpModalHeader>
@@ -147,13 +146,13 @@ function save() {
 
 <style scoped>
 .sd-lead { color: var(--mp-text-subtle); margin-bottom: var(--mp-spacing-4); }
-.sd-group + .sd-group { margin-top: var(--mp-spacing-5); padding-top: var(--mp-spacing-5); border-top: 1px solid var(--mp-border-default); }
+.sd-group + .sd-group { margin-top: var(--mp-spacing-5); padding-top: var(--mp-spacing-5); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 .sd-order { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin-bottom: var(--mp-spacing-3); }
 .sd-label { display: block; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin-bottom: var(--mp-spacing-1); }
 .sd-label--mt { margin-top: var(--mp-spacing-4); }
-.sd-courier-trigger { display: flex; align-items: center; gap: var(--mp-spacing-1); width: 100%; padding: 0 var(--mp-spacing-2); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-default); color: var(--mp-text-subtle); }
+.sd-courier-trigger { display: flex; align-items: center; gap: var(--mp-spacing-1); width: 100%; padding: 0 var(--mp-spacing-2); border: 1px solid var(--mp-colors-border-form, #1d1f2429); border-radius: var(--mp-radii-md); background: var(--mp-background-default); color: var(--mp-text-subtle); }
 .sd-courier-trigger--error { border-color: var(--mp-border-critical, #d92d20); }
-.sd-courier-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; height: 36px; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
+.sd-courier-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; height: var(--mp-sizes-9\.5, 38px); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
 .sd-none { padding: var(--mp-spacing-3); color: var(--mp-text-subtle); }
 .sd-error { color: var(--mp-text-critical, #d92d20); font-size: var(--mp-font-sizes-sm); margin-top: var(--mp-spacing-1); }
 .sd-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }

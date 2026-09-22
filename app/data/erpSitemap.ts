@@ -82,8 +82,10 @@ export const BUILT_KEYS = new Set<string>([
   'Bill of materials',
   'Company profile',
   'Warehouse settings',
+  'Users and roles', // tabComponents (User list / Custom role) + /users-and-roles/invite
   'Mekari pay',
   'Wms report',
+  'Inventory report',
   // Real components that were previously under-reported by this set:
   'Data migration', // pageRegistry (DataMigrationPage) + /data-migration/wms-cutover/* flow
   'Crm',            // detailMatch /crm → CrmDealsPage
@@ -172,7 +174,7 @@ const ACTIONS: Record<string, EntityAction[]> = {
   'Purchase invoices': [
     a('New', 'partial', 'title button no @click'), a('Details', 'missing', 'only OCR review route'),
     a('Edit', 'missing'), a('Archive', 'missing'), a('Delete', 'partial', 'dead kebab button'),
-    a('Import', 'partial'), a('Review files (OCR)', 'built'),
+    a('Import', 'partial'), a('Dropbox (OCR)', 'built'),
   ],
   'Purchase orders': [
     a('New', 'built', 'overlay, no URL'), a('Details', 'built', 'overlay, no URL'), a('Edit', 'partial'),
@@ -190,6 +192,23 @@ const ACTIONS: Record<string, EntityAction[]> = {
     a('New', 'built'), a('Details', 'built'), a('Edit', 'built'), a('Archive', 'partial', 'menu item no-op'),
     a('Delete', 'missing'), a('Duplicate', 'partial'), a('Import', 'partial'), a('Export', 'built'),
     a('Print barcode', 'built'),
+  ],
+  // ── Contacts ──
+  // One index + form + detail set serves all three role lists (Customers,
+  // Vendors, Other contacts) — the route slug picks the role it filters by.
+  'Customers': [
+    a('New', 'built'), a('Details', 'built'), a('Edit', 'built'), a('Delete', 'built'),
+    a('Validate NPWP/NITKU', 'built', 'mock DJP lookup'),
+    a('Create transaction', 'partial', 'menu routes to the module index, not a prefilled form'),
+    a('Archive', 'missing'), a('Import', 'missing'), a('Export', 'missing'),
+  ],
+  'Vendors': [
+    a('New', 'built'), a('Details', 'built'), a('Edit', 'built'), a('Delete', 'built'),
+    a('Archive', 'missing'), a('Import', 'missing'), a('Export', 'missing'),
+  ],
+  'Other contacts': [
+    a('New', 'built'), a('Details', 'built'), a('Edit', 'built'), a('Delete', 'built'),
+    a('Archive', 'missing'), a('Import', 'missing'), a('Export', 'missing'),
   ],
   // ── Production ──
   'Production request': [
@@ -245,6 +264,13 @@ const ACTIONS: Record<string, EntityAction[]> = {
   'Stock inout': [a('Index', 'built'), a('Create', 'built')],
   // ── Reports ──
   'WMS': [a('Index', 'built'), a('Details', 'built'), a('Export', 'built')],
+  // ── Settings ──
+  'Users & roles': [
+    a('Invite user', 'built'), a('Edit access', 'built'), a('Deactivate / Activate', 'built'),
+    a('Delete user', 'built'), a('Resend invitation', 'partial', 'toast only, no mail'),
+    a('New custom role', 'built'), a('Edit custom role', 'built'), a('Duplicate custom role', 'built'),
+    a('Delete custom role', 'built'), a('Export', 'missing'),
+  ],
 }
 
 /** Build a leaf node, resolving its route, key, and built-status in one place. */
@@ -275,7 +301,7 @@ export const SITEMAP: SitemapModule[] = [
       leaf('Financials', { to: 'Financial report' }),
       leaf('Sales', { to: 'Sales report' }),
       leaf('Purchases', { to: 'Purchase report' }),
-      leaf('Inventory', { to: 'Inventory report' }),
+      leaf('Inventory', { to: 'Inventory report', note: 'Reports › Inventory index (report cards); Dual Unit Inventory Report via /inventory-report/dual-unit.' }),
       leaf('WMS', { to: 'WMS report', note: 'Reports › WMS index (four report cards); detail tables via /wms-report/:slug.' }),
       leaf('Tax', { to: 'Tax report' }),
       leaf('Cash & bank', { to: 'Cash & bank report' }),

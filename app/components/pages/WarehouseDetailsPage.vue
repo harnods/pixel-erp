@@ -170,20 +170,20 @@ function confirmDelete() {
 
 // ── Products table (Products tab) — ErpTablePage (read-only, single page) ──────
 const allStockColumns: TableColumn[] = [
-  { key: 'name',                label: 'Name',                 width: '320px', sortType: 'text'   },
-  { key: 'sku',                 label: 'SKU',                  width: '200px', sortType: 'text'   },
-  { key: 'barcode',             label: 'Barcode',              width: '170px', sortType: 'text'   },
-  { key: 'category',            label: 'Category',             width: '150px', sortType: 'text'   },
-  { key: 'locations',           label: 'Location',             width: '230px' },
-  { key: 'onHand',              label: 'On hand qty',          width: '120px', align: 'right', sortType: 'number' },
-  { key: 'reserved',            label: 'Reserved qty',         width: '120px', align: 'right', sortType: 'number' },
-  { key: 'available',           label: 'Available qty',        width: '120px', align: 'right', sortType: 'number' },
-  { key: 'onTheWay',            label: 'On the way qty',       width: '130px', align: 'right', sortType: 'number' },
-  { key: 'minStock',            label: 'Min. stock',           width: '130px', align: 'right', sortType: 'number' },
-  { key: 'unit',                label: 'Unit',                 width: '90px',  sortType: 'text'   },
+  { key: 'name',                label: 'Name',                 kind: 'name',   sortType: 'text'   },
+  { key: 'sku',                 label: 'SKU',                  kind: 'number', sortType: 'text'   },
+  { key: 'barcode',             label: 'Barcode',              kind: 'number', sortType: 'text'   },
+  { key: 'category',            label: 'Category',             sortType: 'text'   },
+  { key: 'locations',           label: 'Location' },
+  { key: 'onHand',              label: 'On hand qty',          align: 'right', sortType: 'number' },
+  { key: 'reserved',            label: 'Reserved qty',         align: 'right', sortType: 'number' },
+  { key: 'available',           label: 'Available qty',        align: 'right', sortType: 'number' },
+  { key: 'onTheWay',            label: 'On the way qty',       align: 'right', sortType: 'number' },
+  { key: 'minStock',            label: 'Min. stock',           align: 'right', sortType: 'number' },
+  { key: 'unit',                label: 'Unit',                 kind: 'unit',   sortType: 'text'   },
 ]
 // Column show/hide — first column (Name) always on; Last updated appended, hidden by default.
-const allStockCols: TableColumn[] = [...allStockColumns, { key: 'lastUpdated', label: 'Last updated', width: '200px' }]
+const allStockCols: TableColumn[] = [...allStockColumns, { key: 'lastUpdated', label: 'Last updated', kind: 'date' }]
 const stockColVisibility = reactive<Record<string, boolean>>(
   Object.fromEntries(allStockCols.map(c => [c.key, c.key !== 'lastUpdated'])),
 )
@@ -1723,12 +1723,10 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
     </div><!-- /detail-stage -->
 
     <!-- ── Archive confirmation modal (same content as the index page's) ── -->
-    <MpModal
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
       id="wh-detail-archive-modal"
       :is-open="archiveModalOpen"
       size="md"
-      is-close-on-esc
-      is-close-on-overlay-click
       :is-keep-alive="false"
       @close="archiveModalOpen = false"
     >
@@ -1761,12 +1759,10 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
     </MpModal>
 
     <!-- ── Delete confirmation modal ── -->
-    <MpModal
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
       id="wh-detail-delete-modal"
       :is-open="deleteModalOpen"
       size="md"
-      is-close-on-esc
-      is-close-on-overlay-click
       :is-keep-alive="false"
       @close="deleteModalOpen = false"
     >
@@ -1789,12 +1785,10 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
     </MpModal>
 
     <!-- ── Add/edit team member modal ── -->
-    <MpModal
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
       id="wh-team-modal"
       :is-open="teamModalOpen"
       size="md"
-      is-close-on-esc
-      is-close-on-overlay-click
       :is-keep-alive="false"
       @close="closeTeamModal"
     >
@@ -1842,12 +1836,10 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
       <MpModalOverlay />
     </MpModal>
 
-    <MpModal
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
       id="wh-remove-team-modal"
       :is-open="removeTeamModalOpen"
       size="md"
-      is-close-on-esc
-      is-close-on-overlay-click
       :is-keep-alive="false"
       @close="removeTeamModalOpen = false"
     >
@@ -2060,7 +2052,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   background: var(--mp-background-surface);
   padding-right: 34px;
 }
-.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-jump-search:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -2251,8 +2243,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 }
 /* neutral slate focus, consistent with all ERP form fields (border-bold = #8C9596) */
 .wh-search:focus-within {
-  border-color: var(--mp-border-bold);
-  box-shadow: 0 0 0 1px var(--mp-border-bold);
+  border-color: var(--mp-border-bold, #8c9596);
+  box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596);
 }
 .wh-search-input {
   flex: 1;

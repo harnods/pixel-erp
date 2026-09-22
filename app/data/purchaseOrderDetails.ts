@@ -21,6 +21,10 @@ export interface POLineItem {
   discountPct: number
   taxLabel: string
   amount: number
+  /** Demo-only dimension name -> value pairs (Settings > Dimensions line
+   *  tagging) — this store is generated, not connected to real Dimension
+   *  records, so it's name-keyed rather than id-keyed. */
+  dimensions?: Record<string, string>
 }
 
 export interface POAttachment { name: string; sizeKB: number }
@@ -96,8 +100,8 @@ const SHIP_TO = [
   'Jl. Raya Bogor KM 30, Cibinong, Bogor, Jawa Barat',
   'Ruko Sentra Niaga No. 7, Bintaro, Tangerang Selatan',
 ]
-const SHIP_VIA = ['Sentral Cargo', 'JNE Trucking', 'SiCepat Gokil', 'Internal fleet']
-export const WAREHOUSES = ['Default warehouse', 'Cibinong warehouse', 'Pulogadung DC', 'Bandung hub']
+export const SHIP_VIA = ['Sentral Cargo', 'JNE Trucking', 'SiCepat Gokil', 'Internal fleet']
+export const WAREHOUSES = ['Warehouse Default', 'Gudang Jakarta Pusat', 'Gudang Surabaya Timur', 'Gudang Bandung Selatan', 'Gudang Medan Baru', 'Gudang Semarang Industrial']
 export const PAYMENT_TERMS = ['Net 30', 'Net 14', 'Cash on delivery', 'Net 45']
 export const UNIT_OPTIONS = ['Pcs', 'Sheet', 'Meter', 'Pail', 'Box', 'Length', 'Pack', 'Kg']
 export const TAX_OPTIONS = ['PPN 11%', 'Non-PPN']
@@ -162,6 +166,8 @@ function buildLineItems(total: number, count: number, seed: number): { items: PO
       discountPct: 0,
       taxLabel: TAX_LABEL,
       amount: lineAmount,
+      // Demo-only "Dimensions" values — see POLineItem.dimensions.
+      dimensions: { Branch: pick(['Jakarta', 'Bandung', 'Surabaya'], seed + i), 'Cost center': pick(['Operations', 'Warehouse'], seed + i) },
     })
   }
 

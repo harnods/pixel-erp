@@ -17,6 +17,7 @@ import type { AttendanceException } from './attendance'
 import { expiringContracts, type Contract } from './contracts'
 import { productIndexRows } from './productsIndex'
 import type { KbAttachment } from './coworkKb'
+import { employees, type Employee } from './employees'
 
 export type CoworkModule = 'HR' | 'Sales' | 'CRM' | 'WMS' | 'Finance' | 'Production'
 export type CoworkTaskStatus = 'running' | 'completed' | 'scheduled' | 'failed' | 'draft'
@@ -57,6 +58,17 @@ export interface CoworkTask {
   /** Execution history — each manual/scheduled run. The task's status/metric mirror
    *  the latest run. Older tasks may have none (synthesised from the task itself). */
   runs?: CoworkRun[]
+  // ── Goal linkage (see `coworkGoals.ts`) ──────────────────────────────────────
+  /** Set when the task came out of a goal's plan; absent = an ad-hoc task. */
+  goalId?: string
+  /** The agent that owns this task — assigned by the goal's lead agent, which may
+   *  be an agent the user never picked. */
+  agentId?: string
+  /** Several agents collaborate on this task (multi-agent room) — shown together
+   *  in the task's "Agent" section. Absent = just `agentId`. */
+  agentIds?: string[]
+  /** Task ids that must finish first (a workstream handed off between agents). */
+  dependsOn?: string[]
 }
 
 export interface CoworkRun {
@@ -648,6 +660,43 @@ const PIPELINE_PLAN = pipelinePlan()
 const MONTHEND_PLAN = monthEndPlan()
 const CONTRACTS_PLAN = contractsPlan()
 
+// Multi-agent scenario (HR-led): why payroll rose this month. HR investigates,
+// Production + Sales explain the driver (a big new order). See the linked chat
+// room `room-prod-scale` in useCoworkChats.
+const PAYROLL_PLAN = {
+  taskTitle: 'Monthly payroll cost review',
+  intro: 'Compared this month\'s payroll against headcount and overtime, traced the driver with the Production and Sales agents, then drafted a summary and a monitor.',
+  metric: 'Payroll +18% (Rp 109M) · demand-driven',
+  sources: [
+    { name: 'Mekari Talenta — payroll & attendance', detail: 'Base pay, overtime hours, new hires' },
+    { name: 'Production — line output', detail: 'Packing-line overtime & capacity' },
+    { name: 'CRM — sales orders', detail: 'PO #SO-4821 · Anomali Coffee' },
+  ],
+  steps: [
+    { title: 'Compare payroll vs headcount', detail: 'Base pay barely moved; ~85% of the rise is overtime plus 3 new temporary operators.' },
+    { title: 'Trace the overtime', detail: 'Production ran ~120 overtime hrs/week on the packing line for a big new order.' },
+    { title: 'Confirm the driver', detail: 'Sales confirmed PO #SO-4821 (Anomali Coffee, +56% volume, first delivery 20 Sep).' },
+    { title: 'Draft summary & monitor', detail: 'Wrote a management summary and scheduled a weekly payroll-vs-output monitor.' },
+  ],
+  artifacts: {
+    briefing: {
+      summary: [
+        { title: 'Payroll up +18% (Rp 109M)', detail: 'Base pay flat vs last month; the increase is overtime (~85%) plus 3 temporary line operators.', priority: 'High' as const },
+        { title: 'Driver: Anomali Coffee order', detail: 'PO #SO-4821, +56% volume, first delivery 20 Sep — required ~120 overtime hrs/week on packing.', priority: 'Medium' as const },
+        { title: 'Verdict: demand-driven, not a leak', detail: 'The extra cost maps 1:1 to extra output for a signed order; unit economics stay intact.', priority: 'Low' as const },
+      ],
+      findings: [
+        { title: 'Not a cost leak', detail: 'The rise is fully explained by overtime + temps for the new order — no unexplained payroll drift.' },
+        { title: 'Watch cost-per-unit', detail: 'A weekly payroll-vs-output monitor now runs each Friday until the order winds down in November.' },
+      ],
+    },
+    actionItems: [
+      { title: 'Share management summary', detail: 'Send the payroll-increase summary to Finance & Ops leadership.', owner: 'HR Business Partner', due: 'Today', priority: 'Medium' as const },
+      { title: 'Review the weekly monitor', detail: 'Check cost-per-unit each Friday as the Anomali Coffee order runs.', owner: 'HR Ops', due: 'Weekly', priority: 'Low' as const },
+    ],
+  },
+}
+
 // Per-run plans (most recent first) for each scheduled task — distinct content.
 const RECEIVABLES_RUNS = [
   { ranAt: '2026-08-18T08:00:00', plan: RECEIVABLES_PLAN },
@@ -701,6 +750,17 @@ const CONTRACTS_RUNS = [
 
 // ── Seeds ────────────────────────────────────────────────────────────────────
 const TASKS_SEED: CoworkTask[] = [
+  // Multi-agent scenario — HR agent leads, with Production + Sales in the room.
+  // Recurring at month-end; a chat room (room-prod-scale) holds the working thread.
+  { id: 'CW-2050', title: 'Monthly payroll cost review', module: 'HR', modules: ['HR', 'Production', 'Sales'], status: 'completed',
+    prompt: 'At the end of each month, review payroll cost against headcount and output, explain any change, and flag anything that needs attention.',
+    createdAt: '2026-09-01T09:00:00', completedAt: '2026-09-01T09:04:00', metric: PAYROLL_PLAN.metric,
+    // Owned by HR alone — HR pulls in Production/Sales only in the chat room, not
+    // as co-owners of the task.
+    agentId: 'hr',
+    outputs: ['Briefing summary', 'Action items'], sources: ['Mekari Talenta', 'Production', 'CRM'],
+    planJson: JSON.stringify(PAYROLL_PLAN), runs: scheduledRuns('CW-2050', [{ ranAt: '2026-09-01T09:00:00', plan: PAYROLL_PLAN }]),
+    schedule: { cadence: 'Monthly', time: '18:00', nextRun: 'End of month · 18:00', enabled: true } },
   { id: 'CW-1042', title: 'Month-end close checklist', module: 'Finance', modules: ['Finance', 'Sales', 'WMS'], status: 'completed',
     prompt: COWORK_CATALOG.find((c) => c.title === 'Month-end close checklist')!.prompt,
     createdAt: '2026-07-18T09:00:00', completedAt: '2026-08-18T09:00:00', metric: MONTHEND_PLAN.metric,
@@ -743,11 +803,17 @@ const TASKS_SEED: CoworkTask[] = [
 // are REAL OAuth connections; the rest are demo-only. An app can belong to several
 // categories (e.g. Notion is Featured + Productivity) — one record, rendered in
 // each of its categories, sharing a single connected state.
+// Brand logos for apps without a bundled PNG. The `?v=2` busts any stale
+// browser cache from before these assets existed.
+const IG_LOGO = '/connectors/instagram.svg?v=2'
+const META_LOGO = '/connectors/meta.svg?v=2'
+const TIKTOK_LOGO = '/connectors/tiktok.svg?v=2'
+
 const CONNECTION_SEED: CoworkConnection[] = [
   // ── Mekari products (native, connected by default) ──
   { id: 'mekari-talenta', name: 'Mekari Talenta', categories: ['Featured', 'Business & operations'], connected: true, provider: 'fake', detail: 'HR, payroll & attendance', color: '#0A6E4E' },
   { id: 'mekari-jurnal', name: 'Mekari Jurnal', categories: ['Featured', 'Finance'], connected: true, provider: 'fake', detail: 'Accounting & invoicing', color: '#0A6E4E' },
-  { id: 'mekari-qontak', name: 'Mekari Qontak', categories: ['Featured', 'Business & operations'], connected: true, provider: 'fake', detail: 'CRM & omnichannel', color: '#0A6E4E' },
+  { id: 'mekari-qontak', name: 'Mekari Qontak', categories: ['Featured', 'Business & operations'], connected: true, provider: 'fake', detail: 'CRM & omnichannel', color: '#0A6E4E', logo: '/connectors/mekari-qontak.webp?v=3' },
   // ── Google (real OAuth) ──
   { id: 'gmail', name: 'Gmail', categories: ['Featured', 'Communication'], connected: false, provider: 'google',
     detail: 'Read inbox to draft follow-ups', scope: 'https://www.googleapis.com/auth/gmail.readonly', color: '#EA4335' },
@@ -791,6 +857,9 @@ const CONNECTION_SEED: CoworkConnection[] = [
   { id: 'teams', name: 'Microsoft Teams', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Chat & meetings', color: '#5059C9' },
   { id: 'zoom', name: 'Zoom', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Video meetings', color: '#0B5CFF' },
   { id: 'whatsapp', name: 'WhatsApp Business', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Customer messaging', color: '#25D366' },
+  { id: 'instagram', name: 'Instagram', categories: ['Featured', 'Communication'], connected: false, provider: 'fake', detail: 'Posts, reels & follower insights', color: '#E1306C', logo: IG_LOGO },
+  { id: 'meta-business', name: 'Meta Business Suite', categories: ['Communication', 'Data & analytics'], connected: false, provider: 'fake', detail: 'Ads, audiences & page insights', color: '#0866FF', logo: META_LOGO },
+  { id: 'tiktok', name: 'TikTok for Business', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Short-form video & ads', color: '#111111', logo: TIKTOK_LOGO },
   { id: 'telegram', name: 'Telegram', categories: ['Communication'], connected: false, provider: 'fake', detail: 'Channels & bots', color: '#2AABEE' },
   // ── Finance ──
   { id: 'xero', name: 'Xero', categories: ['Finance'], connected: false, provider: 'fake', detail: 'Ledgers & invoices', color: '#13B5EA' },
@@ -805,6 +874,46 @@ const CONNECTION_SEED: CoworkConnection[] = [
 // An agent is the "brain" behind a set of predefined tasks. It owns a module, a
 // persona (fed to the model so it shapes the task result), the tasks it runs, and
 // the connections it draws on. Names/descriptions are contextual to those tasks.
+export type CoworkAgentStatus = 'draft' | 'published' | 'archived'
+export type CoworkAgentType = 'curated' | 'custom'
+export type CoworkApprovalMode = 'manual' | 'auto'
+export type CoworkLanguageBehaviour = 'mirror' | 'id' | 'en'
+
+/** Structured guard-rails for an automatically-approved binding (SK-30). */
+export interface CoworkAutoConditions {
+  maxPerRun?: number
+  maxPerDay?: number
+  valueCeiling?: number   // rupiah
+  scope?: string          // e.g. "warehouse JKT-01"
+}
+/** An agent×skill binding carries its own approval mode + auto guard-rails (SK-30). */
+export interface CoworkSkillBinding {
+  skillId: string
+  approvalMode: CoworkApprovalMode
+  autoConditions?: CoworkAutoConditions
+  notifyOnAuto?: 'always' | 'daily_digest' | 'never'
+  setBy?: string
+  setAt?: string
+}
+/** Immutable snapshot captured on every publish (AG-04) — supports the Versions tab + rollback. */
+export interface CoworkAgentVersion {
+  version: number
+  createdAt: string
+  createdBy: string
+  changeNote?: string
+  snapshot: {
+    instruction: string
+    model: string
+    knowledge: KbAttachment[]
+    knowledgeApps: string[]
+    allWorkspace: boolean
+    skillBindings: CoworkSkillBinding[]
+    visibilityEveryone: boolean
+    visibilityRoles: string[]
+    visibilityEmployees: string[]
+  }
+}
+
 export interface CoworkAgent {
   id: string
   name: string            // contextual identity, e.g. "Collections & Close"
@@ -838,11 +947,35 @@ export interface CoworkAgent {
   knowledgeApps?: string[]
   /** Pull from ALL workspace content (overrides knowledgeAreas). */
   allWorkspace?: boolean
-  /** Enabled skill ids (see COWORK_SKILLS) — the actions this agent can take. */
+  /** Enabled skill ids (see COWORK_SKILLS) — derived from `skillBindings` for
+   *  back-compat. `skillBindings` is the source of truth going forward. */
   skills?: string[]
-  /** Visibility: everyone in the company, or a specific set of employees. */
+  /** Per-skill bindings incl. approval mode + auto guard-rails (SK-30). */
+  skillBindings?: CoworkSkillBinding[]
+  /** Visibility: everyone in the company, selected roles, or a specific set of people. */
   visibilityEveryone?: boolean
+  visibilityRoles?: string[]       // role ids (see COWORK_ROLES)
   visibilityEmployees?: string[]   // employee ids
+  // ── Lifecycle & governance (AG-01/02/04) ──
+  status?: CoworkAgentStatus       // draft / published / archived
+  type?: CoworkAgentType           // curated (Mekari template) / custom (company-owned)
+  /** For a clone: the curated template id + a display label ("Based on Mekari HR agent v3"). */
+  templateId?: string
+  basedOn?: string
+  /** true when Mekari has pushed a template update the admin hasn't reviewed (AG-03). */
+  templateUpdateAvailable?: boolean
+  version?: number
+  versions?: CoworkAgentVersion[]
+  languageBehaviour?: CoworkLanguageBehaviour
+  /** Preset avatar id (when not using a custom/uploaded avatar). */
+  avatarPreset?: string
+  /** Agent answers other agents but is hidden from the human picker (AG-31). */
+  delegationOnlyAllowed?: boolean
+  pinned?: boolean
+  lastUsedAt?: string
+  archivedAt?: string
+  /** Task ids paused by the most recent archive — restored on un-archive (AG-22). */
+  archivePausedTaskIds?: string[]
 }
 
 // ── Skills (master data) ──────────────────────────────────────────────────────
@@ -851,6 +984,16 @@ export interface CoworkAgent {
 // agent's persona + enabled skills are what the Gemini brain uses to decide what
 // to actually do.
 export interface CoworkSkillAction { id: string; label: string }
+/** Risk class of a skill's actions (Module 03 SK-02). Drives the risk badge and
+ *  whether the binding may run automatically (SK-31). */
+export type CoworkSkillRisk = 'read' | 'write_internal' | 'write_external' | 'sensitive'
+/** Fixed label + Pixel semantic tone per risk class (Module 03 §4 risk badges). */
+export const SKILL_RISK_META: Record<CoworkSkillRisk, { label: string; tone: 'neutral' | 'info' | 'warning' | 'danger' }> = {
+  read: { label: 'Read-only', tone: 'neutral' },
+  write_internal: { label: 'Changes records', tone: 'info' },
+  write_external: { label: 'Sends externally', tone: 'warning' },
+  sensitive: { label: 'Sensitive', tone: 'danger' },
+}
 export interface CoworkSkill {
   id: string
   name: string
@@ -860,6 +1003,13 @@ export interface CoworkSkill {
   /** CDN icon name for the grid tile + accent colour. */
   icon?: string
   color?: string
+  /** Risk class — read / write_internal / write_external / sensitive (SK-02). */
+  riskClass?: CoworkSkillRisk
+  /** Can this skill ever run in "Automatically approve" mode? Forced false for
+   *  `sensitive` (SK-01). Derived from riskClass unless explicitly set. */
+  autoAllowed?: boolean
+  /** Connection ids this skill needs to act (drives "Needs Talenta" chips + Unavailable). */
+  requiresConnections?: string[]
   /** 'built-in' = shipped; 'custom' = user-created (AI-generated or uploaded .md). */
   source?: 'built-in' | 'custom'
   /** The skill definition as markdown (SKILL.md) — how a skill is authored & stored,
@@ -872,13 +1022,13 @@ export interface CoworkSkill {
   createdAt?: string
 }
 const SKILL_SEED: CoworkSkill[] = [
-  { id: 'purchase-request', name: 'Raise purchase requests', module: 'WMS', description: 'Create a purchase request for low-stock or shortages.', actions: [{ id: 'create-pr', label: 'Create purchase request' }], icon: 'box', color: '#0A6E4E', source: 'built-in' },
-  { id: 'stock-count', name: 'Schedule stock counts', module: 'WMS', description: 'Create a cycle/stock count task for a location.', actions: [{ id: 'create-count', label: 'Create stock count' }], icon: 'box', color: '#0A6E4E', source: 'built-in' },
+  { id: 'purchase-request', name: 'Raise purchase requests', module: 'WMS', description: 'Create a purchase request for low-stock or shortages.', actions: [{ id: 'create-pr', label: 'Create purchase request' }], icon: 'assets', color: '#0A6E4E', source: 'built-in' },
+  { id: 'stock-count', name: 'Schedule stock counts', module: 'WMS', description: 'Create a cycle/stock count task for a location.', actions: [{ id: 'create-count', label: 'Create stock count' }], icon: 'assets', color: '#0A6E4E', source: 'built-in' },
   { id: 'work-order', name: 'Create work orders', module: 'Production', description: 'Open a production work order for a BOM.', actions: [{ id: 'create-wo', label: 'Create work order' }], icon: 'settings', color: '#6941C6', source: 'built-in' },
   { id: 'payment-reminder', name: 'Chase payments', module: 'Finance', description: 'Draft and send payment reminders to overdue customers.', actions: [{ id: 'draft-reminder', label: 'Draft reminder' }, { id: 'send-reminder', label: 'Send reminder' }], icon: 'billing', color: '#B54708', source: 'built-in' },
   { id: 'send-invoice', name: 'Send sales invoices', module: 'Sales', description: 'Issue a sales invoice to a customer and email it out.', actions: [{ id: 'draft-invoice', label: 'Draft invoice' }, { id: 'send-invoice', label: 'Send invoice' }], icon: 'billing', color: '#165082', source: 'built-in' },
   { id: 'journal', name: 'Work in finance', module: 'Finance', description: 'Open invoices, bills and journals for review or posting.', actions: [{ id: 'open-finance', label: 'Open in finance' }], icon: 'billing', color: '#B54708', source: 'built-in' },
-  { id: 'crm-followup', name: 'Draft CRM follow-ups', module: 'CRM', description: 'Write personalised follow-up messages and open deals in CRM.', actions: [{ id: 'draft-followup', label: 'Draft follow-up' }, { id: 'open-crm', label: 'Open in CRM' }], icon: 'stats', color: '#165082', source: 'built-in' },
+  { id: 'crm-followup', name: 'Draft CRM follow-ups', module: 'CRM', description: 'Write personalised follow-up messages and open deals in CRM.', actions: [{ id: 'draft-followup', label: 'Draft follow-up' }, { id: 'open-crm', label: 'Open in CRM' }], icon: 'chart-line', color: '#165082', source: 'built-in' },
   { id: 'hr-reprimand', name: 'Send HR notices', module: 'HR', description: 'Draft a reprimand or note to a chronically-late employee and their manager.', actions: [{ id: 'draft-reprimand', label: 'Draft reprimand' }, { id: 'send-reprimand', label: 'Send reprimand' }], icon: 'profile', color: '#B42318', source: 'built-in' },
   { id: 'contract-review', name: 'Review contracts', module: 'HR', description: 'Flag contracts for renewal, conversion or offboarding.', actions: [{ id: 'review-contract', label: 'Review contract' }], icon: 'profile', color: '#B54708', source: 'built-in' },
   // ── HR ──
@@ -905,7 +1055,113 @@ const SKILL_SEED: CoworkSkill[] = [
   { id: 'create-task', name: 'Create follow-up tasks', description: 'Turn any recommendation into a tracked task with an owner.', actions: [{ id: 'create-task', label: 'Create task' }], source: 'built-in' },
   { id: 'send-email', name: 'Send email', description: 'Compose and send an email on your behalf.', actions: [{ id: 'send-email', label: 'Send email' }], source: 'built-in' },
 ]
+// ── Skill risk classification (SK-02) + required connections ────────────────────
+// Keyed by skill id so the 24 curated skills get an accurate risk class without
+// editing each seed line. Anything unmapped defaults to write_internal (safe-ish);
+// unknown external tools would be write_external per SK-02, but our seed set is known.
+const SKILL_RISK: Record<string, CoworkSkillRisk> = {
+  // read-only analysis
+  'contract-review': 'read', 'payroll-precheck': 'read', 'screen-candidates': 'read',
+  'pipeline-review': 'read', 'campaign-analysis': 'read', 'work-orders-risk': 'read',
+  'bom-check': 'read', 'month-end-close': 'read', 'diagnose-issue': 'read',
+  // creates/updates a record inside Mekari or a connected system
+  'purchase-request': 'write_internal', 'stock-count': 'write_internal', 'work-order': 'write_internal',
+  'journal': 'write_internal', 'resignation-handover': 'write_internal', 'fulfil-orders': 'write_internal',
+  'outbound-plan': 'write_internal', 'bank-recon': 'write_internal', 'create-task': 'write_internal',
+  // leaves the company
+  'payment-reminder': 'write_external', 'send-invoice': 'write_external', 'crm-followup': 'write_external',
+  'ticket-triage': 'write_external', 'send-email': 'write_external',
+  // touches people-sensitive data
+  'hr-reprimand': 'sensitive',
+}
+// Connection ids a skill needs to actually act (drives "Needs Gmail" chips + Unavailable).
+const SKILL_CONNS: Record<string, string[]> = {
+  'payment-reminder': ['gmail'], 'send-invoice': ['gmail'], 'crm-followup': ['hubspot'],
+  'ticket-triage': ['zendesk'], 'send-email': ['gmail'], 'hr-reprimand': ['gmail'],
+  'campaign-analysis': ['ga4'],
+}
+/** Fill riskClass / autoAllowed / requiresConnections on a skill (idempotent). */
+export function normalizeSkill(s: CoworkSkill): CoworkSkill {
+  s.riskClass ??= SKILL_RISK[s.id] ?? 'write_internal'
+  s.autoAllowed ??= s.riskClass !== 'sensitive'
+  s.requiresConnections ??= SKILL_CONNS[s.id] ?? []
+  s.source ??= 'built-in'
+  return s
+}
+SKILL_SEED.forEach(normalizeSkill)
+
 export const COWORK_COMPANY = 'PT Central Perk Indonesia'
+export const COWORK_CURRENT_USER_ID = 'EMP-0001'
+export const COWORK_CURRENT_USER = 'You'
+
+// ── Roles (Module 05 §3.2) — sourced from Talenta / Jurnal / Qontak / Cowork so
+//    the visibility picker (AG-16) can grant access by role, and count the audience. ──
+export interface CoworkRole { id: string; name: string; product: 'Talenta' | 'Jurnal' | 'Qontak' | 'Cowork' }
+export const COWORK_ROLES: CoworkRole[] = [
+  { id: 't-hr-admin', name: 'HR admin', product: 'Talenta' },
+  { id: 't-payroll-admin', name: 'Payroll admin', product: 'Talenta' },
+  { id: 't-manager', name: 'Manager', product: 'Talenta' },
+  { id: 't-employee', name: 'Employee', product: 'Talenta' },
+  { id: 'j-owner', name: 'Owner', product: 'Jurnal' },
+  { id: 'j-accountant', name: 'Accountant', product: 'Jurnal' },
+  { id: 'j-sales', name: 'Sales', product: 'Jurnal' },
+  { id: 'j-purchasing', name: 'Purchasing', product: 'Jurnal' },
+  { id: 'q-admin', name: 'Admin', product: 'Qontak' },
+  { id: 'q-agent', name: 'Agent', product: 'Qontak' },
+  { id: 'cw-admin', name: 'Cowork admin', product: 'Cowork' },
+  { id: 'cw-member', name: 'Cowork member', product: 'Cowork' },
+]
+// Which employees each role covers — mapped from the HR directory so counts are real.
+const ROLE_MATCH: Record<string, (e: Employee) => boolean> = {
+  't-hr-admin': (e) => e.department === 'People',
+  't-payroll-admin': (e) => e.department === 'Finance' && (e.jobLevel === 'Manager' || e.jobLevel === 'Director'),
+  't-manager': (e) => e.jobLevel === 'Manager' || e.jobLevel === 'Director',
+  't-employee': () => true,
+  'j-owner': (e) => e.jobLevel === 'Director',
+  'j-accountant': (e) => e.department === 'Finance',
+  'j-sales': (e) => e.department === 'Sales',
+  'j-purchasing': (e) => e.department === 'Warehouse' || e.department === 'Operations',
+  'q-admin': (e) => e.jobLevel === 'Director',
+  'q-agent': (e) => e.department === 'Sales' || e.department === 'Marketing',
+  'cw-admin': (e) => e.jobLevel === 'Director',
+  'cw-member': () => true,
+}
+const activeEmployeesList = (): Employee[] => employees.filter((e) => e.status !== 'resigned')
+export function employeesForRole(roleId: string): Employee[] {
+  const m = ROLE_MATCH[roleId]
+  return m ? activeEmployeesList().filter(m) : []
+}
+export function roleMemberCount(roleId: string): number { return employeesForRole(roleId).length }
+/** Distinct people who can see an agent given its visibility (AG-16 count preview). */
+export function visibilityAudienceCount(a: Pick<CoworkAgent, 'visibilityEveryone' | 'visibilityRoles' | 'visibilityEmployees'>): number {
+  if (a.visibilityEveryone) return activeEmployeesList().length
+  const ids = new Set<string>()
+  ;(a.visibilityRoles ?? []).forEach((r) => employeesForRole(r).forEach((e) => ids.add(e.id)))
+  ;(a.visibilityEmployees ?? []).forEach((id) => ids.add(id))
+  return ids.size
+}
+/** The actual people who can see an agent (everyone / role members / named users), de-duped. */
+export function visibilityAudience(a: Pick<CoworkAgent, 'visibilityEveryone' | 'visibilityRoles' | 'visibilityEmployees'>): Employee[] {
+  if (a.visibilityEveryone) return activeEmployeesList()
+  const seen = new Set<string>()
+  const out: Employee[] = []
+  const add = (e: Employee | undefined) => { if (e && !seen.has(e.id)) { seen.add(e.id); out.push(e) } }
+  ;(a.visibilityRoles ?? []).forEach((r) => employeesForRole(r).forEach(add))
+  ;(a.visibilityEmployees ?? []).forEach((id) => add(activeEmployeesList().find((e) => e.id === id)))
+  return out
+}
+/** Can the current user see (start a chat with / be assigned) this agent? (AG-21) */
+export function agentVisibleToCurrentUser(a: CoworkAgent): boolean {
+  if (a.visibilityEveryone) return true
+  if ((a.visibilityEmployees ?? []).includes(COWORK_CURRENT_USER_ID)) return true
+  return (a.visibilityRoles ?? []).some((r) => employeesForRole(r).some((e) => e.id === COWORK_CURRENT_USER_ID))
+}
+
+// ── Avatar presets (AG-12) — 12 bot avatars the wizard offers (no external assets
+//    beyond dicebear, matching how custom agents are seeded today). ──
+export const AGENT_AVATAR_PRESETS: { id: string; url: string }[] = [
+  'nova', 'atlas', 'sage', 'pixel', 'orbit', 'ember', 'delta', 'lumen', 'cobalt', 'flux', 'iris', 'juno',
+].map((seed) => ({ id: seed, url: `https://api.dicebear.com/9.x/bottts-neutral/png?seed=${seed}&size=144&radius=20&backgroundColor=e6ddf7` }))
 export const AGENT_SEED: CoworkAgent[] = [
   // ── My agents: the default assistant ──
   {
@@ -913,7 +1169,7 @@ export const AGENT_SEED: CoworkAgent[] = [
     description: 'Your all-round co-worker across HR, sales, CRM, warehouse, finance and production.',
     persona: 'Mekari Airene, a versatile, reliable co-worker. Ground everything in the ERP data, prioritise what matters, and hand off to a specialist agent when a task is clearly in one domain.',
     taskTitles: ['Chase overdue receivables', 'Bank reconciliation review', 'Month-end close checklist'],
-    connections: ['xero', 'stripe'], model: 'gemini-flash-latest', avatar: '/agents/airene.png', color: '#7C3AED',
+    connections: ['mekari-talenta', 'mekari-jurnal', 'mekari-qontak'], model: 'gemini-flash-latest', avatar: '/agents/airene.png', color: '#7C3AED',
   },
   // ── Browse agents (10) ──
   {
@@ -991,33 +1247,111 @@ const AGENT_DEFAULT_SKILLS: Record<string, string[]> = {
   'technical-support': ['diagnose-issue', 'create-task'],
   default: ['create-task', 'send-email'],
 }
-for (const a of AGENT_SEED) {
+/** Deterministic "last used N days ago" from the agent id (no Date.now in seeds). */
+function seededDaysAgo(id: string): number {
+  let h = 0
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+  return h % 21
+}
+/** Snapshot of an agent's publishable state — captured into a version (AG-04). */
+function snapshotOf(a: CoworkAgent): CoworkAgentVersion['snapshot'] {
+  return {
+    instruction: a.instruction || a.persona || '',
+    model: a.model,
+    knowledge: [...(a.knowledge ?? [])],
+    knowledgeApps: [...(a.knowledgeApps ?? [])],
+    allWorkspace: !!a.allWorkspace,
+    skillBindings: (a.skillBindings ?? []).map((b) => ({ ...b })),
+    visibilityEveryone: a.visibilityEveryone ?? true,
+    visibilityRoles: [...(a.visibilityRoles ?? [])],
+    visibilityEmployees: [...(a.visibilityEmployees ?? [])],
+  }
+}
+/** Fill lifecycle/governance defaults on an agent (idempotent — safe on load + create). */
+// The core Mekari products an agent grounds on. Airene reaches all of them;
+// a specialist maps from its module. These are the connection ids under /connectors/*.
+const MEKARI_CORE_APPS = ['mekari-talenta', 'mekari-jurnal', 'mekari-qontak']
+const MODULE_MEKARI_APPS: Record<CoworkModule, string[]> = {
+  HR: ['mekari-talenta'],
+  Finance: ['mekari-jurnal'],
+  CRM: ['mekari-qontak'],
+  Sales: ['mekari-qontak', 'mekari-jurnal'],
+  WMS: ['mekari-jurnal'],
+  Production: ['mekari-jurnal'],
+}
+
+export function normalizeAgent(a: CoworkAgent): CoworkAgent {
   a.instruction ??= a.persona
   a.skills ??= AGENT_DEFAULT_SKILLS[a.id] ?? ['create-task']
+  a.skillBindings ??= a.skills.map((id) => ({ skillId: id, approvalMode: 'manual' as CoworkApprovalMode }))
+  // Keep the back-compat `skills` array in lockstep with the bindings.
+  a.skills = a.skillBindings.map((b) => b.skillId)
   a.visibilityEveryone ??= true
+  a.visibilityRoles ??= []
   a.visibilityEmployees ??= []
   a.knowledgeAreas ??= [a.module]
+  // Live data sources are Mekari products (never the old module label like "Finance").
+  // Airene is the generalist → connects to every core Mekari product by default.
+  a.knowledgeApps ??= a.id === 'airene' ? [...MEKARI_CORE_APPS] : (MODULE_MEKARI_APPS[a.module] ?? [])
   a.allWorkspace ??= false
   a.knowledgeFiles ??= []
+  a.knowledge ??= []
+  a.status ??= 'published'
+  a.type ??= 'curated'
+  a.languageBehaviour ??= 'mirror'
+  a.delegationOnlyAllowed ??= false
+  a.pinned ??= a.id === 'airene'
+  a.lastUsedAt ??= simDaysAgo(seededDaysAgo(a.id))
+  a.version ??= 1
+  a.versions ??= [{ version: 1, createdAt: a.lastUsedAt!, createdBy: 'Mekari', changeNote: 'Initial version', snapshot: snapshotOf(a) }]
+  return a
 }
+AGENT_SEED.forEach(normalizeAgent)
 
 function load<T>(key: string, seed: T[]): T[] {
   return loadSnapshot<T>(key) ?? seed
 }
 
 export const coworkTasks = reactive<CoworkTask[]>(load('cowork-tasks-v2', TASKS_SEED))
-export const coworkConnections = reactive<CoworkConnection[]>(load('cowork-connections-v3', CONNECTION_SEED))
-export const coworkAgents = reactive<CoworkAgent[]>(load('cowork-agents-v3', AGENT_SEED))
+// Ensure the multi-agent scenario task exists / stays fresh for users with an
+// older saved snapshot (it's a scripted demo, so overwriting is intentional).
+{
+  const seedTask = TASKS_SEED.find((t) => t.id === 'CW-2050')
+  if (seedTask) {
+    const idx = coworkTasks.findIndex((t) => t.id === 'CW-2050')
+    const fresh = JSON.parse(JSON.stringify(seedTask)) as CoworkTask
+    if (idx >= 0) coworkTasks.splice(idx, 1, fresh); else coworkTasks.unshift(fresh)
+    saveSnapshot('cowork-tasks-v2', coworkTasks)
+  }
+}
+export const coworkConnections = reactive<CoworkConnection[]>(load('cowork-connections-v5', CONNECTION_SEED))
+// v4 = adds lifecycle/governance fields (status, type, skillBindings, versions, roles).
+export const coworkAgents = reactive<CoworkAgent[]>(load('cowork-agents-v4', AGENT_SEED).map(normalizeAgent))
 // Skills are persisted so custom (AI-generated / uploaded .md) skills survive and
-// can be used anywhere (agent skill pickers, task actions).
-export const coworkSkills = reactive<CoworkSkill[]>(load('cowork-skills-v1', SKILL_SEED))
+// can be used anywhere (agent skill pickers, task actions). v2 = adds riskClass/autoAllowed.
+export const coworkSkills = reactive<CoworkSkill[]>(load('cowork-skills-v2', SKILL_SEED).map(normalizeSkill))
 // Back-compat: existing agent code imports COWORK_SKILLS — same reactive array.
 export const COWORK_SKILLS = coworkSkills
 
+// ── Company policies (Module 05 AC-11) — gate whether skills may run automatically ──
+export interface CoworkPolicies {
+  automaticActions: boolean          // master switch for auto-approval
+  allowAutomaticExternalSends: boolean  // required to auto-approve write_external skills
+  pauseAllAutomatic: boolean         // kill switch (SK-38) — treats every binding as manual
+}
+export const coworkPolicies = reactive<CoworkPolicies>(
+  loadSnapshot<CoworkPolicies>('cowork-policies-v1') as CoworkPolicies ??
+  { automaticActions: true, allowAutomaticExternalSends: false, pauseAllAutomatic: false },
+)
+export function setPolicy<K extends keyof CoworkPolicies>(key: K, value: CoworkPolicies[K]): void {
+  coworkPolicies[key] = value
+  saveSnapshot('cowork-policies-v1', coworkPolicies)
+}
+
 function persistTasks() { saveSnapshot('cowork-tasks-v2', coworkTasks) }
-function persistConnections() { saveSnapshot('cowork-connections-v3', coworkConnections) }
-function persistAgents() { saveSnapshot('cowork-agents-v3', coworkAgents) }
-function persistSkills() { saveSnapshot('cowork-skills-v1', coworkSkills) }
+function persistConnections() { saveSnapshot('cowork-connections-v5', coworkConnections) }
+function persistAgents() { saveSnapshot('cowork-agents-v4', coworkAgents) }
+function persistSkills() { saveSnapshot('cowork-skills-v2', coworkSkills) }
 let skillSeq = 1
 export function getSkill(id: string): CoworkSkill | undefined { return coworkSkills.find((s) => s.id === id) }
 export function addSkill(s: Omit<CoworkSkill, 'id'> & { id?: string }): CoworkSkill {
@@ -1038,17 +1372,129 @@ export function getAgent(id: string): CoworkAgent | undefined { return coworkAge
 let agentSeq = 1
 export function addAgent(a: Omit<CoworkAgent, 'id'> & { id?: string }): CoworkAgent {
   const agent: CoworkAgent = { id: a.id ?? `agent-${Date.now().toString(36)}-${agentSeq++}`, ...a }
+  agent.type ??= 'custom'   // user-created agents are company-owned custom agents
+  agent.status ??= 'published'
+  normalizeAgent(agent)
   coworkAgents.unshift(agent)
   persistAgents()
   return agent
 }
 export function updateAgent(id: string, patch: Partial<CoworkAgent>): void {
   const a = coworkAgents.find((x) => x.id === id)
-  if (a) { Object.assign(a, patch); persistAgents() }
+  if (!a) return
+  Object.assign(a, patch)
+  // Keep the derived `skills` array in lockstep whenever bindings change.
+  if (patch.skillBindings) a.skills = patch.skillBindings.map((b) => b.skillId)
+  persistAgents()
 }
 export function deleteAgentSafe(id: string): void {
   const i = coworkAgents.findIndex((x) => x.id === id)
   if (i >= 0) { coworkAgents.splice(i, 1); persistAgents() }
+}
+
+// ── Lifecycle & governance helpers (AG-02/04/05/22, SK-31) ──────────────────────
+/** Airene (the company default general agent) can never be archived (AG-05). */
+export function canArchiveAgent(id: string): boolean { return id !== 'airene' }
+
+/** Scheduled tasks that would be paused if this agent were archived (AG-22 impact). */
+export function tasksUsingAgent(a: CoworkAgent | undefined): CoworkTask[] {
+  if (!a) return []
+  return coworkTasks.filter((t) =>
+    (a.taskTitles.includes(t.title) || t.module === a.module) && !!t.schedule)
+}
+
+/** Archive an agent: pause its scheduled tasks and remember which ones we paused. */
+export function archiveAgent(id: string): { paused: number } {
+  const a = coworkAgents.find((x) => x.id === id)
+  if (!a || !canArchiveAgent(id)) return { paused: 0 }
+  const paused = tasksUsingAgent(a)
+  a.archivePausedTaskIds = paused.map((t) => t.id)
+  paused.forEach((t) => { if (t.schedule) t.schedule.enabled = false })
+  a.status = 'archived'
+  a.archivedAt = simDaysAgo(0)
+  saveSnapshot('cowork-tasks-v2', coworkTasks)
+  persistAgents()
+  return { paused: paused.length }
+}
+/** Restore an archived agent and un-pause ONLY the tasks this archive paused. */
+export function restoreAgent(id: string): void {
+  const a = coworkAgents.find((x) => x.id === id)
+  if (!a) return
+  ;(a.archivePausedTaskIds ?? []).forEach((tid) => {
+    const t = coworkTasks.find((x) => x.id === tid)
+    if (t?.schedule) t.schedule.enabled = true
+  })
+  a.archivePausedTaskIds = []
+  a.status = 'published'
+  a.archivedAt = undefined
+  saveSnapshot('cowork-tasks-v2', coworkTasks)
+  persistAgents()
+}
+/** Clone an agent into a new company-owned custom agent (AG-02 "Use"/Duplicate). */
+export function duplicateAgent(id: string): CoworkAgent | undefined {
+  const src = coworkAgents.find((x) => x.id === id)
+  if (!src) return undefined
+  const clone: CoworkAgent = JSON.parse(JSON.stringify(src))
+  clone.id = `agent-${Date.now().toString(36)}-${agentSeq++}`
+  clone.name = `${src.name} (copy)`
+  clone.type = 'custom'
+  clone.owned = true
+  clone.status = 'published'
+  clone.pinned = false
+  clone.templateId = src.id
+  clone.basedOn = `Based on ${src.name}${src.version ? ` v${src.version}` : ''}`
+  clone.version = 1
+  clone.versions = [{ version: 1, createdAt: simDaysAgo(0), createdBy: COWORK_CURRENT_USER, changeNote: `Cloned from ${src.name}`, snapshot: snapshotOf(clone) }]
+  clone.lastUsedAt = simDaysAgo(0)
+  coworkAgents.unshift(clone)
+  persistAgents()
+  return clone
+}
+/** Capture a new immutable version on publish (AG-04). Call after applying edits. */
+export function publishAgentVersion(id: string, changeNote?: string): void {
+  const a = coworkAgents.find((x) => x.id === id)
+  if (!a) return
+  const nextV = (a.version ?? 0) + 1
+  a.versions = [...(a.versions ?? []), { version: nextV, createdAt: simDaysAgo(0), createdBy: COWORK_CURRENT_USER, changeNote, snapshot: snapshotOf(a) }]
+  a.version = nextV
+  a.status = 'published'
+  persistAgents()
+}
+/** Roll an agent back to a prior version's snapshot (AG-04). */
+export function rollbackAgent(id: string, version: number): void {
+  const a = coworkAgents.find((x) => x.id === id)
+  const v = a?.versions?.find((x) => x.version === version)
+  if (!a || !v) return
+  Object.assign(a, {
+    instruction: v.snapshot.instruction,
+    model: v.snapshot.model,
+    knowledge: [...v.snapshot.knowledge],
+    knowledgeApps: [...v.snapshot.knowledgeApps],
+    allWorkspace: v.snapshot.allWorkspace,
+    skillBindings: v.snapshot.skillBindings.map((b) => ({ ...b })),
+    skills: v.snapshot.skillBindings.map((b) => b.skillId),
+    visibilityEveryone: v.snapshot.visibilityEveryone,
+    visibilityRoles: [...v.snapshot.visibilityRoles],
+    visibilityEmployees: [...v.snapshot.visibilityEmployees],
+  })
+  publishAgentVersion(id, `Rolled back to v${version}`)
+}
+/** true if any binding runs automatically (drives the "Auto ⏩" badge). */
+export function agentHasAutoAction(a: CoworkAgent | undefined): boolean {
+  if (!a || coworkPolicies.pauseAllAutomatic) return false
+  return (a.skillBindings ?? []).some((b) => b.approvalMode === 'auto')
+}
+/** Whether a skill's binding may be set to auto, and why not (SK-31). Powers the
+ *  disabled state + tooltip on the approval-mode control. */
+export function autoModeAvailable(skill: CoworkSkill | undefined): { allowed: boolean; reason?: string } {
+  if (!skill) return { allowed: false, reason: 'Unknown skill.' }
+  if (skill.riskClass === 'sensitive' || skill.autoAllowed === false)
+    return { allowed: false, reason: 'Sensitive skills always require your approval.' }
+  if (!coworkPolicies.automaticActions)
+    return { allowed: false, reason: 'Automatic actions are off for your company — change in Cowork policies.' }
+  if (skill.riskClass === 'write_external' && !coworkPolicies.allowAutomaticExternalSends)
+    return { allowed: false, reason: 'Automatic external sends are off for your company — change in Cowork policies.' }
+  return { allowed: true }
 }
 /** The agent that owns a module (drives a task's result). */
 export function agentForModule(m?: CoworkModule): CoworkAgent | undefined {
@@ -1152,6 +1598,65 @@ export function unscheduleTask(id: string): void {
 export function setConnection(id: string, connected: boolean): void {
   const c = coworkConnections.find((x) => x.id === id)
   if (c) { c.connected = connected; persistConnections() }
+}
+
+/** Auth mode for a connection's connect flow — drives the consent copy. */
+export type CoworkConnectionAuth = 'first_party' | 'oauth' | 'api_key'
+export function connectionAuthMode(c: CoworkConnection): CoworkConnectionAuth {
+  if (c.id.startsWith('mekari-')) return 'first_party'
+  if (c.provider === 'google') return 'oauth'
+  // A handful of catalogue apps are key-based rather than OAuth in real life.
+  if (['stripe', 'brex', 'metabase', 'bigquery', 'snowflake'].includes(c.id)) return 'api_key'
+  return 'oauth'
+}
+/** Plain-language permissions Cowork requests — differs per provider category
+ *  (Open principle: show scopes before consent). `write` = a change-class scope. */
+export function connectionScopes(c: CoworkConnection): { label: string; write?: boolean }[] {
+  if (c.id.startsWith('mekari-')) return [
+    { label: 'Access your data using your own Mekari permissions (RBAC enforced)' },
+    { label: 'Read the records you can already see in ' + c.name },
+    { label: 'Create and update records where you have edit rights', write: true },
+  ]
+  // Google apps get accurate, product-specific scopes.
+  const GOOGLE: Record<string, { label: string; write?: boolean }[]> = {
+    gmail: [{ label: 'Read your emails and drafts' }, { label: 'Send emails on your behalf', write: true }, { label: 'Read your contacts' }],
+    gdrive: [{ label: 'Read your files and folders' }, { label: 'Create and edit files', write: true }, { label: 'Read file names and metadata' }],
+    gcal: [{ label: 'Read your calendars and events' }, { label: 'Create and update events on your behalf', write: true }, { label: 'Read attendees and availability' }],
+    gcontacts: [{ label: 'Read your contacts and their details' }, { label: 'Read contact groups and labels' }],
+  }
+  if (GOOGLE[c.id]) return GOOGLE[c.id]!
+  const primary = c.categories.find((k) => k !== 'Featured') ?? c.categories[0]
+  switch (primary) {
+    case 'Communication': return [
+      { label: `Read your ${c.name} conversations, channels and contacts` },
+      { label: 'Send messages and post on your behalf', write: true },
+      { label: 'Read your profile and account info' },
+    ]
+    case 'Productivity': return [
+      { label: `Read your ${c.name} documents, items and comments` },
+      { label: 'Create and update items on your behalf', write: true },
+      { label: 'Read workspace members and structure' },
+    ]
+    case 'Business & operations': return [
+      { label: `Read your ${c.name} records (deals, tickets, orders, contacts)` },
+      { label: 'Create and update records on your behalf', write: true },
+      { label: 'Read account, pipeline and catalog metadata' },
+    ]
+    case 'Data & analytics': return [
+      { label: `Read your ${c.name} reports, datasets and dashboards` },
+      { label: 'Run read-only queries against your data' },
+      { label: 'Read schema and metadata' },
+    ]
+    case 'Finance': return [
+      { label: `Read your ${c.name} invoices, payments and balances` },
+      { label: 'Create draft invoices and payments for your review', write: true },
+      { label: 'Read customers, vendors and account info' },
+    ]
+    default: return [
+      { label: `Read your ${c.name} data` },
+      { label: 'Act on your behalf within the tools you enable', write: true },
+    ]
+  }
 }
 
 let connSeq = 1

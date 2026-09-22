@@ -20,13 +20,13 @@ function goConfigure(id: string) { router.push(`/warehouses/${id}/configure`) }
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const allColumns: TableColumn[] = [
-  { key: 'name',        label: 'Name',         width: '155px', sortType: 'text' },
-  { key: 'code',        label: 'Code',         width: '78px',  sortType: 'text' },
-  { key: 'skuTotal',    label: 'SKU qty',      width: '78px', align: 'right', sortType: 'number' },
-  { key: 'pics',        label: 'PIC',          width: '108px' },
-  { key: 'address',     label: 'Address',      width: '90px',  sortType: 'text' },
-  { key: 'status',      label: 'Status',       width: '90px',  sortType: 'text' },
-  { key: 'lastUpdated', label: 'Last updated', width: '120px' },
+  { key: 'name',        label: 'Name',         kind: 'name',    sortType: 'text' },
+  { key: 'code',        label: 'Code',         kind: 'number',  sortType: 'text' },
+  { key: 'skuTotal',    label: 'SKU qty',      kind: 'default', align: 'right', sortType: 'number' },
+  { key: 'pics',        label: 'PIC',          kind: 'name' },
+  { key: 'address',     label: 'Address',      kind: 'address', sortType: 'text' },
+  { key: 'status',      label: 'Status',       kind: 'status',  sortType: 'text' },
+  { key: 'lastUpdated', label: 'Last updated', kind: 'date' },
 ]
 
 // Column settings — Name is always on and cannot be hidden
@@ -484,12 +484,10 @@ const emptyDesc = computed(() =>
   </ErpTablePage>
 
   <!-- ── Delete confirmation modal ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="wh-delete-modal"
     :is-open="deleteModalOpen"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeDeleteModal"
   >
@@ -512,12 +510,10 @@ const emptyDesc = computed(() =>
   </MpModal>
 
   <!-- ── Archive confirmation modal ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="wh-archive-modal"
     :is-open="archiveModalOpen"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeArchiveModal"
   >
@@ -550,12 +546,10 @@ const emptyDesc = computed(() =>
   </MpModal>
 
   <!-- ── Bulk archive confirmation modal ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="wh-bulk-archive-modal"
     :is-open="bulkArchiveModalOpen"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeBulkArchiveModal"
   >
@@ -578,12 +572,10 @@ const emptyDesc = computed(() =>
   </MpModal>
 
   <!-- ── Export modal ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="wh-export-modal"
     :is-open="exportModalOpen"
     size="lg"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeExportModal"
   >
@@ -698,12 +690,10 @@ const emptyDesc = computed(() =>
   </MpModal>
 
   <!-- ── Bulk delete confirmation modal ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="wh-bulk-delete-modal"
     :is-open="bulkDeleteModalOpen"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeBulkDeleteModal"
   >

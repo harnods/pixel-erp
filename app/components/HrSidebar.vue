@@ -8,7 +8,7 @@
  */
 import { ref, reactive, computed, watch } from 'vue'
 import { infoToast } from '~/utils/toasts'
-import { toast } from '@mekari/pixel3'
+import { toast, MpTooltip } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import toggleIcon from '~/assets/images/sidebar-toggle.svg?url'
 import { getEmployee } from '~/data'
@@ -109,6 +109,17 @@ function handlePanelSubItemClick(sub: SubItem) {
   router.push(sub.to)
 }
 
+// Collapsed-rail hover tooltip. Only relevant while the rail is collapsed to
+// icons (railExpanded false) — once expanded the label is already visible. An
+// item with a `submenu` reveals a flyout on hover (see handleItemMouseEnter),
+// so it gets no tooltip — the flyout already names the section and a tooltip
+// would collide with it. Plain items (no submenu) still get the tooltip.
+function navItemTooltip(item: Item): string | undefined {
+  if (railExpanded.value) return undefined
+  if (item.submenu) return undefined
+  return item.name
+}
+
 // ── Employee-profile level-2 menu (shown when viewing an employee detail) ──────
 interface ProfileItem { label: string; view?: string; children?: { label: string; view: string }[] }
 const PROFILE_MENU: ProfileItem[] = [
@@ -186,27 +197,49 @@ function goView(view?: string) {
 <template>
   <div class="sidebar-wrapper">
     <nav class="sidebar hr-sidebar" :class="{ 'is-expanded': railExpanded }" aria-label="HR navigation">
-      <div class="sidebar-header">
+      <div class="sidebar-header" data-devchange="sidebar-collapsed-tooltip">
         <button class="sidebar-toggle" title="Toggle sidebar" @click="expanded = !expanded">
           <img :src="toggleIcon" alt="Toggle sidebar">
         </button>
       </div>
 
       <div v-for="(group, gi) in groups" :key="gi" class="nav-group">
-        <button
-          v-for="item in group"
-          :key="item.name"
-          class="nav-item"
-          :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
-          :title="item.name"
-          @click="handleNavClick(item)"
-          @mouseenter="(e) => handleItemMouseEnter(e, item)"
-          @mouseleave="scheduleClose"
-        >
-          <img :src="`https://cdn.mekari.design/icons/${item.icon}-outline.svg`" class="nav-icon-line" alt="" />
-          <img :src="`https://cdn.mekari.design/icons/${item.icon}-fill.svg`" class="nav-icon-fill" alt="" />
-          <span class="nav-label">{{ item.name }}</span>
-        </button>
+        <template v-for="item in group" :key="item.name">
+          <!-- Collapsed rail: styled Pixel tooltip on hover. Rendered only when a
+               tooltip is wanted (see navItemTooltip) so an excluded/active item
+               carries no tooltip node at all — avoids a stale empty tooltip box. -->
+          <MpTooltip
+            v-if="navItemTooltip(item)"
+            :id="`hr-nav-tt-${item.name}`"
+            :label="navItemTooltip(item)!"
+            placement="right"
+            use-portal
+          >
+            <button
+              class="nav-item"
+              :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
+              @click="handleNavClick(item)"
+              @mouseenter="(e) => handleItemMouseEnter(e, item)"
+              @mouseleave="scheduleClose"
+            >
+              <img :src="`https://cdn.mekari.design/icons/${item.icon}-outline.svg`" class="nav-icon-line" alt="" />
+              <img :src="`https://cdn.mekari.design/icons/${item.icon}-fill.svg`" class="nav-icon-fill" alt="" />
+              <span class="nav-label">{{ item.name }}</span>
+            </button>
+          </MpTooltip>
+          <button
+            v-else
+            class="nav-item"
+            :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
+            @click="handleNavClick(item)"
+            @mouseenter="(e) => handleItemMouseEnter(e, item)"
+            @mouseleave="scheduleClose"
+          >
+            <img :src="`https://cdn.mekari.design/icons/${item.icon}-outline.svg`" class="nav-icon-line" alt="" />
+            <img :src="`https://cdn.mekari.design/icons/${item.icon}-fill.svg`" class="nav-icon-fill" alt="" />
+            <span class="nav-label">{{ item.name }}</span>
+          </button>
+        </template>
       </div>
     </nav>
 

@@ -81,7 +81,7 @@ async function save() {
 
 <template>
   <Transition name="ha">
-    <div v-if="isOpen" class="ha-overlay" @click.self="close">
+    <div v-if="isOpen" class="ha-overlay">
       <div class="ha-panel" role="dialog" aria-label="Add actions">
         <!-- Header -->
         <header class="ha-header">

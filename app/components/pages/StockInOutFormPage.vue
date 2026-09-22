@@ -19,11 +19,18 @@ import { addAdjustment, accountOptions, IN_OUT_CATEGORIES, stockAdjustments } fr
 import { addWmsAdjustmentSafe } from '~/data/wmsStockAdjustments'
 import { scrollToFirstError } from '~/utils/form'
 import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
+import ErpDimensionTagUpsell from '~/components/patterns/ErpDimensionTagUpsell.vue'
+import ErpLineDimensionsCell from '~/components/patterns/ErpLineDimensionsCell.vue'
+import ErpBulkDimensionsPopover from '~/components/patterns/ErpBulkDimensionsPopover.vue'
+import ErpDimensionsInfoPopover from '~/components/patterns/ErpDimensionsInfoPopover.vue'
+import { applicableDimensions } from '~/data/dimensions'
 
 const router = useRouter()
 const route = useRoute()
 const { activeScenario } = useScenario()
 const isWms = computed(() => activeScenario.value.startsWith('WMS'))
+const { dimensionsActivated } = useDimensionsActivation()
+const showDimensionsColumn = computed(() => dimensionsActivated.value && applicableDimensions('stock-adjustment').length > 0)
 
 function toDisplayDate(iso: string) { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}` }
 function toISODate(display: string) { const [d, m, y] = display.split('/'); return `${y}-${m}-${d}` }
@@ -95,13 +102,15 @@ interface ProductRow {
   locationRows: LocationRow[]
   avgMode: 'auto' | 'custom'
   avgCostInput: string
+  /** dimensionId -> selected value name (Settings > Dimensions line tagging). */
+  dimensions: Record<string, string>
 }
 
 const rows = ref<ProductRow[]>([])
 const selectedSkus = computed(() => rows.value.map(r => r.sku))
 
 function makeProductRow(sku: string): ProductRow {
-  return { sku, locationRows: [], avgMode: 'auto', avgCostInput: '' }
+  return { sku, locationRows: [], avgMode: 'auto', avgCostInput: '', dimensions: {} }
 }
 
 function applyPicker(skus: string[]) {
@@ -111,6 +120,13 @@ function applyPicker(skus: string[]) {
 
 function removeRow(sku: string) { rows.value = rows.value.filter(r => r.sku !== sku) }
 function removeLocRow(row: ProductRow, idx: number) { row.locationRows.splice(idx, 1) }
+
+// Bulk-apply from the Dimensions column header's "Bulk" popover — merges the
+// picked values onto every visible product's dimensions (a dimension left
+// blank in the popover is a no-op, not a clear).
+function onBulkDimensions(patch: Record<string, string>) {
+  rows.value.forEach((row) => { row.dimensions = { ...row.dimensions, ...patch } })
+}
 
 // ── Location picker (MpPopover pattern) ──────────────────────────────────────────
 const activeLocKey = ref<string | null>(null)
@@ -295,6 +311,7 @@ async function handleSave() {
       if (isBatchTrackedSku(r.sku)) return sum + locBatchTotal(loc)
       return sum + parseDelta(loc.delta)
     }, 0),
+    ...(Object.keys(r.dimensions).length ? { dimensions: r.dimensions } : {}),
   }))
   const input = {
     kind: 'in-out' as const,
@@ -385,6 +402,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <MpFormControl v-if="!isWms" id="scf-tags" class="scf-f-tags">
             <MpFormLabel>Tags</MpFormLabel>
             <MpInputTag id="scf-tags-input" placeholder="Select tag" :data="tags" :is-enable-create-new-tag="true" :is-show-suggestions="false" @change="onTagsChange" />
+            <ErpDimensionTagUpsell id="scf-dim-upsell" />
           </MpFormControl>
 
           <MpFormControl id="scf-category" class="scf-f-category" is-required :is-invalid="categoryError">
@@ -445,7 +463,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <span class="sio-product-id">{{ row.sku }}</span>
                   </div>
                 </div>
-                <div class="sio-product-avg">
+                <!-- Costing is ERP-only — a WMS Standalone user has no access to it. -->
+                <div v-if="!isWms" class="sio-product-avg">
                   <span class="sio-avg-label">Average cost</span>
                   <div class="sio-avg-value-wrap">
                     <template v-if="row.avgMode === 'custom'">
@@ -473,9 +492,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
               <!-- Location sub-table: all products (batch, SN, regular) -->
               <div class="sio-loc-table-wrap">
-                <table class="sio-loc-table">
+                <table class="sio-loc-table" :class="{ 'sio-loc-table--with-dimensions': !isWms && showDimensionsColumn }">
                   <colgroup>
-                    <col class="sio-col-loc" /><col class="sio-col-num" /><col class="sio-col-num" /><col class="sio-col-num" /><col class="sio-col-action" /><col class="sio-col-unit" /><col class="sio-col-del" />
+                    <col class="sio-col-loc" /><col class="sio-col-onhand" /><col class="sio-col-inout" /><col class="sio-col-newonhand" /><col class="sio-col-action" /><col class="sio-col-unit" /><col v-if="!isWms && showDimensionsColumn" class="sio-col-dimensions" /><col class="sio-col-del" />
                   </colgroup>
                   <thead>
                     <tr>
@@ -485,6 +504,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       <th class="sio-th sio-th--num">New on hand qty</th>
                       <th class="sio-th" />
                       <th class="sio-th">Unit</th>
+                      <th v-if="!isWms && showDimensionsColumn" class="sio-th sio-th--dimensions">
+                        <span class="sio-th-dim-label">
+                          Dimensions
+                          <ErpDimensionsInfoPopover :id="`sio-dim-info-${row.sku}`" />
+                        </span>
+                        <ErpBulkDimensionsPopover :id="`sio-dim-bulk-${row.sku}`" transaction-type="stock-adjustment" @apply="onBulkDimensions" />
+                      </th>
                       <th class="sio-th sio-th--del" />
                     </tr>
                   </thead>
@@ -560,6 +586,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
                         {{ newOnHandForLocRow(row.sku, locRow) !== null ? newOnHandForLocRow(row.sku, locRow)!.toLocaleString('id-ID') : onHandForLocation(row.sku, locRow.locationId).toLocaleString('id-ID') }}
                       </td>
                       <td class="sio-td sio-td--muted">{{ unitFor(row.sku) }}</td>
+                      <td v-if="!isWms && showDimensionsColumn" class="sio-td sio-td--dimensions">
+                        <ErpLineDimensionsCell
+                          :model-value="row.dimensions" transaction-type="stock-adjustment" :id="`sio-dim-${row.sku}`"
+                          @update:model-value="(v) => row.dimensions = v"
+                        />
+                      </td>
                       <td class="sio-td sio-td--del">
                         <button class="sio-del-loc-btn" type="button" aria-label="Remove location" @click="removeLocRow(row, li)">
                           <MpIcon name="minus-circular" size="sm" />
@@ -593,7 +625,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                           </MpPopoverContent>
                         </MpPopover>
                       </td>
-                      <td class="sio-td sio-td--add-loc-spacer" colspan="6" />
+                      <td class="sio-td sio-td--add-loc-spacer" :colspan="!isWms && showDimensionsColumn ? 7 : 6" />
                     </tr>
                   </tbody>
                 </table>
@@ -679,14 +711,14 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
 <style scoped>
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-.detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
+.detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
 .detail-breadcrumb { align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); line-height: var(--mp-line-heights-sm, 16px); }
 .detail-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
 .detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .detail-title { margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
-.detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-8); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); }
-.detail-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); border-top: 1px solid transparent; transition: border-top-color 0.15s; }
+.detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-8); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); }
+.detail-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage, #ffffff); border-top: 1px solid transparent; transition: border-top-color 0.15s; }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
 
 /* ── Form grid ─────────────────────────────────────────────────────────────────── */
@@ -709,7 +741,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .sio-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); }
 .sio-wh-name { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .sio-toolbar-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.scf-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 280px; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px); color: var(--mp-icon-default); }
+.scf-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 280px; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-full, 999px); color: var(--mp-icon-default); }
 .scf-search-input { flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .scf-search-input::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
@@ -719,12 +751,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
   color: var(--mp-icon-default, var(--mp-text-secondary));
   border-radius: var(--mp-radii-full, 999px);
 }
-.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .scf-import-btn { padding: var(--mp-spacing-2) var(--mp-spacing-4); border: 1px solid var(--mp-background-inverse, #080d0e); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-inverse, #080d0e); color: #fff; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; }
 .scf-import-btn:hover { opacity: 0.9; }
 
-.sio-select-prod-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-1\.5) var(--mp-spacing-4); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px); background: none; cursor: pointer; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-default); }
-.sio-select-prod-btn:hover { background: var(--mp-background-neutral-subtle); }
+.sio-select-prod-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-1\.5) var(--mp-spacing-4); border: 1px solid var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-full, 999px); background: none; cursor: pointer; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-default); }
+.sio-select-prod-btn:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 
 /* ── Product group ──────────────────────────────────────────────────────────────── */
 .sio-product-list { margin-top: var(--mp-spacing-4); display: flex; flex-direction: column; gap: 0; }
@@ -732,8 +764,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
 .sio-product-header { display: flex; align-items: center; gap: var(--mp-spacing-4); padding: var(--mp-spacing-3) 0; }
 .sio-product-info { display: flex; align-items: center; gap: var(--mp-spacing-3); flex: 0 0 320px; min-width: 0; }
-.sio-thumb { width: 40px; height: 40px; border-radius: var(--mp-radii-md); object-fit: cover; flex-shrink: 0; border: 1px solid var(--mp-border-subtle); background: var(--mp-background-neutral); }
-.sio-thumb--empty { display: block; background: var(--mp-background-neutral-subtle); }
+.sio-thumb { width: 40px; height: 40px; border-radius: var(--mp-radii-md); object-fit: cover; flex-shrink: 0; border: 1px solid var(--mp-border-subtle, #e5e7e7); background: var(--mp-background-neutral, #ffffff); }
+.sio-thumb--empty { display: block; background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .sio-product-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .sio-product-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sio-product-id { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
@@ -743,13 +775,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .sio-avg-value-wrap { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .sio-avg-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sio-avg-prefix { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.sio-avg-num { width: 120px; border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-sm); padding: var(--mp-spacing-1) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); text-align: right; background: var(--mp-background-neutral, #fff); outline: none; font-variant-numeric: tabular-nums; }
+.sio-avg-num { width: 120px; border: 1px solid var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-sm); padding: var(--mp-spacing-1) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); text-align: right; background: var(--mp-background-neutral, #fff); outline: none; font-variant-numeric: tabular-nums; }
 .sio-avg-edit { visibility: hidden; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-icon-default); flex-shrink: 0; }
 .sio-product-group:hover .sio-avg-edit { visibility: visible; }
-.sio-avg-edit:hover { background: var(--mp-background-neutral); }
+.sio-avg-edit:hover { background: var(--mp-background-neutral, #ffffff); }
 
 .sio-remove-prod { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary); flex-shrink: 0; margin-left: auto; }
-.sio-remove-prod:hover { background: var(--mp-background-neutral); color: var(--mp-text-danger, #dc2626); }
+.sio-remove-prod:hover { background: var(--mp-background-neutral, #ffffff); color: var(--mp-text-danger, #dc2626); }
 
 /* ── Batch / serial values in location table ───────────────────────────────────── */
 .sio-batch-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
@@ -757,28 +789,60 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
 /* ── Location sub-table ─────────────────────────────────────────────────────────── */
 .sio-loc-table-wrap { overflow-x: auto; }
-.sio-loc-table { width: 100%; table-layout: auto; border-collapse: collapse; min-width: 640px; }
-.sio-col-loc    { width: 46%; }
-.sio-col-num    { width: 12%; }
-.sio-col-action { width: auto; }
-.sio-col-unit   { width: 7%; }
-.sio-col-del    { width: 52px; }
-.sio-th { height: 28px; text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default); white-space: nowrap; letter-spacing: 0.04em; }
+/* table-layout:auto let the browser recompute every column's rendered pixel
+   width from its % hint + row content whenever the table's own width
+   changed (exactly what happened when Dimensions was added — columns
+   overlapped/cropped). table-layout:fixed + flat px widths below make every
+   column's size a flat constant, independent of content or of whether
+   Dimensions is present. */
+.sio-loc-table { width: 100%; table-layout: fixed; border-collapse: collapse; min-width: 1395px; }
+/* Widths are the pixel sizes the original %-columns resolved to at the app's
+   1320px content width (46% location, 12% each qty, 7% unit) — the widths this
+   table has always shown on a 1440px screen — so the location name keeps its
+   full column and nothing else narrows either. Only ACTION departs from its %
+   (it was `auto`, and the remainder left it ~95px, which cropped the control):
+   it keeps its content-measured 170px. Dimensions is added ON TOP of the sum
+   rather than taken out of it, so the total can exceed the container and
+   .sio-loc-table-wrap's overflow-x:auto scrolls instead of squeezing. */
+.sio-loc-table--with-dimensions { min-width: 1615px; }
+.sio-col-loc       { width: 607px; }
+.sio-col-onhand    { width: 158px; }
+.sio-col-inout     { width: 158px; }
+.sio-col-newonhand { width: 158px; }
+.sio-col-action    { width: 170px; }
+.sio-col-unit      { width: 92px; }
+.sio-col-dimensions { width: 220px; }
+.sio-col-del       { width: 52px; }
+.sio-th { height: 28px; text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); white-space: nowrap; letter-spacing: 0.04em; }
 .sio-th--num { text-align: right; }
-.sio-td { padding: 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: middle; height: var(--mp-sizes-10, 40px); border-right: 1px solid var(--mp-border-default); background: var(--mp-background-neutral, #fff); }
-.sio-td--muted { color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); }
-.sio-td--num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; background: var(--mp-background-neutral-subtle); }
-.sio-td--del { border-right: none; text-align: center; padding: 0; background: var(--mp-background-neutral-subtle); }
+/* Dimensions header carries both the label+info-icon (left) and the "Bulk"
+   link (float:right, from ErpBulkDimensionsPopover) — same layout as the
+   Sales/Purchases/Expenses line-items tables. */
+.sio-th--dimensions { text-transform: none; }
+.sio-th-dim-label { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); text-transform: uppercase; }
+/* vertical-align:top (not middle) — only visibly matters once the Dimensions
+   column stacks 2+ values and stretches the row taller than the 40px
+   baseline, where every other cell must pin to the top of it, not float to
+   its vertical center (feedback_dimensions_row_stretch_top_align). Top padding
+   matches .sio-td--action's own 10px so a plain value (On hand/Stock in-out/
+   New on hand qty, Unit) sits at the same baseline as "Manage batch" instead
+   of flush against the cell's top edge — cells that manage their own height
+   (loc trigger, qty input, Dimensions, the delete column) override back to 0. */
+.sio-td { padding: 10px var(--mp-spacing-3) 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); vertical-align: top; height: var(--mp-sizes-10, 40px); border-right: 1px solid var(--mp-border-default, #e3e7e9); background: var(--mp-background-neutral, #fff); }
+.sio-td--dimensions { padding: 0; }
+.sio-td--muted { color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.sio-td--num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.sio-td--del { border-right: none; text-align: center; padding: 0; background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .sio-td--loc { padding: 0; }
 .sio-td--loc { padding: 0; }
-.sio-td--loc:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.sio-td--loc:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .sio-loc-trigger { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 100%; min-height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-3); cursor: text; }
 .sio-loc-input { flex: 1; min-width: 0; border: none; outline: none; background: none; padding: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sio-loc-input::placeholder { color: var(--mp-text-placeholder); }
 .sio-loc-chevron { flex-shrink: 0; color: var(--mp-icon-default); }
 .sio-loc-none { margin: 0; padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); text-align: center; }
 .sio-td--input { padding: 0; }
-.sio-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.sio-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .sio-td--add-loc { padding: 0; }
 .sio-qty-input { width: 100%; text-align: right; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-3); border: none; background: transparent; color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; outline: none; }
 .sio-qty-input::placeholder { color: var(--mp-text-placeholder); }
@@ -786,7 +850,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .sio-diff--neg { color: var(--mp-text-danger, #a8352d); }
 .sio-diff--neutral { color: var(--mp-text-default); }
 .sio-del-loc-btn { display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 100%; border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary); }
-.sio-del-loc-btn:hover { background: var(--mp-background-neutral-subtle); color: var(--mp-text-danger, #dc2626); }
+.sio-del-loc-btn:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-danger, #dc2626); }
 
 .sio-td--add-loc-spacer { background: var(--mp-background-neutral, #fff); border-right: none; }
 

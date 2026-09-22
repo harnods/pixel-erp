@@ -53,17 +53,17 @@ const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'taskNo',        label: 'Number',       width: '180px', sortType: 'text' },
-  { key: 'salesNos',      label: 'Sales orders', width: '240px' },
-  { key: 'warehouseName', label: 'Warehouse',    width: '180px', sortType: 'text' },
-  { key: 'assignee',      label: 'Assignee',     width: '160px', sortType: 'text' },
-  { key: 'skuQty',        label: 'SKU qty',      width: '100px', align: 'right', sortType: 'number' },
-  { key: 'toPickQty',     label: 'To pick',      width: '100px', align: 'right', sortType: 'number' },
-  { key: 'pickedQty',     label: 'Picked qty',   width: '100px', align: 'right', sortType: 'number' },
-  { key: 'status',        label: 'Status',       width: '140px', sortType: 'text' },
+  { key: 'taskNo',        label: 'Number',       kind: 'number', sortType: 'text' },
+  { key: 'salesNos',      label: 'Sales orders' },
+  { key: 'warehouseName', label: 'Warehouse',    kind: 'name', sortType: 'text' },
+  { key: 'assignee',      label: 'Assignee',     kind: 'name', sortType: 'text' },
+  { key: 'skuQty',        label: 'SKU qty',      align: 'right', sortType: 'number' },
+  { key: 'toPickQty',     label: 'To pick',      align: 'right', sortType: 'number' },
+  { key: 'pickedQty',     label: 'Picked qty',   align: 'right', sortType: 'number' },
+  { key: 'status',        label: 'Status',       kind: 'status', sortType: 'text' },
   { key: 'icons',         label: '',             width: '48px',  noHeader: true },
-  { key: 'startDate',     label: 'Start date',   width: '170px', sortType: 'date' },
-  { key: 'endDate',       label: 'End date',     width: '190px', sortType: 'date' },
+  { key: 'startDate',     label: 'Start date',   kind: 'date', sortType: 'date' },
+  { key: 'endDate',       label: 'End date',     kind: 'date', sortType: 'date' },
 ]
 // Column show/hide — Number stays on; the sort menu's "Hide column" flips these off,
 // the ColumnSettings menu turns them back on.
@@ -515,8 +515,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   />
 
   <!-- ── Cancel confirmation modal ── -->
-  <MpModal id="pick-cancel-modal" :is-open="cancelModalOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="pick-cancel-modal" :is-open="cancelModalOpen" size="md" :is-keep-alive="false" @close="closeCancelModal">
     <MpModalContent>
       <MpModalHeader>{{ t('Cancel') }} {{ taskToCancel?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>

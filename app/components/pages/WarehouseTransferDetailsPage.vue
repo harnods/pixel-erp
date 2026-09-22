@@ -347,9 +347,8 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
     />
 
     <!-- Cancel warehouse transfer -->
-    <MpModal
-      id="wtd-cancel" :is-open="cancelOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="wtd-cancel" :is-open="cancelOpen" size="md" :is-keep-alive="false" @close="cancelOpen = false"
     >
       <MpModalContent>
         <MpModalHeader>{{ t('Cancel warehouse transfer?') }}<MpModalCloseButton /></MpModalHeader>
@@ -407,7 +406,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .detail-jump { display: flex; flex-direction: column; }
 .detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }
 .detail-jump-search { width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; padding-right: 34px; }
-.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-jump-search:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
   display: inline-flex; align-items: center; justify-content: center;

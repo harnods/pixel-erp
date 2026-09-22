@@ -283,12 +283,10 @@ function confirmDeleteLocation() {
     />
 
     <!-- Delete confirmation -->
-    <MpModal
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
       id="sld-delete-modal"
       :is-open="deleteConfirmOpen"
       size="md"
-      is-close-on-esc
-      is-close-on-overlay-click
       :is-keep-alive="false"
       @close="deleteConfirmOpen = false"
     >

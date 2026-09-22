@@ -135,15 +135,15 @@ function closeRejectModal() {
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'date',        label: 'Date',         width: '120px',                                sortType: 'date'   },
-  { key: 'number',       label: 'Number',       width: '240px', sortable: true,                sortType: 'number' },
-  { key: 'warehouse',    label: 'Warehouse',    width: '160px', sortable: true,                sortType: 'text'   },
-  { key: 'details',      label: 'Details',      width: '260px', sortable: true,                sortType: 'text'   },
-  { key: 'reason',       label: 'Reason',       width: '200px', sortable: true,                sortType: 'text'   },
-  { key: 'requestedBy',  label: 'Requested by', width: '160px', sortable: true,                sortType: 'text'   },
-  { key: 'balanceDue',   label: 'Balance due',  width: '160px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'total',        label: 'Total',        width: '160px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'dueDate',      label: 'Due date',     width: '120px',                                sortType: 'date'   },
+  { key: 'date',        label: 'Date',         kind: 'date',                                sortType: 'date'   },
+  { key: 'number',       label: 'Number',       kind: 'number', sortable: true,                sortType: 'number' },
+  { key: 'warehouse',    label: 'Warehouse',    kind: 'name', sortable: true,                sortType: 'text'   },
+  { key: 'details',      label: 'Details',      sortable: true,                sortType: 'text'   },
+  { key: 'reason',       label: 'Reason',       kind: 'status', sortable: true,                sortType: 'text'   },
+  { key: 'requestedBy',  label: 'Requested by', kind: 'name', sortable: true,                sortType: 'text'   },
+  { key: 'balanceDue',   label: 'Balance due',  kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'total',        label: 'Total',        kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'dueDate',      label: 'Due date',     kind: 'date',                                sortType: 'date'   },
 ]
 
 // Column show/hide — Date & Number are always on (locked in the menu).
