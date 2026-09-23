@@ -67,7 +67,24 @@ const WO_TYPE_OPTIONS = [
 ]
 // Work orders can only be raised from an already-created BOM — the dropdown lists
 // the real (persisted) BOM catalog, newest first.
-const BOM_OPTIONS = computed(() => billOfMaterials.map(b => ({ id: b.id, name: b.name, no: b.number })))
+/**
+ * BOMs scoped to the chosen category.
+ *
+ * A Subcontracting work order is built from a Subcontracting BOM — that is the
+ * BOM carrying the subcon cost lines — and conversely an in-house order must not
+ * be built from one. The two vocabularies are not otherwise parallel (a BOM is
+ * Standard/Custom/Subcontracting, a work order Standard/Order/Subcontracting), so
+ * matching on the name would empty the list for Order. The real constraint is the
+ * subcon split, and that is what is enforced.
+ */
+const BOM_OPTIONS = computed(() => billOfMaterials
+  .filter((b) => {
+    if (!category.value) return true
+    return category.value === 'Subcontracting'
+      ? b.category === 'Subcontracting'
+      : b.category !== 'Subcontracting'
+  })
+  .map(b => ({ id: b.id, name: b.name, no: b.number })))
 function findBom(id: string): BillOfMaterials | undefined { return billOfMaterials.find(b => b.id === id) }
 
 // A BOM's own option vocabulary (account/cost-driver/process/mapping labels) may not
@@ -137,6 +154,17 @@ const createAsSubAssembly = ref(false)
 // which purchase requests / transfers / receipts this work order raises; the plan
 // is previewed live so that consequence is visible before saving.
 const isSubcon = computed(() => category.value === 'Subcontracting')
+
+/**
+ * Changing the category re-scopes the BOM list, so a BOM picked under the old
+ * category is cleared rather than left as an invalid pairing. Subcontracting also
+ * defaults Track routing to No: the routing is the vendor's, and this work order
+ * records no in-house steps to track.
+ */
+watch(category, () => {
+  if (bomId.value && !BOM_OPTIONS.value.some(b => b.id === bomId.value)) bomId.value = ''
+  if (isSubcon.value) trackRouting.value = 'no'
+})
 const subconScope = ref<SubconScope>('finished-good')
 const subconSplit = ref<SubconSplit>('full')
 const subconMethod = ref<SubconMethod>('resupply')

@@ -18,7 +18,6 @@ import {
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import SubconMethodChip from '~/components/patterns/SubconMethodChip.vue'
-import SubconStageChain from '~/components/patterns/SubconStageChain.vue'
 import SubconShortfallModal from '~/components/patterns/SubconShortfallModal.vue'
 import CompleteSubconWorkOrderModal, { type SubconComponentUsage } from '~/components/patterns/CompleteSubconWorkOrderModal.vue'
 import {
@@ -219,6 +218,7 @@ const subconTransactions = computed(() =>
   subconPlan.value.flatMap(row =>
     row.entries.map((entry, i) => ({
       key: `${row.key}-${entry.kind}-${entry.doc?.id ?? `planned-${i}`}`,
+      kind: entry.kind,
       tag: entry.tag,
       type: SUBCON_DOC_TYPE_LABEL[entry.tag],
       title: entry.title,
@@ -229,18 +229,71 @@ const subconTransactions = computed(() =>
   ),
 )
 
+/**
+ * The run grouped by transaction type, which is how it is read: someone asking
+ * "did the invoice go out?" wants the invoices together, not interleaved with
+ * everything else in chain order.
+ *
+ * **The purchase requests split by what they actually buy.** They share a type but
+ * not a nature, and the difference decides which account and which warehouse they
+ * hit, so lumping them under one undifferentiated heading would hide exactly the
+ * distinction the supply method exists to make:
+ *
+ *   • raw material — bought from a 3rd party and shipped to the vendor (dropship)
+ *   • subcon cost  — the vendor's own service
+ *   • in-house     — the half of a partial split bought normally into our own
+ *                    warehouse, which is not subcontracted at all
+ *
+ * Every other type groups on its own.
+ */
+const PR_NATURE = {
+  componentPr: 'material',
+  rawPr: 'material',
+  subconPr: 'service',
+  processPr: 'service',
+  purchasePr: 'inHouse',
+} as const
+
+const PR_NATURE_LABEL = {
+  material: 'raw material',
+  service: 'subcon cost',
+  inHouse: 'in-house portion',
+} as const
+
+const subconTransactionGroups = computed(() => {
+  const groups: {
+    key: string
+    label: string
+    /** Set on the raw-material purchase so it can be told apart at a glance. */
+    variant?: 'material'
+    rows: typeof subconTransactions.value
+  }[] = []
+
+  for (const tx of subconTransactions.value) {
+    const nature = PR_NATURE[tx.kind as keyof typeof PR_NATURE]
+    // Only worth qualifying when the order actually raises more than one kind of
+    // request; a single request needs no disambiguation.
+    const qualify = !!nature && subconTransactions.value
+      .filter(o => PR_NATURE[o.kind as keyof typeof PR_NATURE])
+      .some(o => PR_NATURE[o.kind as keyof typeof PR_NATURE] !== nature)
+
+    const key = qualify ? `${tx.tag}-${nature}` : tx.tag
+    const label = qualify ? `${tx.type} — ${t(PR_NATURE_LABEL[nature])}` : tx.type
+
+    const existing = groups.find(g => g.key === key)
+    if (existing) { existing.rows.push(tx); continue }
+    groups.push({
+      key,
+      label,
+      ...(qualify && nature === 'material' ? { variant: 'material' as const } : {}),
+      rows: [tx],
+    })
+  }
+  return groups
+})
+
 /** Everything that can be raised right now, across both threads. */
 const subconCreateActions = computed(() => subconPlan.value.flatMap(row => row.actions))
-
-/** Where the work order sits on the five-stage subcon chain. */
-const subconStage = computed<1 | 2 | 3 | 4 | 5>(() => {
-  const w = wo.value
-  if (!w || !w.subcon) return 1
-  if (w.status === 'completed') return 5
-  if (w.producedQty > 0) return 4
-  if (!subconStarted.value) return 1
-  return w.subcon.method === 'basic' ? 3 : 2
-})
 
 /**
  * Subcon cost — the vendor's charges, which stand in for Production cost and
@@ -1437,13 +1490,17 @@ function suppressFabClick(e: MouseEvent) {
       <section v-if="subcon" class="wod-section">
         <div class="wod-section-head-static">
           <h2 class="wod-section-title">{{ t('Subcontracting') }}</h2>
-          <SubconMethodChip :method="subcon.method" badge-for="additionalInformation" />
         </div>
 
         <div class="wod-info-grid">
           <div class="content-list-col">
             <ContentList :label="t('Subcon vendor')" :value="subcon.vendorName" />
             <ContentList :label="t('Scope')" :value="t(SUBCON_SCOPE_LABEL[subcon.scope])" />
+            <!-- The supply method is a setup choice like the rest, so it reads
+                 with them rather than as a badge detached from its own settings. -->
+            <ContentList :label="t('Supply method')">
+              <SubconMethodChip :method="subcon.method" badge-for="additionalInformation" />
+            </ContentList>
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Quantity')" :value="subcon.split === 'partial' ? t('Partial (split)') : t('Full quantity')" />
@@ -1468,17 +1525,6 @@ function suppressFabClick(e: MouseEvent) {
           </div>
         </div>
 
-        <!-- Where this work order sits on the subcon chain -->
-        <div class="wod-subcon-progress">
-          <SubconStageChain :stage="subconStage" :method="subcon.method" />
-          <span class="wod-subcon-progress__text">
-            {{ subconStarted
-              ? t('Work order started — raise its documents from the Transactions tab below.')
-              : subconSupplyStep && !subconSupplyRaised
-                ? `${t('Raise the')} ${t(subconSupplyStep.title).toLowerCase()} ${t('first, then start the work order.')}`
-                : t('Ready to start — the components are on their way to the vendor.') }}
-          </span>
-        </div>
 
         <!-- Set when Start was pressed with no supply document yet. The button
              stays live and says why here (rule/btn-no-disabled-validation,
@@ -1887,9 +1933,21 @@ function suppressFabClick(e: MouseEvent) {
                   <th class="wod-th">{{ t('Status') }}</th>
                 </tr>
               </thead>
-              <tbody>
-                <tr v-for="tx in subconTransactions" :key="tx.key" class="wod-tr">
-                  <td class="wod-td">{{ t(tx.type) }}</td>
+              <tbody v-for="group in subconTransactionGroups" :key="group.key">
+                <!-- One heading per transaction type. On dropship the two
+                     purchase requests are different animals — raw material from a
+                     3rd party, and the vendor's service — so they head up
+                     separately rather than sharing a row. -->
+                <tr class="wod-tr wod-tr--group">
+                  <td class="wod-td wod-td--group" colspan="5">
+                    <span class="wod-group-label" :class="{ 'wod-group-label--material': group.variant === 'material' }">
+                      {{ group.label }}
+                    </span>
+                    <span class="wod-group-count">{{ group.rows.length }}</span>
+                  </td>
+                </tr>
+                <tr v-for="tx in group.rows" :key="tx.key" class="wod-tr">
+                  <td class="wod-td wod-td--indent">{{ t(tx.type) }}</td>
                   <td class="wod-td">
                     <a v-if="tx.doc" class="cell-link" @click.prevent="openRaisedDocument(tx.doc)">{{ tx.doc.number }}</a>
                     <span v-else class="wod-subcon-muted">{{ t(tx.title) }}</span>
@@ -2169,6 +2227,31 @@ function suppressFabClick(e: MouseEvent) {
 :deep(.psn-overlay), :deep(.pbd-overlay) { z-index: 1500; }
 
 /* ── Transactions tab (subcon) ────────────────────────────────────────────── */
+/* A type heading inside the transactions table. */
+.wod-tr--group .wod-td--group {
+  padding-top: var(--mp-spacing-4);
+  border-bottom: 1px solid var(--mp-border-default);
+}
+.wod-group-label {
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+/* The raw-material purchase buys goods, not the vendor's work — a different
+   account and a different destination, so it is marked as its own thing. */
+.wod-group-label--material {
+  padding: 0 var(--mp-spacing-2);
+  border-radius: var(--mp-radii-sm);
+  background: var(--mp-background-warning-subtle, #fffaea);
+  color: var(--mp-text-warning, #b54708);
+}
+.wod-group-count {
+  margin-left: var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+}
+.wod-td--indent { padding-left: var(--mp-spacing-5); }
+
 .wod-tx-head {
   display: flex;
   align-items: center;
@@ -2318,15 +2401,6 @@ function suppressFabClick(e: MouseEvent) {
   margin-bottom: var(--mp-spacing-5);
 }
 /* ── Subcontracting ──────────────────────────────────────────────────────── */
-.wod-subcon-progress {
-  display: flex; align-items: center; gap: var(--mp-spacing-4);
-  margin-top: var(--mp-spacing-4);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-md);
-  background: var(--mp-background-default, #fff);
-}
-.wod-subcon-progress__text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
 .wod-subcon-subtitle {
   margin: var(--mp-spacing-6) 0 var(--mp-spacing-3);
