@@ -533,6 +533,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Owner': 'Pemilik',
   'Note': 'Catatan',
   'Rotting in (days)': 'Mengendap (hari)',
+  'Close in': 'Tutup dalam',
   'Change icon': 'Ganti ikon',
   // CRM ▸ Modules ▸ Deals ▸ Setup tab
   'Setup': 'Setup',

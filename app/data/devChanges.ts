@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-pipeline-close-in',
+    title: 'Pipeline: "Close in" replaces "Rotting in (days)"',
+    description:
+      '"Rotting in (days)" renamed to "Close in" and only available when Expected close date is in the layout. Swimlane preview cards reduced to 1. Delete stage and New stage buttons removed.',
+    date: '2026-09-23',
+    files: ['CrmModuleBuilderPage.vue'],
+  },
+  {
     id: 'crm-module-per-tab-save',
     title: 'Module builder: per-tab save with unsaved-changes prompt',
     description:

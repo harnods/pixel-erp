@@ -393,6 +393,7 @@ function takeSnapshot(): string {
 }
 function markClean() { savedSnapshot.value = takeSnapshot(); savedDispClone.value = JSON.stringify(disp.value) }
 const isDirty = computed(() => savedSnapshot.value !== '' && savedSnapshot.value !== takeSnapshot())
+const hasCloseDateInLayout = computed(() => draft.fields.some((f: { id: string; section?: string }) => f.id === 'closeDate' && !!f.section))
 
 // Drag-reorder the card-property rows (order = the order fields stack on a card) —
 // same ERP pointer sortable, vertical axis. rule/dnd-live-sortable.
@@ -1334,7 +1335,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                       </div>
                       <div class="pipe-lane-cards">
                         <template v-if="i === 0">
-                          <div v-for="n in 2" :key="n" class="pipe-card">
+                          <div class="pipe-card">
                             <template v-for="f in enabledCardFields" :key="f.key">
                               <span v-if="f.key === 'company'" class="pipe-card-company">{{ t('Company') }}</span>
                               <span v-else-if="f.key === 'dealName'" class="pipe-card-deal">{{ t('Record name') }}</span>
@@ -1345,7 +1346,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                               <span v-else-if="f.key === 'memo'" class="pipe-card-sub">{{ t('Memo') }}</span>
                               <span v-else class="pipe-card-sub">{{ t(f.label) }}</span>
                             </template>
-                            <div v-if="disp.showAging" class="pipe-card-foot pipe-card-foot--end">
+                            <div v-if="disp.showAging && hasCloseDateInLayout" class="pipe-card-foot pipe-card-foot--end">
                               <span class="pipe-card-aging">2d</span>
                             </div>
                           </div>
@@ -1384,9 +1385,9 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                         ><MpIcon name="drag" size="md" /></span>
                       </div>
                     </TransitionGroup>
-                    <div class="pipe-side-row pipe-side-row--sep">
-                      <MpToggle id="gm-disp-aging" :is-checked="disp.showAging" :aria-label="t('Rotting in (days)')" @update:is-checked="(v: boolean) => (disp.showAging = v)" />
-                      <span class="pipe-side-rowlabel">{{ t('Rotting in (days)') }}</span>
+                    <div v-if="hasCloseDateInLayout" class="pipe-side-row pipe-side-row--sep" data-devchange="crm-pipeline-close-in">
+                      <MpToggle id="gm-disp-aging" :is-checked="disp.showAging" :aria-label="t('Close in')" @update:is-checked="(v: boolean) => (disp.showAging = v)" />
+                      <span class="pipe-side-rowlabel">{{ t('Close in') }}</span>
                     </div>
                     <div class="pipe-side-addprop">
                       <MpButton variant="ghost" is-rounded left-icon="add" @click="cardPropsDrawerOpen = true">{{ t('Add property') }}</MpButton>
@@ -1444,7 +1445,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                          not live data); populated on the first lane only, per Figma. -->
                     <div class="pipe-lane-cards">
                       <template v-if="i === 0">
-                        <div v-for="n in 2" :key="n" class="pipe-card">
+                        <div class="pipe-card">
                           <template v-for="f in enabledCardFields" :key="f.key">
                             <span v-if="f.key === 'company'" class="pipe-card-company">{{ t('Company') }}</span>
                             <span v-else-if="f.key === 'dealName'" class="pipe-card-deal">{{ propList.find((p) => p.id === 'deal-name')?.name ?? t('Record name') }}</span>
@@ -1455,7 +1456,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                             <span v-else-if="f.key === 'memo'" class="pipe-card-sub">{{ t('Memo') }}</span>
                             <span v-else class="pipe-card-sub">{{ t(f.label) }}</span>
                           </template>
-                          <div v-if="disp.showAging" class="pipe-card-foot pipe-card-foot--end" data-devchange="crm-aging-always-bottom-right">
+                          <div v-if="disp.showAging && hasCloseDateInLayout" class="pipe-card-foot pipe-card-foot--end" data-devchange="crm-aging-always-bottom-right">
                             <span class="pipe-card-aging">2d</span>
                           </div>
                         </div>
@@ -1465,15 +1466,8 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                     <div v-if="disp.stageTotal" class="pipe-lane-total">
                       <span class="pipe-lane-total-label">{{ t('Total deal value') }}</span>
                     </div>
-
-                    <button v-if="!viewMode" class="pipe-lane-delete" type="button" @click="removeStage(s.id)"><!-- pixel-police-allow — styled delete affordance -->
-                      <MpIcon name="delete" size="sm" /><span>{{ t('Delete stage') }}</span>
-                    </button>
                   </div>
                   </TransitionGroup>
-
-                  <!-- + New stage -->
-                  <MpButton v-if="!viewMode" class="pipe-newstage" variant="ghost" is-rounded left-icon="add" @click="addStage">{{ t('New stage') }}</MpButton>
                 </div>
 
                 <!-- Settings — kept in the Pipeline right column (edit mode only) -->
@@ -1502,9 +1496,9 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                         ><MpIcon name="drag" size="md" /></span>
                       </div>
                     </TransitionGroup>
-                    <div class="pipe-side-row pipe-side-row--sep">
-                      <MpToggle id="disp-aging" :is-checked="disp.showAging" :aria-label="t('Rotting in (days)')" @update:is-checked="(v: boolean) => (disp.showAging = v)" />
-                      <span class="pipe-side-rowlabel">{{ t('Rotting in (days)') }}</span>
+                    <div v-if="hasCloseDateInLayout" class="pipe-side-row pipe-side-row--sep" data-devchange="crm-pipeline-close-in">
+                      <MpToggle id="disp-aging" :is-checked="disp.showAging" :aria-label="t('Close in')" @update:is-checked="(v: boolean) => (disp.showAging = v)" />
+                      <span class="pipe-side-rowlabel">{{ t('Close in') }}</span>
                     </div>
                     <div class="pipe-side-addprop">
                       <MpButton variant="ghost" is-rounded left-icon="add" @click="cardPropsDrawerOpen = true">{{ t('Add property') }}</MpButton>
