@@ -288,9 +288,11 @@
   box-shadow: inset 1px 0 0 0 var(--mp-colors-border-default, #e3e7e9);
 }
 .pm-table th.pm-cell-sticky-end { background: var(--mp-colors-background-surface, #f1f5f9); }
-/* Same, for a row-action cell whose width is its content (a textlink, not a 44px icon). */
+/* Same, for a row-action cell whose width is its content (a textlink, not a 44px icon).
+   It stays a table-cell — the flex row goes on an inner .pm-cell-actions — so the divider
+   spans the full row height instead of only the content's. */
 .pm-table th.pm-cell-sticky-action, .pm-table td.pm-cell-sticky-action {
-  position: sticky; right: 0; background: var(--mp-colors-background-neutral, #ffffff);
+  position: sticky; right: 0; vertical-align: middle; background: var(--mp-colors-background-neutral, #ffffff);
   box-shadow: inset 1px 0 0 0 var(--mp-colors-border-default, #e3e7e9);
 }
 .pm-table th.pm-cell-sticky-action { background: var(--mp-colors-background-surface, #f1f5f9); }
