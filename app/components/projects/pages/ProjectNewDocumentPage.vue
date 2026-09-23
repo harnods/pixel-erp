@@ -15,7 +15,7 @@
  * production is not offered here and timesheets post to Direct labour only.
  */
 import {
-  MpButton, MpIcon, MpInput, MpTextarea, MpTag, MpSegmentedControl, MpTextlink, MpFormControl, MpFormLabel, MpFormErrorMessage, MpFormHelpText,
+  MpButton, MpIcon, MpInput, MpInputGroup, MpInputLeftAddon, MpTextarea, MpTag, MpRadio, MpTextlink, MpFormControl, MpFormLabel, MpFormErrorMessage, MpFormHelpText,
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
 } from '@mekari/pixel3'
 import PmTitleBar from '../PmTitleBar.vue'
@@ -58,7 +58,6 @@ const accountOptions = computed(() => docType.value === 'Timesheet'
   ? COST_ACCOUNTS.filter(a => a.code === LABOUR_ACCOUNT)
   : COST_ACCOUNTS.filter(a => a.code !== COGM_ACCOUNT))
 watch(docType, v => { if (v === 'Timesheet') lines.value.forEach(l => { l.account = LABOUR_ACCOUNT }) })
-const docTypeOptions = computed(() => DOC_TYPES.map(d => ({ id: `nd-type-${d.key}`, label: t(d.label), value: d.key })))
 const accountSelectOptions = computed(() => accountOptions.value.map(a => ({ value: a.code, label: t(a.name) })))
 const nodeOptions = computed(() => nodes.value.map(n => ({ value: n.id, label: n.label })))
 const nodePlaceholder = computed(() => (peg.value.state === 'none' || filled.value.length === 0 ? t('No project (ordinary expense)') : t('Required — pick a project node')))
@@ -112,10 +111,12 @@ const VERDICT = computed(() => ({
     <PmTitleBar :title="t('New document')" :breadcrumb="presetProject ? { label: `${presetProject.code} · ${presetProject.name}`, to: `/projects/${presetProject.id}` } : { label: t('Documents'), to: '/project-documents' }" />
     <div class="pm-stage">
       <div class="pm-stack pm-gap-4">
-        <div class="pm-card pm-stack pm-gap-4">
+        <div class="pm-stack pm-gap-4">
           <MpFormControl id="nd-type-fc">
             <MpFormLabel>{{ t('Document type') }}</MpFormLabel>
-            <MpSegmentedControl id="nd-type" name="nd-type" v-model="docType" :data="docTypeOptions" />
+            <div class="pm-row pm-gap-5 pm-mt-2">
+              <MpRadio v-for="d in DOC_TYPES" :id="`nd-type-${d.key}`" :key="d.key" name="nd-type" :is-checked="docType === d.key" @change="docType = d.key">{{ t(d.label) }}</MpRadio>
+            </div>
           </MpFormControl>
           <div class="pm-grid-2">
             <MpFormControl v-if="docType !== 'Timesheet'" id="nd-v-fc">
@@ -171,7 +172,12 @@ const VERDICT = computed(() => ({
                   </span>
                   <span v-else class="pm-muted pm-small">—</span>
                 </td>
-                <td class="pm-num"><MpInput :id="`nd-amt-${i}`" v-model="l.amount" inputmode="numeric" :aria-label="t('Amount')" @blur="l.amount = parseAmount(l.amount) ? parseAmount(l.amount).toLocaleString('id-ID') : ''" /></td>
+                <td class="pm-num">
+                  <MpInputGroup :id="`nd-amt-group-${i}`">
+                    <MpInputLeftAddon :id="`nd-amt-addon-${i}`" has-background>Rp</MpInputLeftAddon>
+                    <MpInput :id="`nd-amt-${i}`" v-model="l.amount" inputmode="numeric" :aria-label="t('Amount')" @blur="l.amount = parseAmount(l.amount) ? parseAmount(l.amount).toLocaleString('id-ID') : ''" />
+                  </MpInputGroup>
+                </td>
                 <td>
                   <MpButton :id="`nd-remove-${i}`" variant="ghost" is-rounded :aria-label="t('Remove line')" @click="removeLine(i)" left-icon="minus-circular" />
                 </td>
