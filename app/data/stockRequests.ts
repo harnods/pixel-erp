@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
 import { STAFF, shiftDays, TODAY_ISO } from './master'
-import { workOrders } from './workOrders'
+import { workOrders, type WorkOrder, type WorkOrderStatus } from './workOrders'
 import { billOfMaterials, catalogProduct } from './billOfMaterials'
 import { getWarehouseDetail, isBatchTracked, isSerialized } from './warehouseDetails'
 import { loadSnapshot, saveSnapshot } from './persist'
@@ -293,6 +293,40 @@ export function persistStockRequests(): void {
   saveSnapshot('stockRequests', stockRequests)
 }
 
+/**
+ * Which work-order statuses reach the dashboard (PRD INV — Stock Request
+ * Dashboard, story 2):
+ *  • the four ACTIVE statuses are the **Requested** tab;
+ *  • **Done** (completed) still shows, on **All**, but offers no further action;
+ *  • **Canceled / deleted** never show.
+ */
+const ACTIVE_WO_STATUSES = new Set<WorkOrderStatus>([
+  'not started', 'in progress', 'partially produced', 'partially completed',
+])
+
+/** The work order behind a request, if it still exists. */
+export function workOrderFor(req: StockRequest): WorkOrder | undefined {
+  return workOrders.find(w => w.id === req.workOrderId)
+}
+
+/** Canceled work orders drop off the dashboard entirely. */
+export function isOnDashboard(req: StockRequest): boolean {
+  const wo = workOrderFor(req)
+  return !wo || wo.status !== 'canceled'
+}
+
+/** A Done work order is read-only on the dashboard — no reserve / transfer / purchase. */
+export function isActionable(req: StockRequest): boolean {
+  const wo = workOrderFor(req)
+  if (req.rejected) return false
+  return !wo || ACTIVE_WO_STATUSES.has(wo.status)
+}
+
+/** The **Requested** tab: work orders still in an active status. */
+export function isRequestedTab(req: StockRequest): boolean {
+  return isOnDashboard(req) && isActionable(req)
+}
+
 /** Requests still needing warehouse action — drives any count badge. */
 export const stockRequestOpenCount = (): number =>
   stockRequests.filter(needsAction).length
@@ -314,10 +348,15 @@ export interface SkuDemandEntry {
 
 /** One aggregated component row — same SKU summed across every open work order. */
 export interface SkuDemandGroup {
+  /** unique key — one row per SKU **per destination warehouse** (story 2) */
+  key: string
   productId: string
   product: string
   sku: string
   unit: string
+  /** the destination warehouse this row's demand is for */
+  destinationWarehouse: string
+  destinationWarehouseId: string
   entries: SkuDemandEntry[]
   /** number of open work orders needing this component */
   openWorkOrders: number
@@ -346,14 +385,17 @@ export function skuDemandGroups(
   requests: StockRequest[],
   lineFilter?: (line: StockRequestLine, req: StockRequest) => boolean,
 ): SkuDemandGroup[] {
+  // One bucket per SKU + destination warehouse: the same component wanted at two
+  // warehouses is two different pieces of demand, fulfilled by two transfers.
   const byProduct = new Map<string, { line: StockRequestLine; req: StockRequest }[]>()
   for (const req of requests) {
-    if (req.rejected) continue
+    if (req.rejected || !isOnDashboard(req)) continue
     for (const line of req.lines) {
       if (lineFilter && !lineFilter(line, req)) continue
-      const bucket = byProduct.get(line.productId) ?? []
+      const key = `${line.productId}::${line.destinationWarehouseId}`
+      const bucket = byProduct.get(key) ?? []
       bucket.push({ line, req })
-      byProduct.set(line.productId, bucket)
+      byProduct.set(key, bucket)
     }
   }
 
@@ -379,10 +421,13 @@ export function skuDemandGroups(
     const remaining = Math.max(0, required - reserved - Math.max(0, available))
     const dates = entries.map(e => e.requiredDate).sort()
     return {
+      key: `${first.productId}::${first.destinationWarehouseId}`,
       productId: first.productId,
       product: first.product,
       sku: first.sku,
       unit: first.unit,
+      destinationWarehouse: first.destinationWarehouse,
+      destinationWarehouseId: first.destinationWarehouseId,
       entries,
       openWorkOrders: new Set(entries.map(e => e.workOrderId)).size,
       earliestRequired: dates[0]!,

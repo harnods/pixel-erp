@@ -33,7 +33,8 @@ import { dateFilterMatches, type DateFilterValue } from '~/utils/dateFilter'
 import { TODAY, TODAY_ISO } from '~/data/master'
 import {
   stockRequests, stockRequestStatus, stockRequestStatusOptions, skuDemandGroups,
-  requestRequiredQty, needsAction, isOverdue, reserveStock, rejectRequest, canReject,
+  requestRequiredQty, isRequestedTab, isOnDashboard, isActionable, workOrderFor, isOverdue,
+  reserveStock, rejectRequest, canReject,
   type StockRequest, type StockRequestLine, type SkuDemandGroup,
 } from '~/data/stockRequests'
 
@@ -66,26 +67,20 @@ const viewOptions = [
 // ─── Columns — semantic `kind`s only, no pixel widths (rule/table-column-kind) ──
 // By transaction (W-2 covers the product view; this one mirrors the request record).
 const woColumns: TableColumn[] = [
-  { key: 'workOrderNumber', label: t('Transaction'),  kind: 'number', sortable: true, sortType: 'text'   },
-  { key: 'qty',             label: t('Qty'),                          sortable: true, sortType: 'number', align: 'right' },
-  { key: 'requestDate',     label: t('Request date'), kind: 'date',   sortable: true, sortType: 'date'   },
-  { key: 'requestor',       label: t('Requestor'),    kind: 'name',   sortable: true, sortType: 'text'   },
-  { key: 'status',          label: t('Status'),       kind: 'status',                 sortType: 'text'   },
+  { key: 'workOrderNumber',     label: t('WO number'),             kind: 'number', sortable: true, sortType: 'text' },
+  { key: 'woStartDate',         label: t('WO start date'),         kind: 'date',   sortable: true, sortType: 'date' },
+  { key: 'status',              label: t('WO status'),             kind: 'status',                 sortType: 'text' },
+  { key: 'destinationWarehouse', label: t('Destination warehouse'), kind: 'name',  sortable: true, sortType: 'text' },
 ]
-// By product (W-2) — Available sits left of Status; quantities right-aligned.
+// By product (story 2) — one row per SKU PER DESTINATION WAREHOUSE.
 const skuColumns: TableColumn[] = [
-  // Lane — the row checkbox and the child-row indent gutter, same idea as the
-  // Production request table's 56px thumbnail lane. Layout column, so it keeps an
-  // explicit width rather than a semantic `kind`.
-  { key: 'lane',             label: '',                     width: '56px', noHeader: true },
-  { key: 'product',          label: t('Component'),         kind: 'name', sortable: true, sortType: 'text'   },
-  { key: 'openWorkOrders',   label: t('Open WOs'),                        sortable: true, sortType: 'number', align: 'right' },
-  { key: 'earliestRequired', label: t('Earliest required'), kind: 'date', sortable: true, sortType: 'date'   },
-  { key: 'required',         label: t('Required'),                        sortable: true, sortType: 'number', align: 'right' },
-  { key: 'reserved',         label: t('Reserved'),                        sortable: true, sortType: 'number', align: 'right' },
-  { key: 'remaining',        label: t('Remaining'),                       sortable: true, sortType: 'number', align: 'right' },
-  { key: 'available',        label: t('Available'),                       sortable: true, sortType: 'number', align: 'right' },
-  { key: 'status',           label: t('Status'),            kind: 'status',              sortType: 'text'   },
+  { key: 'lane',       label: '',                              width: '56px', noHeader: true },
+  { key: 'sku',        label: t('SKU code'),                   kind: 'number', sortable: true, sortType: 'text' },
+  { key: 'product',    label: t('SKU name'),                   kind: 'name',   sortable: true, sortType: 'text' },
+  { key: 'required',   label: t('Total qty needed'),                           sortable: true, sortType: 'number', align: 'right' },
+  { key: 'destinationWarehouse', label: t('Destination warehouse'), kind: 'name', sortable: true, sortType: 'text' },
+  { key: 'available',  label: t('Available qty in destination'),                sortable: true, sortType: 'number', align: 'right' },
+  { key: 'status',     label: t('Status'),                     kind: 'status',                 sortType: 'text' },
 ]
 
 // Column show/hide — first column always on; "Last updated" is opt-in (off by default).
@@ -119,16 +114,30 @@ function matchesDateRange(iso: string, range: Date[] | null): boolean {
 }
 
 // ─── Rows — By transaction ─────────────────────────────────────────────────────
-type WoRow = StockRequest & { status: string; qty: number; overdue: boolean }
+// Story 2 — the Order view lists the WORK ORDER: its number, start date, status
+// and destination warehouse. Canceled work orders never appear; Done ones show
+// only under All, with no actions.
+type WoRow = StockRequest & {
+  status: string; qty: number; overdue: boolean
+  woStartDate: string; destinationWarehouse: string; actionable: boolean
+}
 const woRows = computed<WoRow[]>(() =>
   sourceRequests.value
-    .map(r => ({
-      ...r,
-      status: stockRequestStatus(r) as string,
-      qty: requestRequiredQty(r),
-      overdue: isOverdue(r, TODAY_ISO),
-    }))
-    .filter(r => showAll.value || needsAction(r))
+    .filter(isOnDashboard)
+    .filter(r => showAll.value || isRequestedTab(r))
+    .map(r => {
+      const w = workOrderFor(r)
+      return {
+        ...r,
+        // The dashboard shows the WORK ORDER's status, not the readiness rollup.
+        status: (w?.status ?? stockRequestStatus(r)) as string,
+        qty: requestRequiredQty(r),
+        overdue: isOverdue(r, TODAY_ISO),
+        woStartDate: w?.planStartDate ?? r.requestDate,
+        destinationWarehouse: [...new Set(r.lines.map(l => l.destinationWarehouse))].join(', '),
+        actionable: isActionable(r),
+      }
+    })
     .sort((a, b) => b.requestDate.localeCompare(a.requestDate)),
 )
 
@@ -168,13 +177,13 @@ function matchesWoRow(row: WoRow, s: string, status: string): boolean {
 const skuRows = computed<SkuDemandGroup[]>(() => {
   const s = search.value.trim().toLowerCase()
   const kw = appliedFilters.keyword.trim().toLowerCase()
-  const inScope = sourceRequests.value.filter(r =>
-    dateFilterMatches(r.requestDate, dateFilter.value, TODAY),
-  )
+  const inScope = sourceRequests.value
+    .filter(isOnDashboard)
+    .filter(r => showAll.value || isRequestedTab(r))
+    .filter(r => dateFilterMatches(r.requestDate, dateFilter.value, TODAY))
   const lineFilter = (line: StockRequestLine) => matchesDateRange(line.requiredDate, appliedFilters.requestDate)
 
   return skuDemandGroups(inScope, lineFilter)
-    .filter(g => showAll.value || !g.sufficient)
     .filter(g => !s || `${g.product} ${g.sku}`.toLowerCase().includes(s)
       || g.entries.some(e => e.workOrderNumber.toLowerCase().includes(s)))
     .filter(g => !kw || `${g.product} ${g.sku}`.toLowerCase().includes(kw))
@@ -226,7 +235,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 // ─── SKU rows: accordion expand — every component starts collapsed ─────────────
 const expanded = reactive<Record<string, boolean>>({})
-function toggleExpand(productId: string) { expanded[productId] = !expanded[productId] }
+function toggleExpand(key: string) { expanded[key] = !expanded[key] }
 
 // ─── Row actions (W-1 row menu, W-7 reject) ────────────────────────────────────
 // "View details" opens the stock request; the work order is one click further in.
@@ -366,30 +375,35 @@ const exportColumns = computed(() => {
 
     <!-- ══ By product ════════════════════════════════════════════════════════ -->
 
-    <!-- Component — name + rotating chevron, SKU underneath. The whole cell is
-         the toggle (rule/table-accordion-row-click); the chevron is affordance only. -->
-    <template #cell-product="{ row }">
+    <!-- SKU code — carries the accordion toggle for the row -->
+    <template #cell-sku="{ row }">
       <span
         class="sr-component" role="button"
-        :aria-expanded="!!expanded[sku(row).productId]"
-        @click.stop="toggleExpand(sku(row).productId)"
+        :aria-expanded="!!expanded[sku(row).key]"
+        @click.stop="toggleExpand(sku(row).key)"
       >
         <span class="sr-component-main">
-          <span class="sr-component-name">{{ sku(row).product }}</span>
-          <span class="sr-expand" :class="{ 'sr-expand--open': expanded[sku(row).productId] }" aria-hidden="true">
+          <span class="sr-component-name">{{ sku(row).sku }}</span>
+          <span class="sr-expand" :class="{ 'sr-expand--open': expanded[sku(row).key] }" aria-hidden="true">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </span>
         </span>
-        <span class="sr-component-sku">SKU: {{ sku(row).sku }}</span>
-        <!-- W-6 — the note sits under the component, not the status badge: the
-             status column is a fixed-width `kind` and would wrap it to shreds. -->
-        <span v-if="sku(row).backdate" class="sr-note">
-          <MpIcon name="warning" size="sm" />
-          {{ t('Stock minus after recalculation') }} — {{ sku(row).backdate!.transaction }}
-        </span>
       </span>
+    </template>
+
+    <template #cell-product="{ row }">
+      <span class="cell-text" :title="sku(row).product">{{ sku(row).product }}</span>
+      <!-- W-6 — stock went minus after a backdated transaction -->
+      <span v-if="sku(row).backdate" class="sr-note">
+        <MpIcon name="warning" size="sm" />
+        {{ t('Stock minus after recalculation') }} — {{ sku(row).backdate!.transaction }}
+      </span>
+    </template>
+
+    <template #cell-destinationWarehouse="{ row }">
+      <span class="cell-text">{{ view === 'product' ? sku(row).destinationWarehouse : wo(row).destinationWarehouse }}</span>
     </template>
 
     <template #cell-earliestRequired="{ value }">{{ formatDate(value as string) }}</template>
@@ -408,54 +422,48 @@ const exportColumns = computed(() => {
       <span :class="{ 'sr-short': sku(row).available < 0 }">{{ sku(row).available }} {{ sku(row).unit }}</span>
     </template>
 
-    <!-- Per-WO breakdown — one child row per work order needing this component
-         (W-1). Cells mirror the parent columns one-for-one so the <colgroup>
-         lines them up under the same headers; the trailing spacer + actions
-         cells keep the kebab column aligned too. -->
+    <!-- Expanded rows. Product view lists the work orders behind this SKU at this
+         warehouse; order view lists the SKUs the work order needs (story 2). -->
     <template #row-extra="{ row, columns: cols, showSpacer }">
-      <tr
-        v-for="entry in (expanded[sku(row).productId] ? sku(row).entries : [])"
-        :key="`${sku(row).productId}-${entry.workOrderId}`"
-        class="sr-child"
-      >
-        <td v-for="col in cols" :key="col.key" class="sr-child-td" :class="{ 'sr-child-td--right': col.align === 'right' }">
-          <!-- Lane column stays empty — it is the child indent gutter -->
-          <template v-if="col.key === 'lane'" />
-          <!-- Component column — the work order this demand came from -->
-          <span v-else-if="col.key === 'product'" class="sr-child-wo">
-            <span class="cell-link" @click="viewDetails(entry.requestId)">{{ entry.workOrderNumber }}</span>
-            <span v-if="entry.kind" class="sr-tag" :class="`sr-tag--${entry.kind}`">{{ entry.kind === 'additional' ? t('Additional stock') : t('Adjustment') }}</span>
-          </span>
-          <template v-else-if="col.key === 'openWorkOrders'">{{ entry.requestor }}</template>
-          <template v-else-if="col.key === 'earliestRequired'">{{ formatDate(entry.requiredDate) }}</template>
-          <template v-else-if="col.key === 'required'">{{ entry.qty }} {{ sku(row).unit }}</template>
-          <template v-else-if="col.key === 'reserved'">{{ entry.covered }} {{ sku(row).unit }}</template>
-          <template v-else-if="col.key === 'remaining'">
-            <span :class="{ 'sr-short': entry.covered < entry.qty }">
-              {{ entry.covered >= entry.qty ? '—' : `${entry.qty - entry.covered} ${sku(row).unit}` }}
+      <template v-if="view === 'product'">
+        <tr
+          v-for="entry in (expanded[sku(row).key] ? sku(row).entries : [])"
+          :key="`${sku(row).key}-${entry.workOrderId}`"
+          class="sr-child"
+        >
+          <td v-for="col in cols" :key="col.key" class="sr-child-td" :class="{ 'sr-child-td--right': col.align === 'right' }">
+            <template v-if="col.key === 'lane'" />
+            <span v-else-if="col.key === 'sku'" class="sr-child-wo">
+              <span class="cell-link" @click="viewDetails(entry.requestId)">{{ entry.workOrderNumber }}</span>
+              <span v-if="entry.kind" class="sr-tag" :class="`sr-tag--${entry.kind}`">{{ entry.kind === 'additional' ? t('Additional stock') : t('Adjustment') }}</span>
             </span>
-          </template>
-          <template v-else-if="col.key === 'status'">
-            <span class="sr-child-state" :class="entry.covered >= entry.qty ? 'sr-covered' : 'sr-short'">
-              {{ entry.covered >= entry.qty ? t('Covered') : t('Not covered') }}
+            <template v-else-if="col.key === 'product'">{{ t('Required by') }} {{ formatDate(entry.requiredDate) }}</template>
+            <template v-else-if="col.key === 'required'">{{ entry.qty }} {{ sku(row).unit }}</template>
+          </td>
+          <td v-if="showSpacer" class="sr-child-td sr-child-td--spacer" />
+          <td class="sr-child-td sr-child-td--actions" />
+        </tr>
+      </template>
+
+      <template v-else>
+        <tr
+          v-for="line in (expanded[wo(row).id] ? wo(row).lines : [])"
+          :key="`${wo(row).id}-${line.productId}`"
+          class="sr-child"
+        >
+          <td v-for="col in cols" :key="col.key" class="sr-child-td" :class="{ 'sr-child-td--right': col.align === 'right' }">
+            <span v-if="col.key === 'workOrderNumber'" class="sr-child-sku">
+              <span class="sr-child-sku-code">{{ line.sku }}</span>
+              <span class="sr-child-sku-name">{{ line.product }}</span>
             </span>
-          </template>
-        </td>
-        <td v-if="showSpacer" class="sr-child-td sr-child-td--spacer" />
-        <td class="sr-child-td sr-child-td--actions">
-          <MpPopover :id="`sr-child-actions-${sku(row).productId}-${entry.workOrderId}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-            <MpPopoverTrigger>
-              <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
-            </MpPopoverTrigger>
-            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
-              <MpPopoverList>
-                <MpPopoverListItem @click="viewDetails(entry.requestId)">{{ t('View details') }}</MpPopoverListItem>
-                <MpPopoverListItem v-if="entry.covered < entry.qty" @click="reserveById(entry.requestId)">{{ t('Reserve stock') }}</MpPopoverListItem>
-              </MpPopoverList>
-            </MpPopoverContent>
-          </MpPopover>
-        </td>
-      </tr>
+            <template v-else-if="col.key === 'woStartDate'">{{ line.qty }} {{ line.unit }}</template>
+            <template v-else-if="col.key === 'status'">{{ t('Required by') }} {{ formatDate(line.requiredDate) }}</template>
+            <template v-else-if="col.key === 'destinationWarehouse'">{{ line.destinationWarehouse }}</template>
+          </td>
+          <td v-if="showSpacer" class="sr-child-td sr-child-td--spacer" />
+          <td class="sr-child-td sr-child-td--actions" />
+        </tr>
+      </template>
     </template>
 
     <!-- ══ By transaction ════════════════════════════════════════════════════ -->
@@ -463,14 +471,18 @@ const exportColumns = computed(() => {
     <!-- Transaction — the originating work order plus its request tag (W-7) -->
     <template #cell-workOrderNumber="{ row }">
       <span class="sr-txn">
+        <span class="sr-expand" :class="{ 'sr-expand--open': expanded[wo(row).id] }" role="button"
+              :aria-label="expanded[wo(row).id] ? t('Collapse') : t('Expand')" @click.stop="toggleExpand(wo(row).id)">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
         <span class="cell-link cell-text" @click.stop="viewDetails(wo(row).id)">{{ t('Work order') }} {{ wo(row).workOrderNumber }}</span>
         <span v-if="wo(row).kind" class="sr-tag" :class="`sr-tag--${wo(row).kind}`">{{ wo(row).kind === 'additional' ? t('Additional stock') : t('Adjustment') }}</span>
       </span>
     </template>
 
-    <template #cell-qty="{ row }">{{ wo(row).qty }}</template>
-    <template #cell-requestDate="{ value }">{{ formatDate(value as string) }}</template>
-    <template #cell-requestor="{ value }"><span class="cell-text">{{ value }}</span></template>
+    <template #cell-woStartDate="{ row }">{{ formatDate(wo(row).woStartDate) }}</template>
 
     <template #cell-lastUpdated="{ row }">
       <LastUpdatedCell v-bind="lastUpdatedFor((row as Record<string, unknown>).id as string)" />
@@ -478,7 +490,8 @@ const exportColumns = computed(() => {
 
     <!-- ══ Shared ════════════════════════════════════════════════════════════ -->
 
-    <!-- Status — both views; the notes underneath are view-specific (W-6, W-7) -->
+    <!-- Status — the WORK ORDER's status in the order view, the SKU rollup in the
+         product view (story 2). -->
     <template #cell-status="{ row }">
       <ErpStatusBadge :status="(row as Record<string, unknown>).status as string" />
       <p v-if="view === 'transaction' && wo(row).overdue" class="sr-note">{{ t('Overdue — reminder sent') }}</p>
@@ -495,7 +508,7 @@ const exportColumns = computed(() => {
 
     <!-- Actions — View details always first (rule/table-actions-no-tooltip) -->
     <template #actions="{ row }">
-      <MpPopover :id="`sr-actions-${view}-${view === 'product' ? sku(row).productId : wo(row).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+      <MpPopover :id="`sr-actions-${view}-${view === 'product' ? sku(row).key : wo(row).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
           <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
         </MpPopoverTrigger>
@@ -504,7 +517,7 @@ const exportColumns = computed(() => {
           <MpPopoverList v-if="view === 'product'">
             <MpPopoverListItem @click="createPurchaseRequest(byComponent([sku(row).productId]))">{{ t('Create purchase request') }}</MpPopoverListItem>
             <MpPopoverListItem @click="createWarehouseTransfer(byComponent([sku(row).productId]))">{{ t('Create warehouse transfer') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="toggleExpand(sku(row).productId)">{{ expanded[sku(row).productId] ? t('Hide transactions') : t('Show transactions') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="toggleExpand(sku(row).key)">{{ expanded[sku(row).key] ? t('Hide transactions') : t('Show transactions') }}</MpPopoverListItem>
           </MpPopoverList>
 
           <!-- Work order row -->
@@ -611,6 +624,9 @@ const exportColumns = computed(() => {
 .sr-child-td--actions { text-align: center; vertical-align: top; padding: var(--mp-sizes-0\.5, 2px) 3px; }
 /* Indent the first cell so the child reads as nested under its component. */
 .sr-child-td:first-child { padding-left: var(--mp-spacing-8); }
+.sr-child-sku { display: flex; flex-direction: column; min-width: 0; }
+.sr-child-sku-code { color: var(--mp-text-default, #080d0e); }
+.sr-child-sku-name { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary, #3a4749); }
 .sr-child-wo { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
 .sr-child-state { white-space: nowrap; }
 .sr-covered { color: var(--mp-text-success, #186f4a); }
