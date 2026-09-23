@@ -9,8 +9,7 @@
  *
  * Core-workspace scope: Name/Customer/Contact person/Stage/Value/Due date columns
  * (the guaranteed default properties every module has), a stage kanban, and simple
- * stage moves. No tabs/line-items/won-lost-reason modal — see CrmServicesPage.vue
- * for that fuller, hand-built experience.
+ * stage moves.
  */
 import { ref, computed } from 'vue'
 import { MpButton, MpButtonGroup, MpIcon } from '@mekari/pixel3'
@@ -201,7 +200,7 @@ function ownerInitials(name: string) { return name.split(' ').map((p) => p[0]).s
 .kanban-empty { display: flex; align-items: center; justify-content: center; flex: 1; min-height: 200px; }
 .kanban-empty__text { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); text-align: center; max-width: 400px; }
 
-/* Kanban — same standard as CrmServicesPage.vue / CrmDealsPage.vue */
+/* Kanban — same standard as CrmDealsPage.vue */
 .kanban { flex: 1; min-height: 0; overflow-x: auto; overflow-y: hidden; padding-bottom: var(--mp-spacing-3); }
 .kanban__board { display: flex; gap: var(--mp-spacing-4); align-items: stretch; min-height: 100%; }
 .kcol { flex: 0 0 288px; width: 288px; display: flex; flex-direction: column; min-height: 0; background: var(--mp-background-neutral-subtle, #f4f5f7); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: 12px; transition: background 0.12s ease, border-color 0.12s ease; }

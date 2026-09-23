@@ -224,23 +224,7 @@ function dealsSeed(): ConversionConfig {
     ],
   }
 }
-function servicesSeed(): ConversionConfig {
-  return {
-    moduleId: 'services', enabled: false, target: 'sales-order', validated: false, revision: 1,
-    lastSavedBy: 'Rizal Candra', lastSavedAt: '2026-09-09T10:00:00',
-    criterion: null,
-    mappings: [
-      { targetKey: 'customer',     strategy: 'crm-field', sourceFieldId: 'company' },
-      { targetKey: 'txDate',       strategy: 'system',    systemValue: 'conversion-date' },
-      { targetKey: 'dueDate',      strategy: 'crm-field', sourceFieldId: 'due-date' },
-      // productLines intentionally UNMAPPED → this draft is incomplete.
-      { targetKey: 'productLines', strategy: 'unmapped' },
-      { targetKey: 'currency',     strategy: 'crm-field', sourceFieldId: 'currency-code' },
-    ],
-  }
-}
-
-const CONFIGS_SEED: ConversionConfig[] = [dealsSeed(), servicesSeed()]
+const CONFIGS_SEED: ConversionConfig[] = [dealsSeed()]
 export const conversionConfigs = reactive<ConversionConfig[]>(
   load('crm-conversion-configs-v4', CONFIGS_SEED),
 )

@@ -32,8 +32,8 @@ import {
   moduleStores, isDealLikeModule, resetGenericModuleDraft, canEditModule,
   DEAL_PROPERTY_TYPE_ICON, isRelatedListType, defaultPropertyIcon,
   genericPipelineFieldId, setGenericPipelineField, transferGenericPipelineFieldId, isPicklistType,
-  deals, serviceDeals, genericRecordsFor, CRM_CURRENT_USER, notesFor,
-  type ServiceDeal, type GenericModuleRecord,
+  deals, genericRecordsFor, CRM_CURRENT_USER, notesFor,
+  type GenericModuleRecord,
   crmTeams, teamsForModule, setModuleTeams,
   publishCrmModule, unpublishCrmModule,
   type DealProperty, type DealPropertyType, type DealPropertyConfig, type Deal,
@@ -507,28 +507,6 @@ const DEAL_FILL: Record<string, (d: Deal) => boolean> = {
   'probability': () => false,
   'discount-percentage': (d) => !!(d.orderDiscount && d.orderDiscount > 0),
 }
-const SERVICE_FILL: Record<string, (d: ServiceDeal) => boolean> = {
-  'record-name': (d) => !!d.name,
-  'record-owner': (d) => !!d.owner,
-  'status': () => false,
-  'tags': () => false,
-  'transaction-number': (d) => !!d.transactionNo,
-  'external-reference-id': (d) => !!d.referenceNo,
-  'source': () => false,
-  'transaction-date': (d) => !!d.transactionDate,
-  'due-date': (d) => !!d.dueDate,
-  'notes': (d) => notesFor('service', d.id).length > 0,
-  'memo': (d) => !!d.memo,
-  'attachments': (d) => !!(d.files && d.files.length),
-  'contact': (d) => !!d.contact,
-  'company': (d) => !!d.company,
-  'product-list': (d) => !!(d.products && d.products.length),
-  'payment-term': (d) => !!d.paymentTerms,
-  'deal-value': (d) => d.value > 0,
-  'currency-code': (d) => !!d.currency,
-  'shipping-address': () => false,
-  'billing-address': () => false,
-}
 const GENERIC_FILL: Record<string, (d: GenericModuleRecord) => boolean> = {
   'record-name': (d) => !!d.name,
   'record-owner': (d) => !!d.owner,
@@ -550,12 +528,6 @@ function computeFillRate(id: string): number {
   if (moduleId === 'deals') {
     const checker = DEAL_FILL[id]
     const active = deals.filter((d) => !d.archived)
-    if (!checker || !active.length) return 0
-    return Math.round((active.filter(checker).length / active.length) * 100)
-  }
-  if (moduleId === 'services') {
-    const checker = SERVICE_FILL[id]
-    const active = serviceDeals.filter((d) => !d.archived)
     if (!checker || !active.length) return 0
     return Math.round((active.filter(checker).length / active.length) * 100)
   }

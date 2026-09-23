@@ -231,7 +231,7 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'crm-default-properties-v2',
     title: 'Default properties unified across all modules',
     description:
-      'All CRM properties are shared as DEFAULT_PROPERTIES — every module (Deals, Service deals, custom) gets the identical property set. Fill rates are computed per-module from actual records.',
+      'All CRM properties are shared as DEFAULT_PROPERTIES — every module (Deals, custom) gets the identical property set. Fill rates are computed per-module from actual records.',
     date: '2026-09-19',
     files: ['crm.ts', 'crmConversion.ts', 'CrmModuleBuilderPage.vue', 'crmReports.ts'],
   },
@@ -352,7 +352,7 @@ export const DEV_CHANGES: DevChange[] = [
       'All CRM UI labels now match the labels defined in DEFAULT_PROPERTIES: "Customer" → "Company", "Deal value" → "Value", "Close date" → "Expected close date". Applied across preview drawer, detail page, index pages, filters, export columns, and pipeline card fields.',
     date: '2026-09-21',
     pr: '#86',
-    files: ['CrmDealPreviewDrawer.vue', 'CrmDealDetailPage.vue', 'CrmDealsPage.vue', 'CrmServicesPage.vue', 'CrmGenericModulePage.vue', 'CrmModuleBuilderPage.vue', 'CrmDealsFiltersDrawer.vue'],
+    files: ['CrmDealPreviewDrawer.vue', 'CrmDealDetailPage.vue', 'CrmDealsPage.vue', 'CrmGenericModulePage.vue', 'CrmModuleBuilderPage.vue', 'CrmDealsFiltersDrawer.vue'],
   },
   {
     id: 'deal-preview-totals',
