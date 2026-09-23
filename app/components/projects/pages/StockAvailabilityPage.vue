@@ -40,7 +40,7 @@ onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
 interface Row {
   id: string; item: string; warehouse: string; unit: string; onHand: number; reserved: number
   available: number; byProject: { p: ReturnType<typeof getProject>; qty: number }[]
-  contention: boolean; pending: number; i: StockItem
+  contention: boolean; pending: number; status: string; i: StockItem
 }
 const allRows = computed<Row[]>(() => stockItems.map(i => {
   const byProject = [...reservedByProject(i.id).entries()].map(([pid, q]) => ({ p: getProject(pid)!, qty: q })).sort((a, b) => b.qty - a.qty)
@@ -48,7 +48,9 @@ const allRows = computed<Row[]>(() => stockItems.map(i => {
   const available = availableQty(i.id)
   return {
     id: i.id, item: i.name, warehouse: i.warehouse, unit: i.unit, onHand: i.onHand, reserved: reservedQty(i.id),
-    available, byProject, contention: byProject.length > 1 && available < i.onHand * 0.15, pending, i,
+    available, byProject, contention: byProject.length > 1 && available < i.onHand * 0.15, pending,
+    status: byProject.length > 1 && available < i.onHand * 0.15 ? t('Contention') : pending ? t('Release request') : '',
+    i,
   }
 }))
 
@@ -70,6 +72,7 @@ const columns = computed<TableColumn[]>(() => [
   { key: 'reserved', label: t('Reserved'), align: 'right', sortType: 'number' },
   { key: 'available', label: t('Available'), align: 'right', sortType: 'number' },
   { key: 'byProject', label: t('Reserved by project'), kind: 'tags', sortType: 'number' },
+  { key: 'status', label: t('Status'), kind: 'status', sortType: 'text' },
 ])
 const asRow = (r: unknown) => r as Row
 const priorityLabel = (p: string) => t(p === 'high' ? 'High' : p === 'medium' ? 'Medium' : 'Low')
@@ -163,13 +166,14 @@ function doIssue() {
         </template>
 
         <template #cell-item="{ row }">
-          <div>
-            <span class="cell-link" role="link" tabindex="0" @click.stop="openDetail(asRow(row))" @keydown.enter="openDetail(asRow(row))">{{ asRow(row).item }}</span>
-            <span class="pm-row pm-gap-1 pm-mt-2">
-              <ErpStatusBadge v-if="asRow(row).contention" v-bind="badgeProps('flag', 'contention', t)" />
-              <ErpStatusBadge v-if="asRow(row).pending" status="pending" type="information" :label="`${asRow(row).pending} ${t('release request')}`" />
-            </span>
+          <span class="cell-link" role="link" tabindex="0" @click.stop="openDetail(asRow(row))" @keydown.enter="openDetail(asRow(row))">{{ asRow(row).item }}</span>
+        </template>
+        <template #cell-status="{ row }">
+          <div v-if="asRow(row).contention || asRow(row).pending" class="pm-stack pm-gap-1">
+            <ErpStatusBadge v-if="asRow(row).contention" v-bind="badgeProps('flag', 'contention', t)" />
+            <ErpStatusBadge v-if="asRow(row).pending" status="pending" type="information" :label="`${asRow(row).pending} ${t('release request')}`" />
           </div>
+          <span v-else class="pm-muted">—</span>
         </template>
         <template #cell-onHand="{ row }">{{ num(asRow(row).onHand) }} {{ asRow(row).unit }}</template>
         <template #cell-reserved="{ row }">{{ num(asRow(row).reserved) }}</template>
@@ -235,10 +239,20 @@ function doIssue() {
 
         <div v-if="detailRequests.length">
           <h3 class="pm-h3 pm-mb-2">{{ t('Release requests') }}</h3>
-          <div v-for="q in detailRequests" :key="q.id" class="pm-row pm-gap-2 pm-small pm-mb-2">
-            <ErpStatusBadge v-bind="badgeProps('approval', q.status, t)" />
-            <span>{{ q.qty }} {{ detail.unit }} {{ getProject(q.fromProjectId)?.code }} → {{ getProject(q.toProjectId)?.code }} — {{ q.reason }}</span>
-            <MpTextlink v-if="q.status === 'pending'" :id="`stock-inbox-${q.id}`" as="a" @click.prevent="router.push('/project-approvals')">{{ t('Open in Approvals') }}</MpTextlink>
+          <div class="pm-table-wrap">
+            <table class="pm-table">
+              <thead><tr><th class="pm-num">{{ t('Qty') }}</th><th>{{ t('From') }}</th><th>{{ t('To') }}</th><th>{{ t('Reason') }}</th><th>{{ t('Status') }}</th><th /></tr></thead>
+              <tbody>
+                <tr v-for="q in detailRequests" :key="q.id">
+                  <td class="pm-num">{{ num(q.qty) }} {{ detail.unit }}</td>
+                  <td>{{ getProject(q.fromProjectId)?.code }}</td>
+                  <td>{{ getProject(q.toProjectId)?.code }}</td>
+                  <td class="pm-wrap">{{ q.reason }}</td>
+                  <td><ErpStatusBadge v-bind="badgeProps('approval', q.status, t)" /></td>
+                  <td class="pm-cell-actions"><MpTextlink v-if="q.status === 'pending'" :id="`stock-inbox-${q.id}`" as="a" @click.prevent="router.push('/project-approvals')">{{ t('Open in Approvals') }}</MpTextlink></td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </template>

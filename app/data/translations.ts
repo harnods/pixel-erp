@@ -2854,6 +2854,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Min stock": "Stok minimum",
 
   // ── Projects module (Project MTO) ─────────────────────────────────────────
+  "Release request": "Permintaan pelepasan",
   "Show only contention": "Tampilkan hanya rebutan stok",
   "View reservations": "Lihat pencadangan",
   "Nothing is reserved on this item": "Tidak ada pencadangan pada barang ini",
