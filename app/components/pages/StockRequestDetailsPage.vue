@@ -29,7 +29,7 @@ import { formatDate } from '~/utils/date'
 import {
   stockRequests, stockRequestStatus, lineCovered, lineToTransfer, lineReadiness,
   isOverdue, canReject, reserveWorkOrderProducts, unreserveWorkOrderProducts, rejectRequest,
-  reservedTracking, trackingChanged, setReservedBatches, setReservedSerials,
+  reservedTracking, trackingChanged, lineTracking, setReservedBatches, setReservedSerials,
   type StockRequest, type StockRequestLine, type UnreserveDisposition,
 } from '~/data/stockRequests'
 import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
@@ -142,17 +142,18 @@ const batchOpen = ref(false)
 const serialOpen = ref(false)
 
 function trackingLabel(line: StockRequestLine): string {
-  if (!line.tracking) return '—'
+  const tracking = lineTracking(line)
+  if (!tracking) return '—'
   const { batches, serials } = reservedTracking(line)
-  if (line.tracking === 'serial') return serials.length ? serials.join(', ') : '—'
-  return batches.length ? batches.map(b => `${b.batchNo} (${b.qty})`).join(', ') : '—'
+  if (tracking === 'serial') return serials.length ? serials.join(', ') : t('Select serial number')
+  return batches.length ? batches.map(b => `${b.batchNo} (${b.qty})`).join(', ') : t('Select batch')
 }
 function isChanged(line: StockRequestLine): boolean { return trackingChanged(line) }
 
 function openTracking(line: StockRequestLine) {
   trackingRow.value = line
-  if (line.tracking === 'serial') serialOpen.value = true
-  else if (line.tracking === 'batch') batchOpen.value = true
+  if (lineTracking(line) === 'serial') serialOpen.value = true
+  else if (lineTracking(line) === 'batch') batchOpen.value = true
 }
 function saveBatches(batches: { batchNo: string; qty: number }[]) {
   if (req.value && trackingRow.value) {
@@ -322,7 +323,7 @@ function saveSerials(serials: string[]) {
                 <!-- Tracked components carry the work order's pick; PPIC may reserve
                      other units, and the work order detail is told when they do. -->
                 <td class="wod-td wod-td--wrap">
-                  <span v-if="!l.tracking" class="srd-muted">—</span>
+                  <span v-if="!lineTracking(l)" class="srd-muted">—</span>
                   <span v-else class="srd-tracking">
                     <span class="cell-link" @click="openTracking(l)">{{ trackingLabel(l) }}</span>
                     <span v-if="isChanged(l)" class="srd-tracking-changed">{{ t('changed') }}</span>

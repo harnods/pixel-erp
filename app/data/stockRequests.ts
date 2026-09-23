@@ -2,7 +2,7 @@ import { reactive } from 'vue'
 import { STAFF, shiftDays, TODAY_ISO } from './master'
 import { workOrders } from './workOrders'
 import { billOfMaterials, catalogProduct } from './billOfMaterials'
-import { getWarehouseDetail } from './warehouseDetails'
+import { getWarehouseDetail, isBatchTracked, isSerialized } from './warehouseDetails'
 import { loadSnapshot, saveSnapshot } from './persist'
 
 /**
@@ -578,6 +578,18 @@ export function releaseConsumption(workOrderId: string, productId: string, qty: 
   return applied
 }
 
+/**
+ * Whether a component is batch- or serial-tracked. DERIVED from the product's
+ * category, so a line knows its tracking however the request was raised — the
+ * stored `tracking` field is only a hint carried over from the work order.
+ */
+export function lineTracking(line: StockRequestLine): 'batch' | 'serial' | undefined {
+  const category = catalogProduct(line.productId)?.category ?? ''
+  if (isBatchTracked(category)) return 'batch'
+  if (isSerialized(category)) return 'serial'
+  return undefined
+}
+
 /** The batch/serial the warehouse actually reserved, falling back to the WO's pick. */
 export function reservedTracking(line: StockRequestLine): { batches: { batchNo: string; qty: number }[]; serials: string[] } {
   return {
@@ -591,8 +603,9 @@ export function reservedTracking(line: StockRequestLine): { batches: { batchNo: 
  * detail surfaces this so production is never silently handed other batches.
  */
 export function trackingChanged(line: StockRequestLine): boolean {
-  if (!line.tracking) return false
-  if (line.tracking === 'serial') {
+  const tracking = lineTracking(line)
+  if (!tracking) return false
+  if (tracking === 'serial') {
     if (!line.reservedSerials || !line.requestedSerials) return false
     const a = [...line.requestedSerials].sort().join('|')
     const b = [...line.reservedSerials].sort().join('|')
