@@ -196,12 +196,12 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['CrmModuleBuilderPage.vue'],
   },
   {
-    id: 'crm-aging-always-bottom-right',
-    title: 'Aging indicator always bottom-right',
+    id: 'crm-close-in-live',
+    title: 'Close in — days until expected close date',
     description:
-      'The rotting-in-days aging badge on pipeline cards is now always positioned at the bottom-right of the card, regardless of how many fields are enabled. Previously it was inline with Owner and could be pushed up by fields below it.',
-    date: '2026-09-20',
-    files: ['CrmDealsPage.vue', 'CrmModuleBuilderPage.vue'],
+      'Pipeline card badge now shows days remaining until the expected close date ("Close in") instead of days since deal creation ("Rotting in"). Only shown when the deal has an expected close date. Warn tone when ≤7 days, danger when overdue.',
+    date: '2026-09-23',
+    files: ['CrmDealsPage.vue'],
   },
   {
     id: 'crm-pipeline-card-props',
