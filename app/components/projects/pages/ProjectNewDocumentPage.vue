@@ -150,7 +150,7 @@ const VERDICT = computed(() => ({
             </span>
           </MpBannerDescription>
         </MpBanner>
-        <MpBanner v-else-if="!action.error.value && filled.length && peg.state === 'none'" id="nd-ordinary" variant="info">
+        <MpBanner v-else-if="!action.error.value && peg.state === 'none'" id="nd-ordinary" variant="info">
           <MpBannerIcon /><MpBannerDescription>{{ t('No line names a project — this saves as an ordinary expense and consumes no project budget.') }}</MpBannerDescription>
         </MpBanner>
 
@@ -199,7 +199,7 @@ const VERDICT = computed(() => ({
         </div>
 
         <!-- Budget check -->
-        <div v-if="checks.length" class="pm-card pm-stack">
+        <div v-if="checks.length" class="pm-card pm-stack pm-mt-4">
           <div class="pm-row">
             <h3 class="pm-h3">{{ t('Budget check') }}</h3>
             <ErpStatusBadge :status="VERDICT.status" :type="VERDICT.type" :label="VERDICT.label" />
