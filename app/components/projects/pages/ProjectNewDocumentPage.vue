@@ -124,6 +124,7 @@ const VERDICT = computed(() => ({
             <div class="pm-row pm-gap-5 pm-mt-2">
               <MpRadio v-for="d in DOC_TYPES" :id="`nd-type-${d.key}`" :key="d.key" name="nd-type" :is-checked="docType === d.key" @change="docType = d.key">{{ t(d.label) }}</MpRadio>
             </div>
+            <MpFormHelpText>{{ t('One document can split across several projects. Dimensions default from each project and are reporting-only.') }}</MpFormHelpText>
           </MpFormControl>
           <MpFormControl v-if="docType !== 'Timesheet'" id="nd-v-fc" class="pm-maxw-field">
             <MpFormLabel>{{ t('Vendor') }}</MpFormLabel>
@@ -184,10 +185,14 @@ const VERDICT = computed(() => ({
                 </td>
               </tr>
             </tbody>
-            <tfoot><tr><td colspan="4"><MpButton id="nd-add-line" variant="ghost" is-rounded left-icon="add" @click="addLine">{{ t('Line') }}</MpButton></td><td class="pm-num">{{ rp(total) }}</td><td class="pm-cell-sticky-end" /></tr></tfoot>
+            <tfoot><tr><td colspan="5"><MpButton id="nd-add-line" variant="ghost" is-rounded left-icon="add" @click="addLine">{{ t('Line') }}</MpButton></td><td class="pm-cell-sticky-end" /></tr></tfoot>
           </table>
         </div>
-        <p class="pm-caption pm-m-0">{{ t('One document can split across several projects. Dimensions default from each project and are reporting-only.') }}</p>
+        <div class="pm-row pm-row--nowrap pm-gap-4 pm-total-row">
+          <span class="pm-spacer" />
+          <span class="pm-stat-label">{{ t('Total') }}</span>
+          <span class="pm-strong pm-num">{{ rp(total) }}</span>
+        </div>
 
         <!-- Budget check -->
         <div v-if="checks.length" class="pm-card pm-stack">

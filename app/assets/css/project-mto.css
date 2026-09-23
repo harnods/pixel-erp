@@ -286,3 +286,5 @@
   box-shadow: inset 1px 0 0 0 var(--mp-colors-border-default, #e3e7e9);
 }
 .pm-table th.pm-cell-sticky-end { background: var(--mp-colors-background-surface, #f1f5f9); }
+/* Total sits under its table, aligned with the amount column's right edge. */
+.pm-total-row { padding: var(--mp-spacing-3, 12px) var(--mp-spacing-2, 8px) 0 0; }
