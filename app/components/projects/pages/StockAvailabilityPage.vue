@@ -71,6 +71,7 @@ const columns = computed<TableColumn[]>(() => [
   { key: 'onHand', label: t('On hand'), align: 'right', sortType: 'number' },
   { key: 'reserved', label: t('Reserved'), align: 'right', sortType: 'number' },
   { key: 'available', label: t('Available'), align: 'right', sortType: 'number' },
+  { key: 'unit', label: t('Unit'), kind: 'unit', sortType: 'text' },
   { key: 'byProject', label: t('Reserved by project'), kind: 'tags', sortType: 'number' },
   { key: 'status', label: t('Status'), kind: 'status', sortType: 'text' },
 ])
@@ -175,7 +176,7 @@ function doIssue() {
           </div>
           <span v-else class="pm-muted">—</span>
         </template>
-        <template #cell-onHand="{ row }">{{ num(asRow(row).onHand) }} {{ asRow(row).unit }}</template>
+        <template #cell-onHand="{ row }">{{ num(asRow(row).onHand) }}</template>
         <template #cell-reserved="{ row }">{{ num(asRow(row).reserved) }}</template>
         <template #cell-available="{ row }">
           <span :class="asRow(row).available <= 0 ? 'pm-neg' : ''">{{ num(asRow(row).available) }}</span>
