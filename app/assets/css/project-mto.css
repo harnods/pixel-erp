@@ -94,6 +94,11 @@
 .pm-grid-5 { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--mp-spacing-4, 16px); }
 @media (max-width: 1100px) { .pm-grid-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 900px) { .pm-grid-3, .pm-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Inside a drawer the panel's own width decides the columns, not the viewport's. */
+.pm-drawer-panel { container-type: inline-size; }
+@container (min-width: 640px) { .pm-drawer-body .pm-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container (max-width: 639px) { .pm-drawer-body .pm-grid-3, .pm-drawer-body .pm-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 420px) { .pm-drawer-body .pm-grid-3, .pm-drawer-body .pm-grid-2 { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 560px) { .pm-grid-2, .pm-grid-3, .pm-grid-4, .pm-grid-5 { grid-template-columns: minmax(0, 1fr); } }
 
 /* ── Cards / stats / key-value ───────────────────────────────────────────── */
@@ -147,19 +152,19 @@
 .pm-drawer-enter-from .pm-drawer-panel, .pm-drawer-leave-to .pm-drawer-panel { transform: translateX(calc(100% + var(--mp-spacing-3, 12px))); }
 .pm-drawer-overlay { position: fixed; inset: 0; z-index: 1300; background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45)); display: flex; justify-content: flex-end; }
 .pm-drawer-panel {
-  margin: var(--mp-spacing-3, 12px); width: min(var(--mp-sizes-140, 560px), calc(100% - var(--mp-spacing-6, 24px))); height: calc(100% - var(--mp-spacing-6, 24px));
+  margin: var(--mp-spacing-3, 12px); width: min(var(--mp-sizes-150, 600px), calc(100% - var(--mp-spacing-6, 24px))); height: calc(100% - var(--mp-spacing-6, 24px));
   display: flex; flex-direction: column; background: var(--mp-colors-background-stage, #ffffff); border-radius: var(--mp-radii-xl, 12px); overflow: hidden;
 }
-.pm-drawer-panel--wide { width: min(var(--mp-sizes-190, 760px), calc(100% - var(--mp-spacing-6, 24px))); }
+.pm-drawer-panel--wide { width: min(var(--mp-sizes-220, 880px), calc(100% - var(--mp-spacing-6, 24px))); }
 .pm-drawer-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3, 12px);
-  padding: var(--mp-spacing-3, 12px) var(--mp-spacing-3, 12px) var(--mp-spacing-3, 12px) var(--mp-spacing-4, 16px);
+  padding: var(--mp-spacing-4, 16px) var(--mp-spacing-4, 16px) var(--mp-spacing-4, 16px) var(--mp-spacing-6, 24px);
   background: var(--mp-colors-background-neutral-subtle, #f8f9f9); border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9);
 }
 .pm-drawer-title { margin: 0; font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-default, #080d0e); }
 .pm-drawer-sub { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #3a4749); margin-top: var(--mp-spacing-0\.5, 2px); }
-.pm-drawer-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px); padding: var(--mp-spacing-4, 16px); }
-.pm-drawer-footer { flex-shrink: 0; padding: var(--mp-spacing-3, 12px) var(--mp-spacing-4, 16px); border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); display: flex; justify-content: flex-end; }
+.pm-drawer-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px); padding: var(--mp-spacing-6, 24px); }
+.pm-drawer-footer { flex-shrink: 0; padding: var(--mp-spacing-4, 16px) var(--mp-spacing-6, 24px); border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); display: flex; justify-content: flex-end; }
 .pm-modal-body { display: flex; flex-direction: column; gap: var(--mp-spacing-4, 16px); }
 
 /* ── Structure accordion ──────────────────────────────────────────────────── */
