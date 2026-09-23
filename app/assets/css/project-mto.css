@@ -97,9 +97,11 @@
 @media (max-width: 900px) { .pm-grid-3, .pm-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* Inside a drawer the panel's own width decides the columns, not the viewport's. */
 .pm-drawer-panel { container-type: inline-size; }
+@container (min-width: 760px) { .pm-drawer-body .pm-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @container (min-width: 640px) { .pm-drawer-body .pm-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container (max-width: 759px) { .pm-drawer-body .pm-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @container (max-width: 639px) { .pm-drawer-body .pm-grid-3, .pm-drawer-body .pm-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@container (max-width: 420px) { .pm-drawer-body .pm-grid-3, .pm-drawer-body .pm-grid-2 { grid-template-columns: minmax(0, 1fr); } }
+@container (max-width: 420px) { .pm-drawer-body .pm-grid-4, .pm-drawer-body .pm-grid-3, .pm-drawer-body .pm-grid-2 { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 560px) { .pm-grid-2, .pm-grid-3, .pm-grid-4, .pm-grid-5 { grid-template-columns: minmax(0, 1fr); } }
 
 /* ── Cards / stats / key-value ───────────────────────────────────────────── */
@@ -156,7 +158,7 @@
   margin: var(--mp-spacing-3, 12px); width: min(var(--mp-sizes-150, 600px), calc(100% - var(--mp-spacing-6, 24px))); height: calc(100% - var(--mp-spacing-6, 24px));
   display: flex; flex-direction: column; background: var(--mp-colors-background-stage, #ffffff); border-radius: var(--mp-radii-xl, 12px); overflow: hidden;
 }
-.pm-drawer-panel--wide { width: min(var(--mp-sizes-220, 880px), calc(100% - var(--mp-spacing-6, 24px))); }
+.pm-drawer-panel--wide { width: min(var(--mp-sizes-260, 1040px), calc(100% - var(--mp-spacing-6, 24px))); }
 .pm-drawer-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3, 12px);
   padding: var(--mp-spacing-3, 12px) var(--mp-spacing-3, 12px) var(--mp-spacing-3, 12px) var(--mp-spacing-5, 20px);
@@ -286,6 +288,14 @@
   box-shadow: inset 1px 0 0 0 var(--mp-colors-border-default, #e3e7e9);
 }
 .pm-table th.pm-cell-sticky-end { background: var(--mp-colors-background-surface, #f1f5f9); }
+/* Same, for a row-action cell whose width is its content (a textlink, not a 44px icon). */
+.pm-table th.pm-cell-sticky-action, .pm-table td.pm-cell-sticky-action {
+  position: sticky; right: 0; background: var(--mp-colors-background-neutral, #ffffff);
+  box-shadow: inset 1px 0 0 0 var(--mp-colors-border-default, #e3e7e9);
+}
+.pm-table th.pm-cell-sticky-action { background: var(--mp-colors-background-surface, #f1f5f9); }
+/* Long free text in a line table wraps inside a bounded column instead of stretching it. */
+.pm-clamp-text { white-space: normal; max-width: var(--mp-sizes-90, 360px); }
 /* Total sits under its table, aligned with the amount column's right edge. */
 .pm-total-row { padding: 0 var(--mp-spacing-2, 8px) 0 0; }
 /* Toggle field in a filter bar: toggle then label, the standard 12px gap (rule/form-toggle-inline). */

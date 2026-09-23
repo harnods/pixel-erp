@@ -3322,7 +3322,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Only in copy": "Hanya di salinan",
   "Only in master": "Hanya di master",
   "Only the BOM (while no open work order uses it) and plan details can change.": "Hanya BOM (selama tidak dipakai perintah kerja terbuka) dan detail rencana yang dapat diubah.",
-  "Open in Approvals": "Buka di Persetujuan",
+  "Open approvals": "Buka persetujuan",
   "Open in Budget setup": "Buka di Pengaturan anggaran",
   "Open project": "Buka proyek",
   "Open projects": "Proyek terbuka",

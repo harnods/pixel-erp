@@ -150,7 +150,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <template #actions="{ row }">
           <PmMenu :id="`pd-row-${asRow(row).id}`" kebab :label="t('More actions')" :items="[
             { label: t('Open project'), action: () => router.push(`/projects/${asRow(row).projectId}?tab=cost`), disabledReason: asRow(row).projectId ? undefined : t('No line on this document names a project') },
-            { label: t('Open in Approvals'), action: () => router.push('/project-approvals'), disabledReason: asRow(row).status === 'held' ? undefined : t('Only a held document waits for Finance') },
+            { label: t('Open approvals'), action: () => router.push('/project-approvals'), disabledReason: asRow(row).status === 'held' ? undefined : t('Only a held document waits for Finance') },
           ]" />
         </template>
 

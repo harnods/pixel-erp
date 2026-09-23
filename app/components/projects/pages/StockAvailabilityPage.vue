@@ -210,7 +210,7 @@ function doIssue() {
     <!-- Reservations on one item — who holds what, and the release requests against it -->
     <PmOverlay id="stock-detail" :open="!!detail" wide :title="detail?.item ?? ''" @close="closeDetail">
       <template v-if="detail">
-        <div class="pm-grid-3">
+        <div class="pm-grid-4">
           <div><div class="pm-stat-label">{{ t('Warehouse') }}</div><div class="pm-body">{{ detail.warehouse }}</div></div>
           <div><div class="pm-stat-label">{{ t('On hand') }}</div><div class="pm-body">{{ num(detail.onHand) }} {{ detail.unit }}</div></div>
           <div><div class="pm-stat-label">{{ t('Reserved') }}</div><div class="pm-body">{{ num(detail.reserved) }} {{ detail.unit }}</div></div>
@@ -221,7 +221,7 @@ function doIssue() {
           <h3 class="pm-h3 pm-mb-2">{{ t('Reserved by project') }}</h3>
           <div class="pm-table-wrap">
             <table class="pm-table">
-              <thead><tr><th>{{ t('Project') }}</th><th>{{ t('Priority') }}</th><th>{{ t('Work package') }}</th><th class="pm-num">{{ t('Qty') }}</th><th>{{ t('Status') }}</th><th /></tr></thead>
+              <thead><tr><th>{{ t('Project') }}</th><th>{{ t('Priority') }}</th><th>{{ t('Work package') }}</th><th class="pm-num">{{ t('Qty') }}</th><th>{{ t('Status') }}</th><th class="pm-cell-sticky-action" /></tr></thead>
               <tbody>
                 <tr v-for="res in detailReservations" :key="res.id">
                   <td><MpTextlink :id="`stock-project-${res.id}`" as="a" @click.prevent="router.push(`/projects/${res.projectId}?tab=production`)">{{ getProject(res.projectId)?.code }}</MpTextlink> {{ getProject(res.projectId)?.name }}</td>
@@ -229,7 +229,7 @@ function doIssue() {
                   <td>{{ getWorkPackage(res.wpId)?.code }} {{ getWorkPackage(res.wpId)?.name }}</td>
                   <td class="pm-num">{{ num(res.qty) }} {{ detail.unit }}</td>
                   <td><ErpStatusBadge v-bind="badgeProps('res', res.status, t)" /></td>
-                  <td class="pm-cell-actions"><MpTextlink :id="`stock-request-${res.id}`" as="a" @click.prevent="openRequest(res.id)">{{ t('Request release') }}</MpTextlink></td>
+                  <td class="pm-cell-actions pm-cell-sticky-action"><MpTextlink :id="`stock-request-${res.id}`" as="a" @click.prevent="openRequest(res.id)">{{ t('Request release') }}</MpTextlink></td>
                 </tr>
                 <tr v-if="!detailReservations.length"><td colspan="6"><div class="pm-empty-inline">{{ t('Nothing is reserved on this item') }}</div></td></tr>
               </tbody>
@@ -241,15 +241,15 @@ function doIssue() {
           <h3 class="pm-h3 pm-mb-2">{{ t('Release requests') }}</h3>
           <div class="pm-table-wrap">
             <table class="pm-table">
-              <thead><tr><th class="pm-num">{{ t('Qty') }}</th><th>{{ t('From') }}</th><th>{{ t('To') }}</th><th>{{ t('Reason') }}</th><th>{{ t('Status') }}</th><th /></tr></thead>
+              <thead><tr><th class="pm-num">{{ t('Qty') }}</th><th>{{ t('From') }}</th><th>{{ t('To') }}</th><th>{{ t('Reason') }}</th><th>{{ t('Status') }}</th><th class="pm-cell-sticky-action" /></tr></thead>
               <tbody>
                 <tr v-for="q in detailRequests" :key="q.id">
                   <td class="pm-num">{{ num(q.qty) }} {{ detail.unit }}</td>
                   <td>{{ getProject(q.fromProjectId)?.code }}</td>
                   <td>{{ getProject(q.toProjectId)?.code }}</td>
-                  <td class="pm-wrap">{{ q.reason }}</td>
+                  <td class="pm-wrap"><div class="pm-clamp-text">{{ q.reason }}</div></td>
                   <td><ErpStatusBadge v-bind="badgeProps('approval', q.status, t)" /></td>
-                  <td class="pm-cell-actions"><MpTextlink v-if="q.status === 'pending'" :id="`stock-inbox-${q.id}`" as="a" @click.prevent="router.push('/project-approvals')">{{ t('Open in Approvals') }}</MpTextlink></td>
+                  <td class="pm-cell-actions pm-cell-sticky-action"><MpTextlink v-if="q.status === 'pending'" :id="`stock-inbox-${q.id}`" as="a" @click.prevent="router.push('/project-approvals')">{{ t('Open approvals') }}</MpTextlink></td>
                 </tr>
               </tbody>
             </table>
