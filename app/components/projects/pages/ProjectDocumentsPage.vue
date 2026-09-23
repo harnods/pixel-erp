@@ -126,7 +126,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <template #cell-docNo="{ row }">
           <div>
             <span v-if="asRow(row).projectId" class="cell-link" role="link" tabindex="0" @click.stop="router.push(`/projects/${asRow(row).projectId}?tab=cost`)" @keydown.enter="router.push(`/projects/${asRow(row).projectId}?tab=cost`)">{{ asRow(row).docNo }}</span>
-            <span v-else class="pm-strong">{{ asRow(row).docNo }}</span>
+            <span v-else>{{ asRow(row).docNo }}</span>
             <span class="pm-cell-sub">{{ asRow(row).party }}</span>
           </div>
         </template>
