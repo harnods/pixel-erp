@@ -239,11 +239,13 @@ export interface PurchaseRequest {
   awaitingApproval?: boolean              // sits in the "Awaiting approval" queue
   lines: PurchaseRequestLine[]            // requested products
   /**
-   * The vendor replenishment SUGGESTS, carried as guidance only (US-020 VR-02).
-   * A PR deliberately needs no bound vendor — purchasing sources it and binds a
-   * vendor at PO time (US-022 AC-06). Absent means "purchasing to source".
+   * The single vendor this request is for — one PR is scoped to one vendor
+   * (matching the PR creation form's Vendor field). Every line is sourced from
+   * this vendor, and conversion produces one PO for it. Optional: a PR may be
+   * left unbound ("purchasing to source"), and purchasing then picks the vendor
+   * at PO time.
    */
-  suggestedVendor?: { id: string; name: string }
+  vendor?: { id: string; name: string }
   /** Set when this request was raised from the replenishment worklist. */
   replenishment?: PurchaseRequestReplenishmentOrigin
 }

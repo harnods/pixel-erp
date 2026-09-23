@@ -43,6 +43,13 @@ import { applyMoqAndPack } from './replenishment'
 const TAX_RATE = 0.11
 const TAX_LABEL = 'PPN 11%'
 
+/** One request's contribution to a merged PO line. */
+export interface MergeSource {
+  prId: string
+  prNumber: number
+  qty: number
+}
+
 export interface DraftPoLine {
   sku: string
   productName: string
@@ -60,6 +67,8 @@ export interface DraftPoLine {
   /** Rounding provenance for the preview note. */
   raisedByMoq?: boolean
   raisedByPack?: boolean
+  /** When merged from several PRs, who contributed how much (stock units). */
+  sources?: MergeSource[]
   /** Inputs captured for the audit trail. */
   context: {
     leadTimeDays: number
@@ -334,9 +343,11 @@ export function planPosFromPurchaseRequest(
 
   for (const prLine of pr.lines) {
     const base = { sku: prLine.sku, productName: prLine.product, warehouseId, warehouseName }
+    // 1 PR = 1 vendor: every line is sourced from the PR's bound vendor, unless a
+    // per-SKU override is passed (a whole-PR vendor change sets them together).
     const vendorId = prLine.sku in vendorChoices
       ? vendorChoices[prLine.sku]!
-      : suggestedVendorForSku(prLine.sku)
+      : (pr.vendor?.id ?? suggestedVendorForSku(prLine.sku))
 
     if (!vendorId) { skipped.push({ ...base, reason: 'no-vendor' }); continue }
 
@@ -419,6 +430,141 @@ export function convertPurchaseRequestToPos(
       status: skipped.length === 0 ? 'closed' : 'partially processed',
       awaitingApproval: false,
     })
+  }
+
+  return { created, skipped }
+}
+
+/** Suggested ship-to when converting many PRs at once: first PR with a warehouse. */
+export function defaultConversionWarehouseForMany(prs: PurchaseRequest[]): string {
+  const withWh = prs.find((p) => p.replenishment?.warehouseId)?.replenishment?.warehouseId
+  return withWh ?? warehouses[0]?.id ?? ''
+}
+
+/**
+ * Plan the draft PO(s) a SET of PRs would MERGE into (bulk conversion).
+ *
+ * Same-SKU lines across the selected requests are SUMMED into one need, then that
+ * combined need is rounded ONCE to the chosen vendor's MOQ + purchase multiplier
+ * (US-006 / D12). Merging before rounding is the whole point: three requests for
+ * 16 + 22 + 42 become one 80-unit need that rounds to a single MOQ/pack quantity,
+ * instead of three separate roundings that over-order.
+ *
+ * Lines group into one PO per vendor for the chosen warehouse ship-to. Each merged
+ * line keeps its `sources` (which PR contributed how much) so the merge is visible.
+ */
+export function planPosFromPurchaseRequests(
+  prs: PurchaseRequest[],
+  warehouseId: string,
+  vendorChoices: Record<string, string | null> = {},
+  qtyOverrides: Record<string, number> = {},
+): { groups: DraftPoGroup[]; skipped: SkippedLine[] } {
+  const warehouseName = warehouses.find((w) => w.id === warehouseId)?.name ?? ''
+
+  // 1) merge lines by (VENDOR, SKU) — each PR is scoped to one vendor, so lines
+  //    only combine within the same vendor; different-vendor PRs never blend.
+  const merged = new Map<string, { vendorId: string | null; sku: string; product: string; need: number; sources: MergeSource[] }>()
+  for (const pr of prs) {
+    const prVendor = pr.vendor?.id ?? null
+    for (const line of pr.lines) {
+      const vendorId = line.sku in vendorChoices ? vendorChoices[line.sku]! : (prVendor ?? suggestedVendorForSku(line.sku))
+      const key = `${vendorId ?? '∅'}::${line.sku}`
+      if (!merged.has(key)) merged.set(key, { vendorId, sku: line.sku, product: line.product, need: 0, sources: [] })
+      const m = merged.get(key)!
+      m.need += line.requestedQty
+      m.sources.push({ prId: pr.id, prNumber: pr.number, qty: line.requestedQty })
+    }
+  }
+
+  // 2) round each merged need to its vendor and group into POs (one per vendor).
+  const groups = new Map<string, Omit<DraftPoGroup, 'subtotal' | 'taxAmount' | 'total' | 'leadTimeDays'>>()
+  const skipped: SkippedLine[] = []
+
+  for (const m of merged.values()) {
+    const base = { sku: m.sku, productName: m.product, warehouseId, warehouseName }
+    const vendorId = m.vendorId
+    if (!vendorId) { skipped.push({ ...base, reason: 'no-vendor' }); continue }
+
+    const vi = vendorItemFor(m.sku, vendorId)
+    if (!vi) { skipped.push({ ...base, reason: 'inactive-vendor-item' }); continue }
+    if (!vi.unitsPerPurchaseUnit || vi.unitsPerPurchaseUnit < 1) {
+      skipped.push({ ...base, reason: 'missing-uom' }); continue
+    }
+
+    const rounded = applyMoqAndPack(m.need, vi)
+    const finalQty = m.sku in qtyOverrides ? qtyOverrides[m.sku]! : rounded.purchaseQty
+    if (finalQty <= 0) { skipped.push({ ...base, reason: 'zero-qty' }); continue }
+
+    const key = `${vendorId}::${warehouseId}`
+    if (!groups.has(key)) {
+      groups.set(key, { key, vendorId, vendorName: vendorNameFor(vendorId), warehouseId, warehouseName, lines: [] })
+    }
+    groups.get(key)!.lines.push({
+      sku: m.sku,
+      productName: m.product,
+      warehouseId,
+      vendorId,
+      vendorItem: vi,
+      recommendedQty: rounded.purchaseQty,
+      finalQty,
+      unitCost: vi.unitCost,
+      purchaseUnit: vi.purchaseUnit,
+      needStock: m.need,
+      raisedByMoq: rounded.raisedByMoq,
+      raisedByPack: rounded.raisedByPack,
+      sources: m.sources,
+      context: {
+        leadTimeDays: vi.leadTimeDays,
+        safetyDays: 0,
+        avgDailySales: 0,
+        reorderPoint: 0,
+        available: 0,
+        onOrder: 0,
+      },
+    })
+  }
+
+  return { groups: [...groups.values()].map(summarize), skipped }
+}
+
+/**
+ * Merge a SET of PRs into draft PO(s) and reflect the conversion on each request.
+ *
+ * Every created PO is `'draft'` (US-020). A source PR closes when all of its lines
+ * made it into a PO; it becomes `partially processed` when any of its SKUs was
+ * skipped (no vendor / missing pack data).
+ */
+export function convertPurchaseRequestsToPos(
+  prs: PurchaseRequest[],
+  warehouseId: string,
+  vendorChoices: Record<string, string | null> = {},
+  qtyOverrides: Record<string, number> = {},
+  createdBy = 'You',
+): DraftPoResult {
+  const { groups, skipped } = planPosFromPurchaseRequests(prs, warehouseId, vendorChoices, qtyOverrides)
+
+  const created = groups.map((group) => {
+    const order = createDraftPoFromGroup(group, createdBy)
+    return {
+      id: order.id,
+      number: String(order.number),
+      vendorId: group.vendorId,
+      vendorName: group.vendorName,
+      warehouseId: group.warehouseId,
+      lineCount: group.lines.length,
+      total: group.total,
+    }
+  })
+
+  if (created.length > 0) {
+    const skippedSkus = new Set(skipped.map((s) => s.sku))
+    for (const pr of prs) {
+      const anySkipped = pr.lines.some((l) => skippedSkus.has(l.sku))
+      updatePurchaseRequest(pr.id, {
+        status: anySkipped ? 'partially processed' : 'closed',
+        awaitingApproval: false,
+      })
+    }
   }
 
   return { created, skipped }

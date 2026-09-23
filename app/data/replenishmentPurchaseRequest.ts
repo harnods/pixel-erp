@@ -326,7 +326,7 @@ export function createPurchaseRequestFromGroup(group: PrGroup, createdBy = 'You'
     tags: ['Replenishment'],
     awaitingApproval: true,
     lines,
-    ...(group.vendorId ? { suggestedVendor: { id: group.vendorId, name: group.vendorName } } : {}),
+    ...(group.vendorId ? { vendor: { id: group.vendorId, name: group.vendorName } } : {}),
     replenishment: origin,
   })
 }

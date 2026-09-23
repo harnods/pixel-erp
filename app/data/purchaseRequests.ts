@@ -2,6 +2,8 @@ import { reactive } from 'vue'
 import type { PurchaseRequest, PurchaseRequestLine, PurchaseRequestStatus, UrgencyLevel } from './types'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { CATALOG } from './catalog'
+import { vendors } from './vendors'
+import { vendorItemsForVendor } from './vendorItems'
 
 /**
  * Mock purchase requests for the coffee business — 100 records generated
@@ -10,8 +12,16 @@ import { CATALOG } from './catalog'
  * snapshot so any future create/edit survives a refresh and `resetDb()` clears it.
  */
 
-// Bumped to v3 — seeds a replenishment origin on ~1 in 4 requests (Source column).
-const SNAPSHOT_KEY = 'purchase-requests-v3'
+// Bumped to v4 — every PR is now scoped to ONE vendor (1 PR = 1 vendor), and its
+// lines are drawn from that vendor's supplied products so a conversion to PO is
+// clean. Still seeds a replenishment origin on ~1 in 4 requests (Source column).
+const SNAPSHOT_KEY = 'purchase-requests-v4'
+
+// Vendors that actually supply products (have vendor-items) — services vendors
+// like PLN/Telkom have none, so a PR is never bound to them.
+const SUPPLIER_VENDORS = vendors.filter(v => vendorItemsForVendor(v.id).length > 0)
+
+function catalogBySku(sku: string) { return CATALOG.find(p => p.sku === sku) }
 
 // Procurement staff pool — the Figma placeholders plus a couple more, so the
 // column reads like a small procurement team.
@@ -37,23 +47,28 @@ function addDays(iso: string, days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-// Deterministic requested lines drawn from the shared product catalog, so the
-// PO form's accordion can group real products under each request.
-function buildLines(i: number, count: number): PurchaseRequestLine[] {
+// Deterministic requested lines drawn from ONE vendor's supplied products, so a
+// PR is coherent (1 PR = 1 vendor) and converts cleanly to a PO.
+function buildLinesForVendor(i: number, count: number, vendorId: string): PurchaseRequestLine[] {
+  const skus = vendorItemsForVendor(vendorId).map(vi => vi.sku)
+  if (!skus.length) return []
   const lines: PurchaseRequestLine[] = []
-  for (let j = 0; j < count; j++) {
-    const p = CATALOG[(i * 5 + j * 7) % CATALOG.length]!
+  const n = Math.min(count, skus.length)      // distinct SKUs, capped by the vendor's range
+  const start = i % skus.length
+  for (let j = 0; j < n; j++) {
+    const sku = skus[(start + j) % skus.length]!
+    const p = catalogBySku(sku)
     const requestedQty = 5 + ((i + j * 3) % 96)          // 5..100
     // Available is often short of requested (that's why a PO is raised).
     const availableQty = Math.round(requestedQty * ((j % 4) / 4))
     lines.push({
-      product: p.name,
-      sku: p.sku,
-      description: p.desc,
+      product: p?.name ?? sku,
+      sku,
+      description: p?.desc ?? '',
       requestedQty,
       availableQty,
-      unit: p.unit,
-      unitCost: p.price,
+      unit: p?.unit ?? 'Pcs',
+      unitCost: p?.price ?? 0,
       taxLabel: 'PPN 11%',
     })
   }
@@ -69,8 +84,9 @@ function build(): PurchaseRequest[] {
     const status = STATUSES[i % STATUSES.length]!
     const date = addDays('2026-01-02', i)         // one request per day
     const requiredDate = addDays(date, 21 + (i % 10))
-    const totalProducts = 2 + (i % 9)
-    const lines = buildLines(i, totalProducts)
+    const vendor = SUPPLIER_VENDORS[i % SUPPLIER_VENDORS.length]!
+    const lines = buildLinesForVendor(i, 2 + (i % 9), vendor.id)
+    const totalProducts = lines.length
 
     out.push({
       id: `PR${String(i + 1).padStart(3, '0')}`,
@@ -80,6 +96,7 @@ function build(): PurchaseRequest[] {
       requiredDate,
       status,
       totalProducts,
+      vendor: { id: vendor.id, name: vendor.name },
       urgency: URGENCY[i % URGENCY.length]!,
       tags: TAG_SETS[i % TAG_SETS.length],
       attachment: i % 6 === 0,

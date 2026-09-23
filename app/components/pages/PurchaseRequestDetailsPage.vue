@@ -180,6 +180,7 @@ function goBack() { router.push('/purchase-requests') }
         <div class="content-list-grid">
           <!-- col 1: deliver to -->
           <div class="content-list-col">
+            <ContentList :label="t('Vendor')" :value="request.vendor?.name || t('Purchasing to source')" />
             <ContentList :label="t('Deliver to')" :value="request.deliverTo" />
             <ContentList :label="t('Warehouse')" :value="request.warehouse" />
           </div>

@@ -18,7 +18,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   planPosFromPurchaseRequest, convertPurchaseRequestToPos,
-  suggestedVendorForSku, defaultConversionWarehouse,
+  planPosFromPurchaseRequests, defaultConversionWarehouseForMany,
+  defaultConversionWarehouse,
 } from '~/data/replenishmentDraftPo'
 import { applyMoqAndPack, replenishmentWorklist } from '~/data/replenishment'
 import { createPurchaseRequests } from '~/data/replenishmentPurchaseRequest'
@@ -145,5 +146,60 @@ describe('convertPurchaseRequestToPos — draft only, reflects on the PR', () =>
     const result = convertPurchaseRequestToPos(pr, wh)
     expect(result.created.length).toBe(1)
     expect(getPurchaseRequest(pr.id)!.status).toBe('closed')
+  })
+})
+
+describe('planPosFromPurchaseRequests — bulk merge (1 PR = 1 vendor)', () => {
+  // Find two seed PRs with the SAME vendor that share at least one SKU.
+  function sameVendorPairSharingSku() {
+    const byVendor = new Map<string, typeof purchaseRequests>()
+    for (const pr of purchaseRequests) {
+      const v = pr.vendor?.id
+      if (!v) continue
+      if (!byVendor.has(v)) byVendor.set(v, [] as unknown as typeof purchaseRequests)
+      byVendor.get(v)!.push(pr)
+    }
+    for (const prs of byVendor.values()) {
+      for (let a = 0; a < prs.length; a++) {
+        for (let b = a + 1; b < prs.length; b++) {
+          const shared = prs[a]!.lines.map(l => l.sku).find(s => prs[b]!.lines.some(l => l.sku === s))
+          if (shared) return { pr1: prs[a]!, pr2: prs[b]!, sku: shared }
+        }
+      }
+    }
+    return null
+  }
+
+  it('sums same-vendor same-SKU lines across PRs, then rounds once', () => {
+    const hit = sameVendorPairSharingSku()
+    expect(hit).not.toBeNull()
+    const { pr1, pr2, sku } = hit!
+    const wh = defaultConversionWarehouseForMany([pr1, pr2])
+    const { groups } = planPosFromPurchaseRequests([pr1, pr2], wh)
+
+    // same vendor → exactly one PO group, no vendor blending
+    expect(groups.length).toBe(1)
+    const g = groups[0]!
+    expect(g.vendorId).toBe(pr1.vendor!.id)
+
+    const line = g.lines.find(l => l.sku === sku)!
+    const q1 = pr1.lines.find(l => l.sku === sku)!.requestedQty
+    const q2 = pr2.lines.find(l => l.sku === sku)!.requestedQty
+    expect(line.needStock).toBe(q1 + q2)                       // merged need
+    expect(line.sources!.length).toBe(2)                        // both PRs cited
+    const vi = vendorItemFor(sku, g.vendorId)!
+    expect(line.finalQty).toBe(applyMoqAndPack(q1 + q2, vi).purchaseQty)  // rounded once
+  })
+
+  it('never blends different vendors into one PO', () => {
+    const a = purchaseRequests.find(p => p.vendor?.id)
+    const b = purchaseRequests.find(p => p.vendor?.id && p.vendor.id !== a!.vendor!.id)
+    expect(a && b).toBeTruthy()
+    const wh = defaultConversionWarehouseForMany([a!, b!])
+    const { groups } = planPosFromPurchaseRequests([a!, b!], wh)
+    const vendorIds = new Set(groups.map(g => g.vendorId))
+    expect(vendorIds.size).toBe(groups.length)                  // one vendor per group
+    expect(vendorIds.has(a!.vendor!.id)).toBe(true)
+    expect(vendorIds.has(b!.vendor!.id)).toBe(true)
   })
 })

@@ -199,7 +199,7 @@ describe('createPurchaseRequests — commits requests, never orders', () => {
     const plan = planPurchaseRequests(rows)
     for (const g of plan.groups) {
       const pr = createPurchaseRequestFromGroup(g)
-      if (g.vendorId) expect(pr.suggestedVendor?.id).toBe(g.vendorId)
+      if (g.vendorId) expect(pr.vendor?.id).toBe(g.vendorId)
       // Nothing on the request binds it to that vendor.
       expect(pr.status).toBe('open')
     }

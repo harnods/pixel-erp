@@ -15,7 +15,8 @@ import ExportModal from '~/components/patterns/ExportModal.vue'
 import CopyLinkDrawer from '~/components/patterns/CopyLinkDrawer.vue'
 import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
 import ConvertPrToPoModal from '~/components/patterns/ConvertPrToPoModal.vue'
-import { convertPurchaseRequestToPos } from '~/data/replenishmentDraftPo'
+import BulkConvertPrToPoModal from '~/components/patterns/BulkConvertPrToPoModal.vue'
+import { convertPurchaseRequestToPos, convertPurchaseRequestsToPos } from '~/data/replenishmentDraftPo'
 import { formatDate } from '~/utils/date'
 import PurchaseRequestFiltersDrawer, { emptyPurchaseRequestFilters, type PurchaseRequestFiltersValue } from '~/components/patterns/PurchaseRequestFiltersDrawer.vue'
 import { purchaseRequests, updatePurchaseRequest } from '~/data'
@@ -195,6 +196,36 @@ function confirmConvert(payload: {
   const skipPart = result.skipped.length ? ` · ${result.skipped.length} ${t('lines skipped')}` : ''
   toast.notify({ variant: 'success', title: `${poPart}${skipPart}` })
 }
+
+// Bulk: merge several PRs into one PO per vendor — same-SKU lines are summed, then
+// the combined qty is rounded once to the vendor's MOQ & multiplier (US-018 / D12).
+const bulkConvertOpen = ref(false)
+const bulkConvertPrs = ref<PurchaseRequest[]>([])
+function bulkCreatePurchaseOrder(selectedRows: Set<number>) {
+  const prs = bulkSelectedRequests(selectedRows) as unknown as PurchaseRequest[]
+  if (!prs.length) return
+  bulkConvertPrs.value = prs
+  bulkConvertOpen.value = true
+}
+function confirmBulkConvert(payload: {
+  warehouseId: string
+  vendorChoices: Record<string, string | null>
+  qtyOverrides: Record<string, number>
+}) {
+  const prs = bulkConvertPrs.value
+  if (!prs.length) return
+  const result = convertPurchaseRequestsToPos(prs, payload.warehouseId, payload.vendorChoices, payload.qtyOverrides)
+  bulkConvertOpen.value = false
+  if (result.created.length === 0) {
+    toast.notify({ variant: 'error', title: t('No draft purchase order could be created') })
+    return
+  }
+  const poPart = result.created.length === 1
+    ? t('1 draft purchase order created')
+    : `${result.created.length} ${t('draft purchase orders created')}`
+  const skipPart = result.skipped.length ? ` · ${result.skipped.length} ${t('lines skipped')}` : ''
+  toast.notify({ variant: 'success', title: `${poPart}${skipPart}` })
+}
 function markCompleted(id: string) {
   updatePurchaseRequest(id, { status: 'closed', awaitingApproval: false })
   toast.notify({ variant: 'success', title: t('Purchase request marked as completed') })
@@ -282,6 +313,7 @@ const exportColumns = computed(() => [
         </MpPopoverTrigger>
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
+            <MpPopoverListItem @click="bulkCreatePurchaseOrder(selectedRows as Set<number>)">{{ t('Create purchase order') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openShareBulk(selectedRows as Set<number>)">{{ t('Share via email') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openCopyLinks(bulkSelectedRequests(selectedRows as Set<number>).slice(0, 5))">{{ t('Copy link') }}</MpPopoverListItem>
@@ -444,6 +476,9 @@ const exportColumns = computed(() => [
 
   <!-- ── Convert PR → draft PO (rounds requested qty to vendor MOQ & multiplier) ── -->
   <ConvertPrToPoModal v-model:is-open="convertOpen" :pr="convertPr" @confirm="confirmConvert" />
+
+  <!-- ── Bulk: merge several PRs into one PO per vendor (sums qty, then rounds) ── -->
+  <BulkConvertPrToPoModal v-model:is-open="bulkConvertOpen" :prs="bulkConvertPrs" @confirm="confirmBulkConvert" />
 
   <!-- ── Prototype scenario FAB (bottom-right): toggle data vs empty-state view ── -->
   <ScenarioFab v-model="previewMode" />

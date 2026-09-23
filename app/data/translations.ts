@@ -4001,6 +4001,17 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   '1 draft purchase order created': '1 draf pesanan pembelian dibuat',
   'draft purchase orders created': 'draf pesanan pembelian dibuat',
   'No draft purchase order could be created': 'Tidak ada draf pesanan pembelian yang bisa dibuat',
+  // Bulk PR → 1 PO merge
+  'Select vendor': 'Pilih vendor',
+  'Merge into purchase order': 'Gabung jadi pesanan pembelian',
+  '1 request': '1 permintaan',
+  'requests': 'permintaan',
+  '1 merged line': '1 baris gabungan',
+  'merged lines': 'baris gabungan',
+  'nothing can be ordered': 'tidak ada yang bisa dipesan',
+  'Merged need': 'Kebutuhan gabungan',
+  'From': 'Dari',
+  'Same-product lines across the selected requests are combined, then the merged quantity is rounded to each vendor\'s MOQ and purchase multiplier. Saved as a draft for approval.': 'Baris produk sama dari permintaan terpilih digabung, lalu jumlah gabungannya dibulatkan ke MOQ dan kelipatan pembelian tiap vendor. Disimpan sebagai draf untuk disetujui.',
   'lead time': 'waktu tunggu',
   // ── Replenishment — vendor terms ──
   'Vendors, lead time and MOQ': 'Vendor, waktu tunggu, dan MOQ',

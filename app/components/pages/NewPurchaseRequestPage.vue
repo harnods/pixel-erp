@@ -13,7 +13,7 @@ import {
   MpIcon, MpTextlink, toast, css,
 } from '@mekari/pixel3'
 import {
-  products, purchaseRequests,
+  products, purchaseRequests, vendors,
   WAREHOUSES, UNIT_OPTIONS,
 } from '~/data'
 import type { PurchaseRequest, PurchaseRequestLine, UrgencyLevel } from '~/data/types'
@@ -41,8 +41,11 @@ const requestDate      = ref(isoToDMY(todayISO()))
 const requiredDate     = ref('')
 const urgency          = ref('Medium')
 const warehouse        = ref('')
+const vendorName       = ref('')
 
 const URGENCY_OPTIONS = ['Low', 'Medium', 'High']
+// A purchase request is scoped to ONE vendor (1 PR = 1 vendor).
+const VENDOR_OPTIONS = vendors.map(v => v.name)
 
 // ── Line items ────────────────────────────────────────────────────────────────
 interface LineItem {
@@ -147,6 +150,7 @@ function onSave() {
     taxLabel: 'PPN 11%',
   }))
   const id = nextRequestId()
+  const chosenVendor = vendors.find(v => v.name === vendorName.value.trim())
   const request: PurchaseRequest = {
     id,
     number: nextRequestNumber(),
@@ -156,6 +160,7 @@ function onSave() {
     status: 'open',
     totalProducts: lines.length,
     urgency: urgency.value.toLowerCase() as UrgencyLevel,
+    ...(chosenVendor ? { vendor: { id: chosenVendor.id, name: chosenVendor.name } } : {}),
     lines,
   }
   purchaseRequests.push(request)
@@ -190,6 +195,12 @@ function onSave() {
               @update:model-value="staffError = false"
             />
             <MpFormErrorMessage>{{ t('You must enter procurement staff') }}</MpFormErrorMessage>
+          </MpFormControl>
+
+          <!-- One PR = one vendor. Optional — leave blank for "purchasing to source". -->
+          <MpFormControl id="f-vendor" class="si-field">
+            <MpFormLabel>{{ t('Vendor') }}</MpFormLabel>
+            <MpAutocomplete id="f-vendor-inp" v-model="vendorName" :data="VENDOR_OPTIONS" use-portal is-clearable is-full-width :placeholder="t('Select vendor')" />
           </MpFormControl>
         </div>
 
