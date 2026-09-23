@@ -1142,7 +1142,8 @@ function onSave() {
 .si-del-btn:hover { background: var(--mp-background-neutral, #ffffff) !important; color: var(--mp-text-danger, #dc2626); }
 
 /* ── Totals ── */
-.si-bottom-section { display: flex; justify-content: flex-end; }
+.si-bottom-section { display: grid; grid-template-columns: 1fr 428px; }
+.si-bottom-section .si-totals-col { grid-column: 2; }
 
 /* ── Memo + Attachment ── */
 .si-memo-attachment-section { display: flex; flex-direction: column; gap: 20px; max-width: 432px; }

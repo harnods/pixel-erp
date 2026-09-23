@@ -1463,7 +1463,8 @@ const DEAL_DETAIL_LAYOUT_SEED: DealDetailLayout = {
         { id: 'sec-overview', name: 'Overview', columns: 3, cols: [['record-name', 'company', 'billing-address'], ['contact', 'email', 'phone'], ['deal-value', 'record-owner', 'status']] },
         { id: 'sec-transaction', name: 'Transaction', columns: 4, cols: distributeCols(['transaction-date', 'due-date', 'transaction-number', 'external-reference-id', 'payment-term'], 4) },
         { id: 'sec-products', name: 'Products', columns: 1, cols: [['product-list']], kind: 'products', system: true },
-        { id: 'sec-additional', name: 'Additional info', columns: 3, cols: [['notes', 'attachments'], ['tags', 'source'], ['shipping-address']] },
+        { id: 'sec-additional', name: 'Additional info', columns: 3, cols: [['tags', 'source'], ['shipping-address'], []] },
+        { id: 'sec-memo-attachment', name: 'Memo & Attachment', columns: 2, cols: [['notes', 'attachments'], []] },
       ],
     },
     { id: 'tab-notes', key: 'notes', label: 'Notes', editable: false, visible: true },
@@ -1473,10 +1474,10 @@ const DEAL_DETAIL_LAYOUT_SEED: DealDetailLayout = {
   ],
 }
 export const dealDetailLayout = reactive<DealDetailLayout>(
-  loadSnapshot<DealDetailLayout>('crm-deal-detail-layout-v8')?.[0]
+  loadSnapshot<DealDetailLayout>('crm-deal-detail-layout-v9')?.[0]
     ?? JSON.parse(JSON.stringify(DEAL_DETAIL_LAYOUT_SEED)),
 )
-export function persistDealDetailLayout() { saveSnapshot('crm-deal-detail-layout-v8', [dealDetailLayout]) }
+export function persistDealDetailLayout() { saveSnapshot('crm-deal-detail-layout-v9', [dealDetailLayout]) }
 
 // ── Deals module PROPERTIES (the Properties tab) ─────────────────────────────
 // The module's field catalogue. Field types mirror the standard CRM property
@@ -1824,7 +1825,8 @@ const SERVICE_DETAIL_LAYOUT_SEED: DealDetailLayout = {
         { id: 'ssec-overview', name: 'Overview', columns: 3, cols: [['record-name', 'company'], ['contact', 'email', 'phone'], ['deal-value', 'record-owner', 'status']] },
         { id: 'ssec-service', name: 'Service info', columns: 3, cols: distributeCols(['service-type', 'transaction-date', 'due-date', 'payment-term', 'transaction-number', 'external-reference-id'], 3) },
         { id: 'ssec-products', name: 'Products', columns: 1, cols: [['product-list']], kind: 'products', system: true },
-        { id: 'ssec-additional', name: 'Additional info', columns: 3, cols: [['notes', 'attachments'], ['tags', 'source'], ['shipping-address']] },
+        { id: 'ssec-additional', name: 'Additional info', columns: 3, cols: [['tags', 'source'], ['shipping-address'], []] },
+        { id: 'ssec-memo-attachment', name: 'Memo & Attachment', columns: 2, cols: [['notes', 'attachments'], []] },
       ],
     },
     { id: 'stab-notes', key: 'notes', label: 'Notes', editable: false, visible: true },
@@ -1834,10 +1836,10 @@ const SERVICE_DETAIL_LAYOUT_SEED: DealDetailLayout = {
   ],
 }
 export const serviceDetailLayout = reactive<DealDetailLayout>(
-  loadSnapshot<DealDetailLayout>('crm-service-detail-layout-v5')?.[0]
+  loadSnapshot<DealDetailLayout>('crm-service-detail-layout-v6')?.[0]
     ?? JSON.parse(JSON.stringify(SERVICE_DETAIL_LAYOUT_SEED)),
 )
-export function persistServiceDetailLayout() { saveSnapshot('crm-service-detail-layout-v5', [serviceDetailLayout]) }
+export function persistServiceDetailLayout() { saveSnapshot('crm-service-detail-layout-v6', [serviceDetailLayout]) }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // GENERIC custom modules — any module created via "+ New module" (Settings ▸

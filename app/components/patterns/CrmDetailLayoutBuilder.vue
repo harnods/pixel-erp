@@ -1331,7 +1331,8 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 }
 .dlb-prev-form-page .si-affix-value { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: flex-end; padding: 0 var(--mp-spacing-2); white-space: nowrap; }
 .dlb-prev-form-page .si-unit-ro { flex: 1; display: flex; align-items: center; padding: 0 var(--mp-spacing-2); color: var(--mp-text-secondary, #64748b); }
-.dlb-prev-form-page .si-bottom-section { display: flex; justify-content: flex-end; }
+.dlb-prev-form-page .si-bottom-section { display: grid; grid-template-columns: 1fr 428px; }
+.dlb-prev-form-page .si-bottom-section .si-totals-col { grid-column: 2; }
 .dlb-prev-form-page .si-memo-attachment-section { display: flex; flex-direction: column; gap: 20px; max-width: 432px; }
 .dlb-prev-form-page .si-note-field { display: flex; flex-direction: column; }
 .dlb-prev-form-page .si-field-caption { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1, 4px); }
@@ -1482,9 +1483,10 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
   border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
-.dp-totals-section { display: flex; justify-content: flex-end; }
+.dp-totals-section { display: grid; grid-template-columns: 1fr 380px; }
+.dp-totals-section .dp-totals { grid-column: 2; }
 .dp-memo-section { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
-.dp-totals { display: flex; flex-direction: column; gap: var(--mp-spacing-4); padding-top: var(--mp-spacing-2); }
+.dp-totals { display: flex; flex-direction: column; gap: var(--mp-spacing-4); padding-top: var(--mp-spacing-2); width: 380px; flex-shrink: 0; }
 .dp-total-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
 .dp-total-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .dp-total-amt { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }
