@@ -8,12 +8,14 @@
  * The Warehouse persona's view (OQ19).
  */
 import {
-  MpIcon, MpButton, MpInput, MpTextarea, MpCheckbox, MpTag, MpTextlink, MpFormControl, MpFormLabel, MpFormErrorMessage,
-  MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
+  MpIcon, MpButton, MpInput, MpTextarea, MpToggle, MpTag, MpTextlink, MpFormControl, MpFormLabel, MpFormErrorMessage,
+  MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpCheckbox,
 } from '@mekari/pixel3'
 import PmTitleBar from '../PmTitleBar.vue'
+import PmMenu from '../PmMenu.vue'
 import PmOverlay from '../PmOverlay.vue'
 import PmActionError from '../PmActionError.vue'
+import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { stockItems, reservations, reservedQty, availableQty, reservedByProject, releaseRequests, type StockItem } from '~/data/projectReservations'
@@ -29,18 +31,56 @@ const { asActor, role } = useProjectRole()
 const rqAction = useProjectAction()
 const issAction = useProjectAction()
 
-const search = ref('')
 const onlyContention = ref(false)
-const rows = computed(() => stockItems
-  .filter(i => !search.value.trim() || i.name.toLowerCase().includes(search.value.trim().toLowerCase()))
-  .map(i => {
-    const byProject = [...reservedByProject(i.id).entries()].map(([pid, q]) => ({ p: getProject(pid)!, qty: q })).sort((a, b) => b.qty - a.qty)
-    const pending = releaseRequests.filter(r => r.itemId === i.id && r.status === 'pending').length
-    return { i, reserved: reservedQty(i.id), available: availableQty(i.id), byProject, contention: byProject.length > 1 && availableQty(i.id) < i.onHand * 0.15, pending }
-  })
-  .filter(r => !onlyContention.value || r.contention || r.pending))
-const expanded = ref<string | null>(null)
+const loading = ref(true)
+onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
+
+// Row = the item's stock position; the per-project breakdown opens in a drawer
+// (as batch reservations do elsewhere) rather than a table nested inside a row.
+interface Row {
+  id: string; item: string; warehouse: string; unit: string; onHand: number; reserved: number
+  available: number; byProject: { p: ReturnType<typeof getProject>; qty: number }[]
+  contention: boolean; pending: number; i: StockItem
+}
+const allRows = computed<Row[]>(() => stockItems.map(i => {
+  const byProject = [...reservedByProject(i.id).entries()].map(([pid, q]) => ({ p: getProject(pid)!, qty: q })).sort((a, b) => b.qty - a.qty)
+  const pending = releaseRequests.filter(r => r.itemId === i.id && r.status === 'pending').length
+  const available = availableQty(i.id)
+  return {
+    id: i.id, item: i.name, warehouse: i.warehouse, unit: i.unit, onHand: i.onHand, reserved: reservedQty(i.id),
+    available, byProject, contention: byProject.length > 1 && available < i.onHand * 0.15, pending, i,
+  }
+}))
+
+const {
+  search, currentPage, paginated, total, perPage, setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
+} = useTableState<Row>(allRows, {
+  perPage: 25,
+  defaultSort: { key: 'item', dir: 'asc' },
+  filterFn: (r, s) => (!s || r.item.toLowerCase().includes(s) || r.warehouse.toLowerCase().includes(s))
+    && (!onlyContention.value || r.contention || !!r.pending),
+})
+watch(onlyContention, () => setPage(1))
+function clearFilters() { onlyContention.value = false; search.value = '' }
+
+const columns = computed<TableColumn[]>(() => [
+  { key: 'item', label: t('Item'), kind: 'name', sortType: 'text' },
+  { key: 'warehouse', label: t('Warehouse'), kind: 'name', sortType: 'text' },
+  { key: 'onHand', label: t('On hand'), align: 'right', sortType: 'number' },
+  { key: 'reserved', label: t('Reserved'), align: 'right', sortType: 'number' },
+  { key: 'available', label: t('Available'), align: 'right', sortType: 'number' },
+  { key: 'byProject', label: t('Reserved by project'), kind: 'tags', sortType: 'number' },
+])
+const asRow = (r: unknown) => r as Row
 const priorityLabel = (p: string) => t(p === 'high' ? 'High' : p === 'medium' ? 'Medium' : 'Low')
+
+// ── Reservations drawer (the old inline accordion) ──
+const detailId = ref('')
+const detail = computed(() => allRows.value.find(r => r.id === detailId.value))
+const detailReservations = computed(() => (detail.value ? reservations.filter(x => x.itemId === detail.value!.id && (x.status === 'reserved' || x.status === 'picked')) : []))
+const detailRequests = computed(() => (detail.value ? releaseRequests.filter(x => x.itemId === detail.value!.id) : []))
+function openDetail(r: Row) { detailId.value = r.id }
+function closeDetail() { detailId.value = '' }
 
 // Request release
 const rq = reactive({ open: false, resId: '', toWp: '', qty: '', reason: '', touched: false })
@@ -71,6 +111,7 @@ const issOptions = computed(() => issNodes.value.map(n => ({ value: n.id, label:
 watch(() => [iss.wpId, iss.qty], () => { iss.ack = false })
 function openIssue(item: StockItem) {
   issAction.clear()
+  detailId.value = ''
   Object.assign(iss, { open: true, item, wpId: issNodes.value[0]?.id ?? '', qty: '', ack: false, touched: false })
 }
 function doIssue() {
@@ -86,82 +127,126 @@ function doIssue() {
   <div class="pm-page">
     <PmTitleBar :title="t('Stock availability')" />
     <div class="pm-stage">
-      <div class="pm-filters">
-        <div class="filter-left">
-          <label class="pm-check">
-            <MpCheckbox id="stock-only-contention" :is-checked="onlyContention" @change="onlyContention = !onlyContention" />
-            <span>{{ t('Only contention') }}</span>
-          </label>
-        </div>
-        <div class="filter-right">
-          <div class="filter-search">
-            <MpIcon name="search" size="sm" />
-            <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search item...')" />
+      <ErpTablePage
+        :columns="columns"
+        :rows="(paginated as unknown as Record<string, unknown>[])"
+        :total="total"
+        :current-page="currentPage"
+        :per-page="perPage"
+        :sort-key="sortKey"
+        :sort-dir="sortDir"
+        :loading="loading"
+        :has-active-search="!!search"
+        :has-active-filter="onlyContention"
+        :search="search"
+        filter-empty-label="item"
+        actions-align-top
+        @page-change="setPage"
+        @per-page-change="setPerPage"
+        @sort="toggleSort"
+        @sort-change="setSort"
+        @clear-filters="clearFilters"
+      >
+        <template #filters>
+          <div class="filter-left">
+            <label class="pm-toggle-field">
+              <MpToggle id="stock-only-contention" v-model:is-checked="onlyContention" :aria-label="t('Show only contention')" />
+              <span>{{ t('Show only contention') }}</span>
+            </label>
           </div>
-        </div>
-      </div>
+          <div class="filter-right">
+            <div class="filter-search">
+              <MpIcon name="search" size="sm" />
+              <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search item...')" />
+            </div>
+          </div>
+        </template>
 
-      <div class="pm-table-wrap">
-        <table class="pm-table">
-          <thead>
-            <tr><th>{{ t('Item') }}</th><th>{{ t('Warehouse') }}</th><th class="pm-num">{{ t('On hand') }}</th><th class="pm-num">{{ t('Reserved') }}</th><th class="pm-num">{{ t('Available') }}</th><th>{{ t('Reserved by project') }}</th><th /></tr>
-          </thead>
-          <tbody>
-            <template v-for="r in rows" :key="r.i.id">
-              <tr class="pm-tr-click" @click="expanded = expanded === r.i.id ? null : r.i.id">
-                <td>
-                  <span class="pm-row pm-gap-2">
-                    <MpIcon :name="expanded === r.i.id ? 'chevrons-down' : 'chevrons-right'" size="sm" />
-                    <span class="pm-strong">{{ r.i.name }}</span>
-                    <ErpStatusBadge v-if="r.contention" v-bind="badgeProps('flag', 'contention', t)" />
-                    <ErpStatusBadge v-if="r.pending" status="pending" type="information" :label="`${r.pending} ${t('release request')}`" />
-                  </span>
-                </td>
-                <td>{{ r.i.warehouse }}</td>
-                <td class="pm-num">{{ num(r.i.onHand) }} {{ r.i.unit }}</td>
-                <td class="pm-num">{{ num(r.reserved) }}</td>
-                <td class="pm-num" :class="r.available <= 0 ? 'pm-neg' : ''">{{ num(r.available) }}</td>
-                <td class="pm-wrap">
-                  <span class="pm-row pm-gap-1">
-                    <MpTag v-for="b in r.byProject" :id="`stock-${r.i.id}-${b.p.id}`" :key="b.p.id">{{ b.p.code }} · {{ num(b.qty) }}</MpTag>
-                    <span v-if="!r.byProject.length" class="pm-muted">—</span>
-                  </span>
-                </td>
-                <td><MpTextlink :id="`stock-issue-${r.i.id}`" as="a" @click.prevent.stop="openIssue(r.i)">{{ t('Issue') }}</MpTextlink></td>
-              </tr>
-              <tr v-if="expanded === r.i.id" class="pm-tr-sub">
-                <td colspan="7">
-                  <div class="pm-table-wrap">
-                    <table class="pm-table">
-                      <thead><tr><th>{{ t('Project') }}</th><th>{{ t('Priority') }}</th><th>{{ t('Work package') }}</th><th class="pm-num">{{ t('Qty') }}</th><th>{{ t('Status') }}</th><th /></tr></thead>
-                      <tbody>
-                        <tr v-for="res in reservations.filter(x => x.itemId === r.i.id && (x.status === 'reserved' || x.status === 'picked'))" :key="res.id">
-                          <td><MpTextlink :id="`stock-project-${res.id}`" as="a" @click.prevent="router.push(`/projects/${res.projectId}?tab=production`)">{{ getProject(res.projectId)?.code }}</MpTextlink> {{ getProject(res.projectId)?.name }}</td>
-                          <td><ErpStatusBadge v-bind="badgeProps('priority', getProject(res.projectId)!.priority, t)" /></td>
-                          <td>{{ getWorkPackage(res.wpId)?.code }} {{ getWorkPackage(res.wpId)?.name }}</td>
-                          <td class="pm-num">{{ num(res.qty) }} {{ r.i.unit }}</td>
-                          <td><ErpStatusBadge v-bind="badgeProps('res', res.status, t)" /></td>
-                          <td><MpTextlink :id="`stock-request-${res.id}`" as="a" @click.prevent="openRequest(res.id)">{{ t('Request release') }}</MpTextlink></td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                  <div v-for="q in releaseRequests.filter(x => x.itemId === r.i.id)" :key="q.id" class="pm-row pm-gap-2 pm-small pm-mt-2">
-                    <ErpStatusBadge v-bind="badgeProps('approval', q.status, t)" />
-                    <span>{{ q.qty }} {{ r.i.unit }} {{ getProject(q.fromProjectId)?.code }} → {{ getProject(q.toProjectId)?.code }} — {{ q.reason }}</span>
-                    <MpTextlink v-if="q.status === 'pending'" :id="`stock-inbox-${q.id}`" as="a" @click.prevent="router.push('/project-approvals')">{{ t('Open in Approvals') }}</MpTextlink>
-                  </div>
-                </td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
-      </div>
+        <template #cell-item="{ row }">
+          <div>
+            <span class="cell-link" role="link" tabindex="0" @click.stop="openDetail(asRow(row))" @keydown.enter="openDetail(asRow(row))">{{ asRow(row).item }}</span>
+            <span class="pm-row pm-gap-1 pm-mt-2">
+              <ErpStatusBadge v-if="asRow(row).contention" v-bind="badgeProps('flag', 'contention', t)" />
+              <ErpStatusBadge v-if="asRow(row).pending" status="pending" type="information" :label="`${asRow(row).pending} ${t('release request')}`" />
+            </span>
+          </div>
+        </template>
+        <template #cell-onHand="{ row }">{{ num(asRow(row).onHand) }} {{ asRow(row).unit }}</template>
+        <template #cell-reserved="{ row }">{{ num(asRow(row).reserved) }}</template>
+        <template #cell-available="{ row }">
+          <span :class="asRow(row).available <= 0 ? 'pm-neg' : ''">{{ num(asRow(row).available) }}</span>
+        </template>
+        <template #cell-byProject="{ row }">
+          <span v-if="asRow(row).byProject.length" class="pm-row pm-gap-1">
+            <MpTag v-for="b in asRow(row).byProject" :id="`stock-${asRow(row).id}-${b.p!.id}`" :key="b.p!.id">{{ b.p!.code }} · {{ num(b.qty) }}</MpTag>
+          </span>
+          <span v-else class="pm-muted">—</span>
+        </template>
+
+        <template #actions="{ row }">
+          <PmMenu :id="`stock-row-${asRow(row).id}`" kebab :label="t('More actions')" :items="[
+            { label: t('View reservations'), action: () => openDetail(asRow(row)), disabledReason: asRow(row).byProject.length ? undefined : t('Nothing is reserved on this item') },
+            { label: t('Issue stock'), action: () => openIssue(asRow(row).i) },
+          ]" />
+        </template>
+
+        <template #empty>
+          <div class="pm-empty-inline">
+            <div class="pm-empty-title">{{ t('No items') }}</div>
+            <div class="pm-empty-desc">{{ t('Items will appear here.') }}</div>
+          </div>
+        </template>
+      </ErpTablePage>
       <p class="pm-caption pm-mt-2">
         {{ t('Issuing stock reserved to another project') }}: <strong>{{ projectPolicy.reservationIssuePolicy === 'block' ? t('Blocked') : t('Warned') }}</strong>.
         <template v-if="role !== 'warehouse'"> {{ t('Tip: switch “View as” to Warehouse to see this page the way warehouse staff do.') }}</template>
       </p>
     </div>
+
+    <!-- Reservations on one item — who holds what, and the release requests against it -->
+    <PmOverlay id="stock-detail" :open="!!detail" wide :title="detail?.item ?? ''" @close="closeDetail">
+      <template v-if="detail">
+        <div class="pm-grid-3">
+          <div><div class="pm-stat-label">{{ t('Warehouse') }}</div><div class="pm-body">{{ detail.warehouse }}</div></div>
+          <div><div class="pm-stat-label">{{ t('On hand') }}</div><div class="pm-body">{{ num(detail.onHand) }} {{ detail.unit }}</div></div>
+          <div><div class="pm-stat-label">{{ t('Reserved') }}</div><div class="pm-body">{{ num(detail.reserved) }} {{ detail.unit }}</div></div>
+          <div><div class="pm-stat-label">{{ t('Available') }}</div><div class="pm-body" :class="detail.available <= 0 ? 'pm-neg' : ''">{{ num(detail.available) }} {{ detail.unit }}</div></div>
+        </div>
+
+        <div>
+          <h3 class="pm-h3 pm-mb-2">{{ t('Reserved by project') }}</h3>
+          <div class="pm-table-wrap">
+            <table class="pm-table">
+              <thead><tr><th>{{ t('Project') }}</th><th>{{ t('Priority') }}</th><th>{{ t('Work package') }}</th><th class="pm-num">{{ t('Qty') }}</th><th>{{ t('Status') }}</th><th /></tr></thead>
+              <tbody>
+                <tr v-for="res in detailReservations" :key="res.id">
+                  <td><MpTextlink :id="`stock-project-${res.id}`" as="a" @click.prevent="router.push(`/projects/${res.projectId}?tab=production`)">{{ getProject(res.projectId)?.code }}</MpTextlink> {{ getProject(res.projectId)?.name }}</td>
+                  <td><ErpStatusBadge v-bind="badgeProps('priority', getProject(res.projectId)!.priority, t)" /></td>
+                  <td>{{ getWorkPackage(res.wpId)?.code }} {{ getWorkPackage(res.wpId)?.name }}</td>
+                  <td class="pm-num">{{ num(res.qty) }} {{ detail.unit }}</td>
+                  <td><ErpStatusBadge v-bind="badgeProps('res', res.status, t)" /></td>
+                  <td class="pm-cell-actions"><MpTextlink :id="`stock-request-${res.id}`" as="a" @click.prevent="openRequest(res.id)">{{ t('Request release') }}</MpTextlink></td>
+                </tr>
+                <tr v-if="!detailReservations.length"><td colspan="6"><div class="pm-empty-inline">{{ t('Nothing is reserved on this item') }}</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div v-if="detailRequests.length">
+          <h3 class="pm-h3 pm-mb-2">{{ t('Release requests') }}</h3>
+          <div v-for="q in detailRequests" :key="q.id" class="pm-row pm-gap-2 pm-small pm-mb-2">
+            <ErpStatusBadge v-bind="badgeProps('approval', q.status, t)" />
+            <span>{{ q.qty }} {{ detail.unit }} {{ getProject(q.fromProjectId)?.code }} → {{ getProject(q.toProjectId)?.code }} — {{ q.reason }}</span>
+            <MpTextlink v-if="q.status === 'pending'" :id="`stock-inbox-${q.id}`" as="a" @click.prevent="router.push('/project-approvals')">{{ t('Open in Approvals') }}</MpTextlink>
+          </div>
+        </div>
+      </template>
+      <template #footer>
+        <MpButton variant="ghost" is-rounded @click="closeDetail">{{ t('Close') }}</MpButton>
+        <MpButton v-if="detail" id="stock-detail-issue" variant="primary" is-rounded @click="openIssue(detail.i)">{{ t('Issue stock') }}</MpButton>
+      </template>
+    </PmOverlay>
 
     <!-- Request release -->
     <PmOverlay id="stock-request-modal" :open="rq.open" variant="modal" :title="t('Request release')" :subtitle="rqRes ? `${getProject(rqRes.projectId)?.code} · ${num(rqRes.qty)} ${t('reserved')}` : ''" @close="rq.open = false">

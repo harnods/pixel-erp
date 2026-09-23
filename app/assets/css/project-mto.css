@@ -288,3 +288,5 @@
 .pm-table th.pm-cell-sticky-end { background: var(--mp-colors-background-surface, #f1f5f9); }
 /* Total sits under its table, aligned with the amount column's right edge. */
 .pm-total-row { padding: 0 var(--mp-spacing-2, 8px) 0 0; }
+/* Toggle field in a filter bar: toggle then label, the standard 12px gap (rule/form-toggle-inline). */
+.pm-toggle-field { display: inline-flex; align-items: center; gap: var(--mp-spacing-3, 12px); cursor: pointer; font-size: var(--mp-font-sizes-md, 14px); }

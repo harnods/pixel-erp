@@ -2854,6 +2854,12 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Min stock": "Stok minimum",
 
   // ── Projects module (Project MTO) ─────────────────────────────────────────
+  "Show only contention": "Tampilkan hanya rebutan stok",
+  "View reservations": "Lihat pencadangan",
+  "Nothing is reserved on this item": "Tidak ada pencadangan pada barang ini",
+  "No items": "Belum ada barang",
+  "Items will appear here.": "Barang akan muncul di sini.",
+  "Release requests": "Permintaan pelepasan",
   "No documents": "Belum ada dokumen",
   "Documents will appear here.": "Dokumen akan muncul di sini.",
   "Documents": "Dokumen",
@@ -3312,7 +3318,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Only an active project can be re-opened": "Hanya proyek aktif yang dapat dibuka ulang",
   "Only an active project can recognise revenue.": "Hanya proyek aktif yang dapat mengakui pendapatan.",
   "Only an active project records BAST": "Hanya proyek aktif yang dapat mencatat BAST",
-  "Only contention": "Hanya rebutan stok",
   "Only in copy": "Hanya di salinan",
   "Only in master": "Hanya di master",
   "Only the BOM (while no open work order uses it) and plan details can change.": "Hanya BOM (selama tidak dipakai perintah kerja terbuka) dan detail rencana yang dapat diubah.",
