@@ -208,9 +208,10 @@ function onReserve(productIds: string[]) {
     return
   }
   // C-3 — say which case applied when only part of the selection went through.
-  const title = r.skippedProducts > 0
-    ? `${r.reservedProducts} ${t('component(s) reserved')} · ${r.skippedProducts} ${t('left as a request to the stockist')}`
-    : `${r.reservedProducts} ${t('component(s) reserved')} (${r.reservedQty} ${t('unit')})`
+  const parts = [`${r.reservedProducts} ${t('component(s) reserved')} (${r.reservedQty} ${t('unit')})`]
+  if (r.partialProducts > 0) parts.push(`${r.partialProducts} ${t('reserved short')}`)
+  if (r.skippedProducts > 0) parts.push(`${r.skippedProducts} ${t('had no stock')}`)
+  const title = parts.join(' · ')
   toast.notify({ variant: 'success', title, maxWidth: 'max-content' })
 }
 

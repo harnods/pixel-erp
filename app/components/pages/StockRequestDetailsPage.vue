@@ -28,7 +28,7 @@ import UnreserveMaterialsModal from '~/components/patterns/UnreserveMaterialsMod
 import { formatDate } from '~/utils/date'
 import {
   stockRequests, stockRequestStatus, lineCovered, lineToTransfer, lineReadiness,
-  isOverdue, canReject, reserveWorkOrderProducts, unreserveWorkOrderProducts, rejectRequest,
+  isOverdue, canReject, reserveRequestProducts, unreserveRequestProducts, rejectRequest,
   reservedTracking, trackingChanged, lineTracking, setReservedBatches, setReservedSerials,
   type StockRequest, type StockRequestLine, type UnreserveDisposition,
 } from '~/data/stockRequests'
@@ -92,21 +92,22 @@ const unreserveOpen = ref(false)
 
 function onReserve(productIds: string[]) {
   if (!req.value) return
-  const r = reserveWorkOrderProducts(req.value.workOrderId, productIds)
+  const r = reserveRequestProducts(req.value.id, productIds)
   reserveOpen.value = false
   if (r.reservedProducts === 0) {
     toast.notify({ variant: 'error', title: t('Nothing could be reserved — warehouse stock does not cover any selected component in full'), maxWidth: 'max-content' })
     return
   }
-  const msg = r.skippedProducts > 0
-    ? `${r.reservedProducts} ${t('component(s) reserved')} · ${r.skippedProducts} ${t('still short')}`
-    : `${r.reservedProducts} ${t('component(s) reserved')} (${r.reservedQty} ${t('unit')})`
+  const parts = [`${r.reservedProducts} ${t('component(s) reserved')} (${r.reservedQty} ${t('unit')})`]
+  if (r.partialProducts > 0) parts.push(`${r.partialProducts} ${t('reserved short')}`)
+  if (r.skippedProducts > 0) parts.push(`${r.skippedProducts} ${t('had no stock')}`)
+  const msg = parts.join(' · ')
   toast.notify({ variant: 'success', title: msg, maxWidth: 'max-content' })
 }
 
 function onUnreserve(payload: { productIds: string[]; disposition: UnreserveDisposition; reason: string }) {
   if (!req.value) return
-  const released = unreserveWorkOrderProducts(req.value.workOrderId, payload.productIds, payload.disposition)
+  const released = unreserveRequestProducts(req.value.id, payload.productIds, payload.disposition)
   unreserveOpen.value = false
   if (released === 0) return
   const where = payload.disposition === 'return-to-warehouse'

@@ -544,20 +544,39 @@ export function lineReadiness(line: StockRequestLine): LineReadiness {
 export function reserveWorkOrderProducts(
   workOrderId: string,
   productIds: string[],
-): { reservedProducts: number; reservedQty: number; skippedProducts: number } {
-  const req = requestForWorkOrder(workOrderId)
-  const result = { reservedProducts: 0, reservedQty: 0, skippedProducts: 0 }
+): { reservedProducts: number; reservedQty: number; skippedProducts: number; partialProducts: number } {
+  return reserveRequestProducts(requestForWorkOrder(workOrderId)?.id ?? '', productIds)
+}
+
+/**
+ * Reserve selected components of ONE request, by request id. A work order can
+ * carry an additional/adjustment request alongside its primary one, so anything
+ * acting on a request the user is looking at must address it directly rather than
+ * re-deriving "the work order's request".
+ */
+export function reserveRequestProducts(
+  requestId: string,
+  productIds: string[],
+): { reservedProducts: number; reservedQty: number; skippedProducts: number; partialProducts: number } {
+  const req = stockRequests.find(r => r.id === requestId)
+  const result = { reservedProducts: 0, reservedQty: 0, skippedProducts: 0, partialProducts: 0 }
   if (!req) return result
   for (const productId of productIds) {
     const line = req.lines.find(l => l.productId === productId)
     if (!line) continue
     const outstanding = line.qty - lineCovered(line)
     if (outstanding <= 0) continue
-    if (line.destAvailable < outstanding) { result.skippedProducts++; continue }
-    line.reserved += outstanding
-    line.destAvailable -= outstanding
+    // Reserve what the warehouse can actually give. PARTIAL is allowed here: the
+    // all-or-nothing rule (C-3) governs AUTO-reserve at work order creation, not a
+    // stockist reserving by hand — and the start gate's "partially reserved"
+    // states only exist because a line can be reserved short.
+    const take = Math.min(outstanding, line.destAvailable)
+    if (take <= 0) { result.skippedProducts++; continue }
+    line.reserved += take
+    line.destAvailable -= take
     result.reservedProducts++
-    result.reservedQty += outstanding
+    result.reservedQty += take
+    if (take < outstanding) result.partialProducts++
   }
   if (result.reservedQty > 0) persistStockRequests()
   return result
@@ -651,7 +670,16 @@ export function unreserveWorkOrderProducts(
   productIds: string[],
   disposition: UnreserveDisposition,
 ): number {
-  const req = requestForWorkOrder(workOrderId)
+  return unreserveRequestProducts(requestForWorkOrder(workOrderId)?.id ?? '', productIds, disposition)
+}
+
+/** Release the full reserved qty of selected components of ONE request, by id. */
+export function unreserveRequestProducts(
+  requestId: string,
+  productIds: string[],
+  disposition: UnreserveDisposition,
+): number {
+  const req = stockRequests.find(r => r.id === requestId)
   if (!req) return 0
   let released = 0
   for (const productId of productIds) {
