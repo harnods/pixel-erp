@@ -38,7 +38,7 @@ const { role, actor, asActor, current } = useProjectRole()
 
 const KIND_KEYS = Object.keys(APPROVAL_KIND_LABELS) as ApprovalKind[]
 const kindFilter = ref('')
-const statusFilter = ref('pending')
+const statusFilter = ref('')
 const kindOptions = computed(() => KIND_KEYS.map(k => ({ value: k, label: t(APPROVAL_KIND_LABELS[k]) })))
 const statusOptions = computed(() => [
   { value: 'pending', label: t('Pending') },
@@ -53,37 +53,42 @@ onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
 interface Row {
   id: string; refNo: string; title: string; kind: ApprovalKind; kindLabel: string
   project: string; projectId: string; requestedBy: string; requestedAt: string
-  amount: number; status: ApprovalItem['status']; a: ApprovalItem
+  amount: number; status: ApprovalItem['status']; statusRank: number; a: ApprovalItem
 }
-const rows = computed<Row[]>(() => approvals.map(a => ({
-  id: a.id, refNo: a.refNo, title: a.title, kind: a.kind, kindLabel: t(APPROVAL_KIND_LABELS[a.kind]),
-  project: `${getProject(a.projectId)?.code} · ${getProject(a.projectId)?.name}`, projectId: a.projectId,
-  requestedBy: a.requestedBy, requestedAt: a.requestedAt,
-  amount: a.kind === 'overage' ? (a.requested ?? 0) : (a.amount ?? 0), status: a.status, a,
-})))
+// Pending first, then approved, then rejected (the default sort key); within a group the
+// rows arrive newest-first and Array.sort is stable, so that order survives.
+const STATUS_RANK: Record<ApprovalItem['status'], number> = { pending: 0, approved: 1, rejected: 2 }
+const rows = computed<Row[]>(() => approvals
+  .slice().sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))
+  .map(a => ({
+    id: a.id, refNo: a.refNo, title: a.title, kind: a.kind, kindLabel: t(APPROVAL_KIND_LABELS[a.kind]),
+    project: `${getProject(a.projectId)?.code} · ${getProject(a.projectId)?.name}`, projectId: a.projectId,
+    requestedBy: a.requestedBy, requestedAt: a.requestedAt,
+    amount: a.kind === 'overage' ? (a.requested ?? 0) : (a.amount ?? 0), status: a.status, statusRank: STATUS_RANK[a.status], a,
+  })))
 
 const {
   search, currentPage, paginated, total, perPage, setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState<Row>(rows, {
   perPage: 25,
-  defaultSort: { key: 'requestedAt', dir: 'desc' },
+  defaultSort: { key: 'statusRank', dir: 'asc' },
   filterFn: (r, s) => {
     const matches = !s || r.refNo.toLowerCase().includes(s) || r.title.toLowerCase().includes(s) || r.project.toLowerCase().includes(s)
     return matches && (!kindFilter.value || r.kind === kindFilter.value) && (!statusFilter.value || r.status === statusFilter.value)
   },
 })
 watch([kindFilter, statusFilter], () => setPage(1))
-const hasActiveFilter = computed(() => !!kindFilter.value || statusFilter.value !== 'pending')
-function clearFilters() { kindFilter.value = ''; statusFilter.value = 'pending'; search.value = '' }
+const hasActiveFilter = computed(() => !!kindFilter.value || !!statusFilter.value)
+function clearFilters() { kindFilter.value = ''; statusFilter.value = ''; search.value = '' }
 
 const columns = computed<TableColumn[]>(() => [
-  { key: 'refNo', label: t('Request'), kind: 'number', sortType: 'text' },
+  { key: 'refNo', label: t('Request'), kind: 'name', sortType: 'text' },
   { key: 'kindLabel', label: t('Type'), sortType: 'text' },
+  { key: 'statusRank', label: t('Status'), kind: 'status', sortType: 'number' },
   { key: 'project', label: t('Project'), kind: 'name', sortType: 'text' },
   { key: 'requestedBy', label: t('Raised by'), kind: 'name', sortType: 'text' },
   { key: 'requestedAt', label: t('Raised on'), kind: 'date', sortType: 'text' },
   { key: 'amount', label: t('Amount'), kind: 'amount', align: 'right', sortType: 'number' },
-  { key: 'status', label: t('Status'), kind: 'status', sortType: 'text' },
 ])
 const asRow = (r: unknown) => r as Row
 
@@ -171,7 +176,7 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
             <span class="pm-cell-sub">{{ asRow(row).title }}</span>
           </div>
         </template>
-        <template #cell-kindLabel="{ row }"><ErpStatusBadge v-bind="badgeProps('kind', asRow(row).kind, t)" /></template>
+        <template #cell-kindLabel="{ row }">{{ asRow(row).kindLabel }}</template>
         <template #cell-project="{ row }">
           <div>
             <span>{{ getProject(asRow(row).projectId)?.code }}</span>
@@ -187,7 +192,7 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
           <template v-else-if="asRow(row).amount">{{ rp(asRow(row).amount) }}</template>
           <span v-else class="pm-muted">—</span>
         </template>
-        <template #cell-status="{ row }"><ErpStatusBadge v-bind="badgeProps('approval', asRow(row).status, t)" /></template>
+        <template #cell-statusRank="{ row }"><ErpStatusBadge v-bind="badgeProps('approval', asRow(row).status, t)" /></template>
 
         <template #actions="{ row }">
           <PmMenu :id="`appr-row-${asRow(row).id}`" kebab :label="t('More actions')" :items="[
@@ -198,8 +203,8 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
 
         <template #empty>
           <div class="pm-empty-inline">
-            <div class="pm-empty-title">{{ statusFilter === 'pending' ? t('Nothing waiting') : t('No decisions yet') }}</div>
-            <div class="pm-empty-desc">{{ statusFilter === 'pending' ? t('New requests from PMs appear here.') : '' }}</div>
+            <div class="pm-empty-title">{{ t('Nothing waiting') }}</div>
+            <div class="pm-empty-desc">{{ t('New requests from PMs appear here.') }}</div>
           </div>
         </template>
       </ErpTablePage>
@@ -214,10 +219,7 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
       @close="closeReview"
     >
       <template v-if="current_">
-        <div class="pm-row pm-gap-2">
-          <ErpStatusBadge v-bind="badgeProps('approval', current_.status, t)" />
-          <ErpStatusBadge v-bind="badgeProps('kind', current_.kind, t)" />
-        </div>
+        <ErpStatusBadge v-bind="badgeProps('approval', current_.status, t)" />
         <div v-if="current_.reason" class="pm-tl-reason pm-m-0"><span class="pm-muted">{{ t('Reason') }}:</span> {{ current_.reason }}</div>
 
         <!-- Overage -->
