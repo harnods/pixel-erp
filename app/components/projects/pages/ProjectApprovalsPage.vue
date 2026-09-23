@@ -223,18 +223,19 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
           <MpButton id="appr-open-project" variant="ghost" is-rounded left-icon="newtab" :aria-label="t('Open project')" @click="router.push(`/projects/${current_.projectId}`)" />
         </MpTooltip>
       </template>
-      <template #headerMeta>
-        <template v-if="current_">
-          <ErpStatusBadge v-bind="badgeProps('approval', current_.status, t)" />
-          <span class="pm-caption pm-m-0">
-            {{ t(APPROVAL_KIND_LABELS[current_.kind]) }} · {{ getProject(current_.projectId)?.code }} · {{ t('raised by') }} {{ current_.requestedBy }} {{ t('on') }} {{ formatDate(current_.requestedAt) }}
-          </span>
-        </template>
-      </template>
       <template v-if="current_">
-        <div v-if="current_.reason" class="pm-quote">
-          <div class="pm-stat-label">{{ t('Reason from') }} {{ current_.requestedBy }}</div>
-          <p class="pm-body pm-mt-2">{{ current_.reason }}</p>
+        <!-- The request's own facts — status, type and provenance — read as fields, then the reason -->
+        <div class="pm-grid-3">
+          <div><div class="pm-stat-label">{{ t('Status') }}</div><div class="pm-mt-2"><ErpStatusBadge v-bind="badgeProps('approval', current_.status, t)" /></div></div>
+          <div><div class="pm-stat-label">{{ t('Type') }}</div><div class="pm-body">{{ t(APPROVAL_KIND_LABELS[current_.kind]) }}</div></div>
+          <div><div class="pm-stat-label">{{ t('Project') }}</div><div class="pm-body">{{ getProject(current_.projectId)?.code }} · {{ getProject(current_.projectId)?.name }}</div></div>
+          <div><div class="pm-stat-label">{{ t('Raised by') }}</div><div class="pm-body">{{ current_.requestedBy }}</div></div>
+          <div><div class="pm-stat-label">{{ t('Raised on') }}</div><div class="pm-body">{{ formatDate(current_.requestedAt) }}</div></div>
+          <div v-if="current_.status !== 'pending'"><div class="pm-stat-label">{{ t('Decided by') }}</div><div class="pm-body">{{ current_.decidedBy }} · {{ formatDate(current_.decidedAt) }}</div></div>
+        </div>
+        <div v-if="current_.reason">
+          <div class="pm-stat-label">{{ t('Reason') }}</div>
+          <p class="pm-body">{{ current_.reason }}</p>
         </div>
 
         <!-- Overage -->
@@ -304,8 +305,9 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
           </MpFormControl>
           <PmActionError id="appr-error" :error="action.error.value" />
         </template>
-        <div v-else class="pm-caption">
-          {{ current_.status === 'approved' ? t('Approved') : t('Rejected') }} {{ t('by') }} {{ current_.decidedBy }} {{ t('on') }} {{ formatDate(current_.decidedAt) }}<template v-if="current_.decisionNote"> — “{{ current_.decisionNote }}”</template>
+        <div v-else-if="current_.decisionNote">
+          <div class="pm-stat-label">{{ t('Decision note') }}</div>
+          <p class="pm-body">{{ current_.decisionNote }}</p>
         </div>
       </template>
 
