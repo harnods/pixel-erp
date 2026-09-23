@@ -92,11 +92,16 @@ if (!isCreating) {
   }
 }
 
-// ── View vs Edit mode ───────────────────────────────────────────────────────
-// Existing modules open in VIEW mode (read-only); click Edit to switch.
-// New modules and ?edit=1 (freshly created from modal) go straight to edit.
-const viewMode = ref(!isCreating && route.query.edit !== '1')
-function enterEdit() { viewMode.value = false; nextTick(() => markClean()) }
+// ── View vs Edit mode (per-tab) ─────────────────────────────────────────────
+// Each tab has its own independent edit state. Clicking "Edit" on Setup only
+// makes Setup editable; switching to another tab exits edit mode for the old tab.
+const initialEditTab = isCreating ? '__all__' : route.query.edit === '1' ? (isDealLikeModule(props.orderId) ? 'setup' : 'fields') : null
+const editingTab = ref<string | null>(initialEditTab)
+const viewMode = computed(() => {
+  if (isCreating) return false
+  return editingTab.value !== activeTab.value
+})
+function enterEdit() { editingTab.value = activeTab.value; nextTick(() => markClean()) }
 // Deals module cannot be deleted or deactivated.
 const isDealSystem = computed(() => mod.value?.id === 'deals')
 const hasModuleActions = computed(() => {
@@ -257,11 +262,12 @@ const unsavedTabTarget = ref<string | null>(null)
 const unsavedConfirmOpen = ref(false)
 function switchTab(key: string) {
   if (key === activeTab.value) return
-  if (!viewMode.value && activeTab.value !== 'properties' && isDirty.value) {
+  if (editingTab.value !== null && editingTab.value !== 'properties' && isDirty.value) {
     unsavedTabTarget.value = key
     unsavedConfirmOpen.value = true
     return
   }
+  editingTab.value = null
   activeTab.value = key
 }
 function reloadAll() {
@@ -272,6 +278,7 @@ function reloadAll() {
 }
 function discardAndSwitch() {
   unsavedConfirmOpen.value = false
+  editingTab.value = null
   reloadAll()
   activeTab.value = unsavedTabTarget.value ?? activeTab.value
   unsavedTabTarget.value = null
@@ -284,6 +291,7 @@ function stayOnTab() {
 function saveAndSwitch() {
   saveChanges()
   unsavedConfirmOpen.value = false
+  editingTab.value = null
   activeTab.value = unsavedTabTarget.value ?? activeTab.value
   unsavedTabTarget.value = null
 }
@@ -948,12 +956,13 @@ function saveChanges() {
   persistCrmModule(m, AUTHOR, nowStamp())
   const tabLabels: Record<string, string> = { setup: 'Setup saved', properties: 'Properties saved', layout: 'Layout saved', pipeline: 'Pipeline saved' }
   successToast(t(tabLabels[activeTab.value] ?? 'Saved'))
+  editingTab.value = null
   nextTick(() => markClean())
 }
 // Every module (Deals system module included) is edited from the Modules index.
 function cancel() {
-  if (!isCreating && !viewMode.value) {
-    viewMode.value = true
+  if (!isCreating && editingTab.value !== null) {
+    editingTab.value = null
     reloadAll()
     return
   }
