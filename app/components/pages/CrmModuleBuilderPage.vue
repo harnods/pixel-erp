@@ -1260,13 +1260,14 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                     </MpPopoverList>
                   </MpPopoverContent>
                 </MpPopover>
-                <MpButton
-                  v-else-if="(row as unknown as DealProperty).editable"
-                  class="btn-enterprise--secondary builder-edit-opts"
-                  is-rounded
-                  data-devchange="crm-editable-property-options"
-                  @click="openEditOptions((row as unknown as DealProperty).id)"
-                >{{ t('Edit options') }}</MpButton>
+                <MpTooltip v-else-if="(row as unknown as DealProperty).editable" :id="`prop-edit-opts-${(row as unknown as DealProperty).id}`" :label="t('Edit options')" placement="top" use-portal>
+                  <MpButton
+                    class="builder-kebab"
+                    :aria-label="t('Edit options')"
+                    data-devchange="crm-editable-property-options"
+                    @click="openEditOptions((row as unknown as DealProperty).id)"
+                  ><MpIcon name="edit" size="md" /></MpButton>
+                </MpTooltip>
                 <span
                   v-else-if="(row as unknown as DealProperty).id === systemActionDevChangePropertyId"
                   class="prop-action-devchange-anchor"
@@ -1953,7 +1954,6 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
 .prop-type { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-colors-text-default, #080d0e); }
 .prop-type-icon { color: var(--mp-colors-icon-default, #536062); flex-shrink: 0; }
 .prop-action-devchange-anchor { display: inline-flex; width: var(--mp-sizes-8); height: var(--mp-sizes-8); pointer-events: none; }
-.builder-edit-opts { font-size: var(--mp-font-sizes-sm) !important; padding: var(--mp-spacing-1) var(--mp-spacing-3) !important; white-space: nowrap; }
 /* Properties filter bar (mirrors the standard ErpFilterBar layout). */
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
