@@ -3973,10 +3973,12 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'No cap': 'Tanpa batas',
   'Currently': 'Saat ini',
   'Replenishment worklist': 'Daftar kerja pengisian ulang',
-  'Count in-transit transfers as on order': 'Hitung transfer dalam perjalanan sebagai pemesanan',
+  'Count in-transit transfers as incoming supply': 'Hitung transfer dalam perjalanan sebagai pasokan masuk',
   'more vendor': 'vendor lain',
   'across all stocked products': 'dari seluruh produk tersimpan',
   'On order qty': 'Jumlah dalam pemesanan',
+  'In transit qty': 'Jumlah dalam perjalanan',
+  'Suggested qty = (lead time + safety days) × velocity − (available + in transit), rounded up.': 'Jumlah saran = (waktu tunggu + hari pengaman) × kecepatan − (tersedia + dalam perjalanan), dibulatkan ke atas.',
   'lead time': 'waktu tunggu',
   // ── Replenishment — vendor terms ──
   'Vendors, lead time and MOQ': 'Vendor, waktu tunggu, dan MOQ',

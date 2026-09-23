@@ -204,7 +204,7 @@ const longestWindow = computed(() => props.row?.velocity.lookbackDays ?? 0)
                 </span>
               </div>
 
-              <div class="rp-bd-dt">{{ t('On order') }}</div>
+              <div class="rp-bd-dt">{{ t('In transit') }}</div>
               <div class="rp-bd-dd">
                 {{ num(row.atp.onOrder) }} {{ row.unit }}
                 <span v-if="row.atp.onOrderDocs.length" class="rp-bd-dd-note">
@@ -238,7 +238,7 @@ const longestWindow = computed(() => props.row?.velocity.lookbackDays ?? 0)
               </div>
             </div>
             <p class="rp-bd-caption">
-              {{ t('Suggested qty = (lead time + safety days) × velocity − (available + on order), rounded up.') }}
+              {{ t('Suggested qty = (lead time + safety days) × velocity − (available + in transit), rounded up.') }}
             </p>
           </section>
 

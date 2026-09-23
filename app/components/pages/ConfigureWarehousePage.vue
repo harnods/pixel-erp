@@ -503,10 +503,10 @@ const toggleConfirmItems = computed((): string[] => {
 
               <div class="cw-toggle-row">
                 <div class="cw-toggle-info">
-                  <span class="cw-toggle-title">{{ t('Count in-transit transfers as on order') }}</span>
+                  <span class="cw-toggle-title">{{ t('Count in-transit transfers as incoming supply') }}</span>
                   <span class="cw-toggle-desc">{{ t('Include stock already on its way from another warehouse when working out what is still needed.') }}</span>
                 </div>
-                <MpToggle v-model:is-checked="draft.replenishmentIncludeInTransit" :is-disabled="!isEditing" :aria-label="t('Count in-transit transfers as on order')" />
+                <MpToggle v-model:is-checked="draft.replenishmentIncludeInTransit" :is-disabled="!isEditing" :aria-label="t('Count in-transit transfers as incoming supply')" />
               </div>
             </template>
 

@@ -204,7 +204,7 @@ const ALL_COLUMNS: TableColumn[] = [
   { key: 'onHandQty',     label: 'On hand qty',    width: '120px', sortable: true, sortType: 'number', align: 'right' },
   { key: 'reservedQty',   label: 'Reserved qty',   width: '124px', sortable: true, sortType: 'number', align: 'right' },
   { key: 'availableQty',  label: 'Available qty',  width: '128px', sortable: true, sortType: 'number', align: 'right' },
-  { key: 'onOrderQty',    label: 'On order qty',   width: '124px', sortable: true, sortType: 'number', align: 'right' },
+  { key: 'onOrderQty',    label: 'In transit qty', width: '124px', sortable: true, sortType: 'number', align: 'right' },
   { key: 'unit',          label: 'Unit',           width: '88px' },
   { key: 'coverValue',    label: 'Days of cover',  width: '148px', sortable: true, sortType: 'number', align: 'right' },
   { key: 'suggestedQty',  label: 'Suggested qty',  width: '164px', sortable: true, sortType: 'number', align: 'right' },

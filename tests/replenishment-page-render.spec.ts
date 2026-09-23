@@ -75,7 +75,7 @@ describe('ReplenishmentPage — the worklist renders', () => {
     const text = wrapper.text()
     expect(text).toContain('On hand')
     expect(text).toContain('Reserved')
-    expect(text).toContain('On order')
+    expect(text).toContain('In transit')
   })
 
   it('shows the stat cards and the freshness line', async () => {
