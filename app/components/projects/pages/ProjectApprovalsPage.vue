@@ -34,7 +34,7 @@ import { successToast } from '~/utils/toasts'
 
 const { t } = useLocale()
 const router = useRouter()
-const { role, actor, asActor, current } = useProjectRole()
+const { role, actor, asActor } = useProjectRole()
 
 const KIND_KEYS = Object.keys(APPROVAL_KIND_LABELS) as ApprovalKind[]
 const kindFilter = ref('')
@@ -209,7 +209,6 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
           </div>
         </template>
       </ErpTablePage>
-      <p class="pm-caption pm-mt-2">{{ t('Viewing as') }} {{ t(current.label) }} ({{ actor }})</p>
     </div>
 
     <!-- Review drawer — the request's own detail, then the decision -->
@@ -231,7 +230,7 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
         </div>
         <div class="pm-grid-3">
           <div><div class="pm-stat-label">{{ t('Type') }}</div><div class="pm-body">{{ t(APPROVAL_KIND_LABELS[current_.kind]) }}</div></div>
-          <div><div class="pm-stat-label">{{ t('Status') }}</div><div class="pm-mt-2"><ErpStatusBadge v-bind="badgeProps('approval', current_.status, t)" /></div></div>
+          <div><div class="pm-stat-label">{{ t('Status') }}</div><div class="pm-field-badge"><ErpStatusBadge v-bind="badgeProps('approval', current_.status, t)" /></div></div>
         </div>
         <div>
           <div class="pm-stat-label">{{ t('Project') }}</div>
@@ -325,7 +324,7 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
       </template>
 
       <template #footer>
-        <MpButton variant="ghost" is-rounded @click="closeReview">{{ current_?.status === 'pending' ? t('Cancel') : t('Close') }}</MpButton>
+        <MpButton variant="ghost" is-rounded @click="closeReview">{{ t('Close') }}</MpButton>
         <template v-if="current_?.status === 'pending'">
           <MpButton id="appr-reject" variant="ghost" is-rounded @click="decide(false)">{{ t('Reject') }}</MpButton>
           <MpButton id="appr-approve" variant="primary" is-rounded @click="decide(true)">{{ t('Approve') }}</MpButton>
