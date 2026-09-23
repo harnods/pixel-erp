@@ -99,6 +99,10 @@ const viewMode = ref(!isCreating && route.query.edit !== '1')
 function enterEdit() { viewMode.value = false; nextTick(() => markClean()) }
 // Deals module cannot be deleted or deactivated.
 const isDealSystem = computed(() => mod.value?.id === 'deals')
+const hasModuleActions = computed(() => {
+  if (!mod.value || isDealSystem.value) return false
+  return mod.value.status === 'draft' || mod.value.status === 'published'
+})
 const deleteConfirmOpen = ref(false)
 function requestDeleteModule() {
   if (!mod.value || isDealSystem.value) return
@@ -1022,23 +1026,19 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
           <ErpStatusBadge v-if="!isCreating && mod && !mod.system" :status="statusBadge.status" :label="t(statusBadge.label)" badge-for="additionalInformation" />
         </div>
       </div>
-      <div v-if="viewMode && mod" class="cd-bar-actions" data-devchange="crm-module-view-mode">
+      <div v-if="mod && !isCreating && hasModuleActions" class="cd-bar-actions" data-devchange="crm-module-view-mode">
         <MpPopover id="module-actions-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
             <MpButton variant="secondary" is-rounded right-icon="caret-down">{{ t('Actions') }}</MpButton>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem @click="enterEdit">{{ t('Edit') }}</MpPopoverListItem>
               <MpPopoverListItem v-if="!isDealSystem && mod.status === 'draft'" @click="publishModule">{{ t('Publish') }}</MpPopoverListItem>
-              <MpPopoverListItem v-if="!isDealSystem && mod.status === 'published'" @click="deactivateModule">{{ t('Deactivate') }}</MpPopoverListItem>
-              <MpPopoverListItem v-if="!isDealSystem" @click="requestDeleteModule">{{ t('Delete') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="!isDealSystem && mod.status === 'published'" @click="deactivateModule">{{ t('Unpublish') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="!isDealSystem && mod.status === 'draft'" @click="requestDeleteModule">{{ t('Delete') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
-      </div>
-      <div v-if="!viewMode && mod && !mod.system && mod.status !== 'published'" class="cd-bar-actions">
-        <MpButton variant="primary" is-rounded @click="publishModule">{{ t('Publish') }}</MpButton>
       </div>
     </header>
 
@@ -1062,6 +1062,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
           <div v-show="activeTab === 'setup'" class="builder-panel">
             <!-- VIEW mode: ContentList read-only -->
             <div v-if="viewMode" class="setup-view">
+              <MpButton class="tab-edit-btn" variant="ghost" is-rounded left-icon="edit" @click="enterEdit">{{ t('Edit') }}</MpButton>
               <ContentList :label="t('Module name')">
                 <span class="mod-name-inline"><MpIcon :name="mod!.icon ?? 'pipeline'" size="sm" /> {{ mod!.name }}</span>
               </ContentList>
@@ -1280,6 +1281,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
 
           <!-- ════════ PIPELINE (Deals) — swimlane editor + settings sidebar ════════ -->
           <div v-show="activeTab === 'pipeline'" class="builder-panel builder-panel--pipeline" :data-devchange="isGenericModule ? 'crm-field-driven-pipeline' : 'crm-pipeline-no-custom-views'">
+            <MpButton v-if="viewMode" class="tab-edit-btn" variant="ghost" is-rounded left-icon="edit" @click="enterEdit">{{ t('Edit') }}</MpButton>
 
             <!-- ── Generic module: field picker + derived Kanban ── -->
             <template v-if="isGenericModule">
@@ -1513,6 +1515,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
           <!-- ════════ LAYOUT (Deals) — one Edit-layout canvas; applies to the deal
                details page AND the creation/edit form ════════ -->
           <div v-if="activeTab === 'layout'" class="builder-panel builder-panel--layout">
+            <MpButton v-if="viewMode" class="tab-edit-btn" variant="ghost" is-rounded left-icon="edit" @click="enterEdit">{{ t('Edit') }}</MpButton>
             <CrmDetailLayoutBuilder :detail="draft.detailLayout" :properties="propList" :create-property="createDealProperty" :module-icon="draft.icon" :module-id="props.orderId" :readonly="viewMode" @update:erp-target="onErpTargetChange" />
           </div>
 
@@ -1635,7 +1638,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
 
     <!-- Sticky action footer — per-tab save: Cancel + Save (secondary).
          Publish moved to page header (primary, top-right). -->
-    <footer v-if="mod && !isCreating && !viewMode && activeTab !== 'properties' && (isDirty || unsavedConfirmOpen)" class="builder-footer" data-devchange="crm-module-per-tab-save">
+    <footer v-if="mod && !isCreating && !viewMode && activeTab !== 'properties'" class="builder-footer" data-devchange="crm-module-per-tab-save">
       <div class="builder-footer-wrap">
         <Transition name="coachmark-fade">
           <div v-if="unsavedConfirmOpen" class="unsaved-coachmark">
@@ -1647,7 +1650,8 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
             <div class="unsaved-coachmark-arrow" />
           </div>
         </Transition>
-        <MpButton variant="secondary" is-rounded @click="saveChanges">{{ t('Save') }}</MpButton>
+        <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
+        <MpButton variant="primary" is-rounded @click="saveChanges">{{ t('Save changes') }}</MpButton>
       </div>
     </footer>
 
@@ -1938,7 +1942,8 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
 .page-tab--active::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--mp-border-selected, #029861); }
 
 /* Each tab panel stacks its rows with the standard 20px gap. */
-.builder-panel { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
+.builder-panel { display: flex; flex-direction: column; gap: var(--mp-spacing-5); position: relative; }
+.tab-edit-btn { position: absolute; top: 0; right: 0; z-index: 1; }
 
 /* ── Layout tab (Deals) — Details/Form page switcher ── */
 .builder-panel--layout { gap: var(--mp-spacing-4); }
