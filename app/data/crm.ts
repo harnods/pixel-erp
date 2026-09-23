@@ -1795,6 +1795,11 @@ export const servicePipelineViews = reactive<DealPipelineView[]>(
 )
 export function persistServicePipelineViews() { saveSnapshot('crm-service-pipeline-views-v1', servicePipelineViews) }
 
+export const servicePipelineFieldId = ref<string | null>(
+  loadSnapshot<string | null>('crm-service-pipeline-field-v1')?.[0] ?? null,
+)
+export function persistServicePipelineFieldId() { saveSnapshot('crm-service-pipeline-field-v1', [servicePipelineFieldId.value]) }
+
 const SERVICE_MODULE_SETUP_SEED: DealModuleSetup = {
   baseCurrency: 'IDR', applyCloseDate: true, closeMode: 'period',
   closePeriod: 'this-month', closeAmount: 1, closeUnit: 'days',
@@ -2010,7 +2015,8 @@ export function genericPicklistProperties(moduleId: string): DealProperty[] {
 
 /** Get the pipeline-driving field for a generic module (null = not assigned). */
 export function genericPipelineFieldId(moduleId: string): string | null {
-  if (moduleId === 'deals' || moduleId === 'services') return null
+  if (moduleId === 'deals') return null
+  if (moduleId === 'services') return servicePipelineFieldId.value
   const cfg = genericModuleConfigs[moduleId]
   return cfg?.pipelineFieldId ?? null
 }
@@ -2026,6 +2032,18 @@ export function transferGenericPipelineFieldId(moduleId: string, fieldId: string
  *  assigned, derives pipeline stages from its options. When cleared (null), empties
  *  the pipeline. */
 export function setGenericPipelineField(moduleId: string, fieldId: string | null, draftOptions?: DealPropertyOption[]): void {
+  if (moduleId === 'services') {
+    servicePipelineFieldId.value = fieldId
+    if (!fieldId) { servicePipelines.splice(0, servicePipelines.length); persistServicePipelineFieldId(); persistServicePipelines(); return }
+    const prop = serviceProperties.find((p) => p.id === fieldId)
+    const options = draftOptions ?? prop?.config?.options ?? []
+    servicePipelines.splice(0, servicePipelines.length, {
+      id: 'default', name: 'Default pipeline',
+      stages: options.map((o, i) => ({ id: `field-${i}`, name: o.label, kind: 'open' as DealStageKind, isDefault: i === 0 })),
+    })
+    persistServicePipelineFieldId(); persistServicePipelines()
+    return
+  }
   const cfg = ensureGenericModuleConfig(moduleId)
   cfg.pipelineFieldId = fieldId
   if (!fieldId) { cfg.pipelines = []; persistGenericModuleConfigs(); return }

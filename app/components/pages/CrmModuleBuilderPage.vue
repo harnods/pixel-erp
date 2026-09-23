@@ -299,7 +299,7 @@ function saveAndSwitch() {
 // ── Generic vs predefined module detection ──
 const isGenericModule = computed(() => {
   const id = mod.value?.id ?? ''
-  return id !== 'deals' && id !== 'services' && isDeals.value
+  return id !== 'deals' && isDeals.value
 })
 
 // ── Pipeline field picker (generic modules only) ──
