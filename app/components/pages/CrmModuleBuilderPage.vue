@@ -1258,19 +1258,27 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
               <!-- Default properties (from the master library) + related lists are non-editable,
                    EXCEPT editable system properties (status, priority, tags, source, payment-term)
                    which allow editing their picklist options. -->
-              <template v-if="!viewMode" #actions="{ row }">
-                <MpPopover v-if="canManageProperty(row as unknown as DealProperty)" :id="`prop-actions-${(row as unknown as DealProperty).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-                  <MpPopoverTrigger>
-                    <MpButton class="builder-kebab" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
-                  </MpPopoverTrigger>
-                  <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
-                    <MpPopoverList>
-                      <MpPopoverListItem @click="openEditProperty((row as unknown as DealProperty).id)">{{ t('Edit') }}</MpPopoverListItem>
-                      <MpPopoverListItem v-if="!(row as unknown as DealProperty).system" @click="deleteProperty((row as unknown as DealProperty).id)">{{ t('Delete') }}</MpPopoverListItem>
-                    </MpPopoverList>
-                  </MpPopoverContent>
-                </MpPopover>
-                <MpTooltip v-else-if="(row as unknown as DealProperty).editable" :id="`prop-edit-opts-${(row as unknown as DealProperty).id}`" :label="t('Edit options')" placement="top" use-portal>
+              <template #actions="{ row }">
+                <template v-if="!viewMode">
+                  <MpPopover v-if="canManageProperty(row as unknown as DealProperty)" :id="`prop-actions-${(row as unknown as DealProperty).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                    <MpPopoverTrigger>
+                      <MpButton class="builder-kebab" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
+                    </MpPopoverTrigger>
+                    <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+                      <MpPopoverList>
+                        <MpPopoverListItem @click="openEditProperty((row as unknown as DealProperty).id)">{{ t('Edit') }}</MpPopoverListItem>
+                        <MpPopoverListItem v-if="!(row as unknown as DealProperty).system" @click="deleteProperty((row as unknown as DealProperty).id)">{{ t('Delete') }}</MpPopoverListItem>
+                      </MpPopoverList>
+                    </MpPopoverContent>
+                  </MpPopover>
+                  <span
+                    v-else-if="(row as unknown as DealProperty).id === systemActionDevChangePropertyId"
+                    class="prop-action-devchange-anchor"
+                    data-devchange="crm-system-property-actions-removed"
+                    aria-hidden="true"
+                  />
+                </template>
+                <MpTooltip v-if="(row as unknown as DealProperty).editable" :id="`prop-edit-opts-${(row as unknown as DealProperty).id}`" :label="t('Edit options')" placement="top" use-portal>
                   <MpButton
                     class="builder-kebab"
                     :aria-label="t('Edit options')"
@@ -1278,12 +1286,6 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                     @click="openEditOptions((row as unknown as DealProperty).id)"
                   ><MpIcon name="edit" size="md" /></MpButton>
                 </MpTooltip>
-                <span
-                  v-else-if="(row as unknown as DealProperty).id === systemActionDevChangePropertyId"
-                  class="prop-action-devchange-anchor"
-                  data-devchange="crm-system-property-actions-removed"
-                  aria-hidden="true"
-                />
               </template>
             </ErpTablePage>
           </div>
