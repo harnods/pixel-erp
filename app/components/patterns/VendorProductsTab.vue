@@ -171,7 +171,7 @@ const columns = computed<TableColumn[]>(() => {
     // "Purchase multiple" was trade jargon. This header is the whole sentence, so
     // the meaning survives without the tooltip being opened. It wraps to two lines
     // at normal widths, which is the price of it explaining itself.
-    { key: 'purchaseMultiple', label: t('Order in multiples of'), align: 'right', sortable: true, sortType: 'number' },
+    { key: 'purchaseMultiple', label: t('Purchase multiplier'), align: 'right', sortable: true, sortType: 'number' },
   ]
   // US-19 — no price permission means these columns do not exist for this user.
   // They are not rendered empty; the table is simply narrower.
@@ -306,7 +306,7 @@ function saveTerms(payload: { moq: number; moqUnit: string; purchaseMultiple: nu
     changes.push({ label: t('Minimum order qty unit'), from: row.moqUnit, to: payload.moqUnit })
   }
   if (row.purchaseMultiple !== payload.purchaseMultiple) {
-    changes.push({ label: t('Order in multiples of'), from: String(row.purchaseMultiple), to: String(payload.purchaseMultiple) })
+    changes.push({ label: t('Purchase multiplier'), from: String(row.purchaseMultiple), to: String(payload.purchaseMultiple) })
   }
   if (row.multipleUnit !== payload.multipleUnit) {
     changes.push({ label: t('Order multiple unit'), from: row.multipleUnit, to: payload.multipleUnit })

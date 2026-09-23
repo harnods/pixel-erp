@@ -129,7 +129,7 @@ function submit(): void {
 
           <div class="evt-row">
             <MpFormControl id="evt-step" class="evt-num" :is-invalid="!!error">
-              <MpFormLabel>{{ t('Order in multiples of') }}</MpFormLabel>
+              <MpFormLabel>{{ t('Purchase multiplier') }}</MpFormLabel>
               <MpInput id="evt-step-input" v-model="multiple" type="number" is-full-width />
             </MpFormControl>
             <MpFormControl id="evt-step-unit" class="evt-unit">
