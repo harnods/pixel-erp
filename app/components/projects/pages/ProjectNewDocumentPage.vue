@@ -164,7 +164,7 @@ const VERDICT = computed(() => ({
                 <th class="pm-th-wide" data-devchange="pm-draft-project-documents">{{ t('Project') }}</th>
                 <th class="pm-th-mid">{{ t('Dimensions') }}</th>
                 <th class="pm-num pm-th-mid">{{ t('Amount') }}</th>
-                <th class="pm-cell-sticky-end" />
+                <th v-if="lines.length > 1" class="pm-cell-sticky-end" />
               </tr>
             </thead>
             <tbody>
@@ -184,12 +184,12 @@ const VERDICT = computed(() => ({
                     <MpInput :id="`nd-amt-${i}`" v-model="l.amount" inputmode="numeric" :aria-label="t('Amount')" @blur="l.amount = parseAmount(l.amount) ? parseAmount(l.amount).toLocaleString('id-ID') : ''" />
                   </MpInputGroup>
                 </td>
-                <td class="pm-cell-sticky-end">
-                  <MpButton v-if="lines.length > 1" :id="`nd-remove-${i}`" variant="ghost" is-rounded :aria-label="t('Remove line')" @click="removeLine(i)" left-icon="minus-circular" />
+                <td v-if="lines.length > 1" class="pm-cell-sticky-end">
+                  <MpButton :id="`nd-remove-${i}`" variant="ghost" is-rounded :aria-label="t('Remove line')" @click="removeLine(i)" left-icon="minus-circular" />
                 </td>
               </tr>
             </tbody>
-            <tfoot><tr><td colspan="5"><MpButton id="nd-add-line" variant="ghost" is-rounded left-icon="add" @click="addLine">{{ t('Line') }}</MpButton></td><td class="pm-cell-sticky-end" /></tr></tfoot>
+            <tfoot><tr><td colspan="5"><MpButton id="nd-add-line" variant="ghost" is-rounded left-icon="add" @click="addLine">{{ t('Line') }}</MpButton></td><td v-if="lines.length > 1" class="pm-cell-sticky-end" /></tr></tfoot>
           </table>
         </div>
         <div class="pm-row pm-row--nowrap pm-gap-4 pm-total-row">
