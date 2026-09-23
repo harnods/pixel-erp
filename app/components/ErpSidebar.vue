@@ -884,6 +884,21 @@ function findActive(pageKey: string, allowShortcuts: boolean): {
           }
           if (sub) break
         }
+        // Same collision on an expandOnClick item, whose children live in the
+        // promoted panel instead of panelSubmenu (e.g. Projects › Projects, both
+        // /projects — and every /projects/:id detail route resolves to that key).
+        // Without this the sub stays null and the panel highlights whatever was
+        // last visited in the section instead of the page actually open.
+        if (!sub && item.expandOnClick) {
+          const groups = expandGroupsFor(item)
+          for (const g of groups) {
+            for (const p of g) {
+              if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) { sub = p.label; break }
+            }
+            if (sub) break
+          }
+          if (sub) return { nav: item.name, sub, panel: { title: item.name, groups, parentNavName: item.name } }
+        }
         return { nav: item.name, sub, panel }
       }
       // expandOnClick items: check their promoted-panel content BEFORE the plain
