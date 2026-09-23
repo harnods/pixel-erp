@@ -79,6 +79,7 @@
 .pm-mb-4 { margin-bottom: var(--mp-spacing-4, 16px); }
 .pm-mb-5 { margin-bottom: var(--mp-spacing-5, 20px); }
 .pm-m-0 { margin: 0; }
+.pm-nowrap { white-space: nowrap; }
 .pm-pl-6 { padding-left: var(--mp-spacing-6, 24px); }
 .pm-grow { flex: 1; min-width: 0; }
 .pm-grow-2 { flex: 2; min-width: var(--mp-sizes-48, 192px); }
@@ -238,6 +239,7 @@
 .pm-approval-head { padding: var(--mp-spacing-4, 16px); gap: var(--mp-spacing-3, 12px); cursor: pointer; flex-wrap: nowrap; }
 .pm-approval-body { padding: var(--mp-spacing-4, 16px); border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); }
 .pm-tl-reason.pm-m-0 { margin: 0; }
+.pm-nowrap { white-space: nowrap; }
 .pm-tree-name > div { min-width: 0; overflow-wrap: anywhere; }
 /* ErpFilterSelect as a full-width form field: its root shrink-wraps, so let it fill the row. */
 .efs[style*="--efs-w: 100%"] { display: block; width: 100%; }

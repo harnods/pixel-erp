@@ -133,17 +133,19 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <template #cell-date="{ row }">{{ formatDate(asRow(row).date) }}</template>
         <template #cell-lines="{ row }">
           <div>
-            <div v-for="(l, i) in asRow(row).d.lines.slice(0, 2)" :key="i" class="pm-small">{{ l.description }} · {{ t(accountName(l.account)) }} · {{ l.wpId ? nodeLabel(l.wpId) : t('no project') }}</div>
-            <div v-if="asRow(row).d.lines.length > 2" class="pm-caption">+{{ asRow(row).d.lines.length - 2 }}</div>
+            <div v-for="(l, i) in asRow(row).d.lines.slice(0, 2)" :key="i">{{ l.description }}</div>
+            <span class="pm-cell-sub">
+              {{ t(accountName(asRow(row).d.lines[0]!.account)) }} · {{ asRow(row).d.lines[0]!.wpId ? nodeLabel(asRow(row).d.lines[0]!.wpId!) : t('no project') }}<template v-if="asRow(row).d.lines.length > 2"> · +{{ asRow(row).d.lines.length - 2 }}</template>
+            </span>
           </div>
         </template>
-        <template #cell-amount="{ row }">{{ rp(asRow(row).amount) }}</template>
-        <template #cell-status="{ row }">
+        <template #cell-amount="{ row }">
           <div>
-            <ErpStatusBadge v-bind="badgeProps('doc', asRow(row).status, t)" />
-            <span v-if="asRow(row).d.override" class="pm-cell-sub">{{ t('Over by') }} {{ rp(asRow(row).d.override!.overBy) }} ({{ pct(asRow(row).d.override!.overPct) }})</span>
+            <div>{{ rp(asRow(row).amount) }}</div>
+            <span v-if="asRow(row).d.override" class="pm-cell-sub pm-nowrap">{{ t('Over by') }} {{ rp(asRow(row).d.override!.overBy) }} ({{ pct(asRow(row).d.override!.overPct) }})</span>
           </div>
         </template>
+        <template #cell-status="{ row }"><ErpStatusBadge v-bind="badgeProps('doc', asRow(row).status, t)" /></template>
 
         <template #actions="{ row }">
           <PmMenu :id="`pd-row-${asRow(row).id}`" kebab :label="t('More actions')" :items="[
