@@ -1461,7 +1461,7 @@ const DEAL_DETAIL_LAYOUT_SEED: DealDetailLayout = {
       id: 'tab-details', key: 'details', label: 'Deal details', editable: true, visible: true,
       sections: [
         { id: 'sec-overview', name: 'Overview', columns: 3, cols: [['record-name', 'company', 'billing-address'], ['contact', 'email', 'phone'], ['deal-value', 'record-owner', 'status']] },
-        { id: 'sec-transaction', name: 'Transaction', columns: 4, cols: distributeCols(['transaction-date', 'due-date', 'transaction-no', 'reference-no', 'payment-terms'], 4) },
+        { id: 'sec-transaction', name: 'Transaction', columns: 4, cols: distributeCols(['transaction-date', 'due-date', 'transaction-number', 'external-reference-id', 'payment-term'], 4) },
         { id: 'sec-products', name: 'Products', columns: 1, cols: [['product-list']], kind: 'products', system: true },
         { id: 'sec-additional', name: 'Additional info', columns: 3, cols: [['notes', 'attachments'], ['tags', 'source'], ['shipping-address']] },
       ],
@@ -1557,12 +1557,13 @@ export function defaultPropertyIcon(fieldType: string): string {
   if (fieldType === 'Contact' || fieldType === 'crm_contact_reference') return 'profile'
   if (fieldType === 'Company' || fieldType === 'crm_company_reference') return 'company'
   const API_ICON_MAP: Record<string, string> = {
-    single_line_text: 'text-editor-text', multi_line_text: 'text-editor-text', number: 'text-editor-number',
-    date: 'calendar', date_time: 'calendar', dropdown_select: 'caret-down', tags: 'tag',
-    auto_number: 'text-editor-number', email: 'email', phone: 'phone', url: 'link',
+    single_line_text: 'text-editor-text', multiple_line_text: 'text-editor-text', number: 'text-editor-number',
+    date: 'calendar', date_time: 'calendar', pick_list: 'caret-down', radio_select: 'radio-button',
+    multi_select: 'tag', auto_number: 'text-editor-number', email: 'email', phone: 'phone', url: 'link',
     product_list: 'shopping-bag', file_upload: 'attachment', image_upload: 'image',
-    single_checkbox: 'checkmark-circle', currency: 'text-editor-number', percentage: 'text-editor-number',
-    user_reference: 'profile', address: 'map-pin', activity_log: 'clock',
+    single_checkbox: 'checkmark-circle', percentage: 'text-editor-number',
+    user_reference: 'profile', activity_log: 'clock', related_list: 'clock',
+    system_id: 'text-editor-number', system_boolean: 'checkmark-circle', system_number: 'text-editor-number',
   }
   return API_ICON_MAP[fieldType] ?? (DEAL_PROPERTY_TYPE_ICON as Record<string, string>)[fieldType] ?? 'text-editor-text'
 }
@@ -1579,20 +1580,20 @@ export const DEFAULT_PROPERTIES: DefaultProperty[] = [
   // ── Visible system properties (rows 3–34 in spreadsheet) ──
   { id: 'record-name', name: 'Record Name', fieldType: 'single_line_text', variableName: 'record_name', description: 'The name/title of the record.' },
   { id: 'record-owner', name: 'Record Owner', fieldType: 'user_reference', variableName: 'record_owner', description: 'The user responsible for this record.' },
-  { id: 'description', name: 'Description', fieldType: 'multi_line_text', variableName: 'description', description: 'A detailed description of the record.', existInDeals: false },
-  { id: 'status', name: 'Status', fieldType: 'dropdown_select', variableName: 'status', description: 'Current status/stage of the record.', editable: true, editableScope: 'rename' },
-  { id: 'priority', name: 'Priority', fieldType: 'dropdown_select', variableName: 'priority', description: 'Priority level of the record.', editable: true, editableScope: 'rename', existInDeals: false },
-  { id: 'tags', name: 'Tags', fieldType: 'tags', variableName: 'tags', description: 'Labels/tags for categorizing the record.', editable: true, editableScope: 'add-delete-rename' },
-  { id: 'transaction-no', name: 'Transaction Number', fieldType: 'auto_number', variableName: 'transaction_no', description: 'Unique auto-generated document number for the record.' },
-  { id: 'reference-no', name: 'External Reference ID', fieldType: 'single_line_text', variableName: 'reference_no', description: 'External reference number (e.g. customer PO number).' },
-  { id: 'source', name: 'Source', fieldType: 'dropdown_select', variableName: 'source', description: 'Where this record originated from.', editable: true, editableScope: 'add-delete-rename' },
+  { id: 'description', name: 'Description', fieldType: 'multiple_line_text', variableName: 'description', description: 'General record description.', existInDeals: false },
+  { id: 'status', name: 'Status', fieldType: 'pick_list', variableName: 'status', description: 'Current status/stage of the record.', editable: true, editableScope: 'rename' },
+  { id: 'priority', name: 'Priority', fieldType: 'radio_select', variableName: 'priority', description: 'Priority level of the record.', editable: true, editableScope: 'rename', existInDeals: false },
+  { id: 'tags', name: 'Tags', fieldType: 'multi_select', variableName: 'tags', description: 'Optional flexible classification.', editable: true, editableScope: 'add-delete-rename' },
+  { id: 'transaction-number', name: 'Transaction Number', fieldType: 'auto_number', variableName: 'transaction_number', description: 'Server-generated human-readable identifier.' },
+  { id: 'external-reference-id', name: 'External Reference ID', fieldType: 'single_line_text', variableName: 'external_reference_id', description: 'For imported or integrated identifiers.' },
+  { id: 'source', name: 'Source', fieldType: 'pick_list', variableName: 'source', description: 'Administrator defines applicable sources.', editable: true, editableScope: 'add-delete-rename' },
   { id: 'transaction-date', name: 'Transaction Date', fieldType: 'date', variableName: 'transaction_date', description: 'The date the transaction is created.' },
   { id: 'due-date', name: 'Due Date', fieldType: 'date', variableName: 'due_date', description: 'Payment due date.' },
-  { id: 'expected-close-date', name: 'Expected Close Date', fieldType: 'date', variableName: 'expected_close_date', description: 'Expected close date of the record.', existInDeals: false },
+  { id: 'close-date', name: 'Expected Close Date', fieldType: 'date', variableName: 'close_date', description: 'Optional expected completion/closure date.', existInDeals: false },
   { id: 'next-follow-up-time', name: 'Next Follow-up Time', fieldType: 'date_time', variableName: 'next_follow_up_time', description: 'Date and time of the next scheduled follow-up.', existInDeals: false },
   { id: 'completed-time', name: 'Completed Time', fieldType: 'date_time', variableName: 'completed_time', description: 'Date and time the record was completed.', existInDeals: false },
-  { id: 'notes', name: 'Notes', fieldType: 'multi_line_text', variableName: 'notes', description: 'Notes logged against the record.' },
-  { id: 'memo', name: 'Memo', fieldType: 'multi_line_text', variableName: 'memo', description: 'Internal memo. Not visible to the customer.', existInDeals: false },
+  { id: 'notes', name: 'Notes', fieldType: 'multiple_line_text', variableName: 'notes', description: 'Internal notes distinct from Description.' },
+  { id: 'memo', name: 'Memo', fieldType: 'multiple_line_text', variableName: 'memo', description: 'Memo for leaving additional messages if needed.', existInDeals: false },
   { id: 'attachments', name: 'Attachments', fieldType: 'file_upload', variableName: 'attachments', description: 'File attachments on the record.' },
   { id: 'image', name: 'Image', fieldType: 'image_upload', variableName: 'image', description: 'Image associated with the record.' },
   { id: 'contact', name: 'Contact', fieldType: 'crm_contact_reference', variableName: 'contact', description: 'The contact person associated with this record.', dataSource: { label: 'Contacts', origin: 'crm' }, linkedFields: [
@@ -1600,49 +1601,50 @@ export const DEFAULT_PROPERTIES: DefaultProperty[] = [
     { name: 'Phone number', type: 'phone', variableName: 'phone_number' }, { name: 'Associated company', type: 'crm_company_reference', variableName: 'associated_company' },
   ] },
   { id: 'company', name: 'Company', fieldType: 'crm_company_reference', variableName: 'company', description: 'The company this record belongs to.', dataSource: { label: 'Companies', origin: 'crm' }, linkedFields: [
-    { name: 'Company name', type: 'single_line_text', variableName: 'company_name' }, { name: 'Industry', type: 'dropdown_select', variableName: 'industry' },
-    { name: 'Country', type: 'dropdown_select', variableName: 'country' }, { name: 'Tax number (NPWP)', type: 'single_line_text', variableName: 'tax_number' },
+    { name: 'Company name', type: 'single_line_text', variableName: 'company_name' }, { name: 'Industry', type: 'pick_list', variableName: 'industry' },
+    { name: 'Country', type: 'pick_list', variableName: 'country' }, { name: 'Tax number (NPWP)', type: 'single_line_text', variableName: 'tax_number' },
     { name: 'Company owner', type: 'user_reference', variableName: 'company_owner' },
   ] },
   { id: 'email', name: 'Email', fieldType: 'email', variableName: 'email', description: 'Primary email address.' },
   { id: 'phone', name: 'Phone', fieldType: 'phone', variableName: 'phone', description: 'Primary phone number.' },
   { id: 'product-list', name: 'Product List', fieldType: 'product_list', variableName: 'product_list', description: 'Line items (products) on the record.', dataSource: { label: 'Product catalog', origin: 'catalog' } },
   { id: 'website', name: 'Website', fieldType: 'url', variableName: 'website', description: 'Website URL.', existInDeals: false },
-  { id: 'billing-address', name: 'Billing Address', fieldType: 'address', variableName: 'billing_address', description: 'Billing address for the transaction.' },
-  { id: 'shipping-address', name: 'Shipping Address', fieldType: 'address', variableName: 'shipping_address', description: 'Shipping/delivery address.' },
-  { id: 'payment-terms', name: 'Payment Terms', fieldType: 'dropdown_select', variableName: 'payment_terms', description: 'Payment terms (e.g. Net 30, COD).', editable: true, editableScope: 'add-delete-rename', dataSource: { label: 'Payment terms', origin: 'erp' } },
-  { id: 'deal-value', name: 'Deal Value', fieldType: 'currency', variableName: 'deal_value', description: 'The monetary value of the record.' },
-  { id: 'currency', name: 'Currency', fieldType: 'dropdown_select', variableName: 'currency', description: 'Transaction currency code.', existInDeals: false, dataSource: { label: 'Currencies', origin: 'erp' } },
-  { id: 'quantity', name: 'Quantity', fieldType: 'number', variableName: 'quantity', description: 'Quantity of items.', existInDeals: false },
-  { id: 'probability', name: 'Probability', fieldType: 'percentage', variableName: 'probability', description: 'Probability of closing the deal.', existInDeals: false },
-  { id: 'discount', name: 'Discount', fieldType: 'percentage', variableName: 'discount', description: 'Discount percentage applied to the record.', existInDeals: false },
+  { id: 'billing-address', name: 'Billing Address', fieldType: 'multiple_line_text', variableName: 'billing_address', description: 'Billing address.' },
+  { id: 'shipping-address', name: 'Shipping Address', fieldType: 'multiple_line_text', variableName: 'shipping_address', description: 'Generic shipping address.' },
+  { id: 'payment-term', name: 'Payment Terms', fieldType: 'pick_list', variableName: 'payment_term', description: 'Administrator defines applicable payment terms.', editable: true, editableScope: 'add-delete-rename', dataSource: { label: 'Payment terms', origin: 'erp' } },
+  { id: 'deal-value', name: 'Deal Value', fieldType: 'number', variableName: 'deal_value', description: 'Generic total deal value; adopts the basic currency from Module set up upon display.' },
+  { id: 'currency-code', name: 'Currency', fieldType: 'pick_list', variableName: 'currency_code', description: 'Transaction currency code.', existInDeals: false, dataSource: { label: 'Currencies', origin: 'erp' } },
+  { id: 'quantity', name: 'Quantity', fieldType: 'number', variableName: 'quantity', description: 'Number type; allows maximum 6 decimals.', existInDeals: false },
+  { id: 'probability', name: 'Probability', fieldType: 'percentage', variableName: 'probability', description: 'Useful for likelihood or confidence.', existInDeals: false },
+  { id: 'discount-percentage', name: 'Discount', fieldType: 'percentage', variableName: 'discount_percentage', description: 'Optional commercial adjustment; separate from product list discounts.', existInDeals: false },
 
   // ── Hidden/System properties (rows 36–45 in spreadsheet) ──
-  { id: 'record-id', name: 'Record ID', fieldType: 'auto_number', variableName: 'record_id', description: 'Unique numeric identifier for this record.', hidden: true },
-  { id: 'created-time', name: 'Created Time', fieldType: 'date_time', variableName: 'created_time', description: 'Date and time the record was created.', hidden: true },
-  { id: 'created-by', name: 'Created By', fieldType: 'user_reference', variableName: 'created_by', description: 'User who created this record.', hidden: true },
-  { id: 'last-modified-time', name: 'Last Modified Time', fieldType: 'date_time', variableName: 'last_modified_time', description: 'Date and time of the most recent modification.', hidden: true },
-  { id: 'last-modified-by', name: 'Last Modified By', fieldType: 'user_reference', variableName: 'last_modified_by', description: 'User who last modified this record.', hidden: true },
-  { id: 'archived-state', name: 'Archived State', fieldType: 'single_checkbox', variableName: 'archived_state', description: 'Whether the record is archived.', hidden: true },
-  { id: 'record-version', name: 'Record Version', fieldType: 'number', variableName: 'record_version', description: 'Version number of the record.', hidden: true },
-  { id: 'company-tenant-id', name: 'Company/Tenant ID', fieldType: 'auto_number', variableName: 'company_tenant_id', description: 'ID of the company/tenant that owns this record.', hidden: true },
-  { id: 'audit-reference', name: 'Audit Reference', fieldType: 'single_line_text', variableName: 'audit_reference', description: 'Reference for audit trail.', hidden: true },
-  { id: 'activity-log', name: 'Activity Log', fieldType: 'activity_log', variableName: 'activity_log', description: 'Full audit trail: creation, stage changes, field edits, conversions, and deletions.', hidden: true },
+  { id: 'record-id', name: 'Record ID', fieldType: 'system_id', variableName: 'record_id', description: 'Hidden, immutable.', hidden: true },
+  { id: 'created-time', name: 'Created Time', fieldType: 'date_time', variableName: 'created_time', description: 'Read-only; optional System Information display.', hidden: true },
+  { id: 'created-by', name: 'Created By', fieldType: 'user_reference', variableName: 'created_by', description: 'Read-only; never expose a raw numeric user ID.', hidden: true },
+  { id: 'last-modified-time', name: 'Last Modified Time', fieldType: 'date_time', variableName: 'last_modified_time', description: 'Read-only.', hidden: true },
+  { id: 'last-modified-by', name: 'Last Modified By', fieldType: 'user_reference', variableName: 'last_modified_by', description: 'Read-only.', hidden: true },
+  { id: 'is-archived', name: 'Archived State', fieldType: 'system_boolean', variableName: 'is_archived', description: 'System-managed; not directly editable.', hidden: true },
+  { id: 'record-version', name: 'Record Version', fieldType: 'system_number', variableName: 'record_version', description: 'Hidden optimistic-concurrency value.', hidden: true },
+  { id: 'company-id', name: 'Company/Tenant ID', fieldType: 'system_id', variableName: 'company_id', description: 'Hidden and server-enforced.', hidden: true },
+  { id: 'audit-reference', name: 'Audit Reference', fieldType: 'system_id', variableName: 'audit_reference', description: 'Hidden internal audit correlation.', hidden: true },
+  { id: 'activity-log', name: 'Activity Log', fieldType: 'related_list', variableName: 'activity_log', description: 'Read-only component in Detail; not a normal value field.', hidden: true },
 ]
 /** Unique field-type labels present in DEFAULT_PROPERTIES — for the index filter. */
 export const DEFAULT_PROPERTY_FIELD_TYPES: string[] = [...new Set(DEFAULT_PROPERTIES.map((p) => p.fieldType))]
 /** ids of the default properties — used to flag/seed module property lists. */
 export const DEFAULT_PROPERTY_IDS = new Set(DEFAULT_PROPERTIES.map((p) => p.id))
 /** Picklist property types whose options can drive a Kanban pipeline. */
-const PICKLIST_TYPES: DealPropertyType[] = ['Dropdown select', 'Radio select', 'dropdown_select']
+const PICKLIST_TYPES: DealPropertyType[] = ['Dropdown select', 'Radio select', 'dropdown_select', 'pick_list', 'radio_select', 'multi_select']
 /** The default properties as module `DealProperty` rows (system + isDefault). Both
  *  the Deals and Service module property lists prepend these, so the master library
  *  and every module stay in sync by construction. */
 const DEFAULT_PICKLIST_OPTIONS: Record<string, readonly string[]> = {
   'status': DEAL_STAGES as unknown as string[],
-  'priority': ['Low', 'Medium', 'High', 'Urgent'],
-  'tags': ['Hot lead', 'VIP', 'Follow-up', 'New'],
-  'source': ['Organic search', 'Paid search', 'Email marketing', 'Referral', 'Social media', 'Direct traffic', 'Offline sources', 'Other'],
+  'priority': ['Minor', 'Low', 'Medium', 'High', 'Urgent'],
+  'tags': ['VIP', 'New opportunity', 'Need Attention'],
+  'source': ['Website', 'Offline events', 'Referrals'],
+  'payment-term': PAYMENT_TERMS as unknown as string[],
 }
 function optionsForDefaultProp(p: DefaultProperty): DealPropertyOption[] | undefined {
   const type = p.fieldType as DealPropertyType
@@ -1734,9 +1736,14 @@ const PROPERTY_ID_MIGRATION: Record<string, string> = {
   customer: 'company', 'primary-contact': 'contact', products: 'product-list',
   'contact-person': 'contact', 'product-lines': 'product-list',
   'deal-name': 'record-name', owner: 'record-owner', 'deal-stage': 'status',
-  'close-date': 'expected-close-date', attachment: 'attachments',
+  'close-date': 'close-date', attachment: 'attachments',
   'contact-person-email': 'email', 'contact-person-phone': 'phone',
   'record-source': 'source', message: 'notes',
+  'expected-close-date': 'close-date',
+  'transaction-no': 'transaction-number', 'reference-no': 'external-reference-id',
+  'payment-terms': 'payment-term', currency: 'currency-code',
+  discount: 'discount-percentage',
+  'archived-state': 'is-archived', 'company-tenant-id': 'company-id',
 }
 function normalizeDealProperties(list: DealProperty[]): DealProperty[] {
   return list.map((p) => {
@@ -1812,7 +1819,7 @@ const SERVICE_DETAIL_LAYOUT_SEED: DealDetailLayout = {
       id: 'stab-details', key: 'details', label: 'Service details', editable: true, visible: true,
       sections: [
         { id: 'ssec-overview', name: 'Overview', columns: 3, cols: [['record-name', 'company'], ['contact', 'email', 'phone'], ['deal-value', 'record-owner', 'status']] },
-        { id: 'ssec-service', name: 'Service info', columns: 3, cols: distributeCols(['service-type', 'transaction-date', 'due-date', 'payment-terms', 'transaction-no', 'reference-no'], 3) },
+        { id: 'ssec-service', name: 'Service info', columns: 3, cols: distributeCols(['service-type', 'transaction-date', 'due-date', 'payment-term', 'transaction-number', 'external-reference-id'], 3) },
         { id: 'ssec-products', name: 'Products', columns: 1, cols: [['product-list']], kind: 'products', system: true },
         { id: 'ssec-additional', name: 'Additional info', columns: 3, cols: [['notes', 'attachments'], ['tags', 'source'], ['shipping-address']] },
       ],

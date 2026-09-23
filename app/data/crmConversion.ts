@@ -214,12 +214,12 @@ function dealsSeed(): ConversionConfig {
       { targetKey: 'customer',     strategy: 'crm-field', sourceFieldId: 'company' },
       { targetKey: 'txDate',       strategy: 'crm-field', sourceFieldId: 'transaction-date' },
       { targetKey: 'dueDate',      strategy: 'crm-field', sourceFieldId: 'due-date' },
-      { targetKey: 'paymentTerm',  strategy: 'crm-field', sourceFieldId: 'payment-terms' },
+      { targetKey: 'paymentTerm',  strategy: 'crm-field', sourceFieldId: 'payment-term' },
       { targetKey: 'productLines', strategy: 'crm-field', sourceFieldId: 'product-list' },
-      { targetKey: 'currency',     strategy: 'crm-field', sourceFieldId: 'currency' },
+      { targetKey: 'currency',     strategy: 'crm-field', sourceFieldId: 'currency-code' },
       { targetKey: 'billingAddress', strategy: 'crm-field', sourceFieldId: 'billing-address' },
       { targetKey: 'shippingAddress', strategy: 'crm-field', sourceFieldId: 'shipping-address' },
-      { targetKey: 'referenceNo',  strategy: 'crm-field', sourceFieldId: 'reference-no' },
+      { targetKey: 'referenceNo',  strategy: 'crm-field', sourceFieldId: 'external-reference-id' },
       { targetKey: 'memo',         strategy: 'crm-field', sourceFieldId: 'memo' },
     ],
   }
@@ -235,7 +235,7 @@ function servicesSeed(): ConversionConfig {
       { targetKey: 'dueDate',      strategy: 'crm-field', sourceFieldId: 'due-date' },
       // productLines intentionally UNMAPPED → this draft is incomplete.
       { targetKey: 'productLines', strategy: 'unmapped' },
-      { targetKey: 'currency',     strategy: 'crm-field', sourceFieldId: 'currency' },
+      { targetKey: 'currency',     strategy: 'crm-field', sourceFieldId: 'currency-code' },
     ],
   }
 }

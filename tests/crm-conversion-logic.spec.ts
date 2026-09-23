@@ -298,7 +298,7 @@ describe('DEFAULT_PROPERTIES completeness', () => {
   it('includes deal-value property', () => {
     const dv = DEFAULT_PROPERTIES.find((p) => p.id === 'deal-value')
     expect(dv).toBeDefined()
-    expect(dv!.fieldType).toBe('currency')
+    expect(dv!.fieldType).toBe('number')
   })
 
   it('every DEFAULT_PROPERTIES id is in DEFAULT_PROPERTY_IDS set', () => {
