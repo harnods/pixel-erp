@@ -79,22 +79,22 @@ const DEALS_LINE_FIELDS: ReportField[] = [
  *  module — a custom-authored property has no real backing value slot yet. */
 const GENERIC_VALUE_KEY: Record<string, keyof NonNullable<ReturnType<typeof genericRecordsFor>>[number]['values']> = {
   'company': 'customer',
-  'contact-person': 'contactPerson',
+  'contact': 'contactPerson',
   'deal-value': 'dealValue',
-  'deal-name': 'name' as any,
-  'owner': 'owner' as any,
+  'record-name': 'name' as any,
+  'record-owner': 'owner' as any,
   'currency': 'currency',
   'transaction-date': 'transactionDate',
   'due-date': 'dueDate',
-  'close-date': 'dueDate',
+  'expected-close-date': 'dueDate',
   'payment-terms': 'paymentTerms',
   'reference-no': 'referenceNo',
-  'message': 'description',
+  'notes': 'description',
   'memo': 'memo',
 }
 const GENERIC_SYSTEM_FIELDS: ReportField[] = [
-  { id: 'name', label: 'Deal name', type: 'text' },
-  { id: 'stage', label: 'Stage', type: 'pick-list' },
+  { id: 'name', label: 'Record name', type: 'text' },
+  { id: 'stage', label: 'Status', type: 'pick-list' },
   { id: 'owner', label: 'Owner', type: 'user', options: CRM_OWNERS },
   { id: 'createdAt', label: 'Created date', type: 'date' },
 ]

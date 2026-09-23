@@ -254,11 +254,11 @@ export const DEV_CHANGES: DevChange[] = [
   },
   {
     id: 'crm-settings-properties-hidden',
-    title: 'Settings Properties page hidden',
+    title: 'Settings Properties page deprecated',
     description:
-      'The standalone CRM Settings Properties page is hidden from Settings. Property management stays inside each module under Settings > Modules.',
-    date: '2026-09-18',
-    files: ['CrmSidebar.vue', '[...slug].vue'],
+      'The standalone CRM Settings Properties page is removed. Property management stays inside each module under Settings > Modules. System properties overhauled to match the definitive list.',
+    date: '2026-09-23',
+    files: ['CrmSidebar.vue', '[...slug].vue', 'crm.ts'],
   },
   {
     id: 'crm-company-property-label',
@@ -267,6 +267,14 @@ export const DEV_CHANGES: DevChange[] = [
       'The CRM module property formerly labelled Customer is now labelled Company, matching its Company association type and the company-first CRM model.',
     date: '2026-09-18',
     files: ['crm.ts', 'CrmModuleBuilderPage.vue'],
+  },
+  {
+    id: 'crm-system-properties-overhaul',
+    title: 'System properties overhauled',
+    description:
+      'DEFAULT_PROPERTIES rewritten to the definitive 32 visible + 10 hidden system properties. Uses API-style field types. Editable properties (Status, Priority, Tags, Source, Payment Terms) show an edit button. Properties with existInDeals=false are excluded from default layout/pipeline card. Removed deprecated shipping, tax, and ERP-specific properties.',
+    date: '2026-09-23',
+    files: ['crm.ts', 'CrmModuleBuilderPage.vue', 'crmConversion.ts', 'crmReports.ts', 'CrmDetailLayoutBuilder.vue'],
   },
   {
     id: 'crm-system-property-actions-removed',

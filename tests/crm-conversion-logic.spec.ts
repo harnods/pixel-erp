@@ -295,10 +295,10 @@ describe('erpTargetFields', () => {
 
 // ── DEFAULT_PROPERTIES ──────────────────────────────────────────────────────
 describe('DEFAULT_PROPERTIES completeness', () => {
-  it('includes exchange-rate property', () => {
-    const er = DEFAULT_PROPERTIES.find((p) => p.id === 'exchange-rate')
-    expect(er).toBeDefined()
-    expect(er!.fieldType).toBe('Number')
+  it('includes deal-value property', () => {
+    const dv = DEFAULT_PROPERTIES.find((p) => p.id === 'deal-value')
+    expect(dv).toBeDefined()
+    expect(dv!.fieldType).toBe('currency')
   })
 
   it('every DEFAULT_PROPERTIES id is in DEFAULT_PROPERTY_IDS set', () => {
@@ -307,9 +307,10 @@ describe('DEFAULT_PROPERTIES completeness', () => {
     }
   })
 
-  it('defaultDealProperties returns same length as DEFAULT_PROPERTIES + any custom', () => {
+  it('defaultDealProperties returns visible properties only (excludes hidden)', () => {
     const dp = defaultDealProperties()
-    expect(dp.length).toBeGreaterThanOrEqual(DEFAULT_PROPERTIES.length)
+    const visibleCount = DEFAULT_PROPERTIES.filter((p) => !p.hidden).length
+    expect(dp.length).toBe(visibleCount)
   })
 
   it('every property in defaultDealProperties has a valid DealPropertyType', () => {

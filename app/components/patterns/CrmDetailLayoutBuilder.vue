@@ -65,18 +65,20 @@ const PREVIEW_MODES = [
   { id: 'prev-details', label: 'Details record', value: 'details' },
 ]
 const DUMMY_DATA: Record<string, string> = {
-  'deal-name': 'Annual espresso contract', 'deal-value': 'Rp 19.200.000', 'company': 'Kopi Kenangan Pusat',
-  'contact-person': 'Ratna Sari', 'contact-person-email': 'buyer@kopikenangan.com', 'contact-person-phone': '+62 811 5550 006',
-  'owner': 'Dewi Lestari', 'currency': 'IDR', 'billing-address': 'Jl. Menteng Raya No. 42, Jakarta',
-  'transaction-date': '15/09/2026', 'due-date': '15/10/2026', 'close-date': '30/09/2026',
+  'record-name': 'Annual espresso contract', 'deal-value': 'Rp 19.200.000', 'company': 'Kopi Kenangan Pusat',
+  'contact': 'Ratna Sari', 'email': 'buyer@kopikenangan.com', 'phone': '+62 811 5550 006',
+  'record-owner': 'Dewi Lestari', 'currency': 'IDR', 'billing-address': 'Jl. Menteng Raya No. 42, Jakarta',
+  'transaction-date': '15/09/2026', 'due-date': '15/10/2026', 'expected-close-date': '30/09/2026',
   'transaction-no': 'TXN-0913', 'reference-no': 'RFQ-8815', 'payment-terms': 'Net 30',
-  'exchange-rate': '1.00', 'warehouse': 'Gudang Utama', 'shipping-address': 'Jl. Menteng Raya No. 42',
-  'shipping-date': '16/09/2026', 'delivery-date': '18/09/2026', 'ship-via': 'JNE Regular',
-  'tracking-no': 'JNE-88150913', 'shipping-fee': 'Rp 150.000',
-  'discount': '5%', 'global-discount': '0%', 'tax': 'PPN 11%', 'tax-inclusive': 'No', 'tax-after-discount': 'Yes',
-  'memo': 'Twelve-month espresso bean supply across all outlets.', 'attachment': '—', 'message': '—',
+  'shipping-address': 'Jl. Menteng Raya No. 42',
+  'discount': '5%',
+  'notes': 'Twelve-month espresso bean supply across all outlets.', 'attachments': '—', 'memo': '—',
   'service-type': 'Consultation', 'priority': 'High',
-  'record-name': 'Annual espresso contract', 'record-value': 'Rp 19.200.000',
+  'status': 'Proposal', 'tags': 'VIP, Hot lead', 'source': 'Referral',
+  'description': 'Annual supply agreement for premium espresso beans.',
+  'image': '—', 'website': 'kopikenangan.com', 'product-list': '—',
+  'quantity': '12', 'probability': '75%',
+  'next-follow-up-time': '20/09/2026 10:00', 'completed-time': '—',
 }
 const PREVIEW_STAGES = ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation', 'Won']
 function detailsTabSections() {

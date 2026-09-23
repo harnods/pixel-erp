@@ -504,7 +504,7 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     // before the module is actually created (see CrmModuleBuilderPage.vue).
     if (sub === 'settings' && id === 'modules' && segs[3]) return { component: CrmModuleBuilderPage, id: segs[3] }
     if (sub === 'settings' && id === 'modules') return { component: CrmModulesPage, id: '' }
-    if (sub === 'settings' && id === 'properties') return { component: CrmSettingsPage, id: 'company' }
+    // /crm/settings/properties is deprecated — fall through to generic settings
     // ERP Integration Settings (PRD: ERP Transaction Conversion Settings V1).
     if (sub === 'settings' && id === 'erp-integrations' && segs[3]) return { component: CrmErpIntegrationEditorPage, id: segs[3] }
     if (sub === 'settings' && id === 'erp-integrations') return { component: CrmErpIntegrationsPage, id: '' }
