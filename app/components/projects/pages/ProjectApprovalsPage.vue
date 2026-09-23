@@ -224,22 +224,26 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
         </MpTooltip>
       </template>
       <template v-if="current_">
-        <!-- The request's own facts — status, type and provenance — read as fields, then the reason -->
+        <!-- Request · type/status · project · provenance, then the request's own figures, then the reason -->
         <div>
           <div class="pm-stat-label">{{ t('Request') }}</div>
           <p class="pm-body">{{ current_.title }}</p>
         </div>
-        <div class="pm-grid-3">
-          <div><div class="pm-stat-label">{{ t('Status') }}</div><div class="pm-mt-2"><ErpStatusBadge v-bind="badgeProps('approval', current_.status, t)" /></div></div>
+        <div class="pm-grid-2">
           <div><div class="pm-stat-label">{{ t('Type') }}</div><div class="pm-body">{{ t(APPROVAL_KIND_LABELS[current_.kind]) }}</div></div>
-          <div><div class="pm-stat-label">{{ t('Project') }}</div><div class="pm-body">{{ getProject(current_.projectId)?.code }} · {{ getProject(current_.projectId)?.name }}</div></div>
+          <div><div class="pm-stat-label">{{ t('Status') }}</div><div class="pm-mt-2"><ErpStatusBadge v-bind="badgeProps('approval', current_.status, t)" /></div></div>
+        </div>
+        <div>
+          <div class="pm-stat-label">{{ t('Project') }}</div>
+          <p class="pm-body">{{ getProject(current_.projectId)?.code }} · {{ getProject(current_.projectId)?.name }}</p>
+        </div>
+        <div class="pm-grid-2">
           <div><div class="pm-stat-label">{{ t('Raised by') }}</div><div class="pm-body">{{ current_.requestedBy }}</div></div>
           <div><div class="pm-stat-label">{{ t('Raised on') }}</div><div class="pm-body">{{ formatDate(current_.requestedAt) }}</div></div>
-          <div v-if="current_.status !== 'pending'"><div class="pm-stat-label">{{ t('Decided by') }}</div><div class="pm-body">{{ current_.decidedBy }} · {{ formatDate(current_.decidedAt) }}</div></div>
         </div>
-        <div v-if="current_.reason">
-          <div class="pm-stat-label">{{ t('Reason') }}</div>
-          <p class="pm-body">{{ current_.reason }}</p>
+        <div v-if="current_.status !== 'pending'" class="pm-grid-2">
+          <div><div class="pm-stat-label">{{ t('Decided by') }}</div><div class="pm-body">{{ current_.decidedBy }}</div></div>
+          <div><div class="pm-stat-label">{{ t('Decided on') }}</div><div class="pm-body">{{ formatDate(current_.decidedAt) }}</div></div>
         </div>
 
         <!-- Overage -->
@@ -300,6 +304,11 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
           <div v-if="current_.payload" class="pm-small">{{ t('Proposed baseline from Budget setup') }}: {{ current_.payload.lines.length }} {{ t('lines') }}, {{ t('revenue') }} {{ rp(current_.payload.revenue) }}.</div>
           <div><MpTextlink id="appr-open-budget" as="a" @click.prevent="router.push(`/budget-setup/${current_.projectId}?returnTo=${encodeURIComponent('/project-approvals')}`)">{{ t('Open in Budget setup') }}</MpTextlink></div>
         </template>
+
+        <div v-if="current_.reason">
+          <div class="pm-stat-label">{{ t('Reason') }}</div>
+          <p class="pm-body">{{ current_.reason }}</p>
+        </div>
 
         <template v-if="current_.status === 'pending'">
           <MpFormControl id="appr-note-fc" :is-invalid="rejectTried && !note.trim()">

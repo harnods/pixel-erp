@@ -2854,6 +2854,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Min stock": "Stok minimum",
 
   // ── Projects module (Project MTO) ─────────────────────────────────────────
+  "Decided on": "Diputuskan pada",
   "Decided by": "Diputuskan oleh",
   "Reason from": "Alasan dari",
   "Raised by": "Diajukan oleh",
