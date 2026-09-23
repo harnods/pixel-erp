@@ -1557,13 +1557,13 @@ export function defaultPropertyIcon(fieldType: string): string {
   if (fieldType === 'Contact' || fieldType === 'crm_contact_reference') return 'profile'
   if (fieldType === 'Company' || fieldType === 'crm_company_reference') return 'company'
   const API_ICON_MAP: Record<string, string> = {
-    single_line_text: 'text-editor-text', multiple_line_text: 'text-editor-text', number: 'text-editor-number',
-    date: 'calendar', date_time: 'calendar', pick_list: 'caret-down', radio_select: 'radio-button',
-    multi_select: 'tag', auto_number: 'text-editor-number', email: 'email', phone: 'phone', url: 'link',
-    product_list: 'shopping-bag', file_upload: 'attachment', image_upload: 'image',
-    single_checkbox: 'checkmark-circle', percentage: 'text-editor-number',
-    user_reference: 'profile', activity_log: 'clock', related_list: 'clock',
-    system_id: 'text-editor-number', system_boolean: 'checkmark-circle', system_number: 'text-editor-number',
+    single_line_text: 'text-editor-text', multiple_line_text: 'textarea', number: 'number',
+    date: 'calendar', date_time: 'calendar', pick_list: 'dropdown', radio_select: 'dropdown',
+    multi_select: 'remove-tag', auto_number: 'number', email: 'envelope', phone: 'phone', url: 'link',
+    product_list: 'products', file_upload: 'attachment', image_upload: 'file-image',
+    single_checkbox: 'checkbox-checklist', percentage: 'number',
+    user_reference: 'profile', activity_log: 'time', related_list: 'table-view-list',
+    system_id: 'id-card', system_boolean: 'checkbox-checklist', system_number: 'number',
   }
   return API_ICON_MAP[fieldType] ?? (DEAL_PROPERTY_TYPE_ICON as Record<string, string>)[fieldType] ?? 'text-editor-text'
 }
