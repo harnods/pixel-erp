@@ -780,33 +780,8 @@ function onSave() {
         </div>
       </section>
 
-      <!-- ── Notes + Attachment + Totals ── -->
+      <!-- ── Totals ── -->
       <section class="si-bottom-section">
-        <!-- Left stack: Message / Memo / Attachment, a constant 20px apart -->
-        <div class="si-notes-col">
-          <MpFormControl id="f-memo" class="si-note-field">
-            <div class="si-lbl-row"><MpFormLabel>{{ t('Memo') }}</MpFormLabel><span class="si-counter">{{ memo.length }}/250</span></div>
-            <MpTextarea id="f-memo-inp" v-model="memo" :maxlength="250" is-full-width />
-            <span class="si-field-caption">{{ t('Only visible to you and your team') }}</span>
-          </MpFormControl>
-
-          <div class="si-attachment-section">
-            <span class="si-attachment-label">{{ t('Attachment') }}</span>
-            <MpUpload
-              id="f-attachment" :button-text="t('Choose file')" :placeholder="t('or drag and drop here')"
-              is-multiple is-full-width @change="onFilesChange"
-            />
-            <p class="si-field-caption">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP format, with a maximum size of 10 MB per file and 5 files per transaction') }}</p>
-            <div v-if="attachments.length" class="si-attachment-list">
-              <MpUploadList
-                v-for="(a, idx) in attachments" :key="a.name + idx"
-                :title="a.name" :subtitle="`${a.sizeKB} KB`" :icon-name="iconForFile(a.name)"
-                status="success" is-show-remove-button @remove="removeAttachment(idx)"
-              />
-            </div>
-          </div>
-        </div>
-
         <div class="si-totals-col">
           <div class="si-totals-row si-totals-row--h3">
             <span>{{ t('Subtotal') }}</span>
@@ -888,6 +863,31 @@ function onSave() {
           <div class="si-totals-row si-totals-row--h3">
             <span>{{ t('Total') }}</span>
             <span>{{ fmt(total) }}</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Memo + Attachment ── -->
+      <section class="si-memo-attachment-section">
+        <MpFormControl id="f-memo" class="si-note-field">
+          <div class="si-lbl-row"><MpFormLabel>{{ t('Memo') }}</MpFormLabel><span class="si-counter">{{ memo.length }}/250</span></div>
+          <MpTextarea id="f-memo-inp" v-model="memo" :maxlength="250" is-full-width />
+          <span class="si-field-caption">{{ t('Only visible to you and your team') }}</span>
+        </MpFormControl>
+
+        <div class="si-attachment-section">
+          <span class="si-attachment-label">{{ t('Attachment') }}</span>
+          <MpUpload
+            id="f-attachment" :button-text="t('Choose file')" :placeholder="t('or drag and drop here')"
+            is-multiple is-full-width @change="onFilesChange"
+          />
+          <p class="si-field-caption">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP format, with a maximum size of 10 MB per file and 5 files per transaction') }}</p>
+          <div v-if="attachments.length" class="si-attachment-list">
+            <MpUploadList
+              v-for="(a, idx) in attachments" :key="a.name + idx"
+              :title="a.name" :subtitle="`${a.sizeKB} KB`" :icon-name="iconForFile(a.name)"
+              status="success" is-show-remove-button @remove="removeAttachment(idx)"
+            />
           </div>
         </div>
       </section>
@@ -1141,11 +1141,11 @@ function onSave() {
 }
 .si-del-btn:hover { background: var(--mp-background-neutral, #ffffff) !important; color: var(--mp-text-danger, #dc2626); }
 
-/* ── Notes + Attachment + Totals ── */
-.si-bottom-section { display: flex; align-items: flex-start; gap: var(--mp-spacing-6); }
-/* Message / Memo / Attachment sit a constant 20px apart. Literal 20px, not
-   --mp-spacing-5: that token resolves to 20.8px here (rem-based). */
-.si-notes-col { display: flex; flex-direction: column; gap: 20px; width: 432px; flex-shrink: 0; }
+/* ── Totals ── */
+.si-bottom-section { display: flex; justify-content: flex-end; }
+
+/* ── Memo + Attachment ── */
+.si-memo-attachment-section { display: flex; flex-direction: column; gap: 20px; max-width: 432px; }
 .si-note-field { display: flex; flex-direction: column; }
 .si-field-caption { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1, 4px); }
 /* char-counter on the label row (rule/input-char-counter) */
@@ -1162,7 +1162,7 @@ function onSave() {
 }
 .si-attachment-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-1); }
 
-.si-totals-col { margin-left: auto; width: 428px; flex-shrink: 0; display: flex; flex-direction: column; }
+.si-totals-col { width: 428px; flex-shrink: 0; display: flex; flex-direction: column; }
 .si-totals-row {
   display: flex; justify-content: space-between; align-items: center;
   gap: var(--mp-spacing-3);

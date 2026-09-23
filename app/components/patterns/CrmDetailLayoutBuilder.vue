@@ -749,11 +749,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                       </table>
                       <div class="dp-items-count">{{ t('Showing') }} 1 {{ t('of') }} 1 {{ t('products') }}</div>
                     </section>
-                    <section class="dp-section dp-notes-totals">
-                      <div class="dp-notes-left">
-                        <div class="dp-cl"><span class="dp-cl-label">{{ t('Memo') }}</span><span class="dp-cl-value">Please ensure all beans are vacuum-sealed for freshness during transit.</span></div>
-                        <div class="dp-cl"><span class="dp-cl-label">{{ t('Attachment') }}</span><span class="dp-cl-value dp-cl-link">Purchase_agreement_v2.pdf</span></div>
-                      </div>
+                    <section class="dp-section dp-totals-section">
                       <div class="dp-totals">
                         <div class="dp-total-row"><span class="dp-total-label dp-total-label--strong">{{ t('Subtotal') }}</span><span class="dp-total-amt dp-total-amt--strong">Rp9.600.000,00</span></div>
                         <div class="dp-total-row"><span class="dp-total-label">{{ t('Discount per line') }}</span><span class="dp-total-amt">Rp0,00</span></div>
@@ -763,6 +759,10 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                         <div class="dp-total-rule" />
                         <div class="dp-total-row"><span class="dp-total-label dp-total-label--total">{{ t('Total') }}</span><span class="dp-total-amt dp-total-amt--total">Rp10.756.000,00</span></div>
                       </div>
+                    </section>
+                    <section class="dp-section dp-memo-section">
+                      <div class="dp-cl"><span class="dp-cl-label">{{ t('Memo') }}</span><span class="dp-cl-value">Please ensure all beans are vacuum-sealed for freshness during transit.</span></div>
+                      <div class="dp-cl"><span class="dp-cl-label">{{ t('Attachment') }}</span><span class="dp-cl-value dp-cl-link">Purchase_agreement_v2.pdf</span></div>
                     </section>
                   </div>
                 </div>
@@ -818,11 +818,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                         </div>
                       </section>
                     </template>
-                    <section v-if="detailsTabSections().some(s => s.kind === 'products')" class="dp-section dp-notes-totals">
-                      <div class="dp-notes-left">
-                        <div class="dp-cl"><span class="dp-cl-label">{{ t('Memo') }}</span><span class="dp-cl-value">—</span></div>
-                        <div class="dp-cl"><span class="dp-cl-label">{{ t('Attachment') }}</span><span class="dp-cl-value">—</span></div>
-                      </div>
+                    <section v-if="detailsTabSections().some(s => s.kind === 'products')" class="dp-section dp-totals-section">
                       <div class="dp-totals">
                         <div class="dp-total-row"><span class="dp-total-label dp-total-label--strong">{{ t('Subtotal') }}</span><span class="dp-total-amt dp-total-amt--strong">Rp19.200.000,00</span></div>
                         <div class="dp-total-row"><span class="dp-total-label">{{ t('Discount per line') }}</span><span class="dp-total-amt">Rp0,00</span></div>
@@ -831,6 +827,10 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                         <div class="dp-total-rule" />
                         <div class="dp-total-row"><span class="dp-total-label dp-total-label--total">{{ t('Total') }}</span><span class="dp-total-amt dp-total-amt--total">Rp21.312.000,00</span></div>
                       </div>
+                    </section>
+                    <section v-if="detailsTabSections().some(s => s.kind === 'products')" class="dp-section dp-memo-section">
+                      <div class="dp-cl"><span class="dp-cl-label">{{ t('Memo') }}</span><span class="dp-cl-value">—</span></div>
+                      <div class="dp-cl"><span class="dp-cl-label">{{ t('Attachment') }}</span><span class="dp-cl-value">—</span></div>
                     </section>
                   </div>
                 </div>
@@ -945,20 +945,8 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                         </table>
                       </div>
                     </section>
-                    <!-- Notes + Totals -->
+                    <!-- Totals -->
                     <section class="si-bottom-section">
-                      <div class="si-notes-col">
-                        <MpFormControl id="fp-memo" class="si-note-field">
-                          <div class="si-lbl-row"><MpFormLabel>{{ t('Memo') }}</MpFormLabel><span class="si-counter">0/250</span></div>
-                          <MpTextarea is-full-width disabled />
-                          <span class="si-field-caption">{{ t('Only visible to you and your team') }}</span>
-                        </MpFormControl>
-                        <div class="si-attachment-section">
-                          <span class="si-attachment-label">{{ t('Attachment') }}</span>
-                          <MpUpload id="fp-attachment" :button-text="t('Choose file')" :placeholder="t('or drag and drop here')" is-full-width disabled />
-                          <p class="si-field-caption">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP format, with a maximum size of 10 MB per file and 5 files per transaction') }}</p>
-                        </div>
-                      </div>
                       <div class="si-totals-col">
                         <div class="si-totals-row si-totals-row--h3"><span>{{ t('Subtotal') }}</span><span>Rp0,00</span></div>
                         <div class="si-discount-block">
@@ -979,6 +967,19 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                         <div class="si-totals-row"><span>PPN 11%</span><span>Rp0,00</span></div>
                         <div class="si-total-rule" />
                         <div class="si-totals-row si-totals-row--h3"><span>{{ t('Total') }}</span><span>Rp0,00</span></div>
+                      </div>
+                    </section>
+                    <!-- Memo + Attachment -->
+                    <section class="si-memo-attachment-section">
+                      <MpFormControl id="fp-memo" class="si-note-field">
+                        <div class="si-lbl-row"><MpFormLabel>{{ t('Memo') }}</MpFormLabel><span class="si-counter">0/250</span></div>
+                        <MpTextarea is-full-width disabled />
+                        <span class="si-field-caption">{{ t('Only visible to you and your team') }}</span>
+                      </MpFormControl>
+                      <div class="si-attachment-section">
+                        <span class="si-attachment-label">{{ t('Attachment') }}</span>
+                        <MpUpload id="fp-attachment" :button-text="t('Choose file')" :placeholder="t('or drag and drop here')" is-full-width disabled />
+                        <p class="si-field-caption">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP format, with a maximum size of 10 MB per file and 5 files per transaction') }}</p>
                       </div>
                     </section>
                     <!-- Footer -->
@@ -1058,18 +1059,6 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                     </template>
                     <p v-if="!detailsTabSections().length" class="dlb-prev-placeholder">{{ t('No sections configured. Add sections and properties in the Layout tab.') }}</p>
                     <section v-if="detailsTabSections().some(s => s.kind === 'products')" class="si-bottom-section">
-                      <div class="si-notes-col">
-                        <MpFormControl id="fp-memo-g" class="si-note-field">
-                          <div class="si-lbl-row"><MpFormLabel>{{ t('Memo') }}</MpFormLabel><span class="si-counter">0/250</span></div>
-                          <MpTextarea is-full-width disabled />
-                          <span class="si-field-caption">{{ t('Only visible to you and your team') }}</span>
-                        </MpFormControl>
-                        <div class="si-attachment-section">
-                          <span class="si-attachment-label">{{ t('Attachment') }}</span>
-                          <MpUpload id="fp-attachment-g" :button-text="t('Choose file')" :placeholder="t('or drag and drop here')" is-full-width disabled />
-                          <p class="si-field-caption">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP format, with a maximum size of 10 MB per file and 5 files per transaction') }}</p>
-                        </div>
-                      </div>
                       <div class="si-totals-col">
                         <div class="si-totals-row si-totals-row--h3"><span>{{ t('Subtotal') }}</span><span>Rp0,00</span></div>
                         <div class="si-discount-block">
@@ -1090,6 +1079,18 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                         <div class="si-totals-row"><span>PPN 11%</span><span>Rp0,00</span></div>
                         <div class="si-total-rule" />
                         <div class="si-totals-row si-totals-row--h3"><span>{{ t('Total') }}</span><span>Rp0,00</span></div>
+                      </div>
+                    </section>
+                    <section v-if="detailsTabSections().some(s => s.kind === 'products')" class="si-memo-attachment-section">
+                      <MpFormControl id="fp-memo-g" class="si-note-field">
+                        <div class="si-lbl-row"><MpFormLabel>{{ t('Memo') }}</MpFormLabel><span class="si-counter">0/250</span></div>
+                        <MpTextarea is-full-width disabled />
+                        <span class="si-field-caption">{{ t('Only visible to you and your team') }}</span>
+                      </MpFormControl>
+                      <div class="si-attachment-section">
+                        <span class="si-attachment-label">{{ t('Attachment') }}</span>
+                        <MpUpload id="fp-attachment-g" :button-text="t('Choose file')" :placeholder="t('or drag and drop here')" is-full-width disabled />
+                        <p class="si-field-caption">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP format, with a maximum size of 10 MB per file and 5 files per transaction') }}</p>
                       </div>
                     </section>
                     <MpButtonGroup class="erp-action-footer si-form-footer">
@@ -1330,8 +1331,8 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 }
 .dlb-prev-form-page .si-affix-value { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: flex-end; padding: 0 var(--mp-spacing-2); white-space: nowrap; }
 .dlb-prev-form-page .si-unit-ro { flex: 1; display: flex; align-items: center; padding: 0 var(--mp-spacing-2); color: var(--mp-text-secondary, #64748b); }
-.dlb-prev-form-page .si-bottom-section { display: flex; align-items: flex-start; gap: var(--mp-spacing-6); }
-.dlb-prev-form-page .si-notes-col { display: flex; flex-direction: column; gap: 20px; width: 432px; flex-shrink: 0; }
+.dlb-prev-form-page .si-bottom-section { display: flex; justify-content: flex-end; }
+.dlb-prev-form-page .si-memo-attachment-section { display: flex; flex-direction: column; gap: 20px; max-width: 432px; }
 .dlb-prev-form-page .si-note-field { display: flex; flex-direction: column; }
 .dlb-prev-form-page .si-field-caption { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1, 4px); }
 .dlb-prev-form-page .si-totals-col { margin-left: auto; width: 428px; flex-shrink: 0; display: flex; flex-direction: column; }
@@ -1481,8 +1482,8 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
   border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
-.dp-notes-totals { display: grid; grid-template-columns: 1fr 380px; gap: var(--mp-spacing-6); align-items: start; }
-.dp-notes-left { display: flex; flex-direction: column; }
+.dp-totals-section { display: flex; justify-content: flex-end; }
+.dp-memo-section { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
 .dp-totals { display: flex; flex-direction: column; gap: var(--mp-spacing-4); padding-top: var(--mp-spacing-2); }
 .dp-total-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
 .dp-total-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
