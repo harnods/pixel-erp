@@ -29,7 +29,7 @@ import {
   getCrmModule, persistCrmModule, createCustomModule, crmModules, persistCrmModules,
   CRM_FIELD_TYPE_LABELS, CRM_MODULE_ICONS,
   moduleStores, isDealLikeModule, resetGenericModuleDraft, canEditModule,
-  DEAL_PROPERTY_TYPE_ICON, isRelatedListType,
+  DEAL_PROPERTY_TYPE_ICON, isRelatedListType, defaultPropertyIcon,
   genericPipelineFieldId, setGenericPipelineField, transferGenericPipelineFieldId, isPicklistType,
   deals, serviceDeals, genericRecordsFor, CRM_CURRENT_USER, notesFor,
   type ServiceDeal, type GenericModuleRecord,
@@ -430,7 +430,7 @@ const cardPropOptions = computed(() => {
   }
   for (const p of propList.value) {
     if (byId.has(p.id) || labels.has(p.name.toLowerCase())) continue
-    byId.set(p.id, { id: p.id, name: p.name, subtitle: p.variableName, icon: DEAL_PROPERTY_TYPE_ICON[p.type] })
+    byId.set(p.id, { id: p.id, name: p.name, subtitle: p.variableName, icon: defaultPropertyIcon(p.type) })
   }
   return [...byId.values()]
 })
@@ -1226,7 +1226,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                 </span>
               </template>
               <template #cell-type="{ row }">
-                <span class="prop-type"><MpIcon :name="DEAL_PROPERTY_TYPE_ICON[(row as unknown as DealProperty).type]" size="sm" class="prop-type-icon" />{{ (row as unknown as DealProperty).type }}</span>
+                <span class="prop-type"><MpIcon :name="defaultPropertyIcon((row as unknown as DealProperty).type)" size="sm" class="prop-type-icon" />{{ (row as unknown as DealProperty).type }}</span>
               </template>
               <template #cell-createdBy="{ row }">{{ t(propCreatedByLabel(row as unknown as DealProperty)) }}</template>
               <template #cell-fillRate="{ row }">{{ (row as unknown as DealProperty).fillRate }}%</template>

@@ -22,7 +22,7 @@ import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
 import CrmPropertyDrawer from '~/components/patterns/CrmPropertyDrawer.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
-  DEAL_PROPERTY_TYPE_ICON, newDetailSectionId, isRelatedListType, sectionAllProps, distributeCols,
+  DEAL_PROPERTY_TYPE_ICON, defaultPropertyIcon, newDetailSectionId, isRelatedListType, sectionAllProps, distributeCols,
   type DealDetailLayout, type DetailLayoutSection, type DetailLayoutTab,
   type DealProperty, type DealPropertyType, type DealPropertyConfig, type PropertyCondition,
   type CrmConversionTarget,
@@ -152,7 +152,7 @@ const addPropOptions = computed(() => {
   const own = new Set(sectionAllProps(section))
   return props.properties
     .filter((p) => own.has(p.id) || !elsewhere.has(p.id))
-    .map((p) => ({ id: p.id, name: p.name, subtitle: p.variableName, icon: DEAL_PROPERTY_TYPE_ICON[p.type] }))
+    .map((p) => ({ id: p.id, name: p.name, subtitle: p.variableName, icon: defaultPropertyIcon(p.type) }))
 })
 // Reconcile the drawer's picked set into the section's columns: drop de-selected
 // ids from every column, append newly-picked ids to the shortest column (keeps
@@ -325,7 +325,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
     ghostDY = e.clientY - rect.top
     ghost.value = {
       x: rect.left, y: rect.top, w: rect.width,
-      icon: p?.type ? DEAL_PROPERTY_TYPE_ICON[p.type] : 'text-editor-text',
+      icon: p?.type ? defaultPropertyIcon(p.type) : 'text-editor-text',
       label: p?.name ?? pid, variable: p?.variableName ?? pid,
     }
   }
@@ -453,7 +453,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                   class="dlb-prop" :class="{ 'is-dragging': propDrag?.sec === section.id && propDrag?.pid === pid }"
                 >
                   <span class="dlb-drag" :aria-label="t('Drag to reorder')" @pointerdown="onPropPointerDown(section, pid, $event)"><MpIcon name="drag" size="sm" /></span>
-                  <MpIcon :name="prop(pid)?.type ? DEAL_PROPERTY_TYPE_ICON[prop(pid)!.type] : 'text-editor-text'" size="sm" class="dlb-prop-type" />
+                  <MpIcon :name="prop(pid)?.type ? defaultPropertyIcon(prop(pid)!.type) : 'text-editor-text'" size="sm" class="dlb-prop-type" />
                   <div class="dlb-prop-text">
                     <span class="dlb-prop-label">{{ prop(pid)?.name ?? pid }}</span>
                     <span class="dlb-prop-var">{{ prop(pid)?.variableName ?? pid }}</span>
