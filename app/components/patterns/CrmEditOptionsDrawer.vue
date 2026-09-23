@@ -38,7 +38,7 @@ function save() {
       <div v-if="open && property" class="eod-overlay">
         <div class="eod-panel" role="dialog" :aria-label="t('Edit options')">
           <header class="eod-header">
-            <h2 class="eod-title">{{ t('Edit options') }} — {{ property.name }}</h2>
+            <h2 class="eod-title">{{ t('Edit options') }}: {{ property.name }}</h2>
             <MpButton class="eod-close" :aria-label="t('Close')" @click="close"><MpIcon name="close" size="md" /></MpButton>
           </header>
 
@@ -88,7 +88,7 @@ function save() {
 .eod-close:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3) !important; }
 
 .eod-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--mp-spacing-5); display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
-.eod-hint { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); }
+.eod-hint { margin: 0; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-default, #080d0e); }
 
 .eod-opt-section { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .eod-opt-cols, .eod-opt-row { display: grid; grid-template-columns: 1fr 1fr 32px; gap: var(--mp-spacing-2); align-items: center; }
