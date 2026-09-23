@@ -205,16 +205,23 @@ function confirmCancelTask() {
 // ─── Print shipping label (source/marketplace or WMS label; D9 duplicate guard) ──
 const {
   pdfOpen, pdfDoc, pdfFilename, printShippingLabels,
-  courierModalOpen, courierModalOrders, saveShippingDetailsAndPrint, cancelShippingDetails,
+  courierModalOpen, courierModalRows, saveShippingDetailsAndPrint, cancelShippingDetails,
 } = usePrintShippingLabel()
 function ordersForPacking(t: PackingTask) { const o = orderById(t.salesOrderId); return o ? [o] : [] }
+/** The parcel this packing task produces — its courier/AWB and label are its own. */
+function packagesForPacking(tasks: PackingTask[]) {
+  return tasks.map(t => ({ id: t.id, no: t.taskNo, orderId: t.salesOrderId }))
+}
 function canPrintLabel(t: PackingTask): boolean { return anyLabelAvailable(ordersForPacking(t)) }
 function selectedPackingsOf(sel: Set<number>): PackingTask[] {
   return [...sel].map(i => paginated.value[i]).filter(Boolean) as unknown as PackingTask[]
 }
 function bulkPrintLabels(sel: Set<number>, deselectAll: () => void) {
-  const orders = selectedPackingsOf(sel).flatMap(ordersForPacking)
-  printShippingLabels(orders, { requireCourier: true })
+  const tasks = selectedPackingsOf(sel)
+  // Orders can repeat when two selected packages belong to one outbound; the print
+  // flow keys the labels off the packages, so pass the orders deduped.
+  const orders = [...new Map(tasks.flatMap(ordersForPacking).map(o => [o.id, o])).values()]
+  printShippingLabels(orders, { requireCourier: true, packages: packagesForPacking(tasks) })
   deselectAll()
 }
 
@@ -422,7 +429,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             >{{ t('View delivery') }}</MpPopoverListItem>
             <MpPopoverListItem
               v-if="canPrintLabel(row as unknown as PackingTask)"
-              @click="printShippingLabels(ordersForPacking(row as unknown as PackingTask), { requireCourier: true })"
+              @click="printShippingLabels(ordersForPacking(row as unknown as PackingTask), { requireCourier: true, packages: packagesForPacking([row as unknown as PackingTask]) })"
             >{{ t('Print shipping label') }}</MpPopoverListItem>
             <MpPopoverListItem
               v-else
@@ -459,7 +466,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
   <ShippingDetailsModal
     :is-open="courierModalOpen"
-    :orders="courierModalOrders"
+    :rows="courierModalRows"
     @close="cancelShippingDetails"
     @submit="saveShippingDetailsAndPrint"
   />

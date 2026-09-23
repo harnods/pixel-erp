@@ -326,7 +326,7 @@ function endPackingClick() {
 // finishing the task, right before the packer sticks it on the package.
 const {
   pdfOpen, pdfDoc, pdfFilename, printShippingLabels,
-  courierModalOpen, courierModalOrders, saveShippingDetailsAndPrint, cancelShippingDetails,
+  courierModalOpen, courierModalRows, saveShippingDetailsAndPrint, cancelShippingDetails,
 } = usePrintShippingLabel()
 
 async function commit() {
@@ -348,7 +348,13 @@ async function commit() {
   // Already committed — the router.push below is this function's own doing,
   // not the operator losing unsaved work, so the guard mustn't fire on it.
   disableUnsavedChangesGuard()
-  if (order.value) await printShippingLabels([order.value], { requireCourier: true })
+  if (order.value) {
+    const t = task.value
+    await printShippingLabels([order.value], {
+      requireCourier: true,
+      packages: t ? [{ id: t.id, no: t.taskNo, orderId: t.salesOrderId }] : [],
+    })
+  }
   // Nothing printable (label unavailable/duplicate) — printShippingLabels already
   // toasted why, so just leave; otherwise wait for the preview to be dismissed
   // (Print or Cancel) — or, when the order had no courier yet, for the shipping-
@@ -617,7 +623,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 
   <ShippingDetailsModal
     :is-open="courierModalOpen"
-    :orders="courierModalOrders"
+    :rows="courierModalRows"
     @close="cancelShippingDetails"
     @submit="saveShippingDetailsAndPrint"
   />
