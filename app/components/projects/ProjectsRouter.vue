@@ -8,7 +8,8 @@
  *   /projects/:id[?tab=…]             project page (tabs)
  *   /projects/:id/work-orders/new     work-order budget gate
  *   /project-approvals                approvals inbox (5 kinds)
- *   /project-new-document             pegged document + budget check
+ *   /project-documents                pegged cost documents (index)
+ *   /project-documents/new            pegged document + budget check
  *   /stock-availability               on hand / reserved / available
  *   /site-change-capture              field change → change order
  *   /project-audit-log[?project=]     audit page (cross-project, filterable)
@@ -23,6 +24,7 @@ const CreatePage = defineAsyncComponent(() => import('./pages/ProjectCreatePage.
 const DetailPage = defineAsyncComponent(() => import('./pages/ProjectDetailPage.vue'))
 const WoGatePage = defineAsyncComponent(() => import('./pages/ProjectWoGatePage.vue'))
 const ApprovalsPage = defineAsyncComponent(() => import('./pages/ProjectApprovalsPage.vue'))
+const DocumentsPage = defineAsyncComponent(() => import('./pages/ProjectDocumentsPage.vue'))
 const NewDocumentPage = defineAsyncComponent(() => import('./pages/ProjectNewDocumentPage.vue'))
 const StockPage = defineAsyncComponent(() => import('./pages/StockAvailabilityPage.vue'))
 const SiteCapturePage = defineAsyncComponent(() => import('./pages/SiteChangeCapturePage.vue'))
@@ -39,7 +41,7 @@ const view = computed<{ component: Component; props: Record<string, unknown> }>(
       if (c === 'work-orders' && d === 'new') return { component: WoGatePage, props: { projectId: b } }
       return { component: DetailPage, props: { projectId: b } }
     case 'project-approvals': return { component: ApprovalsPage, props: {} }
-    case 'project-new-document': return { component: NewDocumentPage, props: {} }
+    case 'project-documents': return b === 'new' ? { component: NewDocumentPage, props: {} } : { component: DocumentsPage, props: {} }
     case 'stock-availability': return { component: StockPage, props: {} }
     case 'site-change-capture': return { component: SiteCapturePage, props: {} }
     case 'project-audit-log': return { component: AuditPage, props: {} }

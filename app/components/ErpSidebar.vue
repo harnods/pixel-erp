@@ -555,13 +555,13 @@ const erpNavGroups: NavItem[][] = [
     },
     {
       // Project MTO — job costing for custom make-to-order + service engagements.
-      // Rail per PRD: Projects · Approvals (badged) · New document · Stock
+      // Rail per PRD: Projects · Approvals (badged) · Documents · Stock
       // availability · Site change capture, plus Audit log (P3), Budget setup (P4)
       // and Project settings. The Approvals count is a getter so the (static) nav
       // array still re-renders when the pending count changes.
       name: 'Projects', icon: 'briefcase',
       submenu: [
-        [{ label: 'Projects' }, { label: 'Approvals', to: 'Project approvals' }, { label: 'New document', to: 'Project new document' }],
+        [{ label: 'Projects' }, { label: 'Approvals', to: 'Project approvals' }, { label: 'Documents', to: 'Project documents' }],
         [{ label: 'Stock availability' }, { label: 'Site change capture' }],
         [{ label: 'Budget setup' }, { label: 'Audit log', to: 'Project audit log' }, { label: 'Project settings', iconType: 'settings' }],
       ],
@@ -569,7 +569,7 @@ const erpNavGroups: NavItem[][] = [
         [
           { label: 'Projects' },
           { label: 'Approvals', to: 'Project approvals', get count() { return pendingApprovals().length || undefined } },
-          { label: 'New document', to: 'Project new document' },
+          { label: 'Documents', to: 'Project documents' },
         ],
         [{ label: 'Stock availability' }, { label: 'Site change capture' }],
         [{ label: 'Budget setup' }, { label: 'Audit log', to: 'Project audit log' }, { label: 'Project settings', iconType: 'settings' }],

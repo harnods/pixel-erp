@@ -20,15 +20,13 @@ import {
 } from '@mekari/pixel3'
 import PmTitleBar from '../PmTitleBar.vue'
 import PmActionError from '../PmActionError.vue'
-import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { getProject, peggableNodes, getWorkPackage, nodeLabel } from '~/data/projects'
-import { COST_ACCOUNTS, COGM_ACCOUNT, LABOUR_ACCOUNT, accountName } from '~/data/projectBudgets'
-import { peggedDocuments, type PeggedDocument } from '~/data/projectTransactions'
+import { COST_ACCOUNTS, COGM_ACCOUNT, LABOUR_ACCOUNT } from '~/data/projectBudgets'
+import { type PeggedDocument } from '~/data/projectTransactions'
 import { effectiveMode } from '~/data/projectPolicy'
 import { saveDocument, peggingState, checkDocument } from '~/data/projectActions'
 import { rp, pct, parseAmount } from '~/utils/projectFormat'
-import { formatDate } from '~/utils/date'
 import { badgeProps } from '~/utils/projectStatus'
 
 const { t } = useLocale()
@@ -94,12 +92,7 @@ function save() {
   touched.value = true
   const res = saveDocument({ docType: docType.value, vendor: vendor.value || undefined, lines: filled.value, overrideReason: reason.value }, asActor.value)
   const okMsg = res.ok && 'doc' in res && res.doc ? `${res.doc.docNo} — ${badgeProps('doc', res.doc.status, t).label}` : undefined
-  if (action.run(res, okMsg)) {
-    lines.value = [{ description: '', account: docType.value === 'Timesheet' ? LABOUR_ACCOUNT : '5-50300', amount: '', wpId: '' }]
-    reason.value = ''
-    vendor.value = ''
-    touched.value = false
-  }
+  if (action.run(res, okMsg)) router.push('/project-documents')
 }
 function budgetLink(wpId: string, need: number) {
   const wp = getWorkPackage(wpId)!
@@ -116,7 +109,7 @@ const VERDICT = computed(() => ({
 
 <template>
   <div class="pm-page">
-    <PmTitleBar :title="t('New document')" :breadcrumb="presetProject ? { label: `${presetProject.code} · ${presetProject.name}`, to: `/projects/${presetProject.id}` } : undefined" />
+    <PmTitleBar :title="t('New document')" :breadcrumb="presetProject ? { label: `${presetProject.code} · ${presetProject.name}`, to: `/projects/${presetProject.id}` } : { label: t('Documents'), to: '/project-documents' }" />
     <div class="pm-stage">
       <div class="pm-stack pm-gap-4">
         <div class="pm-card pm-stack pm-gap-4">
@@ -231,31 +224,6 @@ const VERDICT = computed(() => ({
           <MpButton id="nd-save" variant="primary" is-rounded @click="save">{{ verdict === 'escalate' ? t('Save and send to Finance') : t('Save') }}</MpButton>
         </div>
 
-        <!-- Recent -->
-        <section class="pm-section">
-          <h2 class="pm-h2 pm-mb-3">{{ t('Recent documents') }}</h2>
-          <div class="pm-table-wrap">
-            <table class="pm-table">
-              <thead><tr><th>{{ t('Number') }}</th><th>{{ t('Date') }}</th><th>{{ t('Lines') }}</th><th class="pm-num">{{ t('Amount') }}</th><th>{{ t('Status') }}</th></tr></thead>
-              <tbody>
-                <tr v-for="d in peggedDocuments.slice(0, 12)" :key="d.id">
-                  <td>{{ d.docNo }}<span class="pm-cell-sub">{{ d.vendor ?? d.createdBy }}</span></td>
-                  <td>{{ formatDate(d.date) }}</td>
-                  <td class="pm-wrap">
-                    <div v-for="(l, i) in d.lines.slice(0, 3)" :key="i" class="pm-small">{{ l.description }} · {{ t(accountName(l.account)) }} · {{ l.wpId ? nodeLabel(l.wpId) : t('no project') }}</div>
-                    <div v-if="d.lines.length > 3" class="pm-caption">+{{ d.lines.length - 3 }}</div>
-                  </td>
-                  <td class="pm-num">{{ rp(d.lines.reduce((s, l) => s + l.amount, 0)) }}</td>
-                  <td>
-                    <ErpStatusBadge v-bind="badgeProps('doc', d.status, t)" />
-                    <span v-if="d.override" class="pm-cell-sub">{{ t('Over by') }} {{ rp(d.override.overBy) }} ({{ pct(d.override.overPct) }})</span>
-                  </td>
-                </tr>
-                <tr v-if="!peggedDocuments.length"><td colspan="5"><div class="pm-empty-inline">{{ t('No documents yet.') }}</div></td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
       </div>
     </div>
   </div>

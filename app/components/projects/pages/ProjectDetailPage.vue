@@ -118,7 +118,7 @@ const actions = computed<PmMenuItem[]>(() => {
   const closed = p.status === 'closed'
   return [
     { label: t('New work order'), action: () => router.push(`/projects/${p.id}/work-orders/new`), disabledReason: !p.isProduction ? t('Service projects have no work orders') : closed ? t('Project is closed') : undefined },
-    { label: t('New document'), action: () => router.push(`/project-new-document?project=${p.id}`), disabledReason: closed ? t('Project is closed') : undefined },
+    { label: t('New document'), action: () => router.push(`/project-documents/new?project=${p.id}`), disabledReason: closed ? t('Project is closed') : undefined },
     { label: t('Capture site change'), action: () => router.push(`/site-change-capture?project=${p.id}`), disabledReason: closed ? t('Project is closed') : undefined },
     { label: t('Open in Budget setup'), action: () => router.push(`/budget-setup/${p.id}?returnTo=${encodeURIComponent(`/projects/${p.id}?tab=budget`)}`) },
     { label: t('Re-open approval'), action: () => { reopen.clear(); reopenOpen.value = true }, disabledReason: p.status !== 'active' ? t('Only an active project can be re-opened') : undefined },
