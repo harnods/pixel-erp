@@ -32,7 +32,8 @@ import { setPurchaseOrderDocument } from './purchaseOrderLines'
 import { PAYMENT_TERMS, type POLineItem, type POTotals } from './purchaseOrderDetails'
 import { productBySku } from './inventory'
 import { warehouses } from './warehouses'
-import { vendorItemFor, vendorNameFor, type VendorItem } from './vendorItems'
+import { vendorItemFor, vendorNameFor, vendorItemsForSku, preferredVendorItem, type VendorItem } from './vendorItems'
+import { updatePurchaseRequest } from './purchaseRequests'
 import { SIM_TODAY_ISO } from './simClock'
 import { shiftDays } from './master'
 import { currentRunNo } from './replenishmentRuns'
@@ -54,6 +55,11 @@ export interface DraftPoLine {
   finalQty: number
   unitCost: number
   purchaseUnit: string
+  /** The stock-unit need this line was rounded from (transparency). */
+  needStock?: number
+  /** Rounding provenance for the preview note. */
+  raisedByMoq?: boolean
+  raisedByPack?: boolean
   /** Inputs captured for the audit trail. */
   context: {
     leadTimeDays: number
@@ -287,4 +293,133 @@ export function createPoFromPurchaseRequest(
     lines,
   })
   return { order: createDraftPoFromGroup(group, createdBy, pr.id), skipped }
+}
+
+/**
+ * Suggested ship-to for a PR conversion: a replenishment PR carries its warehouse
+ * on the origin; a manual PR has none, so the caller supplies a default.
+ */
+export function defaultConversionWarehouse(pr: PurchaseRequest): string {
+  return pr.replenishment?.warehouseId ?? warehouses[0]?.id ?? ''
+}
+
+/** The vendor pre-selected for a PR line: preferred vendor, else the first linked. */
+export function suggestedVendorForSku(sku: string): string | null {
+  return preferredVendorItem(sku)?.vendorId ?? vendorItemsForSku(sku)[0]?.vendorId ?? null
+}
+
+/**
+ * Plan the purchase orders a PR would convert into (PRD D12 / US-019 VR-02).
+ *
+ * This is where the demand-coverage NEED the PR carries in STOCK units is finally
+ * rounded into a vendor's terms — MOQ raise, then purchase-multiplier (pack)
+ * round-up — against whoever purchasing picks as the FINAL vendor. Rounding lives
+ * here, at conversion, so it is applied ONCE and against the real vendor, never
+ * twice on the PR against a vendor that may later change.
+ *
+ * `vendorChoices` / `qtyOverrides` are the purchasing user's edits (per SKU); an
+ * override is the final ORDER quantity in PURCHASE units and is honoured as typed
+ * (never silently re-rounded). Lines group into one PO per vendor for the chosen
+ * warehouse ship-to.
+ */
+export function planPosFromPurchaseRequest(
+  pr: PurchaseRequest,
+  warehouseId: string,
+  vendorChoices: Record<string, string | null> = {},
+  qtyOverrides: Record<string, number> = {},
+): { groups: DraftPoGroup[]; skipped: SkippedLine[] } {
+  const warehouseName = warehouses.find((w) => w.id === warehouseId)?.name ?? ''
+  const groups = new Map<string, Omit<DraftPoGroup, 'subtotal' | 'taxAmount' | 'total' | 'leadTimeDays'>>()
+  const skipped: SkippedLine[] = []
+
+  for (const prLine of pr.lines) {
+    const base = { sku: prLine.sku, productName: prLine.product, warehouseId, warehouseName }
+    const vendorId = prLine.sku in vendorChoices
+      ? vendorChoices[prLine.sku]!
+      : suggestedVendorForSku(prLine.sku)
+
+    if (!vendorId) { skipped.push({ ...base, reason: 'no-vendor' }); continue }
+
+    const vi = vendorItemFor(prLine.sku, vendorId)
+    if (!vi) { skipped.push({ ...base, reason: 'inactive-vendor-item' }); continue }
+    if (!vi.unitsPerPurchaseUnit || vi.unitsPerPurchaseUnit < 1) {
+      skipped.push({ ...base, reason: 'missing-uom' }); continue
+    }
+
+    // The PR line's requested qty is the STOCK-unit need — round it to this
+    // vendor's MOQ + purchase multiplier now (US-006). An override is already in
+    // purchase units and is taken verbatim.
+    const rounded = applyMoqAndPack(prLine.requestedQty, vi)
+    const finalQty = prLine.sku in qtyOverrides ? qtyOverrides[prLine.sku]! : rounded.purchaseQty
+    if (finalQty <= 0) { skipped.push({ ...base, reason: 'zero-qty' }); continue }
+
+    const origin = pr.replenishment?.lines.find((l) => l.sku === prLine.sku)
+    const key = `${vendorId}::${warehouseId}`
+    if (!groups.has(key)) {
+      groups.set(key, { key, vendorId, vendorName: vendorNameFor(vendorId), warehouseId, warehouseName, lines: [] })
+    }
+    groups.get(key)!.lines.push({
+      sku: prLine.sku,
+      productName: prLine.product,
+      warehouseId,
+      vendorId,
+      vendorItem: vi,
+      recommendedQty: rounded.purchaseQty,
+      finalQty,
+      unitCost: vi.unitCost,
+      purchaseUnit: vi.purchaseUnit,
+      needStock: prLine.requestedQty,
+      raisedByMoq: rounded.raisedByMoq,
+      raisedByPack: rounded.raisedByPack,
+      context: {
+        leadTimeDays: origin?.leadTimeDays ?? vi.leadTimeDays,
+        safetyDays: origin?.safetyDays ?? 0,
+        avgDailySales: origin?.avgDailySales ?? 0,
+        reorderPoint: origin?.reorderPoint ?? 0,
+        available: origin?.available ?? 0,
+        onOrder: origin?.onOrder ?? 0,
+      },
+    })
+  }
+
+  return { groups: [...groups.values()].map(summarize), skipped }
+}
+
+/**
+ * Convert a PR into one or more draft POs and reflect it on the request.
+ *
+ * Every created PO is `'draft'` (US-020 — replenishment/conversion never sends an
+ * order). The PR moves to `closed` when all lines converted, or
+ * `partially processed` when some were skipped (no vendor / missing pack data).
+ */
+export function convertPurchaseRequestToPos(
+  pr: PurchaseRequest,
+  warehouseId: string,
+  vendorChoices: Record<string, string | null> = {},
+  qtyOverrides: Record<string, number> = {},
+  createdBy = 'You',
+): DraftPoResult {
+  const { groups, skipped } = planPosFromPurchaseRequest(pr, warehouseId, vendorChoices, qtyOverrides)
+
+  const created = groups.map((group) => {
+    const order = createDraftPoFromGroup(group, createdBy, pr.id)
+    return {
+      id: order.id,
+      number: String(order.number),
+      vendorId: group.vendorId,
+      vendorName: group.vendorName,
+      warehouseId: group.warehouseId,
+      lineCount: group.lines.length,
+      total: group.total,
+    }
+  })
+
+  if (created.length > 0) {
+    updatePurchaseRequest(pr.id, {
+      status: skipped.length === 0 ? 'closed' : 'partially processed',
+      awaitingApproval: false,
+    })
+  }
+
+  return { created, skipped }
 }

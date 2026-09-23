@@ -14,6 +14,8 @@ import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import CopyLinkDrawer from '~/components/patterns/CopyLinkDrawer.vue'
 import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
+import ConvertPrToPoModal from '~/components/patterns/ConvertPrToPoModal.vue'
+import { convertPurchaseRequestToPos } from '~/data/replenishmentDraftPo'
 import { formatDate } from '~/utils/date'
 import PurchaseRequestFiltersDrawer, { emptyPurchaseRequestFilters, type PurchaseRequestFiltersValue } from '~/components/patterns/PurchaseRequestFiltersDrawer.vue'
 import { purchaseRequests, updatePurchaseRequest } from '~/data'
@@ -165,11 +167,33 @@ function clearFilters() {
 }
 
 // ─── Row actions ───────────────────────────────────────────────────────────────
-// Create purchase order → opens the PO form pre-loaded with this request's items
-// (grouped in the accordion table). Wired at the router level in [...slug].vue.
-const createPurchaseOrderFromRequests = inject<(ids: string[]) => void>('createPurchaseOrderFromRequests')
+// Create purchase order → opens the conversion modal, where the requested qty is
+// rounded to the chosen vendor's MOQ & purchase multiplier before the draft PO is
+// raised (PRD D12 / US-019). Works for replenishment and manual requests alike.
+const convertOpen = ref(false)
+const convertPr = ref<PurchaseRequest | null>(null)
 function createPurchaseOrder(pr: PurchaseRequest) {
-  createPurchaseOrderFromRequests?.([pr.id])
+  convertPr.value = pr
+  convertOpen.value = true
+}
+function confirmConvert(payload: {
+  warehouseId: string
+  vendorChoices: Record<string, string | null>
+  qtyOverrides: Record<string, number>
+}) {
+  const pr = convertPr.value
+  if (!pr) return
+  const result = convertPurchaseRequestToPos(pr, payload.warehouseId, payload.vendorChoices, payload.qtyOverrides)
+  convertOpen.value = false
+  if (result.created.length === 0) {
+    toast.notify({ variant: 'error', title: t('No draft purchase order could be created') })
+    return
+  }
+  const poPart = result.created.length === 1
+    ? t('1 draft purchase order created')
+    : `${result.created.length} ${t('draft purchase orders created')}`
+  const skipPart = result.skipped.length ? ` · ${result.skipped.length} ${t('lines skipped')}` : ''
+  toast.notify({ variant: 'success', title: `${poPart}${skipPart}` })
 }
 function markCompleted(id: string) {
   updatePurchaseRequest(id, { status: 'closed', awaitingApproval: false })
@@ -417,6 +441,9 @@ const exportColumns = computed(() => [
   <ExportModal :open="exportOpen" :title="t('Export purchase requests')" entity-label="purchase requests" :columns="exportColumns" :custom-fields="[t('Sample custom field 1'), t('Sample custom field 2')]" :total="total" @close="exportOpen = false" @export="exportOpen = false" />
   <CopyLinkDrawer :open="copyOpen" :items="copyItems" @close="copyOpen = false" @download-csv="copyOpen = false" />
   <ShareViaEmailModal :open="shareOpen" :title="shareTitle" :subject="shareSubject" :attachment-name="shareAttachment" :attachment-size-k-b="128" sender-email="rizal.candra@centralperk.co.id" @close="shareOpen = false" @send="shareOpen = false" />
+
+  <!-- ── Convert PR → draft PO (rounds requested qty to vendor MOQ & multiplier) ── -->
+  <ConvertPrToPoModal v-model:is-open="convertOpen" :pr="convertPr" @confirm="confirmConvert" />
 
   <!-- ── Prototype scenario FAB (bottom-right): toggle data vs empty-state view ── -->
   <ScenarioFab v-model="previewMode" />
