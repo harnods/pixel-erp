@@ -441,6 +441,14 @@ function raiseStockRequest(wo: { id: string; number: string }) {
       // warehouse transfer can cover a whole group.
       destinationWarehouse: warehouses.find(w => w.id === r.warehouseId)?.name ?? t('Unassigned warehouse'),
       destinationWarehouseId: r.warehouseId,
+      // Share the batch / serial the work order picked, so the warehouse starts
+      // from the same units (it may reserve different ones — see trackingChanged).
+      ...(trackingTypeFor(r.productId) === 'batch' && r.batchSelection.length
+        ? { tracking: 'batch' as const, requestedBatches: r.batchSelection.map(b => ({ ...b })) }
+        : {}),
+      ...(trackingTypeFor(r.productId) === 'serial' && r.serialSelection.length
+        ? { tracking: 'serial' as const, requestedSerials: [...r.serialSelection] }
+        : {}),
     }
   })
   if (!lines.length) return

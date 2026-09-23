@@ -32,7 +32,8 @@ import ReserveMaterialsModal from '~/components/patterns/ReserveMaterialsModal.v
 import UnreserveMaterialsModal from '~/components/patterns/UnreserveMaterialsModal.vue'
 import { productionSettings, reservationOnWorkOrder, reservationEnabled } from '~/data/productionSettings'
 import {
-  raiseStockRequestForWorkOrder, requestForWorkOrder, workOrderReadiness, isFullyReserved,
+  raiseStockRequestForWorkOrder, requestForWorkOrder, workOrderReadiness, startGate,
+  changedTrackingLines, reservedTracking,
   reservedForWorkOrder, reserveWorkOrderProducts, unreserveWorkOrderProducts,
   type UnreserveDisposition,
 } from '~/data/stockRequests'
@@ -172,6 +173,17 @@ onMounted(syncStockRequest)
 watch(() => wo.value?.id, syncStockRequest)
 
 const stockRequest = computed(() => wo.value ? requestForWorkOrder(wo.value.id) : undefined)
+// Components whose batch / serial the warehouse reserved differently from what
+// this work order picked — production must be told, never silently substituted.
+const trackingChangedLines = computed(() =>
+  stockRequest.value ? changedTrackingLines(stockRequest.value) : [])
+function reservedTrackingLabel(productId: string): string {
+  const line = stockRequest.value?.lines.find(l => l.productId === productId)
+  if (!line) return ''
+  const { batches, serials } = reservedTracking(line)
+  if (line.tracking === 'serial') return serials.join(', ')
+  return batches.map(b => `${b.batchNo} (${b.qty})`).join(', ')
+}
 const reservationLines = computed(() => stockRequest.value?.lines ?? [])
 const materialReadiness = computed(() => reservationEnabled() && wo.value ? workOrderReadiness(wo.value.id) : undefined)
 
@@ -219,11 +231,23 @@ function reservedFor(productId: string): number {
 }
 
 // ── D-8 / UC-04 — the start gate ───────────────────────────────────────────────
-// Start requires full reservation unless "Allow partial production" is on.
-const startBlocked = computed(() => {
-  if (!reservationEnabled() || productionSettings.allowStartWithLimitedStock) return false
-  return wo.value ? !isFullyReserved(wo.value.id) : false
-})
+// Full reservation by default; the two Production readiness toggles relax it —
+// "Allow partial production" needs only ONE component reserved, "Can start work
+// order with limited stock" needs EVERY component reserved (each may be partial).
+const gate = computed(() => wo.value
+  ? startGate(wo.value.id, {
+      reservationOn: reservationEnabled(),
+      allowPartialProduction: productionSettings.allowPartialProduction,
+      allowStartWithLimitedStock: productionSettings.allowStartWithLimitedStock,
+    })
+  : { allowed: true as const })
+const startBlocked = computed(() => !gate.value.allowed)
+
+const START_BLOCK_MESSAGE: Record<string, string> = {
+  'none-reserved': t('Reserve at least one component before starting'),
+  'some-unreserved': t('Every component needs some stock reserved before starting'),
+  'not-fully-reserved': t('Reserve every component in full before starting, or relax the rule in Production settings'),
+}
 
 function startWorkOrder() {
   const w = wo.value
@@ -231,7 +255,7 @@ function startWorkOrder() {
   if (startBlocked.value) {
     toast.notify({
       variant: 'error',
-      title: t('Reserve every component before starting, or allow starting with limited stock in Production settings'),
+      title: START_BLOCK_MESSAGE[gate.value.reason ?? 'not-fully-reserved'] ?? '',
       maxWidth: 'max-content',
     })
     return
@@ -634,6 +658,18 @@ function suppressFabClick(e: MouseEvent) {
           <svg class="wod-chevron" :class="{ 'wod-chevron--open': !collapsed.raw }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <template v-if="!collapsed.raw">
+          <!-- The warehouse reserved different units than this work order picked. -->
+          <div v-if="trackingChangedLines.length" class="wod-tracking-note">
+            <MpIcon name="information" size="sm" />
+            <span>
+              {{ t('The warehouse reserved a different batch / serial number for') }}
+              <template v-for="(l, i) in trackingChangedLines" :key="l.productId">
+                <strong>{{ l.product }}</strong>
+                <span class="wod-tracking-detail"> ({{ reservedTrackingLabel(l.productId) }})</span>{{ i < trackingChangedLines.length - 1 ? ', ' : '' }}
+              </template>
+            </span>
+          </div>
+
           <!-- S-2 — Two-step: no reservation happens here, so say where it does. -->
           <p v-if="reservationOn && !canReserveHere" class="wod-reserve-note">
             <MpIcon name="information" size="sm" />
@@ -1101,6 +1137,16 @@ function suppressFabClick(e: MouseEvent) {
 </template>
 
 <style scoped>
+/* Batch/serial substitution notice (warehouse reserved different units) */
+.wod-tracking-note {
+  display: flex; align-items: flex-start; gap: var(--mp-spacing-2);
+  margin: 0 0 var(--mp-spacing-3); padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  background: var(--mp-background-information-subtle, #eaf2fd);
+  border-radius: var(--mp-radii-md, 6px);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default, #080d0e);
+}
+.wod-tracking-detail { color: var(--mp-text-secondary, #3a4749); }
+
 /* Material readiness note + badge (PRD UC-00 S-2, UC-02) */
 .wod-section-title { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .wod-reserve-note {

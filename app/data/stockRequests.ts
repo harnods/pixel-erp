@@ -49,6 +49,19 @@ export interface StockRequestLine {
   destinationWarehouse: string
   /** id behind {@link destinationWarehouse} — the key for stock lookups. */
   destinationWarehouseId: string
+  /**
+   * Batch / serial tracking, when the component is tracked.
+   *
+   * `requested*` is what the WORK ORDER picked at creation; `reserved*` is what
+   * PPIC actually reserved on the Stock requests side. PPIC may reserve different
+   * units than the work order asked for — the two are kept apart so the work order
+   * can be told when its pick was changed ({@link trackingChanged}).
+   */
+  tracking?: 'batch' | 'serial'
+  requestedBatches?: { batchNo: string; qty: number }[]
+  reservedBatches?: { batchNo: string; qty: number }[]
+  requestedSerials?: string[]
+  reservedSerials?: string[]
 }
 
 /** W-7 request tags — a request raised on top of the WO's original demand. */
@@ -449,13 +462,68 @@ export function workOrderReadiness(workOrderId: string): StockRequestStatus | un
 }
 
 /**
- * D-8 / UC-04 — Start requires FULL reservation, unless "Allow partial production"
- * is on. A work order with no request at all has nothing to reserve, so it passes.
+ * D-8 / UC-04 — Start requires FULL reservation. A work order with no request at
+ * all has nothing to reserve, so it passes.
  */
 export function isFullyReserved(workOrderId: string): boolean {
   const req = requestForWorkOrder(workOrderId)
   if (!req) return true
   return req.lines.every(l => lineCovered(l) >= l.qty)
+}
+
+/** Why a work order cannot start yet — drives the message the user sees. */
+export type StartBlockReason = 'none-reserved' | 'some-unreserved' | 'not-fully-reserved'
+
+/**
+ * The start gate (D-8), relaxed by the two Production readiness toggles. Both only
+ * apply while reservation is on at all — with it off there is nothing to gate.
+ *
+ *  • **Allow partial production** — the most lenient: start as soon as ANY ONE
+ *    component holds a reservation greater than zero.
+ *  • **Can start work order with limited stock** — start once EVERY component
+ *    holds a reservation greater than zero (each may still be partial).
+ *  • neither — every component must be reserved in full.
+ *
+ * When both are on the more lenient rule wins.
+ */
+export function startGate(
+  workOrderId: string,
+  options: { reservationOn: boolean; allowPartialProduction: boolean; allowStartWithLimitedStock: boolean },
+): { allowed: boolean; reason?: StartBlockReason } {
+  if (!options.reservationOn) return { allowed: true }
+  const req = requestForWorkOrder(workOrderId)
+  if (!req || req.lines.length === 0) return { allowed: true }
+
+  const lines = req.lines
+  if (lines.every(l => lineCovered(l) >= l.qty)) return { allowed: true }
+
+  if (options.allowPartialProduction) {
+    return lines.some(l => lineCovered(l) > 0)
+      ? { allowed: true }
+      : { allowed: false, reason: 'none-reserved' }
+  }
+  if (options.allowStartWithLimitedStock) {
+    return lines.every(l => lineCovered(l) > 0)
+      ? { allowed: true }
+      : { allowed: false, reason: 'some-unreserved' }
+  }
+  return { allowed: false, reason: 'not-fully-reserved' }
+}
+
+/**
+ * Consumption draws DOWN the reservation: producing (partial or full) moves qty
+ * out of `reserved` and into `consumed`, so a line never double-counts stock that
+ * has already left the rack. Returns the qty actually applied.
+ */
+export function applyConsumption(workOrderId: string, productId: string, qty: number): number {
+  const req = requestForWorkOrder(workOrderId)
+  const line = req?.lines.find(l => l.productId === productId)
+  if (!req || !line || qty <= 0) return 0
+  const applied = Math.min(qty, line.reserved)
+  line.reserved -= applied
+  line.consumed += applied
+  persistStockRequests()
+  return applied
 }
 
 /** Readiness of one component line — drives the Reserve modal's pill (D-5). */
@@ -493,6 +561,68 @@ export function reserveWorkOrderProducts(
   }
   if (result.reservedQty > 0) persistStockRequests()
   return result
+}
+
+/**
+ * A material RETURN undoes consumption: qty comes back out of `consumed` and is
+ * held as `reserved` again, so the line reads as it did before it was issued.
+ */
+export function releaseConsumption(workOrderId: string, productId: string, qty: number): number {
+  const req = requestForWorkOrder(workOrderId)
+  const line = req?.lines.find(l => l.productId === productId)
+  if (!req || !line || qty <= 0) return 0
+  const applied = Math.min(qty, line.consumed)
+  line.consumed -= applied
+  line.reserved += applied
+  persistStockRequests()
+  return applied
+}
+
+/** The batch/serial the warehouse actually reserved, falling back to the WO's pick. */
+export function reservedTracking(line: StockRequestLine): { batches: { batchNo: string; qty: number }[]; serials: string[] } {
+  return {
+    batches: line.reservedBatches ?? line.requestedBatches ?? [],
+    serials: line.reservedSerials ?? line.requestedSerials ?? [],
+  }
+}
+
+/**
+ * Did PPIC reserve different units than the work order picked? The work order
+ * detail surfaces this so production is never silently handed other batches.
+ */
+export function trackingChanged(line: StockRequestLine): boolean {
+  if (!line.tracking) return false
+  if (line.tracking === 'serial') {
+    if (!line.reservedSerials || !line.requestedSerials) return false
+    const a = [...line.requestedSerials].sort().join('|')
+    const b = [...line.reservedSerials].sort().join('|')
+    return a !== b
+  }
+  if (!line.reservedBatches || !line.requestedBatches) return false
+  const key = (xs: { batchNo: string; qty: number }[]) =>
+    [...xs].sort((x, y) => x.batchNo.localeCompare(y.batchNo)).map(x => `${x.batchNo}:${x.qty}`).join('|')
+  return key(line.requestedBatches) !== key(line.reservedBatches)
+}
+
+/** Components on this request whose batch/serial the warehouse changed. */
+export function changedTrackingLines(req: StockRequest): StockRequestLine[] {
+  return req.lines.filter(trackingChanged)
+}
+
+/** PPIC reserves specific batches for a component (Stock request detail). */
+export function setReservedBatches(requestId: string, productId: string, batches: { batchNo: string; qty: number }[]): void {
+  const line = stockRequests.find(r => r.id === requestId)?.lines.find(l => l.productId === productId)
+  if (!line) return
+  line.reservedBatches = batches.map(b => ({ ...b }))
+  persistStockRequests()
+}
+
+/** PPIC reserves specific serial numbers for a component (Stock request detail). */
+export function setReservedSerials(requestId: string, productId: string, serials: string[]): void {
+  const line = stockRequests.find(r => r.id === requestId)?.lines.find(l => l.productId === productId)
+  if (!line) return
+  line.reservedSerials = [...serials]
+  persistStockRequests()
 }
 
 /** D-6 — where the released stock goes. Mandatory on unreserve. */
@@ -608,6 +738,10 @@ export interface WorkOrderMaterialLine {
   /** where this component has to land */
   destinationWarehouse: string
   destinationWarehouseId: string
+  /** batch/serial the work order picked, shared with the warehouse */
+  tracking?: 'batch' | 'serial'
+  requestedBatches?: { batchNo: string; qty: number }[]
+  requestedSerials?: string[]
 }
 
 /**

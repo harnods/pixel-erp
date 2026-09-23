@@ -29,8 +29,11 @@ import { formatDate } from '~/utils/date'
 import {
   stockRequests, stockRequestStatus, lineCovered, lineToTransfer, lineReadiness,
   isOverdue, canReject, reserveWorkOrderProducts, unreserveWorkOrderProducts, rejectRequest,
+  reservedTracking, trackingChanged, setReservedBatches, setReservedSerials,
   type StockRequest, type StockRequestLine, type UnreserveDisposition,
 } from '~/data/stockRequests'
+import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
+import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
 import { TODAY_ISO } from '~/data/master'
 
 const props = defineProps<{ orderId: string }>()
@@ -131,6 +134,40 @@ function reject() {
 }
 
 const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
+
+// ── Batch / serial (PPIC may reserve units other than the ones the work order
+// picked; the work order detail is told about it) ─────────────────────────────
+const trackingRow = ref<StockRequestLine | null>(null)
+const batchOpen = ref(false)
+const serialOpen = ref(false)
+
+function trackingLabel(line: StockRequestLine): string {
+  if (!line.tracking) return '—'
+  const { batches, serials } = reservedTracking(line)
+  if (line.tracking === 'serial') return serials.length ? serials.join(', ') : '—'
+  return batches.length ? batches.map(b => `${b.batchNo} (${b.qty})`).join(', ') : '—'
+}
+function isChanged(line: StockRequestLine): boolean { return trackingChanged(line) }
+
+function openTracking(line: StockRequestLine) {
+  trackingRow.value = line
+  if (line.tracking === 'serial') serialOpen.value = true
+  else if (line.tracking === 'batch') batchOpen.value = true
+}
+function saveBatches(batches: { batchNo: string; qty: number }[]) {
+  if (req.value && trackingRow.value) {
+    setReservedBatches(req.value.id, trackingRow.value.productId, batches)
+    toast.notify({ variant: 'success', title: t('Batch updated — the work order will be notified'), maxWidth: 'max-content' })
+  }
+  batchOpen.value = false
+}
+function saveSerials(serials: string[]) {
+  if (req.value && trackingRow.value) {
+    setReservedSerials(req.value.id, trackingRow.value.productId, serials)
+    toast.notify({ variant: 'success', title: t('Serial numbers updated — the work order will be notified'), maxWidth: 'max-content' })
+  }
+  serialOpen.value = false
+}
 </script>
 
 <template>
@@ -262,6 +299,7 @@ const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
                 <th class="wod-th wod-th--num">{{ t('Consumed') }}</th>
                 <th class="wod-th wod-th--num">{{ t('To transfer') }}</th>
                 <th class="wod-th">{{ t('Required date') }}</th>
+                <th class="wod-th">{{ t('Batch / SN') }}</th>
                 <th class="wod-th">{{ t('Status') }}</th>
               </tr>
             </thead>
@@ -281,6 +319,15 @@ const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
                   {{ lineToTransfer(l) > 0 ? `${lineToTransfer(l)} ${l.unit}` : '—' }}
                 </td>
                 <td class="wod-td">{{ formatDate(l.requiredDate) }}</td>
+                <!-- Tracked components carry the work order's pick; PPIC may reserve
+                     other units, and the work order detail is told when they do. -->
+                <td class="wod-td wod-td--wrap">
+                  <span v-if="!l.tracking" class="srd-muted">—</span>
+                  <span v-else class="srd-tracking">
+                    <span class="cell-link" @click="openTracking(l)">{{ trackingLabel(l) }}</span>
+                    <span v-if="isChanged(l)" class="srd-tracking-changed">{{ t('changed') }}</span>
+                  </span>
+                </td>
                 <td class="wod-td">
                   <ErpStatusBadge :status="lineStatus(l)" :label="t(READINESS_LABEL[lineStatus(l)] ?? '')" />
                 </td>
@@ -290,6 +337,24 @@ const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
         </div>
       </section>
     </div>
+
+    <!-- ── Batch / serial pick (PPIC reserves specific units) ── -->
+    <PickBatchDrawer
+      v-if="trackingRow"
+      :open="batchOpen" :product-name="trackingRow.product" :sku="trackingRow.sku"
+      :warehouse-id="trackingRow.destinationWarehouseId" :warehouse-name="trackingRow.destinationWarehouse"
+      :unit="trackingRow.unit" :target-count="trackingRow.qty"
+      :model-value="reservedTracking(trackingRow).batches"
+      @update:open="batchOpen = $event" @save="saveBatches"
+    />
+    <PickSerialNumberDrawer
+      v-if="trackingRow"
+      :open="serialOpen" :product-name="trackingRow.product" :sku="trackingRow.sku"
+      :warehouse-id="trackingRow.destinationWarehouseId" :warehouse-name="trackingRow.destinationWarehouse"
+      :unit="trackingRow.unit" :target-count="trackingRow.qty"
+      :model-value="reservedTracking(trackingRow).serials"
+      @update:open="serialOpen = $event" @save="saveSerials"
+    />
 
     <!-- ── Reserve / Unreserve (UC-02 / UC-03) ── -->
     <ReserveMaterialsModal
@@ -306,6 +371,15 @@ const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
 </template>
 
 <style scoped>
+.srd-tracking { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
+.srd-tracking-changed {
+  display: inline-flex; padding: 0 var(--mp-spacing-2);
+  border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-information-subtle, #eaf2fd);
+  color: var(--mp-text-link, #165082);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+}
+
 /* Structural detail-page classes mirror WorkOrderDetailsPage — the same shell is
    reused across transaction detail pages (docs/patterns/details-page-format.md). */
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
