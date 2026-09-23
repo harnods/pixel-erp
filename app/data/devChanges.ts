@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-editable-property-options',
+    title: 'Properties: editable system property options',
+    description:
+      'System properties marked as editable (Status, Priority, Tags, Source, Payment Terms) now show an "Edit options" button. Opens a drawer where options can be renamed (rename scope) or added/deleted/renamed (add-delete-rename scope).',
+    date: '2026-09-23',
+    files: ['CrmModuleBuilderPage.vue', 'CrmEditOptionsDrawer.vue', 'crm.ts'],
+  },
+  {
     id: 'crm-pipeline-close-in',
     title: 'Pipeline: "Close in" replaces "Rotting in (days)"',
     description:

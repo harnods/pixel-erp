@@ -25,6 +25,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
 import CrmPropertyDrawer from '~/components/patterns/CrmPropertyDrawer.vue'
+import CrmEditOptionsDrawer from '~/components/patterns/CrmEditOptionsDrawer.vue'
 import {
   getCrmModule, persistCrmModule, createCustomModule, crmModules, persistCrmModules,
   CRM_FIELD_TYPE_LABELS, CRM_MODULE_ICONS,
@@ -623,6 +624,19 @@ function onPropertySave(payload: { name: string; variableName: string; type: Dea
   }
   propDrawerOpen.value = false
 }
+// Edit options drawer — for editable system properties (status, priority, tags, source, payment-term)
+const editOptionsDrawerOpen = ref(false)
+const editOptionsProp = ref<DealProperty | null>(null)
+function openEditOptions(id: string) {
+  const p = propList.value.find((x) => x.id === id); if (!p) return
+  editOptionsProp.value = p; editOptionsDrawerOpen.value = true
+}
+function onEditOptionsSave(payload: { id: string; options: import('~/data/crm').DealPropertyOption[] }) {
+  const p = propList.value.find((x) => x.id === payload.id)
+  if (p) { if (!p.config) p.config = {}; p.config.options = payload.options }
+  editOptionsDrawerOpen.value = false
+}
+
 // Create a property from the Layout ▸ Add-property drawer's "+ New property".
 // Adds to the editable propList (persisted on Save changes); returns the new prop
 // so the layout drawer can show it in the Add-property list.
@@ -1231,7 +1245,9 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
               <template #cell-createdBy="{ row }">{{ t(propCreatedByLabel(row as unknown as DealProperty)) }}</template>
               <template #cell-fillRate="{ row }">{{ (row as unknown as DealProperty).fillRate }}%</template>
 
-              <!-- Default properties (from the master library) + related lists are non-editable. -->
+              <!-- Default properties (from the master library) + related lists are non-editable,
+                   EXCEPT editable system properties (status, priority, tags, source, payment-term)
+                   which allow editing their picklist options. -->
               <template v-if="!viewMode" #actions="{ row }">
                 <MpPopover v-if="canManageProperty(row as unknown as DealProperty)" :id="`prop-actions-${(row as unknown as DealProperty).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                   <MpPopoverTrigger>
@@ -1244,6 +1260,13 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                     </MpPopoverList>
                   </MpPopoverContent>
                 </MpPopover>
+                <MpButton
+                  v-else-if="(row as unknown as DealProperty).editable"
+                  class="btn-enterprise--secondary builder-edit-opts"
+                  is-rounded
+                  data-devchange="crm-editable-property-options"
+                  @click="openEditOptions((row as unknown as DealProperty).id)"
+                >{{ t('Edit options') }}</MpButton>
                 <span
                   v-else-if="(row as unknown as DealProperty).id === systemActionDevChangePropertyId"
                   class="prop-action-devchange-anchor"
@@ -1656,6 +1679,9 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
     <!-- ════════ Property drawer (Properties ▸ New / Edit) ════════ -->
     <CrmPropertyDrawer :open="propDrawerOpen" :mode="propMode" :property="editingProp" @update:open="propDrawerOpen = $event" @save="onPropertySave" />
 
+    <!-- ════════ Edit options drawer (editable system properties) ════════ -->
+    <CrmEditOptionsDrawer :open="editOptionsDrawerOpen" :property="editOptionsProp" @update:open="editOptionsDrawerOpen = $event" @save="onEditOptionsSave" />
+
     <!-- ════════ Field modal ════════ -->
     <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cmb-field-modal" :is-open="fieldModalOpen" size="md" :is-keep-alive="false" @close="fieldModalOpen = false">
       <MpModalContent>
@@ -1927,6 +1953,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
 .prop-type { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-colors-text-default, #080d0e); }
 .prop-type-icon { color: var(--mp-colors-icon-default, #536062); flex-shrink: 0; }
 .prop-action-devchange-anchor { display: inline-flex; width: var(--mp-sizes-8); height: var(--mp-sizes-8); pointer-events: none; }
+.builder-edit-opts { font-size: var(--mp-font-sizes-sm) !important; padding: var(--mp-spacing-1) var(--mp-spacing-3) !important; white-space: nowrap; }
 /* Properties filter bar (mirrors the standard ErpFilterBar layout). */
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }

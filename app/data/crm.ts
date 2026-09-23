@@ -1667,6 +1667,7 @@ export function defaultDealProperties(): DealProperty[] {
         system: true, isDefault: true, fillRate: 0,
       }
       if (opts) prop.config = { options: opts }
+      if (p.editable) { prop.editable = true; prop.editableScope = p.editableScope }
       return prop
     })
 }
@@ -1710,6 +1711,8 @@ export interface DealProperty {
   /** User who created a custom property. System/default properties omit this. */
   createdBy?: string
   config?: DealPropertyConfig
+  editable?: boolean
+  editableScope?: 'rename' | 'add-delete-rename'
 }
 function propId(name: string): string { return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }
 /** snake_case identifier used to reference a property in formulas/integrations. */
