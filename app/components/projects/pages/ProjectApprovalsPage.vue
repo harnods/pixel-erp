@@ -229,7 +229,7 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
           <div class="pm-stat-label">{{ t('Request') }}</div>
           <p class="pm-body">{{ current_.title }}</p>
         </div>
-        <div class="pm-grid-2">
+        <div class="pm-grid-3">
           <div><div class="pm-stat-label">{{ t('Type') }}</div><div class="pm-body">{{ t(APPROVAL_KIND_LABELS[current_.kind]) }}</div></div>
           <div><div class="pm-stat-label">{{ t('Status') }}</div><div class="pm-mt-2"><ErpStatusBadge v-bind="badgeProps('approval', current_.status, t)" /></div></div>
         </div>
@@ -237,11 +237,11 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
           <div class="pm-stat-label">{{ t('Project') }}</div>
           <p class="pm-body">{{ getProject(current_.projectId)?.code }} · {{ getProject(current_.projectId)?.name }}</p>
         </div>
-        <div class="pm-grid-2">
+        <div class="pm-grid-3">
           <div><div class="pm-stat-label">{{ t('Raised by') }}</div><div class="pm-body">{{ current_.requestedBy }}</div></div>
           <div><div class="pm-stat-label">{{ t('Raised on') }}</div><div class="pm-body">{{ formatDate(current_.requestedAt) }}</div></div>
         </div>
-        <div v-if="current_.status !== 'pending'" class="pm-grid-2">
+        <div v-if="current_.status !== 'pending'" class="pm-grid-3">
           <div><div class="pm-stat-label">{{ t('Decided by') }}</div><div class="pm-body">{{ current_.decidedBy }}</div></div>
           <div><div class="pm-stat-label">{{ t('Decided on') }}</div><div class="pm-body">{{ formatDate(current_.decidedAt) }}</div></div>
         </div>
@@ -279,7 +279,7 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
 
         <!-- ECO -->
         <template v-else-if="current_.kind === 'eco' && eco(current_)">
-          <div class="pm-grid-2">
+          <div class="pm-grid-3">
             <div><div class="pm-stat-label">{{ t('Work package') }}</div><div class="pm-body">{{ nodeLabel(eco(current_)!.wpId) }}</div></div>
             <div><div class="pm-stat-label">{{ t('Effectivity') }}</div><div class="pm-body">{{ t(effectivityText(eco(current_)!.effectivity, eco(current_)!.specificWoIds)) }}</div></div>
             <div><div class="pm-stat-label">{{ t('Affected work orders') }}</div><div class="pm-body">{{ ecoAffectedWos(eco(current_)!).map(w => w.number).join(', ') || t('None yet') }}</div></div>
