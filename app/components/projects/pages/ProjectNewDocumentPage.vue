@@ -83,6 +83,8 @@ const reason = ref('')
 const total = computed(() => filled.value.reduce((s, l) => s + l.amount, 0))
 
 const touched = ref(false)
+// The refusal is answered as soon as the user types, so it clears on the next edit.
+watch(lines, () => { if (action.error.value) action.clear() }, { deep: true })
 function removeLine(i: number) {
   if (lines.value.length === 1) { lines.value[0] = { description: '', account: docType.value === 'Timesheet' ? LABOUR_ACCOUNT : '5-50300', amount: '', wpId: '' }; return }
   lines.value.splice(i, 1)
@@ -134,8 +136,10 @@ const VERDICT = computed(() => ({
           <p v-if="docType === 'Timesheet'" class="pm-caption pm-m-0">{{ t('Timesheets record non-production labour only. Production labour is recorded through a work order and absorbed into Cost of production.') }}</p>
         </div>
 
+        <!-- The save refusal replaces the pegging banner while it stands, directly above the table -->
+        <PmActionError id="nd-error" :error="action.error.value" />
         <!-- Pegging state -->
-        <MpBanner v-if="filled.length && peg.state === 'partial'" id="nd-partial" variant="danger">
+        <MpBanner v-if="!action.error.value && filled.length && peg.state === 'partial'" id="nd-partial" variant="danger">
           <MpBannerIcon />
           <MpBannerTitle>{{ peg.untagged }} {{ t('of') }} {{ filled.length }} {{ t('lines have no project') }}</MpBannerTitle>
           <MpBannerDescription>
@@ -146,7 +150,7 @@ const VERDICT = computed(() => ({
             </span>
           </MpBannerDescription>
         </MpBanner>
-        <MpBanner v-else-if="filled.length && peg.state === 'none'" id="nd-ordinary" variant="info">
+        <MpBanner v-else-if="!action.error.value && filled.length && peg.state === 'none'" id="nd-ordinary" variant="info">
           <MpBannerIcon /><MpBannerDescription>{{ t('No line names a project — this saves as an ordinary expense and consumes no project budget.') }}</MpBannerDescription>
         </MpBanner>
 
@@ -181,7 +185,7 @@ const VERDICT = computed(() => ({
                   </MpInputGroup>
                 </td>
                 <td class="pm-cell-sticky-end">
-                  <MpButton :id="`nd-remove-${i}`" variant="ghost" is-rounded :aria-label="t('Remove line')" @click="removeLine(i)" left-icon="minus-circular" />
+                  <MpButton v-if="lines.length > 1" :id="`nd-remove-${i}`" variant="ghost" is-rounded :aria-label="t('Remove line')" @click="removeLine(i)" left-icon="minus-circular" />
                 </td>
               </tr>
             </tbody>
@@ -230,7 +234,6 @@ const VERDICT = computed(() => ({
           </MpFormControl>
         </div>
 
-        <PmActionError id="nd-error" :error="action.error.value" />
         <div class="pm-footer">
           <MpButton id="nd-cancel" variant="ghost" is-rounded @click="router.back()">{{ t('Cancel') }}</MpButton>
           <MpButton id="nd-save" variant="primary" is-rounded @click="save">{{ verdict === 'escalate' ? t('Save and send to Finance') : t('Save') }}</MpButton>
