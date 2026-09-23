@@ -10,7 +10,7 @@
  * status are columns and filters — not tabs. A row opens the review drawer, where
  * the request's own detail and the decision (with its note) live.
  */
-import { MpButton, MpIcon, MpInput, MpTextlink, MpTooltip, MpFormControl, MpFormLabel, MpFormHelpText } from '@mekari/pixel3'
+import { MpButton, MpIcon, MpInput, MpTextlink, MpTooltip, MpFormControl, MpFormLabel, MpFormErrorMessage } from '@mekari/pixel3'
 import PmTitleBar from '../PmTitleBar.vue'
 import PmMenu from '../PmMenu.vue'
 import PmOverlay from '../PmOverlay.vue'
@@ -97,8 +97,9 @@ const reviewId = ref('')
 const note = ref('')
 const action = useProjectAction()
 const current_ = computed(() => approvals.find(a => a.id === reviewId.value))
-function openReview(a: ApprovalItem) { reviewId.value = a.id; note.value = ''; action.clear() }
-function closeReview() { reviewId.value = ''; action.clear() }
+const rejectTried = ref(false)
+function openReview(a: ApprovalItem) { reviewId.value = a.id; note.value = ''; rejectTried.value = false; action.clear() }
+function closeReview() { reviewId.value = ''; rejectTried.value = false; action.clear() }
 
 function blockReason(a: ApprovalItem): string {
   if (a.requestedBy === actor.value) return t('You raised this request, so someone else must decide it.')
@@ -111,7 +112,7 @@ function decide(approve: boolean) {
   if (!a) return
   const block = blockReason(a)
   if (block) { action.fail(block); return }
-  if (!approve && !note.value.trim()) { action.fail(t('Add a note explaining the rejection.')); return }
+  if (!approve) { rejectTried.value = true; if (!note.value.trim()) return }
   const res = decideApproval(a.id, approve, asActor.value, note.value)
   if (res.ok) { successToast(res.message ?? (approve ? t('Approved') : t('Rejected'))); closeReview() }
   else action.fail(res.error)
@@ -215,7 +216,6 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
     <PmOverlay
       id="appr-review" :open="!!current_" wide
       :title="current_?.refNo ?? ''"
-      :subtitle="current_?.title ?? ''"
       @close="closeReview"
     >
       <template #headerActions>
@@ -225,6 +225,10 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
       </template>
       <template v-if="current_">
         <!-- The request's own facts — status, type and provenance — read as fields, then the reason -->
+        <div>
+          <div class="pm-stat-label">{{ t('Request') }}</div>
+          <p class="pm-body">{{ current_.title }}</p>
+        </div>
         <div class="pm-grid-3">
           <div><div class="pm-stat-label">{{ t('Status') }}</div><div class="pm-mt-2"><ErpStatusBadge v-bind="badgeProps('approval', current_.status, t)" /></div></div>
           <div><div class="pm-stat-label">{{ t('Type') }}</div><div class="pm-body">{{ t(APPROVAL_KIND_LABELS[current_.kind]) }}</div></div>
@@ -298,10 +302,10 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
         </template>
 
         <template v-if="current_.status === 'pending'">
-          <MpFormControl id="appr-note-fc">
+          <MpFormControl id="appr-note-fc" :is-invalid="rejectTried && !note.trim()">
             <MpFormLabel>{{ t('Decision note') }}</MpFormLabel>
             <MpInput id="appr-note" v-model="note" />
-            <MpFormHelpText>{{ t('Required when rejecting') }}</MpFormHelpText>
+            <MpFormErrorMessage>{{ t('Add a note explaining the rejection.') }}</MpFormErrorMessage>
           </MpFormControl>
           <PmActionError id="appr-error" :error="action.error.value" />
         </template>
