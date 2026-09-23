@@ -109,6 +109,13 @@ const VERDICT = computed(() => ({
 <template>
   <div class="pm-page">
     <PmTitleBar :title="t('New document')" :breadcrumb="presetProject ? { label: `${presetProject.code} · ${presetProject.name}`, to: `/projects/${presetProject.id}` } : { label: t('Documents'), to: '/project-documents' }" />
+    <div class="pm-stage-wrap pm-stage-wrap--info">
+    <MpBanner id="nd-policy" variant="info" is-inline class="pm-page-banner">
+      <MpBannerIcon />
+      <MpBannerDescription>
+        <strong>{{ t('Budget check policy') }}:</strong> {{ mode === 'off' ? t('Off for this document type') : t('Warn + override with reason (company policy, phase 1)') }}
+      </MpBannerDescription>
+    </MpBanner>
     <div class="pm-stage">
       <div class="pm-stack pm-gap-4">
         <div class="pm-stack pm-gap-4">
@@ -118,17 +125,11 @@ const VERDICT = computed(() => ({
               <MpRadio v-for="d in DOC_TYPES" :id="`nd-type-${d.key}`" :key="d.key" name="nd-type" :is-checked="docType === d.key" @change="docType = d.key">{{ t(d.label) }}</MpRadio>
             </div>
           </MpFormControl>
-          <div class="pm-grid-2">
-            <MpFormControl v-if="docType !== 'Timesheet'" id="nd-v-fc">
-              <MpFormLabel>{{ t('Vendor') }}</MpFormLabel>
-              <MpInput id="nd-v" v-model="vendor" />
-              <MpFormHelpText>{{ t('Optional for a request') }}</MpFormHelpText>
-            </MpFormControl>
-            <div>
-              <div class="pm-stat-label">{{ t('Budget check policy') }}</div>
-              <div class="pm-body pm-mt-2">{{ mode === 'off' ? t('Off for this document type') : t('Warn + override with reason (company policy, phase 1)') }}</div>
-            </div>
-          </div>
+          <MpFormControl v-if="docType !== 'Timesheet'" id="nd-v-fc" class="pm-maxw-field">
+            <MpFormLabel>{{ t('Vendor') }}</MpFormLabel>
+            <MpInput id="nd-v" v-model="vendor" />
+            <MpFormHelpText>{{ t('Optional for a request') }}</MpFormHelpText>
+          </MpFormControl>
           <p v-if="docType === 'Timesheet'" class="pm-caption pm-m-0">{{ t('Timesheets record non-production labour only. Production labour is recorded through a work order and absorbed into Cost of production.') }}</p>
         </div>
 
@@ -158,7 +159,7 @@ const VERDICT = computed(() => ({
                 <th class="pm-th-wide" data-devchange="pm-draft-project-documents">{{ t('Project') }}</th>
                 <th class="pm-th-mid">{{ t('Dimensions') }}</th>
                 <th class="pm-num pm-th-mid">{{ t('Amount') }}</th>
-                <th />
+                <th class="pm-cell-sticky-end" />
               </tr>
             </thead>
             <tbody>
@@ -178,12 +179,12 @@ const VERDICT = computed(() => ({
                     <MpInput :id="`nd-amt-${i}`" v-model="l.amount" inputmode="numeric" :aria-label="t('Amount')" @blur="l.amount = parseAmount(l.amount) ? parseAmount(l.amount).toLocaleString('id-ID') : ''" />
                   </MpInputGroup>
                 </td>
-                <td>
+                <td class="pm-cell-sticky-end">
                   <MpButton :id="`nd-remove-${i}`" variant="ghost" is-rounded :aria-label="t('Remove line')" @click="removeLine(i)" left-icon="minus-circular" />
                 </td>
               </tr>
             </tbody>
-            <tfoot><tr><td colspan="4"><MpButton id="nd-add-line" variant="ghost" is-rounded left-icon="add" @click="addLine">{{ t('Line') }}</MpButton></td><td class="pm-num">{{ rp(total) }}</td><td /></tr></tfoot>
+            <tfoot><tr><td colspan="4"><MpButton id="nd-add-line" variant="ghost" is-rounded left-icon="add" @click="addLine">{{ t('Line') }}</MpButton></td><td class="pm-num">{{ rp(total) }}</td><td class="pm-cell-sticky-end" /></tr></tfoot>
           </table>
         </div>
         <p class="pm-caption pm-m-0">{{ t('One document can split across several projects. Dimensions default from each project and are reporting-only.') }}</p>
@@ -231,6 +232,7 @@ const VERDICT = computed(() => ({
         </div>
 
       </div>
+    </div>
     </div>
   </div>
 </template>

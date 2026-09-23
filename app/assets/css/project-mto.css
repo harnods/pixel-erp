@@ -280,3 +280,9 @@
 .pm-page-banner { border-radius: 0 !important; flex-shrink: 0; }
 /* A badge used as a field value sits on the value's own line, level with plain text values. */
 .pm-field-badge { display: flex; align-items: center; min-height: var(--mp-sizes-5, 20px); }
+/* Last column of a scrolling line table stays put (same idea as ErpTablePage's sticky actions). */
+.pm-table th.pm-cell-sticky-end, .pm-table td.pm-cell-sticky-end {
+  position: sticky; right: 0; width: var(--mp-sizes-11, 44px); background: var(--mp-colors-background-neutral, #ffffff);
+  box-shadow: inset 1px 0 0 0 var(--mp-colors-border-default, #e3e7e9);
+}
+.pm-table th.pm-cell-sticky-end { background: var(--mp-colors-background-surface, #f1f5f9); }
