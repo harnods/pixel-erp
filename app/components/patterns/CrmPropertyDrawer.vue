@@ -33,9 +33,7 @@ const name = ref('')
 const nameError = ref('')
 // Variable name auto-follows the property name (snake_case) until the user edits it.
 const variableName = ref('')
-const varNameEdited = ref(false)
-watch(name, (n) => { if (!varNameEdited.value) variableName.value = toVariableName(n) })
-function onVarNameInput(v: string) { varNameEdited.value = true; variableName.value = toVariableName(v) }
+watch(name, (n) => { variableName.value = toVariableName(n) })
 const type = ref<DealPropertyType>('Single-line text')
 const config = reactive<DealPropertyConfig>({})
 const typeOptions = NEW_PROPERTY_TYPES.map((tp) => ({ value: tp, label: tp }))
@@ -63,14 +61,12 @@ watch(() => props.open, (o) => {
   if (props.mode === 'edit' && props.property) {
     name.value = props.property.name
     variableName.value = props.property.variableName || toVariableName(props.property.name)
-    varNameEdited.value = true   // don't overwrite an existing property's variable name
     type.value = NEW_PROPERTY_TYPES.includes(props.property.type) ? props.property.type : 'Single-line text'
     seedConfig(type.value)
     if (props.property.config) Object.assign(config, JSON.parse(JSON.stringify(props.property.config)))
   } else {
     name.value = ''
     variableName.value = ''
-    varNameEdited.value = false
     type.value = 'Single-line text'
     seedConfig('Single-line text')
   }
@@ -116,13 +112,6 @@ function save() {
               <MpInput id="cpd-name" v-model="name" is-full-width :maxlength="NAME_MAX" @update:model-value="nameError = ''" />
               <MpFormErrorMessage v-if="nameError">{{ nameError }}</MpFormErrorMessage>
             </MpFormControl>
-
-            <!-- Variable name (snake_case identifier; auto-follows the name until edited) -->
-            <div class="cpd-field">
-              <span class="cpd-label">{{ t('Variable name') }}</span>
-              <span class="cpd-caption">{{ t('Used to reference this property in formulas and integrations.') }}</span>
-              <MpInput id="cpd-varname" :model-value="variableName" is-full-width @update:model-value="onVarNameInput" />
-            </div>
 
             <!-- Field type -->
             <div class="cpd-field">

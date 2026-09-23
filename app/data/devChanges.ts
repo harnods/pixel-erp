@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-hide-variable-name',
+    title: 'New property: hide Variable name field',
+    description:
+      'The Variable name field is now auto-generated from the property name and hidden from the create/edit property drawer. Users no longer need to manage it manually.',
+    date: '2026-09-24',
+    files: ['CrmPropertyDrawer.vue'],
+  },
+  {
     id: 'crm-editable-property-options',
     title: 'Properties: editable system property options',
     description:
