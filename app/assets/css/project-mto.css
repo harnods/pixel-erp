@@ -272,3 +272,6 @@
 .pm-stage-wrap--warning { background: var(--mp-colors-background-warning, #fef3d6); }
 .pm-page-banner { border-radius: 0 !important; flex-shrink: 0; }
 
+/* A quoted, attributed block for text a person typed (a request's reason) — not a
+   system message, so it is a field, not a banner. */
+.pm-quote { padding: var(--mp-spacing-3, 12px) var(--mp-spacing-4, 16px); background: var(--mp-colors-background-neutral-subtle, #f8f9f9); border-left: 2px solid var(--mp-colors-border-bold, #8c9596); border-radius: 0 var(--mp-radii-md, 6px) var(--mp-radii-md, 6px) 0; }

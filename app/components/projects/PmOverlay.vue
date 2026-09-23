@@ -9,6 +9,9 @@
  *     dismissal switched off.
  * Footer actions go in the `footer` slot and are laid out as the responsive
  * action footer (rule/btn-responsive-footer).
+ * Header slots, for a record drawer: `headerActions` (icon buttons beside the title,
+ * before ×) and `headerMeta` (status badge + the record's context line, under the
+ * title/description — the same order as a detail page's title bar).
  */
 import {
   MpButton, MpButtonGroup, MpIcon, MpModal, MpModalContent, MpModalHeader, MpModalBody,
@@ -34,8 +37,12 @@ const emit = defineEmits<{ (e: 'close'): void }>()
     <MpModalContent>
       <MpModalHeader>
         <div>
-          <div>{{ title }}</div>
+          <div class="pm-row pm-gap-2">
+            <span>{{ title }}</span>
+            <slot name="headerActions" />
+          </div>
           <div v-if="subtitle" class="pm-caption">{{ subtitle }}</div>
+          <div v-if="$slots.headerMeta" class="pm-row pm-gap-2 pm-mt-2"><slot name="headerMeta" /></div>
         </div>
         <MpModalCloseButton />
       </MpModalHeader>
@@ -54,9 +61,13 @@ const emit = defineEmits<{ (e: 'close'): void }>()
       <div v-if="open" class="pm-drawer-overlay">
         <div class="pm-drawer-panel" :class="{ 'pm-drawer-panel--wide': wide }" role="dialog" aria-modal="true" :aria-label="title">
           <header class="pm-drawer-header">
-            <div>
-              <h2 class="pm-drawer-title">{{ title }}</h2>
+            <div class="pm-grow">
+              <div class="pm-row pm-gap-1">
+                <h2 class="pm-drawer-title">{{ title }}</h2>
+                <slot name="headerActions" />
+              </div>
               <div v-if="subtitle" class="pm-drawer-sub">{{ subtitle }}</div>
+              <div v-if="$slots.headerMeta" class="pm-row pm-gap-2 pm-mt-2"><slot name="headerMeta" /></div>
             </div>
             <MpButton variant="ghost" is-rounded aria-label="Close" @click="emit('close')" left-icon="close" />
           </header>

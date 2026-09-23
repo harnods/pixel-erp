@@ -10,7 +10,7 @@
  * status are columns and filters — not tabs. A row opens the review drawer, where
  * the request's own detail and the decision (with its note) live.
  */
-import { MpButton, MpIcon, MpInput, MpTextlink, MpFormControl, MpFormLabel, MpFormHelpText } from '@mekari/pixel3'
+import { MpButton, MpIcon, MpInput, MpTextlink, MpTooltip, MpFormControl, MpFormLabel, MpFormHelpText } from '@mekari/pixel3'
 import PmTitleBar from '../PmTitleBar.vue'
 import PmMenu from '../PmMenu.vue'
 import PmOverlay from '../PmOverlay.vue'
@@ -214,13 +214,28 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
     <!-- Review drawer — the request's own detail, then the decision -->
     <PmOverlay
       id="appr-review" :open="!!current_" wide
-      :title="current_ ? `${current_.refNo} · ${current_.title}` : ''"
-      :subtitle="current_ ? `${t(APPROVAL_KIND_LABELS[current_.kind])} · ${getProject(current_.projectId)?.code} · ${t('raised by')} ${current_.requestedBy} ${t('on')} ${formatDate(current_.requestedAt)}` : ''"
+      :title="current_?.refNo ?? ''"
+      :subtitle="current_?.title ?? ''"
       @close="closeReview"
     >
+      <template #headerActions>
+        <MpTooltip v-if="current_" :label="t('Open project')" placement="bottom">
+          <MpButton id="appr-open-project" variant="ghost" is-rounded left-icon="newtab" :aria-label="t('Open project')" @click="router.push(`/projects/${current_.projectId}`)" />
+        </MpTooltip>
+      </template>
+      <template #headerMeta>
+        <template v-if="current_">
+          <ErpStatusBadge v-bind="badgeProps('approval', current_.status, t)" />
+          <span class="pm-caption pm-m-0">
+            {{ t(APPROVAL_KIND_LABELS[current_.kind]) }} · {{ getProject(current_.projectId)?.code }} · {{ t('raised by') }} {{ current_.requestedBy }} {{ t('on') }} {{ formatDate(current_.requestedAt) }}
+          </span>
+        </template>
+      </template>
       <template v-if="current_">
-        <ErpStatusBadge v-bind="badgeProps('approval', current_.status, t)" />
-        <div v-if="current_.reason" class="pm-tl-reason pm-m-0"><span class="pm-muted">{{ t('Reason') }}:</span> {{ current_.reason }}</div>
+        <div v-if="current_.reason" class="pm-quote">
+          <div class="pm-stat-label">{{ t('Reason from') }} {{ current_.requestedBy }}</div>
+          <p class="pm-body pm-mt-2">{{ current_.reason }}</p>
+        </div>
 
         <!-- Overage -->
         <template v-if="current_.kind === 'overage'">
@@ -292,7 +307,6 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
         <div v-else class="pm-caption">
           {{ current_.status === 'approved' ? t('Approved') : t('Rejected') }} {{ t('by') }} {{ current_.decidedBy }} {{ t('on') }} {{ formatDate(current_.decidedAt) }}<template v-if="current_.decisionNote"> — “{{ current_.decisionNote }}”</template>
         </div>
-        <div><MpTextlink id="appr-open-project" as="a" @click.prevent="router.push(`/projects/${current_.projectId}`)">{{ t('Open project') }}</MpTextlink></div>
       </template>
 
       <template #footer>
