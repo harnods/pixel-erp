@@ -1236,7 +1236,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                     <input v-model="propSearch" class="filter-search-input" type="text" :placeholder="t('Search...')" />
                     <button v-if="propSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="propSearch = ''"><MpIcon name="close" size="sm" /></button>
                   </div>
-                  <MpButton v-if="!viewMode" variant="tertiary" is-rounded left-icon="add" @click="openAddProperty()">{{ t('New property') }}</MpButton>
+                  <MpButton variant="tertiary" is-rounded left-icon="add" @click="openAddProperty()">{{ t('New property') }}</MpButton>
                 </div>
               </template>
 
@@ -1259,7 +1259,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                    EXCEPT editable system properties (status, priority, tags, source, payment-term)
                    which allow editing their picklist options. -->
               <template #actions="{ row }">
-                <template v-if="!viewMode">
+                <template>
                   <MpPopover v-if="canManageProperty(row as unknown as DealProperty)" :id="`prop-actions-${(row as unknown as DealProperty).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                     <MpPopoverTrigger>
                       <MpButton class="builder-kebab" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
