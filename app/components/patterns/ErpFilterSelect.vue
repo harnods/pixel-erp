@@ -22,7 +22,17 @@ const props = withDefaults(defineProps<{
   width?: string
   /** filter selects show an (×) to reset; set false for required form selects */
   isClearable?: boolean
-}>(), { width: '176px', isClearable: true })
+  /**
+   * `cell` drops the field border/height so the control can fill a table cell
+   * edge-to-edge (the cell itself draws the boundary). Same searchable
+   * behaviour — only the chrome changes. Used by the WMS cutover product table.
+   */
+  variant?: 'field' | 'cell'
+  /** Greys out and blocks input — for a cell whose group checkbox is off. */
+  isDisabled?: boolean
+  /** No-match copy. UXW blank-slate pattern: "No matching {object} found". */
+  emptyText?: string
+}>(), { width: '176px', isClearable: true, variant: 'field', isDisabled: false, emptyText: 'No results found' })
 
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
@@ -40,7 +50,7 @@ const filtered = computed<Opt[]>(() => {
   return q ? normalized.value.filter((o) => o.label.toLowerCase().includes(q)) : normalized.value
 })
 
-function focusOpen() { if (!open.value) { open.value = true; query.value = ''; nextTick(() => inputEl.value?.focus()) } }
+function focusOpen() { if (props.isDisabled) return; if (!open.value) { open.value = true; query.value = ''; nextTick(() => inputEl.value?.focus()) } }
 function onInput(e: Event) { query.value = (e.target as HTMLInputElement).value; if (!open.value) open.value = true }
 function onBlur() { window.setTimeout(() => { open.value = false; query.value = '' }, 120) }
 function close() { open.value = false; query.value = '' }
@@ -51,7 +61,7 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
 </script>
 
 <template>
-  <div class="efs" :class="{ 'efs--filled': !!modelValue && isClearable && !open }" :style="{ '--efs-w': width }">
+  <div class="efs" :class="[`efs--${variant}`, { 'efs--filled': !!modelValue && isClearable && !open, 'efs--disabled': isDisabled }]" :style="{ '--efs-w': width }">
     <MpPopover :id="id" is-manual :is-open="open" placement="bottom-start" use-portal is-adaptive-width :is-keep-alive="false" @close="close">
       <MpPopoverTrigger>
         <div class="efs-trigger" @click="focusOpen">
@@ -61,6 +71,7 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
             type="text"
             :value="open ? query : selectedLabel"
             :placeholder="modelValue ? selectedLabel : placeholder"
+            :disabled="isDisabled"
             @focus="focusOpen"
             @input="onInput"
             @keydown.enter.prevent="enter"
@@ -78,7 +89,7 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
             @mousedown.prevent
             @click="pick(o.value)"
           >{{ o.label }}</MpPopoverListItem>
-          <div v-if="!filtered.length" class="efs-empty">No results</div>
+          <div v-if="!filtered.length" class="efs-empty">{{ emptyText }}</div>
         </MpPopoverList>
       </MpPopoverContent>
     </MpPopover>
@@ -120,4 +131,26 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
 .efs-clear:hover { color: var(--mp-text-default); }
 
 .efs-empty { padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
+/* ── `cell` variant — fills a table cell edge-to-edge ──────────────────────
+   The cell draws the boundary, so the control drops its own border and radius
+   and inherits the row height. Same searchable combobox behaviour otherwise. */
+.efs--cell { display: flex; width: 100%; }
+.efs--cell .efs-trigger {
+  width: 100%;
+  height: var(--mp-sizes-10, 40px);
+  padding: 0 var(--mp-spacing-3);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+.efs--cell .efs-trigger:focus-within {
+  border-color: transparent;
+  box-shadow: inset 0 0 0 1px var(--mp-colors-border-bold, #8c9596);
+}
+.efs--cell .efs-clear { right: var(--mp-spacing-6); }
+
+.efs--disabled .efs-trigger { cursor: not-allowed; }
+.efs--disabled .efs-input { cursor: not-allowed; color: var(--mp-text-disabled, #9aa4a6); }
+.efs--disabled .efs-chevron { opacity: 0.4; }
 </style>

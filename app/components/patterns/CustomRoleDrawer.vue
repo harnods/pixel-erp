@@ -27,8 +27,8 @@ import { MpIcon, MpButton, MpCheckbox, MpFormControl, MpFormLabel, MpFormErrorMe
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { successToast } from '~/utils/toasts'
 import {
-  AUTHORITY_ACTIONS, AUTHORITY_CATEGORIES, AUTHORITY_FEATURES, DESCRIPTION_MAX, ROLE_NAME_MAX,
-  addCustomRole, authorityActionsFor, authorityRowKeys, authoritySubRowKeys,
+  AUTHORITY_ACTIONS, AUTHORITY_CATEGORIES, DESCRIPTION_MAX, ROLE_NAME_MAX,
+  addCustomRole, authorityActionsFor, authorityFeaturesFor, authorityRowKeys, authoritySubRowKeys,
   getCustomRole, grantedFeatureCount, updateCustomRole,
   type AuthorityAction, type AuthorityCategory, type AuthorityFeature, type AuthorityGrants, type AuthoritySubfeature,
 } from '~/data/usersRoles'
@@ -44,7 +44,10 @@ const emit = defineEmits<{ (e: 'close'): void }>()
 const { t } = useLocale()
 
 const isEdit = computed(() => !!props.roleId)
-const features = AUTHORITY_FEATURES
+const { projectAccountingEnabled } = useApprovalWorkflowScenario()
+/** Project Accounting rows only exist for tenants that bought the component —
+ *  dropped, not disabled (see authorityFeaturesFor). */
+const features = computed(() => authorityFeaturesFor(projectAccountingEnabled.value))
 
 // ─── Draft state ────────────────────────────────────────────────────────────
 const name = ref('')
@@ -85,7 +88,7 @@ watch(() => props.isOpen, (open) => {
     for (const [key, actions] of Object.entries(role.grants)) grants[key] = [...actions]
     // Expand every group that already has something granted — the user
     // almost always wants to see where the role's authority actually is.
-    for (const f of features) {
+    for (const f of features.value) {
       if (!authorityRowKeys(f).some((k) => grants[k]?.length)) continue
       expandedCategories[f.category] = true
       if (!f.subfeatures.length) continue
@@ -102,7 +105,7 @@ const featureCount = computed(() => grantedFeatureCount(grants))
 /** Feature rows the table shows — scoped by the category quick filter and name search. */
 const visibleFeatures = computed(() => {
   const s = search.value.trim().toLowerCase()
-  return features.filter((f) => {
+  return features.value.filter((f) => {
     if (quickFilter.value && f.category !== quickFilter.value) return false
     if (!s) return true
     if (f.label.toLowerCase().includes(s)) return true
@@ -229,7 +232,7 @@ const selectedSummary = computed(() => {
           : [t('Access to CRM, scoped to their own records')]
         return { category: cat, bullets }
       }
-      const catFeatures = features.filter((f) => f.category === cat.value)
+      const catFeatures = features.value.filter((f) => f.category === cat.value)
       const allKeys = catFeatures.flatMap((f) => authorityRowKeys(f))
       const grantedActions = new Set<AuthorityAction>()
       let totalCells = 0

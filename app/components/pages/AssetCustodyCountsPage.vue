@@ -14,20 +14,39 @@
  */
 import { computed } from 'vue'
 import { MpButton, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription } from '@mekari/pixel3'
-import { infoToast } from '~/utils/toasts'
+import { infoToast, successToast } from '~/utils/toasts'
 import { countRows, countSession, custodyRows, varianceRows, type CountTone } from '~/data/fixedAssetScreens'
+import {
+  isVarianceResolved, resolveVariance, reopenVariance, openVariances,
+  canCloseSession, countSessionClosed,
+} from '~/data/fixedAssetSession'
 
 const { t } = useLocale()
 
-const open = computed(() => varianceRows.filter((v) => v.status === 'Open'))
-const resolved = computed(() => varianceRows.filter((v) => v.status !== 'Open'))
-const canClose = computed(() => open.value.length === 0)
+const open = openVariances
+const resolved = computed(() => varianceRows.filter((v) => isVarianceResolved(String(v.id))))
+const canClose = canCloseSession
 
 const toneClass: Record<CountTone, string> = {
   ok: 'cc__res--ok',
   warn: 'cc__res--warn',
   bad: 'cc__res--bad',
   muted: 'cc__res--muted',
+}
+
+/**
+ * Resolving a variance turns a finding into something the ledger understands.
+ * The action is named per row (write off, capitalise, reclassify, partial
+ * disposal) because those are different accounting events, not one generic
+ * "resolve".
+ */
+function resolve(id: string, action: string) {
+  resolveVariance(id)
+  successToast(t(`Resolved as: ${action}`))
+}
+function reopen(id: string) {
+  reopenVariance(id)
+  infoToast(t('Variance reopened'))
 }
 
 /**
@@ -42,7 +61,12 @@ function closeSession() {
     )
     return
   }
-  infoToast(t('Closing the session is not part of this screen yet.'))
+  countSessionClosed.value = true
+  successToast(t('Count session closed. The register now reflects what was counted.'))
+}
+function reopenSession() {
+  countSessionClosed.value = false
+  infoToast(t('Session reopened'))
 }
 </script>
 
@@ -51,16 +75,26 @@ function closeSession() {
     <header class="cc__head">
       <p class="cc__sub">{{ countSession }}</p>
       <div class="cc__actions">
-        <MpButton variant="secondary" is-rounded @click="infoToast(t('Starting a session is not part of this screen yet.'))">
+        <MpButton variant="secondary" is-rounded @click="infoToast(t('Starting a session is not part of this prototype.'))">
           {{ t('New count session') }}
         </MpButton>
-        <!-- Disabled rather than hidden: the reader should see that closing is
-             possible and understand why it is not available yet. -->
-        <MpButton is-rounded @click="closeSession">{{ t('Close session') }}</MpButton>
+        <MpButton v-if="countSessionClosed" variant="secondary" is-rounded @click="reopenSession">
+          {{ t('Reopen session') }}
+        </MpButton>
+        <MpButton v-else is-rounded @click="closeSession">{{ t('Close session') }}</MpButton>
       </div>
     </header>
 
-    <MpBanner v-if="!canClose" id="cc__note-banner" variant="warning" class="cc__note">
+    <!-- A closed session is the audit evidence. Saying so is the point. -->
+    <MpBanner v-if="countSessionClosed" id="cc-closed-banner" variant="success" class="cc__note">
+      <MpBannerIcon id="cc-closed-icon" />
+      <MpBannerTitle>{{ t('Session closed') }}</MpBannerTitle>
+      <MpBannerDescription>
+        {{ t('Every variance was resolved before closing, so this count stands as evidence that the register matches what is physically held.') }}
+      </MpBannerDescription>
+    </MpBanner>
+
+    <MpBanner v-else-if="!canClose" id="cc__note-banner" variant="warning" class="cc__note">
       <MpBannerIcon id="b-icon" />
       <MpBannerTitle>
         {{ open.length }} {{ t(open.length === 1 ? 'variance is unresolved' : 'variances are unresolved') }}
@@ -148,6 +182,7 @@ function closeSession() {
             <th class="cc__th">{{ t('What happened') }}</th>
             <th class="cc__th">{{ t('Resolves as') }}</th>
             <th class="cc__th">{{ t('Status') }}</th>
+            <th class="cc__th" />
           </tr>
         </thead>
         <tbody>
@@ -157,7 +192,20 @@ function closeSession() {
             <td class="cc__td cc__td--wrap">{{ v.explanation }}</td>
             <td class="cc__td">{{ v.action }}</td>
             <td class="cc__td">
-              <span class="cc__res" :class="v.status === 'Open' ? 'cc__res--warn' : 'cc__res--ok'">{{ v.status }}</span>
+              <span class="cc__res" :class="isVarianceResolved(String(v.id)) ? 'cc__res--ok' : 'cc__res--warn'">
+                {{ isVarianceResolved(String(v.id)) ? t('Resolved') : t('Open') }}
+              </span>
+            </td>
+            <td class="cc__td cc__td--action">
+              <!-- The action is named per row: writing off, capitalising and
+                   reclassifying are different accounting events, not one
+                   generic "resolve". -->
+              <MpButton
+                v-if="!isVarianceResolved(String(v.id))"
+                variant="secondary" is-rounded
+                @click="resolve(String(v.id), String(v.action))"
+              >{{ v.action }}</MpButton>
+              <span v-else class="cc__undo" @click="reopen(String(v.id))">{{ t('Reopen') }}</span>
             </td>
           </tr>
         </tbody>
@@ -191,6 +239,9 @@ function closeSession() {
    misaligns every row it appears in. */
 .cc__td--mono { font-variant-numeric: tabular-nums; color: var(--mp-text-default); white-space: nowrap; }
 .cc__td--wrap { max-width: 320px; }
+.cc__td--action { text-align: right; white-space: nowrap; }
+.cc__undo { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
+.cc__undo:hover { text-decoration: underline; }
 .cc__muted { color: var(--mp-text-subtle); }
 .cc__where { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); }
 

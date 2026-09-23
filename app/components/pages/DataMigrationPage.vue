@@ -16,8 +16,6 @@ import {
   cutoverSetUpCount,
   cutoverState,
   furthestCutoverStep,
-  pendingMovementCount,
-  pendingProductCount,
 } from '~/data/wmsCutover'
 
 const { t } = useLocale()
@@ -38,18 +36,10 @@ const conversionDate = computed(() =>
     .format(new Date(cutoverState.conversionDate)),
 )
 
-// Story 9 / FR12 — new WMS products discovered after go-live queue their
-// journal entries until routed. Surfaced here so it is not a hidden backlog.
-const pendingProducts = computed(() => pendingProductCount())
-const heldEntries = computed(() => pendingMovementCount())
-
 function openCutover() {
   // Resume at the earliest step still incomplete (Chart of accounts → Map
   // products → Opening balance).
   router.push(`/data-migration/wms-cutover/${furthestCutoverStep()}`)
-}
-function openPending() {
-  router.push('/data-migration/wms-cutover/pending')
 }
 </script>
 
@@ -105,28 +95,6 @@ function openPending() {
       <div class="dm-card-actions">
         <button type="button" class="btn-enterprise btn-enterprise--primary" @click="openCutover">
           {{ isStarted ? t('Continue setup') : t('Start setup') }}
-        </button>
-      </div>
-    </section>
-
-    <!-- Post-go-live backlog — only when there is one -->
-    <section v-if="isUpgradeScenario && pendingProducts" class="dm-card dm-card--pending">
-      <div class="dm-card-head">
-        <div class="dm-card-icon" aria-hidden="true">
-          <MpIcon name="warning-triangle" size="md" color="icon.warning" />
-        </div>
-        <div class="dm-card-heading">
-          <h2 class="dm-card-title">{{ t('Products pending setup') }}</h2>
-          <p class="dm-pending-count">{{ pendingProducts }} {{ t('products need an account') }}</p>
-          <p class="dm-card-desc">
-            {{ pendingProducts }} {{ t("new WMS products aren't mapped to an inventory account yet, so") }}
-            {{ heldEntries }} {{ t("journal entries can't be posted. Warehouse operations aren't affected.") }}
-          </p>
-        </div>
-      </div>
-      <div class="dm-card-actions">
-        <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="openPending">
-          {{ t('Review products') }}
         </button>
       </div>
     </section>
@@ -216,15 +184,6 @@ function openPending() {
   font-size: var(--mp-font-sizes-md);
   line-height: var(--mp-line-heights-md);
   color: var(--mp-text-secondary);
-}
-
-/* Pending-count summary line — semibold, default text, above the explanatory desc. */
-.dm-pending-count {
-  margin: 0;
-  font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-md);
-  color: var(--mp-text-default);
 }
 
 .dm-meta {

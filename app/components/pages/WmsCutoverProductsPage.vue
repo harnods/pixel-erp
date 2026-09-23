@@ -32,11 +32,14 @@ import {
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpStepper from '~/components/patterns/ErpStepper.vue'
 import FormatRequirementsAccordion from '~/components/patterns/FormatRequirementsAccordion.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import NewTaxModal from '~/components/patterns/NewTaxModal.vue'
 import {
   CUTOVER_TOTAL_PRODUCTS, cutoverProducts, cutoverState,
   inventoryAccounts, revenueAccounts, cogsAccounts, taxOptions,
   accountLabel, isCutoverProductComplete, missingCutoverFields,
-  CUTOVER_STEPS, isCutoverStepComplete, coaSourceState, cutoverSetUpCount, applyBulkImport,
+  CUTOVER_STEPS, isCutoverStepComplete, coaReviewState, cutoverSetUpCount, applyBulkImport,
+  addTaxRate, type TaxRate,
   type CutoverProduct, type CoaAccount, type CutoverStep,
 } from '~/data/wmsCutover'
 
@@ -52,9 +55,11 @@ function parseAmount(raw: string): number | null {
   const digits = raw.replace(/\D/g, '')
   return digits === '' ? null : Number(digits)
 }
-function labelFor(list: CoaAccount[], code: string): string {
-  const found = list.find((a) => a.code === code)
-  return found ? accountLabel(found) : ''
+
+/** Accounts as ErpFilterSelect options — the searchable combobox the account
+    cells use, so a long chart can be typed against instead of scrolled. */
+function accountOptions(list: CoaAccount[]) {
+  return list.map((a) => ({ value: a.code, label: accountLabel(a) }))
 }
 
 // ── Progress ────────────────────────────────────────────────────────────────
@@ -156,6 +161,41 @@ const bulkError = ref('')
 function setSold(p: CutoverProduct, on: boolean) { p.isSold = on }
 function setBought(p: CutoverProduct, on: boolean) { p.isBought = on }
 
+// The Sales/Purchase price + account headers only carry a required-asterisk
+// once at least one product is flagged for that group — until then those
+// columns are not in play for anybody and a marker would be noise.
+const anySold = computed(() => cutoverProducts.some((p) => p.isSold))
+const anyBought = computed(() => cutoverProducts.some((p) => p.isBought))
+
+// ── New tax ─────────────────────────────────────────────────────────────────
+// "Add new tax" at the foot of either tax dropdown — the same escape hatch the
+// sales-invoice tax picker has. The newly created tax is applied straight to
+// the row the user opened it from, so they don't have to reopen the dropdown.
+const newTaxOpen = ref(false)
+const newTaxModal = ref<InstanceType<typeof NewTaxModal> | null>(null)
+const newTaxTarget = ref<{ field: 'sell' | 'buy'; product: CutoverProduct } | null>(null)
+
+function openNewTax(field: 'sell' | 'buy', product: CutoverProduct) {
+  newTaxTarget.value = { field, product }
+  newTaxOpen.value = true
+}
+
+function onNewTaxSave(rate: TaxRate) {
+  const error = addTaxRate(rate)
+  if (error) {
+    newTaxModal.value?.rejectSave(t(error))
+    return
+  }
+  const target = newTaxTarget.value
+  if (target) {
+    if (target.field === 'sell') target.product.sellTax = rate.name
+    else target.product.buyTax = rate.name
+  }
+  newTaxOpen.value = false
+  newTaxTarget.value = null
+  toast.notify({ variant: 'success', title: `${rate.name} ${t('added')}`, maxWidth: 'max-content' })
+}
+
 /** Apply FR2.6's clearing rule at save time rather than at toggle time. */
 function commitToggledOffFields() {
   for (const p of cutoverProducts) {
@@ -186,9 +226,9 @@ function goStep(step: CutoverStep) {
   router.push(`/data-migration/wms-cutover/${step}`)
 }
 
-// Step 2 needs a chart of accounts in place — bounce back to Step 1 if skipped.
+// Step 2 needs a reviewed chart of accounts — bounce back to Step 1 if skipped.
 onMounted(() => {
-  if (!coaSourceState.source) {
+  if (!coaReviewState.reviewed) {
     router.replace('/data-migration/wms-cutover/chart-of-accounts')
     return
   }
@@ -427,6 +467,13 @@ onUnmounted(() => {
         <!-- Aggregate form error -->
         <p v-if="showErrors && formError" class="cut-form-error">{{ formError }}</p>
 
+        <!-- Legend — one asterisk style, one meaning: this field is required.
+             The Sales/Purchase price + account markers appear only once a
+             product is flagged for that group. -->
+        <p class="cut-legend">
+          <span class="cut-req">*</span> {{ t('Required') }}
+        </p>
+
         <!-- ── Form table ── -->
         <div class="cut-table-scroll">
           <table class="cut-table">
@@ -461,28 +508,15 @@ onUnmounted(() => {
                       />
                       <span class="cut-bulk-count">{{ selectedIds.length }} {{ t('selected') }}</span>
 
-                      <MpPopover id="cut-bulk-account" is-close-on-select>
-                        <MpPopoverTrigger>
-                          <button type="button" class="cut-filter-trigger cut-filter-trigger--wide" :class="{ 'cut-filter-trigger--set': !!bulkAccount }">
-                            <span class="cut-filter-label">
-                              {{ bulkAccount ? labelFor(inventoryAccounts, bulkAccount) : t('Select inventory account') }}
-                            </span>
-                            <MpIcon name="chevrons-down" size="sm" />
-                          </button>
-                        </MpPopoverTrigger>
-                        <MpPopoverContent :class="css({ minWidth: '280px', width: 'max-content', maxWidth: '360px' })">
-                          <MpPopoverList>
-                            <MpPopoverListItem
-                              v-for="a in inventoryAccounts"
-                              :key="a.code"
-                              :is-active="a.code === bulkAccount"
-                              @click="bulkAccount = a.code; bulkError = ''"
-                            >
-                              {{ accountLabel(a) }}
-                            </MpPopoverListItem>
-                          </MpPopoverList>
-                        </MpPopoverContent>
-                      </MpPopover>
+                      <ErpFilterSelect
+                        id="cut-bulk-account"
+                        :model-value="bulkAccount"
+                        :placeholder="t('Select inventory account')"
+                        :options="accountOptions(inventoryAccounts)"
+                        :empty-text="t('No matching account found')"
+                        width="280px"
+                        @update:model-value="(v: string) => { bulkAccount = v; bulkError = '' }"
+                      />
 
                       <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="applyBulkAccount">
                         {{ t('Apply') }}
@@ -525,12 +559,24 @@ onUnmounted(() => {
                   <th class="cut-th">{{ t('Default inventory account') }} <span class="cut-req">*</span></th>
                   <th class="cut-th">{{ t('Inventory value') }} <span class="cut-req">*</span></th>
                   <th class="cut-th cut-th--center">{{ t('I sell this product') }}</th>
-                  <th class="cut-th">{{ t('Default sales price') }}</th>
-                  <th class="cut-th">{{ t('Default sales account') }} <span class="cut-req">*</span></th>
+                  <th class="cut-th">
+                    {{ t('Default sales price') }}
+                    <span v-if="anySold" class="cut-req">*</span>
+                  </th>
+                  <th class="cut-th">
+                    {{ t('Default sales account') }}
+                    <span v-if="anySold" class="cut-req">*</span>
+                  </th>
                   <th class="cut-th">{{ t('Default sales tax') }}</th>
                   <th class="cut-th cut-th--center">{{ t('I buy this product') }}</th>
-                  <th class="cut-th">{{ t('Default purchase cost') }}</th>
-                  <th class="cut-th">{{ t('Default purchase account') }} <span class="cut-req">*</span></th>
+                  <th class="cut-th">
+                    {{ t('Default purchase cost') }}
+                    <span v-if="anyBought" class="cut-req">*</span>
+                  </th>
+                  <th class="cut-th">
+                    {{ t('Default purchase account') }}
+                    <span v-if="anyBought" class="cut-req">*</span>
+                  </th>
                   <th class="cut-th">{{ t('Default purchase tax') }}</th>
                   <th class="cut-th">{{ t('Status') }}</th>
                 </tr>
@@ -567,28 +613,16 @@ onUnmounted(() => {
 
                 <!-- Inventory account (stays editable — never locked) -->
                 <td class="cut-td cut-td--select" :class="{ 'cut-td--error': hasError(p, 'inventoryAccount') }">
-                  <MpPopover :id="`inv-acct-${p.id}`" placement="bottom-start" use-portal is-close-on-select>
-                    <MpPopoverTrigger>
-                      <button type="button" class="cut-cell-trigger">
-                        <span :class="p.inventoryAccount ? 'cut-cell-value' : 'cut-cell-placeholder'">
-                          {{ p.inventoryAccount ? labelFor(inventoryAccounts, p.inventoryAccount) : t('Select account') }}
-                        </span>
-                        <MpIcon name="chevrons-down" size="sm" />
-                      </button>
-                    </MpPopoverTrigger>
-                    <MpPopoverContent :class="css({ width: '320px', maxHeight: '260px', overflowY: 'auto', padding: '0' })">
-                      <MpPopoverList>
-                        <MpPopoverListItem
-                          v-for="a in inventoryAccounts"
-                          :key="a.code"
-                          :is-active="a.code === p.inventoryAccount"
-                          @click="p.inventoryAccount = a.code"
-                        >
-                          {{ accountLabel(a) }}
-                        </MpPopoverListItem>
-                      </MpPopoverList>
-                    </MpPopoverContent>
-                  </MpPopover>
+                  <ErpFilterSelect
+                    :id="`inv-acct-${p.id}`"
+                    variant="cell"
+                    :model-value="p.inventoryAccount"
+                    :placeholder="t('Select account')"
+                    :options="accountOptions(inventoryAccounts)"
+                    :empty-text="t('No matching account found')"
+                    :is-clearable="false"
+                    @update:model-value="(v: string) => (p.inventoryAccount = v)"
+                  />
                 </td>
 
                 <!-- Inventory value -->
@@ -636,28 +670,17 @@ onUnmounted(() => {
                   class="cut-td cut-td--select"
                   :class="{ 'cut-td--error': hasError(p, 'revenueAccount'), 'cut-td--off': !p.isSold }"
                 >
-                  <MpPopover :id="`rev-acct-${p.id}`" placement="bottom-start" use-portal is-close-on-select>
-                    <MpPopoverTrigger>
-                      <button type="button" class="cut-cell-trigger" :disabled="!p.isSold">
-                        <span :class="p.revenueAccount ? 'cut-cell-value' : 'cut-cell-placeholder'">
-                          {{ p.revenueAccount ? labelFor(revenueAccounts, p.revenueAccount) : t('Select account') }}
-                        </span>
-                        <MpIcon name="chevrons-down" size="sm" />
-                      </button>
-                    </MpPopoverTrigger>
-                    <MpPopoverContent :class="css({ width: '300px', padding: '0' })">
-                      <MpPopoverList>
-                        <MpPopoverListItem
-                          v-for="a in revenueAccounts"
-                          :key="a.code"
-                          :is-active="a.code === p.revenueAccount"
-                          @click="p.revenueAccount = a.code"
-                        >
-                          {{ accountLabel(a) }}
-                        </MpPopoverListItem>
-                      </MpPopoverList>
-                    </MpPopoverContent>
-                  </MpPopover>
+                  <ErpFilterSelect
+                    :id="`rev-acct-${p.id}`"
+                    variant="cell"
+                    :model-value="p.revenueAccount"
+                    :placeholder="t('Select account')"
+                    :options="accountOptions(revenueAccounts)"
+                    :empty-text="t('No matching account found')"
+                    :is-clearable="false"
+                    :is-disabled="!p.isSold"
+                    @update:model-value="(v: string) => (p.revenueAccount = v)"
+                  />
                 </td>
                 <td
                   class="cut-td cut-td--select"
@@ -681,6 +704,12 @@ onUnmounted(() => {
                           @click="p.sellTax = tax"
                         >
                           {{ tax }}
+                        </MpPopoverListItem>
+                      </MpPopoverList>
+                      <div class="cut-tax-divider" />
+                      <MpPopoverList>
+                        <MpPopoverListItem @click="openNewTax('sell', p)">
+                          <span class="cut-tax-add">{{ t('Add new tax') }}</span>
                         </MpPopoverListItem>
                       </MpPopoverList>
                     </MpPopoverContent>
@@ -717,28 +746,17 @@ onUnmounted(() => {
                   class="cut-td cut-td--select"
                   :class="{ 'cut-td--error': hasError(p, 'cogsAccount'), 'cut-td--off': !p.isBought }"
                 >
-                  <MpPopover :id="`cogs-acct-${p.id}`" placement="bottom-start" use-portal is-close-on-select>
-                    <MpPopoverTrigger>
-                      <button type="button" class="cut-cell-trigger" :disabled="!p.isBought">
-                        <span :class="p.cogsAccount ? 'cut-cell-value' : 'cut-cell-placeholder'">
-                          {{ p.cogsAccount ? labelFor(cogsAccounts, p.cogsAccount) : t('Select account') }}
-                        </span>
-                        <MpIcon name="chevrons-down" size="sm" />
-                      </button>
-                    </MpPopoverTrigger>
-                    <MpPopoverContent :class="css({ width: '320px', padding: '0' })">
-                      <MpPopoverList>
-                        <MpPopoverListItem
-                          v-for="a in cogsAccounts"
-                          :key="a.code"
-                          :is-active="a.code === p.cogsAccount"
-                          @click="p.cogsAccount = a.code"
-                        >
-                          {{ accountLabel(a) }}
-                        </MpPopoverListItem>
-                      </MpPopoverList>
-                    </MpPopoverContent>
-                  </MpPopover>
+                  <ErpFilterSelect
+                    :id="`cogs-acct-${p.id}`"
+                    variant="cell"
+                    :model-value="p.cogsAccount"
+                    :placeholder="t('Select account')"
+                    :options="accountOptions(cogsAccounts)"
+                    :empty-text="t('No matching account found')"
+                    :is-clearable="false"
+                    :is-disabled="!p.isBought"
+                    @update:model-value="(v: string) => (p.cogsAccount = v)"
+                  />
                 </td>
                 <td
                   class="cut-td cut-td--select"
@@ -762,6 +780,12 @@ onUnmounted(() => {
                           @click="p.buyTax = tax"
                         >
                           {{ tax }}
+                        </MpPopoverListItem>
+                      </MpPopoverList>
+                      <div class="cut-tax-divider" />
+                      <MpPopoverList>
+                        <MpPopoverListItem @click="openNewTax('buy', p)">
+                          <span class="cut-tax-add">{{ t('Add new tax') }}</span>
                         </MpPopoverListItem>
                       </MpPopoverList>
                     </MpPopoverContent>
@@ -876,6 +900,14 @@ onUnmounted(() => {
         </div>
       </Transition>
     </Teleport>
+
+    <!-- ── New tax — created from either tax dropdown, applied to that row ── -->
+    <NewTaxModal
+      ref="newTaxModal"
+      :is-open="newTaxOpen"
+      @update:is-open="(v: boolean) => (newTaxOpen = v)"
+      @save="onNewTaxSave"
+    />
 
   </div>
 </template>
@@ -1258,6 +1290,24 @@ onUnmounted(() => {
 .cut-th--check { padding-left: var(--mp-spacing-3); }
 
 .cut-req { color: var(--mp-text-danger); }
+
+.cut-legend {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-sm);
+  line-height: var(--mp-line-heights-sm);
+  color: var(--mp-text-secondary);
+}
+
+/* "Add new tax" — the dropdown's trailing create action. */
+.cut-tax-divider {
+  height: 1px;
+  background: var(--mp-border-default);
+  margin: var(--mp-spacing-1) 0;
+}
+.cut-tax-add { color: var(--mp-text-link); }
 
 .cut-td {
   border-bottom: 1px solid var(--mp-border-default, #e3e7e9);

@@ -376,6 +376,7 @@ watch(() => [currentPageKey.value, route.query.fromPr] as const, ([key, fromPr])
   }
 }, { immediate: true })
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
+const AssetDetailPage = asyncPage(() => import('~/components/pages/AssetDetailPage.vue'))
 const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue'))
 const CrmDealDetailPage = asyncPage(() => import('~/components/pages/CrmDealDetailPage.vue'))
 const CrmServicesPage = asyncPage(() => import('~/components/pages/CrmServicesPage.vue'))
@@ -622,6 +623,11 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'expense') return { component: ProjectExpensePage, id: 'new' }
     if (segs[1] === 'invoice') return { component: ProjectInvoicePage, id: 'new' }
     return { component: ProjectEngagementDetailsPage, id: segs[1]! }
+  }
+  // /assets/:id → the asset record. Full-page: it owns its own title bar and
+  // stage padding, so it routes through detailMatch rather than pageRegistry.
+  if (segs.length >= 2 && segs[0] === 'assets') {
+    return { component: AssetDetailPage, id: segs[1]! }
   }
   // /expenses/new → New expense form (full page, brings its own title bar)
   if (segs.length >= 2 && segs[0] === 'expenses' && segs[1] === 'new') {

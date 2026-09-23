@@ -20,7 +20,7 @@ const { t } = useLocale()
       <p class="st__sub">
         {{ t('The class master sets an asset up correctly at creation. Every field here has a statutory consequence.') }}
       </p>
-      <MpButton variant="secondary" is-rounded @click="infoToast(t('Editing settings is not part of this screen yet.'))">
+      <MpButton variant="secondary" is-rounded @click="infoToast(t('Editing settings is not part of this prototype.'))">
         {{ t('Edit') }}
       </MpButton>
     </header>

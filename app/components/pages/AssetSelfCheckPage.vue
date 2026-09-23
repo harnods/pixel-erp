@@ -15,9 +15,11 @@
 import { computed } from 'vue'
 import { MpIcon, MpButton } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
-import { infoToast } from '~/utils/toasts'
+import { successToast } from '~/utils/toasts'
+import { selfCheckRunAt, rerunSelfCheck } from '~/data/fixedAssetSession'
 import { tieCheckRows } from '~/data/fixedAssetScreens'
-import { fixedAssets, ASSET_HEADLINE_FIGURES as H } from '~/data/fixedAssets'
+import { ASSET_HEADLINE_FIGURES as H } from '~/data/fixedAssets'
+import { unclassifiedAssets } from '~/data/fixedAssetSession'
 
 const { t } = useLocale()
 
@@ -30,7 +32,17 @@ interface Check {
   detail: string
 }
 
-const unclassified = computed(() => fixedAssets.filter((a) => a.taxGroup === null))
+const unclassified = unclassifiedAssets
+
+/**
+ * Re-running restates the result and the time it was taken. The timestamp is
+ * the point: a check retained against a period is what a preparer shows an
+ * examiner, so it has to say when it ran.
+ */
+function runAgain() {
+  rerunSelfCheck()
+  successToast(t('Check re-run'))
+}
 
 /** The four checks, in the order the design lists them. */
 const checks = computed<Check[]>(() => {
@@ -98,8 +110,11 @@ const stateIcon: Record<CheckState, string> = {
 <template>
   <div class="sc">
     <header class="sc__head">
-      <p class="sc__sub">{{ t('September 2026 · closed 30/09/2026 · the result is retained against the period') }}</p>
-      <MpButton variant="secondary" is-rounded @click="infoToast(t('Re-running the check is not part of this screen yet.'))">
+      <p class="sc__sub">
+        {{ t('September 2026 · last run') }} {{ selfCheckRunAt }} ·
+        {{ t('the result is retained against the period') }}
+      </p>
+      <MpButton variant="secondary" is-rounded @click="runAgain">
         {{ t('Run again') }}
       </MpButton>
     </header>

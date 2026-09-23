@@ -330,6 +330,14 @@ export interface AuthorityFeature {
    * edit ("is Administrator"); create/delete don't apply and are hidden.
    */
   actions?: AuthorityAction[]
+  /**
+   * Feature only exists for tenants that bought the Project Accounting billing
+   * component — the same gate the Approval workflows "Applies to: Project
+   * Accounting" option uses. A tenant without the component can't grant
+   * authority over a module they don't have, so the row is dropped from the
+   * matrix entirely rather than shown disabled. See authorityFeaturesFor().
+   */
+  requiresProjectAccounting?: boolean
 }
 
 /** The full permission matrix — verbatim from Figma "Drawer / Custom Role / Add"
@@ -358,6 +366,17 @@ export const AUTHORITY_FEATURES: AuthorityFeature[] = [
   { id: 'acc-chart-of-accounts', label: 'Chart of accounts', category: 'accounting', subfeatures: [] },
   { id: 'acc-close-books', label: 'Close books', category: 'accounting', subfeatures: [] },
   { id: 'acc-fixed-assets', label: 'Fixed assets', category: 'accounting', subfeatures: [] },
+  {
+    id: 'project-accounting', label: 'Project Accounting', category: 'accounting',
+    requiresProjectAccounting: true,
+    subfeatures: [
+      { id: 'project-setup', label: 'Project setup' },
+      { id: 'cost-tracking', label: 'Cost tracking' },
+      { id: 'recognition-and-billing', label: 'Recognition and billing' },
+      { id: 'change-management', label: 'Change management' },
+      { id: 'project-health', label: 'Project health' },
+    ],
+  },
 
   // ── Sales ──
   { id: 'sales-quotes', label: 'Sales quotes', category: 'sales', subfeatures: [] },
@@ -531,6 +550,16 @@ export function authorityRowKeys(feature: AuthorityFeature): string[] {
 export function authorityActionsFor(feature: AuthorityFeature): AuthorityAction[] {
   if (feature.actions) return feature.actions
   return feature.viewOnly ? ['view'] : ['view', 'create', 'edit', 'delete']
+}
+
+/**
+ * The features this tenant can actually grant. Pass whether the Project
+ * Accounting billing component is installed (useApprovalWorkflowScenario) —
+ * without it, that feature is dropped from the matrix rather than shown
+ * disabled: you cannot grant authority over a module you do not have.
+ */
+export function authorityFeaturesFor(hasProjectAccounting: boolean): AuthorityFeature[] {
+  return AUTHORITY_FEATURES.filter((f) => !f.requiresProjectAccounting || hasProjectAccounting)
 }
 
 /** How many features have at least one granted action — the "Feature (n)" count. */

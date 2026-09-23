@@ -25,7 +25,10 @@ describe('authority feature catalogue', () => {
   it('gives report-style features a view-only action set', () => {
     for (const feature of AUTHORITY_FEATURES) {
       const actions = authorityActionsFor(feature)
-      if (feature.viewOnly) expect(actions).toEqual(['view'])
+      // An explicit `actions` list wins over both defaults — e.g. the CRM
+      // module-access row, which is view/edit only (admin vs member).
+      if (feature.actions) expect(actions).toEqual(feature.actions)
+      else if (feature.viewOnly) expect(actions).toEqual(['view'])
       else expect(actions).toEqual(AUTHORITY_ACTIONS.map((a) => a.value))
     }
   })

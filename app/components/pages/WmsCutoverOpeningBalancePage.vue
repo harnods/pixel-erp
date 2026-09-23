@@ -118,7 +118,7 @@ function publish() {
     <!-- ── Title bar ── -->
     <div class="ob-titlebar">
       <div class="ob-titlebar-left">
-        <MpTextlink id="ob-breadcrumb" as="a" class="ob-breadcrumb" @click.prevent="goBack">{{ t('Set up opening balance') }}</MpTextlink>
+        <MpTextlink id="ob-breadcrumb" as="a" class="ob-breadcrumb" @click.prevent="cancel">{{ t('Data migration') }}</MpTextlink>
         <h1 class="ob-title">{{ t('Set up opening balance') }}</h1>
       </div>
     </div>
@@ -272,7 +272,7 @@ function publish() {
   cursor: pointer;
   padding: 0;
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--mp-font-sizes-xs, 12px);
   font-weight: var(--mp-font-weights-regular);
   line-height: var(--mp-line-heights-md);
   color: var(--mp-text-link);
@@ -283,7 +283,7 @@ function publish() {
   margin: 0;
   font-size: var(--mp-font-sizes-2xl);
   font-weight: var(--mp-font-weights-semi-bold);
-  line-height: 32px;
+  line-height: var(--mp-line-heights-2xl, 32px);
   letter-spacing: var(--mp-letter-spacings-tight, -0.2px);
   color: var(--mp-text-default);
 }
@@ -355,7 +355,7 @@ function publish() {
   width: 100%;
   border-collapse: collapse;
 }
-.ob-col--amount { width: 220px; }
+.ob-col--amount { width: var(--mp-sizes-55, 220px); }
 
 .ob-th {
   position: sticky;
@@ -415,7 +415,7 @@ function publish() {
   display: inline-flex;
   align-items: center;
   margin-left: var(--mp-spacing-2);
-  padding: 2px var(--mp-spacing-2);
+  padding: var(--mp-spacing-0\.5, 2px) var(--mp-spacing-2);
   border-radius: var(--mp-radii-full, 999px);
   font-size: var(--mp-font-sizes-sm);
   line-height: var(--mp-line-heights-sm);

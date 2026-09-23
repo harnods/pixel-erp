@@ -30,7 +30,9 @@ import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePa
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import ExportModal from '~/components/patterns/ExportModal.vue'
 import { infoToast, successToast } from '~/utils/toasts'
+import AssetFiltersDrawer from '~/components/patterns/AssetFiltersDrawer.vue'
 import {
   fixedAssets,
   assetClasses,
@@ -75,6 +77,12 @@ const taxGroupFilter = ref('')
 const filtersOpen = ref(false)
 
 const statusOptions = ['Active', 'Impaired', 'Disposed', 'Fully depreciated', 'Incomplete']
+
+function onApplyFilters(v: { branch: string; taxGroup: string }) {
+  branchFilter.value = v.branch
+  taxGroupFilter.value = v.taxGroup
+  filtersOpen.value = false
+}
 
 /** How many of the drawer-held filters are set, for the button's count. */
 const activeDrawerFilters = computed(() =>
@@ -212,18 +220,37 @@ function showUnclassified() {
  * a control at the top of the screen.
  */
 function assignTaxGroup() {
-  infoToast(t('Assigning a tax group is not part of this screen yet.'))
+  infoToast(t('Assigning a tax group is done on the asset record.'))
+}
+
+// rule/export-modal — export opens the shared modal, never a silent download.
+const exportOpen = ref(false)
+const exportColumns = [
+  { key: 'id', label: t('Asset number') },
+  { key: 'name', label: t('Asset') },
+  { key: 'class', label: t('Class') },
+  { key: 'acquired', label: t('Acquired') },
+  { key: 'cost', label: t('Acquisition cost') },
+  { key: 'bookValueCommercial', label: t('Book value') },
+  { key: 'bookValueFiscal', label: t('Tax book value') },
+  { key: 'taxGroup', label: t('Tax group') },
+  { key: 'branch', label: t('Branch') },
+  { key: 'status', label: t('Status') },
+  { key: 'custodian', label: t('Custodian') },
+  { key: 'tag', label: t('Physical tag') },
+]
+function onExport() {
+  exportOpen.value = false
+  successToast(t('Export ready — check your downloads'))
 }
 
 // ── Row actions ─────────────────────────────────────────────────────────────
 const router = useRouter()
 function openAsset(a: FixedAsset) {
-  // The asset record is the next screen in this module; until it exists the
-  // row still behaves like a link so the interaction reads correctly.
-  infoToast(t(`${a.id} — the asset record is not part of this screen yet.`))
+  router.push(`/assets/${a.id}`)
 }
 function runDepreciation() {
-  successToast(t('Depreciation run queued for September 2026.'))
+  router.push('/depreciation-schedule')
 }
 
 /** Fiscal book value, or the reason there is not one. Never a zero. */
@@ -287,7 +314,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
           </MpTooltip>
           <ColumnSettingsMenu id="asset-columns" :items="columnItems" :visibility="columnVisibility" />
           <MpTooltip :label="t('Export')" placement="bottom">
-            <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="infoToast(t('Export is not part of this screen yet.'))" />
+            <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="exportOpen = true" />
           </MpTooltip>
         </MpButtonGroup>
 
@@ -446,6 +473,24 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
       </div>
     </template>
   </ErpTablePage>
+
+  <AssetFiltersDrawer
+    :is-open="filtersOpen"
+    :branch="branchFilter"
+    :tax-group="taxGroupFilter"
+    @close="filtersOpen = false"
+    @apply="onApplyFilters"
+  />
+
+  <ExportModal
+    :open="exportOpen"
+    :title="t('Export assets')"
+    :entity-label="t('assets')"
+    :columns="exportColumns"
+    :total="total"
+    @close="exportOpen = false"
+    @export="onExport"
+  />
 </template>
 
 <style scoped>
