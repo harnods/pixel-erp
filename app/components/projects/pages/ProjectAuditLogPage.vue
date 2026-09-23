@@ -50,6 +50,11 @@ const selectedProject = computed(() => (projectFilter.value && projectFilter.val
 <template>
   <div class="pm-page">
     <PmTitleBar :title="t('Audit log')" :breadcrumb="selectedProject ? { label: `${selectedProject.code} · ${selectedProject.name}`, to: `/projects/${selectedProject.id}` } : undefined" />
+    <div class="pm-stage-wrap" :class="{ 'pm-stage-wrap--info': role === 'warehouse' }">
+    <MpBanner v-if="role === 'warehouse'" id="audit-warehouse" variant="info" is-inline class="pm-page-banner">
+      <MpBannerIcon />
+      <MpBannerDescription>{{ t('Viewing as') }} {{ t(current.label) }} — {{ t('showing reservation, work-order, engineering-change and BAST entries.') }}</MpBannerDescription>
+    </MpBanner>
     <div class="pm-stage">
       <div class="pm-filters">
         <ErpFilterSelect id="audit-project" v-model="projectFilter" :placeholder="t('All projects')" :options="projectOptions" width="240px" />
@@ -61,11 +66,6 @@ const selectedProject = computed(() => (projectFilter.value && projectFilter.val
           <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search summary, reason, document...')" />
         </div>
       </div>
-
-      <MpBanner v-if="role === 'warehouse'" id="audit-warehouse" variant="info" class="pm-mb-3">
-        <MpBannerIcon />
-        <MpBannerDescription>{{ t('Viewing as') }} {{ t(current.label) }} — {{ t('showing reservation, work-order, engineering-change and BAST entries.') }}</MpBannerDescription>
-      </MpBanner>
 
       <div class="pm-card">
         <div class="pm-timeline">
@@ -90,6 +90,7 @@ const selectedProject = computed(() => (projectFilter.value && projectFilter.val
         </div>
       </div>
       <p class="pm-caption pm-mt-2">{{ rows.length }} {{ t('entries') }} · {{ t('Entries are append-only.') }}</p>
+    </div>
     </div>
   </div>
 </template>

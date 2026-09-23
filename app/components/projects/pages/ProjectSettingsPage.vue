@@ -88,20 +88,20 @@ function resetDemo() {
 <template>
   <div class="pm-page">
     <PmTitleBar :title="t('Project settings')" />
+    <!-- Page-level state banner sits above the stage, full width (BillDetailsPage pattern) -->
+    <div class="pm-stage-wrap" :class="{ 'pm-stage-wrap--info': !isFinance }">
+    <MpBanner v-if="!isFinance" id="ps-readonly" variant="info" is-inline class="pm-page-banner">
+      <MpBannerIcon /><MpBannerDescription>{{ t('Read-only — switch “View as” to Finance / Controller to change policy.') }}</MpBannerDescription>
+    </MpBanner>
     <div class="pm-stage">
       <div class="pm-stack pm-gap-5 pm-narrow">
-        <MpBanner v-if="!isFinance" id="ps-readonly" variant="info">
-          <MpBannerIcon /><MpBannerDescription>{{ t('Read-only — switch “View as” to Finance / Controller to change policy.') }}</MpBannerDescription>
-        </MpBanner>
-
-        <MpBanner id="ps-pegging" variant="info">
-          <MpBannerIcon />
-          <MpBannerTitle>{{ t('Pegging is mandatory') }}</MpBannerTitle>
-          <MpBannerDescription>{{ t('There’s no Enforced/Optional setting. If any line on a document names a project, every line must; a document with no project on any line is an ordinary expense.') }}</MpBannerDescription>
-        </MpBanner>
-
         <section class="pm-card pm-stack">
           <h2 class="pm-h3">{{ t('Budget check policy') }}</h2>
+          <MpBanner id="ps-pegging" variant="info">
+            <MpBannerIcon />
+            <MpBannerTitle>{{ t('Pegging is mandatory') }}</MpBannerTitle>
+            <MpBannerDescription>{{ t('There’s no Enforced/Optional setting. If any line on a document names a project, every line must; a document with no project on any line is an ordinary expense.') }}</MpBannerDescription>
+          </MpBanner>
           <p class="pm-caption pm-m-0">{{ t('Phase 1 ships warn + override with a mandatory reason for every document type. “Block” is stored now so hard block can be switched on later without migration — until then it behaves as warn.') }}</p>
           <div class="pm-table-wrap">
             <table class="pm-table">
@@ -174,6 +174,7 @@ function resetDemo() {
           <div><MpButton id="ps-reset" variant="secondary" is-rounded @click="resetOpen = true">{{ t('Reset Projects demo data') }}</MpButton></div>
         </section>
       </div>
+    </div>
     </div>
     <PmOverlay id="ps-reset-modal" :open="resetOpen" variant="modal" :title="t('Reset demo data?')" @close="resetOpen = false">
       <p class="pm-body pm-m-0">{{ t('All projects, documents, approvals and audit entries return to the seed. This can’t be undone.') }}</p>

@@ -87,16 +87,18 @@ function doIssue() {
     <PmTitleBar :title="t('Stock availability')" />
     <div class="pm-stage">
       <div class="pm-filters">
-        <div class="filter-search">
-          <MpIcon name="search" size="sm" />
-          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search item...')" />
+        <div class="filter-left">
+          <label class="pm-check">
+            <MpCheckbox id="stock-only-contention" :is-checked="onlyContention" @change="onlyContention = !onlyContention" />
+            <span>{{ t('Only contention') }}</span>
+          </label>
         </div>
-        <label class="pm-check">
-          <MpCheckbox id="stock-only-contention" :is-checked="onlyContention" @change="onlyContention = !onlyContention" />
-          <span>{{ t('Only contention') }}</span>
-        </label>
-        <span class="pm-spacer" />
-        <span class="pm-small pm-muted">{{ t('Issuing stock reserved to another project') }}: <strong>{{ projectPolicy.reservationIssuePolicy === 'block' ? t('Blocked') : t('Warned') }}</strong></span>
+        <div class="filter-right">
+          <div class="filter-search">
+            <MpIcon name="search" size="sm" />
+            <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search item...')" />
+          </div>
+        </div>
       </div>
 
       <div class="pm-table-wrap">
@@ -155,7 +157,10 @@ function doIssue() {
           </tbody>
         </table>
       </div>
-      <p v-if="role !== 'warehouse'" class="pm-caption pm-mt-2">{{ t('Tip: switch “View as” to Warehouse to see this page the way warehouse staff do.') }}</p>
+      <p class="pm-caption pm-mt-2">
+        {{ t('Issuing stock reserved to another project') }}: <strong>{{ projectPolicy.reservationIssuePolicy === 'block' ? t('Blocked') : t('Warned') }}</strong>.
+        <template v-if="role !== 'warehouse'"> {{ t('Tip: switch “View as” to Warehouse to see this page the way warehouse staff do.') }}</template>
+      </p>
     </div>
 
     <!-- Request release -->

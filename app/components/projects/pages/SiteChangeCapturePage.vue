@@ -93,7 +93,10 @@ const recent = computed(() => changeOrders.filter(v => v.source === 'site').slic
             <MpBannerIcon /><MpBannerDescription>{{ t('It will be flagged as executed-but-unbilled exposure on the project and the portfolio until it’s signed off.') }}</MpBannerDescription>
           </MpBanner>
           <PmActionError id="sc-error" :error="action.error.value" />
-          <MpButton id="sc-submit" variant="primary" is-rounded is-full-width @click="submit">{{ t('Capture change') }}</MpButton>
+        </div>
+        <div class="pm-footer">
+          <MpButton id="sc-cancel" variant="ghost" is-rounded @click="router.back()">{{ t('Cancel') }}</MpButton>
+          <MpButton id="sc-submit" variant="primary" is-rounded @click="submit">{{ t('Capture change') }}</MpButton>
         </div>
 
         <div v-if="recent.length">
