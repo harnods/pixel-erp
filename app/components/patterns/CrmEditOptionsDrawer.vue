@@ -55,7 +55,7 @@ function save() {
               <MpInput :id="`eod-opt-label-${i}`" v-model="opt.label" is-full-width :aria-label="t('Label')" />
               <MpInput :id="`eod-opt-value-${i}`" v-model="opt.value" is-full-width :aria-label="t('Variable name')" :is-read-only="scope === 'rename'" />
               <MpTooltip v-if="canAddDelete()" :id="`eod-opt-rm-${i}`" :label="t('Remove')" placement="top" use-portal>
-                <button type="button" class="eod-opt-remove" :aria-label="t('Remove')" @click="removeOption(i)"><MpIcon name="minus-circular" size="md" /></button>
+                <MpButton class="eod-opt-remove" :aria-label="t('Remove')" @click="removeOption(i)"><MpIcon name="minus-circular" size="md" /></MpButton>
               </MpTooltip>
             </div>
             <MpButton v-if="canAddDelete()" class="eod-add-opt" variant="secondary" is-rounded left-icon="add" @click="addOption">{{ t('Add option') }}</MpButton>
