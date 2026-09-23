@@ -865,7 +865,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             {{ t('This work is performed by an outside vendor. The setup below decides which documents the work order raises.') }}
           </p>
 
-          <div class="wo-grid">
+          <div class="wo-grid wo-grid--subcon">
             <MpFormControl id="wo-subcon-vendor" is-required>
               <MpFormLabel>{{ t('Subcon vendor') }}</MpFormLabel>
               <MpAutocomplete
@@ -1557,6 +1557,17 @@ onUnmounted(() => { stageObserver?.disconnect() })
   align-items: start;
   max-width: 660px;
 }
+/**
+ * The subcon setup runs to seven fields. At the two-column width the section
+ * above uses, that is four rows with a half-empty last one, and the right half of
+ * the page sits unused — so this grid takes a third column and finishes in three.
+ * Field width is unchanged, so the controls still line up with the rest of the form.
+ */
+.wo-grid--subcon {
+  grid-template-columns: repeat(3, minmax(0, 318px));
+  max-width: 1020px;
+}
+
 .wo-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .wo-label-icon { display: flex; align-items: center; color: var(--mp-text-secondary); cursor: pointer; }
 .wo-datepicker { width: 100%; }
