@@ -203,7 +203,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
         <template #cell-code="{ row }">
           <div>
-            <span class="pm-link" role="link" tabindex="0" @click.stop="openProject(asRow(row).id)">{{ asRow(row).code }}</span>
+            <span class="cell-link" role="link" tabindex="0" @click.stop="openProject(asRow(row).id)" @keydown.enter="openProject(asRow(row).id)">{{ asRow(row).code }}</span>
             <span class="pm-cell-sub">{{ asRow(row).name }}</span>
             <span class="pm-cell-sub">{{ asRow(row).customer }} · PM {{ asRow(row).pm }}</span>
           </div>

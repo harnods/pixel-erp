@@ -42,13 +42,14 @@ onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
 // Row = the document flattened so every column sorts on its own value.
 interface Row {
   id: string; docNo: string; docType: PeggedDocument['docType']; typeLabel: string; party: string
-  date: string; amount: number; status: PeggedDocument['status']; projectId?: string; d: PeggedDocument
+  date: string; lines: string; amount: number; status: PeggedDocument['status']; projectId?: string; d: PeggedDocument
 }
 const rows = computed<Row[]>(() => peggedDocuments.map(d => {
   const wpId = d.lines.find(l => l.wpId)?.wpId
   return {
     id: d.id, docNo: d.docNo, docType: d.docType, typeLabel: t(DOC_TYPES.find(x => x.value === d.docType)?.label ?? d.docType),
-    party: d.vendor ?? d.createdBy, date: d.date, amount: d.lines.reduce((s, l) => s + l.amount, 0),
+    party: d.vendor ?? d.createdBy, date: d.date, lines: d.lines.map(l => l.description).join(', '),
+    amount: d.lines.reduce((s, l) => s + l.amount, 0),
     status: d.status, projectId: wpId ? getWorkPackage(wpId)?.projectId : undefined, d,
   }
 }))
@@ -124,7 +125,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
         <template #cell-docNo="{ row }">
           <div>
-            <span class="pm-strong">{{ asRow(row).docNo }}</span>
+            <span v-if="asRow(row).projectId" class="cell-link" role="link" tabindex="0" @click.stop="router.push(`/projects/${asRow(row).projectId}?tab=cost`)" @keydown.enter="router.push(`/projects/${asRow(row).projectId}?tab=cost`)">{{ asRow(row).docNo }}</span>
+            <span v-else class="pm-strong">{{ asRow(row).docNo }}</span>
             <span class="pm-cell-sub">{{ asRow(row).party }}</span>
           </div>
         </template>
@@ -153,8 +155,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <template #empty>
           <div class="pm-empty-full">
             <img :src="emptyIllustration" alt="" class="pm-empty-illustration" width="288" height="240" />
-            <p class="pm-empty-title">{{ t('No documents yet.') }}</p>
-            <p class="pm-empty-desc">{{ t('Cost reaches a project through a document with the project on every line.') }}</p>
+            <p class="pm-empty-title">{{ t('No documents') }}</p>
+            <p class="pm-empty-desc">{{ t('Documents will appear here.') }}</p>
             <MpButton variant="secondary" is-rounded left-icon="add" class="pm-empty-cta" @click="router.push('/project-documents/new')">{{ t('New document') }}</MpButton>
           </div>
         </template>

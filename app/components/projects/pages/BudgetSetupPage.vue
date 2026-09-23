@@ -237,7 +237,7 @@ function goBack() { router.push(returnTo.value || (project.value ? `/projects/${
         </template>
         <template #cell-code="{ row }">
           <div>
-            <span class="pm-link" role="link" tabindex="0" @click.stop="router.push(`/budget-setup/${asIndexRow(row).id}`)">{{ asIndexRow(row).code }}</span>
+            <span class="cell-link" role="link" tabindex="0" @click.stop="router.push(`/budget-setup/${asIndexRow(row).id}`)" @keydown.enter="router.push(`/budget-setup/${asIndexRow(row).id}`)">{{ asIndexRow(row).code }}</span>
             <span class="pm-cell-sub">{{ asIndexRow(row).name }}</span>
           </div>
         </template>

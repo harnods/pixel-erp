@@ -226,11 +226,11 @@
       pages; .filter-search pill itself comes from erp.css) ────────────────── */
 .pm-page .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4, 16px); }
 .pm-page .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3, 12px); margin-left: auto; }
-.pm-empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }
+.pm-empty-full { display: flex; flex-direction: column; align-items: center; }
 .pm-empty-illustration { width: var(--mp-sizes-72, 288px); height: var(--mp-sizes-60, 240px); object-fit: contain; }
 .pm-empty-title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-default, #080d0e); }
 .pm-empty-desc { margin: var(--mp-spacing-0\.5, 2px) 0 0; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #3a4749); }
-.pm-empty-cta { margin-top: var(--mp-spacing-5, 20px); }
+.pm-empty-cta { margin-top: var(--mp-spacing-3, 12px); }
 .pm-empty-inline { padding: var(--mp-spacing-8, 32px) var(--mp-spacing-4, 16px); text-align: center; color: var(--mp-colors-text-secondary, #3a4749); font-size: var(--mp-font-sizes-md, 14px); }
 .pm-stats { margin-bottom: var(--mp-spacing-5, 20px); }
 

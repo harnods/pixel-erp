@@ -2854,11 +2854,12 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Min stock": "Stok minimum",
 
   // ── Projects module (Project MTO) ─────────────────────────────────────────
+  "No documents": "Belum ada dokumen",
+  "Documents will appear here.": "Dokumen akan muncul di sini.",
   "Documents": "Dokumen",
   "Search document, vendor...": "Cari dokumen, vendor...",
   "No line on this document names a project": "Tidak ada baris di dokumen ini yang menyebut proyek",
   "Only a held document waits for Finance": "Hanya dokumen yang ditahan yang menunggu Finance",
-  "Cost reaches a project through a document with the project on every line.": "Biaya masuk ke proyek lewat dokumen yang setiap barisnya menyebut proyek.",
   "Decided on": "Diputuskan pada",
   "Decided by": "Diputuskan oleh",
   "Reason from": "Alasan dari",

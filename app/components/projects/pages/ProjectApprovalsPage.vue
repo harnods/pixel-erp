@@ -173,7 +173,7 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
 
         <template #cell-refNo="{ row }">
           <div>
-            <span class="pm-link" role="link" tabindex="0" @click.stop="openReview(asRow(row).a)">{{ asRow(row).refNo }}</span>
+            <span class="cell-link" role="link" tabindex="0" @click.stop="openReview(asRow(row).a)" @keydown.enter="openReview(asRow(row).a)">{{ asRow(row).refNo }}</span>
             <span class="pm-cell-sub">{{ asRow(row).title }}</span>
           </div>
         </template>
