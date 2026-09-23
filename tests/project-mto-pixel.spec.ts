@@ -70,3 +70,34 @@ describe('Projects module stays on Pixel components', () => {
     })
   }
 })
+
+// The project detail page is a detail page: it must use the documented header
+// summary + key/value renderer rather than a hand-rolled one
+// (rule/detail-contentlist, rule/detail-jump-to, details-page-format §A.4).
+describe('Project detail page follows details-page-format', () => {
+  const detail = readFileSync(join(__dirname, '../app/components/projects/pages/ProjectDetailPage.vue'), 'utf8')
+
+  it('renders key/value through ContentList', () => {
+    expect(detail).toContain("import ContentList from '~/components/patterns/ContentList.vue'")
+    expect(detail).toMatch(/<ContentList /)
+  })
+  it('carries the jump-to switcher', () => {
+    expect(detail).toContain("import DetailJumpTo")
+    expect(detail).toMatch(/<DetailJumpTo\b/)
+  })
+  it('keeps the activity log on the last-updated line', () => {
+    expect(detail).toMatch(/<ActivityLogModal\b/)
+  })
+  it('lays the header out as primary row + dashed divider + grid', () => {
+    for (const cls of ['detail-summary', 'content-list-grid', 'detail-primary-total', 'detail-divider']) {
+      expect(detail, cls).toContain(cls)
+    }
+  })
+  it('has no hand-rolled key/value field left in the detail surface', () => {
+    const files = vueFiles(join(__dirname, '../app/components/projects/tabs'))
+      .concat([join(__dirname, '../app/components/projects/pages/ProjectDetailPage.vue')])
+    for (const f of files) {
+      expect(readFileSync(f, 'utf8'), `${f} — use ContentList`).not.toContain('pm-stat-label')
+    }
+  })
+})

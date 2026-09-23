@@ -25,8 +25,10 @@ import ChangesTab from '../tabs/ChangesTab.vue'
 import ProductionTab from '../tabs/ProductionTab.vue'
 import CompletionTab from '../tabs/CompletionTab.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ContentList from '~/components/patterns/ContentList.vue'
+import DetailJumpTo, { type JumpItem } from '~/components/patterns/DetailJumpTo.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
-import { getProject, methodLabel, weightTotal } from '~/data/projects'
+import { projects, getProject, methodLabel, weightTotal } from '~/data/projects'
 import { getBudget } from '~/data/projectBudgets'
 import { projectSummary } from '~/data/projectSummary'
 import { pendingChanges } from '~/data/projectChanges'
@@ -43,6 +45,8 @@ const router = useRouter()
 const { current, asActor, isFinance, actor } = useProjectRole()
 
 const project = computed(() => getProject(props.projectId))
+// Sibling records for the title-bar jump switcher (rule/detail-jump-to).
+const jumpItems = computed<JumpItem[]>(() => projects.map(p => ({ id: p.id, primary: `${p.code} · ${p.name}`, secondary: p.customer })))
 const summary = computed(() => (project.value ? projectSummary(project.value.id) : undefined))
 const changesPending = computed(() => {
   if (!project.value) return 0
@@ -138,9 +142,14 @@ const lastEntry = computed(() => projectAudit.value[0])
 
 <template>
   <div v-if="project && summary" class="pm-page">
-    <PmTitleBar :title="`${project.code} · ${project.name}`" :breadcrumb="{ label: t('Projects'), to: '/projects' }" :meta="`${project.customer} · PM ${project.pm}${project.salesOrderNo ? ` · ${project.salesOrderNo}` : ''}`">
+    <PmTitleBar :title="`${project.code} · ${project.name}`" :breadcrumb="{ label: t('Projects'), to: '/projects' }">
       <template #badges>
         <ErpStatusBadge v-bind="badgeProps('project', project.status, t)" badge-for="additionalInformation" />
+        <DetailJumpTo
+          id="pm-detail-jump" :items="jumpItems" :aria-label="t('Switch project')"
+          :placeholder="t('Search project...')" :empty-text="t('No projects found')"
+          @select="(id: string) => router.push(`/projects/${id}`)"
+        />
       </template>
       <template #actions>
         <MpButton variant="secondary" is-rounded @click="router.push(`/project-audit-log?project=${project.id}`)">{{ t('View history') }}</MpButton>
@@ -150,37 +159,48 @@ const lastEntry = computed(() => projectAudit.value[0])
     </PmTitleBar>
 
     <div class="pm-stage">
-      <!-- KPI strip — same numbers on every tab (Recognition shows its own two-clock cards) -->
-      <div v-if="activeTab !== 'recognition'" class="pm-kpis pm-mb-5">
-        <div class="pm-kpi pm-kpi--bordered">
-          <div class="pm-kpi-title">{{ t('Contract value') }}</div>
-          <div class="pm-kpi-period">{{ t(methodLabel(project)) }} · {{ project.status === 'draft' ? t('Locks at approval') : t('Locked at approval') }}</div>
-          <div class="pm-kpi-amount">{{ rp(project.contractValue) }}</div>
-        </div>
-        <div class="pm-kpi pm-kpi--bordered">
-          <div class="pm-kpi-title">{{ t('Budget (cost)') }}</div>
-          <div class="pm-kpi-period">{{ project.isProduction ? t('Production') : t('Service') }} · {{ t('Depth') }} {{ project.depth }}</div>
-          <div class="pm-kpi-amount">
-            <template v-if="summary.budget !== undefined">{{ rp(summary.budget) }}</template>
-            <span v-else class="pm-warn">{{ t('Not set') }}</span>
+      <!-- Header summary (details-page-format §A.4): primary row + one emphasis amount,
+           dashed divider, then the ContentList grid (rule/detail-contentlist). -->
+      <section class="detail-summary pm-mb-5">
+        <div class="content-list-grid">
+          <div class="content-list-col"><ContentList :label="t('Customer')" :value="project.customer" /></div>
+          <div class="content-list-col"><ContentList :label="t('Project manager')" :value="project.pm" /></div>
+          <div class="detail-primary-total">
+            <span class="detail-total-label">{{ t('Contract value') }}</span>
+            <span class="detail-total-amount">{{ rp(project.contractValue) }}</span>
           </div>
         </div>
-        <div class="pm-kpi pm-kpi--bordered">
-          <div class="pm-kpi-title">{{ t('Committed + actual') }}</div>
-          <div class="pm-kpi-period">{{ summary.budget ? `${pct(summary.consumed / summary.budget * 100, 0)} ${t('of budget')}` : t('Budget not set') }}</div>
-          <div class="pm-kpi-amount" :class="{ 'pm-neg': summary.budget !== undefined && summary.consumed > summary.budget }">{{ rp(summary.consumed) }}</div>
+
+        <div class="detail-divider" />
+
+        <div class="content-list-grid">
+          <div class="content-list-col">
+            <ContentList :label="t('Recognition')" :value="`${t(methodLabel(project))} · ${project.status === 'draft' ? t('Locks at approval') : t('Locked at approval')}`" />
+            <ContentList :label="t('Shape')" :value="`${project.isProduction ? t('Production') : t('Service')} · ${t('Depth')} ${project.depth}`" />
+          </div>
+          <div class="content-list-col">
+            <ContentList :label="t('Budget (cost)')">
+              <template v-if="summary.budget !== undefined">{{ rp(summary.budget) }}</template>
+              <span v-else class="pm-warn">{{ t('Not set') }}</span>
+            </ContentList>
+            <ContentList :label="t('Committed + actual')">
+              <span :class="{ 'pm-neg': summary.budget !== undefined && summary.consumed > summary.budget }">{{ rp(summary.consumed) }}</span>
+              <template v-if="summary.budget"> · {{ pct(summary.consumed / summary.budget * 100, 0) }} {{ t('of budget') }}</template>
+            </ContentList>
+          </div>
+          <div class="content-list-col">
+            <ContentList :label="t('Completed')" :value="summary.percentComplete !== undefined ? pct(summary.percentComplete) : '—'" />
+            <ContentList :label="t('WIP position')">
+              <span :class="summary.wip > 0 ? 'pm-pos' : summary.wip < 0 ? 'pm-neg' : ''">{{ rp(Math.abs(summary.wip)) }}</span>
+              · {{ summary.wip > 0 ? t('Underbilled (asset)') : summary.wip < 0 ? t('Overbilled (liability)') : t('Balanced') }}
+            </ContentList>
+          </div>
+          <div class="content-list-col">
+            <ContentList :label="t('Sales order')" :value="project.salesOrderNo || '—'" />
+            <ContentList :label="t('Priority')" :value="t(project.priority === 'high' ? 'High' : project.priority === 'medium' ? 'Medium' : 'Low')" />
+          </div>
         </div>
-        <div class="pm-kpi pm-kpi--bordered">
-          <div class="pm-kpi-title">{{ t('Completed') }}</div>
-          <div class="pm-kpi-period">{{ t(methodLabel(project)) }}</div>
-          <div class="pm-kpi-amount">{{ summary.percentComplete !== undefined ? pct(summary.percentComplete) : '—' }}</div>
-        </div>
-        <div class="pm-kpi">
-          <div class="pm-kpi-title">{{ t('WIP position') }}</div>
-          <div class="pm-kpi-period">{{ summary.wip > 0 ? t('Underbilled (asset)') : summary.wip < 0 ? t('Overbilled (liability)') : t('Balanced') }}</div>
-          <div class="pm-kpi-amount" :class="summary.wip > 0 ? 'pm-pos' : summary.wip < 0 ? 'pm-neg' : ''">{{ rp(Math.abs(summary.wip)) }}</div>
-        </div>
-      </div>
+      </section>
 
       <MpTabs id="pm-detail-tabs" data-devchange="pm-pixel-rework" v-model="activeTabIndex" is-manual variant-color="green" class="detail-tabs">
         <MpTabList>
@@ -217,8 +237,8 @@ const lastEntry = computed(() => projectAudit.value[0])
     <PmOverlay id="pm-approve-modal" :open="approveOpen" variant="modal" :title="t('Approve project')" :subtitle="`${project.code} · Draft → Active`" @close="approveOpen = false">
       <p class="pm-body">{{ t('On approval the recognition method, measure and production flag lock. Draft work orders and purchase requests can then go firm and start consuming budget.') }}</p>
       <div class="pm-card pm-card--flat pm-grid-2">
-        <div><div class="pm-stat-label">{{ t('Recognition') }}</div><div class="pm-body">{{ t(methodLabel(project)) }}</div></div>
-        <div><div class="pm-stat-label">{{ t('Shape') }}</div><div class="pm-body">{{ project.isProduction ? t('Production') : t('Service') }}</div></div>
+        <ContentList :label="t('Recognition')" :value="t(methodLabel(project))" />
+        <ContentList :label="t('Shape')" :value="project.isProduction ? t('Production') : t('Service')" />
       </div>
       <MpBanner v-for="(w, i) in approveWarnings" :id="`pm-approve-warn-${i}`" :key="w" variant="warning">
         <MpBannerIcon /><MpBannerDescription>{{ w }}</MpBannerDescription>

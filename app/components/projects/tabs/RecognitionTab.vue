@@ -19,6 +19,7 @@ import {
 import PmOverlay from '../PmOverlay.vue'
 import PmActionError from '../PmActionError.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ContentList from '~/components/patterns/ContentList.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import type { Project } from '~/data/projects'
 import { projectPhases, projectWorkPackages, weightTotal } from '~/data/projects'
@@ -255,9 +256,9 @@ const unitWps = computed(() => projectWorkPackages(props.project.id).filter(w =>
         </MpBanner>
         <div v-else class="pm-card pm-card--flat">
           <div class="pm-grid-3">
-            <div><div class="pm-stat-label">{{ t('Actual cost') }}</div><div class="pm-stat-value pm-stat-value--md">{{ rp(projectActual(project.id)) }}</div></div>
-            <div><div class="pm-stat-label">{{ t('Budget') }}</div><div class="pm-stat-value pm-stat-value--md">{{ rp(inputBudget) }}</div></div>
-            <div><div class="pm-stat-label">{{ t('% complete') }}</div><div class="pm-stat-value pm-stat-value--md">{{ pct(pc) }}</div></div>
+            <ContentList :label="t('Actual cost')" :value="rp(projectActual(project.id))" />
+            <ContentList :label="t('Budget')" :value="rp(inputBudget)" />
+            <ContentList :label="t('% complete')" :value="pct(pc)" />
           </div>
         </div>
       </template>
@@ -387,8 +388,8 @@ const unitWps = computed(() => projectWorkPackages(props.project.id).filter(w =>
         <MpFormErrorMessage>{{ t('Enter the BAST number — a phase is achieved by third-party evidence.') }}</MpFormErrorMessage>
       </MpFormControl>
       <div v-if="verifyPhaseObj" class="pm-card pm-card--flat pm-grid-2">
-        <div><div class="pm-stat-label">{{ t('Revenue recognised') }}</div><div class="pm-strong">{{ rp(((verifyPhaseObj.progressWeightPct ?? 0) / 100) * project.contractValue) }}</div></div>
-        <div><div class="pm-stat-label">{{ t('Invoice issued') }}</div><div class="pm-body">{{ t('None — billing follows the contract terms') }}</div></div>
+        <ContentList :label="t('Revenue recognised')" :value="rp(((verifyPhaseObj.progressWeightPct ?? 0) / 100) * project.contractValue)" />
+        <ContentList :label="t('Invoice issued')" :value="t('None — billing follows the contract terms')" />
       </div>
       <PmActionError id="pm-verify-error" :error="verifyAction.error.value" />
       <template #footer>
@@ -401,8 +402,8 @@ const unitWps = computed(() => projectWorkPackages(props.project.id).filter(w =>
     <PmOverlay id="pm-term-modal" :open="termConfirm.open" variant="modal" :title="t('Issue term invoice')" :subtitle="termConfirm.term?.label" @close="termConfirm.open = false">
       <template v-if="termConfirm.term">
         <div class="pm-card pm-card--flat pm-grid-2">
-          <div><div class="pm-stat-label">{{ t('Amount billed') }}</div><div class="pm-strong">{{ rp((termConfirm.term.pct / 100) * project.contractValue) }}</div></div>
-          <div><div class="pm-stat-label">{{ t('Revenue recognised') }}</div><div class="pm-body">{{ t('None — recognition follows progress') }}</div></div>
+          <ContentList :label="t('Amount billed')" :value="rp((termConfirm.term.pct / 100) * project.contractValue)" />
+          <ContentList :label="t('Revenue recognised')" :value="t('None — recognition follows progress')" />
         </div>
         <MpBanner v-if="!triggerMet(termConfirm.term)" id="pm-term-trigger" variant="warning">
           <MpBannerIcon />

@@ -42,6 +42,10 @@
 .pm-section:first-child { padding-top: 0; }
 .pm-section:last-child { border-bottom: none; }
 .pm-section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3, 12px); margin-bottom: var(--mp-spacing-4, 16px); flex-wrap: wrap; }
+/* A long section caption must not push the section actions onto their own left-aligned
+   line — the text block flexes, the actions stay flush right however the row wraps. */
+.pm-section-head > :first-child { flex: 1 1 var(--mp-sizes-80, 320px); min-width: 0; }
+.pm-section-head > :last-child:not(:first-child) { margin-left: auto; flex-shrink: 0; }
 .pm-h2 { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: var(--mp-line-heights-xl, 28px); color: var(--mp-colors-text-default, #080d0e); }
 .pm-h3 { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-colors-text-default, #080d0e); }
 .pm-caption { margin: var(--mp-spacing-1, 4px) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #3a4749); line-height: var(--mp-line-heights-sm, 16px); }
@@ -247,6 +251,35 @@
 .efs[style*="--efs-w: 100%"] { display: block; width: 100%; }
 
 /* ── Index summary (same anatomy as ProductsPage .stats-section: flat, divided, no card boxes) ── */
+/* ── Detail-page header summary (details-page-format §A.4) ── the same markup as
+   SalesOrder/Bill/PurchaseOrder detail: primary row on the header grid with one
+   emphasis amount, a 4/4 dashed rule, then the ContentList grid. Scoped to .pm-page
+   so it never reaches the pages that define these classes in their own scoped CSS. */
+.pm-page .detail-summary { display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px); }
+.pm-page .content-list-grid {
+  display: grid; grid-template-columns: minmax(0, 318px) repeat(4, minmax(0, 1fr));
+  column-gap: var(--mp-spacing-6, 24px); row-gap: 0;
+}
+.pm-page .content-list-col { display: flex; flex-direction: column; min-width: 0; }
+.pm-page .detail-primary-total {
+  grid-column: 3 / -1; justify-self: end; align-self: start;
+  padding-top: var(--mp-spacing-2, 8px); /* matches ContentList's top padding */
+  display: flex; align-items: baseline; gap: var(--mp-spacing-2, 8px);
+}
+.pm-page .detail-total-label, .pm-page .detail-total-amount {
+  font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold, 600);
+  color: var(--mp-colors-text-default, #080d0e);
+}
+.pm-page .detail-divider {
+  height: 1px;
+  background: repeating-linear-gradient(
+    to right,
+    var(--mp-colors-border-default, #e3e7e9) 0, var(--mp-colors-border-default, #e3e7e9) 4px,
+    transparent 4px, transparent 8px
+  );
+}
+@media (max-width: 1100px) { .pm-page .content-list-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .pm-page .detail-primary-total { grid-column: 2; } }
+
 .pm-kpis { display: flex; gap: var(--mp-spacing-6, 24px); align-items: flex-start; }
 .pm-kpi { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1, 4px); padding-right: var(--mp-spacing-6, 24px); align-self: stretch; }
 .pm-kpi--bordered { border-right: 1px solid var(--mp-colors-border-default, #e3e7e9); }

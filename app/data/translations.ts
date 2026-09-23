@@ -3107,6 +3107,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Custom BOM": "BOM kustom",
   "Custom BOMs": "BOM kustom",
   "Custom fabrication, karoseri, interior fit-out. Phases, work packages, BOM, production plan and stock reservation are available.": "Fabrikasi custom, karoseri, fit-out interior. Fase, paket kerja, BOM, rencana produksi, dan reservasi stok tersedia.",
+  "Customer": "Pelanggan",
+  "Switch project": "Ganti proyek",
   "Customer price": "Harga pelanggan",
   "Customer-funded": "Didanai pelanggan",
   "Customer-funded — change order": "Didanai pelanggan — perintah perubahan",

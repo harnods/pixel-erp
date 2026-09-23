@@ -19,6 +19,7 @@ import {
 import PmOverlay from '../PmOverlay.vue'
 import PmActionError from '../PmActionError.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ContentList from '~/components/patterns/ContentList.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import EcoDiff from '../EcoDiff.vue'
 import type { Project } from '~/data/projects'
@@ -278,9 +279,11 @@ function doSubmit() {
         </MpFormControl>
       </div>
       <div class="pm-card pm-card--flat pm-grid-3">
-        <div><div class="pm-stat-label">{{ t('Margin') }}</div><div class="pm-body" :class="raiseMargin < 0 ? 'pm-neg' : 'pm-pos'">{{ rp(raiseMargin) }}<template v-if="parseAmount(raise.price)"> ({{ pct(raiseMargin / parseAmount(raise.price) * 100) }})</template></div></div>
-        <div><div class="pm-stat-label">{{ t('New contract value') }}</div><div class="pm-body">{{ rp(project.contractValue + parseAmount(raise.price)) }}</div></div>
-        <div><div class="pm-stat-label">{{ t('Recognition method') }}</div><div class="pm-body">{{ t('Unchanged — a change order can’t change it') }}</div></div>
+        <ContentList :label="t('Margin')">
+          <span :class="raiseMargin < 0 ? 'pm-neg' : 'pm-pos'">{{ rp(raiseMargin) }}<template v-if="parseAmount(raise.price)"> ({{ pct(raiseMargin / parseAmount(raise.price) * 100) }})</template></span>
+        </ContentList>
+        <ContentList :label="t('New contract value')" :value="rp(project.contractValue + parseAmount(raise.price))" />
+        <ContentList :label="t('Recognition method')" :value="t('Unchanged — a change order can’t change it')" />
       </div>
       <MpFormControl id="r-distinct-fc">
         <MpFormLabel>{{ t('PSAK 72 treatment') }}</MpFormLabel>
