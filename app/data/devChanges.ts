@@ -395,6 +395,14 @@ export const DEV_CHANGES: DevChange[] = [
     pr: '#86',
     files: ['CrmDealPreviewDrawer.vue', 'crm.ts'],
   },
+  {
+    id: 'crm-pipeline-card-props-layout-filter',
+    title: 'Pipeline card properties filtered by layout',
+    description:
+      'Card properties in the pipeline editor now show only properties that exist in the module\'s detail layout. The "Add property" drawer also only offers layout properties. For custom modules, the pipeline "Group by" field picker only lists picklist properties present in the layout.',
+    date: '2026-09-24',
+    files: ['CrmModuleBuilderPage.vue'],
+  },
 ]
 
 const byId = new Map(DEV_CHANGES.map(c => [c.id, c]))

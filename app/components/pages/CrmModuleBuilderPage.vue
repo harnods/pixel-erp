@@ -31,7 +31,7 @@ import {
   CRM_FIELD_TYPE_LABELS, CRM_MODULE_ICONS,
   moduleStores, isDealLikeModule, resetGenericModuleDraft, canEditModule,
   DEAL_PROPERTY_TYPE_ICON, isRelatedListType, defaultPropertyIcon,
-  genericPipelineFieldId, setGenericPipelineField, transferGenericPipelineFieldId, isPicklistType,
+  genericPipelineFieldId, setGenericPipelineField, transferGenericPipelineFieldId, isPicklistType, sectionAllProps,
   deals, genericRecordsFor, CRM_CURRENT_USER, notesFor,
   type GenericModuleRecord,
   crmTeams, teamsForModule, setModuleTeams,
@@ -304,7 +304,7 @@ const isGenericModule = computed(() => {
 
 // ── Pipeline field picker (generic modules only) ──
 const pipelineFieldId = ref<string | null>(genericPipelineFieldId(props.orderId))
-const picklistProperties = computed(() => propList.value.filter((p) => isPicklistType(p.type)))
+const picklistProperties = computed(() => propList.value.filter((p) => isPicklistType(p.type) && layoutPropertyIds.value.has(p.id)))
 const pipelineFieldOptions = computed(() =>
   picklistProperties.value.map((p) => ({ value: p.id, label: p.name })),
 )
@@ -406,7 +406,30 @@ function takeSnapshot(): string {
 }
 function markClean() { savedSnapshot.value = takeSnapshot(); savedDispClone.value = JSON.stringify(disp.value) }
 const isDirty = computed(() => savedSnapshot.value !== '' && savedSnapshot.value !== takeSnapshot())
-const hasCloseDateInLayout = computed(() => draft.fields.some((f: { id: string; section?: string }) => f.id === 'closeDate' && !!f.section))
+const hasCloseDateInLayout = computed(() => draft.fields.some((f: { id: string; section?: string }) => f.id === 'closeDate' && !!f.section) || layoutPropertyIds.value.has('close-date'))
+
+const CARD_KEY_TO_PROP_ID: Record<string, string> = {
+  company: 'company', dealName: 'record-name', contactPerson: 'contact',
+  dealValue: 'deal-value', owner: 'record-owner', closeDate: 'close-date', memo: 'memo',
+}
+const layoutPropertyIds = computed(() => {
+  const ids = new Set<string>()
+  const layout = draft.detailLayout.tabs.length ? draft.detailLayout : stores.value.detailLayout
+  const tab = layout.tabs.find((t) => t.editable)
+  if (tab?.sections) for (const s of tab.sections) for (const pid of sectionAllProps(s)) ids.add(pid)
+  return ids
+})
+function isCardFieldInLayout(key: string): boolean {
+  const propId = CARD_KEY_TO_PROP_ID[key]
+  if (propId) return layoutPropertyIds.value.has(propId)
+  return layoutPropertyIds.value.has(key)
+}
+
+// Prune card fields not present in the layout — keeps disp.cardFields in sync.
+watchEffect(() => {
+  const inLayout = disp.value.cardFields.filter((f) => isCardFieldInLayout(f.key))
+  if (inLayout.length !== disp.value.cardFields.length) disp.value.cardFields = inLayout
+})
 
 // Drag-reorder the card-property rows (order = the order fields stack on a card) —
 // same ERP pointer sortable, vertical axis. rule/dnd-live-sortable.
@@ -436,12 +459,14 @@ const BUILT_IN_CARD_FIELD_META: Record<string, { subtitle: string; icon: string;
 // "Deal value" doesn't also appear as its property twin.
 const cardPropOptions = computed(() => {
   const byId = new Map<string, { id: string; name: string; subtitle?: string; icon?: string; devchange?: string }>()
-  const labels = new Set(disp.value.cardFields.map((f) => t(f.label).toLowerCase()))
+  const labels = new Set(disp.value.cardFields.filter((f) => isCardFieldInLayout(f.key)).map((f) => t(f.label).toLowerCase()))
   for (const f of disp.value.cardFields) {
+    if (!isCardFieldInLayout(f.key)) continue
     const meta = BUILT_IN_CARD_FIELD_META[f.key]
     byId.set(f.key, { id: f.key, name: t(f.label), subtitle: meta?.subtitle, icon: meta?.icon, devchange: meta?.devchange })
   }
   for (const p of propList.value) {
+    if (!layoutPropertyIds.value.has(p.id)) continue
     if (byId.has(p.id) || labels.has(p.name.toLowerCase())) continue
     byId.set(p.id, { id: p.id, name: p.name, subtitle: '', icon: defaultPropertyIcon(p.type) })
   }
