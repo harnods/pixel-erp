@@ -54,8 +54,11 @@ export interface ReplenishmentConfig {
   leadTimeSampleCount: number
   /** Below this many PO-backed samples the computed tier is not trusted (VR-04). */
   leadTimeMinSamples: number
-  /** PO→receipt gaps beyond this are dropped as outliers (US-001 AC-06). */
+  /** PO→receipt gaps beyond this are dropped as outliers (US-001 AC-06). The
+   *  global value; per-category overrides live in leadTimeOutlierCapByCategory. */
   leadTimeOutlierCapDays: number
+  /** Per-category outlier cap; falls back to leadTimeOutlierCapDays (US-001 AC-09). */
+  leadTimeOutlierCapByCategory: Record<string, number>
   /** Tier 3 of the lead-time ladder — a per-category default (US-001 AC-04). */
   leadTimeByCategory: Record<string, number>
   /** Fallback buffer, in days, when no category or SKU override applies. */
@@ -95,6 +98,14 @@ export const REPL_DEFAULTS: ReplenishmentConfig = {
   leadTimeSampleCount: 5,
   leadTimeMinSamples: 2,
   leadTimeOutlierCapDays: 90,
+  leadTimeOutlierCapByCategory: {
+    'Green Beans': 90,
+    'Roasted Beans': 60,
+    'Espresso Machine': 120,
+    Grinder: 100,
+    Equipment: 120,
+    Accessory: 60,
+  },
   leadTimeByCategory: {
     'Green Beans': 21,
     'Roasted Beans': 10,
@@ -146,6 +157,7 @@ export function getReplenishmentConfig(): ReplenishmentConfig {
     coverageDaysByCategory: { ...REPL_DEFAULTS.coverageDaysByCategory, ...(saved.coverageDaysByCategory ?? {}) },
     lookbackDaysByCategory: { ...REPL_DEFAULTS.lookbackDaysByCategory, ...(saved.lookbackDaysByCategory ?? {}) },
     leadTimeByCategory: { ...REPL_DEFAULTS.leadTimeByCategory, ...(saved.leadTimeByCategory ?? {}) },
+    leadTimeOutlierCapByCategory: { ...REPL_DEFAULTS.leadTimeOutlierCapByCategory, ...(saved.leadTimeOutlierCapByCategory ?? {}) },
   }
 }
 
@@ -176,6 +188,10 @@ export function lookbackDaysForCategory(category: string, cfg: ReplenishmentConf
 }
 
 /** Tier 3 of the lead-time ladder — the category default (US-001 AC-04). */
+export function leadTimeOutlierCapForCategory(category: string, cfg: ReplenishmentConfig = getReplenishmentConfig()): number {
+  return cfg.leadTimeOutlierCapByCategory[category] ?? cfg.leadTimeOutlierCapDays
+}
+
 export function leadTimeForCategory(category: string, cfg: ReplenishmentConfig = getReplenishmentConfig()): number | null {
   return cfg.leadTimeByCategory[category] ?? null
 }

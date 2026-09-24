@@ -3732,6 +3732,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
     'Jumlah pesanan terkirim yang dibutuhkan sebuah produk vendor sebelum waktu tunggunya diukur dari data itu. Di bawah ini, sistem memakai standar waktu tunggu di atas.',
   'A gap between a purchase order and its receipt longer than this is dropped as an outlier, so one abnormal delivery cannot distort the average.':
     'Jeda antara pesanan pembelian dan penerimaannya yang lebih lama dari ini dibuang sebagai pencilan, agar satu pengiriman tak wajar tidak merusak rata-rata.',
+  'A gap between a purchase order and its receipt longer than this is dropped as an outlier, so one abnormal delivery cannot distort the average. Leave a category blank and it uses Other categories.':
+    'Jeda antara pesanan pembelian dan penerimaannya yang lebih lama dari ini dibuang sebagai pencilan, agar satu pengiriman tak wajar tidak merusak rata-rata. Kosongkan kategori untuk memakai Kategori lain.',
   'A measured lead time averages a vendor product\'s most recent delivered orders — at most the maximum, and at least the minimum before it\'s trusted. Fewer than the minimum falls back to the default lead time above; extra orders beyond the maximum are ignored.':
     'Waktu tunggu terukur merata-ratakan pesanan terkirim terakhir sebuah produk vendor — paling banyak sejumlah maksimum, dan paling sedikit sejumlah minimum sebelum dipercaya. Kurang dari minimum akan memakai standar waktu tunggu di atas; pesanan di luar maksimum diabaikan.',
   'At least (to trust)': 'Paling sedikit (agar dipercaya)',

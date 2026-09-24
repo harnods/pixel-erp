@@ -109,6 +109,11 @@ function save() {
         .filter(([, v]) => v !== null && v !== undefined && String(v) !== '')
         .map(([k, v]) => [k, Number(v)]),
     ),
+    leadTimeOutlierCapByCategory: Object.fromEntries(
+      Object.entries(draft.leadTimeOutlierCapByCategory)
+        .filter(([, v]) => v !== null && v !== undefined && String(v) !== '')
+        .map(([k, v]) => [k, Math.max(0, Number(v))]),
+    ),
   }
 
   saveReplenishmentConfig(next)
@@ -418,14 +423,35 @@ const BOUNDARY_OPTIONS = [
       <div class="rs-field">
         <div class="rs-label">
           <span class="rs-label-text">{{ t('Ignore gaps over') }}</span>
-          <span class="rs-label-desc">{{ t('A gap between a purchase order and its receipt longer than this is dropped as an outlier, so one abnormal delivery cannot distort the average.') }}</span>
+          <span class="rs-label-desc">{{ t('A gap between a purchase order and its receipt longer than this is dropped as an outlier, so one abnormal delivery cannot distort the average. Leave a category blank and it uses Other categories.') }}</span>
         </div>
         <div class="rs-control">
-          <MpInputGroup v-if="isEditing" id="rs-lead-cap">
-            <MpInput id="rs-lead-cap-input" v-model="draft.leadTimeOutlierCapDays" type="number" :class="css({ width: '96px' })" />
-            <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
-          </MpInputGroup>
-          <span v-else class="rs-value">{{ committed.leadTimeOutlierCapDays }} {{ t('days') }}</span>
+          <div v-if="isEditing" class="rs-cat-grid">
+            <div v-for="cat in categories" :key="cat" class="rs-cat-row">
+              <span class="rs-cat-name">{{ cat }}</span>
+              <MpInputGroup :id="`rs-cap-cat-${cat}`">
+                <MpInput
+                  :id="`rs-cap-cat-input-${cat}`"
+                  v-model="draft.leadTimeOutlierCapByCategory[cat]"
+                  type="number"
+                  :placeholder="String(draft.leadTimeOutlierCapDays)"
+                  :class="css({ width: '84px' })"
+                />
+                <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
+              </MpInputGroup>
+            </div>
+            <div class="rs-cat-row rs-cat-row--fallback">
+              <span class="rs-cat-name">{{ t('Other categories') }}</span>
+              <MpInputGroup id="rs-cap-fallback">
+                <MpInput id="rs-cap-fallback-input" v-model="draft.leadTimeOutlierCapDays" type="number" :class="css({ width: '84px' })" />
+                <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
+              </MpInputGroup>
+            </div>
+          </div>
+          <span v-else class="rs-value">
+            {{ categories.map(c => `${c} ${committed.leadTimeOutlierCapByCategory[c] ?? committed.leadTimeOutlierCapDays}d`).join('   ') }}
+            &nbsp;&middot;&nbsp; {{ t('Other categories') }} {{ committed.leadTimeOutlierCapDays }}d
+          </span>
         </div>
       </div>
 

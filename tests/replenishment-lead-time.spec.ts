@@ -14,8 +14,8 @@ import {
 } from '~/data/leadTimeHistory'
 import { vendorItems } from '~/data/vendorItems'
 import { warehouses } from '~/data/warehouses'
-import { getReplenishmentConfig, REPL_DEFAULTS } from '~/data/replenishmentConfig'
-import { PRODUCTS } from '~/data/inventory'
+import { getReplenishmentConfig, REPL_DEFAULTS, leadTimeOutlierCapForCategory } from '~/data/replenishmentConfig'
+import { PRODUCTS, productBySku } from '~/data/inventory'
 
 const cfg = getReplenishmentConfig()
 const active = vendorItems.filter((v) => v.active)
@@ -54,10 +54,12 @@ describe('sample eligibility (US-001 VR-02 / AC-02)', () => {
     }
   })
 
-  it('gaps beyond the outlier cap are excluded (AC-06)', () => {
+  it('gaps beyond the outlier cap are excluded (AC-06, per category)', () => {
     for (const vi of active) {
+      // Cap is per product category (US-001 AC-09).
+      const cap = leadTimeOutlierCapForCategory(productBySku(vi.sku)?.category ?? '', cfg)
       for (const s of deriveLeadTime(vi.vendorId, vi.sku, cfg).samples) {
-        expect(s.leadDays).toBeLessThanOrEqual(cfg.leadTimeOutlierCapDays)
+        expect(s.leadDays).toBeLessThanOrEqual(cap)
       }
     }
   })

@@ -56,7 +56,7 @@ import { hashStr } from './cycleCountRecommendations'
 import {
   REPL_ASOF_ISO,
   getReplenishmentConfig,
-  leadTimeForCategory,
+  leadTimeForCategory, leadTimeOutlierCapForCategory,
   type ReplenishmentConfig,
 } from './replenishmentConfig'
 
@@ -206,11 +206,13 @@ function documentSamples(cfg: ReplenishmentConfig): LeadTimeSample[] {
     if (isFirst) firstSeenForPo.set(po.id, receiptDate)
 
     const leadDays = daysBetween(po.date, receiptDate)
-    const excluded: LeadTimeExclusion | undefined = !isFirst
-      ? 'not-first-receipt'
-      : leadDays > cfg.leadTimeOutlierCapDays ? 'outlier' : undefined
 
     for (const line of lines) {
+      // Outlier cap is per product category (US-001 AC-09), so it's resolved per line.
+      const cap = leadTimeOutlierCapForCategory(productBySku(line.sku)?.category ?? '', cfg)
+      const excluded: LeadTimeExclusion | undefined = !isFirst
+        ? 'not-first-receipt'
+        : leadDays > cap ? 'outlier' : undefined
       out.push({
         vendorId: po.vendor.id, sku: line.sku, warehouseId: r.warehouseId,
         poNumber: po.number, orderDate: po.date,
@@ -250,6 +252,8 @@ function modelledSamples(vendorId: string, sku: string, warehouseId: string, cfg
   // Per-warehouse offset (−4..+4 days) on top of the vendor's captured term.
   const whOffset = pick(`${key}:wo`, 9) - 4
   const base = Math.max(1, vi.leadTimeDays + whOffset)
+  // Outlier cap is per product category (US-001 AC-09).
+  const cap = leadTimeOutlierCapForCategory(productBySku(sku)?.category ?? '', cfg)
   const out: LeadTimeSample[] = []
   for (let i = 0; i < count; i++) {
     const jitter = Math.round((unit(`${key}:j:${i}`) - 0.5) * Math.max(2, base * 0.4))
@@ -257,7 +261,7 @@ function modelledSamples(vendorId: string, sku: string, warehouseId: string, cfg
     // (AC-06) has something real to exclude.
     const isOutlier = pick(`${key}:out:${i}`, 7) === 0
     const leadDays = isOutlier
-      ? cfg.leadTimeOutlierCapDays + 10 + pick(`${key}:o:${i}`, 40)
+      ? cap + 10 + pick(`${key}:o:${i}`, 40)
       : Math.max(1, base + jitter)
 
     const receiptDate = shift(REPL_ASOF_ISO, -(7 + i * 21 + pick(`${key}:d:${i}`, 9)))
@@ -265,7 +269,7 @@ function modelledSamples(vendorId: string, sku: string, warehouseId: string, cfg
       vendorId, sku, warehouseId,
       poNumber: null, orderDate: shift(receiptDate, -leadDays),
       receiptNumber: null, receiptDate, leadDays,
-      ...(leadDays > cfg.leadTimeOutlierCapDays ? { excluded: 'outlier' as const } : {}),
+      ...(leadDays > cap ? { excluded: 'outlier' as const } : {}),
     })
   }
   return out
