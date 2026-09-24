@@ -45,7 +45,7 @@ const { t } = useLocale()
 // ─── First-load skeleton (matches the other index pages) ─────────────────────
 const loading = ref(true)
 onMounted(() => {
-  // Plant backdated runs so FSN hysteresis/dwell is real rather than dead code.
+  // Seed a run on first load so the "as of / last recalculated" line has a stamp.
   ensureRunHistory()
   setTimeout(() => { loading.value = false }, 1200)
 })
@@ -85,9 +85,7 @@ function recalculate() {
     toast.notify({
       variant: 'success',
       title: t('Replenishment recalculated.'),
-      description: result.reclassified
-        ? `${result.reclassified} ${t('products changed movement class.')}`
-        : undefined,
+      description: `${result.due} ${t('products to order.')}`,
       maxWidth: 'max-content',
     })
   }, 900)

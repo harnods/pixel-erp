@@ -44,8 +44,8 @@ import {
   preferredVendorItem, vendorItemFor, vendorItemsForSku, vendorNameFor, type VendorItem,
 } from './vendorItems'
 import {
-  classMemo, currentRunNo, hasRunHistory, memoKey, writeRun,
-  type FsnClass, type FsnClassMemo,
+  currentRunNo, hasRunHistory, writeRun,
+  type FsnClass,
 } from './replenishmentRuns'
 import {
   deriveLeadTime, invalidateLeadTimeHistory, isEstimatedTier, leadTimeTierLabel,
@@ -432,79 +432,27 @@ export function resolveReorderPoint(
   return { value: Math.ceil(velocity * (leadDays + settings.safetyDays)), source: 'calculated' }
 }
 
-// ── FSN classification with hysteresis (OD-006) ──────────────────────────────
+// ── FSN classification (OD-006) ──────────────────────────────────────────────
 
 export interface FsnResult {
   raw: FsnClass
+  /** Kept for callers: the class in force. FSN is recomputed each run, so this
+   *  equals `raw` — there is no cross-run smoothing. */
   committed: FsnClass
   movementPct: number
   movementDays: number
   periods: number
-  candidate: FsnClass | null
-  dwell: number
-  dwellRequired: number
-  inHysteresisBand: boolean
-  decisive: boolean
   tracked: boolean
 }
 
 export function rawFsnClass(movementPct: number, historyDays: number, cfg: ReplenishmentConfig): FsnClass {
-  // Too new to classify is NOT the same as not moving (US-012 EH-01). Same
-  // threshold as cold start, so a SKU is never simultaneously "too new to estimate
-  // demand" and "confidently Fast".
+  // Too new to classify is NOT the same as not moving. Same threshold as cold
+  // start, so a SKU is never simultaneously "too new to estimate demand" and
+  // "confidently Fast".
   if (historyDays < cfg.coldStartMinDays) return 'unclassified'
   if (movementPct >= cfg.fsnFastPct) return 'fast'
   if (movementPct >= cfg.fsnSlowPct) return 'slow'
   return 'non-moving'
-}
-
-const CLASS_RANK: Record<FsnClass, number> = { 'non-moving': 0, slow: 1, fast: 2, unclassified: -1 }
-
-/**
- * Hold a class until it clears the hysteresis band and then holds for the dwell
- * period (US-015). Decisive moves bypass the dwell:
- *   • a two-step jump (fast ↔ non-moving),
- *   • movement far beyond the band (≥ 2× the band width),
- *   • any transition into or out of `unclassified` — that is a data-availability
- *     change (history crossed the threshold), not a demand wobble, so making it
- *     wait two cycles would be dishonest.
- */
-export function applyHysteresis(
-  prior: FsnClassMemo | undefined,
-  raw: FsnClass,
-  movementPct: number,
-  cfg: ReplenishmentConfig,
-  runNo: number,
-): { memo: FsnClassMemo; inBand: boolean; decisive: boolean } {
-  if (!prior) {
-    return { memo: { cls: raw, since: runNo, dwell: 0, candidate: null }, inBand: false, decisive: true }
-  }
-  if (raw === prior.cls) {
-    return { memo: { ...prior, dwell: 0, candidate: null }, inBand: false, decisive: false }
-  }
-
-  const band = cfg.fsnHysteresisPct
-  const boundary = raw === 'fast' || prior.cls === 'fast' ? cfg.fsnFastPct : cfg.fsnSlowPct
-  const distance = Math.abs(movementPct - boundary)
-  const inBand = distance <= band
-
-  const twoStep = Math.abs(CLASS_RANK[raw] - CLASS_RANK[prior.cls]) >= 2
-  const involvesUnclassified = raw === 'unclassified' || prior.cls === 'unclassified'
-  const decisive = twoStep || involvesUnclassified || distance >= band * 2
-
-  if (decisive) {
-    return { memo: { cls: raw, since: runNo, dwell: 0, candidate: null }, inBand, decisive: true }
-  }
-  if (inBand) {
-    // Sitting on the fence — hold the current class and reset any pending change.
-    return { memo: { ...prior, dwell: 0, candidate: null }, inBand: true, decisive: false }
-  }
-
-  const dwell = prior.candidate === raw ? prior.dwell + 1 : 1
-  if (dwell >= cfg.fsnDwellCycles) {
-    return { memo: { cls: raw, since: runNo, dwell: 0, candidate: null }, inBand: false, decisive: false }
-  }
-  return { memo: { ...prior, dwell, candidate: raw }, inBand: false, decisive: false }
 }
 
 export function fsnFor(
@@ -517,25 +465,14 @@ export function fsnFor(
   const series = demandSeries(sku, warehouseId, asOf)
   const movementPct = win.days ? (win.movementDays / win.days) * 100 : 0
   const raw = rawFsnClass(movementPct, series.historyDays, cfg)
-  const memo = classMemo(sku, warehouseId)
   const settings = effectiveSettings(sku, warehouseId, cfg)
-
-  const band = cfg.fsnHysteresisPct
-  const boundary = raw === 'fast' || memo?.cls === 'fast' ? cfg.fsnFastPct : cfg.fsnSlowPct
-  const inBand = memo ? Math.abs(movementPct - boundary) <= band && raw !== memo.cls : false
 
   return {
     raw,
-    // No memo yet = never recalculated, so the raw class is what to show.
-    committed: memo?.cls ?? raw,
+    committed: raw,
     movementPct,
     movementDays: win.movementDays,
     periods: win.days,
-    candidate: memo?.candidate ?? null,
-    dwell: memo?.dwell ?? 0,
-    dwellRequired: cfg.fsnDwellCycles,
-    inHysteresisBand: inBand,
-    decisive: false,
     tracked: settings.tracked,
   }
 }
@@ -777,7 +714,7 @@ export function buildRow(
     + coverGap
 
   return {
-    key: memoKey(sku, warehouseId),
+    key: `${sku}::${warehouseId}`,
     sku,
     productName: product?.name ?? sku,
     productDesc: product?.desc ?? '',
@@ -1230,15 +1167,14 @@ export function replenishmentSetupCount(warehouseId?: string): number {
 export interface RecalculateResult {
   runNo: number
   ranAt: string
-  reclassified: number
   due: number
   needsSetup: number
   pairs: number
 }
 
 /**
- * One recalculation = one cycle. Computes raw FSN classes for every pair, runs them
- * through the hysteresis/dwell rules against the stored memos, and commits the run.
+ * One recalculation = one cycle. Recomputes the worklist and records the run so the
+ * worklist can show an "as of / last recalculated" line.
  *
  * `ranAt` uses the real wall clock, which is safe because this only ever runs inside
  * a user's click handler — never at module init and never during SSR.
@@ -1249,67 +1185,34 @@ export function recalculateReplenishment(
   asOf: string = REPL_ASOF_ISO,
   ranAt?: string,
 ): RecalculateResult {
-  const memos: Record<string, FsnClassMemo> = {}
-  let reclassified = 0
   let pairs = 0
-
-  const nextRunNo = currentRunNo() + 1
-
   for (const wh of replenishmentWarehouses()) {
     if (scope !== 'all' && wh.id !== scope) continue
-    for (const product of warehouseProducts(wh.id)) {
-      pairs++
-      const win = demandWindow(product.sku, wh.id, cfg.fsnWindowDays, asOf)
-      const series = demandSeries(product.sku, wh.id, asOf)
-      const movementPct = win.days ? (win.movementDays / win.days) * 100 : 0
-      const raw = rawFsnClass(movementPct, series.historyDays, cfg)
-      const prior = classMemo(product.sku, wh.id)
-      const { memo } = applyHysteresis(prior, raw, movementPct, cfg, nextRunNo)
-      if (prior && memo.cls !== prior.cls) reclassified++
-      memos[memoKey(product.sku, wh.id)] = memo
-    }
+    pairs += warehouseProducts(wh.id).length
   }
 
   const worklist = replenishmentWorklist(scope, cfg, asOf)
-  const run = writeRun(
-    {
-      ranAt: ranAt ?? new Date().toISOString(),
-      asOf,
-      scope,
-      pairs,
-      flagged: worklist.totals.due,
-      needsSetup: worklist.totals.needsSetup,
-      reclassified,
-    },
-    memos,
-  )
+  const run = writeRun({
+    ranAt: ranAt ?? new Date().toISOString(),
+    asOf,
+    scope,
+    pairs,
+    flagged: worklist.totals.due,
+    needsSetup: worklist.totals.needsSetup,
+  })
 
   return {
     runNo: run.runNo,
     ranAt: run.ranAt,
-    reclassified,
     due: worklist.totals.due,
     needsSetup: worklist.totals.needsSetup,
     pairs,
   }
 }
 
-/**
- * Plant two backdated runs on first load, so hysteresis and dwell are inspectable
- * instead of dead code.
- *
- * Without this the mechanic never fires: `movementPct` is a pure function of a
- * deterministic ledger at a fixed anchor, so run #2 would reproduce run #1 exactly,
- * nothing would ever be pending, and "Pending reclassification (1 of 2)" could
- * never appear. Evaluating the SAME ledger at asOf−14 and asOf−7 gives genuinely
- * different 90-day windows, so a real population of pairs arrives with a committed
- * class that differs from today's raw class — some at dwell 0, some at dwell 1.
- */
+/** Seed a single run on first load so the worklist has an "as of" stamp to show. */
 export function ensureRunHistory(cfg: ReplenishmentConfig = getReplenishmentConfig()): void {
   if (!import.meta.client) return
   if (hasRunHistory()) return
-  for (const back of [14, 7]) {
-    const asOf = shiftDays(REPL_ASOF_ISO, -back)
-    recalculateReplenishment('all', cfg, asOf, `${asOf}T07:30:00.000Z`)
-  }
+  recalculateReplenishment('all', cfg, REPL_ASOF_ISO, `${REPL_ASOF_ISO}T07:30:00.000Z`)
 }

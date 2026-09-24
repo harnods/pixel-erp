@@ -94,8 +94,6 @@ function save() {
     fsnWindowDays: Number(draft.fsnWindowDays),
     fsnFastPct: Number(draft.fsnFastPct),
     fsnSlowPct: Number(draft.fsnSlowPct),
-    fsnHysteresisPct: Number(draft.fsnHysteresisPct),
-    fsnDwellCycles: Number(draft.fsnDwellCycles),
     volatileCvThreshold: Number(draft.volatileCvThreshold),
     fallbackLeadTimeDays: Number(draft.fallbackLeadTimeDays),
     leadTimeSampleCount: Math.max(1, Number(draft.leadTimeSampleCount)),

@@ -70,10 +70,6 @@ export interface ReplenishmentConfig {
   fsnFastPct: number
   /** ≥ this share (and below fast) ⇒ Slow; anything less ⇒ Non-moving. */
   fsnSlowPct: number
-  /** Dead-band around a threshold a SKU must clear before reclassifying (US-015). */
-  fsnHysteresisPct: number
-  /** Consecutive recalculations a candidate class must hold before it commits. */
-  fsnDwellCycles: number
   /** Coefficient of variation above which demand is flagged "volatile" (US-002). */
   volatileCvThreshold: number
   /** Tier 4 — the global floor when nothing else resolves (US-001 AC-04). */
@@ -121,8 +117,6 @@ export const REPL_DEFAULTS: ReplenishmentConfig = {
   fsnWindowDays: 90,
   fsnFastPct: 60,
   fsnSlowPct: 10,
-  fsnHysteresisPct: 5,
-  fsnDwellCycles: 2,
   volatileCvThreshold: 1.2,
   fallbackLeadTimeDays: 14,
 }
