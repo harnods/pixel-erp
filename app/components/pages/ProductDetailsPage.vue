@@ -28,7 +28,7 @@ import {
   buildRow, invalidateReplenishmentCaches, isManualFloorTooLow, productActionRollup,
   warehouseMinStockRollup,
 } from '~/data/replenishment'
-import { deriveLeadTime } from '~/data/leadTimeHistory'
+import { deriveLeadTime, isEstimatedTier } from '~/data/leadTimeHistory'
 import { getSkuWarehouseOverride, saveSkuWarehouseOverride } from '~/data/replenishmentSettings'
 import { replenishmentRevision } from '~/data/replenishmentStore'
 import { cutoverState } from '~/data/wmsCutover'
@@ -203,6 +203,25 @@ function vendorLeadLabel(vendorId: string): string {
   const min = Math.min(...days)
   const max = Math.max(...days)
   return min === max ? `${min} days` : `${min}–${max} days`
+}
+
+/** Per-warehouse lead time for one vendor — the breakdown behind the range. */
+function vendorLeadByWarehouse(vendorId: string) {
+  void vendorTick.value
+  void replenishmentRevision.value
+  const sku = product.value?.sku
+  if (!sku) return [] as { warehouseId: string; warehouseName: string; days: number | null; estimated: boolean }[]
+  return warehouseStock.value.map((s) => {
+    const d = deriveLeadTime(vendorId, sku, undefined, s.warehouseId)
+    return { warehouseId: s.warehouseId, warehouseName: s.warehouseName, days: d.days, estimated: isEstimatedTier(d.tier) }
+  })
+}
+
+// Which vendor rows have their per-warehouse lead-time breakdown expanded.
+const leadTimeOpen = reactive<Set<string>>(new Set())
+function toggleLeadTime(vendorId: string) {
+  if (leadTimeOpen.has(vendorId)) leadTimeOpen.delete(vendorId)
+  else leadTimeOpen.add(vendorId)
 }
 
 /** MOQ in the purchase unit, plus what that means in stock units — "4 Pallet" is
@@ -1095,7 +1114,21 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                         <MpBadge v-if="vi.isPreferred" for="tableStatus" type="completed">Preferred</MpBadge>
                         <span v-else class="pd-vendor-alt">Alternate</span>
                       </td>
-                      <td class="pd-td pd-td--num">{{ vendorLeadLabel(vi.vendorId) }}</td>
+                      <td class="pd-td pd-td--num">
+                        <button type="button" class="pd-lead-toggle" @click="toggleLeadTime(vi.vendorId)">
+                          <span>{{ vendorLeadLabel(vi.vendorId) }}</span>
+                          <MpIcon :name="leadTimeOpen.has(vi.vendorId) ? 'chevron-up' : 'chevron-down'" size="sm" />
+                        </button>
+                        <ul v-if="leadTimeOpen.has(vi.vendorId)" class="pd-lead-breakdown">
+                          <li v-for="w in vendorLeadByWarehouse(vi.vendorId)" :key="w.warehouseId" class="pd-lead-row">
+                            <span class="pd-lead-wh">{{ w.warehouseName }}</span>
+                            <span class="pd-lead-days">
+                              {{ w.days != null ? `${w.days} days` : '—' }}
+                              <span v-if="w.estimated" class="pd-lead-est">est.</span>
+                            </span>
+                          </li>
+                        </ul>
+                      </td>
                       <td class="pd-td pd-td--num">{{ vi.moq.toLocaleString('id-ID') }}</td>
                       <td class="pd-td">
                         {{ vi.purchaseUnit }}
@@ -2034,4 +2067,25 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
   margin-top: var(--mp-spacing-3);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
 }
+
+/* Per-warehouse lead-time breakdown (VR-01) — expand under the range. */
+.pd-lead-toggle {
+  display: inline-flex; align-items: center; gap: 4px; margin-left: auto;
+  border: none; background: none; padding: 0; cursor: pointer;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  font-variant-numeric: tabular-nums;
+}
+.pd-lead-toggle:hover { color: var(--mp-text-link); }
+.pd-lead-breakdown {
+  list-style: none; margin: var(--mp-spacing-2) 0 0; padding: var(--mp-spacing-2);
+  background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-sm);
+  text-align: left;
+}
+.pd-lead-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--mp-spacing-3);
+  padding: 2px 0; font-size: var(--mp-font-sizes-sm);
+}
+.pd-lead-wh { color: var(--mp-text-secondary); }
+.pd-lead-days { color: var(--mp-text-default); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pd-lead-est { margin-left: 4px; color: var(--mp-text-subtle); font-size: var(--mp-font-sizes-xs, 11px); }
 </style>
