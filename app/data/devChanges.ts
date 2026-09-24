@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-additional-setup-drawer',
+    title: 'New property: additional setup per field type',
+    description:
+      'The create/edit property drawer now shows per-field-type setup sections: text size for multi-line text, configurable boolean labels, image access (public/private), currency digits/decimals, sort options for picklist types, and 5 new field types (Percentage, Image, Date and time picker, Date range, Currency).',
+    date: '2026-09-24',
+    files: ['CrmPropertyDrawer.vue', 'crm.ts'],
+  },
+  {
     id: 'crm-property-type-labels',
     title: 'Properties: consistent field type labels',
     description:

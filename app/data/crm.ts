@@ -1462,10 +1462,10 @@ export function persistDealDetailLayout() { saveSnapshot('crm-deal-detail-layout
 // rollup, …) — the picker offers this full set; seeded defaults are `system`
 // (not deletable), custom ones added via "New property" are deletable.
 export const DEAL_PROPERTY_TYPES = [
-  'Single-line text', 'Multi-line text', 'Phone number', 'Number',
-  'Date picker', 'Date and time picker', 'Single checkbox', 'Multiple checkboxes',
+  'Single-line text', 'Multi-line text', 'Phone number', 'Number', 'Percentage',
+  'Date picker', 'Date and time picker', 'Date range', 'Single checkbox', 'Multiple checkboxes',
   'Dropdown select', 'Radio select', 'Calculation', 'User', 'Rollup',
-  'Product list', 'Related list', 'File', 'URL', 'Email',
+  'Product list', 'Related list', 'File', 'Image', 'URL', 'Email', 'Currency',
   'Company', 'Contact',   // association types — reference another record (Company / Contact)
 ] as const
 /** Types that embed a whole table/collection of related records (Products, Files,
@@ -1477,11 +1477,13 @@ export type DealPropertyType = typeof DEAL_PROPERTY_TYPES[number]
 /** Icon per property type (Pixel icon slugs) — shown in the type picker. */
 export const DEAL_PROPERTY_TYPE_ICON: Record<DealPropertyType, string> = {
   'Single-line text': 'text-editor-text', 'Multi-line text': 'textarea',
-  'Phone number': 'phone', 'Number': 'number', 'Date picker': 'calendar',
-  'Date and time picker': 'calendar', 'Single checkbox': 'checkbox-checklist', 'Multiple checkboxes': 'checkbox-checklist',
+  'Phone number': 'phone', 'Number': 'number', 'Percentage': 'number',
+  'Date picker': 'calendar', 'Date and time picker': 'calendar', 'Date range': 'calendar',
+  'Single checkbox': 'checkbox-checklist', 'Multiple checkboxes': 'checkbox-checklist',
   'Dropdown select': 'dropdown', 'Radio select': 'dropdown', 'Calculation': 'calculator',
   'User': 'profile', 'Rollup': 'chart-line',
-  'Product list': 'products', 'Related list': 'table-view-list', 'File': 'attachment', 'URL': 'link', 'Email': 'envelope',
+  'Product list': 'products', 'Related list': 'table-view-list',
+  'File': 'attachment', 'Image': 'file-image', 'URL': 'link', 'Email': 'envelope', 'Currency': 'number',
   'Company': 'company', 'Contact': 'profile',
 }
 
@@ -1536,10 +1538,10 @@ export function defaultPropertyIcon(fieldType: string): string {
   if (fieldType === 'Company' || fieldType === 'crm_company_reference') return 'company'
   const API_ICON_MAP: Record<string, string> = {
     single_line_text: 'text-editor-text', multiple_line_text: 'textarea', number: 'number',
-    date: 'calendar', date_time: 'calendar', pick_list: 'dropdown', radio_select: 'dropdown',
+    date: 'calendar', date_time: 'calendar', date_range: 'calendar', pick_list: 'dropdown', radio_select: 'dropdown',
     multi_select: 'remove-tag', auto_number: 'number', email: 'envelope', phone: 'phone', url: 'link',
     product_list: 'products', file_upload: 'attachment', image_upload: 'file-image',
-    single_checkbox: 'checkbox-checklist', percentage: 'number',
+    single_checkbox: 'checkbox-checklist', percentage: 'number', currency: 'number',
     user_reference: 'profile', activity_log: 'time', related_list: 'table-view-list',
     system_id: 'id-card', system_boolean: 'checkbox-checklist', system_number: 'number',
   }
@@ -1547,11 +1549,11 @@ export function defaultPropertyIcon(fieldType: string): string {
 }
 const API_TYPE_LABEL: Record<string, string> = {
   single_line_text: 'Single-line text', multiple_line_text: 'Multi-line text',
-  number: 'Number', percentage: 'Number',
-  date: 'Date picker', date_time: 'Date and time picker',
+  number: 'Number', percentage: 'Percentage', currency: 'Currency',
+  date: 'Date picker', date_time: 'Date and time picker', date_range: 'Date range',
   pick_list: 'Dropdown select', radio_select: 'Radio select', multi_select: 'Multiple checkboxes',
   auto_number: 'Number', email: 'Email', phone: 'Phone number', url: 'URL',
-  product_list: 'Product list', file_upload: 'File', image_upload: 'File',
+  product_list: 'Product list', file_upload: 'File', image_upload: 'Image',
   single_checkbox: 'Single checkbox', system_boolean: 'Single checkbox',
   user_reference: 'User', related_list: 'Related list',
   crm_contact_reference: 'Contact', crm_company_reference: 'Company',
@@ -1669,8 +1671,10 @@ export function defaultDealProperties(): DealProperty[] {
  *  excludes computed/relation types (Calculation, Rollup, User, …) that aren't
  *  user-authorable. */
 export const NEW_PROPERTY_TYPES: DealPropertyType[] = [
-  'Single-line text', 'Multi-line text', 'Phone number', 'Number', 'Date picker',
-  'Single checkbox', 'Multiple checkboxes', 'Radio select', 'Dropdown select', 'File', 'URL', 'Email',
+  'Single-line text', 'Multi-line text', 'Phone number', 'Number', 'Percentage',
+  'Date picker', 'Date and time picker', 'Date range',
+  'Single checkbox', 'Multiple checkboxes', 'Radio select', 'Dropdown select',
+  'File', 'Image', 'URL', 'Email', 'Currency',
 ]
 /** One option for select/checkbox/radio field types. */
 export interface DealPropertyOption { label: string; value: string; inForms: boolean }
@@ -1683,18 +1687,24 @@ export interface DealPropertyConfig {
   datePickerStyle?: 'simple' | 'advance'
   defaultDateAdvance?: unknown   // DateFilterValue | null (advance picker)
   defaultBool?: '' | 'Yes' | 'No'
+  booleanYesLabel?: string
+  booleanNoLabel?: string
+  textSize?: 'small' | 'large'
   options?: DealPropertyOption[]
   /** Set when `options` was populated from a real DATA_SOURCES entry (e.g.
    *  'erp-warehouses') rather than typed freehand — tags where the values really
-   *  came from; not a live binding (options stay editable after selection). */
+   *  came from; not a live binding (options stays editable after selection). */
   sourceKey?: string
   optionStyle?: 'default' | 'badge'
   defaultOption?: string
   fileAccess?: 'private' | 'public'
+  imageAccess?: 'private' | 'public'
   defaultLinkText?: string
   allowModifyLinkText?: boolean
   defaultUrl?: string
   defaultEmail?: string
+  currencyMaxDigits?: number
+  currencyDecimalPlaces?: number
 }
 export interface DealProperty {
   id: string; name: string; variableName: string; type: DealPropertyType; system: boolean; fillRate: number
@@ -1749,9 +1759,9 @@ function normalizeDealProperties(list: DealProperty[]): DealProperty[] {
     return p
   })
 }
-export const dealProperties = reactive<DealProperty[]>(normalizeDealProperties(load('crm-deal-properties-v14', DEAL_PROPERTIES_SEED)))
+export const dealProperties = reactive<DealProperty[]>(normalizeDealProperties(load('crm-deal-properties-v15', DEAL_PROPERTIES_SEED)))
 backfillDefaultPropertyOptions(dealProperties)
-export function persistDealProperties() { saveSnapshot('crm-deal-properties-v14', dealProperties) }
+export function persistDealProperties() { saveSnapshot('crm-deal-properties-v15', dealProperties) }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // GENERIC custom modules — any module created via "+ New module" (Settings ▸
