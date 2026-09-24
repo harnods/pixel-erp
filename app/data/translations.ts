@@ -4003,6 +4003,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'No draft purchase order could be created': 'Tidak ada draf pesanan pembelian yang bisa dibuat',
   // Bulk PR → 1 PO merge
   'Select vendor': 'Pilih vendor',
+  'measured per warehouse': 'diukur per gudang',
   'Merge into purchase order': 'Gabung jadi pesanan pembelian',
   '1 request': '1 permintaan',
   'requests': 'permintaan',

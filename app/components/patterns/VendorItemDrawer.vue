@@ -34,6 +34,8 @@ import {
 import { recommendPreferredVendor } from '~/data/vendorRecommendation'
 import { vendors } from '~/data/vendors'
 import { productBySku } from '~/data/inventory'
+import { deriveLeadTime } from '~/data/leadTimeHistory'
+import { getProductWarehouseStock } from '~/data/productDetails'
 import { unitOptionsForSku, factorFor, baseUnitFor } from '~/data/productUnits'
 import { formatIDR } from '~/utils/currency'
 
@@ -70,12 +72,36 @@ const addableVendors = computed(() => {
 // than one linked vendor the buyer can be unsure which to prefer. Airene scores
 // them on lead time, price, MOQ and purchase history and names one, live off the
 // current (possibly edited-but-unsaved) terms.
+/**
+ * Lead time is DERIVED, never typed (US-001 / D5): it comes from this vendor's
+ * PO→goods-receipt history per warehouse, falling to the category default. So it
+ * is shown read-only here as the per-warehouse range, and the recommendation
+ * scores vendors on that derived figure — not on an editable field.
+ */
+function derivedLeadDays(vendorId: string): number {
+  if (!props.sku) return 0
+  return deriveLeadTime(vendorId, props.sku).days ?? 0
+}
+function leadLabel(vendorId: string): string {
+  if (!props.sku) return '—'
+  const days = getProductWarehouseStock(props.sku)
+    .map((s) => deriveLeadTime(vendorId, props.sku!, undefined, s.warehouseId).days)
+    .filter((d): d is number => d != null)
+  if (!days.length) {
+    const d = deriveLeadTime(vendorId, props.sku).days
+    return d != null ? `${d} days` : '—'
+  }
+  const min = Math.min(...days)
+  const max = Math.max(...days)
+  return min === max ? `${min} days` : `${min}–${max} days`
+}
+
 const showReasons = ref(false)
 const recommendation = computed(() => {
   if (!props.sku || rows.value.length < 2) return null
   return recommendPreferredVendor(props.sku, rows.value.map((r) => ({
     vendorId: r.vendorId,
-    leadTimeDays: Number(r.leadTimeDays) || 0,
+    leadTimeDays: derivedLeadDays(r.vendorId),
     moq: Number(r.moq) || 0,
     unitCost: Number(r.unitCost) || 0,
     unitsPerPurchaseUnit: r.unitsPerPurchaseUnit,
@@ -335,8 +361,8 @@ function save() {
                   </template>
                 </td>
                 <td class="rp-vi-td rp-vi-td--num">
-                  <MpInput :id="`rp-vi-lead-${i}`" v-model="row.leadTimeDays" type="number" :class="css({ width: '68px' })" />
-                  <span class="rp-vi-cell-sub">{{ t('days') }}</span>
+                  <span class="rp-vi-lead-ro">{{ leadLabel(row.vendorId) }}</span>
+                  <span class="rp-vi-cell-sub">{{ t('measured per warehouse') }}</span>
                 </td>
                 <td class="rp-vi-td rp-vi-td--num">
                   <MpInput :id="`rp-vi-moq-${i}`" v-model="row.moq" type="number" :class="css({ width: '68px' })" />
@@ -517,6 +543,7 @@ function save() {
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); white-space: nowrap;
 }
 .rp-vi-cell-sub--warning { color: var(--mp-text-warning); }
+.rp-vi-lead-ro { font-variant-numeric: tabular-nums; color: var(--mp-text-default); white-space: nowrap; }
 .rp-vi-radio { width: 16px; height: 16px; cursor: pointer; accent-color: var(--mp-background-brand, #04846c); }
 .rp-vi-remove {
   display: inline-flex; align-items: center; justify-content: center;
