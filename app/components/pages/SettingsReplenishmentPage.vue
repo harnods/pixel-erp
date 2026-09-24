@@ -73,8 +73,6 @@ function save() {
     [t('Ignore gaps over'), draft.leadTimeOutlierCapDays],
     [t('Cold-start threshold'), draft.coldStartMinDays],
     [t('Classification window'), draft.fsnWindowDays],
-    [t('Hysteresis band'), draft.fsnHysteresisPct],
-    [t('Dwell cycles'), draft.fsnDwellCycles],
   ] as const) {
     if (Number(value) < 0 || Number.isNaN(Number(value))) {
       error.value = `${label} ${t('must be 0 or more')}`
@@ -436,7 +434,7 @@ const BOUNDARY_OPTIONS = [
       <!-- ── FSN ── -->
       <h3 class="rs-sub rs-sub--spaced">{{ t('Movement classification (FSN)') }}</h3>
       <p class="rs-hint">
-        {{ t('Hysteresis and dwell stop products flipping class from one recalculation to the next.') }}
+        {{ t('Classifies products by how often they move, so you can focus on the ones worth replenishing.') }}
       </p>
 
       <div class="rs-field">
@@ -480,29 +478,6 @@ const BOUNDARY_OPTIONS = [
         </div>
       </div>
 
-      <div class="rs-field">
-        <div class="rs-label">
-          <span class="rs-label-text">{{ t('Hysteresis and dwell') }}</span>
-          <span class="rs-label-desc">
-            {{ t('A product must move past a threshold by the band, and hold for this many recalculations, before its class changes.') }}
-          </span>
-        </div>
-        <div class="rs-control">
-          <div v-if="isEditing" class="rs-window-row">
-            <MpInputGroup id="rs-band">
-              <MpInput id="rs-band-input" v-model="draft.fsnHysteresisPct" type="number" :class="css({ width: '84px' })" />
-              <MpInputRightAddon>% {{ t('band') }}</MpInputRightAddon>
-            </MpInputGroup>
-            <MpInputGroup id="rs-dwell">
-              <MpInput id="rs-dwell-input" v-model="draft.fsnDwellCycles" type="number" :class="css({ width: '84px' })" />
-              <MpInputRightAddon>{{ t('cycles') }}</MpInputRightAddon>
-            </MpInputGroup>
-          </div>
-          <span v-else class="rs-value">
-            ±{{ committed.fsnHysteresisPct }}% · {{ committed.fsnDwellCycles }} {{ t('cycles') }}
-          </span>
-        </div>
-      </div>
 
 
       <!-- ── Automation ── -->
