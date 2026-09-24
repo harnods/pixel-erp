@@ -648,133 +648,13 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
               <MpButton variant="ghost" is-rounded left-icon="close" :aria-label="t('Close')" @click="previewOpen = false" />
             </header>
             <div class="dlb-preview-body">
-              <!-- Details record preview — Deals module: exact replica of CrmDealDetailPage -->
-              <template v-if="previewMode === 'details' && moduleId === 'deals'">
+              <!-- Details record preview — dynamic from layout sections (all modules) -->
+              <template v-if="previewMode === 'details'">
                 <div class="dlb-prev-detail-page">
                   <div class="dp-stage">
                     <div class="dp-tabs">
-                      <button class="dp-tab dp-tab--active">{{ t('Deal details') }}</button><!-- pixel-police-allow -->
-                      <button class="dp-tab" disabled>{{ t('Notes') }}</button><!-- pixel-police-allow -->
-                      <button class="dp-tab" disabled>{{ t('Files') }}</button><!-- pixel-police-allow -->
-                      <button class="dp-tab" disabled>{{ t('Sales orders') }}</button><!-- pixel-police-allow -->
-                      <button class="dp-tab" disabled>{{ t('Activity') }}</button><!-- pixel-police-allow -->
+                      <button v-for="(tp, ti) in detail.tabs.filter(t => t.visible)" :key="tp.id" class="dp-tab" :class="{ 'dp-tab--active': ti === 0 }" :disabled="ti !== 0">{{ t(tp.label) }}</button><!-- pixel-police-allow -->
                     </div>
-                    <section class="dp-section">
-                      <h3 class="dp-section-title">{{ t('Overview') }}</h3>
-                      <div class="dp-grid dp-grid--3">
-                        <div class="dp-grid-col">
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Deal name') }}</span><span class="dp-cl-value">Espresso beans pilot batch</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Company') }}</span><span class="dp-cl-value dp-cl-link">Kopi Kenangan Pusat</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Billing address') }}</span><span class="dp-cl-value">Jl. Jend. Sudirman Kav. 52-53, Senayan, Jakarta Selatan, 12190, DKI Jakarta</span></div>
-                        </div>
-                        <div class="dp-grid-col">
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Contact person') }}</span><span class="dp-cl-value">Ratna Sari&nbsp;&nbsp;&nbsp;Linayanti</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Contact person email') }}</span><span class="dp-cl-value dp-cl-link">buyer@kopkenangan.co</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Contact person phone') }}</span><span class="dp-cl-value">021-55300618-62 811 8044 222</span></div>
-                        </div>
-                        <div class="dp-grid-col">
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Value') }}</span><span class="dp-cl-value dp-value-amount">Rp10.756.000,00</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Owner') }}</span><span class="dp-cl-value">Dina Lestari</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Currency') }}</span><span class="dp-cl-value">IDR</span></div>
-                        </div>
-                      </div>
-                    </section>
-                    <section class="dp-section">
-                      <h3 class="dp-section-title">{{ t('Transaction') }}</h3>
-                      <div class="dp-grid dp-grid--4">
-                        <div class="dp-grid-col">
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Transaction date') }}</span><span class="dp-cl-value">06 Sept 2026</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Reference no.') }}</span><span class="dp-cl-value">—</span></div>
-                        </div>
-                        <div class="dp-grid-col">
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Due date') }}</span><span class="dp-cl-value">29 Sept 2026</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Payment terms') }}</span><span class="dp-cl-value">Net 30</span></div>
-                        </div>
-                        <div class="dp-grid-col">
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Expected close date') }}</span><span class="dp-cl-value">29 Sept 2026</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Exchange rate') }}</span><span class="dp-cl-value">—</span></div>
-                        </div>
-                        <div class="dp-grid-col">
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Transaction no.') }}</span><span class="dp-cl-value">Deal #10007</span></div>
-                        </div>
-                      </div>
-                    </section>
-                    <section class="dp-section">
-                      <h3 class="dp-section-title">{{ t('Shipping & delivery') }}</h3>
-                      <div class="dp-grid dp-grid--4">
-                        <div class="dp-grid-col">
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Warehouse') }}</span><span class="dp-cl-value">Default location</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Ship via') }}</span><span class="dp-cl-value">Sentral Cargo</span></div>
-                        </div>
-                        <div class="dp-grid-col">
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Shipping address') }}</span><span class="dp-cl-value">Jl. Jend. Sudirman Kav. 52-53, Senayan, Jakarta Selatan, 12190, DKI Jakarta</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Tracking no.') }}</span><span class="dp-cl-value">—</span></div>
-                        </div>
-                        <div class="dp-grid-col">
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Ship date') }}</span><span class="dp-cl-value">29 Sept 2026</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Shipping fee') }}</span><span class="dp-cl-value">Rp100.000,00</span></div>
-                        </div>
-                        <div class="dp-grid-col">
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Delivery date') }}</span><span class="dp-cl-value">—</span></div>
-                        </div>
-                      </div>
-                    </section>
-                    <section class="dp-section dp-items-section">
-                      <div class="dp-filter-bar">
-                        <div />
-                        <div class="dp-filter-right">
-                          <div class="dp-search-pill"><MpIcon name="search" size="sm" /><span class="dp-search-text">{{ t('Search products…') }}</span></div>
-                          <button class="btn-enterprise btn-enterprise--tertiary dp-add-product" disabled><MpIcon name="add" size="sm" />{{ t('Add product') }}</button>
-                        </div>
-                      </div>
-                      <table class="dp-items">
-                        <thead>
-                          <tr>
-                            <th class="dp-th">{{ t('Product') }}</th>
-                            <th class="dp-th">{{ t('Description') }}</th>
-                            <th class="dp-th dp-th--num">{{ t('Qty') }}</th>
-                            <th class="dp-th">{{ t('Unit') }}</th>
-                            <th class="dp-th dp-th--num">{{ t('Unit price') }}</th>
-                            <th class="dp-th dp-th--num">{{ t('Discount') }}</th>
-                            <th class="dp-th">{{ t('Tax') }}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr>
-                            <td class="dp-td"><div class="dp-product-cell"><div class="dp-product-thumb" /><div class="dp-product-meta"><span class="dp-product-name">Roasted Beans Espresso Blend Dark</span><span class="dp-product-sku">SKU: T002</span></div></div></td>
-                            <td class="dp-td dp-td--muted">Dark roast espresso blend, whole bean</td>
-                            <td class="dp-td dp-td--num">30</td>
-                            <td class="dp-td">Bag</td>
-                            <td class="dp-td dp-td--num">Rp320.000,00</td>
-                            <td class="dp-td dp-td--num">PPN 11%</td>
-                            <td class="dp-td">PPN 11%</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                      <div class="dp-items-count">{{ t('Showing') }} 1 {{ t('of') }} 1 {{ t('products') }}</div>
-                    </section>
-                    <section class="dp-section dp-totals-section">
-                      <div class="dp-totals">
-                        <div class="dp-total-row"><span class="dp-total-label dp-total-label--strong">{{ t('Subtotal') }}</span><span class="dp-total-amt dp-total-amt--strong">Rp9.600.000,00</span></div>
-                        <div class="dp-total-row"><span class="dp-total-label">{{ t('Discount per line') }}</span><span class="dp-total-amt">Rp0,00</span></div>
-                        <div class="dp-total-row"><span class="dp-total-label">{{ t('Global discount') }}</span><span class="dp-total-amt">Rp0,00</span></div>
-                        <div class="dp-total-row"><span class="dp-total-label">PPN 11%</span><span class="dp-total-amt">Rp1.056.000,00</span></div>
-                        <div class="dp-total-row"><span class="dp-total-label">{{ t('Shipping fee') }}</span><span class="dp-total-amt">Rp100.000,00</span></div>
-                        <div class="dp-total-rule" />
-                        <div class="dp-total-row"><span class="dp-total-label dp-total-label--total">{{ t('Total') }}</span><span class="dp-total-amt dp-total-amt--total">Rp10.756.000,00</span></div>
-                      </div>
-                    </section>
-                    <section class="dp-section dp-memo-section">
-                      <div class="dp-cl"><span class="dp-cl-label">{{ t('Memo') }}</span><span class="dp-cl-value">Please ensure all beans are vacuum-sealed for freshness during transit.</span></div>
-                      <div class="dp-cl"><span class="dp-cl-label">{{ t('Attachment') }}</span><span class="dp-cl-value dp-cl-link">Purchase_agreement_v2.pdf</span></div>
-                    </section>
-                  </div>
-                </div>
-              </template>
-              <!-- Details record preview — generic modules: dynamic from layout sections -->
-              <template v-else-if="previewMode === 'details'">
-                <div class="dlb-prev-detail-page">
-                  <div class="dp-stage">
                     <template v-for="section in detailsTabSections()" :key="section.id">
                       <section v-if="section.kind === 'products'" class="dp-section dp-items-section">
                         <div class="dp-filter-bar">
