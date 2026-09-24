@@ -264,6 +264,11 @@ const condSentence = computed(() => {
   }
 })
 function removeProperty(section: DetailLayoutSection, id: string) { section.cols = section.cols.map((c) => c.filter((x) => x !== id)) }
+function toggleMandatory(section: DetailLayoutSection, pid: string) {
+  if (!section.mandatory) section.mandatory = {}
+  section.mandatory[pid] = !section.mandatory[pid]
+  if (!section.mandatory[pid]) delete section.mandatory[pid]
+}
 
 // Delete section — immediate (nothing is saved until "Save changes", so no confirm).
 function deleteSection(s: DetailLayoutSection) {
@@ -455,7 +460,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                   <span class="dlb-drag" :aria-label="t('Drag to reorder')" @pointerdown="onPropPointerDown(section, pid, $event)"><MpIcon name="drag" size="sm" /></span>
                   <MpIcon :name="prop(pid)?.type ? defaultPropertyIcon(prop(pid)!.type) : 'text-editor-text'" size="sm" class="dlb-prop-type" />
                   <div class="dlb-prop-text">
-                    <span class="dlb-prop-label">{{ prop(pid)?.name ?? pid }}</span>
+                    <span class="dlb-prop-label">{{ prop(pid)?.name ?? pid }}<span v-if="section.mandatory?.[pid]" class="dlb-mandatory">*</span></span>
                   </div>
                   <MpTooltip v-if="section.conditions?.[pid]" :id="`dlb-cond-${section.id}-${pid}`" :label="t('Has conditional logic')" placement="top" use-portal>
                     <MpIcon name="condition" size="sm" class="dlb-prop-cond" />
@@ -468,7 +473,8 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                       <MpPopoverContent :class="css({ minWidth: '190px' })">
                         <MpPopoverList>
                           <MpPopoverListItem @click="openCondition(section, pid)">{{ t('Set conditional logic') }}</MpPopoverListItem>
-                          <MpPopoverListItem @click="removeProperty(section, pid)">{{ t('Remove card') }}</MpPopoverListItem>
+                          <MpPopoverListItem @click="toggleMandatory(section, pid)">{{ section.mandatory?.[pid] ? t('Mark as optional') : t('Mark as mandatory') }}</MpPopoverListItem>
+                          <MpPopoverListItem @click="removeProperty(section, pid)">{{ t('Remove property') }}</MpPopoverListItem>
                         </MpPopoverList>
                       </MpPopoverContent>
                     </MpPopover>
@@ -1182,6 +1188,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 .dlb-prop-cond { color: var(--mp-colors-icon-information, #2f6fd0); flex-shrink: 0; }
 .dlb-prop-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .dlb-prop-label { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dlb-mandatory { color: var(--mp-colors-text-danger, #c81e1e); margin-left: 2px; }
 .dlb-prop-var { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); font-family: var(--mp-fonts-mono, ui-monospace, SFMono-Regular, Menlo, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dlb-empty { grid-column: 1 / -1; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #6b7678); margin: 0; padding: var(--mp-spacing-2) 0; }
 

@@ -1401,6 +1401,7 @@ export interface DetailLayoutSection {
   columns: 1 | 2 | 3 | 4         // number of columns (=== cols.length)
   cols: string[][]               // per-column ordered refs into dealProperties (by id)
   conditions?: Record<string, PropertyCondition>  // per-property conditional-logic rules (keyed by property id)
+  mandatory?: Record<string, boolean>            // per-property mandatory flag (keyed by property id)
   kind?: 'products'              // system block (products table + totals) — non-property, locked
   system?: boolean              // locked section (can't delete / add props)
 }
