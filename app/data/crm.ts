@@ -1437,9 +1437,10 @@ const DEAL_DETAIL_LAYOUT_SEED: DealDetailLayout = {
     {
       id: 'tab-details', key: 'details', label: 'Deal details', editable: true, visible: true,
       sections: [
-        { id: 'sec-overview', name: 'Overview', columns: 3, cols: [['record-name', 'company'], ['contact', 'email', 'phone'], ['record-owner', 'status']] },
-        { id: 'sec-transaction', name: 'Transaction', columns: 4, cols: distributeCols(['transaction-date', 'due-date', 'transaction-number', 'external-reference-id'], 4) },
-        { id: 'sec-additional', name: 'Additional info', columns: 3, cols: [['tags', 'source'], ['image'], ['attachments']] },
+        { id: 'sec-overview', name: 'Overview', columns: 3, cols: [['record-name', 'company', 'billing-address'], ['contact', 'email', 'phone'], ['deal-value', 'record-owner', 'source', 'status']] },
+        { id: 'sec-transaction', name: 'Transaction', columns: 3, cols: [['transaction-date', 'transaction-number', 'due-date'], ['external-reference-id', 'payment-term'], ['tags']] },
+        { id: 'sec-products', name: 'Products', columns: 1, cols: [['product-list']], kind: 'products', system: true },
+        { id: 'sec-additional', name: 'Additional info', columns: 3, cols: [['notes', 'attachments'], [], []] },
       ],
     },
     { id: 'tab-notes', key: 'notes', label: 'Notes', editable: false, visible: true },
@@ -1449,10 +1450,10 @@ const DEAL_DETAIL_LAYOUT_SEED: DealDetailLayout = {
   ],
 }
 export const dealDetailLayout = reactive<DealDetailLayout>(
-  loadSnapshot<DealDetailLayout>('crm-deal-detail-layout-v10')?.[0]
+  loadSnapshot<DealDetailLayout>('crm-deal-detail-layout-v11')?.[0]
     ?? JSON.parse(JSON.stringify(DEAL_DETAIL_LAYOUT_SEED)),
 )
-export function persistDealDetailLayout() { saveSnapshot('crm-deal-detail-layout-v10', [dealDetailLayout]) }
+export function persistDealDetailLayout() { saveSnapshot('crm-deal-detail-layout-v11', [dealDetailLayout]) }
 
 // ── Deals module PROPERTIES (the Properties tab) ─────────────────────────────
 // The module's field catalogue. Field types mirror the standard CRM property
@@ -1585,7 +1586,7 @@ export const DEFAULT_PROPERTIES: DefaultProperty[] = [
   { id: 'close-date', name: 'Expected Close Date', fieldType: 'date', variableName: 'close_date', description: 'Optional expected completion/closure date.', existInDeals: false },
   { id: 'next-follow-up-time', name: 'Next Follow-up Time', fieldType: 'date_time', variableName: 'next_follow_up_time', description: 'Date and time of the next scheduled follow-up.', existInDeals: false },
   { id: 'completed-time', name: 'Completed Time', fieldType: 'date_time', variableName: 'completed_time', description: 'Date and time the record was completed.', existInDeals: false },
-  { id: 'notes', name: 'Notes', fieldType: 'multiple_line_text', variableName: 'notes', description: 'Internal notes distinct from Description.', existInDeals: false },
+  { id: 'notes', name: 'Notes', fieldType: 'multiple_line_text', variableName: 'notes', description: 'Internal notes distinct from Description.' },
   { id: 'memo', name: 'Memo', fieldType: 'multiple_line_text', variableName: 'memo', description: 'Memo for leaving additional messages if needed.', existInDeals: false },
   { id: 'attachments', name: 'Attachments', fieldType: 'file_upload', variableName: 'attachments', description: 'File attachments on the record.' },
   { id: 'image', name: 'Image', fieldType: 'image_upload', variableName: 'image', description: 'Image associated with the record.' },
@@ -1600,12 +1601,12 @@ export const DEFAULT_PROPERTIES: DefaultProperty[] = [
   ] },
   { id: 'email', name: 'Email', fieldType: 'email', variableName: 'email', description: 'Primary email address.' },
   { id: 'phone', name: 'Phone', fieldType: 'phone', variableName: 'phone', description: 'Primary phone number.' },
-  { id: 'product-list', name: 'Product List', fieldType: 'product_list', variableName: 'product_list', description: 'Line items (products) on the record.', dataSource: { label: 'Product catalog', origin: 'catalog' }, existInDeals: false },
+  { id: 'product-list', name: 'Product List', fieldType: 'product_list', variableName: 'product_list', description: 'Line items (products) on the record.', dataSource: { label: 'Product catalog', origin: 'catalog' } },
   { id: 'website', name: 'Website', fieldType: 'url', variableName: 'website', description: 'Website URL.', existInDeals: false },
-  { id: 'billing-address', name: 'Billing Address', fieldType: 'multiple_line_text', variableName: 'billing_address', description: 'Billing address.', existInDeals: false },
+  { id: 'billing-address', name: 'Billing Address', fieldType: 'multiple_line_text', variableName: 'billing_address', description: 'Billing address.' },
   { id: 'shipping-address', name: 'Shipping Address', fieldType: 'multiple_line_text', variableName: 'shipping_address', description: 'Generic shipping address.', existInDeals: false },
-  { id: 'payment-term', name: 'Payment Terms', fieldType: 'pick_list', variableName: 'payment_term', description: 'Administrator defines applicable payment terms.', editable: true, editableScope: 'add-delete-rename', dataSource: { label: 'Payment terms', origin: 'erp' }, existInDeals: false },
-  { id: 'deal-value', name: 'Deal Value', fieldType: 'number', variableName: 'deal_value', description: 'Generic total deal value; adopts the basic currency from Module set up upon display.', existInDeals: false },
+  { id: 'payment-term', name: 'Payment Terms', fieldType: 'pick_list', variableName: 'payment_term', description: 'Administrator defines applicable payment terms.', editable: true, editableScope: 'add-delete-rename', dataSource: { label: 'Payment terms', origin: 'erp' } },
+  { id: 'deal-value', name: 'Deal Value', fieldType: 'number', variableName: 'deal_value', description: 'Generic total deal value; adopts the basic currency from Module set up upon display.' },
   { id: 'currency-code', name: 'Currency', fieldType: 'pick_list', variableName: 'currency_code', description: 'Transaction currency code.', existInDeals: false, dataSource: { label: 'Currencies', origin: 'erp' } },
   { id: 'quantity', name: 'Quantity', fieldType: 'number', variableName: 'quantity', description: 'Number type; allows maximum 6 decimals.', existInDeals: false },
   { id: 'probability', name: 'Probability', fieldType: 'percentage', variableName: 'probability', description: 'Useful for likelihood or confidence.', existInDeals: false },
@@ -1758,9 +1759,9 @@ function normalizeDealProperties(list: DealProperty[]): DealProperty[] {
     return p
   })
 }
-export const dealProperties = reactive<DealProperty[]>(normalizeDealProperties(load('crm-deal-properties-v16', DEAL_PROPERTIES_SEED)))
+export const dealProperties = reactive<DealProperty[]>(normalizeDealProperties(load('crm-deal-properties-v17', DEAL_PROPERTIES_SEED)))
 backfillDefaultPropertyOptions(dealProperties)
-export function persistDealProperties() { saveSnapshot('crm-deal-properties-v16', dealProperties) }
+export function persistDealProperties() { saveSnapshot('crm-deal-properties-v17', dealProperties) }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // GENERIC custom modules — any module created via "+ New module" (Settings ▸
