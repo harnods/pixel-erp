@@ -690,6 +690,16 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                         </table>
                         <div class="dp-items-count">{{ t('Showing') }} 1 {{ t('of') }} 1 {{ t('products') }}</div>
                       </section>
+                      <section v-if="section.kind === 'products'" class="dp-section dp-totals-section">
+                        <div class="dp-totals">
+                          <div class="dp-total-row"><span class="dp-total-label dp-total-label--strong">{{ t('Subtotal') }}</span><span class="dp-total-amt dp-total-amt--strong">Rp19.200.000,00</span></div>
+                          <div class="dp-total-row"><span class="dp-total-label">{{ t('Discount per line') }}</span><span class="dp-total-amt">Rp0,00</span></div>
+                          <div class="dp-total-row"><span class="dp-total-label">{{ t('Global discount') }}</span><span class="dp-total-amt">Rp0,00</span></div>
+                          <div class="dp-total-row"><span class="dp-total-label">PPN 11%</span><span class="dp-total-amt">Rp2.112.000,00</span></div>
+                          <div class="dp-total-rule" />
+                          <div class="dp-total-row"><span class="dp-total-label dp-total-label--total">{{ t('Total') }}</span><span class="dp-total-amt dp-total-amt--total">Rp21.312.000,00</span></div>
+                        </div>
+                      </section>
                       <section v-else-if="!(section.id.includes('pricing') && detailsTabSections().some(s => s.kind === 'products'))" class="dp-section">
                         <h3 v-if="section.name" class="dp-section-title">{{ t(section.name) }}</h3>
                         <div class="dp-grid" :class="{ 'dp-grid--3': section.columns === 3, 'dp-grid--4': section.columns === 4 }" :style="section.columns > 4 || (section.columns !== 3 && section.columns !== 4) ? { gridTemplateColumns: `repeat(${section.columns}, minmax(0, 1fr))` } : undefined">
@@ -702,16 +712,6 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                         </div>
                       </section>
                     </template>
-                    <section v-if="detailsTabSections().some(s => s.kind === 'products')" class="dp-section dp-totals-section">
-                      <div class="dp-totals">
-                        <div class="dp-total-row"><span class="dp-total-label dp-total-label--strong">{{ t('Subtotal') }}</span><span class="dp-total-amt dp-total-amt--strong">Rp19.200.000,00</span></div>
-                        <div class="dp-total-row"><span class="dp-total-label">{{ t('Discount per line') }}</span><span class="dp-total-amt">Rp0,00</span></div>
-                        <div class="dp-total-row"><span class="dp-total-label">{{ t('Global discount') }}</span><span class="dp-total-amt">Rp0,00</span></div>
-                        <div class="dp-total-row"><span class="dp-total-label">PPN 11%</span><span class="dp-total-amt">Rp2.112.000,00</span></div>
-                        <div class="dp-total-rule" />
-                        <div class="dp-total-row"><span class="dp-total-label dp-total-label--total">{{ t('Total') }}</span><span class="dp-total-amt dp-total-amt--total">Rp21.312.000,00</span></div>
-                      </div>
-                    </section>
                   </div>
                 </div>
               </template>
