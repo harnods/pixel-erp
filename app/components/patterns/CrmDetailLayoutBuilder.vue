@@ -712,10 +712,6 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                         <div class="dp-total-row"><span class="dp-total-label dp-total-label--total">{{ t('Total') }}</span><span class="dp-total-amt dp-total-amt--total">Rp21.312.000,00</span></div>
                       </div>
                     </section>
-                    <section v-if="detailsTabSections().some(s => s.kind === 'products')" class="dp-section dp-memo-section">
-                      <div class="dp-cl"><span class="dp-cl-label">{{ t('Memo') }}</span><span class="dp-cl-value">—</span></div>
-                      <div class="dp-cl"><span class="dp-cl-label">{{ t('Attachment') }}</span><span class="dp-cl-value">—</span></div>
-                    </section>
                   </div>
                 </div>
               </template>
