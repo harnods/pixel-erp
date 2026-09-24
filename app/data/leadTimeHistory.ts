@@ -50,6 +50,7 @@ import { purchaseOrders } from './purchaseOrders'
 import { lineItemsForReceipt } from './receiptLineItems'
 import { vendors } from './vendors'
 import { vendorItems } from './vendorItems'
+import { warehouses } from './warehouses'
 import { productBySku } from './inventory'
 import { hashStr } from './cycleCountRecommendations'
 import {
@@ -224,25 +225,31 @@ function documentSamples(cfg: ReplenishmentConfig): LeadTimeSample[] {
 // ── Layer B — modelled density ───────────────────────────────────────────────
 
 /**
- * Deterministic PO-backed samples for one vendor×product cell.
+ * Deterministic PO-backed samples for one vendor×product×WAREHOUSE cell (VR-01).
  *
  * Centred on the vendor's captured term so a derived value and the term a buyer
  * agreed stay in the same neighbourhood — a computed 40 days against a quoted 14
  * would read as a bug rather than as a finding. Spread is real but bounded.
+ *
+ * Each warehouse carries its OWN small offset (a supplier reaches Surabaya a few
+ * days later than Jakarta), so lead time genuinely differs per warehouse rather
+ * than every location inheriting one number — which is exactly what VR-01 wants.
  */
-function modelledSamples(vendorId: string, sku: string, cfg: ReplenishmentConfig): LeadTimeSample[] {
+function modelledSamples(vendorId: string, sku: string, warehouseId: string, cfg: ReplenishmentConfig): LeadTimeSample[] {
   if (DIRECT_ONLY_SKUS.includes(sku)) return []
 
   const vi = vendorItems.find((v) => v.vendorId === vendorId && v.sku === sku && v.active)
   if (!vi) return []
 
-  const key = `lt:${vendorId}:${sku}`
-  // 0–5 samples. A cell landing on 0 or 1 falls below leadTimeMinSamples and
-  // exercises Tier 2 — that is the point, not an accident.
+  const key = `lt:${vendorId}:${sku}:${warehouseId}`
+  // 0–5 samples per warehouse. A cell landing on 0 or 1 falls below
+  // leadTimeMinSamples and exercises Tier 2 — that is the point, not an accident.
   const count = pick(`${key}:n`, 6)
   if (!count) return []
 
-  const base = vi.leadTimeDays
+  // Per-warehouse offset (−4..+4 days) on top of the vendor's captured term.
+  const whOffset = pick(`${key}:wo`, 9) - 4
+  const base = Math.max(1, vi.leadTimeDays + whOffset)
   const out: LeadTimeSample[] = []
   for (let i = 0; i < count; i++) {
     const jitter = Math.round((unit(`${key}:j:${i}`) - 0.5) * Math.max(2, base * 0.4))
@@ -255,7 +262,7 @@ function modelledSamples(vendorId: string, sku: string, cfg: ReplenishmentConfig
 
     const receiptDate = shift(REPL_ASOF_ISO, -(7 + i * 21 + pick(`${key}:d:${i}`, 9)))
     out.push({
-      vendorId, sku, warehouseId: '',
+      vendorId, sku, warehouseId,
       poNumber: null, orderDate: shift(receiptDate, -leadDays),
       receiptNumber: null, receiptDate, leadDays,
       ...(leadDays > cfg.leadTimeOutlierCapDays ? { excluded: 'outlier' as const } : {}),
@@ -264,11 +271,19 @@ function modelledSamples(vendorId: string, sku: string, cfg: ReplenishmentConfig
   return out
 }
 
+/** Warehouses lead-time samples are modelled for — the active network. */
+function leadTimeWarehouses(): string[] {
+  return warehouses.filter((w) => w.status === 'active').map((w) => w.id)
+}
+
 // ── Index + cache ────────────────────────────────────────────────────────────
 
 let indexCache: Map<string, LeadTimeSample[]> | null = null
 
-const cellKey = (vendorId: string, sku: string) => `${vendorId}::${sku}`
+// Cell grain is vendor × product × warehouse (VR-01). An empty warehouseId is the
+// warehouse-agnostic bucket used only by no-PO exclusions (which are counted, not
+// averaged, so their warehouse never matters).
+const cellKey = (vendorId: string, sku: string, warehouseId: string) => `${vendorId}::${sku}::${warehouseId}`
 
 function sampleIndex(): Map<string, LeadTimeSample[]> {
   if (indexCache) return indexCache
@@ -278,16 +293,19 @@ function sampleIndex(): Map<string, LeadTimeSample[]> {
   const add = (s: LeadTimeSample) => {
     // A no-PO exclusion has no vendor to attribute to (that is precisely what is
     // missing), so it is filed per SKU under an empty vendor and counted, not averaged.
-    const key = cellKey(s.vendorId, s.sku)
+    const key = cellKey(s.vendorId, s.sku, s.warehouseId)
     const list = index.get(key)
     if (list) list.push(s)
     else index.set(key, [s])
   }
 
   for (const s of documentSamples(cfg)) add(s)
+  const whs = leadTimeWarehouses()
   for (const vi of vendorItems) {
     if (!vi.active) continue
-    for (const s of modelledSamples(vi.vendorId, vi.sku, cfg)) add(s)
+    for (const wh of whs) {
+      for (const s of modelledSamples(vi.vendorId, vi.sku, wh, cfg)) add(s)
+    }
   }
 
   indexCache = index
@@ -298,14 +316,26 @@ export function invalidateLeadTimeHistory(): void {
   indexCache = null
 }
 
-/** Every sample for a vendor×product cell, eligible and excluded alike. */
-export function leadTimeSamplesFor(vendorId: string, sku: string): LeadTimeSample[] {
-  return sampleIndex().get(cellKey(vendorId, sku)) ?? []
+/**
+ * Every sample for a vendor×product cell, eligible and excluded alike. Pass a
+ * `warehouseId` for that warehouse's cell (VR-01); omit it to aggregate across the
+ * whole network (vendor-level views and coverage metrics).
+ */
+export function leadTimeSamplesFor(vendorId: string, sku: string, warehouseId?: string): LeadTimeSample[] {
+  const idx = sampleIndex()
+  if (warehouseId !== undefined) return idx.get(cellKey(vendorId, sku, warehouseId)) ?? []
+  const prefix = `${vendorId}::${sku}::`
+  const out: LeadTimeSample[] = []
+  for (const [k, list] of idx) if (k.startsWith(prefix)) out.push(...list)
+  return out
 }
 
 /** Receipts for this SKU skipped because nothing upstream ordered them (AC-02). */
 export function noPoReceiptCount(sku: string): number {
-  return (sampleIndex().get(cellKey('', sku)) ?? []).length
+  const prefix = `::${sku}::`
+  let n = 0
+  for (const [k, list] of sampleIndex()) if (k.startsWith(prefix)) n += list.length
+  return n
 }
 
 /**
@@ -338,6 +368,7 @@ export function deriveLeadTime(
   vendorId: string | null,
   sku: string,
   cfg: ReplenishmentConfig = getReplenishmentConfig(),
+  warehouseId?: string,
 ): DerivedLeadTime {
   const excludedNoPo = noPoReceiptCount(sku)
   const empty = { samples: [] as LeadTimeSample[], sampleSize: 0, excludedNoPo }
@@ -347,8 +378,10 @@ export function deriveLeadTime(
   // nothing about vendors, so they still apply. Short-circuiting to 'none' here
   // would push every vendorless SKU into Needs setup and strand it there, when
   // US-022 AC-06 explicitly allows a request to be raised without a bound vendor.
+  // Tier 1 is scoped to the given warehouse (VR-01); omitting warehouseId
+  // aggregates across the network for vendor-level views.
   const eligible = vendorId
-    ? leadTimeSamplesFor(vendorId, sku)
+    ? leadTimeSamplesFor(vendorId, sku, warehouseId)
         .filter((s) => !s.excluded && s.leadDays >= 1)
         .sort((a, b) => (a.receiptDate < b.receiptDate ? 1 : -1))
         .slice(0, cfg.leadTimeSampleCount)
@@ -400,15 +433,24 @@ export function isEstimatedTier(tier: LeadTimeTier): boolean {
   return tier !== 'computed' && tier !== 'manual'
 }
 
-/** Share of active vendor×product cells resolving at Tier 1 — the OBS-02 metric. */
+/**
+ * Share of active vendor×product×WAREHOUSE cells resolving at Tier 1 — the OBS-02
+ * metric, at the grain lead time is actually computed (VR-01). A cell falls below
+ * Tier 1 when that warehouse's own PO→GR history is too thin, which is exactly
+ * what the metric should surface.
+ */
 export function computedLeadTimeCoverage(): { computed: number; total: number; pct: number } {
   const cfg = getReplenishmentConfig()
-  const cells = vendorItems.filter((v) => v.active)
+  const whs = leadTimeWarehouses()
   let computed = 0
-  for (const v of cells) {
-    if (deriveLeadTime(v.vendorId, v.sku, cfg).tier === 'computed') computed++
+  let total = 0
+  for (const v of vendorItems) {
+    if (!v.active) continue
+    for (const wh of whs) {
+      total++
+      if (deriveLeadTime(v.vendorId, v.sku, cfg, wh).tier === 'computed') computed++
+    }
   }
-  const total = cells.length
   return { computed, total, pct: total ? Math.round((computed / total) * 100) : 0 }
 }
 

@@ -644,7 +644,7 @@ export function buildRow(
   // Lead time is MEASURED from this vendor+product's PO→receipt history, then
   // falls down the ladder (US-001 VR-04). A hand-entered value outranks the whole
   // ladder — it is the buyer telling the system something it could not observe.
-  const derivedLead = deriveLeadTime(vendorItem?.vendorId ?? null, sku, cfg)
+  const derivedLead = deriveLeadTime(vendorItem?.vendorId ?? null, sku, cfg, warehouseId)
   const manualLead = settings.manualLeadTimeDays
   const leadTimeDays = manualLead ?? derivedLead.days ?? cfg.fallbackLeadTimeDays
   const leadTimeTier: LeadTimeTier = manualLead !== null ? 'manual' : derivedLead.tier
@@ -1080,7 +1080,6 @@ export function recommendedMinStock(
   asOf: string = REPL_ASOF_ISO,
 ): MinStockRecommendation {
   const vendorItem = preferredVendorItem(sku) ?? null
-  const derived = deriveLeadTime(vendorItem?.vendorId ?? null, sku, cfg)
 
   let best: MinStockRecommendation | null = null
   let count = 0
@@ -1089,6 +1088,8 @@ export function recommendedMinStock(
     if (!warehouseProducts(wh.id).some((p) => p.sku === sku)) continue
     count++
 
+    // Lead time is measured per warehouse (VR-01), so it is derived inside the loop.
+    const derived = deriveLeadTime(vendorItem?.vendorId ?? null, sku, cfg, wh.id)
     const settings = effectiveSettings(sku, wh.id, cfg)
     const velocity = velocityFor(sku, wh.id, cfg, asOf)
     const safetyDays = safetyDaysOverride ?? settings.safetyDays
@@ -1122,13 +1123,15 @@ export function recommendedMinStock(
 
   // Nothing to compute from yet — a brand-new product, or one that has never
   // moved. Report that honestly rather than inventing a floor (US-003 CON-02).
+  // No warehouse to attribute to here, so lead time is the network-aggregate.
+  const derivedAgg = deriveLeadTime(vendorItem?.vendorId ?? null, sku, cfg)
   return {
     value: null,
     avgDailySales: 0,
-    leadTimeDays: derived.days ?? cfg.fallbackLeadTimeDays,
-    leadTimeTier: derived.tier,
-    leadTimeEstimated: isEstimatedTier(derived.tier),
-    leadTimeSampleSize: derived.sampleSize,
+    leadTimeDays: derivedAgg.days ?? cfg.fallbackLeadTimeDays,
+    leadTimeTier: derivedAgg.tier,
+    leadTimeEstimated: isEstimatedTier(derivedAgg.tier),
+    leadTimeSampleSize: derivedAgg.sampleSize,
     preferredVendorId: vendorItem?.vendorId ?? null,
     preferredVendorName: vendorItem ? vendorNameFor(vendorItem.vendorId) : '',
     safetyDays: safetyDaysOverride ?? cfg.safetyDaysGlobal,

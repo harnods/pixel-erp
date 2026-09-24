@@ -13,11 +13,13 @@ import {
   isEstimatedTier, leadTimeTierLabel, noPoReceiptCount,
 } from '~/data/leadTimeHistory'
 import { vendorItems } from '~/data/vendorItems'
+import { warehouses } from '~/data/warehouses'
 import { getReplenishmentConfig, REPL_DEFAULTS } from '~/data/replenishmentConfig'
 import { PRODUCTS } from '~/data/inventory'
 
 const cfg = getReplenishmentConfig()
 const active = vendorItems.filter((v) => v.active)
+const activeWarehouses = warehouses.filter((w) => w.status === 'active').map((w) => w.id)
 
 describe('sample eligibility (US-001 VR-02 / AC-02)', () => {
   it('no eligible sample is ever a 0-day lead time', () => {
@@ -109,9 +111,11 @@ describe('the resolution ladder (VR-04)', () => {
     }
   })
 
-  it('falls to the vendor default when samples are too thin (AC-03)', () => {
+  it('falls to the vendor default when a warehouse cell is too thin (AC-03, per warehouse)', () => {
+    // Lead time is now per vendor×product×warehouse (VR-01), so thin cells are
+    // found at that grain — a warehouse whose own PO→GR history is sparse.
     const thin = active
-      .map((v) => ({ v, d: deriveLeadTime(v.vendorId, v.sku, cfg) }))
+      .flatMap((v) => activeWarehouses.map((wh) => ({ v, d: deriveLeadTime(v.vendorId, v.sku, cfg, wh) })))
       .filter((x) => x.d.tier === 'vendor-default')
     expect(thin.length).toBeGreaterThan(0)
     for (const { v, d } of thin) {
@@ -149,8 +153,9 @@ describe('the resolution ladder (VR-04)', () => {
 
 describe('coverage metric (OBS-02)', () => {
   it('reports a real Tier-1 share, not 0% or 100%', () => {
+    // Coverage is measured per vendor×product×warehouse cell (VR-01).
     const cov = computedLeadTimeCoverage()
-    expect(cov.total).toBe(active.length)
+    expect(cov.total).toBe(active.length * activeWarehouses.length)
     expect(cov.computed).toBeGreaterThan(0)
     expect(cov.computed).toBeLessThan(cov.total)
     expect(cov.pct).toBeGreaterThan(0)

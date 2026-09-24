@@ -28,6 +28,7 @@ import {
   buildRow, invalidateReplenishmentCaches, isManualFloorTooLow, productActionRollup,
   warehouseMinStockRollup,
 } from '~/data/replenishment'
+import { deriveLeadTime } from '~/data/leadTimeHistory'
 import { getSkuWarehouseOverride, saveSkuWarehouseOverride } from '~/data/replenishmentSettings'
 import { replenishmentRevision } from '~/data/replenishmentStore'
 import { cutoverState } from '~/data/wmsCutover'
@@ -179,6 +180,30 @@ const preferredVendor = computed(() => {
   void vendorTick.value
   return product.value ? preferredVendorItem(product.value.sku) : undefined
 })
+
+/**
+ * Lead time is derived per vendor × product × WAREHOUSE (US-001 VR-01), so a
+ * vendor no longer has one number — it has one per warehouse the product is
+ * stocked in. Show the range across those warehouses (or a single value when
+ * they agree); the authoritative per-warehouse figures live on the Stock-by-
+ * warehouses tab.
+ */
+function vendorLeadLabel(vendorId: string): string {
+  void vendorTick.value
+  void replenishmentRevision.value
+  const sku = product.value?.sku
+  if (!sku) return '—'
+  const days = warehouseStock.value
+    .map((s) => deriveLeadTime(vendorId, sku, undefined, s.warehouseId).days)
+    .filter((d): d is number => d != null)
+  if (!days.length) {
+    const d = deriveLeadTime(vendorId, sku).days
+    return d != null ? `${d} days` : '—'
+  }
+  const min = Math.min(...days)
+  const max = Math.max(...days)
+  return min === max ? `${min} days` : `${min}–${max} days`
+}
 
 /** MOQ in the purchase unit, plus what that means in stock units — "4 Pallet" is
  *  meaningless on its own when a pallet is 20 sacks. */
@@ -841,7 +866,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                 <template v-if="preferredVendor">
                   <span>{{ vendorNameFor(preferredVendor.vendorId) }}</span>
                   <span class="pd-vendor-note">
-                    Lead time {{ preferredVendor.leadTimeDays }} days ·
+                    Lead time {{ vendorLeadLabel(preferredVendor.vendorId) }} ·
                     MOQ {{ moqLabel(preferredVendor.moq, preferredVendor.purchaseUnit, preferredVendor.unitsPerPurchaseUnit) }}
                   </span>
                 </template>
@@ -1070,7 +1095,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                         <MpBadge v-if="vi.isPreferred" for="tableStatus" type="completed">Preferred</MpBadge>
                         <span v-else class="pd-vendor-alt">Alternate</span>
                       </td>
-                      <td class="pd-td pd-td--num">{{ vi.leadTimeDays }} days</td>
+                      <td class="pd-td pd-td--num">{{ vendorLeadLabel(vi.vendorId) }}</td>
                       <td class="pd-td pd-td--num">{{ vi.moq.toLocaleString('id-ID') }}</td>
                       <td class="pd-td">
                         {{ vi.purchaseUnit }}
@@ -1091,6 +1116,9 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
               <p class="pd-vendor-hint">
                 An order is raised to the vendor's minimum, then rounded up to a whole pack.
                 The preferred vendor is used by default when a draft purchase order is created.
+                Lead time is measured per warehouse from each location's own purchase-to-receipt
+                history, so it can differ by warehouse — see the Stock by warehouses tab for the
+                figure each warehouse uses.
               </p>
             </div>
             <div v-else class="empty-full">

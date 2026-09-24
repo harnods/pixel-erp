@@ -18,6 +18,7 @@ import { getReplenishmentConfig } from '~/data/replenishmentConfig'
 import { effectiveSettings } from '~/data/replenishmentSettings'
 import { warehouseProducts, PRODUCTS } from '~/data/inventory'
 import { preferredVendorItem } from '~/data/vendorItems'
+import { deriveLeadTime } from '~/data/leadTimeHistory'
 import { REPL_COLD_START_SKUS } from '~/data/demandHistory'
 
 const cfg = getReplenishmentConfig()
@@ -92,6 +93,7 @@ describe('grain — a SKU-level default warehouses inherit (US-024 AC-03)', () =
   it('takes the highest per-warehouse figure, so the floor covers the busiest', () => {
     const sku = movingSku()
     const r = recommendedMinStock(sku, undefined, cfg)
+    const vendorId = preferredVendorItem(sku)?.vendorId ?? null
 
     let highest = 0
     for (const wh of replenishmentWarehouses()) {
@@ -99,7 +101,9 @@ describe('grain — a SKU-level default warehouses inherit (US-024 AC-03)', () =
       const v = velocityFor(sku, wh.id, cfg).avgDailySales
       if (v <= 0) continue
       const settings = effectiveSettings(sku, wh.id, cfg)
-      highest = Math.max(highest, Math.ceil(v * (r.leadTimeDays + settings.safetyDays)))
+      // Lead time is per warehouse (VR-01), so mirror the engine per warehouse.
+      const lead = settings.manualLeadTimeDays ?? deriveLeadTime(vendorId, sku, cfg, wh.id).days ?? cfg.fallbackLeadTimeDays
+      highest = Math.max(highest, Math.ceil(v * (lead + settings.safetyDays)))
     }
     expect(r.value).toBe(highest)
   })
