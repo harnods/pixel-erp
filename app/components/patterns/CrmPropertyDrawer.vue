@@ -315,8 +315,8 @@ function save() {
                 <div class="cpd-opt-head">
                   <span class="cpd-label">{{ t('Options') }} ({{ (config.options ?? []).length }})</span>
                   <div class="cpd-opt-actions">
-                    <button v-if="(config.options ?? []).length > 1" type="button" class="cpd-link" @click="sortOptionsAZ">{{ t('Sort A–Z') }}</button>
-                    <button v-if="(config.options ?? []).length" type="button" class="cpd-link" @click="clearOptions">{{ t('Clear all') }}</button>
+                    <MpButton v-if="(config.options ?? []).length > 1" variant="link" class="cpd-link" @click="sortOptionsAZ">{{ t('Sort A–Z') }}</MpButton>
+                    <MpButton v-if="(config.options ?? []).length" variant="link" class="cpd-link" @click="clearOptions">{{ t('Clear all') }}</MpButton>
                   </div>
                 </div>
                 <div v-for="(opt, i) in (config.options ?? [])" :key="i" class="cpd-opt-row">
