@@ -152,7 +152,7 @@ const addPropOptions = computed(() => {
   const own = new Set(sectionAllProps(section))
   return props.properties
     .filter((p) => own.has(p.id) || !elsewhere.has(p.id))
-    .map((p) => ({ id: p.id, name: p.name, subtitle: p.variableName, icon: defaultPropertyIcon(p.type) }))
+    .map((p) => ({ id: p.id, name: p.name, subtitle: '', icon: defaultPropertyIcon(p.type) }))
 })
 // Reconcile the drawer's picked set into the section's columns: drop de-selected
 // ids from every column, append newly-picked ids to the shortest column (keeps
@@ -456,7 +456,6 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                   <MpIcon :name="prop(pid)?.type ? defaultPropertyIcon(prop(pid)!.type) : 'text-editor-text'" size="sm" class="dlb-prop-type" />
                   <div class="dlb-prop-text">
                     <span class="dlb-prop-label">{{ prop(pid)?.name ?? pid }}</span>
-                    <span class="dlb-prop-var">{{ prop(pid)?.variableName ?? pid }}</span>
                   </div>
                   <MpTooltip v-if="section.conditions?.[pid]" :id="`dlb-cond-${section.id}-${pid}`" :label="t('Has conditional logic')" placement="top" use-portal>
                     <MpIcon name="condition" size="sm" class="dlb-prop-cond" />
@@ -627,7 +626,6 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
         <MpIcon :name="ghost.icon" size="sm" class="dlb-prop-type" />
         <div class="dlb-prop-text">
           <span class="dlb-prop-label">{{ ghost.label }}</span>
-          <span class="dlb-prop-var">{{ ghost.variable }}</span>
         </div>
       </div>
     </Teleport>

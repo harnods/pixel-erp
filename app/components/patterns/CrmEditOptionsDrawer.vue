@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { MpButton, MpIcon, MpInput, MpTooltip } from '@mekari/pixel3'
-import type { DealProperty, DealPropertyOption } from '~/data/crm'
+import { toVariableName, type DealProperty, type DealPropertyOption } from '~/data/crm'
 
 const props = defineProps<{ open: boolean; property: DealProperty | null }>()
 const emit = defineEmits<{ 'update:open': [boolean]; save: [{ id: string; options: DealPropertyOption[] }] }>()
@@ -47,14 +47,8 @@ function save() {
             <p v-else class="eod-hint">{{ t('Add, rename, or remove options for this property.') }}</p>
 
             <div class="eod-opt-section">
-              <div class="eod-opt-cols" :class="{ 'eod-opt-cols--no-del': !canAddDelete() }">
-                <span class="eod-opt-col">{{ t('Label') }}</span>
-                <span class="eod-opt-col">{{ t('Variable name') }}</span>
-                <span v-if="canAddDelete()" class="eod-opt-col--x" aria-hidden="true" />
-              </div>
               <div v-for="(opt, i) in options" :key="i" class="eod-opt-row" :class="{ 'eod-opt-row--no-del': !canAddDelete() }">
-                <MpInput :id="`eod-opt-label-${i}`" v-model="opt.label" is-full-width :aria-label="t('Label')" />
-                <MpInput :id="`eod-opt-value-${i}`" v-model="opt.value" is-full-width :aria-label="t('Variable name')" :is-read-only="scope === 'rename'" />
+                <MpInput :id="`eod-opt-label-${i}`" :model-value="opt.label" is-full-width :aria-label="t('Label')" @update:model-value="(v: string) => { opt.label = v; if (canAddDelete()) opt.value = toVariableName(v) || opt.value }" />
                 <MpTooltip v-if="canAddDelete()" :id="`eod-opt-rm-${i}`" :label="t('Remove')" placement="top" use-portal>
                   <MpButton class="eod-opt-remove" :aria-label="t('Remove')" @click="removeOption(i)"><MpIcon name="minus-circular" size="md" /></MpButton>
                 </MpTooltip>
@@ -91,9 +85,8 @@ function save() {
 .eod-hint { margin: 0; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-default, #080d0e); }
 
 .eod-opt-section { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.eod-opt-cols, .eod-opt-row { display: grid; grid-template-columns: 1fr 1fr 32px; gap: var(--mp-spacing-2); align-items: center; }
-.eod-opt-row--no-del, .eod-opt-cols--no-del { grid-template-columns: 1fr 1fr; }
-.eod-opt-cols { margin-bottom: calc(var(--mp-spacing-1, 4px) - var(--mp-spacing-2, 8px)); }
+.eod-opt-row { display: grid; grid-template-columns: 1fr 32px; gap: var(--mp-spacing-2); align-items: center; }
+.eod-opt-row--no-del { grid-template-columns: 1fr; }
 .eod-opt-col { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-default, #080d0e); }
 .eod-opt-remove { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); padding: 0; border: none; background: transparent; cursor: pointer; border-radius: var(--mp-radii-sm); color: var(--mp-colors-text-secondary, #3a4749); }
 .eod-opt-remove:hover { background: var(--mp-colors-background-neutral-subtle, #f8f9f9); color: var(--mp-colors-text-danger, #a8352d); }

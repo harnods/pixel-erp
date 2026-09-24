@@ -443,7 +443,7 @@ const cardPropOptions = computed(() => {
   }
   for (const p of propList.value) {
     if (byId.has(p.id) || labels.has(p.name.toLowerCase())) continue
-    byId.set(p.id, { id: p.id, name: p.name, subtitle: p.variableName, icon: defaultPropertyIcon(p.type) })
+    byId.set(p.id, { id: p.id, name: p.name, subtitle: '', icon: defaultPropertyIcon(p.type) })
   }
   return [...byId.values()]
 })
@@ -1218,7 +1218,6 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                   :data-devchange="(row as unknown as DealProperty).id === 'company' ? 'crm-company-property-label' : undefined"
                 >
                   <span class="prop-name">{{ (row as unknown as DealProperty).name }}</span>
-                  <span class="prop-varname">{{ (row as unknown as DealProperty).variableName }}</span>
                 </span>
               </template>
               <template #cell-type="{ row }">

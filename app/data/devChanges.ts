@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-property-type-labels',
+    title: 'Properties: consistent field type labels',
+    description:
+      'Field type labels in the Properties table and filter dropdown now use human-readable names (e.g. "Dropdown select" instead of "pick_list") — matching the labels shown in the create property drawer.',
+    date: '2026-09-24',
+    files: ['crm.ts', 'CrmModuleBuilderPage.vue'],
+  },
+  {
     id: 'crm-hide-variable-name',
     title: 'New property: hide Variable name field',
     description:

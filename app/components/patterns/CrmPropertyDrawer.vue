@@ -248,14 +248,8 @@ function save() {
                   <span class="cpd-label">{{ t('Options') }} ({{ (config.options ?? []).length }})</span>
                   <button v-if="(config.options ?? []).length" type="button" class="cpd-link" @click="clearOptions">{{ t('Clear all options') }}</button>
                 </div>
-                <div class="cpd-opt-cols">
-                  <span class="cpd-opt-col">{{ t('Label') }}</span>
-                  <span class="cpd-opt-col">{{ t('Variable name') }}</span>
-                  <span class="cpd-opt-col--x" aria-hidden="true" />
-                </div>
                 <div v-for="(opt, i) in (config.options ?? [])" :key="i" class="cpd-opt-row">
-                  <MpInput :id="`cpd-opt-label-${i}`" v-model="opt.label" is-full-width :aria-label="t('Label')" />
-                  <MpInput :id="`cpd-opt-value-${i}`" v-model="opt.value" is-full-width :aria-label="t('Variable name')" />
+                  <MpInput :id="`cpd-opt-label-${i}`" :model-value="opt.label" is-full-width :aria-label="t('Label')" @update:model-value="(v: string) => { opt.label = v; opt.value = toVariableName(v) }" />
                   <MpTooltip :id="`cpd-opt-rm-${i}`" :label="t('Remove')" placement="top" use-portal>
                     <button type="button" class="cpd-opt-remove" :aria-label="t('Remove')" @click="removeOption(i)"><MpIcon name="minus-circular" size="md" /></button>
                   </MpTooltip>
@@ -313,7 +307,7 @@ function save() {
 .cpd-opt-head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
 .cpd-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-link, #165082); }
 .cpd-link:hover { text-decoration: underline; text-underline-offset: 2px; }
-.cpd-opt-cols, .cpd-opt-row { display: grid; grid-template-columns: 1fr 1fr 32px; gap: var(--mp-spacing-2); align-items: center; }
+.cpd-opt-row { display: grid; grid-template-columns: 1fr 32px; gap: var(--mp-spacing-2); align-items: center; }
 .cpd-opt-col { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); }
 .cpd-opt-remove { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); padding: 0; border: none; background: transparent; cursor: pointer; border-radius: var(--mp-radii-sm); color: var(--mp-colors-text-secondary, #3a4749); }
 .cpd-opt-remove:hover { background: var(--mp-colors-background-neutral-subtle, #f8f9f9); color: var(--mp-colors-text-danger, #a8352d); }

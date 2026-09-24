@@ -1545,6 +1545,21 @@ export function defaultPropertyIcon(fieldType: string): string {
   }
   return API_ICON_MAP[fieldType] ?? (DEAL_PROPERTY_TYPE_ICON as Record<string, string>)[fieldType] ?? 'text-editor-text'
 }
+const API_TYPE_LABEL: Record<string, string> = {
+  single_line_text: 'Single-line text', multiple_line_text: 'Multi-line text',
+  number: 'Number', percentage: 'Number',
+  date: 'Date picker', date_time: 'Date and time picker',
+  pick_list: 'Dropdown select', radio_select: 'Radio select', multi_select: 'Multiple checkboxes',
+  auto_number: 'Number', email: 'Email', phone: 'Phone number', url: 'URL',
+  product_list: 'Product list', file_upload: 'File', image_upload: 'File',
+  single_checkbox: 'Single checkbox', system_boolean: 'Single checkbox',
+  user_reference: 'User', related_list: 'Related list',
+  crm_contact_reference: 'Contact', crm_company_reference: 'Company',
+  system_id: 'Single-line text', system_number: 'Number',
+}
+export function defaultPropertyTypeLabel(fieldType: string): string {
+  return API_TYPE_LABEL[fieldType] ?? fieldType
+}
 // The predefined DEFAULT set — the SINGLE SOURCE for the properties every module
 // gets. Both the Deals module and any custom module are seeded
 // from this list (see defaultDealProperties()), so Settings ▸ Properties and each
@@ -1641,7 +1656,7 @@ export function defaultDealProperties(): DealProperty[] {
     .map((p) => {
       const opts = optionsForDefaultProp(p)
       const prop: DealProperty = {
-        id: p.id, name: p.name, variableName: p.variableName, type: p.fieldType as DealPropertyType,
+        id: p.id, name: p.name, variableName: p.variableName, type: defaultPropertyTypeLabel(p.fieldType) as DealPropertyType,
         system: true, isDefault: true, fillRate: 0,
       }
       if (opts) prop.config = { options: opts }
@@ -1734,9 +1749,9 @@ function normalizeDealProperties(list: DealProperty[]): DealProperty[] {
     return p
   })
 }
-export const dealProperties = reactive<DealProperty[]>(normalizeDealProperties(load('crm-deal-properties-v13', DEAL_PROPERTIES_SEED)))
+export const dealProperties = reactive<DealProperty[]>(normalizeDealProperties(load('crm-deal-properties-v14', DEAL_PROPERTIES_SEED)))
 backfillDefaultPropertyOptions(dealProperties)
-export function persistDealProperties() { saveSnapshot('crm-deal-properties-v13', dealProperties) }
+export function persistDealProperties() { saveSnapshot('crm-deal-properties-v14', dealProperties) }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // GENERIC custom modules — any module created via "+ New module" (Settings ▸
