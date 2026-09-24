@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-deals-exist-in-deals',
+    title: 'Deals: properties aligned to PRD "Exist in Deals"',
+    description:
+      'The Deals module now only shows properties marked "Exist in Deals: TRUE" in the PRD. Properties like Notes, Memo, Description, Priority, billing/shipping addresses, deal value, and product list are excluded from Deals (they remain available for other modules). Detail layout updated accordingly.',
+    date: '2026-09-24',
+    files: ['crm.ts'],
+  },
+  {
     id: 'crm-additional-setup-drawer',
     title: 'New property: additional setup per field type',
     description:
