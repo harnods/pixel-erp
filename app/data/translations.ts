@@ -4006,6 +4006,10 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   // Bulk PR → 1 PO merge
   'Select vendor': 'Pilih vendor',
   'measured per warehouse': 'diukur per gudang',
+  'Product categories': 'Kategori produk',
+  'Add a category from your product catalogue to give it its own defaults below. Anything not listed uses Other categories.': 'Tambahkan kategori dari katalog produk untuk memberinya nilai default sendiri di bawah. Yang tidak terdaftar memakai Kategori lain.',
+  'Add category': 'Tambah kategori',
+  'Every category from your catalogue is already listed.': 'Semua kategori dari katalog Anda sudah terdaftar.',
   'products to order.': 'produk untuk dipesan.',
   'Classifies products by how often they move, so you can focus on the ones worth replenishing.': 'Mengklasifikasikan produk berdasarkan seberapa sering bergerak, jadi Anda bisa fokus ke yang perlu diisi ulang.',
   'Merge into purchase order': 'Gabung jadi pesanan pembelian',

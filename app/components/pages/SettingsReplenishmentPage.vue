@@ -18,6 +18,7 @@ import {
 import { recalculateReplenishment, invalidateReplenishmentCaches } from '~/data/replenishment'
 import { safetyDaysOverrideCount } from '~/data/replenishmentSettings'
 import { CATALOG } from '~/data/catalog'
+import { productCategories, addProductCategory } from '~/data/productCategories'
 
 const { t } = useLocale()
 const { activeScenario } = useScenario()
@@ -37,7 +38,32 @@ const draft = reactive<ReplenishmentConfig>(cloneConfig(getReplenishmentConfig()
 const isEditing = ref(false)
 const error = ref('')
 
-const categories = [...new Set(CATALOG.map((c) => c.category))].sort()
+// Categories that get their own per-category defaults: those with products, any a
+// value is already stored against, plus ones added this session from the picker.
+const extraCategories = reactive<string[]>([])
+const categories = computed(() => {
+  const set = new Set<string>(CATALOG.map((c) => c.category))
+  const maps = [
+    committed.value.safetyDaysByCategory,
+    committed.value.coverageDaysByCategory,
+    committed.value.leadTimeByCategory,
+    committed.value.leadTimeOutlierCapByCategory,
+  ]
+  for (const m of maps) for (const k of Object.keys(m)) set.add(k)
+  for (const c of extraCategories) set.add(c)
+  return [...set].sort()
+})
+
+// The category database, minus categories already listed above — the picker's options.
+const catToAdd = ref('')
+const availableCategories = computed(() => productCategories.filter((c) => !categories.value.includes(c)))
+function addCategory() {
+  const n = catToAdd.value.trim()
+  if (!n) return
+  addProductCategory(n)
+  if (!extraCategories.includes(n)) extraCategories.push(n)
+  catToAdd.value = ''
+}
 
 const fsnBandsOk = computed(() => Number(draft.fsnFastPct) > Number(draft.fsnSlowPct))
 
@@ -170,6 +196,29 @@ const BOUNDARY_OPTIONS = [
         </div>
       </header>
       <p v-if="!canEdit" class="rs-hint">{{ t('Only an admin can change replenishment settings.') }}</p>
+
+      <div class="rs-field">
+        <div class="rs-label">
+          <span class="rs-label-text">{{ t('Product categories') }}</span>
+          <span class="rs-label-desc">{{ t('Add a category from your product catalogue to give it its own defaults below. Anything not listed uses Other categories.') }}</span>
+        </div>
+        <div class="rs-control">
+          <template v-if="isEditing">
+            <div class="rs-cat-chips">
+              <span v-for="cat in categories" :key="cat" class="rs-cat-chip">{{ cat }}</span>
+            </div>
+            <div class="rs-cat-add">
+              <MpSelect id="rs-add-cat" v-model="catToAdd" :class="css({ width: '240px' })">
+                <option value="">{{ t('Select category') }}</option>
+                <option v-for="c in availableCategories" :key="c" :value="c">{{ c }}</option>
+              </MpSelect>
+              <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="addCategory">{{ t('Add category') }}</button>
+            </div>
+            <p v-if="!availableCategories.length" class="rs-value-sub">{{ t('Every category from your catalogue is already listed.') }}</p>
+          </template>
+          <span v-else class="rs-value">{{ categories.join('   ') }}</span>
+        </div>
+      </div>
 
       <h3 class="rs-sub">{{ t('Demand') }}</h3>
 
@@ -599,6 +648,15 @@ const BOUNDARY_OPTIONS = [
 
 .rs-cat-row { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .rs-cat-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); width: 160px; }
+
+/* Product-categories picker */
+.rs-cat-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-3); }
+.rs-cat-chip {
+  padding: 2px 10px; border-radius: 999px;
+  background: var(--mp-background-neutral-subtle); border: 1px solid var(--mp-border-default);
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default);
+}
+.rs-cat-add { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 
 .rs-actions {
   position: sticky; bottom: 0;
