@@ -23,7 +23,7 @@ import { formatDate } from '~/utils/date'
 import { billOfMaterials, catalogProduct, type BillOfMaterials } from '~/data/billOfMaterials'
 import { addWorkOrder, type WorkOrderStatus, type WorkOrderMaterialReservation } from '~/data/workOrders'
 import { raiseStockRequestForWorkOrder } from '~/data/stockRequests'
-import { productionSettings, reservationEnabled } from '~/data/productionSettings'
+import { productionSettings } from '~/data/productionSettings'
 import { STAFF } from '~/data/master'
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
@@ -419,7 +419,6 @@ function saveWorkOrder() {
  * which case applied.
  */
 function raiseStockRequest(wo: { id: string; number: string }) {
-  if (!reservationEnabled()) return
   const planStart = parseDateRange(planDates.value).start
   // The row's Required date is the picker's DISPLAY value (DD/MM/YYYY); every date
   // stored on a request is ISO, so normalise before handing it over.

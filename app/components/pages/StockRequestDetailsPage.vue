@@ -28,7 +28,7 @@ import UnreserveMaterialsModal from '~/components/patterns/UnreserveMaterialsMod
 import { formatDate } from '~/utils/date'
 import {
   stockRequests, stockRequestStatus, lineCovered, lineToTransfer, lineReadiness,
-  isOverdue, canReject, reserveRequestProducts, unreserveRequestProducts, rejectRequest,
+  isOverdue, canReject, canRejectLine, reserveRequestProducts, unreserveRequestProducts, rejectRequestLine,
   reservedTracking, trackingChanged, lineTracking, setReservedBatches, setReservedSerials,
   type StockRequest, type StockRequestLine, type UnreserveDisposition,
 } from '~/data/stockRequests'
@@ -48,6 +48,10 @@ function goWorkOrder() { if (req.value) router.push(`/work-orders/${req.value.wo
 // ─── Roll-ups ──────────────────────────────────────────────────────────────────
 const status = computed(() => req.value ? stockRequestStatus(req.value) : 'requested')
 const lines = computed(() => req.value?.lines ?? [])
+/** Everyone who has changed a line's demand on this request (OPEN-17). */
+const requestors = computed(() => [...new Set(lines.value.map(l => l.requestor))].join(', ') || '—')
+/** W-7 — lines the stockist declined; their demand no longer stands. */
+const rejectedLines = computed(() => lines.value.filter(l => l.rejected))
 const componentCount = computed(() => lines.value.length)
 const reservedLines = computed(() => lines.value.filter(l => lineCovered(l) >= l.qty).length)
 const consumedLines = computed(() => lines.value.filter(l => l.qty > 0 && l.consumed >= l.qty).length)
@@ -129,9 +133,32 @@ function createPurchaseRequest() {
   if (!req.value) return
   router.push({ path: '/purchase-requests/new', query: { fromStockRequest: req.value.id } })
 }
-function reject() {
-  if (!req.value || !rejectRequest(req.value.id)) return
-  toast.notify({ variant: 'success', title: `${req.value.number} ${t('request rejected')}`, maxWidth: 'max-content' })
+/**
+ * W-7 — decline ONE line. Only Additional stock and Adjustment lines can be
+ * rejected; the components the work order itself committed to are not the
+ * warehouse's to refuse.
+ */
+function rejectLine(line: StockRequestLine) {
+  if (!req.value || !rejectRequestLine(req.value.id, line)) return
+  toast.notify({
+    variant: 'success',
+    title: `${line.product} ${t('line rejected')}`,
+    maxWidth: 'max-content',
+  })
+}
+
+/** Decline every eligible line at once — the Actions-list shortcut. */
+function rejectAllTagged() {
+  const r = req.value
+  if (!r) return
+  const rejectable = r.lines.filter(canRejectLine)
+  if (rejectable.length === 0) return
+  for (const line of rejectable) rejectRequestLine(r.id, line)
+  toast.notify({
+    variant: 'success',
+    title: `${rejectable.length} ${t('line rejected on')} ${r.number}`,
+    maxWidth: 'max-content',
+  })
 }
 
 const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
@@ -181,9 +208,11 @@ function saveSerials(serials: string[]) {
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('Stock request') }} {{ req.number }}</h1>
           <ErpStatusBadge :status="status" badge-for="additionalInformation" size="md" />
-          <span v-if="req.kind" class="sr-tag" :class="`sr-tag--${req.kind}`">
-            {{ req.kind === 'additional' ? t('Additional stock') : t('Adjustment') }}
-          </span>
+          <!-- W-7 — one chip per tag carried by this request's LINES. -->
+          <span
+            v-for="tag in [...new Set(req.lines.map(l => l.tag).filter(Boolean))]" :key="tag"
+            class="sr-tag" :class="`sr-tag--${tag}`"
+          >{{ tag === 'additional' ? t('Additional stock') : t('Adjustment') }}</span>
         </div>
       </div>
 
@@ -209,23 +238,27 @@ function saveSerials(serials: string[]) {
             <template v-if="canReject(req)">
               <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
               <MpPopoverList>
-                <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="reject">{{ t('Reject request') }}</MpPopoverListItem>
+                <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="rejectAllTagged">{{ t('Reject added lines') }}</MpPopoverListItem>
               </MpPopoverList>
             </template>
           </MpPopoverContent>
         </MpPopover>
 
-        <button v-if="!req.rejected" class="btn-enterprise btn-enterprise--primary" @click="reserveOpen = true">{{ t('Reserve stock') }}</button>
+        <button class="btn-enterprise btn-enterprise--primary" @click="reserveOpen = true">{{ t('Reserve stock') }}</button>
       </div>
     </header>
 
     <!-- ── Stage ── -->
     <div class="detail-stage">
-      <div v-if="req.rejected" class="srd-banner srd-banner--muted">
+      <div v-if="rejectedLines.length" class="srd-banner srd-banner--muted">
         <MpIcon name="information" size="md" />
-        <span>{{ t('This request was rejected. No further stock actions are available.') }}</span>
+        <span>
+          {{ rejectedLines.length }}
+          {{ rejectedLines.length === 1 ? t('line was rejected and is no longer counted as demand.') : t('lines were rejected and are no longer counted as demand.') }}
+          {{ t('Production resolves a rejected line by readjusting the work order.') }}
+        </span>
       </div>
-      <div v-else-if="transferLines.length" class="srd-banner srd-banner--critical">
+      <div v-if="transferLines.length" class="srd-banner srd-banner--critical">
         <MpIcon name="warning" size="md" />
         <span>
           {{ transferLines.length }}
@@ -241,7 +274,9 @@ function saveSerials(serials: string[]) {
           <div class="srd-summary-grid">
             <div>
               <ContentList :label="t('Request no.')" :value="req.number" />
-              <ContentList :label="t('Requestor')" :value="req.requestor" />
+              <!-- OPEN-17 — requestor is per LINE, so the summary names everyone
+                   who has changed this request's demand; each line names its own. -->
+              <ContentList :label="t('Requestors')" :value="requestors" />
             </div>
             <div>
               <!-- The transaction is a reference on the request, not its identity -->
@@ -283,7 +318,7 @@ function saveSerials(serials: string[]) {
               <template v-if="g.toTransfer > 0"> · <span class="srd-short">{{ g.toTransfer }} {{ t('to transfer') }}</span></template>
             </span>
             <button
-              v-if="!req.rejected && g.toTransfer > 0"
+              v-if="g.toTransfer > 0"
               class="btn-enterprise btn-enterprise--secondary"
               @click="createWarehouseTransfer(g.warehouseId)"
             >{{ t('Create warehouse transfer') }}</button>

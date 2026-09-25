@@ -34,7 +34,7 @@ import { TODAY, TODAY_ISO } from '~/data/master'
 import {
   stockRequests, stockRequestStatus, stockRequestStatusOptions, skuDemandGroups,
   requestRequiredQty, isRequestedTab, isOnDashboard, isActionable, workOrderFor, isOverdue,
-  reserveStock, rejectRequest, canReject,
+  reserveStock, rejectRequestLine, canReject, canRejectLine,
   type StockRequest, type StockRequestLine, type SkuDemandGroup,
 } from '~/data/stockRequests'
 
@@ -72,24 +72,51 @@ const woColumns: TableColumn[] = [
   { key: 'status',              label: t('WO status'),             kind: 'status',                 sortType: 'text' },
   { key: 'destinationWarehouse', label: t('Destination warehouse'), kind: 'name',  sortable: true, sortType: 'text' },
 ]
-// By product (story 2) — one row per SKU PER DESTINATION WAREHOUSE.
+/**
+ * By product — PRD v0.5 W-2, kept at one row per SKU PER DESTINATION WAREHOUSE.
+ *
+ * W-2 names the columns Component · Open transactions · Earliest required ·
+ * Required · Reserved · Remaining · Consumed · Available · Status, and says
+ * availability is shown per warehouse and NEVER summed across them. The
+ * per-warehouse row split is how this build satisfies that: rather than one row
+ * carrying several availability figures, each destination gets its own row, so
+ * every number on a row belongs to one warehouse.
+ *
+ * "Component" is split into SKU code + SKU name, which is how every other product
+ * table in this app reads.
+ */
 const skuColumns: TableColumn[] = [
-  { key: 'lane',       label: '',                              width: '56px', noHeader: true },
-  { key: 'sku',        label: t('SKU code'),                   kind: 'number', sortable: true, sortType: 'text' },
-  { key: 'product',    label: t('SKU name'),                   kind: 'name',   sortable: true, sortType: 'text' },
-  { key: 'required',   label: t('Total qty needed'),                           sortable: true, sortType: 'number', align: 'right' },
+  { key: 'lane',        label: '',                       width: '56px', noHeader: true },
+  { key: 'sku',         label: t('SKU code'),            kind: 'number', sortable: true, sortType: 'text' },
+  { key: 'product',     label: t('SKU name'),            kind: 'name',   sortable: true, sortType: 'text' },
+  { key: 'openWorkOrders', label: t('Open transactions'),                sortable: true, sortType: 'number', align: 'right' },
+  { key: 'earliestRequired', label: t('Earliest required'), kind: 'date', sortable: true, sortType: 'date' },
+  { key: 'required',    label: t('Required'),                            sortable: true, sortType: 'number', align: 'right' },
+  { key: 'reserved',    label: t('Reserved'),                            sortable: true, sortType: 'number', align: 'right' },
+  { key: 'remaining',   label: t('Remaining'),                           sortable: true, sortType: 'number', align: 'right' },
+  { key: 'consumed',    label: t('Consumed'),                            sortable: true, sortType: 'number', align: 'right' },
   { key: 'destinationWarehouse', label: t('Destination warehouse'), kind: 'name', sortable: true, sortType: 'text' },
-  { key: 'available',  label: t('Available qty in destination'),                sortable: true, sortType: 'number', align: 'right' },
-  { key: 'status',     label: t('Status'),                     kind: 'status',                 sortType: 'text' },
+  { key: 'available',   label: t('Available'),                           sortable: true, sortType: 'number', align: 'right' },
+  { key: 'status',      label: t('Status'),              kind: 'status',                 sortType: 'text' },
 ]
 
 // Column show/hide — first column always on; "Last updated" is opt-in (off by default).
 const allWoCols: TableColumn[] = [...woColumns, { key: 'lastUpdated', label: t('Last updated'), kind: 'date' }]
-const columnVisibility = reactive<Record<string, boolean>>(
-  Object.fromEntries(allWoCols.map(c => [c.key, c.key !== 'lastUpdated'])),
-)
-const columnItems = allWoCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+// W-2's full column set runs to twelve, past what fits comfortably, so the product
+// view gets the same show/hide menu the transaction view already has. Consumed is
+// off by default — it only matters once a job has started drawing material.
+const allSkuCols: TableColumn[] = skuColumns
+const columnVisibility = reactive<Record<string, boolean>>({
+  ...Object.fromEntries(allWoCols.map(c => [c.key, c.key !== 'lastUpdated'])),
+  ...Object.fromEntries(allSkuCols.map(c => [`sku.${c.key}`, c.key !== 'consumed'])),
+})
+const columnItems = computed(() => (view.value === 'product'
+  // The lane column is layout, not data — never offered in the menu.
+  ? allSkuCols.filter(c => c.key !== 'lane').map((c, i) => ({ key: `sku.${c.key}`, label: c.label, disabled: i === 0 }))
+  : allWoCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))))
 const visibleWoColumns = computed<TableColumn[]>(() => allWoCols.filter(c => columnVisibility[c.key]))
+const visibleSkuColumns = computed<TableColumn[]>(() =>
+  allSkuCols.filter(c => c.key === 'lane' || columnVisibility[`sku.${c.key}`]))
 function hideColumn(key: string) { columnVisibility[key] = false }
 
 // ─── Prototype scenario (ScenarioFab, bottom-right): populated vs empty ────────
@@ -120,6 +147,9 @@ function matchesDateRange(iso: string, range: Date[] | null): boolean {
 type WoRow = StockRequest & {
   status: string; qty: number; overdue: boolean
   woStartDate: string; destinationWarehouse: string; actionable: boolean
+  /** Everyone who has changed a line on this request (OPEN-17) — per line, so a
+      request can name several people; searched and displayed as one list. */
+  requestors: string
 }
 const woRows = computed<WoRow[]>(() =>
   sourceRequests.value
@@ -136,6 +166,7 @@ const woRows = computed<WoRow[]>(() =>
         woStartDate: w?.planStartDate ?? r.requestDate,
         destinationWarehouse: [...new Set(r.lines.map(l => l.destinationWarehouse))].join(', '),
         actionable: isActionable(r),
+        requestors: [...new Set(r.lines.map(l => l.requestor))].join(', '),
       }
     })
     .sort((a, b) => b.requestDate.localeCompare(a.requestDate)),
@@ -152,7 +183,7 @@ const {
 function matchesWoRow(row: WoRow, s: string, status: string): boolean {
   const matchesSearch = !s
     || row.workOrderNumber.toLowerCase().includes(s)
-    || row.requestor.toLowerCase().includes(s)
+    || row.requestors.toLowerCase().includes(s)
     || row.lines.some(l => l.product.toLowerCase().includes(s) || l.sku.toLowerCase().includes(s))
   const matchesStatus = !status || row.status === status
   const matchesQuickDate = dateFilterMatches(row.requestDate, dateFilter.value, TODAY)
@@ -161,7 +192,7 @@ function matchesWoRow(row: WoRow, s: string, status: string): boolean {
   const kw = f.keyword.toLowerCase().trim()
   const matchesKeyword = !kw
     || row.workOrderNumber.toLowerCase().includes(kw)
-    || row.requestor.toLowerCase().includes(kw)
+    || row.requestors.toLowerCase().includes(kw)
     || row.lines.some(l => l.product.toLowerCase().includes(kw) || l.sku.toLowerCase().includes(kw))
   const matchesDrawerStatus = f.status.length === 0 || f.status.includes(row.status)
   const matchesDrawerDate = matchesDateRange(row.requestDate, f.requestDate)
@@ -263,9 +294,20 @@ function createPurchaseRequest(query: Record<string, string>) {
 }
 const byRequest = (requestId: string) => ({ fromStockRequest: requestId })
 const byComponent = (productIds: string[]) => ({ fromComponent: productIds.join(',') })
+/**
+ * W-7 — rejection is per LINE: only Additional stock and Adjustment lines can be
+ * declined, never the components the work order itself committed to. From the
+ * transaction row this declines every line on the request that is eligible.
+ */
 function reject(req: StockRequest) {
-  if (!rejectRequest(req.id)) return
-  toast.notify({ variant: 'success', title: `${req.workOrderNumber} ${t('request rejected')}`, maxWidth: 'max-content' })
+  const rejectable = req.lines.filter(canRejectLine)
+  if (rejectable.length === 0) return
+  for (const line of rejectable) rejectRequestLine(req.id, line)
+  toast.notify({
+    variant: 'success',
+    title: `${rejectable.length} ${t('line rejected on')} ${req.workOrderNumber}`,
+    maxWidth: 'max-content',
+  })
 }
 
 // Row casts for the template — ErpTablePage hands every row back as a plain
@@ -297,7 +339,7 @@ const exportColumns = computed(() => {
 
 <template>
   <ErpTablePage
-    :columns="view === 'product' ? skuColumns : visibleWoColumns"
+    :columns="view === 'product' ? visibleSkuColumns : visibleWoColumns"
     :rows="(view === 'product' ? skuPaginated : paginated) as unknown as Record<string, unknown>[]"
     :total="view === 'product' ? skuTotal : total"
     :current-page="view === 'product' ? skuPage : currentPage"
@@ -342,7 +384,7 @@ const exportColumns = computed(() => {
           <MpTooltip :label="t('Ask Airene')" placement="bottom">
             <MpButton class="filter-airene-btn" variant="ghost" left-icon="airene-brand" :aria-label="t('Ask Airene')" is-rounded @click="toggleAirene?.()" />
           </MpTooltip>
-          <ColumnSettingsMenu v-if="view === 'transaction'" id="sr-columns" :items="columnItems" :visibility="columnVisibility" />
+          <ColumnSettingsMenu id="sr-columns" :items="columnItems" :visibility="columnVisibility" />
           <MpTooltip :label="t('Export')" placement="bottom">
             <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="exportOpen = true" />
           </MpTooltip>
@@ -407,10 +449,15 @@ const exportColumns = computed(() => {
     </template>
 
     <template #cell-earliestRequired="{ value }">{{ formatDate(value as string) }}</template>
+    <template #cell-openWorkOrders="{ row }">{{ sku(row).openWorkOrders }}</template>
     <template #cell-required="{ row }">{{ sku(row).required }} {{ sku(row).unit }}</template>
     <template #cell-reserved="{ row }">{{ sku(row).reserved }} {{ sku(row).unit }}</template>
+    <template #cell-consumed="{ row }">
+      {{ sku(row).consumed > 0 ? `${sku(row).consumed} ${sku(row).unit}` : '—' }}
+    </template>
 
-    <!-- Remaining — still uncovered after reservations AND on-hand stock -->
+    <!-- Remaining = Required − Reserved − Consumed (W-2). Consumed counts as
+         covered, so a partly issued line never reads as under-reserved. -->
     <template #cell-remaining="{ row }">
       <span :class="{ 'sr-short': sku(row).remaining > 0 }">
         {{ sku(row).remaining > 0 ? `${sku(row).remaining} ${sku(row).unit}` : '—' }}
@@ -435,10 +482,19 @@ const exportColumns = computed(() => {
             <template v-if="col.key === 'lane'" />
             <span v-else-if="col.key === 'sku'" class="sr-child-wo">
               <span class="cell-link" @click="viewDetails(entry.requestId)">{{ entry.workOrderNumber }}</span>
-              <span v-if="entry.kind" class="sr-tag" :class="`sr-tag--${entry.kind}`">{{ entry.kind === 'additional' ? t('Additional stock') : t('Adjustment') }}</span>
+              <!-- W-7 — the tag is a property of the LINE, so it sits on the
+                   breakdown row, not on the aggregated product row above. -->
+              <span v-if="entry.tag" class="sr-tag" :class="`sr-tag--${entry.tag}`">{{ entry.tag === 'additional' ? t('Additional stock') : t('Adjustment') }}</span>
             </span>
-            <template v-else-if="col.key === 'product'">{{ t('Required by') }} {{ formatDate(entry.requiredDate) }}</template>
+            <!-- Requestor: who last CHANGED this line's demand (OPEN-17). -->
+            <template v-else-if="col.key === 'product'">{{ entry.requestor }}</template>
+            <template v-else-if="col.key === 'earliestRequired'">{{ formatDate(entry.requiredDate) }}</template>
             <template v-else-if="col.key === 'required'">{{ entry.qty }} {{ sku(row).unit }}</template>
+            <template v-else-if="col.key === 'reserved'">{{ entry.covered }} {{ sku(row).unit }}</template>
+            <template v-else-if="col.key === 'available'">{{ entry.destAvailable }} {{ sku(row).unit }}</template>
+            <template v-else-if="col.key === 'status'">
+              <ErpStatusBadge :status="entry.status" />
+            </template>
           </td>
           <td v-if="showSpacer" class="sr-child-td sr-child-td--spacer" />
           <td class="sr-child-td sr-child-td--actions" />
@@ -478,7 +534,12 @@ const exportColumns = computed(() => {
           </svg>
         </span>
         <span class="cell-link cell-text" @click.stop="viewDetails(wo(row).id)">{{ t('Work order') }} {{ wo(row).workOrderNumber }}</span>
-        <span v-if="wo(row).kind" class="sr-tag" :class="`sr-tag--${wo(row).kind}`">{{ wo(row).kind === 'additional' ? t('Additional stock') : t('Adjustment') }}</span>
+        <!-- W-7 — tags live on LINES now, so a request shows one chip per tag its
+             lines carry rather than a single tag of its own. -->
+        <span
+          v-for="tag in [...new Set(wo(row).lines.map(l => l.tag).filter(Boolean))]" :key="tag"
+          class="sr-tag" :class="`sr-tag--${tag}`"
+        >{{ tag === 'additional' ? t('Additional stock') : t('Adjustment') }}</span>
       </span>
     </template>
 

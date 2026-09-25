@@ -30,7 +30,7 @@ import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import { warehouses } from '~/data/warehouses'
 import ReserveMaterialsModal from '~/components/patterns/ReserveMaterialsModal.vue'
 import UnreserveMaterialsModal from '~/components/patterns/UnreserveMaterialsModal.vue'
-import { productionSettings, reservationOnWorkOrder, reservationEnabled } from '~/data/productionSettings'
+import { productionSettings, reservationOnWorkOrder } from '~/data/productionSettings'
 import {
   raiseStockRequestForWorkOrder, requestForWorkOrder, workOrderReadiness, startGate,
   changedTrackingLines, reservedTracking,
@@ -147,8 +147,6 @@ const rawEst = (r: { purchaseCost: number; needed: number }) => r.purchaseCost *
 function syncStockRequest() {
   const w = wo.value
   if (!w || rawMaterials.value.length === 0) return
-  // "Product components must be reserved" off → work orders raise no request.
-  if (!reservationEnabled()) return
   // Seeded work orders predate the save-time hook (C-4) — back-fill their request
   // on first open, using the same builder so nothing can diverge. Already-reserved
   // state is untouched: raising is idempotent and never auto-reserves here.
@@ -185,13 +183,17 @@ function reservedTrackingLabel(productId: string): string {
   return batches.map(b => `${b.batchNo} (${b.qty})`).join(', ')
 }
 const reservationLines = computed(() => stockRequest.value?.lines ?? [])
-const materialReadiness = computed(() => reservationEnabled() && wo.value ? workOrderReadiness(wo.value.id) : undefined)
+const materialReadiness = computed(() => wo.value ? workOrderReadiness(wo.value.id) : undefined)
 
+// Reservation is always on (v0.5 L-12) — there is no longer a setting that turns
+// the whole flow off, so the Reserved column and readiness badge always apply.
+const reservationOn = computed(() => true)
 // S-2 — under Two-step, EVERY reservation entry point is hidden (not disabled)
 // and an info badge points to Stock requests instead.
-const reservationOn = computed(() => reservationEnabled())
 const canReserveHere = computed(() => reservationOnWorkOrder())
-// D-6 — unreserve is allowed only while Not started; starting locks it.
+// UC-03 — unreserve is allowed only while Not started. Once the work order has
+// started it is reachable ONLY inside the Adjust modal, where the Adjust reason
+// stands in for the approval that path would otherwise need.
 const notStarted = computed(() => wo.value?.status === 'not started')
 const hasReservation = computed(() => reservationLines.value.some(l => l.reserved > 0))
 const showReservationMenu = computed(() => canReserveHere.value && rawMaterials.value.length > 0)
@@ -237,8 +239,7 @@ function reservedFor(productId: string): number {
 // order with limited stock" needs EVERY component reserved (each may be partial).
 const gate = computed(() => wo.value
   ? startGate(wo.value.id, {
-      reservationOn: reservationEnabled(),
-      allowPartialProduction: productionSettings.allowPartialProduction,
+      partialMode: productionSettings.partialMode,
       allowStartWithLimitedStock: productionSettings.allowStartWithLimitedStock,
     })
   : { allowed: true as const })
