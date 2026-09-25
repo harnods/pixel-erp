@@ -500,10 +500,10 @@ function create() {
                 <MpButton :id="`pc-wp-remove-${pi}-${wi}`" variant="ghost" is-rounded left-icon="minus-circular" :aria-label="t('Remove work package')" class="pm-row-remove" @click="ph.wps.splice(wi, 1)" />
               </div>
               <div><MpButton :id="`pc-wp-add-${pi}`" variant="ghost" is-rounded left-icon="add" @click="ph.wps.push(newWp())">{{ t('Work package') }}</MpButton></div>
+              <PmActionError v-if="pi === 0" :id="`pc-step3-error-${pi}`" :error="touched ? step3Error : ''" />
             </div>
             <div><MpButton id="pc-add-phase" variant="secondary" is-rounded left-icon="add" @click="addPhase">{{ t('New phase') }}</MpButton></div>
           </template>
-          <PmActionError id="pc-step3-error" :error="touched ? step3Error : ''" />
         </div>
 
         <!-- ── Step 4: review (banners sit at the top of the stage, above the stepper) ── -->

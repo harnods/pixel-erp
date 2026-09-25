@@ -305,7 +305,11 @@
 .pm-phase-head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3, 12px); }
 /* One grid for the phase fields and its work-package rows, so the name inputs share a width.
    a: type+qty+unit · b: qty+unit · c: RAB+weight only · d: name only. Last track = remove. */
-.pm-srow { display: grid; gap: var(--mp-spacing-3, 12px); align-items: end; }
+/* Every cell carries its own label, so the row aligns at the TOP: a field's error
+   caption then grows the row downwards instead of shifting its neighbours. */
+.pm-srow { display: grid; gap: var(--mp-spacing-3, 12px); align-items: start; }
+/* The row-remove button has no label above it — nudge it down to the control line. */
+.pm-srow .pm-row-remove { margin-top: var(--mp-spacing-6, 24px); }
 .pm-srow--a { grid-template-columns: minmax(0, 1fr) var(--mp-sizes-40, 160px) var(--mp-sizes-32, 128px) var(--mp-sizes-28, 112px) minmax(0, var(--mp-sizes-56, 224px)) var(--mp-sizes-10, 40px); }
 .pm-srow--b { grid-template-columns: minmax(0, 1fr) var(--mp-sizes-32, 128px) var(--mp-sizes-28, 112px) var(--mp-sizes-10, 40px); }
 .pm-srow--c { grid-template-columns: minmax(0, 1fr) var(--mp-sizes-40, 160px) var(--mp-sizes-32, 128px) var(--mp-sizes-10, 40px); }
