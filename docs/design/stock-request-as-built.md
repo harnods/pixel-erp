@@ -107,10 +107,11 @@ is used for the open-count badge, so switching is a one-line change.
   S-4 on + partial consume → at least one reserved > 0; S-4 on + partial completion
   → every component reserved > 0; S-4 on + neither → full reservation. Counts
   reservation, never availability.
-- **UC-06** — Edit updates the line in place; Adjust puts an increase on a new
-  Adjustment-tagged line carrying only the delta with its own request date, reduces
-  Adjustment-first on a decrease, and makes the editor that line's requestor. The
-  Adjust form requires a reason and a per-line request date of today or later.
+- **UC-06 (Adjust half)** — Adjust puts an increase on a new Adjustment-tagged line
+  carrying only the delta with its own request date, reduces Adjustment-first on a
+  decrease, and makes the adjusting user that line's requestor. The form requires a
+  reason and a per-line request date of today or later. **The Edit half is not
+  reachable — see §5.**
 - **UC-03 / D-6** — Unreserve from the Reservation menu only while Not started;
   after start it is reachable only inside Adjust. Full remaining qty per selected
   component, never partial (R-8). Mandatory disposition, optional reason.
@@ -136,6 +137,7 @@ is used for the open-count badge, so switching is a one-line change.
 | Area | Status |
 | --- | --- |
 | **Project MTO** (project stock, hard peg, batch costing) | Out of scope — separate PRD, ships later as an overlay |
+| **UC-06 WO Edit (Not started)** | Data layer built and used by Adjust (`applyDemandChanges(…, 'edit')`, `blockedByReservation`), but **unreachable**: this prototype has no work-order edit screen at all — `CreateWorkOrderPage` serves `/work-orders/new` only, and the `Edit` action on WO detail has never been wired. Reaching it means building an edit page, which is a larger piece of work than the reservation scope. So "update the line in place, editor becomes requestor, block below reserved with an inline unreserve-first error" is specified and coded but cannot be exercised |
 | **UC-05 / UC-07 / UC-08 / UC-10** end-to-end verification | The consumption hook draws reservation down and a return reverses it, but the full pick/issue and goods-receipt paths are unverified against v0.5 (**OPEN-30**) |
 | Notifications (in-app + email) on qty change and rejection | Not built — prototype has no notification surface |
 | RBAC per role (Production / PPIC / Manager production) | Not built — single demo user |
