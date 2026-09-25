@@ -4020,6 +4020,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Keep category': 'Pertahankan kategori',
   'This clears its safety days, order coverage, lead time and gap-cap defaults. Products in this category will use Other categories. You can add it again later.': 'Ini menghapus nilai default hari aman, cakupan pesanan, waktu tunggu, dan batas jeda kategori ini. Produk di kategori ini akan memakai Kategori lain. Anda bisa menambahkannya lagi nanti.',
   'No categories have their own defaults — everything uses Other categories.': 'Belum ada kategori dengan nilai default sendiri — semua memakai Kategori lain.',
+  'Estimated lead time': 'Estimasi waktu tunggu',
+  'Waiting for real lead time': 'Menunggu waktu tunggu asli',
   'None — everything uses Other categories': 'Tidak ada — semua memakai Kategori lain',
   'products to order.': 'produk untuk dipesan.',
   'Classifies products by how often they move, so you can focus on the ones worth replenishing.': 'Mengklasifikasikan produk berdasarkan seberapa sering bergerak, jadi Anda bisa fokus ke yang perlu diisi ulang.',

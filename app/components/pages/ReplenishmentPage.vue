@@ -191,9 +191,11 @@ const ALL_COLUMNS: TableColumn[] = [
   { key: 'productName',   label: 'Product',        width: '280px', sortable: true, sortType: 'text' },
   { key: 'sku',           label: 'SKU',            width: '104px', sortable: true, sortType: 'text' },
   { key: 'fsnClass',      label: 'FSN',            width: '116px', sortable: true, sortType: 'text' },
-  // Demand-reading flags (Volatile / Provisional) — a classification of the demand
-  // pattern, distinct from FSN's movement class, so it gets its own column.
-  { key: 'demandSignal',  label: 'Demand signal',  width: '150px' },
+  // General signals (US-013 AC-01 §4): how reliable / early the numbers behind the
+  // recommendation are — the demand read (Provisional / Volatile demand) AND the
+  // lead-time basis (Estimated lead time / Waiting for real lead time). Distinct
+  // from FSN's movement class, so it gets its own column.
+  { key: 'signals',       label: 'Signals',        width: '210px' },
   { key: 'warehouseName', label: 'Warehouse',      width: '170px', sortable: true, sortType: 'text' },
   // The stock group, in StockTables.vue's vocabulary and widths so it reads as
   // the same table the user already knows. `available` is what days-of-cover
@@ -229,7 +231,6 @@ const sortableRows = computed(() =>
   paginated.value.map((row) => ({
     ...row,
     fsnClass: row.fsn.committed,
-    demandSignal: row.flags.provisional ? 'provisional' : row.flags.volatile ? 'volatile' : '',
     onHandQty: row.atp.onHand,
     reservedQty: row.atp.reserved,
     availableQty: row.atp.available,
@@ -582,15 +583,25 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
       </div>
     </template>
 
-    <!-- Demand-reading flags — how reliable / early the demand figure is, separate
-         from FSN's movement class. -->
-    <template #cell-demandSignal="{ row }">
-      <div v-if="(row as any).flags.volatile || (row as any).flags.provisional" class="rp-badges">
+    <!-- General signals (US-013 AC-01 §4): the demand read AND the lead-time basis,
+         separate from FSN's movement class. -->
+    <template #cell-signals="{ row }">
+      <div
+        v-if="(row as any).flags.provisional || (row as any).flags.volatile
+          || (row as any).flags.leadTimeEstimated || (row as any).leadTimeTier === 'none'"
+        class="rp-badges"
+      >
         <MpBadge v-if="(row as any).flags.provisional" for="additionalInformation" type="information">
           {{ t('Provisional') }}
         </MpBadge>
         <MpBadge v-if="(row as any).flags.volatile" for="additionalInformation" type="information">
-          {{ t('Volatile') }}
+          {{ t('Volatile demand') }}
+        </MpBadge>
+        <MpBadge v-if="(row as any).flags.leadTimeEstimated" for="additionalInformation" type="information">
+          {{ t('Estimated lead time') }}
+        </MpBadge>
+        <MpBadge v-if="(row as any).leadTimeTier === 'none'" for="additionalInformation" type="warning">
+          {{ t('Waiting for real lead time') }}
         </MpBadge>
       </div>
       <span v-else class="rp-signal-none">—</span>
