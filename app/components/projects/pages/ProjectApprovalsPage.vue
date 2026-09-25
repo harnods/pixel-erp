@@ -20,7 +20,7 @@ import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePa
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { approvals, APPROVAL_KIND_LABELS, type ApprovalItem, type ApprovalKind } from '~/data/projectApprovals'
-import { getProject, getWorkPackage, nodeLabel } from '~/data/projects'
+import { getProject, getWorkPackage, nodeLabel, usesMilestone } from '~/data/projects'
 import { changeOrders, engineeringChanges } from '~/data/projectChanges'
 import { peggedDocuments, projectWorkOrders } from '~/data/projectTransactions'
 import { releaseRequests, getStockItem } from '~/data/projectReservations'
@@ -127,7 +127,7 @@ function catchUpPreview(a: ApprovalItem): number | undefined {
   const v = vo(a)
   const p = getProject(a.projectId)
   if (!v || !p || v.distinct || p.method === 'tm') return undefined
-  const pc = p.method === 'output' && p.measure === 'milestone' ? undefined : percentComplete(p)
+  const pc = usesMilestone(p) ? undefined : percentComplete(p)
   if (pc === undefined || !pc) return undefined
   return Math.round((pc / 100) * (p.contractValue + (v.price ?? 0))) - recognisedToDate(p.id)
 }

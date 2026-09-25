@@ -6,7 +6,7 @@
 import { TODAY_ISO } from './master'
 import {
   projects, phases, workPackages, punchItems, getProject, getPhase, getWorkPackage, projectPhases, projectWorkPackages,
-  phaseWorkPackages, weightTotal, persistProjects, newId, clone, type Project,
+  phaseWorkPackages, weightTotal, usesMilestone, persistProjects, newId, clone, type Project,
 } from './projects'
 import {
   getBudget, addRevision, setBudgetLine, persistBudgets, createBudget, COGM_ACCOUNT, wpBudget, accountName,
@@ -45,7 +45,7 @@ export function approveProject(projectId: string, actor: Actor): Result {
   // OQ7 (provisional): project release is approved by Finance / Controller, never by the project's own PM.
   if (actor.role !== 'Finance') return { ok: false, error: 'Finance / Controller approves project release. Switch “View as” to approve.' }
   if (actor.name === p.pm) return { ok: false, error: 'You manage this project, so someone else must approve it.' }
-  if (p.method === 'output' && p.measure === 'milestone' && weightTotal(p.id) !== 100) {
+  if (usesMilestone(p) && weightTotal(p.id) !== 100) {
     return { ok: false, error: `Progress weights total ${pct(weightTotal(p.id))}. Set them to 100% before approving.` }
   }
   p.status = 'active'
@@ -70,7 +70,7 @@ export function reopenProject(projectId: string, reason: string, actor: Actor): 
 }
 
 function methodText(p: Project) {
-  return p.method === 'tm' ? 'T&M' : p.method === 'input' ? 'Input (cost-to-cost)' : `Output · ${p.measure}`
+  return p.method === 'tm' ? 'T&M' : p.method === 'input' ? 'Input (cost-to-cost)' : `Output · ${p.measure === 'both' ? 'milestone + unit' : p.measure}`
 }
 
 export function setProjectThreshold(projectId: string, value: number | undefined, actor: Actor): void {
@@ -553,10 +553,10 @@ function applyVoApproval(voId: string, actor: Actor) {
     const pc = percentComplete(p)
     if (pc !== undefined && pc > 0 && p.method !== 'tm') {
       const catchUp = Math.round((pc / 100) * p.contractValue) - recognisedToDate(p.id)
-      if (catchUp && !(p.method === 'output' && p.measure === 'milestone')) {
+      if (catchUp && !usesMilestone(p)) {
         vo.catchUp = catchUp
         recognitionPostings.push({ id: newId('rec'), no: nextRecNo(p.id), projectId: p.id, date: TODAY_ISO, kind: 'catch_up', description: `Cumulative catch-up — ${vo.no} (${pct(pc)} × new contract value)`, cumulativePct: pc, amount: catchUp, by: actor.name })
-      } else if (p.method === 'output' && p.measure === 'milestone') {
+      } else if (usesMilestone(p)) {
         const verifiedPct = projectPhases(p.id).filter(x => x.verifiedAt).reduce((s, x) => s + (x.progressWeightPct ?? 0), 0)
         const cu = Math.round((verifiedPct / 100) * p.contractValue) - recognisedToDate(p.id)
         if (cu) {
@@ -567,7 +567,7 @@ function applyVoApproval(voId: string, actor: Actor) {
       persistRecognition()
     }
   }
-  if (p.method === 'output' && p.measure === 'milestone') p.reweightRequired = true
+  if (usesMilestone(p)) p.reweightRequired = true
   persistProjects(); persistChanges()
   logAudit({ actor: actor.name, role: actor.role, projectId: p.id, kind: 'change_order', summary: `Approved ${vo.no} — contract value ${fmt(oldValue)} → ${fmt(p.contractValue)}${vo.catchUp ? `; catch-up ${fmt(vo.catchUp)} recognised in the current period` : vo.distinct ? '; distinct — treated prospectively' : ''}`, refNo: vo.no })
 }
@@ -1069,7 +1069,7 @@ export function finaliseRecognition(projectId: string, actor: Actor): Result {
   const p = getProject(projectId)!
   if (p.status !== 'active') return { ok: false, error: 'Only an active project can recognise revenue.' }
   if (p.method === 'tm') return { ok: false, error: 'T&M projects recognise revenue as time is billed.' }
-  if (p.method === 'output' && p.measure === 'milestone') return { ok: false, error: 'Milestone projects finish by verifying each phase by BAST.' }
+  if (usesMilestone(p)) return { ok: false, error: 'Milestone projects finish by verifying each phase by BAST.' }
   const open = projectWorkPackages(projectId).filter(w => w.status !== 'technically_complete')
   if (open.length) return { ok: false, error: `${open.length} work package(s) aren’t technically complete yet. Record their 100% BAST first.` }
   const amount = p.contractValue - recognisedToDate(projectId)

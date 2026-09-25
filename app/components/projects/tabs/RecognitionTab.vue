@@ -22,7 +22,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import type { Project } from '~/data/projects'
-import { projectPhases, projectWorkPackages, weightTotal } from '~/data/projects'
+import { projectPhases, projectWorkPackages, weightTotal, usesMilestone, usesUnits } from '~/data/projects'
 import { projectBudgetTotal } from '~/data/projectBudgets'
 import { projectActual } from '~/data/projectTransactions'
 import {
@@ -46,8 +46,8 @@ const verifyAction = useProjectAction()
 const termAction = useProjectAction()
 
 const active = computed(() => props.project.status === 'active')
-const isMilestone = computed(() => props.project.method === 'output' && props.project.measure === 'milestone')
-const isUnit = computed(() => props.project.method === 'output' && props.project.measure === 'unit')
+const isMilestone = computed(() => usesMilestone(props.project))
+const isUnit = computed(() => usesUnits(props.project))
 const isInput = computed(() => props.project.method === 'input')
 const isTm = computed(() => props.project.method === 'tm')
 

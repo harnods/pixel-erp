@@ -25,8 +25,7 @@ import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
   projectPhases, phaseWorkPackages, weightTotal, suggestedWeight, addPhase, updatePhase, deletePhase,
   addWorkPackage, updateWorkPackage, deleteWorkPackage, getPhase, getWorkPackage,
-  type Project, type Phase, type WorkPackage, type WorkPackageType,
-} from '~/data/projects'
+  type Project, type Phase, type WorkPackage, type WorkPackageType, usesMilestone, usesUnits } from '~/data/projects'
 import { phaseTotal, wpBudget, getBudget } from '~/data/projectBudgets'
 import { wpActual, wpCommitted, phaseActual, phaseCommitted, projectWorkOrders } from '~/data/projectTransactions'
 import { getCustomBom, masterBoms, currentVersion, masterDiverged } from '~/data/projectBoms'
@@ -44,8 +43,8 @@ const pageAction = useProjectAction()
 const wpAction = useProjectAction()
 
 const phases = computed(() => projectPhases(props.project.id))
-const isMilestone = computed(() => props.project.method === 'output' && props.project.measure === 'milestone')
-const isUnit = computed(() => props.project.method === 'output' && props.project.measure === 'unit')
+const isMilestone = computed(() => usesMilestone(props.project))
+const isUnit = computed(() => usesUnits(props.project))
 const closed = computed(() => props.project.status === 'closed')
 const total = computed(() => weightTotal(props.project.id))
 const hasBudget = computed(() => !!getBudget(props.project.id))

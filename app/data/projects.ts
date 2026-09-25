@@ -19,7 +19,17 @@ import { loadSnapshot, saveSnapshot } from './persist'
 
 export type ProjectStatus = 'draft' | 'active' | 'closed'
 export type RecognitionMethod = 'tm' | 'input' | 'output'
-export type OutputMeasure = 'milestone' | 'unit'
+export type OutputMeasure = 'milestone' | 'unit' | 'both'
+
+/** Output·milestone rules (phase weights, BAST verification) — also true for the
+ *  hybrid "milestone + unit" measure, where revenue still steps on verified phases. */
+export function usesMilestone(p: Pick<Project, 'method' | 'measure'>): boolean {
+  return p.method === 'output' && (p.measure === 'milestone' || p.measure === 'both')
+}
+/** Output·unit rules (planned vs confirmed units on work packages). */
+export function usesUnits(p: Pick<Project, 'method' | 'measure'>): boolean {
+  return p.method === 'output' && (p.measure === 'unit' || p.measure === 'both')
+}
 export type WorkPackageType = 'production' | 'service'
 export type WorkPackageStatus = 'not_started' | 'in_progress' | 'technically_complete'
 
@@ -296,7 +306,7 @@ export function suggestedWeight(phase: Phase): number | undefined {
 export function methodLabel(p: Pick<Project, 'method' | 'measure'>): string {
   if (p.method === 'tm') return 'T&M'
   if (p.method === 'input') return 'Input (cost-to-cost)'
-  return p.measure === 'unit' ? 'Output · unit' : 'Output · milestone'
+  return p.measure === 'unit' ? 'Output · unit' : p.measure === 'both' ? 'Output · milestone + unit' : 'Output · milestone'
 }
 
 export function wpStatusLabel(s: WorkPackageStatus): string {

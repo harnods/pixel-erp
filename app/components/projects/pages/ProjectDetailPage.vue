@@ -28,7 +28,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import DetailJumpTo, { type JumpItem } from '~/components/patterns/DetailJumpTo.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
-import { projects, getProject, methodLabel, weightTotal } from '~/data/projects'
+import { projects, getProject, methodLabel, weightTotal, usesMilestone } from '~/data/projects'
 import { getBudget } from '~/data/projectBudgets'
 import { projectSummary } from '~/data/projectSummary'
 import { pendingChanges } from '~/data/projectChanges'
@@ -93,7 +93,7 @@ const approveWarnings = computed(() => {
   if (!p) return []
   const out: string[] = []
   if (!getBudget(p.id)) out.push(t('No budget baseline yet — approval is allowed, but every budget check will read “not set” until a plan is linked in the Budget module.'))
-  if (p.method === 'output' && p.measure === 'milestone' && weightTotal(p.id) !== 100) out.push(`${t('Progress weights total')} ${pct(weightTotal(p.id))}, ${t('not 100%.')}`)
+  if (usesMilestone(p) && weightTotal(p.id) !== 100) out.push(`${t('Progress weights total')} ${pct(weightTotal(p.id))}, ${t('not 100%.')}`)
   return out
 })
 function openApprove() { approve.clear(); approveOpen.value = true }

@@ -12,7 +12,7 @@ import {
   MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 
-type Opt = { value: string; label: string }
+type Opt = { value: string; label: string; /** optional leading MpIcon name, e.g. a priority arrow */ icon?: string }
 
 const props = withDefaults(defineProps<{
   id: string
@@ -31,7 +31,8 @@ const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 const normalized = computed<Opt[]>(() =>
   props.options.map((o) => (typeof o === 'string' ? { value: o, label: o } : o)),
 )
-const selectedLabel = computed(() => normalized.value.find((o) => o.value === props.modelValue)?.label ?? '')
+const selected = computed(() => normalized.value.find((o) => o.value === props.modelValue))
+const selectedLabel = computed(() => selected.value?.label ?? '')
 
 // Combobox state: the trigger input is typeable while open.
 const open = ref(false)
@@ -57,6 +58,7 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
     <MpPopover :id="id" is-manual :is-open="open" placement="bottom-start" use-portal is-adaptive-width :is-keep-alive="false" @close="close">
       <MpPopoverTrigger>
         <div class="efs-trigger" @click="focusOpen">
+          <MpIcon v-if="selected?.icon && !open" :name="selected.icon" size="sm" class="efs-lead" />
           <input
             ref="inputEl"
             class="efs-input"
@@ -81,7 +83,9 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
             :is-active="o.value === modelValue"
             @mousedown.prevent
             @click="pick(o.value)"
-          >{{ o.label }}</MpPopoverListItem>
+          >
+            <span class="efs-option"><MpIcon v-if="o.icon" :name="o.icon" size="sm" />{{ o.label }}</span>
+          </MpPopoverListItem>
           <div v-if="!filtered.length" class="efs-empty">No results</div>
         </MpPopoverList>
       </MpPopoverContent>
@@ -95,7 +99,9 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
 
 <style scoped>
 .efs { position: relative; display: inline-flex; }
-.efs--disabled .efs-trigger { background: var(--mp-colors-background-disabled, #f1f5f9); border-color: var(--mp-colors-border-disabled, #e3e7e9); cursor: not-allowed; }
+.efs--disabled .efs-lead { flex-shrink: 0; margin-right: var(--mp-spacing-2, 8px); }
+.efs-option { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); }
+.efs-trigger { background: var(--mp-colors-background-disabled, #f1f5f9); border-color: var(--mp-colors-border-disabled, #e3e7e9); cursor: not-allowed; }
 .efs--disabled .efs-input { cursor: not-allowed; }
 .efs--disabled .efs-clear { display: none; }
 .efs--disabled .efs-input::placeholder, .efs--disabled .efs-chevron { color: var(--mp-colors-text-disabled, #8c9596); }

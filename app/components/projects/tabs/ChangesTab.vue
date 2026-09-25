@@ -23,7 +23,7 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import EcoDiff from '../EcoDiff.vue'
 import type { Project } from '~/data/projects'
-import { projectWorkPackages, getWorkPackage, nodeLabel } from '~/data/projects'
+import { projectWorkPackages, getWorkPackage, nodeLabel, usesMilestone } from '~/data/projects'
 import { projectChangeOrders, projectEcos, coExposure, engineeringChanges, persistChanges, type EcoEffectivity } from '~/data/projectChanges'
 import { projectWorkOrders } from '~/data/projectTransactions'
 import { getCustomBom, currentVersion, type BomComponent } from '~/data/projectBoms'
@@ -75,7 +75,7 @@ const raiseMargin = computed(() => parseAmount(raise.price) - parseAmount(raise.
 const catchUp = computed(() => {
   const p = props.project
   // Milestone projects get their catch-up on the verified share (explained in the drawer); T&M has none.
-  if (raise.distinct || p.method === 'tm' || (p.method === 'output' && p.measure === 'milestone')) return undefined
+  if (raise.distinct || p.method === 'tm' || usesMilestone(p)) return undefined
   const pc = percentComplete(p)
   if (!pc) return undefined
   return Math.round((pc / 100) * (p.contractValue + parseAmount(raise.price))) - recognisedToDate(p.id)
@@ -303,7 +303,7 @@ function doSubmit() {
         </div>
       </MpFormControl>
       <p v-if="!raise.distinct" class="pm-caption pm-m-0">
-        <template v-if="project.method === 'output' && project.measure === 'milestone'">{{ t('On approval: verified phases are never reopened, a catch-up is posted for the verified share at the new value, and the unverified weights must be reconfirmed to 100% before more verification.') }}</template>
+        <template v-if="usesMilestone(project)">{{ t('On approval: verified phases are never reopened, a catch-up is posted for the verified share at the new value, and the unverified weights must be reconfirmed to 100% before more verification.') }}</template>
         <template v-else-if="catchUp !== undefined">{{ t('Catch-up this period if approved') }}: <strong>{{ rpSigned(catchUp) }}</strong> ({{ pct(percentComplete(project)) }} × {{ t('new contract value') }} − {{ t('recognised to date') }})</template>
         <template v-else>{{ t('No catch-up — nothing recognised on a % basis yet.') }}</template>
       </p>

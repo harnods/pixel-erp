@@ -43,7 +43,9 @@ const method = ref<RecognitionMethod | ''>('')
 const measure = ref<OutputMeasure>('milestone')
 const usePhases = ref(false)
 
-const phasesRequired = computed(() => isProduction.value === true || (method.value === 'output' && measure.value === 'milestone'))
+const isMilestone = computed(() => method.value === 'output' && (measure.value === 'milestone' || measure.value === 'both'))
+const isUnit = computed(() => method.value === 'output' && (measure.value === 'unit' || measure.value === 'both'))
+const phasesRequired = computed(() => isProduction.value === true || isMilestone.value)
 watch(phasesRequired, v => { if (v) usePhases.value = true }, { immediate: true })
 const depth = computed(() => (usePhases.value ? 3 : 1))
 
@@ -70,9 +72,9 @@ const WAREHOUSES = ['Workshop Cileungsi', 'Gudang Utama Bekasi']
 const pmOptions = PMS
 const warehouseOptions = WAREHOUSES
 const priorityOptions = computed(() => [
-  { value: 'high', label: t('High') },
-  { value: 'medium', label: t('Medium') },
-  { value: 'low', label: t('Low') },
+  { value: 'high', label: t('High'), icon: 'arrows-up' },
+  { value: 'medium', label: t('Medium'), icon: 'arrows-right' },
+  { value: 'low', label: t('Low'), icon: 'arrows-down' },
 ])
 const wpTypeOptions = computed(() => [
   { value: 'production', label: t('Production') },
@@ -111,8 +113,6 @@ function removePhase(i: number) {
 }
 watch(usePhases, v => { if (v && !phaseDrafts.value.length) addPhase() })
 
-const isMilestone = computed(() => method.value === 'output' && measure.value === 'milestone')
-const isUnit = computed(() => method.value === 'output' && measure.value === 'unit')
 const weightSum = computed(() => Math.round(phaseDrafts.value.reduce((s, p) => s + (Number(p.weight.replace(',', '.')) || 0), 0) * 100) / 100)
 const rabSum = computed(() => phaseDrafts.value.reduce((s, p) => s + parseAmount(p.rabValue), 0))
 function suggestWeights() {
@@ -188,7 +188,7 @@ function back() { if (step.value > 1) step.value--; else router.push('/projects'
 const methodText = computed(() => {
   if (method.value === 'tm') return 'T&M'
   if (method.value === 'input') return 'Input (cost-to-cost)'
-  if (method.value === 'output') return measure.value === 'unit' ? 'Output · unit' : 'Output · milestone'
+  if (method.value === 'output') return measure.value === 'unit' ? 'Output · unit' : measure.value === 'both' ? 'Output · milestone + unit' : 'Output · milestone'
   return '—'
 })
 
@@ -239,7 +239,7 @@ function create() {
     </MpBanner>
 
     <div class="pm-stage">
-      <div class="pm-form-width">
+      <div class="pm-form-width" :class="{ 'pm-form-width--wide': step === 3 }">
         <!-- Stepper -->
         <div class="pm-steps">
           <template v-for="(s, i) in STEPS" :key="s">
@@ -306,8 +306,12 @@ function create() {
                 {{ t('Unit') }}
                 <template #description>{{ t('Confirmed ÷ planned units across work packages.') }}</template>
               </MpRadio>
+              <MpRadio id="pc-measure-both" name="pc-measure" :is-checked="measure === 'both'" @change="measure = 'both'">
+                {{ t('Milestone + unit') }}
+                <template #description>{{ t('Phases carry the progress weight and their work packages carry planned units — revenue still steps on the BAST.') }}</template>
+              </MpRadio>
             </div>
-            <MpBanner v-if="measure === 'milestone'" id="pc-milestone-note" variant="info" class="pm-mt-3">
+            <MpBanner v-if="isMilestone" id="pc-milestone-note" variant="info" class="pm-mt-3">
               <MpBannerIcon /><MpBannerDescription>{{ t('Milestone-measured Output must have phases — the progress weight lives on each phase and a depth-1 project can’t carry it. Phases are switched on below.') }}</MpBannerDescription>
             </MpBanner>
           </MpFormControl>
@@ -336,14 +340,14 @@ function create() {
             <MpFormControl id="pc-so-fc">
               <MpFormLabel>
                 {{ t('Linked sales order') }}
-                <MpIcon v-tooltip="{ label: t('Billing terms live on the contract, not on the project structure.'), placement: 'top' }" name="information" size="sm" class="pm-label-help" />
+                <MpIcon v-tooltip="{ label: t('Billing terms live on the contract, not on the project structure.'), placement: 'top' }" name="info" size="sm" class="pm-label-icon" />
               </MpFormLabel>
               <ErpFilterSelect id="pc-so" :model-value="form.salesOrderNo" :placeholder="t('Select sales order')" :options="soOptions" width="100%" @update:model-value="onSoPicked" />
             </MpFormControl>
             <MpFormControl id="pc-cv-fc" is-required :is-invalid="touched && !!step2Errors.contractValue">
               <MpFormLabel>
                 {{ t('Contract value') }}
-                <MpIcon v-tooltip="{ label: t('Taken from the linked sales order. Change it only when the contract says something else.'), placement: 'top' }" name="information" size="sm" class="pm-label-help" />
+                <MpIcon v-tooltip="{ label: t('Taken from the linked sales order. Change it only when the contract says something else.'), placement: 'top' }" name="info" size="sm" class="pm-label-icon" />
               </MpFormLabel>
               <MpInputGroup id="pc-cv-group">
                 <MpInputLeftAddon id="pc-cv-addon" has-background>Rp</MpInputLeftAddon>
@@ -358,20 +362,20 @@ function create() {
             <MpFormControl id="pc-pr-fc">
               <MpFormLabel>
                 {{ t('Priority') }}
-                <MpIcon v-tooltip="{ label: t('Shown to other projects when they compete for reserved stock.'), placement: 'top' }" name="information" size="sm" class="pm-label-help" />
+                <MpIcon v-tooltip="{ label: t('Shown to other projects when they compete for reserved stock.'), placement: 'top' }" name="info" size="sm" class="pm-label-icon" />
               </MpFormLabel>
               <ErpFilterSelect id="pc-pr" :model-value="form.priority" :placeholder="t('Priority')" :options="priorityOptions" width="100%" :is-clearable="false" @update:model-value="(v: string) => (form.priority = (v || 'medium') as 'high' | 'medium' | 'low')" />
             </MpFormControl>
             <MpFormControl id="pc-bp-fc">
               <MpFormLabel>
                 {{ t('Budget plan') }}
-                <MpIcon v-tooltip="{ label: t('Approved RAB/RAP plans come from the Budget module. Link one now or later — until then every budget check reads “not set”.'), placement: 'top' }" name="information" size="sm" class="pm-label-help" />
+                <MpIcon v-tooltip="{ label: t('Approved RAB/RAP plans come from the Budget module. Link one now or later — until then every budget check reads “not set”.'), placement: 'top' }" name="info" size="sm" class="pm-label-icon" />
               </MpFormLabel>
               <ErpFilterSelect id="pc-bp" v-model="form.budgetPlan" :placeholder="t('Select budget plan')" :options="budgetPlanOptions" width="100%" />
             </MpFormControl>
             <MpFormControl id="pc-period-fc" :is-invalid="touched && !!step2Errors.dates">
               <MpFormLabel>{{ t('Period') }}</MpFormLabel>
-              <MpDatePicker id="pc-period" :model-value="period" is-range format="DD/MM/YYYY" value-type="format" use-portal is-full-width @update:model-value="onPeriod" />
+              <MpDatePicker id="pc-period" :model-value="period" is-range :placeholder="t('DD/MM/YYYY - DD/MM/YYYY')" format="DD/MM/YYYY" value-type="format" use-portal is-full-width @update:model-value="onPeriod" />
               <MpFormErrorMessage>{{ step2Errors.dates }}</MpFormErrorMessage>
             </MpFormControl>
             <MpFormControl v-if="isProduction" id="pc-wh-fc">
@@ -475,9 +479,9 @@ function create() {
                 <MpFormControl v-if="isProduction && wp.type === 'production'" :id="`pc-wp-bom-${pi}-${wi}-fc`">
                   <MpFormLabel>
                     {{ t('BOM') }}
-                    <MpIcon v-tooltip="{ label: t('The master is copied into a custom BOM v1 for this work package. The master stays untouched.'), placement: 'top' }" name="information" size="sm" class="pm-label-help" />
+                    <MpIcon v-tooltip="{ label: t('The master is copied into a custom BOM v1 for this work package. The master stays untouched.'), placement: 'top' }" name="info" size="sm" class="pm-label-icon" />
                   </MpFormLabel>
-                  <ErpFilterSelect :id="`pc-wp-bom-${pi}-${wi}`" v-model="wp.masterBomId" :placeholder="t('Attach later')" :options="bomOptions" width="100%" />
+                  <ErpFilterSelect :id="`pc-wp-bom-${pi}-${wi}`" v-model="wp.masterBomId" :placeholder="t('Select BOM')" :options="bomOptions" width="100%" />
                 </MpFormControl>
                 <span v-else-if="isProduction" />
                 <span v-for="f in wpFillers" :key="`wpf-${f}`" />

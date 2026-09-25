@@ -18,7 +18,7 @@ import PmActionError from '../PmActionError.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import type { Project } from '~/data/projects'
-import { projectWorkPackages, punchItems, getWorkPackage } from '~/data/projects'
+import { projectWorkPackages, punchItems, getWorkPackage, usesMilestone } from '~/data/projects'
 import { wpCommitted, projectWos, woCommitted } from '~/data/projectTransactions'
 import { projectReservations } from '~/data/projectReservations'
 import { recordBast, closePunchItem, addPunchItem, closeBlockers, closeProject, finaliseRecognition } from '~/data/projectActions'
@@ -72,7 +72,7 @@ function doClosePunch(id: string, reworkCost?: number) {
 // Completion true-up (Input / Output·unit): all work packages done but measured progress < 100%.
 const canTrueUp = computed(() => {
   const p = props.project
-  if (p.status !== 'active' || p.method === 'tm' || (p.method === 'output' && p.measure === 'milestone')) return false
+  if (p.status !== 'active' || p.method === 'tm' || usesMilestone(p)) return false
   return wps.value.every(w => w.status === 'technically_complete') && recognisedToDate(p.id) < p.contractValue
 })
 const trueUpAmount = computed(() => props.project.contractValue - recognisedToDate(props.project.id))
