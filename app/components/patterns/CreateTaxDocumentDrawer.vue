@@ -30,6 +30,7 @@ import {
   addTaxDocument,
   type TaxDocumentPaymentStage, type TaxDocumentStatus, type TaxDocumentLane,
 } from '~/data/taxDocuments'
+import { buildTaxSnapshot } from '~/data/taxDocumentChanges'
 
 const props = defineProps<{
   isOpen: boolean
@@ -225,6 +226,9 @@ function save(status: TaxDocumentStatus) {
       classificationCode: selectedTransactionDetail.value?.fields === 'export-notice' ? classificationCode.value.trim() : undefined,
     } : {}),
     status,
+    // What this document reports — the baseline a later Sales Invoice edit is
+    // diffed against (PRD-05 AC-001).
+    invoiceSnapshot: buildTaxSnapshot(props.invoice),
   })
   emit('saved')
   close()

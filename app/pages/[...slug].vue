@@ -834,6 +834,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'sales-invoices' && segs[1] === 'new') {
     return { component: NewSalesInvoicePage, id: 'new' }
   }
+  // /sales-invoices/:id/edit → reuse the sales invoice form in edit mode
+  if (segs.length >= 3 && segs[0] === 'sales-invoices' && segs[2] === 'edit') {
+    return { component: NewSalesInvoicePage, id: segs[1]! }
+  }
   // /sales-invoices/:id → sales invoice detail
   if (segs.length >= 2 && segs[0] === 'sales-invoices') {
     return { component: SalesInvoiceDetailsPage, id: segs[1] }

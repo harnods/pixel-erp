@@ -15,13 +15,17 @@ import TaxDocumentDetailDrawer from '~/components/patterns/TaxDocumentDetailDraw
 import { getSalesInvoiceDetail } from '~/data/salesInvoiceDetails'
 import { canGenerateTaxDocument } from '~/data/salesInvoiceLineItems'
 import { salesInvoices } from '~/data'
-import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import EFakturPreviewModal from '~/components/patterns/EFakturPreviewModal.vue'
+import TaxImpactReviewDrawer from '~/components/patterns/TaxImpactReviewDrawer.vue'
 import {
-  getTaxDocumentsForInvoice, formatTaxDocumentNumber, updateTaxDocumentStatus,
-  taxDocMenuItemDefs, DJP_STATUS_CONFIG, type TaxDocument,
+  getTaxDocumentsForInvoice, formatTaxDocumentNumber, formatTaxDocumentKind,
+  updateTaxDocumentStatus, formatPaymentStage,
+  taxDocMenuItemDefs, DJP_STATUS_CONFIG,
+  getApprovedTaxDocument, generateReturnNoteDraft, outstandingReturnNote,
+  type TaxDocument, type TaxDocumentPaymentStage,
 } from '~/data/taxDocuments'
-import { generateEFakturPdf } from '~/utils/eFakturPdf'
-import type jsPDF from 'jspdf'
+import { buildTaxSnapshot } from '~/data/taxDocumentChanges'
+import { useTaxSubmissionPermission } from '~/composables/useTaxSubmissionPermission'
 import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
 import { applicableDimensions } from '~/data/dimensions'
 
@@ -78,6 +82,40 @@ function onTaxDocumentSaved() {
   toast.notify({ variant: 'success', title: t('Tax document saved'), rootProps: { class: 'toast-enterprise' } })
 }
 
+/**
+ * Number of the document a replacement/cancellation supersedes — shown only
+ * while THIS document has no issued number of its own.
+ *
+ * Once DJP approves it the reference is redundant: the faktur number already
+ * says it, because a pengganti carries the NSFP of the faktur it corrects and
+ * differs only in the status digit (0404891702057779 → 0414891702057779). It
+ * earns its place only on a draft, where this row still reads "—" and the
+ * number it will take over can't be seen yet.
+ */
+function supersededNumber(doc: TaxDocument): string {
+  if (!doc.replacesId) return ''
+  if (formatTaxDocumentNumber(doc) !== '—') return ''
+  const source = taxDocuments.value.find(d => d.id === doc.replacesId)
+  if (!source) return ''
+  const number = formatTaxDocumentNumber(source)
+  return number === '—' ? '' : number
+}
+
+/**
+ * Number of the faktur a return note was raised against.
+ *
+ * Unlike supersededNumber this never hides itself, because a return note never
+ * gets a number of its own to make the reference redundant — the nota retur is
+ * numbered by the buyer who issues it.
+ */
+function returnNoteFor(doc: TaxDocument): string {
+  if (doc.kind !== 'return-note' || !doc.relatesToId) return ''
+  const source = taxDocuments.value.find(d => d.id === doc.relatesToId)
+  if (!source) return ''
+  const number = formatTaxDocumentNumber(source)
+  return number === '—' ? '' : number
+}
+
 // ── Tax document detail drawer ("View details") ─────────────────────────────────
 const taxDocDetailOpen = ref(false)
 const taxDocDetailDoc = ref<TaxDocument | null>(null)
@@ -87,16 +125,31 @@ function openTaxDocDetail(doc: TaxDocument) {
 }
 
 // ── e-Faktur print preview (Approved tax documents only) ───────────────────────
+// Renders the Faktur Pajak form as UI rather than embedding a generated PDF —
+// see EFakturPreviewModal.vue for why. The PDF is still available from inside
+// that modal ("Download PDF").
 const eFakturPreviewOpen = ref(false)
-const eFakturPreviewDoc = ref<jsPDF | null>(null)
-const eFakturPreviewFilename = ref('')
+const eFakturPreviewDoc = ref<TaxDocument | null>(null)
 function printEFaktur(doc: TaxDocument) {
-  eFakturPreviewDoc.value = generateEFakturPdf(doc, invoice.value)
-  eFakturPreviewFilename.value = `e-Faktur ${formatTaxDocumentNumber(doc)}.pdf`
+  eFakturPreviewDoc.value = doc
   eFakturPreviewOpen.value = true
 }
 
+// ── Submission permission (PRD-05 BR-006 / AC-009) ────────────────────────────
+const { canSubmitTaxDocument, setCanSubmitTaxDocument } = useTaxSubmissionPermission()
+
 function submitTaxDocToDjp(doc: TaxDocument) {
+  // Denied outright rather than hidden — the user needs to know the action exists
+  // and who to ask for it (AC-009).
+  if (!canSubmitTaxDocument.value) {
+    toast.notify({
+      variant: 'error',
+      title: t('You do not have permission to submit tax documents to DJP'),
+      description: t('Ask an administrator for tax submission access.'),
+      rootProps: { class: 'toast-enterprise' },
+    })
+    return
+  }
   updateTaxDocumentStatus(doc.id, 'awaiting-approval')
   toast.notify({ variant: 'success', title: t('Submitted to DJP'), rootProps: { class: 'toast-enterprise' } })
 }
@@ -111,18 +164,26 @@ function refreshTaxDocStatus(doc: TaxDocument) {
  *  this with View details dropped) — labels/order/disabled come from the
  *  shared taxDocMenuItemDefs; onClick handlers are wired here by label. */
 interface TaxDocMenuItem { label: string; disabled?: boolean; tooltip?: string; onClick?: () => void }
+/** Submitting is the one action gated by permission — locked with its reason
+ *  rather than hidden, so an unauthorised user can see what to request access for. */
+const SUBMIT_LABELS = ['Submit to DJP', 'Resubmit to DJP']
 function taxDocMenuItems(doc: TaxDocument, opts: { excludeViewDetails?: boolean } = {}): TaxDocMenuItem[] {
   return taxDocMenuItemDefs(doc.status)
     .filter(item => !(opts.excludeViewDetails && item.label === 'View details'))
-    .map(item => ({
-      ...item,
-      onClick:
-        item.label === 'View details' ? () => openTaxDocDetail(doc)
-        : item.label === 'Submit to DJP' ? () => submitTaxDocToDjp(doc)
-        : item.label === 'Refresh DJP status' ? () => refreshTaxDocStatus(doc)
-        : item.label === 'Print e-faktur' ? () => printEFaktur(doc)
-        : undefined,
-    }))
+    .map(item => {
+      const submitLocked = SUBMIT_LABELS.includes(item.label) && !canSubmitTaxDocument.value
+      return {
+        ...item,
+        disabled: item.disabled || submitLocked,
+        tooltip: submitLocked ? 'You do not have permission to submit tax documents to DJP' : item.tooltip,
+        onClick:
+          item.label === 'View details' ? () => openTaxDocDetail(doc)
+          : SUBMIT_LABELS.includes(item.label) ? () => submitTaxDocToDjp(doc)
+          : item.label === 'Refresh DJP status' ? () => refreshTaxDocStatus(doc)
+          : item.label === 'Print e-faktur' ? () => printEFaktur(doc)
+          : undefined,
+      }
+    })
 }
 const taxDocDetailMenuItems = computed(() =>
   taxDocDetailDoc.value ? taxDocMenuItems(taxDocDetailDoc.value, { excludeViewDetails: true }) : [],
@@ -186,6 +247,9 @@ onUnmounted(() => itemsObserver?.disconnect())
 watch(() => props.orderId, () => {
   shownCount.value = PAGE_SIZE
   loadingMore.value = false
+  // A tab jump belongs to the invoice it was made on — switching invoices hands
+  // the choice back to the route.
+  jumpedTabIndex.value = null
   nextTick(() => {
     if (itemsScrollEl.value) itemsScrollEl.value.scrollTop = 0
     setupItemsObserver()
@@ -223,7 +287,9 @@ function formatUpdatedAt(iso: string) {
 }
 
 function discountText(pct: number) { return pct > 0 ? `${pct}%` : '' }
-function paymentStageLabel(stage: string) { return stage === 'down-payment' ? t('Down payment') : t('Settlement') }
+/** Delegates to the store's own formatter — a local copy here previously had no
+ *  'full-payment' case and mislabelled those documents as "Settlement". */
+function paymentStageLabel(stage: TaxDocumentPaymentStage | undefined) { return t(formatPaymentStage(stage)) }
 
 /** File-type → Pixel document icon for an attachment. */
 function attachmentIcon(name: string): string {
@@ -237,6 +303,87 @@ function attachmentIcon(name: string): string {
 
 function goBack() { router.push('/sales-invoices') }
 function receivePayment() { router.push('/sales-invoices') }
+function editInvoice() { router.push(`/sales-invoices/${invoice.value.id}/edit`) }
+
+// Saving an edit that generated a tax document draft lands here with
+// ?tab=tax-document, so the draft waiting for review is what the user sees first.
+// MpTabs takes a positional index, and the tabs before this one are conditional
+// — so the index has to be counted, not hardcoded.
+const route = useRoute()
+const taxDocTabIndex = computed(() => (hasLinkedTransactions.value ? 1 : 0) + (hasPayments.value ? 1 : 0))
+
+/**
+ * Tab jumped to by an action on THIS page (rather than by the arriving route) —
+ * so raising a document lands the user on the tab that now holds it, the same
+ * way saving an edit does via ?tab=tax-document.
+ *
+ * The nonce is what makes it work: MpTabs only reads `default-value` on mount, so
+ * the jump takes effect through the `:key` remount. Without a nonce, jumping to a
+ * tab the user has since navigated away from wouldn't change the key, and so
+ * wouldn't remount.
+ */
+const jumpedTabIndex = ref<number | null>(null)
+const tabJumpNonce = ref(0)
+function showTaxDocumentTab() {
+  jumpedTabIndex.value = taxDocTabIndex.value
+  tabJumpNonce.value += 1
+}
+
+const defaultTabIndex = computed(() => {
+  if (jumpedTabIndex.value !== null) return jumpedTabIndex.value
+  if (route.query.tab !== 'tax-document' || !hasTaxDocuments.value) return 0
+  return taxDocTabIndex.value
+})
+
+// ── Sales return against an approved faktur ───────────────────────────────────
+// A return doesn't correct the faktur (nothing about the original delivery was
+// misstated), so it raises neither a replacement nor a cancellation — DJP handles
+// it through a Nota Retur issued by the BUYER. The impact is therefore a follow-up
+// the user owns, which is what the review drawer states before anything is added.
+const returnReviewOpen = ref(false)
+const approvedTaxDoc = computed(() => getApprovedTaxDocument(invoice.value.id))
+
+/** Today as DD/MM/YYYY — how tax documents store their date. */
+function todayDMY(): string {
+  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date())
+}
+
+function createSalesReturn() {
+  // No approved faktur → no tax impact to review. The sales return form itself
+  // isn't part of this prototype, so there is nothing further to open here.
+  if (!approvedTaxDoc.value) return
+
+  // Already chasing one — raising a second identical placeholder would just be
+  // noise, so show the user the one that's already outstanding instead.
+  if (outstandingReturnNote(invoice.value.id)) {
+    toast.notify({
+      variant: 'information',
+      title: t('This invoice already has a return note awaiting the buyer'),
+      rootProps: { class: 'toast-enterprise' },
+    })
+    showTaxDocumentTab()
+    return
+  }
+  returnReviewOpen.value = true
+}
+
+function onSalesReturnConfirm() {
+  const source = approvedTaxDoc.value
+  if (!source) return
+  generateReturnNoteDraft({
+    source,
+    date: todayDMY(),
+    invoiceSnapshot: buildTaxSnapshot(invoice.value),
+  })
+  returnReviewOpen.value = false
+  toast.notify({
+    variant: 'success',
+    title: t('Return note added, awaiting the buyer'),
+    description: t('Follow up with the buyer to get the return note (nota retur).'),
+    rootProps: { class: 'toast-enterprise' },
+  })
+  showTaxDocumentTab()
+}
 </script>
 
 <template>
@@ -483,7 +630,7 @@ function receivePayment() { router.push('/sales-invoices') }
       <!-- ── Tabs — only the ones with content to show ── -->
       <MpTabs
         v-if="hasLinkedTransactions || hasPayments || hasTaxDocuments"
-        :key="invoice.id" id="detail-tabs" :default-value="0" variant-color="green" class="detail-tabs"
+        :key="`${invoice.id}-${defaultTabIndex}-${tabJumpNonce}`" id="detail-tabs" :default-value="defaultTabIndex" variant-color="green" class="detail-tabs"
       >
         <MpTabList>
           <MpTab v-if="hasLinkedTransactions" id="detail-tab-linked" value="linked">{{ t('Linked transactions') }}</MpTab>
@@ -550,11 +697,37 @@ function receivePayment() { router.push('/sales-invoices') }
           </MpTabPanel>
 
           <MpTabPanel v-if="hasTaxDocuments" value="tax-document">
-            <h3 class="detail-tab-heading">{{ t('Tax documents') }}</h3>
+            <div class="detail-taxdoc-heading-row">
+              <h3 class="detail-tab-heading detail-tab-heading--inline">{{ t('Tax documents') }}</h3>
+
+              <!-- Demo control for the submission permission the prototype has no
+                   roles module to derive (see useTaxSubmissionPermission) — same
+                   "Scenario state" convention as CreateTaxDocumentDrawer's lane FAB. -->
+              <MpPopover id="taxdoc-permission-popover" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                <MpPopoverTrigger>
+                  <MpButton class="detail-icon-btn" :aria-label="t('Change scenario state')">
+                    <MpIcon name="sliders" size="md" />
+                  </MpButton>
+                </MpPopoverTrigger>
+                <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content' })">
+                  <p class="detail-scenario-heading">{{ t('Scenario state') }}</p>
+                  <MpPopoverList>
+                    <MpPopoverListItem :is-active="canSubmitTaxDocument" @click="setCanSubmitTaxDocument(true)">
+                      {{ t('Can submit tax documents') }}
+                    </MpPopoverListItem>
+                    <MpPopoverListItem :is-active="!canSubmitTaxDocument" @click="setCanSubmitTaxDocument(false)">
+                      {{ t('No tax submission permission') }}
+                    </MpPopoverListItem>
+                  </MpPopoverList>
+                </MpPopoverContent>
+              </MpPopover>
+            </div>
+
             <table class="detail-linked">
               <colgroup>
                 <col class="detail-linked-col--date" />
                 <col class="detail-linked-col--number" />
+                <col class="detail-linked-col--type" />
                 <col class="detail-linked-col--stage" />
                 <col />
                 <col class="detail-linked-col--actions" />
@@ -563,6 +736,7 @@ function receivePayment() { router.push('/sales-invoices') }
                 <tr>
                   <th class="detail-th">{{ t('Date') }}</th>
                   <th class="detail-th">{{ t('Number') }}</th>
+                  <th class="detail-th">{{ t('Type') }}</th>
                   <th class="detail-th">{{ t('Payment stage') }}</th>
                   <th class="detail-th">{{ t('DJP Status') }}</th>
                   <th class="detail-th" aria-hidden="true"></th>
@@ -572,11 +746,24 @@ function receivePayment() { router.push('/sales-invoices') }
                 <tr v-for="doc in taxDocuments" :key="doc.id" class="detail-item-row">
                   <td class="detail-td">{{ doc.date }}</td>
                   <td class="detail-td">{{ formatTaxDocumentNumber(doc) }}</td>
+                  <td class="detail-td">
+                    <span>{{ t(formatTaxDocumentKind(doc)) }}</span>
+                    <!-- Which document this one supersedes — the lineage is the
+                         whole point of a replacement/cancellation record. -->
+                    <span v-if="supersededNumber(doc)" class="detail-taxdoc-supersedes">
+                      {{ doc.kind === 'cancellation' ? t('Cancels') : t('Replaces') }} {{ supersededNumber(doc) }}
+                    </span>
+                    <!-- A return note acts on no document — it points at the
+                         faktur the returned goods were delivered under. -->
+                    <span v-else-if="returnNoteFor(doc)" class="detail-taxdoc-supersedes">
+                      {{ t('Against') }} {{ returnNoteFor(doc) }}
+                    </span>
+                  </td>
                   <td class="detail-td">{{ paymentStageLabel(doc.paymentStage) }}</td>
                   <td class="detail-td">
                     <ErpStatusBadge
                       :status="doc.status"
-                      :label="DJP_STATUS_CONFIG[doc.status].label"
+                      :label="t(DJP_STATUS_CONFIG[doc.status].label)"
                       :type="DJP_STATUS_CONFIG[doc.status].type"
                     />
                   </td>
@@ -652,12 +839,12 @@ function receivePayment() { router.push('/sales-invoices') }
             <MpPopoverList>
               <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Set as recurring') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Create sales return') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="createSalesReturn">{{ t('Create sales return') }}</MpPopoverListItem>
               <MpPopoverListItem v-if="invoice.hasPpn" @click="openCreateTaxDocument">{{ t('Create tax document') }}</MpPopoverListItem>
             </MpPopoverList>
             <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
             <MpPopoverList>
-              <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="editInvoice">{{ t('Edit') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
               <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
             </MpPopoverList>
@@ -681,13 +868,13 @@ function receivePayment() { router.push('/sales-invoices') }
                 <MpPopoverListItem>{{ t('Set as recurring') }}</MpPopoverListItem>
                 <MpPopoverListItem>{{ t('Create join invoice') }}</MpPopoverListItem>
                 <MpPopoverListItem>{{ t('Create progress invoice') }}</MpPopoverListItem>
-                <MpPopoverListItem>{{ t('Create sales return') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="createSalesReturn">{{ t('Create sales return') }}</MpPopoverListItem>
                 <MpPopoverListItem v-if="invoice.hasPpn" @click="openCreateTaxDocument">{{ t('Create tax document') }}</MpPopoverListItem>
                 <MpPopoverListItem>{{ t('Apply credit memo') }}</MpPopoverListItem>
               </MpPopoverList>
               <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
               <MpPopoverList>
-                <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="editInvoice">{{ t('Edit') }}</MpPopoverListItem>
                 <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
                 <MpPopoverListItem>{{ t('Reject') }}</MpPopoverListItem>
                 <MpPopoverListItem>{{ t('Void') }}</MpPopoverListItem>
@@ -720,11 +907,10 @@ function receivePayment() { router.push('/sales-invoices') }
       :invoice="invoice"
     />
 
-    <PdfPreviewModal
+    <EFakturPreviewModal
       :open="eFakturPreviewOpen"
       :doc="eFakturPreviewDoc"
-      :filename="eFakturPreviewFilename"
-      :title="t('Print e-faktur')"
+      :invoice="invoice"
       @close="eFakturPreviewOpen = false"
     />
 
@@ -733,6 +919,18 @@ function receivePayment() { router.push('/sales-invoices') }
       :doc="taxDocDetailDoc"
       :invoice="invoice"
       :menu-items="taxDocDetailMenuItems"
+      :related-number="taxDocDetailDoc ? (supersededNumber(taxDocDetailDoc) || returnNoteFor(taxDocDetailDoc)) : ''"
+    />
+
+    <!-- Sales return on an invoice with an approved faktur — states the tax
+         follow-up before the return note record is added. -->
+    <TaxImpactReviewDrawer
+      v-model:is-open="returnReviewOpen"
+      trigger="sales-return"
+      action="return-note"
+      :changes="[]"
+      :source-document="approvedTaxDoc"
+      @confirm="onSalesReturnConfirm"
     />
 
     <ConfirmModal
@@ -772,7 +970,7 @@ function receivePayment() { router.push('/sales-invoices') }
   flex-shrink: 0;
   height: var(--mp-sizes-18, 72px);   /* page title bar is always 72px */
   box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   padding: 0 var(--mp-spacing-6);
   display: flex;
   flex-direction: row;
@@ -828,7 +1026,7 @@ function receivePayment() { router.push('/sales-invoices') }
   cursor: pointer;
   color: var(--mp-icon-default, var(--mp-text-secondary));
 }
-.detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
+.detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* jump-to popover (304px): search on top (280px input, 12px padding), 5 recent below */
 .detail-jump { display: flex; flex-direction: column; }
@@ -837,7 +1035,7 @@ function receivePayment() { router.push('/sales-invoices') }
   width: 100%;        /* = 280px inside the 304px popover minus 12px padding each side */
   box-sizing: border-box;
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
@@ -854,7 +1052,7 @@ function receivePayment() { router.push('/sales-invoices') }
   color: var(--mp-icon-default, var(--mp-text-secondary));
   border-radius: var(--mp-radii-full, 999px);
 }
-.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .search-clear-btn--overlay { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); }
 .detail-jump-list { display: flex; flex-direction: column; }
 .detail-jump-item {
@@ -869,7 +1067,7 @@ function receivePayment() { router.push('/sales-invoices') }
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   border-radius: var(--mp-radii-md);
 }
-.detail-jump-item:hover { background: var(--mp-background-neutral-subtle); }
+.detail-jump-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .detail-jump-item-number { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .detail-jump-item-customer { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .detail-jump-empty {
@@ -896,7 +1094,7 @@ function receivePayment() { router.push('/sales-invoices') }
   cursor: pointer;
   color: var(--mp-icon-default, var(--mp-text-secondary));
 }
-.detail-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
+.detail-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* ── Stage ── */
 .detail-stage {
@@ -904,7 +1102,7 @@ function receivePayment() { router.push('/sales-invoices') }
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  background: var(--mp-background-stage);
+  background: var(--mp-background-stage, #ffffff);
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   /* fixed 24px top border keeps content off the stage's top edge while scrolling */
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
@@ -984,7 +1182,7 @@ function receivePayment() { router.push('/sales-invoices') }
 .detail-items-section { display: flex; flex-direction: column; flex-shrink: 0; }
 /* progressive case → contained panel with a 1px bold outer border */
 .detail-items-section--bordered {
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   overflow: hidden;
 }
@@ -1007,12 +1205,12 @@ function receivePayment() { router.push('/sales-invoices') }
   height: var(--mp-sizes-7, 28px);
   text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary);
   text-transform: uppercase;
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .detail-th--num {
@@ -1028,7 +1226,7 @@ function receivePayment() { router.push('/sales-invoices') }
   font-weight: var(--mp-font-weights-regular);
   line-height: var(--mp-line-heights-lg, 20px);
   color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   vertical-align: middle;
 }
 .detail-td--num {
@@ -1054,7 +1252,28 @@ function receivePayment() { router.push('/sales-invoices') }
 .detail-linked-col--number { width: 260px; }
 .detail-linked-col--status { width: 160px; }
 .detail-linked-col--stage  { width: 160px; }
+.detail-linked-col--type   { width: 200px; }
 .detail-linked-col--actions { width: 52px; }
+
+/* Tax documents tab — heading with the scenario control pinned right */
+.detail-taxdoc-heading-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--mp-spacing-3);
+  margin-bottom: var(--mp-spacing-3);
+}
+.detail-tab-heading--inline { margin-bottom: 0; }
+.detail-scenario-heading {
+  padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+}
+/* "Replaces 01234…" under the type — a second line, subordinate to it */
+.detail-taxdoc-supersedes {
+  display: block;
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-subtle);
+  margin-top: var(--mp-spacing-0\.5);
+}
 
 .row-kebab {
   display: flex !important;
@@ -1069,7 +1288,7 @@ function receivePayment() { router.push('/sales-invoices') }
   color: var(--mp-text-subtle);
 }
 .row-kebab:hover {
-  background: var(--mp-background-neutral-hovered);
+  background: var(--mp-background-neutral-hovered, #eef0f3);
   color: var(--mp-text-default);
 }
 
@@ -1098,7 +1317,7 @@ function receivePayment() { router.push('/sales-invoices') }
   padding: var(--mp-spacing-3) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-secondary);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .detail-loading {
   display: inline-flex;

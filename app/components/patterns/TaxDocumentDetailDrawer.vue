@@ -21,7 +21,10 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import type { SalesInvoiceDetail } from '~/data/salesInvoiceDetails'
 import { VAT_CODES, computeTaxDocumentSummary } from '~/data/vatCodes'
 import { FOREIGN_TRANSACTION_DETAILS, computeForeignTaxDocumentSummary } from '~/data/foreignTransactionDetails'
-import { DJP_STATUS_CONFIG, formatPaymentStage, type TaxDocument } from '~/data/taxDocuments'
+import {
+  DJP_STATUS_CONFIG, formatPaymentStage, formatTaxDocumentKind,
+  type TaxDocument,
+} from '~/data/taxDocuments'
 
 export interface TaxDocMenuItem { label: string; disabled?: boolean; tooltip?: string; onClick?: () => void }
 
@@ -38,6 +41,10 @@ const props = defineProps<{
   doc: TaxDocument | null
   invoice: SalesInvoiceDetail
   menuItems: TaxDocMenuItem[]
+  /** Number of the document this one replaces, cancels, or (for a return note)
+   *  was raised against — the parent resolves it, since only it holds the
+   *  invoice's full document list. Empty when standalone. */
+  relatedNumber?: string
 }>()
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
@@ -48,15 +55,33 @@ const { t } = useLocale()
 const isForeign = computed(() => props.doc?.lane === 'foreign')
 const selectedVatCode = computed(() => (props.doc && !isForeign.value) ? VAT_CODES.find(c => c.code === props.doc!.djpCode) ?? null : null)
 const selectedTransactionDetail = computed(() => (props.doc && isForeign.value) ? FOREIGN_TRANSACTION_DETAILS.find(c => c.code === props.doc!.djpCode) ?? null : null)
+/** How this document relates to `relatedNumber` — the verb differs by kind, and a
+ *  return note doesn't act on the faktur at all, it just cites it. */
+const relatedLabel = computed(() => {
+  if (props.doc?.kind === 'cancellation') return t('Cancels')
+  if (props.doc?.kind === 'return-note') return t('Against')
+  return t('Replaces')
+})
+
 const dpp = computed(() => props.invoice.totals.total - props.invoice.totals.taxAmount)
 const standardPpn = computed(() => props.invoice.totals.taxAmount)
 const summary = computed(() => {
   if (!props.doc) return null
+  // A return note has no tax figures of its own: how much is being returned is
+  // stated on the buyer's nota retur, which we don't have yet. Showing the
+  // invoice's own DPP/PPN here would read as the value of the return.
+  if (props.doc.kind === 'return-note') return null
   if (isForeign.value) return computeForeignTaxDocumentSummary(props.invoice.total, dpp.value)
   return selectedVatCode.value
     ? computeTaxDocumentSummary(selectedVatCode.value, props.invoice.total, dpp.value, standardPpn.value)
     : null
 })
+
+/** Only the changes that drove this document — the incidental no-impact edits
+ *  that rode along in the same save aren't what a reviewer is checking here. */
+const taxRelevantChanges = computed(() =>
+  (props.doc?.changes ?? []).filter(c => c.action !== 'none'),
+)
 
 function close() { emit('update:isOpen', false) }
 </script>
@@ -90,6 +115,16 @@ function close() { emit('update:isOpen', false) }
               <div class="tdd-row">
                 <span class="tdd-row-label">{{ t('Document type') }}</span>
                 <span class="tdd-row-value">{{ t(doc.documentType) }}</span>
+              </div>
+              <!-- Lineage — where this document sits relative to the one it
+                   supersedes (PRD-05: replacement / cancellation records). -->
+              <div class="tdd-row">
+                <span class="tdd-row-label">{{ t('Type') }}</span>
+                <span class="tdd-row-value">{{ t(formatTaxDocumentKind(doc)) }}</span>
+              </div>
+              <div v-if="relatedNumber" class="tdd-row">
+                <span class="tdd-row-label">{{ relatedLabel }}</span>
+                <span class="tdd-row-value">{{ relatedNumber }}</span>
               </div>
               <!-- Foreign lane doesn't collect a sales invoice type at all. -->
               <div v-if="!isForeign" class="tdd-row">
@@ -128,7 +163,7 @@ function close() { emit('update:isOpen', false) }
                 <span class="tdd-row-label">{{ t('DJP status') }}</span>
                 <ErpStatusBadge
                   :status="doc.status"
-                  :label="DJP_STATUS_CONFIG[doc.status].label"
+                  :label="t(DJP_STATUS_CONFIG[doc.status].label)"
                   :type="DJP_STATUS_CONFIG[doc.status].type"
                 />
               </div>
@@ -157,6 +192,29 @@ function close() { emit('update:isOpen', false) }
                 <span class="tdd-row-label">Pajak penjualan atas Barang Mewah (PPnBM)</span>
                 <span class="tdd-row-value tdd-row-value--strong">{{ formatIDR(summary.ppnbm) }}</span>
               </div>
+            </div>
+
+            <!-- Why this draft exists — the Sales Invoice changes that generated
+                 it, so reviewing before submission (AC-007) is a real check
+                 rather than a rubber stamp. -->
+            <div v-if="taxRelevantChanges.length" class="tdd-section">
+              <MpText size="h3" weight="semiBold" class="tdd-section-title">{{ t('Sales invoice changes') }}</MpText>
+              <table class="tdd-changes">
+                <thead>
+                  <tr>
+                    <th class="tdd-changes-th">{{ t('Field') }}</th>
+                    <th class="tdd-changes-th">{{ t('Before') }}</th>
+                    <th class="tdd-changes-th">{{ t('After') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="c in taxRelevantChanges" :key="c.key">
+                    <td class="tdd-changes-td tdd-changes-td--field">{{ t(c.label) }}</td>
+                    <td class="tdd-changes-td tdd-changes-td--muted">{{ c.before }}</td>
+                    <td class="tdd-changes-td">{{ c.after }}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -233,6 +291,33 @@ function close() { emit('update:isOpen', false) }
 .tdd-row-label { flex: 0 0 240px; color: var(--mp-text-default); }
 .tdd-row-value { flex: 1; text-align: right; color: var(--mp-text-default); }
 .tdd-row-value--strong { font-weight: var(--mp-font-weights-semi-bold); }
+
+/* "Sales invoice changes" — compact 3-column read-only table; values wrap
+   (a line item reads "Arabica — 10 KG × Rp100.000,00") rather than truncate. */
+.tdd-changes { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.tdd-changes-th {
+  height: var(--mp-sizes-7, 28px);
+  text-align: left;
+  padding: var(--mp-spacing-1) var(--mp-spacing-2);
+  background: var(--mp-background-neutral-subtle);
+  font-size: var(--mp-font-sizes-sm);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-secondary);
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--mp-border-default);
+  white-space: nowrap;
+}
+.tdd-changes-td {
+  padding: var(--mp-spacing-1\.5) var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-lg, 20px);
+  color: var(--mp-text-default);
+  border-bottom: 1px solid var(--mp-border-default);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.tdd-changes-td--field { font-weight: var(--mp-font-weights-semi-bold); }
+.tdd-changes-td--muted { color: var(--mp-text-secondary); }
 
 .tdd-footer {
   display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
