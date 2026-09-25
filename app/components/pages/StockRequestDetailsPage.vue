@@ -22,6 +22,8 @@ import {
   MpIcon, toast, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
+import { entriesFor, lastActivity } from '~/data/activityLog'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ReserveMaterialsModal from '~/components/patterns/ReserveMaterialsModal.vue'
 import UnreserveMaterialsModal from '~/components/patterns/UnreserveMaterialsModal.vue'
@@ -29,6 +31,7 @@ import { formatDate } from '~/utils/date'
 import {
   stockRequests, stockRequestStatus, lineCovered, lineToTransfer, lineReadiness,
   isOverdue, canReject, canRejectLine, reserveRequestProducts, unreserveRequestProducts, rejectRequestLine,
+  stockRequestLineStatus,
   reservedTracking, trackingChanged, lineTracking, setReservedBatches, setReservedSerials,
   type StockRequest, type StockRequestLine, type UnreserveDisposition,
 } from '~/data/stockRequests'
@@ -83,12 +86,15 @@ const READINESS_LABEL: Record<string, string> = {
   'partially reserved': 'Partially reserved',
   reserved: 'Reserved',
   'issued / picked': 'Issued / picked',
+  rejected: 'Rejected',
+  canceled: 'Canceled',
 }
-function lineStatus(line: StockRequestLine): string {
-  const r = lineReadiness(line)
-  if (r === 'reserved') return line.consumed >= line.qty ? 'issued / picked' : 'reserved'
-  return lineCovered(line) > 0 ? 'partially reserved' : 'requested'
-}
+/**
+ * W-3 — derived centrally in the data layer so this page cannot drift from the
+ * dashboard. It previously had its own copy, which did not know about rejection
+ * and showed a declined line as still Requested.
+ */
+const lineStatus = stockRequestLineStatus
 
 // ─── Actions ───────────────────────────────────────────────────────────────────
 const reserveOpen = ref(false)
@@ -162,6 +168,31 @@ function rejectAllTagged() {
 }
 
 const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
+
+/**
+ * Activity log (rule/detail-activity-log-always, US-8). Reserve, unreserve and
+ * every release are written to the shared store; the request's own creation is
+ * derived, so a request nobody has acted on still shows how it came to exist.
+ */
+const activityOpen = ref(false)
+const activityEntries = computed(() => {
+  const r = req.value
+  if (!r) return []
+  return entriesFor('stock-request', r.id, [{
+    date: `${r.requestDate}T08:00:00`,
+    user: r.lines[0]?.requestor ?? '—',
+    activity: t('Request raised'),
+    details: [
+      { label: t('Transaction'), value: `${t('Work order')} ${r.workOrderNumber}` },
+      { label: t('Components'), value: String(r.lines.length) },
+    ],
+  }])
+})
+const lastUpdated = computed(() => {
+  const r = req.value
+  if (!r) return undefined
+  return lastActivity('stock-request', r.id)
+})
 
 // ── Batch / serial (PPIC may reserve units other than the ones the work order
 // picked; the work order detail is told about it) ─────────────────────────────
@@ -336,16 +367,26 @@ function saveSerials(serials: string[]) {
                 <th class="wod-th wod-th--num">{{ t('Consumed') }}</th>
                 <th class="wod-th wod-th--num">{{ t('To transfer') }}</th>
                 <th class="wod-th">{{ t('Required date') }}</th>
+                <!-- W-9 — each line names who last changed ITS demand (OPEN-17). -->
+                <th class="wod-th">{{ t('Requestor') }}</th>
                 <th class="wod-th">{{ t('Batch / SN') }}</th>
                 <th class="wod-th">{{ t('Status') }}</th>
+                <th class="wod-th wod-th--actions" />
               </tr>
             </thead>
             <tbody>
-              <tr v-for="l in g.lines" :key="l.productId" class="wod-tr">
+              <!-- Keyed by INDEX, not productId: one component can hold several
+                   lines on a request (original + Adjustment deltas), so productId
+                   is no longer unique here. -->
+              <tr v-for="(l, li) in g.lines" :key="`${l.productId}-${li}`" class="wod-tr" :class="{ 'srd-tr--rejected': l.rejected }">
                 <td class="wod-td wod-td--wrap">
                   <div class="srd-product">
                     <span class="srd-product-name">{{ l.product }}</span>
                     <span class="srd-product-sku">{{ l.sku }}</span>
+                    <!-- W-7 — what kind of demand this line is. -->
+                    <span v-if="l.tag" class="sr-tag" :class="`sr-tag--${l.tag}`">
+                      {{ l.tag === 'additional' ? t('Additional stock') : t('Adjustment') }}
+                    </span>
                   </div>
                 </td>
                 <td class="wod-td wod-td--num">{{ l.qty }} {{ l.unit }}</td>
@@ -356,6 +397,7 @@ function saveSerials(serials: string[]) {
                   {{ lineToTransfer(l) > 0 ? `${lineToTransfer(l)} ${l.unit}` : '—' }}
                 </td>
                 <td class="wod-td">{{ formatDate(l.requiredDate) }}</td>
+                <td class="wod-td">{{ l.requestor }}</td>
                 <!-- Tracked components carry the work order's pick; PPIC may reserve
                      other units, and the work order detail is told when they do. -->
                 <td class="wod-td wod-td--wrap">
@@ -367,6 +409,16 @@ function saveSerials(serials: string[]) {
                 </td>
                 <td class="wod-td">
                   <ErpStatusBadge :status="lineStatus(l)" :label="t(READINESS_LABEL[lineStatus(l)] ?? '')" />
+                </td>
+                <!-- W-7 — reject is offered ONLY on a tagged line; the components
+                     the work order itself committed to are not the warehouse's to
+                     refuse, so there is no button to explain away on those rows. -->
+                <td class="wod-td wod-td--actions">
+                  <button
+                    v-if="canRejectLine(l)"
+                    class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm srd-reject"
+                    @click="rejectLine(l)"
+                  >{{ t('Reject') }}</button>
                 </td>
               </tr>
             </tbody>
@@ -394,6 +446,22 @@ function saveSerials(serials: string[]) {
     />
 
     <!-- ── Reserve / Unreserve (UC-02 / UC-03) ── -->
+    <!-- Provenance line — the ONLY way into the activity log
+         (rule/activity-log-trigger). -->
+    <a class="detail-updated" @click.prevent="activityOpen = true">
+      {{ t('Last updated by') }} {{ lastUpdated?.user ?? (req.lines[0]?.requestor ?? '—') }}
+      {{ t('on') }} {{ formatDate((lastUpdated?.date ?? req.requestDate).slice(0, 10)) }}
+    </a>
+
+    <ActivityLogModal
+      :is-open="activityOpen"
+      :subject="`${t('Stock request')} ${req.number}`"
+      :updated-by="lastUpdated?.user ?? (req.lines[0]?.requestor ?? '—')"
+      :updated-at="lastUpdated?.date ?? req.requestDate"
+      :entries="activityEntries"
+      @close="activityOpen = false"
+    />
+
     <ReserveMaterialsModal
       id="srd-reserve" :is-open="reserveOpen"
       :work-order-number="req.number" :lines="lines"
@@ -516,6 +584,12 @@ function saveSerials(serials: string[]) {
 .srd-product { display: flex; flex-direction: column; }
 .srd-product-name { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default, #080d0e); }
 .srd-product-sku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary, #3a4749); }
+.detail-updated {
+  margin: 0; align-self: flex-start;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer;
+}
+.srd-tr--rejected .wod-td { opacity: 0.55; }
+.srd-reject { color: var(--mp-text-critical); }
 .srd-muted { color: var(--mp-text-secondary, #3a4749); }
 .srd-warn { color: var(--mp-text-warning, #a35200); }
 .srd-short { color: var(--mp-text-critical, #a8352d); font-weight: var(--mp-font-weights-semi-bold); }

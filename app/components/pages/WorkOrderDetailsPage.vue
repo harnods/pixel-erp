@@ -28,11 +28,14 @@ import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 import { recordsForWorkOrder, addMaterialConsumeReturnRecord, remainingReservation } from '~/data/materialConsumeReturn'
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import { warehouses } from '~/data/warehouses'
+import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ReserveMaterialsModal from '~/components/patterns/ReserveMaterialsModal.vue'
 import UnreserveMaterialsModal from '~/components/patterns/UnreserveMaterialsModal.vue'
 import { productionSettings, reservationOnWorkOrder } from '~/data/productionSettings'
+import { logActivityFor, entriesFor, lastActivity } from '~/data/activityLog'
 import {
   raiseStockRequestForWorkOrder, requestForWorkOrder, workOrderReadiness, startGate,
+  releaseOnCompletion,
   changedTrackingLines, reservedTracking,
   reservedForWorkOrder, reserveWorkOrderProducts, unreserveWorkOrderProducts,
   type UnreserveDisposition,
@@ -201,6 +204,27 @@ const showReservationMenu = computed(() => canReserveHere.value && rawMaterials.
 const reserveOpen = ref(false)
 const unreserveOpen = ref(false)
 
+/**
+ * Activity log (rule/detail-activity-log-always, US-8). Reservation, release and
+ * change events are logged; creation is derived so a untouched work order still
+ * shows a coherent trail.
+ */
+const activityOpen = ref(false)
+const activityEntries = computed(() => {
+  const w = wo.value
+  if (!w) return []
+  return entriesFor('work-order', w.id, [{
+    date: `${w.planStartDate || TODAY_ISO}T08:00:00`,
+    user: STAFF[0]!,
+    activity: t('Work order created'),
+    details: [
+      { label: t('Planned qty'), value: String(w.plannedQty) },
+      { label: t('Components'), value: String(rawMaterials.value.length) },
+    ],
+  }])
+})
+const lastUpdatedEntry = computed(() => wo.value ? lastActivity('work-order', wo.value.id) : undefined)
+
 function onReserve(productIds: string[]) {
   if (!wo.value) return
   const r = reserveWorkOrderProducts(wo.value.id, productIds)
@@ -215,6 +239,38 @@ function onReserve(productIds: string[]) {
   if (r.skippedProducts > 0) parts.push(`${r.skippedProducts} ${t('had no stock')}`)
   const title = parts.join(' · ')
   toast.notify({ variant: 'success', title, maxWidth: 'max-content' })
+  // UC-02 — every reservation is logged with actor, product and qty, and with the
+  // surface it was made from: "from work order page" with actor (Production), as
+  // against a reservation made by PPIC on Stock requests.
+  logReservation(t('Reserved material'), productIds, [
+    { label: t('Qty reserved'), value: `${r.reservedQty}` },
+    { label: t('Source'), value: t('Work order page (Production)') },
+  ])
+}
+
+/**
+ * Write one reservation event against BOTH the work order and its stock request:
+ * the two surfaces show the same allocation, so a trail visible on only one of
+ * them sends whoever is looking at the other to the wrong conclusion.
+ */
+function logReservation(activity: string, productIds: string[], extra: { label: string; value: string }[]) {
+  const w = wo.value
+  if (!w) return
+  const req = requestForWorkOrder(w.id)
+  const names = productIds
+    .map(id => reservationLines.value.find(l => l.productId === id)?.product ?? id)
+    .join(', ')
+  logActivityFor(
+    [
+      { type: 'work-order' as const, id: w.id },
+      ...(req ? [{ type: 'stock-request' as const, id: req.id }] : []),
+    ],
+    {
+      user: STAFF[0]!,
+      activity,
+      details: [{ label: t('Components'), value: names }, ...extra],
+    },
+  )
 }
 
 function onUnreserve(payload: { productIds: string[]; disposition: UnreserveDisposition; reason: string }) {
@@ -226,6 +282,14 @@ function onUnreserve(payload: { productIds: string[]; disposition: UnreserveDisp
     ? t('returned to warehouse')
     : t('charged to production cost')
   toast.notify({ variant: 'success', title: `${released} ${t('unit unreserved')} — ${where}`, maxWidth: 'max-content' })
+  // UC-15 R-1(c) — the manual release trigger. Logged with the same shape as the
+  // two automatic ones so the three reconcile against the stock ledger.
+  logReservation(t('Released reservation'), payload.productIds, [
+    { label: t('Qty released'), value: `${released}` },
+    { label: t('Trigger'), value: t('Manual unreserve') },
+    { label: t('Disposition'), value: where },
+    ...(payload.reason ? [{ label: t('Reason'), value: payload.reason }] : []),
+  ])
 }
 
 // Reserved qty per component — shown in the Raw materials table.
@@ -320,7 +384,33 @@ function completeWorkOrder() {
   wo.value.status = 'completed'
   wo.value.endDate = new Date().toISOString().slice(0, 10)
   persistWorkOrders()
-  toast.notify({ variant: 'success', title: 'Work order completed' })
+
+  // UC-15 R-3 — trigger (a). Whatever is still reserved when a work order
+  // COMPLETES is by definition unused, so it returns to available stock
+  // automatically and unapproved: holding a job's last step for a decision nobody
+  // is making just strands the material. (A PARTIAL completion does not come
+  // through here — its remaining reserve stays reserved, as the job still means
+  // to use it.) Material lost or damaged must be recorded as consumption BEFORE
+  // completing, or it is released here as if it were still on the shelf.
+  const released = releaseOnCompletion(wo.value.id)
+  if (released.qty > 0) {
+    logReservation(
+      t('Released reservation'),
+      released.products.map(p => p.productId),
+      [
+        { label: t('Qty released'), value: `${released.qty}` },
+        { label: t('Trigger'), value: t('Work order completion') },
+      ],
+    )
+  }
+
+  toast.notify({
+    variant: 'success',
+    title: released.qty > 0
+      ? `${t('Work order completed')} — ${released.qty} ${t('unit returned to available stock')}`
+      : t('Work order completed'),
+    maxWidth: 'max-content',
+  })
 }
 function onAutoConsumeAndComplete() {
   if (!wo.value) return
@@ -929,6 +1019,14 @@ function suppressFabClick(e: MouseEvent) {
         </div>
       </section>
 
+      <!-- Provenance line — the ONLY way into the activity log
+           (rule/activity-log-trigger). Reservation, release and change events all
+           land here, which is where US-8 expects them to be traceable. -->
+      <a class="detail-updated" @click.prevent="activityOpen = true">
+        {{ t('Last updated by') }} {{ lastUpdatedEntry?.user ?? STAFF[0] }}
+        {{ t('on') }} {{ formatDate((lastUpdatedEntry?.date ?? wo.planStartDate ?? TODAY_ISO).slice(0, 10)) }}
+      </a>
+
     </div>
 
     <!-- ── Material consume & return — no records at all: illustration only, no filter bar ── -->
@@ -1074,6 +1172,15 @@ function suppressFabClick(e: MouseEvent) {
       </MpPopoverContent>
     </MpPopover>
 
+    <ActivityLogModal
+      :is-open="activityOpen"
+      :subject="`${t('Work order')} ${wo?.number ?? ''}`"
+      :updated-by="lastUpdatedEntry?.user ?? STAFF[0]"
+      :updated-at="lastUpdatedEntry?.date ?? wo?.planStartDate ?? TODAY_ISO"
+      :entries="activityEntries"
+      @close="activityOpen = false"
+    />
+
     <CompleteWorkOrderModal
       v-model:is-open="showCompleteModal"
       :rows="remainingRawMaterials"
@@ -1139,6 +1246,12 @@ function suppressFabClick(e: MouseEvent) {
 </template>
 
 <style scoped>
+/* Provenance line under the Overview stage — matches the shared detail pages. */
+.detail-updated {
+  margin: 0; align-self: flex-start;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer;
+}
+
 /* Batch/serial substitution notice (warehouse reserved different units) */
 .wod-tracking-note {
   display: flex; align-items: flex-start; gap: var(--mp-spacing-2);

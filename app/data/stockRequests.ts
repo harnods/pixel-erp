@@ -338,25 +338,29 @@ function buildSeed(): StockRequest[] {
     // then point back at one of them by `rawIndex`.
     const raws = [...new Map((bom?.rawMaterials ?? []).map(r => [r.productId, r])).values()]
     const requestDate = shiftDays(TODAY_ISO, s.dayOffset)
-    const lines: StockRequestLine[] = s.lines.map((sl, li) => {
+    // A seed may describe more lines than its work order's BOM actually has
+    // components; those have nothing real to point at, so they are dropped rather
+    // than rendered as a placeholder "Raw material" row.
+    const lines: StockRequestLine[] = s.lines.flatMap((sl, li) => {
       const ri = sl.rawIndex ?? li
       const raw = raws[ri]
-      const product = raw ? catalogProduct(raw.productId) : undefined
+      if (!raw) return []
+      const product = catalogProduct(raw.productId)
       // The qty a request asks for is exactly the qty the work order's Raw
       // materials table calls "Needed qty" — the BOM line. Scaling it here would
       // make the two surfaces disagree about the same number. A tagged line
       // carries only its DELTA, so it asks for a fraction of that.
-      const base = raw?.needed ?? 1
+      const base = raw.needed
       const qty = sl.tag ? Math.max(1, Math.round(base * 0.2)) : base
       const consumed = Math.round(qty * sl.consumedPct)
       // A tagged line shares its component's destination, so the detail page still
       // groups all three under one warehouse and one transfer.
       const wh = SEED_WAREHOUSES[ri % SEED_WAREHOUSES.length]!
-      return {
-        productId: raw?.productId ?? `p-100${ri + 1}`,
+      return [{
+        productId: raw.productId,
         product: product?.name ?? 'Raw material',
-        sku: product?.sku ?? `10${String(ri + 1).padStart(2, '0')}`,
-        unit: raw?.unit ?? product?.unit ?? 'Unit',
+        sku: product?.sku ?? '—',
+        unit: raw.unit || product?.unit || 'Unit',
         qty,
         reserved: Math.max(Math.round(qty * sl.reservedPct), consumed),
         consumed,
@@ -367,7 +371,7 @@ function buildSeed(): StockRequest[] {
         requestor: STAFF[sl.staffIndex ?? s.staffIndex] ?? STAFF[0]!,
         ...(sl.tag ? { tag: sl.tag } : {}),
         ...(sl.rejected ? { rejected: true } : {}),
-      }
+      }]
     })
     return {
       id: `sr-${i + 1}`,
@@ -380,7 +384,17 @@ function buildSeed(): StockRequest[] {
   })
 }
 
-const snapshot = loadSnapshot<StockRequest>('stockRequests')
+/**
+ * Snapshot key is VERSIONED. PRD v0.5 moved requestor, tag and rejection onto the
+ * line and collapsed a work order's several requests into one, so a snapshot
+ * written by an earlier build cannot be read as a v0.5 request: its lines have no
+ * requestor at all, and its extra requests would come back as duplicates. The
+ * seed is deterministic demo data, so dropping the stale snapshot costs nothing
+ * and is honest — reconstructing it would be guesswork presented as history.
+ */
+const SNAPSHOT_KEY = 'stockRequests.v2'
+
+const snapshot = loadSnapshot<StockRequest>(SNAPSHOT_KEY)
 export const stockRequests = reactive<StockRequest[]>(snapshot ?? buildSeed())
 
 const SR_NO_RE = /^SR-2026-(\d+)$/
@@ -396,7 +410,7 @@ function nextRequestNumber(): string {
 
 /** Persist the stock-request snapshot (call after any mutation). */
 export function persistStockRequests(): void {
-  saveSnapshot('stockRequests', stockRequests)
+  saveSnapshot(SNAPSHOT_KEY, stockRequests)
 }
 
 /**
