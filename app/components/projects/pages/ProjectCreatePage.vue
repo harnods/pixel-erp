@@ -72,9 +72,9 @@ const WAREHOUSES = ['Workshop Cileungsi', 'Gudang Utama Bekasi']
 const pmOptions = PMS
 const warehouseOptions = WAREHOUSES
 const priorityOptions = computed(() => [
-  { value: 'high', label: t('High'), icon: 'arrows-up' },
-  { value: 'medium', label: t('Medium'), icon: 'arrows-right' },
-  { value: 'low', label: t('Low'), icon: 'arrows-down' },
+  { value: 'high', label: t('High') },
+  { value: 'medium', label: t('Medium') },
+  { value: 'low', label: t('Low') },
 ])
 const wpTypeOptions = computed(() => [
   { value: 'production', label: t('Production') },
@@ -152,16 +152,24 @@ const step2Errors = computed(() => ({
   contractValue: !parseAmount(form.contractValue) ? t('Enter the contract value.') : '',
   dates: !form.startDate || !form.endDate ? t('Pick the project period.') : form.endDate < form.startDate ? t('The period must end after it starts.') : '',
 }))
+// Anything that belongs to one field is reported ON that field (rule/form-errors-inline);
+// only a rule that spans the whole step can fall back to the form-level message.
+const phaseErrors = computed(() => phaseDrafts.value.map(ph => ({
+  name: !ph.name.trim() ? t('Enter the phase name.') : '',
+  wps: ph.wps.map(w => ({
+    name: !w.name.trim() ? t('Enter the work package name, or remove the row.') : '',
+    type: isProduction.value && !w.type ? t('Choose production or service.') : '',
+    unit: parseAmount(w.plannedUnits) > 0 && !w.unit.trim() ? t('Enter the unit.') : '',
+  })),
+})))
 const step3Error = computed(() => {
   if (!usePhases.value) return ''
   if (!phaseDrafts.value.length) return t('Add at least one phase.')
-  if (phaseDrafts.value.some(p => !p.name.trim())) return t('Every phase needs a name.')
-  if (phaseDrafts.value.some(p => p.wps.some(w => !w.name.trim()))) return t('Every work package needs a name, or remove the empty row.')
-  if (isProduction.value && phaseDrafts.value.some(p => p.wps.some(w => !w.type))) return t('Choose production or service for every work package.')
-  if (phaseDrafts.value.some(p => p.wps.some(w => parseAmount(w.plannedUnits) > 0 && !w.unit.trim()))) return t('Enter the unit for every work package with planned units.')
   if (isUnit.value && !phaseDrafts.value.some(p => p.wps.some(w => parseAmount(w.plannedUnits) > 0))) return t('Unit-measured Output needs planned units on at least one work package.')
   return ''
 })
+const step3Invalid = computed(() => !!step3Error.value
+  || (usePhases.value && phaseErrors.value.some(p => p.name || p.wps.some(w => w.name || w.type || w.unit))))
 const weightWarning = computed(() => isMilestone.value && usePhases.value && weightSum.value !== 100
   ? `${t('Progress weights total')} ${pct(weightSum.value)} — ${t('they must total 100% before the project can be approved.')}` : '')
 
@@ -169,7 +177,7 @@ function next() {
   touched.value = true
   if (step.value === 1 && step1Error.value) return
   if (step.value === 2 && Object.values(step2Errors.value).some(Boolean)) return
-  if (step.value === 3 && step3Error.value) return
+  if (step.value === 3 && step3Invalid.value) return
   touched.value = false
   step.value++
 }
@@ -427,14 +435,15 @@ function create() {
               <!-- Card title + delete, top-right -->
               <div class="pm-phase-head">
                 <h4 class="pm-h3">{{ t('Phase') }} {{ pi + 1 }}</h4>
-                <MpButton :id="`pc-ph-remove-${pi}`" variant="ghost" is-rounded left-icon="delete" :aria-label="t('Remove phase')" @click="removePhase(pi)" />
+                <MpButton v-if="phaseDrafts.length > 1 || !phasesRequired" :id="`pc-ph-remove-${pi}`" variant="ghost" is-rounded left-icon="delete" :aria-label="t('Remove phase')" @click="removePhase(pi)" />
               </div>
 
               <!-- Phase fields and work-package rows share one grid (rowClass) -->
               <div class="pm-srow" :class="rowClass">
-                <MpFormControl :id="`pc-ph-${pi}-fc`" is-required>
+                <MpFormControl :id="`pc-ph-${pi}-fc`" is-required :is-invalid="touched && !!phaseErrors[pi]?.name">
                   <MpFormLabel>{{ t('Phase name') }}</MpFormLabel>
                   <MpInput :id="`pc-ph-${pi}`" v-model="ph.name" :placeholder="t('e.g. Interior')" />
+                  <MpFormErrorMessage>{{ phaseErrors[pi]?.name }}</MpFormErrorMessage>
                 </MpFormControl>
                 <template v-if="isMilestone">
                   <MpFormControl :id="`pc-ph-rab-${pi}-fc`">
@@ -459,22 +468,25 @@ function create() {
               <!-- Work packages — every field carries its own label, like the phase row above.
                    A production work package picks a master BOM; a service one types its unit. -->
               <div v-for="(wp, wi) in ph.wps" :key="wi" class="pm-srow pm-srow--wp" :class="rowClass">
-                <MpFormControl :id="`pc-wp-${pi}-${wi}-fc`" is-required>
+                <MpFormControl :id="`pc-wp-${pi}-${wi}-fc`" is-required :is-invalid="touched && !!phaseErrors[pi]?.wps[wi]?.name">
                   <MpFormLabel>{{ t('Phase') }} {{ pi + 1 }}.{{ wi + 1 }}</MpFormLabel>
                   <MpInput :id="`pc-wp-${pi}-${wi}`" v-model="wp.name" :placeholder="t('Work package name')" />
+                  <MpFormErrorMessage>{{ phaseErrors[pi]?.wps[wi]?.name }}</MpFormErrorMessage>
                 </MpFormControl>
-                <MpFormControl v-if="isProduction" :id="`pc-wp-type-${pi}-${wi}-fc`" is-required>
+                <MpFormControl v-if="isProduction" :id="`pc-wp-type-${pi}-${wi}-fc`" is-required :is-invalid="touched && !!phaseErrors[pi]?.wps[wi]?.type">
                   <MpFormLabel>{{ t('Type') }}</MpFormLabel>
                   <ErpFilterSelect :id="`pc-wp-type-${pi}-${wi}`" :model-value="wp.type" :placeholder="t('Type')" :options="wpTypeOptions" :is-clearable="false" width="100%" @update:model-value="(v: string) => (wp.type = v as WorkPackageType)" />
+                  <MpFormErrorMessage>{{ phaseErrors[pi]?.wps[wi]?.type }}</MpFormErrorMessage>
                 </MpFormControl>
                 <MpFormControl v-if="isProduction || isUnit" :id="`pc-wp-units-${pi}-${wi}-fc`">
                   <MpFormLabel>{{ t('Qty') }}</MpFormLabel>
                   <MpInput :id="`pc-wp-units-${pi}-${wi}`" v-model="wp.plannedUnits" inputmode="numeric" placeholder="0" />
                 </MpFormControl>
-                <MpFormControl v-if="isProduction || isUnit" :id="`pc-wp-unit-${pi}-${wi}-fc`">
+                <MpFormControl v-if="isProduction || isUnit" :id="`pc-wp-unit-${pi}-${wi}-fc`" :is-invalid="touched && !!phaseErrors[pi]?.wps[wi]?.unit">
                   <MpFormLabel>{{ t('Unit') }}</MpFormLabel>
                   <MpInput v-if="wp.type === 'service' || !isProduction" :id="`pc-wp-unit-${pi}-${wi}`" v-model="wp.unit" :placeholder="t('e.g. Visit')" />
                   <ErpFilterSelect v-else :id="`pc-wp-unit-${pi}-${wi}`" v-model="wp.unit" :placeholder="t('Unit')" :options="unitOptions" :is-clearable="false" width="100%" />
+                  <MpFormErrorMessage>{{ phaseErrors[pi]?.wps[wi]?.unit }}</MpFormErrorMessage>
                 </MpFormControl>
                 <MpFormControl v-if="isProduction && wp.type === 'production'" :id="`pc-wp-bom-${pi}-${wi}-fc`">
                   <MpFormLabel>
