@@ -337,12 +337,12 @@ async function save() {
 .zm-nav--next { right: 16px; }
 .zm-count { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); padding: 4px 12px; border-radius: 999px; background: rgba(255,255,255,0.16); color: var(--mp-colors-white); font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold); } /* pixel-police-allow */
 .cpd__slide-img { display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover; }
-.cpd__slide-n { position: absolute; top: 6px; left: 6px; display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: rgba(8,13,14,0.66); color: var(--mp-colors-white); font-size: 11px; font-weight: var(--mp-font-weights-semi-bold); }
+.cpd__slide-n { position: absolute; top: 6px; left: 6px; display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: rgba(8,13,14,0.66); color: var(--mp-colors-white); font-size: 11px; font-weight: var(--mp-font-weights-semi-bold); } /* pixel-police-allow */
 .cpd__error { margin: 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-danger, #d1362f); }
 .cpd__hintline { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
 .cpd__subjects { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); align-items: center; }
 .cpd__subject { position: relative; width: 56px; height: 56px; border-radius: var(--mp-radii-md, 8px); overflow: hidden; border: 1px solid var(--mp-border-default, #e3e7e9); flex-shrink: 0; }
 .cpd__subject-img { width: 100%; height: 100%; object-fit: cover; }
-.cpd__subject-x { position: absolute; top: 2px; right: 2px; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: none; border-radius: 999px; background: rgba(8,13,14,0.66); color: var(--mp-colors-white); cursor: pointer; padding: 0; }
+.cpd__subject-x { position: absolute; top: 2px; right: 2px; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: none; border-radius: 999px; background: rgba(8,13,14,0.66); color: var(--mp-colors-white); cursor: pointer; padding: 0; } /* pixel-police-allow */
 .cpd__subject-x :deep(svg) { color: var(--mp-colors-white); width: 12px; height: 12px; }
 </style>
