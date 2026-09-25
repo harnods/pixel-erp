@@ -437,6 +437,7 @@ function create() {
                 <h4 class="pm-h3">{{ t('Phase') }} {{ pi + 1 }}</h4>
                 <MpButton v-if="phaseDrafts.length > 1 || !phasesRequired" :id="`pc-ph-remove-${pi}`" variant="ghost" is-rounded left-icon="delete" :aria-label="t('Remove phase')" @click="removePhase(pi)" />
               </div>
+              <PmActionError v-if="pi === 0" :id="`pc-step3-error-${pi}`" :error="touched ? step3Error : ''" />
 
               <!-- Phase fields and work-package rows share one grid (rowClass) -->
               <div class="pm-srow" :class="rowClass">
@@ -500,7 +501,6 @@ function create() {
                 <MpButton :id="`pc-wp-remove-${pi}-${wi}`" variant="ghost" is-rounded left-icon="minus-circular" :aria-label="t('Remove work package')" class="pm-row-remove" @click="ph.wps.splice(wi, 1)" />
               </div>
               <div><MpButton :id="`pc-wp-add-${pi}`" variant="ghost" is-rounded left-icon="add" @click="ph.wps.push(newWp())">{{ t('Work package') }}</MpButton></div>
-              <PmActionError v-if="pi === 0" :id="`pc-step3-error-${pi}`" :error="touched ? step3Error : ''" />
             </div>
             <div><MpButton id="pc-add-phase" variant="secondary" is-rounded left-icon="add" @click="addPhase">{{ t('New phase') }}</MpButton></div>
           </template>
