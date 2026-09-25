@@ -14,7 +14,7 @@
  */
 import { MpIcon } from '@mekari/pixel3'
 import type { WorklistRow } from '~/data/replenishment'
-import { leadTimeTierLabel } from '~/data/leadTimeHistory'
+import { leadTimeTierLabel, leadTimeSamplesFor } from '~/data/leadTimeHistory'
 import { formatIDR } from '~/utils/currency'
 import { formatDate } from '~/utils/date'
 
@@ -54,14 +54,76 @@ const velocityNote = computed(() => {
     : `Averaged over the last ${row.velocity.lookbackDays} days of sales`
 })
 
-/** Real documents behind the demand figure, newest first, capped for the panel. */
-const documents = computed(() => {
-  const docs = props.row?.velocity.citations ?? []
-  return [...docs].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 10)
+// How many rows each list previews before "Showing N of M · Export for the rest".
+// A trust panel answers "is this believable?" with the most recent few; the full
+// audit trail (which can be hundreds of rows) is what Export is for.
+const PREVIEW = 8
+
+/** Every sales/movement doc behind the demand figure, newest first. */
+const salesDocs = computed(() =>
+  [...(props.row?.velocity.citations ?? [])].sort((a, b) => (a.date < b.date ? 1 : -1)),
+)
+const documents = computed(() => salesDocs.value.slice(0, PREVIEW))
+
+/**
+ * Purchase documents behind the LEAD time — the PO→goods-receipt samples that were
+ * averaged. Only when the lead time is actually computed; an estimated tier has no
+ * measured receipts, so we show its basis instead of an empty table.
+ */
+const purchaseDocs = computed(() => {
+  const row = props.row
+  if (!row || row.leadTimeTier !== 'computed' || !row.vendor) return []
+  return leadTimeSamplesFor(row.vendor.id, row.sku, row.warehouseId)
+    .filter((s) => !s.excluded && s.leadDays >= 1)
+    .sort((a, b) => (a.receiptDate < b.receiptDate ? 1 : -1))
 })
+const purchasePreview = computed(() => purchaseDocs.value.slice(0, PREVIEW))
 
 const modelledDays = computed(() => props.row?.velocity.modelledDays ?? 0)
 const longestWindow = computed(() => props.row?.velocity.lookbackDays ?? 0)
+
+/** CSV-escape one cell. */
+function csvCell(v: string | number): string {
+  const s = String(v ?? '')
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+/**
+ * Export the FULL contributing set — every sales and purchase document, not the
+ * preview. This is the answer to "what about 1000 rows": the panel stays a
+ * scannable preview, and the long tail leaves as a file. Bounded, client-side data,
+ * so unlike the worklist's server-split export it genuinely runs here.
+ */
+function exportDocuments() {
+  const row = props.row
+  if (!row || !import.meta.client) return
+  const lines: (string | number)[][] = [
+    ['Kind', 'Date', 'Number', 'Detail', 'Qty / lead days', 'Unit'],
+  ]
+  for (const d of salesDocs.value) {
+    lines.push([
+      'Sales', d.date, d.number,
+      d.salesNo ?? (d.kind === 'transfer' ? 'Warehouse transfer' : 'Stock adjustment'),
+      d.qty, row.unit,
+    ])
+  }
+  for (const s of purchaseDocs.value) {
+    lines.push([
+      'Purchase', s.receiptDate, s.poNumber ?? '(modelled)',
+      s.receiptNumber ?? '(modelled)', s.leadDays, 'days',
+    ])
+  }
+  const csv = lines.map((r) => r.map(csvCell).join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `contributing-documents-${row.sku}-${row.warehouseId}.csv`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
 </script>
 
 <template>
@@ -170,16 +232,13 @@ const longestWindow = computed(() => props.row?.velocity.lookbackDays ?? 0)
               </div>
 
               <!-- Sizes the ORDER, never the trigger (decision D9). -->
-              <div class="rp-bd-dt">{{ row.maxLevel !== null ? t('Max level') : t('Coverage days') }}</div>
+              <div class="rp-bd-dt">{{ t('Coverage days') }}</div>
               <div class="rp-bd-dd">
-                <template v-if="row.maxLevel !== null">
-                  {{ num(row.maxLevel) }} {{ row.unit }}
-                  <span class="rp-bd-dd-note">{{ t('order up to this level') }}</span>
-                </template>
-                <template v-else>
-                  {{ row.coverageDays }} {{ t('days') }}
-                  <span class="rp-bd-dd-note">{{ t('how much each order covers — not part of the trigger') }}</span>
-                </template>
+                {{ row.coverageDays }} {{ t('days') }}
+                <span class="rp-bd-dd-note">
+                  <template v-if="row.maxLevel !== null">{{ t('Not used — a max level is set') }}</template>
+                  <template v-else>{{ t('how much each order covers — not part of the trigger') }}</template>
+                </span>
               </div>
 
               <div class="rp-bd-dt">{{ t('Reorder point') }}</div>
@@ -189,11 +248,22 @@ const longestWindow = computed(() => props.row?.velocity.lookbackDays ?? 0)
                 <span class="rp-bd-dd-note">{{ SOURCE_LABEL[row.reorderPointSource] }}</span>
               </div>
 
-              <div class="rp-bd-dt">{{ t('Max level') }}</div>
+              <!-- The order-up-to level the suggestion refills to. Always present when
+                   there is demand: a max level if one is set, otherwise the coverage-days
+                   target — so every recommended SKU shows how high it orders up to. -->
+              <div class="rp-bd-dt">{{ t('Order up to') }}</div>
               <div class="rp-bd-dd">
-                <template v-if="row.maxLevel === null">—</template>
-                <template v-else>{{ num(row.maxLevel) }} {{ row.unit }}</template>
-                <span v-if="row.maxLevel !== null" class="rp-bd-dd-note">{{ t('Caps the suggestion') }}</span>
+                <template v-if="row.velocity.avgDailySales > 0 || row.maxLevel !== null">
+                  {{ num(row.suggestion.targetQty) }} {{ row.unit }}
+                  <span class="rp-bd-dd-note">
+                    <template v-if="row.maxLevel !== null">{{ t('Max level — a fixed ceiling you set') }}</template>
+                    <template v-else>{{ t('velocity × (lead + safety + coverage days)') }}</template>
+                  </span>
+                </template>
+                <template v-else>
+                  —
+                  <span class="rp-bd-dd-note">{{ t('No demand yet to size an order') }}</span>
+                </template>
               </div>
 
               <div class="rp-bd-dt">{{ t('Available') }}</div>
@@ -242,9 +312,19 @@ const longestWindow = computed(() => props.row?.velocity.lookbackDays ?? 0)
             </p>
           </section>
 
-          <!-- Real demand documents -->
+          <!-- Contributing documents — the real movements behind the numbers. The
+               panel shows the most recent few (a trust check); the full set, which
+               can be hundreds of rows, leaves via Export rather than filling the
+               drawer. -->
           <section class="rp-bd-section">
-            <span class="rp-bd-section-title">{{ t('Contributing sales documents') }}</span>
+            <div class="rp-bd-section-head">
+              <span class="rp-bd-section-title">{{ t('Contributing sales documents') }}</span>
+              <a
+                v-if="salesDocs.length || purchaseDocs.length"
+                class="rp-bd-link"
+                @click="exportDocuments"
+              >{{ t('Export all (CSV)') }}</a>
+            </div>
             <table v-if="documents.length" class="rp-bd-table">
               <thead>
                 <tr>
@@ -270,14 +350,54 @@ const longestWindow = computed(() => props.row?.velocity.lookbackDays ?? 0)
             <p v-else class="rp-bd-caption">
               {{ t('No shipped sales documents in this window.') }}
             </p>
+            <p v-if="salesDocs.length > documents.length" class="rp-bd-caption">
+              {{ t('Showing') }} {{ documents.length }} {{ t('of') }} {{ salesDocs.length }}
+              {{ t('documents — export for the full list') }}
+            </p>
             <!-- Honesty: say plainly how much of the window is modelled demo history
                  rather than implying every day is a real document. -->
             <p v-if="modelledDays > 0" class="rp-bd-caption">
-              {{ documents.length }} {{ t('shipped documents') }} ·
+              {{ salesDocs.length }} {{ t('shipped documents') }} ·
               {{ modelledDays }} {{ t('of') }} {{ longestWindow }} {{ t('days are modelled demo history') }}
             </p>
             <p v-if="row.flags.volatile" class="rp-bd-caption rp-bd-caption--warning">
               {{ t('Demand is volatile — recent spikes were damped before weighting.') }}
+            </p>
+          </section>
+
+          <!-- Contributing purchase documents — the PO→goods-receipt history the
+               lead time was measured from, symmetric with the sales side. -->
+          <section class="rp-bd-section">
+            <span class="rp-bd-section-title">{{ t('Contributing purchase documents') }}</span>
+            <template v-if="purchasePreview.length">
+              <table class="rp-bd-table">
+                <thead>
+                  <tr>
+                    <th class="rp-bd-th">{{ t('Ordered') }}</th>
+                    <th class="rp-bd-th">{{ t('Received') }}</th>
+                    <th class="rp-bd-th">{{ t('Purchase order') }}</th>
+                    <th class="rp-bd-th">{{ t('Receipt') }}</th>
+                    <th class="rp-bd-th rp-bd-th--num">{{ t('Lead time') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(s, i) in purchasePreview" :key="`${s.receiptDate}-${i}`">
+                    <td class="rp-bd-td">{{ formatDate(s.orderDate) }}</td>
+                    <td class="rp-bd-td">{{ formatDate(s.receiptDate) }}</td>
+                    <td class="rp-bd-td rp-bd-td--sub">{{ s.poNumber ?? t('Modelled') }}</td>
+                    <td class="rp-bd-td rp-bd-td--sub">{{ s.receiptNumber ?? t('Modelled') }}</td>
+                    <td class="rp-bd-td rp-bd-td--num">{{ s.leadDays }} {{ t('days') }}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p v-if="purchaseDocs.length > purchasePreview.length" class="rp-bd-caption">
+                {{ t('Showing') }} {{ purchasePreview.length }} {{ t('of') }} {{ purchaseDocs.length }}
+                {{ t('receipts — export for the full list') }}
+              </p>
+            </template>
+            <p v-else class="rp-bd-caption">
+              {{ t('Lead time is') }} {{ leadTimeTierLabel(row.leadTimeTier, row.leadTimeSampleSize) }} —
+              {{ t('no delivered purchase orders measured for this product and warehouse yet.') }}
             </p>
           </section>
 
