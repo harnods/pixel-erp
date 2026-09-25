@@ -4038,6 +4038,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'purchase receipts': 'penerimaan pembelian',
   'behind these numbers': 'di balik angka-angka ini',
   'Export documents (CSV)': 'Ekspor dokumen (CSV)',
+  'Export sales (CSV)': 'Ekspor penjualan (CSV)',
+  'Export purchases (CSV)': 'Ekspor pembelian (CSV)',
   'No contributing documents in this window.': 'Belum ada dokumen yang berkontribusi pada periode ini.',
   'Export all (CSV)': 'Ekspor semua (CSV)',
   'Showing': 'Menampilkan',

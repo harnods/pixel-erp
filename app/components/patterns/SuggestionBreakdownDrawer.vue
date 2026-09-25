@@ -85,36 +85,46 @@ function csvCell(v: string | number): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
-/**
- * Download the FULL contributing set as a spreadsheet — every sales and purchase
- * document. Bounded, client-side data, so it genuinely runs here (unlike the
- * worklist's server-split export). This is the entry point to the detail the drawer
- * intentionally does not list.
- */
-function exportDocuments() {
-  const row = props.row
-  if (!row || !import.meta.client) return
-  const lines: (string | number)[][] = [['Kind', 'Date', 'Number', 'Detail', 'Qty / lead days', 'Unit']]
-  for (const d of [...salesDocs.value].sort((a, b) => (a.date < b.date ? 1 : -1))) {
-    lines.push([
-      'Sales', d.date, d.number,
-      d.salesNo ?? (d.kind === 'transfer' ? 'Warehouse transfer' : 'Stock adjustment'),
-      d.qty, row.unit,
-    ])
-  }
-  for (const s of [...purchaseDocs.value].sort((a, b) => (a.receiptDate < b.receiptDate ? 1 : -1))) {
-    lines.push(['Purchase', s.receiptDate, s.poNumber ?? '(modelled)', s.receiptNumber ?? '(modelled)', s.leadDays, 'days'])
-  }
+/** Turn rows into a CSV file and download it. Bounded client-side data, so this
+ *  genuinely runs here (unlike the worklist's server-split export). */
+function downloadCsv(lines: (string | number)[][], name: string) {
+  if (!import.meta.client) return
   const csv = lines.map((r) => r.map(csvCell).join(',')).join('\n')
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `contributing-documents-${row.sku}-${row.warehouseId}.csv`
+  a.download = name
   document.body.appendChild(a)
   a.click()
   a.remove()
   URL.revokeObjectURL(url)
+}
+
+/** The full contributing SALES detail — the entry point the drawer doesn't list. */
+function exportSales() {
+  const row = props.row
+  if (!row) return
+  const lines: (string | number)[][] = [['Date', 'Number', 'Source', 'Qty', 'Unit']]
+  for (const d of [...salesDocs.value].sort((a, b) => (a.date < b.date ? 1 : -1))) {
+    lines.push([
+      d.date, d.number,
+      d.salesNo ?? (d.kind === 'transfer' ? 'Warehouse transfer' : 'Stock adjustment'),
+      d.qty, row.unit,
+    ])
+  }
+  downloadCsv(lines, `contributing-sales-${row.sku}-${row.warehouseId}.csv`)
+}
+
+/** The full contributing PURCHASE detail (PO→goods-receipt samples). */
+function exportPurchase() {
+  const row = props.row
+  if (!row) return
+  const lines: (string | number)[][] = [['Ordered', 'Received', 'Purchase order', 'Receipt', 'Lead days']]
+  for (const s of [...purchaseDocs.value].sort((a, b) => (a.receiptDate < b.receiptDate ? 1 : -1))) {
+    lines.push([s.orderDate, s.receiptDate, s.poNumber ?? '(modelled)', s.receiptNumber ?? '(modelled)', s.leadDays])
+  }
+  downloadCsv(lines, `contributing-purchase-${row.sku}-${row.warehouseId}.csv`)
 }
 </script>
 
@@ -307,14 +317,24 @@ function exportDocuments() {
                 · {{ modelledDays }} {{ t('of') }} {{ longestWindow }} {{ t('days are modelled demo history') }}
               </template>
             </p>
-            <button
-              v-if="salesDocs.length || purchaseDocs.length"
-              class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm btn-enterprise--icon-before"
-              type="button"
-              @click="exportDocuments"
-            >
-              <MpIcon name="download" size="sm" /> {{ t('Export documents (CSV)') }}
-            </button>
+            <div v-if="salesDocs.length || purchaseDocs.length" class="rp-bd-export">
+              <button
+                v-if="salesDocs.length"
+                class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm btn-enterprise--icon-before"
+                type="button"
+                @click="exportSales"
+              >
+                <MpIcon name="download" size="sm" /> {{ t('Export sales (CSV)') }}
+              </button>
+              <button
+                v-if="purchaseDocs.length"
+                class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm btn-enterprise--icon-before"
+                type="button"
+                @click="exportPurchase"
+              >
+                <MpIcon name="download" size="sm" /> {{ t('Export purchases (CSV)') }}
+              </button>
+            </div>
             <p v-else class="rp-bd-caption">{{ t('No contributing documents in this window.') }}</p>
           </section>
 
@@ -451,6 +471,8 @@ function exportDocuments() {
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle);
 }
 .rp-bd-substat-note--critical { color: var(--mp-text-danger); }
+
+.rp-bd-export { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-3); }
 
 .rp-bd-dl {
   margin-top: var(--mp-spacing-3);
