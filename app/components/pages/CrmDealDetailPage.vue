@@ -564,20 +564,9 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
               </div>
             </section>
 
-            <!-- ── Notes + totals ── -->
-            <section class="detail-notes detail-details-block">
-              <div class="detail-notes-left">
-                <ContentList v-if="deal.description" :label="t('Message')">
-                  <p class="detail-note-text">{{ deal.description }}</p>
-                </ContentList>
-                <ContentList v-if="deal.notes" :label="t('Memo')">
-                  <p class="detail-note-text">{{ deal.notes }}</p>
-                </ContentList>
-              </div>
-
-              <!-- Totals only apply once the deal has products; otherwise the Deal
-                   value emphasis (above) carries the estimated value. -->
-              <div v-if="deal.products?.length" class="detail-totals">
+            <!-- ── Totals ── -->
+            <section v-if="deal.products?.length" class="detail-totals-section detail-details-block">
+              <div class="detail-totals">
                 <div class="detail-total-row">
                   <span class="detail-total-row-label detail-total-row-label--strong">{{ t('Subtotal') }}</span>
                   <span class="detail-total-row-amt detail-total-row-amt--strong">{{ money(totals!.subtotal) }}</span>
@@ -604,6 +593,16 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                   <span class="detail-total-row-amt detail-total-row-amt--total">{{ money(totals!.total) }}</span>
                 </div>
               </div>
+            </section>
+
+            <!-- ── Memo ── -->
+            <section v-if="deal.description || deal.notes" class="detail-memo-section detail-details-block">
+              <ContentList v-if="deal.description" :label="t('Message')">
+                <p class="detail-note-text">{{ deal.description }}</p>
+              </ContentList>
+              <ContentList v-if="deal.notes" :label="t('Memo')">
+                <p class="detail-note-text">{{ deal.notes }}</p>
+              </ContentList>
             </section>
           </MpTabPanel>
 
@@ -1000,8 +999,9 @@ a.deal-contact-line:hover { text-decoration: underline; text-underline-offset: 2
 .cell-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── Notes + totals ── */
-.detail-notes { display: grid; grid-template-columns: 1fr 380px; gap: var(--mp-spacing-6); align-items: start; }
-.detail-notes-left { display: flex; flex-direction: column; }
+.detail-totals-section { display: grid; grid-template-columns: 1fr 380px; }
+.detail-totals-section .detail-totals { grid-column: 2; }
+.detail-memo-section { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
 .detail-note-text { margin: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default); white-space: pre-line; }
 .detail-attach-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .detail-attach { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); cursor: pointer; width: fit-content; }
@@ -1011,7 +1011,7 @@ a.deal-contact-line:hover { text-decoration: underline; text-underline-offset: 2
 .detail-attach:hover .detail-attach-name { text-decoration: underline; text-underline-offset: 2px; }
 .detail-attach-size { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
-.detail-totals { display: flex; flex-direction: column; gap: var(--mp-spacing-4); padding-top: var(--mp-spacing-2); }
+.detail-totals { display: flex; flex-direction: column; gap: var(--mp-spacing-4); padding-top: var(--mp-spacing-2); width: 380px; flex-shrink: 0; }
 .detail-total-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
 .detail-total-row-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .detail-total-row-amt { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }

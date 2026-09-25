@@ -48,7 +48,7 @@ function continueNewModule() {
   if (!newModuleName.value.trim()) { newModuleNameError.value = t('Enter a module name.'); return }
   newModuleOpen.value = false
   const id = createCustomModule(newModuleName.value.trim(), 'pipeline', newModuleAccess.value, [], 'draft')
-  router.push({ path: `/crm/settings/modules/${id}`, query: { edit: '1' } })
+  router.push({ path: `/crm/settings/modules/${id}`, query: { edit: '1', accessLocked: '1' } })
 }
 
 type ModuleRow = CrmModule & { access: string; conversionLabel: string }
@@ -57,9 +57,7 @@ type ModuleRow = CrmModule & { access: string; conversionLabel: string }
 const rows = computed<ModuleRow[]>(() =>
   crmModules.map((m) => ({
     ...m,
-    // Generic custom modules (any id besides the hand-built 'deals'/'services')
-    // keep their own live record count instead of the static seeded field.
-    recordCount: (!m.system && m.id !== 'services') ? genericRecordsFor(m.id).length : m.recordCount,
+    recordCount: !m.system ? genericRecordsFor(m.id).length : m.recordCount,
     access: m.accessLevel === 'company' ? 'Company' : 'Team',
     conversionLabel: m.conversionTarget ? CRM_CONVERSION_LABELS[m.conversionTarget] : '—',
   })),

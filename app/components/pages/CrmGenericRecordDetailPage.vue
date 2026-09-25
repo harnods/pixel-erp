@@ -15,9 +15,8 @@ import {
   persistGenericRecordEdit, DATA_SOURCES, dataSourceByKey, DEAL_CURRENCIES,
 } from '~/data/crm'
 
-// `orderId` = the record id (matches the { orderId } contract every detailMatch
-// page receives, e.g. CrmServiceDetailPage). The module id isn't threaded through
-// detailMatch — derived from the route itself instead.
+// `orderId` = the record id. The module id isn't threaded through detailMatch —
+// derived from the route itself instead.
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 const route = useRoute()

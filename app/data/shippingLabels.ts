@@ -14,6 +14,11 @@
  * caught no matter whether the first print happened at the picking task or the
  * packing task. Enforced only when the order's warehouse has
  * `preventDuplicateLabel` = true (Disallow); otherwise reprints are allowed.
+ *
+ * When an outbound ships as several PARCELS, each parcel has its own label (its own
+ * courier + AWB), so the key gains the package: printing parcel 2 after parcel 1 is
+ * a first print, not a reprint — while printing parcel 1 twice is still caught. The
+ * picking board has no parcels yet and keeps the bare code.
  */
 import { reactive } from "vue";
 import { outgoingOrders, isMarketplaceOrder, type OutgoingOrder } from "./outgoing";
@@ -50,12 +55,16 @@ function persist(): void {
   saveSnapshot("printed-ship-labels-v1", printed);
 }
 
-export function isLabelPrinted(code: string): boolean {
-  return !!code && !!printed[normalizeCode(code)];
+/** The registry key for one printable label — one per parcel once packages exist. */
+export function labelPrintKey(code: string, packageNo?: string): string {
+  return packageNo ? `${code}#${packageNo}` : code;
 }
-export function markLabelPrinted(code: string): void {
+export function isLabelPrinted(code: string, packageNo?: string): boolean {
+  return !!code && !!printed[normalizeCode(labelPrintKey(code, packageNo))];
+}
+export function markLabelPrinted(code: string, packageNo?: string): void {
   if (code) {
-    printed[normalizeCode(code)] = new Date().toISOString();
+    printed[normalizeCode(labelPrintKey(code, packageNo))] = new Date().toISOString();
     persist();
   }
 }
@@ -75,6 +84,10 @@ export interface ShipLabelPrintResult {
    *  missing-courier = non-marketplace order with no courier yet (only when the
    *  caller requires one — the packing print gate). */
   status: ShipLabelPrintStatus;
+  /** Package flows only: the parcels of this order that may print NOW — a parcel
+   *  already printed is dropped here rather than dragging the whole order to
+   *  "duplicate", so a second parcel still prints. */
+  packageNos?: string[];
 }
 
 /**
@@ -89,19 +102,35 @@ export interface ShipLabelPrintResult {
 export function resolveShippingLabelPrint(
   orders: OutgoingOrder[],
   preventDuplicate: (warehouseId: string) => boolean = (wid) => getWarehouseConfig(wid).preventDuplicateLabel,
+  packageNosFor?: (order: OutgoingOrder) => string[],
 ): ShipLabelPrintResult[] {
   return orders.map((order) => {
     const info = shippingLabelInfo(order);
     if (!info.available) return { order, info, status: "unavailable" as const };
-    const status: ShipLabelPrintStatus =
-      preventDuplicate(order.warehouseId) && isLabelPrinted(info.code) ? "duplicate" : "ok";
+    const guard = preventDuplicate(order.warehouseId);
+    const packageNos = packageNosFor?.(order) ?? [];
+
+    if (packageNos.length) {
+      // Per parcel: keep the ones not printed yet. Only when every parcel in this
+      // job has already been printed is the order itself a duplicate.
+      const printable = guard ? packageNos.filter((no) => !isLabelPrinted(info.code, no)) : packageNos;
+      return printable.length
+        ? { order, info, status: "ok" as const, packageNos: printable }
+        : { order, info, status: "duplicate" as const, packageNos: [] };
+    }
+
+    const status: ShipLabelPrintStatus = guard && isLabelPrinted(info.code) ? "duplicate" : "ok";
     return { order, info, status };
   });
 }
 
 /** Mark every successfully-printed label as printed (feeds the D9 duplicate guard). */
 export function commitShippingLabelsPrinted(results: ShipLabelPrintResult[]): void {
-  for (const r of results) if (r.status === "ok") markLabelPrinted(r.info.code);
+  for (const r of results) {
+    if (r.status !== "ok") continue;
+    if (r.packageNos?.length) for (const no of r.packageNos) markLabelPrinted(r.info.code, no);
+    else markLabelPrinted(r.info.code);
+  }
 }
 
 // ── Order lookup helpers for the picking/packing callers ──────────────────────

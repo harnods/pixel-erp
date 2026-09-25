@@ -214,38 +214,17 @@ function dealsSeed(): ConversionConfig {
       { targetKey: 'customer',     strategy: 'crm-field', sourceFieldId: 'company' },
       { targetKey: 'txDate',       strategy: 'crm-field', sourceFieldId: 'transaction-date' },
       { targetKey: 'dueDate',      strategy: 'crm-field', sourceFieldId: 'due-date' },
-      { targetKey: 'paymentTerm',  strategy: 'crm-field', sourceFieldId: 'payment-terms' },
-      { targetKey: 'productLines', strategy: 'crm-field', sourceFieldId: 'product-lines' },
-      { targetKey: 'currency',     strategy: 'crm-field', sourceFieldId: 'currency' },
-      { targetKey: 'exchangeRate', strategy: 'crm-field', sourceFieldId: 'exchange-rate' },
-      { targetKey: 'warehouse',    strategy: 'crm-field', sourceFieldId: 'warehouse' },
+      { targetKey: 'paymentTerm',  strategy: 'crm-field', sourceFieldId: 'payment-term' },
+      { targetKey: 'productLines', strategy: 'crm-field', sourceFieldId: 'product-list' },
+      { targetKey: 'currency',     strategy: 'crm-field', sourceFieldId: 'currency-code' },
       { targetKey: 'billingAddress', strategy: 'crm-field', sourceFieldId: 'billing-address' },
       { targetKey: 'shippingAddress', strategy: 'crm-field', sourceFieldId: 'shipping-address' },
-      { targetKey: 'shipDate',     strategy: 'crm-field', sourceFieldId: 'shipping-date' },
-      { targetKey: 'shipVia',      strategy: 'crm-field', sourceFieldId: 'ship-via' },
-      { targetKey: 'referenceNo',  strategy: 'crm-field', sourceFieldId: 'reference-no' },
-      { targetKey: 'shippingFee',  strategy: 'crm-field', sourceFieldId: 'shipping-fee' },
+      { targetKey: 'referenceNo',  strategy: 'crm-field', sourceFieldId: 'external-reference-id' },
       { targetKey: 'memo',         strategy: 'crm-field', sourceFieldId: 'memo' },
     ],
   }
 }
-function servicesSeed(): ConversionConfig {
-  return {
-    moduleId: 'services', enabled: false, target: 'sales-order', validated: false, revision: 1,
-    lastSavedBy: 'Rizal Candra', lastSavedAt: '2026-09-09T10:00:00',
-    criterion: null,
-    mappings: [
-      { targetKey: 'customer',     strategy: 'crm-field', sourceFieldId: 'company' },
-      { targetKey: 'txDate',       strategy: 'system',    systemValue: 'conversion-date' },
-      { targetKey: 'dueDate',      strategy: 'crm-field', sourceFieldId: 'due-date' },
-      // productLines intentionally UNMAPPED → this draft is incomplete.
-      { targetKey: 'productLines', strategy: 'unmapped' },
-      { targetKey: 'currency',     strategy: 'crm-field', sourceFieldId: 'currency' },
-    ],
-  }
-}
-
-const CONFIGS_SEED: ConversionConfig[] = [dealsSeed(), servicesSeed()]
+const CONFIGS_SEED: ConversionConfig[] = [dealsSeed()]
 export const conversionConfigs = reactive<ConversionConfig[]>(
   load('crm-conversion-configs-v4', CONFIGS_SEED),
 )

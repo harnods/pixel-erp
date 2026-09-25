@@ -74,13 +74,14 @@ function updatedTime(id: string): string {
   const mm = (n * 7) % 60
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
 }
-/** Days a deal has been open (aging), from creation to today. */
-function agingDays(d: Deal): number {
-  const [y, m, dd] = d.createdAt.split('-').map(Number)
+/** Days remaining until expected close date. Negative = overdue. */
+function closeInDays(d: Deal): number | null {
+  if (!d.expectedCloseDate) return null
+  const [y, m, dd] = d.expectedCloseDate.split('-').map(Number)
   const [ty, tm, td] = TODAY.split('-').map(Number)
-  return Math.max(0, Math.round((Date.UTC(ty!, tm! - 1, td!) - Date.UTC(y!, m! - 1, dd!)) / 86_400_000))
+  return Math.round((Date.UTC(y!, m! - 1, dd!) - Date.UTC(ty!, tm! - 1, td!)) / 86_400_000)
 }
-function agingTone(n: number): '' | 'warn' | 'danger' { return n > 30 ? 'danger' : n > 14 ? 'warn' : '' }
+function closeInTone(n: number): '' | 'warn' | 'danger' { return n < 0 ? 'danger' : n <= 7 ? 'warn' : '' }
 
 /** Owner avatar — initials on a deterministic pastel background, with the initials
  *  in a darker shade of the same hue. */
@@ -631,8 +632,8 @@ const toggleAirene = inject<() => void>('toggleAirene')
                   <span class="deal__avatar" :style="ownerAvatarStyle(d.owner)">{{ ownerInitials(d.owner) }}</span>
                   {{ d.owner }}
                 </span>
-                <div v-if="dealPipelineDisplay.showAging && isDealOpen(d)" class="deal__foot deal__foot--end" data-devchange="crm-aging-always-bottom-right">
-                  <span class="deal__aging" :class="`deal__aging--${agingTone(agingDays(d))}`" :title="`${t('Open for')} ${agingDays(d)} ${t('days')}`">{{ agingDays(d) }}d</span>
+                <div v-if="dealPipelineDisplay.showAging && closeInDays(d) !== null" class="deal__foot deal__foot--end" data-devchange="crm-close-in-live">
+                  <span class="deal__aging" :class="`deal__aging--${closeInTone(closeInDays(d)!)}`" :title="`${t('Expected close date')}: ${d.expectedCloseDate}`">{{ closeInDays(d)! }}d</span>
                 </div>
               </article>
               <p v-if="!col.cards.length" class="kcol__empty">{{ t('No deals') }}</p>

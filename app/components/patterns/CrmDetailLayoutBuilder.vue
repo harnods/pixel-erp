@@ -22,7 +22,7 @@ import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
 import CrmPropertyDrawer from '~/components/patterns/CrmPropertyDrawer.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
-  DEAL_PROPERTY_TYPE_ICON, newDetailSectionId, isRelatedListType, sectionAllProps, distributeCols,
+  DEAL_PROPERTY_TYPE_ICON, defaultPropertyIcon, newDetailSectionId, isRelatedListType, sectionAllProps, distributeCols,
   type DealDetailLayout, type DetailLayoutSection, type DetailLayoutTab,
   type DealProperty, type DealPropertyType, type DealPropertyConfig, type PropertyCondition,
   type CrmConversionTarget,
@@ -65,18 +65,20 @@ const PREVIEW_MODES = [
   { id: 'prev-details', label: 'Details record', value: 'details' },
 ]
 const DUMMY_DATA: Record<string, string> = {
-  'deal-name': 'Annual espresso contract', 'deal-value': 'Rp 19.200.000', 'company': 'Kopi Kenangan Pusat',
-  'contact-person': 'Ratna Sari', 'contact-person-email': 'buyer@kopikenangan.com', 'contact-person-phone': '+62 811 5550 006',
-  'owner': 'Dewi Lestari', 'currency': 'IDR', 'billing-address': 'Jl. Menteng Raya No. 42, Jakarta',
+  'record-name': 'Annual espresso contract', 'deal-value': 'Rp 19.200.000', 'company': 'Kopi Kenangan Pusat',
+  'contact': 'Ratna Sari', 'email': 'buyer@kopikenangan.com', 'phone': '+62 811 5550 006',
+  'record-owner': 'Dewi Lestari', 'currency-code': 'IDR', 'billing-address': 'Jl. Menteng Raya No. 42, Jakarta',
   'transaction-date': '15/09/2026', 'due-date': '15/10/2026', 'close-date': '30/09/2026',
-  'transaction-no': 'TXN-0913', 'reference-no': 'RFQ-8815', 'payment-terms': 'Net 30',
-  'exchange-rate': '1.00', 'warehouse': 'Gudang Utama', 'shipping-address': 'Jl. Menteng Raya No. 42',
-  'shipping-date': '16/09/2026', 'delivery-date': '18/09/2026', 'ship-via': 'JNE Regular',
-  'tracking-no': 'JNE-88150913', 'shipping-fee': 'Rp 150.000',
-  'discount': '5%', 'global-discount': '0%', 'tax': 'PPN 11%', 'tax-inclusive': 'No', 'tax-after-discount': 'Yes',
-  'memo': 'Twelve-month espresso bean supply across all outlets.', 'attachment': '—', 'message': '—',
+  'transaction-number': 'TXN-0913', 'external-reference-id': 'RFQ-8815', 'payment-term': 'Net 30',
+  'shipping-address': 'Jl. Menteng Raya No. 42',
+  'discount-percentage': '5%',
+  'notes': 'Twelve-month espresso bean supply across all outlets.', 'attachments': '—', 'memo': '—',
   'service-type': 'Consultation', 'priority': 'High',
-  'record-name': 'Annual espresso contract', 'record-value': 'Rp 19.200.000',
+  'status': 'Proposal', 'tags': 'VIP, Hot lead', 'source': 'Referral',
+  'description': 'Annual supply agreement for premium espresso beans.',
+  'image': '—', 'website': 'kopikenangan.com', 'product-list': '—',
+  'quantity': '12', 'probability': '75%',
+  'next-follow-up-time': '20/09/2026 10:00', 'completed-time': '—',
 }
 const PREVIEW_STAGES = ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation', 'Won']
 function detailsTabSections() {
@@ -150,7 +152,7 @@ const addPropOptions = computed(() => {
   const own = new Set(sectionAllProps(section))
   return props.properties
     .filter((p) => own.has(p.id) || !elsewhere.has(p.id))
-    .map((p) => ({ id: p.id, name: p.name, subtitle: p.variableName, icon: DEAL_PROPERTY_TYPE_ICON[p.type] }))
+    .map((p) => ({ id: p.id, name: p.name, subtitle: '', icon: defaultPropertyIcon(p.type) }))
 })
 // Reconcile the drawer's picked set into the section's columns: drop de-selected
 // ids from every column, append newly-picked ids to the shortest column (keeps
@@ -262,6 +264,11 @@ const condSentence = computed(() => {
   }
 })
 function removeProperty(section: DetailLayoutSection, id: string) { section.cols = section.cols.map((c) => c.filter((x) => x !== id)) }
+function toggleMandatory(section: DetailLayoutSection, pid: string) {
+  if (!section.mandatory) section.mandatory = {}
+  section.mandatory[pid] = !section.mandatory[pid]
+  if (!section.mandatory[pid]) delete section.mandatory[pid]
+}
 
 // Delete section — immediate (nothing is saved until "Save changes", so no confirm).
 function deleteSection(s: DetailLayoutSection) {
@@ -323,7 +330,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
     ghostDY = e.clientY - rect.top
     ghost.value = {
       x: rect.left, y: rect.top, w: rect.width,
-      icon: p?.type ? DEAL_PROPERTY_TYPE_ICON[p.type] : 'text-editor-text',
+      icon: p?.type ? defaultPropertyIcon(p.type) : 'text-editor-text',
       label: p?.name ?? pid, variable: p?.variableName ?? pid,
     }
   }
@@ -451,10 +458,9 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                   class="dlb-prop" :class="{ 'is-dragging': propDrag?.sec === section.id && propDrag?.pid === pid }"
                 >
                   <span class="dlb-drag" :aria-label="t('Drag to reorder')" @pointerdown="onPropPointerDown(section, pid, $event)"><MpIcon name="drag" size="sm" /></span>
-                  <MpIcon :name="prop(pid)?.type ? DEAL_PROPERTY_TYPE_ICON[prop(pid)!.type] : 'text-editor-text'" size="sm" class="dlb-prop-type" />
+                  <MpIcon :name="prop(pid)?.type ? defaultPropertyIcon(prop(pid)!.type) : 'text-editor-text'" size="sm" class="dlb-prop-type" />
                   <div class="dlb-prop-text">
-                    <span class="dlb-prop-label">{{ prop(pid)?.name ?? pid }}</span>
-                    <span class="dlb-prop-var">{{ prop(pid)?.variableName ?? pid }}</span>
+                    <span class="dlb-prop-label">{{ prop(pid)?.name ?? pid }}<span v-if="section.mandatory?.[pid]" class="dlb-mandatory">*</span></span>
                   </div>
                   <MpTooltip v-if="section.conditions?.[pid]" :id="`dlb-cond-${section.id}-${pid}`" :label="t('Has conditional logic')" placement="top" use-portal>
                     <MpIcon name="condition" size="sm" class="dlb-prop-cond" />
@@ -467,7 +473,8 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                       <MpPopoverContent :class="css({ minWidth: '190px' })">
                         <MpPopoverList>
                           <MpPopoverListItem @click="openCondition(section, pid)">{{ t('Set conditional logic') }}</MpPopoverListItem>
-                          <MpPopoverListItem @click="removeProperty(section, pid)">{{ t('Remove card') }}</MpPopoverListItem>
+                          <MpPopoverListItem @click="toggleMandatory(section, pid)">{{ section.mandatory?.[pid] ? t('Mark as optional') : t('Mark as mandatory') }}</MpPopoverListItem>
+                          <MpPopoverListItem @click="removeProperty(section, pid)">{{ t('Remove property') }}</MpPopoverListItem>
                         </MpPopoverList>
                       </MpPopoverContent>
                     </MpPopover>
@@ -625,7 +632,6 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
         <MpIcon :name="ghost.icon" size="sm" class="dlb-prop-type" />
         <div class="dlb-prop-text">
           <span class="dlb-prop-label">{{ ghost.label }}</span>
-          <span class="dlb-prop-var">{{ ghost.variable }}</span>
         </div>
       </div>
     </Teleport>
@@ -642,133 +648,13 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
               <MpButton variant="ghost" is-rounded left-icon="close" :aria-label="t('Close')" @click="previewOpen = false" />
             </header>
             <div class="dlb-preview-body">
-              <!-- Details record preview — Deals module: exact replica of CrmDealDetailPage -->
-              <template v-if="previewMode === 'details' && moduleId === 'deals'">
+              <!-- Details record preview — dynamic from layout sections (all modules) -->
+              <template v-if="previewMode === 'details'">
                 <div class="dlb-prev-detail-page">
                   <div class="dp-stage">
                     <div class="dp-tabs">
-                      <button class="dp-tab dp-tab--active">{{ t('Deal details') }}</button><!-- pixel-police-allow -->
-                      <button class="dp-tab" disabled>{{ t('Notes') }}</button><!-- pixel-police-allow -->
-                      <button class="dp-tab" disabled>{{ t('Files') }}</button><!-- pixel-police-allow -->
-                      <button class="dp-tab" disabled>{{ t('Sales orders') }}</button><!-- pixel-police-allow -->
-                      <button class="dp-tab" disabled>{{ t('Activity') }}</button><!-- pixel-police-allow -->
+                      <button v-for="(tp, ti) in detail.tabs.filter(t => t.visible)" :key="tp.id" class="dp-tab" :class="{ 'dp-tab--active': ti === 0 }" :disabled="ti !== 0">{{ t(tp.label) }}</button><!-- pixel-police-allow -->
                     </div>
-                    <section class="dp-section">
-                      <h3 class="dp-section-title">{{ t('Overview') }}</h3>
-                      <div class="dp-grid dp-grid--3">
-                        <div class="dp-grid-col">
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Deal name') }}</span><span class="dp-cl-value">Espresso beans pilot batch</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Company') }}</span><span class="dp-cl-value dp-cl-link">Kopi Kenangan Pusat</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Billing address') }}</span><span class="dp-cl-value">Jl. Jend. Sudirman Kav. 52-53, Senayan, Jakarta Selatan, 12190, DKI Jakarta</span></div>
-                        </div>
-                        <div class="dp-grid-col">
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Contact person') }}</span><span class="dp-cl-value">Ratna Sari&nbsp;&nbsp;&nbsp;Linayanti</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Contact person email') }}</span><span class="dp-cl-value dp-cl-link">buyer@kopkenangan.co</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Contact person phone') }}</span><span class="dp-cl-value">021-55300618-62 811 8044 222</span></div>
-                        </div>
-                        <div class="dp-grid-col">
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Value') }}</span><span class="dp-cl-value dp-value-amount">Rp10.756.000,00</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Owner') }}</span><span class="dp-cl-value">Dina Lestari</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Currency') }}</span><span class="dp-cl-value">IDR</span></div>
-                        </div>
-                      </div>
-                    </section>
-                    <section class="dp-section">
-                      <h3 class="dp-section-title">{{ t('Transaction') }}</h3>
-                      <div class="dp-grid dp-grid--4">
-                        <div class="dp-grid-col">
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Transaction date') }}</span><span class="dp-cl-value">06 Sept 2026</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Reference no.') }}</span><span class="dp-cl-value">—</span></div>
-                        </div>
-                        <div class="dp-grid-col">
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Due date') }}</span><span class="dp-cl-value">29 Sept 2026</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Payment terms') }}</span><span class="dp-cl-value">Net 30</span></div>
-                        </div>
-                        <div class="dp-grid-col">
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Expected close date') }}</span><span class="dp-cl-value">29 Sept 2026</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Exchange rate') }}</span><span class="dp-cl-value">—</span></div>
-                        </div>
-                        <div class="dp-grid-col">
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Transaction no.') }}</span><span class="dp-cl-value">Deal #10007</span></div>
-                        </div>
-                      </div>
-                    </section>
-                    <section class="dp-section">
-                      <h3 class="dp-section-title">{{ t('Shipping & delivery') }}</h3>
-                      <div class="dp-grid dp-grid--4">
-                        <div class="dp-grid-col">
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Warehouse') }}</span><span class="dp-cl-value">Default location</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Ship via') }}</span><span class="dp-cl-value">Sentral Cargo</span></div>
-                        </div>
-                        <div class="dp-grid-col">
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Shipping address') }}</span><span class="dp-cl-value">Jl. Jend. Sudirman Kav. 52-53, Senayan, Jakarta Selatan, 12190, DKI Jakarta</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Tracking no.') }}</span><span class="dp-cl-value">—</span></div>
-                        </div>
-                        <div class="dp-grid-col">
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Ship date') }}</span><span class="dp-cl-value">29 Sept 2026</span></div>
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Shipping fee') }}</span><span class="dp-cl-value">Rp100.000,00</span></div>
-                        </div>
-                        <div class="dp-grid-col">
-                          <div class="dp-cl"><span class="dp-cl-label">{{ t('Delivery date') }}</span><span class="dp-cl-value">—</span></div>
-                        </div>
-                      </div>
-                    </section>
-                    <section class="dp-section dp-items-section">
-                      <div class="dp-filter-bar">
-                        <div />
-                        <div class="dp-filter-right">
-                          <div class="dp-search-pill"><MpIcon name="search" size="sm" /><span class="dp-search-text">{{ t('Search products…') }}</span></div>
-                          <button class="btn-enterprise btn-enterprise--tertiary dp-add-product" disabled><MpIcon name="add" size="sm" />{{ t('Add product') }}</button>
-                        </div>
-                      </div>
-                      <table class="dp-items">
-                        <thead>
-                          <tr>
-                            <th class="dp-th">{{ t('Product') }}</th>
-                            <th class="dp-th">{{ t('Description') }}</th>
-                            <th class="dp-th dp-th--num">{{ t('Qty') }}</th>
-                            <th class="dp-th">{{ t('Unit') }}</th>
-                            <th class="dp-th dp-th--num">{{ t('Unit price') }}</th>
-                            <th class="dp-th dp-th--num">{{ t('Discount') }}</th>
-                            <th class="dp-th">{{ t('Tax') }}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr>
-                            <td class="dp-td"><div class="dp-product-cell"><div class="dp-product-thumb" /><div class="dp-product-meta"><span class="dp-product-name">Roasted Beans Espresso Blend Dark</span><span class="dp-product-sku">SKU: T002</span></div></div></td>
-                            <td class="dp-td dp-td--muted">Dark roast espresso blend, whole bean</td>
-                            <td class="dp-td dp-td--num">30</td>
-                            <td class="dp-td">Bag</td>
-                            <td class="dp-td dp-td--num">Rp320.000,00</td>
-                            <td class="dp-td dp-td--num">PPN 11%</td>
-                            <td class="dp-td">PPN 11%</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                      <div class="dp-items-count">{{ t('Showing') }} 1 {{ t('of') }} 1 {{ t('products') }}</div>
-                    </section>
-                    <section class="dp-section dp-notes-totals">
-                      <div class="dp-notes-left">
-                        <div class="dp-cl"><span class="dp-cl-label">{{ t('Memo') }}</span><span class="dp-cl-value">Please ensure all beans are vacuum-sealed for freshness during transit.</span></div>
-                        <div class="dp-cl"><span class="dp-cl-label">{{ t('Attachment') }}</span><span class="dp-cl-value dp-cl-link">Purchase_agreement_v2.pdf</span></div>
-                      </div>
-                      <div class="dp-totals">
-                        <div class="dp-total-row"><span class="dp-total-label dp-total-label--strong">{{ t('Subtotal') }}</span><span class="dp-total-amt dp-total-amt--strong">Rp9.600.000,00</span></div>
-                        <div class="dp-total-row"><span class="dp-total-label">{{ t('Discount per line') }}</span><span class="dp-total-amt">Rp0,00</span></div>
-                        <div class="dp-total-row"><span class="dp-total-label">{{ t('Global discount') }}</span><span class="dp-total-amt">Rp0,00</span></div>
-                        <div class="dp-total-row"><span class="dp-total-label">PPN 11%</span><span class="dp-total-amt">Rp1.056.000,00</span></div>
-                        <div class="dp-total-row"><span class="dp-total-label">{{ t('Shipping fee') }}</span><span class="dp-total-amt">Rp100.000,00</span></div>
-                        <div class="dp-total-rule" />
-                        <div class="dp-total-row"><span class="dp-total-label dp-total-label--total">{{ t('Total') }}</span><span class="dp-total-amt dp-total-amt--total">Rp10.756.000,00</span></div>
-                      </div>
-                    </section>
-                  </div>
-                </div>
-              </template>
-              <!-- Details record preview — generic modules: dynamic from layout sections -->
-              <template v-else-if="previewMode === 'details'">
-                <div class="dlb-prev-detail-page">
-                  <div class="dp-stage">
                     <template v-for="section in detailsTabSections()" :key="section.id">
                       <section v-if="section.kind === 'products'" class="dp-section dp-items-section">
                         <div class="dp-filter-bar">
@@ -804,6 +690,16 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                         </table>
                         <div class="dp-items-count">{{ t('Showing') }} 1 {{ t('of') }} 1 {{ t('products') }}</div>
                       </section>
+                      <section v-if="section.kind === 'products'" class="dp-section dp-totals-section">
+                        <div class="dp-totals">
+                          <div class="dp-total-row"><span class="dp-total-label dp-total-label--strong">{{ t('Subtotal') }}</span><span class="dp-total-amt dp-total-amt--strong">Rp19.200.000,00</span></div>
+                          <div class="dp-total-row"><span class="dp-total-label">{{ t('Discount per line') }}</span><span class="dp-total-amt">Rp0,00</span></div>
+                          <div class="dp-total-row"><span class="dp-total-label">{{ t('Global discount') }}</span><span class="dp-total-amt">Rp0,00</span></div>
+                          <div class="dp-total-row"><span class="dp-total-label">PPN 11%</span><span class="dp-total-amt">Rp2.112.000,00</span></div>
+                          <div class="dp-total-rule" />
+                          <div class="dp-total-row"><span class="dp-total-label dp-total-label--total">{{ t('Total') }}</span><span class="dp-total-amt dp-total-amt--total">Rp21.312.000,00</span></div>
+                        </div>
+                      </section>
                       <section v-else-if="!(section.id.includes('pricing') && detailsTabSections().some(s => s.kind === 'products'))" class="dp-section">
                         <h3 v-if="section.name" class="dp-section-title">{{ t(section.name) }}</h3>
                         <div class="dp-grid" :class="{ 'dp-grid--3': section.columns === 3, 'dp-grid--4': section.columns === 4 }" :style="section.columns > 4 || (section.columns !== 3 && section.columns !== 4) ? { gridTemplateColumns: `repeat(${section.columns}, minmax(0, 1fr))` } : undefined">
@@ -816,20 +712,6 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                         </div>
                       </section>
                     </template>
-                    <section v-if="detailsTabSections().some(s => s.kind === 'products')" class="dp-section dp-notes-totals">
-                      <div class="dp-notes-left">
-                        <div class="dp-cl"><span class="dp-cl-label">{{ t('Memo') }}</span><span class="dp-cl-value">—</span></div>
-                        <div class="dp-cl"><span class="dp-cl-label">{{ t('Attachment') }}</span><span class="dp-cl-value">—</span></div>
-                      </div>
-                      <div class="dp-totals">
-                        <div class="dp-total-row"><span class="dp-total-label dp-total-label--strong">{{ t('Subtotal') }}</span><span class="dp-total-amt dp-total-amt--strong">Rp19.200.000,00</span></div>
-                        <div class="dp-total-row"><span class="dp-total-label">{{ t('Discount per line') }}</span><span class="dp-total-amt">Rp0,00</span></div>
-                        <div class="dp-total-row"><span class="dp-total-label">{{ t('Global discount') }}</span><span class="dp-total-amt">Rp0,00</span></div>
-                        <div class="dp-total-row"><span class="dp-total-label">PPN 11%</span><span class="dp-total-amt">Rp2.112.000,00</span></div>
-                        <div class="dp-total-rule" />
-                        <div class="dp-total-row"><span class="dp-total-label dp-total-label--total">{{ t('Total') }}</span><span class="dp-total-amt dp-total-amt--total">Rp21.312.000,00</span></div>
-                      </div>
-                    </section>
                   </div>
                 </div>
               </template>
@@ -943,20 +825,8 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                         </table>
                       </div>
                     </section>
-                    <!-- Notes + Totals -->
+                    <!-- Totals -->
                     <section class="si-bottom-section">
-                      <div class="si-notes-col">
-                        <MpFormControl id="fp-memo" class="si-note-field">
-                          <div class="si-lbl-row"><MpFormLabel>{{ t('Memo') }}</MpFormLabel><span class="si-counter">0/250</span></div>
-                          <MpTextarea is-full-width disabled />
-                          <span class="si-field-caption">{{ t('Only visible to you and your team') }}</span>
-                        </MpFormControl>
-                        <div class="si-attachment-section">
-                          <span class="si-attachment-label">{{ t('Attachment') }}</span>
-                          <MpUpload id="fp-attachment" :button-text="t('Choose file')" :placeholder="t('or drag and drop here')" is-full-width disabled />
-                          <p class="si-field-caption">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP format, with a maximum size of 10 MB per file and 5 files per transaction') }}</p>
-                        </div>
-                      </div>
                       <div class="si-totals-col">
                         <div class="si-totals-row si-totals-row--h3"><span>{{ t('Subtotal') }}</span><span>Rp0,00</span></div>
                         <div class="si-discount-block">
@@ -977,6 +847,19 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                         <div class="si-totals-row"><span>PPN 11%</span><span>Rp0,00</span></div>
                         <div class="si-total-rule" />
                         <div class="si-totals-row si-totals-row--h3"><span>{{ t('Total') }}</span><span>Rp0,00</span></div>
+                      </div>
+                    </section>
+                    <!-- Memo + Attachment -->
+                    <section class="si-memo-attachment-section">
+                      <MpFormControl id="fp-memo" class="si-note-field">
+                        <div class="si-lbl-row"><MpFormLabel>{{ t('Memo') }}</MpFormLabel><span class="si-counter">0/250</span></div>
+                        <MpTextarea is-full-width disabled />
+                        <span class="si-field-caption">{{ t('Only visible to you and your team') }}</span>
+                      </MpFormControl>
+                      <div class="si-attachment-section">
+                        <span class="si-attachment-label">{{ t('Attachment') }}</span>
+                        <MpUpload id="fp-attachment" :button-text="t('Choose file')" :placeholder="t('or drag and drop here')" is-full-width disabled />
+                        <p class="si-field-caption">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP format, with a maximum size of 10 MB per file and 5 files per transaction') }}</p>
                       </div>
                     </section>
                     <!-- Footer -->
@@ -1056,18 +939,6 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                     </template>
                     <p v-if="!detailsTabSections().length" class="dlb-prev-placeholder">{{ t('No sections configured. Add sections and properties in the Layout tab.') }}</p>
                     <section v-if="detailsTabSections().some(s => s.kind === 'products')" class="si-bottom-section">
-                      <div class="si-notes-col">
-                        <MpFormControl id="fp-memo-g" class="si-note-field">
-                          <div class="si-lbl-row"><MpFormLabel>{{ t('Memo') }}</MpFormLabel><span class="si-counter">0/250</span></div>
-                          <MpTextarea is-full-width disabled />
-                          <span class="si-field-caption">{{ t('Only visible to you and your team') }}</span>
-                        </MpFormControl>
-                        <div class="si-attachment-section">
-                          <span class="si-attachment-label">{{ t('Attachment') }}</span>
-                          <MpUpload id="fp-attachment-g" :button-text="t('Choose file')" :placeholder="t('or drag and drop here')" is-full-width disabled />
-                          <p class="si-field-caption">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP format, with a maximum size of 10 MB per file and 5 files per transaction') }}</p>
-                        </div>
-                      </div>
                       <div class="si-totals-col">
                         <div class="si-totals-row si-totals-row--h3"><span>{{ t('Subtotal') }}</span><span>Rp0,00</span></div>
                         <div class="si-discount-block">
@@ -1088,6 +959,18 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                         <div class="si-totals-row"><span>PPN 11%</span><span>Rp0,00</span></div>
                         <div class="si-total-rule" />
                         <div class="si-totals-row si-totals-row--h3"><span>{{ t('Total') }}</span><span>Rp0,00</span></div>
+                      </div>
+                    </section>
+                    <section v-if="detailsTabSections().some(s => s.kind === 'products')" class="si-memo-attachment-section">
+                      <MpFormControl id="fp-memo-g" class="si-note-field">
+                        <div class="si-lbl-row"><MpFormLabel>{{ t('Memo') }}</MpFormLabel><span class="si-counter">0/250</span></div>
+                        <MpTextarea is-full-width disabled />
+                        <span class="si-field-caption">{{ t('Only visible to you and your team') }}</span>
+                      </MpFormControl>
+                      <div class="si-attachment-section">
+                        <span class="si-attachment-label">{{ t('Attachment') }}</span>
+                        <MpUpload id="fp-attachment-g" :button-text="t('Choose file')" :placeholder="t('or drag and drop here')" is-full-width disabled />
+                        <p class="si-field-caption">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP format, with a maximum size of 10 MB per file and 5 files per transaction') }}</p>
                       </div>
                     </section>
                     <MpButtonGroup class="erp-action-footer si-form-footer">
@@ -1181,6 +1064,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 .dlb-prop-cond { color: var(--mp-colors-icon-information, #2f6fd0); flex-shrink: 0; }
 .dlb-prop-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .dlb-prop-label { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dlb-mandatory { color: var(--mp-colors-text-danger, #c81e1e); margin-left: 2px; }
 .dlb-prop-var { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); font-family: var(--mp-fonts-mono, ui-monospace, SFMono-Regular, Menlo, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dlb-empty { grid-column: 1 / -1; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #6b7678); margin: 0; padding: var(--mp-spacing-2) 0; }
 
@@ -1328,8 +1212,9 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 }
 .dlb-prev-form-page .si-affix-value { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: flex-end; padding: 0 var(--mp-spacing-2); white-space: nowrap; }
 .dlb-prev-form-page .si-unit-ro { flex: 1; display: flex; align-items: center; padding: 0 var(--mp-spacing-2); color: var(--mp-text-secondary, #64748b); }
-.dlb-prev-form-page .si-bottom-section { display: flex; align-items: flex-start; gap: var(--mp-spacing-6); }
-.dlb-prev-form-page .si-notes-col { display: flex; flex-direction: column; gap: 20px; width: 432px; flex-shrink: 0; }
+.dlb-prev-form-page .si-bottom-section { display: grid; grid-template-columns: 1fr 428px; }
+.dlb-prev-form-page .si-bottom-section .si-totals-col { grid-column: 2; }
+.dlb-prev-form-page .si-memo-attachment-section { display: flex; flex-direction: column; gap: 20px; max-width: 432px; }
 .dlb-prev-form-page .si-note-field { display: flex; flex-direction: column; }
 .dlb-prev-form-page .si-field-caption { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1, 4px); }
 .dlb-prev-form-page .si-totals-col { margin-left: auto; width: 428px; flex-shrink: 0; display: flex; flex-direction: column; }
@@ -1479,9 +1364,10 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
   border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
-.dp-notes-totals { display: grid; grid-template-columns: 1fr 380px; gap: var(--mp-spacing-6); align-items: start; }
-.dp-notes-left { display: flex; flex-direction: column; }
-.dp-totals { display: flex; flex-direction: column; gap: var(--mp-spacing-4); padding-top: var(--mp-spacing-2); }
+.dp-totals-section { display: grid; grid-template-columns: 1fr 380px; }
+.dp-totals-section .dp-totals { grid-column: 2; }
+.dp-memo-section { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
+.dp-totals { display: flex; flex-direction: column; gap: var(--mp-spacing-4); padding-top: var(--mp-spacing-2); width: 380px; flex-shrink: 0; }
 .dp-total-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
 .dp-total-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .dp-total-amt { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }

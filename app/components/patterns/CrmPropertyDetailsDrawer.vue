@@ -43,11 +43,6 @@ function dataSourceLine(p: DefaultProperty): string {
                 {{ property.fieldType }}
               </span>
             </div>
-            <!-- Variable name -->
-            <div class="cpd-field">
-              <span class="cpd-label">{{ t('Variable name') }}</span>
-              <code class="cpd-var">{{ property.variableName }}</code>
-            </div>
             <!-- Description -->
             <div class="cpd-field">
               <span class="cpd-label">{{ t('Description') }}</span>
@@ -74,7 +69,6 @@ function dataSourceLine(p: DefaultProperty): string {
                   <MpIcon :name="defaultPropertyIcon(f.type)" size="sm" class="cpd-linked-icon" />
                   <span class="cpd-linked-text">
                     <span class="cpd-linked-name">{{ f.name }}</span>
-                    <code class="cpd-linked-var">{{ f.variableName }}</code>
                   </span>
                   <span class="cpd-linked-type">{{ f.type }}</span>
                 </li>

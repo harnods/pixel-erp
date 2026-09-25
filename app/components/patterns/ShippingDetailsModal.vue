@@ -2,10 +2,14 @@
 /**
  * Shipping-details modal — asks for the courier + tracking number of the shipment
  * being labelled when a non-marketplace order has no courier yet. One shipment =
- * one parcel = one tracking number; an order shipped partially over several cycles
- * fills this in once per cycle (each partial has its own delivery, label and AWB).
- * Opened from the packing print flow (usePrintShippingLabel); on "Save & print" it
- * hands the details back so the caller persists them and prints.
+ * one parcel = one tracking number, so the fields are asked PER PACKAGE: an
+ * outbound leaving as two parcels gets two pairs, each free to name a different
+ * courier and AWB.
+ *
+ * Rows arrive pre-filled by the caller: a package with details of its own shows
+ * them, otherwise it inherits the parent outbound's (fill the order in once and
+ * every parcel under it starts from the same courier). On "Save & print" the
+ * values go back per row, and the caller stores a package row against the package.
  *
  * Mirrors existing patterns — the searchable courier picker of HandoverToCourierPage
  * and the modal shell of the inbound Edit-tracking modal (ReceiptIndexPage) — no new
@@ -17,11 +21,10 @@ import {
   MpModalOverlay, MpModalCloseButton, MpInput, MpPopover, MpPopoverTrigger,
   MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon, css,
 } from '@mekari/pixel3'
-import type { OutgoingOrder } from '~/data/outgoing'
-import { wmsShippingForOrder } from '~/data/deliveryTasks'
+import type { ShippingDetailRow } from '~/composables/usePrintShippingLabel'
 import { couriers } from '~/data/couriers'
 
-const props = defineProps<{ isOpen: boolean; orders: OutgoingOrder[] }>()
+const props = defineProps<{ isOpen: boolean; rows: ShippingDetailRow[] }>()
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'submit', details: Record<string, { courier: string; trackingNo: string }>): void
@@ -32,19 +35,18 @@ const { t } = useLocale()
 interface Form { courier: string; search: string; active: boolean; trackingNo: string; error: boolean }
 const forms = reactive<Record<string, Form>>({})
 
-// (Re)seed a form per order whenever the modal opens — prefill any courier/tracking
-// already on file (edit case); otherwise start blank.
+// (Re)seed a form per row whenever the modal opens — the caller has already worked
+// out what each one inherits, so this just mirrors it.
 watch(
-  () => [props.isOpen, props.orders] as const,
+  () => [props.isOpen, props.rows] as const,
   () => {
     if (!props.isOpen) return
-    for (const o of props.orders) {
-      const ship = wmsShippingForOrder(o.id)
-      forms[o.id] = {
-        courier: ship?.courier ?? '',
+    for (const r of props.rows) {
+      forms[r.key] = {
+        courier: r.courier,
         search: '',
         active: false,
-        trackingNo: ship?.trackingNo ?? '',
+        trackingNo: r.trackingNo,
         error: false,
       }
     }
@@ -52,29 +54,34 @@ watch(
   { immediate: true, deep: true },
 )
 
-function couriersFiltered(orderId: string) {
-  const q = (forms[orderId]?.search ?? '').trim().toLowerCase()
+function couriersFiltered(key: string) {
+  const q = (forms[key]?.search ?? '').trim().toLowerCase()
   return couriers.filter((c) => !q || c.name.toLowerCase().includes(q))
 }
-function openPicker(orderId: string) {
-  const f = forms[orderId]; if (f) { f.active = true; f.search = '' }
+function openPicker(key: string) {
+  const f = forms[key]; if (f) { f.active = true; f.search = '' }
 }
-function selectCourier(orderId: string, name: string) {
-  const f = forms[orderId]; if (!f) return
+function selectCourier(key: string, name: string) {
+  const f = forms[key]; if (!f) return
   f.courier = name; f.active = false; f.error = false
+}
+
+/** Heading for a row: the outbound, plus the parcel when the order has packages. */
+function rowTitle(r: ShippingDetailRow): string {
+  return r.packageNo ? `${r.orderNumber} · ${r.packageNo}` : r.orderNumber
 }
 
 function save() {
   let valid = true
-  for (const o of props.orders) {
-    const f = forms[o.id]
+  for (const r of props.rows) {
+    const f = forms[r.key]
     if (!f?.courier.trim()) { if (f) f.error = true; valid = false }
   }
   if (!valid) return
   const out: Record<string, { courier: string; trackingNo: string }> = {}
-  for (const o of props.orders) {
-    const f = forms[o.id]!
-    out[o.id] = { courier: f.courier.trim(), trackingNo: f.trackingNo.trim() }
+  for (const r of props.rows) {
+    const f = forms[r.key]!
+    out[r.key] = { courier: f.courier.trim(), trackingNo: f.trackingNo.trim() }
   }
   emit('submit', out)
 }
@@ -87,25 +94,25 @@ function save() {
     <MpModalContent>
       <MpModalHeader>{{ t('Shipping details') }}<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
-        <p class="sd-lead">{{ t('This order has no courier yet. Add it to print the shipping label.') }}</p>
+        <p class="sd-lead">{{ t('Add a courier for each package to print the shipping label. Each package ships on its own tracking no.') }}</p>
 
-        <div v-for="o in orders" :key="o.id" class="sd-group">
-          <p v-if="orders.length > 1" class="sd-order">{{ o.number }}<span v-if="o.customer"> · {{ o.customer }}</span></p>
+        <div v-for="r in rows" :key="r.key" class="sd-group">
+          <p v-if="rows.length > 1 || r.packageNo" class="sd-order">{{ rowTitle(r) }}<span v-if="r.customer"> · {{ r.customer }}</span></p>
 
           <!-- Courier (required) -->
           <label class="sd-label">{{ t('Courier') }}</label>
           <MpPopover
-            :id="`sd-courier-${o.id}`"
+            :id="`sd-courier-${r.key}`"
             placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select
           >
             <MpPopoverTrigger>
-              <div class="sd-courier-trigger" :class="{ 'sd-courier-trigger--error': forms[o.id]?.error }">
+              <div class="sd-courier-trigger" :class="{ 'sd-courier-trigger--error': forms[r.key]?.error }">
                 <input
                   type="text" class="sd-courier-input" autocomplete="off"
-                  :value="forms[o.id]?.active ? forms[o.id]?.search : (forms[o.id]?.courier ?? '')"
+                  :value="forms[r.key]?.active ? forms[r.key]?.search : (forms[r.key]?.courier ?? '')"
                   :placeholder="t('Select courier')"
-                  @focus="openPicker(o.id)"
-                  @input="forms[o.id] && (forms[o.id].active = true, forms[o.id].search = ($event.target as HTMLInputElement).value)"
+                  @focus="openPicker(r.key)"
+                  @input="forms[r.key] && (forms[r.key].active = true, forms[r.key].search = ($event.target as HTMLInputElement).value)"
                 />
                 <MpIcon name="chevron-down" size="sm" />
               </div>
@@ -113,21 +120,21 @@ function save() {
             <MpPopoverContent :class="css({ width: '320px', maxHeight: '300px', overflowY: 'auto', padding: '0' })">
               <MpPopoverList>
                 <MpPopoverListItem
-                  v-for="c in couriersFiltered(o.id)" :key="c.id"
-                  :is-active="c.name === forms[o.id]?.courier"
-                  @click="selectCourier(o.id, c.name)"
+                  v-for="c in couriersFiltered(r.key)" :key="c.id"
+                  :is-active="c.name === forms[r.key]?.courier"
+                  @click="selectCourier(r.key, c.name)"
                 >{{ c.name }}</MpPopoverListItem>
-                <p v-if="!couriersFiltered(o.id).length" class="sd-none">{{ t('No couriers found') }}</p>
+                <p v-if="!couriersFiltered(r.key).length" class="sd-none">{{ t('No couriers found') }}</p>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
-          <p v-if="forms[o.id]?.error" class="sd-error">{{ t('You must select a courier') }}</p>
+          <p v-if="forms[r.key]?.error" class="sd-error">{{ t('You must select a courier') }}</p>
 
           <!-- Tracking no. (optional — one per shipment) -->
           <label class="sd-label sd-label--mt">{{ t('Tracking no.') }}</label>
           <MpInput
-            :id="`sd-track-${o.id}`"
-            v-model="forms[o.id]!.trackingNo"
+            :id="`sd-track-${r.key}`"
+            v-model="forms[r.key]!.trackingNo"
             :placeholder="t('Example: SD0009583')"
             is-full-width
           />

@@ -360,9 +360,6 @@ watch(() => [currentPageKey.value, route.query.fromPr] as const, ([key, fromPr])
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
 const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue'))
 const CrmDealDetailPage = asyncPage(() => import('~/components/pages/CrmDealDetailPage.vue'))
-const CrmServicesPage = asyncPage(() => import('~/components/pages/CrmServicesPage.vue'))
-const CrmServiceDetailPage = asyncPage(() => import('~/components/pages/CrmServiceDetailPage.vue'))
-const NewCrmServicePage = asyncPage(() => import('~/components/pages/NewCrmServicePage.vue'))
 const NewCrmDealPage = asyncPage(() => import('~/components/pages/NewCrmDealPage.vue'))
 const CrmOrdersPage = asyncPage(() => import('~/components/pages/CrmOrdersPage.vue'))
 const CrmTasksPage = asyncPage(() => import('~/components/pages/CrmTasksPage.vue'))
@@ -473,12 +470,7 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     // /crm/deals/new → full detail create form; /crm/deals/:id/edit → edit form (both a PAGE).
     if (sub === 'deals' && id === 'new') return { component: NewCrmDealPage, id: 'new' }
     if (sub === 'deals' && id && segs[3] === 'edit') return { component: NewCrmDealPage, id }
-    // /crm/services → Service deals workspace (custom module); /crm/services/new →
-    // create form; /crm/services/:id/edit → edit form; /crm/services/:id → detail.
-    if (sub === 'services' && id === 'new') return { component: NewCrmServicePage, id: 'new' }
-    if (sub === 'services' && id && segs[3] === 'edit') return { component: NewCrmServicePage, id }
-    if (sub === 'services') return id ? { component: CrmServiceDetailPage, id } : { component: CrmServicesPage, id: '' }
-    // /crm/<moduleId>[/recordId] → any OTHER published custom module (created via
+    // /crm/<moduleId>[/recordId] → any published custom module (created via
     // "+ New module") gets the generic records workspace/detail, driven entirely
     // by its own pipeline/properties (no per-module page needed). Guarded by a
     // real, non-system module lookup so it can't hijack reserved CRM subpaths.
@@ -508,7 +500,7 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     // before the module is actually created (see CrmModuleBuilderPage.vue).
     if (sub === 'settings' && id === 'modules' && segs[3]) return { component: CrmModuleBuilderPage, id: segs[3] }
     if (sub === 'settings' && id === 'modules') return { component: CrmModulesPage, id: '' }
-    if (sub === 'settings' && id === 'properties') return { component: CrmSettingsPage, id: 'company' }
+    // /crm/settings/properties is deprecated — fall through to generic settings
     // ERP Integration Settings (PRD: ERP Transaction Conversion Settings V1).
     if (sub === 'settings' && id === 'erp-integrations' && segs[3]) return { component: CrmErpIntegrationEditorPage, id: segs[3] }
     if (sub === 'settings' && id === 'erp-integrations') return { component: CrmErpIntegrationsPage, id: '' }
