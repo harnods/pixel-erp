@@ -6,7 +6,7 @@
  *    hand-drawn svg icons, legacy pill/banner classes, or disabled-for-validation actions.
  */
 import { describe, it, expect } from 'vitest'
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { isoToDmy, dmyToIso } from '../app/utils/projectFormat'
 import { badge, badgeProps } from '../app/utils/projectStatus'
@@ -99,5 +99,21 @@ describe('Project detail page follows details-page-format', () => {
     for (const f of files) {
       expect(readFileSync(f, 'utf8'), `${f} — use ContentList`).not.toContain('pm-stat-label')
     }
+  })
+})
+
+// Budget setup moved out of this module — the baseline is owned elsewhere and the
+// project only links an approved plan (picked on the create form).
+describe('Projects module no longer owns Budget setup', () => {
+  it('has no route, page or deep link left', () => {
+    for (const f of vueFiles(join(__dirname, '../app/components/projects'))) {
+      expect(readFileSync(f, 'utf8'), `${f} — /budget-setup is gone`).not.toContain('/budget-setup')
+    }
+    expect(existsSync(join(__dirname, '../app/components/projects/pages/BudgetSetupPage.vue'))).toBe(false)
+  })
+  it('offers the Budget module’s approved plans to link', async () => {
+    const { BUDGET_PLANS } = await import('../app/data/projectBudgets')
+    expect(BUDGET_PLANS.length).toBeGreaterThan(0)
+    for (const p of BUDGET_PLANS) expect(p.total).toBeGreaterThan(0)
   })
 })

@@ -13,7 +13,6 @@
  *   /stock-availability               on hand / reserved / available
  *   /site-change-capture              field change → change order
  *   /project-audit-log[?project=]     audit page (cross-project, filterable)
- *   /budget-setup[/:projectId]        separate budget module
  *   /project-settings                 company policy
  */
 const route = useRoute()
@@ -29,7 +28,6 @@ const NewDocumentPage = defineAsyncComponent(() => import('./pages/ProjectNewDoc
 const StockPage = defineAsyncComponent(() => import('./pages/StockAvailabilityPage.vue'))
 const SiteCapturePage = defineAsyncComponent(() => import('./pages/SiteChangeCapturePage.vue'))
 const AuditPage = defineAsyncComponent(() => import('./pages/ProjectAuditLogPage.vue'))
-const BudgetSetupPage = defineAsyncComponent(() => import('./pages/BudgetSetupPage.vue'))
 const SettingsPage = defineAsyncComponent(() => import('./pages/ProjectSettingsPage.vue'))
 
 const view = computed<{ component: Component; props: Record<string, unknown> }>(() => {
@@ -45,7 +43,6 @@ const view = computed<{ component: Component; props: Record<string, unknown> }>(
     case 'stock-availability': return { component: StockPage, props: {} }
     case 'site-change-capture': return { component: SiteCapturePage, props: {} }
     case 'project-audit-log': return { component: AuditPage, props: {} }
-    case 'budget-setup': return { component: BudgetSetupPage, props: { projectId: b } }
     case 'project-settings': return { component: SettingsPage, props: {} }
   }
   return { component: PortfolioPage, props: {} }

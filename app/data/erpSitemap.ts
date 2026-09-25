@@ -107,7 +107,6 @@ export const BUILT_KEYS = new Set<string>([
   'Stock availability',
   'Site change capture',
   'Project audit log',
-  'Budget setup',
   'Project settings',
 
   // ── tabComponents index pages ──
@@ -414,7 +413,6 @@ export const SITEMAP: SitemapModule[] = [
       leaf('Documents', { to: 'Project documents' }),
       leaf('Stock availability'),
       leaf('Site change capture'),
-      leaf('Budget setup'),
       leaf('Audit log', { to: 'Project audit log' }),
       leaf('Project settings'),
     ],

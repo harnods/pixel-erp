@@ -408,7 +408,7 @@ function doSubmit() {
           </div>
           <MpFormErrorMessage>{{ t('Choose which work orders this change applies to before submitting.') }}</MpFormErrorMessage>
         </MpFormControl>
-        <p class="pm-caption pm-m-0">{{ t('On approval the cost delta raises a budget revision in Budget setup, and reservations adjust.') }}</p>
+        <p class="pm-caption pm-m-0">{{ t('On approval the cost delta raises a budget revision in the Budget module, and reservations adjust.') }}</p>
         <PmActionError id="pm-eco-editor-error" :error="editorAction.error.value" />
       </template>
       <template #footer>

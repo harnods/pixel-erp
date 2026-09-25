@@ -59,6 +59,8 @@ export interface Project {
   startDate: string
   endDate: string
   createdAt: string
+  /** approved RAB/RAP plan linked from the Budget module (the baseline itself lives there) */
+  budgetPlanRef?: string
   /** set when a change order altered contract value on Output·milestone — unverified weights must be reconfirmed to 100% */
   reweightRequired?: boolean
   closedAt?: string
@@ -325,6 +327,8 @@ export interface NewProjectInput {
   longTerm: boolean
   defaultWarehouse?: string
   dimensions: ProjectDimensions
+  /** ref of the approved plan picked from the Budget module, when there is one */
+  budgetPlanRef?: string
   startDate: string
   endDate: string
   phases: { name: string; progressWeightPct?: number; rabValue?: number; workPackages: { name: string; type: WorkPackageType; plannedUnits?: number; unit?: string }[] }[]
@@ -340,6 +344,7 @@ export function createProject(input: NewProjectInput, today: string): Project {
     measure: input.method === 'output' ? input.measure : undefined,
     contractValue: input.contractValue, pm: input.pm, priority: input.priority, longTerm: input.longTerm,
     defaultWarehouse: input.defaultWarehouse, dimensions: input.dimensions,
+    budgetPlanRef: input.budgetPlanRef,
     status: 'draft', startDate: input.startDate, endDate: input.endDate, createdAt: today,
   }
   projects.unshift(project)

@@ -250,8 +250,7 @@ const unitWps = computed(() => projectWorkPackages(props.project.id).filter(w =>
         <MpBanner v-if="inputBudget === undefined" id="pm-rec-no-budget" variant="warning">
           <MpBannerIcon />
           <MpBannerDescription>
-            {{ t('Budget not set — % complete can’t be computed for cost-to-cost until a baseline exists.') }}
-            <MpTextlink id="pm-rec-setup-budget" as="a" @click.prevent="router.push(`/budget-setup/${project.id}`)">{{ t('Set up budget') }}</MpTextlink>
+            {{ t('Budget not set — % complete can’t be computed for cost-to-cost until a baseline exists.') }} {{ t('Link a plan in the Budget module.') }}
           </MpBannerDescription>
         </MpBanner>
         <div v-else class="pm-card pm-card--flat">

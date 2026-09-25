@@ -259,7 +259,6 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
             </table>
           </div>
           <div v-else-if="wo(current_)" class="pm-small">{{ wo(current_)!.number }} · {{ nodeLabel(wo(current_)!.wpId) }} · {{ t('set-aside') }} {{ rp(wo(current_)!.budgetSetAside) }} ({{ t('estimate') }} {{ rp(wo(current_)!.estimate) }})</div>
-          <div><MpTextlink id="appr-budget-link" as="a" @click.prevent="router.push(`/budget-setup/${current_.projectId}?returnTo=${encodeURIComponent('/project-approvals')}`)">{{ t('Review the budget in Budget setup') }}</MpTextlink></div>
         </template>
 
         <!-- Change order -->
@@ -300,8 +299,7 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
 
         <!-- Budget revision -->
         <template v-else-if="current_.kind === 'budget_revision'">
-          <div v-if="current_.payload" class="pm-small">{{ t('Proposed baseline from Budget setup') }}: {{ current_.payload.lines.length }} {{ t('lines') }}, {{ t('revenue') }} {{ rp(current_.payload.revenue) }}.</div>
-          <div><MpTextlink id="appr-open-budget" as="a" @click.prevent="router.push(`/budget-setup/${current_.projectId}?returnTo=${encodeURIComponent('/project-approvals')}`)">{{ t('Open in Budget setup') }}</MpTextlink></div>
+          <div v-if="current_.payload" class="pm-small">{{ t('Proposed baseline from the Budget module') }}: {{ current_.payload.lines.length }} {{ t('lines') }}, {{ t('revenue') }} {{ rp(current_.payload.revenue) }}.</div>
         </template>
 
         <div v-if="current_.reason">

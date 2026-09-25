@@ -39,6 +39,17 @@ export function accountName(code: string): string {
   return COST_ACCOUNTS.find(a => a.code === code)?.name ?? code
 }
 
+/** Approved RAB/RAP plans held by the **Budget module**. A project links one (at
+ *  create time, or later from that module); the node × account baseline itself is
+ *  maintained there, never here. */
+export interface BudgetPlan { ref: string; total: number; approvedBy: string; approvedAt: string }
+export const BUDGET_PLANS: BudgetPlan[] = [
+  { ref: 'RAB_IPB_Pascasarjana.pdf · RAP_Pasca_sarjana.pdf', total: 580_839_105, approvedBy: 'Maya Kartika', approvedAt: '2026-04-02' },
+  { ref: 'RAB/RAP Grand Kamala rev.1', total: 496_300_000, approvedBy: 'Maya Kartika', approvedAt: '2026-04-20' },
+  { ref: 'RAP Pendampingan Pajak 2026', total: 75_000_000, approvedBy: 'Maya Kartika', approvedAt: '2026-01-14' },
+  { ref: 'RAB Karoseri Box 8 Unit', total: 412_000_000, approvedBy: 'Maya Kartika', approvedAt: '2026-05-08' },
+]
+
 export interface BudgetLine { wpId: string; account: string; amount: number }
 
 export interface BudgetRevisionChange { wpId?: string; phaseId?: string; account?: string; field: 'line' | 'reserve' | 'revenue'; from: number; to: number }

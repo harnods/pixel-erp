@@ -25,26 +25,10 @@ import { badgeProps } from '~/utils/projectStatus'
 const { t } = useLocale()
 const router = useRouter()
 
-type Dim = 'branch' | 'department' | 'costCenter' | 'fundingSource'
-const DIMENSIONS: { value: Dim; label: string }[] = [
-  { value: 'branch', label: 'Branch' },
-  { value: 'department', label: 'Department' },
-  { value: 'costCenter', label: 'Cost center' },
-  { value: 'fundingSource', label: 'Funding source' },
-]
 const statusFilter = ref('')
-const dimKey = ref<'' | Dim>('')
-const dimValue = ref('')
-watch(dimKey, () => { dimValue.value = '' })
 const statusOptions = computed(() => [
   { value: 'draft', label: t('Draft') }, { value: 'active', label: t('Active') }, { value: 'closed', label: t('Closed') },
 ])
-const dimOptions = computed(() => DIMENSIONS.map(d => ({ value: d.value, label: t(d.label) })))
-const dimValueOptions = computed(() => {
-  const k = dimKey.value
-  if (!k) return []
-  return [...new Set(projects.map(p => p.dimensions[k]).filter(Boolean) as string[])].sort()
-})
 
 // Row = summary flattened so every column can sort.
 interface Row {
@@ -77,13 +61,12 @@ const {
   filterFn: (r, s) => {
     const matches = !s || r.code.toLowerCase().includes(s) || r.name.toLowerCase().includes(s) || r.customer.toLowerCase().includes(s)
     const byStatus = !statusFilter.value || r.status === statusFilter.value
-    const byDim = !dimKey.value || !dimValue.value || r.s.project.dimensions[dimKey.value] === dimValue.value
-    return matches && byStatus && byDim
+    return matches && byStatus
   },
 })
-watch([statusFilter, dimKey, dimValue], () => setPage(1))
-const hasActiveFilter = computed(() => !!statusFilter.value || !!dimValue.value)
-function clearFilters() { statusFilter.value = ''; dimKey.value = ''; dimValue.value = ''; search.value = '' }
+watch(statusFilter, () => setPage(1))
+const hasActiveFilter = computed(() => !!statusFilter.value)
+function clearFilters() { statusFilter.value = ''; search.value = '' }
 
 const columns: TableColumn[] = [
   { key: 'code', label: 'Project', kind: 'name', sortType: 'text' },
@@ -184,8 +167,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <template v-if="scenario !== 'empty'" #filters>
           <div class="filter-left">
             <ErpFilterSelect id="pm-status-filter" v-model="statusFilter" :placeholder="t('Status')" :options="statusOptions" />
-            <ErpFilterSelect id="pm-dim-filter" v-model="dimKey" :placeholder="t('Dimension')" :options="dimOptions" />
-            <ErpFilterSelect id="pm-dim-value-filter" v-model="dimValue" :placeholder="t('Dimension value')" :options="dimValueOptions" :is-disabled="!dimKey" />
           </div>
           <div class="filter-right">
             <MpButtonGroup class="filter-btn-group">
@@ -247,7 +228,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <template #actions="{ row }">
           <PmMenu :id="`pm-row-${asRow(row).id}`" kebab :label="t('More actions')" :items="[
             { label: t('View details'), action: () => router.push(`/projects/${asRow(row).id}`) },
-            { label: t('Open in Budget setup'), action: () => router.push(`/budget-setup/${asRow(row).id}`) },
             { label: t('View history'), action: () => router.push(`/project-audit-log?project=${asRow(row).id}`) },
           ]" />
         </template>

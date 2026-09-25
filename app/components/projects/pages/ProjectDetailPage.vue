@@ -92,7 +92,7 @@ const approveWarnings = computed(() => {
   const p = project.value
   if (!p) return []
   const out: string[] = []
-  if (!getBudget(p.id)) out.push(t('No budget baseline yet — approval is allowed, but every budget check will read “not set” until one is linked in Budget setup.'))
+  if (!getBudget(p.id)) out.push(t('No budget baseline yet — approval is allowed, but every budget check will read “not set” until a plan is linked in the Budget module.'))
   if (p.method === 'output' && p.measure === 'milestone' && weightTotal(p.id) !== 100) out.push(`${t('Progress weights total')} ${pct(weightTotal(p.id))}, ${t('not 100%.')}`)
   return out
 })
@@ -124,7 +124,6 @@ const actions = computed<PmMenuItem[]>(() => {
     { label: t('New work order'), action: () => router.push(`/projects/${p.id}/work-orders/new`), disabledReason: !p.isProduction ? t('Service projects have no work orders') : closed ? t('Project is closed') : undefined },
     { label: t('New document'), action: () => router.push(`/project-documents/new?project=${p.id}`), disabledReason: closed ? t('Project is closed') : undefined },
     { label: t('Capture site change'), action: () => router.push(`/site-change-capture?project=${p.id}`), disabledReason: closed ? t('Project is closed') : undefined },
-    { label: t('Open in Budget setup'), action: () => router.push(`/budget-setup/${p.id}?returnTo=${encodeURIComponent(`/projects/${p.id}?tab=budget`)}`) },
     { label: t('Re-open approval'), action: () => { reopen.clear(); reopenOpen.value = true }, disabledReason: p.status !== 'active' ? t('Only an active project can be re-opened') : undefined },
     { label: t('Close project'), action: () => { activeTab.value = 'completion' }, disabledReason: closed ? t('Already closed') : undefined },
   ]

@@ -18,8 +18,12 @@ import {
 import PmTitleBar from '../PmTitleBar.vue'
 import PmActionError from '../PmActionError.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
-import { createProject, projects, type RecognitionMethod, type OutputMeasure, type WorkPackageType } from '~/data/projects'
+import { createProject, projects, projectPhases, phaseWorkPackages, type RecognitionMethod, type OutputMeasure, type WorkPackageType } from '~/data/projects'
 import { customers } from '~/data/customers'
+import { salesOrders } from '~/data/salesOrders'
+import { BUDGET_PLANS } from '~/data/projectBudgets'
+import { masterBoms } from '~/data/projectBoms'
+import { replaceCustomBom } from '~/data/projectActions'
 import { UNIT_OPTIONS } from '~/data/purchaseOrderDetails'
 import { logAudit } from '~/data/projectAudit'
 import { TODAY_ISO } from '~/data/master'
@@ -51,6 +55,7 @@ const form = reactive({
   contractValue: '',
   pm: 'Rizal Candra',
   priority: 'medium' as 'high' | 'medium' | 'low',
+  budgetPlan: '',
   startDate: '2026-07-06',
   endDate: '2026-10-30',
   defaultWarehouse: 'Workshop Cileungsi',
@@ -75,12 +80,28 @@ const wpTypeOptions = computed(() => [
 ])
 const customerOptions = computed(() => [...new Set([...projects.map(p => p.customer), ...customers.map(c => c.name)])])
 
+// The contract/SO is an existing record, not free text — picking one carries its
+// customer and value across, so the project and the contract can't disagree.
+const soOptions = computed(() => salesOrders
+  .filter(o => o.status === 'open' || o.status === 'partially processed')
+  .slice(0, 40)
+  .map(o => ({ value: String(o.number), label: `SO #${o.number} · ${o.customer.name} · ${rp(o.total)}` })))
+function onSoPicked(v: string) {
+  form.salesOrderNo = v
+  const o = salesOrders.find(x => String(x.number) === v)
+  if (!o) return
+  form.customer = o.customer.name
+  form.contractValue = o.total.toLocaleString('id-ID')
+}
+// Budget plans live in the Budget module; the project links one (optional).
+const budgetPlanOptions = computed(() => BUDGET_PLANS.map(b => ({ value: b.ref, label: `${b.ref} · ${rp(b.total)}` })))
+
 // ── Step 3: structure ──
-interface WpDraft { name: string; type: WorkPackageType | ''; plannedUnits: string; unit: string }
+interface WpDraft { name: string; type: WorkPackageType | ''; plannedUnits: string; unit: string; masterBomId: string }
 interface PhaseDraft { name: string; rabValue: string; weight: string; wps: WpDraft[] }
 const phaseDrafts = ref<PhaseDraft[]>([])
 // Every structure field starts empty — the placeholder hints what goes in it.
-function newWp(): WpDraft { return { name: '', type: '', plannedUnits: '', unit: '' } }
+function newWp(): WpDraft { return { name: '', type: '', plannedUnits: '', unit: '', masterBomId: '' } }
 function addPhase() { phaseDrafts.value.push({ name: '', rabValue: '', weight: '', wps: [newWp()] }) }
 const structureAction = useProjectAction()
 function removePhase(i: number) {
@@ -88,7 +109,7 @@ function removePhase(i: number) {
   structureAction.clear()
   phaseDrafts.value.splice(i, 1)
 }
-watch(usePhases, v => { if (v && !phaseDrafts.value.length) { addPhase(); addPhase() } })
+watch(usePhases, v => { if (v && !phaseDrafts.value.length) addPhase() })
 
 const isMilestone = computed(() => method.value === 'output' && measure.value === 'milestone')
 const isUnit = computed(() => method.value === 'output' && measure.value === 'unit')
@@ -107,11 +128,29 @@ const step1Error = computed(() => {
   if (!method.value) return t('Choose how revenue is recognised.')
   return ''
 })
+const period = computed(() => [isoToDmy(form.startDate), isoToDmy(form.endDate)])
+/** The range picker emits either DD/MM/YYYY strings or Date objects depending on
+ *  how it parsed the input — normalise both to the ISO the data layer stores. */
+function toIso(v: unknown): string {
+  if (!v) return ''
+  if (v instanceof Date) {
+    if (Number.isNaN(v.getTime())) return ''
+    return `${v.getFullYear()}-${String(v.getMonth() + 1).padStart(2, '0')}-${String(v.getDate()).padStart(2, '0')}`
+  }
+  const str = String(v)
+  return str.includes('/') ? dmyToIso(str) : str.slice(0, 10)
+}
+function onPeriod(v: unknown) {
+  const [a, b] = Array.isArray(v) ? v : [v, '']
+  form.startDate = toIso(a)
+  form.endDate = toIso(b)
+}
+
 const step2Errors = computed(() => ({
   name: !form.name.trim() ? t('Enter the project name.') : '',
   customer: !form.customer.trim() ? t('Enter the customer.') : '',
   contractValue: !parseAmount(form.contractValue) ? t('Enter the contract value.') : '',
-  dates: form.endDate < form.startDate ? t('End date must be after the start date.') : '',
+  dates: !form.startDate || !form.endDate ? t('Pick the project period.') : form.endDate < form.startDate ? t('The period must end after it starts.') : '',
 }))
 const step3Error = computed(() => {
   if (!usePhases.value) return ''
@@ -137,10 +176,11 @@ function next() {
 // Phase fields and work-package rows share one grid so the name inputs line up.
 // a: type + qty + unit · b: qty + unit · c: RAB + weight only · d: name only
 const rowClass = computed(() => (isProduction.value ? 'pm-srow--a' : isUnit.value ? 'pm-srow--b' : isMilestone.value ? 'pm-srow--c' : 'pm-srow--d'))
-const optionalCols = computed(() => (isProduction.value ? 3 : isUnit.value || isMilestone.value ? 2 : 0))
+const optionalCols = computed(() => (isProduction.value ? 4 : isUnit.value || isMilestone.value ? 2 : 0))
 const phaseFillers = computed(() => Math.max(optionalCols.value - (isMilestone.value ? 2 : 0), 0))
-const wpFillers = computed(() => Math.max(optionalCols.value - ((isProduction.value ? 1 : 0) + (isProduction.value || isUnit.value ? 2 : 0)), 0))
+const wpFillers = computed(() => Math.max(optionalCols.value - ((isProduction.value ? 2 : 0) + (isProduction.value || isUnit.value ? 2 : 0)), 0))
 const unitOptions = computed(() => ['Unit', 'Set', ...UNIT_OPTIONS])
+const bomOptions = computed(() => masterBoms.filter(b => !b.archived && b.components.length).map(b => ({ value: b.id, label: `${b.number} · ${b.name}` })))
 const wpTypeLabel = (v: string) => (v === 'production' ? t('Production') : v === 'service' ? t('Service') : '—')
 function fmtAmount(v: string) { const n = parseAmount(v); return n ? n.toLocaleString('id-ID') : '' }
 function back() { if (step.value > 1) step.value--; else router.push('/projects') }
@@ -159,6 +199,7 @@ function create() {
     contractValue: parseAmount(form.contractValue), pm: form.pm, priority: form.priority, longTerm: form.longTerm,
     defaultWarehouse: isProduction.value ? form.defaultWarehouse : undefined,
     dimensions: { branch: form.branch || undefined, department: form.department || undefined, costCenter: form.costCenter || undefined, fundingSource: form.fundingSource || undefined },
+    budgetPlanRef: form.budgetPlan || undefined,
     startDate: form.startDate, endDate: form.endDate,
     phases: usePhases.value ? phaseDrafts.value.map(ph => ({
       name: ph.name.trim(),
@@ -167,6 +208,18 @@ function create() {
       workPackages: ph.wps.filter(w => w.name.trim()).map(w => ({ name: w.name.trim(), type: (w.type || (isProduction.value ? 'production' : 'service')) as WorkPackageType, plannedUnits: parseAmount(w.plannedUnits) || undefined, unit: parseAmount(w.plannedUnits) ? w.unit.trim() : undefined })),
     })) : [],
   }, TODAY_ISO)
+  // Attach each picked master BOM to the work package that was just created —
+  // same copy-to-custom-BOM-v1 action the Structure tab uses.
+  if (usePhases.value && isProduction.value) {
+    const created = projectPhases(p.id)
+    phaseDrafts.value.forEach((ph, pi) => {
+      const wps = phaseWorkPackages(created[pi]?.id ?? '')
+      ph.wps.filter(w => w.name.trim()).forEach((w, wi) => {
+        const target = wps[wi]
+        if (target && w.type === 'production' && w.masterBomId) replaceCustomBom(target.id, w.masterBomId, '', asActor.value)
+      })
+    })
+  }
   logAudit({ actor: actor.value, role: asActor.value.role, projectId: p.id, kind: 'structure', summary: `Created project ${p.code} as Draft — ${p.isProduction ? 'production' : 'service'}, depth ${p.depth}, ${methodText.value}` })
   successToast(`${p.code} ${t('created as draft')}`)
   router.push(`/projects/${p.id}`)
@@ -281,12 +334,17 @@ function create() {
               <MpFormErrorMessage>{{ step2Errors.customer }}</MpFormErrorMessage>
             </MpFormControl>
             <MpFormControl id="pc-so-fc">
-              <MpFormLabel>{{ t('Linked contract / sales order number') }}</MpFormLabel>
-              <MpInput id="pc-so" v-model="form.salesOrderNo" />
-              <MpFormHelpText>{{ t('Billing terms live on the contract, not on the project structure.') }}</MpFormHelpText>
+              <MpFormLabel>
+                {{ t('Linked sales order') }}
+                <MpIcon v-tooltip="{ label: t('Billing terms live on the contract, not on the project structure.'), placement: 'top' }" name="information" size="sm" class="pm-label-help" />
+              </MpFormLabel>
+              <ErpFilterSelect id="pc-so" :model-value="form.salesOrderNo" :placeholder="t('Select sales order')" :options="soOptions" width="100%" @update:model-value="onSoPicked" />
             </MpFormControl>
             <MpFormControl id="pc-cv-fc" is-required :is-invalid="touched && !!step2Errors.contractValue">
-              <MpFormLabel>{{ t('Contract value') }}</MpFormLabel>
+              <MpFormLabel>
+                {{ t('Contract value') }}
+                <MpIcon v-tooltip="{ label: t('Taken from the linked sales order. Change it only when the contract says something else.'), placement: 'top' }" name="information" size="sm" class="pm-label-help" />
+              </MpFormLabel>
               <MpInputGroup id="pc-cv-group">
                 <MpInputLeftAddon id="pc-cv-addon" has-background>Rp</MpInputLeftAddon>
                 <MpInput id="pc-cv" v-model="form.contractValue" inputmode="numeric" @blur="form.contractValue = fmtAmount(form.contractValue)" />
@@ -298,17 +356,22 @@ function create() {
               <ErpFilterSelect id="pc-pm" v-model="form.pm" :placeholder="t('Select project manager')" :options="pmOptions" width="100%" :is-clearable="false" />
             </MpFormControl>
             <MpFormControl id="pc-pr-fc">
-              <MpFormLabel>{{ t('Priority') }}</MpFormLabel>
+              <MpFormLabel>
+                {{ t('Priority') }}
+                <MpIcon v-tooltip="{ label: t('Shown to other projects when they compete for reserved stock.'), placement: 'top' }" name="information" size="sm" class="pm-label-help" />
+              </MpFormLabel>
               <ErpFilterSelect id="pc-pr" :model-value="form.priority" :placeholder="t('Priority')" :options="priorityOptions" width="100%" :is-clearable="false" @update:model-value="(v: string) => (form.priority = (v || 'medium') as 'high' | 'medium' | 'low')" />
-              <MpFormHelpText>{{ t('Shown to other projects when they compete for reserved stock.') }}</MpFormHelpText>
             </MpFormControl>
-            <MpFormControl id="pc-sd-fc">
-              <MpFormLabel>{{ t('Start date') }}</MpFormLabel>
-              <MpDatePicker id="pc-sd" :model-value="isoToDmy(form.startDate)" format="DD/MM/YYYY" value-type="format" use-portal is-full-width @update:model-value="(v: string) => (form.startDate = dmyToIso(v))" />
+            <MpFormControl id="pc-bp-fc">
+              <MpFormLabel>
+                {{ t('Budget plan') }}
+                <MpIcon v-tooltip="{ label: t('Approved RAB/RAP plans come from the Budget module. Link one now or later — until then every budget check reads “not set”.'), placement: 'top' }" name="information" size="sm" class="pm-label-help" />
+              </MpFormLabel>
+              <ErpFilterSelect id="pc-bp" v-model="form.budgetPlan" :placeholder="t('Select budget plan')" :options="budgetPlanOptions" width="100%" />
             </MpFormControl>
-            <MpFormControl id="pc-ed-fc" :is-invalid="touched && !!step2Errors.dates">
-              <MpFormLabel>{{ t('End date') }}</MpFormLabel>
-              <MpDatePicker id="pc-ed" :model-value="isoToDmy(form.endDate)" format="DD/MM/YYYY" value-type="format" use-portal is-full-width @update:model-value="(v: string) => (form.endDate = dmyToIso(v))" />
+            <MpFormControl id="pc-period-fc" :is-invalid="touched && !!step2Errors.dates">
+              <MpFormLabel>{{ t('Period') }}</MpFormLabel>
+              <MpDatePicker id="pc-period" :model-value="period" is-range format="DD/MM/YYYY" value-type="format" use-portal is-full-width @update:model-value="onPeriod" />
               <MpFormErrorMessage>{{ step2Errors.dates }}</MpFormErrorMessage>
             </MpFormControl>
             <MpFormControl v-if="isProduction" id="pc-wh-fc">
@@ -389,22 +452,40 @@ function create() {
                 <span />
               </div>
 
-              <!-- Work packages: "Phase N.M" label over the name · type · qty · unit · remove -->
+              <!-- Work packages — every field carries its own label, like the phase row above.
+                   A production work package picks a master BOM; a service one types its unit. -->
               <div v-for="(wp, wi) in ph.wps" :key="wi" class="pm-srow pm-srow--wp" :class="rowClass">
                 <MpFormControl :id="`pc-wp-${pi}-${wi}-fc`" is-required>
                   <MpFormLabel>{{ t('Phase') }} {{ pi + 1 }}.{{ wi + 1 }}</MpFormLabel>
                   <MpInput :id="`pc-wp-${pi}-${wi}`" v-model="wp.name" :placeholder="t('Work package name')" />
                 </MpFormControl>
-                <ErpFilterSelect v-if="isProduction" :id="`pc-wp-type-${pi}-${wi}`" :model-value="wp.type" :placeholder="t('Type')" :options="wpTypeOptions" :is-clearable="false" width="100%" @update:model-value="(v: string) => (wp.type = v as WorkPackageType)" />
-                <MpInput v-if="isProduction || isUnit" :id="`pc-wp-units-${pi}-${wi}`" v-model="wp.plannedUnits" inputmode="numeric" :placeholder="t('Qty')" :aria-label="t('Qty')" />
-                <ErpFilterSelect v-if="isProduction || isUnit" :id="`pc-wp-unit-${pi}-${wi}`" v-model="wp.unit" :placeholder="t('Unit')" :options="unitOptions" :is-clearable="false" width="100%" />
+                <MpFormControl v-if="isProduction" :id="`pc-wp-type-${pi}-${wi}-fc`" is-required>
+                  <MpFormLabel>{{ t('Type') }}</MpFormLabel>
+                  <ErpFilterSelect :id="`pc-wp-type-${pi}-${wi}`" :model-value="wp.type" :placeholder="t('Type')" :options="wpTypeOptions" :is-clearable="false" width="100%" @update:model-value="(v: string) => (wp.type = v as WorkPackageType)" />
+                </MpFormControl>
+                <MpFormControl v-if="isProduction || isUnit" :id="`pc-wp-units-${pi}-${wi}-fc`">
+                  <MpFormLabel>{{ t('Qty') }}</MpFormLabel>
+                  <MpInput :id="`pc-wp-units-${pi}-${wi}`" v-model="wp.plannedUnits" inputmode="numeric" placeholder="0" />
+                </MpFormControl>
+                <MpFormControl v-if="isProduction || isUnit" :id="`pc-wp-unit-${pi}-${wi}-fc`">
+                  <MpFormLabel>{{ t('Unit') }}</MpFormLabel>
+                  <MpInput v-if="wp.type === 'service' || !isProduction" :id="`pc-wp-unit-${pi}-${wi}`" v-model="wp.unit" :placeholder="t('e.g. Visit')" />
+                  <ErpFilterSelect v-else :id="`pc-wp-unit-${pi}-${wi}`" v-model="wp.unit" :placeholder="t('Unit')" :options="unitOptions" :is-clearable="false" width="100%" />
+                </MpFormControl>
+                <MpFormControl v-if="isProduction && wp.type === 'production'" :id="`pc-wp-bom-${pi}-${wi}-fc`">
+                  <MpFormLabel>
+                    {{ t('BOM') }}
+                    <MpIcon v-tooltip="{ label: t('The master is copied into a custom BOM v1 for this work package. The master stays untouched.'), placement: 'top' }" name="information" size="sm" class="pm-label-help" />
+                  </MpFormLabel>
+                  <ErpFilterSelect :id="`pc-wp-bom-${pi}-${wi}`" v-model="wp.masterBomId" :placeholder="t('Attach later')" :options="bomOptions" width="100%" />
+                </MpFormControl>
+                <span v-else-if="isProduction" />
                 <span v-for="f in wpFillers" :key="`wpf-${f}`" />
                 <MpButton :id="`pc-wp-remove-${pi}-${wi}`" variant="ghost" is-rounded left-icon="minus-circular" :aria-label="t('Remove work package')" class="pm-row-remove" @click="ph.wps.splice(wi, 1)" />
               </div>
               <div><MpButton :id="`pc-wp-add-${pi}`" variant="ghost" is-rounded left-icon="add" @click="ph.wps.push(newWp())">{{ t('Work package') }}</MpButton></div>
             </div>
             <div><MpButton id="pc-add-phase" variant="secondary" is-rounded left-icon="add" @click="addPhase">{{ t('New phase') }}</MpButton></div>
-            <p v-if="isProduction" class="pm-caption pm-m-0">{{ t('Attach a BOM to each production work package from the Structure tab after the project is created — selecting a master BOM copies it into a custom BOM v1.') }}</p>
           </template>
           <PmActionError id="pc-step3-error" :error="touched ? step3Error : ''" />
         </div>

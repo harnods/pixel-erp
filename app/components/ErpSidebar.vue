@@ -556,14 +556,15 @@ const erpNavGroups: NavItem[][] = [
     {
       // Project MTO — job costing for custom make-to-order + service engagements.
       // Rail per PRD: Projects · Approvals (badged) · Documents · Stock
-      // availability · Site change capture, plus Audit log (P3), Budget setup (P4)
-      // and Project settings. The Approvals count is a getter so the (static) nav
+      // availability · Site change capture, plus Audit log (P3) and Project settings.
+      // The budget baseline is owned by a separate Budget module, not by this rail.
+      // The Approvals count is a getter so the (static) nav
       // array still re-renders when the pending count changes.
       name: 'Projects', icon: 'briefcase',
       submenu: [
         [{ label: 'Projects' }, { label: 'Approvals', to: 'Project approvals' }, { label: 'Documents', to: 'Project documents' }],
         [{ label: 'Stock availability' }, { label: 'Site change capture' }],
-        [{ label: 'Budget setup' }, { label: 'Audit log', to: 'Project audit log' }, { label: 'Project settings', iconType: 'settings' }],
+        [{ label: 'Audit log', to: 'Project audit log' }, { label: 'Project settings', iconType: 'settings' }],
       ],
       expandOnClick: [
         [
@@ -572,7 +573,7 @@ const erpNavGroups: NavItem[][] = [
           { label: 'Documents', to: 'Project documents' },
         ],
         [{ label: 'Stock availability' }, { label: 'Site change capture' }],
-        [{ label: 'Budget setup' }, { label: 'Audit log', to: 'Project audit log' }, { label: 'Project settings', iconType: 'settings' }],
+        [{ label: 'Audit log', to: 'Project audit log' }, { label: 'Project settings', iconType: 'settings' }],
       ],
     },
   ],

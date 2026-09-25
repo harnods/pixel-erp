@@ -8,7 +8,7 @@
  *  • Work-order cost appears only on the Cost of production line.
  *  • Production monitoring: WO · status · Baseline (= budget set aside, not the
  *    estimate) · Actual · Variance.
- *  • Any change deep-links into Budget setup and returns here.
+ *  • The baseline is owned by the Budget module; this tab never edits it.
  */
 import { MpButton, MpProgress, MpTextlink } from '@mekari/pixel3'
 import WoJournalOverlay from '../WoJournalOverlay.vue'
@@ -27,8 +27,6 @@ const { t } = useLocale()
 const router = useRouter()
 
 const budget = computed(() => getBudget(props.project.id))
-const returnTo = computed(() => encodeURIComponent(`/projects/${props.project.id}?tab=budget`))
-function openSetup() { router.push(`/budget-setup/${props.project.id}?returnTo=${returnTo.value}`) }
 
 const rows = computed(() => {
   const base = budgetByAccount(props.project.id)
@@ -65,8 +63,7 @@ function usedColor(v: number) { return v > 100 ? 'negative' : v > 90 ? 'warning'
     <!-- Not set -->
     <div v-if="!budget" class="pm-card pm-empty-inline">
       <div class="pm-empty-title">{{ t('Budget not set') }}</div>
-      <p class="pm-empty-desc">{{ t('A missing budget is not a zero budget. Link the approved RAB/RAP plan — or enter the baseline manually — in Budget setup. Until then every budget check on this project reads “not set”.') }}</p>
-      <MpButton id="pm-budget-setup" variant="primary" is-rounded @click="openSetup">{{ t('Set up budget') }}</MpButton>
+      <p class="pm-empty-desc">{{ t('A missing budget is not a zero budget. Link the approved RAB/RAP plan in the Budget module, or pick one when the project is created. Until then every budget check on this project reads “not set”.') }}</p>
     </div>
 
     <template v-else>
@@ -76,7 +73,6 @@ function usedColor(v: number) { return v > 100 ? 'negative' : v > 90 ? 'warning'
             <h2 class="pm-h2">{{ t('Budget detail') }}</h2>
             <p class="pm-caption pm-m-0">{{ t('Frozen baseline from') }} <strong>{{ budget.planRef }}</strong> · {{ t('approved by') }} {{ budget.approvedBy }} {{ t('on') }} {{ formatDate(budget.approvedAt) }}<template v-if="budget.revisions.length"> · {{ budget.revisions.length }} {{ t('revision(s)') }}</template></p>
           </div>
-          <MpButton id="pm-budget-revise" variant="secondary" is-rounded right-icon="newtab" @click="openSetup">{{ t('Revise in Budget setup') }}</MpButton>
         </div>
 
         <div class="pm-table-wrap">
@@ -123,7 +119,7 @@ function usedColor(v: number) { return v > 100 ? 'negative' : v > 90 ? 'warning'
                 </td>
               </tr>
               <tr>
-                <td class="pm-wrap">{{ t('Phase reserves') }}<span class="pm-cell-sub">{{ t('Reserve is entered per phase in Budget setup (the only free-text budget amount).') }}</span></td>
+                <td class="pm-wrap">{{ t('Phase reserves') }}<span class="pm-cell-sub">{{ t('Reserve is entered per phase in the Budget module (the only free-text budget amount).') }}</span></td>
                 <td class="pm-num">{{ rp(reserves) }}</td>
                 <td class="pm-num pm-muted">—</td><td class="pm-num pm-muted">—</td><td class="pm-num pm-muted">—</td><td />
               </tr>

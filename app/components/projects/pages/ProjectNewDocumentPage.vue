@@ -95,10 +95,6 @@ function save() {
   const okMsg = res.ok && 'doc' in res && res.doc ? `${res.doc.docNo} — ${badgeProps('doc', res.doc.status, t).label}` : undefined
   if (action.run(res, okMsg)) router.push('/project-documents')
 }
-function budgetLink(wpId: string, need: number) {
-  const wp = getWorkPackage(wpId)!
-  return `/budget-setup/${wp.projectId}?returnTo=${encodeURIComponent(route.fullPath)}&wp=${wpId}&need=${Math.round(need)}&doc=${encodeURIComponent(t(DOC_TYPES.find(d => d.key === docType.value)!.label))}`
-}
 const VERDICT = computed(() => ({
   within: { status: 'within', type: 'completed', label: t('Within budget') },
   override: { status: 'override', type: 'warning', label: t('Over — override with reason') },
@@ -223,7 +219,6 @@ const VERDICT = computed(() => ({
               </table>
             </div>
             <div v-if="c.result.worst" class="pm-mt-2">
-              <MpTextlink :id="`nd-add-budget-${c.wpId}`" as="a" @click.prevent="router.push(budgetLink(c.wpId, c.result.worst.overBy))">{{ t('Add budget in Budget setup') }}</MpTextlink>
             </div>
           </div>
           <MpFormControl v-if="verdict === 'override' || verdict === 'escalate'" id="nd-reason-fc" is-required :is-invalid="touched && !reason.trim()">

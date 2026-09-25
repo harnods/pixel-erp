@@ -9,7 +9,7 @@
  * this work order" is required before step 2. Over Available → red verdict,
  * difference stated, forward action withheld — phase 1 lets the PM continue
  * only with a reason (held for Finance above the threshold), or deep-link into
- * Budget setup and come back.
+ * the Budget module and come back.
  *
  * Step 2: header shows Budget set aside and Allocated to lines. A Budget
  * column on components and on Labor / Overhead / Other, suggested from the
@@ -70,7 +70,7 @@ const overrideReason = ref('')
 const step1Block = computed(() => {
   if (!project.value) return t('Pick a project.')
   if (!wp.value) return t('Pick a work package.')
-  if (!getBudget(project.value.id) || gate.value?.total === undefined) return t('This work package has no Cost of production budget. Set it in Budget setup first.')
+  if (!getBudget(project.value.id) || gate.value?.total === undefined) return t('This work package has no Cost of production budget. Link a plan in the Budget module first.')
   if (!qty.value) return t('Enter the quantity to produce.')
   if (!setAside.value) return t('Enter the budget for this work order to continue.')
   if (over.value && !overrideReason.value.trim()) return t('Over available — enter a reason to continue, or add budget first.')
@@ -110,10 +110,6 @@ function save() {
   if (saveAction.run(res)) router.push(`/projects/${project.value!.id}?tab=budget`)
 }
 
-function budgetSetupLink() {
-  const back = encodeURIComponent(route.fullPath)
-  return `/budget-setup/${project.value!.id}?returnTo=${back}&wp=${wp.value!.id}&need=${over.value}&doc=${encodeURIComponent(t('New work order'))}`
-}
 </script>
 
 <template>
@@ -161,7 +157,6 @@ function budgetSetupLink() {
               <MpBannerIcon />
               <MpBannerDescription>
                 {{ t('Cost of production budget is not set on this work package.') }}
-                <MpTextlink id="wg-set-budget" as="a" @click.prevent="router.push(`/budget-setup/${project!.id}?returnTo=${encodeURIComponent(route.fullPath)}&wp=${wp.id}`)">{{ t('Set it in Budget setup') }}</MpTextlink>
               </MpBannerDescription>
             </MpBanner>
             <template v-else>
@@ -204,7 +199,6 @@ function budgetSetupLink() {
                   <MpBannerDescription>
                     <template v-if="willHold">{{ t('Above the') }} {{ pct(threshold) }} {{ t('threshold — if you continue, the work order is held for Finance sign-off and shows in the Approvals inbox.') }}</template>
                     <template v-else>{{ t('Within the') }} {{ pct(threshold) }} {{ t('threshold — you can continue with a reason. The override is recorded.') }}</template>
-                    <MpTextlink id="wg-add-budget" as="a" @click.prevent="router.push(budgetSetupLink())">{{ t('Add budget in Budget setup instead') }}</MpTextlink>
                   </MpBannerDescription>
                 </MpBanner>
                 <MpFormControl id="wg-r-fc" is-required>

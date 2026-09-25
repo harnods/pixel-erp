@@ -212,7 +212,7 @@ function wpMenu(wp: WorkPackage): PmMenuItem[] {
   ]
   if (wp.type === 'production') {
     items.push({ label: wp.customBomId ? t('View custom BOM') : t('Attach BOM'), action: () => (wp.customBomId ? (bomView.value = wp.customBomId) : openEditWp(wp)) })
-    items.push({ label: t('New work order'), action: () => router.push(`/projects/${props.project.id}/work-orders/new?wp=${wp.id}`), disabledReason: closed.value ? t('Project is closed') : !hasBudget.value ? t('Budget not set — link a plan in Budget setup first') : undefined })
+    items.push({ label: t('New work order'), action: () => router.push(`/projects/${props.project.id}/work-orders/new?wp=${wp.id}`), disabledReason: closed.value ? t('Project is closed') : !hasBudget.value ? t('Budget not set — link a plan in the Budget module first') : undefined })
   }
   items.push({ label: t('Record BAST'), action: () => router.replace({ query: { tab: 'completion' } }), disabledReason: props.project.status !== 'active' ? t('Only an active project records BAST') : undefined })
   items.push({ label: t('Delete work package'), danger: true, action: () => askDelete('wp', wp.id, `${wp.code} ${wp.name}`),
@@ -258,7 +258,7 @@ function doReconfirm() { pageAction.run(reconfirmWeights(props.project.id, asAct
         <h2 class="pm-h2">{{ t('Project structure') }}</h2>
         <p class="pm-caption pm-m-0">
           <template v-if="project.depth === 1">{{ t('Depth 1 — one work package mirrors the project so cost has somewhere to land. Add a phase to break it down; no cost moves.') }}</template>
-          <template v-else>{{ phases.length }} {{ t('phases') }} · {{ phases.reduce((s, p) => s + phaseWorkPackages(p.id).length, 0) }} {{ t('work packages') }}. {{ t('Budget is read-only here — it’s maintained in Budget setup.') }}</template>
+          <template v-else>{{ phases.length }} {{ t('phases') }} · {{ phases.reduce((s, p) => s + phaseWorkPackages(p.id).length, 0) }} {{ t('work packages') }}. {{ t('Budget is read-only here — it’s maintained in the Budget module.') }}</template>
         </p>
       </div>
       <span class="pm-spacer" />
@@ -467,7 +467,7 @@ function doReconfirm() { pageAction.run(reconfirmWeights(props.project.id, asAct
           <MpDatePicker id="wp-pe" :model-value="isoToDmy(wpDrawer.planEnd)" format="DD/MM/YYYY" value-type="format" use-portal is-full-width @update:model-value="(v: string) => (wpDrawer.planEnd = dmyToIso(v))" />
         </MpFormControl>
       </div>
-      <p class="pm-caption pm-m-0">{{ t('Budget for this work package is set in Budget setup. A suggested budget is computed from the BOM × planned units there — never auto-applied.') }}</p>
+      <p class="pm-caption pm-m-0">{{ t('Budget for this work package is set in the Budget module. A suggested budget is computed from the BOM × planned units there — never auto-applied.') }}</p>
       <PmActionError id="pm-wp-error" :error="wpAction.error.value" />
       <template #footer>
         <MpButton variant="ghost" is-rounded @click="wpDrawer.open = false">{{ t('Cancel') }}</MpButton>

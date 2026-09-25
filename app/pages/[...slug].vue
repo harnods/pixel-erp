@@ -266,7 +266,7 @@ const CreateWorkOrderPage = asyncPage(() => import('~/components/pages/CreateWor
 // Projects module (Project MTO) — every route under these first segments renders
 // through ProjectsRouter, which owns its title bars (full-bleed, like CRM).
 const ProjectsRouter = asyncPage(() => import('~/components/projects/ProjectsRouter.vue'))
-const PROJECT_SEGMENTS = ['projects', 'project-approvals', 'project-documents', 'stock-availability', 'site-change-capture', 'project-audit-log', 'budget-setup', 'project-settings']
+const PROJECT_SEGMENTS = ['projects', 'project-approvals', 'project-documents', 'stock-availability', 'site-change-capture', 'project-audit-log', 'project-settings']
 const WorkOrderDetailsPage = asyncPage(() => import('~/components/pages/WorkOrderDetailsPage.vue'))
 const NewMaterialRecordPage = asyncPage(() => import('~/components/pages/NewMaterialRecordPage.vue'))
 const BillOfMaterialsDetailsPage = asyncPage(() => import('~/components/pages/BillOfMaterialsDetailsPage.vue'))
@@ -661,7 +661,7 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'cash-management') {
     return { component: CashManagementDetailPage, id: segs[1]! }
   }
-  // Projects module — /projects[/:id[/…]], /project-approvals, /budget-setup[/:id], …
+  // Projects module — /projects[/:id[/…]], /project-approvals, /project-documents, …
   if (segs.length >= 1 && PROJECT_SEGMENTS.includes(segs[0]!)) {
     return { component: ProjectsRouter, id: segs.join('/') }
   }
