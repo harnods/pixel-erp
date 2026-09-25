@@ -14,7 +14,7 @@
  */
 import { MpIcon } from '@mekari/pixel3'
 import type { WorklistRow } from '~/data/replenishment'
-import { leadTimeTierLabel } from '~/data/leadTimeHistory'
+import { leadTimeTierLabel, leadTimeSamplesFor } from '~/data/leadTimeHistory'
 import { formatIDR } from '~/utils/currency'
 import { formatDate } from '~/utils/date'
 
@@ -63,6 +63,59 @@ const needCost = computed(() => {
   const perStockingUnit = row.vendorItem.unitCost / Math.max(1, row.vendorItem.unitsPerPurchaseUnit)
   return Math.round(row.suggestion.rawQty * perStockingUnit)
 })
+
+// ── Contributing documents ────────────────────────────────────────────────────
+// The drawer does NOT list transactions — a window can hold hundreds and a partial
+// preview misleads. It shows the counts and hands the full detail to a spreadsheet.
+
+/** Every sales/movement doc behind the demand figure. */
+const salesDocs = computed(() => props.row?.velocity.citations ?? [])
+/** PO→goods-receipt samples behind a COMPUTED lead time (an estimated tier has none). */
+const purchaseDocs = computed(() => {
+  const row = props.row
+  if (!row || row.leadTimeTier !== 'computed' || !row.vendor) return []
+  return leadTimeSamplesFor(row.vendor.id, row.sku, row.warehouseId).filter((s) => !s.excluded && s.leadDays >= 1)
+})
+const modelledDays = computed(() => props.row?.velocity.modelledDays ?? 0)
+const longestWindow = computed(() => props.row?.velocity.lookbackDays ?? 0)
+
+/** CSV-escape one cell. */
+function csvCell(v: string | number): string {
+  const s = String(v ?? '')
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+/**
+ * Download the FULL contributing set as a spreadsheet — every sales and purchase
+ * document. Bounded, client-side data, so it genuinely runs here (unlike the
+ * worklist's server-split export). This is the entry point to the detail the drawer
+ * intentionally does not list.
+ */
+function exportDocuments() {
+  const row = props.row
+  if (!row || !import.meta.client) return
+  const lines: (string | number)[][] = [['Kind', 'Date', 'Number', 'Detail', 'Qty / lead days', 'Unit']]
+  for (const d of [...salesDocs.value].sort((a, b) => (a.date < b.date ? 1 : -1))) {
+    lines.push([
+      'Sales', d.date, d.number,
+      d.salesNo ?? (d.kind === 'transfer' ? 'Warehouse transfer' : 'Stock adjustment'),
+      d.qty, row.unit,
+    ])
+  }
+  for (const s of [...purchaseDocs.value].sort((a, b) => (a.receiptDate < b.receiptDate ? 1 : -1))) {
+    lines.push(['Purchase', s.receiptDate, s.poNumber ?? '(modelled)', s.receiptNumber ?? '(modelled)', s.leadDays, 'days'])
+  }
+  const csv = lines.map((r) => r.map(csvCell).join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `contributing-documents-${row.sku}-${row.warehouseId}.csv`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
 </script>
 
 <template>
@@ -238,6 +291,31 @@ const needCost = computed(() => {
             <p class="rp-bd-caption">
               {{ t('Suggested qty = (lead time + safety days) × velocity − (available + in transit), rounded up.') }}
             </p>
+          </section>
+
+          <!-- Contributing documents — counts only; the full transaction detail is a
+               spreadsheet away, never a list in the drawer. -->
+          <section class="rp-bd-section">
+            <span class="rp-bd-section-title">{{ t('Contributing documents') }}</span>
+            <p class="rp-bd-caption">
+              {{ salesDocs.length }} {{ salesDocs.length === 1 ? t('sales document') : t('sales documents') }}
+              <template v-if="purchaseDocs.length">
+                · {{ purchaseDocs.length }} {{ purchaseDocs.length === 1 ? t('purchase receipt') : t('purchase receipts') }}
+              </template>
+              {{ t('behind these numbers') }}
+              <template v-if="modelledDays > 0">
+                · {{ modelledDays }} {{ t('of') }} {{ longestWindow }} {{ t('days are modelled demo history') }}
+              </template>
+            </p>
+            <button
+              v-if="salesDocs.length || purchaseDocs.length"
+              class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm btn-enterprise--icon-before"
+              type="button"
+              @click="exportDocuments"
+            >
+              <MpIcon name="download" size="sm" /> {{ t('Export documents (CSV)') }}
+            </button>
+            <p v-else class="rp-bd-caption">{{ t('No contributing documents in this window.') }}</p>
           </section>
 
           <!-- Estimated cost of the NEED. A rough figure at the vendor's unit cost;
