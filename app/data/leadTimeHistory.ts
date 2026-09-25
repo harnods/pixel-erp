@@ -356,14 +356,23 @@ export function vendorDefaultLeadTime(vendorId: string): number | null {
 }
 
 /**
- * Resolve lead time for a vendor×product cell down the PRD's ladder (VR-04):
+ * Resolve lead time for a vendor×product cell down the PRD's ladder (VR-04, D22):
  *
  *   Tier 1  computed        average of the last N PO-backed receipts, when the
  *                           cell has at least `leadTimeMinSamples` eligible ones
- *   Tier 2  vendor default  the vendor's average captured term
- *   Tier 3  category        the category default from config
- *   Tier 4  global          the single global fallback
- *   none                    → the pair is routed to Needs setup (US-003 AC-02)
+ *   Tier 2  vendor default  the vendor's average captured term, for a known vendor
+ *                           whose warehouse history is still too thin to compute
+ *   Tier 2  category        the added-category default from config
+ *   Tier 3  global          the "Other categories" floor, when it is a NUMBER
+ *                           (an estimate) — tagged "estimated — Other categories"
+ *   none                    → the floor is "Not set" (null) and nothing computed,
+ *                           so lead time stays BLANK and the pair is routed to
+ *                           Needs setup with a reason (US-005 EH-01, D22) — never
+ *                           a fabricated 0
+ *
+ * A product with NO preferred vendor cannot compute and has no vendor default, so
+ * per US-001 Tier 3 it drops straight to the "Other categories" floor: its real
+ * gap is a vendor, which the Needs-setup reason names ("add a preferred vendor").
  *
  * `manual` never appears here: a hand-entered value overrides the whole ladder
  * and is applied by the caller, which is the only place that knows the warehouse.
@@ -413,8 +422,12 @@ export function deriveLeadTime(
     return { days: categoryDefault, tier: 'category', ...empty, samples: eligible }
   }
 
-  if (cfg.fallbackLeadTimeDays > 0) {
-    return { days: cfg.fallbackLeadTimeDays, tier: 'global', ...empty, samples: eligible }
+  // Tier 3 — the "Other categories" floor. A positive NUMBER is an estimate; "Not
+  // set" (null, or a non-positive value) means wait-for-data: the pair resolves to
+  // BLANK, no reorder point, and is routed to Needs setup (D22). Never a 0.
+  const floor = cfg.fallbackLeadTimeDays
+  if (floor != null && floor > 0) {
+    return { days: floor, tier: 'global', ...empty, samples: eligible }
   }
 
   return { days: null, tier: 'none', ...empty, samples: eligible }

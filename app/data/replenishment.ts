@@ -583,7 +583,10 @@ export function buildRow(
   // ladder — it is the buyer telling the system something it could not observe.
   const derivedLead = deriveLeadTime(vendorItem?.vendorId ?? null, sku, cfg, warehouseId)
   const manualLead = settings.manualLeadTimeDays
-  const leadTimeDays = manualLead ?? derivedLead.days ?? cfg.fallbackLeadTimeDays
+  // `?? 0` only matters when the ladder resolves to none (the floor is "Not set"):
+  // the row is then routed to Needs setup and no quantity is produced, so the 0 is
+  // never used to compute an order — it just keeps the display arithmetic finite.
+  const leadTimeDays = manualLead ?? derivedLead.days ?? cfg.fallbackLeadTimeDays ?? 0
   const leadTimeTier: LeadTimeTier = manualLead !== null ? 'manual' : derivedLead.tier
   const leadTimeEstimated = isEstimatedTier(leadTimeTier)
   // No vendor and no manual figure means nothing to measure against at all.
@@ -1030,7 +1033,7 @@ export function recommendedMinStock(
     const settings = effectiveSettings(sku, wh.id, cfg)
     const velocity = velocityFor(sku, wh.id, cfg, asOf)
     const safetyDays = safetyDaysOverride ?? settings.safetyDays
-    const leadTimeDays = settings.manualLeadTimeDays ?? derived.days ?? cfg.fallbackLeadTimeDays
+    const leadTimeDays = settings.manualLeadTimeDays ?? derived.days ?? cfg.fallbackLeadTimeDays ?? 0
     const tier: LeadTimeTier = settings.manualLeadTimeDays !== null ? 'manual' : derived.tier
 
     // No demand basis means no reorder point — the same rule the worklist uses,
@@ -1065,7 +1068,7 @@ export function recommendedMinStock(
   return {
     value: null,
     avgDailySales: 0,
-    leadTimeDays: derivedAgg.days ?? cfg.fallbackLeadTimeDays,
+    leadTimeDays: derivedAgg.days ?? cfg.fallbackLeadTimeDays ?? 0,
     leadTimeTier: derivedAgg.tier,
     leadTimeEstimated: isEstimatedTier(derivedAgg.tier),
     leadTimeSampleSize: derivedAgg.sampleSize,

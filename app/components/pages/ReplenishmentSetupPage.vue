@@ -260,13 +260,18 @@ function onSaved() {
       </div>
     </template>
 
-    <!-- What is missing, as chips — one per unmet input -->
+    <!-- What is missing, as chips — one per unmet input, with the reason to act on -->
     <template #cell-missing="{ row }">
-      <div class="rp-badges">
-        <MpBadge v-for="m in (row as any).missing" :key="m" for="tableStatus" type="warning">
-          {{ t(m) }}
-        </MpBadge>
-        <span v-if="!(row as any).missing.length" class="rp-num-sub">—</span>
+      <div class="rp-missing">
+        <div class="rp-badges">
+          <MpBadge v-for="m in (row as any).missing" :key="m" for="tableStatus" type="warning">
+            {{ t(m) }}
+          </MpBadge>
+          <span v-if="!(row as any).missing.length" class="rp-num-sub">—</span>
+        </div>
+        <span v-if="(row as any).leadTimeTier === 'none'" class="rp-missing-reason">
+          {{ t('No lead time yet — add a preferred vendor, make a purchase, or set a default lead time.') }}
+        </span>
       </div>
     </template>
 
@@ -401,6 +406,8 @@ function onSaved() {
 .rp-num-value { color: var(--mp-text-default); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .rp-num-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); text-align: right; }
 .rp-badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.rp-missing { display: flex; flex-direction: column; gap: 4px; }
+.rp-missing-reason { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
 
 :deep(.erp-tr:hover .erp-td) { background: var(--mp-background-neutral); }
 

@@ -75,8 +75,15 @@ export interface ReplenishmentConfig {
   fsnSlowPct: number
   /** Coefficient of variation above which demand is flagged "volatile" (US-002). */
   volatileCvThreshold: number
-  /** Tier 4 — the global floor when nothing else resolves (US-001 AC-04). */
-  fallbackLeadTimeDays: number
+  /**
+   * The "Other categories" lead-time floor — the last rung of the ladder (US-001
+   * Tier 3, D22). A positive NUMBER is an estimate ("estimated — Other categories");
+   * `null` means "Not set" (wait-for-data): a product that resolves only to this
+   * floor gets a BLANK lead time, no reorder point, and is routed to Needs setup
+   * with a reason — never a fabricated 0. Offered ONLY on lead time; the safety-days
+   * and order-coverage floors stay numeric (0 is a valid policy value there).
+   */
+  fallbackLeadTimeDays: number | null
 }
 
 export const REPL_DEFAULTS: ReplenishmentConfig = {
@@ -106,11 +113,14 @@ export const REPL_DEFAULTS: ReplenishmentConfig = {
     Equipment: 120,
     Accessory: 60,
   },
+  // Tier 2 — added-category lead-time defaults (US-001 AC-04, D22). Deliberately
+  // NOT every category: the ones left out (e.g. Green Beans, Grinder) fall to the
+  // "Other categories" floor, so the floor is a live rung out of the box and a
+  // product with no measured history there follows it. A buyer adds a category
+  // here (via the settings picker) to give it its own estimate instead.
   leadTimeByCategory: {
-    'Green Beans': 21,
     'Roasted Beans': 10,
     'Espresso Machine': 30,
-    Grinder: 21,
     Equipment: 21,
     Accessory: 10,
   },

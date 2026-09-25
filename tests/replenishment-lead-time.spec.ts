@@ -12,7 +12,7 @@ import {
   deriveLeadTime, leadTimeSamplesFor, vendorDefaultLeadTime, computedLeadTimeCoverage,
   isEstimatedTier, leadTimeTierLabel, noPoReceiptCount,
 } from '~/data/leadTimeHistory'
-import { vendorItems } from '~/data/vendorItems'
+import { vendorItems, VENDORLESS_SKUS } from '~/data/vendorItems'
 import { warehouses } from '~/data/warehouses'
 import { getReplenishmentConfig, REPL_DEFAULTS, leadTimeOutlierCapForCategory } from '~/data/replenishmentConfig'
 import { PRODUCTS, productBySku } from '~/data/inventory'
@@ -161,6 +161,45 @@ describe('coverage metric (OBS-02)', () => {
     expect(cov.computed).toBeGreaterThan(0)
     expect(cov.computed).toBeLessThan(cov.total)
     expect(cov.pct).toBeGreaterThan(0)
+  })
+})
+
+describe('the "Other categories" floor: number or "Not set" (US-001 Tier 3, D22)', () => {
+  // 1006 (Green Beans) and 2101 (Grinder) have no preferred vendor, and those two
+  // categories are deliberately not in the default list — so they resolve straight
+  // to the floor, which is exactly where the "Not set" switch bites.
+  const vendorlessSku = VENDORLESS_SKUS[0]!
+
+  it('a numeric floor gives a vendorless product an estimated lead time', () => {
+    const numeric = { ...cfg, fallbackLeadTimeDays: 14 }
+    const d = deriveLeadTime(null, vendorlessSku, numeric)
+    expect(d.tier).toBe('global')
+    expect(d.days).toBe(14)
+    expect(isEstimatedTier(d.tier)).toBe(true)
+  })
+
+  it('"Not set" (null) leaves the lead time BLANK and never fabricates a 0', () => {
+    const notSet = { ...cfg, fallbackLeadTimeDays: null }
+    const d = deriveLeadTime(null, vendorlessSku, notSet)
+    expect(d.tier).toBe('none')
+    expect(d.days).toBeNull()
+  })
+
+  it('a non-positive floor is treated as "Not set", not a 0-day lead time', () => {
+    const zero = { ...cfg, fallbackLeadTimeDays: 0 }
+    const d = deriveLeadTime(null, vendorlessSku, zero)
+    expect(d.tier).toBe('none')
+    expect(d.days).toBeNull()
+  })
+
+  it('a configured category shields its products from the floor even when "Not set"', () => {
+    // Roasted Beans carries a category default, so it never falls to the floor —
+    // "Not set" only strands products whose category is not in the list.
+    const notSet = { ...cfg, fallbackLeadTimeDays: null }
+    const roasted = PRODUCTS.find((p) => p.category === 'Roasted Beans')!
+    const d = deriveLeadTime(null, roasted.sku, notSet)
+    expect(d.tier).toBe('category')
+    expect(d.days).not.toBeNull()
   })
 })
 

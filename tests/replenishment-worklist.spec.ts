@@ -20,8 +20,9 @@ import {
   replenishmentSetupCount, replenishmentWarehouses,
 } from '~/data/replenishment'
 import { getRunState } from '~/data/replenishmentRuns'
-import { REPL_ASOF_ISO } from '~/data/replenishmentConfig'
+import { REPL_ASOF_ISO, getReplenishmentConfig } from '~/data/replenishmentConfig'
 import { PRODUCTS, warehouseProducts } from '~/data/inventory'
+import { VENDORLESS_SKUS } from '~/data/vendorItems'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { receipts } from '~/data/receipts'
 import { lineItemsForReceipt } from '~/data/receiptLineItems'
@@ -211,6 +212,32 @@ describe('worklist — counts cannot drift from the table', () => {
   it('per-warehouse due counts sum to the total', () => {
     const summed = activeWarehouses.reduce((s, wh) => s + replenishmentDueCount(wh.id), 0)
     expect(summed).toBe(replenishmentDueCount())
+  })
+})
+
+describe('lead-time floor "Not set" routes products to Needs setup (D22)', () => {
+  const cfg = getReplenishmentConfig()
+
+  it('with a numeric floor, no product is stranded for a missing lead time', () => {
+    const numeric = { ...cfg, fallbackLeadTimeDays: 14 }
+    const wl = replenishmentWorklist('all', numeric)
+    expect(wl.needsSetup.every((r) => r.leadTimeTier !== 'none')).toBe(true)
+  })
+
+  it('with the floor "Not set", vendorless products in uncategorised categories wait in Needs setup', () => {
+    const notSet = { ...cfg, fallbackLeadTimeDays: null }
+    const wl = replenishmentWorklist('all', notSet)
+    const waiting = wl.needsSetup.filter((r) => r.leadTimeTier === 'none')
+    expect(waiting.length).toBeGreaterThan(0)
+    // The two vendorless demo SKUs surface here, each flagged for the real gaps.
+    const skus = new Set(waiting.map((r) => r.sku))
+    for (const s of VENDORLESS_SKUS) expect(skus.has(s)).toBe(true)
+    for (const r of waiting) {
+      expect(r.leadTimeDays).not.toBeNaN()
+      expect(r.missing).toContain('Lead time')
+      // Never a fabricated recommendation.
+      expect(r.suggestion.purchaseQty).toBe(0)
+    }
   })
 })
 

@@ -67,6 +67,27 @@ function addCategory() {
 
 const fsnBandsOk = computed(() => Number(draft.fsnFastPct) > Number(draft.fsnSlowPct))
 
+// ── Lead-time floor "Not set" (D22) ──
+// The one setting that accepts "wait for data": null = Not set, a number = estimate.
+function floorSetNotSet() { draft.fallbackLeadTimeDays = null }
+function floorSetNumber() {
+  draft.fallbackLeadTimeDays = committed.value.fallbackLeadTimeDays ?? REPL_DEFAULTS.fallbackLeadTimeDays ?? 14
+}
+/** Placeholder a blank category row shows — the floor it would inherit, or "Not set". */
+const leadFloorPlaceholder = computed(() =>
+  draft.fallbackLeadTimeDays === null ? t('Not set') : String(draft.fallbackLeadTimeDays),
+)
+/** Read-only label for one category's lead-time default (value, inherited floor, or Not set). */
+function leadReadLabel(cat: string): string {
+  const v = committed.value.leadTimeByCategory[cat]
+  if (v != null) return `${cat} ${v}d`
+  const floor = committed.value.fallbackLeadTimeDays
+  return floor != null ? `${cat} ${floor}d` : `${cat} ${t('Not set')}`
+}
+const leadFloorReadLabel = computed(() =>
+  committed.value.fallbackLeadTimeDays != null ? `${committed.value.fallbackLeadTimeDays}d` : t('Not set'),
+)
+
 /** How many SKU/warehouse rows override safety days — so editing the company
  *  default and seeing nothing move is explained (the override wins, D14). */
 const safetyOverrides = computed(() => {
@@ -95,13 +116,22 @@ function save() {
   for (const [label, value] of [
     [t('Safety days default'), draft.safetyDaysGlobal],
     [t('Order coverage'), draft.coverageDaysGlobal],
-    [t('Default lead time'), draft.fallbackLeadTimeDays],
     [t('Ignore gaps over'), draft.leadTimeOutlierCapDays],
     [t('Cold-start threshold'), draft.coldStartMinDays],
     [t('Classification window'), draft.fsnWindowDays],
   ] as const) {
     if (Number(value) < 0 || Number.isNaN(Number(value))) {
       error.value = `${label} ${t('must be 0 or more')}`
+      return
+    }
+  }
+
+  // The lead-time floor is the one field that accepts "Not set" (null). When it IS
+  // a number it must be a real lead time (≥ 1); a 0-day floor is never valid (D22).
+  if (draft.fallbackLeadTimeDays !== null) {
+    const floor = Number(draft.fallbackLeadTimeDays)
+    if (Number.isNaN(floor) || floor < 1) {
+      error.value = `${t('Default lead time')} ${t('must be 1 day or more, or Not set')}`
       return
     }
   }
@@ -121,7 +151,7 @@ function save() {
     fsnFastPct: Number(draft.fsnFastPct),
     fsnSlowPct: Number(draft.fsnSlowPct),
     volatileCvThreshold: Number(draft.volatileCvThreshold),
-    fallbackLeadTimeDays: Number(draft.fallbackLeadTimeDays),
+    fallbackLeadTimeDays: draft.fallbackLeadTimeDays === null ? null : Number(draft.fallbackLeadTimeDays),
     leadTimeSampleCount: Math.max(1, Number(draft.leadTimeSampleCount)),
     leadTimeMinSamples: Math.max(1, Number(draft.leadTimeMinSamples)),
     leadTimeOutlierCapDays: Number(draft.leadTimeOutlierCapDays),
@@ -413,7 +443,7 @@ const BOUNDARY_OPTIONS = [
                   :id="`rs-lead-cat-input-${cat}`"
                   v-model="draft.leadTimeByCategory[cat]"
                   type="number"
-                  :placeholder="String(draft.fallbackLeadTimeDays)"
+                  :placeholder="leadFloorPlaceholder"
                   :class="css({ width: '84px' })"
                 />
                 <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
@@ -421,15 +451,31 @@ const BOUNDARY_OPTIONS = [
             </div>
             <div class="rs-cat-row rs-cat-row--fallback">
               <span class="rs-cat-name">{{ t('Other categories') }}</span>
-              <MpInputGroup id="rs-fallback-lead">
-                <MpInput id="rs-fallback-lead-input" v-model="draft.fallbackLeadTimeDays" type="number" :class="css({ width: '84px' })" />
-                <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
-              </MpInputGroup>
+              <!-- The only floor that accepts "Not set" (D22): a number is an estimate,
+                   "Not set" makes products with no measured lead time wait in Needs setup. -->
+              <template v-if="draft.fallbackLeadTimeDays !== null">
+                <MpInputGroup id="rs-fallback-lead">
+                  <MpInput id="rs-fallback-lead-input" v-model="draft.fallbackLeadTimeDays" type="number" :class="css({ width: '84px' })" />
+                  <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
+                </MpInputGroup>
+                <button class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" type="button" @click="floorSetNotSet">
+                  {{ t('Use Not set') }}
+                </button>
+              </template>
+              <template v-else>
+                <span class="rs-notset-pill">{{ t('Not set') }}</span>
+                <button class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" type="button" @click="floorSetNumber">
+                  {{ t('Set a number') }}
+                </button>
+              </template>
             </div>
+            <p v-if="draft.fallbackLeadTimeDays === null" class="rs-value-sub rs-notset-hint">
+              {{ t('Not set: a product with no measured lead time and no preferred vendor waits in Needs setup instead of getting an estimate. It still raises a stockout alert if it runs low.') }}
+            </p>
           </div>
           <span v-else class="rs-value">
-            {{ categories.map(c => `${c} ${committed.leadTimeByCategory[c] ?? committed.fallbackLeadTimeDays}d`).join('   ') }}
-            &nbsp;&middot;&nbsp; {{ t('Other categories') }} {{ committed.fallbackLeadTimeDays }}d
+            {{ categories.map(leadReadLabel).join('   ') }}
+            &nbsp;&middot;&nbsp; {{ t('Other categories') }} {{ leadFloorReadLabel }}
           </span>
         </div>
       </div>
@@ -648,6 +694,16 @@ const BOUNDARY_OPTIONS = [
 
 .rs-cat-row { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .rs-cat-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); width: 160px; }
+
+/* Lead-time floor "Not set" (D22) — a distinct empty state, never a typed 0. */
+.rs-notset-pill {
+  display: inline-flex; align-items: center; height: 32px; padding: 0 12px;
+  border-radius: var(--mp-radii-md, 8px);
+  border: 1px dashed var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-subdued, #6b7280);
+}
+.rs-notset-hint { margin-top: 4px; max-width: 420px; }
 
 /* Product-categories picker */
 .rs-cat-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-3); }
