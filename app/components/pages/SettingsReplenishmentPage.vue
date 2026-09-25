@@ -17,8 +17,8 @@ import {
 } from '~/data/replenishmentConfig'
 import { recalculateReplenishment, invalidateReplenishmentCaches } from '~/data/replenishment'
 import { safetyDaysOverrideCount } from '~/data/replenishmentSettings'
-import { CATALOG } from '~/data/catalog'
 import { productCategories, addProductCategory } from '~/data/productCategories'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 
 const { t } = useLocale()
 const { activeScenario } = useScenario()
@@ -38,19 +38,25 @@ const draft = reactive<ReplenishmentConfig>(cloneConfig(getReplenishmentConfig()
 const isEditing = ref(false)
 const error = ref('')
 
-// Categories that get their own per-category defaults: those with products, any a
-// value is already stored against, plus ones added this session from the picker.
+// Which categories get their OWN per-category defaults (a row in every grid below).
+// A category is "listed" when it carries a value in any per-category map, or was
+// added this session from the picker — and is NOT one removed this session. Anything
+// not listed simply uses "Other categories"; catalogue categories are not forced in,
+// so a category can be removed to fall back to the company default. (US-001/D21.)
 const extraCategories = reactive<string[]>([])
+const removedCategories = reactive<Set<string>>(new Set())
+const PER_CATEGORY_MAPS = [
+  'safetyDaysByCategory', 'coverageDaysByCategory', 'leadTimeByCategory', 'leadTimeOutlierCapByCategory',
+] as const
+
 const categories = computed(() => {
-  const set = new Set<string>(CATALOG.map((c) => c.category))
-  const maps = [
-    committed.value.safetyDaysByCategory,
-    committed.value.coverageDaysByCategory,
-    committed.value.leadTimeByCategory,
-    committed.value.leadTimeOutlierCapByCategory,
-  ]
-  for (const m of maps) for (const k of Object.keys(m)) set.add(k)
+  // While editing, read the DRAFT so an add/remove shows immediately; otherwise the
+  // committed config, so the read-only view matches what is saved.
+  const src = isEditing.value ? draft : committed.value
+  const set = new Set<string>()
+  for (const key of PER_CATEGORY_MAPS) for (const k of Object.keys(src[key])) set.add(k)
   for (const c of extraCategories) set.add(c)
+  for (const c of removedCategories) set.delete(c)
   return [...set].sort()
 })
 
@@ -61,8 +67,37 @@ function addCategory() {
   const n = catToAdd.value.trim()
   if (!n) return
   addProductCategory(n)
+  removedCategories.delete(n)
   if (!extraCategories.includes(n)) extraCategories.push(n)
   catToAdd.value = ''
+}
+
+/** Whether a category still carries any per-category default in the draft — the
+ *  negative case a remove has to clear (and warn about) across every setting. */
+function categoryHasDefaults(cat: string): boolean {
+  return PER_CATEGORY_MAPS.some((key) => {
+    const v = (draft[key] as Record<string, unknown>)[cat]
+    return v !== undefined && v !== null && String(v) !== ''
+  })
+}
+
+// Removing a category strips its default from EVERY grid at once, so it is confirmed
+// when there is something to lose; an empty (just-added) category goes without a prompt.
+const removeTarget = ref<string | null>(null)
+const removeConfirmOpen = ref(false)
+function requestRemove(cat: string) {
+  if (categoryHasDefaults(cat)) { removeTarget.value = cat; removeConfirmOpen.value = true }
+  else removeCategory(cat)
+}
+function confirmRemove() {
+  if (removeTarget.value) removeCategory(removeTarget.value)
+  removeTarget.value = null
+}
+function removeCategory(cat: string) {
+  for (const key of PER_CATEGORY_MAPS) delete (draft[key] as Record<string, unknown>)[cat]
+  const i = extraCategories.indexOf(cat)
+  if (i !== -1) extraCategories.splice(i, 1)
+  removedCategories.add(cat)
 }
 
 const fsnBandsOk = computed(() => Number(draft.fsnFastPct) > Number(draft.fsnSlowPct))
@@ -97,12 +132,15 @@ const safetyOverrides = computed(() => {
 
 function startEdit() {
   Object.assign(draft, cloneConfig(committed.value))
+  removedCategories.clear()
   error.value = ''
   isEditing.value = true
 }
 
 function cancel() {
   Object.assign(draft, cloneConfig(committed.value))
+  removedCategories.clear()
+  extraCategories.length = 0
   error.value = ''
   isEditing.value = false
 }
@@ -155,6 +193,11 @@ function save() {
     leadTimeSampleCount: Math.max(1, Number(draft.leadTimeSampleCount)),
     leadTimeMinSamples: Math.max(1, Number(draft.leadTimeMinSamples)),
     leadTimeOutlierCapDays: Number(draft.leadTimeOutlierCapDays),
+    safetyDaysByCategory: Object.fromEntries(
+      Object.entries(draft.safetyDaysByCategory)
+        .filter(([, v]) => v !== null && v !== undefined && String(v) !== '')
+        .map(([k, v]) => [k, Math.max(0, Number(v))]),
+    ),
     coverageDaysByCategory: Object.fromEntries(
       Object.entries(draft.coverageDaysByCategory)
         .filter(([, v]) => v !== null && v !== undefined && String(v) !== '')
@@ -174,6 +217,9 @@ function save() {
 
   saveReplenishmentConfig(next)
   committed.value = next
+  // Removals are now baked into the committed maps; the derived list reflects them.
+  removedCategories.clear()
+  extraCategories.length = 0
   isEditing.value = false
   error.value = ''
 
@@ -191,6 +237,8 @@ function save() {
 
 function resetToDefaults() {
   Object.assign(draft, cloneConfig(REPL_DEFAULTS))
+  removedCategories.clear()
+  extraCategories.length = 0
   error.value = ''
 }
 
@@ -235,7 +283,19 @@ const BOUNDARY_OPTIONS = [
         <div class="rs-control">
           <template v-if="isEditing">
             <div class="rs-cat-chips">
-              <span v-for="cat in categories" :key="cat" class="rs-cat-chip">{{ cat }}</span>
+              <span v-for="cat in categories" :key="cat" class="rs-cat-chip">
+                {{ cat }}
+                <button
+                  class="rs-cat-chip-x"
+                  type="button"
+                  :aria-label="`${t('Remove')} ${cat}`"
+                  :title="t('Remove — this category will use Other categories')"
+                  @click="requestRemove(cat)"
+                >
+                  <MpIcon name="close" size="sm" />
+                </button>
+              </span>
+              <span v-if="!categories.length" class="rs-value-sub">{{ t('No categories have their own defaults — everything uses Other categories.') }}</span>
             </div>
             <div class="rs-cat-add">
               <MpSelect id="rs-add-cat" v-model="catToAdd" :class="css({ width: '240px' })">
@@ -246,7 +306,7 @@ const BOUNDARY_OPTIONS = [
             </div>
             <p v-if="!availableCategories.length" class="rs-value-sub">{{ t('Every category from your catalogue is already listed.') }}</p>
           </template>
-          <span v-else class="rs-value">{{ categories.join('   ') }}</span>
+          <span v-else class="rs-value">{{ categories.length ? categories.join('   ') : t('None — everything uses Other categories') }}</span>
         </div>
       </div>
 
@@ -623,6 +683,17 @@ const BOUNDARY_OPTIONS = [
       <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="cancel">{{ t('Cancel') }}</button>
       <button class="btn-enterprise btn-enterprise--primary" type="button" @click="save">{{ t('Save changes') }}</button>
     </div>
+
+    <!-- Removing a category clears its default from EVERY grid — confirm the loss. -->
+    <ConfirmModal
+      :is-open="removeConfirmOpen"
+      :title="`${t('Remove')} ${removeTarget ?? ''}`"
+      :description="t('This clears its safety days, order coverage, lead time and gap-cap defaults. Products in this category will use Other categories. You can add it again later.')"
+      :confirm-label="t('Remove category')"
+      :cancel-label="t('Keep category')"
+      @update:is-open="removeConfirmOpen = $event"
+      @confirm="confirmRemove"
+    />
   </div>
 </template>
 
@@ -706,12 +777,20 @@ const BOUNDARY_OPTIONS = [
 .rs-notset-hint { margin-top: 4px; max-width: 420px; }
 
 /* Product-categories picker */
-.rs-cat-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-3); }
+.rs-cat-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-3); align-items: center; }
 .rs-cat-chip {
-  padding: 2px 10px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 6px 2px 10px; border-radius: 999px;
   background: var(--mp-background-neutral-subtle); border: 1px solid var(--mp-border-default);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default);
 }
+.rs-cat-chip-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; padding: 0; border: none; border-radius: 999px;
+  background: none; cursor: pointer; color: var(--mp-text-subtle, #6b7280);
+}
+.rs-cat-chip-x:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
+.rs-cat-chip-x :deep(svg) { width: 14px; height: 14px; }
 .rs-cat-add { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 
 .rs-actions {
