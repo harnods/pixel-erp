@@ -14,13 +14,18 @@ export interface ReplenishmentFiltersValue {
   signals: string[]
 }
 
-/** Row-level signals a buyer triages by. */
+/**
+ * Row-level signals a buyer triages by (US-013 AC-01 §4). The first four mirror the
+ * worklist's "Signals" column — the demand read and the lead-time basis — and
+ * "Stocks out before resupply" is kept as the fifth, since that risk shows as a
+ * days-of-cover emphasis rather than a column badge.
+ */
 export const REPLENISHMENT_SIGNALS: { id: string; name: string }[] = [
-  { id: 'oversold', name: 'Oversold' },
-  { id: 'below-lead', name: 'Stocks out before resupply' },
-  { id: 'no-vendor', name: 'No vendor' },
   { id: 'volatile', name: 'Volatile demand' },
-  { id: 'moq-adjusted', name: 'Adjusted for MOQ or pack size' },
+  { id: 'provisional', name: 'Provisional' },
+  { id: 'estimated-lead', name: 'Estimated lead time' },
+  { id: 'waiting-lead', name: 'Waiting for real lead time' },
+  { id: 'below-lead', name: 'Stocks out before resupply' },
 ]
 
 export function emptyReplenishmentFilters(): ReplenishmentFiltersValue {

@@ -147,11 +147,11 @@ function matchesDrawer(row: WorklistRow): boolean {
   }
 
   for (const signal of f.signals) {
-    if (signal === 'oversold' && !row.flags.oversold) return false
-    if (signal === 'below-lead' && !row.flags.belowLeadTime) return false
-    if (signal === 'no-vendor' && row.vendorItem) return false
     if (signal === 'volatile' && !row.flags.volatile) return false
-    if (signal === 'moq-adjusted' && !(row.suggestion.raisedByMoq || row.suggestion.raisedByPack)) return false
+    if (signal === 'provisional' && !row.flags.provisional) return false
+    if (signal === 'estimated-lead' && !row.flags.leadTimeEstimated) return false
+    if (signal === 'waiting-lead' && row.leadTimeTier !== 'none') return false
+    if (signal === 'below-lead' && !row.flags.belowLeadTime) return false
   }
   return true
 }
