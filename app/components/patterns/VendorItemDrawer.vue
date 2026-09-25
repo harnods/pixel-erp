@@ -39,7 +39,13 @@ import { getProductWarehouseStock } from '~/data/productDetails'
 import { unitOptionsForSku, factorFor, baseUnitFor } from '~/data/productUnits'
 import { formatIDR } from '~/utils/currency'
 
-const props = defineProps<{ isOpen: boolean; sku: string | null }>()
+/**
+ * `readonly` — vendor terms (lead time, MOQ, pack size, cost, preferred) are owned
+ * by PURCHASING and edited only in the Vendors module. The replenishment worklist is
+ * a STOCKIST surface, so it opens this drawer read-only: everything shows as text,
+ * with no inputs, no add/remove, and no Save.
+ */
+const props = defineProps<{ isOpen: boolean; sku: string | null; readonly?: boolean }>()
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
   (e: 'saved'): void
@@ -310,7 +316,7 @@ function save() {
                 {{ showReasons ? t('Hide') : t('Why?') }}
               </button>
               <button
-                v-if="!recommendedIsDefault"
+                v-if="!recommendedIsDefault && !readonly"
                 type="button"
                 class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
                 @click="applyRecommendation"
@@ -334,7 +340,7 @@ function save() {
                 <th class="rp-vi-th rp-vi-th--num">{{ t('Pack size') }}</th>
                 <th class="rp-vi-th rp-vi-th--num">{{ t('Unit cost') }}</th>
                 <th class="rp-vi-th rp-vi-th--center">{{ t('Default') }}</th>
-                <th class="rp-vi-th" />
+                <th v-if="!readonly" class="rp-vi-th" />
               </tr>
             </thead>
             <tbody>
@@ -365,7 +371,8 @@ function save() {
                   <span class="rp-vi-cell-sub">{{ t('measured per warehouse') }}</span>
                 </td>
                 <td class="rp-vi-td rp-vi-td--num">
-                  <MpInput :id="`rp-vi-moq-${i}`" v-model="row.moq" type="number" :class="css({ width: '68px' })" />
+                  <MpInput v-if="!readonly" :id="`rp-vi-moq-${i}`" v-model="row.moq" type="number" :class="css({ width: '68px' })" />
+                  <span v-else class="rp-vi-lead-ro">{{ row.moq }}</span>
                   <span v-if="moqNote(row)" class="rp-vi-cell-sub rp-vi-cell-sub--warning">{{ moqNote(row) }}</span>
                 </td>
                 <!-- Quote the minimum in the base unit or in any multi-unit the
@@ -373,6 +380,7 @@ function save() {
                      so the "= N base" reading below always tells the truth. -->
                 <td class="rp-vi-td">
                   <MpSelect
+                    v-if="!readonly"
                     :id="`rp-vi-unit-${i}`"
                     :model-value="row.purchaseUnit"
                     :class="css({ width: '112px' })"
@@ -380,18 +388,22 @@ function save() {
                   >
                     <option v-for="o in unitOptions" :key="o.name" :value="o.name">{{ o.name }}</option>
                   </MpSelect>
+                  <span v-else class="rp-vi-lead-ro">{{ row.purchaseUnit }}</span>
                   <span v-if="moqInStockUnits(row)" class="rp-vi-cell-sub">{{ moqInStockUnits(row) }}</span>
                   <span v-else class="rp-vi-cell-sub">{{ t('base unit') }}</span>
                 </td>
                 <td class="rp-vi-td rp-vi-td--num">
-                  <MpInput :id="`rp-vi-pack-${i}`" v-model="row.packSize" type="number" :class="css({ width: '68px' })" />
+                  <MpInput v-if="!readonly" :id="`rp-vi-pack-${i}`" v-model="row.packSize" type="number" :class="css({ width: '68px' })" />
+                  <span v-else class="rp-vi-lead-ro">{{ row.packSize }}</span>
                 </td>
                 <td class="rp-vi-td rp-vi-td--num">
-                  <MpInput :id="`rp-vi-cost-${i}`" v-model="row.unitCost" type="number" :class="css({ width: '124px' })" />
+                  <MpInput v-if="!readonly" :id="`rp-vi-cost-${i}`" v-model="row.unitCost" type="number" :class="css({ width: '124px' })" />
+                  <span v-else class="rp-vi-lead-ro">{{ formatIDR(Number(row.unitCost) || 0) }}</span>
                   <span class="rp-vi-cell-sub">{{ formatIDR(Number(row.unitCost) || 0) }} / {{ row.purchaseUnit }}</span>
                 </td>
                 <td class="rp-vi-td rp-vi-td--center">
                   <input
+                    v-if="!readonly"
                     :id="`rp-vi-default-${i}`"
                     class="rp-vi-radio"
                     type="radio"
@@ -400,8 +412,12 @@ function save() {
                     :aria-label="t('Default')"
                     @change="makeDefault(i)"
                   />
+                  <span v-else-if="row.isPreferred" class="rp-vi-default-ro" :title="t('Default')">
+                    <MpIcon name="check-circular" size="md" />
+                  </span>
+                  <span v-else class="rp-vi-cell-sub">—</span>
                 </td>
-                <td class="rp-vi-td rp-vi-td--center">
+                <td v-if="!readonly" class="rp-vi-td rp-vi-td--center">
                   <button class="rp-vi-remove" type="button" :aria-label="t('Remove')" @click="removeRow(i)">
                     <MpIcon name="minus-circular" size="md" />
                   </button>
@@ -410,7 +426,11 @@ function save() {
             </tbody>
           </table>
 
-          <button class="rp-vi-add" type="button" @click="addRow">+ {{ t('Vendor') }}</button>
+          <button v-if="!readonly" class="rp-vi-add" type="button" @click="addRow">+ {{ t('Vendor') }}</button>
+
+          <p v-if="readonly" class="rp-vi-hint rp-vi-hint--managed">
+            {{ t('Vendor terms are managed by purchasing in the Vendors module. This view is read-only.') }}
+          </p>
 
           <p class="rp-vi-hint">
             {{ t('MOQ and pack size are quoted in the MOQ unit. The suggested quantity is raised to MOQ, then rounded up to a whole pack.') }}
@@ -426,9 +446,11 @@ function save() {
         </div>
 
         <footer class="rp-vi-footer">
-          <span v-if="error" class="rp-vi-error">{{ error }}</span>
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="save">{{ t('Save changes') }}</button>
+          <span v-if="error && !readonly" class="rp-vi-error">{{ error }}</span>
+          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">
+            {{ readonly ? t('Close') : t('Cancel') }}
+          </button>
+          <button v-if="!readonly" class="btn-enterprise btn-enterprise--primary" type="button" @click="save">{{ t('Save changes') }}</button>
         </footer>
       </div>
     </div>
@@ -545,6 +567,13 @@ function save() {
 .rp-vi-cell-sub--warning { color: var(--mp-text-warning); }
 .rp-vi-lead-ro { font-variant-numeric: tabular-nums; color: var(--mp-text-default); white-space: nowrap; }
 .rp-vi-radio { width: 16px; height: 16px; cursor: pointer; accent-color: var(--mp-background-brand, #04846c); }
+.rp-vi-default-ro { display: inline-flex; color: var(--mp-icon-brand, #04846c); }
+.rp-vi-hint--managed {
+  margin-top: var(--mp-spacing-3);
+  padding: var(--mp-spacing-2\.5) var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
+  background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary);
+}
 .rp-vi-remove {
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);

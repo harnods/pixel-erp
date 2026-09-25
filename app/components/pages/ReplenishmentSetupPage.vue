@@ -346,9 +346,11 @@ function onSaved() {
     @saved="onSaved"
   />
 
+  <!-- Read-only: stockist surface; vendor terms are edited by purchasing. -->
   <VendorItemDrawer
     v-model:is-open="vendorOpen"
     :sku="vendorSku"
+    readonly
     @saved="onSaved"
   />
 </template>

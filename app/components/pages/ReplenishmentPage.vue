@@ -777,9 +777,12 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
     @saved="onSettingsSaved"
   />
 
+  <!-- Read-only: the worklist is a stockist surface; vendor terms are edited by
+       purchasing in the Vendors module. -->
   <VendorItemDrawer
     v-model:is-open="vendorOpen"
     :sku="vendorSku"
+    readonly
     @saved="onSettingsSaved"
   />
 

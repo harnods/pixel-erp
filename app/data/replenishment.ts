@@ -656,12 +656,8 @@ export function buildRow(
     { label: 'Shortfall', value: `${targetQty.toFixed(1)} − (${atp.available} + ${atp.onOrder}) = ${gapQty.toFixed(1)}` },
     { label: 'Rounded up', value: `${rawQty} ${product?.unit ?? ''}` },
   ]
-  if (vendorItem && rounded.purchaseQty > 0) {
-    trace.push({
-      label: 'Order quantity',
-      value: `${rounded.purchaseQty} ${vendorItem.purchaseUnit} (${rounded.stockingQty} ${product?.unit ?? ''})`,
-    })
-  }
+  // MOQ and the purchase multiplier are applied when the PR becomes a PO, not here,
+  // so the trace ends at the need — it never shows an "order quantity".
 
   const suggestion: SuggestionResult = {
     targetQty,

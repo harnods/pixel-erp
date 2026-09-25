@@ -14,7 +14,7 @@
  */
 import { MpIcon } from '@mekari/pixel3'
 import type { WorklistRow } from '~/data/replenishment'
-import { leadTimeTierLabel, leadTimeSamplesFor } from '~/data/leadTimeHistory'
+import { leadTimeTierLabel } from '~/data/leadTimeHistory'
 import { formatIDR } from '~/utils/currency'
 import { formatDate } from '~/utils/date'
 
@@ -22,8 +22,6 @@ const props = defineProps<{ isOpen: boolean; row: WorklistRow | null }>()
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
   (e: 'create-purchase-request', row: WorklistRow): void
-  (e: 'edit-settings', row: WorklistRow): void
-  (e: 'edit-vendors', row: WorklistRow): void
 }>()
 
 const { t } = useLocale()
@@ -54,76 +52,17 @@ const velocityNote = computed(() => {
     : `Averaged over the last ${row.velocity.lookbackDays} days of sales`
 })
 
-// How many rows each list previews before "Showing N of M · Export for the rest".
-// A trust panel answers "is this believable?" with the most recent few; the full
-// audit trail (which can be hundreds of rows) is what Export is for.
-const PREVIEW = 8
-
-/** Every sales/movement doc behind the demand figure, newest first. */
-const salesDocs = computed(() =>
-  [...(props.row?.velocity.citations ?? [])].sort((a, b) => (a.date < b.date ? 1 : -1)),
-)
-const documents = computed(() => salesDocs.value.slice(0, PREVIEW))
-
 /**
- * Purchase documents behind the LEAD time — the PO→goods-receipt samples that were
- * averaged. Only when the lead time is actually computed; an estimated tier has no
- * measured receipts, so we show its basis instead of an empty table.
+ * A rough cost of the NEED at the vendor's unit price. The suggestion is in stocking
+ * units and unitCost is per purchase unit, so convert back. The exact amount is set
+ * on the purchase order, after MOQ and pack rounding — this is only an estimate.
  */
-const purchaseDocs = computed(() => {
+const needCost = computed(() => {
   const row = props.row
-  if (!row || row.leadTimeTier !== 'computed' || !row.vendor) return []
-  return leadTimeSamplesFor(row.vendor.id, row.sku, row.warehouseId)
-    .filter((s) => !s.excluded && s.leadDays >= 1)
-    .sort((a, b) => (a.receiptDate < b.receiptDate ? 1 : -1))
+  if (!row?.vendorItem) return 0
+  const perStockingUnit = row.vendorItem.unitCost / Math.max(1, row.vendorItem.unitsPerPurchaseUnit)
+  return Math.round(row.suggestion.rawQty * perStockingUnit)
 })
-const purchasePreview = computed(() => purchaseDocs.value.slice(0, PREVIEW))
-
-const modelledDays = computed(() => props.row?.velocity.modelledDays ?? 0)
-const longestWindow = computed(() => props.row?.velocity.lookbackDays ?? 0)
-
-/** CSV-escape one cell. */
-function csvCell(v: string | number): string {
-  const s = String(v ?? '')
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-}
-
-/**
- * Export the FULL contributing set — every sales and purchase document, not the
- * preview. This is the answer to "what about 1000 rows": the panel stays a
- * scannable preview, and the long tail leaves as a file. Bounded, client-side data,
- * so unlike the worklist's server-split export it genuinely runs here.
- */
-function exportDocuments() {
-  const row = props.row
-  if (!row || !import.meta.client) return
-  const lines: (string | number)[][] = [
-    ['Kind', 'Date', 'Number', 'Detail', 'Qty / lead days', 'Unit'],
-  ]
-  for (const d of salesDocs.value) {
-    lines.push([
-      'Sales', d.date, d.number,
-      d.salesNo ?? (d.kind === 'transfer' ? 'Warehouse transfer' : 'Stock adjustment'),
-      d.qty, row.unit,
-    ])
-  }
-  for (const s of purchaseDocs.value) {
-    lines.push([
-      'Purchase', s.receiptDate, s.poNumber ?? '(modelled)',
-      s.receiptNumber ?? '(modelled)', s.leadDays, 'days',
-    ])
-  }
-  const csv = lines.map((r) => r.map(csvCell).join(',')).join('\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `contributing-documents-${row.sku}-${row.warehouseId}.csv`
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
-}
 </script>
 
 <template>
@@ -154,24 +93,13 @@ function exportDocuments() {
             <div class="rp-bd-headline">
               <span class="rp-bd-headline-label">{{ t('Suggested qty') }}</span>
               <span class="rp-bd-headline-value">
-                {{ num(row.suggestion.purchaseQty) }} {{ row.suggestion.purchaseUnit }}
+                {{ num(row.suggestion.rawQty) }} {{ row.unit }}
               </span>
             </div>
-            <p v-if="row.suggestion.purchaseQty > 0" class="rp-bd-headline-note">
-              {{ num(row.suggestion.stockingQty) }} {{ row.unit }} ·
-              {{ t('Raw suggestion') }} {{ num(row.suggestion.rawQty) }} {{ row.unit }}
-            </p>
-            <p v-if="row.suggestion.raisedByMoq || row.suggestion.raisedByPack" class="rp-bd-headline-note">
-              <template v-if="row.suggestion.raisedByMoq && row.suggestion.raisedByPack">
-                {{ t('Rounded up to MOQ') }} {{ num(row.vendorItem?.moq ?? 0) }},
-                {{ t('then to a pack of') }} {{ num(row.vendorItem?.packSize ?? 1) }}
-              </template>
-              <template v-else-if="row.suggestion.raisedByMoq">
-                {{ t('Rounded up to MOQ') }} {{ num(row.vendorItem?.moq ?? 0) }} {{ row.suggestion.purchaseUnit }}
-              </template>
-              <template v-else>
-                {{ t('Rounded to a pack of') }} {{ num(row.vendorItem?.packSize ?? 1) }} {{ row.suggestion.purchaseUnit }}
-              </template>
+            <!-- This is the NEED. MOQ and the purchase multiplier are applied later,
+                 when the purchase request becomes a purchase order — not here. -->
+            <p v-if="row.suggestion.rawQty > 0 && row.vendorItem" class="rp-bd-headline-note">
+              {{ t('Rounded to MOQ and pack size when you raise the purchase order.') }}
             </p>
             <p v-if="row.suggestion.cappedByMaxLevel" class="rp-bd-headline-note">
               {{ t('Capped by the max level') }}
@@ -185,14 +113,30 @@ function exportDocuments() {
               </template>
               <template v-else>{{ t('This product is not tracked for replenishment.') }}</template>
             </p>
+
+            <!-- Days of cover — an INFORMATION read on how long current available
+                 stock lasts at the current pace, not a policy input. Sits with the
+                 suggested qty it contextualises, never in the Inputs list. -->
+            <div class="rp-bd-substat">
+              <span class="rp-bd-substat-label">{{ t('Days of cover') }}</span>
+              <span
+                class="rp-bd-substat-value"
+                :class="{ 'rp-bd-substat-value--critical': row.cover.belowLeadTime }"
+              >
+                <template v-if="row.cover.coverDays === null">—</template>
+                <template v-else>{{ num(row.cover.coverDays, 1) }} {{ t('days') }}</template>
+              </span>
+              <span class="rp-bd-substat-note" :class="{ 'rp-bd-substat-note--critical': row.cover.belowLeadTime }">
+                <template v-if="row.cover.coverDays === null">{{ t('No recent sales') }}</template>
+                <template v-else-if="row.cover.belowLeadTime">{{ t('Stocks out before resupply') }}</template>
+                <template v-else>{{ t('from available stock at the current pace') }}</template>
+              </span>
+            </div>
           </section>
 
           <!-- Inputs -->
           <section class="rp-bd-section">
-            <div class="rp-bd-section-head">
-              <span class="rp-bd-section-title">{{ t('Inputs') }}</span>
-              <a class="rp-bd-link" @click="emit('edit-settings', row)">{{ t('Edit settings') }}</a>
-            </div>
+            <span class="rp-bd-section-title">{{ t('Inputs') }}</span>
             <dl class="rp-bd-dl">
               <div class="rp-bd-dt">{{ t('Demand velocity') }}</div>
               <div class="rp-bd-dd">
@@ -203,9 +147,6 @@ function exportDocuments() {
               <div class="rp-bd-dt">{{ t('Lead time') }}</div>
               <div class="rp-bd-dd">
                 {{ row.leadTimeDays }} {{ t('days') }}
-                <a class="rp-bd-link rp-bd-link--inline" @click="emit('edit-vendors', row)">
-                  {{ t('Edit') }}
-                </a>
                 <span class="rp-bd-dd-note">
                   {{ leadTimeTierLabel(row.leadTimeTier, row.leadTimeSampleSize) }}
                   · {{ row.vendor?.name ?? t('No vendor — using the company default') }}
@@ -282,19 +223,6 @@ function exportDocuments() {
                 </span>
                 <span v-else class="rp-bd-dd-note">{{ t('No open receipts') }}</span>
               </div>
-
-              <div class="rp-bd-dt">{{ t('Days of cover') }}</div>
-              <div class="rp-bd-dd">
-                <template v-if="row.cover.coverDays === null">
-                  — <span class="rp-bd-dd-note">{{ t('No recent sales') }}</span>
-                </template>
-                <template v-else>
-                  {{ num(row.cover.coverDays, 1) }} {{ t('days') }}
-                  <span v-if="row.cover.belowLeadTime" class="rp-bd-dd-note rp-bd-dd-note--critical">
-                    {{ t('Stocks out before resupply') }}
-                  </span>
-                </template>
-              </div>
             </dl>
           </section>
 
@@ -312,97 +240,9 @@ function exportDocuments() {
             </p>
           </section>
 
-          <!-- Contributing documents — the real movements behind the numbers. The
-               panel shows the most recent few (a trust check); the full set, which
-               can be hundreds of rows, leaves via Export rather than filling the
-               drawer. -->
-          <section class="rp-bd-section">
-            <div class="rp-bd-section-head">
-              <span class="rp-bd-section-title">{{ t('Contributing sales documents') }}</span>
-              <a
-                v-if="salesDocs.length || purchaseDocs.length"
-                class="rp-bd-link"
-                @click="exportDocuments"
-              >{{ t('Export all (CSV)') }}</a>
-            </div>
-            <table v-if="documents.length" class="rp-bd-table">
-              <thead>
-                <tr>
-                  <th class="rp-bd-th">{{ t('Date') }}</th>
-                  <th class="rp-bd-th">{{ t('Number') }}</th>
-                  <th class="rp-bd-th">{{ t('Source') }}</th>
-                  <th class="rp-bd-th rp-bd-th--num">{{ t('Qty') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="doc in documents" :key="`${doc.id}-${doc.date}`">
-                  <td class="rp-bd-td">{{ formatDate(doc.date) }}</td>
-                  <td class="rp-bd-td">{{ doc.number }}</td>
-                  <!-- Only a dispatch has a sales reference; a transfer or a
-                       write-off says what it was instead of showing a blank. -->
-                  <td class="rp-bd-td rp-bd-td--sub">
-                    {{ doc.salesNo ?? (doc.kind === 'transfer' ? t('Warehouse transfer') : t('Stock adjustment')) }}
-                  </td>
-                  <td class="rp-bd-td rp-bd-td--num">{{ num(doc.qty) }} {{ row.unit }}</td>
-                </tr>
-              </tbody>
-            </table>
-            <p v-else class="rp-bd-caption">
-              {{ t('No shipped sales documents in this window.') }}
-            </p>
-            <p v-if="salesDocs.length > documents.length" class="rp-bd-caption">
-              {{ t('Showing') }} {{ documents.length }} {{ t('of') }} {{ salesDocs.length }}
-              {{ t('documents — export for the full list') }}
-            </p>
-            <!-- Honesty: say plainly how much of the window is modelled demo history
-                 rather than implying every day is a real document. -->
-            <p v-if="modelledDays > 0" class="rp-bd-caption">
-              {{ salesDocs.length }} {{ t('shipped documents') }} ·
-              {{ modelledDays }} {{ t('of') }} {{ longestWindow }} {{ t('days are modelled demo history') }}
-            </p>
-            <p v-if="row.flags.volatile" class="rp-bd-caption rp-bd-caption--warning">
-              {{ t('Demand is volatile — recent spikes were damped before weighting.') }}
-            </p>
-          </section>
-
-          <!-- Contributing purchase documents — the PO→goods-receipt history the
-               lead time was measured from, symmetric with the sales side. -->
-          <section class="rp-bd-section">
-            <span class="rp-bd-section-title">{{ t('Contributing purchase documents') }}</span>
-            <template v-if="purchasePreview.length">
-              <table class="rp-bd-table">
-                <thead>
-                  <tr>
-                    <th class="rp-bd-th">{{ t('Ordered') }}</th>
-                    <th class="rp-bd-th">{{ t('Received') }}</th>
-                    <th class="rp-bd-th">{{ t('Purchase order') }}</th>
-                    <th class="rp-bd-th">{{ t('Receipt') }}</th>
-                    <th class="rp-bd-th rp-bd-th--num">{{ t('Lead time') }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(s, i) in purchasePreview" :key="`${s.receiptDate}-${i}`">
-                    <td class="rp-bd-td">{{ formatDate(s.orderDate) }}</td>
-                    <td class="rp-bd-td">{{ formatDate(s.receiptDate) }}</td>
-                    <td class="rp-bd-td rp-bd-td--sub">{{ s.poNumber ?? t('Modelled') }}</td>
-                    <td class="rp-bd-td rp-bd-td--sub">{{ s.receiptNumber ?? t('Modelled') }}</td>
-                    <td class="rp-bd-td rp-bd-td--num">{{ s.leadDays }} {{ t('days') }}</td>
-                  </tr>
-                </tbody>
-              </table>
-              <p v-if="purchaseDocs.length > purchasePreview.length" class="rp-bd-caption">
-                {{ t('Showing') }} {{ purchasePreview.length }} {{ t('of') }} {{ purchaseDocs.length }}
-                {{ t('receipts — export for the full list') }}
-              </p>
-            </template>
-            <p v-else class="rp-bd-caption">
-              {{ t('Lead time is') }} {{ leadTimeTierLabel(row.leadTimeTier, row.leadTimeSampleSize) }} —
-              {{ t('no delivered purchase orders measured for this product and warehouse yet.') }}
-            </p>
-          </section>
-
-          <!-- Cost, when there is something to order -->
-          <section v-if="row.vendorItem && row.suggestion.purchaseQty > 0" class="rp-bd-section">
+          <!-- Estimated cost of the NEED. A rough figure at the vendor's unit cost;
+               the exact amount is set on the purchase order, after MOQ rounding. -->
+          <section v-if="row.vendorItem && row.suggestion.rawQty > 0" class="rp-bd-section">
             <span class="rp-bd-section-title">{{ t('Estimated cost') }}</span>
             <dl class="rp-bd-dl">
               <div class="rp-bd-dt">{{ t('Unit cost') }}</div>
@@ -411,8 +251,8 @@ function exportDocuments() {
               </div>
               <div class="rp-bd-dt">{{ t('Estimated total') }}</div>
               <div class="rp-bd-dd">
-                {{ formatIDR(row.suggestion.purchaseQty * row.vendorItem.unitCost) }}
-                <span class="rp-bd-dd-note">{{ t('Before tax') }}</span>
+                {{ formatIDR(needCost) }}
+                <span class="rp-bd-dd-note">{{ t('Estimate for the suggested need · exact total set at the purchase order') }}</span>
               </div>
             </dl>
           </section>
@@ -513,6 +353,26 @@ function exportDocuments() {
 }
 .rp-bd-headline-note { margin-top: 2px; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
 .rp-bd-headline-note--muted { color: var(--mp-text-secondary); }
+
+/* Days of cover — an information stat sitting under the suggested qty. */
+.rp-bd-substat {
+  margin-top: var(--mp-spacing-3);
+  padding-top: var(--mp-spacing-3);
+  border-top: 1px solid var(--mp-border-subtle, var(--mp-border-default));
+  display: grid; grid-template-columns: auto 1fr; align-items: baseline;
+  column-gap: var(--mp-spacing-3); row-gap: 2px;
+}
+.rp-bd-substat-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.rp-bd-substat-value {
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default); text-align: right;
+}
+.rp-bd-substat-value--critical { color: var(--mp-text-danger); }
+.rp-bd-substat-note {
+  grid-column: 1 / -1;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle);
+}
+.rp-bd-substat-note--critical { color: var(--mp-text-danger); }
 
 .rp-bd-dl {
   margin-top: var(--mp-spacing-3);
