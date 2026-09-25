@@ -121,7 +121,7 @@ function ownerInitials(name: string) { return name.split(' ').map((p) => p[0]).s
         <div class="filter-search gmp-search">
           <MpIcon name="search" size="sm" class="filter-search-icon" />
           <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search records…')" />
-          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''"><MpIcon name="close" size="sm" /></button>
+          <MpButton v-if="search" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="search = ''" />
         </div>
       </div>
 

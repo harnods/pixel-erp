@@ -22,9 +22,9 @@
          is-open keeps the hover fill while the popover is open, even after the cursor
          moves off the button onto the portaled popover. -->
     <MpPopoverTrigger>
-      <button class="quick-create__trigger" :class="{ 'is-open': menuOpen }" type="button" aria-label="Create new">
+      <MpButton variant="ghost" class="quick-create__trigger" :class="{ 'is-open': menuOpen }" aria-label="Create new">
         <MpIcon name="add" color="icon.inverse" />
-      </button>
+      </MpButton>
     </MpPopoverTrigger>
 
     <MpPopoverContent class="quick-create" is-unstyled>
@@ -32,33 +32,33 @@
       <template v-if="view === 'main'">
         <p class="quick-create__section">Create/New</p>
         <nav class="quick-create__group">
-          <button
+          <MpButton
             v-for="item in visibleShortcuts"
             :key="item.key"
-            type="button"
+            variant="ghost"
             class="quick-create__row"
             @click="go(item, onClosePopover)"
           >
             <span class="quick-create__label">{{ item.label }}</span>
-          </button>
+          </MpButton>
         </nav>
 
         <div class="quick-create__divider" />
 
         <nav class="quick-create__group">
-          <button type="button" class="quick-create__row" @click="view = 'manage'">
+          <MpButton variant="ghost" class="quick-create__row" @click="view = 'manage'">
             <span class="quick-create__label">Shortcut visibility</span>
             <MpIcon name="chevrons-right" size="md" color="icon.default" />
-          </button>
+          </MpButton>
         </nav>
       </template>
 
       <!-- ── Manage: reorder + show/hide ─────────────────────── -->
       <template v-else>
         <div class="quick-create__subhead">
-          <button type="button" class="quick-create__back" aria-label="Back" @click="view = 'main'">
+          <MpButton variant="ghost" class="quick-create__back" aria-label="Back" @click="view = 'main'">
             <MpIcon name="chevrons-left" size="md" color="icon.default" />
-          </button>
+          </MpButton>
           <span class="quick-create__subtitle">Shortcut visibility</span>
         </div>
 
@@ -78,8 +78,8 @@
               <MpIcon name="drag" size="sm" />
             </span>
             <span class="quick-create__manage-label">{{ item.label }}</span>
-            <button
-              type="button"
+            <MpButton
+              variant="ghost"
               class="quick-create__toggle"
               :class="{ 'is-hidden': !item.visible }"
               :aria-label="item.visible ? `Hide ${item.label}` : `Show ${item.label}`"
@@ -94,7 +94,7 @@
                 :color="item.visible ? 'icon.default' : 'icon.disabled'"
                 size="sm"
               />
-            </button>
+            </MpButton>
           </li>
         </ul>
       </template>
@@ -104,7 +104,7 @@
 
 <script setup lang="ts">
 import { ref } from "vue";
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon, toast } from "@mekari/pixel3";
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon, MpButton, toast } from "@mekari/pixel3";
 import {
   quickShortcuts,
   visibleShortcuts,

@@ -79,8 +79,8 @@ function toggle(list: string[], v: string) {
           <div class="cvd-field">
             <span class="cvd-field-label">View type</span>
             <div class="cvd-typetabs">
-              <button type="button" class="page-tab" :class="{ 'page-tab--active': draft.type === 'table' }" @click="draft.type = 'table'"><MpIcon name="table-view-list" size="sm" /> Table</button>
-              <button type="button" class="page-tab" :class="{ 'page-tab--active': draft.type === 'board' }" @click="draft.type = 'board'"><MpIcon name="table-view-column" size="sm" /> Board</button>
+              <MpButton variant="ghost" type="button" class="page-tab" :class="{ 'page-tab--active': draft.type === 'table' }" @click="draft.type = 'table'"><MpIcon name="table-view-list" size="sm" /> Table</MpButton>
+              <MpButton variant="ghost" type="button" class="page-tab" :class="{ 'page-tab--active': draft.type === 'board' }" @click="draft.type = 'board'"><MpIcon name="table-view-column" size="sm" /> Board</MpButton>
             </div>
           </div>
 
@@ -132,11 +132,11 @@ function toggle(list: string[], v: string) {
         </div>
 
         <footer class="cvd-footer">
-          <button v-if="mode === 'edit'" class="btn-enterprise btn-enterprise--danger" type="button" @click="emit('delete')">Delete view</button>
-          <button v-else class="btn-enterprise btn-enterprise--ghost" type="button" @click="resetFilters">Reset filter</button>
+          <MpButton v-if="mode === 'edit'" class="btn-enterprise btn-enterprise--danger" variant="danger" type="button" @click="emit('delete')">Delete view</MpButton>
+          <MpButton v-else class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="resetFilters">Reset filter</MpButton>
           <div class="cvd-footer-right">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="save">{{ mode === 'create' ? 'Save view' : 'Save changes' }}</button>
+            <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="close">Cancel</MpButton>
+            <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="save">{{ mode === 'create' ? 'Save view' : 'Save changes' }}</MpButton>
           </div>
         </footer>
       </div>

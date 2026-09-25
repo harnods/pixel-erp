@@ -4,9 +4,9 @@
     <nav class="sidebar" :class="{ 'is-expanded': navExpanded, 'arrow-left': arrowPointsLeft }" aria-label="Main navigation">
       <!-- Toggle -->
       <div class="sidebar-header" data-devchange="sidebar-collapsed-tooltip">
-        <button class="sidebar-toggle" @click="handleToggle" title="Toggle sidebar">
+        <MpButton variant="ghost" class="sidebar-toggle" @click="handleToggle" title="Toggle sidebar">
           <img :src="toggleIcon" alt="Toggle sidebar" />
-        </button>
+        </MpButton>
       </div>
 
       <!-- Nav groups -->
@@ -22,7 +22,8 @@
             placement="right"
             use-portal
           >
-            <button
+            <MpButton
+              variant="ghost"
               class="nav-item"
               :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
               @click="() => handleNavClick(item)"
@@ -32,10 +33,11 @@
               <img :src="`https://cdn.mekari.design/icons/${item.iconLine ?? item.icon + '-outline'}.svg`" class="nav-icon-line" alt="" />
               <img :src="`https://cdn.mekari.design/icons/${item.iconFill ?? item.icon + '-fill'}.svg`" class="nav-icon-fill" alt="" />
               <span class="nav-label">{{ t(item.name) }}</span>
-            </button>
+            </MpButton>
           </MpTooltip>
-          <button
+          <MpButton
             v-else
+            variant="ghost"
             class="nav-item"
             :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
             @click="() => handleNavClick(item)"
@@ -45,7 +47,7 @@
             <img :src="`https://cdn.mekari.design/icons/${item.iconLine ?? item.icon + '-outline'}.svg`" class="nav-icon-line" alt="" />
             <img :src="`https://cdn.mekari.design/icons/${item.iconFill ?? item.icon + '-fill'}.svg`" class="nav-icon-fill" alt="" />
             <span class="nav-label">{{ t(item.name) }}</span>
-          </button>
+          </MpButton>
         </template>
       </div>
     </nav>
@@ -62,7 +64,8 @@
             <template v-for="sub in group" :key="sub.label">
               <!-- Accordion item (e.g. Fixed assets): expandable header + children -->
               <template v-if="sub.children">
-                <button
+                <MpButton
+                  variant="ghost"
                   class="panel-item panel-item--accordion"
                   :class="{ 'is-open': isAccordionOpen(sub) }"
                   @click="handlePanelAccordionClick(sub)"
@@ -71,22 +74,24 @@
                   <svg class="panel-accordion-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
                   </svg>
-                </button>
-                <button
+                </MpButton>
+                <MpButton
                   v-for="child in sub.children"
                   v-show="isAccordionOpen(sub)"
                   :key="child.label"
+                  variant="ghost"
                   class="panel-item panel-item--child"
                   :class="{ active: activePanelSubItem === child.label }"
                   @click="handlePanelSubItemClick(child)"
                 >
                   <span>{{ t(child.label) }}</span>
                   <MpBadge v-if="child.count != null" class="panel-item-count" for="additionalInformation" type="warning" size="sm">{{ child.count }}</MpBadge>
-                </button>
+                </MpButton>
               </template>
               <!-- Plain item -->
-              <button
+              <MpButton
                 v-else
+                variant="ghost"
                 class="panel-item"
                 :class="{ active: activePanelSubItem === sub.label }"
                 @click="handlePanelSubItemClick(sub)"
@@ -105,7 +110,7 @@
                   class="panel-item-icon panel-item-icon--settings"
                   alt=""
                 />
-              </button>
+              </MpButton>
             </template>
           </template>
         </div>
@@ -124,9 +129,10 @@
     >
       <template v-for="(group, gi) in flyoutGroups" :key="gi">
         <div class="submenu-group" :class="{ 'has-border': gi < flyoutGroups.length - 1 }">
-          <button
+          <MpButton
             v-for="sub in group"
             :key="sub.label"
+            variant="ghost"
             class="submenu-item"
             :class="{ active: activePanelSubItem === sub.label }"
             @click="handleFlyoutSubItemClick(sub)"
@@ -134,7 +140,7 @@
             <span>{{ t(sub.label) }}</span>
             <img v-if="sub.iconType === 'shortcut'" :src="shortcutIcon" class="submenu-item-icon submenu-item-icon--shortcut" alt="" />
             <img v-else-if="sub.iconType === 'settings'" :src="settingsIcon" class="submenu-item-icon" alt="" />
-          </button>
+          </MpButton>
         </div>
       </template>
     </div>
@@ -142,7 +148,7 @@
 </template>
 
 <script setup lang="ts">
-import { MpIcon, MpBadge, MpTooltip } from '@mekari/pixel3'
+import { MpIcon, MpBadge, MpTooltip, MpButton } from '@mekari/pixel3'
 import toggleIconUrl from '~/assets/images/sidebar-toggle.svg?url'
 import shortcutIconUrl from '~/assets/images/shortcut-icon.svg?url'
 import { receiptCountsByStage } from '~/data/receipts'
@@ -1409,7 +1415,7 @@ function cancelClose() {
 .panel-item:hover { background-color: var(--mp-background-neutral-subtle-hovered); }
 
 .panel-item.active {
-  background-color: #E2E8F0;
+  background-color: var(--mp-background-neutral-pressed, #E2E8F0);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-link, #165082);
 }
@@ -1533,7 +1539,7 @@ function cancelClose() {
 .submenu-item:hover { background-color: var(--mp-background-neutral-subtle-hovered); }
 
 .submenu-item.active {
-  background-color: #E2E8F0;
+  background-color: var(--mp-background-neutral-pressed, #E2E8F0);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-link, #165082);
 }

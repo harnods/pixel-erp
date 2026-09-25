@@ -7,7 +7,7 @@
  * in [...slug].vue), so it draws its own title bar with a back link + Export (CSV).
  */
 import { ref, reactive, computed, watch, inject, onMounted, onUnmounted } from 'vue'
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpTooltip, MpIcon, MpCheckbox, css } from '@mekari/pixel3'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpTooltip, MpIcon, MpCheckbox, MpButton, css } from '@mekari/pixel3'
 import ErpColumnSortMenu from '~/components/patterns/ErpColumnSortMenu.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
@@ -401,7 +401,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Title bar (full-bleed detail) ── -->
     <div class="rpt-titlebar">
       <div class="rpt-titlebar-left">
-        <button v-if="showBreadcrumb" class="rpt-breadcrumb" @click="router.push('/wms-report')">{{ t('Reports') }}</button>
+        <MpButton v-if="showBreadcrumb" class="rpt-breadcrumb" variant="ghost" @click="router.push('/wms-report')">{{ t('Reports') }}</MpButton>
         <h1 class="rpt-title">{{ t(title) }}</h1>
       </div>
     </div>
@@ -416,33 +416,33 @@ const emptyIllustration = '/illustrations/empty-folder.png'
              Hidden on snapshot reports (Warehouse stock quantity). -->
         <MpPopover v-if="showDate" :id="`rpt-period-${orderId}`" :is-close-on-select="false">
           <MpPopoverTrigger>
-            <button type="button" class="filter-trigger" :style="{ width: '210px' }">
+            <MpButton type="button" class="filter-trigger" variant="ghost" :style="{ width: '210px' }">
               <svg class="cal-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 2.5v3M16 2.5v3M3.5 9.5h17M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v13A1.5 1.5 0 0 1 19 20.5H5A1.5 1.5 0 0 1 3.5 19V6A1.5 1.5 0 0 1 5 4.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
               <span class="filter-trigger-label">{{ periodLabel }}</span>
               <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
+            </MpButton>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ padding: '0', width: 'max-content' })">
             <div class="rpt-date-panel">
               <!-- Preset list. In preset mode each row shows its resolved date range;
                    in Custom mode the list collapses to plain labels beside the calendar. -->
               <div class="rpt-date-list" :class="{ 'rpt-date-list--compact': periodPreset === 'custom' }">
-                <button
+                <MpButton
                   v-for="opt in periodOptions" :key="opt.value" type="button"
-                  class="rpt-date-item" :class="{ 'rpt-date-item--active': periodPreset === opt.value }"
+                  class="rpt-date-item" variant="ghost" :class="{ 'rpt-date-item--active': periodPreset === opt.value }"
                   @click="selectPreset(opt.value)"
                 >
                   <span class="rpt-date-item-label">{{ t(opt.label) }}</span>
                   <span v-if="periodPreset !== 'custom'" class="rpt-date-item-range">{{ presetRangeLabel(Number(opt.value)) }}</span>
-                </button>
+                </MpButton>
                 <div class="rpt-date-divider" />
-                <button
+                <MpButton
                   type="button"
-                  class="rpt-date-item" :class="{ 'rpt-date-item--active': periodPreset === 'custom' }"
+                  class="rpt-date-item" variant="ghost" :class="{ 'rpt-date-item--active': periodPreset === 'custom' }"
                   @click="selectCustom"
                 >
                   <span class="rpt-date-item-label">{{ t('Custom range') }}</span>
-                </button>
+                </MpButton>
               </div>
 
               <!-- Two-month calendar — only in Custom range mode -->
@@ -451,21 +451,21 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               <div class="rpt-date-months">
                 <div v-for="side in (['left', 'right'] as const)" :key="side" class="rpt-cal">
                   <div class="rpt-cal-header">
-                    <button class="rpt-cal-nav" type="button" :aria-label="t('Previous month')" @click="calPrevMonth">
+                    <MpButton class="rpt-cal-nav" variant="ghost" type="button" :aria-label="t('Previous month')" @click="calPrevMonth">
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M15 6L9 12L15 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    </button>
+                    </MpButton>
                     <span class="rpt-cal-title">{{ side === 'left' ? leftTitle : rightTitle }}</span>
-                    <button class="rpt-cal-nav" type="button" :aria-label="t('Next month')" @click="calNextMonth">
+                    <MpButton class="rpt-cal-nav" variant="ghost" type="button" :aria-label="t('Next month')" @click="calNextMonth">
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    </button>
+                    </MpButton>
                   </div>
                   <div class="rpt-cal-weekdays">
                     <span v-for="d in WEEKDAYS" :key="d">{{ d }}</span>
                   </div>
                   <div class="rpt-cal-days">
-                    <button
+                    <MpButton
                       v-for="cell in (side === 'left' ? leftCells : rightCells)" :key="cell.iso" type="button"
-                      class="rpt-cal-day"
+                      class="rpt-cal-day" variant="ghost"
                       :class="{
                         'rpt-cal-day--muted': !cell.inMonth,
                         'rpt-cal-day--today': cell.inMonth && cell.iso === todayIso,
@@ -473,7 +473,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                         'rpt-cal-day--end': cell.inMonth && calCellIsEnd(cell.iso),
                       }"
                       @click="onCalDayClick(cell)"
-                    >{{ cell.dayNum }}</button>
+                    >{{ cell.dayNum }}</MpButton>
                   </div>
                 </div>
               </div>
@@ -485,10 +485,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <!-- Warehouse — multi-select -->
         <MpPopover :id="`rpt-wh-${orderId}`" :is-close-on-select="false">
           <MpPopoverTrigger>
-            <button type="button" class="filter-trigger" :style="{ width: '200px' }">
+            <MpButton type="button" class="filter-trigger" variant="ghost" :style="{ width: '200px' }">
               <span class="filter-trigger-label">{{ warehouseLabel }}</span>
               <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
+            </MpButton>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', maxWidth: '320px' })">
             <div class="checkbox-filter-list">
@@ -510,10 +510,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
              with an operator dimension only) -->
         <MpPopover v-if="showOperator" :id="`rpt-op-${orderId}`" :is-close-on-select="false">
           <MpPopoverTrigger>
-            <button type="button" class="filter-trigger" :style="{ width: '190px' }">
+            <MpButton type="button" class="filter-trigger" variant="ghost" :style="{ width: '190px' }">
               <span class="filter-trigger-label">{{ operatorLabel }}</span>
               <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
+            </MpButton>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '190px', width: 'max-content', maxWidth: '320px' })">
             <div class="checkbox-filter-list">
@@ -532,20 +532,20 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         </MpPopover>
 
         <!-- All filters — accuracy reports only (Keywords / Product name / Source / Completion state) -->
-        <button v-if="isAccuracy" class="filter-all-btn" type="button" @click="isFiltersDrawerOpen = true">
+        <MpButton v-if="isAccuracy" class="filter-all-btn" variant="ghost" type="button" @click="isFiltersDrawerOpen = true">
           <MpIcon name="filter" size="sm" />
           {{ drawerFilterCount ? `${t('All filters')} (${drawerFilterCount})` : t('All filters') }}
-        </button>
+        </MpButton>
         </div>
 
         <div class="rpt-filter-right">
           <div class="filter-btn-group">
             <MpTooltip v-if="!compact" id="tt-rpt-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
-              <button class="filter-icon-btn filter-icon-btn--airene" type="button" :aria-label="t('Ask Airene')" @click="toggleAirene?.()"><MpIcon name="airene-brand" size="md" /></button>
+              <MpButton class="filter-icon-btn filter-icon-btn--airene" variant="ghost" type="button" :aria-label="t('Ask Airene')" @click="toggleAirene?.()"><MpIcon name="airene-brand" size="md" /></MpButton>
             </MpTooltip>
             <ColumnSettingsMenu v-if="!compact" :id="`rpt-col-settings-${orderId}`" :items="columnItems" :visibility="colVis" />
             <MpTooltip id="tt-rpt-export" :label="t('Export')" placement="bottom" use-portal>
-              <button class="filter-icon-btn" type="button" :aria-label="t('Export')" @click="exportCsv"><MpIcon name="download" size="md" /></button>
+              <MpButton class="filter-icon-btn" variant="ghost" type="button" :aria-label="t('Export')" @click="exportCsv"><MpIcon name="download" size="md" /></MpButton>
             </MpTooltip>
           </div>
           <div class="filter-search">
@@ -553,11 +553,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
             <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
-            <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
+            <MpButton v-if="search" class="search-clear-btn" variant="ghost" type="button" :aria-label="t('Clear search')" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
         </div>
       </div>

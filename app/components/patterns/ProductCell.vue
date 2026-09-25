@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { css, MpButton } from '@mekari/pixel3'
 
 const props = defineProps<{
   name: string
@@ -19,94 +20,103 @@ onMounted(() => {
     overflow.value = descEl.value.scrollHeight > descEl.value.clientHeight + 1
   }
 })
+
+const cellClass = css({
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: '3',
+  minWidth: '0',
+})
+
+const thumbClass = css({
+  width: '10',
+  height: '10',
+  rounded: 'md',
+  flexShrink: '0',
+  objectFit: 'cover',
+  bg: 'background.neutral',
+  border: '1px solid var(--mp-border-subtle, var(--mp-border-default))',
+})
+
+const infoClass = css({
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '0.5',
+  minWidth: '0',
+})
+
+const nameClass = css({
+  fontSize: 'md',
+  fontWeight: 'medium',
+  color: 'text.default',
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+})
+
+const descClass = css({
+  margin: '0',
+  fontSize: 'sm',
+  color: 'text.secondary',
+  lineHeight: 'sm',
+  overflow: 'hidden',
+})
+
+const descExpandedClass = css({
+  display: 'block',
+})
+
+const toggleClass = css({
+  alignSelf: 'flex-start',
+  border: 'none',
+  bg: 'transparent',
+  padding: '0',
+  cursor: 'pointer',
+  fontSize: 'sm',
+  color: 'text.link',
+  lineHeight: 'sm',
+  _hover: {
+    textDecoration: 'underline',
+    textUnderlineOffset: '2px',
+  },
+})
 </script>
 
 <template>
-  <div class="pc-cell">
+  <div :class="cellClass">
     <img
       v-if="image"
-      class="pc-thumb"
+      :class="thumbClass"
       :src="image"
       :alt="name"
       loading="lazy"
       width="40"
       height="40"
     />
-    <div class="pc-info">
-      <a v-if="linkable" class="cell-link pc-name" @click.stop="$emit('nameClick')">{{ name }}</a>
-      <span v-else class="pc-name">{{ name }}</span>
+    <div :class="infoClass">
+      <a v-if="linkable" class="cell-link" :class="nameClass" @click.stop="$emit('nameClick')">{{ name }}</a>
+      <span v-else :class="nameClass">{{ name }}</span>
       <template v-if="desc">
         <p
           ref="descEl"
-          class="pc-desc"
-          :class="{ 'pc-desc--expanded': expanded }"
+          :class="[descClass, expanded ? descExpandedClass : 'pc-desc--clamped']"
         >{{ desc }}</p>
-        <button
+        <MpButton
           v-if="overflow || expanded"
-          class="pc-toggle"
+          :class="toggleClass"
+          variant="ghost"
           @click.stop="expanded = !expanded"
-        >{{ expanded ? 'Show less' : 'Show more' }}</button>
+        >{{ expanded ? 'Show less' : 'Show more' }}</MpButton>
       </template>
     </div>
   </div>
 </template>
 
 <style scoped>
-.pc-cell {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--mp-spacing-3);
-  min-width: 0;
-}
-.pc-thumb {
-  width: var(--mp-sizes-10, 40px);
-  height: var(--mp-sizes-10, 40px);
-  border-radius: var(--mp-radii-md);
-  flex-shrink: 0;
-  object-fit: cover;
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-subtle, var(--mp-border-default));
-}
-.pc-info {
-  display: flex;
-  flex-direction: column;
-  gap: var(--mp-spacing-0\.5);
-  min-width: 0;
-}
-.pc-name {
-  font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-medium, 500);
-  color: var(--mp-text-default);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.pc-desc {
-  margin: 0;
-  font-size: var(--mp-font-sizes-sm);
-  color: var(--mp-text-secondary);
-  line-height: var(--mp-line-heights-sm, 1.4);
-  overflow: hidden;
+/* -webkit-line-clamp cannot be expressed via css() — kept in a style block */
+.pc-desc--clamped {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
-}
-.pc-desc--expanded {
-  display: block;
-  -webkit-line-clamp: unset;
-}
-.pc-toggle {
-  align-self: flex-start;
-  border: none;
-  background: none;
-  padding: 0;
-  cursor: pointer;
-  font-size: var(--mp-font-sizes-sm);
-  color: var(--mp-text-link);
-  line-height: var(--mp-line-heights-sm);
-}
-.pc-toggle:hover {
-  text-decoration: underline;
-  text-underline-offset: 2px;
 }
 </style>

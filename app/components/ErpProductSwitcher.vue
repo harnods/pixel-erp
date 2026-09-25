@@ -7,6 +7,7 @@
  * / POS). ERP/HR/CRM/Tax navigate; the rest are placeholders.
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { MpButton } from '@mekari/pixel3'
 import { infoToast } from '~/utils/toasts'
 import { toast } from '@mekari/pixel3'
 import { isHrPath } from '~/utils/hrRoutes'
@@ -67,23 +68,24 @@ onUnmounted(() => { document.removeEventListener('mousedown', onDocClick); docum
 
 <template>
   <div ref="rootEl" class="ps">
-    <button class="ps-trigger" type="button" aria-label="Switch product" :aria-expanded="open" @click="open = !open">
+    <MpButton variant="ghost" class="ps-trigger" type="button" aria-label="Switch product" :aria-expanded="open" @click="open = !open">
       <img src="https://cdn.mekari.design/icons/categories-outline.svg" class="ps-trigger-icon" alt="">
-    </button>
+    </MpButton>
 
     <Transition name="ps-fade">
       <div v-if="open" class="ps-popover" role="menu">
         <!-- Company header (click to expand company switcher) -->
-        <button class="ps-company" type="button" :aria-expanded="companyOpen" @click="companyOpen = !companyOpen">
+        <MpButton variant="ghost" class="ps-company" type="button" :aria-expanded="companyOpen" @click="companyOpen = !companyOpen">
           <span class="ps-company-name">{{ activeCompany }}</span>
           <svg class="ps-company-chevron" :class="{ 'is-open': companyOpen }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
+        </MpButton>
 
         <!-- Company list (expanded) -->
         <div v-if="companyOpen" class="ps-company-list">
-          <button
+          <MpButton
             v-for="co in companies"
             :key="co"
+            variant="ghost"
             class="ps-company-item"
             :class="{ 'ps-company-item--active': co === activeCompany }"
             type="button"
@@ -91,14 +93,15 @@ onUnmounted(() => { document.removeEventListener('mousedown', onDocClick); docum
           >
             <span class="ps-company-item-label">{{ co }}</span>
             <svg v-if="co === activeCompany" class="ps-company-check" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12l5 5L20 7" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
+          </MpButton>
         </div>
 
         <!-- Products -->
         <div v-show="!companyOpen" class="ps-list">
-          <button
+          <MpButton
             v-for="p in products"
             :key="p.key"
+            variant="ghost"
             class="ps-item"
             :class="{ 'ps-item--active': p.key === activeKey }"
             type="button"
@@ -109,7 +112,7 @@ onUnmounted(() => { document.removeEventListener('mousedown', onDocClick); docum
               <img :src="`https://cdn.mekari.design/icons/${p.icon}-outline.svg`" class="ps-icon" alt="">
             </span>
             <span class="ps-item-label">{{ p.label }}</span>
-          </button>
+          </MpButton>
         </div>
       </div>
     </Transition>

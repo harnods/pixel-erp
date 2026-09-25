@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpSpinner,
+  MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpSpinner,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpTooltip, MpIcon,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   css, toast,
@@ -360,33 +360,33 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">{{ t('Packing') }}</button>
+        <MpButton variant="ghost" class="detail-breadcrumb" @click="goBack">{{ t('Packing') }}</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ task.taskNo }}</h1>
           <ErpStatusBadge :status="localStatus" badge-for="additionalInformation" size="md" />
           <MpPopover id="pck-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" :aria-label="t('Switch task')">
+              <MpButton variant="ghost" class="detail-jump-chevron" :aria-label="t('Switch task')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
+                  <MpButton v-if="jumpSearch" variant="ghost" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
-                  </button>
+                  </MpButton>
                 </div>
                 <div class="detail-jump-list">
-                  <button v-for="t in jumpResults" :key="t.id" class="detail-jump-item" @click="jumpTo(t.id)">
+                  <MpButton v-for="t in jumpResults" :key="t.id" variant="secondary" class="detail-jump-item" @click="jumpTo(t.id)">
                     <span class="detail-jump-item-number">{{ t.taskNo }}</span>
                     <span class="detail-jump-item-customer">{{ t.salesNo }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No tasks found.') }}</p>
                 </div>
               </div>
@@ -419,7 +419,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
             <ContentList :label="t('Reason')">
               <span class="pck-reason">
                 <span>{{ task.canceledReason ?? '—' }}</span>
-                <button v-if="canReleaseReserved" type="button" class="pck-reason-release" @click="releaseReservedFromTask">{{ t('Release reserved') }}</button>
+                <MpButton v-if="canReleaseReserved" variant="secondary" type="button" class="pck-reason-release" @click="releaseReservedFromTask">{{ t('Release reserved') }}</MpButton>
               </span>
             </ContentList>
             <ContentList :label="t('Canceled by')" :value="task.canceledBy ?? '—'" />
@@ -447,11 +447,11 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
             <input v-model="itemSearch" class="pck-search" type="text" :placeholder="t('Search...')" />
-            <button v-if="itemSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="itemSearch = ''">
+            <MpButton v-if="itemSearch" variant="ghost" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="itemSearch = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
         </div>
         <section class="detail-items-section" :class="{ 'detail-items-section--bordered': itemsOverflowing }">
@@ -516,14 +516,14 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
                   <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td detail-td--action">
                     <template v-if="!skippedPicking">
                       <MpTooltip v-if="isBatchTrackedSku(row.item.skuCode)" :id="`pck-tt-batch-${row.item.key}`" :label="t('View batch')" placement="top" use-portal>
-                        <button class="pck-view-btn" type="button" :aria-label="t('View batch')" @click="openViewBatch(row.item)">
+                        <MpButton variant="secondary" class="pck-view-btn" type="button" :aria-label="t('View batch')" @click="openViewBatch(row.item)">
                           <MpIcon name="competencies" size="md" />
-                        </button>
+                        </MpButton>
                       </MpTooltip>
                       <MpTooltip v-else-if="isSerialTrackedSku(row.item.skuCode)" :id="`pck-tt-serial-${row.item.key}`" :label="t('View serial number')" placement="top" use-portal>
-                        <button class="pck-view-btn" type="button" :aria-label="t('View serial number')" @click="openViewSerial(row.item)">
+                        <MpButton variant="secondary" class="pck-view-btn" type="button" :aria-label="t('View serial number')" @click="openViewSerial(row.item)">
                           <MpIcon name="competencies" size="md" />
-                        </button>
+                        </MpButton>
                       </MpTooltip>
                     </template>
                   </td>
@@ -632,15 +632,15 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
       <!-- Change assignee — the escape hatch when the holder has lost access to the
            company. Manager-only (or an operator with LM access), and only while the
            task is still Open / In Progress. -->
-      <button v-if="canChangeAssignee" class="btn-enterprise detail-btn detail-btn--secondary" @click="reassignOpen = true">{{ t('Change assignee') }}</button>
+      <MpButton v-if="canChangeAssignee" variant="secondary" class="btn-enterprise detail-btn detail-btn--secondary" @click="reassignOpen = true">{{ t('Change assignee') }}</MpButton>
       <MpPopover id="pck-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--secondary">
+          <MpButton variant="secondary" class="detail-btn detail-btn--secondary">
             {{ t('Print') }}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -654,14 +654,14 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
       <template v-if="localStatus === 'open'">
         <div v-if="canCancel" class="detail-split-btn">
           <MpTooltip v-if="sourceLabelGated" id="pck-start-tt-split" :label="t('Cannot start packing. Waiting for the marketplace shipping label.')" placement="top" use-portal>
-            <button class="btn-enterprise detail-btn detail-btn--primary detail-btn--disabled detail-split-btn__main" disabled>{{ t('Match order') }}</button>
+            <MpButton variant="primary" class="btn-enterprise detail-btn detail-btn--primary detail-btn--disabled detail-split-btn__main" is-disabled>{{ t('Match order') }}</MpButton>
           </MpTooltip>
-          <button v-else class="btn-enterprise detail-btn detail-btn--primary detail-split-btn__main" @click="startPackingAndNavigate">{{ t('Match order') }}</button>
+          <MpButton v-else variant="primary" class="btn-enterprise detail-btn detail-btn--primary detail-split-btn__main" @click="startPackingAndNavigate">{{ t('Match order') }}</MpButton>
           <MpPopover id="pck-actions-open" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
-              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
+              <MpButton variant="primary" class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList><MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">{{ t('Cancel task') }}</MpPopoverListItem></MpPopoverList>
@@ -669,29 +669,29 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
           </MpPopover>
         </div>
         <MpTooltip v-else-if="sourceLabelGated" id="pck-start-tt-solo" :label="t('Cannot start packing. Waiting for the marketplace shipping label.')" placement="top" use-portal>
-          <button class="btn-enterprise detail-btn detail-btn--primary detail-btn--disabled" disabled>{{ t('Match order') }}</button>
+          <MpButton variant="primary" class="btn-enterprise detail-btn detail-btn--primary detail-btn--disabled" is-disabled>{{ t('Match order') }}</MpButton>
         </MpTooltip>
-        <button v-else class="btn-enterprise detail-btn detail-btn--primary" @click="startPackingAndNavigate">{{ t('Match order') }}</button>
+        <MpButton v-else variant="primary" class="btn-enterprise detail-btn detail-btn--primary" @click="startPackingAndNavigate">{{ t('Match order') }}</MpButton>
       </template>
       <template v-else-if="localStatus === 'in progress'">
         <div v-if="canCancel" class="detail-split-btn">
-          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="router.push(`/packing/${orderId}/pack`)">{{ t('Continue matching') }}</button>
+          <MpButton variant="primary" class="detail-btn detail-btn--primary detail-split-btn__main" @click="router.push(`/packing/${orderId}/pack`)">{{ t('Continue matching') }}</MpButton>
           <MpPopover id="pck-actions-prog" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
-              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
+              <MpButton variant="primary" class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList><MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">{{ t('Cancel task') }}</MpPopoverListItem></MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
         </div>
-        <button v-else class="detail-btn detail-btn--primary" @click="router.push(`/packing/${orderId}/pack`)">{{ t('Continue matching') }}</button>
+        <MpButton v-else variant="primary" class="detail-btn detail-btn--primary" @click="router.push(`/packing/${orderId}/pack`)">{{ t('Continue matching') }}</MpButton>
       </template>
-      <button v-else-if="localStatus === 'completed' && linkedDelivery.length" class="detail-btn detail-btn--primary" @click="viewDelivery">
+      <MpButton v-else-if="localStatus === 'completed' && linkedDelivery.length" variant="primary" class="detail-btn detail-btn--primary" @click="viewDelivery">
         {{ t('View delivery') }}
-      </button>
+      </MpButton>
     </footer>
 
     <!-- ── Cancel confirmation ── -->
@@ -703,8 +703,8 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">{{ t('Keep task') }}</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ t('Cancel task') }}</button>
+            <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">{{ t('Keep task') }}</MpButton>
+            <MpButton variant="danger" class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ t('Cancel task') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -715,7 +715,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 
   <div v-else class="pck-not-found">
     <p>{{ t('Packing task not found.') }}</p>
-    <button class="detail-breadcrumb" @click="goBack">{{ t('Back to Packing') }}</button>
+    <MpButton variant="ghost" class="detail-breadcrumb" @click="goBack">{{ t('Back to Packing') }}</MpButton>
   </div>
 
   <ViewBatchDrawer

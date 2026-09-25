@@ -4,7 +4,7 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  MpIcon, MpSpinner, css, toast,
+  MpIcon, MpSpinner, css, toast, MpButton,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
@@ -220,33 +220,33 @@ function confirmDelete() {
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">{{ t('Receipts') }}</button>
+        <MpButton class="detail-breadcrumb" variant="ghost" @click="goBack">{{ t('Receipts') }}</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ detail.purchaseNo }}</h1>
           <ErpStatusBadge v-if="receipt" :status="receipt.status" :type="receipt.status === 'pending' ? 'announcement' : undefined" badge-for="additionalInformation" size="md" />
           <MpPopover id="rcd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" :aria-label="t('Switch transaction')">
+              <MpButton class="detail-jump-chevron" variant="secondary" :aria-label="t('Switch transaction')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
+                  <MpButton v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" variant="ghost" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
-                  </button>
+                  </MpButton>
                 </div>
                 <div class="detail-jump-list">
-                  <button v-for="o in jumpResults" :key="o.id" class="detail-jump-item" @click="jumpTo(o.id)">
+                  <MpButton v-for="o in jumpResults" :key="o.id" class="detail-jump-item" variant="secondary" @click="jumpTo(o.id)">
                     <span class="detail-jump-item-number">{{ o.purchaseNo }}</span>
                     <span class="detail-jump-item-customer">{{ o.warehouseName }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found.') }}</p>
                 </div>
               </div>
@@ -493,12 +493,12 @@ function confirmDelete() {
            Edit order / Cancel/Close / Delete actions (never a standalone footer button). -->
       <template v-if="canCreateReceivingTask(orderId)">
         <div v-if="canEdit || canCancelAction || isManual" class="detail-split-btn">
-          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="openPurchaseReceiving">{{ t('Create purchase receiving') }}</button>
+          <MpButton class="detail-btn detail-btn--primary detail-split-btn__main" variant="primary" @click="openPurchaseReceiving">{{ t('Create purchase receiving') }}</MpButton>
           <MpPopover id="rcd-actions-recv" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
-              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
+              <MpButton class="detail-btn detail-btn--primary detail-split-btn__chevron" variant="primary" :aria-label="t('More actions')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
@@ -509,16 +509,16 @@ function confirmDelete() {
             </MpPopoverContent>
           </MpPopover>
         </div>
-        <button v-else class="detail-btn detail-btn--primary" @click="openPurchaseReceiving">{{ t('Create purchase receiving') }}</button>
+        <MpButton v-else class="detail-btn detail-btn--primary" variant="primary" @click="openPurchaseReceiving">{{ t('Create purchase receiving') }}</MpButton>
       </template>
 
       <!-- No create action left, but the receipt is still editable/cancellable/deletable -->
       <MpPopover v-else-if="canEdit || canCancelAction || isManual" id="rcd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--primary">
+          <MpButton class="detail-btn detail-btn--primary" variant="primary">
             {{ t('Actions') }}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -542,8 +542,8 @@ function confirmDelete() {
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">{{ t('Keep receipt') }}</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ isPartialClose ? t('Close receipt') : t('Cancel receipt') }}</button>
+            <MpButton class="btn-enterprise btn-enterprise--secondary" variant="secondary" @click="closeCancelModal">{{ t('Keep receipt') }}</MpButton>
+            <MpButton class="btn-enterprise btn-enterprise--danger" variant="danger" @click="confirmCancel">{{ isPartialClose ? t('Close receipt') : t('Cancel receipt') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -561,8 +561,8 @@ function confirmDelete() {
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="closeDeleteModal">{{ t('Keep receipt') }}</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">{{ t('Delete') }}</button>
+            <MpButton class="btn-enterprise btn-enterprise--secondary" variant="secondary" @click="closeDeleteModal">{{ t('Keep receipt') }}</MpButton>
+            <MpButton class="btn-enterprise btn-enterprise--danger" variant="danger" @click="confirmDelete">{{ t('Delete') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>

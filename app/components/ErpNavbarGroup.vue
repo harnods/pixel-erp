@@ -7,6 +7,7 @@
  * Layout mirrors Figma "Menu Group" (node 4141:450).
  */
 import { computed } from 'vue'
+import { MpButton } from '@mekari/pixel3'
 import { infoToast } from '~/utils/toasts'
 import { toast } from '@mekari/pixel3'
 import { isHrPath } from '~/utils/hrRoutes'
@@ -36,9 +37,10 @@ function openProduct(item: RailItem) {
 
 <template>
   <nav class="navbar-group" aria-label="Product navigation">
-    <button
+    <MpButton
       v-for="item in railItems"
       :key="item.key"
+      variant="ghost"
       class="ng-item"
       :class="{ active: activeProduct === item.key }"
       :aria-label="item.label"
@@ -50,7 +52,7 @@ function openProduct(item: RailItem) {
         <img :src="`https://cdn.mekari.design/icons/${item.icon}-fill.svg`" class="ng-icon ng-icon-fill" alt="" />
       </span>
       <span class="ng-label">{{ item.label }}</span>
-    </button>
+    </MpButton>
   </nav>
 </template>
 

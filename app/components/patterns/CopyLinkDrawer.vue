@@ -9,6 +9,7 @@
  * click is allowed to close it — there is no in-progress input to lose.
  */
 import { MpIcon, MpButton, toast } from '@mekari/pixel3'
+import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
 import { useLocale } from '~/composables/useLocale'
 
 const props = defineProps<{
@@ -43,79 +44,38 @@ async function copy(url: string) {
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="cld">
-      <div v-if="open" class="cld-overlay">
-        <div class="cld-panel" role="dialog" :aria-label="heading">
-          <header class="cld-header">
-            <div class="cld-header-text">
-              <span class="cld-title">{{ heading }}</span>
-              <span class="cld-caption">{{ captionText }}</span>
-            </div>
-            <MpButton class="cld-close" :aria-label="t('Close')" @click="close">
-              <MpIcon name="close" size="md" />
-            </MpButton>
-          </header>
-
-          <div class="cld-body">
-            <ul class="cld-list">
-              <li v-for="(item, i) in items" :key="`${i}-${item.url}`" class="cld-row">
-                <div class="cld-row-left">
-                  <span class="cld-row-title">{{ item.title }}</span>
-                  <span v-if="item.subtitle" class="cld-row-subtitle">{{ item.subtitle }}</span>
-                </div>
-                <div class="cld-row-right">
-                  <a class="cld-row-url" :href="item.url" target="_blank" rel="noopener noreferrer" @click.prevent>{{ item.url }}</a>
-                  <MpButton variant="ghost" is-rounded :aria-label="t('Copy link')" @click="copy(item.url)">
-                    <MpIcon name="copy" size="sm" />
-                  </MpButton>
-                </div>
-              </li>
-            </ul>
-          </div>
-
-          <footer class="cld-footer">
-            <MpButton variant="secondary" is-rounded @click="emit('download-csv')">
-              {{ t('Download CSV') }}
-            </MpButton>
-          </footer>
-        </div>
+  <ErpDrawer :is-open="open" :title="heading" width="480px" @close="close">
+    <template #title>
+      <div class="cld-header-text">
+        <span class="cld-title">{{ heading }}</span>
+        <span class="cld-caption">{{ captionText }}</span>
       </div>
-    </Transition>
-  </Teleport>
+    </template>
+    <template #body>
+      <ul class="cld-list">
+        <li v-for="(item, i) in items" :key="`${i}-${item.url}`" class="cld-row">
+          <div class="cld-row-left">
+            <span class="cld-row-title">{{ item.title }}</span>
+            <span v-if="item.subtitle" class="cld-row-subtitle">{{ item.subtitle }}</span>
+          </div>
+          <div class="cld-row-right">
+            <a class="cld-row-url" :href="item.url" target="_blank" rel="noopener noreferrer" @click.prevent>{{ item.url }}</a>
+            <MpButton variant="ghost" is-rounded :aria-label="t('Copy link')" @click="copy(item.url)">
+              <MpIcon name="copy" size="sm" />
+            </MpButton>
+          </div>
+        </li>
+      </ul>
+    </template>
+    <template #footer>
+      <MpButton variant="secondary" is-rounded @click="emit('download-csv')">
+        {{ t('Download CSV') }}
+      </MpButton>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>
-.cld-enter-active { transition: background-color 250ms ease; }
-.cld-leave-active { transition: background-color 250ms ease; }
-.cld-enter-from, .cld-leave-to { background-color: transparent; }
-.cld-enter-active .cld-panel { transition: transform 350ms ease-out; }
-.cld-leave-active .cld-panel { transition: transform 250ms ease-in; }
-.cld-enter-from .cld-panel,
-.cld-leave-to .cld-panel { transform: translateX(calc(100% + 12px)); }
-
-.cld-overlay {
-  position: fixed; inset: 0; z-index: 1300;
-  background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45));
-  display: flex; justify-content: flex-end;
-}
-.cld-panel {
-  margin: var(--mp-spacing-3, 12px);
-  width: min(480px, calc(100% - 24px));
-  height: calc(100% - 24px);
-  display: flex; flex-direction: column;
-  background: var(--mp-background-stage, #fff);
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.cld-header {
-  flex-shrink: 0; display: flex; align-items: flex-start; justify-content: space-between;
-  gap: var(--mp-spacing-3, 12px);
-  padding: var(--mp-spacing-3, 12px) var(--mp-spacing-3, 12px) var(--mp-spacing-3, 12px) var(--mp-spacing-4, 16px);
-  background: var(--mp-background-neutral-subtle, #f0f1f3);
-  border-bottom: 1px solid var(--mp-border-default, #dfe1e6);
-}
 .cld-header-text { display: flex; flex-direction: column; gap: var(--mp-spacing-1, 4px); min-width: 0; }
 .cld-title {
   font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600);
@@ -125,16 +85,6 @@ async function copy(url: string) {
   font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-regular, 400);
   color: var(--mp-text-subtle, #67707a);
 }
-.cld-close {
-  flex-shrink: 0;
-  display: inline-flex !important; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important; min-width: 0 !important;
-  border: none !important; background: none !important; border-radius: var(--mp-radii-md, 6px);
-  cursor: pointer; color: var(--mp-icon-default, #4b545c);
-}
-.cld-close:hover { background: var(--mp-background-neutral-hovered, #e6e8eb); }
-
-.cld-body { flex: 1; overflow-y: auto; padding: var(--mp-spacing-4, 16px); }
 
 .cld-list { list-style: none; margin: 0; padding: 0; }
 .cld-row {
@@ -165,9 +115,4 @@ async function copy(url: string) {
 }
 .cld-row-url:hover { text-decoration: underline; }
 
-.cld-footer {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end;
-  padding: var(--mp-spacing-3, 12px) var(--mp-spacing-4, 16px);
-  border-top: 1px solid var(--mp-border-default, #dfe1e6);
-}
 </style>

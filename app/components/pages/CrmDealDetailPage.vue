@@ -301,12 +301,10 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
       <div class="detail-titlerow-right">
         <!-- Ongoing: "Mark as won" split button + inline stage picker -->
         <div v-if="!isArchived && isOngoing" class="detail-split-btn">
-          <button class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="markWon">{{ t('Mark as won') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="markWon">{{ t('Mark as won') }}</MpButton>
           <MpPopover id="deal-stage-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
             <MpPopoverTrigger>
-              <button class="btn-enterprise btn-enterprise--primary detail-split-btn__chevron" :aria-label="t('Change stage')">
-                <MpIcon name="chevrons-down" size="sm" />
-              </button>
+              <MpButton class="btn-enterprise btn-enterprise--primary detail-split-btn__chevron" left-icon="chevrons-down" :aria-label="t('Change stage')" />
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
               <p class="deal-stage-menu-label">{{ t('Move to stage') }}</p>
@@ -321,13 +319,13 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
           </MpPopover>
         </div>
         <!-- Won & not converted: manual conversion via read-only review (PRD). -->
-        <button v-else-if="!isArchived && isWon && !isConverted" class="btn-enterprise btn-enterprise--primary" @click="openConvertReview">{{ t('Create') }} {{ t(convTarget) }}</button>
+        <MpButton v-else-if="!isArchived && isWon && !isConverted" class="btn-enterprise btn-enterprise--primary" @click="openConvertReview">{{ t('Create') }} {{ t(convTarget) }}</MpButton>
         <!-- Converted: open the created ERP transaction. -->
-        <button v-else-if="!isArchived && isConverted && erpTxn" class="btn-enterprise btn-enterprise--secondary" @click="openErpTxn">{{ t('Open in ERP') }}</button>
+        <MpButton v-else-if="!isArchived && isConverted && erpTxn" class="btn-enterprise btn-enterprise--secondary" @click="openErpTxn">{{ t('Open in ERP') }}</MpButton>
         <!-- Lost: reopen -->
-        <button v-else-if="!isArchived && isLost" class="btn-enterprise btn-enterprise--primary" @click="openReopen">{{ t('Reopen deal') }}</button>
+        <MpButton v-else-if="!isArchived && isLost" class="btn-enterprise btn-enterprise--primary" @click="openReopen">{{ t('Reopen deal') }}</MpButton>
         <!-- Archived: restore -->
-        <button v-else-if="isArchived" class="btn-enterprise btn-enterprise--secondary" @click="onRestore">{{ t('Restore') }}</button>
+        <MpButton v-else-if="isArchived" class="btn-enterprise btn-enterprise--secondary" @click="onRestore">{{ t('Restore') }}</MpButton>
 
         <!-- Kebab -->
         <MpPopover id="deal-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
@@ -522,7 +520,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                   <div class="filter-search">
                     <MpIcon name="search" size="sm" />
                     <input v-model="productSearch" class="filter-search-input" type="text" :placeholder="t('Search products…')" />
-                    <button v-if="productSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="productSearch = ''"><MpIcon name="close" size="sm" /></button>
+                    <MpButton v-if="productSearch" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="productSearch = ''" />
                   </div>
                   <MpButton variant="tertiary" is-rounded left-icon="add" @click="productDrawerOpen = true">{{ t('Add product') }}</MpButton>
                 </div>
@@ -623,7 +621,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                 <div class="filter-search">
                   <MpIcon name="search" size="sm" />
                   <input v-model="fileSearch" class="filter-search-input" type="text" :placeholder="t('Search files…')" />
-                  <button v-if="fileSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="fileSearch = ''"><MpIcon name="close" size="sm" /></button>
+                  <MpButton v-if="fileSearch" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="fileSearch = ''" />
                 </div>
                 <MpButton variant="tertiary" is-rounded @click="pickFiles">{{ t('Upload file') }}</MpButton>
                 <input ref="fileInput" type="file" multiple class="deal-files-input" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.xls,.xlsx,.csv,.doc,.docx" @change="onFileInput" />

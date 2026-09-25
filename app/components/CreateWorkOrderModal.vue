@@ -100,11 +100,7 @@ function handleContinue() {
         <div class="cwo-modal" role="dialog" :aria-label="title" @click.stop>
           <header class="cwo-header">
             <h2 class="cwo-header-title">{{ title }}</h2>
-            <button class="cwo-close" aria-label="Close" @click="emit('close')">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-              </svg>
-            </button>
+            <MpButton class="cwo-close" variant="ghost" size="sm" left-icon="close" aria-label="Close" @click="emit('close')" />
           </header>
 
           <div v-if="product" class="cwo-body">
@@ -231,13 +227,7 @@ function handleContinue() {
   background: var(--mp-background-neutral-subtle);
 }
 .cwo-header-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); }
-.cwo-close {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
-  border: none; background: none; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-text-secondary);
-}
-.cwo-close:hover { background: var(--mp-background-neutral-hovered); }
+.cwo-close { color: var(--mp-text-secondary); }
 
 .cwo-body { flex: 1; overflow-y: auto; padding: var(--mp-spacing-6); }
 .cwo-product { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-xl, 32px); color: var(--mp-text-default); }

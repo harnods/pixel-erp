@@ -19,7 +19,7 @@ import { useReportFullscreen } from '~/composables/useReportFullscreen'
 import { useAireneBridge } from '~/composables/useAireneBridge'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import {
-  MpIcon, MpTooltip, MpToggle, MpSkeleton, MpSelect,
+  MpButton, MpIcon, MpTooltip, MpToggle, MpSkeleton, MpSelect,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
 } from '@mekari/pixel3'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -380,12 +380,12 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
     <!-- ── Title bar — the budget is switchable from the title itself ── -->
     <header v-if="!fullscreen" class="bvr-titlebar">
       <div class="bvr-titlebar-left">
-        <button class="bvr-breadcrumb" type="button" @click="router.push('/financial-report')">{{ t('Financials') }}</button>
+        <MpButton class="bvr-breadcrumb" variant="link" type="button" @click="router.push('/financial-report')">{{ t('Financials') }}</MpButton>
         <div class="bvr-title-row">
           <h1 class="bvr-title">{{ t('Budget Variance') }}: {{ budget.name }} <span class="bvr-title-cur">(IDR)</span></h1>
           <MpPopover id="bvr-budget" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="bvr-title-caret" type="button" :aria-label="t('Switch budget')"><MpIcon name="caret-down" size="sm" /></button>
+              <MpButton class="bvr-title-caret" variant="ghost" type="button" left-icon="caret-down" :aria-label="t('Switch budget')" />
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content' })">
               <MpPopoverList>
@@ -405,26 +405,27 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
             <span class="bvr-field-label">{{ t('Budget ends in') }}</span>
             <MpPopover id="bvr-endmonth" use-portal :is-keep-alive="false" placement="bottom-start">
               <MpPopoverTrigger>
-                <button class="bvr-monthfield" type="button">
+                <MpButton class="bvr-monthfield" variant="secondary" type="button">
                   <span>{{ endMonthLabel }}</span>
                   <MpIcon name="calendar" size="sm" />
-                </button>
+                </MpButton>
               </MpPopoverTrigger>
               <MpPopoverContent :class="css({ width: 'max-content', padding: '12px' })">
                 <div class="bvr-monthgrid-head">
-                  <button class="bvr-monthnav" type="button" :aria-label="t('Previous year')" @click="monthPickerYear--"><MpIcon name="caret-left" size="sm" /></button>
+                  <MpButton class="bvr-monthnav" variant="ghost" type="button" left-icon="caret-left" :aria-label="t('Previous year')" @click="monthPickerYear--" />
                   <span class="bvr-monthgrid-year">{{ monthPickerYear }}</span>
-                  <button class="bvr-monthnav" type="button" :aria-label="t('Next year')" @click="monthPickerYear++"><MpIcon name="caret-right" size="sm" /></button>
+                  <MpButton class="bvr-monthnav" variant="ghost" type="button" left-icon="caret-right" :aria-label="t('Next year')" @click="monthPickerYear++" />
                 </div>
                 <div class="bvr-monthgrid">
-                  <button
+                  <MpButton
                     v-for="(m, i) in MONTHS"
                     :key="m"
                     class="bvr-monthcell"
+                    variant="ghost"
                     :class="{ 'is-active': pendingEndMonth.getFullYear() === monthPickerYear && pendingEndMonth.getMonth() === i }"
                     type="button"
                     @click="pickMonth(i)"
-                  >{{ m }}</button>
+                  >{{ m }}</MpButton>
                 </div>
               </MpPopoverContent>
             </MpPopover>
@@ -462,31 +463,30 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
             </MpPopover>
           </div>
 
-          <button class="bvr-apply" type="button" @click="applyReport">{{ t('Apply') }}</button>
-          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="drawerOpen = true">
-            <MpIcon name="filter" size="sm" /> {{ t('All filters') }}
+          <MpButton class="bvr-apply" variant="primary" type="button" @click="applyReport">{{ t('Apply') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" left-icon="filter" @click="drawerOpen = true">
+            {{ t('All filters') }}
             <span v-if="activeFilterCount" class="bvr-allfilters-count">{{ activeFilterCount }}</span>
-          </button>
+          </MpButton>
         </div>
 
         <div class="bvr-controls-right">
           <MpTooltip id="bvr-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
-            <button class="bvr-icon-btn bvr-icon-btn--airene" type="button" :aria-label="t('Ask Airene')" @click="openAirene">
+            <MpButton class="bvr-icon-btn bvr-icon-btn--airene" variant="ghost" type="button" :aria-label="t('Ask Airene')" @click="openAirene">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                 <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
                 <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
               </svg>
-            </button>
+            </MpButton>
           </MpTooltip>
 
           <ColumnSettingsMenu id="bvr-columns" :items="columnItems" :visibility="colVis" :tooltip="t('Column settings')" />
 
           <MpPopover id="bvr-export" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
             <MpPopoverTrigger>
-              <button class="btn-enterprise btn-enterprise--secondary bvr-export" type="button">
+              <MpButton class="btn-enterprise btn-enterprise--secondary bvr-export" type="button" right-icon="caret-down">
                 {{ t('Export') }}
-                <MpIcon name="caret-down" size="sm" />
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
               <MpPopoverList>
@@ -501,11 +501,11 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
       <!-- ── Compare — opens the shared Comparison drawer ── -->
       <div v-if="!fullscreen" class="bvr-comparebar">
         <MpToggle id="bvr-compare" :is-checked="compareOn" @change="onCompareControl" />
-        <button class="bvr-compare-trigger" type="button" @click="compareDrawerOpen = true">
+        <MpButton class="bvr-compare-trigger" variant="ghost" type="button" @click="compareDrawerOpen = true">
           <span :class="{ 'bvr-compare-label': compareOn }">{{ t('Compare') }}{{ compareOn ? ':' : '' }}</span>
           <span v-if="compareOn" class="bvr-compare-basis">{{ compareCaption }}</span>
           <MpIcon name="caret-down" size="sm" />
-        </button>
+        </MpButton>
       </div>
       <p v-if="!fullscreen && formError" class="bvr-form-error">{{ formError }}</p>
       <p v-if="!fullscreen && compareOn && isDemoDimensions" class="bvr-demo-note">
@@ -515,26 +515,26 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
 
       <!-- Active-filter badges -->
       <div v-if="!fullscreen && activeFilterCount" class="bvr-badges">
-        <span v-if="filters.accountKeyword" class="bvr-fbadge">“{{ filters.accountKeyword }}”<button type="button" :aria-label="t('Remove')" @click="filters.accountKeyword = ''"><MpIcon name="close" size="sm" /></button></span>
-        <span v-if="filters.onlyExceeding" class="bvr-fbadge">{{ t('Only accounts exceeding budget') }}<button type="button" :aria-label="t('Remove')" @click="filters.onlyExceeding = false"><MpIcon name="close" size="sm" /></button></span>
-        <span v-if="!filters.showZero" class="bvr-fbadge">{{ t('Hiding accounts with no budget') }}<button type="button" :aria-label="t('Remove')" @click="filters.showZero = true"><MpIcon name="close" size="sm" /></button></span>
-        <button class="bvr-reset" type="button" @click="resetFilters">{{ t('Reset filter') }}</button>
+        <span v-if="filters.accountKeyword" class="bvr-fbadge">“{{ filters.accountKeyword }}”<MpButton variant="ghost" type="button" left-icon="close" :aria-label="t('Remove')" @click="filters.accountKeyword = ''" /></span>
+        <span v-if="filters.onlyExceeding" class="bvr-fbadge">{{ t('Only accounts exceeding budget') }}<MpButton variant="ghost" type="button" left-icon="close" :aria-label="t('Remove')" @click="filters.onlyExceeding = false" /></span>
+        <span v-if="!filters.showZero" class="bvr-fbadge">{{ t('Hiding accounts with no budget') }}<MpButton variant="ghost" type="button" left-icon="close" :aria-label="t('Remove')" @click="filters.showZero = true" /></span>
+        <MpButton class="bvr-reset" variant="link" type="button" @click="resetFilters">{{ t('Reset filter') }}</MpButton>
       </div>
 
       <!-- ── View tabs ── -->
       <div v-if="!fullscreen" class="bvr-viewbar">
         <div class="bvr-views">
-          <button class="bvr-viewtab" :class="{ 'is-active': activeViewId === 'default' }" type="button" @click="selectView('default')">{{ t('Default view') }}</button>
+          <MpButton class="bvr-viewtab" variant="ghost" :class="{ 'is-active': activeViewId === 'default' }" type="button" @click="selectView('default')">{{ t('Default view') }}</MpButton>
 
           <template v-for="v in views" :key="v.id">
             <span v-if="editingViewId === v.id" class="bvr-viewtab bvr-viewtab--editing">
               <input v-model="editViewName" class="bvr-viewtab-input bvr-view-edit" @keydown.enter.prevent="commitEditView" @keydown.esc="cancelEditView" @blur="commitEditView" />
             </span>
             <span v-else class="bvr-viewtab-wrap">
-              <button class="bvr-viewtab" :class="{ 'is-active': activeViewId === v.id }" type="button" @click="selectView(v.id)">{{ v.name }}</button>
+              <MpButton class="bvr-viewtab" variant="ghost" :class="{ 'is-active': activeViewId === v.id }" type="button" @click="selectView(v.id)">{{ v.name }}</MpButton>
               <MpPopover :id="`bvr-view-${v.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
                 <MpPopoverTrigger>
-                  <button class="bvr-view-kebab" type="button" :aria-label="t('View options')"><MpIcon name="menu-kebab" size="sm" /></button>
+                  <MpButton class="bvr-view-kebab" variant="ghost" type="button" left-icon="menu-kebab" :aria-label="t('View options')" />
                 </MpPopoverTrigger>
                 <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
                   <MpPopoverList>
@@ -549,13 +549,13 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
           <span v-if="addingView" class="bvr-viewtab bvr-viewtab--editing">
             <input ref="newViewInput" v-model="newViewName" class="bvr-viewtab-input" :placeholder="t('View name')" @keydown.enter.prevent="commitAddView" @keydown.esc="cancelAddView" @blur="commitAddView" />
           </span>
-          <button v-else class="bvr-addview" type="button" @click="startAddView"><MpIcon name="add" size="sm" /> {{ t('Add view') }}</button>
+          <MpButton v-else class="bvr-addview" variant="ghost" type="button" left-icon="add" @click="startAddView">{{ t('Add view') }}</MpButton>
 
-          <button class="bvr-allviews" type="button" @click="allViewsOpen = true">{{ t('All views') }}</button>
+          <MpButton class="bvr-allviews" variant="link" type="button" @click="allViewsOpen = true">{{ t('All views') }}</MpButton>
         </div>
         <div class="bvr-viewbar-right">
           <MpTooltip id="bvr-fs-enter" :label="t('Full screen')" placement="bottom-end" use-portal>
-            <button class="bvr-fs-btn" type="button" :aria-label="t('Full screen')" @click="fullscreen = true"><MpIcon name="full-screen" size="md" /></button>
+            <MpButton class="bvr-fs-btn" variant="ghost" type="button" left-icon="full-screen" :aria-label="t('Full screen')" @click="fullscreen = true" />
           </MpTooltip>
         </div>
       </div>
@@ -565,7 +565,7 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
         <div v-if="fullscreen" class="bvr-fs-topbar">
           <span class="bvr-fs-title">{{ t('Budget Variance') }}: {{ budget.name }} <span class="bvr-title-cur">(IDR)</span></span>
           <MpTooltip id="bvr-fs-exit" :label="t('Exit full screen')" placement="bottom-end" use-portal>
-            <button class="bvr-fs-btn" type="button" :aria-label="t('Exit full screen')" @click="fullscreen = false"><MpIcon name="minimize" size="md" /></button>
+            <MpButton class="bvr-fs-btn" variant="ghost" type="button" left-icon="minimize" :aria-label="t('Exit full screen')" @click="fullscreen = false" />
           </MpTooltip>
         </div>
 
@@ -669,7 +669,7 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
           <div v-else class="bvr-empty">
             <img src="/illustrations/empty-folder.png" alt="" class="bvr-empty-img" width="240" height="200" />
             <p class="bvr-empty-title">{{ t('No data matches this filter.') }}</p>
-            <button class="bvr-empty-cta" type="button" @click="resetFilters">{{ t('Reset filter') }}</button>
+            <MpButton class="bvr-empty-cta" variant="secondary" type="button" @click="resetFilters">{{ t('Reset filter') }}</MpButton>
           </div>
         </template>
       </div>
@@ -687,13 +687,13 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
         <div class="bvr-vd-panel" role="dialog" :aria-label="t('All views')">
           <header class="bvr-vd-head">
             <span class="bvr-vd-title">{{ t('All views') }}</span>
-            <button class="bvr-vd-close" type="button" :aria-label="t('Close')" @click="allViewsOpen = false"><MpIcon name="close" size="md" /></button>
+            <MpButton class="bvr-vd-close" variant="ghost" type="button" left-icon="close" :aria-label="t('Close')" @click="allViewsOpen = false" />
           </header>
           <div class="bvr-vd-body">
-            <button class="bvr-view-item" :class="{ 'is-active': activeViewId === 'default' }" type="button" @click="selectView('default'); allViewsOpen = false">{{ t('Default view') }}</button>
+            <MpButton class="bvr-view-item" variant="ghost" :class="{ 'is-active': activeViewId === 'default' }" type="button" @click="selectView('default'); allViewsOpen = false">{{ t('Default view') }}</MpButton>
             <div v-for="v in views" :key="v.id" class="bvr-view-item-row">
-              <button class="bvr-view-item" :class="{ 'is-active': activeViewId === v.id }" type="button" @click="selectView(v.id); allViewsOpen = false">{{ v.name }}</button>
-              <button class="bvr-view-del" type="button" :aria-label="t('Delete')" @click="askDeleteView(v)"><MpIcon name="trash" size="sm" /></button>
+              <MpButton class="bvr-view-item" variant="ghost" :class="{ 'is-active': activeViewId === v.id }" type="button" @click="selectView(v.id); allViewsOpen = false">{{ v.name }}</MpButton>
+              <MpButton class="bvr-view-del" variant="ghost" type="button" left-icon="trash" :aria-label="t('Delete')" @click="askDeleteView(v)" />
             </div>
             <p v-if="!views.length" class="bvr-vd-hint">{{ t('Saved views will appear here.') }}</p>
           </div>

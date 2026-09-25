@@ -15,7 +15,7 @@
  * mirroring CrmModulesPage so every Settings surface matches.
  */
 import { computed, reactive, ref, watch } from 'vue'
-import { MpIcon } from '@mekari/pixel3'
+import { MpButton, MpIcon } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -164,7 +164,7 @@ watch(statusFilter, () => setPage(1))
             <div class="filter-search">
               <MpIcon name="search" size="sm" />
               <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
-              <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''"><MpIcon name="close" size="sm" /></button>
+              <MpButton v-if="search" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="search = ''" />
             </div>
           </div>
         </template>
@@ -198,7 +198,7 @@ watch(statusFilter, () => setPage(1))
         </template>
 
         <template #actions="{ row }">
-          <button class="btn-enterprise btn-enterprise--secondary" type="button" @click.stop="manage((row as unknown as IntegrationRow).id)">{{ t('Manage') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--secondary" type="button" @click.stop="manage((row as unknown as IntegrationRow).id)">{{ t('Manage') }}</MpButton>
         </template>
       </ErpTablePage>
     </div>

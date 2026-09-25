@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import {
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpButton, css,
 } from '@mekari/pixel3'
 import { warehouses } from '~/data/warehouses'
 import { TODAY } from '~/data/master'
@@ -145,10 +145,10 @@ function stageAccent(s: StageCard): string {
     <div class="filter-bar">
       <MpPopover :id="`ovw-wh-${direction}`" is-close-on-select>
         <MpPopoverTrigger>
-          <button type="button" class="filter-trigger" :style="{ width: '200px' }">
+          <MpButton type="button" class="filter-trigger" variant="ghost" :style="{ width: '200px' }">
             <span class="filter-trigger-label">{{ warehouseLabel }}</span>
             <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', maxWidth: '320px' })">
           <MpPopoverList>
@@ -160,10 +160,10 @@ function stageAccent(s: StageCard): string {
 
       <MpPopover :id="`ovw-op-${direction}`" is-close-on-select>
         <MpPopoverTrigger>
-          <button type="button" class="filter-trigger" :style="{ width: '190px' }">
+          <MpButton type="button" class="filter-trigger" variant="ghost" :style="{ width: '190px' }">
             <span class="filter-trigger-label">{{ operatorLabel }}</span>
             <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '190px', width: 'max-content', maxWidth: '320px' })">
           <MpPopoverList>
@@ -181,10 +181,10 @@ function stageAccent(s: StageCard): string {
           <h2 class="section-title">{{ t('Live operations') }}</h2>
           <MpPopover :id="`ovw-day-${direction}`" is-close-on-select>
             <MpPopoverTrigger>
-              <button type="button" class="filter-trigger filter-trigger--auto filter-trigger--ghost">
+              <MpButton type="button" class="filter-trigger filter-trigger--auto filter-trigger--ghost" variant="ghost">
                 <span class="filter-trigger-label">{{ liveDayLabel }}</span>
                 <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
               <MpPopoverList>
@@ -196,10 +196,10 @@ function stageAccent(s: StageCard): string {
         </div>
         <div class="section-head-right">
           <span class="updated">{{ t('Updated') }} {{ refreshedAt }}</span>
-          <button class="link-btn" @click="refresh">
+          <MpButton class="link-btn" variant="ghost" @click="refresh">
             <svg class="link-ico" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12a8 8 0 0 1 13.66-5.66M20 12a8 8 0 0 1-13.66 5.66M17.5 3.5V8H13M6.5 20.5V16H11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
             {{ t('Refresh') }}
-          </button>
+          </MpButton>
         </div>
       </div>
 
@@ -239,10 +239,10 @@ function stageAccent(s: StageCard): string {
           <h2 class="section-title">{{ t('Performance') }}</h2>
           <MpPopover :id="`ovw-period-${direction}`" is-close-on-select>
             <MpPopoverTrigger>
-              <button type="button" class="filter-trigger filter-trigger--auto filter-trigger--ghost">
+              <MpButton type="button" class="filter-trigger filter-trigger--auto filter-trigger--ghost" variant="ghost">
                 <span class="filter-trigger-label">{{ t('Period') }}: {{ t(periodLabel) }}</span>
                 <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '260px', width: 'max-content' })">
               <MpPopoverList>
@@ -266,12 +266,12 @@ function stageAccent(s: StageCard): string {
           </div>
           <div class="ov-head-actions">
             <div class="seg-toggle">
-              <button :class="{ active: statMode === 'avg' }" @click="statMode = 'avg'">{{ t('Average') }}</button>
-              <button :class="{ active: statMode === 'median' }" @click="statMode = 'median'">{{ t('Median') }}</button>
+              <MpButton :class="{ active: statMode === 'avg' }" variant="ghost" @click="statMode = 'avg'">{{ t('Average') }}</MpButton>
+              <MpButton :class="{ active: statMode === 'median' }" variant="ghost" @click="statMode = 'median'">{{ t('Median') }}</MpButton>
             </div>
-            <button type="button" class="ov-shortcut" :aria-label="t('Open report')">
+            <MpButton type="button" class="ov-shortcut" variant="ghost" :aria-label="t('Open report')">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 17L17 7M17 7H7M17 7V17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
+            </MpButton>
           </div>
         </div>
 
@@ -313,7 +313,7 @@ function stageAccent(s: StageCard): string {
                 <span class="metric-card-title">{{ t(b.label) }}</span>
                 <span class="metric-card-desc">{{ t(b.desc) }}</span>
               </div>
-              <button type="button" class="metric-shortcut" :aria-label="t('Open report')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 17L17 7M17 7H7M17 7V17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+              <MpButton type="button" class="metric-shortcut" variant="ghost" :aria-label="t('Open report')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 17L17 7M17 7H7M17 7V17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></MpButton>
             </div>
             <div class="metric-card-divider" />
             <div class="tl-stats">

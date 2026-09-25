@@ -1051,7 +1051,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
     <!-- Section tabs — OUTSIDE the white stage (rule/erp-tabs-pattern: section tabs
          sit on the neutral-subtle bar below the title, not as MpTabs in the stage). -->
     <div v-if="mod" class="page-tabs-bar">
-      <button v-for="tab in tabs" :key="tab.key" type="button" class="page-tab" :class="{ 'page-tab--active': activeTab === tab.key }" @click="switchTab(tab.key)">{{ t(tab.label) }}</button><!-- pixel-police-allow -->
+      <MpButton v-for="tab in tabs" :key="tab.key" type="button" class="page-tab" :class="{ 'page-tab--active': activeTab === tab.key }" @click="switchTab(tab.key)">{{ t(tab.label) }}</MpButton><!-- pixel-police-allow -->
     </div>
 
     <div class="detail-stage">
@@ -1093,18 +1093,18 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                   <MpInputLeftAddon id="setup-name-addon" has-background>
                     <MpPopover id="module-icon-menu" :is-open="iconMenuOpen" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start" @close="iconMenuOpen = false">
                       <MpPopoverTrigger>
-                        <button type="button" class="setup-icon-trigger" :aria-label="t('Change icon')" @click="iconMenuOpen = !iconMenuOpen">
+                        <MpButton type="button" class="setup-icon-trigger" :aria-label="t('Change icon')" @click="iconMenuOpen = !iconMenuOpen">
                           <MpIcon :name="draft.icon" size="md" />
                           <MpIcon name="chevrons-down" size="sm" class="setup-icon-caret" />
-                        </button>
+                        </MpButton>
                       </MpPopoverTrigger>
                       <MpPopoverContent :class="css({ padding: 'var(--mp-spacing-2)', width: '240px' })">
                         <div class="pipe-icon-grid">
-                          <button
+                          <MpButton
                             v-for="ic in CRM_MODULE_ICONS" :key="ic" type="button"
                             class="pipe-icon-choice" :class="{ 'pipe-icon-choice--active': draft.icon === ic }"
-                            :aria-label="ic" @click="pickIcon(ic)"
-                          ><MpIcon :name="ic" size="md" /></button>
+                            :left-icon="ic" :aria-label="ic" @click="pickIcon(ic)"
+                          />
                         </div>
                       </MpPopoverContent>
                     </MpPopover>
@@ -1231,7 +1231,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                   <div class="filter-search">
                     <MpIcon name="search" size="sm" />
                     <input v-model="propSearch" class="filter-search-input" type="text" :placeholder="t('Search...')" />
-                    <button v-if="propSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="propSearch = ''"><MpIcon name="close" size="sm" /></button>
+                    <MpButton v-if="propSearch" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="propSearch = ''" />
                   </div>
                   <MpButton variant="tertiary" is-rounded left-icon="add" @click="openAddProperty()">{{ t('New property') }}</MpButton>
                 </div>
@@ -1335,11 +1335,12 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                         ><MpIcon name="drag" size="md" /></span>
                         <div class="pipe-lane-label"><span class="pipe-lane-name">{{ opt.label }}</span></div>
                         <MpTooltip v-if="!viewMode" :id="`gm-stage-vis-${opt.value}`" :label="isStageVisible(opt.value) ? t('Hide stage in this view') : t('Show stage in this view')" placement="top" use-portal>
-                          <button
+                          <MpButton
                             class="pipe-lane-vis" type="button"
+                            :left-icon="isStageVisible(opt.value) ? 'show' : 'hide'"
                             :aria-label="isStageVisible(opt.value) ? t('Hide stage in this view') : t('Show stage in this view')"
                             @click="setStageVisible(opt.value, !isStageVisible(opt.value))"
-                          ><MpIcon :name="isStageVisible(opt.value) ? 'show' : 'hide'" size="sm" /></button>
+                          />
                         </MpTooltip>
                       </div>
                       <div class="pipe-lane-cards">
@@ -1438,15 +1439,16 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                         />
                         <template v-else>
                           <span class="pipe-lane-name">{{ s.name }}</span>
-                          <button v-if="!viewMode" class="pipe-lane-edit" type="button" :aria-label="t('Rename stage')" @click="editStage(s.id)"><MpIcon name="edit" size="sm" /></button><!-- pixel-police-allow — icon-only edit affordance, styled via .pipe-lane-edit -->
+                          <MpButton v-if="!viewMode" class="pipe-lane-edit" type="button" left-icon="edit" :aria-label="t('Rename stage')" @click="editStage(s.id)" /><!-- pixel-police-allow — icon-only edit affordance, styled via .pipe-lane-edit -->
                         </template>
                       </div>
                       <MpTooltip v-if="!viewMode" :id="`stage-vis-${s.id}`" :label="isStageVisible(s.id) ? t('Hide stage in this view') : t('Show stage in this view')" placement="top" use-portal>
-                        <button
+                        <MpButton
                           class="pipe-lane-vis" type="button"
+                          :left-icon="isStageVisible(s.id) ? 'show' : 'hide'"
                           :aria-label="isStageVisible(s.id) ? t('Hide stage in this view') : t('Show stage in this view')"
                           @click="setStageVisible(s.id, !isStageVisible(s.id))"
-                        ><MpIcon :name="isStageVisible(s.id) ? 'show' : 'hide'" size="sm" /></button>
+                        />
                       </MpTooltip>
                     </div>
 
@@ -1651,8 +1653,8 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
           <div v-if="unsavedConfirmOpen" class="unsaved-coachmark">
             <p class="unsaved-coachmark-text">{{ t('You have unsaved changes on this tab. If you switch tabs now, your changes will be lost.') }}</p>
             <div class="unsaved-coachmark-actions">
-              <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="discardAndSwitch">{{ t('Continue without saving') }}</button>
-              <button type="button" class="btn-enterprise btn-enterprise--primary" @click="saveAndSwitch">{{ t('Save') }}</button>
+              <MpButton type="button" class="btn-enterprise btn-enterprise--ghost" @click="discardAndSwitch">{{ t('Continue without saving') }}</MpButton>
+              <MpButton type="button" class="btn-enterprise btn-enterprise--primary" @click="saveAndSwitch">{{ t('Save') }}</MpButton>
             </div>
             <div class="unsaved-coachmark-arrow" />
           </div>

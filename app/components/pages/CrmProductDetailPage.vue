@@ -7,7 +7,7 @@
  */
 import { computed } from 'vue'
 import { infoToast } from '~/utils/toasts'
-import { toast } from '@mekari/pixel3'
+import { toast, MpButton } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ClampText from '~/components/patterns/ClampText.vue'
 import { formatIDR } from '~/utils/currency'
@@ -25,11 +25,11 @@ const product = computed(() => getProductDetail(props.orderId))
   <div v-if="product" class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" type="button" @click="goBack">Products</button>
+        <MpButton class="detail-breadcrumb" type="button" @click="goBack">Products</MpButton>
         <h1 class="detail-title">{{ product.name }}</h1>
       </div>
       <div class="detail-bar-right">
-        <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="soon('Edit product')">Edit</button>
+        <MpButton class="btn-enterprise btn-enterprise--secondary" type="button" @click="soon('Edit product')">Edit</MpButton>
       </div>
     </header>
 
@@ -56,7 +56,7 @@ const product = computed(() => getProductDetail(props.orderId))
   </div>
 
   <div v-else class="detail-page">
-    <header class="detail-bar"><div class="detail-bar-left"><button class="detail-breadcrumb" type="button" @click="goBack">Products</button><h1 class="detail-title">Product not found</h1></div></header>
+    <header class="detail-bar"><div class="detail-bar-left"><MpButton class="detail-breadcrumb" type="button" @click="goBack">Products</MpButton><h1 class="detail-title">Product not found</h1></div></header>
   </div>
 </template>
 

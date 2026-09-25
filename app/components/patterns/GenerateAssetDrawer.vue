@@ -159,9 +159,9 @@ async function saveToAssets() {
               <div class="gad__subjects">
                 <span v-for="id in subjectIds" :key="id" class="gad__subject">
                   <img v-if="subjectThumbs.get(id)" :src="subjectThumbs.get(id)" alt="" class="gad__subject-img" />
-                  <button type="button" class="gad__subject-x" aria-label="Remove" @click="removeSubject(id)"><MpIcon name="close" size="sm" /></button>
+                  <MpButton type="button" class="gad__subject-x" variant="ghost" aria-label="Remove" @click="removeSubject(id)"><MpIcon name="close" size="sm" /></MpButton>
                 </span>
-                <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="showAssetPicker = true">Add from your assets</button>
+                <MpButton type="button" class="btn-enterprise btn-enterprise--secondary" variant="secondary" @click="showAssetPicker = true">Add from your assets</MpButton>
               </div>
             </MpFormControl>
 
@@ -210,6 +210,6 @@ async function saveToAssets() {
 .gad__subjects { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); align-items: center; }
 .gad__subject { position: relative; width: 56px; height: 56px; border-radius: var(--mp-radii-md, 8px); overflow: hidden; border: 1px solid var(--mp-border-default, #e3e7e9); flex-shrink: 0; }
 .gad__subject-img { width: 100%; height: 100%; object-fit: cover; }
-.gad__subject-x { position: absolute; top: 2px; right: 2px; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: none; border-radius: 999px; background: rgba(8,13,14,0.66); color: #fff; cursor: pointer; padding: 0; }
-.gad__subject-x :deep(svg) { color: #fff; width: 12px; height: 12px; }
+.gad__subject-x { position: absolute; top: 2px; right: 2px; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: none; border-radius: 999px; background: rgba(8,13,14,0.66); color: var(--mp-colors-white); cursor: pointer; padding: 0; }
+.gad__subject-x :deep(svg) { color: var(--mp-colors-white); width: 12px; height: 12px; }
 </style>

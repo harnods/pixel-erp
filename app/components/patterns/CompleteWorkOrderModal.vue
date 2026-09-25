@@ -9,7 +9,7 @@
  * A custom Teleport overlay, not MpModal — MpModal renders with no structural
  * CSS in this Pixel3 build (see ConfirmModal.vue for the same root cause/fix).
  */
-import { MpIcon } from '@mekari/pixel3'
+import { MpIcon, MpButton } from '@mekari/pixel3'
 
 export interface CompleteWorkOrderRow {
   productId: string
@@ -52,9 +52,7 @@ function complete() { emit('complete'); close() }
       <div class="cwo-panel" role="alertdialog" aria-modal="true" aria-label="Complete work order">
         <header class="cwo-header">
           <h2 class="cwo-title">Complete work order</h2>
-          <button class="cwo-close" type="button" aria-label="Close" @click="close">
-            <MpIcon name="close" size="md" />
-          </button>
+          <MpButton class="cwo-close" variant="ghost" size="sm" left-icon="close" aria-label="Close" @click="close" />
         </header>
 
         <p class="cwo-desc">Review remaining components and choose how to close this work order</p>
@@ -90,9 +88,9 @@ function complete() { emit('complete'); close() }
         </div>
 
         <div class="cwo-footer">
-          <button class="cwo-cancel" type="button" @click="close">Cancel</button>
-          <button class="cwo-btn cwo-btn--secondary" type="button" @click="adjust">Adjust work order</button>
-          <button class="cwo-btn cwo-btn--primary" type="button" @click="complete">Auto-consume &amp; complete</button>
+          <MpButton variant="link" class="cwo-cancel" @click="close">Cancel</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--secondary" is-rounded @click="adjust">Adjust work order</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" is-rounded @click="complete">Auto-consume &amp; complete</MpButton>
         </div>
       </div>
     </div>
@@ -126,12 +124,7 @@ function complete() { emit('complete'); close() }
   border-bottom: 1px solid var(--mp-border-default);
 }
 .cwo-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.cwo-close {
-  display: flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px; border: none; border-radius: var(--mp-radii-md);
-  background: transparent; color: var(--mp-text-secondary); cursor: pointer;
-}
-.cwo-close:hover { background: var(--mp-background-neutral-hovered); }
+.cwo-close { color: var(--mp-text-secondary); }
 
 .cwo-desc { margin: 0; padding: var(--mp-spacing-4) var(--mp-spacing-5) 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
@@ -168,19 +161,5 @@ function complete() { emit('complete'); close() }
   padding: var(--mp-spacing-4) var(--mp-spacing-5);
   border-top: 1px solid var(--mp-border-default);
 }
-.cwo-cancel {
-  border: none; background: none; padding: 0; margin-right: auto;
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); cursor: pointer;
-}
-.cwo-cancel:hover { text-decoration: underline; text-underline-offset: 2px; }
-.cwo-btn {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
-  height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-5);
-  border-radius: var(--mp-radii-full, 999px); border: 1px solid transparent;
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium); cursor: pointer;
-}
-.cwo-btn--secondary { background: var(--mp-background-neutral); border-color: var(--mp-border-bold); color: var(--mp-text-secondary); }
-.cwo-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
-.cwo-btn--primary { background: var(--mp-colors-emerald-700, #029861); border-color: var(--mp-colors-emerald-700, #029861); color: var(--mp-text-inverse); }
-.cwo-btn--primary:hover { background: var(--mp-colors-emerald-800, #186f4a); border-color: var(--mp-colors-emerald-800, #186f4a); }
+.cwo-cancel { margin-right: auto; }
 </style>

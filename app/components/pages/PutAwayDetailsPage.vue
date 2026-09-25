@@ -4,7 +4,7 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpTooltip, MpIcon,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  MpSpinner, toast, css,
+  MpSpinner, toast, css, MpButton,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -313,33 +313,33 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">{{ t('Put-away') }}</button>
+        <MpButton class="detail-breadcrumb" variant="ghost" @click="goBack">{{ t('Put-away') }}</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ task.taskNo }}</h1>
           <ErpStatusBadge :status="task.status" badge-for="additionalInformation" size="md" />
           <MpPopover id="pad-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" :aria-label="t('Switch task')">
+              <MpButton class="detail-jump-chevron" variant="secondary" :aria-label="t('Switch task')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
+                  <MpButton v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" variant="ghost" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
-                  </button>
+                  </MpButton>
                 </div>
                 <div class="detail-jump-list">
-                  <button v-for="t in jumpResults" :key="t.id" class="detail-jump-item" @click="jumpTo(t.id)">
+                  <MpButton v-for="t in jumpResults" :key="t.id" class="detail-jump-item" variant="secondary" @click="jumpTo(t.id)">
                     <span class="detail-jump-item-number">{{ t.taskNo }}</span>
                     <span class="detail-jump-item-customer">{{ t.receivingTaskNos[0] }}{{ t.receivingTaskNos.length > 1 ? ` +${t.receivingTaskNos.length - 1} more` : '' }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No tasks found.') }}</p>
                 </div>
               </div>
@@ -365,7 +365,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
         <span class="pad-cancel-banner-text">
           {{ t('The purchase order behind this task\'s receiving was canceled. Nothing has been stored yet — acknowledging will cancel this put-away. Its linked receiving task stays completed (the received goods are a permanent record).') }}
         </span>
-        <button class="pad-cancel-banner-btn" type="button" @click="confirmAcknowledgeCancel">{{ t('Acknowledge') }}</button>
+        <MpButton class="pad-cancel-banner-btn" variant="secondary" @click="confirmAcknowledgeCancel">{{ t('Acknowledge') }}</MpButton>
       </div>
 
       <!-- ── Summary grid (2 cols) ── -->
@@ -413,11 +413,11 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
             <input v-model="itemSearch" class="pad-search" type="text" :placeholder="t('Search...')" />
-            <button v-if="itemSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="itemSearch = ''">
+            <MpButton v-if="itemSearch" class="search-clear-btn" variant="ghost" :aria-label="t('Clear search')" @click="itemSearch = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
         </div>
 
@@ -459,14 +459,14 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
                   <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td detail-td--secondary">{{ row.unit }}</td>
                   <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td detail-td--action">
                     <MpTooltip v-if="isBatchTrackedSku(row.skuCode)" :id="`pad-tt-batch-${row.rowId}`" :label="t('View batch')" placement="top" use-portal>
-                      <button class="pad-view-btn" type="button" :aria-label="t('View batch')" @click="openViewBatch(row)">
+                      <MpButton class="pad-view-btn" variant="secondary" :aria-label="t('View batch')" @click="openViewBatch(row)">
                         <MpIcon name="competencies" size="md" />
-                      </button>
+                      </MpButton>
                     </MpTooltip>
                     <MpTooltip v-else-if="isSerialTrackedSku(row.skuCode)" :id="`pad-tt-serial-${row.rowId}`" :label="t('View serial number')" placement="top" use-portal>
-                      <button class="pad-view-btn" type="button" :aria-label="t('View serial number')" @click="openViewSerial(row)">
+                      <MpButton class="pad-view-btn" variant="secondary" :aria-label="t('View serial number')" @click="openViewSerial(row)">
                         <MpIcon name="competencies" size="md" />
-                      </button>
+                      </MpButton>
                     </MpTooltip>
                   </td>
                 </tr>
@@ -542,23 +542,23 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
       <!-- Change assignee — the escape hatch when the holder has lost access to the
            company. Manager-only (or an operator with LM access), and only while the
            task is still Open / In Progress. -->
-      <button v-if="canChangeAssignee" class="btn-enterprise detail-btn detail-btn--secondary" @click="reassignOpen = true">{{ t('Change assignee') }}</button>
-      <button class="detail-btn detail-btn--secondary" @click="printPutAwaySlip">{{ t('Print put-away slip') }}</button>
+      <MpButton v-if="canChangeAssignee" class="btn-enterprise detail-btn detail-btn--secondary" variant="secondary" @click="reassignOpen = true">{{ t('Change assignee') }}</MpButton>
+      <MpButton class="detail-btn detail-btn--secondary" variant="secondary" @click="printPutAwaySlip">{{ t('Print put-away slip') }}</MpButton>
 
       <!-- Completed / canceled: stock already committed to its final location
            (or nothing left to cancel) — no actions left, terminal record. -->
       <template v-if="task.status === 'open' || task.status === 'in progress'">
         <div class="detail-split">
-          <button class="detail-btn detail-btn--primary detail-split-main" @click="startPutAway">
+          <MpButton class="detail-btn detail-btn--primary detail-split-main" variant="primary" @click="startPutAway">
             {{ task.status === 'in progress' ? t('Continue put-away') : t('Start put-away') }}
-          </button>
+          </MpButton>
           <MpPopover id="pad-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
-              <button class="detail-btn detail-btn--primary detail-split-chevron" :aria-label="t('More actions')">
+              <MpButton class="detail-btn detail-btn--primary detail-split-chevron" variant="primary" :aria-label="t('More actions')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
@@ -587,8 +587,8 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">{{ t('Keep task') }}</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ t('Cancel task') }}</button>
+            <MpButton class="btn-enterprise btn-enterprise--secondary" variant="secondary" @click="cancelOpen = false">{{ t('Keep task') }}</MpButton>
+            <MpButton class="btn-enterprise btn-enterprise--danger" variant="danger" @click="confirmCancel">{{ t('Cancel task') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -606,8 +606,8 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="ackCancelOpen = false">{{ t('Review') }}</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmAcknowledgeCancel">{{ t('Acknowledge') }}</button>
+            <MpButton class="btn-enterprise btn-enterprise--secondary" variant="secondary" @click="ackCancelOpen = false">{{ t('Review') }}</MpButton>
+            <MpButton class="btn-enterprise btn-enterprise--danger" variant="danger" @click="confirmAcknowledgeCancel">{{ t('Acknowledge') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>

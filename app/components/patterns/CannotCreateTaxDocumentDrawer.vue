@@ -69,12 +69,12 @@ function goToProduct(sku: string) {
                   <MpIcon name="company" size="md" />
                   <MpText size="h3" weight="semiBold">{{ t('Company tax info') }}</MpText>
                 </div>
-                <button
-                  type="button" class="cctd-icon-btn" :aria-label="t('Open company profile')"
+                <MpButton
+                  type="button" class="cctd-icon-btn" variant="ghost" :aria-label="t('Open company profile')"
                   @click="goToCompanyProfile"
                 >
                   <MpIcon name="newtab" size="sm" />
-                </button>
+                </MpButton>
               </div>
               <ul class="cctd-bullets">
                 <li>{{ t('NPWP or NPWP & NITKU not validated') }}</li>
@@ -111,12 +111,12 @@ function goToProduct(sku: string) {
                       {{ p.missingCode ? t('Missing DJP code') : t('Missing DJP unit') }}
                     </MpText>
                   </div>
-                  <button
-                    type="button" class="cctd-icon-btn" :aria-label="t('Open product details')"
+                  <MpButton
+                    type="button" class="cctd-icon-btn" variant="ghost" :aria-label="t('Open product details')"
                     @click="goToProduct(p.sku)"
                   >
                     <MpIcon name="newtab" size="sm" />
-                  </button>
+                  </MpButton>
                 </div>
               </div>
             </div>

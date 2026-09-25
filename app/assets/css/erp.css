@@ -174,6 +174,39 @@
   min-width: 160px;
 }
 
+/* ── Split button — chevron segment sizing ──────────────────────────────────
+ * MpButton's internal min-width compresses the chevron half of a split button.
+ * This override gives the trailing segment a fixed width (40px) and zeroes out
+ * the min-width so it stays a compact square with the icon centred. Applied via
+ * the shared class .detail-split-btn__chevron (used on all detail-page split
+ * buttons) and .cqd-split-caret (CRM quick-create drawer). */
+.detail-split-btn__chevron,
+.detail-split-chevron,
+.cqd-split-caret {
+  min-width: 0 !important;
+  width: 40px !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  border-left: 1px solid rgba(255, 255, 255, 0.28) !important;
+}
+.detail-split-btn__main,
+.detail-split-main {
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+/* ── Jump-to popover items (detail-jump-item / djt-item) ────────────────────
+ * MpButton centres its children (align-items: center). Jump-to items render
+ * the record name + subtitle stacked in a column — the centering makes them
+ * look wrong. Force left-align so the text sits flush-start. */
+.detail-jump-item,
+.djt-item {
+  align-items: flex-start !important;
+  text-align: left !important;
+}
+
 /* ── MpPopoverListItem hover (atomic-CSS gap remediation) ─────────────────────
  * Pixel's hover rule is `.mp-popover-list-item:hover { background:
  * var(--mp-background-neutral-hovered) }`, but that short alias resolves EMPTY in

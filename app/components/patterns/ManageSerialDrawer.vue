@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, reactive, nextTick } from 'vue'
-import { MpIcon, MpBadge, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
+import { MpIcon, MpBadge, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpButton, css } from '@mekari/pixel3'
 import ScanBar from '~/components/patterns/ScanBar.vue'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
@@ -670,9 +670,9 @@ async function handleSave() {
 
       <header class="msn-header">
         <h2 class="msn-title">Manage serial number</h2>
-        <button class="msn-close" type="button" aria-label="Close" @click="handleCancel">
+        <MpButton class="msn-close" variant="ghost" type="button" aria-label="Close" @click="handleCancel">
           <MpIcon name="close" size="md" />
-        </button>
+        </MpButton>
       </header>
 
       <div class="msn-content">
@@ -791,7 +791,7 @@ async function handleSave() {
             />
             <p v-if="addError" class="msn-add-error">{{ addError }}</p>
             <div class="msn-form-action">
-              <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="addToList">Add to list</button>
+              <MpButton class="btn-enterprise btn-enterprise--secondary" variant="secondary" type="button" @click="addToList">Add to list</MpButton>
             </div>
           </template>
           <p v-if="saveError" class="msn-save-error">{{ saveError }}</p>
@@ -803,11 +803,11 @@ async function handleSave() {
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
             </svg>
             <input v-model="search" class="msn-search-input" type="text" placeholder="Search..." />
-            <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <MpButton v-if="search" class="search-clear-btn" variant="ghost" type="button" aria-label="Clear search" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
         </div>
 
@@ -826,17 +826,18 @@ async function handleSave() {
               <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
             <span>{{ activeBin }}</span>
-            <button class="msn-active-bin-clear" type="button" aria-label="Clear active bin" @click="activeBin = null">
+            <MpButton class="msn-active-bin-clear" variant="ghost" type="button" aria-label="Clear active bin" @click="activeBin = null">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
-          <button
+          <MpButton
             class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+            variant="secondary"
             type="button"
             @click="resetPicked"
-          >Reset count</button>
+          >Reset count</MpButton>
         </ScanBar>
         <p v-if="isPutAway || isPicking" class="msn-scan-caption">Scan the storage location first before scanning the serial number.</p>
 
@@ -993,23 +994,25 @@ async function handleSave() {
                   </template>
                 </td>
                 <td v-if="isPutAway" class="msn-td msn-td--del">
-                  <button
+                  <MpButton
                     class="msn-toggle-btn msn-toggle-btn--remove"
+                    variant="ghost"
                     type="button"
                     aria-label="Remove storage location"
                     @click="removeSerialRow(row)"
                   >
                     <MpIcon name="minus-circular" size="sm" />
-                  </button>
+                  </MpButton>
                 </td>
                 <td v-else class="msn-td msn-td--del">
-                  <button
+                  <MpButton
                     v-if="!row.fromPriorTask"
                     class="msn-toggle-btn"
                     :class="[
                       row.counted ? 'msn-toggle-btn--remove' : 'msn-toggle-btn--restore',
                       (row.reserved || ((isTransfer || isPicking) && !row.counted && countedCount >= targetCount)) ? 'msn-toggle-btn--disabled' : ''
                     ]"
+                    variant="ghost"
                     type="button"
                     :aria-label="row.counted
                       ? (isPicking ? 'Remove from pick' : isTransfer ? 'Remove from transfer' : 'Mark as not counted')
@@ -1017,7 +1020,7 @@ async function handleSave() {
                     @click="toggleRow(row)"
                   >
                     <MpIcon :name="row.counted ? 'minus-circular' : 'add'" size="sm" />
-                  </button>
+                  </MpButton>
                 </td>
               </tr>
 
@@ -1025,7 +1028,7 @@ async function handleSave() {
           </table>
           <div class="msn-pagination">
             <span>Showing {{ displayRows.length }} of {{ filtered.length }} serial numbers</span>
-            <button v-if="hasMore" class="msn-load-more" type="button" @click="loadMore">Load more</button>
+            <MpButton v-if="hasMore" class="msn-load-more" variant="ghost" type="button" @click="loadMore">Load more</MpButton>
           </div>
         </div>
 
@@ -1036,8 +1039,8 @@ async function handleSave() {
       </div>
 
       <footer class="msn-footer">
-        <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="handleCancel">Cancel</button>
-        <button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="isSaving" @click="handleSave">{{ isSaving ? 'Saving…' : 'Save' }}</button>
+        <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="handleCancel">Cancel</MpButton>
+        <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" :is-disabled="isSaving" @click="handleSave">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
       </footer>
 
     </div>
@@ -1214,10 +1217,10 @@ async function handleSave() {
 .msn-active-bin {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-2\.5);
-  background: #e6f7ef; border: 1px solid #029861;
+  background: var(--mp-colors-success-weaker); border: 1px solid var(--mp-colors-success-default);
   border-radius: var(--mp-radii-full); white-space: nowrap;
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  color: #027a4e; flex-shrink: 0;
+  color: var(--mp-colors-success-bolder); flex-shrink: 0;
 }
 .msn-active-bin-clear {
   background: none; border: none; padding: 0; cursor: pointer;

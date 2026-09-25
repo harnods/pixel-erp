@@ -208,15 +208,15 @@ function moduleLabel(id: string) { return moduleOptions.value.find((m) => m.valu
         <h1 class="crm-title">{{ isEdit ? t('Edit report') : t('Create report') }}</h1>
       </div>
       <div class="crm-titlebar__right">
-        <button class="btn-enterprise btn-enterprise--ghost" @click="discardAndLeave">{{ t('Cancel') }}</button>
+        <MpButton class="btn-enterprise btn-enterprise--ghost" @click="discardAndLeave">{{ t('Cancel') }}</MpButton>
         <MpButton variant="primary" is-rounded @click="save">{{ t('Save') }}</MpButton>
       </div>
     </header>
 
     <nav class="cc-viewtabs">
-      <button v-for="s in STAGES" :key="s.key" class="page-tab" :class="{ 'page-tab--active': stage === s.key }" type="button" @click="goStage(s.key)">
+      <MpButton v-for="s in STAGES" :key="s.key" class="page-tab" :class="{ 'page-tab--active': stage === s.key }" type="button" @click="goStage(s.key)">
         {{ t(s.label) }}
-      </button>
+      </MpButton>
     </nav>
 
     <div class="cc-stage">
@@ -252,7 +252,7 @@ function moduleLabel(id: string) { return moduleOptions.value.find((m) => m.valu
             <ul class="rb-field-list">
               <li v-for="f in availableFields" :key="f.id" class="rb-field-item">
                 <span>{{ f.label }}</span>
-                <button class="rb-icon-btn" type="button" :aria-label="t('Add column')" @click="addColumn(f.id)"><MpIcon name="add" size="sm" /></button>
+                <MpButton class="rb-icon-btn" type="button" left-icon="add" :aria-label="t('Add column')" @click="addColumn(f.id)" />
               </li>
               <li v-if="!availableFields.length" class="rb-field-empty">{{ t('No more fields to add.') }}</li>
             </ul>
@@ -263,9 +263,9 @@ function moduleLabel(id: string) { return moduleOptions.value.find((m) => m.valu
               <li v-for="(id, i) in columns" :key="id" class="rb-field-item">
                 <span>{{ fieldLabelOf(id) }}</span>
                 <span class="rb-field-actions">
-                  <button class="rb-icon-btn" type="button" :aria-label="t('Move up')" :disabled="i === 0" @click="moveColumn(id, -1)"><MpIcon name="caret-up" size="sm" /></button>
-                  <button class="rb-icon-btn" type="button" :aria-label="t('Move down')" :disabled="i === columns.length - 1" @click="moveColumn(id, 1)"><MpIcon name="caret-down" size="sm" /></button>
-                  <button class="rb-icon-btn" type="button" :aria-label="t('Remove column')" @click="removeColumn(id)"><MpIcon name="close" size="sm" /></button>
+                  <MpButton class="rb-icon-btn" type="button" left-icon="caret-up" :aria-label="t('Move up')" :is-disabled="i === 0" @click="moveColumn(id, -1)" />
+                  <MpButton class="rb-icon-btn" type="button" left-icon="caret-down" :aria-label="t('Move down')" :is-disabled="i === columns.length - 1" @click="moveColumn(id, 1)" />
+                  <MpButton class="rb-icon-btn" type="button" left-icon="close" :aria-label="t('Remove column')" @click="removeColumn(id)" />
                 </span>
               </li>
               <li v-if="!columns.length" class="rb-field-empty">{{ t('Add at least one column, or configure a summary-only report in Group & summarize.') }}</li>
@@ -288,11 +288,11 @@ function moduleLabel(id: string) { return moduleOptions.value.find((m) => m.valu
           <ErpFilterSelect :id="`rb-crit-op-${c.id}`" v-model="c.operator" :placeholder="t('Operator')" :options="operatorsFor(c.fieldId)" width="160px" :is-clearable="false" @update:model-value="markDirty" />
           <input v-if="needsValue(c)" v-model="c.value" class="rb-value-input" type="text" :placeholder="t('Value')" @input="markDirty">
           <input v-if="needsSecondValue(c)" v-model="c.value2" class="rb-value-input" type="text" :placeholder="t('And')" @input="markDirty">
-          <button class="rb-icon-btn" type="button" :aria-label="t('Remove filter')" @click="removeCriterion(c.id)"><MpIcon name="close" size="sm" /></button>
+          <MpButton class="rb-icon-btn" type="button" left-icon="close" :aria-label="t('Remove filter')" @click="removeCriterion(c.id)" />
         </div>
-        <button class="btn-enterprise btn-enterprise--secondary rb-add-btn" type="button" @click="addCriterion">
-          <MpIcon name="add" size="sm" /> {{ t('Add filter') }}
-        </button>
+        <MpButton class="btn-enterprise btn-enterprise--secondary rb-add-btn" type="button" left-icon="add" @click="addCriterion">
+          {{ t('Add filter') }}
+        </MpButton>
         <p v-if="filterError" class="rb-error">{{ filterError }}</p>
         <p v-else-if="!criteria.length" class="rb-hint">{{ t('No filters — every authorized record is included.') }}</p>
       </section>
@@ -311,11 +311,11 @@ function moduleLabel(id: string) { return moduleOptions.value.find((m) => m.valu
         <div v-for="(m, i) in measures" :key="i" class="rb-measure-row">
           <ErpFilterSelect :id="`rb-measure-fn-${i}`" v-model="m.fn" :placeholder="t('Function')" :options="Object.entries(AGG_LABELS).map(([value,label]) => ({value, label: t(label)}))" width="160px" :is-clearable="false" @update:model-value="markDirty" />
           <ErpFilterSelect v-if="m.fn !== 'count'" :id="`rb-measure-field-${i}`" v-model="m.fieldId" :placeholder="t('Field')" :options="numericFields.map(f => ({ value: f.id, label: f.label }))" width="200px" @update:model-value="markDirty" />
-          <button class="rb-icon-btn" type="button" :aria-label="t('Remove summary')" @click="removeMeasure(i)"><MpIcon name="close" size="sm" /></button>
+          <MpButton class="rb-icon-btn" type="button" left-icon="close" :aria-label="t('Remove summary')" @click="removeMeasure(i)" />
         </div>
-        <button class="btn-enterprise btn-enterprise--secondary rb-add-btn" type="button" @click="addMeasure">
-          <MpIcon name="add" size="sm" /> {{ t('Add summary') }}
-        </button>
+        <MpButton class="btn-enterprise btn-enterprise--secondary rb-add-btn" type="button" left-icon="add" @click="addMeasure">
+          {{ t('Add summary') }}
+        </MpButton>
 
         <h2 class="rb-section-title rb-section-title--spaced">{{ t('Sort') }}</h2>
         <div class="rb-group-row">
@@ -369,11 +369,11 @@ function moduleLabel(id: string) { return moduleOptions.value.find((m) => m.valu
         <div v-if="visibility === 'selected'" class="rb-share-pickers">
           <ErpFilterSelect id="rb-share-user" :model-value="''" :placeholder="t('Add a user')" :options="REPORT_OWNER_OPTIONS.filter(o => !sharedUserIds.includes(o)).map(o => ({value:o,label:o}))" width="220px" @update:model-value="(v: string) => { if (v) { sharedUserIds.push(v); markDirty() } }" />
           <div class="rb-chip-list">
-            <span v-for="u in sharedUserIds" :key="u" class="rb-chip">{{ u }} <button type="button" :aria-label="t('Remove')" @click="sharedUserIds.splice(sharedUserIds.indexOf(u), 1); markDirty()"><MpIcon name="close" size="sm" /></button></span>
+            <span v-for="u in sharedUserIds" :key="u" class="rb-chip">{{ u }} <MpButton type="button" left-icon="close" :aria-label="t('Remove')" @click="sharedUserIds.splice(sharedUserIds.indexOf(u), 1); markDirty()" /></span>
           </div>
           <ErpFilterSelect id="rb-share-team" :model-value="''" :placeholder="t('Add a team')" :options="crmTeamOptions().filter(o => !sharedTeamIds.includes(o.value))" width="220px" @update:model-value="(v: string) => { if (v) { sharedTeamIds.push(v); markDirty() } }" />
           <div class="rb-chip-list">
-            <span v-for="tid in sharedTeamIds" :key="tid" class="rb-chip">{{ crmTeamOptions().find(o => o.value === tid)?.label ?? tid }} <button type="button" :aria-label="t('Remove')" @click="sharedTeamIds.splice(sharedTeamIds.indexOf(tid), 1); markDirty()"><MpIcon name="close" size="sm" /></button></span>
+            <span v-for="tid in sharedTeamIds" :key="tid" class="rb-chip">{{ crmTeamOptions().find(o => o.value === tid)?.label ?? tid }} <MpButton type="button" left-icon="close" :aria-label="t('Remove')" @click="sharedTeamIds.splice(sharedTeamIds.indexOf(tid), 1); markDirty()" /></span>
           </div>
           <p class="rb-hint">{{ t('Sharing grants discovery and Run only — not edit, export, or underlying data access.') }}</p>
         </div>
@@ -391,8 +391,8 @@ function moduleLabel(id: string) { return moduleOptions.value.find((m) => m.valu
 
       <!-- ── Stage footer nav ── -->
       <div class="rb-footer">
-        <button class="btn-enterprise btn-enterprise--ghost" type="button" :disabled="stage === 'source'" @click="prevStage">{{ t('Back') }}</button>
-        <button v-if="stage !== 'save'" class="btn-enterprise btn-enterprise--primary" type="button" @click="nextStage">{{ t('Next') }}</button>
+        <MpButton class="btn-enterprise btn-enterprise--ghost" type="button" :is-disabled="stage === 'source'" @click="prevStage">{{ t('Back') }}</MpButton>
+        <MpButton v-if="stage !== 'save'" class="btn-enterprise btn-enterprise--primary" type="button" @click="nextStage">{{ t('Next') }}</MpButton>
         <MpButton v-else variant="primary" is-rounded @click="save">{{ t('Save') }}</MpButton>
       </div>
     </div>

@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { formatDateLong, formatDateTimeLong } from '~/utils/date'
 import {
-  MpSpinner, MpIcon, MpTooltip,
+  MpButton, MpSpinner, MpIcon, MpTooltip,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
   MpModalOverlay, MpModalCloseButton,
   toast,
@@ -423,9 +423,9 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goPacking">{{ t('Packing') }}</button>
+          <MpButton variant="ghost" class="detail-breadcrumb" @click="goPacking">{{ t('Packing') }}</MpButton>
           <span class="detail-breadcrumb-sep">/</span>
-          <button class="detail-breadcrumb" @click="goBack">{{ task.taskNo }}</button>
+          <MpButton variant="ghost" class="detail-breadcrumb" @click="goBack">{{ task.taskNo }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('Match order') }}</h1>
@@ -459,16 +459,16 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
             <input v-model="search" class="pak-search" type="text" :placeholder="t('Search...')" />
-            <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
+            <MpButton v-if="search" variant="ghost" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
         </div>
 
         <ScanBar :placeholder="t('Scan barcode...')" @scan="handleScan">
-          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetProgress">{{ t('Reset count') }}</button>
+          <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetProgress">{{ t('Reset count') }}</MpButton>
         </ScanBar>
 
         <p v-if="finishError" class="pak-finish-error">{{ finishError }}</p>
@@ -551,14 +551,14 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                         :class="{ 'pak-verify-tag--done': verifiedCount(item) >= item.pickedQty, 'pak-verify-tag--pending': showQtyErrors && verifiedCount(item) < item.pickedQty }"
                       >{{ verifiedCount(item) }}/{{ item.pickedQty }} {{ t('verified') }}</span>
                       <MpTooltip v-if="isBatchTrackedSku(item.skuCode)" :id="`pak-tt-batch-${item.key}`" :label="t('View batch')" placement="top" use-portal>
-                        <button class="pak-view-btn" type="button" :aria-label="t('View batch')" @click="openViewBatch(item)">
+                        <MpButton variant="secondary" class="pak-view-btn" type="button" :aria-label="t('View batch')" @click="openViewBatch(item)">
                           <MpIcon name="competencies" size="md" />
-                        </button>
+                        </MpButton>
                       </MpTooltip>
                       <MpTooltip v-else-if="isSerialTrackedSku(item.skuCode)" :id="`pak-tt-serial-${item.key}`" :label="t('View serial number')" placement="top" use-portal>
-                        <button class="pak-view-btn" type="button" :aria-label="t('View serial number')" @click="openViewSerial(item)">
+                        <MpButton variant="secondary" class="pak-view-btn" type="button" :aria-label="t('View serial number')" @click="openViewSerial(item)">
                           <MpIcon name="competencies" size="md" />
-                        </button>
+                        </MpButton>
                       </MpTooltip>
                     </div>
                   </td>
@@ -576,15 +576,15 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
     </div>
 
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <button class="pak-btn pak-btn--ghost" @click="goBack">{{ t('Cancel') }}</button>
-      <button class="pak-btn pak-btn--secondary" @click="saveDraft">{{ t('Save draft') }}</button>
-      <button class="pak-btn pak-btn--primary" @click="endPackingClick">{{ t('Finish packing') }}</button>
+      <MpButton variant="ghost" class="pak-btn pak-btn--ghost" @click="goBack">{{ t('Cancel') }}</MpButton>
+      <MpButton variant="secondary" class="pak-btn pak-btn--secondary" @click="saveDraft">{{ t('Save draft') }}</MpButton>
+      <MpButton variant="primary" class="pak-btn pak-btn--primary" @click="endPackingClick">{{ t('Finish packing') }}</MpButton>
     </footer>
   </div>
 
   <div v-else class="pak-not-found">
     <p>{{ t('Packing task not found.') }}</p>
-    <button class="detail-breadcrumb" @click="goPacking">{{ t('Back to Packing') }}</button>
+    <MpButton variant="ghost" class="detail-breadcrumb" @click="goPacking">{{ t('Back to Packing') }}</MpButton>
   </div>
 
   <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="pak-confirm" :is-open="showConfirm" size="md" :is-keep-alive="false" @close="showConfirm = false">
@@ -605,8 +605,8 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
       </MpModalBody>
       <MpModalFooter>
         <div class="pak-modal-footer">
-          <button class="pak-btn pak-btn--ghost" @click="showConfirm = false">{{ t('Cancel') }}</button>
-          <button class="pak-btn pak-btn--primary" @click="commit">{{ t('Finish packing') }}</button>
+          <MpButton variant="ghost" class="pak-btn pak-btn--ghost" @click="showConfirm = false">{{ t('Cancel') }}</MpButton>
+          <MpButton variant="primary" class="pak-btn pak-btn--primary" @click="commit">{{ t('Finish packing') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -709,7 +709,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 .pak-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); white-space: nowrap; }
 .pak-td--input { padding: 0; background: var(--mp-background-neutral, #fff); }
 .pak-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
-.pak-td--input--error { background: #FCEEED; border-bottom-color: #E2483D; }
+.pak-td--input--error { background: var(--mp-colors-danger-weaker); border-bottom-color: var(--mp-colors-danger-default); }
 .pak-qty-tooltip-wrap { display: block; width: 100%; }
 .pak-qty-input { display: block; width: 100%; box-sizing: border-box; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-align: right; font-variant-numeric: tabular-nums; line-height: var(--mp-line-heights-md); }
 .pak-qty--full { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium, 500); }

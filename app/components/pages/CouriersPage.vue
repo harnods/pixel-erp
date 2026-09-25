@@ -5,7 +5,7 @@
  * mirroring the ErpTablePage index-page shell used across the app.
  */
 import {
-  MpFormControl, MpFormLabel, MpInput,
+  MpFormControl, MpFormLabel, MpInput, MpButton,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
@@ -150,11 +150,11 @@ function confirmDelete() {
     <template #actions="{ row }">
       <MpPopover :id="`courier-actions-${(row as unknown as Courier).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="row-kebab" :aria-label="t('More actions')">
+          <MpButton class="row-kebab" :aria-label="t('More actions')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
             </svg>
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '140px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -171,12 +171,12 @@ function confirmDelete() {
         <img src="/illustrations/empty-folder.png" alt="" class="empty-illustration" width="288" height="240" />
         <p class="empty-full-title">{{ t('No couriers') }}</p>
         <p class="empty-full-desc">{{ t('Couriers you add will appear here.') }}</p>
-        <button class="empty-full-btn" @click="openAdd">
+        <MpButton class="empty-full-btn" @click="openAdd">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
           {{ t('Add courier') }}
-        </button>
+        </MpButton>
       </div>
     </template>
   </ErpTablePage>
@@ -195,10 +195,10 @@ function confirmDelete() {
             <MpInput id="courier-edit-name-input" v-model="editName" is-full-width :placeholder="t('e.g. JNE REG')" />
           </MpFormControl>
           <div class="cem-footer">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="editOpen = false">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveEdit">
+            <MpButton class="btn-enterprise btn-enterprise--ghost" @click="editOpen = false">{{ t('Cancel') }}</MpButton>
+            <MpButton class="btn-enterprise btn-enterprise--primary" :is-disabled="isSaving" @click="saveEdit">
               {{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}
-            </button>
+            </MpButton>
           </div>
         </div>
       </div>

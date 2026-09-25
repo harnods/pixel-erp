@@ -109,210 +109,152 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
 </script>
 
 <template>
-  <Transition name="sof-filters">
-    <div v-if="isOpen" class="sof-filters-overlay">
-      <div class="sof-filters-panel" role="dialog" aria-label="All filters">
-        <header class="sof-filters-header">
-          <span class="sof-filters-title">All filters</span>
-          <MpButton class="sof-filters-close" aria-label="Close" @click="close">
-            <MpIcon name="close" size="md" />
-          </MpButton>
-        </header>
-
-        <div class="sof-filters-body">
-          <!-- Keywords — text input with an inline column-scope dropdown suffix. -->
-          <MpFormControl :id="`${id}-keyword-fc`">
-            <MpFormLabel>Keywords</MpFormLabel>
-            <div class="sof-keyword">
-              <input
-                v-model="draft.keyword"
-                class="sof-keyword-input"
-                type="text"
-                placeholder="Search keywords..."
-                @keydown.enter.prevent="apply"
-              >
-              <MpPopover :id="`${id}-keyword-scope`" is-manual :is-open="keywordColumnOpen" use-portal :is-keep-alive="false" @open="keywordColumnOpen = true" @close="keywordColumnOpen = false">
-                <MpPopoverTrigger>
-                  <MpButton class="sof-keyword-scope" @click.stop="keywordColumnOpen = !keywordColumnOpen">
-                    <span class="sof-keyword-scope-label">{{ keywordColumnLabel }}</span>
-                    <MpIcon name="chevrons-down" size="sm" />
-                  </MpButton>
-                </MpPopoverTrigger>
-                <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content' })" @blur="keywordColumnOpen = false" @escape="keywordColumnOpen = false">
-                  <MpPopoverList>
-                    <MpPopoverListItem :is-active="draft.keywordColumn === 'all'" @click="draft.keywordColumn = 'all'">
-                      All columns
-                    </MpPopoverListItem>
-                    <MpPopoverListItem
-                      v-for="col in columns" :key="col.key"
-                      :is-active="draft.keywordColumn === col.key" @click="draft.keywordColumn = col.key"
-                    >
-                      {{ col.label }}
-                    </MpPopoverListItem>
-                  </MpPopoverList>
-                </MpPopoverContent>
-              </MpPopover>
-            </div>
-          </MpFormControl>
-
-          <!-- Transaction date — past-preset range (Today / Last 7 / Last 30 days). -->
-          <div class="sof-field">
-            <span class="sof-field-label">Transaction date</span>
-            <AdvancedDateRangePicker
-              :id="`${id}-transactiondate`" :model-value="draft.transactionDate"
-              is-full-width hide-label placeholder="Select transaction date"
-              @update:model-value="draft.transactionDate = $event"
-            />
-          </div>
-
-          <!-- Due date — forward-looking range (Next 7 / 14 / 30 days). -->
-          <div class="sof-field">
-            <span class="sof-field-label">Due date</span>
-            <AdvancedDateRangePicker
-              :id="`${id}-duedate`" :model-value="draft.dueDate" direction="future"
-              is-full-width hide-label placeholder="Select due date"
-              @update:model-value="draft.dueDate = $event"
-            />
-          </div>
-
-          <div class="sof-field">
-            <span class="sof-field-label">Status</span>
-            <ul class="sof-checklist">
-              <li
-                v-for="opt in statusOptions" :key="opt.value"
-                class="sof-check-item" @click="toggleStatus(opt.value)"
-              >
-                <span @click.stop>
-                  <MpCheckbox :id="`${id}-status-${opt.value}`" :is-checked="draft.status.includes(opt.value)" @change="() => toggleStatus(opt.value)" />
-                </span>
-                <span class="sof-check-label">{{ opt.label }}</span>
-              </li>
-            </ul>
-          </div>
-
-          <div class="sof-field">
-            <span class="sof-field-label">Total (Rp)</span>
-            <AmountComparatorField
-              :id="`${id}-total`"
-              :comparator="draft.totalComparator"
-              :value="draft.totalValue"
-              :min="draft.totalMin"
-              :max="draft.totalMax"
-              @update:comparator="draft.totalComparator = $event"
-              @update:value="draft.totalValue = $event"
-              @update:min="draft.totalMin = $event"
-              @update:max="draft.totalMax = $event"
-            />
-          </div>
-
-          <!-- Tags — comparator prefix select + typeable tag input (chips), same
-               shape as the Total (Rp) field above. -->
-          <div class="sof-field">
-            <span class="sof-field-label">Tags</span>
-            <div class="sof-tags">
-              <MpPopover
-                :id="`${id}-tags-comparator`" is-manual :is-open="tagsComparatorOpen"
-                use-portal :is-keep-alive="false" placement="bottom-start"
-                @open="tagsComparatorOpen = true" @close="tagsComparatorOpen = false"
-              >
-                <MpPopoverTrigger>
-                  <MpButton class="sof-tags-prefix" @click.stop="tagsComparatorOpen = !tagsComparatorOpen">
-                    <span>{{ TAGS_COMPARATOR_LABELS[draft.tagsComparator] }}</span>
-                    <MpIcon name="chevrons-down" size="sm" />
-                  </MpButton>
-                </MpPopoverTrigger>
-                <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content' })" @blur="tagsComparatorOpen = false" @escape="tagsComparatorOpen = false">
-                  <MpPopoverList>
-                    <MpPopoverListItem
-                      v-for="c in TAGS_COMPARATORS" :key="c"
-                      :is-active="c === draft.tagsComparator" @click="selectTagsComparator(c)"
-                    >
-                      {{ TAGS_COMPARATOR_LABELS[c] }}
-                    </MpPopoverListItem>
-                  </MpPopoverList>
-                </MpPopoverContent>
-              </MpPopover>
-              <div class="sof-tags-field">
-                <span v-for="(tag, i) in draft.tags" :key="`${i}-${tag}`" class="sof-tag-chip">
-                  {{ tag }}
-                  <button type="button" class="sof-tag-remove" :aria-label="`Remove ${tag}`" @click="removeTag(i)">
-                    <MpIcon name="close" size="sm" />
-                  </button>
-                </span>
-                <input
-                  :id="`${id}-tags-input`"
-                  v-model="tagDraft"
-                  class="sof-tag-input"
-                  type="text"
-                  placeholder=""
-                  @keydown.enter.prevent="addTag"
-                  @keydown.delete="onTagBackspace"
+  <ErpDrawer :is-open="isOpen" title="All filters" @close="close">
+    <template #body>
+      <!-- Keywords — text input with an inline column-scope dropdown suffix. -->
+      <MpFormControl :id="`${id}-keyword-fc`">
+        <MpFormLabel>Keywords</MpFormLabel>
+        <div class="sof-keyword">
+          <input
+            v-model="draft.keyword"
+            class="sof-keyword-input"
+            type="text"
+            placeholder="Search keywords..."
+            @keydown.enter.prevent="apply"
+          >
+          <MpPopover :id="`${id}-keyword-scope`" is-manual :is-open="keywordColumnOpen" use-portal :is-keep-alive="false" @open="keywordColumnOpen = true" @close="keywordColumnOpen = false">
+            <MpPopoverTrigger>
+              <MpButton class="sof-keyword-scope" @click.stop="keywordColumnOpen = !keywordColumnOpen">
+                <span class="sof-keyword-scope-label">{{ keywordColumnLabel }}</span>
+                <MpIcon name="chevrons-down" size="sm" />
+              </MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content' })" @blur="keywordColumnOpen = false" @escape="keywordColumnOpen = false">
+              <MpPopoverList>
+                <MpPopoverListItem :is-active="draft.keywordColumn === 'all'" @click="draft.keywordColumn = 'all'">
+                  All columns
+                </MpPopoverListItem>
+                <MpPopoverListItem
+                  v-for="col in columns" :key="col.key"
+                  :is-active="draft.keywordColumn === col.key" @click="draft.keywordColumn = col.key"
                 >
-              </div>
-            </div>
+                  {{ col.label }}
+                </MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+      </MpFormControl>
+
+      <!-- Transaction date — past-preset range (Today / Last 7 / Last 30 days). -->
+      <div class="sof-field">
+        <span class="sof-field-label">Transaction date</span>
+        <AdvancedDateRangePicker
+          :id="`${id}-transactiondate`" :model-value="draft.transactionDate"
+          is-full-width hide-label placeholder="Select transaction date"
+          @update:model-value="draft.transactionDate = $event"
+        />
+      </div>
+
+      <!-- Due date — forward-looking range (Next 7 / 14 / 30 days). -->
+      <div class="sof-field">
+        <span class="sof-field-label">Due date</span>
+        <AdvancedDateRangePicker
+          :id="`${id}-duedate`" :model-value="draft.dueDate" direction="future"
+          is-full-width hide-label placeholder="Select due date"
+          @update:model-value="draft.dueDate = $event"
+        />
+      </div>
+
+      <div class="sof-field">
+        <span class="sof-field-label">Status</span>
+        <ul class="sof-checklist">
+          <li
+            v-for="opt in statusOptions" :key="opt.value"
+            class="sof-check-item" @click="toggleStatus(opt.value)"
+          >
+            <span @click.stop>
+              <MpCheckbox :id="`${id}-status-${opt.value}`" :is-checked="draft.status.includes(opt.value)" @change="() => toggleStatus(opt.value)" />
+            </span>
+            <span class="sof-check-label">{{ opt.label }}</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="sof-field">
+        <span class="sof-field-label">Total (Rp)</span>
+        <AmountComparatorField
+          :id="`${id}-total`"
+          :comparator="draft.totalComparator"
+          :value="draft.totalValue"
+          :min="draft.totalMin"
+          :max="draft.totalMax"
+          @update:comparator="draft.totalComparator = $event"
+          @update:value="draft.totalValue = $event"
+          @update:min="draft.totalMin = $event"
+          @update:max="draft.totalMax = $event"
+        />
+      </div>
+
+      <!-- Tags — comparator prefix select + typeable tag input (chips), same
+           shape as the Total (Rp) field above. -->
+      <div class="sof-field">
+        <span class="sof-field-label">Tags</span>
+        <div class="sof-tags">
+          <MpPopover
+            :id="`${id}-tags-comparator`" is-manual :is-open="tagsComparatorOpen"
+            use-portal :is-keep-alive="false" placement="bottom-start"
+            @open="tagsComparatorOpen = true" @close="tagsComparatorOpen = false"
+          >
+            <MpPopoverTrigger>
+              <MpButton class="sof-tags-prefix" @click.stop="tagsComparatorOpen = !tagsComparatorOpen">
+                <span>{{ TAGS_COMPARATOR_LABELS[draft.tagsComparator] }}</span>
+                <MpIcon name="chevrons-down" size="sm" />
+              </MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content' })" @blur="tagsComparatorOpen = false" @escape="tagsComparatorOpen = false">
+              <MpPopoverList>
+                <MpPopoverListItem
+                  v-for="c in TAGS_COMPARATORS" :key="c"
+                  :is-active="c === draft.tagsComparator" @click="selectTagsComparator(c)"
+                >
+                  {{ TAGS_COMPARATOR_LABELS[c] }}
+                </MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+          <div class="sof-tags-field">
+            <span v-for="(tag, i) in draft.tags" :key="`${i}-${tag}`" class="sof-tag-chip">
+              {{ tag }}
+              <MpButton type="button" variant="ghost" class="sof-tag-remove" :aria-label="`Remove ${tag}`" @click="removeTag(i)">
+                <MpIcon name="close" size="sm" />
+              </MpButton>
+            </span>
+            <input
+              :id="`${id}-tags-input`"
+              v-model="tagDraft"
+              class="sof-tag-input"
+              type="text"
+              placeholder=""
+              @keydown.enter.prevent="addTag"
+              @keydown.delete="onTagBackspace"
+            >
           </div>
         </div>
-
-        <footer class="sof-filters-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="clearAll">Reset filter</button>
-          <div class="sof-footer-right">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="apply">Apply</button>
-          </div>
-        </footer>
       </div>
-    </div>
-  </Transition>
+    </template>
+
+    <template #footer>
+      <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="clearAll">Reset filter</MpButton>
+      <div class="sof-footer-right">
+        <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="close">Cancel</MpButton>
+        <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="apply">Apply</MpButton>
+      </div>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>
-.sof-filters-enter-active { transition: background-color 250ms ease; }
-.sof-filters-leave-active { transition: background-color 250ms ease; }
-.sof-filters-enter-from, .sof-filters-leave-to { background-color: transparent; }
-.sof-filters-enter-active .sof-filters-panel { transition: transform 350ms ease-out; }
-.sof-filters-leave-active .sof-filters-panel { transition: transform 250ms ease-in; }
-.sof-filters-enter-from .sof-filters-panel,
-.sof-filters-leave-to .sof-filters-panel { transform: translateX(calc(100% + 12px)); }
-
-.sof-filters-overlay {
-  position: fixed; inset: 0; z-index: 1300;
-  background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45));
-  display: flex; justify-content: flex-end;
-}
-.sof-filters-panel {
-  margin: var(--mp-spacing-3);
-  width: min(420px, calc(100% - 24px));
-  height: calc(100% - 24px);
-  display: flex; flex-direction: column;
-  background: var(--mp-background-stage, #fff);
-  border-radius: 12px;
-  overflow: hidden;
-}
-.sof-filters-header {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
-  padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
-}
-.sof-filters-title {
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
-}
-.sof-filters-close {
-  display: inline-flex !important; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important; min-width: 0 !important;
-  border: none !important; background: none !important; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default);
-}
-.sof-filters-close:hover { background: var(--mp-background-neutral-hovered); }
-
-.sof-filters-body {
-  flex: 1; overflow-y: auto;
-  /* 20px row gap between fields — the standard form field spacing (Form.md). */
-  display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px);
-  padding: var(--mp-spacing-4);
-}
-
 /* Keywords — text input with an inline column-scope dropdown suffix. */
 .sof-keyword {
   display: flex; align-items: center; gap: var(--mp-spacing-3);
@@ -383,10 +325,5 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
 .sof-tag-input { flex: 1; min-width: var(--mp-sizes-20, 80px); height: var(--mp-sizes-5, 20px); border: none; outline: none; background: transparent; padding: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .sof-tag-input::placeholder { color: var(--mp-text-placeholder); }
 
-.sof-filters-footer {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-top: 1px solid var(--mp-border-default);
-}
 .sof-footer-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 </style>

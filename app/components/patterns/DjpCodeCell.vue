@@ -5,6 +5,7 @@
  * "View details" link that opens DjpCodePopover with the full text. Overflow
  * detection mirrors ClampText.vue (ResizeObserver + scrollHeight/clientHeight).
  */
+import { css } from '@mekari/pixel3'
 import DjpCodePopover from '~/components/patterns/DjpCodePopover.vue'
 
 const props = defineProps<{
@@ -29,20 +30,30 @@ onMounted(() => {
 })
 onUnmounted(() => { resizeObserver?.disconnect(); resizeObserver = null })
 watch(() => props.text, () => nextTick(measure))
+
+const cellClass = css({
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'flex-start',
+  minWidth: '0',
+})
+
+const bodyClass = css({
+  whiteSpace: 'normal',
+  overflowWrap: 'anywhere',
+})
 </script>
 
 <template>
-  <span class="djp-cell">
-    <span ref="bodyEl" class="djp-cell__body">{{ text }}</span>
+  <span :class="cellClass">
+    <span ref="bodyEl" :class="[bodyClass, 'djp-cell__body--clamped']">{{ text }}</span>
     <DjpCodePopover v-if="overflowing" :id="id" :title="title" :description="text" />
   </span>
 </template>
 
 <style scoped>
-.djp-cell { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
-.djp-cell__body {
-  white-space: normal;
-  overflow-wrap: anywhere;
+/* -webkit-line-clamp cannot be expressed via css() — kept in a style block */
+.djp-cell__body--clamped {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;

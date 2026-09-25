@@ -8,7 +8,7 @@
  * contextual.
  */
 import { ref } from 'vue'
-import { MpIcon } from '@mekari/pixel3'
+import { MpIcon, MpButton } from '@mekari/pixel3'
 
 defineProps<{ requirements: string[] }>()
 
@@ -18,10 +18,10 @@ const open = ref(false)
 
 <template>
   <div class="fmt" :class="{ 'fmt--open': open }">
-    <button type="button" class="fmt-head" :aria-expanded="open" @click="open = !open">
+    <MpButton class="fmt-head" :aria-expanded="open" @click="open = !open">
       <span class="fmt-title">{{ t('Format requirements') }}</span>
       <MpIcon :name="open ? 'chevrons-down' : 'chevrons-right'" size="sm" color="icon.default" />
-    </button>
+    </MpButton>
 
     <div v-if="open" class="fmt-body">
       <ul class="fmt-list">
@@ -43,17 +43,18 @@ const open = ref(false)
   background: var(--mp-background-neutral);
 }
 .fmt-head {
-  display: flex;
+  display: flex !important;
   align-items: center;
   justify-content: space-between;
   gap: var(--mp-spacing-2);
-  width: 100%;
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  background: transparent;
-  border: none;
+  width: 100% !important;
+  padding: var(--mp-spacing-3) var(--mp-spacing-4) !important;
+  background: transparent !important;
+  border: none !important;
   cursor: pointer;
   font-family: inherit;
   text-align: left;
+  min-width: 0 !important;
 }
 .fmt-title {
   font-size: var(--mp-font-sizes-md);

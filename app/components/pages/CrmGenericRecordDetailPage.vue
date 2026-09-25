@@ -52,14 +52,14 @@ const paymentTermsOptions = (dataSourceByKey('erp-payment-terms')?.values ?? [])
       <div class="grd-body">
         <!-- Stage stepper — click a stage to move the record -->
         <section class="grd-stepper">
-          <button
+          <MpButton
             v-for="(s, i) in stages" :key="s.name" type="button" class="grd-step"
             :class="{ 'grd-step--done': i <= currentIndex, 'grd-step--current': i === currentIndex }"
             @click="moveStage(s.name)"
           >
             <span class="grd-step-label">{{ s.name }}</span>
             <span class="grd-step-bar" />
-          </button>
+          </MpButton>
         </section>
 
         <!-- Default fields — inline-editable -->

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MpIcon } from '@mekari/pixel3'
+import { MpIcon, MpButton } from '@mekari/pixel3'
 import type { Notification } from '~/data/notifications'
 
 defineProps<{
@@ -27,24 +27,22 @@ defineEmits<{
         </div>
       </div>
       <div class="ndp-nav">
-        <button
+        <MpButton
           class="ndp-nav-btn"
-          type="button"
           aria-label="Previous notification"
           :disabled="!hasPrev"
           @click="$emit('prev')"
         >
           <MpIcon name="chevrons-up" size="sm" />
-        </button>
-        <button
+        </MpButton>
+        <MpButton
           class="ndp-nav-btn"
-          type="button"
           aria-label="Next notification"
           :disabled="!hasNext"
           @click="$emit('next')"
         >
           <MpIcon name="chevrons-down" size="sm" />
-        </button>
+        </MpButton>
       </div>
     </div>
 
@@ -63,15 +61,14 @@ defineEmits<{
       </div>
 
       <div class="ndp-actions">
-        <button
+        <MpButton
           v-for="action in notification.detail.actions"
           :key="action.label"
-          type="button"
           class="btn-enterprise"
           :class="action.primary ? 'btn-enterprise--primary' : 'btn-enterprise--ghost'"
         >
           {{ action.label }}
-        </button>
+        </MpButton>
       </div>
     </div>
   </div>
@@ -130,15 +127,16 @@ defineEmits<{
   flex-shrink: 0;
 }
 .ndp-nav-btn {
-  display: flex;
+  display: flex !important;
   align-items: center;
   justify-content: center;
-  padding: var(--mp-spacing-2);
-  border: none;
-  border-radius: var(--mp-radii-md, 6px);
-  background: transparent;
+  padding: var(--mp-spacing-2) !important;
+  border: none !important;
+  border-radius: var(--mp-radii-md, 6px) !important;
+  background: transparent !important;
   color: var(--mp-text-secondary);
   cursor: pointer;
+  min-width: 0 !important;
 }
 .ndp-nav-btn:hover:not(:disabled) { background: var(--mp-background-neutral-hovered); }
 .ndp-nav-btn:disabled { color: var(--mp-text-placeholder, #8690a2); cursor: not-allowed; }

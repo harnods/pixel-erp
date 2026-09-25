@@ -367,16 +367,16 @@ function submitToDjp() { save('awaiting-approval') }
                 <MpFormLabel>{{ t('VAT Code') }}</MpFormLabel>
                 <MpPopover id="ctd-vat-popover" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
                   <MpPopoverTrigger>
-                    <button
-                      id="ctd-vat-inp" ref="vatTriggerEl" type="button" class="ctd-select-trigger"
+                    <MpButton
+                      id="ctd-vat-inp" ref="vatTriggerEl" type="button" class="ctd-select-trigger" variant="ghost"
                       :class="{ 'ctd-select-trigger--invalid': vatCodeError, 'ctd-select-trigger--disabled': isVatCodeLocked }"
-                      :disabled="isVatCodeLocked"
+                      :is-disabled="isVatCodeLocked"
                     >
                       <span :class="{ 'ctd-select-trigger__placeholder': !selectedVatCode }">
                         {{ selectedVatCode ? selectedVatCode.label : t('Select VAT Code') }}
                       </span>
                       <MpIcon name="chevrons-down" size="sm" />
-                    </button>
+                    </MpButton>
                   </MpPopoverTrigger>
                   <MpPopoverContent
                     :class="css({ minWidth: '280px' })"
@@ -484,9 +484,9 @@ function submitToDjp() { save('awaiting-approval') }
           </div>
 
           <div class="ctd-footer">
-            <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="close">{{ t('Cancel') }}</button>
-            <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="saveDraft">{{ t('Save as draft') }}</button>
-            <button type="button" class="btn-enterprise btn-enterprise--primary" @click="submitToDjp">{{ t('Save & submit to DJP') }}</button>
+            <MpButton type="button" class="btn-enterprise btn-enterprise--ghost" variant="ghost" @click="close">{{ t('Cancel') }}</MpButton>
+            <MpButton type="button" class="btn-enterprise btn-enterprise--secondary" variant="secondary" @click="saveDraft">{{ t('Save as draft') }}</MpButton>
+            <MpButton type="button" class="btn-enterprise btn-enterprise--primary" variant="primary" @click="submitToDjp">{{ t('Save & submit to DJP') }}</MpButton>
           </div>
         </div>
       </MpDrawerBody>

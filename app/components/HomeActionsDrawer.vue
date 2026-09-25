@@ -80,36 +80,26 @@ async function save() {
 </script>
 
 <template>
-  <Transition name="ha">
-    <div v-if="isOpen" class="ha-overlay">
-      <div class="ha-panel" role="dialog" aria-label="Add actions">
-        <!-- Header -->
-        <header class="ha-header">
-          <h2 class="ha-title">Add actions</h2>
-          <button class="ha-close" type="button" aria-label="Close" @click="close">
-            <MpIcon name="close" size="md" />
-          </button>
-        </header>
-
-        <!-- Body — two columns -->
-        <div class="ha-body">
+  <ErpDrawer :is-open="isOpen" title="Add actions" width="920px" @close="close">
+    <template #body>
+      <div class="ha-body">
           <!-- Left: catalog -->
           <section class="ha-col">
             <div class="ha-search">
               <MpIcon name="search" size="sm" />
               <input v-model="search" class="ha-search-input" type="text" placeholder="Search action" />
-              <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+              <MpButton v-if="search" class="search-clear-btn" variant="ghost" type="button" aria-label="Clear search" @click="search = ''">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                 </svg>
-              </button>
+              </MpButton>
             </div>
             <div class="ha-col-head"><span class="ha-col-title">Action list</span></div>
             <div class="ha-list">
-              <button v-for="a in available" :key="a.key" class="ha-item ha-item--add" type="button" @click="add(a.key)">
+              <MpButton v-for="a in available" :key="a.key" class="ha-item ha-item--add" variant="ghost" type="button" @click="add(a.key)">
                 <span class="ha-name">{{ a.label }}</span>
                 <span class="ha-act ha-act--add"><MpIcon name="add" size="sm" /></span>
-              </button>
+              </MpButton>
               <p v-if="!available.length" class="ha-empty">No actions found.</p>
             </div>
           </section>
@@ -137,50 +127,25 @@ async function save() {
                 <MpIcon name="drag" size="sm" class="ha-grip" />
                 <span class="ha-name">{{ a.label }}</span>
                 <MpTooltip :id="`ha-remove-${a.key}`" label="Remove" placement="top" use-portal>
-                  <button class="ha-remove" type="button" aria-label="Remove" @click.stop="remove(a.key)">
+                  <MpButton class="ha-remove" variant="ghost" type="button" aria-label="Remove" @click.stop="remove(a.key)">
                     <MpIcon name="minus-circular" size="sm" />
-                  </button>
+                  </MpButton>
                 </MpTooltip>
               </li>
             </ul>
           </section>
         </div>
+    </template>
 
-        <!-- Footer -->
-        <footer class="ha-footer">
-          <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
-          <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="save">{{ isSaving ? 'Saving…' : 'Save changes' }}</MpButton>
-        </footer>
-      </div>
-    </div>
-  </Transition>
+    <template #footer>
+      <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
+      <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="save">{{ isSaving ? 'Saving…' : 'Save changes' }}</MpButton>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>
-.ha-enter-active, .ha-leave-active { transition: background-color 250ms ease; }
-.ha-enter-from, .ha-leave-to { background-color: transparent; }
-.ha-enter-active :deep(.ha-panel) { transition: transform 350ms ease-out; }
-.ha-leave-active :deep(.ha-panel) { transition: transform 250ms ease-in; }
-.ha-enter-from :deep(.ha-panel),
-.ha-leave-to :deep(.ha-panel) { transform: translateX(calc(100% + 12px)); }
-
-.ha-overlay { position: fixed; inset: 0; z-index: 1300; background: rgba(8, 13, 14, 0.45); display: flex; justify-content: flex-end; }
-/* Floating ERP drawer — 12px margin, rounded corners, no box-shadow. */
-.ha-panel {
-  margin: var(--mp-spacing-3); width: min(920px, calc(100% - 24px)); height: calc(100% - 24px);
-  display: flex; flex-direction: column; background: var(--mp-background-stage, #fff);
-  border-radius: 24px; overflow: hidden;
-}
-.ha-header {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
-  padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  border-bottom: 1px solid var(--mp-border-default); background: var(--mp-background-neutral-subtle);
-}
-.ha-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.ha-close { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
-.ha-close:hover { background: var(--mp-background-neutral-hovered); }
-
-.ha-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1px 1fr; }
+.ha-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1px 1fr; margin: calc(-1 * var(--mp-spacing-4)); }
 .ha-col { display: flex; flex-direction: column; min-height: 0; padding: var(--mp-spacing-4); gap: var(--mp-spacing-3); }
 .ha-divider { background: var(--mp-border-default); }
 
@@ -233,5 +198,4 @@ async function save() {
 
 .ha-empty { margin: 0; padding: var(--mp-spacing-4) var(--mp-spacing-1); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
-.ha-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 </style>

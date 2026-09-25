@@ -251,7 +251,7 @@ function handleSave() {
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Work Order #{{ wo.number.split('-').pop() }}</button>
+        <MpButton class="detail-breadcrumb" @click="goBack">Work Order #{{ wo.number.split('-').pop() }}</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">New material record</h1>
         </div>
@@ -456,7 +456,7 @@ function handleSave() {
   <div v-else class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="router.push('/work-orders')">Work orders</button>
+        <MpButton class="detail-breadcrumb" @click="router.push('/work-orders')">Work orders</MpButton>
         <div class="detail-titlerow-left"><h1 class="detail-title">Work order not found</h1></div>
       </div>
     </header>

@@ -9,7 +9,7 @@
  * tag cells across all index pages.
  */
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon, MpTag, css } from '@mekari/pixel3'
+import { MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon, MpTag, css } from '@mekari/pixel3'
 
 let uid = 0
 
@@ -112,9 +112,9 @@ watch(() => props.tags, () => nextTick(measure))
       >
         <div class="etl-header">
           <span class="etl-header-title">{{ title ?? t('Values') }}</span>
-          <button class="etl-close-btn" type="button" :aria-label="t('Close')" @click.stop="open = false">
+          <MpButton class="etl-close-btn" type="button" variant="ghost" :aria-label="t('Close')" @click.stop="open = false">
             <MpIcon name="close" size="sm" />
-          </button>
+          </MpButton>
         </div>
         <ul class="etl-list">
           <li v-for="tag in tags" :key="tag" class="etl-list-item">{{ tag }}</li>
@@ -128,9 +128,9 @@ watch(() => props.tags, () => nextTick(measure))
         :class="css({ width: '400px', padding: '24px', position: 'relative' })"
         @blur="open = false" @escape="open = false"
       >
-        <button class="etl-card-close" type="button" :aria-label="t('Close')" @click.stop="open = false">
+        <MpButton class="etl-card-close" type="button" variant="ghost" :aria-label="t('Close')" @click.stop="open = false">
           <MpIcon name="close" size="sm" />
-        </button>
+        </MpButton>
         <span class="etl-card-title">{{ title ?? t('Values') }}</span>
         <div class="etl-card-table">
           <ul class="etl-card-list">

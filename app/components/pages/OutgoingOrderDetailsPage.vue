@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import {
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, css,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpAutocomplete, MpFormControl, MpFormLabel, MpFormErrorMessage, toast,
@@ -299,33 +299,33 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">{{ t('Outbound delivery') }}</button>
+        <MpButton variant="ghost" class="detail-breadcrumb" @click="goBack">{{ t('Outbound delivery') }}</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ order.salesNo }}</h1>
           <ErpStatusBadge :status="outgoingStage(order)" :type="order.status === 'pending' ? 'announcement' : undefined" badge-for="additionalInformation" size="md" />
           <MpPopover id="ood-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" :aria-label="t('Switch transaction')">
+              <MpButton variant="ghost" class="detail-jump-chevron" :aria-label="t('Switch transaction')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
+                  <MpButton v-if="jumpSearch" variant="ghost" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
-                  </button>
+                  </MpButton>
                 </div>
                 <div class="detail-jump-list">
-                  <button v-for="o in jumpResults" :key="o.id" class="detail-jump-item" @click="jumpTo(o.id)">
+                  <MpButton v-for="o in jumpResults" :key="o.id" variant="secondary" class="detail-jump-item" @click="jumpTo(o.id)">
                     <span class="detail-jump-item-number">{{ o.salesNo }}</span>
                     <span class="detail-jump-item-customer">{{ o.customer ?? o.source }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found.') }}</p>
                 </div>
               </div>
@@ -513,12 +513,12 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
            (Edit order / Cancel order / Release reserved), matching StockAdjustmentDetailsPage. -->
       <template v-if="canPickOrder(order)">
         <div v-if="canEdit || canCancel || canRelease" class="detail-split-btn">
-          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="createPicking">{{ t('Create picking list') }}</button>
+          <MpButton variant="primary" class="detail-btn detail-btn--primary detail-split-btn__main" @click="createPicking">{{ t('Create picking list') }}</MpButton>
           <MpPopover id="ood-actions-pick" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
-              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
+              <MpButton variant="primary" class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
@@ -529,18 +529,18 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
             </MpPopoverContent>
           </MpPopover>
         </div>
-        <button v-else class="detail-btn detail-btn--primary" @click="createPicking">{{ t('Create picking list') }}</button>
+        <MpButton v-else variant="primary" class="detail-btn detail-btn--primary" @click="createPicking">{{ t('Create picking list') }}</MpButton>
       </template>
 
       <!-- Create packing — same split treatment -->
       <template v-else-if="canCreatePackingDirectlyForOrder(order)">
         <div v-if="canEdit || canCancel || canRelease" class="detail-split-btn">
-          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="openDirectPacking">{{ t('Create packing') }}</button>
+          <MpButton variant="primary" class="detail-btn detail-btn--primary detail-split-btn__main" @click="openDirectPacking">{{ t('Create packing') }}</MpButton>
           <MpPopover id="ood-actions-pack" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
-              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
+              <MpButton variant="primary" class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
@@ -551,16 +551,16 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
             </MpPopoverContent>
           </MpPopover>
         </div>
-        <button v-else class="detail-btn detail-btn--primary" @click="openDirectPacking">{{ t('Create packing') }}</button>
+        <MpButton v-else variant="primary" class="detail-btn detail-btn--primary" @click="openDirectPacking">{{ t('Create packing') }}</MpButton>
       </template>
 
       <!-- No create action left, but the order is still editable / cancellable / has reserved to release -->
       <MpPopover v-else-if="canEdit || canCancel || canRelease" id="ood-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--primary">
+          <MpButton variant="primary" class="detail-btn detail-btn--primary">
             {{ t('Actions') }}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -606,8 +606,8 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         </MpModalBody>
         <MpModalFooter>
           <div class="ood-modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="closeDirectPacking">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--primary" @click="confirmDirectPacking">{{ t('Create packing') }}</button>
+            <MpButton variant="ghost" class="btn-enterprise btn-enterprise--ghost" @click="closeDirectPacking">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" @click="confirmDirectPacking">{{ t('Create packing') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -623,8 +623,8 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         </MpModalBody>
         <MpModalFooter>
           <div class="ood-modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="cancelModalOpen = false">{{ t('Keep order') }}</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ t('Cancel order') }}</button>
+            <MpButton variant="ghost" class="btn-enterprise btn-enterprise--ghost" @click="cancelModalOpen = false">{{ t('Keep order') }}</MpButton>
+            <MpButton variant="danger" class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ t('Cancel order') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -635,7 +635,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 
   <div v-else class="ood-not-found">
     <p>{{ t('Order not found.') }}</p>
-    <button class="detail-breadcrumb" @click="goBack">{{ t('Back to Outbound delivery') }}</button>
+    <MpButton variant="ghost" class="detail-breadcrumb" @click="goBack">{{ t('Back to Outbound delivery') }}</MpButton>
   </div>
 </template>
 

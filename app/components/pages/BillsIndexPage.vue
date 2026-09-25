@@ -450,14 +450,14 @@ function confirmBulkDelete() {
 
         <!-- Card 4: Upsell — Mekari Card — hidden when Airene panel is open or dismissed -->
         <div v-if="!aireneOpen && showMekariCardUpsell" class="stat-card stat-card--upsell">
-          <button
-            type="button"
+          <MpButton
+            variant="ghost"
             class="upsell-dismiss"
             :aria-label="t('Dismiss')"
             @click="showMekariCardUpsell = false"
           >
             <MpIcon name="close" size="sm" />
-          </button>
+          </MpButton>
           <div class="upsell-content">
             <div class="upsell-icon">
               <MpIcon name="billing" size="md" variant="fill" />
@@ -468,9 +468,9 @@ function confirmBulkDelete() {
             </div>
           </div>
           <div class="upsell-actions">
-            <button type="button" class="btn-enterprise btn-enterprise--secondary">
+            <MpButton class="btn-enterprise btn-enterprise--secondary">
               {{ t('Start set up') }}
-            </button>
+            </MpButton>
           </div>
         </div>
 
@@ -511,9 +511,9 @@ function confirmBulkDelete() {
             type="text"
             :placeholder="t('Search...')"
           />
-          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
+          <MpButton v-if="search" class="search-clear-btn" variant="ghost" :aria-label="t('Clear search')" @click="search = ''">
             <MpIcon name="close" size="sm" />
-          </button>
+          </MpButton>
         </div>
       </div>
     </template>
@@ -539,14 +539,14 @@ function confirmBulkDelete() {
           placement="bottom"
           use-portal
         >
-          <button
-            type="button"
+          <MpButton
+            variant="ghost"
             class="attachment-icon-indicator"
             :aria-label="t('View attachment')"
             @click.stop="previewAttachments(row as Row)"
           >
             <MpIcon name="attachment" size="sm" />
-          </button>
+          </MpButton>
         </MpTooltip>
       </div>
     </template>
@@ -671,8 +671,8 @@ function confirmBulkDelete() {
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="closeBulkDeleteModal">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="confirmBulkDelete">{{ t('Delete') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" @click="closeBulkDeleteModal">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--danger" variant="danger" @click="confirmBulkDelete">{{ t('Delete') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -783,8 +783,8 @@ function confirmBulkDelete() {
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="closeExportModal">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="closeExportModal">{{ t('Export') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" @click="closeExportModal">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" @click="closeExportModal">{{ t('Export') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>

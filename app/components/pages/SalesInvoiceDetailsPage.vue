@@ -271,15 +271,16 @@ function receivePayment() { router.push('/sales-invoices') }
                   </MpButton>
                 </div>
                 <div class="detail-jump-list">
-                  <button
+                  <MpButton
                     v-for="inv in jumpResults"
                     :key="inv.id"
+                    variant="secondary"
                     class="detail-jump-item"
                     @click="jumpTo(inv.id)"
                   >
                     <span class="detail-jump-item-number">{{ t('Sales Invoice') }} #{{ inv.number }}</span>
                     <span class="detail-jump-item-customer">{{ inv.customer.name }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found') }}</p>
                 </div>
               </div>
@@ -622,10 +623,9 @@ function receivePayment() { router.push('/sales-invoices') }
         <!-- Print & share (secondary dropdown) -->
         <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--secondary">
+            <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary" left-icon="chevrons-down">
               {{ t('Print & share') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
+            </MpButton>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
@@ -644,10 +644,9 @@ function receivePayment() { router.push('/sales-invoices') }
         <!-- Paid: a plain "Actions" primary dropdown (no payment left to record) -->
         <MpPopover v-if="invoice.status === 'paid'" id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--primary">
+            <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" left-icon="chevrons-down">
               {{ t('Actions') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
+            </MpButton>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
@@ -669,14 +668,12 @@ function receivePayment() { router.push('/sales-invoices') }
              a payment; chevron segment opens the rest (Reject + the create-document
              actions that only make sense before the invoice is settled). -->
         <div v-else class="detail-split-btn">
-          <button class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="receivePayment">
+          <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="receivePayment">
             {{ t('Add payment') }}
-          </button>
+          </MpButton>
           <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
-              <button class="btn-enterprise btn-enterprise--primary detail-split-btn__chevron" :aria-label="t('More actions')">
-                <MpIcon name="chevrons-down" size="sm" />
-              </button>
+              <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary detail-split-btn__chevron" left-icon="chevrons-down" :aria-label="t('More actions')" />
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>

@@ -8,7 +8,7 @@
  */
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpSelect, MpCheckbox, MpTooltip, MpIcon, MpInput, css,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpSelect, MpCheckbox, MpTooltip, MpIcon, MpInput, MpButton, css,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -323,7 +323,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Products</button>
+        <MpButton class="detail-breadcrumb" variant="ghost" @click="goBack">Products</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ product.name }}</h1>
         </div>
@@ -331,12 +331,12 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 
       <MpPopover id="pd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--primary">
+          <MpButton class="detail-btn detail-btn--primary" variant="primary">
             Actions
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -499,11 +499,11 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                   <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                 </svg>
                 <input v-model="txSearch" class="pd-search-input" type="text" placeholder="Search..." />
-                <button v-if="txSearch" class="pd-search-clear" type="button" aria-label="Clear search" @click="txSearch = ''">
+                <MpButton v-if="txSearch" class="pd-search-clear" variant="secondary" type="button" aria-label="Clear search" @click="txSearch = ''">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                   </svg>
-                </button>
+                </MpButton>
               </div>
             </div>
 
@@ -592,20 +592,21 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                     <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                   </svg>
                   <input v-model="batchSearch" class="pd-search-input" type="text" placeholder="Search..." />
-                  <button v-if="batchSearch" class="pd-search-clear" type="button" aria-label="Clear search" @click="batchSearch = ''">
+                  <MpButton v-if="batchSearch" class="pd-search-clear" variant="secondary" type="button" aria-label="Clear search" @click="batchSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
-                  </button>
+                  </MpButton>
                 </div>
-                <button
+                <MpButton
                   v-if="filteredBatches.length"
                   class="detail-btn detail-btn--secondary"
+                  variant="secondary"
                   type="button"
                   @click="printAllBatchBarcodes"
                 >
                   Print all barcode
-                </button>
+                </MpButton>
               </div>
             </div>
 
@@ -654,11 +655,11 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                     <td class="pd-td pd-td--action">
                       <MpPopover :id="`pd-batch-actions-${b.batchNo}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                         <MpPopoverTrigger>
-                          <button class="row-kebab" aria-label="More actions" @click.stop>
+                          <MpButton class="row-kebab" variant="secondary" aria-label="More actions" @click.stop>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                               <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
                             </svg>
-                          </button>
+                          </MpButton>
                         </MpPopoverTrigger>
                         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                           <MpPopoverList>
@@ -692,14 +693,15 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
           <MpTabPanel v-else-if="product.trackStockBy === 'Serial number'" value="serials">
             <div class="pd-section-head">
               <h3 class="linked-section-title">Serial numbers</h3>
-              <button
+              <MpButton
                 v-if="serialTotal > 0"
                 class="detail-btn detail-btn--secondary"
+                variant="secondary"
                 type="button"
                 @click="printAllSerialBarcodes"
               >
                 Print all barcode
-              </button>
+              </MpButton>
             </div>
             <div v-if="pagedSerialStock.length" class="pd-table-scroll">
               <table class="pd-table">
@@ -751,23 +753,26 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
           <MpTabPanel value="warehouses">
             <div v-if="pagedWarehouseStock.length" class="pd-filter-bar pd-filter-bar--end">
               <div v-if="whEditing" class="pd-filter-right">
-                <button
+                <MpButton
                   class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+                  variant="ghost"
                   type="button"
                   @click="whEditing = false"
-                >Cancel</button>
-                <button
+                >Cancel</MpButton>
+                <MpButton
                   class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
+                  variant="primary"
                   type="button"
                   @click="saveMinStock"
-                >Save</button>
+                >Save</MpButton>
               </div>
-              <button
+              <MpButton
                 v-else
                 class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+                variant="secondary"
                 type="button"
                 @click="startEditMinStock"
-              >Edit</button>
+              >Edit</MpButton>
             </div>
             <div v-if="pagedWarehouseStock.length" class="pd-table-scroll">
               <table class="pd-table">

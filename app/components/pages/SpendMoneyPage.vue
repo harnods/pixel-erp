@@ -262,7 +262,7 @@ function handleSave() {
           <MpFormControl id="sm-transno">
             <div class="ex-label-row">
               <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
-              <button type="button" class="ex-label-icon" :aria-label="t('Transaction no. settings')" @click="noSettingsOpen = true"><MpIcon name="settings" size="sm" /></button>
+              <MpButton variant="ghost" type="button" class="ex-label-icon" :aria-label="t('Transaction no. settings')" left-icon="settings" @click="noSettingsOpen = true" />
             </div>
             <MpInput id="sm-transno-input" v-model="transactionNo" :placeholder="t('Auto')" is-full-width is-disabled />
           </MpFormControl>

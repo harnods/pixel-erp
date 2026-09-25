@@ -7,7 +7,7 @@
  * number" lists.
  */
 import { ref, computed, watch } from 'vue'
-import { MpIcon } from '@mekari/pixel3'
+import { MpIcon, MpButton } from '@mekari/pixel3'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 
 const props = withDefaults(defineProps<{
@@ -92,9 +92,9 @@ function handleSave() {
 
       <header class="psn-header">
         <h2 class="psn-title">{{ title }}</h2>
-        <button class="psn-close" type="button" aria-label="Close" @click="handleCancel">
+        <MpButton class="psn-close" variant="ghost" type="button" aria-label="Close" @click="handleCancel">
           <MpIcon name="close" size="md" />
-        </button>
+        </MpButton>
       </header>
 
       <div class="psn-content">
@@ -135,9 +135,9 @@ function handleSave() {
             <div class="psn-list">
               <div v-for="s in filteredAvailable" :key="s" class="psn-row" @click="addOne(s)">
                 <span class="psn-row-text">{{ s }}</span>
-                <button class="psn-row-btn psn-row-btn--add" type="button" :aria-label="`Add ${s}`" @click.stop="addOne(s)">
+                <MpButton class="psn-row-btn psn-row-btn--add" variant="ghost" type="button" :aria-label="`Add ${s}`" @click.stop="addOne(s)">
                   <MpIcon name="add" size="sm" />
-                </button>
+                </MpButton>
               </div>
               <p v-if="!filteredAvailable.length" class="psn-empty-text">No serial numbers available.</p>
             </div>
@@ -158,9 +158,9 @@ function handleSave() {
             <div class="psn-list">
               <div v-for="s in filteredSelected" :key="s" class="psn-row" :class="{ 'psn-row--static': isReadOnly }">
                 <span class="psn-row-text">{{ s }}</span>
-                <button v-if="!isReadOnly" class="psn-row-btn psn-row-btn--remove" type="button" :aria-label="`Remove ${s}`" @click="removeOne(s)">
+                <MpButton v-if="!isReadOnly" class="psn-row-btn psn-row-btn--remove" variant="ghost" type="button" :aria-label="`Remove ${s}`" @click="removeOne(s)">
                   <MpIcon name="minus-circular" size="sm" />
-                </button>
+                </MpButton>
               </div>
               <p v-if="!filteredSelected.length" class="psn-empty-text">{{ isReadOnly ? 'Nothing reserved.' : 'No serial numbers selected.' }}</p>
             </div>
@@ -169,10 +169,10 @@ function handleSave() {
       </div>
 
       <footer class="psn-footer">
-        <button v-if="isReadOnly" class="btn-enterprise btn-enterprise--primary" type="button" @click="handleCancel">Close</button>
+        <MpButton v-if="isReadOnly" class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="handleCancel">Close</MpButton>
         <template v-else>
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="handleCancel">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="handleSave">Save</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="handleCancel">Cancel</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="handleSave">Save</MpButton>
         </template>
       </footer>
 

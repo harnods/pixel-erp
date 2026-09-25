@@ -506,43 +506,41 @@ const toggleAirene = inject<() => void>('toggleAirene')
       <!-- ── Fixed metrics (PRD: 5 cards, click-through) ── -->
       <div class="cc-stats">
         <div class="stats-section">
-          <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'ongoing' }" @click="applyMetric('ongoing')">
+          <MpButton type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'ongoing' }" @click="applyMetric('ongoing')">
             <div class="stat-title">{{ t('Total ongoing deals') }}</div>
             <div class="stat-amount">{{ m.totalOngoing }}</div>
             <div class="stat-sub">{{ t('In the pipeline') }}</div>
-          </button>
-          <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'ongoing' }" @click="applyMetric('ongoing')">
+          </MpButton>
+          <MpButton type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'ongoing' }" @click="applyMetric('ongoing')">
             <div class="stat-title">{{ t('Total deal value') }}</div>
             <div class="stat-amount">{{ formatMoney(m.totalOngoingValue, 'IDR') }}</div>
             <div class="stat-sub">{{ t('Ongoing, base currency') }}</div>
-          </button>
-          <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'closing' }" @click="applyMetric('closing')">
+          </MpButton>
+          <MpButton type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'closing' }" @click="applyMetric('closing')">
             <div class="stat-title">{{ t('Closing this month') }}</div>
             <div class="stat-amount">{{ m.closingThisMonthCount }}</div>
             <div class="stat-sub">{{ formatMoney(m.closingThisMonthValue, 'IDR') }}</div>
-          </button>
-          <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'overdue' }" @click="applyMetric('overdue')">
+          </MpButton>
+          <MpButton type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'overdue' }" @click="applyMetric('overdue')">
             <div class="stat-title">{{ t('Overdue') }}</div>
             <div class="stat-amount" :class="{ 'stat-amount--danger': m.overdueCount > 0 }">{{ m.overdueCount }}</div>
             <div class="stat-sub">{{ t('Past due date') }}</div>
-          </button>
-          <button type="button" class="stat-card" :class="{ 'stat-card--active': metricFilter === 'converted' }" @click="applyMetric('converted')">
+          </MpButton>
+          <MpButton type="button" class="stat-card" :class="{ 'stat-card--active': metricFilter === 'converted' }" @click="applyMetric('converted')">
             <div class="stat-title">{{ convTargetShort }} {{ t('created') }}</div>
             <div class="stat-amount">{{ m.txnCreatedPast30Count }}</div>
             <div class="stat-sub">{{ t('Past 30 days') }}</div>
-          </button>
+          </MpButton>
         </div>
         <!-- ── Optional report-backed pins — a distinct extension area after the
              protected fixed cards above (never replaces/reorders them). ── -->
         <div v-if="pinnedDealMetrics.length" class="cc-pinned-metrics">
           <div v-for="pin in pinnedDealMetrics" :key="pin.id" class="pinned-metric-card">
-            <button type="button" class="pinned-metric-body" @click="router.push(`/crm/reports/${pin.reportId}`)">
+            <MpButton type="button" class="pinned-metric-body" @click="router.push(`/crm/reports/${pin.reportId}`)">
               <div class="stat-title">{{ pin.label }}</div>
               <div class="stat-amount">{{ metricPinValue(pin) ?? '—' }}</div>
-            </button>
-            <button type="button" class="pinned-metric-unpin" :aria-label="t('Unpin')" @click="unpinReportMetric(pin.id)">
-              <MpIcon name="close" size="sm" />
-            </button>
+            </MpButton>
+            <MpButton type="button" class="pinned-metric-unpin" left-icon="close" :aria-label="t('Unpin')" @click="unpinReportMetric(pin.id)" />
           </div>
         </div>
       </div>
@@ -586,7 +584,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
           <div class="filter-search">
             <MpIcon name="search" size="sm" />
             <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search deals…')" />
-            <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''"><MpIcon name="close" size="sm" /></button>
+            <MpButton v-if="search" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="search = ''" />
           </div>
         </div>
       </div>
@@ -715,18 +713,18 @@ const toggleAirene = inject<() => void>('toggleAirene')
             <MpPopoverContent class="erp-dropdown-menu">
               <!-- Change stage swaps this SAME popover's content — no modal (rule/dnd… see CLAUDE.md). -->
               <div v-if="stagePicker.mode === 'row' && stagePicker.ids[0] === asDeal(row).id" class="stage-picker">
-                <button type="button" class="stage-picker-back" @click="closeStagePicker()"><MpIcon name="chevrons-left" size="sm" />{{ t('Change stage') }}</button>
-                <button
+                <MpButton type="button" class="stage-picker-back" left-icon="chevrons-left" @click="closeStagePicker()">{{ t('Change stage') }}</MpButton>
+                <MpButton
                   v-for="s in stageOptionsFor(stagePicker.ids)" :key="s" type="button" class="stage-picker-item"
                   @click="pickStage(s); if (!stagePicker.mode) onClosePopover()"
-                >{{ t(dealStageLabel(s)) }}</button>
+                >{{ t(dealStageLabel(s)) }}</MpButton>
                 <div v-if="stagePicker.awaitingLostReason" class="stage-picker-lost">
                   <span class="stage-picker-lost-label">{{ t('Lost reason') }}</span>
                   <textarea v-model="stagePicker.lostReason" class="stage-picker-textarea" rows="2" @input="stagePicker.error = ''" />
                   <span v-if="stagePicker.error" class="stage-picker-err">{{ stagePicker.error }}</span>
                   <div class="stage-picker-lost-actions">
-                    <button type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="cancelLostReason()">{{ t('Cancel') }}</button>
-                    <button type="button" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="confirmLostReason(); if (!stagePicker.mode) onClosePopover()">{{ t('Confirm') }}</button>
+                    <MpButton type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="cancelLostReason()">{{ t('Cancel') }}</MpButton>
+                    <MpButton type="button" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="confirmLostReason(); if (!stagePicker.mode) onClosePopover()">{{ t('Confirm') }}</MpButton>
                   </div>
                 </div>
               </div>
@@ -763,18 +761,18 @@ const toggleAirene = inject<() => void>('toggleAirene')
             </MpPopoverTrigger>
             <MpPopoverContent class="erp-dropdown-menu">
               <div v-if="stagePicker.mode === 'bulk'" class="stage-picker">
-                <button type="button" class="stage-picker-back" @click="closeStagePicker()"><MpIcon name="chevrons-left" size="sm" />{{ t('Change stage') }}</button>
-                <button
+                <MpButton type="button" class="stage-picker-back" left-icon="chevrons-left" @click="closeStagePicker()">{{ t('Change stage') }}</MpButton>
+                <MpButton
                   v-for="s in stageOptionsFor(stagePicker.ids)" :key="s" type="button" class="stage-picker-item"
                   @click="pickStage(s); if (!stagePicker.mode) onClosePopover()"
-                >{{ t(dealStageLabel(s)) }}</button>
+                >{{ t(dealStageLabel(s)) }}</MpButton>
                 <div v-if="stagePicker.awaitingLostReason" class="stage-picker-lost">
                   <span class="stage-picker-lost-label">{{ t('Lost reason') }}</span>
                   <textarea v-model="stagePicker.lostReason" class="stage-picker-textarea" rows="2" @input="stagePicker.error = ''" />
                   <span v-if="stagePicker.error" class="stage-picker-err">{{ stagePicker.error }}</span>
                   <div class="stage-picker-lost-actions">
-                    <button type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="cancelLostReason()">{{ t('Cancel') }}</button>
-                    <button type="button" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="confirmLostReason(); if (!stagePicker.mode) onClosePopover()">{{ t('Confirm') }}</button>
+                    <MpButton type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="cancelLostReason()">{{ t('Cancel') }}</MpButton>
+                    <MpButton type="button" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="confirmLostReason(); if (!stagePicker.mode) onClosePopover()">{{ t('Confirm') }}</MpButton>
                   </div>
                 </div>
               </div>

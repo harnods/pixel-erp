@@ -90,104 +90,82 @@ function toggle<T extends string>(list: T[], v: T) { const i = list.indexOf(v); 
 </script>
 
 <template>
-  <Transition name="cmfd">
-    <div v-if="isOpen" class="cmfd-overlay">
-      <div class="cmfd-panel" role="dialog" aria-label="All filters">
-        <header class="cmfd-head">
-          <span class="cmfd-title">All filters</span>
-          <MpButton class="cmfd-close" aria-label="Close" @click="close"><MpIcon name="close" size="md" /></MpButton>
-        </header>
-
-        <div class="cmfd-body">
-          <!-- Keywords — text + column scope -->
-          <MpFormControl :id="`${id}-kw`">
-            <MpFormLabel>Keywords</MpFormLabel>
-            <div class="cmfd-keyword">
-              <input v-model="draft.keyword" class="cmfd-keyword-input" type="text" placeholder="Search keywords..." @keydown.enter.prevent="apply" />
-              <MpPopover :id="`${id}-kwcol`" is-manual :is-open="keywordColOpen" use-portal :is-keep-alive="false" @open="keywordColOpen = true" @close="keywordColOpen = false">
-                <MpPopoverTrigger>
-                  <MpButton class="cmfd-keyword-scope" @click.stop="keywordColOpen = !keywordColOpen"><span>{{ keywordColLabel() }}</span><MpIcon name="chevrons-down" size="sm" /></MpButton>
-                </MpPopoverTrigger>
-                <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })" @blur="keywordColOpen = false" @escape="keywordColOpen = false">
-                  <MpPopoverList>
-                    <MpPopoverListItem v-for="c in KEYWORD_COLUMNS" :key="c.key" :is-active="draft.keywordColumn === c.key" @click="draft.keywordColumn = c.key">{{ c.label }}</MpPopoverListItem>
-                  </MpPopoverList>
-                </MpPopoverContent>
-              </MpPopover>
-            </div>
-          </MpFormControl>
-
-          <!-- Customer — tags with Is any of / Is none of -->
-          <div class="cmfd-field">
-            <span class="cmfd-field-label">Customer</span>
-            <div class="cmfd-tags">
-              <MpPopover :id="`${id}-cmp`" is-manual :is-open="comparatorOpen" use-portal :is-keep-alive="false" placement="bottom-start" @open="comparatorOpen = true" @close="comparatorOpen = false">
-                <MpPopoverTrigger>
-                  <MpButton class="cmfd-tags-prefix" @click.stop="comparatorOpen = !comparatorOpen"><span>{{ comparatorLabel() }}</span><MpIcon name="chevrons-down" size="sm" /></MpButton>
-                </MpPopoverTrigger>
-                <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })" @blur="comparatorOpen = false" @escape="comparatorOpen = false">
-                  <MpPopoverList>
-                    <MpPopoverListItem v-for="c in COMPARATORS" :key="c.key" :is-active="draft.customerComparator === c.key" @click="draft.customerComparator = c.key; comparatorOpen = false">{{ c.label }}</MpPopoverListItem>
-                  </MpPopoverList>
-                </MpPopoverContent>
-              </MpPopover>
-              <MpPopover :id="`${id}-cust-sug`" class="cmfd-cust-pop" is-manual :is-open="custSuggestOpen" use-portal :is-keep-alive="false" is-adaptive-width placement="bottom-start">
-                <MpPopoverTrigger>
-                  <div class="cmfd-tags-field">
-                    <span v-for="(tag, i) in draft.customers" :key="`${i}-${tag}`" class="cmfd-tag-chip">
-                      {{ tag }}
-                      <button type="button" class="cmfd-tag-remove" :aria-label="`Remove ${tag}`" @click="removeCust(i)"><MpIcon name="close" size="sm" /></button>
-                    </span>
-                    <input :id="`${id}-cust`" v-model="custDraft" class="cmfd-tag-input" type="text" autocomplete="off" :placeholder="draft.customers.length ? '' : 'Type a customer and press Enter'" @focus="custFocused = true" @blur="onCustBlur" @keydown.enter.prevent="addCust" @keydown.delete="onCustBackspace" />
-                  </div>
-                </MpPopoverTrigger>
-                <MpPopoverContent :class="css({ maxHeight: '240px', overflowY: 'auto' })">
-                  <MpPopoverList>
-                    <MpPopoverListItem v-for="c in filteredCustomers" :key="c" @mousedown.prevent @click="pickCust(c)">{{ c }}</MpPopoverListItem>
-                  </MpPopoverList>
-                </MpPopoverContent>
-              </MpPopover>
-            </div>
-          </div>
-
-          <!-- Transaction type -->
-          <div class="cmfd-field">
-            <span class="cmfd-field-label">Transaction type</span>
-            <ul class="cmfd-checklist">
-              <li v-for="tt in CM_MUTATION_TYPES" :key="tt" class="cmfd-check-item" @click="toggle(draft.txnTypes, tt)">
-                <span @click.stop><MpCheckbox :id="`${id}-tt-${tt}`" :is-checked="draft.txnTypes.includes(tt)" @change="() => toggle(draft.txnTypes, tt)" /></span>
-                <span class="cmfd-check-label">{{ TXN_LABELS[tt] }}</span>
-              </li>
-            </ul>
-          </div>
+  <ErpDrawer :is-open="isOpen" title="All filters" width="400px" @close="close">
+    <template #body>
+      <!-- Keywords — text + column scope -->
+      <MpFormControl :id="`${id}-kw`">
+        <MpFormLabel>Keywords</MpFormLabel>
+        <div class="cmfd-keyword">
+          <input v-model="draft.keyword" class="cmfd-keyword-input" type="text" placeholder="Search keywords..." @keydown.enter.prevent="apply" />
+          <MpPopover :id="`${id}-kwcol`" is-manual :is-open="keywordColOpen" use-portal :is-keep-alive="false" @open="keywordColOpen = true" @close="keywordColOpen = false">
+            <MpPopoverTrigger>
+              <MpButton class="cmfd-keyword-scope" @click.stop="keywordColOpen = !keywordColOpen"><span>{{ keywordColLabel() }}</span><MpIcon name="chevrons-down" size="sm" /></MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })" @blur="keywordColOpen = false" @escape="keywordColOpen = false">
+              <MpPopoverList>
+                <MpPopoverListItem v-for="c in KEYWORD_COLUMNS" :key="c.key" :is-active="draft.keywordColumn === c.key" @click="draft.keywordColumn = c.key">{{ c.label }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
         </div>
+      </MpFormControl>
 
-        <footer class="cmfd-foot">
-          <button class="cmfd-btn cmfd-btn--ghost" type="button" @click="clearAll">Reset filter</button>
-          <div class="cmfd-foot-right">
-            <button class="cmfd-btn cmfd-btn--ghost" type="button" @click="close">Cancel</button>
-            <button class="cmfd-btn cmfd-btn--primary" type="button" @click="apply">Apply</button>
-          </div>
-        </footer>
+      <!-- Customer — tags with Is any of / Is none of -->
+      <div class="cmfd-field">
+        <span class="cmfd-field-label">Customer</span>
+        <div class="cmfd-tags">
+          <MpPopover :id="`${id}-cmp`" is-manual :is-open="comparatorOpen" use-portal :is-keep-alive="false" placement="bottom-start" @open="comparatorOpen = true" @close="comparatorOpen = false">
+            <MpPopoverTrigger>
+              <MpButton class="cmfd-tags-prefix" @click.stop="comparatorOpen = !comparatorOpen"><span>{{ comparatorLabel() }}</span><MpIcon name="chevrons-down" size="sm" /></MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })" @blur="comparatorOpen = false" @escape="comparatorOpen = false">
+              <MpPopoverList>
+                <MpPopoverListItem v-for="c in COMPARATORS" :key="c.key" :is-active="draft.customerComparator === c.key" @click="draft.customerComparator = c.key; comparatorOpen = false">{{ c.label }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+          <MpPopover :id="`${id}-cust-sug`" class="cmfd-cust-pop" is-manual :is-open="custSuggestOpen" use-portal :is-keep-alive="false" is-adaptive-width placement="bottom-start">
+            <MpPopoverTrigger>
+              <div class="cmfd-tags-field">
+                <span v-for="(tag, i) in draft.customers" :key="`${i}-${tag}`" class="cmfd-tag-chip">
+                  {{ tag }}
+                  <MpButton type="button" class="cmfd-tag-remove" variant="ghost" :aria-label="`Remove ${tag}`" @click="removeCust(i)"><MpIcon name="close" size="sm" /></MpButton>
+                </span>
+                <input :id="`${id}-cust`" v-model="custDraft" class="cmfd-tag-input" type="text" autocomplete="off" :placeholder="draft.customers.length ? '' : 'Type a customer and press Enter'" @focus="custFocused = true" @blur="onCustBlur" @keydown.enter.prevent="addCust" @keydown.delete="onCustBackspace" />
+              </div>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ maxHeight: '240px', overflowY: 'auto' })">
+              <MpPopoverList>
+                <MpPopoverListItem v-for="c in filteredCustomers" :key="c" @mousedown.prevent @click="pickCust(c)">{{ c }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
       </div>
-    </div>
-  </Transition>
+
+      <!-- Transaction type -->
+      <div class="cmfd-field">
+        <span class="cmfd-field-label">Transaction type</span>
+        <ul class="cmfd-checklist">
+          <li v-for="tt in CM_MUTATION_TYPES" :key="tt" class="cmfd-check-item" @click="toggle(draft.txnTypes, tt)">
+            <span @click.stop><MpCheckbox :id="`${id}-tt-${tt}`" :is-checked="draft.txnTypes.includes(tt)" @change="() => toggle(draft.txnTypes, tt)" /></span>
+            <span class="cmfd-check-label">{{ TXN_LABELS[tt] }}</span>
+          </li>
+        </ul>
+      </div>
+    </template>
+
+    <template #footer>
+      <MpButton class="cmfd-btn cmfd-btn--ghost" variant="ghost" type="button" @click="clearAll">Reset filter</MpButton>
+      <div class="cmfd-foot-right">
+        <MpButton class="cmfd-btn cmfd-btn--ghost" variant="ghost" type="button" @click="close">Cancel</MpButton>
+        <MpButton class="cmfd-btn cmfd-btn--primary" variant="ghost" type="button" @click="apply">Apply</MpButton>
+      </div>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>
-.cmfd-enter-active, .cmfd-leave-active { transition: background-color 250ms ease; }
-.cmfd-enter-from, .cmfd-leave-to { background-color: transparent; }
-.cmfd-enter-active .cmfd-panel { transition: transform 350ms ease-out; }
-.cmfd-enter-from .cmfd-panel, .cmfd-leave-to .cmfd-panel { transform: translateX(calc(100% + 12px)); }
-
-.cmfd-overlay { position: fixed; inset: 0; z-index: 1300; background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45)); display: flex; justify-content: flex-end; }
-.cmfd-panel { margin: var(--mp-spacing-3); width: min(400px, calc(100% - 24px)); height: calc(100% - 24px); display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); border-radius: 12px; overflow: hidden; }
-.cmfd-head { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default); }
-.cmfd-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.cmfd-close { display: inline-flex !important; align-items: center; justify-content: center; width: 36px !important; height: 36px !important; min-width: 0 !important; border: none !important; background: none !important; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
-.cmfd-close:hover { background: var(--mp-background-neutral-hovered); }
-
-.cmfd-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px); padding: var(--mp-spacing-4); }
 .cmfd-field { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .cmfd-field-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 
@@ -219,7 +197,6 @@ function toggle<T extends string>(list: T[], v: T) { const i = list.indexOf(v); 
 .cmfd-check-item { display: flex; align-items: center; gap: var(--mp-spacing-2); cursor: pointer; user-select: none; }
 .cmfd-check-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
-.cmfd-foot { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 .cmfd-foot-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .cmfd-btn { height: 36px; padding: 0 var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500); cursor: pointer; border: 1px solid transparent; }
 .cmfd-btn--ghost { background: transparent; color: var(--mp-text-default); }

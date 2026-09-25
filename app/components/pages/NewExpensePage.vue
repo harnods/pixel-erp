@@ -655,18 +655,18 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
             </div>
             <div class="ex-file-controls">
               <div class="ex-zoom-toggle" role="group" :aria-label="t('Zoom')">
-                <button
+                <MpButton
                   type="button"
                   class="ex-zoom-part"
                   :class="{ 'ex-zoom-part--active': zoomMode === 'fit' }"
                   @click="zoomMode = 'fit'"
-                >{{ t('Fit') }}</button>
-                <button
+                >{{ t('Fit') }}</MpButton>
+                <MpButton
                   type="button"
                   class="ex-zoom-part"
                   :class="{ 'ex-zoom-part--active': zoomMode === '100' }"
                   @click="zoomMode = '100'"
-                >100%</button>
+                >100%</MpButton>
               </div>
               <MpButton class="ex-icon-btn" :aria-label="t('Close receipt panel')" @click="closePanel">
                 <MpIcon name="close" size="sm" />
@@ -712,18 +712,20 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
             <MpTextlink id="ne-airene-learn-more" as="a" class="ex-airene-learn-more" @click.prevent>{{ t('Learn more') }}</MpTextlink>
           </p>
           <div class="ex-airene-feedback">
-            <button
+            <MpButton
               class="ex-icon-btn"
               :class="{ 'ex-icon-btn--active': autofillFeedback === 'up' }"
+              left-icon="like"
               :aria-label="t('Good autofill result')"
               @click="setAutofillFeedback('up')"
-            ><MpIcon name="like" size="sm" /></button>
-            <button
+            />
+            <MpButton
               class="ex-icon-btn"
               :class="{ 'ex-icon-btn--active': autofillFeedback === 'down' }"
+              left-icon="dislike"
               :aria-label="t('Poor autofill result')"
               @click="setAutofillFeedback('down')"
-            ><MpIcon name="dislike" size="sm" /></button>
+            />
           </div>
         </div>
       </div>
@@ -777,7 +779,7 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
           <MpFormControl id="ex-transno" is-required>
             <div class="ex-label-row">
               <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
-              <button type="button" class="ex-label-icon" :aria-label="t('Transaction no. settings')" @click="noSettingsOpen = true"><MpIcon name="settings" size="sm" /></button>
+              <MpButton type="button" class="ex-label-icon" left-icon="settings" :aria-label="t('Transaction no. settings')" @click="noSettingsOpen = true" />
             </div>
             <MpInput id="ex-transno-input" v-model="transactionNo" placeholder="Auto" is-full-width is-disabled />
           </MpFormControl>
@@ -1171,13 +1173,13 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
 
         <!-- Footer actions -->
         <footer class="ex-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="goExpenses">{{ t('Cancel') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="goExpenses">{{ t('Cancel') }}</MpButton>
           <template v-if="isEdit">
-            <button class="btn-enterprise btn-enterprise--primary" @click="handleSave('close')">{{ t('Save changes') }}</button>
+            <MpButton class="btn-enterprise btn-enterprise--primary" @click="handleSave('close')">{{ t('Save changes') }}</MpButton>
           </template>
           <template v-else>
-            <button class="btn-enterprise btn-enterprise--secondary" @click="handleSave('close')">{{ t('Save & close') }}</button>
-            <button class="btn-enterprise btn-enterprise--primary" @click="handleSave('new')">{{ t('Save & create another') }}</button>
+            <MpButton class="btn-enterprise btn-enterprise--secondary" @click="handleSave('close')">{{ t('Save & close') }}</MpButton>
+            <MpButton class="btn-enterprise btn-enterprise--primary" @click="handleSave('new')">{{ t('Save & create another') }}</MpButton>
           </template>
         </footer>
       </div>

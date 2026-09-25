@@ -6,9 +6,9 @@
  * design skill on the server. Save creates a campaign and stores the post.
  */
 import {
-  MpDrawer, MpDrawerContent, MpDrawerBody, MpDrawerOverlay,
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpSelect, MpTextarea, MpText, MpButton, MpSpinner, MpIcon, toast,
 } from '@mekari/pixel3'
+import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
 import { buzzBrands, buzzBrand, buzzCampaigns, persistCampaigns, addBuzzAsset, BUZZ_TODAY, type BuzzCampaign } from '~/data/buzz'
 import { getImage, putImage } from '~/utils/buzzImageStore'
 import AssetPickerDrawer from '~/components/patterns/AssetPickerDrawer.vue'
@@ -183,19 +183,11 @@ async function save() {
 </script>
 
 <template>
-  <MpDrawer :is-close-on-esc="false" :is-close-on-overlay-click="false" id="buzz-create-post-drawer" :is-open="isOpen" placement="right" size="lg" variant="floating" :is-keep-alive="false" @close="close">
-    <MpDrawerContent>
-      <MpDrawerBody>
-        <div class="cpd">
-          <div class="cpd__header">
-            <MpText weight="semiBold">Create campaign</MpText>
-            <MpButton left-icon="close" variant="ghost" size="sm" aria-label="Close" @click="close" />
-          </div>
-
-          <div class="cpd__form">
+  <ErpDrawer :is-open="isOpen" title="Create campaign" width="600px" @close="close">
+    <template #body>
             <div v-if="!hasBrands" class="cpd__nobrand">
               <p class="cpd__nobrand-text">You need a brand kit first — Buzz generates on-brand posts from it.</p>
-              <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="close(); router.push('/buzz-branding')">Go to Branding</button>
+              <MpButton type="button" class="btn-enterprise btn-enterprise--secondary" variant="secondary" @click="close(); router.push('/buzz-branding')">Go to Branding</MpButton>
             </div>
 
             <template v-else>
@@ -240,9 +232,9 @@ async function save() {
                 <div class="cpd__subjects">
                   <span v-for="id in subjectIds" :key="id" class="cpd__subject">
                     <img v-if="subjectThumbs.get(id)" :src="subjectThumbs.get(id)" alt="" class="cpd__subject-img" />
-                    <button type="button" class="cpd__subject-x" aria-label="Remove" @click="removeSubject(id)"><MpIcon name="close" size="sm" /></button>
+                    <MpButton type="button" class="cpd__subject-x" variant="ghost" aria-label="Remove" @click="removeSubject(id)"><MpIcon name="close" size="sm" /></MpButton>
                   </span>
-                  <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="showAssetPicker = true">Add from your assets</button>
+                  <MpButton type="button" class="btn-enterprise btn-enterprise--secondary" variant="secondary" @click="showAssetPicker = true">Add from your assets</MpButton>
                 </div>
               </MpFormControl>
 
@@ -260,43 +252,38 @@ async function save() {
                 <template v-else-if="resultKind === 'single'">
                   <p class="cpd__resultlabel">Pick a design · click to zoom</p>
                   <div class="cpd__alts">
-                    <button v-for="(img, i) in results" :key="i" type="button" class="cpd__alt" :class="{ 'cpd__alt--on': selected === i }" @click="selected = i; openZoom(i)">
+                    <MpButton v-for="(img, i) in results" :key="i" type="button" class="cpd__alt" :class="{ 'cpd__alt--on': selected === i }" variant="ghost" @click="selected = i; openZoom(i)">
                       <img :src="img.dataUrl" :alt="`Design ${i + 1}`" class="cpd__alt-img" />
                       <span v-if="selected === i" class="cpd__alt-check"><MpIcon name="check" size="sm" /></span>
-                    </button>
+                    </MpButton>
                   </div>
                 </template>
                 <!-- Carousel: slide strip -->
                 <template v-else>
                   <p class="cpd__resultlabel">{{ results.length }}-slide series · click to zoom</p>
                   <div class="cpd__slides">
-                    <button v-for="(img, i) in results" :key="i" type="button" class="cpd__slide" @click="openZoom(i)">
+                    <MpButton v-for="(img, i) in results" :key="i" type="button" class="cpd__slide" variant="ghost" @click="openZoom(i)">
                       <img :src="img.dataUrl" :alt="`Slide ${i + 1}`" class="cpd__slide-img" />
                       <span class="cpd__slide-n">{{ i + 1 }}</span>
-                    </button>
+                    </MpButton>
                   </div>
                 </template>
                 <p v-if="error" class="cpd__error">{{ error }}</p>
               </div>
               <p v-else-if="error" class="cpd__error">{{ error }}</p>
             </template>
-          </div>
-
-          <div v-if="hasBrands" class="cpd__footer">
-            <template v-if="!results.length">
-              <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
-              <MpButton variant="primary" is-rounded :is-loading="generating" @click="generate">{{ postType === 'story' ? 'Generate Story' : postType === 'carousel' ? 'Generate series' : 'Generate designs' }}</MpButton>
-            </template>
-            <template v-else>
-              <MpButton variant="ghost" is-rounded :is-loading="generating" @click="generate">Regenerate</MpButton>
-              <MpButton variant="primary" is-rounded :is-loading="saving" @click="save">Save campaign</MpButton>
-            </template>
-          </div>
-        </div>
-      </MpDrawerBody>
-    </MpDrawerContent>
-    <MpDrawerOverlay />
-  </MpDrawer>
+    </template>
+    <template v-if="hasBrands" #footer>
+      <template v-if="!results.length">
+        <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
+        <MpButton variant="primary" is-rounded :is-loading="generating" @click="generate">{{ postType === 'story' ? 'Generate Story' : postType === 'carousel' ? 'Generate series' : 'Generate designs' }}</MpButton>
+      </template>
+      <template v-else>
+        <MpButton variant="ghost" is-rounded :is-loading="generating" @click="generate">Regenerate</MpButton>
+        <MpButton variant="primary" is-rounded :is-loading="saving" @click="save">Save campaign</MpButton>
+      </template>
+    </template>
+  </ErpDrawer>
 
   <AssetPickerDrawer v-model:is-open="showAssetPicker" v-model="subjectIds" />
 
@@ -304,10 +291,10 @@ async function save() {
   <Teleport to="body">
     <Transition name="zm">
       <div v-if="zoomIndex !== null && results[zoomIndex]" class="zm-overlay">
-        <button class="zm-close" type="button" aria-label="Close" @click="zoomIndex = null"><MpIcon name="close" size="md" /></button>
-        <button v-if="results.length > 1" class="zm-nav zm-nav--prev" type="button" aria-label="Previous" @click.stop="zoomPrev"><MpIcon name="caret-left" size="lg" /></button>
+        <MpButton class="zm-close" variant="ghost" type="button" aria-label="Close" @click="zoomIndex = null"><MpIcon name="close" size="md" /></MpButton>
+        <MpButton v-if="results.length > 1" class="zm-nav zm-nav--prev" variant="ghost" type="button" aria-label="Previous" @click.stop="zoomPrev"><MpIcon name="caret-left" size="lg" /></MpButton>
         <img :src="results[zoomIndex].dataUrl" alt="Design preview" class="zm-img" />
-        <button v-if="results.length > 1" class="zm-nav zm-nav--next" type="button" aria-label="Next" @click.stop="zoomNext"><MpIcon name="caret-right" size="lg" /></button>
+        <MpButton v-if="results.length > 1" class="zm-nav zm-nav--next" variant="ghost" type="button" aria-label="Next" @click.stop="zoomNext"><MpIcon name="caret-right" size="lg" /></MpButton>
         <span v-if="results.length > 1" class="zm-count">{{ zoomIndex + 1 }} / {{ results.length }}</span>
       </div>
     </Transition>
@@ -315,10 +302,6 @@ async function save() {
 </template>
 
 <style scoped>
-.cpd { display: flex; flex-direction: column; height: 100%; }
-.cpd__header { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-1); padding: var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); background: var(--mp-background-neutral-subtle); }
-.cpd__form { display: flex; flex-direction: column; gap: var(--mp-spacing-5); flex: 1; overflow-y: auto; padding: var(--mp-spacing-4); }
-.cpd__footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 .cpd__nobrand { display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-3); }
 .cpd__nobrand-text { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .cpd__preview--loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-3); min-height: 280px; border: 1px dashed var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 8px); background: var(--mp-background-neutral-subtle); }
@@ -332,8 +315,8 @@ async function save() {
 .cpd__alt { position: relative; padding: 0; border: none; background: none; cursor: pointer; border-radius: var(--mp-radii-md, 8px); overflow: hidden; box-shadow: 0 0 0 1px var(--mp-border-default, #e3e7e9); }
 .cpd__alt--on { box-shadow: 0 0 0 2px var(--mp-border-selected, #029861); }
 .cpd__alt-img { display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover; }
-.cpd__alt-check { position: absolute; top: 4px; right: 4px; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 999px; background: var(--mp-background-brand-bold, #029861); color: #fff; }
-.cpd__alt-check :deep(svg) { color: #fff; }
+.cpd__alt-check { position: absolute; top: 4px; right: 4px; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 999px; background: var(--mp-background-brand-bold, #029861); color: var(--mp-colors-white); }
+.cpd__alt-check :deep(svg) { color: var(--mp-colors-white); }
 /* Carousel: slide strip */
 .cpd__slides { display: flex; gap: var(--mp-spacing-2, 8px); overflow-x: auto; padding-bottom: var(--mp-spacing-1); }
 .cpd__slide { position: relative; flex: 0 0 auto; width: 140px; border-radius: var(--mp-radii-md, 8px); overflow: hidden; border: 1px solid var(--mp-border-default, #e3e7e9); padding: 0; background: none; cursor: pointer; }
@@ -344,22 +327,22 @@ async function save() {
 .zm-enter-from, .zm-leave-to { opacity: 0; }
 .zm-overlay { position: fixed; inset: 0; z-index: 1600; background: rgba(8, 13, 14, 0.82); display: flex; align-items: center; justify-content: center; padding: var(--mp-spacing-8, 32px); }
 .zm-img { max-width: min(680px, 86vw); max-height: 88vh; object-fit: contain; border-radius: var(--mp-radii-md, 8px); display: block; }
-.zm-close { position: fixed; top: 16px; right: 16px; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: none; background: rgba(255,255,255,0.14); border-radius: 999px; cursor: pointer; color: #fff; }
+.zm-close { position: fixed; top: 16px; right: 16px; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: none; background: rgba(255,255,255,0.14); border-radius: 999px; cursor: pointer; color: var(--mp-colors-white); }
 .zm-close:hover { background: rgba(255,255,255,0.24); }
-.zm-close :deep(svg) { color: #fff; }
-.zm-nav { position: fixed; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; border: none; background: rgba(255,255,255,0.14); border-radius: 999px; cursor: pointer; color: #fff; }
+.zm-close :deep(svg) { color: var(--mp-colors-white); }
+.zm-nav { position: fixed; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; border: none; background: rgba(255,255,255,0.14); border-radius: 999px; cursor: pointer; color: var(--mp-colors-white); }
 .zm-nav:hover { background: rgba(255,255,255,0.24); }
-.zm-nav :deep(svg) { color: #fff; }
+.zm-nav :deep(svg) { color: var(--mp-colors-white); }
 .zm-nav--prev { left: 16px; }
 .zm-nav--next { right: 16px; }
-.zm-count { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); padding: 4px 12px; border-radius: 999px; background: rgba(255,255,255,0.16); color: #fff; font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold); }
+.zm-count { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); padding: 4px 12px; border-radius: 999px; background: rgba(255,255,255,0.16); color: var(--mp-colors-white); font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold); }
 .cpd__slide-img { display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover; }
-.cpd__slide-n { position: absolute; top: 6px; left: 6px; display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: rgba(8,13,14,0.66); color: #fff; font-size: 11px; font-weight: var(--mp-font-weights-semi-bold); }
+.cpd__slide-n { position: absolute; top: 6px; left: 6px; display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: rgba(8,13,14,0.66); color: var(--mp-colors-white); font-size: 11px; font-weight: var(--mp-font-weights-semi-bold); }
 .cpd__error { margin: 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-danger, #d1362f); }
 .cpd__hintline { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
 .cpd__subjects { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); align-items: center; }
 .cpd__subject { position: relative; width: 56px; height: 56px; border-radius: var(--mp-radii-md, 8px); overflow: hidden; border: 1px solid var(--mp-border-default, #e3e7e9); flex-shrink: 0; }
 .cpd__subject-img { width: 100%; height: 100%; object-fit: cover; }
-.cpd__subject-x { position: absolute; top: 2px; right: 2px; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: none; border-radius: 999px; background: rgba(8,13,14,0.66); color: #fff; cursor: pointer; padding: 0; }
-.cpd__subject-x :deep(svg) { color: #fff; width: 12px; height: 12px; }
+.cpd__subject-x { position: absolute; top: 2px; right: 2px; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: none; border-radius: 999px; background: rgba(8,13,14,0.66); color: var(--mp-colors-white); cursor: pointer; padding: 0; }
+.cpd__subject-x :deep(svg) { color: var(--mp-colors-white); width: 12px; height: 12px; }
 </style>

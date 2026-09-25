@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTooltip, MpIcon, MpSpinner, toast,
+  MpTooltip, MpIcon, MpSpinner, MpButton, toast,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -174,7 +174,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">{{ t('All warehouse transfers') }}</button>
+        <MpButton class="detail-breadcrumb" variant="ghost" @click="goBack">{{ t('All warehouse transfers') }}</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ transfer.number }}</h1>
           <ErpStatusBadge
@@ -183,27 +183,27 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
           />
           <MpPopover id="wtd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" :aria-label="t('Switch transaction')">
+              <MpButton class="detail-jump-chevron" variant="ghost" :aria-label="t('Switch transaction')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
+                  <MpButton v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" variant="ghost" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
-                  </button>
+                  </MpButton>
                 </div>
                 <div class="detail-jump-list">
-                  <button v-for="t in jumpResults" :key="t.id" class="detail-jump-item" @click="jumpTo(t.id)">
+                  <MpButton v-for="t in jumpResults" :key="t.id" class="detail-jump-item" variant="ghost" @click="jumpTo(t.id)">
                     <span class="detail-jump-item-number">{{ t.number }}</span>
                     <span class="detail-jump-item-customer">{{ t.originName }} → {{ t.destinationName }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found') }}</p>
                 </div>
               </div>
@@ -215,12 +215,12 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
       <!-- Right-side actions (warehouse transfer has an approval flow) —
            manager view adds a primary Approve button ahead of the icon actions. -->
       <div class="detail-titlerow-right">
-        <button v-if="canApprove" class="btn-enterprise btn-enterprise--primary" @click="approve">{{ t('Approve') }}</button>
+        <MpButton v-if="canApprove" class="btn-enterprise btn-enterprise--primary" variant="primary" @click="approve">{{ t('Approve') }}</MpButton>
         <MpTooltip id="wtd-tt-tasks" :label="t('Approval log')" placement="bottom" use-portal>
-          <button class="detail-icon-btn" :aria-label="t('Approval log')" @click="approvalLogOpen = true"><MpIcon name="task-todo" size="md" /></button>
+          <MpButton class="detail-icon-btn" variant="ghost" :aria-label="t('Approval log')" @click="approvalLogOpen = true"><MpIcon name="task-todo" size="md" /></MpButton>
         </MpTooltip>
         <MpTooltip id="wtd-tt-comments" :label="t('Comments')" placement="bottom" use-portal>
-          <button class="detail-icon-btn" :aria-label="t('Comments')"><MpIcon name="comment" size="md" /></button>
+          <MpButton class="detail-icon-btn" variant="ghost" :aria-label="t('Comments')"><MpIcon name="comment" size="md" /></MpButton>
         </MpTooltip>
       </div>
     </header>
@@ -304,15 +304,15 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
     </div>
 
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <button class="detail-btn detail-btn--secondary" @click="printPdf">{{ t('Print PDF') }}</button>
+      <MpButton class="detail-btn detail-btn--secondary" variant="secondary" @click="printPdf">{{ t('Print PDF') }}</MpButton>
       <MpPopover id="wtd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--primary">
+          <MpButton class="detail-btn detail-btn--primary" variant="primary">
             {{ t('Actions') }}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -357,8 +357,8 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="cancelOpen = false">{{ t('Keep transfer') }}</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ t('Cancel transfer') }}</button>
+            <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" @click="cancelOpen = false">{{ t('Keep transfer') }}</MpButton>
+            <MpButton class="btn-enterprise btn-enterprise--danger" variant="danger" @click="confirmCancel">{{ t('Cancel transfer') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -369,15 +369,15 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 
   <div v-else class="wtd-not-found">
     <p>{{ t('Warehouse transfer not found.') }}</p>
-    <button class="detail-breadcrumb" @click="goBack">{{ t('Back to warehouse transfers') }}</button>
+    <MpButton class="detail-breadcrumb" variant="ghost" @click="goBack">{{ t('Back to warehouse transfers') }}</MpButton>
   </div>
 
   <!-- ── Demo scenario FAB (bottom-right) — shared with the index page ── -->
   <MpPopover id="wtd-demo-fab" is-close-on-select use-portal placement="top-end">
     <MpPopoverTrigger>
-      <button class="demo-fab" :aria-label="t('Change approval view')">
+      <MpButton class="demo-fab" variant="ghost" :aria-label="t('Change approval view')">
         <MpIcon name="sliders" size="md" color="icon.inverse" />
-      </button>
+      </MpButton>
     </MpPopoverTrigger>
     <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
       <p class="demo-fab-heading">{{ t('Approval view') }}</p>

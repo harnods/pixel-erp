@@ -238,14 +238,14 @@ const learn: LearnCard[] = [
 
         <div class="chips">
           <div class="chips__row">
-            <button v-for="a in selectedActions" :key="a.key" class="chip" type="button" @click="runAction(a)">
+            <MpButton v-for="a in selectedActions" :key="a.key" class="chip" type="button" @click="runAction(a)">
               <MpIcon :name="a.icon" size="md" class="chip__icon" />
               {{ a.label }}
-            </button>
-            <button class="chip" type="button" @click="manageActionsOpen = true">
+            </MpButton>
+            <MpButton class="chip" type="button" @click="manageActionsOpen = true">
               <MpIcon name="add" size="md" class="chip__icon" />
               {{ t('Actions') }}
-            </button>
+            </MpButton>
           </div>
         </div>
       </div>
@@ -284,26 +284,26 @@ const learn: LearnCard[] = [
             <div v-if="anomalies.length > 1 && !anomalyExpanded" class="anomaly-peek" aria-hidden="true" />
           </div>
 
-          <button
+          <MpButton
             v-if="anomalies.length > 1"
             class="anomaly-toggle"
             type="button"
+            :left-icon="anomalyExpanded ? 'caret-up' : 'caret-down'"
             @click="anomalyExpanded = !anomalyExpanded"
           >
-            <MpIcon :name="anomalyExpanded ? 'caret-up' : 'caret-down'" size="sm" />
             {{ anomalyExpanded ? t('Show less') : t('Show more') }}
-          </button>
+          </MpButton>
         </div>
 
         <!-- Awaiting approval -->
         <div class="card approvals">
           <div class="approvals__tabs">
-            <button class="apptab apptab--active" type="button">
+            <MpButton class="apptab apptab--active" type="button">
               {{ t('Awaiting approval') }} <span class="apptab__count apptab__count--active">{{ approvals.length }}</span>
-            </button>
-            <button class="apptab" type="button" @click="soon(t('Actions required'))">
+            </MpButton>
+            <MpButton class="apptab" type="button" @click="soon(t('Actions required'))">
               {{ t('Actions required') }} <span class="apptab__count">{{ actionsRequiredCount }}</span>
-            </button>
+            </MpButton>
           </div>
 
           <div class="approvals__list">
@@ -321,15 +321,13 @@ const learn: LearnCard[] = [
                 <p v-if="a.amountSub" class="appr__amount-sub">{{ a.amountSub }}</p>
               </div>
               <MpButton variant="secondary" is-rounded @click.stop="approve(a)">{{ t('Approve') }}</MpButton>
-              <button class="appr__kebab" type="button" @click.stop>
-                <MpIcon name="menu-kebab" size="md" />
-              </button>
+              <MpButton class="appr__kebab" type="button" left-icon="menu-kebab" @click.stop />
             </div>
           </div>
 
-          <button class="approvals__all" type="button" @click="router.push('/warehouse-transfers')">
+          <MpButton class="approvals__all" type="button" @click="router.push('/warehouse-transfers')">
             {{ t('View all awaiting approvals') }}
-          </button>
+          </MpButton>
         </div>
       </section>
 
@@ -345,14 +343,12 @@ const learn: LearnCard[] = [
               </div>
               <img :src="n.art" alt="" class="wn__art">
               <div class="wn__foot">
-                <button class="wn__link" type="button" @click="soon(t('Learn more'))">{{ t('Learn more') }}</button>
+                <MpButton class="wn__link" type="button" @click="soon(t('Learn more'))">{{ t('Learn more') }}</MpButton>
                 <MpButton variant="secondary" is-rounded @click="soon(t('Try feature'))">{{ t('Try feature') }}</MpButton>
               </div>
             </article>
           </div>
-          <button v-if="whatsNewHasPagination" class="whatsnew__next" type="button" :aria-label="t('Next')" @click="soon(t('More updates'))">
-            <MpIcon name="chevrons-right" size="md" />
-          </button>
+          <MpButton v-if="whatsNewHasPagination" class="whatsnew__next" type="button" :aria-label="t('Next')" left-icon="chevrons-right" @click="soon(t('More updates'))" />
         </div>
         <div v-if="whatsNewHasPagination" class="whatsnew__dots">
           <span class="dot dot--active" />
@@ -376,7 +372,7 @@ const learn: LearnCard[] = [
 
         <div class="card setup">
           <div class="setup__list">
-            <button
+            <MpButton
               v-for="(s, i) in setupSteps"
               :key="s.label"
               class="setup-step"
@@ -391,7 +387,7 @@ const learn: LearnCard[] = [
                 <span class="setup-step__label">{{ s.label }}</span>
                 <span class="setup-step__time">{{ s.time }}</span>
               </span>
-            </button>
+            </MpButton>
           </div>
 
           <div class="setup__detail">
@@ -401,10 +397,9 @@ const learn: LearnCard[] = [
               <p class="setup__sub">{{ currentSetup.sub }}</p>
               <div class="setup__actions">
                 <MpButton variant="primary" is-rounded @click="setupNow">{{ currentSetup.cta }}</MpButton>
-                <button class="btn btn--secondary btn--icon" type="button" @click="soon(t('Watch video'))">
-                  <MpIcon name="play-video" size="md" />
+                <MpButton class="btn btn--secondary btn--icon" type="button" left-icon="play-video" @click="soon(t('Watch video'))">
                   {{ t('Watch video') }}
-                </button>
+                </MpButton>
               </div>
             </div>
             <img :src="currentSetup.illus ?? setupBuilding" alt="" class="setup__illus">
@@ -431,20 +426,20 @@ const learn: LearnCard[] = [
       <section class="sec">
         <h3 class="sec__title">{{ t('Useful links') }}</h3>
         <div class="useful">
-          <button class="useful-link" type="button" @click="toggleAirene()">
+          <MpButton class="useful-link" type="button" @click="toggleAirene()">
             <MpIcon name="chat" size="md" class="useful-link__icon" />
             <span class="useful-link__text">
               <span class="useful-link__title">{{ t('Live chat') }}</span>
               <span class="useful-link__desc">{{ t('Chat with our customer support for any questions or inquiries.') }}</span>
             </span>
-          </button>
-          <button class="useful-link" type="button" @click="soon(t('Help center'))">
+          </MpButton>
+          <MpButton class="useful-link" type="button" @click="soon(t('Help center'))">
             <MpIcon name="book" size="md" class="useful-link__icon" />
             <span class="useful-link__text">
               <span class="useful-link__title">{{ t('Help center') }}</span>
               <span class="useful-link__desc">{{ t('Guidelines for all features in Mekari ERP.') }}</span>
             </span>
-          </button>
+          </MpButton>
         </div>
       </section>
     </div>
@@ -455,7 +450,7 @@ const learn: LearnCard[] = [
     <!-- ── Demo scenario FAB ── -->
     <MpPopover id="home-demo-fab" is-close-on-select use-portal placement="top-end">
       <MpPopoverTrigger>
-        <button class="demo-fab" :aria-label="t('Change scenario state')"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
+        <MpButton class="demo-fab" :aria-label="t('Change scenario state')"><MpIcon name="sliders" size="md" color="icon.inverse" /></MpButton>
       </MpPopoverTrigger>
       <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
         <p class="demo-fab-heading">{{ t('Home version') }}</p>
@@ -499,7 +494,7 @@ const learn: LearnCard[] = [
   width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
   display: inline-flex; align-items: center; justify-content: center;
   border: none; border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-inverse, #080d0e); color: #fff; cursor: pointer; z-index: 1200;
+  background: var(--mp-background-inverse, #080d0e); color: var(--mp-colors-white); cursor: pointer; z-index: 1200;
   box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2);
 }
 .demo-fab:hover { opacity: 0.9; }
@@ -646,7 +641,7 @@ const learn: LearnCard[] = [
 .btn--secondary:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .btn--brand {
   background: var(--mp-background-brand-bold, #029861);
-  color: #fff;
+  color: var(--mp-colors-white);
 }
 .btn--brand:hover { background: var(--mp-background-brand-bold-hovered, #0f6d4d); }
 .btn--ghost {
@@ -668,7 +663,7 @@ const learn: LearnCard[] = [
 .anomaly-stack--deck .anomaly {
   position: relative;
   z-index: 2;
-  border: 2px solid #fff;
+  border: 2px solid var(--mp-colors-white);
 }
 .anomaly-peek {
   position: absolute;
@@ -711,7 +706,7 @@ const learn: LearnCard[] = [
   gap: var(--mp-spacing-3);
 }
 .anomaly__head { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.anomaly__icon { color: #e5810f; flex-shrink: 0; }
+.anomaly__icon { color: var(--mp-colors-warning-default); flex-shrink: 0; }
 .anomaly__title {
   font-size: var(--mp-font-sizes-md);
   font-weight: var(--mp-font-weights-semi-bold);
@@ -841,9 +836,9 @@ const learn: LearnCard[] = [
   display: flex;
   flex-direction: column;
 }
-.wn--green    { --wn-bg: #edf9f2; background: var(--wn-bg); }
-.wn--yellow   { --wn-bg: #FFF9EA; background: var(--wn-bg); }
-.wn--blue     { --wn-bg: #eaf4fc; background: var(--wn-bg); }
+.wn--green    { --wn-bg: var(--mp-colors-success-weaker); background: var(--wn-bg); }
+.wn--yellow   { --wn-bg: var(--mp-colors-warning-weaker); background: var(--wn-bg); }
+.wn--blue     { --wn-bg: var(--mp-colors-info-weaker); background: var(--wn-bg); }
 .wn__head { position: relative; z-index: 1; padding: var(--mp-spacing-6) var(--mp-spacing-6) 0; }
 .wn__title {
   margin: 0 0 var(--mp-spacing-2);
@@ -1044,7 +1039,7 @@ const learn: LearnCard[] = [
 }
 .learn-tag--blue    { background: #eaf1fd; color: #3d5bcc; }
 .learn-tag--neutral { background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-secondary, #3a4749); }
-.learn-tag--yellow  { background: #fdf6dd; color: #a14a0b; }
+.learn-tag--yellow  { background: #fdf6dd; color: var(--mp-colors-warning-bolder); }
 .learn-card__title {
   margin: 0 0 var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-lg);

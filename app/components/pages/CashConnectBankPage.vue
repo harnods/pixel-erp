@@ -18,7 +18,7 @@
 import { ref, computed, onMounted, type Ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpAutocomplete, MpTextarea, MpCheckbox,
+  MpButton, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpAutocomplete, MpTextarea, MpCheckbox,
   MpUpload, MpUploadList, MpIcon, MpSpinner, toast,
 } from '@mekari/pixel3'
 import ErpStepper from '~/components/patterns/ErpStepper.vue'
@@ -264,9 +264,9 @@ function goBack() { router.push(`/cash-management/${props.orderId}`) }
     <div class="cnb-titlebar">
       <div class="cnb-titlebar-left">
         <div class="cnb-breadcrumb-row">
-          <button class="cnb-breadcrumb" @click="router.push('/cash-management')">{{ t('Cash management') }}</button>
+          <MpButton class="cnb-breadcrumb" variant="link" @click="router.push('/cash-management')">{{ t('Cash management') }}</MpButton>
           <span class="cnb-breadcrumb-sep">/</span>
-          <button class="cnb-breadcrumb" @click="goBack">{{ account?.code }} {{ account?.name }}</button>
+          <MpButton class="cnb-breadcrumb" variant="link" @click="goBack">{{ account?.code }} {{ account?.name }}</MpButton>
         </div>
         <div class="cnb-title-row">
           <h1 class="cnb-title">{{ stage === 'connected' ? t('Bank connection') : t('Connect to bank') }}</h1>
@@ -276,10 +276,10 @@ function goBack() { router.push(`/cash-management/${props.orderId}`) }
       <!-- Support is the single top-right action across the whole flow; steps 2 & 3
            no longer repeat it in their footers. -->
       <div class="cnb-titlebar-right">
-        <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="contactSupport">
-          <MpIcon name="headphone" size="sm" />{{ t('Contact our support team') }}
-        </button>
-        <button v-if="stage === 'connected'" class="btn-enterprise btn-enterprise--danger" @click="disconnectOpen = true">{{ t('Disconnect Bank connection') }}</button>
+        <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" left-icon="headphone" @click="contactSupport">
+          {{ t('Contact our support team') }}
+        </MpButton>
+        <MpButton v-if="stage === 'connected'" class="btn-enterprise btn-enterprise--danger" @click="disconnectOpen = true">{{ t('Disconnect Bank connection') }}</MpButton>
       </div>
     </div>
 
@@ -436,8 +436,8 @@ function goBack() { router.push(`/cash-management/${props.orderId}`) }
             <!-- Actions -->
             <div class="cnb-action-group">
               <div class="cnb-action-right">
-                <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</button>
-                <button class="btn-enterprise btn-enterprise--primary" @click="submitRequest">{{ t('Continue') }}</button>
+                <MpButton class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</MpButton>
+                <MpButton class="btn-enterprise btn-enterprise--primary" @click="submitRequest">{{ t('Continue') }}</MpButton>
               </div>
             </div>
           </div>
@@ -474,7 +474,7 @@ function goBack() { router.push(`/cash-management/${props.orderId}`) }
             <div class="cnb-substep-body">
               <h3 class="cnb-substep-title">{{ t('Print & complete Surat Kuasa') }}</h3>
               <p class="cnb-substep-caption">{{ t('Letter of Authorization (Surat Kuasa) will be checked by the bank.') }}</p>
-              <button class="btn-enterprise btn-enterprise--secondary cnb-substep-btn" @click="downloadLoa">{{ t('Download Letter of Authorization') }}</button>
+              <MpButton class="btn-enterprise btn-enterprise--secondary cnb-substep-btn" @click="downloadLoa">{{ t('Download Letter of Authorization') }}</MpButton>
             </div>
           </div>
 
@@ -483,7 +483,7 @@ function goBack() { router.push(`/cash-management/${props.orderId}`) }
             <div class="cnb-substep-body">
               <h3 class="cnb-substep-title">{{ t('Upload signed Surat Kuasa') }}</h3>
               <p class="cnb-substep-caption">{{ t('Make sure you sign the form in pen, as digital signatures are not accepted.') }}</p>
-              <button class="cnb-link" @click="contactSupport">{{ t('View example') }}</button>
+              <MpButton class="cnb-link" variant="link" @click="contactSupport">{{ t('View example') }}</MpButton>
               <div class="cnb-upload-field">
                 <MpUpload id="cnb-surat" accept=".pdf,.jpg,.jpeg" is-full-width :placeholder="t('or drag and drop here')" :button-text="t('Choose file')" @change="(e) => handleFile(e, 'surat')" />
                 <p class="cnb-upload-hint">{{ t('Supported formats: PDF, JPG. Maximum file size 10 MB.') }}</p>
@@ -494,8 +494,8 @@ function goBack() { router.push(`/cash-management/${props.orderId}`) }
           </div>
 
           <div class="cnb-action-group cnb-action-group--split">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--primary" @click="submitSuratKuasa">{{ t('Submit') }}</button>
+            <MpButton class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</MpButton>
+            <MpButton class="btn-enterprise btn-enterprise--primary" @click="submitSuratKuasa">{{ t('Submit') }}</MpButton>
           </div>
         </div>
 
@@ -505,7 +505,7 @@ function goBack() { router.push(`/cash-management/${props.orderId}`) }
           <div class="cnb-wait-body">
             <h2 class="cnb-wait-title">{{ t('Application under review') }}</h2>
             <p class="cnb-wait-text">{{ t('We will send your activation credentials to your registered email within 2 business days. Follow the instructions in the email to complete the process, then return here to activate.') }}</p>
-            <button class="btn-enterprise btn-enterprise--secondary cnb-wait-btn" @click="backAfterReview">{{ t('Back to account') }}</button>
+            <MpButton class="btn-enterprise btn-enterprise--secondary cnb-wait-btn" @click="backAfterReview">{{ t('Back to account') }}</MpButton>
           </div>
         </div>
 
@@ -520,7 +520,7 @@ function goBack() { router.push(`/cash-management/${props.orderId}`) }
                 <li>{{ t('Open your file and enter the password listed in the email.') }}</li>
                 <li>{{ t('Come back here and upload the file to fill in the form automatically.') }}</li>
               </ol>
-              <button class="cnb-link" @click="contactSupport">{{ t('Watch tutorial') }}</button>
+              <MpButton class="cnb-link" variant="link" @click="contactSupport">{{ t('Watch tutorial') }}</MpButton>
             </div>
           </div>
 
@@ -567,8 +567,8 @@ function goBack() { router.push(`/cash-management/${props.orderId}`) }
           </div>
 
           <div class="cnb-action-group cnb-action-group--split">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--primary" @click="activate">{{ t('Activate') }}</button>
+            <MpButton class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</MpButton>
+            <MpButton class="btn-enterprise btn-enterprise--primary" @click="activate">{{ t('Activate') }}</MpButton>
           </div>
         </div>
 
@@ -578,7 +578,7 @@ function goBack() { router.push(`/cash-management/${props.orderId}`) }
           <div class="cnb-wait-body">
             <h2 class="cnb-wait-title">{{ t('Activation in progress') }}</h2>
             <p class="cnb-wait-text">{{ t('Activation may take up to 30 working days. We will send a confirmation email to your registered address once it is complete.') }}</p>
-            <button class="btn-enterprise btn-enterprise--secondary cnb-wait-btn" @click="backAfterActivation">{{ t('Back to account') }}</button>
+            <MpButton class="btn-enterprise btn-enterprise--secondary cnb-wait-btn" @click="backAfterActivation">{{ t('Back to account') }}</MpButton>
           </div>
         </div>
 

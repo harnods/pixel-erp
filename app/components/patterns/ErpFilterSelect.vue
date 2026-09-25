@@ -9,7 +9,7 @@
  */
 import { computed, ref, nextTick } from 'vue'
 import {
-  MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+  MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpButton, css,
 } from '@mekari/pixel3'
 
 type Opt = { value: string; label: string }
@@ -83,9 +83,9 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
       </MpPopoverContent>
     </MpPopover>
 
-    <button v-if="modelValue && isClearable && !open" type="button" class="efs-clear" aria-label="Clear" @click.stop="pick('')">
+    <MpButton v-if="modelValue && isClearable && !open" type="button" class="efs-clear" variant="ghost" aria-label="Clear" @click.stop="pick('')">
       <MpIcon name="close" size="sm" />
-    </button>
+    </MpButton>
   </div>
 </template>
 
@@ -102,7 +102,7 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
   border: 1px solid var(--mp-colors-border-form, #1d1f2429);
   border-radius: var(--mp-radii-md); cursor: text;
 }
-.efs-trigger:focus-within { border-color: #8c9596; box-shadow: 0 0 0 1px #8c9596; }
+.efs-trigger:focus-within { border-color: var(--mp-colors-border-bold); box-shadow: 0 0 0 1px var(--mp-colors-border-bold); }
 .efs-input {
   flex: 1; min-width: 0; border: none; outline: none; background: transparent; padding: 0;
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); cursor: text;

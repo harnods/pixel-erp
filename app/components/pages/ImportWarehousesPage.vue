@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { toast } from '@mekari/pixel3'
+import { MpButton, toast } from '@mekari/pixel3'
 import ErpDropzoneIcon from '~/components/patterns/ErpDropzoneIcon.vue'
 
 const router = useRouter()
@@ -98,7 +98,7 @@ function fmtBytes(bytes: number) {
     <!-- ── Page title bar (neutral-subtle bg, 72px, matches ErpTablePage title pattern) ── -->
     <div class="iw-titlebar">
       <div class="iw-titlebar-left">
-        <button class="iw-breadcrumb" @click="goBack">{{ t('Warehouses') }}</button>
+        <MpButton class="iw-breadcrumb" @click="goBack">{{ t('Warehouses') }}</MpButton>
         <h1 class="iw-title">{{ t('Import warehouses') }}</h1>
       </div>
     </div>
@@ -126,10 +126,10 @@ function fmtBytes(bytes: number) {
                   <div class="iw-spacer" />
                 </div>
                 <div class="iw-step-form">
-                  <button class="iw-btn-download">{{ t('Download template file') }}</button>
+                  <MpButton class="iw-btn-download">{{ t('Download template file') }}</MpButton>
                   <!-- Accordion: Format requirements -->
                   <div class="iw-accordion" :class="{ 'iw-accordion--open': formatOpen }">
-                    <button class="iw-accordion-header" @click="formatOpen = !formatOpen">
+                    <MpButton class="iw-accordion-header" @click="formatOpen = !formatOpen">
                       <span class="iw-accordion-label">{{ t('Format requirements') }}</span>
                       <svg
                         class="iw-accordion-chevron"
@@ -138,7 +138,7 @@ function fmtBytes(bytes: number) {
                       >
                         <path d="M9 18L15 12L9 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                       </svg>
-                    </button>
+                    </MpButton>
                     <div v-if="formatOpen" class="iw-accordion-body">
                       <ul class="iw-accordion-list">
                         <li>{{ t('Date format: DD/MM/YYYY') }}</li>
@@ -214,11 +214,11 @@ function fmtBytes(bytes: number) {
                     <span class="iw-file-name">{{ uploadedFile.name }}</span>
                     <span class="iw-file-size">{{ fmtBytes(uploadedFile.size) }}</span>
                   </div>
-                  <button class="iw-file-remove" :aria-label="t('Remove file')" @click="removeFile">
+                  <MpButton class="iw-file-remove" :aria-label="t('Remove file')" @click="removeFile">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
-                  </button>
+                  </MpButton>
                 </div>
 
               </div>
@@ -229,11 +229,11 @@ function fmtBytes(bytes: number) {
           <!-- ── Action group ── -->
           <div class="iw-action-group">
             <div class="iw-action-right">
-              <button class="iw-btn-cancel" @click="goBack">{{ t('Cancel') }}</button>
-              <button
+              <MpButton class="iw-btn-cancel" @click="goBack">{{ t('Cancel') }}</MpButton>
+              <MpButton
                 class="iw-btn-import"
                 @click="doImport"
-              >{{ t('Import') }}</button>
+              >{{ t('Import') }}</MpButton>
             </div>
           </div>
 
@@ -247,29 +247,29 @@ function fmtBytes(bytes: number) {
       <div v-if="fabOpen" class="iw-fab-menu">
         <div class="iw-fab-group">
           <p class="iw-fab-group-label">{{ t('Import outcome') }}</p>
-          <button
+          <MpButton
             v-for="s in (['success', 'partial', 'error'] as const)"
             :key="s"
             class="iw-fab-item"
             :class="{ 'iw-fab-item--active': importScenario === s }"
             @click="applyScenario(s)"
-          >{{ s === 'success' ? t('Success') : s === 'partial' ? t('Partial (3 rows failed)') : t('Import failed') }}</button>
+          >{{ s === 'success' ? t('Success') : s === 'partial' ? t('Partial (3 rows failed)') : t('Import failed') }}</MpButton>
         </div>
         <div class="iw-fab-divider" />
         <div class="iw-fab-group">
           <p class="iw-fab-group-label">{{ t('Dropzone state') }}</p>
-          <button class="iw-fab-item" @click="applyFileSelected">{{ t('File selected') }}</button>
-          <button class="iw-fab-item" @click="applyDropzoneError('format')">{{ t('Wrong format') }}</button>
-          <button class="iw-fab-item" @click="applyDropzoneError('size')">{{ t('File too large') }}</button>
+          <MpButton class="iw-fab-item" @click="applyFileSelected">{{ t('File selected') }}</MpButton>
+          <MpButton class="iw-fab-item" @click="applyDropzoneError('format')">{{ t('Wrong format') }}</MpButton>
+          <MpButton class="iw-fab-item" @click="applyDropzoneError('size')">{{ t('File too large') }}</MpButton>
         </div>
       </div>
-      <button class="iw-fab" :class="{ 'iw-fab--open': fabOpen }" :aria-label="t('Preview scenarios')" @click="fabOpen = !fabOpen">
+      <MpButton class="iw-fab" :class="{ 'iw-fab--open': fabOpen }" :aria-label="t('Preview scenarios')" @click="fabOpen = !fabOpen">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
           <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
           <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
         </svg>
-      </button>
+      </MpButton>
     </div>
 
   </div>

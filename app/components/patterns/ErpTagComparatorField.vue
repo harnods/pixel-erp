@@ -87,9 +87,9 @@ const menuClass = css({ minWidth: '200px', maxHeight: '240px', overflowY: 'auto'
     <div class="etc-tags">
       <span v-for="(tag, i) in values" :key="`${i}-${tag}`" class="etc-chip">
         {{ tag }}
-        <button type="button" class="etc-chip-remove" :aria-label="`Remove ${tag}`" @click="removeTag(i)">
+        <MpButton type="button" class="etc-chip-remove" :aria-label="`Remove ${tag}`" @click="removeTag(i)">
           <MpIcon name="close" size="sm" />
-        </button>
+        </MpButton>
       </span>
       <MpPopover
         :id="`${id}-suggest`" is-manual :is-open="suggestOpen && filtered.length > 0"
@@ -129,7 +129,7 @@ const menuClass = css({ minWidth: '200px', maxHeight: '240px', overflowY: 'auto'
   border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16));
   border-radius: var(--mp-radii-md, 6px);
 }
-.etc:focus-within { border-color: #8c9596; box-shadow: 0 0 0 1px #8c9596; }
+.etc:focus-within { border-color: var(--mp-colors-border-bold); box-shadow: 0 0 0 1px var(--mp-colors-border-bold); }
 .etc-prefix {
   flex-shrink: 0; display: inline-flex !important; align-items: center; gap: var(--mp-spacing-1);
   min-width: 0 !important; padding: var(--mp-spacing-2, 6px) !important;

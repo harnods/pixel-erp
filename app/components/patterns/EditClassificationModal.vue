@@ -12,7 +12,7 @@
  */
 import { ref, computed, watch } from 'vue'
 import {
-  MpRadio,
+  MpRadio, MpButton,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
   MpModalOverlay, MpModalCloseButton,
 } from '@mekari/pixel3'
@@ -93,8 +93,8 @@ function save() {
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="emit('close')">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" :disabled="!pending" @click="save">{{ t('Save') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="emit('close')">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" :is-disabled="!pending" @click="save">{{ t('Save') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -118,12 +118,5 @@ function save() {
   margin: 0; padding-left: var(--mp-spacing-8, 32px);
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-secondary);
 }
-/* .btn-enterprise has no disabled state of its own — Save stays inert until a
-   classification is picked, so it needs one here. */
-.modal-footer-btns .btn-enterprise:disabled {
-  background: var(--mp-background-disabled, #f0f1f3);
-  border-color: var(--mp-background-disabled, #f0f1f3);
-  color: var(--mp-text-disabled, #9aa4b2);
-  cursor: not-allowed;
-}
+/* MpButton handles disabled state via is-disabled prop */
 </style>

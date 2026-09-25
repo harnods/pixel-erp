@@ -119,138 +119,101 @@ function applyFilter() {
 </script>
 
 <template>
-  <Transition name="ef-filters">
-    <div v-if="isOpen" class="ef-filters-overlay">
-      <div class="ef-filters-panel" role="dialog" aria-label="All filters">
-        <header class="ef-filters-header">
-          <span class="ef-filters-title">All filters</span>
-          <button class="ef-filters-close" type="button" aria-label="Close" @click="close">
-            <MpIcon name="close" size="md" />
-          </button>
-        </header>
-
-        <div class="ef-filters-body">
-          <!-- Blank slate — Add filter sits directly under the caption -->
-          <div v-if="!hasAddedScopes" class="ef-blank">
-            <MpIcon name="filter" :class="css({ width: '56px', height: '56px', color: 'var(--mp-icon-secondary, #6e7a7c)' })" />
-            <div class="ef-blank-text">
-              <p class="ef-blank-title">No filters have been set yet</p>
-              <p class="ef-blank-sub">Your filter will be displayed here</p>
+  <ErpDrawer :is-open="isOpen" title="All filters" width="440px" @close="close">
+    <template #body>
+      <!-- Blank slate — Add filter sits directly under the caption -->
+      <div v-if="!hasAddedScopes" class="ef-blank">
+        <MpIcon name="filter" :class="css({ width: '56px', height: '56px', color: 'var(--mp-icon-secondary, #6e7a7c)' })" />
+        <div class="ef-blank-text">
+          <p class="ef-blank-title">No filters have been set yet</p>
+          <p class="ef-blank-sub">Your filter will be displayed here</p>
+        </div>
+        <MpPopover id="ef-add-filter-blank" is-close-on-select use-portal :is-keep-alive="false" placement="bottom" @close="addSearch = ''">
+          <MpPopoverTrigger>
+            <MpButton type="button" class="ef-add-btn" variant="ghost"><MpIcon name="add" size="sm" />Add filter</MpButton>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content' })">
+            <div class="ef-add-search">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              <input v-model="addSearch" type="text" placeholder="Search" class="ef-scope-search-input" @click.stop />
             </div>
-            <MpPopover id="ef-add-filter-blank" is-close-on-select use-portal :is-keep-alive="false" placement="bottom" @close="addSearch = ''">
-              <MpPopoverTrigger>
-                <button type="button" class="ef-add-btn"><MpIcon name="add" size="sm" />Add filter</button>
-              </MpPopoverTrigger>
-              <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content' })">
-                <div class="ef-add-search">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-                  <input v-model="addSearch" type="text" placeholder="Search" class="ef-scope-search-input" @click.stop />
-                </div>
-                <MpPopoverList>
-                  <MpPopoverListItem v-for="s in availableScopes" :key="s.key" @click="addScope(s.key)">{{ s.label }}</MpPopoverListItem>
-                  <p v-if="!availableScopes.length" class="ef-scope-empty">No filters found</p>
-                </MpPopoverList>
-              </MpPopoverContent>
-            </MpPopover>
-          </div>
+            <MpPopoverList>
+              <MpPopoverListItem v-for="s in availableScopes" :key="s.key" @click="addScope(s.key)">{{ s.label }}</MpPopoverListItem>
+              <p v-if="!availableScopes.length" class="ef-scope-empty">No filters found</p>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
+      </div>
 
-          <template v-else>
-            <!-- Added scopes — separated by a bottom border, no box -->
-            <div class="ef-scopes">
-              <div v-for="key in addedScopes" :key="key" class="ef-scope">
-                <button type="button" class="ef-scope-head" @click="openScopes[key] = !openScopes[key]">
-                  <span class="ef-scope-head-text">
-                    <span class="ef-scope-label">{{ scopeByKey[key].label }}</span>
-                    <span class="ef-scope-preview">{{ selectedPreview(key) }}</span>
-                  </span>
-                  <span class="ef-scope-actions">
-                    <span class="ef-scope-icon" role="button" aria-label="Remove filter" @click.stop="removeScope(key)">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/><path d="M8 12h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-                    </span>
-                    <span class="ef-scope-icon">
-                      <svg class="ef-scope-chevron" :class="{ 'ef-scope-chevron--open': openScopes[key] }" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    </span>
-                  </span>
-                </button>
+      <template v-else>
+        <!-- Added scopes — separated by a bottom border, no box -->
+        <div class="ef-scopes">
+          <div v-for="key in addedScopes" :key="key" class="ef-scope">
+            <MpButton type="button" class="ef-scope-head" variant="ghost" @click="openScopes[key] = !openScopes[key]">
+              <span class="ef-scope-head-text">
+                <span class="ef-scope-label">{{ scopeByKey[key].label }}</span>
+                <span class="ef-scope-preview">{{ selectedPreview(key) }}</span>
+              </span>
+              <span class="ef-scope-actions">
+                <span class="ef-scope-icon" role="button" aria-label="Remove filter" @click.stop="removeScope(key)">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/><path d="M8 12h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                </span>
+                <span class="ef-scope-icon">
+                  <svg class="ef-scope-chevron" :class="{ 'ef-scope-chevron--open': openScopes[key] }" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+              </span>
+            </MpButton>
 
-                <div v-if="openScopes[key]" class="ef-scope-panel">
-                  <div class="ef-scope-search">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-                    <input v-model="scopeSearch[key]" type="text" placeholder="Search" class="ef-scope-search-input" />
-                  </div>
-                  <div class="ef-scope-option ef-scope-option--all">
-                    <MpCheckbox :id="`ef-scope-all-${key}`" :is-checked="allChecked(key)" :is-indeterminate="someChecked(key)" @change="toggleAll(key)">Select all {{ scopeByKey[key].label.toLowerCase() }}</MpCheckbox>
-                  </div>
-                  <div class="ef-scope-list">
-                    <div v-for="item in filteredItems(key)" :key="item.id" class="ef-scope-option">
-                      <MpCheckbox :id="`ef-scope-${key}-${item.id}`" :is-checked="form[key]?.includes(item.id) ?? false" @change="toggleItem(key, item.id)">{{ item.name }}</MpCheckbox>
-                    </div>
-                    <p v-if="!filteredItems(key).length" class="ef-scope-empty">No items found</p>
-                  </div>
+            <div v-if="openScopes[key]" class="ef-scope-panel">
+              <div class="ef-scope-search">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                <input v-model="scopeSearch[key]" type="text" placeholder="Search" class="ef-scope-search-input" />
+              </div>
+              <div class="ef-scope-option ef-scope-option--all">
+                <MpCheckbox :id="`ef-scope-all-${key}`" :is-checked="allChecked(key)" :is-indeterminate="someChecked(key)" @change="toggleAll(key)">Select all {{ scopeByKey[key].label.toLowerCase() }}</MpCheckbox>
+              </div>
+              <div class="ef-scope-list">
+                <div v-for="item in filteredItems(key)" :key="item.id" class="ef-scope-option">
+                  <MpCheckbox :id="`ef-scope-${key}-${item.id}`" :is-checked="form[key]?.includes(item.id) ?? false" @change="toggleItem(key, item.id)">{{ item.name }}</MpCheckbox>
                 </div>
+                <p v-if="!filteredItems(key).length" class="ef-scope-empty">No items found</p>
               </div>
             </div>
-
-            <!-- Add filter -->
-            <div class="ef-add-row">
-              <MpPopover id="ef-add-filter" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start" @close="addSearch = ''">
-                <MpPopoverTrigger>
-                  <button type="button" class="ef-add-btn"><MpIcon name="add" size="sm" />Add filter</button>
-                </MpPopoverTrigger>
-                <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content' })">
-                  <div class="ef-add-search">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-                    <input v-model="addSearch" type="text" placeholder="Search" class="ef-scope-search-input" @click.stop />
-                  </div>
-                  <MpPopoverList>
-                    <MpPopoverListItem v-for="s in availableScopes" :key="s.key" @click="addScope(s.key)">{{ s.label }}</MpPopoverListItem>
-                    <p v-if="!availableScopes.length" class="ef-scope-empty">No filters found</p>
-                  </MpPopoverList>
-                </MpPopoverContent>
-              </MpPopover>
-            </div>
-          </template>
+          </div>
         </div>
 
-        <footer class="ef-filters-footer">
-          <MpButton variant="ghost" is-rounded :is-disabled="!hasAddedScopes" @click="resetAll">Reset all</MpButton>
-          <div class="ef-footer-right">
-            <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
-            <MpButton variant="primary" is-rounded @click="applyFilter">Apply filter</MpButton>
-          </div>
-        </footer>
+        <!-- Add filter -->
+        <div class="ef-add-row">
+          <MpPopover id="ef-add-filter" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start" @close="addSearch = ''">
+            <MpPopoverTrigger>
+              <MpButton type="button" class="ef-add-btn" variant="ghost"><MpIcon name="add" size="sm" />Add filter</MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content' })">
+              <div class="ef-add-search">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                <input v-model="addSearch" type="text" placeholder="Search" class="ef-scope-search-input" @click.stop />
+              </div>
+              <MpPopoverList>
+                <MpPopoverListItem v-for="s in availableScopes" :key="s.key" @click="addScope(s.key)">{{ s.label }}</MpPopoverListItem>
+                <p v-if="!availableScopes.length" class="ef-scope-empty">No filters found</p>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+      </template>
+    </template>
+
+    <template #footer>
+      <MpButton variant="ghost" is-rounded :is-disabled="!hasAddedScopes" @click="resetAll">Reset all</MpButton>
+      <div class="ef-footer-right">
+        <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
+        <MpButton variant="primary" is-rounded @click="applyFilter">Apply filter</MpButton>
       </div>
-    </div>
-  </Transition>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>
-.ef-filters-enter-active, .ef-filters-leave-active { transition: background-color 250ms ease; }
-.ef-filters-enter-from, .ef-filters-leave-to { background-color: transparent; }
-.ef-filters-enter-active .ef-filters-panel { transition: transform 350ms ease-out; }
-.ef-filters-leave-active .ef-filters-panel { transition: transform 250ms ease-in; }
-.ef-filters-enter-from .ef-filters-panel,
-.ef-filters-leave-to .ef-filters-panel { transform: translateX(calc(100% + 12px)); }
-
-.ef-filters-overlay { position: fixed; inset: 0; z-index: 1300; background: rgba(8, 13, 14, 0.45); display: flex; justify-content: flex-end; }
-.ef-filters-panel {
-  margin: var(--mp-spacing-3); width: min(440px, calc(100% - 24px)); height: calc(100% - 24px);
-  display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); border-radius: 24px; overflow: hidden;
-}
-.ef-filters-header {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
-  padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle, #f8f9f9); border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
-}
-.ef-filters-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.ef-filters-close {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default);
-}
-.ef-filters-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
-.ef-filters-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding: var(--mp-spacing-4); }
-
 /* Blank slate */
 .ef-blank { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-10, 40px) 0; }
 .ef-blank-text { text-align: center; }
@@ -289,9 +252,5 @@ function applyFilter() {
 .ef-add-btn:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .ef-add-search { display: flex; align-items: center; gap: var(--mp-spacing-2); margin: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-colors-border-form, #1d1f2429); border-radius: var(--mp-radii-md); color: var(--mp-text-subtle); }
 
-.ef-filters-footer {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default, #e3e7e9);
-}
 .ef-footer-right { display: flex; gap: var(--mp-spacing-3); }
 </style>

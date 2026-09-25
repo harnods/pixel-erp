@@ -10,7 +10,7 @@
  * matching column (tags are many-to-one), which is the truthful board reading.
  */
 import { ref, computed } from 'vue'
-import { MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
+import { MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import { formatIDR } from '~/utils/currency'
@@ -81,11 +81,10 @@ function lifecycleBadge(lc: LifecycleStage) {
       <span class="cb-groupby-label">Group by</span>
       <MpPopover id="cb-groupby" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
         <MpPopoverTrigger>
-          <button class="btn-enterprise btn-enterprise--secondary" type="button">
-            <MpIcon name="table-view-column" size="sm" />
+          <MpButton class="btn-enterprise btn-enterprise--secondary" variant="secondary" type="button" left-icon="table-view-column">
             <span>{{ groupByLabel }}</span>
             <MpIcon name="chevrons-down" size="sm" />
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content' })">
           <MpPopoverList>

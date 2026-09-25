@@ -5,19 +5,32 @@
  * Last updated column across every table that has column settings.
  */
 import { formatDateTime } from '~/utils/date'
+import { css } from '@mekari/pixel3'
 
 defineProps<{ at?: string; by?: string }>()
+
+const cellClass = css({
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '0.5',
+})
+
+const dateClass = css({
+  fontSize: 'md',
+  color: 'text.default',
+  whiteSpace: 'nowrap',
+})
+
+const byClass = css({
+  fontSize: 'sm',
+  color: 'text.secondary',
+  whiteSpace: 'nowrap',
+})
 </script>
 
 <template>
-  <div class="lu-cell">
-    <span class="lu-date">{{ formatDateTime(at) }}</span>
-    <span class="lu-by">{{ by || '—' }}</span>
+  <div :class="cellClass">
+    <span :class="dateClass">{{ formatDateTime(at) }}</span>
+    <span :class="byClass">{{ by || '—' }}</span>
   </div>
 </template>
-
-<style scoped>
-.lu-cell { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
-.lu-date { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }
-.lu-by { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
-</style>

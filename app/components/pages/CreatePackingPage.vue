@@ -505,7 +505,7 @@ async function handleCreate() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goPacking">{{ t('Packing') }}</button>
+          <MpButton variant="textLink" class="detail-breadcrumb" @click="goPacking">{{ t('Packing') }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('New packing') }}</h1>
@@ -750,14 +750,10 @@ async function handleCreate() {
                       <td v-if="meta.groupIndex === 0" :rowspan="meta.groupSize" class="pk-td">{{ meta.row.unit }}</td>
                       <td v-if="!isDirectMode && meta.groupIndex === 0" :rowspan="meta.groupSize" class="pk-td pk-td--action">
                         <MpTooltip v-if="isBatchTrackedSku(meta.row.sku)" :id="`pc-tt-batch-${meta.row.key}`" :label="tl('View batch')" placement="top" use-portal>
-                          <button class="pk-view-btn" type="button" :aria-label="tl('View batch')" @click.stop="openViewBatch(t.orderId, meta.row)">
-                            <MpIcon name="competencies" size="md" />
-                          </button>
+                          <MpButton class="pk-view-btn" type="button" variant="ghost" left-icon="competencies" :aria-label="tl('View batch')" @click.stop="openViewBatch(t.orderId, meta.row)" />
                         </MpTooltip>
                         <MpTooltip v-else-if="isSerialTrackedSku(meta.row.sku)" :id="`pc-tt-serial-${meta.row.key}`" :label="tl('View serial number')" placement="top" use-portal>
-                          <button class="pk-view-btn" type="button" :aria-label="tl('View serial number')" @click.stop="openViewSerial(t.orderId, meta.row)">
-                            <MpIcon name="competencies" size="md" />
-                          </button>
+                          <MpButton class="pk-view-btn" type="button" variant="ghost" left-icon="competencies" :aria-label="tl('View serial number')" @click.stop="openViewSerial(t.orderId, meta.row)" />
                         </MpTooltip>
                       </td>
                     </tr>

@@ -12,6 +12,7 @@ import {
   MpButton, MpIcon, MpInput, MpTextarea, MpCheckbox, MpRadio, MpDatePicker,
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpTooltip,
 } from '@mekari/pixel3'
+import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import AdvanceDateFilter from '~/components/patterns/AdvanceDateFilter.vue'
 import { TODAY } from '~/data/master'
@@ -98,16 +99,8 @@ function save() {
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="cpd">
-      <div v-if="open" class="cpd-overlay">
-        <div class="cpd-panel" role="dialog" :aria-label="mode === 'edit' ? t('Edit property') : t('New property')">
-          <header class="cpd-header">
-            <h2 class="cpd-title">{{ mode === 'edit' ? t('Edit property') : t('New property') }}</h2>
-            <MpButton class="cpd-close" :aria-label="t('Close')" @click="close"><MpIcon name="close" size="md" /></MpButton>
-          </header>
-
-          <div class="cpd-body">
+  <ErpDrawer :is-open="open" :title="mode === 'edit' ? t('Edit property') : t('New property')" width="520px" @close="close">
+    <template #body>
             <!-- Property name -->
             <MpFormControl id="cpd-name-fc" :is-invalid="!!nameError">
               <div class="cpd-labelrow">
@@ -322,39 +315,21 @@ function save() {
                 <div v-for="(opt, i) in (config.options ?? [])" :key="i" class="cpd-opt-row">
                   <MpInput :id="`cpd-opt-label-${i}`" :model-value="opt.label" is-full-width :aria-label="t('Label')" @update:model-value="(v: string) => { opt.label = v; opt.value = toVariableName(v) }" />
                   <MpTooltip :id="`cpd-opt-rm-${i}`" :label="t('Remove')" placement="top" use-portal>
-                    <button type="button" class="cpd-opt-remove" :aria-label="t('Remove')" @click="removeOption(i)"><MpIcon name="minus-circular" size="md" /></button>
+                    <MpButton type="button" class="cpd-opt-remove" variant="ghost" :aria-label="t('Remove')" @click="removeOption(i)"><MpIcon name="minus-circular" size="md" /></MpButton>
                   </MpTooltip>
                 </div>
                 <MpButton class="cpd-add-opt" variant="secondary" is-rounded left-icon="add" @click="addOption">{{ t('Add option') }}</MpButton>
               </div>
             </template>
-          </div>
-
-          <footer class="cpd-footer">
-            <MpButton variant="ghost" is-rounded @click="close">{{ t('Cancel') }}</MpButton>
-            <MpButton variant="primary" is-rounded @click="save">{{ mode === 'edit' ? t('Save changes') : t('Create property') }}</MpButton>
-          </footer>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+    </template>
+    <template #footer>
+      <MpButton variant="ghost" is-rounded @click="close">{{ t('Cancel') }}</MpButton>
+      <MpButton variant="primary" is-rounded @click="save">{{ mode === 'edit' ? t('Save changes') : t('Create property') }}</MpButton>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>
-.cpd-enter-active, .cpd-leave-active { transition: background-color 220ms ease; }
-.cpd-enter-from, .cpd-leave-to { background-color: transparent; }
-.cpd-enter-active :deep(.cpd-panel) { transition: transform 300ms ease-out; }
-.cpd-leave-active :deep(.cpd-panel) { transition: transform 220ms ease-in; }
-.cpd-enter-from :deep(.cpd-panel), .cpd-leave-to :deep(.cpd-panel) { transform: translateX(calc(100% + 12px)); }
-
-.cpd-overlay { position: fixed; inset: 0; z-index: 1400; background: var(--mp-colors-background-overlay, rgba(8, 13, 14, 0.45)); display: flex; justify-content: flex-end; }
-.cpd-panel { margin: var(--mp-spacing-3); width: min(520px, calc(100% - 24px)); height: calc(100% - 24px); display: flex; flex-direction: column; background: var(--mp-colors-background-stage, #fff); border-radius: var(--mp-radii-xl, 12px); overflow: hidden; }
-.cpd-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-5); border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
-.cpd-title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #080d0e); }
-.cpd-close { display: inline-flex !important; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); min-width: 0 !important; padding: 0 !important; border: none !important; background: transparent !important; cursor: pointer; color: var(--mp-colors-icon-default, #536062); }
-.cpd-close:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3) !important; }
-
-.cpd-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--mp-spacing-5); display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
 .cpd-field { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 /* Dropdowns in this drawer sit at 50% of the field width (~3 of 6 grid cols). */
 /* ErpFilterSelect's trigger is a fixed 176px inline-flex; force it to fill a 50% box. */
@@ -386,5 +361,4 @@ function save() {
 .cpd-opt-remove:hover { background: var(--mp-colors-background-neutral-subtle, #f8f9f9); color: var(--mp-colors-text-danger, #a8352d); }
 .cpd-add-opt { align-self: flex-start; margin-top: var(--mp-spacing-1); }
 
-.cpd-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-5); border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); }
 </style>

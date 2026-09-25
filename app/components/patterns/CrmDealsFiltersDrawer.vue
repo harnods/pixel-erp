@@ -83,162 +83,108 @@ const keywordColumnLabel = computed(() =>
 </script>
 
 <template>
-  <Transition name="cdf-filters">
-    <div v-if="isOpen" class="cdf-filters-overlay">
-      <div class="cdf-filters-panel" role="dialog" aria-label="All filters">
-        <header class="cdf-filters-header">
-          <span class="cdf-filters-title">All filters</span>
-          <MpButton class="cdf-filters-close" aria-label="Close" @click="close">
-            <MpIcon name="close" size="md" />
-          </MpButton>
-        </header>
-
-        <div class="cdf-filters-body">
-          <!-- Keywords — text input with an inline column-scope dropdown suffix. -->
-          <MpFormControl :id="`${id}-keyword-fc`">
-            <MpFormLabel>Keywords</MpFormLabel>
-            <div class="cdf-keyword">
-              <input
-                v-model="draft.keyword"
-                class="cdf-keyword-input"
-                type="text"
-                placeholder="Search keywords..."
-                @keydown.enter.prevent="apply"
-              >
-              <MpPopover :id="`${id}-keyword-scope`" is-manual :is-open="keywordColumnOpen" use-portal :is-keep-alive="false" @open="keywordColumnOpen = true" @close="keywordColumnOpen = false">
-                <MpPopoverTrigger>
-                  <MpButton class="cdf-keyword-scope" @click.stop="keywordColumnOpen = !keywordColumnOpen">
-                    <span class="cdf-keyword-scope-label">{{ keywordColumnLabel }}</span>
-                    <MpIcon name="chevrons-down" size="sm" />
-                  </MpButton>
-                </MpPopoverTrigger>
-                <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content' })" @blur="keywordColumnOpen = false" @escape="keywordColumnOpen = false">
-                  <MpPopoverList>
-                    <MpPopoverListItem :is-active="draft.keywordColumn === 'all'" @click="draft.keywordColumn = 'all'">All columns</MpPopoverListItem>
-                    <MpPopoverListItem v-for="col in columns" :key="col.key" :is-active="draft.keywordColumn === col.key" @click="draft.keywordColumn = col.key">{{ col.label }}</MpPopoverListItem>
-                  </MpPopoverList>
-                </MpPopoverContent>
-              </MpPopover>
-            </div>
-          </MpFormControl>
-
-          <!-- Deal value (Rp) — greater than / in between / less than. -->
-          <div class="cdf-field">
-            <span class="cdf-field-label">Deal value (Rp)</span>
-            <AmountComparatorField
-              :id="`${id}-value`"
-              :comparator="draft.valueComparator"
-              :value="draft.value"
-              :min="draft.valueMin"
-              :max="draft.valueMax"
-              @update:comparator="draft.valueComparator = $event"
-              @update:value="draft.value = $event"
-              @update:min="draft.valueMin = $event"
-              @update:max="draft.valueMax = $event"
-            />
-          </div>
-
-          <!-- Owner — comparator prefix + typeable tag input (Is any of / none of). -->
-          <div class="cdf-field">
-            <span class="cdf-field-label">Owner</span>
-            <ErpTagComparatorField
-              :id="`${id}-owner`"
-              :comparator="draft.ownerComparator"
-              :values="draft.owners"
-              :options="ownerOptions"
-              placeholder="Type an owner…"
-              @update:comparator="draft.ownerComparator = $event"
-              @update:values="draft.owners = $event"
-            />
-          </div>
-
-          <!-- Customer / Contact person — comparator prefix + typeable tag input. -->
-          <div class="cdf-field">
-            <span class="cdf-field-label">{{ customerLabel || 'Company' }}</span>
-            <ErpTagComparatorField
-              :id="`${id}-customer`"
-              :comparator="draft.customerComparator"
-              :values="draft.customers"
-              :options="customerOptions"
-              :placeholder="customerPlaceholder || 'Type a company…'"
-              @update:comparator="draft.customerComparator = $event"
-              @update:values="draft.customers = $event"
-            />
-          </div>
-
-          <!-- Close date — advanced date range picker (Today / This week / This
-               month / Next month / Custom date range). Self-contained trigger, so
-               it uses a plain bold field label, not MpFormControl. -->
-          <div class="cdf-field">
-            <span class="cdf-field-label">Close date</span>
-            <AdvancedDateRangePicker
-              :id="`${id}-closedate`"
-              :model-value="draft.closeDate"
-              :presets="CLOSE_DATE_PRESETS"
-              is-full-width
-              hide-label
-              placeholder="Select close date"
-              @update:model-value="draft.closeDate = $event"
-            />
-          </div>
+  <ErpDrawer :is-open="isOpen" title="All filters" @close="close">
+    <template #body>
+      <!-- Keywords — text input with an inline column-scope dropdown suffix. -->
+      <MpFormControl :id="`${id}-keyword-fc`">
+        <MpFormLabel>Keywords</MpFormLabel>
+        <div class="cdf-keyword">
+          <input
+            v-model="draft.keyword"
+            class="cdf-keyword-input"
+            type="text"
+            placeholder="Search keywords..."
+            @keydown.enter.prevent="apply"
+          >
+          <MpPopover :id="`${id}-keyword-scope`" is-manual :is-open="keywordColumnOpen" use-portal :is-keep-alive="false" @open="keywordColumnOpen = true" @close="keywordColumnOpen = false">
+            <MpPopoverTrigger>
+              <MpButton class="cdf-keyword-scope" @click.stop="keywordColumnOpen = !keywordColumnOpen">
+                <span class="cdf-keyword-scope-label">{{ keywordColumnLabel }}</span>
+                <MpIcon name="chevrons-down" size="sm" />
+              </MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content' })" @blur="keywordColumnOpen = false" @escape="keywordColumnOpen = false">
+              <MpPopoverList>
+                <MpPopoverListItem :is-active="draft.keywordColumn === 'all'" @click="draft.keywordColumn = 'all'">All columns</MpPopoverListItem>
+                <MpPopoverListItem v-for="col in columns" :key="col.key" :is-active="draft.keywordColumn === col.key" @click="draft.keywordColumn = col.key">{{ col.label }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
         </div>
+      </MpFormControl>
 
-        <footer class="cdf-filters-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="clearAll">Reset filter</button>
-          <div class="cdf-footer-right">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="apply">Apply</button>
-          </div>
-        </footer>
+      <!-- Deal value (Rp) — greater than / in between / less than. -->
+      <div class="cdf-field">
+        <span class="cdf-field-label">Deal value (Rp)</span>
+        <AmountComparatorField
+          :id="`${id}-value`"
+          :comparator="draft.valueComparator"
+          :value="draft.value"
+          :min="draft.valueMin"
+          :max="draft.valueMax"
+          @update:comparator="draft.valueComparator = $event"
+          @update:value="draft.value = $event"
+          @update:min="draft.valueMin = $event"
+          @update:max="draft.valueMax = $event"
+        />
       </div>
-    </div>
-  </Transition>
+
+      <!-- Owner — comparator prefix + typeable tag input (Is any of / none of). -->
+      <div class="cdf-field">
+        <span class="cdf-field-label">Owner</span>
+        <ErpTagComparatorField
+          :id="`${id}-owner`"
+          :comparator="draft.ownerComparator"
+          :values="draft.owners"
+          :options="ownerOptions"
+          placeholder="Type an owner…"
+          @update:comparator="draft.ownerComparator = $event"
+          @update:values="draft.owners = $event"
+        />
+      </div>
+
+      <!-- Customer / Contact person — comparator prefix + typeable tag input. -->
+      <div class="cdf-field">
+        <span class="cdf-field-label">{{ customerLabel || 'Company' }}</span>
+        <ErpTagComparatorField
+          :id="`${id}-customer`"
+          :comparator="draft.customerComparator"
+          :values="draft.customers"
+          :options="customerOptions"
+          :placeholder="customerPlaceholder || 'Type a company…'"
+          @update:comparator="draft.customerComparator = $event"
+          @update:values="draft.customers = $event"
+        />
+      </div>
+
+      <!-- Close date — advanced date range picker (Today / This week / This
+           month / Next month / Custom date range). Self-contained trigger, so
+           it uses a plain bold field label, not MpFormControl. -->
+      <div class="cdf-field">
+        <span class="cdf-field-label">Close date</span>
+        <AdvancedDateRangePicker
+          :id="`${id}-closedate`"
+          :model-value="draft.closeDate"
+          :presets="CLOSE_DATE_PRESETS"
+          is-full-width
+          hide-label
+          placeholder="Select close date"
+          @update:model-value="draft.closeDate = $event"
+        />
+      </div>
+    </template>
+
+    <template #footer>
+      <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="clearAll">Reset filter</MpButton>
+      <div class="cdf-footer-right">
+        <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="close">Cancel</MpButton>
+        <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="apply">Apply</MpButton>
+      </div>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>
-.cdf-filters-enter-active { transition: background-color 250ms ease; }
-.cdf-filters-leave-active { transition: background-color 250ms ease; }
-.cdf-filters-enter-from, .cdf-filters-leave-to { background-color: transparent; }
-.cdf-filters-enter-active .cdf-filters-panel { transition: transform 350ms ease-out; }
-.cdf-filters-leave-active .cdf-filters-panel { transition: transform 250ms ease-in; }
-.cdf-filters-enter-from .cdf-filters-panel,
-.cdf-filters-leave-to .cdf-filters-panel { transform: translateX(calc(100% + 12px)); }
-
-.cdf-filters-overlay {
-  position: fixed; inset: 0; z-index: 1300;
-  background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45));
-  display: flex; justify-content: flex-end;
-}
-.cdf-filters-panel {
-  margin: var(--mp-spacing-3);
-  width: min(420px, calc(100% - 24px));
-  height: calc(100% - 24px);
-  display: flex; flex-direction: column;
-  background: var(--mp-background-stage, #fff);
-  border-radius: 12px;
-  overflow: hidden;
-}
-.cdf-filters-header {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
-  padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle, #f8f9f9);
-  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
-}
-.cdf-filters-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.cdf-filters-close {
-  display: inline-flex !important; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important; min-width: 0 !important;
-  border: none !important; background: none !important; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default);
-}
-.cdf-filters-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
-
-.cdf-filters-body {
-  flex: 1; overflow-y: auto;
-  display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px);
-  padding: var(--mp-spacing-4);
-}
-
 .cdf-keyword {
   display: flex; align-items: center; gap: var(--mp-spacing-3);
   padding: var(--mp-sizes-0\.5, 2px) var(--mp-sizes-0\.5, 2px) var(--mp-sizes-0\.5, 2px) var(--mp-spacing-3);
@@ -267,10 +213,5 @@ const keywordColumnLabel = computed(() =>
 .cdf-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .cdf-field-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 
-.cdf-filters-footer {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-top: 1px solid var(--mp-border-default, #e3e7e9);
-}
 .cdf-footer-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 </style>

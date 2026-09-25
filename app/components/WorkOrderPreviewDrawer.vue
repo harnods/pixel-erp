@@ -105,11 +105,11 @@ function openDetails(wo: WorkOrder) {
                   <td class="wod-td">{{ wo.unit }}</td>
                   <td class="wod-td"><ErpStatusBadge :status="wo.status" /></td>
                   <td class="wod-td wod-td--actions">
-                    <button class="wod-open-btn" aria-label="View details" @click="openDetails(wo)">
+                    <MpButton class="wod-open-btn" variant="ghost" aria-label="View details" @click="openDetails(wo)">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                         <path d="M9 6h9v9M18 6 6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                       </svg>
-                    </button>
+                    </MpButton>
                   </td>
                 </tr>
               </tbody>

@@ -51,7 +51,7 @@ function fmtDate(iso: string | null): string {
         </div>
 
         <footer class="uvd-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">{{ t('Close') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="close">{{ t('Close') }}</MpButton>
         </footer>
       </div>
     </div>
