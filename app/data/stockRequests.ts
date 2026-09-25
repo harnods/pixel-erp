@@ -1317,3 +1317,153 @@ export function shortfallLinesForProduct(productId: string): ShortfallLine[] {
   }
   return [...byWarehouse.values()]
 }
+
+// ── UC-06 — WO Edit & Adjust (change management) ────────────────────────────────
+// How a demand change reaches the stock request depends on the work order's phase.
+// EDIT (Not started) updates the line in place; ADJUST (In progress) keeps the
+// delta on its own tagged line. The split is not decoration: a delta raised
+// mid-run has its own required date, which one line cannot carry alongside the
+// original's, and the stockist may reject the delta (W-7) without rejecting the
+// original demand, which the work order has already committed to. Merging them
+// would lose both.
+
+/** One component's new state, as an Edit or Adjust hands it over. */
+export interface DemandChange {
+  productId: string
+  /** the component's TOTAL new qty across all its lines — not a delta */
+  qty: number
+  /** required date; on an Adjust increase this becomes the new line's own date */
+  requiredDate: string
+}
+
+/** What a change did — enough to word the toast and the log entry. */
+export interface DemandChangeResult {
+  increased: { productId: string; product: string; delta: number }[]
+  decreased: { productId: string; product: string; delta: number }[]
+  /** components whose reservation had to be released to make the cut (R-4) */
+  released: ReleaseResult
+}
+
+/**
+ * UC-06 — apply demand changes to a work order's request.
+ *
+ * `phase` decides how an INCREASE lands:
+ *  • `edit` (Not started) — the existing line's qty is raised in place.
+ *  • `adjust` (In progress) — a NEW line tagged Adjustment carries only the delta,
+ *    with its own required date; the original line is left untouched.
+ *
+ * A DECREASE always reduces in place, taking from the Adjustment line FIRST and
+ * the original last (`reductionOrder`), so the most recent extra demand is given
+ * up before anything the work order originally committed to.
+ *
+ * Cutting below what is already reserved releases that component's FULL remaining
+ * reservation first (R-4, R-8) — unreserve is never partial — and the updated line
+ * then goes back to the request in the same save, to be reserved again by whatever
+ * the reservation method is (C-3 under One-step, PPIC under Two-step). Callers
+ * must therefore treat a decrease as possibly releasing stock, and log it.
+ *
+ * Either way, the user making the change becomes the requestor of every line they
+ * touched (OPEN-17).
+ */
+export function applyDemandChanges(
+  workOrderId: string,
+  changes: DemandChange[],
+  requestor: string,
+  phase: 'edit' | 'adjust',
+): DemandChangeResult {
+  const result: DemandChangeResult = { increased: [], decreased: [], released: { qty: 0, products: [] } }
+  const req = requestForWorkOrder(workOrderId)
+  if (!req) return result
+
+  for (const change of changes) {
+    const lines = linesForProduct(req, change.productId)
+    if (lines.length === 0) continue
+    const current = lines.reduce((s, l) => s + l.qty, 0)
+    const delta = change.qty - current
+    if (delta === 0) continue
+    const product = lines[0]!.product
+
+    if (delta > 0) {
+      if (phase === 'adjust') {
+        // The delta gets its own line, with its own required date and its own
+        // rejectability. `template` carries the component's identity and
+        // destination; nothing else about the original line is copied.
+        const template = drawdownOrder(lines)[0]!
+        req.lines.push({
+          ...template,
+          qty: delta,
+          reserved: 0,
+          consumed: 0,
+          requiredDate: change.requiredDate,
+          requestor,
+          tag: 'adjustment',
+          rejected: false,
+          destAvailable: destinationAvailableFor(change.productId, template.destinationWarehouseId),
+        })
+      } else {
+        const target = drawdownOrder(lines)[0]!
+        target.qty += delta
+        target.requiredDate = change.requiredDate
+        target.requestor = requestor
+      }
+      result.increased.push({ productId: change.productId, product, delta })
+      continue
+    }
+
+    // ── Decrease ───────────────────────────────────────────────────────────────
+    // R-4 — going below the reserved qty is only possible once that reservation is
+    // released, and release is all-or-nothing per component (R-8).
+    const reserved = lines.reduce((s, l) => s + l.reserved, 0)
+    const covered = lines.reduce((s, l) => s + l.reserved + l.consumed, 0)
+    if (change.qty < covered && reserved > 0) {
+      const released = releaseReservation(req.id, [change.productId])
+      result.released.qty += released.qty
+      result.released.products.push(...released.products)
+    }
+
+    let cut = -delta
+    for (const line of reductionOrder(lines)) {
+      if (cut <= 0) break
+      // Never cut below what has already been issued: that material has left the
+      // rack, and a request line cannot un-ask for it (it comes back, if at all,
+      // through a material return — UC-08).
+      const floor = line.consumed
+      const take = Math.min(cut, Math.max(0, line.qty - floor))
+      if (take <= 0) continue
+      line.qty -= take
+      line.requestor = requestor
+      cut -= take
+    }
+    // A tagged line cut to nothing is demand that no longer exists — drop it
+    // rather than leave a zero-qty row cluttering the dashboard. An original line
+    // stays even at zero, because the work order still lists that component.
+    for (let i = req.lines.length - 1; i >= 0; i--) {
+      const l = req.lines[i]!
+      if (l.productId === change.productId && l.tag && l.qty <= 0) req.lines.splice(i, 1)
+    }
+    result.decreased.push({ productId: change.productId, product, delta: -delta })
+  }
+
+  if (result.increased.length || result.decreased.length) persistStockRequests()
+  return result
+}
+
+/**
+ * UC-06 guardrail for WO **Edit** (Not started): a component's qty cannot be set
+ * below what is already reserved. The user is told to unreserve first, which they
+ * can do because the work order has not started (UC-03).
+ *
+ * Adjust has no equivalent block — there the cut releases the reservation itself,
+ * inside the modal, under the Adjust reason.
+ */
+export function blockedByReservation(workOrderId: string, changes: DemandChange[]): string[] {
+  const req = requestForWorkOrder(workOrderId)
+  if (!req) return []
+  return changes
+    .filter((c) => {
+      const lines = linesForProduct(req, c.productId)
+      if (lines.length === 0) return false
+      return c.qty < lines.reduce((s, l) => s + l.reserved + l.consumed, 0)
+    })
+    .map(c => c.productId)
+}

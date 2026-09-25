@@ -29,13 +29,16 @@ import { recordsForWorkOrder, addMaterialConsumeReturnRecord, remainingReservati
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import { warehouses } from '~/data/warehouses'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
+import AdjustWorkOrderModal from '~/components/patterns/AdjustWorkOrderModal.vue'
+import CancelWorkOrderModal from '~/components/patterns/CancelWorkOrderModal.vue'
 import ReserveMaterialsModal from '~/components/patterns/ReserveMaterialsModal.vue'
 import UnreserveMaterialsModal from '~/components/patterns/UnreserveMaterialsModal.vue'
 import { productionSettings, reservationOnWorkOrder } from '~/data/productionSettings'
 import { logActivityFor, entriesFor, lastActivity } from '~/data/activityLog'
 import {
   raiseStockRequestForWorkOrder, requestForWorkOrder, workOrderReadiness, startGate,
-  releaseOnCompletion,
+  releaseOnCompletion, releaseForCanceledWorkOrder, applyDemandChanges, reservedProductIds,
+  type DemandChange,
   changedTrackingLines, reservedTracking,
   reservedForWorkOrder, reserveWorkOrderProducts, unreserveWorkOrderProducts,
   type UnreserveDisposition,
@@ -96,13 +99,150 @@ const primaryAction = computed(() => {
     default: return '' // completed / canceled → no primary action
   }
 })
-// Actions menu items — terminal statuses drop the destructive/edit options.
+/**
+ * Actions menu — UC-09 decides which of Delete / Cancel a phase offers:
+ *  • Not started — Edit and Delete. Nothing has happened yet.
+ *  • In progress / partial — Adjust and Cancel. Delete is BLOCKED here and the
+ *    user is pointed at Cancel; it is still listed, because a missing action is
+ *    indistinguishable from a bug, while a listed one can explain itself
+ *    (rule/btn-no-disabled-validation).
+ *  • Completed — Delete (its stock adjustments and journal entries go with it).
+ *  • Canceled — nothing left to do but Print.
+ */
+const RUNNING_STATUSES = ['in progress', 'partially produced', 'partially completed']
+const isRunning = computed(() => RUNNING_STATUSES.includes(wo.value?.status ?? ''))
+
 const actionItems = computed(() => {
   const s = wo.value?.status
-  if (s === 'completed') return ['Print']
-  if (s === 'canceled') return ['Print', 'Delete']
+  if (s === 'completed') return ['Print', 'Delete']
+  if (s === 'canceled') return ['Print']
+  if (isRunning.value) return ['Adjust', 'Replace attachment', 'Print', 'Cancel work order', 'Delete']
   return ['Edit', 'Replace attachment', 'Print', 'Delete']
 })
+const DESTRUCTIVE_ACTIONS = new Set(['Delete', 'Cancel work order'])
+
+const adjustOpen = ref(false)
+const cancelOpen = ref(false)
+
+function onActionSelect(item: string) {
+  if (item === 'Adjust') { adjustOpen.value = true; return }
+  if (item === 'Cancel work order') { cancelOpen.value = true; return }
+  if (item === 'Delete') {
+    // UC-09 — a running work order cannot be deleted; say so and name the way out
+    // rather than silently doing nothing.
+    if (isRunning.value) {
+      toast.notify({
+        variant: 'error',
+        title: t('A work order in progress cannot be deleted — cancel it instead'),
+        maxWidth: 'max-content',
+      })
+      return
+    }
+    deleteWorkOrder()
+  }
+}
+
+/**
+ * UC-09 — Delete, allowed Not started or Completed. Reservations are released
+ * automatically (UC-15 trigger b); the request stays on the dashboard as Canceled.
+ */
+function deleteWorkOrder() {
+  const w = wo.value
+  if (!w) return
+  const released = releaseForCanceledWorkOrder(w.id)
+  w.status = 'canceled'
+  persistWorkOrders()
+  if (released.qty > 0) {
+    logReservation(t('Released reservation'), released.products.map(p => p.productId), [
+      { label: t('Qty released'), value: `${released.qty}` },
+      { label: t('Trigger'), value: t('Work order deletion') },
+    ])
+  }
+  toast.notify({
+    variant: 'success',
+    title: released.qty > 0
+      ? `${t('Work order deleted')} — ${released.qty} ${t('unit released from reservation')}`
+      : t('Work order deleted'),
+    maxWidth: 'max-content',
+  })
+}
+
+/** Qty a cancel would release from reservation, for the confirmation (R-6). */
+const cancelReleasedQty = computed(() => reservationLines.value.reduce((s, l) => s + l.reserved, 0))
+/** Qty a cancel would restore by deleting this work order's stock adjustments (R-6). */
+const cancelRestoredQty = computed(() => reservationLines.value.reduce((s, l) => s + l.consumed, 0))
+
+/**
+ * UC-09 — Cancel, once the work order has started. Releases the reservation and
+ * deletes the work order's stock adjustments, so stock returns to the condition it
+ * would be in had the job never existed. The request stays as Canceled (W-3).
+ */
+function onCancelWorkOrder(reason: string) {
+  const w = wo.value
+  if (!w) return
+  const released = releaseForCanceledWorkOrder(w.id)
+  const restored = cancelRestoredQty.value
+  w.status = 'canceled'
+  w.endDate = new Date().toISOString().slice(0, 10)
+  persistWorkOrders()
+  cancelOpen.value = false
+
+  logActivityFor(
+    [
+      { type: 'work-order' as const, id: w.id },
+      ...(stockRequest.value ? [{ type: 'stock-request' as const, id: stockRequest.value.id }] : []),
+    ],
+    {
+      user: STAFF[0]!,
+      activity: t('Work order canceled'),
+      details: [
+        { label: t('Reason'), value: reason },
+        { label: t('Qty released'), value: `${released.qty}` },
+        { label: t('Qty restored'), value: `${restored}` },
+        { label: t('Trigger'), value: t('Work order cancellation') },
+      ],
+    },
+  )
+  toast.notify({ variant: 'success', title: `${w.number} ${t('canceled')}`, maxWidth: 'max-content' })
+}
+
+/**
+ * UC-06 — apply an Adjust. An increase lands as a new line tagged Adjustment
+ * carrying only the delta with its own request date; a decrease reduces in place,
+ * Adjustment line first. Cutting below the reserved qty releases that component's
+ * full remaining reservation as part of the same save (R-4), which the modal warns
+ * about before the user commits.
+ */
+function onAdjust(payload: { changes: DemandChange[]; reason: string }) {
+  const w = wo.value
+  if (!w) return
+  const r = applyDemandChanges(w.id, payload.changes, STAFF[0]!, 'adjust')
+  adjustOpen.value = false
+
+  const details = [
+    { label: t('Reason'), value: payload.reason },
+    ...r.increased.map(i => ({ label: `${t('Increased')} — ${i.product}`, value: `+${i.delta}` })),
+    ...r.decreased.map(d => ({ label: `${t('Decreased')} — ${d.product}`, value: `-${d.delta}` })),
+    ...(r.released.qty > 0 ? [{ label: t('Qty released'), value: `${r.released.qty}` }] : []),
+  ]
+  logActivityFor(
+    [
+      { type: 'work-order' as const, id: w.id },
+      ...(stockRequest.value ? [{ type: 'stock-request' as const, id: stockRequest.value.id }] : []),
+    ],
+    { user: STAFF[0]!, activity: t('Work order adjusted'), details },
+  )
+
+  const parts: string[] = []
+  if (r.increased.length) parts.push(`${r.increased.length} ${t('component increased')}`)
+  if (r.decreased.length) parts.push(`${r.decreased.length} ${t('component decreased')}`)
+  if (r.released.qty > 0) parts.push(`${r.released.qty} ${t('unit released from reservation')}`)
+  toast.notify({
+    variant: 'success',
+    title: parts.join(' · ') || t('Work order adjusted'),
+    maxWidth: 'max-content',
+  })
+}
 
 // ── Attachments (representative) ────────────────────────────────────────────────
 const attachments = [
@@ -661,7 +801,8 @@ function suppressFabClick(e: MouseEvent) {
             <MpPopoverList>
               <MpPopoverListItem
                 v-for="item in actionItems" :key="item"
-                :class="item === 'Delete' ? css({ color: 'var(--mp-text-critical)' }) : ''"
+                :class="DESTRUCTIVE_ACTIONS.has(item) ? css({ color: 'var(--mp-text-critical)' }) : ''"
+                @click="onActionSelect(item)"
               >{{ t(item) }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
@@ -1171,6 +1312,25 @@ function suppressFabClick(e: MouseEvent) {
         </MpPopoverList>
       </MpPopoverContent>
     </MpPopover>
+
+    <AdjustWorkOrderModal
+      id="wod-adjust"
+      :is-open="adjustOpen"
+      :work-order-number="wo?.number ?? ''"
+      :lines="reservationLines"
+      @close="adjustOpen = false"
+      @adjust="onAdjust"
+    />
+
+    <CancelWorkOrderModal
+      id="wod-cancel"
+      :is-open="cancelOpen"
+      :work-order-number="wo?.number ?? ''"
+      :released-qty="cancelReleasedQty"
+      :restored-qty="cancelRestoredQty"
+      @close="cancelOpen = false"
+      @cancel-work-order="onCancelWorkOrder"
+    />
 
     <ActivityLogModal
       :is-open="activityOpen"
