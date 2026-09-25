@@ -102,7 +102,7 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
   border: 1px solid var(--mp-colors-border-form, #1d1f2429);
   border-radius: var(--mp-radii-md); cursor: text;
 }
-.efs-trigger:focus-within { border-color: var(--mp-colors-border-bold); box-shadow: 0 0 0 1px var(--mp-colors-border-bold); }
+.efs-trigger:focus-within { border-color: var(--mp-colors-border-bold); box-shadow: 0 0 0 1px var(--mp-colors-border-bold); } /* pixel-police-allow-shadow */
 .efs-input {
   flex: 1; min-width: 0; border: none; outline: none; background: transparent; padding: 0;
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); cursor: text;

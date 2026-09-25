@@ -1039,7 +1039,7 @@ const learn: LearnCard[] = [
 }
 .learn-tag--blue    { background: #eaf1fd; color: #3d5bcc; }
 .learn-tag--neutral { background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-secondary, #3a4749); }
-.learn-tag--yellow  { background: #fdf6dd; color: var(--mp-colors-warning-bolder); }
+.learn-tag--yellow  { background: var(--mp-colors-warning-weaker, #fdf6dd); color: var(--mp-colors-warning-bolder); }
 .learn-card__title {
   margin: 0 0 var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-lg);

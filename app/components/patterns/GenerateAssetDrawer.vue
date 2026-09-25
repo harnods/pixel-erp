@@ -210,6 +210,6 @@ async function saveToAssets() {
 .gad__subjects { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); align-items: center; }
 .gad__subject { position: relative; width: 56px; height: 56px; border-radius: var(--mp-radii-md, 8px); overflow: hidden; border: 1px solid var(--mp-border-default, #e3e7e9); flex-shrink: 0; }
 .gad__subject-img { width: 100%; height: 100%; object-fit: cover; }
-.gad__subject-x { position: absolute; top: 2px; right: 2px; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: none; border-radius: 999px; background: rgba(8,13,14,0.66); color: var(--mp-colors-white); cursor: pointer; padding: 0; }
+.gad__subject-x { position: absolute; top: 2px; right: 2px; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: none; border-radius: 999px; background: rgba(8,13,14,0.66); color: var(--mp-colors-white); cursor: pointer; padding: 0; } /* pixel-police-allow */
 .gad__subject-x :deep(svg) { color: var(--mp-colors-white); width: 12px; height: 12px; }
 </style>

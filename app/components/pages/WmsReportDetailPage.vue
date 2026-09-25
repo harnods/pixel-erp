@@ -416,7 +416,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
              Hidden on snapshot reports (Warehouse stock quantity). -->
         <MpPopover v-if="showDate" :id="`rpt-period-${orderId}`" :is-close-on-select="false">
           <MpPopoverTrigger>
-            <MpButton type="button" class="filter-trigger" variant="ghost" :style="{ width: '210px' }">
+            <MpButton type="button" class="filter-trigger filter-trigger--w210" variant="ghost">
               <svg class="cal-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 2.5v3M16 2.5v3M3.5 9.5h17M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v13A1.5 1.5 0 0 1 19 20.5H5A1.5 1.5 0 0 1 3.5 19V6A1.5 1.5 0 0 1 5 4.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
               <span class="filter-trigger-label">{{ periodLabel }}</span>
               <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -485,7 +485,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <!-- Warehouse — multi-select -->
         <MpPopover :id="`rpt-wh-${orderId}`" :is-close-on-select="false">
           <MpPopoverTrigger>
-            <MpButton type="button" class="filter-trigger" variant="ghost" :style="{ width: '200px' }">
+            <MpButton type="button" class="filter-trigger filter-trigger--w200" variant="ghost">
               <span class="filter-trigger-label">{{ warehouseLabel }}</span>
               <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </MpButton>
@@ -510,7 +510,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
              with an operator dimension only) -->
         <MpPopover v-if="showOperator" :id="`rpt-op-${orderId}`" :is-close-on-select="false">
           <MpPopoverTrigger>
-            <MpButton type="button" class="filter-trigger" variant="ghost" :style="{ width: '190px' }">
+            <MpButton type="button" class="filter-trigger filter-trigger--w190" variant="ghost">
               <span class="filter-trigger-label">{{ operatorLabel }}</span>
               <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </MpButton>
@@ -687,6 +687,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   font-size: 14px; color: var(--mp-text-default); cursor: pointer; text-align: left;
 }
 .filter-trigger:hover { border-color: var(--mp-border-bold); }
+.filter-trigger--w210 { width: 210px; }
+.filter-trigger--w200 { width: 200px; }
+.filter-trigger--w190 { width: 190px; }
 .filter-trigger-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .filter-trigger .chev { color: var(--mp-icon-default); flex: none; }
 .filter-trigger .cal-ico { color: var(--mp-icon-default); flex: none; }

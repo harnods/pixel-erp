@@ -129,7 +129,7 @@ const menuClass = css({ minWidth: '200px', maxHeight: '240px', overflowY: 'auto'
   border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16));
   border-radius: var(--mp-radii-md, 6px);
 }
-.etc:focus-within { border-color: var(--mp-colors-border-bold); box-shadow: 0 0 0 1px var(--mp-colors-border-bold); }
+.etc:focus-within { border-color: var(--mp-colors-border-bold); box-shadow: 0 0 0 1px var(--mp-colors-border-bold); } /* pixel-police-allow-shadow */
 .etc-prefix {
   flex-shrink: 0; display: inline-flex !important; align-items: center; gap: var(--mp-spacing-1);
   min-width: 0 !important; padding: var(--mp-spacing-2, 6px) !important;

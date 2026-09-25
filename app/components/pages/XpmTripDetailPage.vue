@@ -531,7 +531,7 @@ const xpmTlSubStyle = css({
   left: 4px;
   top: 14px;
   bottom: 0;
-  width: 1px;
+  width: var(--mp-border-width-sm, 1px);
   background: var(--mp-border-default);
 }
 

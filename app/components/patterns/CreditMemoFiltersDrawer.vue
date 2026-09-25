@@ -96,7 +96,7 @@ function toggle<T extends string>(list: T[], v: T) { const i = list.indexOf(v); 
       <MpFormControl :id="`${id}-kw`">
         <MpFormLabel>Keywords</MpFormLabel>
         <div class="cmfd-keyword">
-          <input v-model="draft.keyword" class="cmfd-keyword-input" type="text" placeholder="Search keywords..." @keydown.enter.prevent="apply" />
+          <input v-model="draft.keyword" class="cmfd-keyword-input" type="text" placeholder="Search keywords..." @keydown.enter.prevent="apply" /> <!-- pixel-police-allow: borderless inline input -->
           <MpPopover :id="`${id}-kwcol`" is-manual :is-open="keywordColOpen" use-portal :is-keep-alive="false" @open="keywordColOpen = true" @close="keywordColOpen = false">
             <MpPopoverTrigger>
               <MpButton class="cmfd-keyword-scope" @click.stop="keywordColOpen = !keywordColOpen"><span>{{ keywordColLabel() }}</span><MpIcon name="chevrons-down" size="sm" /></MpButton>
@@ -131,7 +131,7 @@ function toggle<T extends string>(list: T[], v: T) { const i = list.indexOf(v); 
                   {{ tag }}
                   <MpButton type="button" class="cmfd-tag-remove" variant="ghost" :aria-label="`Remove ${tag}`" @click="removeCust(i)"><MpIcon name="close" size="sm" /></MpButton>
                 </span>
-                <input :id="`${id}-cust`" v-model="custDraft" class="cmfd-tag-input" type="text" autocomplete="off" :placeholder="draft.customers.length ? '' : 'Type a customer and press Enter'" @focus="custFocused = true" @blur="onCustBlur" @keydown.enter.prevent="addCust" @keydown.delete="onCustBackspace" />
+                <input :id="`${id}-cust`" v-model="custDraft" class="cmfd-tag-input" type="text" autocomplete="off" :placeholder="draft.customers.length ? '' : 'Type a customer and press Enter'" @focus="custFocused = true" @blur="onCustBlur" @keydown.enter.prevent="addCust" @keydown.delete="onCustBackspace" /> <!-- pixel-police-allow: inline tag input -->
               </div>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ maxHeight: '240px', overflowY: 'auto' })">

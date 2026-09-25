@@ -145,7 +145,7 @@ function stageAccent(s: StageCard): string {
     <div class="filter-bar">
       <MpPopover :id="`ovw-wh-${direction}`" is-close-on-select>
         <MpPopoverTrigger>
-          <MpButton type="button" class="filter-trigger" variant="ghost" :style="{ width: '200px' }">
+          <MpButton type="button" class="filter-trigger filter-trigger--w200" variant="ghost">
             <span class="filter-trigger-label">{{ warehouseLabel }}</span>
             <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </MpButton>
@@ -160,7 +160,7 @@ function stageAccent(s: StageCard): string {
 
       <MpPopover :id="`ovw-op-${direction}`" is-close-on-select>
         <MpPopoverTrigger>
-          <MpButton type="button" class="filter-trigger" variant="ghost" :style="{ width: '190px' }">
+          <MpButton type="button" class="filter-trigger filter-trigger--w190" variant="ghost">
             <span class="filter-trigger-label">{{ operatorLabel }}</span>
             <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </MpButton>
@@ -420,6 +420,8 @@ function stageAccent(s: StageCard): string {
   font-size: 14px; color: var(--mp-text-default); cursor: pointer; text-align: left;
 }
 .filter-trigger--auto { width: auto; }
+.filter-trigger--w200 { width: 200px; }
+.filter-trigger--w190 { width: 190px; }
 .filter-trigger:hover { border-color: var(--mp-border-bold); }
 /* borderless variant — the Live operations date picker sits inline next to the title */
 /* Overview date/period pickers: no box, just a bottom border (underline style). */
