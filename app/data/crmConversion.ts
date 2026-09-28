@@ -61,7 +61,7 @@ export interface ErpTargetField {
 // Common fields shared by Sales Quote + Sales Order (PRD §Common mapping +
 // §Sales Quote / §Sales Order mapping requirements).
 const COMMON_ERP_FIELDS: ErpTargetField[] = [
-  { key: 'customer',     label: 'ERP Customer',        requirement: 'required',    category: 'customer',      purpose: 'The ERP customer the transaction bills to' },
+  { key: 'customer',     label: 'Customer',             requirement: 'required',    category: 'customer',      purpose: 'The ERP customer the transaction bills to' },
   { key: 'total',        label: 'Total',               requirement: 'required',    category: 'money',         purpose: 'Total transaction amount (calculated from line items)' },
   { key: 'txDate',       label: 'Transaction date',    requirement: 'required',    category: 'date',          purpose: 'Date the ERP transaction is dated' },
   { key: 'dueDate',      label: 'Due date',            requirement: 'required',    category: 'date',          purpose: 'Payment due date' },

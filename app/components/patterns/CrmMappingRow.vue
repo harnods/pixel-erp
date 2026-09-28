@@ -18,7 +18,7 @@ import {
 } from '~/data/crmConversion'
 import type { CrmModule, DealProperty } from '~/data/crm'
 
-const props = defineProps<{ field: ErpTargetField; entry: MappingEntry; mod: CrmModule; properties?: DealProperty[] }>()
+const props = withDefaults(defineProps<{ field: ErpTargetField; entry: MappingEntry; mod: CrmModule; properties?: DealProperty[]; showErrors?: boolean }>(), { showErrors: false })
 const emit = defineEmits<{ 'update:entry': [MappingEntry] }>()
 const { t } = useLocale()
 
@@ -101,15 +101,7 @@ function onStrategy(v: string) {
           :disabled="!!entry.protected"
           @update:model-value="(v: string) => patch({ sourceFieldId: v })"
         />
-        <ErpFilterSelect
-          v-else-if="entry.strategy === 'system'"
-          :id="`map-sys-${field.key}`"
-          :model-value="entry.systemValue ?? ''"
-          placeholder="Select value"
-          :options="systemOptions"
-          :disabled="!!entry.protected"
-          @update:model-value="(v: string) => patch({ systemValue: v as SystemValueKey })"
-        />
+        <span v-else-if="entry.strategy === 'system'" class="map-readonly">{{ entry.systemValue ? t(SYSTEM_VALUE_LABEL[entry.systemValue]) : '—' }}</span>
         <MpInput
           v-else-if="entry.strategy === 'fixed'"
           :id="`map-fixed-${field.key}`"
@@ -122,7 +114,7 @@ function onStrategy(v: string) {
         <span v-else class="map-readonly map-readonly--muted">—</span>
       </div>
     </div>
-    <p v-if="evalResult.message && !entry.protected" class="map-inline-error">{{ evalResult.message }}</p>
+    <p v-if="evalResult.message && !entry.protected && showErrors" class="map-inline-error">{{ evalResult.message }}</p>
   </div>
 </template>
 

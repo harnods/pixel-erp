@@ -112,6 +112,7 @@ const validationErrors = computed(() => {
 
 // ── Actions ──────────────────────────────────────────────────────────────────
 const saveError = ref('')
+const showMappingErrors = ref(false)
 const enableConfirmOpen = ref(false)
 function goBack() { router.push(`/crm/settings/erp-integrations/${props.orderId}`) }
 
@@ -127,6 +128,7 @@ function applySave() {
 function onSave() {
   // Enabled + incomplete → block with inline error (button never disabled per rule).
   if (draft.enabled && validationErrors.value.length) {
+    showMappingErrors.value = true
     saveError.value = t('Resolve the mapping errors below before enabling conversion.')
     return
   }
@@ -222,6 +224,7 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
                     :entry="entryFor(f.key)"
                     :mod="mod"
                     :properties="modProperties"
+                    :show-errors="showMappingErrors"
                     @update:entry="setEntry"
                   />
                 </div>
@@ -243,6 +246,7 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
                     :entry="entryFor(f.key)"
                     :mod="mod"
                     :properties="modProperties"
+                    :show-errors="showMappingErrors"
                     @update:entry="setEntry"
                   />
                 </div>
