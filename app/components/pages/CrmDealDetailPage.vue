@@ -11,11 +11,10 @@
  *    CrmDealStageModal (captures a Lost reason). A Lost deal shows the terminal
  *    stepper node as red "Lost" and cannot be converted.
  *
- * ERP conversion (PRD): a MANUAL "Create Sales Order/Quote" action (primary when
- * Won, else in the kebab) opens CrmConversionReviewDrawer — a READ-ONLY review +
- * explicit confirm that creates exactly one ERP transaction (see crmConversion.ts:
- * dealConvEligibility / runDealConversion). One success per deal; a Failed attempt
- * can be retried; a converted deal links to the ERP transaction (Open in ERP).
+ * ERP conversion: a MANUAL "Create Sales Order/Quote" action (primary when Won,
+ * else in the kebab) navigates to the full ERP form (/sales-orders/new) pre-filled
+ * with the deal's data. After saving, the deal is marked converted and linked to
+ * the ERP transaction (Open in ERP).
  */
 import { ref, computed } from 'vue'
 import {
@@ -28,7 +27,6 @@ import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import CrmDealStageModal from '~/components/patterns/CrmDealStageModal.vue'
-import CrmConversionReviewDrawer from '~/components/patterns/CrmConversionReviewDrawer.vue'
 import ActivityLogTable from '~/components/patterns/ActivityLogTable.vue'
 import CrmNotesPanel from '~/components/patterns/CrmNotesPanel.vue'
 import FilePreviewModal from '~/components/patterns/FilePreviewModal.vue'
@@ -44,7 +42,8 @@ import {
   lineSubtotal, crmCustomers, dealNo, dealStageLabel,
   type DealStage, type DealLineItem, type DealAttachment, type DealProductsPayload,
 } from '~/data/crm'
-import { dealConvEligibility, dealTargetLabel, runDealConversion, dealErpTxn } from '~/data/crmConversion'
+import { dealConvEligibility, dealTargetLabel, dealErpTxn, dealTarget } from '~/data/crmConversion'
+import { dealToSalesPrefill, pendingSalesPrefill, pendingConversionDealId } from '~/data/salesFormPrefill'
 
 const currentUser = 'Rizal Candra'
 
@@ -146,25 +145,19 @@ function confirmReopen() {
   reopenConfirmOpen.value = false; pendingStage.value = null
 }
 
-// ── Manual ERP conversion — read-only review + confirm (PRD) ──
-const reviewOpen = ref(false)
-// Open the read-only review; a blocked record surfaces an inline reason (no drawer).
+// ── Manual ERP conversion — navigate to the full ERP form with prefill ──
 function openConvertReview() {
   const d = deal.value; if (!d) return
   const e = dealConvEligibility(d)
   if (!e.ok) { infoToast(e.reason ?? t('This deal cannot be converted.')); return }
-  reviewOpen.value = true
-}
-function onConfirmConversion() {
-  const d = deal.value; if (!d) return
-  const r = runDealConversion(d.id)
-  reviewOpen.value = false
-  if (r.ok) successToast(`${t(convTarget.value)} ${t('created')}`)
-  else infoToast(r.error ?? t('Conversion failed'))
+  pendingSalesPrefill.value = dealToSalesPrefill(d)
+  pendingConversionDealId.value = d.id
+  const target = dealTarget()
+  router.push(target === 'sales-quote' ? '/sales-quotes/new' : '/sales-orders/new')
 }
 // Open the created ERP transaction (converted deals).
 function openErpTxn() { if (erpTxn.value) router.push(erpTxn.value.route) }
-// Failed → retry replays the conversion (the one-success guard blocks a duplicate).
+// Failed → retry replays the conversion.
 function retryConversion() { openConvertReview() }
 
 // ── Archive / restore / delete ──
@@ -319,7 +312,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
           </MpPopover>
         </div>
         <!-- Won & not converted: manual conversion via read-only review (PRD). -->
-        <MpButton v-else-if="!isArchived && isWon && !isConverted" class="btn-enterprise btn-enterprise--primary" @click="openConvertReview">{{ t('Create') }} {{ t(convTarget) }}</MpButton>
+        <MpButton v-else-if="!isArchived && isWon && !isConverted" class="btn-enterprise btn-enterprise--primary" data-devchange="crm-create-sales-order-full-form" @click="openConvertReview">{{ t('Create') }} {{ t(convTarget) }}</MpButton>
         <!-- Converted: open the created ERP transaction. -->
         <MpButton v-else-if="!isArchived && isConverted && erpTxn" class="btn-enterprise btn-enterprise--secondary" @click="openErpTxn">{{ t('Open in ERP') }}</MpButton>
         <!-- Lost: reopen -->
@@ -747,13 +740,6 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
       @confirm="confirmReopen"
     />
 
-    <!-- ── Manual ERP conversion — read-only review + confirm (PRD) ── -->
-    <CrmConversionReviewDrawer
-      :open="reviewOpen"
-      :deal="deal"
-      @close="reviewOpen = false"
-      @confirm="onConfirmConversion"
-    />
 
     <!-- ── Add / edit products (full-screen line-items + totals editor) ── -->
     <CrmEditProductsDrawer

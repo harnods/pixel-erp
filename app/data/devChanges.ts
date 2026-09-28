@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-create-sales-order-full-form',
+    title: 'Create Sales Order now opens full ERP form',
+    description:
+      'The "Create Sales Order" button in CRM Deals now navigates to the full ERP New Sales Order form (/sales-orders/new) pre-filled with the deal\'s data, instead of opening a read-only review drawer. All fields remain editable before saving.',
+    date: '2026-09-28',
+    files: ['CrmDealDetailPage.vue', 'NewSalesOrderPage.vue', 'salesFormPrefill.ts', 'crmConversion.ts'],
+  },
+  {
     id: 'crm-deals-exist-in-deals',
     title: 'Deals: properties aligned to PRD "Exist in Deals"',
     description:

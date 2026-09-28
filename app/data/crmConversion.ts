@@ -216,11 +216,9 @@ function dealsSeed(): ConversionConfig {
       { targetKey: 'dueDate',      strategy: 'crm-field', sourceFieldId: 'due-date' },
       { targetKey: 'paymentTerm',  strategy: 'crm-field', sourceFieldId: 'payment-term' },
       { targetKey: 'productLines', strategy: 'crm-field', sourceFieldId: 'product-list' },
-      { targetKey: 'currency',     strategy: 'crm-field', sourceFieldId: 'currency-code' },
+      { targetKey: 'currency',     strategy: 'system', systemValue: 'base-currency' },
       { targetKey: 'billingAddress', strategy: 'crm-field', sourceFieldId: 'billing-address' },
-      { targetKey: 'shippingAddress', strategy: 'crm-field', sourceFieldId: 'shipping-address' },
       { targetKey: 'referenceNo',  strategy: 'crm-field', sourceFieldId: 'external-reference-id' },
-      { targetKey: 'memo',         strategy: 'crm-field', sourceFieldId: 'memo' },
     ],
   }
 }
@@ -427,20 +425,31 @@ function nextNumber(arr: { number: number }[], base: number): number {
 
 export interface ConvResult { ok: boolean; error?: string; target?: ConvTarget; ref?: { id: string; number: number } }
 
-/** Confirm the conversion: create exactly one ERP transaction and project the
- *  result onto the deal. Prototype resolves Processing → Converted immediately;
- *  the eligibility guard above is the exactly-once guarantee. */
-export function runDealConversion(dealId: string): ConvResult {
+/** Confirm the conversion: link the deal to an existing ERP transaction (created
+ *  by the full ERP form), or create one internally as a fallback. When `existingOrder`
+ *  is provided, the order is already in the salesOrders array — we just mark the deal. */
+export function runDealConversion(dealId: string, existingOrder?: SalesOrder): ConvResult {
   const d = getDeal(dealId)
   if (!d) return { ok: false, error: 'Deal not found.' }
+  const today = new Date().toISOString().slice(0, 10)
+  const target = dealTarget()
+
+  if (existingOrder) {
+    d.conversion = 'converted'
+    d.convertedTarget = 'Sales Order'
+    d.salesOrderId = existingOrder.id
+    d.lastActivity = today
+    d.conversionError = undefined
+    persistCrmDeals()
+    return { ok: true, target, ref: { id: existingOrder.id, number: existingOrder.number } }
+  }
+
   const elig = dealConvEligibility(d)
   if (!elig.ok) return { ok: false, error: elig.reason }
-  const target = dealTarget()
   d.conversion = 'processing'
   d.conversionError = undefined
   persistCrmDeals()
 
-  const today = new Date().toISOString().slice(0, 10)
   const totals = dealTotals(d)
   if (target === 'sales-order') {
     const number = nextNumber(salesOrders as { number: number }[], 10000)
