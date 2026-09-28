@@ -368,6 +368,7 @@ const CrmReportViewerPage = asyncPage(() => import('~/components/pages/CrmReport
 const CrmActivityLogPage = asyncPage(() => import('~/components/pages/CrmActivityLogPage.vue'))
 const CrmModulesPage = asyncPage(() => import('~/components/pages/CrmModulesPage.vue'))
 const CrmErpIntegrationsPage = asyncPage(() => import('~/components/pages/CrmErpIntegrationsPage.vue'))
+const CrmErpIntegrationDetailPage = asyncPage(() => import('~/components/pages/CrmErpIntegrationDetailPage.vue'))
 const CrmErpIntegrationEditorPage = asyncPage(() => import('~/components/pages/CrmErpIntegrationEditorPage.vue'))
 const CrmGenericModulePage = asyncPage(() => import('~/components/pages/CrmGenericModulePage.vue'))
 const CrmGenericRecordDetailPage = asyncPage(() => import('~/components/pages/CrmGenericRecordDetailPage.vue'))
@@ -498,7 +499,8 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (sub === 'settings' && id === 'modules') return { component: CrmModulesPage, id: '' }
     // /crm/settings/properties is deprecated — fall through to generic settings
     // ERP Integration Settings (PRD: ERP Transaction Conversion Settings V1).
-    if (sub === 'settings' && id === 'erp-integrations' && segs[3]) return { component: CrmErpIntegrationEditorPage, id: segs[3] }
+    if (sub === 'settings' && id === 'erp-integrations' && segs[4] === 'edit') return { component: CrmErpIntegrationEditorPage, id: segs[3] }
+    if (sub === 'settings' && id === 'erp-integrations' && segs[3]) return { component: CrmErpIntegrationDetailPage, id: segs[3] }
     if (sub === 'settings' && id === 'erp-integrations') return { component: CrmErpIntegrationsPage, id: '' }
     if (sub === 'settings') return { component: CrmSettingsPage, id: id ?? 'company' }
     return { component: CRM_PAGES[sub] ?? CrmDealsPage, id: sub }

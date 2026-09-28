@@ -113,7 +113,7 @@ const validationErrors = computed(() => {
 // ── Actions ──────────────────────────────────────────────────────────────────
 const saveError = ref('')
 const enableConfirmOpen = ref(false)
-function goBack() { router.push('/crm/settings/erp-integrations') }
+function goBack() { router.push(`/crm/settings/erp-integrations/${props.orderId}`) }
 
 function applySave() {
   saveConfig(props.orderId, {
@@ -142,9 +142,9 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
   <div class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <NuxtLink class="detail-breadcrumb" to="/crm/settings/erp-integrations">{{ t('ERP integrations') }}</NuxtLink>
+        <NuxtLink class="detail-breadcrumb" :to="`/crm/settings/erp-integrations/${orderId}`">{{ mod ? mod.name : t('ERP integrations') }}</NuxtLink>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">{{ mod ? mod.name : t('Module not found') }}</h1>
+          <h1 class="detail-title">{{ mod ? `${t('Edit')} ${mod.name}` : t('Module not found') }}</h1>
         </div>
       </div>
     </header>

@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-erp-integration-detail',
+    title: 'ERP Integration Settings: detail page before editor',
+    description:
+      'Clicking "Manage" on the ERP Integrations list now opens a read-only detail page showing the module\'s conversion config. An "Edit" button navigates to the editor page.',
+    date: '2026-09-28',
+    files: ['CrmErpIntegrationDetailPage.vue', 'CrmErpIntegrationEditorPage.vue', '[...slug].vue'],
+  },
+  {
     id: 'crm-create-sales-order-full-form',
     title: 'Create Sales Order now opens full ERP form',
     description:
