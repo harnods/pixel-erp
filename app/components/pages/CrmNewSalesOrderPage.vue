@@ -56,13 +56,14 @@ function onCreated(order: SalesOrder) {
 .crm-so-form { display: flex; flex-direction: column; height: 100%; }
 .crm-so-bar {
   display: flex; align-items: flex-start; justify-content: space-between;
-  padding: 16px 24px 12px; border-bottom: 1px solid var(--mp-color-gray-100);
+  padding: var(--mp-spacing-16) var(--mp-spacing-24) var(--mp-spacing-12);
+  border-bottom: 1px solid var(--mp-color-gray-100);
   flex-shrink: 0;
 }
-.crm-so-bar-left { display: flex; flex-direction: column; gap: 2px; }
-.crm-so-crumb { font-size: 12px; color: var(--mp-color-gray-600); cursor: pointer; }
+.crm-so-bar-left { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.crm-so-crumb { font-size: var(--mp-font-size-12); color: var(--mp-color-gray-600); cursor: pointer; }
 .crm-so-crumb:hover { color: var(--mp-color-gray-900); }
-.crm-so-h1 { font-size: 20px; font-weight: 600; color: var(--mp-color-gray-900); margin: 0; }
-.crm-so-bar-right { display: flex; gap: 8px; padding-top: 4px; }
-.crm-so-notfound { padding: 48px; text-align: center; color: var(--mp-color-gray-500); }
+.crm-so-h1 { font-size: var(--mp-font-size-20); font-weight: 600; color: var(--mp-color-gray-900); margin: 0; }
+.crm-so-bar-right { display: flex; gap: var(--mp-spacing-8); padding-top: var(--mp-spacing-4); }
+.crm-so-notfound { padding: var(--mp-spacing-48); text-align: center; color: var(--mp-color-gray-500); }
 </style>
