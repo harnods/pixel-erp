@@ -145,7 +145,7 @@ const footer = css({
 
     <!-- ── Help footer ─────────────────────────────────────────────────── -->
     <div :class="footer">
-      <MpIcon name="help" size="sm" color="icon.secondary" />
+      <MpIcon name="help" size="sm" color="icon.default" />
       <MpText size="body" color="text.default">{{ COPY.helpPrefix }}</MpText>
       <MpButton variant="textLink" size="sm">{{ COPY.helpLink }}</MpButton>
       <MpText size="body" color="text.default">{{ COPY.helpSuffix }}</MpText>

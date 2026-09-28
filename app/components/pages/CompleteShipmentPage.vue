@@ -124,7 +124,7 @@ async function handleSave() {
             <ul v-if="attachedFiles.length" class="cs-file-list">
               <li v-for="f in attachedFiles" :key="f.name" class="cs-file-item">
                 <span class="cs-file-name">{{ f.name }}</span>
-                <button class="cs-file-remove" type="button" @click="removeFile(f.name)"><MpIcon name="close" size="xs" /></button>
+                <button class="cs-file-remove" type="button" @click="removeFile(f.name)"><MpIcon name="close" size="16px" /></button>
               </li>
             </ul>
           </div>

@@ -465,7 +465,7 @@ const activeTabName = computed(() => TAB_NAMES[activeTabIndex.value] ?? 'transac
       <section class="cmd-overview">
         <div class="cmd-ov-item cmd-account">
           <div class="cmd-bank-logo">
-            <MpIcon name="bank" size="lg" class="cmd-bank-logo__icon" />
+            <MpIcon name="bank" size="32px" class="cmd-bank-logo__icon" />
           </div>
           <div class="cmd-account-col">
             <div class="cmd-account-name-row">

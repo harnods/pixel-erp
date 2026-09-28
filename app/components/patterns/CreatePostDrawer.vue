@@ -305,9 +305,9 @@ async function save() {
     <Transition name="zm">
       <div v-if="zoomIndex !== null && results[zoomIndex]" class="zm-overlay" @click.self="zoomIndex = null">
         <button class="zm-close" type="button" aria-label="Close" @click="zoomIndex = null"><MpIcon name="close" size="md" /></button>
-        <button v-if="results.length > 1" class="zm-nav zm-nav--prev" type="button" aria-label="Previous" @click.stop="zoomPrev"><MpIcon name="caret-left" size="lg" /></button>
+        <button v-if="results.length > 1" class="zm-nav zm-nav--prev" type="button" aria-label="Previous" @click.stop="zoomPrev"><MpIcon name="caret-left" size="32px" /></button>
         <img :src="results[zoomIndex].dataUrl" alt="Design preview" class="zm-img" />
-        <button v-if="results.length > 1" class="zm-nav zm-nav--next" type="button" aria-label="Next" @click.stop="zoomNext"><MpIcon name="caret-right" size="lg" /></button>
+        <button v-if="results.length > 1" class="zm-nav zm-nav--next" type="button" aria-label="Next" @click.stop="zoomNext"><MpIcon name="caret-right" size="32px" /></button>
         <span v-if="results.length > 1" class="zm-count">{{ zoomIndex + 1 }} / {{ results.length }}</span>
       </div>
     </Transition>

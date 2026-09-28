@@ -1012,7 +1012,7 @@ onMounted(() => {
             <ul v-if="attachedFiles.length" class="scf-file-list">
               <li v-for="f in attachedFiles" :key="f.name" class="scf-file-item">
                 <span class="scf-file-name">{{ f.name }}</span>
-                <button class="scf-file-remove" type="button" @click="removeFile(f.name)"><MpIcon name="close" size="xs" /></button>
+                <button class="scf-file-remove" type="button" @click="removeFile(f.name)"><MpIcon name="close" size="16px" /></button>
               </li>
             </ul>
           </div>

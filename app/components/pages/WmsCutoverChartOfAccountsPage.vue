@@ -197,7 +197,7 @@ function onContinue() {
                 <div class="coa-card-title-row">
                   <h2 class="coa-card-title">{{ t('Import my own chart of accounts') }}</h2>
                   <span v-if="committedSource === 'own'" class="coa-inuse">
-                    <MpIcon name="check" size="sm" color="icon.positive" /> {{ t('In use') }}
+                    <MpIcon name="check" size="sm" color="icon.success" /> {{ t('In use') }}
                   </span>
                 </div>
                 <p class="coa-card-desc">
@@ -267,7 +267,7 @@ function onContinue() {
 
                 <div v-else class="coa-import-done">
                   <span class="coa-import-done-msg">
-                    <MpIcon name="check" size="sm" color="icon.positive" />
+                    <MpIcon name="check" size="sm" color="icon.success" />
                     {{ coaSourceState.importedCount }} {{ t('accounts imported') }}
                   </span>
                   <MpTextlink id="coa-preview-link" as="a" @click.prevent="openPreview">{{ t('Preview') }}</MpTextlink>

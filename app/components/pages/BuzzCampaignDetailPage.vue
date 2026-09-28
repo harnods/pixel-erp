@@ -127,7 +127,7 @@ function confirmDelete() {
             <button v-for="(c, i) in creatives" :key="c.id" type="button" class="cd-tile" @click="openZoom(i)">
               <video v-if="c.media === 'video' && imgs.get(c.id)" :src="imgs.get(c.id)" class="cd-tile__img" muted playsinline preload="metadata" />
               <img v-else-if="imgs.get(c.id)" :src="imgs.get(c.id)" :alt="c.title" class="cd-tile__img" />
-              <span v-if="c.media === 'video'" class="cd-tile__play"><MpIcon name="caret-right" size="lg" /></span>
+              <span v-if="c.media === 'video'" class="cd-tile__play"><MpIcon name="caret-right" size="32px" /></span>
               <span v-else-if="campaign.kind === 'carousel'" class="cd-tile__n">{{ i + 1 }}</span>
             </button>
           </div>
@@ -141,10 +141,10 @@ function confirmDelete() {
       <Transition name="zm">
         <div v-if="zoom !== null && creatives[zoom]" class="zm-overlay" @click.self="zoom = null">
           <button class="zm-close" type="button" aria-label="Close" @click="zoom = null"><MpIcon name="close" size="md" /></button>
-          <button v-if="creatives.length > 1" class="zm-nav zm-nav--prev" type="button" aria-label="Previous" @click.stop="zoomPrev"><MpIcon name="caret-left" size="lg" /></button>
+          <button v-if="creatives.length > 1" class="zm-nav zm-nav--prev" type="button" aria-label="Previous" @click.stop="zoomPrev"><MpIcon name="caret-left" size="32px" /></button>
           <video v-if="creatives[zoom].media === 'video'" :src="imgs.get(creatives[zoom].id)" class="zm-img" autoplay loop controls playsinline />
           <img v-else :src="imgs.get(creatives[zoom].id)" alt="Creative" class="zm-img" />
-          <button v-if="creatives.length > 1" class="zm-nav zm-nav--next" type="button" aria-label="Next" @click.stop="zoomNext"><MpIcon name="caret-right" size="lg" /></button>
+          <button v-if="creatives.length > 1" class="zm-nav zm-nav--next" type="button" aria-label="Next" @click.stop="zoomNext"><MpIcon name="caret-right" size="32px" /></button>
           <span v-if="creatives.length > 1" class="zm-count">{{ zoom + 1 }} / {{ creatives.length }}</span>
         </div>
       </Transition>
@@ -152,7 +152,7 @@ function confirmDelete() {
   </template>
 
   <div v-else class="cd-missing">
-    <MpIcon name="file-image" size="lg" />
+    <MpIcon name="file-image" size="32px" />
     <p>Campaign not found.</p>
     <MpButton is-rounded variant="secondary" @click="router.push('/buzz-campaigns')">Back to Campaigns</MpButton>
   </div>

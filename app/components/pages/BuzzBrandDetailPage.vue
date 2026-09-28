@@ -302,7 +302,7 @@ function hex(v: string) { return (v || '').toUpperCase() }
   </template>
 
   <div v-else class="bd-missing">
-    <MpIcon name="file-image" size="lg" />
+    <MpIcon name="file-image" size="32px" />
     <p>Brand kit not found.</p>
     <MpButton is-rounded variant="secondary" @click="router.push('/buzz-branding')">Back to Brand kits</MpButton>
   </div>

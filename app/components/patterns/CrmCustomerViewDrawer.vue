@@ -119,16 +119,17 @@ function toggle(list: string[], v: string) {
             </ul>
           </div>
 
-          <!-- Segment -->
+          <!-- Segment — same multi-select shape as Lifecycle and Contact owner
+               above, so all three read as one control type (was a row of
+               hand-rolled toggle chips; Pixel has no chip component). -->
           <div v-if="segmentOptions.length" class="cvd-field">
             <span class="cvd-field-label">Segment</span>
-            <div class="cvd-chips">
-              <button
-                v-for="s in segmentOptions" :key="s" type="button"
-                class="cvd-chip" :class="{ 'is-on': draft.filters.segments.includes(s) }"
-                @click="toggle(draft.filters.segments, s)"
-              >{{ s }}</button>
-            </div>
+            <ul class="cvd-checklist">
+              <li v-for="s in segmentOptions" :key="s" class="cvd-check-item" @click="toggle(draft.filters.segments, s)">
+                <span @click.stop><MpCheckbox :id="`${id}-sg-${s}`" :is-checked="draft.filters.segments.includes(s)" @change="() => toggle(draft.filters.segments, s)" /></span>
+                <span class="cvd-check-label">{{ s }}</span>
+              </li>
+            </ul>
           </div>
         </div>
 
@@ -161,7 +162,7 @@ function toggle(list: string[], v: string) {
 
 .cvd-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px); padding: var(--mp-spacing-4); }
 .cvd-input { width: 100%; height: 36px; padding: 0 var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16)); border-radius: var(--mp-radii-md, 6px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; }
-.cvd-input:focus { border-color: var(--mp-border-brand, #4b61dc); }
+.cvd-input:focus { border-color: var(--mp-border-brand, #0a6e4e); }
 .cvd-input::placeholder { color: var(--mp-text-placeholder); }
 .cvd-error { display: block; margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #c62828); }
 
@@ -180,10 +181,6 @@ function toggle(list: string[], v: string) {
 .cvd-radio.is-on::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: var(--mp-border-brand, #0a6e4e); }
 
 .cvd-divider { height: 1px; background: var(--mp-border-default); }
-
-.cvd-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); }
-.cvd-chip { padding: 4px 12px; border: 1px solid var(--mp-border-default); background: var(--mp-background-neutral, #fff); border-radius: 999px; cursor: pointer; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
-.cvd-chip.is-on { border-color: var(--mp-border-brand, #0a6e4e); background: var(--mp-background-brand-subtle, #e8f5f0); color: var(--mp-text-brand, #0a6e4e); }
 
 .cvd-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 .cvd-footer-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }

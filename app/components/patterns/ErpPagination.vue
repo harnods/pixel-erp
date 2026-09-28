@@ -43,7 +43,7 @@ const rangeEnd    = computed(() => Math.min(props.currentPage * props.perPage, p
           </svg>
         </div>
       </div>
-      <span class="pag-showing">Showing {{ rangeStart }}-{{ rangeEnd }} of {{ total }}</span>
+      <span class="pag-showing">Showing {{ rangeStart }}–{{ rangeEnd }} of {{ total }}</span>
     </div>
 
     <!-- Right: Page X of Y + nav -->

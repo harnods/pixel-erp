@@ -131,7 +131,7 @@ function stageBadge(stage: string) {
   </div>
 
   <div v-else class="cd-missing">
-    <MpIcon name="profile" size="lg" />
+    <MpIcon name="profile" size="32px" />
     <p>Customer not found.</p>
     <button class="crm-btn crm-btn--secondary" type="button" @click="router.push('/crm/customers')">Back to Customers</button>
   </div>
