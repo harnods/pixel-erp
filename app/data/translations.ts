@@ -4031,6 +4031,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'from available stock at the current pace': 'dari stok tersedia dengan laju saat ini',
   'Estimate for the suggested need · exact total set at the purchase order': 'Perkiraan untuk kebutuhan yang disarankan · total pasti ditetapkan pada pesanan pembelian',
   'Vendor terms are managed by purchasing in the Vendors module. This view is read-only.': 'Ketentuan vendor dikelola oleh tim pembelian di modul Vendor. Tampilan ini hanya-baca.',
+  'No vendor supplies this product yet, so it cannot be ordered. Add one in the Vendors module.': 'Belum ada vendor yang memasok produk ini, jadi belum bisa dipesan. Tambahkan di modul Vendor.',
   'Contributing documents': 'Dokumen yang berkontribusi',
   'sales document': 'dokumen penjualan',
   'sales documents': 'dokumen penjualan',

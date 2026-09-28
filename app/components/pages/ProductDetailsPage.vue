@@ -1073,7 +1073,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                   class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
                   type="button"
                   @click="vendorOpen = true"
-                >Edit vendors</button>
+                >View vendors</button>
               </div>
               <div class="pd-table-scroll">
                 <table class="pd-table">
@@ -1159,12 +1159,13 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
               <p class="empty-full-title">No vendors</p>
               <p class="empty-full-desc">
                 No vendor supplies this product yet, so it cannot be ordered or replenished.
+                Link it to a vendor from the Vendors module.
               </p>
               <button
                 class="btn-enterprise btn-enterprise--secondary empty-cta"
                 type="button"
-                @click="vendorOpen = true"
-              >Add vendor</button>
+                @click="router.push('/vendors')"
+              >Go to Vendors</button>
             </div>
           </MpTabPanel>
 
@@ -1733,11 +1734,13 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
       @close="barcodePreviewOpen = false"
     />
 
-    <!-- Same drawer the replenishment worklist uses, so vendor terms are edited in
-         exactly one place no matter where the user came from. -->
+    <!-- Read-only: vendor terms are owned by purchasing and edited only in the
+         Vendors module. The product page (like the replenishment worklist) only
+         views them. -->
     <VendorItemDrawer
       v-model:is-open="vendorOpen"
       :sku="product.sku"
+      readonly
       @saved="vendorTick++"
     />
   </div>

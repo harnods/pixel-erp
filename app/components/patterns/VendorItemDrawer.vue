@@ -300,7 +300,12 @@ function save() {
           </div>
 
           <p v-if="!rows.length" class="rp-vi-empty">
-            {{ t('No vendor supplies this product yet, so it cannot be ordered. Add one to include it in the worklist.') }}
+            <template v-if="readonly">
+              {{ t('No vendor supplies this product yet, so it cannot be ordered. Add one in the Vendors module.') }}
+            </template>
+            <template v-else>
+              {{ t('No vendor supplies this product yet, so it cannot be ordered. Add one to include it in the worklist.') }}
+            </template>
           </p>
 
           <!-- Airene preferred-vendor recommendation — only with something to choose between. -->
