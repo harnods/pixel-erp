@@ -36,12 +36,12 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['CrmErpIntegrationDetailPage.vue', 'CrmErpIntegrationEditorPage.vue', '[...slug].vue'],
   },
   {
-    id: 'crm-create-sales-order-full-form',
-    title: 'Create Sales Order now opens full ERP form',
+    id: 'crm-create-sales-order-inline',
+    title: 'Create Sales Order form now in CRM',
     description:
-      'The "Create Sales Order" button in CRM Deals now navigates to the full ERP New Sales Order form (/sales-orders/new) pre-filled with the deal\'s data, instead of opening a read-only review drawer. All fields remain editable before saving.',
+      'The "Create Sales Order" button in CRM Deals now opens the full sales order form within CRM (/crm/deals/:id/create-order) instead of navigating to the ERP module. The form is the same ERP form, embedded with CRM breadcrumb navigation.',
     date: '2026-09-28',
-    files: ['CrmDealDetailPage.vue', 'NewSalesOrderPage.vue', 'salesFormPrefill.ts', 'crmConversion.ts'],
+    files: ['CrmNewSalesOrderPage.vue', 'CrmDealDetailPage.vue', '[...slug].vue'],
   },
   {
     id: 'crm-deals-exist-in-deals',

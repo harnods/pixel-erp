@@ -12,9 +12,9 @@
  *    stepper node as red "Lost" and cannot be converted.
  *
  * ERP conversion: a MANUAL "Create Sales Order/Quote" action (primary when Won,
- * else in the kebab) navigates to the full ERP form (/sales-orders/new) pre-filled
- * with the deal's data. After saving, the deal is marked converted and linked to
- * the ERP transaction (Open in ERP).
+ * else in the kebab) navigates to the CRM-embedded sales order form
+ * (/crm/deals/:id/create-order) pre-filled with the deal's data. After saving,
+ * the deal is marked converted and linked to the ERP transaction.
  */
 import { ref, computed } from 'vue'
 import {
@@ -145,7 +145,7 @@ function confirmReopen() {
   reopenConfirmOpen.value = false; pendingStage.value = null
 }
 
-// ── Manual ERP conversion — navigate to the full ERP form with prefill ──
+// ── Manual ERP conversion — navigate to CRM-embedded sales order form ──
 function openConvertReview() {
   const d = deal.value; if (!d) return
   const e = dealConvEligibility(d)
@@ -153,7 +153,7 @@ function openConvertReview() {
   pendingSalesPrefill.value = dealToSalesPrefill(d)
   pendingConversionDealId.value = d.id
   const target = dealTarget()
-  router.push(target === 'sales-quote' ? '/sales-quotes/new' : '/sales-orders/new')
+  router.push(target === 'sales-quote' ? `/crm/deals/${d.id}/create-quote` : `/crm/deals/${d.id}/create-order`)
 }
 // Open the created ERP transaction (converted deals).
 function openErpTxn() { if (erpTxn.value) router.push(erpTxn.value.route) }
@@ -312,7 +312,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
           </MpPopover>
         </div>
         <!-- Won & not converted: manual conversion via read-only review (PRD). -->
-        <MpButton v-else-if="!isArchived && isWon && !isConverted" class="btn-enterprise btn-enterprise--primary" data-devchange="crm-create-sales-order-full-form" @click="openConvertReview">{{ t('Create') }} {{ t(convTarget) }}</MpButton>
+        <MpButton v-else-if="!isArchived && isWon && !isConverted" class="btn-enterprise btn-enterprise--primary" data-devchange="crm-create-sales-order-inline" @click="openConvertReview">{{ t('Create') }} {{ t(convTarget) }}</MpButton>
         <!-- Converted: open the created ERP transaction. -->
         <MpButton v-else-if="!isArchived && isConverted && erpTxn" class="btn-enterprise btn-enterprise--secondary" @click="openErpTxn">{{ t('Open in ERP') }}</MpButton>
         <!-- Lost: reopen -->

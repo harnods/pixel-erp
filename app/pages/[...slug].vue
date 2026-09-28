@@ -370,6 +370,7 @@ const CrmModulesPage = asyncPage(() => import('~/components/pages/CrmModulesPage
 const CrmErpIntegrationsPage = asyncPage(() => import('~/components/pages/CrmErpIntegrationsPage.vue'))
 const CrmErpIntegrationDetailPage = asyncPage(() => import('~/components/pages/CrmErpIntegrationDetailPage.vue'))
 const CrmErpIntegrationEditorPage = asyncPage(() => import('~/components/pages/CrmErpIntegrationEditorPage.vue'))
+const CrmNewSalesOrderPage = asyncPage(() => import('~/components/pages/CrmNewSalesOrderPage.vue'))
 const CrmGenericModulePage = asyncPage(() => import('~/components/pages/CrmGenericModulePage.vue'))
 const CrmGenericRecordDetailPage = asyncPage(() => import('~/components/pages/CrmGenericRecordDetailPage.vue'))
 const CrmModuleBuilderPage = asyncPage(() => import('~/components/pages/CrmModuleBuilderPage.vue'))
@@ -467,6 +468,7 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     // /crm/deals/new → full detail create form; /crm/deals/:id/edit → edit form (both a PAGE).
     if (sub === 'deals' && id === 'new') return { component: NewCrmDealPage, id: 'new' }
     if (sub === 'deals' && id && segs[3] === 'edit') return { component: NewCrmDealPage, id }
+    if (sub === 'deals' && id && (segs[3] === 'create-order' || segs[3] === 'create-quote')) return { component: CrmNewSalesOrderPage, id }
     // /crm/<moduleId>[/recordId] → any published custom module (created via
     // "+ New module") gets the generic records workspace/detail, driven entirely
     // by its own pipeline/properties (no per-module page needed). Guarded by a
