@@ -23,7 +23,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { MpButton, MpIcon, MpToggle, MpRadio, MpFormControl, MpFormLabel, MpModal, MpModalOverlay, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import CrmMappingRow from '~/components/patterns/CrmMappingRow.vue'
-import { getCrmModule, moduleStores, type CrmModule } from '~/data/crm'
+import { getCrmModule, moduleStores, sectionAllProps, type CrmModule } from '~/data/crm'
 import {
   ensureConversionConfig, getConversionConfig, saveConfig,
   erpTargetFields, evalEntry,
@@ -81,28 +81,26 @@ function setEntry(next: MappingEntry) {
 // ── Custom-module blocking criterion (one field + operator + value) ──────────
 const criterionEnabled = ref(false)
 watch(() => props.orderId, () => { criterionEnabled.value = !!getConversionConfig(props.orderId)?.criterion }, { immediate: true })
-// Fields eligible for the criterion: scalar text/option/number/date/boolean — not
-// customer / product-list / user (PRD §Custom-module conversion limitation criterion).
-const CRITERION_ALLOWED_TYPES = new Set([
-  'Single-line text', 'Multi-line text', 'Phone number', 'Email', 'URL',
-  'Number', 'Percentage', 'Currency',
-  'Date picker', 'Date and time picker',
-  'Dropdown select', 'Radio select',
-  'Single checkbox',
-])
-const CRITERION_TEXT_TYPES = new Set(['Single-line text', 'Multi-line text', 'Phone number', 'Email', 'URL'])
+// Fields eligible for the criterion: only option-type properties that are placed
+// in the module's detail layout (PRD §Custom-module conversion limitation criterion).
+const CRITERION_OPTION_TYPES = new Set(['Dropdown select', 'Radio select', 'Multiple checkboxes'])
+const layoutPropIds = computed(() => {
+  const layout = moduleStores(props.orderId).detailLayout
+  const ids = new Set<string>()
+  for (const tab of layout.tabs) for (const s of tab.sections ?? []) for (const id of sectionAllProps(s)) ids.add(id)
+  return ids
+})
 const criterionFieldOptions = computed(() =>
   modProperties.value
-    .filter((p) => CRITERION_ALLOWED_TYPES.has(p.type))
+    .filter((p) => CRITERION_OPTION_TYPES.has(p.type) && layoutPropIds.value.has(p.id))
     .map((p) => ({ value: p.id, label: p.name })),
 )
-const operatorOptions = computed(() => {
+const criterionValueOptions = computed(() => {
   const p = modProperties.value.find((x) => x.id === draft.criterion?.fieldId)
-  if (p && CRITERION_TEXT_TYPES.has(p.type)) return [{ value: 'equals', label: 'Equals' }, { value: 'contains', label: 'Contains' }]
-  return [{ value: 'equals', label: 'Equals' }]
+  return (p?.config?.options ?? []).map((o) => ({ value: o.value, label: o.label }))
 })
 function ensureCriterion() {
-  if (!draft.criterion) draft.criterion = { fieldId: criterionFieldOptions.value[0]?.value ?? '', operator: 'equals', value: '' }
+  if (!draft.criterion) draft.criterion = { fieldId: criterionFieldOptions.value[0]?.value ?? '', operator: 'equals' as CriterionOperator, value: '' }
 }
 watch(criterionEnabled, (on) => { if (on) ensureCriterion(); else draft.criterion = null })
 
@@ -293,11 +291,11 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
             </template>
             <!-- Custom modules: at most one blocking criterion. -->
             <template v-else>
-              <p class="ed-limitation-desc">{{ t('Optionally block conversion when a record matches one condition.') }}</p>
+              <p class="ed-limitation-desc">{{ t('Prevent conversion when a record matches a specific value.') }}</p>
               <div class="ed-toggle-row">
-                <MpToggle v-model:is-checked="criterionEnabled" :aria-label="t('Block conversion when a condition is met')" />
+                <MpToggle v-model:is-checked="criterionEnabled" :aria-label="t('Do not allow conversion when')" />
                 <div class="ed-toggle-text">
-                  <span class="ed-toggle-label">{{ t('Block conversion when a condition is met') }}</span>
+                  <span class="ed-toggle-label">{{ t('Do not allow conversion when') }}</span>
                 </div>
               </div>
               <div v-if="criterionEnabled && draft.criterion" class="ed-criterion">
@@ -306,19 +304,20 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
                   :model-value="draft.criterion.fieldId"
                   placeholder="Select field"
                   :options="criterionFieldOptions"
-                  @update:model-value="(v: string) => draft.criterion && (draft.criterion.fieldId = v)"
+                  @update:model-value="(v: string) => { if (draft.criterion) { draft.criterion.fieldId = v; draft.criterion.value = '' } }"
                 />
                 <ErpFilterSelect
                   id="ed-crit-op"
-                  :model-value="draft.criterion.operator"
+                  model-value="equals"
                   placeholder="Operator"
-                  :options="operatorOptions"
-                  @update:model-value="(v: string) => draft.criterion && (draft.criterion.operator = v as CriterionOperator)"
+                  :options="[{ value: 'equals', label: t('Equals') }]"
+                  disabled
                 />
-                <MpInput
+                <ErpFilterSelect
                   id="ed-crit-value"
                   :model-value="draft.criterion.value"
-                  :placeholder="t('Value')"
+                  placeholder="Select value"
+                  :options="criterionValueOptions"
                   @update:model-value="(v: string) => draft.criterion && (draft.criterion.value = v)"
                 />
               </div>
