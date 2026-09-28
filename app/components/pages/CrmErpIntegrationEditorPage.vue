@@ -104,6 +104,11 @@ function ensureCriterion() {
 }
 watch(criterionEnabled, (on) => { if (on) ensureCriterion(); else draft.criterion = null })
 
+const targetLabel = computed(() => draft.target === 'sales-quote' ? t('Sales Quote') : t('Sales Order'))
+const dealsRuleCaption = computed(() => `${t('Deals in the Lost stage cannot be converted to a')} ${targetLabel.value} ${t('in ERP.')}`)
+const criterionCaption = computed(() => `${t('Records matching this condition cannot be converted to a')} ${targetLabel.value} ${t('in ERP.')}`)
+const criterionToggleLabel = computed(() => `${t('Do not convert to')} ${targetLabel.value} ${t('when')}`)
+
 // Blocking validation errors (mandatory unmapped/incompatible + broken optional) —
 // gate the enabled save and surface inline (no side panel).
 const validationErrors = computed(() => {
@@ -261,10 +266,10 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
 
           <!-- 4. Conversion limitation — only when conversion is enabled. -->
           <section v-if="draft.enabled" class="ed-section">
-            <h2 class="ed-section-title">{{ t('Conversion limitation') }}</h2>
+            <h2 class="ed-section-title">{{ t('Conversion rules') }}</h2>
             <!-- Deals: fixed Lost-stage rule displayed as disabled criterion form for consistency. -->
             <template v-if="isDeals">
-              <p class="ed-section-cap">{{ t('Deals in the Lost stage cannot be converted to an ERP transaction.') }}</p>
+              <p class="ed-section-cap">{{ dealsRuleCaption }}</p>
               <div class="ed-criterion">
                 <ErpFilterSelect
                   id="ed-crit-field-deals"
@@ -291,11 +296,11 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
             </template>
             <!-- Custom modules: at most one blocking criterion. -->
             <template v-else>
-              <p class="ed-limitation-desc">{{ t('Prevent conversion when a record matches a specific value.') }}</p>
+              <p class="ed-limitation-desc">{{ criterionCaption }}</p>
               <div class="ed-toggle-row">
-                <MpToggle v-model:is-checked="criterionEnabled" :aria-label="t('Do not allow conversion when')" />
+                <MpToggle v-model:is-checked="criterionEnabled" :aria-label="criterionToggleLabel" />
                 <div class="ed-toggle-text">
-                  <span class="ed-toggle-label">{{ t('Do not allow conversion when') }}</span>
+                  <span class="ed-toggle-label">{{ criterionToggleLabel }}</span>
                 </div>
               </div>
               <div v-if="criterionEnabled && draft.criterion" class="ed-criterion">
