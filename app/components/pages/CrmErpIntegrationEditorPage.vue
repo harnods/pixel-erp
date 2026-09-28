@@ -374,7 +374,7 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
 .editor-empty-caption { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* Full-width single column (the readiness/dependencies side panel was removed). */
-.editor-main { display: flex; flex-direction: column; gap: var(--mp-spacing-6); min-width: 0; }
+.editor-main { display: flex; flex-direction: column; gap: var(--mp-spacing-6); min-width: 0; flex: 1; }
 
 /* .ed-section stacks [header-list, body] with a 12px gap between them. No divider
    between sections (the editor-main gap separates them). */
@@ -418,5 +418,5 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
 /* Action bar inside the stage — sticky to the bottom of the scrollable white area.
    Negative margins bleed it to the stage edges (the stage has spacing-6 padding);
    margin-top pushes it below the content with a divider. */
-.ed-footer { position: sticky; bottom: calc(-1 * var(--mp-spacing-6)); margin: var(--mp-spacing-6) calc(-1 * var(--mp-spacing-6)) calc(-1 * var(--mp-spacing-6)); display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-6); background: var(--mp-background-stage, #ffffff); border-top: 1px solid var(--mp-border-subtle, #e6e8eb); }
+.ed-footer { position: sticky; bottom: calc(-1 * var(--mp-spacing-6)); margin: auto calc(-1 * var(--mp-spacing-6)) calc(-1 * var(--mp-spacing-6)); display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-6); background: var(--mp-background-stage, #ffffff); border-top: 1px solid var(--mp-border-subtle, #e6e8eb); }
 </style>
