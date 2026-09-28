@@ -203,10 +203,6 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
                     </MpRadio>
                   </div>
                 </MpFormControl>
-                <div class="ed-notice">
-                  <MpIcon name="info" size="sm" />
-                  <span>{{ t('Conversion is always manual. A record is only converted when a user explicitly creates the ERP transaction, never automatically by stage, status, or schedule.') }}</span>
-                </div>
               </template>
             </div>
           </section>

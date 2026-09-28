@@ -65,9 +65,9 @@ const COMMON_ERP_FIELDS: ErpTargetField[] = [
   { key: 'total',        label: 'Total',               requirement: 'required',    category: 'money',         purpose: 'Total transaction amount (calculated from line items)' },
   { key: 'txDate',       label: 'Transaction date',    requirement: 'required',    category: 'date',          purpose: 'Date the ERP transaction is dated' },
   { key: 'dueDate',      label: 'Due date',            requirement: 'required',    category: 'date',          purpose: 'Payment due date' },
-  { key: 'paymentTerm',  label: 'Payment term',        requirement: 'conditional', category: 'erp-option',    purpose: 'ERP payment term', conditionNote: 'Required unless a company default term applies' },
+  { key: 'paymentTerm',  label: 'Payment term',        requirement: 'conditional', category: 'erp-option',    purpose: 'ERP payment term' },
   { key: 'txNumber',     label: 'Transaction no.',     requirement: 'required',    category: 'text',          purpose: 'ERP auto-generated transaction number' },
-  { key: 'warehouse',    label: 'Warehouse',           requirement: 'conditional', category: 'erp-option',    purpose: 'Source warehouse', conditionNote: 'Required when the tenant tracks inventory' },
+  { key: 'warehouse',    label: 'Warehouse',           requirement: 'conditional', category: 'erp-option',    purpose: 'Source warehouse' },
   { key: 'productLines', label: 'Product lines',       requirement: 'required',    category: 'product-lines', purpose: 'Line items (product, qty, price, discount, tax) — 1–100 lines' },
   // Optional
   { key: 'email',            label: 'Email',             requirement: 'optional', category: 'text',           purpose: 'Customer email for transaction correspondence' },
