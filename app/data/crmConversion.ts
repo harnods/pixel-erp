@@ -83,22 +83,7 @@ const COMMON_ERP_FIELDS: ErpTargetField[] = [
   { key: 'attachments',      label: 'Attachments',       requirement: 'optional', category: 'text',           purpose: 'File attachments on the transaction' },
 ]
 
-/** Sales Quote adds Expiry date (quote validity); Sales Order has no expiry. */
-const QUOTE_ONLY: ErpTargetField = {
-  key: 'expiryDate', label: 'Expiry date', requirement: 'required', category: 'date',
-  purpose: 'Date the quote is valid until (Sales Quote only)',
-}
-
-export function erpTargetFields(target: ConvTarget): ErpTargetField[] {
-  if (target === 'sales-quote') {
-    // Expiry sits right after Due date.
-    const out: ErpTargetField[] = []
-    for (const f of COMMON_ERP_FIELDS) {
-      out.push(f)
-      if (f.key === 'dueDate') out.push(QUOTE_ONLY)
-    }
-    return out
-  }
+export function erpTargetFields(_target: ConvTarget): ErpTargetField[] {
   return COMMON_ERP_FIELDS
 }
 

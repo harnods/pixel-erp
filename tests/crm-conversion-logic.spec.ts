@@ -263,23 +263,16 @@ describe('compatibleCrmTypes', () => {
 
 // ── erpTargetFields ─────────────────────────────────────────────────────────
 describe('erpTargetFields', () => {
-  it('sales-order returns COMMON_ERP_FIELDS without expiryDate', () => {
-    const fields = erpTargetFields('sales-order')
-    expect(fields.find((f) => f.key === 'expiryDate')).toBeUndefined()
-    expect(fields.find((f) => f.key === 'customer')).toBeDefined()
-    expect(fields.find((f) => f.key === 'productLines')).toBeDefined()
+  it('sales-order and sales-quote return the same fields', () => {
+    const soFields = erpTargetFields('sales-order')
+    const sqFields = erpTargetFields('sales-quote')
+    expect(soFields.map((f) => f.key)).toEqual(sqFields.map((f) => f.key))
+    expect(soFields.find((f) => f.key === 'customer')).toBeDefined()
+    expect(soFields.find((f) => f.key === 'productLines')).toBeDefined()
   })
 
-  it('sales-quote includes expiryDate after dueDate', () => {
-    const fields = erpTargetFields('sales-quote')
-    const expiryIdx = fields.findIndex((f) => f.key === 'expiryDate')
-    const dueDateIdx = fields.findIndex((f) => f.key === 'dueDate')
-    expect(expiryIdx).toBeGreaterThan(-1)
-    expect(expiryIdx).toBe(dueDateIdx + 1)
-  })
-
-  it('sales-quote has one more field than sales-order', () => {
-    expect(erpTargetFields('sales-quote').length).toBe(erpTargetFields('sales-order').length + 1)
+  it('sales-quote has the same number of fields as sales-order', () => {
+    expect(erpTargetFields('sales-quote').length).toBe(erpTargetFields('sales-order').length)
   })
 
   it('required fields include customer, total, txDate, dueDate, txNumber, productLines', () => {
