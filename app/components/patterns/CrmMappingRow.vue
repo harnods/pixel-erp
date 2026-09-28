@@ -45,7 +45,7 @@ const fieldOptions = computed(() => {
 
 const SYSTEM_VALUES: SystemValueKey[] = [
   'conversion-date', 'base-currency', 'erp-customer-id', 'record-id',
-  'primary-name', 'current-company', 'acting-user', 'rate-one',
+  'primary-name', 'current-company', 'acting-user', 'rate-one', 'calculated-total',
 ]
 const systemOptions = computed(() => SYSTEM_VALUES.map((v) => ({ value: v, label: t(SYSTEM_VALUE_LABEL[v]) })))
 
@@ -80,47 +80,46 @@ function onStrategy(v: string) {
 
       <!-- Source (strategy) -->
       <div class="map-cell">
-        <span v-if="entry.protected" class="map-readonly">{{ t(SOURCE_STRATEGY_LABEL[entry.strategy]) }}</span>
         <ErpFilterSelect
-          v-else
           :id="`map-strategy-${field.key}`"
           :model-value="entry.strategy"
           placeholder="Source"
           :options="strategyOptions"
+          :disabled="!!entry.protected"
           @update:model-value="onStrategy"
         />
       </div>
 
       <!-- CRM field / resolved value -->
       <div class="map-cell">
-        <span v-if="entry.protected" class="map-readonly">{{ protectedValue }}</span>
-        <template v-else>
-          <ErpFilterSelect
-            v-if="entry.strategy === 'crm-field'"
-            :id="`map-field-${field.key}`"
-            :model-value="entry.sourceFieldId ?? ''"
-            placeholder="Select CRM field"
-            :options="fieldOptions"
-            @update:model-value="(v: string) => patch({ sourceFieldId: v })"
-          />
-          <ErpFilterSelect
-            v-else-if="entry.strategy === 'system'"
-            :id="`map-sys-${field.key}`"
-            :model-value="entry.systemValue ?? ''"
-            placeholder="Select value"
-            :options="systemOptions"
-            @update:model-value="(v: string) => patch({ systemValue: v as SystemValueKey })"
-          />
-          <MpInput
-            v-else-if="entry.strategy === 'fixed'"
-            :id="`map-fixed-${field.key}`"
-            :model-value="entry.fixedLabel ?? ''"
-            :placeholder="t('Enter a fixed value')"
-            @update:model-value="(v: string) => patch({ fixedLabel: v })"
-          />
-          <span v-else-if="entry.strategy === 'erp-default'" class="map-readonly">{{ t('Default') }} {{ t(field.label) }}</span>
-          <span v-else class="map-readonly map-readonly--muted">—</span>
-        </template>
+        <ErpFilterSelect
+          v-if="entry.strategy === 'crm-field'"
+          :id="`map-field-${field.key}`"
+          :model-value="entry.sourceFieldId ?? ''"
+          placeholder="Select CRM field"
+          :options="fieldOptions"
+          :disabled="!!entry.protected"
+          @update:model-value="(v: string) => patch({ sourceFieldId: v })"
+        />
+        <ErpFilterSelect
+          v-else-if="entry.strategy === 'system'"
+          :id="`map-sys-${field.key}`"
+          :model-value="entry.systemValue ?? ''"
+          placeholder="Select value"
+          :options="systemOptions"
+          :disabled="!!entry.protected"
+          @update:model-value="(v: string) => patch({ systemValue: v as SystemValueKey })"
+        />
+        <MpInput
+          v-else-if="entry.strategy === 'fixed'"
+          :id="`map-fixed-${field.key}`"
+          :model-value="entry.fixedLabel ?? ''"
+          :placeholder="t('Enter a fixed value')"
+          :disabled="!!entry.protected"
+          @update:model-value="(v: string) => patch({ fixedLabel: v })"
+        />
+        <span v-else-if="entry.strategy === 'erp-default'" class="map-readonly">{{ entry.fixedLabel ? t(entry.fixedLabel) : `${t('Default')} ${t(field.label)}` }}</span>
+        <span v-else class="map-readonly map-readonly--muted">—</span>
       </div>
     </div>
     <p v-if="evalResult.message && !entry.protected" class="map-inline-error">{{ evalResult.message }}</p>

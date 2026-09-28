@@ -69,8 +69,6 @@ const COMMON_ERP_FIELDS: ErpTargetField[] = [
   { key: 'txNumber',     label: 'Transaction no.',     requirement: 'required',    category: 'text',          purpose: 'ERP auto-generated transaction number' },
   { key: 'warehouse',    label: 'Warehouse',           requirement: 'conditional', category: 'erp-option',    purpose: 'Source warehouse', conditionNote: 'Required when the tenant tracks inventory' },
   { key: 'productLines', label: 'Product lines',       requirement: 'required',    category: 'product-lines', purpose: 'Line items (product, qty, price, discount, tax) — 1–100 lines' },
-  { key: 'currency',     label: 'Currency',            requirement: 'required',    category: 'currency-code', purpose: 'Transaction currency code' },
-  { key: 'exchangeRate', label: 'Exchange rate',       requirement: 'conditional', category: 'decimal',       purpose: 'Rate to base currency', conditionNote: 'Required when the currency is not the company base currency' },
   // Optional
   { key: 'email',            label: 'Email',             requirement: 'optional', category: 'text',           purpose: 'Customer email for transaction correspondence' },
   { key: 'billingAddress',   label: 'Billing address',   requirement: 'optional', category: 'text',           purpose: 'Billing address override' },
@@ -81,7 +79,6 @@ const COMMON_ERP_FIELDS: ErpTargetField[] = [
   { key: 'referenceNo',      label: 'Reference number',  requirement: 'optional', category: 'text',           purpose: 'External reference (RFQ/PO no.)' },
   { key: 'tags',             label: 'Tags',              requirement: 'optional', category: 'text',           purpose: 'Tags for categorization' },
   { key: 'message',          label: 'Message',           requirement: 'optional', category: 'text',           purpose: 'Customer-facing message on the transaction' },
-  { key: 'shippingFee',      label: 'Shipping fee',      requirement: 'optional', category: 'money',          purpose: 'Flat shipping charge' },
   { key: 'memo',             label: 'Memo',              requirement: 'optional', category: 'text',           purpose: 'Internal note carried to ERP' },
   { key: 'attachments',      label: 'Attachments',       requirement: 'optional', category: 'text',           purpose: 'File attachments on the transaction' },
 ]

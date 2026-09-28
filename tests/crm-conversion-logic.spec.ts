@@ -282,14 +282,15 @@ describe('erpTargetFields', () => {
     expect(erpTargetFields('sales-quote').length).toBe(erpTargetFields('sales-order').length + 1)
   })
 
-  it('required fields include customer, txDate, dueDate, productLines, currency', () => {
+  it('required fields include customer, total, txDate, dueDate, txNumber, productLines', () => {
     const required = erpTargetFields('sales-order').filter((f) => f.requirement === 'required')
     const keys = required.map((f) => f.key)
     expect(keys).toContain('customer')
+    expect(keys).toContain('total')
     expect(keys).toContain('txDate')
     expect(keys).toContain('dueDate')
+    expect(keys).toContain('txNumber')
     expect(keys).toContain('productLines')
-    expect(keys).toContain('currency')
   })
 })
 
