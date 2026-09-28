@@ -4032,6 +4032,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Estimate for the suggested need · exact total set at the purchase order': 'Perkiraan untuk kebutuhan yang disarankan · total pasti ditetapkan pada pesanan pembelian',
   'Vendor terms are managed by purchasing in the Vendors module. This view is read-only.': 'Ketentuan vendor dikelola oleh tim pembelian di modul Vendor. Tampilan ini hanya-baca.',
   'No vendor supplies this product yet, so it cannot be ordered. Add one in the Vendors module.': 'Belum ada vendor yang memasok produk ini, jadi belum bisa dipesan. Tambahkan di modul Vendor.',
+  'Select replenishment from the same warehouse to create a purchase request.': 'Pilih daftar replenishment dari gudang yang sama untuk membuat permintaan pembelian.',
   'Contributing documents': 'Dokumen yang berkontribusi',
   'sales document': 'dokumen penjualan',
   'sales documents': 'dokumen penjualan',

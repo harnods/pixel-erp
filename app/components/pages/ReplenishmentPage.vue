@@ -332,6 +332,16 @@ function selectedWorklistRows(sel: Set<number>): WorklistRow[] {
   return [...sel].map((i) => paginated.value[i]).filter(Boolean) as WorklistRow[]
 }
 
+/**
+ * A purchase request is per warehouse (one PO has one ship-to), and letting a bulk
+ * selection span warehouses would fan out into many POs — the heavy back-end path
+ * we avoid. So "Request to purchase" is offered only when every selected row is in
+ * the same warehouse; otherwise the bulk bar explains what to do instead.
+ */
+function selectionSpansWarehouses(sel: Set<number>): boolean {
+  return new Set(selectedWorklistRows(sel).map((r) => r.warehouseId)).size > 1
+}
+
 function bulkCreatePr(sel: Set<number>, deselectAll: () => void) {
   openPoForRows(selectedWorklistRows(sel), deselectAll)
 }
@@ -543,7 +553,14 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
 
     <!-- ── Bulk actions ── -->
     <template #bulk-actions="{ deselectAll, selectedRows }">
+      <!-- A PO has one ship-to. Requesting across warehouses would fan out into many
+           POs, so it is only offered for a single-warehouse selection. -->
+      <span v-if="selectionSpansWarehouses(selectedRows as Set<number>)" class="rp-bulk-info">
+        <MpIcon name="information-circular" size="sm" />
+        {{ t('Select replenishment from the same warehouse to create a purchase request.') }}
+      </span>
       <button
+        v-else
         class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
         @click="bulkCreatePr(selectedRows as Set<number>, deselectAll)"
       >{{ t('Request to purchase') }}</button>
@@ -901,6 +918,13 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
 .rp-vendor { display: flex; flex-direction: column; min-width: 0; }
 .rp-badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .rp-signal-none { color: var(--mp-text-tertiary, var(--mp-text-secondary)); }
+
+/* Bulk bar guidance when a selection spans warehouses — no cross-warehouse PR. */
+.rp-bulk-info {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5, 6px);
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
+}
+.rp-bulk-info :deep(svg) { color: var(--mp-icon-secondary, var(--mp-text-secondary)); flex-shrink: 0; }
 
 :deep(.erp-tr:hover .erp-td) { background: var(--mp-background-neutral); }
 
