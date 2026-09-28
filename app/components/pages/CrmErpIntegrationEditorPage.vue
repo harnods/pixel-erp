@@ -90,9 +90,11 @@ const layoutPropIds = computed(() => {
   for (const tab of layout.tabs) for (const s of tab.sections ?? []) for (const id of sectionAllProps(s)) ids.add(id)
   return ids
 })
+const layoutProperties = computed(() => modProperties.value.filter((p) => layoutPropIds.value.has(p.id)))
+const mappingProperties = computed(() => isDeals.value ? modProperties.value : layoutProperties.value)
 const criterionFieldOptions = computed(() =>
-  modProperties.value
-    .filter((p) => CRITERION_OPTION_TYPES.has(p.type) && layoutPropIds.value.has(p.id))
+  layoutProperties.value
+    .filter((p) => CRITERION_OPTION_TYPES.has(p.type))
     .map((p) => ({ value: p.id, label: p.name })),
 )
 const criterionValueOptions = computed(() => {
@@ -114,7 +116,7 @@ const criterionToggleLabel = computed(() => `${t('Do not convert to')} ${targetL
 const validationErrors = computed(() => {
   const errs: string[] = []
   for (const f of allFields.value) {
-    const r = evalEntry(entryFor(f.key), f, mod.value ?? ({ fields: [] } as unknown as CrmModule), modProperties.value)
+    const r = evalEntry(entryFor(f.key), f, mod.value ?? ({ fields: [] } as unknown as CrmModule), mappingProperties.value)
     if (r.status === 'missing' || r.status === 'incompatible') errs.push(r.message ?? `${t(f.label)} is not mapped correctly.`)
   }
   return errs
@@ -233,7 +235,7 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
                     :field="f"
                     :entry="entryFor(f.key)"
                     :mod="mod"
-                    :properties="modProperties"
+                    :properties="mappingProperties"
                     :show-errors="showMappingErrors"
                     @update:entry="setEntry"
                   />
@@ -255,7 +257,7 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
                     :field="f"
                     :entry="entryFor(f.key)"
                     :mod="mod"
-                    :properties="modProperties"
+                    :properties="mappingProperties"
                     :show-errors="showMappingErrors"
                     @update:entry="setEntry"
                   />
