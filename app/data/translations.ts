@@ -2055,4 +2055,252 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Out qty": "Jumlah keluar",
   "On the way": "Dalam perjalanan",
   "Min stock": "Stok minimum",
+
+  // ── Reports › Tax (report-card index) ────────────────────────────────────────
+  // Card titles + descriptions. The sibling report indexes (Sales, Inventory,
+  // WMS) ship their card copy EN-only; these are translated because the tax
+  // vocabulary already has approved ID pairs everywhere else in the module.
+  'Output tax invoice list': 'Daftar faktur keluaran',
+  'Input tax invoice list': 'Daftar faktur masukan',
+  'VAT summary': 'Ringkasan PPN',
+  'Withholding tax summary': 'Ringkasan PPh',
+  'Tax payment list': 'Daftar pembayaran pajak',
+  'Matches your sales and purchase invoices against the faktur pajak recorded in DJP Coretax, per tax period, and shows what is still unreconciled.':
+    'Mencocokkan faktur penjualan dan pembelian Anda dengan faktur pajak yang tercatat di Coretax DJP per masa pajak, serta menampilkan yang belum direkonsiliasi.',
+  'Every faktur pajak you issued in a period, with its transaction code, DPP, and PPN. The working list behind your SPT Masa PPN.':
+    'Seluruh faktur pajak yang Anda terbitkan dalam satu masa, lengkap dengan kode transaksi, DPP, dan PPN. Daftar kerja di balik SPT Masa PPN Anda.',
+  'Every faktur pajak you received in a period, showing which ones are creditable and which are still waiting on a vendor.':
+    'Seluruh faktur pajak yang Anda terima dalam satu masa, menampilkan mana yang dapat dikreditkan dan mana yang masih menunggu vendor.',
+  'Output PPN against input PPN per tax period, so you can see the amount payable or overpaid before you file.':
+    'PPN keluaran dibanding PPN masukan per masa pajak, agar Anda tahu jumlah kurang atau lebih bayar sebelum melapor.',
+  'PPh withheld and paid per article and per period, summarized from your transactions.':
+    'PPh yang dipotong dan disetor per pasal dan per masa, dirangkum dari transaksi Anda.',
+  'All tax payments made in a period, with their billing codes, so you can tie every payment back to a return.':
+    'Seluruh pembayaran pajak dalam satu masa beserta kode billing-nya, agar setiap pembayaran dapat ditelusuri ke SPT-nya.',
+
+  // ── VAT reconciliation (Reports › Tax › VAT reconciliation) ──────────────────
+  // Nav + module labels. "Faktur keluaran/masukan" and "Selisih pajak" are the
+  // Indonesian domain terms and stay as-is in both locales.
+  // Qualified as PPN because in Jurnal "Rekonsiliasi" already means bank
+  // reconciliation — this one reconciles PPN against Coretax.
+  'VAT reconciliation': 'Rekonsiliasi PPN',
+  // The two faktur sides. EN uses the standard VAT pair (input/output tax) —
+  // the same vocabulary DJP's own English material uses, and consistent with the
+  // EN locale already saying "Tax invoice" for faktur pajak. ID keeps the
+  // domain terms. The route slugs stay /faktur-keluaran and /faktur-masukan.
+  'Output tax invoice': 'Faktur keluaran',
+  'Input tax invoice': 'Faktur masukan',
+  // Retained as page keys (they are the route round-trip form), not for display.
+  'Faktur keluaran': 'Faktur keluaran',
+  'Faktur masukan': 'Faktur masukan',
+  'Unmatched & discrepancies': 'Belum cocok & selisih',
+  'Matching rules': 'Aturan pencocokan',
+  'Tax difference': 'Selisih pajak',
+  'Not reconciled': 'Belum direkonsiliasi',
+  'Needs attention': 'Perlu ditangani',
+  'All faktur': 'Semua faktur',
+  'Tax period': 'Masa pajak',
+  'Clear search': 'Hapus pencarian',
+  'Exposure': 'Nilai berisiko',
+
+  // Period index — headers and copy taken from the equivalent Klikpajak screen
+  // so the two products read the same. "Masa pajak" is plural-neutral in ID, so
+  // the nav label and the column header share one translation.
+  'Tax periods': 'Masa pajak',
+  // "Tgl." is the abbreviation Klikpajak uses in this header. EN drops the
+  // "reconciliation" (redundant on this page) and reads as the date it is.
+  'Reconciled on': 'Tgl. rekonsiliasi',
+  'Invoice type': 'Jenis faktur',
+  'Sales/purchase invoice (Rp)': 'Faktur penjualan/pembelian (Rp)',
+  'Tax invoice (Rp)': 'Faktur pajak (Rp)',
+  'Difference (Rp)': 'Selisih (Rp)',
+  // Tab labels — scope, noun phrase. "Perlu ditangani" is already the module's
+  // term for the same idea on the faktur workspace tabs.
+  'All reconciliations': 'Semua rekonsiliasi',
+  'Search tax period': 'Cari masa pajak',
+  // "Show" is redundant on a checkbox — the checkbox is the show/hide.
+  'Only periods with a difference': 'Hanya masa pajak dengan selisih',
+  'Reset filter': 'Reset filter',
+  'Apply': 'Terapkan',
+  // Bare "Difference" as a drawer field label. Same term as the column header's
+  // "Selisih (Rp)" — financial variance, per the terms library.
+  'Difference': 'Selisih',
+  // First-run empty state uses "Belum ada {object}" — "Tidak ada" is the
+  // no-filter-result pattern, a different scenario.
+  'No tax periods': 'Belum ada masa pajak',
+  'Tax periods will appear here.': 'Masa pajak akan muncul di sini.',
+  'Download CSV': 'Download CSV',
+
+  // Period statuses — Klikpajak's existing three. 'Not reconciled' is already
+  // paired above as 'Belum direkonsiliasi'.
+  'Reconciled': 'Selesai rekonsiliasi',
+  'Partially reconciled': 'Terekonsiliasi sebagian',
+
+  // Match states
+  'Matched': 'Cocok',
+  'Suggested': 'Disarankan',
+  'Suggested match': 'Kecocokan yang disarankan',
+  'Discrepancy': 'Selisih',
+  'Discrepancies': 'Selisih',
+  'Unmatched': 'Belum cocok',
+  'Unmatched record': 'Data belum cocok',
+  'ERP only': 'Hanya di ERP',
+  'Coretax only': 'Hanya di Coretax',
+  'ERP only · unmatched': 'Hanya di ERP · belum cocok',
+  'Coretax only · unmatched': 'Hanya di Coretax · belum cocok',
+  'All issues': 'Semua masalah',
+
+  // Workspace columns + KPIs
+  'Tax invoices issued': 'Faktur pajak keluaran',
+  'Tax invoices received': 'Faktur pajak masukan',
+  'From ERP': 'Dari ERP',
+  'From Coretax': 'Dari Coretax',
+  'DPP · sales': 'DPP · penjualan',
+  'DPP · faktur': 'DPP · faktur',
+  'DPP · purchases': 'DPP · pembelian',
+  'PPN · sales': 'PPN · penjualan',
+  'PPN · faktur': 'PPN · faktur',
+  'PPN · purchases': 'PPN · pembelian',
+  'Fully reconciled': 'Sudah direkonsiliasi',
+  'Tax difference': 'Selisih pajak',
+  'Not approved': 'Belum disetujui',
+  'Last sync': 'Sinkronisasi terakhir',
+
+  // Workspace toolbar + empty states
+  'Search...': 'Cari...',
+  'Review with Airene': 'Tinjau dengan Airene',
+  'No faktur match your filters': 'Faktur tidak sesuai filter Anda',
+  'Recheck the filters you have applied and try filtering again.': 'Cek kembali filter yang Anda terapkan dan filter ulang.',
+  'No match in ERP': 'Tidak ada padanan di ERP',
+  'Not found in Coretax': 'Tidak ditemukan di Coretax',
+  'Create a sales invoice from this faktur to reconcile.': 'Buat faktur penjualan dari faktur ini untuk merekonsiliasi.',
+  'Create a purchase invoice from this faktur to reconcile.': 'Buat faktur pembelian dari faktur ini untuk merekonsiliasi.',
+  'Issue a faktur pajak in Coretax to match this invoice.': 'Terbitkan faktur pajak di Coretax agar cocok dengan faktur ini.',
+  'Create faktur pajak': 'Buat faktur pajak',
+  'Create purchase invoice': 'Buat faktur pembelian',
+  'Flag for follow-up': 'Tandai untuk ditindaklanjuti',
+
+  // Engine reasoning
+  'AI suggested match': 'Kecocokan yang disarankan AI',
+  'Discrepancy detected': 'Selisih ditemukan',
+  'Review discrepancy': 'Tinjau selisih',
+  'Match': 'Cocokkan',
+  'Accept match': 'Terima kecocokan',
+
+  // Workspace footer fragments
+  'pairs': 'pasangan',
+  'matched': 'cocok',
+  'need review': 'perlu ditinjau',
+  'unmatched': 'belum cocok',
+
+  // Detail drawer
+  'Reconciliation detail': 'Detail rekonsiliasi',
+  'Other match candidates': 'Kandidat kecocokan lain',
+  'match': 'kecocokan',
+  'Match this': 'Cocokkan ini',
+  'Activity': 'Aktivitas',
+  'Synced from Coretax': 'Disinkronkan dari Coretax',
+  'System': 'Sistem',
+  'Reconciliation engine': 'Mesin rekonsiliasi',
+  'Auto-matched on NPWP, DPP, PPN and date': 'Dicocokkan otomatis berdasarkan NPWP, DPP, PPN, dan tanggal',
+  'Flagged for review by matching engine': 'Ditandai untuk ditinjau oleh mesin pencocokan',
+  'Sales invoice posted': 'Faktur penjualan diposting',
+  'Purchase invoice posted': 'Faktur pembelian diposting',
+  'Open in Coretax': 'Buka di Coretax',
+  'Unmatch': 'Batalkan kecocokan',
+  'Adjust ERP record': 'Sesuaikan data ERP',
+  'Accept anyway': 'Tetap terima',
+  'Flag': 'Tandai',
+  'Create faktur': 'Buat faktur',
+
+  // Toast confirmations
+  'Sync with Coretax': 'Sinkronkan dengan Coretax',
+  'Coretax synced. 12 new faktur pulled': 'Coretax berhasil disinkronkan. 12 faktur baru ditarik',
+  'Finalize period': 'Finalisasi masa pajak',
+  'Period finalized': 'Masa pajak berhasil difinalisasi',
+  'Export started': 'Ekspor berhasil dimulai',
+  'Match confirmed': 'Kecocokan berhasil dikonfirmasi',
+  'matches confirmed': 'kecocokan berhasil dikonfirmasi',
+  'Suggestion ignored': 'Saran berhasil diabaikan',
+  'Match canceled': 'Kecocokan berhasil dibatalkan',
+  'Discrepancy accepted': 'Selisih berhasil diterima',
+  'Record flagged for follow-up': 'Data berhasil ditandai untuk ditindaklanjuti',
+  'Opening create form…': 'Sedang membuka formulir…',
+  'Opening sales invoice…': 'Sedang membuka faktur penjualan…',
+  'Opening purchase invoice…': 'Sedang membuka faktur pembelian…',
+  'Opening Coretax…': 'Sedang membuka Coretax…',
+  'Faktur flagged for follow-up': 'Faktur berhasil ditandai untuk ditindaklanjuti',
+  'Opening ERP record…': 'Sedang membuka data ERP…',
+
+  // Unmatched & discrepancies report
+  'Need review': 'Perlu ditinjau',
+  'Suggested matches': 'Kecocokan yang disarankan',
+  'Amount or date diffs': 'Selisih jumlah atau tanggal',
+  'No faktur in Coretax': 'Tidak ada faktur di Coretax',
+  'Not recorded in ERP': 'Belum tercatat di ERP',
+  'Side / source': 'Sisi / sumber',
+  'Party · NPWP': 'Pihak · NPWP',
+  'Output · Sales': 'Keluaran · Penjualan',
+  'Input · Purchases': 'Masukan · Pembelian',
+  'All clear in this category': 'Tidak ada masalah di kategori ini',
+  'Nothing to review here for this period.': 'Tidak ada yang perlu ditinjau untuk masa pajak ini.',
+  'Export CSV': 'Ekspor CSV',
+  'Send to Finance': 'Kirim ke tim Finance',
+  'Report sent to finance team': 'Laporan berhasil dikirim ke tim finance',
+
+  // Matching rules — cards
+  'Matching attributes': 'Atribut pencocokan',
+  'Pick which fields the engine compares, and how strictly.': 'Pilih kolom yang dibandingkan mesin, dan seberapa ketat.',
+  'NPWP (tax ID)': 'NPWP',
+  'The taxpayer identification number on both records.': 'Nomor pokok wajib pajak pada kedua data.',
+  'Invoice / faktur reference': 'Referensi faktur',
+  'Compare the ERP reference against the Coretax faktur number.': 'Bandingkan referensi ERP dengan nomor faktur Coretax.',
+  'Party name': 'Nama pihak',
+  'Customer or vendor display name.': 'Nama tampilan pelanggan atau vendor.',
+  'Weight': 'Bobot',
+  'Exact match': 'Sama persis',
+  'Exact': 'Persis',
+  'Fuzzy': 'Mirip',
+
+  'Tolerances': 'Toleransi',
+  'How much drift can be ignored before the engine flags a discrepancy.': 'Seberapa besar perbedaan yang bisa diabaikan sebelum mesin menandai selisih.',
+  'Date window': 'Rentang tanggal',
+  'Maximum days between the ERP date and the Coretax date.': 'Jumlah hari maksimum antara tanggal ERP dan tanggal Coretax.',
+  'DPP tolerance': 'Toleransi DPP',
+  'Acceptable difference in the taxable base amount.': 'Perbedaan dasar pengenaan pajak yang masih diterima.',
+  'PPN tolerance': 'Toleransi PPN',
+  'Acceptable difference in the tax amount.': 'Perbedaan jumlah pajak yang masih diterima.',
+
+  'Confidence thresholds': 'Ambang keyakinan',
+  'The engine scores every match. These thresholds decide what happens next.': 'Mesin memberi skor pada setiap kecocokan. Ambang ini menentukan tindakan selanjutnya.',
+  'Auto-match threshold': 'Ambang pencocokan otomatis',
+  'Above this confidence the pair is matched without review.': 'Di atas keyakinan ini, pasangan langsung dicocokkan tanpa ditinjau.',
+  'Suggested match threshold': 'Ambang kecocokan yang disarankan',
+  'Above this confidence the pair appears as a suggestion to review.': 'Di atas keyakinan ini, pasangan muncul sebagai saran untuk ditinjau.',
+  'Pairs scoring below': 'Pasangan dengan skor di bawah',
+  'are flagged as discrepancies or unmatched, depending on which fields differ.': 'ditandai sebagai selisih atau belum cocok, tergantung kolom yang berbeda.',
+  'AI explanations': 'Penjelasan AI',
+  'tell users why each suggestion was made.': 'menjelaskan alasan setiap saran diberikan.',
+
+  'Automation': 'Otomatisasi',
+  'What the engine does on its own when it finds a high-confidence match.': 'Tindakan mesin secara mandiri saat menemukan kecocokan dengan keyakinan tinggi.',
+  'Use AI to explain suggestions': 'Gunakan AI untuk menjelaskan saran',
+  'Show plain-language reasoning next to each suggested match and discrepancy.': 'Tampilkan alasan dalam bahasa sederhana di samping setiap saran dan selisih.',
+  'Auto-approve high-confidence matches': 'Setujui otomatis kecocokan dengan keyakinan tinggi',
+  'Pairs above the auto-match threshold are accepted with no manual review. You can still unmatch them later.': 'Pasangan di atas ambang pencocokan otomatis diterima tanpa ditinjau manual. Kecocokan tetap bisa dibatalkan nanti.',
+
+  // Matching rules — preview
+  'How the engine will behave': 'Cara mesin bekerja',
+  'Auto-matched': 'Dicocokkan otomatis',
+  'Discrepancy or unmatched': 'Selisih atau belum cocok',
+  'Current period preview': 'Pratinjau masa pajak ini',
+  'with these rules, the last 248 invoices would have been': 'dengan aturan ini, 248 faktur terakhir akan menjadi',
+  'auto-matched': 'dicocokkan otomatis',
+  'suggestions': 'saran',
+  'flagged': 'ditandai',
+  'and': 'dan',
+  'Rule history': 'Riwayat aturan',
+  'Restore defaults': 'Kembalikan ke bawaan',
+  'Defaults restored': 'Pengaturan bawaan berhasil dikembalikan',
+  'Matching rules saved': 'Aturan pencocokan berhasil disimpan',
 }

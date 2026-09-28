@@ -85,6 +85,8 @@ export const BUILT_KEYS = new Set<string>([
   'Mekari pay',
   'Wms report',
   'Inventory report',
+  'Tax report',
+  'Vat reconciliation',
   // Real components that were previously under-reported by this set:
   'Data migration', // pageRegistry (DataMigrationPage) + /data-migration/wms-cutover/* flow
   'Crm',            // detailMatch /crm → CrmDealsPage
@@ -268,7 +270,15 @@ export const SITEMAP: SitemapModule[] = [
       leaf('Purchases', { to: 'Purchase report' }),
       leaf('Inventory', { to: 'Inventory report', note: 'Reports › Inventory index (report cards); Dual Unit Inventory Report via /inventory-report/dual-unit.' }),
       leaf('WMS', { to: 'WMS report', note: 'Reports › WMS index (four report cards); detail tables via /wms-report/:slug.' }),
-      leaf('Tax', { to: 'Tax report' }),
+      leaf('Tax', {
+        to: 'Tax report',
+        note: 'Reports › Tax index (report cards). VAT reconciliation is the built card; the rest are coming-soon.',
+        children: [
+          leaf('VAT reconciliation', {
+            note: 'Tabs: All reconciliations · Needs attention. A masa row opens its Faktur keluaran / Faktur masukan workspace; the Difference cell opens Unmatched & discrepancies for that masa; Matching rules is a title-bar settings destination.',
+          }),
+        ],
+      }),
       leaf('Cash & bank', { to: 'Cash & bank report' }),
       leaf('Production', { to: 'Production report' }),
       leaf('Fixed assets', { to: 'Fixed assets report' }),
@@ -278,7 +288,6 @@ export const SITEMAP: SitemapModule[] = [
     module: 'Accounting',
     items: [
       leaf('Cash management'),
-      leaf('Reconciliations'),
       leaf('Consolidation'),
       leaf('Chart of accounts'),
       leaf('Close books'),

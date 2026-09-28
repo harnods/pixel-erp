@@ -46,7 +46,10 @@ export function pathToLabel(path: string): string {
  *  lookup, which must keep its original title-cased value. */
 export function displayLabel(label: string): string {
   const ACRONYMS: Record<string, string> = { Hr: "HR", Crm: "CRM", Wms: "WMS" };
-  return ACRONYMS[label] ?? label;
+  if (ACRONYMS[label]) return ACRONYMS[label];
+  // Multi-word labels whose leading word is an acronym flattened by pathToLabel
+  // ('/vat-reconciliation' → 'Vat reconciliation').
+  return label.replace(/^(Vat|Hr|Crm|Wms|Ppn|Spt|Npwp)\b/, (w) => w.toUpperCase());
 }
 
 /**

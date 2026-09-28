@@ -25,11 +25,26 @@ The `status` prop is **case-insensitive**. Unknown statuses fall back to `type="
 
 | Badge type | Colour | Statuses |
 |---|---|---|
-| `completed` | green | `paid`, `approved`, `active`, `completed`, `verified`, `success` |
-| `warning` | yellow | `open`, `pending`, `draft`, `in review`, `on progress` |
+| `completed` | green | `paid`, `approved`, `active`, `completed`, `verified`, `success`, `reconciled` |
+| `warning` | yellow | `open`, `pending`, `draft`, `in review`, `on progress`, `partially reconciled` |
 | `critical` | red | `overdue`, `rejected`, `failed`, `expired`, `error` |
-| `announcement` | **gray** | `closed`, `voided`, `inactive`, `archived`, `cancelled`, `not started` |
+| `announcement` | **gray** | `closed`, `voided`, `inactive`, `archived`, `cancelled`, `not started`, `not reconciled` |
 | `information` | blue | `partially processed`, `new`, `beta`, `vip`, `featured` |
+
+### VAT reconciliation periods
+
+The three states mirror the equivalent Klikpajak screen, so the two products read
+the same:
+
+| Status | Badge type | Klikpajak copy |
+|---|---|---|
+| `reconciled` | `completed` (green) | Selesai rekonsiliasi |
+| `partially reconciled` | `warning` (yellow) | Terekonsiliasi sebagian |
+| `not reconciled` | `announcement` (gray) | Belum direkonsiliasi |
+
+Gray for `not reconciled` (rather than red) is deliberate: not having started is
+a neutral fact, not an error. The red in that table is reserved for a non-zero
+**Selisih** — the figure that actually needs explaining.
 
 ---
 
