@@ -62,21 +62,28 @@ export interface ErpTargetField {
 // §Sales Quote / §Sales Order mapping requirements).
 const COMMON_ERP_FIELDS: ErpTargetField[] = [
   { key: 'customer',     label: 'ERP Customer',        requirement: 'required',    category: 'customer',      purpose: 'The ERP customer the transaction bills to' },
+  { key: 'total',        label: 'Total',               requirement: 'required',    category: 'money',         purpose: 'Total transaction amount (calculated from line items)' },
   { key: 'txDate',       label: 'Transaction date',    requirement: 'required',    category: 'date',          purpose: 'Date the ERP transaction is dated' },
   { key: 'dueDate',      label: 'Due date',            requirement: 'required',    category: 'date',          purpose: 'Payment due date' },
   { key: 'paymentTerm',  label: 'Payment term',        requirement: 'conditional', category: 'erp-option',    purpose: 'ERP payment term', conditionNote: 'Required unless a company default term applies' },
+  { key: 'txNumber',     label: 'Transaction no.',     requirement: 'required',    category: 'text',          purpose: 'ERP auto-generated transaction number' },
+  { key: 'warehouse',    label: 'Warehouse',           requirement: 'conditional', category: 'erp-option',    purpose: 'Source warehouse', conditionNote: 'Required when the tenant tracks inventory' },
   { key: 'productLines', label: 'Product lines',       requirement: 'required',    category: 'product-lines', purpose: 'Line items (product, qty, price, discount, tax) — 1–100 lines' },
   { key: 'currency',     label: 'Currency',            requirement: 'required',    category: 'currency-code', purpose: 'Transaction currency code' },
   { key: 'exchangeRate', label: 'Exchange rate',       requirement: 'conditional', category: 'decimal',       purpose: 'Rate to base currency', conditionNote: 'Required when the currency is not the company base currency' },
-  { key: 'warehouse',    label: 'Warehouse',           requirement: 'conditional', category: 'erp-option',    purpose: 'Source warehouse', conditionNote: 'Required when the tenant tracks inventory' },
-  // Optional (PRD: never required for completeness; if mapped, must be valid)
+  // Optional
+  { key: 'email',            label: 'Email',             requirement: 'optional', category: 'text',           purpose: 'Customer email for transaction correspondence' },
   { key: 'billingAddress',   label: 'Billing address',   requirement: 'optional', category: 'text',           purpose: 'Billing address override' },
   { key: 'shippingAddress',  label: 'Shipping address',  requirement: 'optional', category: 'text',           purpose: 'Shipping address override' },
   { key: 'shipDate',         label: 'Shipping / delivery date', requirement: 'optional', category: 'date',    purpose: 'Requested delivery date' },
   { key: 'shipVia',          label: 'Ship via',          requirement: 'optional', category: 'erp-option',     purpose: 'Shipping method' },
+  { key: 'trackingNo',       label: 'Tracking no.',      requirement: 'optional', category: 'text',           purpose: 'Shipment tracking number' },
   { key: 'referenceNo',      label: 'Reference number',  requirement: 'optional', category: 'text',           purpose: 'External reference (RFQ/PO no.)' },
+  { key: 'tags',             label: 'Tags',              requirement: 'optional', category: 'text',           purpose: 'Tags for categorization' },
+  { key: 'message',          label: 'Message',           requirement: 'optional', category: 'text',           purpose: 'Customer-facing message on the transaction' },
   { key: 'shippingFee',      label: 'Shipping fee',      requirement: 'optional', category: 'money',          purpose: 'Flat shipping charge' },
   { key: 'memo',             label: 'Memo',              requirement: 'optional', category: 'text',           purpose: 'Internal note carried to ERP' },
+  { key: 'attachments',      label: 'Attachments',       requirement: 'optional', category: 'text',           purpose: 'File attachments on the transaction' },
 ]
 
 /** Sales Quote adds Expiry date (quote validity); Sales Order has no expiry. */
@@ -112,6 +119,7 @@ export const SOURCE_STRATEGY_LABEL: Record<SourceStrategy, string> = {
 export type SystemValueKey =
   | 'conversion-date' | 'base-currency' | 'erp-customer-id' | 'record-id'
   | 'primary-name' | 'current-company' | 'acting-user' | 'rate-one'
+  | 'calculated-total'
 export const SYSTEM_VALUE_LABEL: Record<SystemValueKey, string> = {
   'conversion-date': 'Conversion date',
   'base-currency': 'Company base currency',
@@ -121,6 +129,7 @@ export const SYSTEM_VALUE_LABEL: Record<SystemValueKey, string> = {
   'current-company': 'Current company',
   'acting-user': 'Acting user',
   'rate-one': 'Exchange rate 1.0',
+  'calculated-total': 'Calculated total from line items',
 }
 
 /** One mapping row: a target field ← a source. */
@@ -211,14 +220,27 @@ function dealsSeed(): ConversionConfig {
     lastSavedBy: 'Rizal Candra', lastSavedAt: '2026-09-10T14:30:00', lastValidatedAt: '2026-09-10T14:30:00',
     criterion: null,
     mappings: [
-      { targetKey: 'customer',     strategy: 'crm-field', sourceFieldId: 'company' },
-      { targetKey: 'txDate',       strategy: 'crm-field', sourceFieldId: 'transaction-date' },
+      // Mandatory
+      { targetKey: 'customer',     strategy: 'crm-field', sourceFieldId: 'contact', protected: true },
+      { targetKey: 'total',        strategy: 'system', systemValue: 'calculated-total', protected: true },
+      { targetKey: 'txDate',       strategy: 'crm-field', sourceFieldId: 'transaction-date', protected: true },
       { targetKey: 'dueDate',      strategy: 'crm-field', sourceFieldId: 'due-date' },
-      { targetKey: 'paymentTerm',  strategy: 'crm-field', sourceFieldId: 'payment-term' },
-      { targetKey: 'productLines', strategy: 'crm-field', sourceFieldId: 'product-list' },
-      { targetKey: 'currency',     strategy: 'system', systemValue: 'base-currency' },
-      { targetKey: 'billingAddress', strategy: 'crm-field', sourceFieldId: 'billing-address' },
-      { targetKey: 'referenceNo',  strategy: 'crm-field', sourceFieldId: 'external-reference-id' },
+      { targetKey: 'paymentTerm',  strategy: 'crm-field', sourceFieldId: 'payment-term', protected: true },
+      { targetKey: 'txNumber',     strategy: 'erp-default', fixedLabel: 'Auto-number', protected: true },
+      { targetKey: 'warehouse',    strategy: 'erp-default', fixedLabel: 'Default warehouse', protected: true },
+      { targetKey: 'productLines', strategy: 'crm-field', sourceFieldId: 'product-list', protected: true },
+      // Optional
+      { targetKey: 'email',            strategy: 'crm-field', sourceFieldId: 'email', protected: true },
+      { targetKey: 'billingAddress',   strategy: 'crm-field', sourceFieldId: 'billing-address', protected: true },
+      { targetKey: 'shippingAddress',  strategy: 'unmapped' },
+      { targetKey: 'shipDate',         strategy: 'unmapped' },
+      { targetKey: 'shipVia',          strategy: 'unmapped' },
+      { targetKey: 'trackingNo',       strategy: 'unmapped' },
+      { targetKey: 'referenceNo',      strategy: 'crm-field', sourceFieldId: 'external-reference-id' },
+      { targetKey: 'tags',             strategy: 'crm-field', sourceFieldId: 'tags', protected: true },
+      { targetKey: 'message',          strategy: 'unmapped' },
+      { targetKey: 'memo',             strategy: 'crm-field', sourceFieldId: 'notes' },
+      { targetKey: 'attachments',      strategy: 'crm-field', sourceFieldId: 'attachments' },
     ],
   }
 }
