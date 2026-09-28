@@ -277,6 +277,20 @@ function save() {
   close()
   toast.notify({ variant: 'success', title: t('Vendor terms saved.'), maxWidth: 'max-content' })
 }
+
+/**
+ * Read-only mode still lets a stockist pick the preferred vendor — that choice is
+ * theirs, not a purchasing term. This persists ONLY the preferred flag, never the
+ * (read-only) terms.
+ */
+function savePreferred() {
+  if (!props.sku) return
+  const preferred = rows.value.find((r) => r.isPreferred)
+  if (preferred) setPreferredVendor(props.sku, preferred.vendorId)
+  emit('saved')
+  close()
+  toast.notify({ variant: 'success', title: t('Preferred vendor saved.'), maxWidth: 'max-content' })
+}
 </script>
 
 <template>
@@ -321,7 +335,7 @@ function save() {
                 {{ showReasons ? t('Hide') : t('Why?') }}
               </button>
               <button
-                v-if="!recommendedIsDefault && !readonly"
+                v-if="!recommendedIsDefault"
                 type="button"
                 class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
                 @click="applyRecommendation"
@@ -406,9 +420,11 @@ function save() {
                   <span v-else class="rp-vi-lead-ro">{{ formatIDR(Number(row.unitCost) || 0) }}</span>
                   <span class="rp-vi-cell-sub">{{ formatIDR(Number(row.unitCost) || 0) }} / {{ row.purchaseUnit }}</span>
                 </td>
+                <!-- The preferred vendor IS selectable here even when terms are
+                     read-only: choosing which vendor to default a request to is a
+                     stockist decision, not a vendor-term edit. -->
                 <td class="rp-vi-td rp-vi-td--center">
                   <input
-                    v-if="!readonly"
                     :id="`rp-vi-default-${i}`"
                     class="rp-vi-radio"
                     type="radio"
@@ -417,10 +433,6 @@ function save() {
                     :aria-label="t('Default')"
                     @change="makeDefault(i)"
                   />
-                  <span v-else-if="row.isPreferred" class="rp-vi-default-ro" :title="t('Default')">
-                    <MpIcon name="check-circular" size="md" />
-                  </span>
-                  <span v-else class="rp-vi-cell-sub">—</span>
                 </td>
                 <td v-if="!readonly" class="rp-vi-td rp-vi-td--center">
                   <button class="rp-vi-remove" type="button" :aria-label="t('Remove')" @click="removeRow(i)">
@@ -434,7 +446,7 @@ function save() {
           <button v-if="!readonly" class="rp-vi-add" type="button" @click="addRow">+ {{ t('Vendor') }}</button>
 
           <p v-if="readonly" class="rp-vi-hint rp-vi-hint--managed">
-            {{ t('Vendor terms are managed by purchasing in the Vendors module. This view is read-only.') }}
+            {{ t('Vendor terms are managed by purchasing in the Vendors module. You can still set the preferred vendor here.') }}
           </p>
 
           <p class="rp-vi-hint">
@@ -455,7 +467,8 @@ function save() {
           <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">
             {{ readonly ? t('Close') : t('Cancel') }}
           </button>
-          <button v-if="!readonly" class="btn-enterprise btn-enterprise--primary" type="button" @click="save">{{ t('Save changes') }}</button>
+          <button v-if="readonly" class="btn-enterprise btn-enterprise--primary" type="button" @click="savePreferred">{{ t('Save preferred vendor') }}</button>
+          <button v-else class="btn-enterprise btn-enterprise--primary" type="button" @click="save">{{ t('Save changes') }}</button>
         </footer>
       </div>
     </div>
