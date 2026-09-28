@@ -83,15 +83,22 @@ const criterionEnabled = ref(false)
 watch(() => props.orderId, () => { criterionEnabled.value = !!getConversionConfig(props.orderId)?.criterion }, { immediate: true })
 // Fields eligible for the criterion: scalar text/option/number/date/boolean — not
 // customer / product-list / user (PRD §Custom-module conversion limitation criterion).
+const CRITERION_ALLOWED_TYPES = new Set([
+  'Single-line text', 'Multi-line text', 'Phone number', 'Email', 'URL',
+  'Number', 'Percentage', 'Currency',
+  'Date picker', 'Date and time picker',
+  'Dropdown select', 'Radio select',
+  'Single checkbox',
+])
+const CRITERION_TEXT_TYPES = new Set(['Single-line text', 'Multi-line text', 'Phone number', 'Email', 'URL'])
 const criterionFieldOptions = computed(() =>
-  (mod.value?.fields ?? [])
-    .filter((f) => ['text', 'number', 'date', 'pick-list', 'radio'].includes(f.type))
-    .map((f) => ({ value: f.id, label: f.label })),
+  modProperties.value
+    .filter((p) => CRITERION_ALLOWED_TYPES.has(p.type))
+    .map((p) => ({ value: p.id, label: p.name })),
 )
 const operatorOptions = computed(() => {
-  const f = mod.value?.fields.find((x) => x.id === draft.criterion?.fieldId)
-  // Contains only applies to free-text-like fields.
-  if (f && f.type === 'text') return [{ value: 'equals', label: 'Equals' }, { value: 'contains', label: 'Contains' }]
+  const p = modProperties.value.find((x) => x.id === draft.criterion?.fieldId)
+  if (p && CRITERION_TEXT_TYPES.has(p.type)) return [{ value: 'equals', label: 'Equals' }, { value: 'contains', label: 'Contains' }]
   return [{ value: 'equals', label: 'Equals' }]
 })
 function ensureCriterion() {
@@ -257,14 +264,36 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
           <!-- 4. Conversion limitation — only when conversion is enabled. -->
           <section v-if="draft.enabled" class="ed-section">
             <h2 class="ed-section-title">{{ t('Conversion limitation') }}</h2>
-            <!-- Deals: fixed Lost-stage rule (read-only). -->
-            <div v-if="isDeals" class="ed-notice ed-notice--muted">
-              <MpIcon name="info" size="sm" />
-              <span>{{ t('Deals in the Lost stage can never be converted. This rule is fixed and cannot be changed.') }}</span>
-            </div>
+            <!-- Deals: fixed Lost-stage rule displayed as disabled criterion form for consistency. -->
+            <template v-if="isDeals">
+              <p class="ed-section-cap">{{ t('Deals in the Lost stage cannot be converted to an ERP transaction.') }}</p>
+              <div class="ed-criterion">
+                <ErpFilterSelect
+                  id="ed-crit-field-deals"
+                  model-value="stage"
+                  placeholder="Field"
+                  :options="[{ value: 'stage', label: t('Stage') }]"
+                  disabled
+                />
+                <ErpFilterSelect
+                  id="ed-crit-op-deals"
+                  model-value="equals"
+                  placeholder="Operator"
+                  :options="[{ value: 'equals', label: t('Equals') }]"
+                  disabled
+                />
+                <ErpFilterSelect
+                  id="ed-crit-value-deals"
+                  model-value="lost"
+                  placeholder="Value"
+                  :options="[{ value: 'lost', label: t('Lost') }]"
+                  disabled
+                />
+              </div>
+            </template>
             <!-- Custom modules: at most one blocking criterion. -->
             <template v-else>
-              <p class="ed-section-cap">{{ t('Optionally block conversion when a record matches one condition.') }}</p>
+              <p class="ed-limitation-desc">{{ t('Optionally block conversion when a record matches one condition.') }}</p>
               <div class="ed-toggle-row">
                 <MpToggle v-model:is-checked="criterionEnabled" :aria-label="t('Block conversion when a condition is met')" />
                 <div class="ed-toggle-text">
@@ -351,6 +380,7 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
 /* Section headings are H2 → xl/20px semibold (rule/type-scale: H1 24, H2 20, H3 16). */
 .ed-section-title { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-xl, 28px); color: var(--mp-text-default); }
 .ed-section-cap { margin: 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
+.ed-limitation-desc { margin: 0; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); }
 /* Body: form controls stacked with the standard 20px form row gap (Form.md). */
 .ed-body { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
 .ed-toggle-row { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); }
