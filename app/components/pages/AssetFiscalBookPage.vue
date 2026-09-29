@@ -79,7 +79,8 @@ const exportColumns = [
   { key: 'taxGroup', label: t('Statutory group') },
   { key: 'assets', label: t('Assets') },
 ]
-function exportStatement() { exportOpen.value = true }
+const router = useRouter()
+function exportStatement() { infoToast(t('Not in this prototype')) }
 function onExport() {
   exportOpen.value = false
   successToast(t('Export ready — check your downloads'))
@@ -92,9 +93,14 @@ function onExport() {
       <p class="fb__sub">
         {{ t('Asset profit and loss impact · FY2026 to 30 September 2026 · PT Central Perk Indonesia') }}
       </p>
-      <MpButton variant="secondary" is-rounded @click="exportStatement">
-        {{ t('Export') }}
-      </MpButton>
+      <div class="fb__headright">
+        <span class="fb__link" @click="router.push('/tax-differences')">{{ t('Differences by asset') }}</span>
+        <span class="fb__link" @click="router.push('/lampiran-9')">{{ t('Lampiran 9') }}</span>
+        <span class="fb__link" @click="router.push('/asset-roll-forward')">{{ t('Roll-forward') }}</span>
+        <MpButton variant="secondary" is-rounded @click="exportStatement">
+          {{ t('Export') }}
+        </MpButton>
+      </div>
     </header>
 
     <!-- What this statement leaves out, said before the numbers rather than after. -->
@@ -196,6 +202,7 @@ function onExport() {
     <div class="fb__card">
       <div class="fb__cardhead">
         <span class="fb__cardtitle">{{ t('Disposal and impairment') }}</span>
+        <span class="fb__hint">{{ t('A disposal\'s gain or loss on each book: the tax figure is proceeds less the fiscal carrying amount') }}</span>
       </div>
       <table class="fb__table">
         <thead>
@@ -215,6 +222,9 @@ function onExport() {
             <td class="fb__td fb__td--num" :class="(r.commercial ?? 0) >= 0 ? 'fb__td--pos' : 'fb__td--neg'">{{ cell(r.commercial).text }}</td>
             <td class="fb__td fb__td--num" :class="(r.fiscal ?? 0) >= 0 ? 'fb__td--pos' : 'fb__td--neg'">{{ cell(r.fiscal).text }}</td>
             <td class="fb__td fb__td--num">{{ cell(diff(r.commercial, r.fiscal)).text }}</td>
+          </tr>
+          <tr v-if="!disposals.length" class="fb__tr">
+            <td class="fb__td fb__td--absent" colspan="4">{{ t('No disposal this year. When one is recorded its fiscal gain or loss appears here.') }}</td>
           </tr>
           <tr v-for="r in impairments" :key="r.basis ?? r.label" class="fb__tr">
             <td class="fb__td">
@@ -258,6 +268,9 @@ function onExport() {
 </template>
 
 <style scoped>
+.fb__headright { display: flex; align-items: center; gap: var(--mp-spacing-4); }
+.fb__link { color: var(--mp-text-link); cursor: pointer; font-size: var(--mp-font-sizes-md); }
+.fb__link:hover { text-decoration: underline; }
 
 .fb__head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); min-height: 32px; }
 .fb__title { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }

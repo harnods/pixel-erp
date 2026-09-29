@@ -102,6 +102,11 @@ const pageRegistry: Record<string, Component> = {
   'Assets':            defineAsyncComponent(() => import('~/components/pages/AssetsIndexPage.vue')),
   'Depreciation schedule': defineAsyncComponent(() => import('~/components/pages/AssetDepreciationSchedulePage.vue')),
   'Tax book':          defineAsyncComponent(() => import('~/components/pages/AssetFiscalBookPage.vue')),
+  'Tax differences':   defineAsyncComponent(() => import('~/components/pages/AssetTaxDifferencesPage.vue')),
+  'Lampiran 9':        defineAsyncComponent(() => import('~/components/pages/AssetLampiranPage.vue')),
+  // `/asset-roll-forward` slugs to 'Asset roll forward' (the hyphen is a word break).
+  'Asset roll forward': defineAsyncComponent(() => import('~/components/pages/AssetRollForwardPage.vue')),
+  'Asset migration':   defineAsyncComponent(() => import('~/components/pages/AssetMigrationPage.vue')),
   'Impairment tests':  defineAsyncComponent(() => import('~/components/pages/AssetImpairmentPage.vue')),
   'Period self check': defineAsyncComponent(() => import('~/components/pages/AssetSelfCheckPage.vue')),
   'Custody and counts': defineAsyncComponent(() => import('~/components/pages/AssetCustodyCountsPage.vue')),

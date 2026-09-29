@@ -33,6 +33,9 @@ import {
 import {
   runFor, postRun, reverseRun, nextUnposted, CURRENT_MONTH,
 } from '~/data/fixedAssetSession'
+import { journalDateFor, journalDateRule } from '~/data/assetPolicy'
+import { periodOfMonth, generateRun, draftRunFor } from '~/data/assetStore'
+import { periodLabel } from '~/data/assetEngine'
 
 const { t } = useLocale()
 const router = useRouter()
@@ -58,14 +61,27 @@ const confirming = ref<SchedulePeriod | null>(null)
 const journal = computed(() => (confirming.value ? journalFor(confirming.value) : []))
 const journalTotal = computed(() => journal.value.reduce((s, l) => s + (l.debit ?? 0), 0))
 
-/** The journal date follows company policy: the last day of the period. */
+/** The journal date follows company policy (OD-09), set once in Asset settings. */
 function periodEnd(month: number): string {
-  const last = new Date(2026, month + 1, 0).getDate()
-  return `${String(last).padStart(2, '0')}/${String(month + 1).padStart(2, '0')}/2026`
+  return journalDateFor(periodOfMonth(month))
 }
 
 // Read inside the computed so it re-reads after every post and reversal.
 const pendingNumber = computed(() => (periods.value, nextJournalNumber()))
+
+/**
+ * OD-08. Generate on demand. The draft is what Review and post shows; it is
+ * safe to repeat, because regenerating replaces the draft, never a posted run.
+ */
+const draft = computed(() => (actionable.value ? draftRunFor(periodOfMonth(actionable.value.month)) : null))
+function generate() {
+  if (!actionable.value) return
+  const p = periodOfMonth(actionable.value.month)
+  const r = generateRun(p)
+  if (!r.ok) { infoToast(r.reason); return }
+  const n = r.run.lines.length
+  successToast(t(`Draft generated for ${periodLabel(p)} · ${n} assets, both books`))
+}
 
 function confirmPost() {
   const p = confirming.value
@@ -73,7 +89,7 @@ function confirmPost() {
   const number = pendingNumber.value
   const r = postRun(p.month)
   if (!r.ok) { infoToast(r.reason); return }
-  successToast(t(`${p.label} posted · ${number}`))
+  successToast(t(`${p.label} posted · ${number} · self-check run and retained for the period`))
   confirming.value = null
 }
 
@@ -109,12 +125,18 @@ function stateLabel(p: SchedulePeriod) {
         <div class="ds__runnote">
           {{ actionable.assetCount }} {{ t(actionable.assetCount === 1 ? 'asset' : 'assets') }}
           · {{ t('journal dated') }} {{ periodEnd(actionable.month) }}
+          <span class="ds__runrule">({{ t(journalDateRule()) }}, {{ t('set in Asset settings') }})</span>
+        </div>
+        <div class="ds__runnote">
+          <template v-if="draft">{{ t('Draft generated') }} {{ draft.generatedOn }} · {{ draft.lines.length }} {{ t('lines') }}</template>
+          <template v-else>{{ t('No draft yet. Generate one to review it before anything posts.') }}</template>
         </div>
       </div>
       <div class="ds__runfig">
         <div class="ds__runfiglabel">{{ t('Posts to the general ledger') }}</div>
         <div class="ds__runfigvalue">{{ formatIDR(actionable.accounting) }}</div>
       </div>
+      <MpButton variant="secondary" is-rounded @click="generate">{{ draft ? t('Generate again') : t('Generate draft') }}</MpButton>
       <MpButton is-rounded @click="confirming = actionable">{{ t('Review and post') }}</MpButton>
     </div>
 
@@ -354,6 +376,7 @@ function stateLabel(p: SchedulePeriod) {
 .ds__runlabel { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .ds__runperiod { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ds__runnote { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); }
+.ds__runrule { color: var(--mp-text-secondary); }
 .ds__runfig { text-align: right; flex: none; }
 .ds__runfiglabel { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .ds__runfigvalue {

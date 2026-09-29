@@ -12,12 +12,16 @@
  * is otherwise indistinguishable from the output of one that succeeded, and the
  * feature then provides false assurance, which is worse than none.
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { MpIcon, MpButton } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
-import { successToast } from '~/utils/toasts'
-import { selfCheckRunAt, rerunSelfCheck } from '~/data/fixedAssetSession'
-import { selfCheckFor, computeSelfCheck, CURRENT_PERIOD, type CheckResult } from '~/data/assetStore'
+import { successToast, infoToast } from '~/utils/toasts'
+import { rerunSelfCheck } from '~/data/fixedAssetSession'
+import {
+  selfCheckFor, computeSelfCheck, CURRENT_PERIOD, retainedSelfChecks, simulateDirectJournal, withdrawDirectJournals,
+  journals, type CheckResult,
+} from '~/data/assetStore'
+import { periodLabel, type Period } from '~/data/assetEngine'
 
 const { t } = useLocale()
 
@@ -37,14 +41,41 @@ interface Check {
  */
 function runAgain() {
   rerunSelfCheck()
+  selected.value = CURRENT_PERIOD
   successToast(t('Check re-run'))
+}
+
+/** OD-43: one retained result per period. Closed periods ran theirs at close. */
+const selected = ref<Period>(CURRENT_PERIOD)
+const history = computed(() => retainedSelfChecks())
+const isCurrent = computed(() => selected.value === CURRENT_PERIOD)
+function stateOf(checks: CheckResult[]): CheckState {
+  if (checks.some((c) => c.state === 'failed')) return 'failed'
+  if (checks.some((c) => c.state === 'incomplete')) return 'incomplete'
+  return 'passed'
+}
+
+/**
+ * FG6-AC3 demonstration. Nothing outside the module can post to an asset
+ * control account in the product, so the only way to show this check
+ * failing is to post such a journal here, clearly labelled.
+ */
+const demoJournals = computed(() => journals.value.filter((j) => j.source === 'manual'))
+function simulate() {
+  const j = simulateDirectJournal()
+  selected.value = CURRENT_PERIOD
+  infoToast(t(`Demonstration journal ${j.number} posted to 6-5100 from outside the asset module`))
+}
+function withdraw() {
+  const n = withdrawDirectJournals()
+  successToast(t(`${n} demonstration ${n === 1 ? 'journal' : 'journals'} withdrawn`))
 }
 
 /**
  * The result retained against the period, as the store last ran it. The
  * store re-runs it whenever the module changes, and Run again restates it.
  */
-const result = computed(() => selfCheckFor(CURRENT_PERIOD) ?? { ...computeSelfCheck(CURRENT_PERIOD), runAt: '' })
+const result = computed(() => selfCheckFor(selected.value) ?? { ...computeSelfCheck(selected.value), runAt: '' })
 const tieCheckRows = computed(() => result.value.tie)
 
 /** What each check compares. The result and its detail come from the store. */
@@ -92,13 +123,28 @@ const stateIcon: Record<CheckState, string> = {
   <div class="sc">
     <header class="sc__head">
       <p class="sc__sub">
-        {{ t('September 2026 · last run') }} {{ selfCheckRunAt }} ·
+        {{ periodLabel(selected) }} · {{ t(isCurrent ? 'last run' : 'run at close') }} {{ result.runAt }} ·
         {{ t('the result is retained against the period') }}
       </p>
-      <MpButton variant="secondary" is-rounded @click="runAgain">
+      <MpButton v-if="isCurrent" variant="secondary" is-rounded @click="runAgain">
         {{ t('Run again') }}
       </MpButton>
+      <MpButton v-else variant="secondary" is-rounded @click="selected = CURRENT_PERIOD">
+        {{ t('Back to the current period') }}
+      </MpButton>
     </header>
+
+    <!-- OD-43: the result each period kept, so a reviewer can see the close ran it. -->
+    <div class="sc__periods">
+      <span
+        v-for="h in history" :key="h.period" class="sc__period"
+        :class="[`sc__period--${stateOf(h.checks)}`, { 'sc__period--on': h.period === selected }]"
+        @click="selected = h.period"
+      >
+        <MpIcon :name="stateIcon[stateOf(h.checks)]" size="xs" />
+        {{ periodLabel(h.period) }}
+      </span>
+    </div>
 
     <!-- The summary states the result either way. Silence is what the feature
          exists to remove. -->
@@ -159,10 +205,40 @@ const stateIcon: Record<CheckState, string> = {
         </tbody>
       </table>
     </div>
+
+    <!-- FG6-AC3: labelled as a demonstration wherever it appears. -->
+    <div v-if="isCurrent" class="sc__card sc__demo">
+      <div class="sc__cardhead">
+        {{ t('Demonstration · simulate a direct journal') }}
+      </div>
+      <div class="sc__demobody">
+        <p class="sc__demotext">
+          {{ t('In the product nothing outside the asset module can post to an asset control account, so this check cannot fail from ordinary use. This posts a Rp 4.000.000 journal to 6-5100 as if another module had, so the reconciliation can be seen to fail and name the account. It is a demonstration, not a feature.') }}
+        </p>
+        <div v-if="demoJournals.length" class="sc__demolist">
+          <div v-for="j in demoJournals" :key="j.number">{{ j.number }} · {{ j.date }} · {{ t(j.memo) }}</div>
+        </div>
+        <div class="sc__demobtns">
+          <MpButton size="sm" variant="secondary" is-rounded @click="simulate">{{ t('Post a demonstration journal') }}</MpButton>
+          <MpButton v-if="demoJournals.length" size="sm" variant="ghost" is-rounded @click="withdraw">{{ t('Withdraw demonstration journals') }}</MpButton>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.sc__periods { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-4); }
+.sc__period { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); padding: var(--mp-spacing-1) var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); background: var(--mp-background-neutral); cursor: pointer; }
+.sc__period--failed { color: var(--mp-text-critical); }
+.sc__period--incomplete { color: var(--mp-text-warning); }
+.sc__period--passed :deep(svg) { color: var(--mp-text-success); }
+.sc__period--on { border-color: var(--mp-border-bold); font-weight: var(--mp-font-weights-semi-bold); }
+.sc__demo { margin-top: var(--mp-spacing-4); border-style: dashed; }
+.sc__demobody { padding: var(--mp-spacing-3) var(--mp-spacing-4) var(--mp-spacing-4); }
+.sc__demotext { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: 0 0 var(--mp-spacing-3); max-width: 760px; }
+.sc__demolist { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); margin-bottom: var(--mp-spacing-3); font-variant-numeric: tabular-nums; }
+.sc__demobtns { display: flex; gap: var(--mp-spacing-2); }
 
 .sc__head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); min-height: 32px; }
 .sc__title { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }

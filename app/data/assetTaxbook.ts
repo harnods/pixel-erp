@@ -432,6 +432,86 @@ export function rollForward(book: Book, to: Period = CURRENT_PERIOD, from: Perio
   return { rows: list, total, excluded }
 }
 
+// ── P&L impact (OD-40) and difference by dimension (OD-04) ──────────────────
+
+export interface ImpactLine {
+  key: string
+  assets: number
+  /** Charged to profit on the accounting book: depreciation, impairment, loss on disposal. */
+  accounting: number
+  /** Deductible on the fiscal book: impairment is never, disposal on the tax carrying amount. */
+  fiscal: number
+  /** fiscal less accounting: positive is a further deduction, negative is added back. */
+  difference: number
+}
+
+/**
+ * Every figure the asset module puts through profit in FY2026 to `p`, on both
+ * books, grouped by class or by statutory group. A gain on disposal is a
+ * negative charge. Only classified assets are in it, so both columns describe
+ * the same population; the rest is counted separately.
+ */
+export function impactBy(dim: 'class' | 'group' | 'line', p: Period = CURRENT_PERIOD): { rows: ImpactLine[]; total: ImpactLine; excludedAccounting: number; excluded: number } {
+  const rows = new Map<string, ImpactLine>()
+  const add = (key: string, id: string | null, acc: number, fis: number) => {
+    const r = rows.get(key) ?? { key, assets: 0, accounting: 0, fiscal: 0, difference: 0, ids: new Set<string>() } as ImpactLine & { ids: Set<string> }
+    r.accounting += acc
+    r.fiscal += fis
+    if (id) (r as ImpactLine & { ids: Set<string> }).ids.add(id)
+    rows.set(key, r)
+  }
+  const inFy = (x: { period: Period }) => !isBefore(x.period, FY_START) && !isAfter(x.period, p)
+  let excludedAccounting = 0
+  let excluded = 0
+  for (const s of assetRecords.value) {
+    const l = ledgers.value[s.id]!
+    const acc = chargesBetween(l, 'accounting', FY_START, p) ?? 0
+    if (!l.books.tax) {
+      if (acc) { excludedAccounting += acc; excluded += 1 }
+      continue
+    }
+    const tax = chargesBetween(l, 'tax', FY_START, p) ?? 0
+    const k = (line: string) => (dim === 'class' ? s.class : dim === 'group' ? l.taxGroup! : line)
+    add(k(s.type === 'Tangible' ? 'Depreciation' : 'Amortisation'), s.id, acc, tax)
+    for (const i of l.books.accounting.impairments) if (inFy(i) && i.loss) add(k('Impairment loss'), s.id, i.loss, 0)
+    for (const r of l.books.accounting.reversals) if (inFy(r) && r.applied) add(k('Impairment loss'), s.id, -r.applied, 0)
+    const dA = l.books.accounting.disposal
+    const dT = l.books.tax.disposal
+    if (dA && inFy(dA)) add(k('Loss (gain) on disposal'), s.id, -dA.gainLoss, -(dT?.gainLoss ?? 0))
+    l.books.accounting.partialDisposals.forEach((d, i) => {
+      if (inFy(d)) add(k('Loss (gain) on disposal'), s.id, -d.gainLoss, -(l.books.tax!.partialDisposals[i]?.gainLoss ?? 0))
+    })
+  }
+  const order = ['Depreciation', 'Amortisation', 'Impairment loss', 'Loss (gain) on disposal']
+  const out = [...rows.values()].map((r) => {
+    const ids = (r as ImpactLine & { ids?: Set<string> }).ids
+    return { key: r.key, assets: ids?.size ?? 0, accounting: r.accounting, fiscal: r.fiscal, difference: r.fiscal - r.accounting }
+  }).sort((a, b) => (dim === 'line' ? order.indexOf(a.key) - order.indexOf(b.key) : a.key.localeCompare(b.key)))
+  const total = out.reduce<ImpactLine>((t, r) => ({
+    key: 'Total', assets: t.assets + r.assets, accounting: t.accounting + r.accounting, fiscal: t.fiscal + r.fiscal, difference: t.difference + r.difference,
+  }), { key: 'Total', assets: 0, accounting: 0, fiscal: 0, difference: 0 })
+  if (dim === 'line') total.assets = new Set(assetRecords.value.filter((s) => ledgers.value[s.id]!.books.tax).map((s) => s.id)).size
+  return { rows: out, total, excludedAccounting, excluded }
+}
+
+// ── Incomplete parameters (OD-35) ───────────────────────────────────────────
+
+/**
+ * What an asset still held is missing for one of the outputs that depend on
+ * it: the tax book and filing (group, code), or the count (location,
+ * custodian). Each is named so the register can say which, not just that.
+ */
+export function missingParameters(a: FixedAsset): string[] {
+  if (a.status === 'Disposed' || a.status === 'Split') return []
+  const out: string[] = []
+  if (!a.taxGroup) out.push('Statutory group')
+  if (a.type === 'Intangible' && !a.statutoryCode) out.push('Statutory code')
+  if (a.commercialLifeMonths === null && !a.indefiniteLife) out.push('Useful life')
+  if (a.type === 'Tangible' && !a.location) out.push('Location')
+  if (a.type === 'Tangible' && !a.custodian) out.push('Custodian')
+  return out
+}
+
 /** The period an asset's history begins, for the classification drawer. */
 export function inServicePeriod(id: string): Period {
   return periodOfDate(ledgers.value[id]!.inServiceDate)

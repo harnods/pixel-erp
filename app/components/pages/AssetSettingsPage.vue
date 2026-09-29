@@ -1,17 +1,71 @@
 <script setup lang="ts">
 /**
- * Asset settings — the class master and the behaviour switches.
+ * Asset settings: the class master (TS-01) and the behaviour switches.
  *
- * The class master is why an asset arrives classified instead of needing to be
- * fixed later. Choosing a class sets the statutory group, both lives, the
- * method and the accounts, so the register's one unclassified asset is an
- * exception rather than the normal state.
+ * The class master is why an asset arrives classified instead of needing to
+ * be fixed later. A new asset takes its class's statutory group, accounting
+ * life and method, and so does an asset moved into the class. Editing a
+ * class here changes what the next asset inherits; assets already in the
+ * class keep what they have, because a default is not a retrospective change.
+ *
+ * The tax life is the group's, never the class's: it is shown, not edited.
  */
-import { MpIcon, MpButton } from '@mekari/pixel3'
-import { infoToast } from '~/utils/toasts'
-import { classMaster, settingToggles } from '~/data/fixedAssetScreens'
+import { computed, ref } from 'vue'
+import { MpIcon, MpButton, MpInput } from '@mekari/pixel3'
+import { infoToast, successToast } from '~/utils/toasts'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import { settingToggles } from '~/data/fixedAssetScreens'
+import {
+  assetClassMaster, allowedGroupsFor, groupLifeMonths, updateClassDef, classCounts, canChangeClass,
+} from '~/data/assetTaxbook'
+import { journalDatePolicy } from '~/data/assetPolicy'
+import { METHOD_LABEL, formatLife } from '~/data/assetEngine'
+import { viewAs } from '~/data/assetStore'
 
 const { t } = useLocale()
+const router = useRouter()
+
+const counts = computed(() => classCounts())
+
+// ── Editing one class ───────────────────────────────────────────────────────
+const editing = ref<string | null>(null)
+const draft = ref({ group: '', lifeYears: '', method: 'straight-line' })
+const editError = ref('')
+const methodOptions = [
+  { value: 'straight-line', label: 'Straight line' },
+  { value: 'reducing-balance', label: 'Reducing balance' },
+]
+const editDef = computed(() => assetClassMaster.value.find((c) => c.class === editing.value) ?? null)
+const editGroups = computed(() => (editDef.value ? allowedGroupsFor(editDef.value.type, editDef.value.class) : []))
+
+function startEdit(cls: string) {
+  if (!canChangeClass.value) { infoToast(t(`Viewing as ${viewAs.value}. The class master needs the Owner or Accounting role.`)); return }
+  const d = assetClassMaster.value.find((c) => c.class === cls)!
+  editing.value = cls
+  draft.value = { group: d.defaultTaxGroup, lifeYears: String(d.commercialLifeMonths / 12), method: d.method }
+  editError.value = ''
+}
+function saveEdit() {
+  if (!editing.value) return
+  const years = Number(draft.value.lifeYears.replace(',', '.'))
+  const r = updateClassDef(editing.value, {
+    defaultTaxGroup: draft.value.group,
+    commercialLifeMonths: Math.round(years * 12),
+    method: draft.value.method as 'straight-line' | 'reducing-balance',
+  })
+  if (r) { editError.value = r; return }
+  successToast(t(`${editing.value} updated. New assets in the class inherit it`))
+  editing.value = null
+}
+
+// ── Switches ────────────────────────────────────────────────────────────────
+/** OD-09: the journal date policy is live; the others are shown as the design states them. */
+const jdateOn = computed(() => journalDatePolicy.value === 'period-end')
+function toggleJournalDate() {
+  journalDatePolicy.value = jdateOn.value ? 'posting-date' : 'period-end'
+  successToast(t(jdateOn.value ? 'Journal date now follows the last day of the period' : 'Journal date now follows the posting date'))
+}
+function toggleOther() { infoToast(t('Not in this prototype')) }
 </script>
 
 <template>
@@ -20,15 +74,15 @@ const { t } = useLocale()
       <p class="st__sub">
         {{ t('The class master sets an asset up correctly at creation. Every field here has a statutory consequence.') }}
       </p>
-      <MpButton variant="secondary" is-rounded @click="infoToast(t('Editing settings is not part of this prototype.'))">
-        {{ t('Edit') }}
+      <MpButton variant="secondary" is-rounded @click="router.push('/asset-migration')">
+        {{ t('Bring existing assets onto both books') }}
       </MpButton>
     </header>
 
     <div class="st__card">
       <div class="st__cardhead">
         <span class="st__cardtitle">{{ t('Asset classes') }}</span>
-        <span class="st__hint">{{ t('Selecting a class fills the rest') }}</span>
+        <span class="st__hint">{{ t('A new asset, or one moved into a class, inherits the group, life and method') }}</span>
       </div>
       <table class="st__table">
         <thead>
@@ -39,19 +93,53 @@ const { t } = useLocale()
             <th class="st__th">{{ t('Accounting life') }}</th>
             <th class="st__th">{{ t('Method') }}</th>
             <th class="st__th">{{ t('Accounts') }}</th>
+            <th class="st__th st__th--num">{{ t('Assets') }}</th>
+            <th class="st__th" />
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(c, i) in classMaster" :key="i" class="st__tr">
-            <td class="st__td st__td--strong">{{ c.class }}</td>
-            <td class="st__td">{{ c.defaultTaxGroup }}</td>
-            <!-- The two lives sit beside each other because their disagreement
-                 is the reason the module holds two books at all. -->
-            <td class="st__td st__td--num">{{ c.fiscalLife }}</td>
-            <td class="st__td st__td--num">{{ c.commercialLife }}</td>
-            <td class="st__td">{{ c.method }}</td>
-            <td class="st__td st__td--mono">{{ c.accounts }}</td>
-          </tr>
+          <template v-for="c in assetClassMaster" :key="c.class">
+            <tr class="st__tr">
+              <td class="st__td st__td--strong">{{ c.class }}</td>
+              <td class="st__td">{{ c.defaultTaxGroup }}</td>
+              <!-- The two lives sit beside each other because their disagreement
+                   is the reason the module holds two books at all. -->
+              <td class="st__td st__td--num">{{ formatLife(groupLifeMonths(c.defaultTaxGroup)) }}</td>
+              <td class="st__td st__td--num">{{ formatLife(c.commercialLifeMonths) }}</td>
+              <td class="st__td">{{ t(METHOD_LABEL[c.method]) }}</td>
+              <td class="st__td st__td--mono">{{ c.accounts }}</td>
+              <td class="st__td st__td--num">{{ counts[c.class] ?? 0 }}</td>
+              <td class="st__td st__td--act">
+                <MpButton size="sm" variant="ghost" is-rounded @click="startEdit(c.class)">{{ t('Edit') }}</MpButton>
+              </td>
+            </tr>
+            <tr v-if="editing === c.class" class="st__tr st__tr--edit">
+              <td class="st__td" colspan="8">
+                <div class="st__edit">
+                  <div class="st__editfield">
+                    <label class="st__editlabel" for="st-group">{{ t('Statutory group') }}</label>
+                    <ErpFilterSelect id="st-group" v-model="draft.group" :placeholder="t('Group')" :options="editGroups" width="100%" :is-clearable="false" />
+                  </div>
+                  <div class="st__editfield">
+                    <label class="st__editlabel" for="st-life">{{ t('Accounting life (years)') }}</label>
+                    <MpInput id="st-life" v-model="draft.lifeYears" />
+                  </div>
+                  <div class="st__editfield">
+                    <label class="st__editlabel" for="st-method">{{ t('Method') }}</label>
+                    <ErpFilterSelect id="st-method" v-model="draft.method" :placeholder="t('Method')" :options="methodOptions" width="100%" :is-clearable="false" />
+                  </div>
+                  <div class="st__editbtns">
+                    <MpButton variant="ghost" is-rounded @click="editing = null">{{ t('Cancel') }}</MpButton>
+                    <MpButton is-rounded @click="saveEdit">{{ t('Save') }}</MpButton>
+                  </div>
+                </div>
+                <p v-if="editError" class="st__error">{{ t(editError) }}</p>
+                <p v-else class="st__edithint">
+                  {{ t(`The tax life follows the group. The ${counts[c.class] ?? 0} assets already in ${c.class} keep what they have; change one by moving it between classes or classifying it.`) }}
+                </p>
+              </td>
+            </tr>
+          </template>
         </tbody>
       </table>
     </div>
@@ -61,9 +149,12 @@ const { t } = useLocale()
         <span class="st__cardtitle">{{ g.head }}</span>
       </div>
       <div class="st__toggles">
-        <div v-for="(item, ii) in g.items" :key="ii" class="st__toggle">
-          <span class="st__box" :class="{ 'st__box--on': item.isOn }">
-            <MpIcon v-if="item.isOn" name="check" size="xs" />
+        <div
+          v-for="(item, ii) in g.items" :key="ii" class="st__toggle st__toggle--click"
+          @click="gi === 0 && ii === 0 ? toggleJournalDate() : toggleOther()"
+        >
+          <span class="st__box" :class="{ 'st__box--on': gi === 0 && ii === 0 ? jdateOn : item.isOn }">
+            <MpIcon v-if="gi === 0 && ii === 0 ? jdateOn : item.isOn" name="check" size="xs" />
           </span>
           <div>
             <div class="st__togglek">{{ item.label }}</div>
@@ -88,13 +179,23 @@ const { t } = useLocale()
 
 .st__table { width: 100%; border-collapse: collapse; }
 .st__th { text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); letter-spacing: 0.04em; text-transform: uppercase; color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-2) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.st__th--num { text-align: right; }
 .st__td { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
 .st__td--strong { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .st__td--num { font-variant-numeric: tabular-nums; }
 .st__td--mono { font-variant-numeric: tabular-nums; color: var(--mp-text-secondary); }
+.st__td--act { text-align: right; width: 1%; white-space: nowrap; }
+.st__tr--edit .st__td { background: var(--mp-background-neutral-subtle); }
+.st__edit { display: grid; grid-template-columns: 1.4fr 1fr 1.2fr auto; gap: var(--mp-spacing-4); align-items: end; }
+.st__editfield { display: flex; flex-direction: column; gap: var(--mp-spacing-2); min-width: 0; }
+.st__editlabel { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.st__editbtns { display: flex; gap: var(--mp-spacing-2); }
+.st__edithint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: var(--mp-spacing-2) 0 0; }
+.st__error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-critical); margin: var(--mp-spacing-2) 0 0; }
 
 .st__toggles { display: flex; flex-direction: column; }
 .st__toggle { display: flex; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.st__toggle--click { cursor: pointer; }
 .st__toggle:last-child { border-bottom: 0; }
 .st__box { width: var(--mp-sizes-4); height: var(--mp-sizes-4); border-radius: var(--mp-radii-sm); border: 1px solid var(--mp-border-bold); background: var(--mp-background-neutral); flex: none; margin-top: var(--mp-spacing-1); display: inline-flex; align-items: center; justify-content: center; color: var(--mp-background-neutral); }
 .st__box--on { background: var(--mp-background-success-bold); border-color: var(--mp-background-success-bold); }

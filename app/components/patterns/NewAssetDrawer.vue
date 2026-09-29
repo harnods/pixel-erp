@@ -12,8 +12,8 @@ import { ref, watch, computed } from 'vue'
 import { MpButton, MpIcon, MpInput } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { createAsset, earliestEffectivePeriod, canChangeValue, viewAs } from '~/data/assetStore'
-import { assetBranches, STATUTORY_GROUPS } from '~/data/fixedAssets'
-import { classMaster } from '~/data/fixedAssetScreens'
+import { assetBranches } from '~/data/fixedAssets'
+import { assetClassMaster, classDef, allowedGroupsFor, groupRefusal } from '~/data/assetTaxbook'
 import { parseRupiah } from '~/data/assetValueChange'
 import { periodLabel } from '~/data/assetEngine'
 
@@ -25,8 +25,13 @@ const emit = defineEmits<{
 
 const { t } = useLocale()
 
-const classOptions = [...classMaster.map((c) => c.class), 'Intangible assets']
-const groupOptions = Object.keys(STATUTORY_GROUPS)
+// TS-01: the class master is session state, so an edit in Asset settings reaches here.
+const classOptions = computed(() => assetClassMaster.value.map((c) => c.class))
+// OD-02: only the groups the class accepts are offered.
+const groupOptions = computed(() => {
+  const d = classDef(f.value.cls)
+  return d ? allowedGroupsFor(d.type, d.class) : []
+})
 const methodOptions = [
   { value: 'straight-line', label: 'Straight line' },
   { value: 'reducing-balance', label: 'Reducing balance' },
@@ -47,10 +52,11 @@ watch(() => props.isOpen, (open) => {
 
 // The class sets the defaults it owns, the way the class master says.
 watch(() => f.value.cls, (cls) => {
-  const m = classMaster.find((c) => c.class === cls)
+  const m = classDef(cls)
   if (!m) return
   f.value.taxGroup = m.defaultTaxGroup
-  f.value.lifeYears = String(parseInt(m.commercialLife, 10))
+  f.value.lifeYears = String(m.commercialLifeMonths / 12)
+  f.value.method = m.method
 })
 
 const posted = computed(() => periodLabel(earliestEffectivePeriod.value))
@@ -79,6 +85,11 @@ function submit() {
   const residual = parseRupiah(v.residual) ?? 0
   if (cost && residual >= cost) e.residual = 'The residual value must be below the cost'
   if (v.cls && v.cls !== 'Intangible assets' && !v.taxGroup) e.taxGroup = 'Choose the statutory group'
+  const def = classDef(v.cls)
+  if (def && v.taxGroup) {
+    const g = groupRefusal(def.type, def.class, v.taxGroup)
+    if (g) e.taxGroup = g
+  }
   errors.value = e
   if (Object.keys(e).length) return
   const r = createAsset({
@@ -154,7 +165,7 @@ function submit() {
               <label class="nad-label" for="nad-group">{{ t('Statutory group') }}</label>
               <ErpFilterSelect id="nad-group" v-model="f.taxGroup" :placeholder="t('Choose a group')" :options="groupOptions" width="100%" />
               <p v-if="errors.taxGroup" class="nad-error">{{ t(errors.taxGroup) }}</p>
-              <p v-else class="nad-hint">{{ t('Set from the class. The group fixes the tax life and method.') }}</p>
+              <p v-else class="nad-hint">{{ t('Set from the class master. The group fixes the tax life and method.') }}</p>
             </div>
             <div class="nad-row">
               <div class="nad-field">
