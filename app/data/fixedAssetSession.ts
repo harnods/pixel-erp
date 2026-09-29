@@ -132,8 +132,72 @@ export function recordImpairmentTest(input: {
 
 // ── Depreciation run ────────────────────────────────────────────────────────
 
-/** Posted or still a draft. The close blocks on an unposted period. */
-export const depreciationPosted = ref(false)
+/**
+ * Which FY2026 periods have been posted to the general ledger.
+ *
+ * A month is either posted (a journal exists, dated) or a draft. January
+ * through August are already closed when the prototype opens; September is the
+ * period the user is standing in, and it is the only one they can act on —
+ * posting is strictly sequential, so the run is always the earliest unposted
+ * month.
+ */
+export interface PostedRun {
+  /** 0-based month index within 2026. */
+  month: number
+  /** dd/mm/yyyy the journal carries. */
+  postedOn: string
+  /** The journal number the run produced. */
+  journal: string
+}
+
+const initialRuns: PostedRun[] = [
+  { month: 0, postedOn: '05/02/2026', journal: 'JV-2026-0118' },
+  { month: 1, postedOn: '04/03/2026', journal: 'JV-2026-0241' },
+  { month: 2, postedOn: '06/04/2026', journal: 'JV-2026-0377' },
+  { month: 3, postedOn: '05/05/2026', journal: 'JV-2026-0492' },
+  { month: 4, postedOn: '04/06/2026', journal: 'JV-2026-0615' },
+  { month: 5, postedOn: '06/07/2026', journal: 'JV-2026-0738' },
+  { month: 6, postedOn: '05/08/2026', journal: 'JV-2026-0861' },
+  { month: 7, postedOn: '04/09/2026', journal: 'JV-2026-0984' },
+]
+
+const postedRuns = ref<PostedRun[]>([...initialRuns])
+
+/**
+ * The posting record for a month, or null while it is still a draft.
+ *
+ * Reads `postedRuns.value` directly so a template calling it registers the ref
+ * as a dependency — a helper that closed over a snapshot would render the
+ * right answer once and then never update when a period is posted.
+ */
+export function runFor(month: number): PostedRun | null {
+  return postedRuns.value.find((r) => r.month === month) ?? null
+}
+
+/** The current period — September 2026, index 8. */
+export const CURRENT_MONTH = 8
+
+/**
+ * The earliest unposted month. Posting is sequential: a preparer cannot post
+ * October while September is open, because the accumulated balances the later
+ * run reads from would not exist yet.
+ */
+export const nextUnposted = computed(() => {
+  for (let m = 0; m <= CURRENT_MONTH; m++) if (!runFor(m)) return m
+  return null
+})
+
+export function postRun(month: number, journal: string, postedOn: string) {
+  if (runFor(month)) return
+  postedRuns.value = [...postedRuns.value, { month, postedOn, journal }]
+}
+
+export function reverseRun(month: number) {
+  postedRuns.value = postedRuns.value.filter((r) => r.month !== month)
+}
+
+/** Kept for screens that only ask whether the current period is closed. */
+export const depreciationPosted = computed(() => !!runFor(CURRENT_MONTH))
 
 // ── Self-check ──────────────────────────────────────────────────────────────
 

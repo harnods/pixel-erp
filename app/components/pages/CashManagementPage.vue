@@ -326,7 +326,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
       <span v-if="(row as TreeRow).hasChildren" />
       <span v-else-if="(row as CashAccount).statementBalance === null" class="balance-cell__empty">{{ t('No statement imported') }}</span>
       <div v-else class="balance-cell">
-        <span>{{ formatMoney((row as CashAccount).statementBalance!, (row as CashAccount).statementCurrency ?? (row as CashAccount).currency) }}</span>
+        <span>{{ formatMoney((row as CashAccount).statementBalance!, (row as CashAccount).currency) }}</span>
         <span v-if="(row as CashAccount).statementDate" class="balance-cell__date">
           {{ formatDate((row as CashAccount).statementDate!) }}
         </span>
@@ -350,6 +350,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
         <button
           v-if="(row as CashAccount).unreconciledCount > 0"
           class="reconcile-btn btn-enterprise btn-enterprise--secondary"
+          :title="`${t('Reconcile')} (${(row as CashAccount).unreconciledCount})`"
           @click.stop="goToDetail((row as CashAccount).id)"
         >
           {{ t('Reconcile') }} ({{ (row as CashAccount).unreconciledCount }})

@@ -100,6 +100,16 @@ function clearFilters() {
   taxGroupFilter.value = ''
 }
 
+/**
+ * Whether the count above is a filtered subset rather than the whole register.
+ *
+ * The "Show all" link only means something while something is hidden — shown
+ * unconditionally it is a link that does nothing, which is worse than no link.
+ */
+const isFiltered = computed(() =>
+  !!(search.value || classFilter.value || branchFilter.value || statusFilter.value || taxGroupFilter.value),
+)
+
 // ── Rows ────────────────────────────────────────────────────────────────────
 const filtered = computed<FixedAsset[]>(() => {
   const q = search.value.trim().toLowerCase()
@@ -305,6 +315,12 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
         <MpButton class="filter-all-btn" is-rounded variant="secondary" @click="filtersOpen = true">
           {{ t('All filters') }}{{ activeDrawerFilters ? ` (${activeDrawerFilters})` : '' }}
         </MpButton>
+        <!-- Appears only while a filter is actually hiding rows — sitting
+             beside the controls that caused the filtering, not up in the
+             stats where a reader has to work out what it undoes. -->
+        <MpButton v-if="isFiltered" class="filter-clear-btn" is-rounded variant="ghost" @click="clearFilters">
+          {{ t('Clear filters') }}
+        </MpButton>
       </div>
 
       <div class="filter-right">
@@ -349,9 +365,8 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
         <div class="stats-section">
           <div class="stat-card stat-card--bordered">
             <div class="stat-title">{{ t('Assets') }}</div>
-            <div class="stat-period">{{ t('In the register') }}</div>
+            <div class="stat-period">{{ isFiltered ? t('Matching the filters') : t('In the register') }}</div>
             <div class="stat-amount">{{ totals.count }}</div>
-            <span class="stat-link" @click="clearFilters">{{ t('Show all') }}</span>
           </div>
 
           <div class="stat-card stat-card--bordered">

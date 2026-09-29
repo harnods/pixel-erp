@@ -94,6 +94,7 @@ export * from './bankStatementReviewFiles'
 export * from './bills'
 export * from './fixedAssets'
 export * from './fixedAssetScreens'
+export * from './depreciationSchedule'
 export * from './reviewFiles'
 
 // ── HR (Employees) ──────────────────────────────────────────────────────────

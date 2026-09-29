@@ -24,7 +24,7 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { fixedAssets } from '~/data/fixedAssets'
 import {
-  findAsset, detailFigures, detailPanes, derivation, schedulePreview, assetHistory,
+  findAsset, detailFigures, detailPanes, derivation, monthlySchedule, scheduleTotal, assetHistory,
 } from '~/data/fixedAssetDetail'
 import { assignedTaxGroup, assignTaxGroupTo } from '~/data/fixedAssetSession'
 import { assetTaxGroups } from '~/data/fixedAssets'
@@ -49,7 +49,8 @@ const effectiveTaxGroup = computed(() => {
 const figures = computed(() => (asset.value ? detailFigures(asset.value) : []))
 const panes = computed(() => (asset.value ? detailPanes(asset.value) : []))
 const history = computed(() => (asset.value ? assetHistory(asset.value) : []))
-const schedule = computed(() => (asset.value ? schedulePreview(asset.value) : []))
+const schedule = computed(() => (asset.value ? monthlySchedule(asset.value) : []))
+const total = computed(() => scheduleTotal(schedule.value))
 
 // ── Tabs ────────────────────────────────────────────────────────────────────
 type Tab = 'depreciation' | 'identity' | 'history'
@@ -65,11 +66,13 @@ const tabs: { key: Tab; label: string }[] = [
 // always answers the number the reader actually clicked.
 const derivationOpen = ref(false)
 const derivationBasis = ref<'accounting' | 'tax'>('accounting')
+const derivationPeriod = ref('September 2026')
 const derivationSteps = computed(() =>
-  asset.value ? derivation(asset.value, derivationBasis.value) : [],
+  asset.value ? derivation(asset.value, derivationBasis.value, derivationPeriod.value) : [],
 )
-function explain(basis: 'accounting' | 'tax') {
+function explain(basis: 'accounting' | 'tax', period: string) {
   derivationBasis.value = basis
+  derivationPeriod.value = period
   derivationOpen.value = true
 }
 
@@ -174,12 +177,18 @@ function setTaxGroup(group: string) {
       </div>
 
       <!-- ── Headline figures ── -->
-      <div class="ad__figures">
-        <div v-for="f in figures" :key="f.label" class="ad__figure">
-          <div class="ad__figlabel">{{ t(f.label) }}</div>
-          <div v-if="f.value === null" class="ad__figvalue ad__figvalue--absent">{{ t(f.absent ?? 'Not computed') }}</div>
-          <div v-else class="ad__figvalue">{{ formatIDR(f.value) }}</div>
-          <div class="ad__fignote">{{ f.note }}</div>
+      <!-- The house index-page stats band: divider-separated columns sitting
+           directly on the stage, caption above the figure. -->
+      <div class="stats-section">
+        <div
+          v-for="(f, i) in figures" :key="f.label"
+          class="stat-card" :class="{ 'stat-card--bordered': i < figures.length - 1 }"
+        >
+          <div class="stat-title">{{ t(f.label) }}</div>
+          <div class="stat-period">{{ t(f.caption) }}</div>
+          <div v-if="f.value === null" class="stat-amount stat-amount--absent">{{ t(f.absent ?? 'Not computed') }}</div>
+          <div v-else class="stat-amount">{{ formatIDR(f.value) }}</div>
+          <div v-if="f.sub" class="stat-sub">{{ t(f.sub) }}</div>
         </div>
       </div>
 
@@ -195,6 +204,12 @@ function setTaxGroup(group: string) {
 
       <!-- ── Depreciation ── -->
       <div v-if="tab === 'depreciation'" class="ad__card">
+        <div class="ad__cardhead">
+          <div>
+            <div class="ad__cardtitle">{{ t('FY2026 schedule') }}</div>
+            <div class="ad__cardsub">{{ t('January to September 2026 · periods closed so far') }}</div>
+          </div>
+        </div>
         <table class="ad__table">
           <thead>
             <tr>
@@ -206,21 +221,40 @@ function setTaxGroup(group: string) {
           </thead>
           <tbody>
             <tr v-for="r in schedule" :key="r.period" class="ad__tr">
-              <td class="ad__td">{{ r.period }}</td>
+              <td class="ad__td">
+                <span class="ad__period">{{ r.period }}</span>
+                <!-- The month an event landed in is the month the reader needs
+                     it named, not a footnote under the table. -->
+                <span v-if="r.event" class="ad__event-inline">{{ t(r.event) }}</span>
+              </td>
               <!-- Every charge is clickable. This is the differentiator: the
                    product shows its work rather than asserting a number. -->
               <td class="ad__td ad__td--num">
-                <span class="ad__figurelink" @click="explain('accounting')">
-                  {{ r.accounting === null ? t('Not amortised') : formatIDR(r.accounting) }}
+                <span v-if="r.accounting === null" class="ad__absent">{{ t(r.accountingAbsent ?? 'Not computed') }}</span>
+                <span v-else class="ad__figurelink" @click="explain('accounting', r.period)">
+                  {{ formatIDR(r.accounting) }}
                 </span>
               </td>
               <td class="ad__td ad__td--num">
-                <span class="ad__figurelink" @click="explain('tax')">
-                  {{ r.tax === null ? t('Not computed') : formatIDR(r.tax) }}
+                <span v-if="r.tax === null" class="ad__absent">{{ t(r.taxAbsent ?? 'Not computed') }}</span>
+                <span v-else class="ad__figurelink" @click="explain('tax', r.period)">
+                  {{ formatIDR(r.tax) }}
                 </span>
               </td>
               <td class="ad__td ad__td--num">
                 {{ r.accounting !== null && r.tax !== null ? formatIDR(r.accounting - r.tax) : '—' }}
+              </td>
+            </tr>
+            <tr class="ad__tr ad__tr--total">
+              <td class="ad__td">{{ t('FY2026 to 30/09') }}</td>
+              <td class="ad__td ad__td--num">
+                {{ total.accounting === null ? '—' : formatIDR(total.accounting) }}
+              </td>
+              <td class="ad__td ad__td--num">
+                {{ total.tax === null ? '—' : formatIDR(total.tax) }}
+              </td>
+              <td class="ad__td ad__td--num">
+                {{ total.accounting !== null && total.tax !== null ? formatIDR(total.accounting - total.tax) : '—' }}
               </td>
             </tr>
           </tbody>
@@ -300,6 +334,10 @@ function setTaxGroup(group: string) {
 
 .ad__bar {
   display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4);
+  /* flex: none is load-bearing — .ad is a flex column, so without it the bar
+     shrinks to min-height and the identity line spills past its own border
+     into the figures below. */
+  flex: none;
   min-height: 72px; padding: var(--mp-spacing-4) var(--mp-spacing-6);
   background: var(--mp-background-neutral-subtle);
   border-bottom: 1px solid var(--mp-border-default);
@@ -352,20 +390,37 @@ function setTaxGroup(group: string) {
 .ad__blockedtitle { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); }
 .ad__blockedtext { font-size: var(--mp-font-sizes-sm); margin-top: var(--mp-spacing-1); }
 
-.ad__figures {
-  display: flex; gap: var(--mp-spacing-6); flex-wrap: wrap;
-  padding-bottom: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4);
+/* The house index-page stats band (BillsIndexPage). Divider-separated columns
+   on the stage, caption above the figure — not a bordered card. */
+.stats-section {
+  display: flex; gap: var(--mp-spacing-6); align-items: flex-start;
+  padding-bottom: var(--mp-spacing-5); margin-bottom: var(--mp-spacing-5);
   border-bottom: 1px solid var(--mp-border-default);
 }
-.ad__figure { min-width: 160px; }
-.ad__figlabel { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.ad__figvalue {
-  font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default); font-variant-numeric: tabular-nums;
+.stat-card {
+  flex: 1; min-width: 0; display: flex; flex-direction: column;
+  gap: var(--mp-spacing-1); padding-right: var(--mp-spacing-6); align-self: stretch;
+}
+.stat-card--bordered { border-right: 1px solid var(--mp-border-default); }
+.stat-title {
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
+}
+.stat-period {
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px);
+}
+.stat-amount {
+  font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default); line-height: var(--mp-line-heights-2xl, 32px);
+  font-variant-numeric: tabular-nums;
 }
 /* Never a zero where the figure does not exist. */
-.ad__figvalue--absent { color: var(--mp-text-critical); }
-.ad__fignote { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.stat-amount--absent { color: var(--mp-text-critical); font-size: var(--mp-font-sizes-lg); }
+.stat-sub {
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
+  line-height: var(--mp-line-heights-sm, 16px); font-variant-numeric: tabular-nums;
+}
 
 .ad__tabs { display: flex; gap: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); margin-bottom: var(--mp-spacing-4); }
 .ad__tab {
@@ -376,6 +431,9 @@ function setTaxGroup(group: string) {
 .ad__tab--on { color: var(--mp-text-selected); font-weight: var(--mp-font-weights-semi-bold); border-bottom-color: var(--mp-text-selected); }
 
 .ad__card { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); overflow: hidden; }
+.ad__cardhead { padding: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.ad__cardtitle { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.ad__cardsub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); }
 .ad__table { width: 100%; border-collapse: collapse; }
 .ad__th {
   text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
@@ -385,7 +443,17 @@ function setTaxGroup(group: string) {
 }
 .ad__th--num { text-align: right; }
 .ad__td { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
-.ad__td--num { text-align: right; font-variant-numeric: tabular-nums; }
+.ad__td--num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ad__period { display: block; }
+/* The event names itself in the month it happened, not in a footnote. */
+.ad__event-inline { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); }
+/* An absent charge says why. Never a zero. */
+.ad__absent { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.ad__tr--total .ad__td {
+  font-weight: var(--mp-font-weights-semi-bold);
+  background: var(--mp-background-neutral-subtle);
+  border-bottom: 0;
+}
 .ad__figurelink { color: var(--mp-text-link); cursor: pointer; }
 .ad__figurelink:hover { text-decoration: underline; }
 .ad__hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); padding: var(--mp-spacing-3) var(--mp-spacing-4); margin: 0; }

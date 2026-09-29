@@ -2,10 +2,9 @@
  * Cash management — the cash/bank/card accounts listed on /cash-management.
  *
  * Balances are kept as plain numbers so the table can sort them; the page
- * formats them for display. Two currencies are carried per row because an
- * account's imported statement isn't always denominated in the account's own
- * currency (see DBS Singapore below) — `statementCurrency` falls back to
- * `currency` when it isn't set.
+ * formats them for display. Statement and book balance are both denominated in
+ * the account's own `currency`, so a row never mixes two currencies — a
+ * statement imported in a foreign currency is converted at import time.
  */
 
 export type CashAccountCurrency = 'IDR' | 'SGD' | 'USD' | 'AUD'
@@ -41,10 +40,10 @@ export interface CashAccount {
   /** Total syncs per cycle (connected accounts only). */
   syncTotal?: number
   currency: CashAccountCurrency
-  /** null when no bank statement has been imported yet. */
+  /** null when no bank statement has been imported yet. Always denominated in
+   *  the account's own `currency` — a statement imported in another currency is
+   *  converted on import, so the list never shows two currencies on one row. */
   statementBalance: number | null
-  /** Currency of the imported statement. Defaults to `currency`. */
-  statementCurrency?: CashAccountCurrency
   /** Date of the imported statement (ISO). Absent when there is no statement. */
   statementDate?: string
   bookBalance: number
@@ -87,7 +86,7 @@ export const cashAccounts: CashAccount[] = [
   // warns that further syncs are charged.
   { id: 'CA010', code: '1-10009', name: 'Bank CIMB Niaga', accountNumber: '8730054219', isConnected: true, syncRemaining: 0,   syncTotal: 500, currency: 'IDR', statementBalance: 92_400_000,   statementDate: '2026-02-05', bookBalance: 88_150_000,   unreconciledCount: 4,  lastUpdated: '2026-08-13T07:40:00',
     connection: { bankName: 'PT. Bank CIMB Niaga (CIMB)', bankAccountType: 'Corporate', accountName: 'PT Central Perk Indonesia', accountNumber: '8730054219', connectToAccount: '1-10009 Bank CIMB Niaga', companyId: '680128' } },
-  { id: 'CA004', code: '1-10004', name: 'DBS Singapore',   accountNumber: '0661089145',                  currency: 'SGD', statementBalance: 155_000_000,  statementCurrency: 'IDR', statementDate: '2025-12-20', bookBalance: 6_000,  unreconciledCount: 1, lastUpdated: '2025-12-20T11:20:00' },
+  { id: 'CA004', code: '1-10004', name: 'DBS Singapore',   accountNumber: '0661089145',                  currency: 'SGD', statementBalance: 6_500,  statementDate: '2025-12-20', bookBalance: 6_000,  unreconciledCount: 1, lastUpdated: '2025-12-20T11:20:00' },
 
   // Mandiri Office — a parent account with nested sub-accounts (see Figma 5527-171257).
   { id: 'CA-MO',  code: '1-100061',    name: 'Mandiri Office',                                            currency: 'IDR', statementBalance: null,                                     bookBalance: 189_000_000, unreconciledCount: 0,  lastUpdated: '2026-08-11T16:30:00' },

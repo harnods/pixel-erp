@@ -41,8 +41,11 @@ export function monthlyCharge(cost: number, lifeMonths: number | null): number |
 export interface DetailFigure {
   label: string
   value: number | null
-  /** How the figure was arrived at. Shown under it, always. */
-  note: string
+  /** What this figure is and as of when. Read ABOVE the value. */
+  caption: string
+  /** Supporting detail read under the value — the accumulated behind a book
+   *  value, the deferred tax behind a difference. */
+  sub?: string
   /** Why it is absent, when it is. Never rendered as a zero. */
   absent?: string
 }
@@ -50,54 +53,51 @@ export interface DetailFigure {
 /**
  * The headline figures on an asset record.
  *
- * Accumulated depreciation is derived from months in service rather than
- * stored, so it always agrees with the book value beside it.
+ * Four columns, not six: cost, then each book as its own column carrying the
+ * book value as the headline and the accumulated behind it, then the number
+ * the module exists to produce. Six equal money figures do not fit the stage
+ * and wrap into a second row that reads as a separate band.
+ *
+ * Accumulated depreciation is derived from the book value rather than stored,
+ * so it always agrees with the figure above it.
  */
 export function detailFigures(a: FixedAsset): DetailFigure[] {
-  const months = monthsInService(a.acquired)
-  const accMonthly = monthlyCharge(a.cost, a.commercialLifeMonths)
-  const taxMonthly = monthlyCharge(a.cost, a.fiscalLifeMonths)
+  const asOf = 'at 30/09/2026'
   const accAccum = a.bookValueCommercial === null ? null : a.cost - a.bookValueCommercial
   const taxAccum = a.bookValueFiscal === null ? null : a.cost - a.bookValueFiscal
 
   const figures: DetailFigure[] = [
-    { label: 'Acquisition cost', value: a.cost, note: 'Both books' },
+    {
+      label: 'Acquisition cost',
+      value: a.cost,
+      caption: `Both books · acquired ${a.acquired}`,
+    },
   ]
-
-  if (a.indefiniteLife) {
-    figures.push({
-      label: 'Accumulated · accounting', value: null,
-      note: 'Indefinite life — no accounting schedule exists',
-      absent: 'Not amortised',
-    })
-  } else {
-    figures.push({
-      label: 'Accumulated · accounting', value: accAccum,
-      note: accMonthly ? `${months} months × ${fmt(accMonthly)}` : 'No schedule',
-    })
-  }
 
   figures.push({
     label: 'Book value · accounting',
     value: a.bookValueCommercial,
-    note: a.indefiniteLife
-      ? 'Carried at cost until impaired'
-      : `${lifeYears(a.commercialLifeMonths)} · straight line`,
+    caption: a.indefiniteLife
+      ? `Carried at cost ${asOf}`
+      : `${lifeYears(a.commercialLifeMonths)} straight line · ${asOf}`,
+    sub: a.indefiniteLife
+      ? 'Indefinite life — not amortised, tested for impairment'
+      : accAccum === null
+        ? undefined
+        : `Accumulated ${fmt(accAccum)}`,
     absent: a.status === 'Disposed' ? 'Disposed' : undefined,
   })
 
   figures.push({
-    label: 'Accumulated · tax',
-    value: taxAccum,
-    note: taxMonthly ? `${months} months × ${fmt(taxMonthly)}` : 'No statutory group',
-    absent: a.taxGroup ? undefined : 'Not computed',
-  })
-
-  figures.push({
-    label: 'Tax book value',
+    label: 'Book value · tax',
     value: a.bookValueFiscal,
-    note: a.taxGroup ? `${a.taxGroup} · ${lifeYears(a.fiscalLifeMonths)}` : 'No statutory group',
-    absent: a.taxGroup ? undefined : 'Not computed',
+    caption: a.taxGroup
+      ? `${a.taxGroup}, ${lifeYears(a.fiscalLifeMonths)} · ${asOf}`
+      : 'No statutory group set',
+    sub: taxAccum === null ? undefined : `Accumulated ${fmt(taxAccum)}`,
+    // Disposed and unclassified are different absences and must not share a
+    // label: one means no longer held, the other means nothing to compute from.
+    absent: a.status === 'Disposed' ? 'Disposed' : a.taxGroup ? undefined : 'Not computed',
   })
 
   // The number the whole module exists to produce.
@@ -107,10 +107,11 @@ export function detailFigures(a: FixedAsset): DetailFigure[] {
   figures.push({
     label: 'Cumulative difference',
     value: diff === null ? null : Math.abs(diff),
-    note: diff === null
-      ? 'Needs both books'
+    caption: `Accounting less tax · ${asOf}`,
+    sub: diff === null
+      ? undefined
       : `Deferred tax ${fmt(Math.round(Math.abs(diff) * 0.22))} at 22%`,
-    absent: diff === null ? 'Not computed' : undefined,
+    absent: diff === null ? 'Needs both books' : undefined,
   })
 
   return figures
@@ -214,9 +215,11 @@ export interface DerivationStep {
  */
 export function derivation(a: FixedAsset, basis: 'accounting' | 'tax', period = 'September 2026'): DerivationStep[] {
   const life = basis === 'accounting' ? a.commercialLifeMonths : a.fiscalLifeMonths
-  const charge = basis === 'accounting'
-    ? assetChargeSeptember[a.id]?.commercial ?? null
-    : assetChargeSeptember[a.id]?.fiscal ?? null
+  // Read the charge from the same schedule the table rendered, so the panel
+  // always explains the exact number that was clicked.
+  const row = monthlySchedule(a).find((r) => r.period === period)
+  const charge = basis === 'accounting' ? row?.accounting ?? null : row?.tax ?? null
+  const absent = basis === 'accounting' ? row?.accountingAbsent : row?.taxAbsent
 
   if (basis === 'accounting' && a.indefiniteLife) {
     return [
@@ -253,20 +256,142 @@ export function derivation(a: FixedAsset, basis: 'accounting' | 'tax', period = 
 
   steps.push({
     label: `Charge for ${period}`,
-    value: charge === null ? 'Not computed' : fmt(charge),
+    value: charge === null ? (absent ?? 'Not computed') : fmt(charge),
     isResult: true,
   })
   return steps
 }
 
-/** The asset's own schedule rows, for the Depreciation tab. */
-export function schedulePreview(a: FixedAsset) {
-  const sep = assetChargeSeptember[a.id]
-  const ytd = assetChargeYtd[a.id]
-  return [
-    { period: 'FY2026 to 30/09', accounting: ytd?.commercial ?? null, tax: ytd?.fiscal ?? null },
-    { period: 'September 2026', accounting: sep?.commercial ?? null, tax: sep?.fiscal ?? null },
-  ]
+/**
+ * The asset's own FY2026 schedule, month by month.
+ *
+ * Two rows — a year-to-date figure and one month — told the reader nothing
+ * about shape: whether the charge is level, when it started, when it stopped.
+ * Nine rows plus a total do, and they make the events legible where they
+ * happen: the month an asset entered service, the month an impairment reset
+ * the accounting basis, the month a disposal ended both schedules.
+ *
+ * Charges are derived from cost ÷ life and the months actually in service, so
+ * the total ties to `assetChargeYtd` by construction rather than by
+ * transcription.
+ */
+export interface ScheduleMonth {
+  /** 'January 2026' … 'September 2026'. */
+  period: string
+  /** Short form for a narrow column: 'Jan 2026'. */
+  short: string
+  accounting: number | null
+  tax: number | null
+  /** Why a side is absent this month, when it is. Never shown as a zero. */
+  accountingAbsent?: string
+  taxAbsent?: string
+  /** What happened in this month, when something did. */
+  event?: string
+}
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
+
+/** Month index (0-based) an asset's life ends on a given basis, or null. */
+function lifeEndMonthIndex(acquired: string, lifeMonths: number | null): number | null {
+  if (!lifeMonths) return null
+  const d = parseDate(acquired)
+  return d.getFullYear() * 12 + d.getMonth() + lifeMonths
+}
+
+/** FY2026 January through September, the periods closed so far. */
+export function monthlySchedule(a: FixedAsset, months = 9): ScheduleMonth[] {
+  const acq = parseDate(a.acquired)
+  const acqIdx = acq.getFullYear() * 12 + acq.getMonth()
+  const endAcc = lifeEndMonthIndex(a.acquired, a.commercialLifeMonths)
+  const endTax = lifeEndMonthIndex(a.acquired, a.fiscalLifeMonths)
+
+  // Rates from cost ÷ life, kept exact here and rounded cumulatively below.
+  const rateAcc = a.commercialLifeMonths ? a.cost / a.commercialLifeMonths : null
+  const rateTax = a.fiscalLifeMonths ? a.cost / a.fiscalLifeMonths : null
+
+  /**
+   * The charge for the n-th month of an asset's life, in whole rupiah.
+   *
+   * Rounding each month independently leaves a residual the column does not
+   * absorb, and dumping that residual into one month makes that month look
+   * wrong. Rounding the *cumulative* figure and taking the difference is what
+   * a fixed-asset ledger actually does: months differ by at most one rupiah,
+   * no month is an outlier, and the run always ties to the accumulated total.
+   */
+  const monthly = (rate: number, n: number) =>
+    Math.round(rate * n) - Math.round(rate * (n - 1))
+
+  // The one asset whose accounting basis was reset mid-year. From July the
+  // charge is the recomputed one, which is why the column is not level.
+  const impairedFrom = a.status === 'Impaired' ? 2026 * 12 + 6 : null
+  const rateAccAfterImpairment = assetChargeSeptember[a.id]?.commercial ?? null
+
+  // Disposal ends both schedules after the month it happened in.
+  const disposedAfter = a.status === 'Disposed' ? 2026 * 12 + 7 : null
+
+  const rows = MONTH_NAMES.slice(0, months).map((name, m) => {
+    const idx = 2026 * 12 + m
+    const row: ScheduleMonth = {
+      period: `${name} 2026`,
+      short: `${name.slice(0, 3)} 2026`,
+      accounting: null,
+      tax: null,
+    }
+
+    if (idx < acqIdx) {
+      row.accountingAbsent = 'Not in service'
+      row.taxAbsent = 'Not in service'
+      return row
+    }
+    if (idx === acqIdx) row.event = 'Entered service'
+    if (impairedFrom !== null && idx === impairedFrom) {
+      row.event = 'Impaired 30/06/2026 — accounting basis reset'
+    }
+    if (disposedAfter !== null && idx === disposedAfter) {
+      row.event = 'Disposed 15/08/2026'
+    }
+
+    // ── Accounting ──
+    const n = idx - acqIdx + 1 // which month of this asset's life
+    if (a.indefiniteLife) {
+      row.accountingAbsent = 'Not amortised'
+    } else if (disposedAfter !== null && idx > disposedAfter) {
+      row.accountingAbsent = 'Disposed'
+    } else if (endAcc !== null && idx >= endAcc) {
+      row.accountingAbsent = 'Life ended'
+    } else if (rateAcc !== null) {
+      row.accounting = impairedFrom !== null && idx >= impairedFrom && rateAccAfterImpairment !== null
+        ? rateAccAfterImpairment
+        : monthly(rateAcc, n)
+    }
+
+    // ── Tax ──
+    if (!a.taxGroup) {
+      row.taxAbsent = 'No statutory group'
+    } else if (disposedAfter !== null && idx > disposedAfter) {
+      row.taxAbsent = 'Disposed'
+    } else if (endTax !== null && idx >= endTax) {
+      row.taxAbsent = 'Life ended'
+    } else if (rateTax !== null) {
+      row.tax = monthly(rateTax, n)
+    }
+
+    return row
+  })
+
+  return rows
+}
+
+/** The FY2026-to-30/09 total under the monthly rows. */
+export function scheduleTotal(rows: ScheduleMonth[]) {
+  const sum = (pick: (r: ScheduleMonth) => number | null) => {
+    const vals = rows.map(pick).filter((v): v is number => v !== null)
+    return vals.length ? vals.reduce((s, v) => s + v, 0) : null
+  }
+  return { accounting: sum((r) => r.accounting), tax: sum((r) => r.tax) }
 }
 
 /** What has happened to this asset. Newest first. */

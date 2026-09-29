@@ -197,6 +197,23 @@ function onSortOpt(key: string, dir: 'asc' | 'desc') {
   else emit('sortChange', key, dir)
 }
 
+/**
+ * Clicking the header sorts it — the behaviour every table reader expects and
+ * reaches for before finding the hover icon. The icon menu stays as the way to
+ * pick a direction by name (and to hide the column); this is the shortcut.
+ *
+ * Cycle: unsorted → ascending → descending → unsorted, matching what the menu
+ * does when you pick the direction that is already active.
+ */
+function onHeaderClick(col: TableColumn) {
+  if (!col.sortable && !col.sortType) return
+  // A plain sortable column owns its own toggle in the parent page.
+  if (!col.sortType) { emit('sort', col.key); return }
+  if (props.sortKey !== col.key) emit('sortChange', col.key, 'asc')
+  else if (props.sortDir === 'asc') emit('sortChange', col.key, 'desc')
+  else emit('sortChange', '', 'asc')
+}
+
 // ─── Pagination skeleton ────────────────────────────────────────────────────
 // Briefly show the skeleton when the user changes page or rows-per-page, so every
 // module gets a "loading next page" state without extra page code.
@@ -581,7 +598,7 @@ const bulkCountLabel = computed(() => {
               }"
               :data-col="col.key"
               :style="colStyle(col)"
-              @click="(col.sortable && !col.sortType) ? emit('sort', col.key) : undefined"
+              @click="onHeaderClick(col)"
             >
               <span class="th-inner">
                 <MpCheckbox
@@ -608,9 +625,14 @@ const bulkCountLabel = computed(() => {
                       :class="{ 'erp-sort-btn--active': sortKey === col.key }"
                       aria-label="Sort column" @click.stop
                     >
+                      <!-- The glyph reports the current direction, so the active
+                           sort is readable without opening the menu. -->
                       <!-- Literal px, not "sm" — MpIcon's "sm" resolves to ~20px (token
                            spacing.5), which doesn't fit the 28px-fixed header row. -->
-                      <MpIcon name="sort-default" size="16px" />
+                      <MpIcon
+                        :name="sortKey === col.key ? (sortDir === 'asc' ? 'arrows-up' : 'arrows-down') : 'sort-default'"
+                        size="16px"
+                      />
                     </button>
                   </MpPopoverTrigger>
                   <MpPopoverContent :class="css({ minWidth: '184px', width: 'max-content', whiteSpace: 'nowrap' })">
@@ -1027,11 +1049,14 @@ const bulkCountLabel = computed(() => {
   animation: none !important;
 }
 
-/* Sortable header */
-.erp-th--sortable {
+/* Sortable header — both plain-sortable columns and sort-menu columns are
+   clickable, so both carry the affordance. */
+.erp-th--sortable,
+.erp-th--menu {
   cursor: pointer;
 }
-.erp-th--sortable:hover {
+.erp-th--sortable:hover,
+.erp-th--menu:hover {
   background: var(--mp-background-neutral-subtle, #f8f9f9);
 }
 
@@ -1096,7 +1121,20 @@ const bulkCountLabel = computed(() => {
 /* ── Column sort menu (ERP behaviour) ── */
 /* header content wraps label + sort icon; right-aligned columns push it to the end */
 .th-inner { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); max-width: 100%; }
-.erp-th--right .th-inner { flex-direction: row-reverse; }
+/* A right-aligned column's header label must share the right edge of the
+   numbers below it, AND the sort icon must sit on the same side of the label
+   as it does in a left-aligned column — the two requirements conflict while
+   the icon takes part in layout, because its width pushes the label inward.
+   Taking it out of flow satisfies both: the label keeps the numeric right
+   edge, and the icon hangs just outside it in the column gutter. The amount
+   columns run at their 160px minimum, so reserving width for the icon instead
+   would overflow the figures. */
+.erp-th--right .th-inner { position: relative; }
+.erp-th--right .erp-sort-btn {
+  position: absolute;
+  left: 100%;
+  margin-left: var(--mp-spacing-1);
+}
 /* icon button revealed on header hover; stays visible while its column is the sort */
 .erp-sort-btn {
   display: inline-flex; align-items: center; justify-content: center;
