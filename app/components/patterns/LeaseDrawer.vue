@@ -102,7 +102,7 @@ watch(() => [props.isOpen, props.mode, props.leaseId], () => {
   const l = lease.value
   if (!l) return
   const b = blankModification(l)
-  m.value = { period: b.period, extraMonths: String(b.extraMonths), payment: formatIDR(b.payment).replace(/[^\d.]/g, ''), rate: String(b.annualRatePct), reason: '' }
+  m.value = { period: b.period, extraMonths: String(b.extraMonths), payment: new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(b.payment), rate: String(b.annualRatePct), reason: '' }
 }, { immediate: true })
 
 function submit() {
@@ -119,6 +119,7 @@ function submit() {
   if (!props.leaseId) return
   const pv = modPreview.value
   if (!pv || !pv.ok) { errors.value = { ...(pv?.errors ?? {}), ...(pv?.refusal ? { form: pv.refusal } : {}) }; return }
+  if (!m.value.reason.trim()) { errors.value = { reason: 'Say what changed in the contract' }; return }
   const r = modifyLease(props.leaseId, toMod())
   if (!r.ok) { errors.value = { form: r.reason }; return }
   emit('done', `Lease remeasured · ${pv.rou?.id ?? 'right-of-use asset'} ${pv.adjustment >= 0 ? 'increased' : 'reduced'} by ${formatIDR(Math.abs(pv.adjustment))} over ${pv.remainingMonths} months`, props.leaseId)

@@ -30,7 +30,7 @@ import {
 } from './assetEngine'
 import {
   createAsset, recordEvent, previewEvent, ledgers, onAssetStoreReset, earliestEffectivePeriod,
-  actingUser, canChangeValue, viewAs, postedRunFor, CURRENT_PERIOD, FY_START,
+  actingUser, canChangeValue, viewAs, postedRunFor, findAsset, CURRENT_PERIOD, FY_START,
 } from './assetStore'
 
 export type LeaseExemption = 'short-term' | 'low-value'
@@ -382,7 +382,6 @@ export function previewModification(leaseId: string, v: ModificationInput): Modi
   if (!(v.annualRatePct >= 0) || v.annualRatePct > 50) errors.annualRatePct = 'Enter the discount rate as a percentage, 0 to 50'
   if (isBefore(v.period, s.startPeriod) || isAfter(v.period, s.endPeriod)) errors.period = `Choose a period inside the term, ${periodLabel(s.startPeriod)} to ${periodLabel(s.endPeriod)}`
   else if (monthsBetween(v.period, s.endPeriod) + 1 + v.extraMonths <= 0) errors.extraMonths = 'The revised term must leave at least one month from the effective period'
-  if (!v.reason.trim()) errors.reason = 'Say what changed in the contract'
   if (Object.keys(errors).length) return { ...blank, errors }
   const { r, event } = modificationEvent(l, v)
   const out: ModificationPreview = {
@@ -409,6 +408,7 @@ export function previewModification(leaseId: string, v: ModificationInput): Modi
 
 /** Record a modification. The asset's event is the commit; the lease follows it. */
 export function modifyLease(leaseId: string, v: ModificationInput): { ok: true } | { ok: false; reason: string } {
+  if (!v.reason.trim()) return { ok: false, reason: 'Say what changed in the contract' }
   const pv = previewModification(leaseId, v)
   if (!pv.ok) return { ok: false, reason: pv.refusal ?? Object.values(pv.errors)[0] ?? 'The modification cannot be recorded' }
   const l = findLease(leaseId)!
@@ -470,11 +470,13 @@ export function leaseSummary(l: LeaseContract, p: Period = CURRENT_PERIOD): Leas
   const s = leaseSchedule(l)
   const row = s.rows.find((x) => x.period === p)
   const led = l.rouAssetId ? ledgers.value[l.rouAssetId] : null
+  // The register's own figure for the asset, so both screens read the same.
+  const reg = l.rouAssetId ? findAsset(l.rouAssetId) : undefined
   return {
     lease: l,
     term: `${l.startDate} – ${periodEndDate(s.endPeriod)}`,
     liability: l.exemption ? 0 : liabilityAt(l, p),
-    rouBookValue: led ? bookValueAt(led, 'accounting', p) : null,
+    rouBookValue: reg ? reg.bookValueCommercial : led ? bookValueAt(led, 'accounting', p) : null,
     month: {
       rouCharge: led ? chargeAt(led, 'accounting', p).charge : null,
       interest: l.exemption ? 0 : row?.interest ?? 0,

@@ -36,7 +36,7 @@ import {
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
   generateRun, postPeriod, draftRunFor, lastPostedPeriod, nextOpenPeriod, periodOfMonth, FY_PERIODS, CURRENT_PERIOD,
-  canChangeValue, viewAs,
+  canChangeValue, viewAs, journals,
 } from '~/data/assetStore'
 import { isAfter, periodLabel, periodEndDate } from '~/data/assetEngine'
 import { journalDateFor, journalDatePolicyLabel, autoPostRuns } from '~/data/assetPolicy'
@@ -103,6 +103,11 @@ function generate() {
   successToast(genDone.value)
 }
 const draftFor = (month: number) => draftRunFor(periodOfMonth(month))
+/** The date the posted journal actually carries: set by the policy at posting time. */
+function journalDateOf(month: number): string | null {
+  const no = runFor(month)?.journal
+  return no ? journals.value.find((j) => j.number === no)?.date ?? null : null
+}
 
 // ── Forward projection (OD-12) ──────────────────────────────────────────────
 const horizon = ref<string>('12')
@@ -276,6 +281,7 @@ function stateLabel(p: SchedulePeriod) {
                   <span v-if="p.state === 'posted'" class="ds__journal" @click="viewJournal(p)">
                     {{ runFor(p.month)?.journal }}
                   </span>
+                  <span v-if="p.state === 'posted' && journalDateOf(p.month)" class="ds__count">{{ t('dated') }} {{ journalDateOf(p.month) }}</span>
                   <MpTooltip
                     v-if="p.state === 'posted' && periodOfMonth(p.month) === lastPostedPeriod"
                     :id="`ds-rev-${p.month}`" :label="t('Reverse posting')" placement="top" use-portal
