@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-generic-dynamic-pages',
+    title: 'Custom module: dynamic creation form, detail page, and filters drawer',
+    description:
+      'Custom module pages now fully reflect their module settings. "Create new record" opens a Deals-style form with fields from the module\'s layout. Detail page renders dynamic sections/fields. "All filters" button opens a keyword search drawer.',
+    date: '2026-09-29',
+    files: ['NewCrmGenericRecordPage.vue', 'CrmGenericRecordDetailPage.vue', 'CrmGenericModulePage.vue', 'CrmGenericFiltersDrawer.vue', '[...slug].vue'],
+  },
+  {
     id: 'crm-erp-integration-detail',
     title: 'ERP Integration Settings: detail page before editor',
     description:
@@ -106,6 +114,14 @@ export const DEV_CHANGES: DevChange[] = [
       'Clicking "+ New module" now opens a modal asking for Module name and Access level (Company or Team). After "Continue", the Setup page opens with the name prefilled and the access level locked — Company users cannot switch to Team and vice versa.',
     date: '2026-09-21',
     files: ['CrmModulesPage.vue', 'CrmModuleBuilderPage.vue'],
+  },
+  {
+    id: 'crm-generic-filterbar',
+    title: 'Custom modules: Deals-style filter bar & dynamic columns',
+    description:
+      'Custom module filter bar follows Deals layout. View toggle and pipeline filter only appear when kanban is configured; "All filters" button always shows. Table columns are dynamically derived from properties placed in the module Layout tab.',
+    date: '2026-09-29',
+    files: ['CrmGenericModulePage.vue'],
   },
   {
     id: 'crm-field-driven-pipeline',

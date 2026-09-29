@@ -370,7 +370,7 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
 .editor-empty-caption { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* Full-width single column (the readiness/dependencies side panel was removed). */
-.editor-main { display: flex; flex-direction: column; gap: var(--mp-spacing-6); min-width: 0; flex: 1; }
+.editor-main { display: flex; flex-direction: column; gap: var(--mp-spacing-6); min-width: 0; flex: 1; padding-bottom: var(--mp-spacing-5, 20px); }
 
 /* .ed-section stacks [header-list, body] with a 12px gap between them. No divider
    between sections (the editor-main gap separates them). */

@@ -11,20 +11,22 @@
  * (the guaranteed default properties every module has), a stage kanban, and simple
  * stage moves.
  */
-import { ref, computed } from 'vue'
-import { MpButton, MpButtonGroup, MpIcon } from '@mekari/pixel3'
+import { ref, computed, reactive } from 'vue'
+import { MpButton, MpButtonGroup, MpIcon, MpTooltip } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpIconSegmented from '~/components/patterns/ErpIconSegmented.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import CrmGenericFiltersDrawer, { emptyCrmGenericFilters, type CrmGenericFiltersValue } from '~/components/patterns/CrmGenericFiltersDrawer.vue'
 import { useTableState } from '~/composables/useTableState'
 import { formatMoney } from '~/utils/currency'
 import { successToast } from '~/utils/toasts'
 import {
   getCrmModule, genericRecordsFor, genericModuleStages, genericStageBadgeType,
   moveGenericRecordStage, createGenericRecord, CRM_CURRENT_USER,
-  genericPipelineFieldId,
-  type GenericModuleRecord,
+  genericPipelineFieldId, moduleStores,
+  type GenericModuleRecord, type CrmFieldType,
 } from '~/data/crm'
 
 // `orderId` unused here (always '' for the list page) — kept only so this
@@ -43,12 +45,28 @@ const records = computed<GenericModuleRecord[]>(() => genericRecordsFor(moduleId
 const stages = computed(() => genericModuleStages(moduleId.value))
 
 function goDetail(id: string) { router.push(`/crm/${moduleId.value}/${id}`) }
-function openCreate() {
-  const rec = createGenericRecord(moduleId.value)
-  goDetail(rec.id)
+function openCreate() { router.push(`/crm/${moduleId.value}/new`) }
+
+// ── Filters drawer ──
+const filtersOpen = ref(false)
+function openFilters() { filtersOpen.value = true }
+const filtersValue = reactive<CrmGenericFiltersValue>(emptyCrmGenericFilters())
+function onApplyFilters(v: CrmGenericFiltersValue) {
+  Object.assign(filtersValue, v)
+  search.value = v.keyword
 }
 
-// ── View toggle (list default) ──
+// ── Pipeline / kanban detection ──
+const pipelineFieldId = computed(() => genericPipelineFieldId(moduleId.value))
+const hasKanban = computed(() => !!pipelineFieldId.value)
+const pipelineFieldLabel = computed(() => {
+  if (!pipelineFieldId.value) return ''
+  const stores = moduleStores(moduleId.value)
+  const prop = stores.properties.find((p) => p.id === pipelineFieldId.value)
+  return prop?.label ?? ''
+})
+
+// ── View toggle (list default; board only when kanban is configured) ──
 const view = ref<'table' | 'board'>('table')
 const viewOptions = [
   { value: 'table', icon: 'table-view-list', label: t('List view') },
@@ -61,23 +79,66 @@ const { search, statusFilter, currentPage, perPage, sortKey, sortDir, total, pag
     perPage: 25,
     defaultSort: { key: 'createdAt', dir: 'desc' },
     filterFn: (row, s, status) => {
-      const matchesStage = !status || row.stage === status
-      const matchesSearch = !s || [row.name, row.id, row.owner, row.values.customer ?? '', row.values.contactPerson ?? ''].join(' ').toLowerCase().includes(s)
-      return matchesStage && matchesSearch
+      const matchesFilter = !status || row.stage === status
+      const matchesSearch = !s || [row.name, row.id, row.owner, ...Object.values(row.values).map((v) => String(v ?? ''))].join(' ').toLowerCase().includes(s)
+      return matchesFilter && matchesSearch
     },
   })
-const columns: TableColumn[] = [
-  { key: 'name', label: t('Name'), kind: 'name', sortable: true, sortType: 'text' },
-  { key: 'customer', label: t('Company'), kind: 'name' },
-  { key: 'contactPerson', label: t('Contact person'), kind: 'name' },
-  { key: 'stage', label: t('Stage'), kind: 'status' },
-  { key: 'value', label: t('Value'), kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'dueDate', label: t('Due date'), kind: 'date' },
-]
+function fieldTypeToColumnKind(type: CrmFieldType): TableColumn['kind'] {
+  switch (type) {
+    case 'currency': return 'amount'
+    case 'date': return 'date'
+    case 'number': return 'number'
+    case 'pick-list': case 'radio': return 'status'
+    case 'customer': case 'user': case 'text': default: return 'name'
+  }
+}
+function fieldSortType(type: CrmFieldType): 'text' | 'number' {
+  return type === 'number' || type === 'currency' ? 'number' : 'text'
+}
+
+const layoutColumns = computed<TableColumn[]>(() => {
+  const mod = getCrmModule(moduleId.value)
+  if (!mod || !mod.fields.length) {
+    return [{ key: 'name', label: t('Name'), kind: 'name', sortable: true, sortType: 'text' }]
+  }
+  const placed = mod.fields.filter((f) => f.section)
+  if (!placed.length) {
+    return [{ key: 'name', label: t('Name'), kind: 'name', sortable: true, sortType: 'text' }]
+  }
+  const cols: TableColumn[] = []
+  for (const f of placed) {
+    if (f.type === 'product-list') continue
+    const kind = fieldTypeToColumnKind(f.type)
+    cols.push({
+      key: f.id, label: t(f.label), kind, sortable: true,
+      sortType: fieldSortType(f.type),
+      ...(kind === 'amount' ? { align: 'right' as const } : {}),
+    })
+  }
+  return cols
+})
+
+const allCols = computed(() => layoutColumns.value)
+const columnVisibility = reactive<Record<string, boolean>>({})
+const columnVisibilityReady = computed(() => {
+  const cols = allCols.value
+  for (const c of cols) {
+    if (!(c.key in columnVisibility)) columnVisibility[c.key] = true
+  }
+  return columnVisibility
+})
+const columnItems = computed(() => allCols.value.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 })))
+const columns = computed<TableColumn[]>(() => allCols.value.filter((c) => columnVisibilityReady.value[c.key]))
 const hasActiveFilter = computed(() => !!statusFilter.value)
 
+const flatRows = computed(() => paginated.value.map((r) => ({
+  ...r, ...r.values,
+  value: r.values.dealValue ?? 0,
+})))
+
+
 // ── Kanban ──
-const hasPipelineField = computed(() => !!genericPipelineFieldId(moduleId.value) || stages.value.length > 0)
 interface Col { stage: string; kind: string; cards: GenericModuleRecord[]; total: number }
 const boardColumns = computed<Col[]>(() => {
   const s = search.value.trim().toLowerCase()
@@ -108,28 +169,41 @@ function ownerInitials(name: string) { return name.split(' ').map((p) => p[0]).s
       </div>
     </header>
 
-    <div class="crm-body">
-      <div class="gmp-toolbar">
-        <ErpIconSegmented id="gmp-view" v-model="view" :options="viewOptions" />
-        <ErpFilterSelect
-          id="gmp-stage-filter"
-          :model-value="statusFilter"
-          :placeholder="t('Stage')"
-          :options="stages.map((s) => ({ value: s.name, label: s.name }))"
-          @update:model-value="(v: string) => (statusFilter = v)"
-        />
-        <div class="filter-search gmp-search">
-          <MpIcon name="search" size="sm" class="filter-search-icon" />
-          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search records…')" />
-          <MpButton v-if="search" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="search = ''" />
+    <div class="cc-stage">
+      <div class="cc-filterbar" data-devchange="crm-generic-filterbar">
+        <div class="filter-left">
+          <ErpFilterSelect
+            v-if="hasKanban"
+            id="gmp-pipeline-filter"
+            :model-value="statusFilter"
+            :placeholder="pipelineFieldLabel || t('Stage')"
+            :options="stages.map((s) => ({ value: s.name, label: s.name }))"
+            @update:model-value="(v: string) => (statusFilter = v)"
+          />
+          <MpButton
+            variant="secondary" left-icon="filter" is-rounded
+            class="filter-all-btn"
+            @click="openFilters"
+          >{{ t('All filters') }}</MpButton>
+        </div>
+        <div class="filter-right">
+          <ErpIconSegmented v-if="hasKanban" id="gmp-view" v-model="view" :options="viewOptions" />
+          <MpButtonGroup class="filter-btn-group">
+            <ColumnSettingsMenu v-if="view === 'table'" id="gmp-columns" :items="columnItems" :visibility="columnVisibilityReady" />
+            <MpTooltip :label="t('Export')" placement="bottom">
+              <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded />
+            </MpTooltip>
+          </MpButtonGroup>
+          <div class="filter-search">
+            <MpIcon name="search" size="sm" />
+            <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search records…')" />
+            <MpButton v-if="search" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="search = ''" />
+          </div>
         </div>
       </div>
 
-      <div v-if="view === 'board'" class="kanban" data-devchange="crm-field-driven-pipeline">
-        <div v-if="!hasPipelineField" class="kanban-empty">
-          <p class="kanban-empty__text">{{ t('No Kanban grouping configured. Go to Settings → Modules to assign a property.') }}</p>
-        </div>
-        <div v-else class="kanban__board">
+      <div v-if="view === 'board' && hasKanban" class="kanban" data-devchange="crm-field-driven-pipeline">
+        <div class="kanban__board">
           <section
             v-for="col in boardColumns" :key="col.stage" class="kcol"
             :class="{ 'kcol--over': dragOverStage === col.stage }"
@@ -168,7 +242,7 @@ function ownerInitials(name: string) { return name.split(' ').map((p) => p[0]).s
       <ErpTablePage
         v-else
         :columns="columns"
-        :rows="(paginated as unknown as Record<string, unknown>[])"
+        :rows="(flatRows as unknown as Record<string, unknown>[])"
         :total="total" :current-page="currentPage" :per-page="perPage"
         :sort-key="sortKey" :sort-dir="sortDir" :search="search" :has-active-filter="hasActiveFilter"
         :filter-empty-label="t('record')"
@@ -177,28 +251,49 @@ function ownerInitials(name: string) { return name.split(' ').map((p) => p[0]).s
         <template #cell-name="{ row }">
           <a class="cell-link" @click="goDetail((row as unknown as GenericModuleRecord).id)">{{ (row as unknown as GenericModuleRecord).name }}</a>
         </template>
-        <template #cell-customer="{ row }">{{ (row as unknown as GenericModuleRecord).values.customer || '—' }}</template>
-        <template #cell-contactPerson="{ row }">{{ (row as unknown as GenericModuleRecord).values.contactPerson || '—' }}</template>
-        <template #cell-stage="{ row }">
-          <ErpStatusBadge :status="(row as unknown as GenericModuleRecord).stage" :type="genericStageBadgeType(moduleId, (row as unknown as GenericModuleRecord).stage)" :label="(row as unknown as GenericModuleRecord).stage" />
-        </template>
         <template #cell-value="{ row }">{{ formatMoney((row as unknown as GenericModuleRecord).values.dealValue ?? 0, (row as unknown as GenericModuleRecord).values.currency ?? 'IDR') }}</template>
-        <template #cell-dueDate="{ row }">{{ (row as unknown as GenericModuleRecord).values.dueDate || '—' }}</template>
       </ErpTablePage>
     </div>
+
+    <CrmGenericFiltersDrawer
+      id="gmp-filters"
+      :is-open="filtersOpen"
+      :model-value="filtersValue"
+      :columns="columnItems"
+      @update:is-open="(v: boolean) => (filtersOpen = v)"
+      @apply="onApplyFilters"
+    />
   </div>
 </template>
 
 <style scoped>
-.crm-body { display: flex; flex-direction: column; gap: var(--mp-spacing-4); flex: 1; min-height: 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); }
-.gmp-toolbar { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.gmp-search { flex: 1; max-width: 320px; margin-left: auto; }
+.cc-stage { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); }
+.cc-filterbar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding-top: var(--mp-spacing-5); padding-bottom: var(--mp-spacing-5); background: var(--mp-background-stage, #fff); }
+.filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
+.filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.filter-btn-group { display: flex; align-items: center; }
+.filter-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral, #ffffff); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); }
+.filter-search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.filter-search-input::placeholder { color: var(--mp-text-placeholder, #97a0af); }
+.search-clear-btn { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 18px; height: 18px; padding: 0; border: none; background: none; cursor: pointer; color: var(--mp-icon-subtle, #97a0af); border-radius: var(--mp-radii-full, 999px); }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); color: var(--mp-icon-default, #536062); }
+@media (max-width: 640px) {
+  .cc-filterbar { flex-wrap: wrap; }
+  .cc-filterbar > :last-child { flex: 1 1 100%; }
+}
 .cell-link { color: var(--mp-colors-text-link, #165082); cursor: pointer; }
 .cell-link:hover { text-decoration: underline; }
 
-/* Kanban empty state (no pipeline field assigned) */
-.kanban-empty { display: flex; align-items: center; justify-content: center; flex: 1; min-height: 200px; }
-.kanban-empty__text { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); text-align: center; max-width: 400px; }
+.filter-all-btn {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3);
+  background: var(--mp-background-neutral, #ffffff); border: 1px solid var(--mp-border-bold, #8c9596);
+  border-radius: var(--mp-radii-full, 999px);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-md); color: var(--mp-text-secondary);
+  cursor: pointer; white-space: nowrap;
+}
+.filter-all-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* Kanban — same standard as CrmDealsPage.vue */
 .kanban { flex: 1; min-height: 0; overflow-x: auto; overflow-y: hidden; padding-bottom: var(--mp-spacing-3); }

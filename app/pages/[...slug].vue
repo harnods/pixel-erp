@@ -378,6 +378,7 @@ const CrmErpIntegrationEditorPage = asyncPage(() => import('~/components/pages/C
 const CrmNewSalesOrderPage = asyncPage(() => import('~/components/pages/CrmNewSalesOrderPage.vue'))
 const CrmGenericModulePage = asyncPage(() => import('~/components/pages/CrmGenericModulePage.vue'))
 const CrmGenericRecordDetailPage = asyncPage(() => import('~/components/pages/CrmGenericRecordDetailPage.vue'))
+const NewCrmGenericRecordPage = asyncPage(() => import('~/components/pages/NewCrmGenericRecordPage.vue'))
 const CrmModuleBuilderPage = asyncPage(() => import('~/components/pages/CrmModuleBuilderPage.vue'))
 const CrmContactsListPage = asyncPage(() => import('~/components/pages/CrmContactsListPage.vue'))
 const CrmCompaniesListPage = asyncPage(() => import('~/components/pages/CrmCompaniesListPage.vue'))
@@ -481,6 +482,8 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     {
       const customMod = sub && sub !== 'deals' ? getCrmModule(sub) : undefined
       if (customMod && !customMod.system) {
+        if (id === 'new') return { component: NewCrmGenericRecordPage, id: 'new' }
+        if (id && segs[3] === 'edit') return { component: NewCrmGenericRecordPage, id }
         return id ? { component: CrmGenericRecordDetailPage, id } : { component: CrmGenericModulePage, id: '' }
       }
     }
