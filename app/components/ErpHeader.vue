@@ -34,6 +34,9 @@
 
       <!-- Fixed-asset prototype: simulated roles, on the asset screens only. -->
       <ErpViewAsSwitcher v-if="isAssetScreen" />
+      <!-- Demo layer (app/tours), not a product requirement. Shown only when
+           Asset settings > Guided tours is on. -->
+      <TourLauncher v-if="isAssetScreen" />
       <!-- User snapshot menu (avatar + name → account popover) -->
       <ErpUserMenu />
     </MpFlex>
@@ -43,6 +46,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { MpFlex } from "@mekari/pixel3";
+import TourLauncher from "~/tours/TourLauncher.vue";
 import UploadActivityCenter from "~/components/patterns/UploadActivityCenter.vue";
 import erpLogo from "~/assets/images/mekari-erp-logo.svg?url";
 

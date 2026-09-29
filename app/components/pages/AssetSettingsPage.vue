@@ -26,6 +26,7 @@ import {
 import { METHOD_LABEL, formatLife } from '~/data/assetEngine'
 import { viewAs } from '~/data/assetStore'
 import AssetPostingPolicy from '~/components/patterns/AssetPostingPolicy.vue'
+import GuidedToursSetting from '~/tours/GuidedToursSetting.vue'
 
 // OD-09, OD-10: the posting settings are live controls; the rest of the
 // depreciation policy group stays as stated.
@@ -189,7 +190,7 @@ function toggleOther() { infoToast(t('Not in this prototype')) }
 
     <!-- LR-5: off by default, set per event. Each switch is read by the
          value-change drawer, Custody and counts, and Asset approvals. -->
-    <div class="st__card">
+    <div class="st__card" data-tour="appr-rules">
       <div class="st__cardhead">
         <span class="st__cardtitle">{{ t('Approval rules') }}</span>
         <span class="st__hint">{{ t('Off by default. With a rule off the event completes at once and records who acted.') }}</span>
@@ -278,6 +279,9 @@ function toggleOther() { infoToast(t('Not in this prototype')) }
         </div>
       </div>
     </div>
+
+    <!-- Demo layer (app/tours), not a product requirement. -->
+    <GuidedToursSetting />
   </div>
 </template>
 
