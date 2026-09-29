@@ -305,22 +305,17 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
         <!-- Archived: restore only -->
         <MpButton v-if="isArchived" class="btn-enterprise btn-enterprise--secondary" @click="onRestore">{{ t('Restore') }}</MpButton>
 
-        <!-- Non-archived: "Move to" split button + kebab -->
-        <template v-else>
-          <div class="detail-split-btn">
-            <MpButton class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="moveToMenuOpen = true">{{ t('Move to') }}</MpButton>
-            <MpPopover id="deal-stage-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-              <MpPopoverTrigger>
-                <MpButton class="btn-enterprise btn-enterprise--primary detail-split-btn__chevron" left-icon="chevrons-down" :aria-label="t('Change stage')" />
-              </MpPopoverTrigger>
-              <MpPopoverContent class="deal-stage-dropdown">
-                <MpPopoverList>
-                  <MpPopoverListItem v-for="s in availableStages" :key="s" @click="onPickStage(s)">{{ t(dealStageLabel(s)) }}</MpPopoverListItem>
-                </MpPopoverList>
-              </MpPopoverContent>
-            </MpPopover>
-          </div>
-        </template>
+        <!-- Non-archived: "Move to" dropdown button -->
+        <MpPopover v-if="!isArchived" id="deal-stage-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+          <MpPopoverTrigger>
+            <MpButton variant="primary" right-icon="chevrons-down" is-rounded>{{ t('Move to') }}</MpButton>
+          </MpPopoverTrigger>
+          <MpPopoverContent class="deal-stage-dropdown">
+            <MpPopoverList>
+              <MpPopoverListItem v-for="s in availableStages" :key="s" @click="onPickStage(s)">{{ t(dealStageLabel(s)) }}</MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
 
         <!-- Kebab actions -->
         <MpPopover id="deal-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
@@ -335,7 +330,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
             </template>
             <template v-else>
               <MpPopoverList>
-                <MpPopoverListItem v-if="convEligible && !isLost" @click="openConvertReview">{{ t('Create') }} {{ t(convTarget) }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="!isLost" @click="openConvertReview">{{ t('Create') }} {{ t(convTarget) }}</MpPopoverListItem>
                 <MpPopoverListItem @click="router.push(`/crm/deals/${deal.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="archiveConfirmOpen = true">{{ t('Archive') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="deleteConfirmOpen = true">{{ t('Delete') }}</MpPopoverListItem>
