@@ -21,6 +21,11 @@ export {
   type ImpairmentTest,
 } from './assetStore'
 
+// OD-38: the lease contracts put their right-of-use assets in the register on
+// load and after every reset. Imported here because every asset screen loads
+// this module, so the register never appears without them.
+import './assetLeases'
+
 /** The register's New asset drawer, opened from the title bar the page does not own. */
 export const newAssetDrawerOpen = ref(false)
 
