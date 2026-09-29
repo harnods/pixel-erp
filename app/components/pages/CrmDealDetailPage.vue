@@ -35,7 +35,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import { formatMoney } from '~/utils/currency'
 import { successToast, infoToast } from '~/utils/toasts'
 import {
-  getDeal, moduleStores, ONGOING_STAGES, moveDealStage, archiveDeal, restoreDeal, deleteDeal,
+  getDeal, moduleStores, ONGOING_STAGES, DEAL_STAGES, moveDealStage, archiveDeal, restoreDeal, deleteDeal,
   dealTotals, dealExpectedValue, dealDaysInStage, dealStageAgingDays, formatAging,
   dealActivityLog, addDealAttachment, removeDealAttachment, setDealProductsFull,
   getDealSalesOrder,
@@ -106,6 +106,13 @@ function agingLabel(i: number) {
 // old → new · conversion / lost / archive), same table as ActivityLogModal ──
 const dealActivity = computed(() => (deal.value ? dealActivityLog(deal.value) : []))
 
+// ── "Move to" dropdown — all stages except the current one ──
+const availableStages = computed<DealStage[]>(() => {
+  const cur = deal.value?.stage
+  return ([...DEAL_STAGES] as DealStage[]).filter((s) => s !== cur)
+})
+const moveToMenuOpen = ref(false)
+
 // ── Stage moves ──
 function moveTo(stage: DealStage): boolean {
   const d = deal.value; if (!d) return false
@@ -114,11 +121,14 @@ function moveTo(stage: DealStage): boolean {
   successToast(`${t('Stage changed to')} ${stage}`)
   return true
 }
-// "Mark as won" → mark Won only. Conversion is NEVER auto-triggered by stage
-// (PRD manual-only invariant) — the user converts via the explicit Create action.
-function markWon() { moveTo('Won') }
-// Stage picker (chevron popover) → move directly.
-function onPickStage(stage: DealStage) { moveTo(stage) }
+function onPickStage(stage: DealStage) {
+  if (stage === 'Lost') { openMarkLost(); return }
+  const d = deal.value; if (!d) return
+  if ((d.stage === 'Won' || d.stage === 'Lost') && stage !== 'Lost') {
+    pendingStage.value = stage; reopenConfirmOpen.value = true; return
+  }
+  moveTo(stage)
+}
 
 // Lost (needs a reason) / reopen — via CrmDealStageModal
 const stageModalOpen = ref(false)
@@ -292,55 +302,40 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
       </div>
 
       <div class="detail-titlerow-right">
-        <!-- Ongoing: "Mark as won" split button + inline stage picker -->
-        <div v-if="!isArchived && isOngoing" class="detail-split-btn">
-          <MpButton class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="markWon">{{ t('Mark as won') }}</MpButton>
-          <MpPopover id="deal-stage-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-            <MpPopoverTrigger>
-              <MpButton class="btn-enterprise btn-enterprise--primary detail-split-btn__chevron" left-icon="chevrons-down" :aria-label="t('Change stage')" />
-            </MpPopoverTrigger>
-            <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-              <p class="deal-stage-menu-label">{{ t('Move to stage') }}</p>
-              <MpPopoverList>
-                <MpPopoverListItem v-for="s in ONGOING_STAGES.filter((x) => x !== deal!.stage)" :key="s" @click="onPickStage(s)">{{ s }}</MpPopoverListItem>
-              </MpPopoverList>
-              <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-              <MpPopoverList>
-                <MpPopoverListItem @click="openMarkLost">{{ t('Mark as lost') }}</MpPopoverListItem>
-              </MpPopoverList>
-            </MpPopoverContent>
-          </MpPopover>
-        </div>
-        <!-- Won & not converted: manual conversion via read-only review (PRD). -->
-        <MpButton v-else-if="!isArchived && isWon && !isConverted" class="btn-enterprise btn-enterprise--primary" data-devchange="crm-create-sales-order-inline" @click="openConvertReview">{{ t('Create') }} {{ t(convTarget) }}</MpButton>
-        <!-- Converted: open the created ERP transaction. -->
-        <MpButton v-else-if="!isArchived && isConverted && erpTxn" class="btn-enterprise btn-enterprise--secondary" @click="openErpTxn">{{ t('Open in ERP') }}</MpButton>
-        <!-- Lost: reopen -->
-        <MpButton v-else-if="!isArchived && isLost" class="btn-enterprise btn-enterprise--primary" @click="openReopen">{{ t('Reopen deal') }}</MpButton>
-        <!-- Archived: restore -->
-        <MpButton v-else-if="isArchived" class="btn-enterprise btn-enterprise--secondary" @click="onRestore">{{ t('Restore') }}</MpButton>
+        <!-- Archived: restore only -->
+        <MpButton v-if="isArchived" class="btn-enterprise btn-enterprise--secondary" @click="onRestore">{{ t('Restore') }}</MpButton>
 
-        <!-- Kebab -->
+        <!-- Non-archived: "Move to" split button + kebab -->
+        <template v-else>
+          <div class="detail-split-btn">
+            <MpButton class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="moveToMenuOpen = true">{{ t('Move to') }}</MpButton>
+            <MpPopover id="deal-stage-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+              <MpPopoverTrigger>
+                <MpButton class="btn-enterprise btn-enterprise--primary detail-split-btn__chevron" left-icon="chevrons-down" :aria-label="t('Change stage')" />
+              </MpPopoverTrigger>
+              <MpPopoverContent class="deal-stage-dropdown">
+                <MpPopoverList>
+                  <MpPopoverListItem v-for="s in availableStages" :key="s" @click="onPickStage(s)">{{ t(dealStageLabel(s)) }}</MpPopoverListItem>
+                </MpPopoverList>
+              </MpPopoverContent>
+            </MpPopover>
+          </div>
+        </template>
+
+        <!-- Kebab actions -->
         <MpPopover id="deal-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
-            <MpButton class="detail-icon-btn" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
+            <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
           </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
+          <MpPopoverContent class="deal-actions-dropdown">
             <template v-if="isArchived">
               <MpPopoverList>
                 <MpPopoverListItem @click="deleteConfirmOpen = true">{{ t('Delete') }}</MpPopoverListItem>
               </MpPopoverList>
             </template>
             <template v-else>
-              <!-- A Won deal can be moved back to an earlier stage, or marked Lost. -->
-              <MpPopoverList v-if="isWon">
-                <MpPopoverListItem @click="openReopen">{{ t('Move to stage…') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="openMarkLost">{{ t('Mark as lost') }}</MpPopoverListItem>
-              </MpPopoverList>
-              <div v-if="isWon" :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
               <MpPopoverList>
-                <!-- Manual convert available at any eligible stage (Won has its own primary button). -->
-                <MpPopoverListItem v-if="convEligible && !isWon" @click="openConvertReview">{{ t('Create') }} {{ t(convTarget) }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="convEligible && !isLost" @click="openConvertReview">{{ t('Create') }} {{ t(convTarget) }}</MpPopoverListItem>
                 <MpPopoverListItem @click="router.push(`/crm/deals/${deal.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="archiveConfirmOpen = true">{{ t('Archive') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="deleteConfirmOpen = true">{{ t('Delete') }}</MpPopoverListItem>
@@ -833,10 +828,8 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
   border-radius: 0 var(--mp-radii-full, 999px) var(--mp-radii-full, 999px) 0;
   border-left: 1px solid rgba(255, 255, 255, 0.3);
 }
-.deal-stage-menu-label {
-  margin: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1);
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
-}
+.deal-stage-dropdown { min-width: 200px; width: max-content; white-space: nowrap; }
+.deal-actions-dropdown { min-width: 180px; width: max-content; white-space: nowrap; }
 
 /* ── Stage ── */
 .detail-stage {
