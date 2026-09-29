@@ -15,15 +15,15 @@ interface ReportCard {
   description: string
 }
 const reports: ReportCard[] = [
-  { slug: 'aged-payables-summary',     title: 'Aged Payables Summary',     description: 'Shows overdue bills to vendors categorized by days (30, 60, 90+ days). Crucial for managing cash outflows and avoiding late fees.' },
-  { slug: 'vendor-balance-list',       title: 'Vendor Balance List',       description: 'Displays the total outstanding amount you owe to each vendor, including unpaid bills and available vendor credits.' },
-  { slug: 'purchases-by-vendor',       title: 'Purchases by Vendor',       description: 'Summarizes total spending per supplier. Useful for identifying your key vendors and negotiating better volume discounts.' },
-  { slug: 'purchases-by-product',      title: 'Purchases by Product',      description: 'Breakdown of quantity and cost of items purchased. Helps analyze procurement trends and changing costs over time.' },
-  { slug: 'expenses-by-account',       title: 'Expenses by Account',       description: 'Groups your operational expenses by chart of accounts (e.g., Rent, Utilities) to show where your budget is being spent.' },
-  { slug: 'purchase-transaction-list', title: 'Purchase Transaction List', description: 'A chronological history of all purchase transactions including bills, orders, and expenses.' },
-  { slug: 'purchase-order-status',     title: 'Purchase Order Status',     description: 'Tracks the lifecycle of purchase orders from creation to goods receipt, billing, and final payment.' },
-  { slug: 'goods-received-report',     title: 'Goods Received Report',     description: 'Details all inventory items received from suppliers, cross-referenced with their purchase orders.' },
-  { slug: 'expense-transaction-list',  title: 'Expense Transaction List',  description: 'A simple list of all direct expense claims and payments recorded within a specific period.' },
+  { slug: 'aged-payables-summary',     title: 'Aged payables summary',     description: 'Shows overdue bills to vendors categorized by days (30, 60, 90+ days). Crucial for managing cash outflows and avoiding late fees.' },
+  { slug: 'vendor-balance-list',       title: 'Vendor balance list',       description: 'Displays the total outstanding amount you owe to each vendor, including unpaid bills and available vendor credits.' },
+  { slug: 'purchases-by-vendor',       title: 'Purchases by vendor',       description: 'Summarizes total spending per supplier. Useful for identifying your key vendors and negotiating better volume discounts.' },
+  { slug: 'purchases-by-product',      title: 'Purchases by product',      description: 'Breakdown of quantity and cost of items purchased. Helps analyze procurement trends and changing costs over time.' },
+  { slug: 'expenses-by-account',       title: 'Expenses by account',       description: 'Groups your operational expenses by chart of accounts (e.g., Rent, Utilities) to show where your budget is being spent.' },
+  { slug: 'purchase-transaction-list', title: 'Purchase transaction list', description: 'A chronological history of all purchase transactions including bills, orders, and expenses.' },
+  { slug: 'purchase-order-status',     title: 'Purchase order status',     description: 'Tracks the lifecycle of purchase orders from creation to goods receipt, billing, and final payment.' },
+  { slug: 'goods-received-report',     title: 'Goods received report',     description: 'Details all inventory items received from suppliers, cross-referenced with their purchase orders.' },
+  { slug: 'expense-transaction-list',  title: 'Expense transaction list',  description: 'A simple list of all direct expense claims and payments recorded within a specific period.' },
 ]
 
 // ── Responsive column count ──────────────────────────────────────────────────

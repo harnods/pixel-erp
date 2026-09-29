@@ -15,8 +15,8 @@ interface ReportCard {
   description: string
 }
 const reports: ReportCard[] = [
-  { slug: 'bank-reconciliation-summary', title: 'Bank Reconciliation Summary', description: 'Summarizes the result of your reconciliation, comparing book balances against bank balances and highlighting unreconciled transactions.' },
-  { slug: 'bank-statement-history',      title: 'Bank Statement History',      description: 'Lists all imported bank statements chronologically, including their source (feed/file) and current reconciliation status.' },
+  { slug: 'bank-reconciliation-summary', title: 'Bank reconciliation summary', description: 'Summarizes the result of your reconciliation, comparing book balances against bank balances and highlighting unreconciled transactions.' },
+  { slug: 'bank-statement-history',      title: 'Bank statement history',      description: 'Lists all imported bank statements chronologically, including their source (feed/file) and current reconciliation status.' },
 ]
 
 // ── Responsive column count ──────────────────────────────────────────────────

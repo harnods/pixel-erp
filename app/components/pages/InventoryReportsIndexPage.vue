@@ -23,7 +23,7 @@ interface ReportCard {
 const reports: ReportCard[] = [
   {
     slug: 'dual-unit',
-    title: 'Dual Unit Inventory',
+    title: 'Dual unit inventory',
     description: 'Stock mutation and on-hand stock in both base and secondary inventory unit, per batch. For products using a secondary inventory unit.',
     built: true,
   },

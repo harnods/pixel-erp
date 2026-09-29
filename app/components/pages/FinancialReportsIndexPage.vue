@@ -16,17 +16,17 @@ interface ReportCard {
   description: string
 }
 const reports: ReportCard[] = [
-  { slug: 'profit-and-loss',    title: 'Profit & Loss',    description: 'Displays your total income, expenses, and net profit over a specific period. Essential for understanding business performance.' },
-  { slug: 'balance-sheet',      title: 'Balance Sheet',    description: "A snapshot of your company's financial position—including assets, liabilities, and equity—at a specific point in time." },
-  { slug: 'cash-flows',         title: 'Cash Flows',       description: 'Tracks the movement of cash in and out of your business to help you analyze liquidity and cash availability.' },
-  { slug: 'general-ledger',     title: 'General Ledger',   description: 'A complete record of all transactions posted to your accounts, sorted by date. Useful for detailed transaction auditing.' },
-  { slug: 'trial-balance',      title: 'Trial Balance',    description: 'A summary of closing balances for all accounts in your chart of accounts to ensure debits and credits match.' },
-  { slug: 'journal-report',     title: 'Journal Report',   description: 'Displays the chronological record of all journal entries, showing the debits and credits affected by each transaction.' },
-  { slug: 'executive-summary',  title: 'Executive Summary', description: 'A high-level overview of key financial ratios and performance indicators designed for business owners and stakeholders.' },
-  { slug: 'changes-in-equity',  title: 'Statement of Changes in Equity', description: "Details the changes in the owner's equity throughout the period, including capital injections and retained earnings." },
-  { slug: 'budget-variance',    title: 'Budget Variance',  description: 'Compares your actual financial performance against your planned budget to identify overspending or revenue gaps.' },
-  { slug: 'budget-manager',     title: 'Budget Manager',   description: 'Set up and manage monthly or yearly budgets for your income and expense accounts.' },
-  { slug: 'anomaly-detection',  title: 'Anomaly Detection', description: 'Identifies potential anomalies in transactions and accounts based on AI analysis, such as unusual amounts, excessive data changes, etc.' },
+  { slug: 'profit-and-loss',    title: 'Profit & loss',    description: 'Displays your total income, expenses, and net profit over a specific period. Essential for understanding business performance.' },
+  { slug: 'balance-sheet',      title: 'Balance sheet',    description: "A snapshot of your company's financial position—including assets, liabilities, and equity—at a specific point in time." },
+  { slug: 'cash-flows',         title: 'Cash flows',       description: 'Tracks the movement of cash in and out of your business to help you analyze liquidity and cash availability.' },
+  { slug: 'general-ledger',     title: 'General ledger',   description: 'A complete record of all transactions posted to your accounts, sorted by date. Useful for detailed transaction auditing.' },
+  { slug: 'trial-balance',      title: 'Trial balance',    description: 'A summary of closing balances for all accounts in your chart of accounts to ensure debits and credits match.' },
+  { slug: 'journal-report',     title: 'Journal report',   description: 'Displays the chronological record of all journal entries, showing the debits and credits affected by each transaction.' },
+  { slug: 'executive-summary',  title: 'Executive summary', description: 'A high-level overview of key financial ratios and performance indicators designed for business owners and stakeholders.' },
+  { slug: 'changes-in-equity',  title: 'Statement of changes in equity', description: "Details the changes in the owner's equity throughout the period, including capital injections and retained earnings." },
+  { slug: 'budget-variance',    title: 'Budget variance',  description: 'Compares your actual financial performance against your planned budget to identify overspending or revenue gaps.' },
+  { slug: 'budget-manager',     title: 'Budget manager',   description: 'Set up and manage monthly or yearly budgets for your income and expense accounts.' },
+  { slug: 'anomaly-detection',  title: 'Anomaly detection', description: 'Identifies potential anomalies in transactions and accounts based on AI analysis, such as unusual amounts, excessive data changes, etc.' },
   { slug: 'multidimensional',   title: 'Multidimensional', description: 'Displays your total income, expenses, and net profit over a specific period. Essential for understanding business performance.' },
 ]
 

@@ -36,7 +36,7 @@ import { DUI_PRODUCTS, dualUnitReportGroups, type DuiReportGroup } from '~/data/
 const { t, locale } = useLocale()
 const router = useRouter()
 
-const TITLE = 'Dual Unit Inventory Report'
+const TITLE = 'Dual unit inventory report'
 
 // ── Filters ─────────────────────────────────────────────────────────────────────
 // Date range is mandatory (a stock report has no "all time") — it drives both the

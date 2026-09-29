@@ -15,8 +15,8 @@ interface ReportCard {
   description: string
 }
 const reports: ReportCard[] = [
-  { slug: 'withholding-tax-summary', title: 'Withholding Tax Summary', description: 'Details all withholding tax (PPh) deductions recorded on sales and purchases, including taxable amounts and tax rates.' },
-  { slug: 'value-added-tax',         title: 'Value Added Tax (PPN)',   description: 'Calculates net VAT obligations by comparing Output Tax (from sales) and Input Tax (from purchases) within the period.' },
+  { slug: 'withholding-tax-summary', title: 'Withholding tax summary', description: 'Details all withholding tax (PPh) deductions recorded on sales and purchases, including taxable amounts and tax rates.' },
+  { slug: 'value-added-tax',         title: 'Value added tax (PPN)',   description: 'Calculates net VAT obligations by comparing Output Tax (from sales) and Input Tax (from purchases) within the period.' },
 ]
 
 // ── Responsive column count ──────────────────────────────────────────────────
