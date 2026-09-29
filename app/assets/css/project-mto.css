@@ -1,0 +1,349 @@
+/*
+ * Projects module (Project MTO) — layout-only styles, .pm- prefixed.
+ *
+ * Controls are Pixel components (MpButton, MpInput, MpTextarea, ErpFilterSelect,
+ * MpRadio, MpCheckbox, MpSegmentedControl, MpBadge, MpTag, MpBanner, MpProgress,
+ * MpModal, MpPopover) — nothing here styles a raw control. Colors are the
+ * fully-qualified --mp-colors-* tokens with a hex fallback (rule/token-no-hardcoded-color,
+ * rule/style-with-css: the short aliases resolve empty in this Pixel build);
+ * spacing/sizing come from --mp-spacing-* / --mp-sizes-* (rule/token-no-hardcoded-spacing).
+ */
+
+/* ── Page frame (mirrors the detail-page shell: title bar on chrome, white stage) ── */
+.pm-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.pm-bar {
+  flex-shrink: 0; min-height: var(--mp-sizes-18, 72px); box-sizing: border-box;
+  background: var(--mp-colors-background-neutral-subtle, #f8f9f9);
+  padding: var(--mp-spacing-3, 12px) var(--mp-spacing-6, 24px);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4, 16px);
+}
+.pm-bar-left { display: flex; flex-direction: column; justify-content: center; min-width: 0; gap: 0; }
+.pm-titlerow { display: flex; align-items: center; gap: var(--mp-spacing-3, 12px); flex-wrap: wrap; }
+.pm-title {
+  margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold, 600);
+  line-height: var(--mp-line-heights-2xl, 32px); color: var(--mp-colors-text-default, #080d0e);
+}
+.pm-title-sub { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #3a4749); }
+.pm-bar-actions { flex-shrink: 0; }
+
+.pm-stage {
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  background: var(--mp-colors-background-stage, #ffffff);
+  border-radius: var(--mp-radii-xl, 12px) var(--mp-radii-xl, 12px) 0 0;
+  padding: var(--mp-spacing-6, 24px) var(--mp-spacing-6, 24px) var(--mp-spacing-10, 40px);
+}
+.pm-narrow { max-width: var(--mp-sizes-240, 960px); }
+.pm-medium { max-width: var(--mp-sizes-270, 1080px); }
+.pm-form-width { max-width: var(--mp-sizes-230, 920px); }
+/* The structure step's phase cards carry a 6-column row — they need more room than
+   the rest of the wizard, so that step widens the whole column (stepper + footer
+   included) instead of breaking out of it. */
+.pm-form-width--wide { max-width: var(--mp-sizes-290, 1160px); }
+.pm-mobile-width { max-width: var(--mp-sizes-140, 560px); margin: 0 auto; }
+
+/* ── Sections & text ─────────────────────────────────────────────────────── */
+.pm-section { padding: var(--mp-spacing-6, 24px) 0; border-bottom: 1px dashed var(--mp-colors-border-default, #e3e7e9); }
+.pm-section:first-child { padding-top: 0; }
+.pm-section:last-child { border-bottom: none; }
+.pm-section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3, 12px); margin-bottom: var(--mp-spacing-4, 16px); flex-wrap: wrap; }
+/* A long section caption must not push the section actions onto their own left-aligned
+   line — the text block flexes, the actions stay flush right however the row wraps. */
+.pm-section-head > :first-child { flex: 1 1 var(--mp-sizes-80, 320px); min-width: 0; }
+.pm-section-head > :last-child:not(:first-child) { margin-left: auto; flex-shrink: 0; }
+.pm-h2 { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: var(--mp-line-heights-xl, 28px); color: var(--mp-colors-text-default, #080d0e); }
+.pm-h3 { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-colors-text-default, #080d0e); }
+.pm-caption { margin: var(--mp-spacing-1, 4px) 0 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #3a4749); line-height: var(--mp-line-heights-sm, 16px); }
+.pm-body { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-default, #080d0e); line-height: var(--mp-line-heights-md, 20px); margin: 0; }
+.pm-muted { color: var(--mp-colors-text-secondary, #3a4749); }
+.pm-small { font-size: var(--mp-font-sizes-sm, 12px); }
+.pm-strong { font-weight: var(--mp-font-weights-semi-bold, 600); }
+.pm-num { font-variant-numeric: tabular-nums; text-align: right; }
+.pm-link { color: var(--mp-colors-text-link, #165082); cursor: pointer; }
+.pm-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.pm-pos { color: var(--mp-colors-text-success, #186f4a); }
+.pm-neg { color: var(--mp-colors-text-danger, #a8352d); }
+.pm-warn { color: var(--mp-colors-text-warning, #a14a0b); }
+.pm-info { color: var(--mp-colors-text-information, #4b61dc); }
+
+/* ── Layout utilities (replace inline style="" — rule/token-no-hardcoded-spacing) ── */
+.pm-row { display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); flex-wrap: wrap; }
+.pm-row--nowrap { flex-wrap: nowrap; }
+.pm-row--top { align-items: flex-start; }
+.pm-row--end { align-items: flex-end; }
+.pm-spacer { flex: 1; }
+.pm-stack { display: flex; flex-direction: column; gap: var(--mp-spacing-3, 12px); }
+.pm-gap-1 { gap: var(--mp-spacing-1, 4px); }
+.pm-gap-2 { gap: var(--mp-spacing-2, 8px); }
+.pm-gap-3 { gap: var(--mp-spacing-3, 12px); }
+.pm-gap-4 { gap: var(--mp-spacing-4, 16px); }
+.pm-gap-5 { gap: var(--mp-spacing-5, 20px); }
+.pm-gap-6 { gap: var(--mp-spacing-6, 24px); }
+.pm-mt-2 { margin-top: var(--mp-spacing-2, 8px); }
+.pm-mt-3 { margin-top: var(--mp-spacing-3, 12px); }
+.pm-mt-4 { margin-top: var(--mp-spacing-4, 16px); }
+.pm-mt-5 { margin-top: var(--mp-spacing-5, 20px); }
+.pm-mb-2 { margin-bottom: var(--mp-spacing-2, 8px); }
+.pm-mb-3 { margin-bottom: var(--mp-spacing-3, 12px); }
+.pm-mb-4 { margin-bottom: var(--mp-spacing-4, 16px); }
+.pm-mb-5 { margin-bottom: var(--mp-spacing-5, 20px); }
+.pm-m-0 { margin: 0; }
+.pm-nowrap { white-space: nowrap; }
+.pm-pl-6 { padding-left: var(--mp-spacing-6, 24px); }
+.pm-grow { flex: 1; min-width: 0; }
+.pm-grow-2 { flex: 2; min-width: var(--mp-sizes-48, 192px); }
+.pm-w-select { width: var(--mp-sizes-90, 360px); max-width: 100%; }
+.pm-w-field { width: var(--mp-sizes-40, 160px); }
+.pm-w-cell { width: var(--mp-sizes-36, 144px); }
+.pm-w-narrow { width: var(--mp-sizes-24, 96px); }
+.pm-maxw-field { max-width: var(--mp-sizes-90, 360px); }
+.pm-maxw-short { max-width: var(--mp-sizes-40, 160px); }
+.pm-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--mp-spacing-4, 16px); }
+.pm-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--mp-spacing-4, 16px); }
+.pm-grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--mp-spacing-4, 16px); }
+.pm-grid-5 { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--mp-spacing-4, 16px); }
+@media (max-width: 1100px) { .pm-grid-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .pm-grid-3, .pm-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Inside a drawer the panel's own width decides the columns, not the viewport's. */
+.pm-drawer-panel { container-type: inline-size; }
+@container (min-width: 760px) { .pm-drawer-body .pm-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@container (min-width: 640px) { .pm-drawer-body .pm-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container (max-width: 759px) { .pm-drawer-body .pm-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 639px) { .pm-drawer-body .pm-grid-3, .pm-drawer-body .pm-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 420px) { .pm-drawer-body .pm-grid-4, .pm-drawer-body .pm-grid-3, .pm-drawer-body .pm-grid-2 { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 560px) { .pm-grid-2, .pm-grid-3, .pm-grid-4, .pm-grid-5 { grid-template-columns: minmax(0, 1fr); } }
+
+/* ── Cards / stats / key-value ───────────────────────────────────────────── */
+.pm-card { border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 12px); background: var(--mp-colors-background-neutral, #ffffff); padding: var(--mp-spacing-4, 16px); }
+.pm-card--flat { background: var(--mp-colors-background-neutral-subtle, #f8f9f9); border-color: transparent; }
+.pm-card--flush { padding: 0; }
+.pm-card--positive { border-color: var(--mp-colors-border-success, #bfe7d1); }
+.pm-card--negative { border-color: var(--mp-colors-border-danger, #f6c3c7); }
+.pm-card--warning { border-color: var(--mp-colors-border-warning, #fbdca6); background: var(--mp-colors-background-warning-subtle, #fffaf0); }
+.pm-stat-label { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #3a4749); }
+.pm-stat-value { margin-top: var(--mp-spacing-1, 4px); font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-default, #080d0e); font-variant-numeric: tabular-nums; line-height: var(--mp-line-heights-xl, 28px); }
+.pm-stat-value--md { font-size: var(--mp-font-sizes-lg, 16px); line-height: var(--mp-line-heights-lg, 24px); }
+.pm-stat-note { margin-top: var(--mp-spacing-0\.5, 2px); font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #3a4749); }
+.pm-stat-op { display: flex; align-items: center; padding: 0 var(--mp-spacing-4, 16px); font-size: var(--mp-font-sizes-xl, 20px); color: var(--mp-colors-text-secondary, #3a4749); }
+
+/* ── Embedded read-only tables (detail tabs; index tables use ErpTablePage) ── */
+.pm-table-wrap { overflow-x: auto; border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
+.pm-table { width: 100%; border-collapse: collapse; min-width: max-content; background: var(--mp-colors-background-neutral, #ffffff); }
+.pm-table th {
+  height: var(--mp-sizes-7, 28px); text-align: left; white-space: nowrap;
+  padding: var(--mp-spacing-1, 4px) var(--mp-spacing-3, 12px) var(--mp-spacing-1, 4px) var(--mp-spacing-2, 8px);
+  background: var(--mp-colors-background-surface, #f1f5f9); font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold, 600);
+  color: var(--mp-colors-text-secondary, #3a4749); text-transform: uppercase; border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9);
+}
+.pm-table th.pm-num, .pm-table td.pm-num { text-align: right; padding-left: var(--mp-spacing-3, 12px); padding-right: var(--mp-spacing-2, 8px); }
+.pm-table td {
+  padding: var(--mp-spacing-2, 8px) var(--mp-spacing-3, 12px) var(--mp-spacing-2, 8px) var(--mp-spacing-2, 8px);
+  font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-default, #080d0e); vertical-align: top;
+  border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); white-space: nowrap;
+}
+.pm-table tbody tr:last-child td { border-bottom: none; }
+.pm-table tbody tr.pm-tr-click { cursor: pointer; }
+.pm-table tbody tr.pm-tr-click:hover td { background: var(--mp-colors-background-neutral-hovered, #f3f5f9); }
+.pm-table td.pm-wrap { white-space: normal; min-width: var(--mp-sizes-56, 224px); }
+.pm-table tfoot td { font-weight: var(--mp-font-weights-semi-bold, 600); border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); border-bottom: none; }
+.pm-table tr.pm-tr-sub td { font-weight: var(--mp-font-weights-semi-bold, 600); }
+.pm-table tr.pm-tr-muted td { color: var(--mp-colors-text-secondary, #3a4749); }
+.pm-table tr.pm-tr-warn td { background: var(--mp-colors-background-warning-subtle, #fffaf0); }
+.pm-cell-sub { display: block; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #3a4749); white-space: normal; }
+.pm-cell-actions { display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); flex-wrap: nowrap; }
+.pm-th-wide { min-width: var(--mp-sizes-64, 256px); }
+.pm-th-mid { min-width: var(--mp-sizes-40, 160px); }
+
+/* ── Drawer shell (rule/drawer-custom-shell — copied from BillsFiltersDrawer; the
+      overlay is only a backdrop: no click/Esc close, rule/modal-drawer-close-explicit-only) ── */
+.pm-drawer-enter-active { transition: background-color 250ms ease; }
+.pm-drawer-leave-active { transition: background-color 250ms ease; }
+.pm-drawer-enter-from, .pm-drawer-leave-to { background-color: transparent; }
+.pm-drawer-enter-active .pm-drawer-panel { transition: transform 350ms ease-out; }
+.pm-drawer-leave-active .pm-drawer-panel { transition: transform 250ms ease-in; }
+.pm-drawer-enter-from .pm-drawer-panel, .pm-drawer-leave-to .pm-drawer-panel { transform: translateX(calc(100% + var(--mp-spacing-3, 12px))); }
+.pm-drawer-overlay { position: fixed; inset: 0; z-index: 1300; background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45)); display: flex; justify-content: flex-end; }
+.pm-drawer-panel {
+  margin: var(--mp-spacing-3, 12px); width: min(var(--mp-sizes-150, 600px), calc(100% - var(--mp-spacing-6, 24px))); height: calc(100% - var(--mp-spacing-6, 24px));
+  display: flex; flex-direction: column; background: var(--mp-colors-background-stage, #ffffff); border-radius: var(--mp-radii-xl, 12px); overflow: hidden;
+}
+.pm-drawer-panel--wide { width: min(var(--mp-sizes-260, 1040px), calc(100% - var(--mp-spacing-6, 24px))); }
+.pm-drawer-header {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3, 12px);
+  padding: var(--mp-spacing-3, 12px) var(--mp-spacing-3, 12px) var(--mp-spacing-3, 12px) var(--mp-spacing-5, 20px);
+  background: var(--mp-colors-background-neutral-subtle, #f8f9f9); border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9);
+}
+.pm-drawer-title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-colors-text-default, #080d0e); }
+.pm-drawer-sub { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #3a4749); margin-top: var(--mp-spacing-0\.5, 2px); }
+.pm-drawer-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px); padding: var(--mp-spacing-5, 20px); }
+.pm-drawer-footer { flex-shrink: 0; padding: var(--mp-spacing-3, 12px) var(--mp-spacing-5, 20px); border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); display: flex; justify-content: flex-end; }
+.pm-modal-body { display: flex; flex-direction: column; gap: var(--mp-spacing-4, 16px); }
+
+/* ── Structure accordion ──────────────────────────────────────────────────── */
+.pm-tree-scroll { overflow-x: auto; }
+.pm-tree { border: 1px solid var(--mp-colors-border-bold, #8c9596); border-radius: var(--mp-radii-lg, 12px); background: var(--mp-colors-background-neutral, #ffffff); min-width: var(--mp-sizes-256, 1024px); }
+.pm-tree-head, .pm-tree-row { display: grid; grid-template-columns: minmax(var(--mp-sizes-64, 256px), 2.4fr) var(--mp-sizes-32, 128px) var(--mp-sizes-32, 128px) var(--mp-sizes-36, 144px) var(--mp-sizes-36, 144px) var(--mp-sizes-36, 144px) var(--mp-sizes-11, 44px); align-items: center; gap: var(--mp-spacing-2, 8px); padding: 0 var(--mp-spacing-3, 12px); }
+.pm-tree-head { height: var(--mp-sizes-9, 36px); background: var(--mp-colors-background-surface, #f1f5f9); font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-secondary, #3a4749); text-transform: uppercase; border-radius: var(--mp-radii-lg, 12px) var(--mp-radii-lg, 12px) 0 0; border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
+.pm-tree-row { min-height: var(--mp-sizes-13, 52px); border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); font-size: var(--mp-font-sizes-md, 14px); }
+.pm-tree-row:last-child { border-bottom: none; }
+.pm-tree-row--phase { background: var(--mp-colors-background-neutral-subtle, #f8f9f9); cursor: pointer; }
+.pm-tree-row--wp .pm-tree-name { padding-left: var(--mp-spacing-8, 32px); }
+.pm-tree-name { display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); min-width: 0; padding: var(--mp-spacing-2, 8px) 0; }
+
+/* ── Timeline (audit log / version history) ───────────────────────────────── */
+.pm-timeline { display: flex; flex-direction: column; }
+.pm-tl-item { display: grid; grid-template-columns: var(--mp-sizes-36, 144px) var(--mp-sizes-4, 16px) minmax(0, 1fr); gap: var(--mp-spacing-3, 12px); padding: var(--mp-spacing-3, 12px) 0; border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
+.pm-tl-item:last-child { border-bottom: none; }
+.pm-tl-item--compact { grid-template-columns: var(--mp-sizes-28, 112px) var(--mp-sizes-4, 16px) minmax(0, 1fr); }
+.pm-tl-date { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #3a4749); line-height: var(--mp-line-heights-md, 20px); }
+.pm-tl-dot { width: var(--mp-sizes-2\.5, 10px); height: var(--mp-sizes-2\.5, 10px); border-radius: var(--mp-radii-full, 999px); margin-top: var(--mp-spacing-1, 4px); background: var(--mp-colors-background-brand-bold, #029861); }
+.pm-tl-dot--muted { background: var(--mp-colors-border-bold, #8c9596); }
+.pm-tl-summary { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-default, #080d0e); line-height: var(--mp-line-heights-md, 20px); }
+.pm-tl-meta { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #3a4749); margin-top: var(--mp-spacing-1, 4px); display: flex; gap: var(--mp-spacing-2, 8px); flex-wrap: wrap; align-items: center; }
+.pm-tl-reason { margin-top: var(--mp-spacing-2, 8px); padding: var(--mp-spacing-2, 8px) var(--mp-spacing-3, 12px); background: var(--mp-colors-background-neutral-subtle, #f8f9f9); border-radius: var(--mp-radii-md, 6px); font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-default, #080d0e); line-height: var(--mp-line-heights-sm, 16px); }
+@media (max-width: 640px) { .pm-tl-item { grid-template-columns: var(--mp-sizes-4, 16px) minmax(0, 1fr); } .pm-tl-date { grid-column: 2; order: 3; } }
+
+/* ── Filter bar + stepper ─────────────────────────────────────────────────── */
+.pm-filters { display: flex; align-items: center; gap: var(--mp-spacing-4, 16px); flex-wrap: wrap; margin-bottom: var(--mp-spacing-4, 16px); }
+.pm-steps { display: flex; align-items: center; gap: var(--mp-spacing-3, 12px); margin-bottom: var(--mp-spacing-6, 24px); flex-wrap: wrap; }
+.pm-step { display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #3a4749); }
+.pm-step-num { width: var(--mp-sizes-6, 24px); height: var(--mp-sizes-6, 24px); border-radius: var(--mp-radii-full, 999px); display: inline-flex; align-items: center; justify-content: center; font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold, 600); background: var(--mp-colors-background-surface, #f1f5f9); color: var(--mp-colors-text-secondary, #3a4749); }
+.pm-step--active { color: var(--mp-colors-text-default, #080d0e); font-weight: var(--mp-font-weights-semi-bold, 600); }
+.pm-step--active .pm-step-num { background: var(--mp-colors-background-brand-bold, #029861); color: var(--mp-colors-text-inverse, #ffffff); }
+.pm-step-line { width: var(--mp-sizes-10, 40px); height: 1px; background: var(--mp-colors-border-default, #e3e7e9); }
+.pm-footer { display: flex; justify-content: flex-end; align-items: center; gap: var(--mp-spacing-3, 12px); padding-top: var(--mp-spacing-4, 16px); margin-top: var(--mp-spacing-6, 24px); border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); }
+.pm-sticky { position: sticky; top: 0; z-index: 2; }
+
+/* ── Radio / checkbox with title + caption (rule/checkbox-multiline-top) ──── */
+.pm-choice { display: block; padding: var(--mp-spacing-3, 12px) var(--mp-spacing-4, 16px); border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: var(--mp-radii-md, 6px); cursor: pointer; }
+.pm-choice--active { border-color: var(--mp-colors-border-selected, #029861); background: var(--mp-colors-background-brand-subtle, #ecf8f3); }
+.pm-choice--disabled { cursor: default; opacity: 0.6; }
+.pm-choice .mp-radio__root, .pm-choice .mp-checkbox__root { align-items: flex-start; }
+.pm-check { display: flex; align-items: center; gap: var(--mp-spacing-2, 8px); font-size: var(--mp-font-sizes-md, 14px); cursor: pointer; }
+.pm-choice-title { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-default, #080d0e); }
+.pm-choice-desc { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #3a4749); line-height: var(--mp-line-heights-sm, 16px); margin-top: var(--mp-spacing-0\.5, 2px); }
+
+@media (max-width: 720px) {
+  .pm-bar { padding: var(--mp-spacing-3, 12px) var(--mp-spacing-4, 16px); flex-direction: column; align-items: stretch; }
+  .pm-stage { padding: var(--mp-spacing-4, 16px) var(--mp-spacing-4, 16px) var(--mp-spacing-8, 32px); }
+  .pm-title { font-size: var(--mp-font-sizes-xl, 20px); line-height: var(--mp-line-heights-xl, 28px); }
+}
+
+/* ── Menu items with a written refusal reason (PmMenu) ────────────────────── */
+.pm-menu-content { max-width: var(--mp-sizes-72, 288px); }
+.pm-menu-item { display: flex; flex-direction: column; align-items: flex-start; text-align: left; white-space: normal; }
+.pm-menu-danger { color: var(--mp-colors-text-danger, #a8352d); }
+
+/* ── Index filter bar + empty state (mirrors the scoped copies on shipped index
+      pages; .filter-search pill itself comes from erp.css) ────────────────── */
+.pm-page .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4, 16px); }
+.pm-page .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3, 12px); margin-left: auto; }
+.pm-empty-full { display: flex; flex-direction: column; align-items: center; }
+.pm-empty-illustration { width: var(--mp-sizes-72, 288px); height: var(--mp-sizes-60, 240px); object-fit: contain; }
+.pm-empty-title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-default, #080d0e); }
+.pm-empty-desc { margin: var(--mp-spacing-0\.5, 2px) 0 0; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #3a4749); }
+.pm-empty-cta { margin-top: var(--mp-spacing-3, 12px); }
+.pm-empty-inline { padding: var(--mp-spacing-8, 32px) var(--mp-spacing-4, 16px); text-align: center; color: var(--mp-colors-text-secondary, #3a4749); font-size: var(--mp-font-sizes-md, 14px); }
+.pm-stats { margin-bottom: var(--mp-spacing-5, 20px); }
+
+/* ── Approvals inbox card ─────────────────────────────────────────────────── */
+.pm-approval-head { padding: var(--mp-spacing-4, 16px); gap: var(--mp-spacing-3, 12px); cursor: pointer; flex-wrap: nowrap; }
+.pm-approval-body { padding: var(--mp-spacing-4, 16px); border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); }
+.pm-tl-reason.pm-m-0 { margin: 0; }
+.pm-nowrap { white-space: nowrap; }
+.pm-tree-name > div { min-width: 0; overflow-wrap: anywhere; }
+/* ErpFilterSelect as a full-width form field: its root shrink-wraps, so let it fill the row. */
+.efs[style*="--efs-w: 100%"] { display: block; width: 100%; }
+
+/* ── Index summary (same anatomy as ProductsPage .stats-section: flat, divided, no card boxes) ── */
+/* ── Detail-page header summary (details-page-format §A.4) ── the same markup as
+   SalesOrder/Bill/PurchaseOrder detail: primary row on the header grid with one
+   emphasis amount, a 4/4 dashed rule, then the ContentList grid. Scoped to .pm-page
+   so it never reaches the pages that define these classes in their own scoped CSS. */
+.pm-page .detail-summary { display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px); }
+.pm-page .content-list-grid {
+  display: grid; grid-template-columns: minmax(0, 318px) repeat(4, minmax(0, 1fr));
+  column-gap: var(--mp-spacing-6, 24px); row-gap: 0;
+}
+.pm-page .content-list-col { display: flex; flex-direction: column; min-width: 0; }
+.pm-page .detail-primary-total {
+  grid-column: 3 / -1; justify-self: end; align-self: start;
+  padding-top: var(--mp-spacing-2, 8px); /* matches ContentList's top padding */
+  display: flex; align-items: baseline; gap: var(--mp-spacing-2, 8px);
+}
+.pm-page .detail-total-label, .pm-page .detail-total-amount {
+  font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold, 600);
+  color: var(--mp-colors-text-default, #080d0e);
+}
+.pm-page .detail-divider {
+  height: 1px;
+  background: repeating-linear-gradient(
+    to right,
+    var(--mp-colors-border-default, #e3e7e9) 0, var(--mp-colors-border-default, #e3e7e9) 4px,
+    transparent 4px, transparent 8px
+  );
+}
+@media (max-width: 1100px) { .pm-page .content-list-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .pm-page .detail-primary-total { grid-column: 2; } }
+
+.pm-kpis { display: flex; gap: var(--mp-spacing-6, 24px); align-items: flex-start; }
+.pm-kpi { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1, 4px); padding-right: var(--mp-spacing-6, 24px); align-self: stretch; }
+.pm-kpi--bordered { border-right: 1px solid var(--mp-colors-border-default, #e3e7e9); }
+.pm-kpi-title { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-default, #080d0e); line-height: var(--mp-line-heights-md, 20px); white-space: nowrap; }
+.pm-kpi-period { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #3a4749); line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pm-kpi-amount { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-default, #080d0e); line-height: var(--mp-line-heights-2xl, 32px); white-space: nowrap; }
+.pm-kpi-link { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-link, #165082); line-height: var(--mp-line-heights-md, 20px); cursor: pointer; }
+@media (max-width: 900px) { .pm-kpis { overflow-x: auto; } }
+
+/* Progress bar in a table cell: sit it on the first text line's midline, like the numbers beside it. */
+.pm-progress-line { height: var(--mp-sizes-5, 20px); display: flex; align-items: center; }
+.pm-progress-line > * { flex: 1; }
+
+/* Project page tabs: labels stay on one line; the tab bar scrolls sideways when narrow. */
+#pm-detail-tabs [data-pixel-component="MpTabList"] { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; }
+#pm-detail-tabs [role="tab"] { white-space: nowrap; flex-shrink: 0; }
+
+/* ── New project › phase card: title row, then fields and work-package rows on one grid ── */
+.pm-phase-head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3, 12px); }
+/* One grid for the phase fields and its work-package rows, so the name inputs share a width.
+   a: type+qty+unit · b: qty+unit · c: RAB+weight only · d: name only. Last track = remove. */
+/* Every cell carries its own label, so the row aligns at the TOP: a field's error
+   caption then grows the row downwards instead of shifting its neighbours. */
+.pm-srow { display: grid; gap: var(--mp-spacing-3, 12px); align-items: start; }
+/* The row-remove button has no label above it — nudge it down to the control line. */
+.pm-srow .pm-row-remove { margin-top: var(--mp-spacing-6, 24px); }
+.pm-srow--a { grid-template-columns: minmax(0, 1fr) var(--mp-sizes-40, 160px) var(--mp-sizes-32, 128px) var(--mp-sizes-28, 112px) minmax(0, var(--mp-sizes-56, 224px)) var(--mp-sizes-10, 40px); }
+.pm-srow--b { grid-template-columns: minmax(0, 1fr) var(--mp-sizes-32, 128px) var(--mp-sizes-28, 112px) var(--mp-sizes-10, 40px); }
+.pm-srow--c { grid-template-columns: minmax(0, 1fr) var(--mp-sizes-40, 160px) var(--mp-sizes-32, 128px) var(--mp-sizes-10, 40px); }
+.pm-srow--d { grid-template-columns: minmax(0, 1fr) var(--mp-sizes-10, 40px); }
+.pm-row-remove { justify-self: end; }
+/* Field-label help icon. Pixel documents this as MpFormLabel's `#icon` slot, but this
+   build's form-control recipe has no such slot (see docs/patterns/pixel-enterprise-overrides.md),
+   so the same MpIcon name="info" + v-tooltip goes inline in the label instead. */
+.pm-label-icon { display: inline-flex; vertical-align: text-bottom; margin-left: var(--mp-spacing-1, 4px); color: var(--mp-colors-icon-secondary, #3a4749); cursor: help; }
+
+/* ── Page banner between title bar and stage (BillDetailsPage .detail-stage-wrapper) ── */
+.pm-stage-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border-radius: var(--mp-radii-xl, 12px) var(--mp-radii-xl, 12px) 0 0; background: var(--mp-colors-background-stage, #ffffff); }
+.pm-stage-wrap--info { background: var(--mp-colors-background-information, #eef0fc); }
+.pm-stage-wrap--warning { background: var(--mp-colors-background-warning, #fef3d6); }
+.pm-page-banner { border-radius: 0 !important; flex-shrink: 0; }
+/* A badge used as a field value sits on the value's own line, level with plain text values. */
+.pm-field-badge { display: flex; align-items: center; min-height: var(--mp-sizes-5, 20px); }
+/* Last column of a scrolling line table stays put (same idea as ErpTablePage's sticky actions). */
+.pm-table th.pm-cell-sticky-end, .pm-table td.pm-cell-sticky-end {
+  position: sticky; right: 0; width: var(--mp-sizes-11, 44px); background: var(--mp-colors-background-neutral, #ffffff);
+  box-shadow: inset 1px 0 0 0 var(--mp-colors-border-default, #e3e7e9);
+}
+.pm-table th.pm-cell-sticky-end { background: var(--mp-colors-background-surface, #f1f5f9); }
+/* Same, for a row-action cell whose width is its content (a textlink, not a 44px icon).
+   It stays a table-cell — the flex row goes on an inner .pm-cell-actions — so the divider
+   spans the full row height instead of only the content's. */
+.pm-table th.pm-cell-sticky-action, .pm-table td.pm-cell-sticky-action {
+  position: sticky; right: 0; vertical-align: middle; background: var(--mp-colors-background-neutral, #ffffff);
+  box-shadow: inset 1px 0 0 0 var(--mp-colors-border-default, #e3e7e9);
+}
+.pm-table th.pm-cell-sticky-action { background: var(--mp-colors-background-surface, #f1f5f9); }
+/* Long free text in a line table wraps inside a bounded column instead of stretching it. */
+.pm-clamp-text { white-space: normal; max-width: var(--mp-sizes-90, 360px); }
+/* Total sits under its table, aligned with the amount column's right edge. */
+.pm-total-row { padding: 0 var(--mp-spacing-2, 8px) 0 0; }
+/* Toggle field in a filter bar: toggle then label, the standard 12px gap (rule/form-toggle-inline). */
+.pm-toggle-field { display: inline-flex; align-items: center; gap: var(--mp-spacing-3, 12px); cursor: pointer; font-size: var(--mp-font-sizes-md, 14px); }

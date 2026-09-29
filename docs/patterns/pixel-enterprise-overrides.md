@@ -135,6 +135,30 @@ ticked) reads as if there's no checkbox at all. Fixed globally in `erp.css` ›
 `.mp-checkbox__root[aria-disabled="true"] .mp-checkbox__control` to use
 `border.default` (`#e3e7e9`) — visible but still clearly muted/inactive.
 
+## 10. MpFormLabel — the documented `#icon` slot doesn't exist in this build
+
+Pixel's Form control docs put a field's help affordance in an **`#icon` slot** on
+`MpFormLabel`:
+
+```vue
+<MpFormLabel>
+  Username
+  <template #icon><MpIcon name="info" size="sm" v-tooltip="'…'" /></template>
+</MpFormLabel>
+```
+
+In this Pixel3 build that slot is **not rendered** — `form-control-slot-recipe`
+only declares `root · label · required · helpText · errorMessage`, so the icon
+silently disappears and the field loses its explanation. Keep the library's
+markup — `MpIcon name="info"` (not `information`) + the `v-tooltip` directive —
+but put it **inline in the label's default slot** with a small left margin
+(`.pm-label-icon` in `project-mto.css`). Revisit when Pixel ships the slot.
+
+A field-label tooltip is the home for the "why/what goes here" text that used to
+sit under the field as `MpFormHelpText`: one short line, `placement="top"`.
+
+---
+
 ---
 
 ## Rule of thumb
