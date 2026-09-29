@@ -76,6 +76,7 @@ const showHeaderSearch = computed(
 const ASSET_SCREENS = new Set([
   'Assets', 'Depreciation schedule', 'Tax book', 'Impairment tests', 'Period self check',
   'Custody and counts', 'Asset approvals', 'Leases', 'Asset settings',
+  'Tax differences', 'Lampiran 9', 'Asset roll forward', 'Asset migration',
 ]);
 const route = useRoute();
 const isAssetScreen = computed(

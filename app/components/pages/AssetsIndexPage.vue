@@ -23,7 +23,7 @@
  *  3. Disposed assets are excluded from the totals — they are no longer held —
  *     and show "—" for book value rather than a stale number.
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { MpBadge, MpButton, MpIcon, MpTooltip, MpButtonGroup, MpSegmentedControl, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
@@ -36,6 +36,11 @@ import AssetFiltersDrawer from '~/components/patterns/AssetFiltersDrawer.vue'
 import NewAssetDrawer from '~/components/patterns/NewAssetDrawer.vue'
 import { fixedAssets, canSeeFinancials, viewAs } from '~/data/assetStore'
 import { conditionOf, unassignedAssets } from '~/data/assetCustody'
+import ClassifyDrawer from '~/components/patterns/ClassifyDrawer.vue'
+import BulkEditDrawer from '~/components/patterns/BulkEditDrawer.vue'
+import NoDeleteDialog from '~/components/patterns/NoDeleteDialog.vue'
+import { missingParameters } from '~/data/assetTaxbook'
+import { latestBulkOperation, reverseBulkEdit, BULK_FIELDS, type BulkField } from '~/data/assetBulkEdit'
 import { newAssetDrawerOpen } from '~/data/fixedAssetSession'
 import {
   assetClasses,
@@ -82,6 +87,8 @@ const taxGroupFilter = ref('')
 const typeFilter = ref('')
 const typeOptions = ['Tangible', 'Intangible']
 const classOptions = computed(() => Array.from(new Set([...assetClasses, ...fixedAssets.value.map((a) => a.class)])).sort())
+/** OD-35: assets missing any parameter an output depends on. */
+const incompleteFilter = ref(false)
 const filtersOpen = ref(false)
 
 const statusOptions = ['Active', 'Impaired', 'Disposed', 'Fully depreciated', 'Incomplete']
@@ -98,9 +105,10 @@ const activeDrawerFilters = computed(() =>
 )
 
 const hasActiveFilter = computed(() =>
-  !!(search.value || typeFilter.value || classFilter.value || branchFilter.value || statusFilter.value || taxGroupFilter.value),
+  !!(search.value || typeFilter.value || classFilter.value || branchFilter.value || statusFilter.value || taxGroupFilter.value || incompleteFilter.value),
 )
 function clearFilters() {
+  incompleteFilter.value = false
   search.value = ''
   typeFilter.value = ''
   classFilter.value = ''
@@ -116,7 +124,7 @@ function clearFilters() {
  * unconditionally it is a link that does nothing, which is worse than no link.
  */
 const isFiltered = computed(() =>
-  !!(search.value || typeFilter.value || classFilter.value || branchFilter.value || statusFilter.value || taxGroupFilter.value),
+  !!(search.value || typeFilter.value || classFilter.value || branchFilter.value || statusFilter.value || taxGroupFilter.value || incompleteFilter.value),
 )
 
 // ── Rows ────────────────────────────────────────────────────────────────────
@@ -128,6 +136,7 @@ const filtered = computed<FixedAsset[]>(() => {
     if (branchFilter.value && a.branch !== branchFilter.value) return false
     if (statusFilter.value && a.status !== statusFilter.value) return false
     if (taxGroupFilter.value && a.taxGroup !== taxGroupFilter.value) return false
+    if (incompleteFilter.value && !missingParameters(a).length) return false
     if (!q) return true
     return (
       a.name.toLowerCase().includes(q) ||
@@ -253,9 +262,54 @@ function showUnclassified() {
  * the bulk bar — not as a page-level button. One asset's problem does not need
  * a control at the top of the screen.
  */
-function assignTaxGroup() {
-  infoToast(t('Assigning a tax group is done on the asset record.'))
+const classifyId = ref<string | null>(null)
+function assignTaxGroup(a: FixedAsset) {
+  classifyId.value = a.id
 }
+function onClassified(message: string) {
+  classifyId.value = null
+  successToast(t(message))
+}
+
+/** Assets missing a parameter, and the view that lists them with what is missing. */
+const incompleteCount = computed(() => fixedAssets.value.filter((a) => missingParameters(a).length).length)
+function showIncomplete() {
+  clearFilters()
+  incompleteFilter.value = true
+}
+
+// ── Bulk edit (OD-34) ───────────────────────────────────────────────────────
+const bulkIds = ref<string[]>([])
+const bulkField = ref<BulkField>('taxGroup')
+const bulkOpen = ref(false)
+function openBulk(selected: Set<number>, field: BulkField, deselect: () => void) {
+  bulkIds.value = [...selected].map((i) => paginated.value[i]!.id)
+  bulkField.value = field
+  bulkOpen.value = true
+  deselect()
+}
+function onBulkDone(message: string) {
+  bulkOpen.value = false
+  successToast(t(message))
+}
+const lastBulk = latestBulkOperation
+function bulkFieldLabel(f: BulkField) { return BULK_FIELDS.find((x) => x.key === f)!.label }
+function reverseLastBulk() {
+  if (!lastBulk.value) return
+  const r = reverseBulkEdit(lastBulk.value.number)
+  if (!r.ok) { infoToast(t(r.reason)); return }
+  successToast(t(`${r.op.number} reversed on ${r.op.items.length} ${r.op.items.length === 1 ? 'asset' : 'assets'}`))
+}
+
+// ── No delete (OD-36) ───────────────────────────────────────────────────────
+const noDeleteId = ref<string | null>(null)
+
+// ── Arriving filtered (FG1-AC2): the filing's refusal links here. ───────────
+const route = useRoute()
+watch(() => route.query.filter, (f) => {
+  if (f === 'unclassified') showUnclassified()
+  else if (f === 'incomplete') showIncomplete()
+}, { immediate: true })
 
 // rule/export-modal — export opens the shared modal, never a silent download.
 const exportOpen = ref(false)
@@ -447,6 +501,26 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
         </div>
 
         <!-- The book switcher moved above the figures; see the comment there. -->
+
+        <!-- OD-35: every missing parameter, not only the tax group. -->
+        <div v-if="incompleteCount && !incompleteFilter" class="asset-note">
+          <span class="stat-link stat-link--warn" @click="showIncomplete">
+            {{ incompleteCount }} {{ t(incompleteCount === 1 ? 'asset has incomplete parameters' : 'assets have incomplete parameters') }}
+          </span>
+        </div>
+        <div v-else-if="incompleteFilter" class="asset-note">
+          {{ t('Showing assets missing a parameter an output depends on. Each row says what is missing.') }}
+        </div>
+
+        <!-- OD-34: the latest bulk edit, reversible as one unit. -->
+        <div v-if="lastBulk" class="asset-note asset-note--bulk">
+          <span>
+            <strong>{{ lastBulk.number }}</strong> · {{ t(bulkFieldLabel(lastBulk.field)) }} {{ t('set to') }} {{ lastBulk.value }}
+            {{ t('on') }} {{ lastBulk.items.length }} {{ t(lastBulk.items.length === 1 ? 'asset' : 'assets') }} · {{ lastBulk.by }} {{ lastBulk.appliedAt }}
+            <template v-if="lastBulk.reversedAt"> · {{ t('reversed') }} {{ lastBulk.reversedAt }}</template>
+          </span>
+          <MpButton v-if="!lastBulk.reversedAt" size="sm" variant="secondary" is-rounded @click="reverseLastBulk">{{ t('Reverse') }}</MpButton>
+        </div>
       </div>
     </template>
 
@@ -459,6 +533,9 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
         <span class="asset-name__sub">
           {{ (row as unknown as FixedAsset).id }}
           <template v-if="(row as unknown as FixedAsset).tag"> · {{ (row as unknown as FixedAsset).tag }}</template>
+        </span>
+        <span v-if="incompleteFilter" class="asset-name__missing">
+          {{ t('Missing') }}: {{ missingParameters(row as unknown as FixedAsset).map((m) => t(m)).join(', ') }}
         </span>
       </span>
     </template>
@@ -524,22 +601,26 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
           <MpPopoverList>
             <MpPopoverListItem @click="openAsset(row as unknown as FixedAsset)">{{ t('View asset') }}</MpPopoverListItem>
             <MpPopoverListItem v-if="canSeeFinancials" @click="router.push('/depreciation-schedule')">{{ t('Depreciation schedule') }}</MpPopoverListItem>
-            <MpPopoverListItem v-if="!(row as unknown as FixedAsset).taxGroup" @click="assignTaxGroup">{{ t('Assign tax group') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="canSeeFinancials" @click="assignTaxGroup(row as unknown as FixedAsset)">
+              {{ (row as unknown as FixedAsset).taxGroup ? t('Change statutory group') : t('Assign tax group') }}
+            </MpPopoverListItem>
+            <MpPopoverListItem @click="noDeleteId = (row as unknown as FixedAsset).id">{{ t('Remove from the register') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
     </template>
 
     <!-- ── Bulk ── -->
-    <template #bulk-actions>
+    <template #bulk-actions="{ selectedRows, deselectAll }">
       <MpPopover id="asset-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
         <MpPopoverTrigger>
           <MpButton size="sm" variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('Actions') }}</MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
-            <MpPopoverListItem @click="assignTaxGroup">{{ t('Assign tax group') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="infoToast(t('Export is not part of this screen yet.'))">{{ t('Export selected') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="canSeeFinancials" @click="openBulk(selectedRows, 'taxGroup', deselectAll)">{{ t('Assign tax group') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openBulk(selectedRows, 'location', deselectAll)">{{ t('Bulk edit') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="infoToast(t('Not in this prototype'))">{{ t('Export selected') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -562,6 +643,9 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
   />
 
   <NewAssetDrawer :is-open="newAssetDrawerOpen" @close="newAssetDrawerOpen = false" @created="onCreated" />
+  <ClassifyDrawer :is-open="!!classifyId" :asset-id="classifyId" @close="classifyId = null" @done="onClassified" />
+  <BulkEditDrawer :is-open="bulkOpen" :ids="bulkIds" :initial-field="bulkField" @close="bulkOpen = false" @done="onBulkDone" />
+  <NoDeleteDialog :asset-id="noDeleteId" @close="noDeleteId = null" />
 
   <ExportModal
     :open="exportOpen"
@@ -575,6 +659,9 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
 </template>
 
 <style scoped>
+.asset-note { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.asset-note--bulk { padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); color: var(--mp-text-default); justify-content: space-between; }
+.asset-name__missing { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); margin-top: var(--mp-spacing-1); }
 /* rule/filter-bar-anatomy — left: inline filters + All filters; right: tools
    then search. rule/filter-bar-left-gap — the left gap is always 16px. */
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); flex: 0 1 auto; min-width: 0; }

@@ -295,6 +295,8 @@ export interface Journal {
   period: Period
   source: 'opening' | 'acquisition' | 'depreciation' | 'impairment' | 'disposal' | 'reversal'
     | 'improvement' | 'correction' | 'impairment-reversal' | 'catch-up' | 'lease-remeasurement'
+    /** A journal from outside the asset module (the self-check demonstration). */
+    | 'manual'
   memo: string
   lines: JournalLine[]
   /** For a reversal, the journal it reverses. */
@@ -1330,15 +1332,25 @@ function seedLedger() {
 }
 
 /**
- * State kept outside this file (the lease contracts) that has to be reseeded
- * with the register. A module registers once; its hook runs now and after
+ * State kept outside this file (lease contracts, the class master, bulk edits,
+ * migration evidence) that has to be reseeded with the register. A module registers once; its hook runs now and after
  * every reset, after the ledger is seeded and before the self-check.
  */
 const resetHooks: (() => void)[] = []
 export function onAssetStoreReset(fn: () => void) {
   resetHooks.push(fn)
   fn()
+  restateSelfChecks()
+}
+
+/**
+ * OD-43: each closed period ran its self-check when it posted, and the
+ * result is retained against that period. Restated after any state that a
+ * reset hook reseeds (leases add right-of-use assets to the register).
+ */
+function restateSelfChecks() {
   selfCheckResults.value = {}
+  for (const x of SEEDED_POSTINGS) runSelfCheck(x.period, `${x.postedOn} 17:00`)
   runSelfCheck(CURRENT_PERIOD, '30/09/2026 17:04')
 }
 
@@ -1362,6 +1374,66 @@ export function setStatutoryCode(id: string, code: string): { ok: true } | { ok:
   return { ok: true }
 }
 
+/**
+ * Withdraw an event recorded this session, for reversing a bulk edit as one
+ * unit (OD-34). Only events that post nothing can be withdrawn: a statutory
+ * classification, or an estimate revision whose period is still open. No
+ * journal and no posted period depends on either, so no ledger history is
+ * lost. The bulk edit keeps the evidence of the change and its reversal.
+ */
+export function retractEvent(assetId: string, eventId: string): string | null {
+  const log = eventLog.value[assetId]
+  const e = log?.find((x) => x.id === eventId)
+  if (!log || !e) return `No event ${eventId} on ${assetId}`
+  // Only the latest: a later event was built on this one, so it goes first.
+  if (log[log.length - 1]!.id !== eventId) return `${assetId} has changed since. Its later change has to be undone first.`
+  if (e.kind !== 'tax-classification' && e.kind !== 'estimate-revision') return `${eventId} posted to the ledger and cannot be withdrawn`
+  if (e.kind === 'estimate-revision' && postedRunFor(e.period)) return `${periodLabel(e.period)} is posted since, so the revision stands. Record a new revision instead.`
+  eventLog.value = { ...eventLog.value, [assetId]: log.filter((x) => x.id !== eventId) }
+  return null
+}
+
+/** The fields of a record that are not money: they move no figure and post nothing. */
+export type RecordField = 'class' | 'location' | 'custodian' | 'statutoryCode'
+
+/** Change descriptive fields on an asset record (class, custody, statutory code). */
+export function updateAssetRecord(id: string, patch: Partial<Pick<AssetSeed, RecordField>>): boolean {
+  if (!recordById(id)) return false
+  assetRecords.value = assetRecords.value.map((s) => (s.id === id ? { ...s, ...patch } : s))
+  return true
+}
+
+/**
+ * FG6-AC3 demonstration. LR-1 means nothing outside the module can post to
+ * an asset control account, so the only way to show the reconciliation
+ * failing is to post a journal as if another module had. It is labelled as a
+ * demonstration wherever it appears, and it can be withdrawn.
+ */
+export function simulateDirectJournal(amount = 4_000_000, p: Period = CURRENT_PERIOD): Journal {
+  const j: Journal = {
+    number: nextJournal(), date: periodEndDate(p), period: p, source: 'manual',
+    memo: 'Demonstration: a journal posted outside the asset module',
+    lines: [
+      { account: '6-5100 · Depreciation and amortisation', description: 'Manual adjustment (demonstration)', debit: amount, credit: null, control: '6-5100' },
+      { account: '2-1900 · Accrued liabilities', description: 'Manual adjustment (demonstration)', debit: null, credit: amount, control: 'other' },
+    ],
+  }
+  journals.value = [...journals.value, j]
+  return j
+}
+
+/** Withdraw the demonstration journals, so the ledger is the module's alone again. */
+export function withdrawDirectJournals(): number {
+  const n = journals.value.filter((j) => j.source === 'manual').length
+  journals.value = journals.value.filter((j) => j.source !== 'manual')
+  return n
+}
+
+/** Every self-check result retained this session, one per period, latest period first. */
+export function retainedSelfChecks(): SelfCheckResult[] {
+  return Object.values(selfCheckResults.value).sort((a, b) => (a.period < b.period ? 1 : -1))
+}
+
 /** Return every piece of session state to the sample data. */
 export function resetAssetStore() {
   journalSeq = 118
@@ -1372,8 +1444,7 @@ export function resetAssetStore() {
   seedLedger()
   seedTests()
   for (const fn of resetHooks) fn()
-  selfCheckResults.value = {}
-  runSelfCheck(CURRENT_PERIOD, '30/09/2026 17:04')
+  restateSelfChecks()
 }
 
 resetAssetStore()

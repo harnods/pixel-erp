@@ -127,7 +127,7 @@ function confirmPost() {
   const number = pendingNumber.value
   const r = postRun(p.month)
   if (!r.ok) { infoToast(r.reason); return }
-  successToast(t(`${p.label} posted · ${number}`))
+  successToast(t(`${p.label} posted · ${number} · self-check run and retained for the period`))
   confirming.value = null
 }
 
@@ -470,6 +470,7 @@ function stateLabel(p: SchedulePeriod) {
 .ds__runlabel { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .ds__runperiod { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ds__runnote { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); }
+.ds__runrule { color: var(--mp-text-secondary); }
 .ds__runfig { text-align: right; flex: none; }
 .ds__runfiglabel { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .ds__runfigvalue {
@@ -591,7 +592,7 @@ function stateLabel(p: SchedulePeriod) {
 /* ── Journal preview drawer ── */
 /* 1300 matches BillsFiltersDrawer: the app header is 1100, and a drawer below
    it renders with its own header hidden behind the chrome. */
-.ds__overlay { position: fixed; inset: 0; background: var(--mp-background-overlay); z-index: 1300; }
+.ds__overlay { position: fixed; inset: 0; background: var(--mp-colors-background-overlay); z-index: 1300; }
 .ds__drawer {
   position: absolute; top: 0; right: 0; bottom: 0; width: 560px; max-width: 94vw;
   background: var(--mp-background-neutral); display: flex; flex-direction: column;

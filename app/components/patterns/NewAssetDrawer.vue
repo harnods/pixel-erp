@@ -13,8 +13,8 @@ import { MpButton, MpCheckbox, MpIcon, MpInput } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { createAsset, earliestEffectivePeriod, canChangeValue, viewAs } from '~/data/assetStore'
-import { assetBranches, STATUTORY_GROUPS } from '~/data/fixedAssets'
-import { classMaster } from '~/data/fixedAssetScreens'
+import { assetBranches } from '~/data/fixedAssets'
+import { assetClassMaster, classDef, allowedGroupsFor, groupRefusal } from '~/data/assetTaxbook'
 import { parseRupiah } from '~/data/assetValueChange'
 import { periodLabel } from '~/data/assetEngine'
 import { previewNewAsset } from '~/data/assetPreview'
@@ -30,8 +30,13 @@ const emit = defineEmits<{
 
 const { t } = useLocale()
 
-const classOptions = [...classMaster.map((c) => c.class), 'Intangible assets']
-const groupOptions = computed(() => (f.value.cls === 'Intangible assets' ? INTANGIBLE_TAX_GROUPS : Object.keys(STATUTORY_GROUPS).filter((g) => g !== 'Lease payments')))
+// TS-01: the class master is session state, so an edit in Asset settings reaches here.
+const classOptions = computed(() => assetClassMaster.value.map((c) => c.class))
+// OD-02: only the groups the class accepts are offered.
+const groupOptions = computed(() => {
+  const d = classDef(f.value.cls)
+  return d ? allowedGroupsFor(d.type, d.class) : []
+})
 const methodOptions = [
   { value: 'straight-line', label: 'Straight line' },
   { value: 'reducing-balance', label: 'Reducing balance' },
@@ -53,10 +58,11 @@ watch(() => props.isOpen, (open) => {
 
 // The class sets the defaults it owns, the way the class master says.
 watch(() => f.value.cls, (cls) => {
-  const m = classMaster.find((c) => c.class === cls)
+  const m = classDef(cls)
   if (!m) return
   f.value.taxGroup = m.defaultTaxGroup
-  f.value.lifeYears = String(parseInt(m.commercialLife, 10))
+  f.value.lifeYears = String(m.commercialLifeMonths / 12)
+  f.value.method = m.method
 })
 
 const posted = computed(() => periodLabel(earliestEffectivePeriod.value))
@@ -118,6 +124,11 @@ function submit() {
   const residual = parseRupiah(v.residual) ?? 0
   if (cost && residual >= cost) e.residual = 'The residual value must be below the cost'
   if (v.cls && v.cls !== 'Intangible assets' && !v.taxGroup) e.taxGroup = 'Choose the statutory group'
+  const def = classDef(v.cls)
+  if (def && v.taxGroup) {
+    const g = groupRefusal(def.type, def.class, v.taxGroup)
+    if (g) e.taxGroup = g
+  }
   errors.value = e
   if (Object.keys(e).length) return
   const r = createAsset({
@@ -207,7 +218,7 @@ function submit() {
               <label class="nad-label" for="nad-group">{{ t('Statutory group') }}</label>
               <ErpFilterSelect id="nad-group" v-model="f.taxGroup" :placeholder="t('Choose a group')" :options="groupOptions" width="100%" />
               <p v-if="errors.taxGroup" class="nad-error">{{ t(errors.taxGroup) }}</p>
-              <p v-else class="nad-hint">{{ t('Set from the class. The group fixes the tax life and method.') }}</p>
+              <p v-else class="nad-hint">{{ t('Set from the class master. The group fixes the tax life and method.') }}</p>
             </div>
             <div v-if="!isIntangible" class="nad-row">
               <div class="nad-field">
@@ -247,7 +258,7 @@ function submit() {
 
 <style scoped>
 /* 1300 matches BillsFiltersDrawer: the app header is 1100. */
-.nad-overlay { position: fixed; inset: 0; background: var(--mp-background-overlay); z-index: 1300; }
+.nad-overlay { position: fixed; inset: 0; background: var(--mp-colors-background-overlay); z-index: 1300; }
 .nad-panel {
   position: absolute; top: 0; right: 0; bottom: 0; width: 560px; max-width: 96vw;
   background: var(--mp-background-neutral); display: flex; flex-direction: column;
@@ -269,7 +280,7 @@ function submit() {
 .nad-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .nad-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: 0; line-height: var(--mp-line-heights-sm); }
 /* rule/form-errors-inline: the error sits with the field, not in a toast. */
-.nad-error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-critical); margin: 0; line-height: var(--mp-line-heights-sm); }
+.nad-error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); margin: 0; line-height: var(--mp-line-heights-sm); }
 .nad-foot {
   display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3);
   padding: var(--mp-spacing-4) var(--mp-spacing-6); flex: none;

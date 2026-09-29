@@ -37,6 +37,10 @@ import AssetLifeSchedule from '~/components/patterns/AssetLifeSchedule.vue'
 import IntangibleCodePicker from '~/components/patterns/IntangibleCodePicker.vue'
 import { lifeSchedule } from '~/data/assetPreview'
 import { leaseOfAsset } from '~/data/assetLeases'
+import ClassifyDrawer from '~/components/patterns/ClassifyDrawer.vue'
+import NoDeleteDialog from '~/components/patterns/NoDeleteDialog.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import { assetClassMaster, planClassChange, changeAssetClass, canChangeClass } from '~/data/assetTaxbook'
 
 // The shared detailMatch slot in [...slug].vue passes `order-id` to every
 // detail component, so the prop is named to match rather than special-casing
@@ -187,6 +191,44 @@ function setTaxGroup(group: string) {
   if (!r.ok) { infoToast(r.reason); return }
   successToast(t(`Statutory group set to ${group}`))
 }
+
+// ── Statutory classification (OD-02) ────────────────────────────────────────
+const classifyOpen = ref(false)
+function onClassified(message: string) {
+  classifyOpen.value = false
+  successToast(t(message))
+}
+
+// ── Class change (TS-01): inherits the class defaults, previewed first ─────
+const classOpen = ref(false)
+const newClass = ref('')
+const classOptions = computed(() => assetClassMaster.value.filter((c) => c.type === asset.value?.type).map((c) => c.class))
+const classPlan = computed(() => (asset.value && newClass.value ? planClassChange(asset.value.id, newClass.value) : null))
+function openClassChange() {
+  if (isGone.value) { openChange('revise'); return }
+  newClass.value = ''
+  classOpen.value = true
+}
+function confirmClassChange() {
+  if (!asset.value) return
+  const r = changeAssetClass(asset.value.id, newClass.value)
+  if (!r.ok) { infoToast(t(r.reason)); return }
+  classOpen.value = false
+  successToast(t(`${asset.value.id} moved to ${newClass.value}. The class defaults are applied`))
+}
+
+// ── No delete (OD-36): the correction paths instead ─────────────────────────
+const noDeleteOpen = ref(false)
+
+// Arriving from the no-delete dialog with a correction path chosen.
+const route = useRoute()
+watch(() => [route.query.change, asset.value?.id], () => {
+  const c = route.query.change
+  if (typeof c === 'string' && VALUE_ACTIONS.some((a) => a.key === c) && asset.value) {
+    openChange(c as ValueAction)
+    router.replace({ path: route.path })
+  }
+}, { immediate: true })
 </script>
 
 <template>
@@ -260,6 +302,14 @@ function setTaxGroup(group: string) {
             <MpPopoverList>
               <MpPopoverListItem v-for="a in VALUE_ACTIONS" :key="a.key" @click="openChange(a.key)">{{ t(a.label) }}</MpPopoverListItem>
             </MpPopoverList>
+            <div class="ad__menuhead">{{ t('Classification') }}</div>
+            <MpPopoverList>
+              <MpPopoverListItem @click="classifyOpen = true">{{ t('Statutory classification') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="openClassChange">{{ t('Change asset class') }}</MpPopoverListItem>
+            </MpPopoverList>
+            <MpPopoverList>
+              <MpPopoverListItem @click="noDeleteOpen = true">{{ t('Remove from the register') }}</MpPopoverListItem>
+            </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
       </div>
@@ -275,16 +325,7 @@ function setTaxGroup(group: string) {
             {{ t('This asset is excluded from the tax book, the difference total and the statutory filing until a group is set.') }}
           </div>
         </div>
-        <MpPopover id="ad-setgroup" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-          <MpPopoverTrigger>
-            <MpButton variant="secondary" is-rounded right-icon="chevrons-down">{{ t('Set group') }}</MpButton>
-          </MpPopoverTrigger>
-          <MpPopoverContent class="erp-dropdown-menu">
-            <MpPopoverList>
-              <MpPopoverListItem v-for="g in assetTaxGroups" :key="g" @click="setTaxGroup(g)">{{ g }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+        <MpButton variant="secondary" is-rounded @click="classifyOpen = true">{{ t('Set group') }}</MpButton>
       </div>
 
       <!-- FG-7: a change held for approval is named where the asset is read. -->
@@ -431,6 +472,14 @@ function setTaxGroup(group: string) {
           <div class="ad__panefields">
             <ContentList v-for="f in p.fields" :key="f.k" horizontal :label="t(f.k)" :value="f.v" />
           </div>
+          <div v-if="p.head === 'Tax parameters' && canSeeFinancials && !isGone" class="ad__paneaction">
+            <MpButton size="sm" variant="secondary" is-rounded @click="classifyOpen = true">
+              {{ effectiveTaxGroup ? t('Change classification') : t('Classify') }}
+            </MpButton>
+          </div>
+          <div v-if="p.head === 'Accounting' && canSeeFinancials && !isGone" class="ad__paneaction">
+            <MpButton size="sm" variant="secondary" is-rounded @click="openClassChange">{{ t('Change asset class') }}</MpButton>
+          </div>
         </div>
       </div>
 
@@ -498,6 +547,42 @@ function setTaxGroup(group: string) {
                   </tr>
                 </tbody>
               </table>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </Teleport>
+
+    <ClassifyDrawer :is-open="classifyOpen" :asset-id="asset.id" @close="classifyOpen = false" @done="onClassified" />
+    <NoDeleteDialog :asset-id="noDeleteOpen ? asset.id : null" @close="noDeleteOpen = false" />
+
+    <!-- ── Class change (TS-01) ── -->
+    <Teleport to="body">
+      <div v-if="classOpen" class="ad__overlay">
+        <aside class="ad__drawer" role="dialog" :aria-label="t('Change asset class')">
+          <header class="ad__drawerhead">
+            <div>
+              <div class="ad__drawertitle">{{ t('Change asset class') }}</div>
+              <div class="ad__drawersub">{{ asset.id }} · {{ t('now') }} {{ asset.class }}</div>
+            </div>
+            <MpButton class="ad__drawerclose" variant="ghost" is-rounded :aria-label="t('Close')" @click="classOpen = false">
+              <MpIcon name="close" size="sm" />
+            </MpButton>
+          </header>
+          <div class="ad__drawerbody">
+            <label class="ad__fieldlabel" for="ad-newclass">{{ t('New class') }}</label>
+            <ErpFilterSelect id="ad-newclass" v-model="newClass" :placeholder="t('Choose a class')" :options="classOptions" width="100%" :is-clearable="false" />
+            <p class="ad__drawernote">{{ t('The asset inherits the class\'s statutory group, accounting life and method from the class master. Posted periods do not move.') }}</p>
+            <template v-if="classPlan">
+              <p v-if="!classPlan.ok" class="ad__fielderror">{{ t(classPlan.reason ?? '') }}</p>
+              <div v-else class="ad__classplan">
+                <ContentList v-for="c in classPlan.changes" :key="c.field" horizontal :label="t(c.field)" :value="`${c.before} → ${c.after}`" />
+              </div>
+            </template>
+            <p v-if="!canChangeClass" class="ad__fielderror">{{ t(`Viewing as ${viewAs}. Changing a class needs the Owner or Accounting role.`) }}</p>
+            <div class="ad__drawerfoot">
+              <MpButton variant="ghost" is-rounded @click="classOpen = false">{{ t('Cancel') }}</MpButton>
+              <MpButton is-rounded :is-disabled="!classPlan?.ok || !canChangeClass" @click="confirmClassChange">{{ t('Change class') }}</MpButton>
             </div>
           </div>
         </aside>
@@ -738,6 +823,11 @@ function setTaxGroup(group: string) {
 .ad__menuhead { padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 :global(.ad__actionsmenu) { min-width: 240px; }
 .ad__drawer--wide { width: 560px; }
+.ad__paneaction { padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
+.ad__fieldlabel { display: block; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin-bottom: var(--mp-spacing-2); }
+.ad__fielderror { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); margin-top: var(--mp-spacing-3); }
+.ad__classplan { margin-top: var(--mp-spacing-4); display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.ad__drawerfoot { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-6); }
 .ad__booktabs { display: flex; gap: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); margin-bottom: var(--mp-spacing-4); }
 .ad__version { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); margin-bottom: var(--mp-spacing-4); overflow: hidden; }
 .ad__versionhead { display: flex; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4) 0; }

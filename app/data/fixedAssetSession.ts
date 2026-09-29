@@ -14,6 +14,7 @@ import {
   runSelfCheck, selfCheckFor, CURRENT_MONTH, CURRENT_PERIOD,
   type DepreciationRun,
 } from './assetStore'
+import { POSTING_DATE } from './assetPolicy'
 
 export {
   impairmentTests, recordImpairmentTest, assignTaxGroupTo, assignedTaxGroup, unclassifiedAssets,
@@ -103,7 +104,8 @@ export const nextUnposted = computed(() =>
 
 /** Post a month. The journal number and date come from the store. */
 export function postRun(month: number) {
-  return postPeriod(periodOfMonth(month))
+  const p = periodOfMonth(month)
+  return postPeriod(p, POSTING_DATE)
 }
 
 /** Reverse a month: a reversing journal, never a deletion (LR-4). */

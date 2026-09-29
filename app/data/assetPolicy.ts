@@ -24,6 +24,9 @@ export const journalPolicyDay = ref(5)
 /** OD-10. When on, generating a run posts it at once. It stays reversible. */
 export const autoPostRuns = ref(false)
 
+/** The prototype's today: the date a run posted now carries. */
+export const POSTING_DATE = '30/09/2026'
+
 export function resetAssetPolicy() {
   journalDatePolicy.value = 'period-end'
   journalPolicyDay.value = 5
@@ -31,7 +34,7 @@ export function resetAssetPolicy() {
 }
 
 /** The date a period's journal carries under the current policy. */
-export function journalDateFor(p: Period, postedOn: string): string {
+export function journalDateFor(p: Period, postedOn: string = POSTING_DATE): string {
   switch (journalDatePolicy.value) {
     case 'posting-date': return postedOn
     case 'policy-day': {
