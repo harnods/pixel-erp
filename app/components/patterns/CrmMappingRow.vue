@@ -120,7 +120,7 @@ function onStrategy(v: string) {
 
 <style scoped>
 /* 8px top/bottom padding + a divider; the parent list strips the last row's border. */
-.map-row { padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-border-subtle, #e6e8eb); }
+.map-row { padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-border-default, #c8cdd0); }
 .map-grid { display: grid; grid-template-columns: minmax(220px, 1.2fr) 200px minmax(220px, 1.4fr); gap: var(--mp-spacing-4); align-items: center; }
 .map-target { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5, 2px); min-width: 0; }
 .map-target-label { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-default); }

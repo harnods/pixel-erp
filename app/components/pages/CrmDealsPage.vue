@@ -908,7 +908,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
    pinned bar carries an opaque strip above it. Rest-state spacing unchanged. */
 .cc-stats { padding-top: var(--mp-spacing-5); margin-bottom: var(--mp-spacing-5); }
 .stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
-.stat-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding: 0 var(--mp-spacing-6) 0 0; align-self: stretch; background: none; border: none; text-align: left; cursor: pointer; border-radius: var(--mp-radii-md); }
+.stat-card.mp-button { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: var(--mp-spacing-1); padding: 0 var(--mp-spacing-6) 0 0; align-self: stretch; background: none; border: none; text-align: left; cursor: pointer; border-radius: var(--mp-radii-md); }
 .stat-card--bordered { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .stat-card:hover .stat-title { color: var(--mp-text-link); }
 .stat-card--active .stat-title { color: var(--mp-text-link); font-weight: var(--mp-font-weights-semi-bold); }
