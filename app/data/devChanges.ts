@@ -31,9 +31,9 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'pm-v62-phase1',
     title: 'Project MTO v6.2 — project dimension, contract value from SOs, Overview tab',
     description:
-      'Phase 1 of the v6.2 pass. Creating a project now creates a dimension value equal to its code (A-2), so pegging rides the existing Dimension engine instead of a bespoke control field. Contract value is derived as the sum of the sales orders carrying the project (§11) rather than a typed number. Adds the Overview tab and renames Changes to Engineering change, since v6.2 drops the variation-order object. Seeds PRJ-A "Meja custom Pak Budi" with the figures the demo depends on — budget Rp30.000.000, Rp4.200.000 posted, Rp12.000.000 set aside, Available Rp13.800.000. Removes the "master has changed" divergence badge: v6.2 closes OQ 28 and keeps the origin record backstage for the next-wave fan-out PRD.',
+      'Phase 1 of the v6.2 pass. Creating a project now creates a dimension value equal to its code (A-2), so pegging rides the existing Dimension engine instead of a bespoke control field. Contract value is derived as the sum of the sales orders carrying the project (§11) rather than a typed number. Renames Changes to Engineering change, since v6.2 drops the variation-order object. Seeds PRJ-A "Meja custom Pak Budi" with the figures the demo depends on — budget Rp30.000.000, Rp4.200.000 posted, Rp12.000.000 set aside, Available Rp13.800.000. Removes the "master has changed" divergence badge: v6.2 closes OQ 28 and keeps the origin record backstage for the next-wave fan-out PRD.',
     date: '2026-09-29',
-    files: ['projects.ts', 'dimensions.ts', 'projectBudgets.ts', 'projectTransactions.ts', 'projectBoms.ts', 'ProjectDetailPage.vue', 'OverviewTab.vue'],
+    files: ['projects.ts', 'dimensions.ts', 'projectBudgets.ts', 'projectTransactions.ts', 'projectBoms.ts', 'ProjectDetailPage.vue'],
   },
   {
     id: 'crm-deals-exist-in-deals',

@@ -17,7 +17,6 @@ import PmTitleBar from '../PmTitleBar.vue'
 import PmMenu, { type PmMenuItem } from '../PmMenu.vue'
 import PmOverlay from '../PmOverlay.vue'
 import PmActionError from '../PmActionError.vue'
-import OverviewTab from '../tabs/OverviewTab.vue'
 import StructureTab from '../tabs/StructureTab.vue'
 import BudgetTab from '../tabs/BudgetTab.vue'
 import CostTrackingTab from '../tabs/CostTrackingTab.vue'
@@ -29,7 +28,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import DetailJumpTo, { type JumpItem } from '~/components/patterns/DetailJumpTo.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
-import { projects, getProject, methodLabel, weightTotal, usesMilestone } from '~/data/projects'
+import { projects, getProject, methodLabel, weightTotal, usesMilestone, contractValueOf } from '~/data/projects'
 import { getBudget } from '~/data/projectBudgets'
 import { projectSummary } from '~/data/projectSummary'
 import { pendingChanges } from '~/data/projectChanges'
@@ -62,7 +61,6 @@ const TABS = computed(() => {
   // engineering-change surface. Recognition stays visible although §11 puts the
   // engine after MVP, so the demo can still show the shape.
   const list = [
-    { key: 'overview', label: 'Overview' },
     { key: 'structure', label: 'Structure' },
     { key: 'budget', label: 'Budget' },
     { key: 'cost', label: 'Cost tracking' },
@@ -76,14 +74,14 @@ const TABS = computed(() => {
 const activeTab = computed({
   get: () => {
     const q = String(route.query.tab ?? 'structure')
-    return TABS.value.some(x => x.key === q) ? q : 'overview'
+    return TABS.value.some(x => x.key === q) ? q : 'structure'
   },
   set: (key: string) => { router.replace({ query: { ...route.query, tab: key } }) },
 })
 // MpTabs' v-model is the tab index (same as WarehouseDetailsPage)
 const activeTabIndex = computed({
   get: () => Math.max(0, TABS.value.findIndex(x => x.key === activeTab.value)),
-  set: (idx: number) => { activeTab.value = TABS.value[idx]?.key ?? 'overview' },
+  set: (idx: number) => { activeTab.value = TABS.value[idx]?.key ?? 'structure' },
 })
 
 // ── Approval gate (Draft only, role-labelled; OQ7 provisional: Finance approves) ──
@@ -173,7 +171,7 @@ const lastEntry = computed(() => projectAudit.value[0])
           <div class="content-list-col"><ContentList :label="t('Project manager')" :value="project.pm" /></div>
           <div class="detail-primary-total">
             <span class="detail-total-label">{{ t('Contract value') }}</span>
-            <span class="detail-total-amount">{{ rp(project.contractValue) }}</span>
+            <span class="detail-total-amount">{{ rp(contractValueOf(project)) }}</span>
           </div>
         </div>
 
@@ -203,6 +201,7 @@ const lastEntry = computed(() => projectAudit.value[0])
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Sales order')" :value="project.salesOrderNo || '—'" />
+            <ContentList :label="t('Dimension value')" :value="project.dimensionValueId || '—'" />
             <ContentList :label="t('Priority')" :value="t(project.priority === 'high' ? 'High' : project.priority === 'medium' ? 'Medium' : 'Low')" />
           </div>
         </div>
@@ -217,8 +216,7 @@ const lastEntry = computed(() => projectAudit.value[0])
         <MpTabPanels>
           <MpTabPanel v-for="tab in TABS" :key="tab.key" :value="tab.key">
             <div v-if="activeTab === tab.key" class="pm-mt-5">
-              <OverviewTab v-if="tab.key === 'overview'" :project="project" />
-              <StructureTab v-else-if="tab.key === 'structure'" :project="project" />
+              <StructureTab v-if="tab.key === 'structure'" :project="project" />
               <BudgetTab v-else-if="tab.key === 'budget'" :project="project" />
               <CostTrackingTab v-else-if="tab.key === 'cost'" :project="project" />
               <RecognitionTab v-else-if="tab.key === 'recognition'" :project="project" />
