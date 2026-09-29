@@ -88,7 +88,7 @@ function componentsFor(wpId: string) {
       <div class="pm-section-head">
         <div>
           <h2 class="pm-h2">{{ t('Production plan') }}</h2>
-          <p class="pm-caption pm-m-0">{{ t('Target against actual output per work package. Open a row for the component picture: what is still reserved, what has been consumed into WIP, and what MRP found short.') }}</p>
+          <p class="pm-caption pm-m-0">{{ t('One table, two levels. A work package reports target against produced; its components report what is reserved, consumed into WIP and found short by MRP. A dash means the measure does not apply at that level.') }}</p>
         </div>
       </div>
 
@@ -96,14 +96,18 @@ function componentsFor(wpId: string) {
         <table class="pm-table">
           <thead>
             <tr>
-              <th>{{ t('Work package') }}</th>
-              <th class="pm-num">{{ t('Finished good target') }}</th>
-              <th class="pm-num">{{ t('Actual produced') }}</th>
+              <th>{{ t('Work package / component') }}</th>
+              <th class="pm-num">{{ t('Target') }}</th>
+              <th class="pm-num">{{ t('Produced') }}</th>
+              <th class="pm-num">{{ t('Reserved') }}</th>
+              <th class="pm-num">{{ t('Consumed') }}</th>
+              <th class="pm-num">{{ t('Requested') }}</th>
               <th>{{ t('Status') }}</th>
             </tr>
           </thead>
           <tbody>
             <template v-for="w in wps" :key="w.id">
+              <!-- Finished good: target and produced apply, the material columns do not. -->
               <tr class="pm-tr-sub pm-tr-click" @click="toggle(w.id)">
                 <td>
                   <span class="pm-row pm-row--nowrap pm-gap-1">
@@ -113,29 +117,30 @@ function componentsFor(wpId: string) {
                 </td>
                 <td class="pm-num">{{ w.plannedUnits ? `${num(w.plannedUnits)} ${w.unit ?? ''}` : '—' }}</td>
                 <td class="pm-num">{{ w.confirmedUnits ? `${num(w.confirmedUnits)} ${w.unit ?? ''}` : '—' }}</td>
+                <td class="pm-num pm-muted">—</td>
+                <td class="pm-num pm-muted">—</td>
+                <td class="pm-num pm-muted">—</td>
                 <td><ErpStatusBadge v-bind="badgeProps('wp', w.status, t)" /></td>
               </tr>
 
+              <!-- Component: the material columns apply, target and produced do not. -->
               <template v-if="open.has(w.id)">
-                <tr>
-                  <th>{{ t('Component') }}</th>
-                  <th class="pm-num">{{ t('Qty reserved') }}</th>
-                  <th class="pm-num">{{ t('Qty consumed') }}</th>
-                  <th class="pm-num">{{ t('Qty requested') }}</th>
-                </tr>
                 <tr v-for="c in componentsFor(w.id)" :key="`${w.id}-${c.name}`">
                   <td class="pm-wrap">{{ c.name }}<span v-if="c.unit" class="pm-cell-sub">{{ c.unit }}</span></td>
+                  <td class="pm-num pm-muted">—</td>
+                  <td class="pm-num pm-muted">—</td>
                   <td class="pm-num">{{ c.reserved ? num(c.reserved) : '—' }}</td>
                   <td class="pm-num">{{ c.consumed ? num(c.consumed) : '—' }}</td>
                   <td class="pm-num" :class="c.requested ? 'pm-neg' : ''">{{ c.requested ? num(c.requested) : '—' }}</td>
+                  <td />
                 </tr>
                 <tr v-if="!componentsFor(w.id).length">
-                  <td colspan="4"><div class="pm-empty-inline">{{ t('Nothing reserved, consumed or requested yet on this work package.') }}</div></td>
+                  <td colspan="7"><div class="pm-empty-inline">{{ t('Nothing reserved, consumed or requested yet on this work package.') }}</div></td>
                 </tr>
               </template>
             </template>
             <tr v-if="!wps.length">
-              <td colspan="4"><div class="pm-empty-inline">{{ t('No production work packages on this project.') }}</div></td>
+              <td colspan="7"><div class="pm-empty-inline">{{ t('No production work packages on this project.') }}</div></td>
             </tr>
           </tbody>
         </table>
