@@ -6,8 +6,10 @@
  *
  * Cross-reference: PRD v0.5 UC-00 — S-1 reservation method, S-2 entry-point
  * gating, S-3 partial consume / partial completion (mutually exclusive), S-4 start
- * with limited stock. Reservation itself is always on (L-12), so the Figma's
- * "Product components must be reserved" toggle is deliberately NOT built.
+ * with limited stock. The "Product components must be reserved" master toggle is
+ * built as the Figma draws it — the PRD's Key Concepts define reservation as
+ * something that can be disabled (UC-00/L-12 still say otherwise; see
+ * productionSettings.ts).
  */
 import { MpToggle, MpIcon, MpTooltip } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
@@ -45,6 +47,8 @@ function togglePartial(mode: Exclude<PartialMode, 'none'>) {
  * tranches, and even one finished unit needs a complete set.
  */
 const startGateNote = computed(() => {
+  if (!productionSettings.componentsMustBeReserved)
+    return 'Reservation is off, so a work order can start without any component reserved.'
   if (!productionSettings.allowStartWithLimitedStock)
     return 'A work order can start only once every component is reserved in full.'
   switch (productionSettings.partialMode) {
@@ -142,9 +146,20 @@ const methodOptions = computed(() =>
 
       <div class="ps-row">
         <span class="ps-label">
-          {{ t('Reservation method') }}
-          <span class="ps-label-desc">{{ t('Reservation always runs — this chooses who reserves, and when') }}</span>
+          {{ t('Product components must be reserved') }}
+          <span class="ps-label-desc">{{ t('Triggers reservation when a work order is created') }}</span>
         </span>
+        <div class="ps-control">
+          <MpToggle
+            id="ps-must-reserve" :is-checked="productionSettings.componentsMustBeReserved"
+            @change="saveProductionSettings({ componentsMustBeReserved: !productionSettings.componentsMustBeReserved })"
+          />
+        </div>
+      </div>
+
+      <!-- The method only means anything while reservation is on. -->
+      <div v-if="productionSettings.componentsMustBeReserved" class="ps-row">
+        <span class="ps-label">{{ t('Reservation method') }}</span>
         <ErpFilterSelect
           id="ps-method" v-model="reservationMethod"
           :placeholder="t('Reservation method')" :options="methodOptions"
@@ -152,7 +167,11 @@ const methodOptions = computed(() =>
         />
       </div>
 
-      <p v-if="productionSettings.reservationMethod === 'two-step'" class="ps-note">
+      <p v-if="!productionSettings.componentsMustBeReserved" class="ps-note">
+        <MpIcon name="information" size="sm" />
+        {{ t('Work orders raise no stock request and start without reserved components. Requests already raised stay on Stock requests.') }}
+      </p>
+      <p v-else-if="productionSettings.reservationMethod === 'two-step'" class="ps-note">
         <MpIcon name="information" size="sm" />
         {{ t('Work orders show an info badge instead of reservation actions: "Reservation via Stock requests only (PPIC / stockist)".') }}
       </p>

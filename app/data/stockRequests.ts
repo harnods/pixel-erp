@@ -596,10 +596,27 @@ export function skuDemandGroups(
 // ── Actions ────────────────────────────────────────────────────────────────────
 
 /**
+ * C-3 — what a line can reserve right now: its outstanding need, capped by the
+ * free stock at its destination warehouse. Reservation is BY AVAILABLE QTY — a
+ * line 30-of-40 covered reserves the 30 and stays Partially reserved for the
+ * stockist, rather than reserving nothing until the full 40 turns up.
+ *
+ * (Earlier drafts made auto-reserve per-line all-or-nothing. The PRD's Key
+ * Concepts now define One-step as reserving "by available qty", and that was the
+ * only rule anywhere that made a reservation all-or-nothing, so every reserve
+ * path — auto, manual, per request, per product — now goes through this.)
+ */
+export function reservableQty(line: StockRequestLine): number {
+  if (line.rejected) return 0
+  return Math.max(0, Math.min(line.qty - lineCovered(line), line.destAvailable))
+}
+
+/**
  * Reserve every line of a request as far as destination stock allows — the
- * dashboard's "Reserve stock" action. Per-line all-or-nothing (PRD C-3): a line
- * is only reserved when warehouse stock covers its whole outstanding need.
- * Returns the reserved qty, or undefined when there was nothing to do.
+ * dashboard's "Reserve stock" action. Each line takes what the destination can
+ * give, up to its outstanding need, and the rest stays open for a transfer or a
+ * purchase (C-3, by available qty). Returns the reserved qty, or undefined when
+ * there was nothing to reserve.
  */
 export function reserveStock(id: string): number | undefined {
   const req = stockRequests.find(r => r.id === id)
@@ -607,11 +624,11 @@ export function reserveStock(id: string): number | undefined {
   let reserved = 0
   for (const line of req.lines) {
     if (line.rejected) continue
-    const outstanding = line.qty - lineCovered(line)
-    if (outstanding <= 0 || line.destAvailable < outstanding) continue
-    line.reserved += outstanding
-    line.destAvailable -= outstanding
-    reserved += outstanding
+    const take = reservableQty(line)
+    if (take <= 0) continue
+    line.reserved += take
+    line.destAvailable -= take
+    reserved += take
   }
   if (reserved === 0) return undefined
   persistStockRequests()
@@ -744,13 +761,15 @@ export type StartBlockReason = 'none-reserved' | 'some-unreserved' | 'not-fully-
  * This counts RESERVATION, never availability: stock sitting free in the warehouse
  * does not open the gate, because nobody has allocated it to this job yet.
  *
- * Reservation is always on (L-12), so unlike v0.4 there is no "reservation off"
- * escape — a work order with no request at all has nothing to gate and passes.
+ * With reservation switched OFF ("Product components must be reserved") there is
+ * nothing to gate: no request is raised and nothing is allocated, so the work order
+ * starts freely. A work order with no request at all passes for the same reason.
  */
 export function startGate(
   workOrderId: string,
-  options: { partialMode: PartialMode; allowStartWithLimitedStock: boolean },
+  options: { reservationOn: boolean; partialMode: PartialMode; allowStartWithLimitedStock: boolean },
 ): { allowed: boolean; reason?: StartBlockReason } {
+  if (!options.reservationOn) return { allowed: true }
   const req = requestForWorkOrder(workOrderId)
   if (!req || req.lines.length === 0) return { allowed: true }
 
@@ -808,10 +827,10 @@ export function lineReadiness(line: StockRequestLine): LineReadiness {
 }
 
 /**
- * D-5 — reserve the SELECTED components of a work order. Per-line all-or-nothing
- * (C-3): a line is reserved only when destination stock covers its whole
- * outstanding need, so a partially covered line stays Requested for the stockist.
- * Returns what happened, so the caller can word the toast (C-3).
+ * D-5 — reserve the SELECTED components of a work order, each by available qty
+ * (C-3): a component the destination can only partly cover reserves what there
+ * is and stays Partially reserved. Returns what happened, so the caller can word
+ * the toast.
  */
 export function reserveWorkOrderProducts(
   workOrderId: string,
@@ -843,11 +862,10 @@ export function reserveRequestProducts(
     for (const line of drawdownOrder(lines)) {
       const outstanding = line.qty - lineCovered(line)
       if (outstanding <= 0) continue
-      // Reserve what the warehouse can actually give. PARTIAL is allowed here: the
-      // all-or-nothing rule (C-3) governs AUTO-reserve at work order creation, not a
-      // stockist reserving by hand — and the start gate's "partially reserved"
-      // states only exist because a line can be reserved short.
-      const take = Math.min(outstanding, line.destAvailable)
+      // Reserve what the warehouse can actually give (C-3, by available qty) — the
+      // start gate's "partially reserved" states only exist because a line can be
+      // reserved short.
+      const take = reservableQty(line)
       if (take <= 0) { productShort = true; continue }
       line.reserved += take
       line.destAvailable -= take
@@ -1066,9 +1084,9 @@ export function unreserveRequestProducts(
 
 /**
  * Reserve one component across EVERY open request that needs it — the product
- * perspective's counterpart to {@link reserveWorkOrderProducts}. Per-line
- * all-or-nothing still applies, so a transaction the warehouse can't cover in
- * full is left for a transfer or a purchase.
+ * perspective's counterpart to {@link reserveWorkOrderProducts}. Each line takes
+ * what its destination can give (C-3); `skipped` counts lines that got nothing,
+ * which is where a transfer or a purchase comes in.
  */
 export function reserveProductEverywhere(productId: string): { transactions: number; qty: number; skipped: number } {
   const result = { transactions: 0, qty: 0, skipped: 0 }
@@ -1078,12 +1096,12 @@ export function reserveProductEverywhere(productId: string): { transactions: num
     // so this reserves each of them rather than the first one found — but still
     // counts the request once, because the row the user clicked is a transaction.
     for (const line of req.lines.filter(l => l.productId === productId && !l.rejected)) {
-      const outstanding = line.qty - lineCovered(line)
-      if (outstanding <= 0) continue
-      if (line.destAvailable < outstanding) { result.skipped++; continue }
-      line.reserved += outstanding
-      line.destAvailable -= outstanding
-      result.qty += outstanding
+      if (line.qty - lineCovered(line) <= 0) continue
+      const take = reservableQty(line)
+      if (take <= 0) { result.skipped++; continue }
+      line.reserved += take
+      line.destAvailable -= take
+      result.qty += take
       touched = true
     }
     if (touched) result.transactions++
@@ -1160,9 +1178,10 @@ export interface WorkOrderMaterialLine {
 
 /**
  * C-4 — work order creation pushes a stock request carrying its component lines.
- * C-3 — under One-step, every line the destination warehouse covers IN FULL is
- * reserved straight away; a partially covered line stays Requested for the
- * stockist. Under Two-step nothing auto-reserves.
+ * C-3 — under One-step, every line reserves straight away BY AVAILABLE QTY: what
+ * the destination can give, up to its need. A line reserved short stays Partially
+ * reserved and one with no stock stays Requested, both for the stockist. Under
+ * Two-step nothing auto-reserves.
  *
  * Idempotent: a work order that already has a request keeps it, so opening an
  * older work order never raises a duplicate.
@@ -1176,9 +1195,9 @@ export function raiseStockRequestForWorkOrder(
     lines: WorkOrderMaterialLine[]
   },
   options: { autoReserve: boolean },
-): { request: StockRequest; created: boolean; reservedProducts: number; reservedQty: number; shortProducts: number } {
+): { request: StockRequest; created: boolean } & SettleResult {
   const existing = requestForWorkOrder(input.workOrderId)
-  if (existing) return { request: existing, created: false, reservedProducts: 0, reservedQty: 0, shortProducts: 0 }
+  if (existing) return { request: existing, created: false, ...NOTHING_SETTLED }
 
   const request: StockRequest = {
     id: `sr-wo-${input.workOrderId}`,
@@ -1190,9 +1209,9 @@ export function raiseStockRequestForWorkOrder(
   }
   stockRequests.push(request)
 
-  const { reservedProducts, reservedQty, shortProducts } = settleLines(request.lines, options.autoReserve)
+  const settled = settleLines(request.lines, options.autoReserve)
   persistStockRequests()
-  return { request, created: true, reservedProducts, reservedQty, shortProducts }
+  return { request, created: true, ...settled }
 }
 
 /**
@@ -1210,7 +1229,7 @@ export function appendStockRequestLines(
   requestor: string,
   tag: StockRequestLineTag,
   options: { autoReserve: boolean },
-): { request: StockRequest; reservedProducts: number; reservedQty: number; shortProducts: number } | undefined {
+): ({ request: StockRequest } & SettleResult) | undefined {
   const request = requestForWorkOrder(workOrderId)
   if (!request || lines.length === 0) return undefined
   const added = buildLines(lines, requestor).map(l => ({ ...l, tag }))
@@ -1234,24 +1253,32 @@ function buildLines(lines: WorkOrderMaterialLine[], requestor: string): StockReq
   }))
 }
 
-/** C-3 — auto-reserve the lines the destination covers IN FULL; leave the rest. */
-function settleLines(lines: StockRequestLine[], autoReserve: boolean) {
-  let reservedProducts = 0
-  let reservedQty = 0
-  let shortProducts = 0
+/** What an auto-reserve did — enough for the toast to say which case applied (C-3). */
+export interface SettleResult {
+  /** lines that reserved anything */
+  reservedProducts: number
+  reservedQty: number
+  /** of those, lines reserved SHORT — still Partially reserved for the stockist */
+  partialProducts: number
+  /** lines that reserved nothing — no stock at the destination, still Requested */
+  shortProducts: number
+}
+const NOTHING_SETTLED: SettleResult = { reservedProducts: 0, reservedQty: 0, partialProducts: 0, shortProducts: 0 }
+
+/** C-3 — auto-reserve each line by available qty; whatever stock can't cover stays open. */
+function settleLines(lines: StockRequestLine[], autoReserve: boolean): SettleResult {
+  const r = { ...NOTHING_SETTLED }
+  if (!autoReserve) return r
   for (const line of lines) {
-    if (line.destAvailable >= line.qty) {
-      if (autoReserve) {
-        line.reserved = line.qty
-        line.destAvailable -= line.qty
-        reservedProducts++
-        reservedQty += line.qty
-      }
-    } else {
-      shortProducts++
-    }
+    const take = reservableQty(line)
+    if (take <= 0) { if (line.qty - lineCovered(line) > 0) r.shortProducts++; continue }
+    line.reserved += take
+    line.destAvailable -= take
+    r.reservedProducts++
+    r.reservedQty += take
+    if (lineCovered(line) < line.qty) r.partialProducts++
   }
-  return { reservedProducts, reservedQty, shortProducts }
+  return r
 }
 
 // ── Prefill for the documents a shortfall leads to ─────────────────────────────
@@ -1342,6 +1369,12 @@ export interface DemandChangeResult {
   decreased: { productId: string; product: string; delta: number }[]
   /** components whose reservation had to be released to make the cut (R-4) */
   released: ReleaseResult
+  /**
+   * What One-step reserved again on the same save (C-3, by available qty): the
+   * new Adjustment lines, and the components a cut had to release first. Always
+   * nothing under Two-step, where PPIC reserves from Stock requests.
+   */
+  reserved: SettleResult
 }
 
 /**
@@ -1370,10 +1403,15 @@ export function applyDemandChanges(
   changes: DemandChange[],
   requestor: string,
   phase: 'edit' | 'adjust',
+  options: { autoReserve: boolean } = { autoReserve: false },
 ): DemandChangeResult {
-  const result: DemandChangeResult = { increased: [], decreased: [], released: { qty: 0, products: [] } }
+  const result: DemandChangeResult = {
+    increased: [], decreased: [], released: { qty: 0, products: [] }, reserved: { ...NOTHING_SETTLED },
+  }
   const req = requestForWorkOrder(workOrderId)
   if (!req) return result
+  /** Lines to put through C-3 once every change is applied. */
+  const toSettle: StockRequestLine[] = []
 
   for (const change of changes) {
     const lines = linesForProduct(req, change.productId)
@@ -1389,7 +1427,7 @@ export function applyDemandChanges(
         // rejectability. `template` carries the component's identity and
         // destination; nothing else about the original line is copied.
         const template = drawdownOrder(lines)[0]!
-        req.lines.push({
+        const added: StockRequestLine = {
           ...template,
           qty: delta,
           reserved: 0,
@@ -1399,7 +1437,11 @@ export function applyDemandChanges(
           tag: 'adjustment',
           rejected: false,
           destAvailable: destinationAvailableFor(change.productId, template.destinationWarehouseId),
-        })
+        }
+        req.lines.push(added)
+        // Worked example step 4: MDF +8 against 6 available → the new line
+        // reserves 6 and stays Partially reserved for the other 2.
+        toSettle.push(added)
       } else {
         const target = drawdownOrder(lines)[0]!
         target.qty += delta
@@ -1415,7 +1457,8 @@ export function applyDemandChanges(
     // released, and release is all-or-nothing per component (R-8).
     const reserved = lines.reduce((s, l) => s + l.reserved, 0)
     const covered = lines.reduce((s, l) => s + l.reserved + l.consumed, 0)
-    if (change.qty < covered && reserved > 0) {
+    const releasing = change.qty < covered && reserved > 0
+    if (releasing) {
       const released = releaseReservation(req.id, [change.productId])
       result.released.qty += released.qty
       result.released.products.push(...released.products)
@@ -1441,8 +1484,16 @@ export function applyDemandChanges(
       const l = req.lines[i]!
       if (l.productId === change.productId && l.tag && l.qty <= 0) req.lines.splice(i, 1)
     }
+    // R-4 — "the updated line is sent to the stock request on the same save", and
+    // re-reservation follows the method. Worked example: Baut 160 reserved → 150;
+    // the 160 is released, the line becomes 150, and One-step reserves 150 again.
+    if (releasing) toSettle.push(...linesForProduct(req, change.productId))
     result.decreased.push({ productId: change.productId, product, delta: -delta })
   }
+
+  // C-3 — under One-step, both kinds of line reserve by available qty now. Settled
+  // original-first, so scarce stock goes to committed demand before a top-up.
+  result.reserved = settleLines(drawdownOrder(toSettle), options.autoReserve)
 
   if (result.increased.length || result.decreased.length) persistStockRequests()
   return result

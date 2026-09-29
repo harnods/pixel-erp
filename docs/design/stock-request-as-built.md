@@ -1,9 +1,11 @@
 # Stock Request & WO Material Reservation — as built
 
 What the prototype on `feat/material-reserve` actually does, written so it can be
-diffed against **[PRD] Work Order Material Reservation & Stock Request**, Draft
-**v0.5** (Google Doc, 25 Sep 2026). Requirement IDs below (S-x, C-x, D-x, W-x, R-x)
-are the PRD's own.
+diffed against **[PRD] Work Order - Material Reservation**, Draft v0.5 on
+Confluence (page `51289981861`, space `PD`, status *Need feedback*, last edited
+29 Sep 2026). That page is the Google-Doc v0.5 of 25 Sep with two edits to its
+*Key Concepts* table — see §3. Requirement IDs below (S-x, C-x, D-x, W-x, R-x) are
+the PRD's own.
 
 v0.5 is the authority. It supersedes both PRD v0.4 and the Confluence draft
 *[PRD] INV — Stock Request Dashboard*, and it names this branch as its reference
@@ -65,7 +67,31 @@ no tenant starts auto-allocating stock on upgrade (L-12).
 
 ## 3. Divergences from the PRD
 
-**Only one open item remains.** v0.5 adopted the rest of what this build had
+### D0 — The PRD contradicts itself; built to Key Concepts ⚠️ *PRD fix needed*
+The Confluence page changed two phrases in **Key Concepts & Definitions** and
+nothing else. The normative sections were not updated to match, so the document
+now says both things. On the product owner's decision the build follows **Key
+Concepts**; the listed sections are the ones to bring into line.
+
+| | Key Concepts (built) | Still says the opposite |
+| --- | --- | --- |
+| One-step auto-reserve | "by available qty" — a line reserves what its destination has, up to its need | S-1, C-3, UC-06 worked example step 1 ("L2 is not reserved because stock 30 < 40 — all-or-nothing") and step 4 ("L5 is not auto-reserved"), OPEN-12 resolution, QA 2, R-4 |
+| Reservation on/off | "can be disabled" | Proposed Solution ("always on"), UC-00 ("There is no toggle to disable reservation"), L-12, QA 10's migration note |
+
+What following Key Concepts means in the code:
+- **C-3 by available qty everywhere.** All-or-nothing was the only rule that made
+  any reservation all-or-nothing, so one helper (`reservableQty`) now backs every
+  reserve path: auto-reserve on WO save, the Adjust delta line, One-step
+  re-reservation after an Adjust cut (R-4), the Reserve modal, and the dashboard's
+  per-request and per-product Reserve actions. Worked example step 4 now reads:
+  L5 reserves the 6 MDF available and stays Partially reserved for 2.
+- **"Product components must be reserved" is back** — the toggle the Figma draws.
+  Off: saving a WO raises no request; the WO shows no readiness, no Reserved qty,
+  no Reservation menu and no Adjust; the start gate is lifted. Requests already
+  raised stay on the dashboard. Default on. The always-on build's migration
+  (reservation-off → Two-step) is removed; the setting passes through as saved.
+
+**One other open item remains.** v0.5 adopted the rest of what this build had
 already diverged into (request numbering, per-line destination warehouse, the
 single detail page, By product / By transaction, the separate limited-stock
 setting), so those are no longer divergences.
@@ -82,9 +108,10 @@ Requested tab; here it stays until its work order leaves an active status.
 is used for the open-count badge, so switching is a one-line change.
 
 ### Resolved by v0.5
-- **The Figma's "Komponen produk harus direservasi" toggle is NOT built.** v0.5
-  makes reservation always on (L-12) and declares the Figma stale. Previously built
-  as drawn; now removed. The Figma still needs updating.
+- **The reservation toggle** went back and forth: built as the Figma drew it, removed
+  when the Google-Doc v0.5 made reservation always on, and **restored** when the
+  Confluence Key Concepts defined it as something that can be disabled (see D0). The
+  Figma is therefore no longer stale on this point — UC-00/L-12 are.
 - **Start gate** — v0.5's UC-04 table is implemented as written (see §4). The
   earlier build relaxed the gate from two independent toggles; v0.5 makes S-4 the
   master relaxer and the partial mode choose how.
@@ -100,10 +127,17 @@ is used for the open-count badge, so switching is a one-line change.
   point on WO surfaces is *hidden* and an info note points to Stock requests.
   Partial consume / partial completion are one `partialMode` union, so they cannot
   both be on. S-4 governs the start gate only.
-- **C-3 / C-4** — saving a WO raises exactly one request; under One-step, lines the
-  destination covers in full auto-reserve (per-line all-or-nothing) and the toast
-  says which case applied. Idempotent.
-- **UC-04 / D-8** — the full truth table: S-4 off → every component fully reserved;
+- **C-3 / C-4** — saving a WO raises exactly one request; under One-step every line
+  auto-reserves by available qty (see D0) and the toast names all three outcomes:
+  reserved, reserved short, sent to the stockist. Idempotent. No request at all
+  while reservation is switched off.
+- **The WO's Needed qty follows the request.** After an Adjust the work order needs
+  more (worked example: "the WO now needs 24 + 8 = 32 MDF"), so while a request
+  exists the WO's Needed qty is its live line total — cost, the completion check
+  and the Reserved / Consumed denominators follow. Rejected lines are left out
+  because the warehouse declined them; they are flagged on the WO instead (W-7).
+- **UC-04 / D-8** — lifted entirely while reservation is off; otherwise the full
+  truth table: S-4 off → every component fully reserved;
   S-4 on + partial consume → at least one reserved > 0; S-4 on + partial completion
   → every component reserved > 0; S-4 on + neither → full reservation. Counts
   reservation, never availability.
@@ -125,7 +159,8 @@ is used for the open-count badge, so switching is a one-line change.
 - **W-1…W-10** — both views; product rows are one per SKU **per destination
   warehouse** so availability is never summed across warehouses; W-2's column set
   behind a column menu; derived statuses incl. Rejected and Canceled; overdue;
-  backdate flag; line tags and per-line rejection; SR-YYYY-NNNN numbering;
+  backdate flag; line tags and per-line rejection, with rejected lines also flagged
+  on the work order (W-7); SR-YYYY-NNNN numbering;
   warehouse grouping with a transfer per destination.
 - **Audit log** — reserve, unreserve, all three release triggers, adjust and cancel
   write entries against both the work order and its request.

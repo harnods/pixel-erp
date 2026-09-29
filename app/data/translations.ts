@@ -3763,7 +3763,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Issue and consume material in stages, before the full planned quantity is available.': 'Keluarkan dan pakai material secara bertahap, sebelum seluruh kuantitas rencana tersedia.',
   'When off, a work order can only start once every component is reserved in full.': 'Jika nonaktif, perintah kerja hanya bisa dimulai setelah semua komponen direservasi penuh.',
   'Partial consume and partial completion cannot both be on — turning one on turns the other off.': 'Konsumsi bertahap dan penyelesaian bertahap tidak bisa aktif bersamaan — mengaktifkan salah satu akan menonaktifkan yang lain.',
-  'Reservation always runs — this chooses who reserves, and when': 'Reservasi selalu berjalan — ini menentukan siapa yang mereservasi, dan kapan',
   'A work order can start only once every component is reserved in full.': 'Perintah kerja baru bisa dimulai setelah semua komponen direservasi penuh.',
   'A work order can start once at least one component holds a reservation.': 'Perintah kerja bisa dimulai setelah minimal satu komponen punya reservasi.',
   'A work order can start once every component holds a reservation, even a partial one.': 'Perintah kerja bisa dimulai setelah semua komponen punya reservasi, meski sebagian.',
@@ -3849,4 +3848,15 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Required by': 'Dibutuhkan pada',
   'unit': 'unit',
   'close': 'tutup',
+
+  // Reservation toggle back + C-3 by available qty
+  'Components are reserved automatically from available stock once the work order is created': 'Komponen direservasi otomatis dari stok tersedia setelah perintah kerja dibuat',
+  'Reservation is off, so a work order can start without any component reserved.': 'Reservasi nonaktif, jadi perintah kerja bisa dimulai tanpa komponen yang direservasi.',
+  'Work orders raise no stock request and start without reserved components. Requests already raised stay on Stock requests.': 'Perintah kerja tidak membuat permintaan stok dan bisa dimulai tanpa komponen yang direservasi. Permintaan yang sudah dibuat tetap ada di Permintaan stok.',
+  'No stock to reserve — the destination warehouse has none of the selected components': 'Tidak ada stok untuk direservasi — gudang tujuan tidak punya komponen yang dipilih',
+  'No stock to reserve — the destination warehouse has none of what this request needs': 'Tidak ada stok untuk direservasi — gudang tujuan tidak punya yang dibutuhkan permintaan ini',
+  'unit reserved automatically': 'unit direservasi otomatis',
+  'The warehouse rejected': 'Gudang menolak',
+  'Adjust the work order to request it again.': 'Sesuaikan perintah kerja untuk memintanya lagi.',
+  'Select at least one component to reserve.': 'Pilih minimal satu komponen untuk direservasi.',
 }

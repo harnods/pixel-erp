@@ -5,9 +5,10 @@
  * stock); tickboxes plus select-all, and Reserve applies to the SELECTED
  * components only.
  *
- * Reservation is per-line all-or-nothing (C-3): a line whose destination stock
- * can't cover its whole outstanding need is not reservable here — it stays a
- * request for the stockist, which is why those rows can't be ticked.
+ * Reservation is by available qty (C-3): a component whose destination stock only
+ * partly covers its outstanding need reserves what there is and stays Partially
+ * reserved. Only a row with NO stock at all (or nothing outstanding) can't be
+ * ticked — there is nothing for it to reserve.
  */
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
@@ -48,7 +49,7 @@ interface Row {
   /** the full outstanding need, for the "of N" hint when reserving short */
   outstanding: number
   readiness: LineReadiness
-  /** only a fully-coverable outstanding line can be reserved (C-3) */
+  /** anything outstanding AND any stock at the destination (C-3, by available qty) */
   selectable: boolean
 }
 

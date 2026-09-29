@@ -33,7 +33,7 @@ import AdjustWorkOrderModal from '~/components/patterns/AdjustWorkOrderModal.vue
 import CancelWorkOrderModal from '~/components/patterns/CancelWorkOrderModal.vue'
 import ReserveMaterialsModal from '~/components/patterns/ReserveMaterialsModal.vue'
 import UnreserveMaterialsModal from '~/components/patterns/UnreserveMaterialsModal.vue'
-import { productionSettings, reservationOnWorkOrder } from '~/data/productionSettings'
+import { productionSettings, reservationOnWorkOrder, reservationEnabled } from '~/data/productionSettings'
 import { logActivityFor, entriesFor, lastActivity } from '~/data/activityLog'
 import {
   raiseStockRequestForWorkOrder, requestForWorkOrder, workOrderReadiness, startGate,
@@ -116,7 +116,13 @@ const actionItems = computed(() => {
   const s = wo.value?.status
   if (s === 'completed') return ['Print', 'Delete']
   if (s === 'canceled') return ['Print']
-  if (isRunning.value) return ['Adjust', 'Replace attachment', 'Print', 'Cancel work order', 'Delete']
+  // Adjust changes the work order's demand ON ITS STOCK REQUEST — with reservation
+  // switched off there is no request to change, so the action is not offered.
+  if (isRunning.value) {
+    return reservationEnabled()
+      ? ['Adjust', 'Replace attachment', 'Print', 'Cancel work order', 'Delete']
+      : ['Replace attachment', 'Print', 'Cancel work order', 'Delete']
+  }
   return ['Edit', 'Replace attachment', 'Print', 'Delete']
 })
 const DESTRUCTIVE_ACTIONS = new Set(['Delete', 'Cancel work order'])
@@ -216,7 +222,11 @@ function onCancelWorkOrder(reason: string) {
 function onAdjust(payload: { changes: DemandChange[]; reason: string }) {
   const w = wo.value
   if (!w) return
-  const r = applyDemandChanges(w.id, payload.changes, STAFF[0]!, 'adjust')
+  // R-4 / C-3 — under One-step the new Adjustment lines, and any component the cut
+  // had to release, reserve again on this same save by available qty.
+  const r = applyDemandChanges(w.id, payload.changes, STAFF[0]!, 'adjust', {
+    autoReserve: reservationOnWorkOrder(),
+  })
   adjustOpen.value = false
 
   const details = [
@@ -224,6 +234,7 @@ function onAdjust(payload: { changes: DemandChange[]; reason: string }) {
     ...r.increased.map(i => ({ label: `${t('Increased')} — ${i.product}`, value: `+${i.delta}` })),
     ...r.decreased.map(d => ({ label: `${t('Decreased')} — ${d.product}`, value: `-${d.delta}` })),
     ...(r.released.qty > 0 ? [{ label: t('Qty released'), value: `${r.released.qty}` }] : []),
+    ...(r.reserved.reservedQty > 0 ? [{ label: t('Qty reserved'), value: `${r.reserved.reservedQty}` }] : []),
   ]
   logActivityFor(
     [
@@ -237,6 +248,7 @@ function onAdjust(payload: { changes: DemandChange[]; reason: string }) {
   if (r.increased.length) parts.push(`${r.increased.length} ${t('component increased')}`)
   if (r.decreased.length) parts.push(`${r.decreased.length} ${t('component decreased')}`)
   if (r.released.qty > 0) parts.push(`${r.released.qty} ${t('unit released from reservation')}`)
+  if (r.reserved.reservedQty > 0) parts.push(`${r.reserved.reservedQty} ${t('unit reserved automatically')}`)
   toast.notify({
     variant: 'success',
     title: parts.join(' · ') || t('Work order adjusted'),
@@ -275,9 +287,25 @@ const showEnd = computed(() => ['partially completed', 'completed', 'canceled'].
 // The BOM template doesn't track an execution warehouse, so a representative
 // default is used for display.
 const EXECUTION_WAREHOUSE = 'Production Jakarta'
+/**
+ * Raw materials, with `needed` = what the work order needs NOW.
+ *
+ * The BOM gives the need at creation (`bomNeeded`). An Adjust (UC-06) changes it:
+ * the PRD's worked example ends "the WO now needs 24 + 8 = 32 MDF across two
+ * lines". That demand lives on the stock request, so while one exists its live
+ * line total is the need — and cost, the completion check and the Reserved /
+ * Consumed denominators all follow, instead of reading "16/4" after an increase.
+ *
+ * A REJECTED line is left out: the warehouse has declined that demand, so the job
+ * cannot count on it until production readjusts (W-7, OPEN-14). It is still
+ * flagged on this page — see `rejectedLines`.
+ */
 const rawMaterials = computed(() => (bom.value?.rawMaterials ?? []).map(r => {
   const p = catalogProduct(r.productId)
-  return { productId: r.productId, product: p?.name ?? '—', sku: p?.sku ?? '—', purchaseCost: r.purchaseCost, warehouse: EXECUTION_WAREHOUSE, needed: r.needed, unit: r.unit }
+  const req = reservationEnabled() && wo.value ? requestForWorkOrder(wo.value.id) : undefined
+  const live = req?.lines.filter(l => l.productId === r.productId && !l.rejected) ?? []
+  const needed = live.length ? live.reduce((sum, l) => sum + l.qty, 0) : r.needed
+  return { productId: r.productId, product: p?.name ?? '—', sku: p?.sku ?? '—', purchaseCost: r.purchaseCost, warehouse: EXECUTION_WAREHOUSE, needed, bomNeeded: r.needed, unit: r.unit }
 }))
 const rawEst = (r: { purchaseCost: number; needed: number }) => r.purchaseCost * r.needed
 
@@ -290,6 +318,8 @@ const rawEst = (r: { purchaseCost: number; needed: number }) => r.purchaseCost *
 function syncStockRequest() {
   const w = wo.value
   if (!w || rawMaterials.value.length === 0) return
+  // "Product components must be reserved" off → work orders raise no request.
+  if (!reservationEnabled()) return
   // Seeded work orders predate the save-time hook (C-4) — back-fill their request
   // on first open, using the same builder so nothing can diverge. Already-reserved
   // state is untouched: raising is idempotent and never auto-reserves here.
@@ -303,7 +333,7 @@ function syncStockRequest() {
       product: r.product,
       sku: r.sku,
       unit: r.unit,
-      qty: r.needed,
+      qty: r.bomNeeded,
       requiredDate: w.planStartDate || TODAY_ISO,
       destinationWarehouse: r.warehouse,
       destinationWarehouseId: warehouses.find(w => w.name === r.warehouse)?.id ?? '',
@@ -316,6 +346,9 @@ watch(() => wo.value?.id, syncStockRequest)
 const stockRequest = computed(() => wo.value ? requestForWorkOrder(wo.value.id) : undefined)
 // Components whose batch / serial the warehouse reserved differently from what
 // this work order picked — production must be told, never silently substituted.
+// W-7 — a line the stockist rejected is shown on the WORK ORDER too, not only on
+// the dashboard: production is the one who resolves it, by readjusting (OPEN-14).
+const rejectedLines = computed(() => stockRequest.value?.lines.filter(l => l.rejected) ?? [])
 const trackingChangedLines = computed(() =>
   stockRequest.value ? changedTrackingLines(stockRequest.value) : [])
 function reservedTrackingLabel(productId: string): string {
@@ -326,11 +359,13 @@ function reservedTrackingLabel(productId: string): string {
   return batches.map(b => `${b.batchNo} (${b.qty})`).join(', ')
 }
 const reservationLines = computed(() => stockRequest.value?.lines ?? [])
-const materialReadiness = computed(() => wo.value ? workOrderReadiness(wo.value.id) : undefined)
+const materialReadiness = computed(() =>
+  reservationEnabled() && wo.value ? workOrderReadiness(wo.value.id) : undefined)
 
-// Reservation is always on (v0.5 L-12) — there is no longer a setting that turns
-// the whole flow off, so the Reserved column and readiness badge always apply.
-const reservationOn = computed(() => true)
+// With "Product components must be reserved" off the work order carries no
+// reservation at all — readiness badge, Reserved qty column, the Reservation menu
+// and the start gate all go, rather than showing figures nothing maintains.
+const reservationOn = computed(() => reservationEnabled())
 // S-2 — under Two-step, EVERY reservation entry point is hidden (not disabled)
 // and an info badge points to Stock requests instead.
 const canReserveHere = computed(() => reservationOnWorkOrder())
@@ -370,7 +405,7 @@ function onReserve(productIds: string[]) {
   const r = reserveWorkOrderProducts(wo.value.id, productIds)
   reserveOpen.value = false
   if (r.reservedProducts === 0) {
-    toast.notify({ variant: 'error', title: t('Nothing could be reserved — warehouse stock does not cover any selected component in full'), maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: t('No stock to reserve — the destination warehouse has none of the selected components'), maxWidth: 'max-content' })
     return
   }
   // C-3 — say which case applied when only part of the selection went through.
@@ -443,6 +478,7 @@ function reservedFor(productId: string): number {
 // order with limited stock" needs EVERY component reserved (each may be partial).
 const gate = computed(() => wo.value
   ? startGate(wo.value.id, {
+      reservationOn: reservationEnabled(),
       partialMode: productionSettings.partialMode,
       allowStartWithLimitedStock: productionSettings.allowStartWithLimitedStock,
     })
@@ -900,6 +936,19 @@ function suppressFabClick(e: MouseEvent) {
                 <strong>{{ l.product }}</strong>
                 <span class="wod-tracking-detail"> ({{ reservedTrackingLabel(l.productId) }})</span>{{ i < trackingChangedLines.length - 1 ? ', ' : '' }}
               </template>
+            </span>
+          </div>
+
+          <!-- W-7 / OPEN-14 — rejected demand stays flagged, not rolled back. -->
+          <div v-if="reservationOn && rejectedLines.length" class="wod-tracking-note">
+            <MpIcon name="warning" size="sm" />
+            <span>
+              {{ t('The warehouse rejected') }}
+              <template v-for="(l, i) in rejectedLines" :key="`${l.productId}-${i}`">
+                <strong>{{ l.qty }} {{ l.unit }} {{ l.product }}</strong>
+                <span class="wod-tracking-detail"> ({{ l.tag === 'additional' ? t('Additional stock') : t('Adjustment') }})</span>{{ i < rejectedLines.length - 1 ? ', ' : '' }}
+              </template>.
+              {{ t('Adjust the work order to request it again.') }}
             </span>
           </div>
 

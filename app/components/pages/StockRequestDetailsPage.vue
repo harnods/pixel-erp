@@ -105,7 +105,7 @@ function onReserve(productIds: string[]) {
   const r = reserveRequestProducts(req.value.id, productIds)
   reserveOpen.value = false
   if (r.reservedProducts === 0) {
-    toast.notify({ variant: 'error', title: t('Nothing could be reserved — warehouse stock does not cover any selected component in full'), maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: t('No stock to reserve — the destination warehouse has none of the selected components'), maxWidth: 'max-content' })
     return
   }
   const parts = [`${r.reservedProducts} ${t('component(s) reserved')} (${r.reservedQty} ${t('unit')})`]

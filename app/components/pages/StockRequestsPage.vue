@@ -278,7 +278,7 @@ function reserveById(requestId: string) {
 function reserve(req: StockRequest) {
   const qty = reserveStock(req.id)
   if (qty === undefined) {
-    toast.notify({ variant: 'error', title: t('Not enough stock to reserve any line in full'), maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: t('No stock to reserve — the destination warehouse has none of what this request needs'), maxWidth: 'max-content' })
     return
   }
   toast.notify({ variant: 'success', title: `${qty} ${t('unit reserved for')} ${req.workOrderNumber}`, maxWidth: 'max-content' })
