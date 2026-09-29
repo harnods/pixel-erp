@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 import { CATALOG } from './catalog'
 import { loadSnapshot, saveSnapshot } from './persist'
+import { TODAY_ISO } from './master'
 
 /** One raw-material line: a registered product consumed to build the output. */
 export interface BomRawMaterial {
@@ -79,7 +80,44 @@ export interface BillOfMaterials {
   routing: BomRoutingStep[]
   otherOutputs: BomOtherOutput[]
   productionWaste: BomProductionWaste[]
+  /**
+   * Version of the content above — the Active version (v1, v2, …). A BOM always
+   * has exactly one Active version; earlier ones live in `versionHistory`,
+   * deactivated (Superseded) and read-only forever. Never part of the name.
+   */
+  version: number
+  /** when / by whom / why the Active version was created (v1 = the BOM's creation) */
+  versionCreatedAt: string
+  versionCreatedBy: string
+  versionNote?: string
+  /** Superseded versions, oldest first — append-only snapshots of their full content. */
+  versionHistory: BomVersionSnapshot[]
 }
+
+/** The recipe fields a version freezes — everything a work order is built from. */
+export type BomContent = Pick<BillOfMaterials,
+  'name' | 'category' | 'costingReference' | 'finishedGoodId' | 'finishedGoodQty' | 'finishedGoodUnit'
+  | 'finishedGoodPercentage' | 'description' | 'allowBomAdjustment' | 'rawMaterials' | 'productionCost'
+  | 'routing' | 'otherOutputs' | 'productionWaste'>
+const CONTENT_KEYS: (keyof BomContent)[] = [
+  'name', 'category', 'costingReference', 'finishedGoodId', 'finishedGoodQty', 'finishedGoodUnit',
+  'finishedGoodPercentage', 'description', 'allowBomAdjustment', 'rawMaterials', 'productionCost',
+  'routing', 'otherOutputs', 'productionWaste',
+]
+
+/** A deactivated (Superseded) version — its content stays readable for the work orders pinned to it. */
+export interface BomVersionSnapshot {
+  version: number
+  content: BomContent
+  createdAt: string
+  createdBy: string
+  note?: string
+  /** when a newer version replaced it */
+  supersededAt: string
+}
+
+/** The fields a BOM form edits — content plus the archive flag; identity and versioning are managed here. */
+export type BillOfMaterialsInput = BomContent & { archived: boolean }
 
 /** Look up a registered product by id — every BOM material/output resolves through this. */
 export function catalogProduct(productId: string) {
@@ -149,6 +187,10 @@ function seedBom(
     productionWaste: [
       { accountMapping: 'Production waste', allocationMethod: 'Percentage', percentage: wastePct, amount: wasteAmount },
     ],
+    version: 1,
+    versionCreatedAt: '2026-01-05',
+    versionCreatedBy: 'Rahadian Bima',
+    versionHistory: [],
   }
 }
 
@@ -166,18 +208,40 @@ const SEED_SPEC: { fg: string; materials: string[]; category: 'Standard' | 'Cust
 ]
 
 function buildSeed(): BillOfMaterials[] {
-  return SEED_SPEC.map((s, i) => seedBom(i, s.fg, s.materials, s.category, s.costing, s.desc))
+  const boms = SEED_SPEC.map((s, i) => seedBom(i, s.fg, s.materials, s.category, s.costing, s.desc))
     .filter(b => !!catalogProduct(b.finishedGoodId))
+  // Versioning demo: #10001 was upgraded to v2 (one more unit of its first green
+  // bean per batch). v1 is Superseded; the work orders created from it keep v1.
+  const demo = boms[0]
+  if (demo) {
+    const v1: BomVersionSnapshot = { version: 1, content: JSON.parse(JSON.stringify(demo)) as BomContent, createdAt: demo.versionCreatedAt, createdBy: demo.versionCreatedBy, supersededAt: '2026-06-20' }
+    demo.rawMaterials = demo.rawMaterials.map((r, i) => (i === 0 ? { ...r, needed: r.needed + 1 } : r))
+    demo.version = 2
+    demo.versionCreatedAt = '2026-06-20'
+    demo.versionCreatedBy = 'Rahadian Bima'
+    demo.versionNote = 'Stronger blend — one more unit of the base green bean per batch.'
+    demo.versionHistory = [v1]
+  }
+  return boms
 }
 
 // Persisted as a full snapshot (seed + user-created) — mirrors outgoing.ts: a
 // present snapshot wins over the freshly-generated seed; "Reset demo data" clears it.
-const bomSnapshot = loadSnapshot<BillOfMaterials>('billOfMaterials')
-export const billOfMaterials = reactive<BillOfMaterials[]>(bomSnapshot ?? buildSeed())
+// Key bumped for regular BOM versioning (seed #10001 carries v2).
+const bomSnapshot = loadSnapshot<BillOfMaterials>('billOfMaterials-v2')
+/** BOMs saved before versioning existed are v1 with no history. */
+function normalize(b: BillOfMaterials): BillOfMaterials {
+  b.version ??= 1
+  b.versionCreatedAt ??= '2026-01-05'
+  b.versionCreatedBy ??= 'Rahadian Bima'
+  b.versionHistory ??= []
+  return b
+}
+export const billOfMaterials = reactive<BillOfMaterials[]>((bomSnapshot ?? buildSeed()).map(normalize))
 
 /** Persist the BOM snapshot (call after any mutation). */
 export function persistBillOfMaterials(): void {
-  saveSnapshot('billOfMaterials', billOfMaterials)
+  saveSnapshot('billOfMaterials-v2', billOfMaterials)
 }
 
 let bomAddSeq = billOfMaterials.length
@@ -191,26 +255,83 @@ function nextBomNumber(): string {
   return `Bill of Materials #${max + 1}`
 }
 
-/** Create a new BOM from the New bill of materials form — persists + navigable. */
-export function addBillOfMaterials(data: Omit<BillOfMaterials, 'id' | 'number'>): BillOfMaterials {
+/** Create a new BOM from the New bill of materials form — born as v1 (Active). */
+export function addBillOfMaterials(data: BillOfMaterialsInput, by = 'Rahadian Bima', today = TODAY_ISO): BillOfMaterials {
   const n = bomAddSeq++
   const bom: BillOfMaterials = {
     ...data,
     id: `bom-new-${n}`,
     number: nextBomNumber(),
+    version: 1,
+    versionCreatedAt: today,
+    versionCreatedBy: by,
+    versionHistory: [],
   }
   billOfMaterials.unshift(bom)
   persistBillOfMaterials()
   return bom
 }
 
-/** Update an existing BOM in place — keeps its id/number, persists + navigable. */
-export function updateBillOfMaterials(id: string, data: Omit<BillOfMaterials, 'id' | 'number'>): BillOfMaterials {
+/** Update the Active version in place — only while no work order references it. Keeps id/number/version. */
+export function updateBillOfMaterials(id: string, data: BillOfMaterialsInput): BillOfMaterials {
   const existing = billOfMaterials.find(b => b.id === id)
   if (!existing) throw new Error(`Bill of materials not found: ${id}`)
-  Object.assign(existing, data)
+  Object.assign(existing, pickInput(data))
   persistBillOfMaterials()
   return existing
+}
+
+/** Only recipe fields + the archive flag — never lets a caller overwrite id, number or version history. */
+function pickInput(data: BillOfMaterialsInput): BillOfMaterialsInput {
+  return { ...cloneContent(data), archived: data.archived }
+}
+
+const cloneContent = (c: BomContent): BomContent => JSON.parse(JSON.stringify(Object.fromEntries(CONTENT_KEYS.map(k => [k, c[k]])))) as BomContent
+
+/**
+ * Upgrade a BOM to a new version: the Active content is frozen as a Superseded
+ * snapshot (deactivated, read-only), and the edit becomes the new Active version.
+ * Work orders already pinned to the old version keep it; new ones get this one.
+ * No engineering change — that is the project BOM's rule, not the regular BOM's.
+ */
+export function upgradeBillOfMaterialsVersion(id: string, data: BillOfMaterialsInput, meta: { by: string; note?: string; today?: string }): BillOfMaterials {
+  const existing = billOfMaterials.find(b => b.id === id)
+  if (!existing) throw new Error(`Bill of materials not found: ${id}`)
+  const today = meta.today ?? TODAY_ISO
+  existing.versionHistory.push({
+    version: existing.version, content: cloneContent(existing), createdAt: existing.versionCreatedAt,
+    createdBy: existing.versionCreatedBy, note: existing.versionNote, supersededAt: today,
+  })
+  Object.assign(existing, pickInput(data))
+  // Monotonic — never reused.
+  existing.version = Math.max(existing.version, ...existing.versionHistory.map(v => v.version)) + 1
+  existing.versionCreatedAt = today
+  existing.versionCreatedBy = meta.by
+  existing.versionNote = meta.note?.trim() || undefined
+  persistBillOfMaterials()
+  return existing
+}
+
+/** The content of one version (Active or Superseded); undefined when the version doesn't exist. */
+export function bomVersionContent(b: BillOfMaterials, version?: number): BomContent | undefined {
+  if (version === undefined || version === b.version) return b
+  return b.versionHistory.find(v => v.version === version)?.content
+}
+
+/** The BOM as a given version saw it — identity from the record, recipe from that version. */
+export function bomAtVersion(b: BillOfMaterials | undefined, version?: number): BillOfMaterials | undefined {
+  if (!b) return undefined
+  const content = bomVersionContent(b, version)
+  return content && content !== b ? { ...b, ...cloneContent(content) } : b
+}
+
+export type RegularBomVersionStatus = 'active' | 'superseded'
+/** Every version, newest first, with its status. */
+export function bomVersionList(b: BillOfMaterials) {
+  return [
+    { version: b.version, status: 'active' as RegularBomVersionStatus, createdAt: b.versionCreatedAt, createdBy: b.versionCreatedBy, note: b.versionNote, supersededAt: undefined as string | undefined },
+    ...[...b.versionHistory].reverse().map(v => ({ version: v.version, status: 'superseded' as RegularBomVersionStatus, createdAt: v.createdAt, createdBy: v.createdBy, note: v.note, supersededAt: v.supersededAt as string | undefined })),
+  ]
 }
 
 /** Cost roll-up shared by the detail and create pages. */

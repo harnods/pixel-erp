@@ -1,7 +1,7 @@
 import { reactive } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { workOrders, type WorkOrderStatus, type WorkOrderMaterialReservation } from './workOrders'
-import { billOfMaterials, catalogProduct } from './billOfMaterials'
+import { billOfMaterials, catalogProduct, bomAtVersion } from './billOfMaterials'
 import { warehouses } from './warehouses'
 import { isBatchTracked, isSerialized, autoSelectBatches, autoSelectSerials } from './warehouseDetails'
 
@@ -58,7 +58,8 @@ function buildSeed(): MaterialConsumeReturnRecord[] {
   let returnSeq = 10001
 
   for (const wo of workOrders) {
-    const bom = billOfMaterials.find(b => b.id === wo.bomId)
+    // The recipe this work order was built from — its pinned BOM version.
+    const bom = bomAtVersion(billOfMaterials.find(b => b.id === wo.bomId), wo.bomVersion)
     if (!bom) continue
     const reservations: Record<string, WorkOrderMaterialReservation> = {}
     bom.rawMaterials.forEach((r, i) => {

@@ -1,23 +1,19 @@
 /**
- * Integrity guard — bill-of-materials edit.
+ * Integrity guard — bill-of-materials edit (regular BOM versioning).
  *
- * A BOM's recipe can only be edited when no active work order still depends on
- * it. `activeWorkOrdersForBom(bomId)` counts work orders referencing the BOM
- * whose status is neither 'completed' nor 'canceled' (i.e. mid-production).
- * While at least one such WO exists, `canEditBom` is false and
- * `updateBillOfMaterialsSafe` refuses with a BOM_IN_USE reason, leaving the
- * BOM unchanged. A BOM no active work order references is editable.
+ * A regular BOM is always editable; what the edit does depends on references.
+ * Once a work order was created from the Active version, that version is locked:
+ * `updateBillOfMaterialsSafe` upgrades the BOM to a new Active version and
+ * deactivates the old one — work orders keep the version they were created from,
+ * new ones use the new version, and no ECO is raised (that's the project BOM's
+ * rule). A BOM no work order references is edited in place.
  */
 import { describe, it, expect } from 'vitest'
-import {
-  canEditBom, updateBillOfMaterialsSafe, activeWorkOrdersForBom,
-} from '~/data/integrityGuards'
-import {
-  billOfMaterials, addBillOfMaterials, type BillOfMaterials,
-} from '~/data/billOfMaterials'
-import '~/data/workOrders'
+import { updateBillOfMaterialsSafe, bomVersionLocked } from '~/data/integrityGuards'
+import { billOfMaterials, addBillOfMaterials, type BillOfMaterialsInput } from '~/data/billOfMaterials'
+import { workOrders } from '~/data/workOrders'
 
-function makeBomData(name: string): Omit<BillOfMaterials, 'id' | 'number'> {
+function makeBomData(name: string): BillOfMaterialsInput {
   return {
     name,
     category: 'Standard',
@@ -38,32 +34,30 @@ function makeBomData(name: string): Omit<BillOfMaterials, 'id' | 'number'> {
 }
 
 describe('Integrity guard — bill-of-materials edit', () => {
-  it('a BOM referenced by an active work order cannot be edited', () => {
-    const bom = billOfMaterials.find((b) => activeWorkOrdersForBom(b.id) > 0)!
+  it('editing a BOM whose Active version a work order uses creates a new version instead of refusing', () => {
+    const bom = billOfMaterials.find(b => bomVersionLocked(b.id))!
     expect(bom).toBeTruthy()
-    expect(activeWorkOrdersForBom(bom.id)).toBeGreaterThan(0)
-    const originalName = bom.name
+    const before = bom.version
+    const pinned = workOrders.filter(w => w.bomId === bom.id).map(w => w.bomVersion)
 
-    expect(canEditBom(bom.id)).toBe(false)
-    const res = updateBillOfMaterialsSafe(bom.id, makeBomData('Should Not Apply'))
-    expect(res.ok).toBe(false)
-    expect(res.ok === false && res.reason).toContain('BOM_IN_USE')
-
-    // Refused — the BOM's data is untouched.
-    expect(billOfMaterials.find((b) => b.id === bom.id)!.name).toBe(originalName)
+    const res = updateBillOfMaterialsSafe(bom.id, makeBomData('Upgraded recipe'), { note: 'Guard test upgrade' })
+    expect(res.ok).toBe(true)
+    expect(res.ok && res.upgraded).toBe(true)
+    expect(bom.version).toBe(before + 1)
+    expect(bom.name).toBe('Upgraded recipe')
+    expect(bom.versionHistory.at(-1)!.version).toBe(before)
+    // Existing work orders keep the version they were created from.
+    expect(workOrders.filter(w => w.bomId === bom.id).map(w => w.bomVersion)).toEqual(pinned)
   })
 
-  it('a BOM with no active work order can be edited', () => {
-    // A freshly-created BOM has no work order pointing at it.
+  it('a BOM no work order references is edited in place — no new version', () => {
     const bom = addBillOfMaterials(makeBomData('Guard Editable BOM'))
-    expect(activeWorkOrdersForBom(bom.id)).toBe(0)
-
-    expect(canEditBom(bom.id)).toBe(true)
+    expect(bomVersionLocked(bom.id)).toBe(false)
     const res = updateBillOfMaterialsSafe(bom.id, makeBomData('Guard Edited Name'))
     expect(res.ok).toBe(true)
-
-    // Applied.
-    expect(billOfMaterials.find((b) => b.id === bom.id)!.name).toBe('Guard Edited Name')
+    expect(res.ok && res.upgraded).toBe(false)
+    expect(bom.version).toBe(1)
+    expect(billOfMaterials.find(b => b.id === bom.id)!.name).toBe('Guard Edited Name')
   })
 
   it('editing an unknown BOM id is refused with NOT_FOUND', () => {

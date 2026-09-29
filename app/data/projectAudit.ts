@@ -11,7 +11,7 @@ import { loadSnapshot, saveSnapshot } from './persist'
 export type AuditKind =
   | 'budget_revision' | 'override' | 'policy_change' | 'method_reopen' | 'approval'
   | 'change_order' | 'eco' | 'reservation' | 'recognition' | 'billing'
-  | 'structure' | 'work_order' | 'bast' | 'close'
+  | 'structure' | 'work_order' | 'bast' | 'close' | 'bom_version'
 
 export const AUDIT_KIND_LABELS: Record<AuditKind, string> = {
   budget_revision: 'Budget revision',
@@ -28,13 +28,14 @@ export const AUDIT_KIND_LABELS: Record<AuditKind, string> = {
   work_order: 'Work order',
   bast: 'BAST',
   close: 'Completion & close',
+  bom_version: 'BOM version',
 }
 
 export interface AuditEntry {
   id: string
   at: string
   actor: string
-  role: 'PM' | 'Finance' | 'Warehouse' | 'Site supervisor' | 'System'
+  role: 'PM' | 'Finance' | 'Warehouse' | 'Site supervisor' | 'Production' | 'System'
   projectId?: string
   kind: AuditKind
   summary: string
@@ -54,10 +55,16 @@ const SEED: AuditEntry[] = [
   { id: 'au-9', at: '2026-06-12T13:45:00', actor: 'Maya Kartika', role: 'Finance', kind: 'policy_change', summary: 'Company escalation threshold confirmed at 20% (phase 1: warn + override for all documents)' },
   { id: 'au-10', at: '2026-06-19T08:50:00', actor: 'Budi Santoso', role: 'Warehouse', projectId: 'ps-2606', kind: 'reservation', summary: 'Released 6 lembar HPL motif walnut reserved to PS-2606 · 1.1 (WO-PS-0004 completed)' },
   { id: 'au-11', at: '2026-06-19T08:51:00', actor: 'System', role: 'System', projectId: 'ps-2606', kind: 'work_order', summary: 'WO-PS-0004 completed — unused set-aside Rp8.000.000 released', refNo: 'WO-PS-0004' },
+  { id: 'au-13', at: '2026-06-18T10:02:00', actor: 'Dewi Lestari', role: 'Production', projectId: 'ps-2606', kind: 'bom_version', summary: 'Published Kitchen set L 3 m — tipe A v2 (Active) — raised ECO-2606-01', reason: 'Customer request', refNo: 'ECO-2606-01' },
+  { id: 'au-14', at: '2026-06-18T15:30:00', actor: 'Andi Pratama', role: 'PM', projectId: 'ps-2606', kind: 'eco', summary: 'Decided ECO-2606-01 — no existing work order adopts v2; WO-PS-0005 stays on v1', reason: 'WO-PS-0005 is already cutting granite tops — it stays on v1; only new work orders take the upgrade.', refNo: 'ECO-2606-01' },
+  { id: 'au-15', at: '2026-06-19T09:10:00', actor: 'Andi Pratama', role: 'PM', projectId: 'ps-2606', kind: 'eco', summary: 'Closed ECO-2606-01', refNo: 'ECO-2606-01' },
+  { id: 'au-16', at: '2026-06-16T11:24:00', actor: 'Dewi Lestari', role: 'Production', projectId: 'ps-2603', kind: 'bom_version', summary: 'Published Meja kuliah lipat + kursi — PS-2603 v2 (Active) — raised ECO-2603-01 for the PM', reason: 'Customer request', refNo: 'ECO-2603-01' },
+  { id: 'au-17', at: '2026-09-24T10:15:00', actor: 'Dewi Lestari', role: 'Production', projectId: 'prj-a', kind: 'bom_version', summary: 'Published PRJ-A-BOM-MJ-001 v2 (Active) — raised ECO-PRJ-A-01 for the PM', reason: 'Customer request', refNo: 'ECO-PRJ-A-01' },
   { id: 'au-12', at: '2026-06-24T17:05:00', actor: 'Agus Wibowo', role: 'Site supervisor', projectId: 'ps-2603', kind: 'change_order', summary: 'Site change captured: Tambah panel akustik ruang auditorium', refNo: 'VO-2603-01' },
 ]
 
-const KEY = 'pm-audit'
+// Key bumped for the v6.2 ECO seed entries.
+const KEY = 'pm-audit-v62b'
 export const auditLog = reactive<AuditEntry[]>(loadSnapshot<AuditEntry>(KEY) ?? structuredClone(SEED))
 
 export function logAudit(entry: Omit<AuditEntry, 'id' | 'at'> & { at?: string }): AuditEntry {

@@ -7,8 +7,11 @@
  *
  *   1 · Production plan — target vs actual output per work package, expandable
  *       to the component level (reserved / consumed / requested).
- *   2 · Active BOM version per work package, opening the BOM detail.
- *   3 · Engineering changes, opening the ECO detail.
+ *   2 · Active BOM version per work package, opening the BOM detail (where
+ *       Production edits the BOM — publishing a new version of a locked one).
+ *   3 · Work orders with the BOM version each is pinned to, and the neutral
+ *       "newer version available" indicator (PRD v6.2 Story 9).
+ *   4 · Engineering changes, opening the ECO page where the PM decides adoption.
  *
  * Deliberately information-only. Running MRP, reserving, releasing, advancing a
  * work order and raising an ECO all still exist — they live on the surfaces that
@@ -25,13 +28,15 @@
 import { MpIcon, MpTextlink } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import BomDetailOverlay from '../BomDetailOverlay.vue'
+import NewerVersionHint from '../eco/NewerVersionHint.vue'
 import type { Project } from '~/data/projects'
 import { projectWorkPackages, getWorkPackage } from '~/data/projects'
 import { projectReservations, getStockItem } from '~/data/projectReservations'
 import { getCustomBom, currentVersion } from '~/data/projectBoms'
-import { projectEcos } from '~/data/projectChanges'
+import { projectEcos, ecoPath, ECO_REASON_LABELS } from '~/data/projectChanges'
+import { projectWos, projectWorkOrders } from '~/data/projectTransactions'
 import { mrpPreview } from '~/data/projectActions'
-import { num } from '~/utils/projectFormat'
+import { num, rpSigned } from '~/utils/projectFormat'
 import { formatDate } from '~/utils/date'
 import { badgeProps } from '~/utils/projectStatus'
 
@@ -40,7 +45,9 @@ const { t } = useLocale()
 const router = useRouter()
 
 const wps = computed(() => projectWorkPackages(props.project.id).filter(w => w.type === 'production'))
-const ecos = computed(() => projectEcos(props.project.id).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)))
+const ecos = computed(() => projectEcos(props.project.id).slice().sort((a, b) => b.publishedAt.localeCompare(a.publishedAt)))
+const wos = computed(() => projectWos(props.project.id))
+const woNumber = (id: string) => projectWorkOrders.find(w => w.id === id)?.number ?? '—'
 
 // Collapsed by default: the header line answers the question most of the time,
 // and the component breakdown is the follow-up.
@@ -184,12 +191,57 @@ function componentsFor(wpId: string) {
       </div>
     </section>
 
-    <!-- 3 · Engineering changes -->
-    <section class="pm-section">
+    <!-- 3 · Work orders and their pinned BOM version — information only -->
+    <section class="pm-section" data-devchange="eco-wo-version-pin">
+      <div class="pm-section-head">
+        <div>
+          <h2 class="pm-h2">{{ t('Work orders') }}</h2>
+          <p class="pm-caption pm-m-0">{{ t('Each work order builds the BOM version it was created from. When a newer version exists, a neutral indicator says so and opens the diff — it never moves the pin; only the PM’s decision on an engineering change does.') }}</p>
+        </div>
+      </div>
+      <div class="pm-table-wrap">
+        <table class="pm-table">
+          <thead>
+            <tr>
+              <th>{{ t('Work order') }}</th>
+              <th>{{ t('Work package') }}</th>
+              <th class="pm-num">{{ t('Qty') }}</th>
+              <th>{{ t('BOM version') }}</th>
+              <th>{{ t('Status') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="w in wos" :key="w.id">
+              <td>
+                {{ w.number }}<span class="pm-cell-sub">{{ w.createdBy }} · {{ formatDate(w.createdAt) }}</span>
+                <span v-if="w.replacesWoId" class="pm-cell-sub">{{ t('Replaces') }} {{ woNumber(w.replacesWoId) }}</span>
+                <span v-if="w.replacedByWoId" class="pm-cell-sub">{{ t('Continued in') }} {{ woNumber(w.replacedByWoId) }}</span>
+              </td>
+              <td>{{ getWorkPackage(w.wpId)?.code }} {{ getWorkPackage(w.wpId)?.name }}</td>
+              <td class="pm-num">{{ num(w.qty) }} {{ w.unit }}<span v-if="w.completedQty && w.status === 'In progress'" class="pm-cell-sub">{{ num(w.completedQty) }} {{ t('completed') }}</span></td>
+              <td>
+                <div class="pm-row pm-gap-2 pm-row--nowrap">
+                  <span>{{ w.bomVersion ? `v${w.bomVersion}` : '—' }}</span>
+                  <NewerVersionHint :id="`pm-wo-hint-${w.id}`" :bom-id="w.customBomId" :version="w.bomVersion" :status="w.status" :wo-number="w.number" />
+                </div>
+                <span v-for="a in w.ecoAdjustments ?? []" :key="a.ecoNo" class="pm-cell-sub">{{ t('Adjusted by') }} {{ a.ecoNo }} · {{ rpSigned(a.delta) }}</span>
+              </td>
+              <td><ErpStatusBadge v-bind="badgeProps('wo', w.status, t)" /></td>
+            </tr>
+            <tr v-if="!wos.length">
+              <td colspan="5"><div class="pm-empty-inline">{{ t('No work orders yet.') }}</div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 4 · Engineering changes -->
+    <section class="pm-section" data-devchange="eco-production-tab-list">
       <div class="pm-section-head">
         <div>
           <h2 class="pm-h2">{{ t('Engineering changes') }}</h2>
-          <p class="pm-caption pm-m-0">{{ t('Versioned BOM changes with a diff and an explicit effectivity scope, so a mid-execution change can’t silently hit released work orders. An ECO never changes contract value — reference a change order when the customer pays.') }}</p>
+          <p class="pm-caption pm-m-0">{{ t('Raised when Production publishes a new version of a project BOM that work orders already use. The new version is Active at once; the PM decides on the ECO page whether existing work orders adopt it.') }}</p>
         </div>
       </div>
 
@@ -208,22 +260,22 @@ function componentsFor(wpId: string) {
           <tbody>
             <tr v-for="e in ecos" :key="e.id">
               <td>
-                <MpTextlink :id="`pm-eco-open-${e.id}`" as="a" @click.prevent="router.push(`/projects/${project.id}/engineering-changes/${e.id}`)">{{ e.no }}</MpTextlink>
-                <span class="pm-cell-sub">{{ e.raisedBy }} · {{ formatDate(e.createdAt) }}</span>
+                <MpTextlink :id="`pm-eco-open-${e.id}`" as="a" @click.prevent="router.push(ecoPath(e))">{{ e.no }}</MpTextlink>
+                <span class="pm-cell-sub">{{ e.publishedBy }} · {{ formatDate(e.publishedAt) }}</span>
               </td>
-              <td class="pm-wrap">{{ e.title }}<span class="pm-cell-sub">{{ e.reason }}</span></td>
+              <td class="pm-wrap">{{ e.title }}<span class="pm-cell-sub">{{ t(ECO_REASON_LABELS[e.reason]) }}</span></td>
               <td>{{ getCustomBom(e.customBomId)?.name }}<span class="pm-cell-sub">{{ getWorkPackage(e.wpId)?.code }} {{ getWorkPackage(e.wpId)?.name }}</span></td>
-              <td>v{{ e.baseVersion }} → {{ e.resultVersion ? `v${e.resultVersion}` : t('(proposed)') }}</td>
+              <td>v{{ e.fromVersion }} → v{{ e.toVersion }}</td>
               <td><ErpStatusBadge v-bind="badgeProps('eco', e.status, t)" /></td>
             </tr>
             <tr v-if="!ecos.length">
-              <td colspan="5"><div class="pm-empty-inline">{{ t('No engineering changes.') }}</div></td>
+              <td colspan="5"><div class="pm-empty-inline">{{ t('No engineering changes. Editing a project BOM that work orders already use raises one.') }}</div></td>
             </tr>
           </tbody>
         </table>
       </div>
     </section>
 
-    <BomDetailOverlay :bom-id="bomView" @close="bomView = undefined" />
+    <BomDetailOverlay :open="!!bomView" :bom-id="bomView" @close="bomView = undefined" />
   </div>
 </template>

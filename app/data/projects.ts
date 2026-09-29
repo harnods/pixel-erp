@@ -535,9 +535,12 @@ export interface ProjectSalesOrder {
   isAddendum?: boolean
 }
 
-const K_PSO = 'pm-project-sos'
+// Key bumped for the v6.2 ECO seed (SO-0231-A1 addendum).
+const K_PSO = 'pm-project-sos-v62'
 const SEED_PSOS: ProjectSalesOrder[] = [
   { id: 'so-0231', projectId: 'prj-a', number: 'SO-0231', value: 48_000_000, date: '2026-08-27' },
+  // Scenario B door 1: the customer's finish change is priced as an addendum — contract Rp48.000.000 → Rp49.700.000.
+  { id: 'so-0231-a1', projectId: 'prj-a', number: 'SO-0231-A1', value: 1_700_000, date: '2026-09-24', isAddendum: true },
 ]
 export const projectSalesOrders = reactive<ProjectSalesOrder[]>(
   loadSnapshot<ProjectSalesOrder>(K_PSO) ?? structuredClone(SEED_PSOS),

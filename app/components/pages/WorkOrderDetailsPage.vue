@@ -22,9 +22,10 @@ import CompleteWorkOrderModal, { type CompleteWorkOrderRow } from '~/components/
 import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
 import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
 import { formatDate } from '~/utils/date'
-import { workOrders, persistWorkOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
+import { workOrders, persistWorkOrders, type WorkOrder, type WorkOrderStatus , bomForWorkOrder } from '~/data/workOrders'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
+import WorkOrderBomVersionDrawer from '~/components/WorkOrderBomVersionDrawer.vue'
 import { recordsForWorkOrder, addMaterialConsumeReturnRecord, remainingReservation } from '~/data/materialConsumeReturn'
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import { warehouses } from '~/data/warehouses'
@@ -35,11 +36,21 @@ const router = useRouter()
 const route = useRoute()
 
 const wo = computed<WorkOrder | undefined>(() => workOrders.find(w => w.id === props.orderId))
-const bom = computed(() => wo.value ? billOfMaterials.find(b => b.id === wo.value!.bomId) : undefined)
+// The BOM exactly as this work order was built from — its PINNED version, not the
+// current one. An upgrade of the BOM never changes what this work order builds.
+const bom = computed(() => wo.value ? bomForWorkOrder(wo.value) : undefined)
+const bomRecord = computed(() => wo.value ? billOfMaterials.find(b => b.id === wo.value!.bomId) : undefined)
+/** A newer Active version exists — neutral information, hidden once the WO is closed. */
+const newerBomVersion = computed(() => {
+  const w = wo.value, b = bomRecord.value
+  if (!w || !b || w.status === 'completed' || w.status === 'canceled') return undefined
+  return b.version > w.bomVersion ? b.version : undefined
+})
+const bomDiffOpen = ref(false)
 
 function goList() { router.push('/work-orders') }
 function goNewRecord() { router.push(`/work-orders/${props.orderId}/material-record/new`) }
-function goBom() { if (bom.value) router.push(`/bill-of-materials/${bom.value.id}`) }
+function goBom() { if (bom.value) router.push(`/bill-of-materials/${bom.value.id}${wo.value && bomRecord.value && wo.value.bomVersion !== bomRecord.value.version ? `?version=${wo.value.bomVersion}` : ''}`) }
 
 // ── Flow (Default vs From production request) ────────────────────────────────
 // From-PR adds the "Linked transactions" bottom tab. Preselected via ?source=pr.
@@ -466,6 +477,16 @@ function suppressFabClick(e: MouseEvent) {
             <ContentList :label="t('BOM no.')">
               <a v-if="bom" class="wod-bom-link" @click.prevent="goBom">{{ bomNo }}</a>
               <template v-else>{{ bomNo }}</template>
+            </ContentList>
+            <ContentList :label="t('BOM version')">
+              <span data-devchange="bom-wo-version-pin" class="wod-version">
+                v{{ wo.bomVersion }}
+                <span
+                  v-if="newerBomVersion" class="wod-version-hint" role="button" tabindex="0"
+                  data-devchange="bom-wo-newer-version"
+                  @click="bomDiffOpen = true" @keydown.enter="bomDiffOpen = true"
+                ><MpIcon name="info" size="sm" />v{{ newerBomVersion }} {{ t('available') }}</span>
+              </span>
             </ContentList>
             <ContentList :label="t('Work order no.')" :value="`${t('Work order')} #${wo.number.split('-').pop()}`" />
           </div>
@@ -944,6 +965,7 @@ function suppressFabClick(e: MouseEvent) {
       </div>
     </header>
   </div>
+  <WorkOrderBomVersionDrawer :is-open="bomDiffOpen" :bom-id="wo?.bomId" :from-version="wo?.bomVersion" :wo-number="wo?.number" @close="bomDiffOpen = false" />
 </template>
 
 <style scoped>
@@ -1105,6 +1127,10 @@ function suppressFabClick(e: MouseEvent) {
 .content-list-col { display: flex; flex-direction: column; min-width: 0; }
 .wod-bom-link { color: var(--mp-text-link); cursor: pointer; }
 .wod-bom-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+/* BOM version pin + neutral newer-version indicator (information only — never blocks) */
+.wod-version { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
+.wod-version-hint { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary); cursor: pointer; }
+.wod-version-hint:hover { color: var(--mp-colors-text-default); text-decoration: underline; text-underline-offset: 2px; }
 .wod-hierarchy-link { flex-shrink: 0; }
 .wod-attach-list { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .wod-attach { display: inline-flex; align-items: flex-start; gap: var(--mp-spacing-2); cursor: pointer; color: var(--mp-text-link); }

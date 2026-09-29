@@ -156,6 +156,7 @@ import { receivingOpenCount } from '~/data/receivingTasks'
 import { putAwayOpenCount } from '~/data/putAwayTasks'
 import { awaitingApprovalGroupCounts, awaitingApprovalTasks } from '~/data/tasks'
 import { pendingApprovals } from '~/data/projectApprovals'
+import { engineeringChanges } from '~/data/projectChanges'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -568,7 +569,7 @@ const erpNavGroups: NavItem[][] = [
       // array still re-renders when the pending count changes.
       name: 'Projects', icon: 'briefcase',
       submenu: [
-        [{ label: 'Projects' }, { label: 'Approvals', to: 'Project approvals' }, { label: 'Documents', to: 'Project documents' }],
+        [{ label: 'Projects' }, { label: 'Approvals', to: 'Project approvals' }, { label: 'Engineering changes' }, { label: 'Documents', to: 'Project documents' }],
         [{ label: 'Stock availability' }, { label: 'Site change capture' }],
         [{ label: 'Audit log', to: 'Project audit log' }, { label: 'Project settings', iconType: 'settings' }],
       ],
@@ -576,6 +577,8 @@ const erpNavGroups: NavItem[][] = [
         [
           { label: 'Projects' },
           { label: 'Approvals', to: 'Project approvals', get count() { return pendingApprovals().length || undefined } },
+          // Open ECOs wait on the PM's adoption decision (PRD v6.2 §7).
+          { label: 'Engineering changes', get count() { return engineeringChanges.filter(e => e.status === 'open').length || undefined } },
           { label: 'Documents', to: 'Project documents' },
         ],
         [{ label: 'Stock availability' }, { label: 'Site change capture' }],

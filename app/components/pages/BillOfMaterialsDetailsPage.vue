@@ -10,7 +10,13 @@
  * products (via catalogProduct) rather than a shared example.
  *
  * A BOM is the *template* a work order is produced from, so — unlike the work
- * order detail — it carries no status, and its tables show planned figures only.
+ * order detail — it carries no workflow status, and its tables show planned figures only.
+ *
+ * Versioning (regular BOM): the page shows one version at a time — the Active one
+ * by default, or a Superseded one picked from the version switcher (?version=N),
+ * which renders read-only and names the Active version. Editing a version a work
+ * order already uses upgrades the BOM (new Active version, old one deactivated);
+ * work orders keep the version they were created from. No ECO for a regular BOM.
  */
 import { ref, reactive, computed } from 'vue'
 import { formatIDR } from '~/utils/currency'
@@ -20,14 +26,41 @@ import {
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
-import { billOfMaterials, catalogProduct, persistBillOfMaterials, type BillOfMaterials, type BomProductionCost } from '~/data/billOfMaterials'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import { MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription } from '@mekari/pixel3'
+import { workOrdersOnBomVersion } from '~/data/workOrders'
+import { formatDate } from '~/utils/date'
+import { billOfMaterials, catalogProduct, persistBillOfMaterials, bomAtVersion, bomVersionList, type BillOfMaterials, type BomProductionCost } from '~/data/billOfMaterials'
 
 // The shared detail renderer passes the route id as `order-id`.
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
 const router = useRouter()
 
-const bom = computed<BillOfMaterials | undefined>(() => billOfMaterials.find(b => b.id === props.orderId))
+const route = useRoute()
+/** The stored record — identity + the Active version. */
+const record = computed<BillOfMaterials | undefined>(() => billOfMaterials.find(b => b.id === props.orderId))
+// Which version is shown: ?version=N (Superseded, read-only) or the Active one.
+const versions = computed(() => (record.value ? bomVersionList(record.value) : []))
+const selectedVersion = computed(() => {
+  const q = Number(route.query.version)
+  return record.value && versions.value.some(v => v.version === q) ? q : record.value?.version
+})
+const viewingSuperseded = computed(() => !!record.value && selectedVersion.value !== record.value.version)
+/** Everything below renders THIS version's content (identity stays the record's). */
+const bom = computed<BillOfMaterials | undefined>(() => bomAtVersion(record.value, selectedVersion.value))
+const versionOptions = computed(() => versions.value.map(v => ({
+  value: String(v.version),
+  label: `v${v.version} · ${v.status === 'active' ? t('Active') : t('Superseded')} · ${woCount(v.version)} ${t('work order(s)')}`,
+})))
+const woCount = (v: number) => (record.value ? workOrdersOnBomVersion(record.value.id, v).length : 0)
+const versionPick = computed({
+  get: () => String(selectedVersion.value ?? ''),
+  set: (v: string) => { router.replace({ query: { ...route.query, version: v && Number(v) !== record.value?.version ? v : undefined } }) },
+})
+function viewVersion(v: number) { versionPick.value = String(v) }
+function goWorkOrder(id: string) { router.push(`/work-orders/${id}`) }
 
 function goList() { router.push('/bill-of-materials') }
 function createWorkOrder() { router.push(`/work-orders/new?source=bom&bomId=${encodeURIComponent(props.orderId)}`) }
@@ -45,8 +78,9 @@ function onAction(item: string) {
 // ── Delete confirmation ────────────────────────────────────────────────────────
 const isDeleteModalOpen = ref(false)
 function confirmDelete() {
-  if (!bom.value) return
-  bom.value.archived = true
+  if (!record.value) return
+  // Archive the record itself — `bom` may be a read-only copy of a superseded version.
+  record.value.archived = true
   persistBillOfMaterials()
   toast.notify({ variant: 'success', title: t('Bill of materials archived') })
   goList()
@@ -114,6 +148,12 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
         <MpButton variant="link" class="detail-breadcrumb" @click="goList">{{ t('Bill of materials') }}</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ bom.number }}</h1>
+          <ErpStatusBadge
+            data-devchange="bom-version-badge"
+            :status="viewingSuperseded ? 'superseded' : 'active'" badge-for="additionalInformation"
+            :type="viewingSuperseded ? 'announcement' : 'completed'"
+            :label="`v${selectedVersion} · ${viewingSuperseded ? t('Superseded') : t('Active')}`"
+          />
         </div>
       </div>
 
@@ -142,6 +182,15 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
     <!-- ── Scrollable stage ── -->
     <div class="detail-stage">
 
+      <MpBanner v-if="viewingSuperseded && record" id="bomd-superseded" variant="info" class="bomd-version-banner">
+        <MpBannerIcon />
+        <MpBannerTitle>{{ t('Read-only') }} — v{{ selectedVersion }} {{ t('was deactivated on') }} {{ formatDate(versions.find(v => v.version === selectedVersion)?.supersededAt) }}</MpBannerTitle>
+        <MpBannerDescription>
+          v{{ record.version }} {{ t('is the Active version — new work orders use it. The') }} {{ woCount(selectedVersion!) }} {{ t('work order(s) created from') }} v{{ selectedVersion }} {{ t('keep building it.') }}
+          <a class="bom-show-more" @click.prevent="viewVersion(record.version)">{{ t('View') }} v{{ record.version }}</a>
+        </MpBannerDescription>
+      </MpBanner>
+
       <!-- ── Bill of materials info ── -->
       <section class="bom-section">
         <div class="bom-section-head-static">
@@ -154,6 +203,11 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
           <div class="content-list-col">
             <ContentList :label="t('BOM name')" :value="bom.name" />
             <ContentList :label="t('BOM no.')" :value="bom.number" />
+            <ContentList :label="t('Version')">
+              <div data-devchange="bom-version-switcher">
+                <ErpFilterSelect id="bomd-version" v-model="versionPick" :placeholder="t('Version')" :options="versionOptions" width="320px" :is-clearable="false" />
+              </div>
+            </ContentList>
             <ContentList :label="t('Description')">
               <template v-if="bom.description">
                 <span>{{ descDisplay }}</span>
@@ -291,7 +345,7 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
       </section>
 
       <!-- ── Finished goods ── -->
-      <section class="bom-section bom-section--last">
+      <section class="bom-section">
         <MpButton variant="ghost" class="bom-section-head" @click="collapsed.finished = !collapsed.finished">
           <h2 class="bom-section-title">{{ t('Finished goods') }}</h2>
           <svg class="bom-chevron" :class="{ 'bom-chevron--open': !collapsed.finished }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -389,6 +443,43 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
         </template>
       </section>
 
+      <!-- ── Versions ── -->
+      <section class="bom-section bom-section--last" data-devchange="bom-version-history">
+        <h2 class="bom-section-title">{{ t('Versions') }}</h2>
+        <p class="bomd-caption">{{ t('One version is Active at a time. Editing a version that work orders use creates a new one and deactivates the old; each work order keeps the version it was created from.') }}</p>
+        <div class="bom-table-scroll">
+          <table class="bom-table">
+            <thead>
+              <tr>
+                <th class="bom-th">{{ t('Version') }}</th><th class="bom-th">{{ t('Status') }}</th>
+                <th class="bom-th">{{ t('Created') }}</th><th class="bom-th">{{ t('What changed') }}</th>
+                <th class="bom-th">{{ t('Work orders') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="v in versions" :key="v.version" class="bom-tr">
+                <td class="bom-td">
+                  <a v-if="v.version !== selectedVersion" class="bom-show-more" @click.prevent="viewVersion(v.version)">v{{ v.version }}</a>
+                  <template v-else>v{{ v.version }}</template>
+                </td>
+                <td class="bom-td">
+                  <ErpStatusBadge :status="v.status" :type="v.status === 'active' ? 'completed' : 'announcement'" :label="v.status === 'active' ? t('Active') : t('Superseded')" />
+                  <span v-if="v.supersededAt" class="bomd-sub">{{ t('Deactivated') }} {{ formatDate(v.supersededAt) }}</span>
+                </td>
+                <td class="bom-td">{{ formatDate(v.createdAt) }}<span class="bomd-sub">{{ v.createdBy }}</span></td>
+                <td class="bom-td">{{ v.note || (v.version === 1 ? t('First version') : '—') }}</td>
+                <td class="bom-td">
+                  <template v-if="record && woCount(v.version)">
+                    <a v-for="(w, i) in workOrdersOnBomVersion(record.id, v.version)" :key="w.id" class="bom-show-more" @click.prevent="goWorkOrder(w.id)">{{ w.number }}{{ i < woCount(v.version) - 1 ? ', ' : '' }}</a>
+                  </template>
+                  <template v-else>—</template>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
     </div>
   </div>
 
@@ -414,6 +505,10 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
 </template>
 
 <style scoped>
+/* ── Versioning ── */
+.bomd-version-banner { margin-bottom: var(--mp-spacing-6); }
+.bomd-caption { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary); }
+.bomd-sub { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary); }
 /* ── Page shell (shared detail-page pattern) ─────────────────────────────── */
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar {

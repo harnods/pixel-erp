@@ -1,15 +1,17 @@
 <script setup lang="ts">
 /**
- * ECO diff (PRD §8 property 3): components added / removed / changed with per-line
- * and total cost delta. A component without a standard cost is excluded from the
- * total with a warning (OQ25) — never a silent zero.
+ * BOM version diff (PRD v6.2 §7): components added / removed / changed with per-line
+ * and total cost delta. Used by the ECO page, the publish drawer (live, against the
+ * version being replaced) and the newer-version indicator. A component without a
+ * standard cost shows `Δ n/a` and marks the total partially uncosted (OQ25) — never
+ * a silent zero.
  */
 import { MpBanner, MpBannerIcon, MpBannerDescription } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { getCustomBom, diffComponents, type BomComponent, type BomProdCost } from '~/data/projectBoms'
 import { rp, rpSigned, num } from '~/utils/projectFormat'
 
-const props = defineProps<{ bomId: string; baseVersion: number; proposed: { components: BomComponent[]; productionCost: BomProdCost[] }; units?: number }>()
+const props = defineProps<{ bomId: string; baseVersion: number; proposed: { components: BomComponent[]; productionCost: BomProdCost[] }; units?: number; unitsLabel?: string }>()
 const { t } = useLocale()
 
 const base = computed(() => getCustomBom(props.bomId)?.versions.find(v => v.version === props.baseVersion))
@@ -46,19 +48,19 @@ const tone = (v?: number) => (v === undefined ? 'pm-warn' : v > 0 ? 'pm-neg' : v
               <template v-if="r.change === 'changed'">{{ rp(r.fromCost) }} → {{ rp(r.toCost) }}</template>
               <template v-else>{{ rp(r.toCost ?? r.fromCost) }}</template>
             </td>
-            <td class="pm-num" :class="tone(r.delta)">{{ r.delta === undefined ? t('No standard cost') : r.delta ? rpSigned(r.delta) : '—' }}</td>
+            <td class="pm-num" :class="tone(r.delta)">{{ r.delta === undefined ? 'Δ n/a' : r.delta ? rpSigned(r.delta) : '—' }}</td>
           </tr>
           <tr v-if="prodDelta" class="pm-tr-sub"><td colspan="4">{{ t('Production cost (labour, overhead, other)') }}</td><td class="pm-num" :class="tone(prodDelta)">{{ rpSigned(prodDelta) }}</td></tr>
         </tbody>
         <tfoot>
-          <tr><td colspan="4">{{ t('Total delta per unit') }}</td><td class="pm-num" :class="tone(unitDelta)">{{ rpSigned(unitDelta) }}</td></tr>
-          <tr v-if="units" data-devchange="pm-eco-affected-units"><td colspan="4">{{ t('Total delta on affected units') }} ({{ units }})</td><td class="pm-num" :class="tone(unitDelta)">{{ rpSigned(unitDelta * units) }}</td></tr>
+          <tr><td colspan="4">{{ t('Total delta per unit') }}<template v-if="missingStd.length"> ({{ t('partially uncosted') }})</template></td><td class="pm-num" :class="tone(unitDelta)">{{ rpSigned(unitDelta) }}</td></tr>
+          <tr v-if="units" data-devchange="pm-eco-affected-units"><td colspan="4">{{ unitsLabel || t('Total delta on affected units') }} ({{ units }})</td><td class="pm-num" :class="tone(unitDelta)">{{ rpSigned(unitDelta * units) }}</td></tr>
         </tfoot>
       </table>
     </div>
     <MpBanner v-if="missingStd.length" id="eco-diff-missing-std" variant="warning">
       <MpBannerIcon />
-      <MpBannerDescription>{{ missingStd.length }} {{ t('component(s) have no standard cost and are excluded from the total — the real delta may be higher.') }}</MpBannerDescription>
+      <MpBannerDescription>{{ missingStd.length }} {{ t('component(s) have no standard cost, so the total is partially uncosted — the real delta may be higher.') }}</MpBannerDescription>
     </MpBanner>
   </div>
 </template>

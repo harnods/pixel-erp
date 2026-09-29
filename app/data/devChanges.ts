@@ -28,6 +28,70 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'bom-version-upgrade',
+    title: 'Bill of materials: editing a used BOM creates a new version',
+    description:
+      'When work orders already use the Active version, saving the edit upgrades the BOM to v(n+1) and deactivates v(n) — a notice says so and a change note is required. Work orders created with v(n) keep it; new work orders use v(n+1). No engineering change for a regular BOM (that is the project BOM’s rule). Replaces the old refusal “Failed to save. This BOM is used by an active work order”.',
+    date: '2026-09-29',
+    files: ['CreateBillOfMaterialsPage.vue', 'integrityGuards.ts', 'billOfMaterials.ts'],
+  },
+  {
+    id: 'bom-version-badge',
+    title: 'Bill of materials: version badge on the detail title',
+    description:
+      'The BOM detail title shows the version being viewed and its status — v2 · Active, or v1 · Superseded when an older version is picked.',
+    date: '2026-09-29',
+    files: ['BillOfMaterialsDetailsPage.vue'],
+  },
+  {
+    id: 'bom-version-switcher',
+    title: 'Bill of materials: version switcher',
+    description:
+      'Pick any version (Active or Superseded, with its work-order count) to see its full recipe. A superseded version is read-only and names the Active one.',
+    date: '2026-09-29',
+    files: ['BillOfMaterialsDetailsPage.vue'],
+  },
+  {
+    id: 'bom-version-history',
+    title: 'Bill of materials: Versions section',
+    description:
+      'Every version with its status, who created it and when, what changed, when it was deactivated, and the work orders built from it.',
+    date: '2026-09-29',
+    files: ['BillOfMaterialsDetailsPage.vue', 'billOfMaterials.ts'],
+  },
+  {
+    id: 'bom-index-version',
+    title: 'Bill of materials list: Active version column',
+    description:
+      'Each BOM shows its Active version and how many superseded versions it has. The version is never part of the BOM name.',
+    date: '2026-09-29',
+    files: ['BillOfMaterialsIndexPage.vue'],
+  },
+  {
+    id: 'bom-wo-version-pin',
+    title: 'Work order: pinned BOM version',
+    description:
+      'A work order is pinned to the BOM version it was created from. Its raw materials, costs, routing, material records and consume/return all read that version — upgrading the BOM never changes a running work order.',
+    date: '2026-09-29',
+    files: ['WorkOrderDetailsPage.vue', 'NewMaterialRecordPage.vue', 'materialConsumeReturn.ts', 'workOrders.ts'],
+  },
+  {
+    id: 'bom-wo-newer-version',
+    title: 'Work order: neutral “vN available” indicator',
+    description:
+      'When the BOM has a newer Active version, the work order shows a neutral “vN available” that opens what changed. Information only — it never blocks and never moves the pin. Hidden on completed and canceled work orders.',
+    date: '2026-09-29',
+    files: ['WorkOrderDetailsPage.vue', 'WorkOrderBomVersionDrawer.vue'],
+  },
+  {
+    id: 'bom-wo-index-version',
+    title: 'Work orders list: BOM version per row',
+    description:
+      'The BOM name cell shows the version each work order is pinned to, plus “vN available” when a newer version is Active.',
+    date: '2026-09-29',
+    files: ['WorkOrdersIndexPage.vue'],
+  },
+  {
     id: 'crm-erp-integration-detail',
     title: 'ERP Integration Settings: detail page before editor',
     description:
@@ -122,6 +186,94 @@ export const DEV_CHANGES: DevChange[] = [
       'Firm documents (PO, expense, timesheet) can no longer post to a Draft project, and Draft projects consume no actual cost (PRD Story 7). A purchase request to a Draft project saves as a draft that commits nothing.',
     date: '2026-09-22',
     files: ['ProjectNewDocumentPage.vue', 'projectActions.ts', 'projectTransactions.ts'],
+  },
+  {
+    id: 'eco-index',
+    title: 'Engineering changes: new index page',
+    description:
+      'Projects › Engineering changes lists every ECO across projects — Open first — with status, project BOM, v-from → v-to, reason code and how many existing work orders are open to decide. There is no create button: an ECO is raised only when Production publishes a new version of a locked project BOM (PRD v6.2 §7).',
+    date: '2026-09-29',
+    files: ['EngineeringChangesPage.vue', 'ProjectsRouter.vue', 'ErpSidebar.vue', 'erpSitemap.ts'],
+  },
+  {
+    id: 'eco-detail',
+    title: 'Engineering changes: ECO decision page under the project',
+    description:
+      '/projects/:id/engineering-changes/:ecoId is now the PM’s decision page (it replaces the read-only placeholder): change identity (reason code, who published, SO addendum), cost impact beside the work-package budget, the composition diff, existing work orders with their computed route, material disposition and the Open → Decided → Implemented → Closed lifecycle with actor + date. Breadcrumb returns to the project’s Production tab.',
+    date: '2026-09-29',
+    files: ['ProjectEcoDetailPage.vue', 'projectActions.ts', 'projectChanges.ts'],
+  },
+  {
+    id: 'eco-decision',
+    title: 'Engineering changes: one primary action per status',
+    description:
+      'Save decision (Open) → Mark implemented (Decided) → Close engineering change (Implemented). Never disabled — a refusal (wrong role, missing addendum, undecided dispositions) shows inline. Above the escalation threshold the decision is held for Finance in Approvals.',
+    date: '2026-09-29',
+    files: ['EngineeringChangeDetailPage.vue', 'projectActions.ts', 'ProjectApprovalsPage.vue'],
+  },
+  {
+    id: 'eco-adoption',
+    title: 'Engineering changes: PM adoption decision with computed routes',
+    description:
+      'The PM chooses None / Selected work orders / All open work orders. Each existing work order shows the route the system computes from its status — repin, cancel & recreate, adjust in place, split & cutover, or untouched when completed — plus the units that take the new version and their cost delta. Future units are shown separately.',
+    date: '2026-09-29',
+    files: ['EngineeringChangeDetailPage.vue', 'projectActions.ts'],
+  },
+  {
+    id: 'eco-addendum-gate',
+    title: 'Engineering changes: SO addendum gate for customer requests',
+    description:
+      'v6.2 has no VO object — a customer change is an SO addendum + ECO. A customer-request ECO can’t be adopted by existing work orders until it links a project SO addendum (which also raises the derived contract value); otherwise the PM overrides with a reason, flagging added scope not yet under contract. PRJ-A seeds SO-0231-A1 for ECO-PRJ-A-01.',
+    date: '2026-09-29',
+    files: ['ProjectEcoDetailPage.vue', 'BomEditDrawer.vue', 'projectActions.ts', 'projects.ts'],
+  },
+  {
+    id: 'eco-disposition',
+    title: 'Engineering changes: mandatory material disposition',
+    description:
+      'When every open work order adopts, removed components’ reserved stock returns to project stock and each affected line needs Use as is / Rework / Scrap before the ECO can be implemented. Scrap posts an actual cost to the project’s Cost of production.',
+    date: '2026-09-29',
+    files: ['EngineeringChangeDetailPage.vue', 'projectActions.ts'],
+  },
+  {
+    id: 'eco-publish-version',
+    title: 'Project BOM: Edit BOM publishes a new version when locked',
+    description:
+      'Production edits the project BOM. While no work order references the Active version it saves in place (no ECO). Once locked, saving publishes vN+1 — Active at once, reason code required — and raises one ECO for the PM. A further edit is refused while that ECO is open, naming it.',
+    date: '2026-09-29',
+    files: ['BomEditDrawer.vue', 'BomDetailOverlay.vue', 'projectActions.ts', 'useProjectRole.ts'],
+  },
+  {
+    id: 'eco-bom-version-switcher',
+    title: 'Project BOM: version switcher and read-only superseded versions',
+    description:
+      'The BOM drawer switches between versions, each labelled Active / Superseded with its work-order count and lock state. A superseded version is read-only and names the Active one. Version history shows who published, the reason code and the ECO it raised. Revert was removed — every change goes through a published version.',
+    date: '2026-09-29',
+    files: ['BomDetailOverlay.vue', 'projectBoms.ts'],
+  },
+  {
+    id: 'eco-newer-version-hint',
+    title: 'Work orders: neutral “vN available” indicator',
+    description:
+      'Wherever a work order is pinned to a version that is no longer Active, a neutral indicator shows “vN available”. Its only action is opening the diff; it never blocks and never moves a pin. Hidden on completed and cancelled work orders.',
+    date: '2026-09-29',
+    files: ['NewerVersionHint.vue', 'BomVersionDiffDrawer.vue'],
+  },
+  {
+    id: 'eco-wo-version-pin',
+    title: 'Production tab: work orders with their pinned BOM version',
+    description:
+      'A read-only Work orders list joins the Production tab (PRD v6.2 Story 9): each row shows the BOM version it is pinned to with the neutral “vN available” indicator, units already completed, “Replaces / Continued in” links written by cancel & recreate and split & cutover, and adjustments documented by an ECO. No actions — the tab reports.',
+    date: '2026-09-29',
+    files: ['ProductionTab.vue', 'projectTransactions.ts'],
+  },
+  {
+    id: 'eco-production-tab-list',
+    title: 'Production tab: engineering changes on the v6.2 model',
+    description:
+      'The Production tab’s engineering-change list now reads the v6.2 ECO: who published the version and when, the reason code, v-from → v-to and the lifecycle status. Each number opens the ECO page under the project. The tab stays information-only — the PM decides on the ECO page.',
+    date: '2026-09-29',
+    files: ['ProductionTab.vue'],
   },
   {
     id: 'pm-eco-affected-units',

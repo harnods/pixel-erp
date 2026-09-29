@@ -17,7 +17,7 @@ import {
   MpAutocomplete, MpDatePicker, MpInput, MpTextarea, MpButton, MpIcon,
   MpCheckbox, MpRadio, toast,
 } from '@mekari/pixel3'
-import { workOrders } from '~/data/workOrders'
+import { workOrders , bomForWorkOrder } from '~/data/workOrders'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 import { warehouses } from '~/data/warehouses'
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
@@ -30,7 +30,8 @@ const router = useRouter()
 const route = useRoute()
 
 const wo = computed(() => workOrders.find(w => w.id === props.orderId))
-const bom = computed(() => wo.value ? billOfMaterials.find(b => b.id === wo.value!.bomId) : undefined)
+// Consume against the recipe this work order was built from — its pinned BOM version.
+const bom = computed(() => wo.value ? bomForWorkOrder(wo.value) : undefined)
 
 function goBack() { router.push(`/work-orders/${props.orderId}?tab=material-consume-return`) }
 

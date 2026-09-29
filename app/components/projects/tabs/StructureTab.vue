@@ -27,7 +27,7 @@ import {
   addWorkPackage, updateWorkPackage, deleteWorkPackage, getPhase, getWorkPackage,
   type Project, type Phase, type WorkPackage, type WorkPackageType, usesMilestone, usesUnits } from '~/data/projects'
 import { phaseTotal, wpBudget, getBudget } from '~/data/projectBudgets'
-import { wpActual, wpCommitted, phaseActual, phaseCommitted, projectWorkOrders } from '~/data/projectTransactions'
+import { wpActual, wpCommitted, phaseActual, phaseCommitted, projectWorkOrders, woClosed } from '~/data/projectTransactions'
 import { getCustomBom, masterBoms, currentVersion } from '~/data/projectBoms'
 import { phaseLockReason, wpStarted, logStructure, replaceCustomBom, reconfirmWeights } from '~/data/projectActions'
 import { rp, pct, parseAmount, isoToDmy, dmyToIso } from '~/utils/projectFormat'
@@ -134,7 +134,7 @@ const editingWp = computed(() => (wpDrawer.id ? getWorkPackage(wpDrawer.id) : un
 const editingStarted = computed(() => (editingWp.value ? wpStarted(editingWp.value.id) : undefined))
 const editingBom = computed(() => getCustomBom(editingWp.value?.customBomId))
 const bomChanging = computed(() => wpDrawer.type === 'production' && (editingBom.value?.masterBomId ?? '') !== wpDrawer.masterBomId)
-const bomOpenWo = computed(() => editingBom.value ? projectWorkOrders.find(w => w.customBomId === editingBom.value!.id && w.status !== 'Completed') : undefined)
+const bomOpenWo = computed(() => editingBom.value ? projectWorkOrders.find(w => w.customBomId === editingBom.value!.id && !woClosed(w)) : undefined)
 const selectedMaster = computed(() => masterBoms.find(m => m.id === wpDrawer.masterBomId))
 const bomOptions = computed(() => masterBoms.filter(x => !x.archived).map(m => ({ value: m.id, label: `${m.number} · ${m.name}${m.components.length ? '' : ` (${t('no components')})`}` })))
 const typeOptions = computed(() => [
@@ -144,7 +144,7 @@ const typeOptions = computed(() => [
 const wpErrors = computed(() => ({
   name: !wpDrawer.name.trim() ? t('Enter the work package name.') : '',
   bom: selectedMaster.value && !selectedMaster.value.components.length ? t('This master BOM has no components, so it can’t be used. Pick another BOM or leave it empty.') : '',
-  replace: bomChanging.value && editingBom.value && bomOpenWo.value ? `${t('An open work order')} (${bomOpenWo.value.number}) ${t('uses this BOM, so it can’t be replaced. Raise an engineering change instead.')}` : '',
+  replace: bomChanging.value && editingBom.value && bomOpenWo.value ? `${t('An open work order')} (${bomOpenWo.value.number}) ${t('uses this BOM, so it can’t be replaced. Edit the BOM instead — that publishes a new version and raises an engineering change.')}` : '',
   reason: bomChanging.value && editingBom.value && !bomOpenWo.value && !wpDrawer.replaceReason.trim() ? t('Enter a reason for replacing the BOM.') : '',
   units: isUnit.value && wpDrawer.type === 'production' && !parseAmount(wpDrawer.plannedUnits) ? t('Unit-measured Output needs planned units.') : '',
 }))

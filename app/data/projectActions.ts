@@ -6,22 +6,28 @@
 import { TODAY_ISO } from './master'
 import {
   projects, phases, workPackages, punchItems, getProject, getPhase, getWorkPackage, projectPhases, projectWorkPackages,
-  phaseWorkPackages, weightTotal, usesMilestone, persistProjects, newId, clone, type Project,
+  phaseWorkPackages, weightTotal, usesMilestone, persistProjects, newId, clone, projectSos, type Project,
 } from './projects'
 import {
   getBudget, addRevision, setBudgetLine, persistBudgets, createBudget, COGM_ACCOUNT, wpBudget, accountName,
   type BudgetRevisionChange, type BudgetLine,
 } from './projectBudgets'
 import {
-  costLines, projectWorkOrders, peggedDocuments, persistLedger, checkBudget, nextWoNumber, woGate,
+  costLines, projectWorkOrders, peggedDocuments, persistLedger, checkBudget, nextWoNumber, woGate, woClosed,
   type ProjectWorkOrder, type PeggedDocument, type ProjectWoLine,
 } from './projectTransactions'
 import {
   billingTerms, recognitionPostings, projectInvoices, persistRecognition, nextRecNo, nextInvoiceNo,
   percentComplete, recognisedToDate, recognitionDue, termInvoice, tmEntries,
 } from './projectRecognition'
-import { changeOrders, engineeringChanges, persistChanges, nextVoNo, pendingChanges, type EcoEffectivity } from './projectChanges'
-import { customBoms, getCustomBom, currentVersion, appendVersion, copyMasterBom, persistBoms, bomUnitCost } from './projectBoms'
+import {
+  changeOrders, engineeringChanges, persistChanges, nextVoNo, nextEcoNo, pendingChanges, blockingEco, ECO_REASON_LABELS,
+  type EngineeringChange, type EcoReason, type EcoAdoption, type EcoRoute, type EcoDisposition,
+} from './projectChanges'
+import {
+  customBoms, getCustomBom, currentVersion, appendVersion, copyMasterBom, persistBoms, bomUnitCost, getVersion, partiallyUncosted,
+  type BomComponent, type BomProdCost,
+} from './projectBoms'
 import {
   reservations, releaseRequests, stockItems, persistReservations, getStockItem, stockItemByName, availableQty, wpReservedQty,
   type Reservation,
@@ -384,7 +390,7 @@ export function advanceWo(woId: string, actor: Actor): Result {
 /** Completion releases unused set-aside (and unconsumed reservations) with audit entries. */
 export function completeWo(woId: string, actor: Actor): Result {
   const wo = projectWorkOrders.find(w => w.id === woId)
-  if (!wo || wo.status === 'Completed') return { ok: false, error: 'Work order is already completed.' }
+  if (!wo || woClosed(wo)) return { ok: false, error: wo?.status === 'Cancelled' ? 'Work order was cancelled.' : 'Work order is already completed.' }
   if (wo.actual === 0) wo.actual = Math.min(wo.estimate, wo.budgetSetAside)
   wo.status = 'Completed'
   wo.completedAt = TODAY_ISO
@@ -402,12 +408,6 @@ export function decideApproval(id: string, approve: boolean, actor: Actor, note?
   const a = approvals.find(x => x.id === id)
   if (!a || a.status !== 'pending') return { ok: false, error: 'This request is no longer pending.' }
   if (a.requestedBy === actor.name) return { ok: false, error: 'You raised this request, so someone else must decide it.' }
-  // OQ23 (provisional): a customer-funded ECO applies after its change order — approve the VO first.
-  if (approve && a.kind === 'eco') {
-    const eco = engineeringChanges.find(e => e.id === a.refId)
-    const vo = eco?.voId ? changeOrders.find(v => v.id === eco.voId) : undefined
-    if (vo && vo.status !== 'approved') return { ok: false, error: `This engineering change is funded by ${vo.no}. Approve the change order first — its budget revision applies before this one.` }
-  }
   // A budget-revision proposal is a full baseline snapshot: applying it after the budget moved
   // would silently revert the revisions made in between. Refuse and ask for a resubmit.
   if (approve && a.kind === 'budget_revision' && a.payload) {
@@ -434,7 +434,7 @@ export function decideApproval(id: string, approve: boolean, actor: Actor, note?
   switch (a.kind) {
     case 'overage': applyOverage(a, approve, actor); break
     case 'change_order': approve ? applyVoApproval(a.refId, actor) : rejectVo(a.refId, actor, note); break
-    case 'eco': approve ? applyEcoApproval(a.refId, actor) : rejectEco(a.refId, actor, note); break
+    case 'eco': approve ? approveEcoDecision(a.refId, actor) : returnEcoDecision(a.refId, actor, note); break
     case 'stock_release': applyReleaseDecision(a.refId, approve, actor); break
     case 'budget_revision': if (approve) applyBudgetRequest(a, actor); break
   }
@@ -578,11 +578,6 @@ function rejectVo(voId: string, actor: Actor, note?: string) {
   vo.status = 'rejected'
   vo.decidedBy = actor.name
   vo.decidedAt = TODAY_ISO
-  // An ECO this VO was funding is no longer customer-funded — unlink it so it can still be decided on its own.
-  for (const e of engineeringChanges.filter(x => x.voId === vo.id && (x.status === 'draft' || x.status === 'pending'))) {
-    e.voId = undefined
-    logAudit({ actor: actor.name, role: actor.role, projectId: e.projectId, kind: 'eco', summary: `${e.no} is no longer customer-funded — ${vo.no} was rejected. Any cost delta is now absorbed by the project budget if approved.`, refNo: e.no })
-  }
   persistChanges()
   logAudit({ actor: actor.name, role: actor.role, projectId: vo.projectId, kind: 'change_order', summary: `Rejected ${vo.no}`, reason: note, refNo: vo.no })
 }
@@ -597,133 +592,360 @@ export function reconfirmWeights(projectId: string, actor: Actor): Result {
   return { ok: true }
 }
 
-// ─── Engineering change (ECO) ───────────────────────────────────────────────────
+// ─── Project BOM versioning & engineering change (PRD v6.2 §5, §7) ──────────────
+//
+// Production edits the project BOM. While the Active version is unreferenced the
+// edit saves in place; once any work order references it the version is locked
+// and an edit publishes vN+1, which is Active at once — every work order created
+// afterwards uses it. The publish raises one ECO. The PM decides only whether
+// EXISTING work orders adopt it; the route per work order is computed from its
+// status. Dispositions close the chain before the ECO can be Implemented.
 
-export function createEco(input: { projectId: string; wpId: string; title: string; reason: string; voId?: string }, actor: Actor): Result & { id?: string } {
-  const wp = getWorkPackage(input.wpId)
-  const b = getCustomBom(wp?.customBomId)
-  if (!wp || !b) return { ok: false, error: 'This work package has no custom BOM to change.' }
-  const p = getProject(input.projectId)!
+export interface BomEditInput {
+  components: BomComponent[]
+  productionCost: BomProdCost[]
+  /** required when the edit publishes a new version */
+  reason?: EcoReason
+  /** short summary — becomes the ECO title */
+  title: string
+  note?: string
+  /** SO addendum (project sales order, isAddendum) behind a customer request */
+  addendumSoId?: string
+}
+
+/** Work orders pinned to a version (any status). The first one locks it for good. */
+export function versionRefs(bomId: string, version: number): ProjectWorkOrder[] {
+  return projectWorkOrders.filter(w => w.customBomId === bomId && w.bomVersion === version)
+}
+export function versionLocked(bomId: string, version: number): boolean {
+  return versionRefs(bomId, version).length > 0
+}
+
+/** Why this actor can't edit the BOM right now — '' when the edit is allowed. */
+export function bomEditRefusal(bomId: string, actor: Actor): string {
+  const b = getCustomBom(bomId)
+  if (!b) return 'This BOM no longer exists.'
+  if (b.archived) return 'This BOM is archived, so it can’t be edited.'
+  if (getProject(b.projectId)?.status === 'closed') return 'The project is closed, so its BOM can’t change.'
+  if (actor.role !== 'Production') return 'Production edits the project BOM. Switch “View as” to Production to edit it.'
+  const blocker = blockingEco(b.id)
+  if (blocker) return `${blocker.no} is still open on this BOM. One engineering change at a time — edit again once the PM has decided it.`
+  return ''
+}
+
+/** Save a BOM edit: in place while unreferenced, otherwise publish vN+1 (Active) and raise an ECO. */
+export function saveBomEdit(bomId: string, input: BomEditInput, actor: Actor): Result & { ecoId?: string; version?: number; published?: boolean } {
+  const refusal = bomEditRefusal(bomId, actor)
+  if (refusal) return { ok: false, error: refusal }
+  const b = getCustomBom(bomId)!
   const cur = currentVersion(b)
+  const components = input.components.map(c => ({ ...c, name: c.name.trim() })).filter(c => c.name)
+  if (!components.length) return { ok: false, error: 'A BOM needs at least one component.' }
+  if (components.some(c => !(c.qty > 0))) return { ok: false, error: 'Every component needs a quantity above zero.' }
+  const names = components.map(c => c.name.toLowerCase())
+  if (new Set(names).size !== names.length) return { ok: false, error: 'A component is listed twice. Combine the rows into one.' }
+  if (!input.title.trim()) return { ok: false, error: 'Describe what changed.' }
+  const unchanged = JSON.stringify(components) === JSON.stringify(cur.components) && JSON.stringify(input.productionCost) === JSON.stringify(cur.productionCost)
+  if (unchanged) return { ok: false, error: 'Nothing changed yet. Edit a component before saving.' }
+
+  if (!versionLocked(b.id, cur.version)) {
+    cur.components = clone(components)
+    cur.productionCost = clone(input.productionCost)
+    cur.editedAt = TODAY_ISO
+    cur.editedBy = actor.name
+    persistBoms()
+    logAudit({ actor: actor.name, role: actor.role, projectId: b.projectId, kind: 'bom_version', summary: `Edited ${b.name} v${cur.version} in place — no work order references it yet, so no new version or ECO`, reason: input.title.trim() })
+    return { ok: true, message: `Saved v${cur.version}. No work order uses it yet, so no engineering change was needed.`, version: cur.version, published: false }
+  }
+
+  if (!input.reason) return { ok: false, error: 'Choose a reason code. A locked version only changes by publishing a new one.' }
+  const p = getProject(b.projectId)!
+  const no = nextEcoNo(p.code)
+  const v = appendVersion(b.id, { createdAt: TODAY_ISO, createdBy: actor.name, source: 'publish', refNo: no, reasonCode: input.reason, note: input.title.trim(), components, productionCost: clone(input.productionCost) })!
   const id = newId('eco')
-  const code = p.code.replace('PS-', '')
-  const n = engineeringChanges.filter(e => e.projectId === p.id).length + 1
-  engineeringChanges.unshift({ id, no: `ECO-${code}-${String(n).padStart(2, '0')}`, projectId: p.id, wpId: wp.id, customBomId: b.id, title: input.title, reason: input.reason, status: 'draft', specificWoIds: [], baseVersion: cur.version, proposed: { components: clone(cur.components), productionCost: clone(cur.productionCost) }, voId: input.voId, raisedBy: actor.name, createdAt: TODAY_ISO })
+  engineeringChanges.unshift({
+    id, no, projectId: p.id, wpId: b.wpId, customBomId: b.id, title: input.title.trim(), reason: input.reason, note: (input.note ?? '').trim(),
+    fromVersion: cur.version, toVersion: v.version, status: 'open', addendumSoId: validAddendum(b.projectId, input.addendumSoId),
+    publishedBy: actor.name, publishedAt: TODAY_ISO, decisions: [], dispositions: [],
+  })
   persistChanges()
-  return { ok: true, id }
+  logAudit({ actor: actor.name, role: actor.role, projectId: p.id, kind: 'bom_version', summary: `Published ${b.name} v${v.version} (Active) — raised ${no} for the PM`, reason: ECO_REASON_LABELS[input.reason], refNo: no })
+  return { ok: true, message: `v${v.version} is now Active. ${no} was sent to the PM to decide existing work orders.`, ecoId: id, version: v.version, published: true }
 }
 
-/** Submit requires an explicit effectivity scope — never defaulted silently. */
-export function submitEco(ecoId: string, effectivity: EcoEffectivity | undefined, woIds: string[], actor: Actor): Result {
+/** Route for a work order adopting a new version — computed from objective status triggers, never picked. */
+export function ecoRoute(w: Pick<ProjectWorkOrder, 'status' | 'completedQty'>): EcoRoute {
+  if (w.status === 'Completed' || w.status === 'Cancelled') return 'untouched'
+  if (w.status === 'Draft') return 'repin'
+  if (w.status === 'Released') return 'cancel_recreate'
+  return (w.completedQty ?? 0) > 0 ? 'split_cutover' : 'adjust'
+}
+
+/** Units of a work order that take the new version on its route. */
+export function ecoRouteUnits(w: Pick<ProjectWorkOrder, 'qty' | 'completedQty'>, route: EcoRoute): number {
+  if (route === 'untouched') return 0
+  if (route === 'split_cutover') return Math.max(w.qty - (w.completedQty ?? 0), 0)
+  return w.qty
+}
+
+/** Existing work orders on an older version of the ECO's BOM (Cancelled ones drop out). */
+export function ecoExistingWos(e: Pick<EngineeringChange, 'customBomId' | 'toVersion'>): ProjectWorkOrder[] {
+  return projectWorkOrders.filter(w => w.customBomId === e.customBomId && w.bomVersion !== undefined && w.bomVersion < e.toVersion && w.status !== 'Cancelled')
+}
+
+/** Per-unit delta between the ECO's two versions; uncosted when a component has no standard cost. */
+export function ecoUnitDelta(e: Pick<EngineeringChange, 'customBomId' | 'fromVersion' | 'toVersion'>): { delta: number; uncosted: boolean } {
+  const b = getCustomBom(e.customBomId)
+  const from = getVersion(b, e.fromVersion)
+  const to = getVersion(b, e.toVersion)
+  if (!from || !to) return { delta: 0, uncosted: false }
+  return { delta: bomUnitCost(to) - bomUnitCost(from), uncosted: partiallyUncosted(from) || partiallyUncosted(to) }
+}
+
+export interface EcoPreviewRow { wo: ProjectWorkOrder; route: EcoRoute; adopt: boolean; units: number; delta: number }
+export interface EcoPreview {
+  rows: EcoPreviewRow[]
+  unitDelta: number
+  uncosted: boolean
+  adoptedDelta: number
+  /** remaining planned units not on any open WO — built from the new Active version automatically */
+  futureUnits: number
+  futureDelta: number
+  total: number
+  /** Cost-of-production budget of the work package — the base the escalation threshold is measured on */
+  budgetBase?: number
+  thresholdPct: number
+  needsApproval: boolean
+  /** every open WO on the old version adopts → removed components' material is freed (dispositions) */
+  allOpenAdopt: boolean
+}
+
+export function ecoPreview(e: EngineeringChange, adoption: EcoAdoption | undefined, selectedWoIds: string[]): EcoPreview {
+  const { delta: unitDelta, uncosted } = ecoUnitDelta(e)
+  const rows: EcoPreviewRow[] = ecoExistingWos(e).map(wo => {
+    const route = ecoRoute(wo)
+    const adopt = route !== 'untouched' && (adoption === 'all_open' || (adoption === 'selected' && selectedWoIds.includes(wo.id)))
+    const units = adopt ? ecoRouteUnits(wo, route) : 0
+    return { wo, route, adopt, units, delta: Math.round(units * unitDelta) }
+  })
+  const adoptedDelta = rows.reduce((s, r) => s + r.delta, 0)
+  const wp = getWorkPackage(e.wpId)
+  const remaining = Math.max((wp?.plannedUnits ?? 0) - (wp?.confirmedUnits ?? 0), 0)
+  const futureUnits = Math.max(remaining - openWoQty(e.wpId), 0)
+  const futureDelta = Math.round(futureUnits * unitDelta)
+  const total = adoptedDelta + futureDelta
+  const budgetBase = getBudget(e.projectId) ? wpBudget(e.wpId, COGM_ACCOUNT) : undefined
+  const p = getProject(e.projectId)
+  const thresholdPct = p?.escalationThresholdPct ?? projectPolicy.companyThresholdPct
+  const needsApproval = !!budgetBase && total > 0 && (total / budgetBase) * 100 > thresholdPct
+  const adoptable = rows.filter(r => r.route !== 'untouched')
+  const allOpenAdopt = adoptable.length > 0 && adoptable.every(r => r.adopt)
+  return { rows, unitDelta, uncosted, adoptedDelta, futureUnits, futureDelta, total, budgetBase, thresholdPct, needsApproval, allOpenAdopt }
+}
+
+function openWoQty(wpId: string) {
+  return projectWorkOrders.filter(w => w.wpId === wpId && !woClosed(w)).reduce((s, w) => s + ecoRouteUnits(w, w.status === 'In progress' && (w.completedQty ?? 0) > 0 ? 'split_cutover' : 'repin'), 0)
+}
+
+/** The PM's adoption decision for existing work orders. Above the escalation threshold it is held for Finance. */
+/** Only an addendum SO of the same project counts. */
+function validAddendum(projectId: string, soId?: string): string | undefined {
+  return soId && projectSos(projectId).some(so => so.id === soId && so.isAddendum) ? soId : undefined
+}
+
+export function decideEco(ecoId: string, input: { adoption?: EcoAdoption; selectedWoIds: string[]; note: string; addendumSoId?: string; addendumOverride?: string }, actor: Actor): Result {
   const e = engineeringChanges.find(x => x.id === ecoId)
-  if (!e) return { ok: false, error: 'ECO not found' }
-  if (!effectivity) return { ok: false, error: 'Choose which work orders this change applies to before submitting.' }
-  if (effectivity === 'specific' && !woIds.length) return { ok: false, error: 'Pick at least one work order.' }
-  if (engineeringChanges.some(x => x.id !== e.id && x.customBomId === e.customBomId && x.status === 'pending')) return { ok: false, error: 'Another ECO is already pending on this BOM. ECOs on one BOM are serialised — wait for it to be decided.' }
-  e.effectivity = effectivity
-  e.specificWoIds = woIds
-  e.status = 'pending'
-  persistChanges()
-  addApproval({ kind: 'eco', projectId: e.projectId, refId: e.id, refNo: e.no, title: `${e.title} — ${getWorkPackage(e.wpId)?.name}`, requestedBy: actor.name, requestedAt: TODAY_ISO, reason: e.reason })
-  logAudit({ actor: actor.name, role: actor.role, projectId: e.projectId, kind: 'eco', summary: `Submitted ${e.no} — effectivity: ${effectivityText(effectivity, woIds)}`, reason: e.reason, refNo: e.no })
-  return { ok: true, message: `${e.no} sent for approval.` }
-}
-
-export function effectivityText(eff: EcoEffectivity | undefined, woIds: string[] = []): string {
-  if (eff === 'new_only') return 'new work orders only'
-  if (eff === 'all_open') return 'all open work orders'
-  if (eff === 'specific') return `specific work orders (${woIds.map(id => projectWorkOrders.find(w => w.id === id)?.number).filter(Boolean).join(', ')})`
-  return 'not chosen'
-}
-
-/** Open work orders for ECO effectivity — Draft and Released (OQ20 assumption; In progress excluded). */
-export function ecoAffectedWos(e: { wpId: string; effectivity?: EcoEffectivity; specificWoIds: string[] }): ProjectWorkOrder[] {
-  const open = projectWorkOrders.filter(w => w.wpId === e.wpId && (w.status === 'Draft' || w.status === 'Released'))
-  if (e.effectivity === 'all_open') return open
-  if (e.effectivity === 'specific') return projectWorkOrders.filter(w => e.specificWoIds.includes(w.id))
-  return []
-}
-
-function applyEcoApproval(ecoId: string, actor: Actor) {
-  const e = engineeringChanges.find(x => x.id === ecoId)
-  if (!e) return
-  const b = getCustomBom(e.customBomId)!
-  const before = currentVersion(b)
-  const v = appendVersion(b.id, { createdAt: TODAY_ISO, createdBy: actor.name, source: 'eco', refNo: e.no, note: e.title, components: e.proposed.components, productionCost: e.proposed.productionCost })!
-  e.status = 'approved'
+  if (!e) return { ok: false, error: 'This engineering change no longer exists.' }
+  if (e.status !== 'open') return { ok: false, error: `${e.no} is already decided.` }
+  if (actor.role !== 'PM') return { ok: false, error: 'The project manager decides which existing work orders adopt the new version. Switch “View as” to Project manager.' }
+  if (!input.adoption) return { ok: false, error: `Choose which existing work orders adopt v${e.toVersion}.` }
+  const preview = ecoPreview(e, input.adoption, input.selectedWoIds)
+  const adopted = preview.rows.filter(r => r.adopt)
+  if (input.adoption === 'selected' && !adopted.length) return { ok: false, error: 'Tick at least one work order, or choose None.' }
+  const addendumSoId = validAddendum(e.projectId, input.addendumSoId) ?? e.addendumSoId
+  if (e.reason === 'customer_request' && adopted.length && !addendumSoId && !input.addendumOverride?.trim()) {
+    return { ok: false, error: 'A customer request needs its SO addendum before work orders adopt it. Link the addendum, or override with a reason.' }
+  }
+  e.addendumSoId = addendumSoId
+  e.addendumOverride = !addendumSoId && adopted.length ? input.addendumOverride?.trim() : undefined
+  e.adoption = input.adoption
+  e.decisionNote = input.note.trim() || undefined
   e.decidedBy = actor.name
   e.decidedAt = TODAY_ISO
-  e.resultVersion = v.version
-  // Cost delta on affected work orders → budget revision in the budget module
-  const unitDelta = bomUnitCost(v) - bomUnitCost(before)
-  const affected = ecoAffectedWos(e)
-  const wp = getWorkPackage(e.wpId)!
-  // Units that get the new version: future work orders (remaining units not yet on any open WO —
-  // they'll be built from the new current version) plus the work orders in the effectivity scope.
-  // In-progress / unselected work orders keep their version, so their units carry no delta.
-  const deltaTotal = Math.round(unitDelta * ecoDeltaUnits(e))
-  const overSetAside: string[] = []
-  for (const w of affected) {
-    w.bomVersion = v.version
-    w.lines = fitLineBudgets(suggestWoLines(b.id, w.qty), w.budgetSetAside)
-    w.estimate = w.lines.reduce((s, l) => s + l.estimate, 0)
-    if (w.budgetSetAside && w.estimate > w.budgetSetAside) overSetAside.push(`${w.number} estimate ${fmt(w.estimate)} > set-aside ${fmt(w.budgetSetAside)}`)
+  e.decisions = adopted.map(r => ({ woId: r.wo.id, woNumber: r.wo.number, route: r.route, fromVersion: r.wo.bomVersion ?? e.fromVersion, units: r.units, delta: r.delta }))
+  const scope = input.adoption === 'none' ? 'no existing work order adopts' : `${adopted.length} work order(s) adopt`
+  if (preview.needsApproval) {
+    e.status = 'pending_approval'
+    persistChanges()
+    const wp = getWorkPackage(e.wpId)
+    addApproval({ kind: 'eco', projectId: e.projectId, refId: e.id, refNo: e.no, title: `${e.title} — ${wp?.code} ${wp?.name}`, requestedBy: actor.name, requestedAt: TODAY_ISO, amount: preview.total, reason: e.decisionNote })
+    logAudit({ actor: actor.name, role: actor.role, projectId: e.projectId, kind: 'eco', summary: `Decided ${e.no} — ${scope} v${e.toVersion}; cost delta ${fmt(preview.total)} is above the ${pct(preview.thresholdPct)} escalation threshold, held for Finance`, reason: e.decisionNote, refNo: e.no })
+    return { ok: true, message: `Above the ${pct(preview.thresholdPct)} escalation threshold — ${e.no} was sent to Finance for approval.` }
   }
-  if (overSetAside.length) logAudit({ actor: 'System', role: 'System', projectId: e.projectId, kind: 'work_order', summary: `${e.no}: line budgets kept within set-aside; ${overSetAside.join('; ')}`, refNo: e.no })
-  if (deltaTotal && getBudget(e.projectId)) {
-    const from = wpBudget(e.wpId, COGM_ACCOUNT) ?? 0
-    setBudgetLine(e.projectId, e.wpId, COGM_ACCOUNT, from + deltaTotal)
-    persistBudgets()
-    addRevision(e.projectId, { date: TODAY_ISO, by: actor.name, reason: `Engineering change ${e.no}: ${e.title}`, source: 'engineering change', refNo: e.no, changes: [{ wpId: e.wpId, account: COGM_ACCOUNT, field: 'line', from, to: from + deltaTotal }] })
-    logAudit({ actor: actor.name, role: actor.role, projectId: e.projectId, kind: 'budget_revision', summary: `Budget revision from ${e.no}: ${wp.code} Cost of production ${fmt(from)} → ${fmt(from + deltaTotal)}`, refNo: e.no })
-  }
-  // Reservations: removed components free their reservations; added components create requirements
-  const removed = before.components.filter(c => !v.components.some(x => x.name === c.name))
-  const added = v.components.filter(c => !before.components.some(x => x.name === c.name))
-  for (const c of removed) {
-    const item = stockItemByName(c.name)
-    if (!item) continue
-    for (const r of reservations.filter(x => x.wpId === e.wpId && x.itemId === item.id && x.status === 'reserved')) {
-      r.status = 'released'; r.releasedAt = TODAY_ISO; r.releaseReason = `Removed by ${e.no}`
-      logAudit({ actor: actor.name, role: actor.role, projectId: e.projectId, kind: 'reservation', summary: `Released ${r.qty} ${item.unit} ${item.name} — component removed by ${e.no}`, refNo: e.no })
+  applyEcoDecision(e, actor)
+  logAudit({ actor: actor.name, role: actor.role, projectId: e.projectId, kind: 'eco', summary: `Decided ${e.no} — ${scope} v${e.toVersion}${e.addendumOverride ? '; adopted without an SO addendum (added scope not yet under contract)' : ''}`, reason: e.addendumOverride ?? e.decisionNote, refNo: e.no })
+  return { ok: true, message: e.dispositions.length ? `${e.no} decided. Decide the material disposition to finish it.` : `${e.no} decided.` }
+}
+
+/** Execute a decision: each adopted WO takes its route, the cost delta revises the budget, freed material needs a disposition. */
+function applyEcoDecision(e: EngineeringChange, actor: Actor) {
+  const b = getCustomBom(e.customBomId)!
+  const from = getVersion(b, e.fromVersion)!
+  const to = getVersion(b, e.toVersion)!
+  const unitDelta = bomUnitCost(to) - bomUnitCost(from)
+  const routed: string[] = []
+  for (const d of e.decisions) {
+    const w = projectWorkOrders.find(x => x.id === d.woId)
+    if (!w) continue
+    if (d.route === 'repin') {
+      w.bomVersion = to.version
+      w.lines = fitLineBudgets(suggestWoLines(b.id, w.qty), w.budgetSetAside)
+      w.estimate = w.lines.reduce((s, l) => s + l.estimate, 0)
+      routed.push(`${w.number} repinned to v${to.version}`)
+    } else if (d.route === 'cancel_recreate') {
+      const nw = recreateWo(w, w.qty, w.budgetSetAside, to.version, actor)
+      w.status = 'Cancelled'
+      w.replacedByWoId = nw.id
+      w.released = w.budgetSetAside
+      d.newWoId = nw.id
+      routed.push(`${w.number} cancelled → ${nw.number} on v${to.version}`)
+    } else if (d.route === 'adjust') {
+      w.ecoAdjustments = [...(w.ecoAdjustments ?? []), { ecoNo: e.no, delta: d.delta, at: TODAY_ISO }]
+      w.estimate += d.delta
+      routed.push(`${w.number} adjusted in place (stays on v${w.bomVersion}; delta ${fmt(d.delta)})`)
+    } else if (d.route === 'split_cutover') {
+      const done = w.completedQty ?? 0
+      const moved = Math.max(w.budgetSetAside - w.actual, 0)
+      const nw = recreateWo(w, w.qty - done, moved, to.version, actor)
+      w.qty = done
+      w.budgetSetAside = w.actual
+      w.status = 'Completed'
+      w.completedAt = TODAY_ISO
+      w.released = 0
+      w.replacedByWoId = nw.id
+      d.newWoId = nw.id
+      routed.push(`${w.number} closed at ${done} ${w.unit} on v${w.bomVersion} → ${nw.number} (${nw.qty} ${nw.unit}) on v${to.version}`)
     }
   }
+  // Budget revision — adopted units plus future units (already on the new Active version).
+  const wp = getWorkPackage(e.wpId)!
+  const preview = ecoPreview(e, e.adoption, e.decisions.map(d => d.woId))
+  const total = e.decisions.reduce((s, d) => s + d.delta, 0) + preview.futureDelta
+  if (total && getBudget(e.projectId)) {
+    const fromAmt = wpBudget(e.wpId, COGM_ACCOUNT) ?? 0
+    setBudgetLine(e.projectId, e.wpId, COGM_ACCOUNT, fromAmt + total)
+    persistBudgets()
+    addRevision(e.projectId, { date: TODAY_ISO, by: actor.name, reason: `Engineering change ${e.no}: ${e.title}`, source: 'engineering change', refNo: e.no, changes: [{ wpId: e.wpId, account: COGM_ACCOUNT, field: 'line', from: fromAmt, to: fromAmt + total }] })
+    logAudit({ actor: actor.name, role: actor.role, projectId: e.projectId, kind: 'budget_revision', summary: `Budget revision from ${e.no}: ${wp.code} Cost of production ${fmt(fromAmt)} → ${fmt(fromAmt + total)}`, refNo: e.no })
+  }
+  e.budgetRevisionAmount = total
+  // Removed components: once every open WO on the old version adopts, nothing needs the old
+  // material any more — reserved stock returns to project stock, and every affected on-hand
+  // line (released or already issued to the floor) needs a disposition (OQ26).
+  e.dispositions = []
+  if (preview.allOpenAdopt || (e.adoption === 'all_open' && e.decisions.length)) {
+    for (const c of from.components.filter(c => !to.components.some(x => x.name === c.name))) {
+      const item = stockItemByName(c.name)
+      if (!item) continue
+      let freed = 0
+      for (const r of reservations.filter(x => x.wpId === e.wpId && x.itemId === item.id && (x.status === 'reserved' || x.status === 'picked'))) {
+        r.status = 'released'; r.releasedAt = TODAY_ISO; r.releaseReason = `Removed by ${e.no} — back to project stock`
+        freed += r.qty
+      }
+      const issued = reservations.filter(x => x.wpId === e.wpId && x.itemId === item.id && x.status === 'issued').reduce((s, r) => s + r.qty, 0)
+      if (freed) {
+        e.dispositions.push({ id: newId('disp'), itemName: item.name, unit: item.unit, qty: freed, source: 'project_stock', unitCost: c.unitCost ?? item.unitCost })
+        logAudit({ actor: actor.name, role: actor.role, projectId: e.projectId, kind: 'reservation', summary: `Released ${freed} ${item.unit} ${item.name} to project stock — component removed by ${e.no}`, refNo: e.no })
+      }
+      if (issued) e.dispositions.push({ id: newId('disp'), itemName: item.name, unit: item.unit, qty: issued, source: 'issued', unitCost: c.unitCost ?? item.unitCost })
+    }
+  }
+  e.status = 'decided'
   persistReservations(); persistLedger(); persistChanges(); persistBoms()
-  logAudit({ actor: actor.name, role: actor.role, projectId: e.projectId, kind: 'eco', summary: `Approved ${e.no} — BOM v${before.version} → v${v.version}; effectivity ${effectivityText(e.effectivity, e.specificWoIds)}; ${affected.length} work order(s) updated; ${added.length} new requirement(s) for MRP`, refNo: e.no })
+  if (routed.length) logAudit({ actor: 'System', role: 'System', projectId: e.projectId, kind: 'work_order', summary: `${e.no} routes: ${routed.join('; ')}`, refNo: e.no })
 }
 
-/** Units that receive an ECO's new version: future work orders (remaining units not yet on any
- *  open WO — they're built from the new current version) plus the WOs in the effectivity scope.
- *  In-progress and unselected WOs keep their version, so their units carry no cost delta. */
-export function ecoDeltaUnits(e: { wpId: string; effectivity?: EcoEffectivity; specificWoIds: string[] }): number {
-  const wp = getWorkPackage(e.wpId)
-  if (!wp) return 0
-  const remainingUnits = Math.max((wp.plannedUnits ?? 0) - (wp.confirmedUnits ?? 0), 0)
-  const futureUnits = Math.max(remainingUnits - affectedQty(e.wpId), 0)
-  return futureUnits + ecoAffectedWos(e).reduce((s, w) => s + w.qty, 0)
+function recreateWo(w: ProjectWorkOrder, qty: number, setAside: number, version: number, actor: Actor): ProjectWorkOrder {
+  const lines = fitLineBudgets(suggestWoLines(w.customBomId, qty), setAside)
+  const nw: ProjectWorkOrder = {
+    id: newId('pwo'), number: nextWoNumber(), projectId: w.projectId, wpId: w.wpId, status: 'Released', qty, unit: w.unit,
+    budgetSetAside: setAside, estimate: lines.reduce((s, l) => s + l.estimate, 0), actual: 0, customBomId: w.customBomId,
+    bomVersion: version, lines, replacesWoId: w.id, createdAt: TODAY_ISO, createdBy: actor.name,
+  }
+  projectWorkOrders.unshift(nw)
+  return nw
 }
 
-function affectedQty(wpId: string) {
-  return projectWorkOrders.filter(w => w.wpId === wpId && w.status !== 'Completed').reduce((s, w) => s + w.qty, 0)
+export function setEcoDisposition(ecoId: string, lineId: string, disposition: EcoDisposition | undefined, actor: Actor): Result {
+  const e = engineeringChanges.find(x => x.id === ecoId)
+  const line = e?.dispositions.find(l => l.id === lineId)
+  if (!e || !line) return { ok: false, error: 'This disposition line no longer exists.' }
+  if (e.status !== 'decided') return { ok: false, error: 'Dispositions are decided after the adoption decision and before the ECO is implemented.' }
+  if (actor.role !== 'PM' && actor.role !== 'Warehouse') return { ok: false, error: 'The PM or Warehouse decides material disposition. Switch “View as” to decide.' }
+  line.disposition = disposition
+  persistChanges()
+  return { ok: true }
 }
 
-function rejectEco(ecoId: string, actor: Actor, note?: string) {
+/** Decided → Implemented: posts every disposition (scrap is charged to the project). Refused while any line is undecided. */
+export function implementEco(ecoId: string, actor: Actor): Result {
+  const e = engineeringChanges.find(x => x.id === ecoId)
+  if (!e) return { ok: false, error: 'This engineering change no longer exists.' }
+  if (e.status !== 'decided') return { ok: false, error: e.status === 'pending_approval' ? 'Finance hasn’t approved the adoption decision yet.' : `${e.no} isn’t waiting to be implemented.` }
+  if (actor.role !== 'PM' && actor.role !== 'Warehouse') return { ok: false, error: 'The PM or Warehouse posts the dispositions. Switch “View as” to post them.' }
+  const undecided = e.dispositions.filter(l => !l.disposition)
+  if (undecided.length) return { ok: false, error: `Decide the disposition for ${undecided.map(l => l.itemName).join(', ')} first — an ECO can’t be implemented with undecided lines.` }
+  const wp = getWorkPackage(e.wpId)!
+  for (const l of e.dispositions) {
+    l.postedAt = TODAY_ISO
+    if (l.disposition === 'scrap') {
+      const amount = Math.round(l.qty * (l.unitCost ?? 0))
+      costLines.push({ id: newId('cl'), projectId: e.projectId, wpId: e.wpId, account: COGM_ACCOUNT, docType: 'Expense', docNo: e.no, date: TODAY_ISO, description: `Scrap — ${l.qty} ${l.unit} ${l.itemName} (${e.no})`, amount, kind: 'actual', dimensions: getProject(e.projectId)?.dimensions })
+      logAudit({ actor: actor.name, role: actor.role, projectId: e.projectId, kind: 'eco', summary: `Scrapped ${l.qty} ${l.unit} ${l.itemName} — ${fmt(amount)} charged to ${wp.code} ${wp.name}`, refNo: e.no })
+    } else {
+      logAudit({ actor: actor.name, role: actor.role, projectId: e.projectId, kind: 'eco', summary: `${l.disposition === 'rework' ? 'Rework' : 'Use as is'}: ${l.qty} ${l.unit} ${l.itemName} (${l.source === 'issued' ? 'issued to the floor' : 'project stock'})`, refNo: e.no })
+    }
+  }
+  e.status = 'implemented'
+  e.implementedBy = actor.name
+  e.implementedAt = TODAY_ISO
+  persistChanges(); persistLedger()
+  logAudit({ actor: actor.name, role: actor.role, projectId: e.projectId, kind: 'eco', summary: `Implemented ${e.no}${e.dispositions.length ? ` — ${e.dispositions.length} disposition line(s) posted` : ''}`, refNo: e.no })
+  return { ok: true, message: `${e.no} implemented.` }
+}
+
+export function closeEco(ecoId: string, actor: Actor): Result {
+  const e = engineeringChanges.find(x => x.id === ecoId)
+  if (!e) return { ok: false, error: 'This engineering change no longer exists.' }
+  if (e.status !== 'implemented') return { ok: false, error: 'Implement the ECO first — every disposition must be posted before it closes.' }
+  if (actor.role !== 'PM') return { ok: false, error: 'The project manager closes the ECO. Switch “View as” to Project manager.' }
+  e.status = 'closed'
+  e.closedBy = actor.name
+  e.closedAt = TODAY_ISO
+  persistChanges()
+  logAudit({ actor: actor.name, role: actor.role, projectId: e.projectId, kind: 'eco', summary: `Closed ${e.no}`, refNo: e.no })
+  return { ok: true, message: `${e.no} closed.` }
+}
+
+function approveEcoDecision(ecoId: string, actor: Actor) {
+  const e = engineeringChanges.find(x => x.id === ecoId)
+  if (!e || e.status !== 'pending_approval') return
+  e.approvedBy = actor.name
+  applyEcoDecision(e, actor)
+  logAudit({ actor: actor.name, role: actor.role, projectId: e.projectId, kind: 'eco', summary: `Approved the adoption decision on ${e.no}`, refNo: e.no })
+}
+
+/** Finance returns the decision — the ECO is Open again and the PM decides afresh. */
+function returnEcoDecision(ecoId: string, actor: Actor, note?: string) {
   const e = engineeringChanges.find(x => x.id === ecoId)
   if (!e) return
-  e.status = 'rejected'
-  e.decidedBy = actor.name
-  e.decidedAt = TODAY_ISO
+  e.status = 'open'
+  e.decisions = []
+  e.adoption = undefined
+  e.decidedBy = undefined
+  e.decidedAt = undefined
   persistChanges()
-  logAudit({ actor: actor.name, role: actor.role, projectId: e.projectId, kind: 'eco', summary: `Rejected ${e.no}`, reason: note, refNo: e.no })
-}
-
-export function revertBom(bomId: string, toVersion: number, actor: Actor): Result {
-  const b = getCustomBom(bomId)
-  const target = b?.versions.find(v => v.version === toVersion)
-  if (!b || !target) return { ok: false, error: 'Version not found' }
-  const v = appendVersion(bomId, { createdAt: TODAY_ISO, createdBy: actor.name, source: 'revert', note: `Reverted to v${toVersion} content`, components: target.components, productionCost: target.productionCost })!
-  logAudit({ actor: actor.name, role: actor.role, projectId: b.projectId, kind: 'eco', summary: `Reverted ${b.name} to v${toVersion} content — saved as v${v.version} (history kept)` })
-  return { ok: true, message: `Saved as v${v.version}.` }
+  logAudit({ actor: actor.name, role: actor.role, projectId: e.projectId, kind: 'eco', summary: `Returned the adoption decision on ${e.no} — the PM decides again`, reason: note, refNo: e.no })
 }
 
 /** Replace or remove a custom BOM — only while no open work order references it. */
@@ -731,8 +953,8 @@ export function replaceCustomBom(wpId: string, masterId: string | undefined, rea
   const wp = getWorkPackage(wpId)!
   const p = getProject(wp.projectId)!
   const cur = getCustomBom(wp.customBomId)
-  if (cur && projectWorkOrders.some(w => w.customBomId === cur.id && w.status !== 'Completed')) {
-    return { ok: false, error: 'An open work order uses this BOM, so it can’t be replaced. Raise an engineering change instead.' }
+  if (cur && projectWorkOrders.some(w => w.customBomId === cur.id && !woClosed(w))) {
+    return { ok: false, error: 'An open work order uses this BOM, so it can’t be replaced. Edit the BOM instead — that publishes a new version and raises an engineering change.' }
   }
   if (cur && !reason.trim()) return { ok: false, error: 'Enter a reason for replacing the BOM.' }
   if (masterId) {
@@ -812,7 +1034,7 @@ export function runMrp(wpId: string, actor: Actor): Result {
   if (prLines.length) {
     peggedDocuments.unshift({ id: newId('doc'), docType: 'PR', docNo: nextDocNo('PR'), date: TODAY_ISO, status: 'draft', lines: prLines, createdBy: 'MRP' })
   }
-  const hasOpenWo = projectWorkOrders.some(w => w.wpId === wpId && w.status !== 'Completed')
+  const hasOpenWo = projectWorkOrders.some(w => w.wpId === wpId && !woClosed(w))
   let draftWo = ''
   if (!hasOpenWo && wp.type === 'production') {
     const remaining = Math.max((wp.plannedUnits ?? 0) - (wp.confirmedUnits ?? 0), 0)
@@ -1091,7 +1313,7 @@ export function closeProject(projectId: string, actor: Actor): Result {
     r.status = 'released'; r.releasedAt = TODAY_ISO; r.releaseReason = 'Project closed — unconsumed'; releasedRes++
   }
   let releasedSetAside = 0
-  for (const w of projectWorkOrders.filter(x => x.projectId === projectId && x.status !== 'Completed')) {
+  for (const w of projectWorkOrders.filter(x => x.projectId === projectId && !woClosed(x))) {
     releasedSetAside += Math.max(w.budgetSetAside - w.actual, 0)
     w.status = 'Completed'; w.released = Math.max(w.budgetSetAside - w.actual, 0); w.completedAt = TODAY_ISO
   }

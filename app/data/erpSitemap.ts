@@ -103,6 +103,7 @@ export const BUILT_KEYS = new Set<string>([
   // ── Projects module (detailMatch → ProjectsRouter) ──
   'Projects',
   'Project approvals',
+  'Engineering changes',
   'Project documents',
   'Stock availability',
   'Site change capture',
@@ -410,6 +411,7 @@ export const SITEMAP: SitemapModule[] = [
     items: [
       leaf('Projects'),
       leaf('Approvals', { to: 'Project approvals' }),
+      leaf('Engineering changes'),
       leaf('Documents', { to: 'Project documents' }),
       leaf('Stock availability'),
       leaf('Site change capture'),

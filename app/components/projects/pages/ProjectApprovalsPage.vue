@@ -15,18 +15,17 @@ import PmTitleBar from '../PmTitleBar.vue'
 import PmMenu from '../PmMenu.vue'
 import PmOverlay from '../PmOverlay.vue'
 import PmActionError from '../PmActionError.vue'
-import EcoDiff from '../EcoDiff.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { approvals, APPROVAL_KIND_LABELS, type ApprovalItem, type ApprovalKind } from '~/data/projectApprovals'
-import { getProject, getWorkPackage, nodeLabel, usesMilestone } from '~/data/projects'
-import { changeOrders, engineeringChanges } from '~/data/projectChanges'
+import { getProject, getWorkPackage, nodeLabel, usesMilestone, projectSos } from '~/data/projects'
+import { changeOrders, engineeringChanges, ecoPath, ECO_REASON_LABELS, ECO_ROUTE_LABELS } from '~/data/projectChanges'
 import { peggedDocuments, projectWorkOrders } from '~/data/projectTransactions'
 import { releaseRequests, getStockItem } from '~/data/projectReservations'
 import { accountName } from '~/data/projectBudgets'
 import { percentComplete, recognisedToDate } from '~/data/projectRecognition'
-import { decideApproval, effectivityText, ecoAffectedWos, ecoDeltaUnits } from '~/data/projectActions'
+import { decideApproval } from '~/data/projectActions'
 import { rp, rpSigned, pct } from '~/utils/projectFormat'
 import { formatDate } from '~/utils/date'
 import { badgeProps } from '~/utils/projectStatus'
@@ -275,16 +274,29 @@ const PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
           <p class="pm-caption pm-m-0">{{ t('On approval, contract value and the work-package budget update through a revision, and the added scope reaches a billable line. A change order never changes the recognition method.') }}</p>
         </template>
 
-        <!-- ECO -->
+        <!-- ECO — an above-threshold adoption decision (PRD v6.2 §7). The version is already
+             Active; Finance approves only whether the PM's chosen existing WOs adopt it. -->
         <template v-else-if="current_.kind === 'eco' && eco(current_)">
           <div class="pm-grid-3">
             <div><div class="pm-stat-label">{{ t('Work package') }}</div><div class="pm-body">{{ nodeLabel(eco(current_)!.wpId) }}</div></div>
-            <div><div class="pm-stat-label">{{ t('Effectivity') }}</div><div class="pm-body">{{ t(effectivityText(eco(current_)!.effectivity, eco(current_)!.specificWoIds)) }}</div></div>
-            <div><div class="pm-stat-label">{{ t('Affected work orders') }}</div><div class="pm-body">{{ ecoAffectedWos(eco(current_)!).map(w => w.number).join(', ') || t('None yet') }}</div></div>
-            <div><div class="pm-stat-label">{{ t('Customer-funded') }}</div><div class="pm-body">{{ eco(current_)!.voId ? changeOrders.find(v => v.id === eco(current_)!.voId)?.no : t('No — the ECO never changes contract value') }}</div></div>
+            <div><div class="pm-stat-label">{{ t('Version') }}</div><div class="pm-body">v{{ eco(current_)!.fromVersion }} → v{{ eco(current_)!.toVersion }} ({{ t('Active') }})</div></div>
+            <div><div class="pm-stat-label">{{ t('Reason code') }}</div><div class="pm-body">{{ t(ECO_REASON_LABELS[eco(current_)!.reason]) }}</div></div>
+            <div><div class="pm-stat-label">{{ t('Cost delta') }}</div><div class="pm-body">{{ rpSigned(current_.amount ?? 0) }}</div></div>
+            <div><div class="pm-stat-label">{{ t('SO addendum') }}</div><div class="pm-body">{{ eco(current_)!.addendumSoId ? projectSos(current_.projectId).find(so => so.id === eco(current_)!.addendumSoId)?.number : eco(current_)!.addendumOverride ? t('Overridden') : t('Not linked') }}</div></div>
           </div>
-          <EcoDiff :bom-id="eco(current_)!.customBomId" :base-version="eco(current_)!.baseVersion" :proposed="eco(current_)!.proposed" :units="ecoDeltaUnits(eco(current_)!)" />
-          <p class="pm-caption pm-m-0">{{ t('On approval: a new immutable BOM version, a budget revision for the cost delta, and reservations adjust (removed components free theirs; added ones create requirements).') }}</p>
+          <div class="pm-table-wrap">
+            <table class="pm-table">
+              <thead><tr><th>{{ t('Work order') }}</th><th>{{ t('Route') }}</th><th class="pm-num">{{ t('Units') }}</th><th class="pm-num">{{ t('Delta') }}</th></tr></thead>
+              <tbody>
+                <tr v-for="d in eco(current_)!.decisions" :key="d.woId"><td>{{ d.woNumber }}</td><td>{{ t(ECO_ROUTE_LABELS[d.route]) }}</td><td class="pm-num">{{ d.units }}</td><td class="pm-num">{{ rpSigned(d.delta) }}</td></tr>
+                <tr v-if="!eco(current_)!.decisions.length"><td colspan="4" class="pm-muted">{{ t('No existing work order adopts — the delta comes from future units.') }}</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="pm-caption pm-m-0">
+            {{ t('On approval the routes run, the cost delta revises the budget, and freed material waits for its disposition. Rejecting returns the ECO to the PM.') }}
+            <span class="pm-link" role="link" tabindex="0" @click="router.push(ecoPath(eco(current_)!))" @keydown.enter="router.push(ecoPath(eco(current_)!))">{{ t('View') }} {{ eco(current_)!.no }}</span>
+          </p>
         </template>
 
         <!-- Stock release -->

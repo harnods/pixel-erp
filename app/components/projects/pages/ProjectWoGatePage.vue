@@ -51,7 +51,8 @@ watch(projectSel, () => { wpSel.value = '' })
 const wp = computed(() => (wpSel.value ? getWorkPackage(wpSel.value) : undefined))
 const bom = computed(() => getCustomBom(wp.value?.customBomId))
 // OQ21 (provisional): "new work orders only" means created after ECO approval — warn when an ECO is still pending.
-const pendingEco = computed(() => (bom.value ? engineeringChanges.find(e => e.customBomId === bom.value!.id && e.status === 'pending') : undefined))
+// PRD v6.2: a new WO always uses the Active version — an open ECO only concerns existing WOs.
+const pendingEco = computed(() => (bom.value ? engineeringChanges.find(e => e.customBomId === bom.value!.id && e.status === 'open') : undefined))
 
 const gate = computed(() => (wp.value ? woGate(wp.value.id) : undefined))
 const setAsideStr = ref('')
@@ -145,8 +146,8 @@ function save() {
             </MpFormControl>
           </div>
 
-          <MpBanner v-if="pendingEco" id="wg-pending-eco" variant="warning">
-            <MpBannerIcon /><MpBannerDescription>{{ pendingEco.no }} {{ t('is pending on this BOM. If it’s approved for new work orders only, this work order won’t get the change — it was created before approval.') }}</MpBannerDescription>
+          <MpBanner v-if="pendingEco" id="wg-pending-eco" variant="info">
+            <MpBannerIcon /><MpBannerDescription>{{ pendingEco.no }} {{ t('is open on this BOM. This work order is created on the Active version') }} v{{ pendingEco.toVersion }} — {{ t('the ECO only decides existing work orders.') }}</MpBannerDescription>
           </MpBanner>
           <MpBanner v-if="project?.status === 'draft'" id="wg-draft" variant="info">
             <MpBannerIcon /><MpBannerDescription>{{ t('This project is still Draft — the work order is saved as Draft and commits nothing until the project is approved.') }}</MpBannerDescription>

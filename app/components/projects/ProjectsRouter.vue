@@ -7,8 +7,9 @@
  *   /projects/new                     adaptive create flow
  *   /projects/:id[?tab=…]             project page (tabs)
  *   /projects/:id/work-orders/new     work-order budget gate
- *   /projects/:id/engineering-changes/:ecoId   ECO detail
+ *   /projects/:id/engineering-changes/:ecoId   ECO decision page (PRD v6.2 §7)
  *   /project-approvals                approvals inbox (5 kinds)
+ *   /engineering-changes              ECO index across projects (/:id resolves to the nested page)
  *   /project-documents                pegged cost documents (index)
  *   /project-documents/new            pegged document + budget check
  *   /stock-availability               on hand / reserved / available
@@ -25,6 +26,7 @@ const DetailPage = defineAsyncComponent(() => import('./pages/ProjectDetailPage.
 const WoGatePage = defineAsyncComponent(() => import('./pages/ProjectWoGatePage.vue'))
 const EcoDetailPage = defineAsyncComponent(() => import('./pages/ProjectEcoDetailPage.vue'))
 const ApprovalsPage = defineAsyncComponent(() => import('./pages/ProjectApprovalsPage.vue'))
+const EcoIndexPage = defineAsyncComponent(() => import('./pages/EngineeringChangesPage.vue'))
 const DocumentsPage = defineAsyncComponent(() => import('./pages/ProjectDocumentsPage.vue'))
 const NewDocumentPage = defineAsyncComponent(() => import('./pages/ProjectNewDocumentPage.vue'))
 const StockPage = defineAsyncComponent(() => import('./pages/StockAvailabilityPage.vue'))
@@ -42,6 +44,7 @@ const view = computed<{ component: Component; props: Record<string, unknown> }>(
       if (c === 'engineering-changes' && d) return { component: EcoDetailPage, props: { projectId: b, ecoId: d } }
       return { component: DetailPage, props: { projectId: b } }
     case 'project-approvals': return { component: ApprovalsPage, props: {} }
+    case 'engineering-changes': return b ? { component: EcoDetailPage, props: { ecoId: b } } : { component: EcoIndexPage, props: {} }
     case 'project-documents': return b === 'new' ? { component: NewDocumentPage, props: {} } : { component: DocumentsPage, props: {} }
     case 'stock-availability': return { component: StockPage, props: {} }
     case 'site-change-capture': return { component: SiteCapturePage, props: {} }

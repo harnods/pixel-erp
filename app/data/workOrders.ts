@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
 import { TODAY } from './master'
-import { billOfMaterials } from './billOfMaterials'
+import { billOfMaterials, bomAtVersion, type BillOfMaterials } from './billOfMaterials'
 import { loadSnapshot, saveSnapshot } from './persist'
 
 /**
@@ -17,6 +17,12 @@ export interface WorkOrder {
   bomId: string
   /** bill of materials name — denormalized for display/sort, mirrors billOfMaterials.find(bomId).name */
   bomName: string
+  /**
+   * The BOM version this work order was created from — the pin. It never moves:
+   * when the BOM is upgraded, this work order keeps building its version, and only
+   * work orders created afterwards use the new one.
+   */
+  bomVersion: number
   /** Standard = made-to-stock · Order = made-to-order (tied to a sales order) */
   category: 'Standard' | 'Order'
   /** Assembly = build the output · Disassembly = break the output into components */
@@ -130,12 +136,14 @@ function buildSeed(): WorkOrder[] {
     number: `WO-2026-${String(i + 1).padStart(4, '0')}`,
     bomId: seedBomId(bomIndex),
     bomName: seedBomName(bomIndex),
+    bomVersion: 1,
   }))
 }
 
 // Persisted as a full snapshot (seed + user-created) — mirrors outgoing.ts.
 const workOrderSnapshot = loadSnapshot<WorkOrder>('workOrders')
-export const workOrders = reactive<WorkOrder[]>(workOrderSnapshot ?? buildSeed())
+// Work orders saved before versioning existed were built from v1.
+export const workOrders = reactive<WorkOrder[]>((workOrderSnapshot ?? buildSeed()).map(w => ({ ...w, bomVersion: w.bomVersion ?? 1 })))
 
 /** Persist the work-order snapshot (call after any mutation). */
 export function persistWorkOrders(): void {
@@ -153,15 +161,27 @@ function nextWorkOrderNumber(): string {
   return `WO-2026-${String(max + 1).padStart(4, '0')}`
 }
 
-/** Create a new work order from the New work order form — must reference an existing BOM. */
-export function addWorkOrder(data: Omit<WorkOrder, 'id' | 'number'>): WorkOrder {
+/** Create a new work order from the New work order form — must reference an existing BOM.
+ *  It is pinned to the BOM's Active version at this moment. */
+export function addWorkOrder(data: Omit<WorkOrder, 'id' | 'number' | 'bomVersion'>): WorkOrder {
   const n = woAddSeq++
   const wo: WorkOrder = {
     ...data,
+    bomVersion: billOfMaterials.find(b => b.id === data.bomId)?.version ?? 1,
     id: `wo-new-${n}`,
     number: nextWorkOrderNumber(),
   }
   workOrders.unshift(wo)
   persistWorkOrders()
   return wo
+}
+
+/** The BOM exactly as this work order was built from — its pinned version, not the current one. */
+export function bomForWorkOrder(wo: Pick<WorkOrder, 'bomId' | 'bomVersion'>): BillOfMaterials | undefined {
+  return bomAtVersion(billOfMaterials.find(b => b.id === wo.bomId), wo.bomVersion)
+}
+
+/** Work orders pinned to one version of a BOM (any status — a reference locks the version for good). */
+export function workOrdersOnBomVersion(bomId: string, version: number): WorkOrder[] {
+  return workOrders.filter(w => w.bomId === bomId && w.bomVersion === version)
 }

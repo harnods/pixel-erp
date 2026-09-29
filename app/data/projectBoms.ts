@@ -10,8 +10,11 @@ const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T
  *   • Picking a master BOM on a production work package duplicates it into a
  *     linked custom BOM v1. The master is untouched; later master edits never
  *     propagate to the copy.
- *   • Versions are immutable. An approved ECO appends a version; revert appends
- *     a new version restoring earlier content — history is never overwritten.
+ *   • Versioning (PRD v6.2 §5, §7): the last version is Active, every earlier one
+ *     is Superseded — an inactive version, never an archived BOM. The first
+ *     reference by a work order locks a version for good. An unreferenced Active
+ *     version is edited in place; editing a locked one publishes vN+1 (Active at
+ *     once) and raises an ECO for the PM. History is never overwritten.
  */
 
 export interface BomComponent { name: string; qty: number; unit: string; unitCost?: number }
@@ -32,9 +35,16 @@ export interface BomVersion {
   version: number
   createdAt: string
   createdBy: string
-  source: 'copy' | 'eco' | 'revert'
+  /** copy = duplicated from the master · publish = new version of a locked BOM · edit = in-place edit of an unreferenced version · eco/revert = legacy */
+  source: 'copy' | 'publish' | 'edit' | 'eco' | 'revert'
   note: string
+  /** the ECO this version raised (publish) */
   refNo?: string
+  /** reason code of a published version (see ECO_REASON_LABELS) */
+  reasonCode?: string
+  /** last in-place edit while the version was still unreferenced */
+  editedAt?: string
+  editedBy?: string
   components: BomComponent[]
   productionCost: BomProdCost[]
 }
@@ -115,22 +125,42 @@ const SEED_CUSTOM: CustomBom[] = [
   // Codes carry the project prefix (v6.2 §6.4) because one project owns several
   // BOM objects once sub-BOMs are duplicated alongside their parent. The origin
   // (master + version at copy) is stored but never rendered.
-  { id: 'cbom-prja-mj', projectId: 'prj-a', wpId: 'wp-prja-1', name: 'PRJ-A-BOM-MJ-001', masterBomId: 'mbom-mj', masterName: 'Meja makan jati', masterVersionAtCopy: 1, copiedAt: '2026-09-02', versions: [v1('2026-09-02', 'Rizal Candra', 'Meja makan jati', FURNITURE, FURNITURE_COST)] },
+  // v1 is locked by the five PRJ-A work orders; v2 (dark walnut stain) raised ECO-PRJ-A-01.
+  { id: 'cbom-prja-mj', projectId: 'prj-a', wpId: 'wp-prja-1', name: 'PRJ-A-BOM-MJ-001', masterBomId: 'mbom-mj', masterName: 'Meja makan jati', masterVersionAtCopy: 1, copiedAt: '2026-09-02',
+    versions: [
+      v1('2026-09-02', 'Rizal Candra', 'Meja makan jati', FURNITURE, FURNITURE_COST),
+      { version: 2, createdAt: '2026-09-24', createdBy: 'Dewi Lestari', source: 'publish', refNo: 'ECO-PRJ-A-01', reasonCode: 'customer_request', note: 'Dark walnut finish — wood stain added',
+        components: [...structuredClone(FURNITURE), { name: 'Wood stain dark walnut', qty: 1, unit: 'Liter', unitCost: 85_000 }], productionCost: structuredClone(FURNITURE_COST) },
+    ] },
   { id: 'cbom-prja-rk', projectId: 'prj-a', wpId: 'wp-prja-1', name: 'PRJ-A-BOM-RK-001', masterBomId: 'mbom-rk', masterName: 'Rangka kaki', masterVersionAtCopy: 1, copiedAt: '2026-09-02', versions: [v1('2026-09-02', 'Rizal Candra', 'Rangka kaki', FURNITURE, FURNITURE_COST)] },
   // master mbom-1 is now v3 but the copy took v2 → divergence badge
-  { id: 'cbom-2603-31', projectId: 'ps-2603', wpId: 'wp-2603-31', name: 'Meja kuliah lipat + kursi — PS-2603', masterBomId: 'mbom-1', masterName: 'Meja kuliah lipat + kursi', masterVersionAtCopy: 2, copiedAt: '2026-05-25', versions: [v1('2026-05-25', 'Rizal Candra', 'Meja kuliah lipat + kursi', FURNITURE, FURNITURE_COST)] },
+  // v1 is locked by WO-PS-0001/0002; Production published v2 on 16 Jun, which raised ECO-2603-01 (Open).
+  { id: 'cbom-2603-31', projectId: 'ps-2603', wpId: 'wp-2603-31', name: 'Meja kuliah lipat + kursi — PS-2603', masterBomId: 'mbom-1', masterName: 'Meja kuliah lipat + kursi', masterVersionAtCopy: 2, copiedAt: '2026-05-25',
+    versions: [
+      v1('2026-05-25', 'Rizal Candra', 'Meja kuliah lipat + kursi', FURNITURE, FURNITURE_COST),
+      { version: 2, createdAt: '2026-06-16', createdBy: 'Dewi Lestari', source: 'publish', refNo: 'ECO-2603-01', reasonCode: 'customer_request', note: 'HPL motif jati + edging 1 mm',
+        components: [
+          { name: 'Multiplek 18 mm', qty: 1.5, unit: 'Lembar', unitCost: 285_000 },
+          { name: 'HPL motif jati', qty: 1, unit: 'Lembar', unitCost: 245_000 },
+          { name: 'Rangka besi hollow', qty: 1, unit: 'Set', unitCost: 320_000 },
+          { name: 'Edging PVC 1 mm', qty: 8, unit: 'Meter', unitCost: 4_500 },
+          { name: 'Aksesoris (baut, engsel)', qty: 1, unit: 'Set', unitCost: 45_000 },
+        ],
+        productionCost: structuredClone(FURNITURE_COST) },
+    ] },
   { id: 'cbom-2603-32', projectId: 'ps-2603', wpId: 'wp-2603-32', name: 'Lemari tanam 2 pintu — PS-2603', masterBomId: 'mbom-2', masterName: 'Lemari tanam 2 pintu', masterVersionAtCopy: 1, copiedAt: '2026-06-08', versions: [v1('2026-06-08', 'Rizal Candra', 'Lemari tanam 2 pintu', CABINET, CABINET_COST)] },
   { id: 'cbom-2606-11', projectId: 'ps-2606', wpId: 'wp-2606-11', name: 'Kitchen set L 3 m — tipe A', masterBomId: 'mbom-3', masterName: 'Kitchen set L 3 m', masterVersionAtCopy: 2, copiedAt: '2026-04-21',
     versions: [
       v1('2026-04-21', 'Andi Pratama', 'Kitchen set L 3 m', KITCHEN, KITCHEN_COST),
-      { version: 2, createdAt: '2026-06-18', createdBy: 'Andi Pratama', source: 'eco', refNo: 'ECO-2606-01', note: 'Customer asked for solid-surface top instead of granite (new work orders only)',
+      { version: 2, createdAt: '2026-06-18', createdBy: 'Dewi Lestari', source: 'publish', refNo: 'ECO-2606-01', reasonCode: 'customer_request', note: 'Top table solid surface',
         components: KITCHEN.map(c => c.name === 'Top table granit' ? { name: 'Top table solid surface', qty: 1, unit: 'Set', unitCost: 3_650_000 } : { ...c }), productionCost: structuredClone(KITCHEN_COST) },
     ] },
   { id: 'cbom-2606-12', projectId: 'ps-2606', wpId: 'wp-2606-12', name: 'Kitchen set L 3 m — tipe B', masterBomId: 'mbom-3', masterName: 'Kitchen set L 3 m', masterVersionAtCopy: 2, copiedAt: '2026-05-12', versions: [v1('2026-05-12', 'Andi Pratama', 'Kitchen set L 3 m', KITCHEN, KITCHEN_COST)] },
   { id: 'cbom-2605-21', projectId: 'ps-2605', wpId: 'wp-2605-21', name: 'Box aluminium truk engkel — PS-2605', masterBomId: 'mbom-4', masterName: 'Box aluminium truk engkel', masterVersionAtCopy: 1, copiedAt: '2026-06-22', versions: [v1('2026-06-22', 'Rizal Candra', 'Box aluminium truk engkel', BOX, BOX_COST)] },
 ]
 
-const K_M = 'pm-master-boms', K_C = 'pm-custom-boms'
+// Custom-BOM key bumped for the v6.2 versioning seed (cbom-2603-31 now carries v2).
+const K_M = 'pm-master-boms', K_C = 'pm-custom-boms-v62b'
 export const masterBoms = reactive<MasterBom[]>(loadSnapshot<MasterBom>(K_M) ?? structuredClone(SEED_MASTERS))
 export const customBoms = reactive<CustomBom[]>(loadSnapshot<CustomBom>(K_C) ?? structuredClone(SEED_CUSTOM))
 export function persistBoms(): void {
@@ -143,6 +173,18 @@ export function getCustomBom(id?: string): CustomBom | undefined {
 }
 export function currentVersion(b: CustomBom): BomVersion {
   return b.versions[b.versions.length - 1]!
+}
+export type BomVersionStatus = 'active' | 'superseded'
+/** Last version is Active; every earlier one is Superseded (read-only forever). */
+export function versionStatus(b: CustomBom, version: number): BomVersionStatus {
+  return version === currentVersion(b).version ? 'active' : 'superseded'
+}
+export function getVersion(b: CustomBom | undefined, version?: number): BomVersion | undefined {
+  return b && version !== undefined ? b.versions.find(v => v.version === version) : undefined
+}
+/** True when some component in the version has no standard cost — totals are then "partially uncosted". */
+export function partiallyUncosted(v: Pick<BomVersion, 'components'>): boolean {
+  return v.components.some(c => c.unitCost === undefined)
 }
 export function bomUnitCost(v: Pick<BomVersion, 'components' | 'productionCost'>): number {
   return v.components.reduce((s, c) => s + c.qty * (c.unitCost ?? 0), 0) + v.productionCost.reduce((s, p) => s + p.perUnit, 0)
@@ -172,7 +214,8 @@ export function copyMasterBom(masterId: string, projectId: string, wpId: string,
 export function appendVersion(bomId: string, v: Omit<BomVersion, 'version'>): BomVersion | undefined {
   const b = getCustomBom(bomId)
   if (!b) return undefined
-  const nv: BomVersion = { ...clone(v), version: b.versions.length + 1 }
+  // Monotonic — never reused (max + 1, not length + 1).
+  const nv: BomVersion = { ...clone(v), version: Math.max(0, ...b.versions.map(x => x.version)) + 1 }
   b.versions.push(nv)
   persistBoms()
   return nv

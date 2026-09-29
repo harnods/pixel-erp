@@ -1,6 +1,5 @@
 import { reactive } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
-import type { BomComponent, BomProdCost } from './projectBoms'
 
 /**
  * Changes — commercial (change order / VO) and engineering (ECO), both in MVP
@@ -11,9 +10,8 @@ import type { BomComponent, BomProdCost } from './projectBoms'
  * Finance approves; never changes the recognition method; only a VO may change
  * contract value.
  *
- * ECO: approval gate reusing the inbox; immutable versioning with revert; diff
- * with per-line and total cost delta; explicit effectivity scope required
- * before approval, never defaulted.
+ * ECO: see the block above EngineeringChange — raised by publishing a version of
+ * a locked project BOM, decided by the PM for existing work orders only.
  */
 
 export type VoStatus = 'requested' | 'priced' | 'raised' | 'approved' | 'rejected'
@@ -44,8 +42,75 @@ export interface ChangeOrder {
   photoCount?: number
 }
 
-export type EcoStatus = 'draft' | 'pending' | 'approved' | 'rejected'
-export type EcoEffectivity = 'new_only' | 'all_open' | 'specific'
+/**
+ * Engineering change order (PRD v6.2 §7 · BOM Versioning & ECO-lite P-05…P-11).
+ *
+ *   • Production edits a locked project BOM → version vN+1 publishes and is Active
+ *     at once; every work order created afterwards uses it. Nobody gates issuance.
+ *   • The publish raises ONE ECO. Its only decision is the PM's: which EXISTING
+ *     work orders adopt the new version — none · selected · all open.
+ *   • The route per adopted work order is computed from its status, never picked.
+ *   • Lifecycle: Open → (Pending approval above the escalation threshold) →
+ *     Decided → Implemented (every disposition posted) → Closed.
+ *   • One ECO at a time per project BOM: a further edit is refused while one is open.
+ */
+export type EcoStatus = 'open' | 'pending_approval' | 'decided' | 'implemented' | 'closed'
+export type EcoReason = 'customer_request' | 'internal_design' | 'material_substitution' | 'data_correction'
+export type EcoAdoption = 'none' | 'selected' | 'all_open'
+export type EcoRoute = 'repin' | 'cancel_recreate' | 'adjust' | 'split_cutover' | 'untouched'
+export type EcoDisposition = 'use_as_is' | 'rework' | 'scrap'
+
+export const ECO_REASON_LABELS: Record<EcoReason, string> = {
+  customer_request: 'Customer request',
+  internal_design: 'Internal design / quality',
+  material_substitution: 'Material substitution',
+  data_correction: 'Data correction',
+}
+export const ECO_ROUTE_LABELS: Record<EcoRoute, string> = {
+  repin: 'Repin in place',
+  cancel_recreate: 'Cancel and recreate',
+  adjust: 'Adjust in place',
+  split_cutover: 'Split and cutover',
+  untouched: 'Untouched — built as is',
+}
+export const ECO_ROUTE_HINTS: Record<EcoRoute, string> = {
+  repin: 'Draft with no reservation — the pin moves to the new version.',
+  cancel_recreate: 'Not started but reserved — cancelled and recreated on the new version; reservations return to the project.',
+  adjust: 'In progress, nothing completed yet — the pin stays and the delta is documented with this ECO as reason.',
+  split_cutover: 'In progress with completed units — built units close on the old version, the rest move to a new work order.',
+  untouched: 'Completed — the as-built record stays on its version. Shown for information.',
+}
+export const ECO_DISPOSITION_LABELS: Record<EcoDisposition, string> = {
+  use_as_is: 'Use as is',
+  rework: 'Rework',
+  scrap: 'Scrap',
+}
+
+/** The PM's decision for one existing work order, frozen at decision time. */
+export interface EcoWoDecision {
+  woId: string
+  woNumber: string
+  route: EcoRoute
+  fromVersion: number
+  /** units that take the new version (remaining units for adjust / split) */
+  units: number
+  delta: number
+  /** work order created by cancel & recreate or split & cutover (cross-reference) */
+  newWoId?: string
+}
+
+/** One affected on-hand line — ECO can't reach Implemented while any is undecided. */
+export interface EcoDispositionLine {
+  id: string
+  itemName: string
+  unit: string
+  qty: number
+  /** where the material sits: already issued to the floor, or released back to project stock */
+  source: 'issued' | 'project_stock'
+  unitCost?: number
+  disposition?: EcoDisposition
+  postedAt?: string
+}
 
 export interface EngineeringChange {
   id: string
@@ -53,21 +118,41 @@ export interface EngineeringChange {
   projectId: string
   wpId: string
   customBomId: string
+  /** what changed, in the publisher's words */
   title: string
-  reason: string
+  reason: EcoReason
+  note: string
+  fromVersion: number
+  toVersion: number
   status: EcoStatus
-  /** required before approval, never defaulted */
-  effectivity?: EcoEffectivity
-  specificWoIds: string[]
-  baseVersion: number
-  proposed: { components: BomComponent[]; productionCost: BomProdCost[] }
-  /** customer-funded change → references a VO (only a VO changes contract value) */
-  voId?: string
-  raisedBy: string
-  createdAt: string
+  /** linked SO addendum (a project sales order with isAddendum) — required before existing work
+   *  orders adopt a customer-request ECO (v6.2 key decision 3: SO addendum + ECO, no VO object) */
+  addendumSoId?: string
+  /** adopt without a linked addendum — flags the project as added scope not yet under contract */
+  addendumOverride?: string
+  publishedBy: string
+  publishedAt: string
+  adoption?: EcoAdoption
+  decisions: EcoWoDecision[]
+  decisionNote?: string
   decidedBy?: string
   decidedAt?: string
-  resultVersion?: number
+  approvedBy?: string
+  dispositions: EcoDispositionLine[]
+  budgetRevisionAmount?: number
+  implementedBy?: string
+  implementedAt?: string
+  closedBy?: string
+  closedAt?: string
+}
+
+/** An ECO still waiting on the PM, Finance or its dispositions. */
+export function ecoIsActive(e: Pick<EngineeringChange, 'status'>): boolean {
+  return e.status !== 'closed'
+}
+/** Blocks a further edit to the same BOM (serialised — OQ22). */
+export function ecoBlocksEdits(e: Pick<EngineeringChange, 'status'>): boolean {
+  return e.status === 'open' || e.status === 'pending_approval'
 }
 
 const SEED_VO: ChangeOrder[] = [
@@ -78,27 +163,24 @@ const SEED_VO: ChangeOrder[] = [
 ]
 
 const SEED_ECO: EngineeringChange[] = [
-  { id: 'eco-1', no: 'ECO-2603-01', projectId: 'ps-2603', wpId: 'wp-2603-31', customBomId: 'cbom-2603-31', title: 'HPL motif jati + edging 1 mm', reason: 'Follows VO-2603-02 (finish change). Edging reduced to 1 mm to match new HPL supplier spec.', status: 'pending', effectivity: 'all_open', specificWoIds: [], baseVersion: 1,
-    proposed: {
-      components: [
-        { name: 'Multiplek 18 mm', qty: 1.5, unit: 'Lembar', unitCost: 285_000 },
-        { name: 'HPL motif jati', qty: 1, unit: 'Lembar', unitCost: 245_000 },
-        { name: 'Rangka besi hollow', qty: 1, unit: 'Set', unitCost: 320_000 },
-        { name: 'Edging PVC 1 mm', qty: 8, unit: 'Meter', unitCost: 4_500 },
-        { name: 'Aksesoris (baut, engsel)', qty: 1, unit: 'Set', unitCost: 45_000 },
-      ],
-      productionCost: [
-        { kind: 'labor', name: 'Tenaga kerja produksi', perUnit: 230_000 },
-        { kind: 'overhead', name: 'Overhead workshop', perUnit: 95_000 },
-        { kind: 'other', name: 'Finishing & packing', perUnit: 21_000 },
-      ],
-    },
-    voId: 'vo-2', raisedBy: 'Rizal Candra', createdAt: '2026-06-16' },
-  { id: 'eco-2', no: 'ECO-2606-01', projectId: 'ps-2606', wpId: 'wp-2606-11', customBomId: 'cbom-2606-11', title: 'Top table solid surface', reason: 'Customer upgrade (VO-2606-01).', status: 'approved', effectivity: 'new_only', specificWoIds: [], baseVersion: 1,
-    proposed: { components: [], productionCost: [] }, voId: 'vo-4', raisedBy: 'Andi Pratama', createdAt: '2026-06-11', decidedBy: 'Maya Kartika', decidedAt: '2026-06-18', resultVersion: 2 },
+  // PRJ-A · PRD Scenario B, door 1 — the customer asked for a dark-walnut finish. Production
+  // published PRJ-A-BOM-MJ-001 v2 (+1 wood stain @ Rp85.000/unit); SO-0231-A1 prices it.
+  // The five PRJ-A work orders on v1 each compute a different adoption route.
+  { id: 'eco-prja-1', no: 'ECO-PRJ-A-01', projectId: 'prj-a', wpId: 'wp-prja-1', customBomId: 'cbom-prja-mj', title: 'Dark walnut finish — wood stain added',
+    reason: 'customer_request', note: 'Pak Budi changed the finish to dark walnut after the sample review. One coat of wood stain per unit.',
+    fromVersion: 1, toVersion: 2, status: 'open', addendumSoId: 'so-0231-a1', publishedBy: 'Dewi Lestari', publishedAt: '2026-09-24', decisions: [], dispositions: [] },
+  { id: 'eco-1', no: 'ECO-2603-01', projectId: 'ps-2603', wpId: 'wp-2603-31', customBomId: 'cbom-2603-31', title: 'HPL motif jati + edging 1 mm',
+    reason: 'customer_request', note: 'Follows VO-2603-02 (finish change). Edging reduced to 1 mm to match the new HPL supplier spec.',
+    fromVersion: 1, toVersion: 2, status: 'open', publishedBy: 'Dewi Lestari', publishedAt: '2026-06-16', decisions: [], dispositions: [] },
+  { id: 'eco-2', no: 'ECO-2606-01', projectId: 'ps-2606', wpId: 'wp-2606-11', customBomId: 'cbom-2606-11', title: 'Top table solid surface',
+    reason: 'customer_request', note: 'Customer upgrade (VO-2606-01) — new work orders build with solid surface.',
+    fromVersion: 1, toVersion: 2, status: 'closed', publishedBy: 'Dewi Lestari', publishedAt: '2026-06-18',
+    adoption: 'none', decisions: [], decisionNote: 'WO-PS-0005 is already cutting granite tops — it stays on v1; only new work orders take the upgrade.',
+    decidedBy: 'Andi Pratama', decidedAt: '2026-06-18', dispositions: [], implementedBy: 'Andi Pratama', implementedAt: '2026-06-18', closedBy: 'Andi Pratama', closedAt: '2026-06-19' },
 ]
 
-const K_V = 'pm-change-orders', K_E = 'pm-ecos'
+// ECO key bumped for the v6.2 model — an older snapshot has a different shape.
+const K_V = 'pm-change-orders', K_E = 'pm-ecos-v62b'
 export const changeOrders = reactive<ChangeOrder[]>(loadSnapshot<ChangeOrder>(K_V) ?? structuredClone(SEED_VO))
 export const engineeringChanges = reactive<EngineeringChange[]>(loadSnapshot<EngineeringChange>(K_E) ?? structuredClone(SEED_ECO))
 export function persistChanges(): void {
@@ -116,8 +198,17 @@ export function coExposure(projectId: string): number {
 export function pendingChanges(projectId: string) {
   return {
     vos: projectChangeOrders(projectId).filter(v => v.status !== 'approved' && v.status !== 'rejected'),
-    ecos: projectEcos(projectId).filter(e => e.status === 'pending' || e.status === 'draft'),
+    ecos: projectEcos(projectId).filter(ecoIsActive),
   }
+}
+/** ECOs live under their project (v6.2 §3.1 — reached from the Production tab). */
+export function ecoPath(e: Pick<EngineeringChange, 'id' | 'projectId'>): string {
+  return `/projects/${e.projectId}/engineering-changes/${e.id}`
+}
+export function getEco(id?: string) { return id ? engineeringChanges.find(e => e.id === id) : undefined }
+/** The ECO that currently blocks edits to a project BOM, if any. */
+export function blockingEco(customBomId: string) {
+  return engineeringChanges.find(e => e.customBomId === customBomId && ecoBlocksEdits(e))
 }
 
 export function nextVoNo(projectCode: string): string {
@@ -126,7 +217,12 @@ export function nextVoNo(projectCode: string): string {
   return `VO-${code}-${String(n).padStart(2, '0')}`
 }
 export function nextEcoNo(projectCode: string): string {
-  const code = projectCode.replace('PS-', '')
-  const n = engineeringChanges.filter(e => e.no.startsWith(`ECO-${code}`)).length + 1
-  return `ECO-${code}-${String(n).padStart(2, '0')}`
+  // PS-2603 → ECO-2603-nn (legacy seeds) · PRJ-A → ECO-PRJ-A-nn
+  const code = projectCode.startsWith('PS-') ? projectCode.slice(3) : projectCode
+  let max = 0
+  for (const e of engineeringChanges) {
+    const m = e.no.match(new RegExp(`^ECO-${code}-(\\d+)$`))
+    if (m) max = Math.max(max, parseInt(m[1]!, 10))
+  }
+  return `ECO-${code}-${String(max + 1).padStart(2, '0')}`
 }

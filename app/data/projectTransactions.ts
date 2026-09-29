@@ -39,7 +39,13 @@ export interface CostLine {
   tm?: { hours: number; billRate: number; decision: 'pending' | 'bill' | 'write_down' | 'write_up'; billAmount?: number; invoiceNo?: string; person: string }
 }
 
-export type ProjectWoStatus = 'Draft' | 'Released' | 'In progress' | 'Completed'
+/** Cancelled exists only through an ECO route (cancel & recreate) — its set-aside moves to the recreated WO. */
+export type ProjectWoStatus = 'Draft' | 'Released' | 'In progress' | 'Completed' | 'Cancelled'
+
+/** Completed or Cancelled — no longer open, commits nothing. */
+export function woClosed(w: Pick<ProjectWorkOrder, 'status'>): boolean {
+  return w.status === 'Completed' || w.status === 'Cancelled'
+}
 
 export interface ProjectWoLine {
   kind: 'material' | 'labor' | 'overhead' | 'other'
@@ -69,7 +75,15 @@ export interface ProjectWorkOrder {
   /** set-aside released on completion (setAside − actual) */
   released?: number
   customBomId?: string
+  /** the BOM version this WO was created from — the pin. Moves only through an ECO adoption route. */
   bomVersion?: number
+  /** units already reported complete (partial completion posted) — drives the split & cutover route */
+  completedQty?: number
+  /** cross-references written by an ECO route (cancel & recreate / split & cutover) */
+  replacesWoId?: string
+  replacedByWoId?: string
+  /** ECO adjustments documented on a WO whose pin stays (WO Adjust in place) */
+  ecoAdjustments?: { ecoNo: string; delta: number; at: string }[]
   lines: ProjectWoLine[]
   createdAt: string
   createdBy: string
@@ -203,11 +217,11 @@ const SEED_WOS: ProjectWorkOrder[] = [
   // commitment ledger (§7). Reserving material the project already owns does not
   // consume budget a second time.
   seedWo({ id: 'pwo-prja-10005', number: 'WO-10005', projectId: 'prj-a', wpId: 'wp-prja-1', status: 'Completed', qty: 4, unit: 'Unit', budgetSetAside: 2_000_000, actual: 2_000_000, customBomId: 'cbom-prja-mj', bomVersion: 1, lines: woLines(4, FURNITURE_MAT, FURNITURE_PROD), createdAt: '2026-09-03', createdBy: 'Rizal Candra', completedAt: '2026-09-18' }),
-  seedWo({ id: 'pwo-prja-10010', number: 'WO-10010', projectId: 'prj-a', wpId: 'wp-prja-1', status: 'In progress', qty: 12, unit: 'Unit', budgetSetAside: 2_200_000, actual: 2_200_000, customBomId: 'cbom-prja-mj', bomVersion: 1, lines: woLines(12, FURNITURE_MAT, FURNITURE_PROD), createdAt: '2026-09-08', createdBy: 'Rizal Candra' }),
+  seedWo({ id: 'pwo-prja-10010', number: 'WO-10010', projectId: 'prj-a', wpId: 'wp-prja-1', status: 'In progress', qty: 12, unit: 'Unit', completedQty: 5, budgetSetAside: 2_200_000, actual: 2_200_000, customBomId: 'cbom-prja-mj', bomVersion: 1, lines: woLines(12, FURNITURE_MAT, FURNITURE_PROD), createdAt: '2026-09-08', createdBy: 'Rizal Candra' }),
   seedWo({ id: 'pwo-prja-10011', number: 'WO-10011', projectId: 'prj-a', wpId: 'wp-prja-1', status: 'In progress', qty: 20, unit: 'Unit', budgetSetAside: 12_000_000, actual: 0, customBomId: 'cbom-prja-rk', bomVersion: 1, lines: woLines(20, FURNITURE_MAT, FURNITURE_PROD), createdAt: '2026-09-12', createdBy: 'Rizal Candra' }),
   seedWo({ id: 'pwo-prja-10014', number: 'WO-10014', projectId: 'prj-a', wpId: 'wp-prja-1', status: 'Released', qty: 8, unit: 'Unit', budgetSetAside: 0, actual: 0, customBomId: 'cbom-prja-mj', bomVersion: 1, lines: woLines(8, FURNITURE_MAT, FURNITURE_PROD), createdAt: '2026-09-15', createdBy: 'Rizal Candra' }),
   seedWo({ id: 'pwo-prja-10021', number: 'WO-10021', projectId: 'prj-a', wpId: 'wp-prja-1', status: 'Draft', qty: 6, unit: 'Unit', budgetSetAside: 0, actual: 0, customBomId: 'cbom-prja-mj', bomVersion: 1, lines: [], createdAt: '2026-09-20', createdBy: 'Rizal Candra' }),
-  seedWo({ id: 'pwo-1', number: 'WO-PS-0001', projectId: 'ps-2603', wpId: 'wp-2603-31', status: 'In progress', qty: 64, unit: 'Set', budgetSetAside: 90_000_000, actual: 61_400_000, customBomId: 'cbom-2603-31', bomVersion: 1, lines: woLines(64, FURNITURE_MAT, FURNITURE_PROD), createdAt: '2026-06-01', createdBy: 'Rizal Candra' }),
+  seedWo({ id: 'pwo-1', number: 'WO-PS-0001', projectId: 'ps-2603', wpId: 'wp-2603-31', status: 'In progress', qty: 64, unit: 'Set', completedQty: 40, budgetSetAside: 90_000_000, actual: 61_400_000, customBomId: 'cbom-2603-31', bomVersion: 1, lines: woLines(64, FURNITURE_MAT, FURNITURE_PROD), createdAt: '2026-06-01', createdBy: 'Rizal Candra' }),
   seedWo({ id: 'pwo-2', number: 'WO-PS-0002', projectId: 'ps-2603', wpId: 'wp-2603-31', status: 'Released', qty: 56, unit: 'Set', budgetSetAside: 60_000_000, actual: 0, customBomId: 'cbom-2603-31', bomVersion: 1, lines: woLines(40, FURNITURE_MAT, FURNITURE_PROD), createdAt: '2026-06-22', createdBy: 'Rizal Candra' }),
   seedWo({ id: 'pwo-3', number: 'WO-PS-0003', projectId: 'ps-2603', wpId: 'wp-2603-32', status: 'In progress', qty: 12, unit: 'Unit', budgetSetAside: 54_000_000, actual: 22_750_000, customBomId: 'cbom-2603-32', bomVersion: 1, lines: woLines(12, CABINET_MAT, CABINET_PROD), createdAt: '2026-06-15', createdBy: 'Rizal Candra' }),
   seedWo({ id: 'pwo-4', number: 'WO-PS-0004', projectId: 'ps-2606', wpId: 'wp-2606-11', status: 'Completed', qty: 14, unit: 'Unit', budgetSetAside: 150_000_000, actual: 142_000_000, released: 8_000_000, customBomId: 'cbom-2606-11', bomVersion: 1, lines: woLines(14, KITCHEN_MAT, KITCHEN_PROD), createdAt: '2026-04-28', createdBy: 'Andi Pratama', completedAt: '2026-06-19' }),
@@ -224,7 +238,8 @@ const SEED_DOCS: PeggedDocument[] = [
 
 const K_LINES = 'pm-cost-lines'
 const K_DOCS = 'pm-documents'
-const K_WOS = 'pm-work-orders'
+// WO key bumped for the v6.2 ECO fields (completedQty, cross-references).
+const K_WOS = 'pm-work-orders-v62'
 export const costLines = reactive<CostLine[]>(loadSnapshot<CostLine>(K_LINES) ?? structuredClone(SEED_LINES))
 export const projectWorkOrders = reactive<ProjectWorkOrder[]>(loadSnapshot<ProjectWorkOrder>(K_WOS) ?? structuredClone(SEED_WOS))
 export const peggedDocuments = reactive<PeggedDocument[]>(loadSnapshot<PeggedDocument>(K_DOCS) ?? structuredClone(SEED_DOCS))
@@ -248,7 +263,7 @@ function woConsumes(w: ProjectWorkOrder): boolean {
   return w.status !== 'Draft' && getProject(w.projectId)?.status !== 'draft'
 }
 export function woCommitted(w: ProjectWorkOrder): number {
-  if (!woConsumes(w) || w.status === 'Completed') return 0
+  if (!woConsumes(w) || woClosed(w)) return 0
   return Math.max(w.budgetSetAside - w.actual, 0)
 }
 

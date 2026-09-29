@@ -19,7 +19,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import type { Project } from '~/data/projects'
 import { projectWorkPackages, punchItems, getWorkPackage, usesMilestone } from '~/data/projects'
-import { wpCommitted, projectWos, woCommitted } from '~/data/projectTransactions'
+import { wpCommitted, projectWos, woCommitted, woClosed } from '~/data/projectTransactions'
 import { projectReservations } from '~/data/projectReservations'
 import { recordBast, closePunchItem, addPunchItem, closeBlockers, closeProject, finaliseRecognition } from '~/data/projectActions'
 import { recognisedToDate, percentComplete } from '~/data/projectRecognition'
@@ -41,7 +41,7 @@ const wps = computed(() => projectWorkPackages(props.project.id))
 const punch = computed(() => punchItems.filter(p => p.projectId === props.project.id))
 const blockers = computed(() => closeBlockers(props.project.id))
 const releaseRes = computed(() => projectReservations(props.project.id).filter(r => r.status === 'reserved' || r.status === 'picked'))
-const releaseSetAside = computed(() => projectWos(props.project.id).filter(w => w.status !== 'Completed').reduce((s, w) => s + woCommitted(w), 0))
+const releaseSetAside = computed(() => projectWos(props.project.id).filter(w => !woClosed(w)).reduce((s, w) => s + woCommitted(w), 0))
 
 const bast = reactive({ open: false, wpId: '', pct: '', no: '', touched: false })
 const bastWp = computed(() => getWorkPackage(bast.wpId))

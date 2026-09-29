@@ -18,7 +18,7 @@ import { formatIDR } from '~/utils/currency'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpAutocomplete, MpInput, MpInputGroup, MpInputLeftAddon, MpInputRightAddon, MpTextarea,
-  MpButton, MpIcon, MpCheckbox, toast,
+  MpButton, MpIcon, MpCheckbox, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, toast,
 } from '@mekari/pixel3'
 import { CATALOG } from '~/data/catalog'
 import {
@@ -26,7 +26,8 @@ import {
   type BillOfMaterials, type BomRawMaterial, type BomProductionCost,
   type BomRoutingStep, type BomOtherOutput, type BomProductionWaste,
 } from '~/data/billOfMaterials'
-import { updateBillOfMaterialsSafe } from '~/data/integrityGuards'
+import { updateBillOfMaterialsSafe, bomVersionLocked } from '~/data/integrityGuards'
+import { workOrdersOnBomVersion } from '~/data/workOrders'
 
 const { t } = useLocale()
 const router = useRouter()
@@ -37,6 +38,17 @@ function goList() { router.push('/bill-of-materials') }
 const editingId = (route.query.edit as string) || ''
 const duplicateFromId = (route.query.duplicate as string) || ''
 const isEditMode = computed(() => !!editingId)
+
+// ── Versioning (regular BOM) ────────────────────────────────────────────────────
+// Once a work order was created from the Active version, that version is locked:
+// saving upgrades the BOM to v(n+1) and deactivates v(n). Work orders already on
+// v(n) keep it; new work orders use v(n+1). No engineering change here — that is
+// the project BOM's rule. A change note is required so every version is explainable.
+const editingBomRecord = computed(() => (editingId ? billOfMaterials.find(b => b.id === editingId) : undefined))
+const upgradesVersion = computed(() => !!editingId && bomVersionLocked(editingId))
+const lockedWoCount = computed(() => (editingBomRecord.value ? workOrdersOnBomVersion(editingBomRecord.value.id, editingBomRecord.value.version).length : 0))
+const versionNote = ref('')
+const versionNoteError = ref(false)
 const editingNumber = ref('')
 const editingArchived = ref(false)
 
@@ -270,7 +282,12 @@ function validate() {
   if (!category.value) { categoryError.value = true; ok = false }
   if (!costingReference.value) { costingError.value = true; ok = false }
   if (!mainRow.value.productId) { mainProductError.value = true; ok = false }
+  if (!validateVersionNote()) ok = false
   return ok
+}
+function validateVersionNote() {
+  if (upgradesVersion.value && !versionNote.value.trim()) { versionNoteError.value = true; return false }
+  return true
 }
 
 const optionLabel = (options: { id: string; name: string }[], id: string) => options.find(o => o.id === id)?.name ?? id
@@ -399,31 +416,35 @@ function buildBomPayload() {
   }
 }
 
-// Returns the BOM id to navigate to, or null when the guard refused the edit
-// (an active work order still depends on this BOM) — caller then aborts.
-function saveBom(): string | null {
+// Returns the BOM id to navigate to (plus the version it saved as), or null when
+// the save was refused — caller then aborts.
+function saveBom(): { id: string; upgradedTo?: number } | null {
   if (isEditMode.value) {
-    const res = updateBillOfMaterialsSafe(editingId, buildBomPayload())
+    const res = updateBillOfMaterialsSafe(editingId, buildBomPayload(), { note: versionNote.value })
     if (!res.ok) {
-      toast.notify({ variant: 'error', title: t('Failed to save. This BOM is used by an active work order'), maxWidth: 'max-content' })
+      toast.notify({ variant: 'error', title: t('Failed to save. Please try again'), maxWidth: 'max-content' })
       return null
     }
-    return editingId
+    return { id: editingId, upgradedTo: res.upgraded ? res.version : undefined }
   }
-  return addBillOfMaterials(buildBomPayload()).id
+  return { id: addBillOfMaterials(buildBomPayload()).id }
+}
+function savedToast(saved: { upgradedTo?: number }, fallback: string) {
+  toast.notify({ variant: 'success', title: saved.upgradedTo ? `${t('Saved as version')} v${saved.upgradedTo}` : fallback })
 }
 function handleSave() {
   if (!validate()) return
-  const id = saveBom()
-  if (!id) return
-  toast.notify({ variant: 'success', title: isEditMode.value ? t('Bill of materials changes saved') : t('Bill of materials saved') })
-  router.push(`/bill-of-materials/${id}`)
+  const saved = saveBom()
+  if (!saved) return
+  savedToast(saved, isEditMode.value ? t('Bill of materials changes saved') : t('Bill of materials saved'))
+  router.push(`/bill-of-materials/${saved.id}`)
 }
 function handleSaveDraft() {
-  const id = saveBom()
-  if (!id) return
-  toast.notify({ variant: 'success', title: isEditMode.value ? t('Bill of materials changes saved') : t('Bill of materials saved as draft') })
-  router.push(`/bill-of-materials/${id}`)
+  if (!validateVersionNote()) return
+  const saved = saveBom()
+  if (!saved) return
+  savedToast(saved, isEditMode.value ? t('Bill of materials changes saved') : t('Bill of materials saved as draft'))
+  router.push(`/bill-of-materials/${saved.id}`)
 }
 
 // ── Sticky footer float ────────────────────────────────────────────────────────────
@@ -466,6 +487,24 @@ onUnmounted(() => { stageObserver?.disconnect() })
       <div class="bf-body">
 
         <!-- ══ BOM info ══════════════════════════════════════════════════════ -->
+        <!-- Versioning notice — only when this save upgrades the BOM -->
+        <section v-if="upgradesVersion && editingBomRecord" class="bf-section" data-devchange="bom-version-upgrade">
+          <MpBanner id="bf-version-banner" variant="info">
+            <MpBannerIcon />
+            <MpBannerTitle>{{ t('Saving creates version') }} v{{ editingBomRecord.version + 1 }}</MpBannerTitle>
+            <MpBannerDescription>
+              v{{ editingBomRecord.version }} {{ t('is used by') }} {{ lockedWoCount }} {{ t('work order(s), so it can’t change. It will be deactivated: existing work orders keep building') }} v{{ editingBomRecord.version }}, {{ t('and new work orders use') }} v{{ editingBomRecord.version + 1 }}.
+            </MpBannerDescription>
+          </MpBanner>
+          <div class="bf-field bf-field--lg">
+            <MpFormControl id="bf-version-note" is-required :is-invalid="versionNoteError">
+              <MpFormLabel>{{ t('What changed in this version') }}</MpFormLabel>
+              <MpTextarea id="bf-version-note-input" v-model="versionNote" @update:model-value="versionNoteError = false" />
+              <MpFormErrorMessage>{{ t('Describe what changed so the new version can be explained later.') }}</MpFormErrorMessage>
+            </MpFormControl>
+          </div>
+        </section>
+
         <section class="bf-section">
           <h2 class="bf-section-title">{{ t('Bill of materials info') }}</h2>
 

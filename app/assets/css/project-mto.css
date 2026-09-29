@@ -175,6 +175,9 @@
 .pm-drawer-title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-colors-text-default, #080d0e); }
 .pm-drawer-sub { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #3a4749); margin-top: var(--mp-spacing-0\.5, 2px); }
 .pm-drawer-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px); padding: var(--mp-spacing-5, 20px); }
+/* A scroll container (e.g. .pm-table-wrap's overflow-x) has min-height 0 in a flex column,
+   so without this it collapses to a sliver instead of the drawer body scrolling. */
+.pm-drawer-body > * { flex-shrink: 0; }
 .pm-drawer-footer { flex-shrink: 0; padding: var(--mp-spacing-3, 12px) var(--mp-spacing-5, 20px); border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); display: flex; justify-content: flex-end; }
 .pm-modal-body { display: flex; flex-direction: column; gap: var(--mp-spacing-4, 16px); }
 
@@ -347,3 +350,22 @@
 .pm-total-row { padding: 0 var(--mp-spacing-2, 8px) 0 0; }
 /* Toggle field in a filter bar: toggle then label, the standard 12px gap (rule/form-toggle-inline). */
 .pm-toggle-field { display: inline-flex; align-items: center; gap: var(--mp-spacing-3, 12px); cursor: pointer; font-size: var(--mp-font-sizes-md, 14px); }
+
+/* ── Engineering change (PRD v6.2) ─────────────────────────────────────────────
+   Newer-version indicator: neutral by design — it informs, never alarms or blocks,
+   so it reads as secondary text with an info icon, not a link-blue CTA or badge. */
+.pm-version-hint {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 4px);
+  font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #3a4749);
+  cursor: pointer; white-space: nowrap;
+}
+.pm-version-hint:hover { color: var(--mp-colors-text-default, #080d0e); text-decoration: underline; text-underline-offset: 2px; }
+.pm-eco-lifecycle { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--mp-spacing-2, 8px) var(--mp-spacing-6, 24px); }
+.pm-eco-step { display: flex; gap: var(--mp-spacing-2, 8px); align-items: flex-start; min-width: 0; }
+.pm-eco-step-dot {
+  flex-shrink: 0; width: var(--mp-sizes-2\.5, 10px); height: var(--mp-sizes-2\.5, 10px); margin-top: var(--mp-spacing-1, 4px);
+  border-radius: var(--mp-radii-full, 9999px); border: 2px solid var(--mp-colors-border-default, #d0d6d8);
+  background: var(--mp-colors-background-neutral, #fff);
+}
+.pm-eco-step--done .pm-eco-step-dot { background: var(--mp-colors-icon-success, #1c8a5c); border-color: var(--mp-colors-icon-success, #1c8a5c); }
+.pm-eco-step--current .pm-eco-step-dot { border-color: var(--mp-colors-border-bold, #3a4749); }

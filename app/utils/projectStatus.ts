@@ -26,11 +26,16 @@ const MAP: Record<string, BadgeSpec> = {
   'vo:raised': { type: 'warning', label: 'Awaiting Finance' },
   'vo:approved': { type: 'completed', label: 'Approved' },
   'vo:rejected': { type: 'critical', label: 'Rejected' },
-  // engineering change
-  'eco:draft': { type: 'announcement', label: 'Draft' },
-  'eco:pending': { type: 'warning', label: 'Awaiting approval' },
-  'eco:approved': { type: 'completed', label: 'Approved' },
-  'eco:rejected': { type: 'critical', label: 'Rejected' },
+  'wo:Cancelled': { type: 'announcement', label: 'Cancelled' },
+  // engineering change (PRD v6.2 lifecycle)
+  'eco:open': { type: 'warning', label: 'Open' },
+  'eco:pending_approval': { type: 'warning', label: 'Pending approval' },
+  'eco:decided': { type: 'information', label: 'Decided' },
+  'eco:implemented': { type: 'information', label: 'Implemented' },
+  'eco:closed': { type: 'completed', label: 'Closed' },
+  // project BOM version
+  'bomv:active': { type: 'completed', label: 'Active' },
+  'bomv:superseded': { type: 'announcement', label: 'Superseded' },
   // approval request
   'approval:pending': { type: 'warning', label: 'Pending' },
   'approval:approved': { type: 'completed', label: 'Approved' },

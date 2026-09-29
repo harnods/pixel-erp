@@ -20,6 +20,8 @@ const { t } = useLocale()
 const columns: TableColumn[] = [
   { key: 'number',           label: t('Number'),             kind: 'number', sortable: true },
   { key: 'name',             label: t('Name'),               kind: 'name', sortable: true },
+  // Regular BOM versioning — exactly one Active version per BOM (never part of the name).
+  { key: 'version',          label: t('Active version'),     sortable: true },
   { key: 'category',         label: t('Category') },
   { key: 'costingReference', label: t('Costing reference'),  kind: 'number' },
   { key: 'finishedGood',     label: t('Finished goods'),     kind: 'name' },
@@ -273,6 +275,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <span class="bom-name">{{ value }}</span>
     </template>
 
+    <!-- ── Active version (+ how many superseded versions exist) ── -->
+    <template #cell-version="{ row }">
+      <span data-devchange="bom-index-version">v{{ (row as unknown as BillOfMaterials).version }}</span>
+      <span v-if="(row as unknown as BillOfMaterials).versionHistory.length" class="bom-version-sub">{{ (row as unknown as BillOfMaterials).versionHistory.length }} {{ t('superseded') }}</span>
+    </template>
+
     <!-- ── Finished good — resolved from the registered product ── -->
     <template #cell-finishedGood="{ row }">
       <span class="bom-finished-good">{{ finishedGoodName(row as unknown as BillOfMaterials) }}</span>
@@ -359,6 +367,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 </template>
 
 <style scoped>
+.bom-version-sub { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary); }
 /* ── Filter bar ─────────────────────────────────────────────────────────── */
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }

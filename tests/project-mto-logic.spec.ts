@@ -36,21 +36,14 @@ describe('ECO quantity parsing', () => {
 })
 
 describe('change order ↔ engineering change', () => {
-  it('rejecting the funding change order unlinks the ECO so it can still be approved', async () => {
-    const { actions, changes, approvals } = await load()
-    const voApproval = approvals.approvals.find(a => a.refNo === 'VO-2603-02')!
-    expect(actions.decideApproval(voApproval.id, false, FIN, 'Customer withdrew').ok).toBe(true)
+  it('a customer-request ECO without an SO addendum needs an override before existing WOs adopt it', async () => {
+    const { actions, changes } = await load()
     const eco = changes.engineeringChanges.find(e => e.no === 'ECO-2603-01')!
-    expect(eco.voId).toBeUndefined()
-    const ecoApproval = approvals.approvals.find(a => a.refNo === 'ECO-2603-01')!
-    expect(actions.decideApproval(ecoApproval.id, true, FIN).ok).toBe(true)
-  })
-
-  it('still refuses an ECO whose change order is only raised, not yet decided (OQ23)', async () => {
-    const { actions, approvals } = await load()
-    const ecoApproval = approvals.approvals.find(a => a.refNo === 'ECO-2603-01')!
-    const res = actions.decideApproval(ecoApproval.id, true, FIN)
-    expect(res.ok).toBe(false)
+    expect(eco.addendumSoId).toBeUndefined()
+    expect(actions.decideEco(eco.id, { adoption: 'all_open', selectedWoIds: [], note: '' }, PM).ok).toBe(false)
+    const res = actions.decideEco(eco.id, { adoption: 'all_open', selectedWoIds: [], note: '', addendumOverride: 'Customer confirmed by email; addendum follows' }, PM)
+    expect(res.ok).toBe(true)
+    expect(eco.addendumOverride).toBeTruthy()
   })
 
   it('a change order with a price but no cost still lifts the revenue baseline with a revision', async () => {
@@ -66,28 +59,23 @@ describe('change order ↔ engineering change', () => {
   })
 })
 
-describe('engineering change approval', () => {
-  it('budget delta counts only future units + WOs in scope, and line budgets stay within the set-aside', async () => {
-    const { actions, tx, budgets, changes, approvals, boms } = await load()
-    // Fund the ECO first so it may be approved.
-    const voApproval = approvals.approvals.find(a => a.refNo === 'VO-2603-02')!
-    actions.decideApproval(voApproval.id, true, FIN)
+describe('engineering change adoption (PRD v6.2)', () => {
+  it('budget delta counts adopted units + future units; unselected WOs keep their pin', async () => {
+    const { actions, tx, budgets, changes } = await load()
     const eco = changes.engineeringChanges.find(e => e.no === 'ECO-2603-01')!
-    eco.effectivity = 'specific'
-    eco.specificWoIds = ['pwo-2'] // WO-PS-0002, Released, 56 sets
-    const units = actions.ecoDeltaUnits(eco)
-    // WP 3.1: 120 planned − 64 confirmed = 56 remaining; open WOs hold 64 + 56 → no future units; scope = 56.
-    expect(units).toBe(56)
     const cogmBefore = budgets.wpBudget('wp-2603-31', budgets.COGM_ACCOUNT)!
-    const bom = boms.getCustomBom('cbom-2603-31')!
-    const unitDelta = boms.bomUnitCost(eco.proposed) - boms.bomUnitCost(boms.currentVersion(bom))
-    const ecoApproval = approvals.approvals.find(a => a.refNo === 'ECO-2603-01')!
-    expect(actions.decideApproval(ecoApproval.id, true, FIN).ok).toBe(true)
-    expect(budgets.wpBudget('wp-2603-31', budgets.COGM_ACCOUNT)).toBe(cogmBefore + Math.round(unitDelta * 56))
-    const wo = tx.projectWorkOrders.find(w => w.id === 'pwo-2')!
-    const allocated = wo.lines.reduce((s, l) => s + l.budget, 0)
-    expect(allocated).toBeLessThanOrEqual(wo.budgetSetAside)
-    // The in-progress WO keeps its version.
+    const { delta } = actions.ecoUnitDelta(eco)
+    // Select only WO-PS-0002 (Released, 56 sets) → cancel & recreate on v2.
+    const res = actions.decideEco(eco.id, { adoption: 'selected', selectedWoIds: ['pwo-2'], note: 'Only the unstarted batch', addendumOverride: 'Priced verbally' }, PM)
+    expect(res.ok).toBe(true)
+    expect(eco.status).toBe('decided')
+    expect(budgets.wpBudget('wp-2603-31', budgets.COGM_ACCOUNT)).toBe(cogmBefore + Math.round(delta * 56))
+    const old = tx.projectWorkOrders.find(w => w.id === 'pwo-2')!
+    expect(old.status).toBe('Cancelled')
+    const nw = tx.projectWorkOrders.find(w => w.id === old.replacedByWoId)!
+    expect(nw.bomVersion).toBe(2)
+    expect(nw.lines.reduce((s, l) => s + l.budget, 0)).toBeLessThanOrEqual(nw.budgetSetAside)
+    // The in-progress WO wasn't selected — its pin stays.
     expect(tx.projectWorkOrders.find(w => w.id === 'pwo-1')!.bomVersion).toBe(1)
   })
 })

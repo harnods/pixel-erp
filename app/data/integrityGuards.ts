@@ -20,7 +20,7 @@ import { warehouses, archiveWarehouses } from './warehouses'
 import { receivingTasks } from './receivingTasks'
 import { pickingTasks } from './pickingTasks'
 import { warehouseTransfers } from './warehouseTransfers'
-import { billOfMaterials, updateBillOfMaterials, type BillOfMaterials } from './billOfMaterials'
+import { billOfMaterials, updateBillOfMaterials, upgradeBillOfMaterialsVersion, type BillOfMaterialsInput } from './billOfMaterials'
 import { workOrders } from './workOrders'
 
 export type GuardResult = { ok: true } | { ok: false; reason: string }
@@ -138,21 +138,37 @@ export function activeWorkOrdersForBom(bomId: string): number {
   ).length
 }
 
-/** A BOM can be edited only when no active work order relies on its recipe. */
+/**
+ * A regular BOM is always editable. What an edit DOES depends on references:
+ * once any work order was created from the Active version, that version is
+ * locked, so saving upgrades the BOM to a new version and deactivates the old
+ * one (existing work orders keep it; new ones use the new version). While no
+ * work order references it, the Active version is edited in place.
+ * (Project BOMs differ: an edit to a referenced one raises an ECO — see projectActions.)
+ */
+export function bomVersionLocked(id: string): boolean {
+  const b = billOfMaterials.find(x => x.id === id)
+  return !!b && workOrders.some(w => w.bomId === id && (w.bomVersion ?? 1) === b.version)
+}
+/** @deprecated kept for callers of the pre-versioning guard — every BOM is now editable. */
 export function canEditBom(id: string): boolean {
-  return activeWorkOrdersForBom(id) === 0
+  return billOfMaterials.some(b => b.id === id)
 }
 
-/** Edit a BOM, refusing while an active work order still depends on it. */
+export type BomSaveResult = { ok: true; upgraded: boolean; version: number } | { ok: false; reason: string }
+
+/** Save a BOM edit — in place while unreferenced, otherwise as a new Active version. */
 export function updateBillOfMaterialsSafe(
   id: string,
-  data: Omit<BillOfMaterials, 'id' | 'number'>,
-): GuardResult {
-  if (!billOfMaterials.some((b) => b.id === id)) return { ok: false, reason: 'NOT_FOUND' }
-  const active = activeWorkOrdersForBom(id)
-  if (active > 0) {
-    return { ok: false, reason: `BOM_IN_USE: ${active} active work order(s) depend on this BOM` }
+  data: BillOfMaterialsInput,
+  meta: { by?: string; note?: string } = {},
+): BomSaveResult {
+  const b = billOfMaterials.find(x => x.id === id)
+  if (!b) return { ok: false, reason: 'NOT_FOUND' }
+  if (bomVersionLocked(id)) {
+    const up = upgradeBillOfMaterialsVersion(id, data, { by: meta.by ?? 'Rahadian Bima', note: meta.note })
+    return { ok: true, upgraded: true, version: up.version }
   }
   updateBillOfMaterials(id, data)
-  return { ok: true }
+  return { ok: true, upgraded: false, version: b.version }
 }
