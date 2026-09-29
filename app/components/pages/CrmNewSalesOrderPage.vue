@@ -59,8 +59,8 @@ function onCreated(order: SalesOrder) {
   flex-shrink: 0;
 }
 .crm-so-bar-left { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5, 2px); }
-.crm-so-crumb { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); cursor: pointer; text-decoration: none; }
-.crm-so-crumb:hover { color: var(--mp-text-default); }
+.crm-so-crumb { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-link, #165082); cursor: pointer; text-decoration: none; }
+.crm-so-crumb:hover { text-decoration: underline; }
 .crm-so-h1 { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
 .crm-so-notfound { padding: var(--mp-spacing-12); text-align: center; color: var(--mp-text-secondary); }
 </style>
