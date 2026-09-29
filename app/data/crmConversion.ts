@@ -412,7 +412,6 @@ export function dealConvEligibility(d: Deal): ConvEligibility {
   if (d.stage === 'Lost') return { ok: false, reason: 'Deals in the Lost stage cannot be converted.' }
   if (d.conversion === 'converted') return { ok: false, reason: 'This deal has already been converted.' }
   if (d.conversion === 'processing') return { ok: false, reason: 'A conversion is already in progress.' }
-  if (!(d.products ?? []).length) return { ok: false, reason: 'Add at least one product before converting.' }
   return { ok: true }
 }
 
