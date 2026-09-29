@@ -6,7 +6,7 @@
  * returns to the deal detail; on cancel they go back to the deal.
  */
 import { computed } from 'vue'
-import { MpButton, MpTextlink, toast } from '@mekari/pixel3'
+import { MpTextlink, toast } from '@mekari/pixel3'
 import NewSalesOrderPage from '~/components/pages/NewSalesOrderPage.vue'
 import { getDeal, dealNo } from '~/data/crm'
 import { dealToSalesPrefill, pendingSalesPrefill } from '~/data/salesFormPrefill'
@@ -36,9 +36,6 @@ function onCreated(order: SalesOrder) {
         <MpTextlink as="a" class="crm-so-crumb" @click.prevent="goBack">{{ dealName || t('Deal') }}</MpTextlink>
         <h1 class="crm-so-h1">{{ t('New sales order') }}</h1>
       </div>
-      <div class="crm-so-bar-right">
-        <MpButton class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</MpButton>
-      </div>
     </header>
     <NewSalesOrderPage
       v-if="deal"
@@ -55,15 +52,15 @@ function onCreated(order: SalesOrder) {
 <style scoped>
 .crm-so-form { display: flex; flex-direction: column; height: 100%; }
 .crm-so-bar {
-  display: flex; align-items: flex-start; justify-content: space-between;
-  padding: var(--mp-spacing-4) var(--mp-spacing-6) var(--mp-spacing-3);
-  border-bottom: 1px solid var(--mp-border-default, #c8cdd0);
+  display: flex; align-items: center;
+  height: var(--mp-sizes-18, 72px); box-sizing: border-box;
+  padding-inline: var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle);
   flex-shrink: 0;
 }
 .crm-so-bar-left { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5, 2px); }
 .crm-so-crumb { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); cursor: pointer; text-decoration: none; }
 .crm-so-crumb:hover { color: var(--mp-text-default); }
 .crm-so-h1 { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
-.crm-so-bar-right { display: flex; gap: var(--mp-spacing-2); padding-top: var(--mp-spacing-1); }
 .crm-so-notfound { padding: var(--mp-spacing-12); text-align: center; color: var(--mp-text-secondary); }
 </style>
