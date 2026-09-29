@@ -13,6 +13,9 @@ import {
   presentValue, combinedSchedule,
 } from '~/data/assetLeases'
 import { journalDatePolicy, journalPolicyDay, autoPostRuns } from '~/data/assetPolicy'
+import { previewNewAsset, projection, lifeSchedule } from '~/data/assetPreview'
+import { annualObligations, annualDone, annualOutstanding, INTANGIBLE_CODES } from '~/data/assetIntangibles'
+import { recordImpairmentTest } from '~/data/assetStore'
 
 beforeEach(() => resetAssetStore())
 
@@ -152,5 +155,55 @@ describe('intangibles (FG-9)', () => {
     expect(findAsset('FA-0094')!.statutoryCode).toBe('0602 Copyright')
     expect(setStatutoryCode('FA-0031', '0601 Patent').ok).toBe(false)
     expect(setStatutoryCode('FA-0091', '0601 Patent').ok).toBe(false)
+  })
+})
+
+
+describe('schedule preview and projection (TS-04, OD-45, OD-12)', () => {
+  it('previews the whole life on both books before the asset exists, summing to the depreciable base', () => {
+    const pv = previewNewAsset({ cost: 120_000_000, inServiceDate: '15/09/2026', lifeMonths: 48, residual: 0, method: 'straight-line', taxGroup: 'Tax group 2' })
+    expect(pv.totals.accounting).toBe(120_000_000)
+    expect(pv.totals.tax).toBe(120_000_000)
+    expect(pv.monthly.accounting).toBe(2_500_000)
+    expect(pv.years[0]!.year).toBe(2026)
+    expect(pv.years[0]!.months).toBe(4)
+  })
+
+  it('shows goodwill with no accounting schedule and a full tax schedule', () => {
+    const s = lifeSchedule(ledgerOf('FA-0091')!)
+    expect(s.totals.accounting).toBeNull()
+    expect(s.accountingAbsent).toBe('Not amortised')
+    expect(s.totals.tax).toBe(2_400_000_000)
+  })
+
+  it('projects both books to the chosen horizon', () => {
+    for (const n of [12, 24, 36]) {
+      const p = projection(n)
+      expect(p).toHaveLength(n)
+      expect(p[0]!.period).toBe('2026-10')
+      expect(p.every((m) => Number.isInteger(m.accounting) && Number.isInteger(m.tax))).toBe(true)
+    }
+    expect(projection(36)[35]!.period).toBe('2029-09')
+  })
+})
+
+describe('annual test obligation (OD-52, FG3-AC6)', () => {
+  it('lists goodwill and indefinite-life intangibles, names done and outstanding, and keeps the list when all are done', () => {
+    const ids = annualObligations.value.map((o) => o.asset.id).sort()
+    expect(ids).toEqual(['FA-0091', 'FA-0093'])
+    const outstanding = annualOutstanding.value.map((o) => o.asset.id)
+    expect(outstanding.length).toBeGreaterThan(0)
+    for (const id of outstanding) {
+      const r = recordImpairmentTest({ assetId: id, indicator: 'Annual test · indefinite life', recoverable: 9_000_000_000, basis: 'Value in use', source: 'Board-approved DCF' })
+      expect(r.ok).toBe(true)
+    }
+    expect(annualOutstanding.value).toHaveLength(0)
+    expect(annualDone.value.map((o) => o.asset.id).sort()).toEqual(['FA-0091', 'FA-0093'])
+    expect(annualObligations.value).toHaveLength(2)
+  })
+
+  it('offers exactly the eleven intangible codes', () => {
+    expect(INTANGIBLE_CODES).toHaveLength(11)
+    expect(INTANGIBLE_CODES.map((c) => c.code)).toContain('0607')
   })
 })

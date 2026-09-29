@@ -24,7 +24,7 @@
  *     and show "—" for book value rather than a stale number.
  */
 import { computed, ref } from 'vue'
-import { MpButton, MpIcon, MpTooltip, MpButtonGroup, MpSegmentedControl, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem } from '@mekari/pixel3'
+import { MpBadge, MpButton, MpIcon, MpTooltip, MpButtonGroup, MpSegmentedControl, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -76,6 +76,11 @@ const classFilter = ref('')
 const branchFilter = ref('')
 const statusFilter = ref('')
 const taxGroupFilter = ref('')
+// OD-44: tangible and intangible assets share one register; the type filter
+// narrows it without making a second list.
+const typeFilter = ref('')
+const typeOptions = ['Tangible', 'Intangible']
+const classOptions = computed(() => Array.from(new Set([...assetClasses, ...fixedAssets.value.map((a) => a.class)])).sort())
 const filtersOpen = ref(false)
 
 const statusOptions = ['Active', 'Impaired', 'Disposed', 'Fully depreciated', 'Incomplete']
@@ -92,10 +97,11 @@ const activeDrawerFilters = computed(() =>
 )
 
 const hasActiveFilter = computed(() =>
-  !!(search.value || classFilter.value || branchFilter.value || statusFilter.value || taxGroupFilter.value),
+  !!(search.value || typeFilter.value || classFilter.value || branchFilter.value || statusFilter.value || taxGroupFilter.value),
 )
 function clearFilters() {
   search.value = ''
+  typeFilter.value = ''
   classFilter.value = ''
   branchFilter.value = ''
   statusFilter.value = ''
@@ -109,13 +115,14 @@ function clearFilters() {
  * unconditionally it is a link that does nothing, which is worse than no link.
  */
 const isFiltered = computed(() =>
-  !!(search.value || classFilter.value || branchFilter.value || statusFilter.value || taxGroupFilter.value),
+  !!(search.value || typeFilter.value || classFilter.value || branchFilter.value || statusFilter.value || taxGroupFilter.value),
 )
 
 // ── Rows ────────────────────────────────────────────────────────────────────
 const filtered = computed<FixedAsset[]>(() => {
   const q = search.value.trim().toLowerCase()
   return fixedAssets.value.filter((a) => {
+    if (typeFilter.value && a.type !== typeFilter.value) return false
     if (classFilter.value && a.class !== classFilter.value) return false
     if (branchFilter.value && a.branch !== branchFilter.value) return false
     if (statusFilter.value && a.status !== statusFilter.value) return false
@@ -191,6 +198,7 @@ function hideColumn(key: string) { columnVisibility.value[key] = false }
 const allColumns = computed<TableColumn[]>(() => {
   const cols: TableColumn[] = [
     { key: 'name', label: t('Asset'), kind: 'name', sortable: true, sortType: 'text' },
+    { key: 'type', label: t('Type'), kind: 'status', sortable: true, sortType: 'text' },
     { key: 'class', label: t('Class'), kind: 'default', sortable: true, sortType: 'text' },
     { key: 'acquired', label: t('Acquired'), kind: 'date', sortable: true, sortType: 'date', align: 'left' },
   ]
@@ -248,6 +256,7 @@ const exportOpen = ref(false)
 const exportColumns = [
   { key: 'id', label: t('Asset number') },
   { key: 'name', label: t('Asset') },
+  { key: 'type', label: t('Type') },
   { key: 'class', label: t('Class') },
   { key: 'acquired', label: t('Acquired') },
   { key: 'cost', label: t('Acquisition cost') },
@@ -325,7 +334,8 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
          about which figures the whole screen reports. -->
     <template #filters>
       <div class="filter-left">
-        <ErpFilterSelect id="asset-class" v-model="classFilter" :placeholder="t('Class')" :options="assetClasses" />
+        <ErpFilterSelect id="asset-type" v-model="typeFilter" :placeholder="t('Type')" :options="typeOptions" />
+        <ErpFilterSelect id="asset-class" v-model="classFilter" :placeholder="t('Class')" :options="classOptions" />
         <ErpFilterSelect id="asset-status" v-model="statusFilter" :placeholder="t('Status')" :options="statusOptions" />
         <MpButton class="filter-all-btn" is-rounded variant="secondary" @click="filtersOpen = true">
           {{ t('All filters') }}{{ activeDrawerFilters ? ` (${activeDrawerFilters})` : '' }}
@@ -441,6 +451,14 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
       </span>
     </template>
 
+    <!-- OD-44: the type, and for a right-of-use asset the lease it comes from. -->
+    <template #cell-type="{ row }">
+      <span class="asset-type">
+        <MpBadge for="additionalInformation" :type="(row as unknown as FixedAsset).type === 'Intangible' ? 'information' : 'announcement'">{{ t((row as unknown as FixedAsset).type) }}</MpBadge>
+        <MpBadge v-if="(row as unknown as FixedAsset).leaseId" for="additionalInformation" type="warning" data-tour="lease-register">{{ t('Lease') }} {{ (row as unknown as FixedAsset).leaseId }}</MpBadge>
+      </span>
+    </template>
+
     <template #cell-cost="{ row }">
       {{ formatIDR((row as unknown as FixedAsset).cost) }}
     </template>
@@ -535,6 +553,8 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
    then search. rule/filter-bar-left-gap — the left gap is always 16px. */
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); flex: 0 1 auto; min-width: 0; }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-left: auto; flex: none; }
+
+.asset-type { display: inline-flex; gap: var(--mp-spacing-1); flex-wrap: wrap; }
 
 /* Stats — divider-separated columns, matching BillsIndexPage and
    CashManagementPage. No card: index pages do not box their stats. */

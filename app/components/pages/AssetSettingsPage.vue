@@ -10,6 +10,11 @@
 import { MpIcon, MpButton } from '@mekari/pixel3'
 import { infoToast } from '~/utils/toasts'
 import { classMaster, settingToggles } from '~/data/fixedAssetScreens'
+import AssetPostingPolicy from '~/components/patterns/AssetPostingPolicy.vue'
+
+// OD-09, OD-10: the posting settings are live controls; the rest of the
+// depreciation policy group stays as stated.
+const LIVE_POLICY = ['Journal date is the last day of the period', 'Post automatically after review']
 
 const { t } = useLocale()
 </script>
@@ -60,8 +65,9 @@ const { t } = useLocale()
       <div class="st__cardhead">
         <span class="st__cardtitle">{{ g.head }}</span>
       </div>
+      <AssetPostingPolicy v-if="g.head === 'Depreciation policy'" />
       <div class="st__toggles">
-        <div v-for="(item, ii) in g.items" :key="ii" class="st__toggle">
+        <div v-for="(item, ii) in g.items.filter((x) => !LIVE_POLICY.includes(x.label))" :key="ii" class="st__toggle">
           <span class="st__box" :class="{ 'st__box--on': item.isOn }">
             <MpIcon v-if="item.isOn" name="check" size="xs" />
           </span>

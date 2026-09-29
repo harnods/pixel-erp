@@ -33,6 +33,14 @@ import {
 import {
   runFor, postRun, reverseRun, nextUnposted, CURRENT_MONTH,
 } from '~/data/fixedAssetSession'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import {
+  generateRun, postPeriod, draftRunFor, lastPostedPeriod, nextOpenPeriod, periodOfMonth, FY_PERIODS, CURRENT_PERIOD,
+  canChangeValue, viewAs,
+} from '~/data/assetStore'
+import { isAfter, periodLabel, periodEndDate } from '~/data/assetEngine'
+import { journalDateFor, journalDatePolicyLabel, autoPostRuns } from '~/data/assetPolicy'
+import { projection, PROJECTION_HORIZONS } from '~/data/assetPreview'
 
 const { t } = useLocale()
 const router = useRouter()
@@ -58,11 +66,52 @@ const confirming = ref<SchedulePeriod | null>(null)
 const journal = computed(() => (confirming.value ? journalFor(confirming.value) : []))
 const journalTotal = computed(() => journal.value.reduce((s, l) => s + (l.debit ?? 0), 0))
 
-/** The journal date follows company policy: the last day of the period. */
+/**
+ * OD-09. The journal date follows the policy set in Asset settings: period
+ * end, the posting date (today), or a fixed day of the following month.
+ */
+const today = periodEndDate(CURRENT_PERIOD)
 function periodEnd(month: number): string {
-  const last = new Date(2026, month + 1, 0).getDate()
-  return `${String(last).padStart(2, '0')}/${String(month + 1).padStart(2, '0')}/2026`
+  return journalDateFor(periodOfMonth(month), today)
 }
+
+// ── Generating a run (OD-08, FG2-AC1, FG2-AC4) ─────────────────────────────
+// Any period up to today can be asked for. A closed one is refused with the
+// next open period named, and nothing is written.
+const genPeriod = ref<string>(nextOpenPeriod.value ?? CURRENT_PERIOD)
+const genOptions = FY_PERIODS.filter((p) => !isAfter(p, CURRENT_PERIOD)).map((p) => ({ value: p, label: periodLabel(p) }))
+const genError = ref('')
+const genDone = ref('')
+function generate() {
+  genError.value = ''
+  genDone.value = ''
+  if (!canChangeValue.value) { genError.value = t(`Viewing as ${viewAs.value}. Generating a run needs the Owner or Accounting role.`); return }
+  const r = generateRun(genPeriod.value)
+  if (!r.ok) { genError.value = t(r.reason); return }
+  const label = periodLabel(r.run.period)
+  // OD-10: with automatic posting on, a generated run posts at once. It can
+  // still be reversed, the same way as one posted by hand.
+  if (autoPostRuns.value && nextOpenPeriod.value === r.run.period) {
+    const pr = postPeriod(r.run.period)
+    if (pr.ok) {
+      genDone.value = t(`${label} generated and posted automatically · ${pr.run.journal} · ${r.run.lines.length} assets`)
+      successToast(genDone.value)
+      return
+    }
+  }
+  genDone.value = t(`Draft generated for ${label} · ${r.run.lines.length} assets · ${formatIDR(r.run.total)}. Nothing is posted yet.`)
+  successToast(genDone.value)
+}
+const draftFor = (month: number) => draftRunFor(periodOfMonth(month))
+
+// ── Forward projection (OD-12) ──────────────────────────────────────────────
+const horizon = ref<string>('12')
+const horizonOptions = PROJECTION_HORIZONS.map((n) => ({ value: String(n), label: `${n} months` }))
+const projected = computed(() => (periods.value, projection(Number(horizon.value))))
+const projectedTotals = computed(() => ({
+  accounting: projected.value.reduce((s, m) => s + m.accounting, 0),
+  tax: projected.value.reduce((s, m) => s + m.tax, 0),
+}))
 
 // Read inside the computed so it re-reads after every post and reversal.
 const pendingNumber = computed(() => (periods.value, nextJournalNumber()))
@@ -109,6 +158,9 @@ function stateLabel(p: SchedulePeriod) {
         <div class="ds__runnote">
           {{ actionable.assetCount }} {{ t(actionable.assetCount === 1 ? 'asset' : 'assets') }}
           · {{ t('journal dated') }} {{ periodEnd(actionable.month) }}
+          <span data-tour="set-jdate-effect">({{ t(journalDatePolicyLabel()) }})</span>
+          · {{ draftFor(actionable.month) ? t(`draft generated ${draftFor(actionable.month)!.generatedOn}`) : t('no draft yet') }}
+          <template v-if="autoPostRuns"> · {{ t('posts automatically when generated') }}</template>
         </div>
       </div>
       <div class="ds__runfig">
@@ -116,6 +168,18 @@ function stateLabel(p: SchedulePeriod) {
         <div class="ds__runfigvalue">{{ formatIDR(actionable.accounting) }}</div>
       </div>
       <MpButton is-rounded @click="confirming = actionable">{{ t('Review and post') }}</MpButton>
+    </div>
+
+    <!-- On-demand generation for a chosen period. -->
+    <div class="ds__gen" data-tour="run-empty">
+      <div class="ds__genfield">
+        <label class="ds__genlabel" for="ds-gen-period">{{ t('Generate a run for') }}</label>
+        <ErpFilterSelect id="ds-gen-period" v-model="genPeriod" :placeholder="t('Choose a period')" :options="genOptions" width="220px" :is-clearable="false" />
+      </div>
+      <MpButton variant="secondary" is-rounded @click="generate">{{ t('Generate') }}</MpButton>
+      <p v-if="genError" class="ds__generror">{{ genError }}</p>
+      <p v-else-if="genDone" class="ds__gendone">{{ genDone }}</p>
+      <p v-else class="ds__genhint">{{ t('Both books in one pass. Generating again replaces the draft, never a posted run.') }}</p>
     </div>
 
     <!-- ── Year figures ── -->
@@ -213,7 +277,7 @@ function stateLabel(p: SchedulePeriod) {
                     {{ runFor(p.month)?.journal }}
                   </span>
                   <MpTooltip
-                    v-if="p.state === 'posted' && p.month === CURRENT_MONTH"
+                    v-if="p.state === 'posted' && periodOfMonth(p.month) === lastPostedPeriod"
                     :id="`ds-rev-${p.month}`" :label="t('Reverse posting')" placement="top" use-portal
                   >
                     <MpButton
@@ -280,6 +344,52 @@ function stateLabel(p: SchedulePeriod) {
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- ── Forward projection (OD-12) ── -->
+    <div class="ds__proj">
+      <div class="ds__projhead">
+        <div>
+          <div class="ds__projtitle">{{ t('Forward projection') }}</div>
+          <div class="ds__projsub">
+            {{ t('Both books, from') }} {{ projected[0]?.label }} {{ t('to') }} {{ projected[projected.length - 1]?.label }}.
+            {{ t('Assumes no additions or disposals.') }}
+          </div>
+        </div>
+        <div class="ds__genfield">
+          <label class="ds__genlabel" for="ds-horizon">{{ t('Horizon') }}</label>
+          <ErpFilterSelect id="ds-horizon" v-model="horizon" :placeholder="t('Horizon')" :options="horizonOptions" width="160px" :is-clearable="false" />
+        </div>
+      </div>
+      <div class="ds__card">
+        <table class="ds__table">
+          <thead>
+            <tr>
+              <th class="ds__th ds__th--period">{{ t('Period') }}</th>
+              <th class="ds__th ds__th--num">{{ t('Accounting charge') }}</th>
+              <th class="ds__th ds__th--num">{{ t('Tax charge') }}</th>
+              <th class="ds__th ds__th--num">{{ t('Difference') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="m in projected" :key="m.period" class="ds__tr ds__tr--projected ds__tr--static">
+              <td class="ds__td">
+                <span class="ds__periodname">{{ m.label }}</span>
+                <span class="ds__count"> {{ m.assets }} {{ t(m.assets === 1 ? 'asset' : 'assets') }}</span>
+              </td>
+              <td class="ds__td ds__td--num">{{ formatIDR(m.accounting) }}</td>
+              <td class="ds__td ds__td--num">{{ formatIDR(m.tax) }}</td>
+              <td class="ds__td ds__td--num">{{ formatIDR(m.accounting - m.tax) }}</td>
+            </tr>
+            <tr class="ds__tr ds__tr--total ds__tr--static">
+              <td class="ds__td">{{ t(`Next ${horizon} months`) }}</td>
+              <td class="ds__td ds__td--num">{{ formatIDR(projectedTotals.accounting) }}</td>
+              <td class="ds__td ds__td--num">{{ formatIDR(projectedTotals.tax) }}</td>
+              <td class="ds__td ds__td--num">{{ formatIDR(projectedTotals.accounting - projectedTotals.tax) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <!-- ── Journal preview ── -->
@@ -360,6 +470,19 @@ function stateLabel(p: SchedulePeriod) {
   font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default); font-variant-numeric: tabular-nums;
 }
+
+.ds__gen { display: flex; align-items: flex-end; gap: var(--mp-spacing-3); flex-wrap: wrap; margin-bottom: var(--mp-spacing-5); }
+.ds__genfield { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.ds__genlabel { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.ds__genhint, .ds__gendone, .ds__generror { font-size: var(--mp-font-sizes-sm); margin: 0; line-height: var(--mp-line-heights-sm); flex-basis: 100%; }
+.ds__genhint { color: var(--mp-text-secondary); }
+.ds__gendone { color: var(--mp-text-default); }
+.ds__generror { color: var(--mp-text-critical); }
+.ds__proj { margin-top: var(--mp-spacing-6); }
+.ds__projhead { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-3); }
+.ds__projtitle { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.ds__projsub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.ds__tr--static { cursor: default; }
 
 .stats-section {
   display: flex; gap: var(--mp-spacing-6); align-items: flex-start;

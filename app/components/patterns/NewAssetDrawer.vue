@@ -9,13 +9,18 @@
  * editable. Validated on submit, with the error at the field.
  */
 import { ref, watch, computed } from 'vue'
-import { MpButton, MpIcon, MpInput } from '@mekari/pixel3'
+import { MpButton, MpCheckbox, MpIcon, MpInput } from '@mekari/pixel3'
+import { formatIDR } from '~/utils/currency'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { createAsset, earliestEffectivePeriod, canChangeValue, viewAs } from '~/data/assetStore'
 import { assetBranches, STATUTORY_GROUPS } from '~/data/fixedAssets'
 import { classMaster } from '~/data/fixedAssetScreens'
 import { parseRupiah } from '~/data/assetValueChange'
 import { periodLabel } from '~/data/assetEngine'
+import { previewNewAsset } from '~/data/assetPreview'
+import { INTANGIBLE_TAX_GROUPS } from '~/data/assetIntangibles'
+import AssetLifeSchedule from '~/components/patterns/AssetLifeSchedule.vue'
+import IntangibleCodePicker from '~/components/patterns/IntangibleCodePicker.vue'
 
 const props = defineProps<{ isOpen: boolean }>()
 const emit = defineEmits<{
@@ -26,7 +31,7 @@ const emit = defineEmits<{
 const { t } = useLocale()
 
 const classOptions = [...classMaster.map((c) => c.class), 'Intangible assets']
-const groupOptions = Object.keys(STATUTORY_GROUPS)
+const groupOptions = computed(() => (f.value.cls === 'Intangible assets' ? INTANGIBLE_TAX_GROUPS : Object.keys(STATUTORY_GROUPS).filter((g) => g !== 'Lease payments')))
 const methodOptions = [
   { value: 'straight-line', label: 'Straight line' },
   { value: 'reducing-balance', label: 'Reducing balance' },
@@ -35,6 +40,7 @@ const methodOptions = [
 const blank = () => ({
   name: '', cls: '', branch: '', cost: '', inService: '', lifeYears: '', residual: '0',
   method: 'straight-line', taxGroup: '', location: '', custodian: '',
+  indefinite: false, statutoryCode: '',
 })
 const f = ref(blank())
 const errors = ref<Record<string, string>>({})
@@ -54,6 +60,36 @@ watch(() => f.value.cls, (cls) => {
 })
 
 const posted = computed(() => periodLabel(earliestEffectivePeriod.value))
+
+// FG-9: an intangible is chosen by its class. It has no tag, location or
+// custodian, takes a statutory code, and may have an indefinite life.
+const isIntangible = computed(() => f.value.cls === 'Intangible assets')
+watch(isIntangible, (on) => {
+  if (on) { f.value.location = ''; f.value.custodian = '' }
+  else { f.value.indefinite = false; f.value.statutoryCode = '' }
+})
+
+/**
+ * TS-04. The whole-life schedule on both books, from the same engine and the
+ * same acquisition createAsset would record, before anything is committed.
+ * Shown once the figures it needs are valid.
+ */
+const preview = computed(() => {
+  const v = f.value
+  const cost = parseRupiah(v.cost)
+  const years = Number(v.lifeYears.replace(',', '.'))
+  const residual = parseRupiah(v.residual) ?? 0
+  const indefinite = isIntangible.value && v.indefinite
+  if (!cost || !validDate(v.inService) || Number(v.inService.slice(6)) < 2020) return null
+  if (!indefinite && !(years > 0)) return null
+  if (residual >= cost) return null
+  try {
+    return previewNewAsset({
+      cost, inServiceDate: v.inService.trim(), lifeMonths: indefinite ? null : Math.round(years * 12),
+      residual: indefinite ? 0 : residual, method: v.method as 'straight-line' | 'reducing-balance', taxGroup: v.taxGroup || null,
+    })
+  } catch { return null }
+})
 
 /** dd/mm/yyyy, a real date. */
 function validDate(s: string): boolean {
@@ -75,7 +111,10 @@ function submit() {
   if (!validDate(v.inService)) e.inService = 'Enter the in-service date as dd/mm/yyyy'
   else if (Number(v.inService.slice(6)) < 2020) e.inService = 'This prototype holds assets in service from 2020'
   const years = Number(v.lifeYears.replace(',', '.'))
-  if (!years || years <= 0) e.lifeYears = 'Enter the useful life in years'
+  const indefinite = isIntangible.value && v.indefinite
+  if (!indefinite && (!years || years <= 0)) e.lifeYears = 'Enter the useful life in years'
+  if (isIntangible.value && !v.statutoryCode) e.statutoryCode = 'Choose the statutory intangible code'
+  if (isIntangible.value && v.taxGroup && !INTANGIBLE_TAX_GROUPS.includes(v.taxGroup)) e.taxGroup = 'A buildings group cannot be assigned to an intangible. Choose tax group 1 to 4.'
   const residual = parseRupiah(v.residual) ?? 0
   if (cost && residual >= cost) e.residual = 'The residual value must be below the cost'
   if (v.cls && v.cls !== 'Intangible assets' && !v.taxGroup) e.taxGroup = 'Choose the statutory group'
@@ -83,8 +122,9 @@ function submit() {
   if (Object.keys(e).length) return
   const r = createAsset({
     name: v.name.trim(), class: v.cls, branch: v.branch, cost: cost!, inServiceDate: v.inService.trim(),
-    lifeMonths: Math.round(years * 12), residual, method: v.method as 'straight-line' | 'reducing-balance',
+    lifeMonths: indefinite ? null : Math.round(years * 12), residual: indefinite ? 0 : residual, method: v.method as 'straight-line' | 'reducing-balance',
     taxGroup: v.taxGroup || null, location: v.location.trim(), custodian: v.custodian.trim(),
+    ...(isIntangible.value ? { statutoryCode: v.statutoryCode } : {}),
   })
   if (!r.ok) { errors.value = { form: r.reason }; return }
   emit('created', r.id)
@@ -134,8 +174,21 @@ function submit() {
                 <p v-else class="nad-hint">{{ t(`Depreciation for periods before ${posted} that are already posted is brought up to date in one journal.`) }}</p>
               </div>
             </div>
-            <div class="nad-row nad-row--3">
+            <template v-if="isIntangible">
               <div class="nad-field">
+                <label class="nad-label" for="nad-code">{{ t('Statutory intangible code') }}</label>
+                <IntangibleCodePicker id="nad-code" v-model="f.statutoryCode" />
+                <p v-if="errors.statutoryCode" class="nad-error">{{ t(errors.statutoryCode) }}</p>
+              </div>
+              <div class="nad-field">
+                <MpCheckbox id="nad-indefinite" :is-checked="f.indefinite" @change="f.indefinite = !f.indefinite">
+                  {{ t('Indefinite useful life') }}
+                </MpCheckbox>
+                <p class="nad-hint">{{ t('Not amortised in the accounts. Tested for impairment every year instead. The tax book still amortises over the statutory group.') }}</p>
+              </div>
+            </template>
+            <div class="nad-row nad-row--3">
+              <div v-if="!(isIntangible && f.indefinite)" class="nad-field">
                 <label class="nad-label" for="nad-life">{{ t('Useful life (years)') }}</label>
                 <MpInput id="nad-life" v-model="f.lifeYears" :is-invalid="!!errors.lifeYears" />
                 <p v-if="errors.lifeYears" class="nad-error">{{ t(errors.lifeYears) }}</p>
@@ -156,7 +209,7 @@ function submit() {
               <p v-if="errors.taxGroup" class="nad-error">{{ t(errors.taxGroup) }}</p>
               <p v-else class="nad-hint">{{ t('Set from the class. The group fixes the tax life and method.') }}</p>
             </div>
-            <div class="nad-row">
+            <div v-if="!isIntangible" class="nad-row">
               <div class="nad-field">
                 <label class="nad-label" for="nad-location">{{ t('Location') }}</label>
                 <MpInput id="nad-location" v-model="f.location" />
@@ -165,6 +218,17 @@ function submit() {
                 <label class="nad-label" for="nad-custodian">{{ t('Custodian') }}</label>
                 <MpInput id="nad-custodian" v-model="f.custodian" />
               </div>
+            </div>
+
+            <!-- TS-04: what the asset will charge, before it exists. -->
+            <div class="nad-preview">
+              <div class="nad-preview-title">{{ t('Schedule preview · whole life, both books') }}</div>
+              <AssetLifeSchedule
+                v-if="preview"
+                :schedule="preview"
+                :caption="`${preview.monthly.accounting === null ? 'Accounting: not amortised' : 'Accounting ' + formatIDR(preview.monthly.accounting) + ' a month'} · ${preview.monthly.tax === null ? 'tax: no statutory group' : 'tax ' + formatIDR(preview.monthly.tax) + ' a month'}. Nothing is recorded until you create the asset.`"
+              />
+              <p v-else class="nad-hint">{{ t('Enter the cost, the in-service date and the useful life to see the schedule.') }}</p>
             </div>
           </div>
 
@@ -212,6 +276,8 @@ function submit() {
   border-top: 1px solid var(--mp-border-default);
 }
 .nad-foot-error { flex: 1; }
+.nad-preview { border-top: 1px solid var(--mp-border-default); padding-top: var(--mp-spacing-4); display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.nad-preview-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .nad-footright { display: flex; gap: var(--mp-spacing-2); flex: none; }
 .nad-enter-active, .nad-leave-active { transition: opacity 0.16s ease; }
 .nad-enter-from, .nad-leave-to { opacity: 0; }
