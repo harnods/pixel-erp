@@ -14,7 +14,9 @@
 import { computed, ref, watch } from 'vue'
 import { MpButton, MpIcon, MpInput, MpCheckbox } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
-import { formatIDR } from '~/utils/currency'
+import { formatIDRWhole } from '~/utils/currency'
+import { plainDurations } from '~/data/assetUiDuration'
+import { gainLossPair } from '~/data/assetUiFigures'
 import {
   VALUE_ACTIONS, blankForm, periodOptions, previewValueChange, effectiveNote, parseRupiah,
   type ValueAction, type ValueChangeForm,
@@ -108,10 +110,12 @@ const commitLabel = computed(() => ({
 }[form.value.action]))
 
 function money(n: number | null | undefined): string {
-  return n === null || n === undefined ? 'None' : formatIDR(n)
+  return n === null || n === undefined ? 'None' : formatIDRWhole(n)
 }
+/** FG3-AC11: a disposal's gain or loss on both books, side by side in one row. */
+const gainLossBoth = computed(() => (form.value.action === 'dispose-part' || form.value.action === 'dispose' ? gainLossPair(preview.value) : null))
 function gainLoss(n: number): string {
-  return `${n >= 0 ? 'Gain' : 'Loss'} ${formatIDR(Math.abs(n))}`
+  return `${n >= 0 ? 'Gain' : 'Loss'} ${formatIDRWhole(Math.abs(n))}`
 }
 
 function commit() {
@@ -244,7 +248,7 @@ const approvalNote = computed(() => {
                   <label class="vcd-label" for="vcd-cost">{{ t('Correct cost (Rp)') }}</label>
                   <MpInput id="vcd-cost" v-model="form.correctedCost" :is-invalid="!!err('correctedCost')" />
                   <p v-if="err('correctedCost')" class="vcd-error">{{ t(err('correctedCost')) }}</p>
-                  <p v-else class="vcd-hint">{{ t('Recorded now at') }} {{ formatIDR(ledgerOf(asset.id)!.acquisitionCost) }}</p>
+                  <p v-else class="vcd-hint">{{ t('Recorded now at') }} {{ formatIDRWhole(ledgerOf(asset.id)!.acquisitionCost) }}</p>
                 </div>
                 <div class="vcd-field">
                   <label class="vcd-label" for="vcd-reason">{{ t('What the error was') }}</label>
@@ -384,19 +388,19 @@ const approvalNote = computed(() => {
                   <div class="vcd-kv"><span>{{ t('Recoverable amount') }}</span><span>{{ money(Number(form.recoverable.replace(/\D/g, ''))) }}</span></div>
                   <div class="vcd-kv vcd-kv--result">
                     <span>{{ t('Outcome') }}</span>
-                    <span>{{ preview.impairment?.loss ? `${t('Impaired')}: ${t('write-down of')} ${formatIDR(preview.impairment.loss)}` : t('No impairment. The test is kept on the asset history.') }}</span>
+                    <span>{{ preview.impairment?.loss ? `${t('Impaired')}: ${t('write-down of')} ${formatIDRWhole(preview.impairment.loss)}` : t('No impairment. The test is kept on the asset history.') }}</span>
                   </div>
                 </div>
 
                 <!-- Reversal: uncapped, cap, and which applied -->
                 <div v-if="preview.reversal" class="vcd-block">
-                  <div class="vcd-kv"><span>{{ t('Carrying amount now') }}</span><span>{{ formatIDR(preview.reversal.carrying) }}</span></div>
-                  <div class="vcd-kv"><span>{{ t('Recovery found by the test') }}</span><span>{{ formatIDR(preview.reversal.uncapped) }}</span></div>
-                  <div class="vcd-kv"><span>{{ t('Cap: unimpaired carrying amount') }}</span><span>{{ formatIDR(preview.reversal.unimpaired) }}</span></div>
-                  <div class="vcd-kv"><span>{{ t('Most that can be written back') }}</span><span>{{ formatIDR(preview.reversal.cap) }}</span></div>
+                  <div class="vcd-kv"><span>{{ t('Carrying amount now') }}</span><span>{{ formatIDRWhole(preview.reversal.carrying) }}</span></div>
+                  <div class="vcd-kv"><span>{{ t('Recovery found by the test') }}</span><span>{{ formatIDRWhole(preview.reversal.uncapped) }}</span></div>
+                  <div class="vcd-kv"><span>{{ t('Cap: unimpaired carrying amount') }}</span><span>{{ formatIDRWhole(preview.reversal.unimpaired) }}</span></div>
+                  <div class="vcd-kv"><span>{{ t('Most that can be written back') }}</span><span>{{ formatIDRWhole(preview.reversal.cap) }}</span></div>
                   <div class="vcd-kv vcd-kv--result">
                     <span>{{ preview.reversal.capApplied ? t('Cap applied') : t('Recovery applied in full') }}</span>
-                    <span>{{ formatIDR(preview.reversal.applied) }}</span>
+                    <span>{{ formatIDRWhole(preview.reversal.applied) }}</span>
                   </div>
                 </div>
 
@@ -440,6 +444,22 @@ const approvalNote = computed(() => {
                   </p>
                 </div>
 
+                <!-- FG3-AC11: the two books' gain or loss, side by side in one row. -->
+                <div v-if="gainLossBoth" class="vcd-block" data-testid="vcd-gainloss-both">
+                  <div class="vcd-block-title">{{ t('Gain or loss on each book') }}</div>
+                  <div class="vcd-pair">
+                    <div class="vcd-pair-cell">
+                      <div class="vcd-compare-label">{{ t('Accounting') }}</div>
+                      <div class="vcd-compare-num vcd-strong vcd-pair-num">{{ gainLossBoth.accounting === null ? t('None') : gainLoss(gainLossBoth.accounting) }}</div>
+                    </div>
+                    <div v-if="hasTax" class="vcd-pair-cell">
+                      <div class="vcd-compare-label">{{ t('Tax') }}</div>
+                      <div class="vcd-compare-num vcd-strong vcd-pair-num">{{ gainLossBoth.tax === null ? t('None') : gainLoss(gainLossBoth.tax) }}</div>
+                    </div>
+                  </div>
+                  <p class="vcd-hint">{{ t('Each measured against that book\'s carrying amount for the part disposed of.') }}</p>
+                </div>
+
                 <!-- Both books, before and after -->
                 <div v-for="b in preview.books" :key="b.book" class="vcd-block">
                   <div class="vcd-block-title">
@@ -460,8 +480,8 @@ const approvalNote = computed(() => {
                     <div class="vcd-compare-num">{{ money(b.costBefore) }}</div>
                     <div class="vcd-compare-num">{{ b.costAfter === null ? t('Disposed') : money(b.costAfter) }}</div>
                     <div class="vcd-compare-label">{{ t('Life') }}</div>
-                    <div class="vcd-compare-text">{{ b.lifeBefore }}</div>
-                    <div class="vcd-compare-text">{{ b.lifeAfter }}</div>
+                    <div class="vcd-compare-text">{{ plainDurations(b.lifeBefore) }}</div>
+                    <div class="vcd-compare-text">{{ plainDurations(b.lifeAfter) }}</div>
                     <template v-if="b.disposalCharge">
                       <div class="vcd-compare-label">{{ t(`Depreciation to ${b.disposalCharge.date}`) }}</div>
                       <div class="vcd-compare-num" />
@@ -475,7 +495,7 @@ const approvalNote = computed(() => {
                     <template v-if="b.catchUp">
                       <div class="vcd-compare-label">{{ t('Catch-up in the effective period') }}</div>
                       <div class="vcd-compare-num" />
-                      <div class="vcd-compare-num vcd-strong">{{ formatIDR(b.catchUp) }}</div>
+                      <div class="vcd-compare-num vcd-strong">{{ formatIDRWhole(b.catchUp) }}</div>
                     </template>
                   </div>
                   <p v-if="b.note" class="vcd-hint">{{ t(b.note) }}</p>
@@ -494,8 +514,8 @@ const approvalNote = computed(() => {
                     <tbody>
                       <tr v-for="r in b.rows" :key="r.period" :class="{ 'vcd-tr--applied': r.applied, 'vcd-tr--changed': r.before !== r.after }">
                         <td class="vcd-td">{{ r.label }}<span v-if="r.applied" class="vcd-td-sub">{{ t('Before the change') }}</span></td>
-                        <td class="vcd-td vcd-td--num">{{ r.before === null ? t(r.beforeAbsent ?? 'None') : formatIDR(r.before) }}</td>
-                        <td class="vcd-td vcd-td--num">{{ r.after === null ? t(r.afterAbsent ?? 'None') : formatIDR(r.after) }}</td>
+                        <td class="vcd-td vcd-td--num">{{ r.before === null ? t(r.beforeAbsent ?? 'None') : formatIDRWhole(r.before) }}</td>
+                        <td class="vcd-td vcd-td--num">{{ r.after === null ? t(r.afterAbsent ?? 'None') : formatIDRWhole(r.after) }}</td>
                         <td class="vcd-td vcd-td--num">{{ money(r.carryingAfter) }}</td>
                       </tr>
                     </tbody>
@@ -582,6 +602,9 @@ const approvalNote = computed(() => {
 .vcd-compare-num { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-align: right; font-variant-numeric: tabular-nums; }
 .vcd-compare-text { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); text-align: right; }
 .vcd-strong { font-weight: var(--mp-font-weights-semi-bold); }
+.vcd-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-2); }
+.vcd-pair-cell { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.vcd-pair-num { text-align: left; }
 
 .vcd-table { width: 100%; border-collapse: collapse; margin-top: var(--mp-spacing-2); }
 .vcd-th {

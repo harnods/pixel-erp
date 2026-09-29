@@ -6,10 +6,14 @@
  * is applied. The applied operation reverses as one unit from the register.
  */
 import { ref, watch, computed } from 'vue'
-import { MpButton, MpIcon, MpInput } from '@mekari/pixel3'
+import { MpButton, MpIcon } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
-import { BULK_FIELDS, planBulkEdit, applyBulkEdit, statutoryGroupOptions, type BulkField } from '~/data/assetBulkEdit'
+import { BULK_FIELDS, statutoryGroupOptions, type BulkField } from '~/data/assetBulkEdit'
+import {
+  planBulkEditFromLists, applyBulkEditWithHistory, bulkLocationOptions, bulkCustodianOptions,
+} from '~/data/assetUiBulkHistory'
 import { assetClassMaster } from '~/data/assetTaxbook'
+import { plainDurations } from '~/data/assetUiDuration'
 
 const props = defineProps<{ isOpen: boolean; ids: string[]; initialField?: BulkField }>()
 const emit = defineEmits<{
@@ -34,15 +38,19 @@ watch(field, () => { value.value = ''; error.value = '' })
 
 const fieldOptions = BULK_FIELDS.map((f) => ({ value: f.key, label: f.label }))
 const fieldHint = computed(() => BULK_FIELDS.find((f) => f.key === field.value)!.hint)
-const valueOptions = computed(() =>
-  field.value === 'taxGroup' ? statutoryGroupOptions : assetClassMaster.value.map((c) => c.class),
-)
-const isFreeText = computed(() => field.value === 'location' || field.value === 'custodian')
+// FG4-AC3: location and custodian come from the maintained lists the
+// custody drawer uses, never typed.
+const valueOptions = computed(() => {
+  if (field.value === 'location') return bulkLocationOptions()
+  if (field.value === 'custodian') return bulkCustodianOptions()
+  return field.value === 'taxGroup' ? statutoryGroupOptions : assetClassMaster.value.map((c) => c.class)
+})
+const isListField = computed(() => field.value === 'location' || field.value === 'custodian')
 
-const plan = computed(() => planBulkEdit(props.ids, field.value, value.value))
+const plan = computed(() => planBulkEditFromLists(props.ids, field.value, value.value))
 
 function apply() {
-  const r = applyBulkEdit(plan.value)
+  const r = applyBulkEditWithHistory(plan.value)
   if (!r.ok) { error.value = r.reason; return }
   const n = r.op.items.length
   emit('done', `${r.op.number} applied to ${n} ${n === 1 ? 'asset' : 'assets'}. Reverse it from the register if it was wrong.`)
@@ -72,8 +80,9 @@ function apply() {
               </div>
               <div class="bed-field">
                 <label class="bed-label" for="bed-value">{{ t('New value') }}</label>
-                <MpInput v-if="isFreeText" id="bed-value" v-model="value" />
-                <ErpFilterSelect v-else id="bed-value" v-model="value" :placeholder="t('Choose')" :options="valueOptions" width="100%" :is-clearable="false" />
+                <ErpFilterSelect id="bed-value" v-model="value" :placeholder="t('Choose')" :options="valueOptions" width="100%" :is-clearable="false" />
+                <p v-if="field === 'location'" class="bed-hint bed-hint--tight">{{ t('From the maintained location list. Add a new one in Asset settings.') }}</p>
+                <p v-else-if="isListField" class="bed-hint bed-hint--tight">{{ t('From the custodian list.') }}</p>
               </div>
             </div>
             <p class="bed-hint">{{ t(fieldHint) }}</p>
@@ -101,7 +110,7 @@ function apply() {
                     <tr v-for="l in plan.affected.slice(0, SAMPLE)" :key="l.id">
                       <td class="bed-td"><span class="bed-id">{{ l.id }}</span> {{ l.name }}</td>
                       <td class="bed-td">{{ l.before }}</td>
-                      <td class="bed-td bed-td--after">{{ l.after }}</td>
+                      <td class="bed-td bed-td--after">{{ plainDurations(l.after) }}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -155,6 +164,7 @@ function apply() {
 .bed-field { display: flex; flex-direction: column; gap: var(--mp-spacing-2); min-width: 0; }
 .bed-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .bed-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: var(--mp-spacing-2) 0 var(--mp-spacing-4); }
+.bed-hint--tight { margin: 0; }
 .bed-count { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); margin-bottom: var(--mp-spacing-3); }
 .bed-card { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); overflow: hidden; margin-bottom: var(--mp-spacing-3); }
 .bed-cardhead { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default); }

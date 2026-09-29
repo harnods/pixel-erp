@@ -14,7 +14,7 @@
  */
 import { computed, ref, watch } from 'vue'
 import { MpButton, MpIcon, MpInput } from '@mekari/pixel3'
-import { formatIDR } from '~/utils/currency'
+import { formatIDRWhole } from '~/utils/currency'
 import { infoToast, successToast } from '~/utils/toasts'
 import { actingUser, viewAs, canSeeFinancials } from '~/data/assetStore'
 import {
@@ -115,13 +115,13 @@ const statusLabel: Record<string, string> = { awaiting: 'Awaiting a decision', a
             <tr v-for="it in r.items" :key="it.assetId">
               <td class="ap__td"><span class="ap__assetlink" @click="router.push(`/assets/${it.assetId}`)">{{ it.assetId }}</span> {{ it.assetName }}</td>
               <td class="ap__td">{{ it.label }}<span v-if="it.applied" class="ap__applied"> · {{ t('recorded') }}</span></td>
-              <td v-if="canSeeFinancials" class="ap__td ap__td--num">{{ it.accounting === null ? t('None') : formatIDR(it.accounting) }}</td>
-              <td v-if="canSeeFinancials" class="ap__td ap__td--num">{{ it.tax === null ? t('No tax book') : formatIDR(it.tax) }}</td>
+              <td v-if="canSeeFinancials" class="ap__td ap__td--num">{{ it.accounting === null ? t('None') : formatIDRWhole(it.accounting) }}</td>
+              <td v-if="canSeeFinancials" class="ap__td ap__td--num">{{ it.tax === null ? t('No tax book') : formatIDRWhole(it.tax) }}</td>
             </tr>
             <tr v-if="canSeeFinancials && r.items.length > 1" class="ap__total">
               <td class="ap__td" colspan="2">{{ t('Total') }} · {{ r.items.length }} {{ t('assets') }}</td>
-              <td class="ap__td ap__td--num">{{ formatIDR(requestTotal(r).accounting) }}</td>
-              <td class="ap__td ap__td--num">{{ formatIDR(requestTotal(r).tax) }}</td>
+              <td class="ap__td ap__td--num">{{ formatIDRWhole(requestTotal(r).accounting) }}</td>
+              <td class="ap__td ap__td--num">{{ formatIDRWhole(requestTotal(r).tax) }}</td>
             </tr>
           </tbody>
         </table>

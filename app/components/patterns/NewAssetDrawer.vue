@@ -10,7 +10,7 @@
  */
 import { ref, watch, computed } from 'vue'
 import { MpButton, MpCheckbox, MpIcon, MpInput } from '@mekari/pixel3'
-import { formatIDR } from '~/utils/currency'
+import { formatIDRWhole } from '~/utils/currency'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { createAsset, earliestEffectivePeriod, canChangeValue, viewAs } from '~/data/assetStore'
 import { assetBranches } from '~/data/fixedAssets'
@@ -20,6 +20,7 @@ import { periodLabel } from '~/data/assetEngine'
 import { previewNewAsset } from '~/data/assetPreview'
 import { INTANGIBLE_TAX_GROUPS } from '~/data/assetIntangibles'
 import AssetLifeSchedule from '~/components/patterns/AssetLifeSchedule.vue'
+import { assetLocations, CUSTODIANS, locationBranch } from '~/data/assetCustody'
 import IntangibleCodePicker from '~/components/patterns/IntangibleCodePicker.vue'
 
 const props = defineProps<{ isOpen: boolean }>()
@@ -66,6 +67,21 @@ watch(() => f.value.cls, (cls) => {
 })
 
 const posted = computed(() => periodLabel(earliestEffectivePeriod.value))
+
+// FG4-AC3: location and custodian come from the same maintained lists as the
+// custody drawer. Both are optional; filled in, the new asset is complete for
+// custody from the start. The location list follows the branch chosen above.
+const locationOptions = computed(() => assetLocations.value
+  .filter((l) => !f.value.branch || l.branch === f.value.branch)
+  .map((l) => ({ value: l.name, label: `${l.name} · ${l.branch}` })))
+const custodianOptions = CUSTODIANS.map((c) => ({ value: c.name, label: `${c.name} · ${c.branch}` }))
+watch(() => f.value.location, (loc) => {
+  const b = loc ? locationBranch(loc) : null
+  if (b && !f.value.branch) f.value.branch = b
+})
+watch(() => f.value.branch, (b) => {
+  if (f.value.location && locationBranch(f.value.location) !== b) f.value.location = ''
+})
 
 // FG-9: an intangible is chosen by its class. It has no tag, location or
 // custodian, takes a statutory code, and may have an indefinite life.
@@ -123,6 +139,8 @@ function submit() {
   if (isIntangible.value && v.taxGroup && !INTANGIBLE_TAX_GROUPS.includes(v.taxGroup)) e.taxGroup = 'A buildings group cannot be assigned to an intangible. Choose tax group 1 to 4.'
   const residual = parseRupiah(v.residual) ?? 0
   if (cost && residual >= cost) e.residual = 'The residual value must be below the cost'
+  if (!isIntangible.value && v.location && !locationBranch(v.location)) e.location = 'Choose a location from the list'
+  if (!isIntangible.value && v.custodian && !CUSTODIANS.some((c) => c.name === v.custodian)) e.custodian = 'Choose a custodian from the list'
   if (v.cls && v.cls !== 'Intangible assets' && !v.taxGroup) e.taxGroup = 'Choose the statutory group'
   const def = classDef(v.cls)
   if (def && v.taxGroup) {
@@ -134,7 +152,8 @@ function submit() {
   const r = createAsset({
     name: v.name.trim(), class: v.cls, branch: v.branch, cost: cost!, inServiceDate: v.inService.trim(),
     lifeMonths: indefinite ? null : Math.round(years * 12), residual: indefinite ? 0 : residual, method: v.method as 'straight-line' | 'reducing-balance',
-    taxGroup: v.taxGroup || null, location: v.location.trim(), custodian: v.custodian.trim(),
+    taxGroup: v.taxGroup || null,
+    ...(isIntangible.value ? {} : { location: v.location, custodian: v.custodian }),
     ...(isIntangible.value ? { statutoryCode: v.statutoryCode } : {}),
   })
   if (!r.ok) { errors.value = { form: r.reason }; return }
@@ -222,12 +241,15 @@ function submit() {
             </div>
             <div v-if="!isIntangible" class="nad-row">
               <div class="nad-field">
-                <label class="nad-label" for="nad-location">{{ t('Location') }}</label>
-                <MpInput id="nad-location" v-model="f.location" />
+                <label class="nad-label" for="nad-location">{{ t('Location') }} <span class="nad-optional">{{ t('Optional') }}</span></label>
+                <ErpFilterSelect id="nad-location" v-model="f.location" :placeholder="t('Choose a location')" :options="locationOptions" width="100%" />
+                <p v-if="errors.location" class="nad-error">{{ t(errors.location) }}</p>
+                <p v-else class="nad-hint">{{ t('From the maintained list. Add a new one in Asset settings.') }}</p>
               </div>
               <div class="nad-field">
-                <label class="nad-label" for="nad-custodian">{{ t('Custodian') }}</label>
-                <MpInput id="nad-custodian" v-model="f.custodian" />
+                <label class="nad-label" for="nad-custodian">{{ t('Custodian') }} <span class="nad-optional">{{ t('Optional') }}</span></label>
+                <ErpFilterSelect id="nad-custodian" v-model="f.custodian" :placeholder="t('Choose a custodian')" :options="custodianOptions" width="100%" />
+                <p v-if="errors.custodian" class="nad-error">{{ t(errors.custodian) }}</p>
               </div>
             </div>
 
@@ -237,7 +259,7 @@ function submit() {
               <AssetLifeSchedule
                 v-if="preview"
                 :schedule="preview"
-                :caption="`${preview.monthly.accounting === null ? 'Accounting: not amortised' : 'Accounting ' + formatIDR(preview.monthly.accounting) + ' a month'} · ${preview.monthly.tax === null ? 'tax: no statutory group' : 'tax ' + formatIDR(preview.monthly.tax) + ' a month'}. Nothing is recorded until you create the asset.`"
+                :caption="`${preview.monthly.accounting === null ? 'Accounting: not amortised' : 'Accounting ' + formatIDRWhole(preview.monthly.accounting) + ' a month'} · ${preview.monthly.tax === null ? 'tax: no statutory group' : 'tax ' + formatIDRWhole(preview.monthly.tax) + ' a month'}. Nothing is recorded until you create the asset.`"
               />
               <p v-else class="nad-hint">{{ t('Enter the cost, the in-service date and the useful life to see the schedule.') }}</p>
             </div>
@@ -292,4 +314,5 @@ function submit() {
 .nad-footright { display: flex; gap: var(--mp-spacing-2); flex: none; }
 .nad-enter-active, .nad-leave-active { transition: opacity 0.16s ease; }
 .nad-enter-from, .nad-leave-to { opacity: 0; }
+.nad-optional { font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
 </style>

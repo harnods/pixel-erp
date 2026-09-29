@@ -19,11 +19,12 @@ import {
   approvalSettings, setApprovalSwitch, setApprovalThreshold, canConfigureApprovals,
 } from '~/data/assetApprovals'
 import { assetLocations, addLocation, BRANCHES, canEditCustody } from '~/data/assetCustody'
-import { formatIDR } from '~/utils/currency'
+import { formatIDRWhole } from '~/utils/currency'
 import {
   assetClassMaster, allowedGroupsFor, groupLifeMonths, updateClassDef, classCounts, canChangeClass,
 } from '~/data/assetTaxbook'
-import { METHOD_LABEL, formatLife } from '~/data/assetEngine'
+import { METHOD_LABEL } from '~/data/assetEngine'
+import { formatMonths } from '~/data/assetUiDuration'
 import { viewAs } from '~/data/assetStore'
 import AssetPostingPolicy from '~/components/patterns/AssetPostingPolicy.vue'
 import GuidedToursSetting from '~/tours/GuidedToursSetting.vue'
@@ -44,10 +45,14 @@ const approvalSwitches = [
   { key: 'valueChange' as const, label: 'Value change needs approval', detail: 'Cost correction, improvement, life or method revision, impairment and its reversal' },
 ]
 const settingsError = ref('')
+// A refused flip leaves the store as it was, but the native checkbox has
+// already moved. Re-keying the toggles redraws them from the store, so a
+// switch the role may not change snaps back at once.
+const toggleRedraw = ref(0)
 function flip(key: 'disposal' | 'writeOff' | 'valueChange', on: boolean) {
   settingsError.value = ''
   const e = setApprovalSwitch(key, on)
-  if (e) { settingsError.value = e; return }
+  if (e) { settingsError.value = e; toggleRedraw.value += 1; return }
   successToast(t(`${approvalSwitches.find((s) => s.key === key)!.label.replace(' needs approval', '')} approval ${on ? 'on' : 'off'}`))
 }
 const thresholdText = ref(approvalSettings.value.threshold ? String(approvalSettings.value.threshold) : '')
@@ -56,7 +61,7 @@ function saveThreshold() {
   const digits = thresholdText.value.replace(/\D/g, '')
   const e = setApprovalThreshold(digits ? Number(digits) : null)
   if (e) { settingsError.value = e; return }
-  successToast(t(digits ? `Threshold set to ${formatIDR(Number(digits))}` : 'Threshold removed'))
+  successToast(t(digits ? `Threshold set to ${formatIDRWhole(Number(digits))}` : 'Threshold removed'))
 }
 
 // ── Locations (FG4-AC3) ─────────────────────────────────────────────────────
@@ -148,8 +153,8 @@ function toggleOther() { infoToast(t('Not in this prototype')) }
               <td class="st__td">{{ c.defaultTaxGroup }}</td>
               <!-- The two lives sit beside each other because their disagreement
                    is the reason the module holds two books at all. -->
-              <td class="st__td st__td--num">{{ formatLife(groupLifeMonths(c.defaultTaxGroup)) }}</td>
-              <td class="st__td st__td--num">{{ formatLife(c.commercialLifeMonths) }}</td>
+              <td class="st__td st__td--num">{{ formatMonths(groupLifeMonths(c.defaultTaxGroup)) }}</td>
+              <td class="st__td st__td--num">{{ formatMonths(c.commercialLifeMonths) }}</td>
               <td class="st__td">{{ t(METHOD_LABEL[c.method]) }}</td>
               <td class="st__td st__td--mono">{{ c.accounts }}</td>
               <td class="st__td st__td--num">{{ counts[c.class] ?? 0 }}</td>
@@ -198,6 +203,7 @@ function toggleOther() { infoToast(t('Not in this prototype')) }
       <div class="st__toggles">
         <div v-for="sw in approvalSwitches" :key="sw.key" class="st__toggle">
           <MpToggle
+            :key="`${sw.key}-${toggleRedraw}`"
             :id="`st-appr-${sw.key}`"
             :is-checked="approvalSettings[sw.key]"
             :aria-label="t(sw.label)"
@@ -215,7 +221,7 @@ function toggleOther() { infoToast(t('Not in this prototype')) }
             <div class="st__togglev">
               {{ approvalSettings.threshold === null
                 ? t('No threshold. Leave empty to rely on the switches alone.')
-                : t(`An event moving more than ${formatIDR(approvalSettings.threshold)} needs its own approval, whatever the switches say.`) }}
+                : t(`An event moving more than ${formatIDRWhole(approvalSettings.threshold)} needs its own approval, whatever the switches say.`) }}
             </div>
           </div>
           <MpButton variant="secondary" is-rounded @click="saveThreshold">{{ t('Save threshold') }}</MpButton>

@@ -15,7 +15,7 @@
  */
 import { computed, ref } from 'vue'
 import { MpButton, MpInput, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription } from '@mekari/pixel3'
-import { formatIDR } from '~/utils/currency'
+import { formatIDRWhole } from '~/utils/currency'
 import { successToast, infoToast } from '~/utils/toasts'
 import {
   migrationRows, setFiscalOpening, reconcileMigration, activateMigration, reconciliations, migrationActivated,
@@ -110,18 +110,18 @@ function activate() {
     <div class="mg__tiles">
       <div class="mg__tile" :class="commercialTies ? 'mg__tile--ok' : 'mg__tile--bad'">
         <span class="mg__tilek">{{ t('Commercial opening · cost') }}</span>
-        <span class="mg__tilev">{{ formatIDR(totals.cost) }}</span>
-        <span class="mg__tilesub">{{ t('Ledger 1-1600 at the cut-over') }} {{ formatIDR(ob.cost) }}</span>
+        <span class="mg__tilev">{{ formatIDRWhole(totals.cost) }}</span>
+        <span class="mg__tilesub">{{ t('Ledger 1-1600 at the cut-over') }} {{ formatIDRWhole(ob.cost) }}</span>
       </div>
       <div class="mg__tile" :class="commercialTies ? 'mg__tile--ok' : 'mg__tile--bad'">
         <span class="mg__tilek">{{ t('Commercial opening · accumulated') }}</span>
-        <span class="mg__tilev">{{ formatIDR(totals.commercial) }}</span>
-        <span class="mg__tilesub">{{ t('Ledger 1-1700 at the cut-over') }} {{ formatIDR(ob.accumulated) }}</span>
+        <span class="mg__tilev">{{ formatIDRWhole(totals.commercial) }}</span>
+        <span class="mg__tilesub">{{ t('Ledger 1-1700 at the cut-over') }} {{ formatIDRWhole(ob.accumulated) }}</span>
       </div>
       <div class="mg__tile" :class="differing.length ? 'mg__tile--bad' : 'mg__tile--ok'">
         <span class="mg__tilek">{{ t('Fiscal opening · accumulated') }}</span>
-        <span class="mg__tilev">{{ formatIDR(totals.fiscal) }}</span>
-        <span class="mg__tilesub">{{ t('Prior tax working paper') }} {{ formatIDR(totals.prior) }}</span>
+        <span class="mg__tilev">{{ formatIDRWhole(totals.fiscal) }}</span>
+        <span class="mg__tilesub">{{ t('Prior tax working paper') }} {{ formatIDRWhole(totals.prior) }}</span>
       </div>
       <div class="mg__tile" :class="differing.length ? 'mg__tile--bad' : 'mg__tile--ok'">
         <span class="mg__tilek">{{ t('Assets that differ') }}</span>
@@ -154,9 +154,9 @@ function activate() {
                 <span class="mg__link" @click="router.push(`/assets/${r.id}`)">{{ r.id }}</span> {{ r.name }}
                 <span v-if="r.priorNote" class="mg__why">{{ t(r.priorNote) }}</span>
               </td>
-              <td class="mg__td mg__td--num">{{ formatIDR(r.cost) }}</td>
-              <td class="mg__td mg__td--num">{{ formatIDR(r.commercialAccumulated) }}</td>
-              <td class="mg__td mg__td--num">{{ r.computedFiscal === null ? t('No tax book') : formatIDR(r.computedFiscal) }}</td>
+              <td class="mg__td mg__td--num">{{ formatIDRWhole(r.cost) }}</td>
+              <td class="mg__td mg__td--num">{{ formatIDRWhole(r.commercialAccumulated) }}</td>
+              <td class="mg__td mg__td--num">{{ r.computedFiscal === null ? t('No tax book') : formatIDRWhole(r.computedFiscal) }}</td>
               <td class="mg__td mg__td--num">
                 <template v-if="editing === r.id">
                   <div class="mg__edit">
@@ -167,13 +167,13 @@ function activate() {
                 </template>
                 <template v-else-if="r.fiscalOpening === null">–</template>
                 <template v-else>
-                  <span :class="{ 'mg__edited': r.edited }">{{ formatIDR(r.fiscalOpening) }}</span>
+                  <span :class="{ 'mg__edited': r.edited }">{{ formatIDRWhole(r.fiscalOpening) }}</span>
                   <span v-if="!migrationActivated" class="mg__link mg__editlink" @click="startEdit(r.id, r.fiscalOpening)">{{ t('Edit') }}</span>
                   <span v-if="r.edited" class="mg__link mg__editlink" @click="resetEdit(r.id)">{{ t('Use computed') }}</span>
                 </template>
               </td>
-              <td class="mg__td mg__td--num">{{ r.priorFiscal === null ? '–' : formatIDR(r.priorFiscal) }}</td>
-              <td class="mg__td mg__td--num" :class="{ 'mg__td--bad': r.difference }">{{ r.difference === null ? '–' : formatIDR(r.difference) }}</td>
+              <td class="mg__td mg__td--num">{{ r.priorFiscal === null ? '–' : formatIDRWhole(r.priorFiscal) }}</td>
+              <td class="mg__td mg__td--num" :class="{ 'mg__td--bad': r.difference }">{{ r.difference === null ? '–' : formatIDRWhole(r.difference) }}</td>
             </tr>
             <tr v-if="editing === r.id && editError" class="mg__tr">
               <td class="mg__td mg__td--error" colspan="7">{{ t(editError) }}</td>
@@ -209,7 +209,7 @@ function activate() {
             </td>
             <td class="mg__td">
               <template v-if="ev.differing.length">
-                <div v-for="d in ev.differing" :key="d.id">{{ d.id }} · {{ formatIDR(d.fiscalOpening) }} {{ t('against') }} {{ formatIDR(d.priorFiscal) }}</div>
+                <div v-for="d in ev.differing" :key="d.id">{{ d.id }} · {{ formatIDRWhole(d.fiscalOpening) }} {{ t('against') }} {{ formatIDRWhole(d.priorFiscal) }}</div>
               </template>
               <template v-else>{{ t('None') }}</template>
             </td>
