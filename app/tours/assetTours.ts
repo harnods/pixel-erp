@@ -189,7 +189,7 @@ export const ASSET_TOURS: AssetTour[] = [
         target: 'run-table',
         title: 'The reference is on the run.',
         body: 'Each posted period carries its journal number and date, which is what makes a drill-down from the ledger possible.',
-        watch: 'September 2026 now reads Posted, JV-2026-0127, dated 05/10/2026.',
+        watch: 'September 2026 now reads Posted, with its JV-2026 journal number, dated 05/10/2026.',
         placement: 'top',
       },
       {

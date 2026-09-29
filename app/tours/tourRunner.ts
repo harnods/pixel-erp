@@ -14,7 +14,7 @@
  * Two things MpTour does are undone here, because every step asks for an
  * action on the screen: it sets pointer-events:none, z-index and position on
  * the target (restored straight after mount), and it draws a full-screen
- * overlay (hidden in TourPanel.vue's styles).
+ * overlay (hidden in TourLauncher.vue's styles).
  */
 import { h, nextTick, ref } from 'vue'
 import type { Router } from 'vue-router'
@@ -146,18 +146,21 @@ function show(panel: PanelProps, target: HTMLElement | null, step: TourStep | nu
   // none, and Popper then pushes the panel over it. In that case pin the
   // panel to the window corner furthest from the target's centre instead,
   // so the part the step is about stays visible and usable.
-  requestAnimationFrame(() => {
+  // Popper positions on its first update, a frame or two after mount.
+  pollTimer = setTimeout(() => {
+    pollTimer = null
     const p = panelEl.getBoundingClientRect()
     const t = target.getBoundingClientRect()
     const ox = Math.min(p.right, t.right) - Math.max(p.left, t.left)
     const oy = Math.min(p.bottom, t.bottom) - Math.max(p.top, t.top)
-    if (ox <= 0 || oy <= 0) return
+    // A sliver of overlap is fine; a panel over a third of its area is not.
+    if (ox <= 0 || oy <= 0 || (ox * oy) / (p.width * p.height) < 0.3) return
     const cx = (t.left + t.right) / 2
     const cy = (t.top + t.bottom) / 2
     const h = cx > window.innerWidth / 2 ? 'l' : 'r'
     const v = cy > window.innerHeight / 2 ? 't' : 'b'
     panelEl.setAttribute('data-pinned', `${v}${h}`)
-  })
+  }, 150)
 }
 
 // ── Moving ───────────────────────────────────────────────────────────────────
