@@ -8,6 +8,8 @@ import { classifyAsset, lampiranRows, assetClassMaster } from '../app/data/asset
 import { createLease, leases } from '../app/data/assetLeases'
 import { changeCustody } from '../app/data/assetCustody'
 import { journalDatePolicy, autoPostRuns } from '../app/data/assetPolicy'
+import { differenceByAsset } from '../app/data/fixedAssetScreens'
+import { fyFigures } from '../app/data/assetStore'
 import '../app/data/fixedAssetSession'
 
 /**
@@ -76,5 +78,18 @@ describe('asset modules work together', () => {
     setViewAs('Approver')
     expect(approveRequest(awaitingRequests.value[0]!.id).ok).toBe(true)
     expect(charge()).not.toBe(before)
+  })
+
+  it('the per-asset difference ties to the statement, with leases and disposals in play', () => {
+    const net = () => differenceByAsset().reduce((a, r) => a + (r.difference ?? 0), 0)
+    expect(net()).toBe(fyFigures().netTemporaryDifference)
+    classifyAsset('FA-0077', { group: 'Tax group 2' })
+    expect(net()).toBe(fyFigures().netTemporaryDifference)
+    createLease({
+      name: 'Forklift lease', underlying: 'Forklift', branch: 'Surabaya', startDate: '01/09/2026',
+      termMonths: 36, monthlyPayment: 10_000_000, annualRatePct: 12, options: '', exemption: null,
+    })
+    recordEvent('FA-0031', { kind: 'disposal', period: '2026-09', date: '30/09/2026', proceeds: 100_000_000 } as never)
+    expect(net()).toBe(fyFigures().netTemporaryDifference)
   })
 })

@@ -92,7 +92,7 @@ export const ASSET_TOURS: AssetTour[] = [
         target: 'diff-table',
         title: 'Open the accounting to tax difference report.',
         body: 'Each asset and event is listed with the reason its two books disagree, so the fiscal correction can be traced back to its source.',
-        watch: 'FA-0077 now appears with a tax life longer than accounting (8 years against 5). The report also flags that its per-asset net does not tie to the statement figure; that is what the prototype computes today.',
+        watch: 'FA-0077 now appears with a tax life longer than accounting (8 years against 5), and the per-asset total still ties to the statement figure, Rp79.921.875.',
         placement: 'top',
       },
       {

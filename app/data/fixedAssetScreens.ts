@@ -39,6 +39,11 @@ export interface ImpactRow {
 function inStatement(a: FixedAsset, type: FixedAsset['type'], p: Period): boolean {
   const l = ledgers.value[a.id]!
   if (a.type !== type || !l.books.tax) return false
+  // A right-of-use asset is reported on the statement's own lease line
+  // (FG-8.5), so it is kept out of the tangible and intangible halves here
+  // too. Otherwise the per-asset view and the statement describe different
+  // populations and cannot tie.
+  if (a.leaseId) return false
   if (isAfter(l.registeredFrom, p)) return false
   return !(l.disposedIn && isBefore(l.disposedIn, FY_START))
 }
