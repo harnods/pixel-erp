@@ -473,14 +473,13 @@ function reservedFor(productId: string): number {
 }
 
 // ── D-8 / UC-04 — the start gate ───────────────────────────────────────────────
-// Full reservation by default; the two Production readiness toggles relax it —
-// "Allow partial production" needs only ONE component reserved, "Can start work
-// order with limited stock" needs EVERY component reserved (each may be partial).
+// Full reservation by default; the partial toggles relax it — "Allow partial
+// consume" needs only ONE component reserved, "Allow partial completion" needs
+// EVERY component reserved (each may be partial). Off entirely with reservation off.
 const gate = computed(() => wo.value
   ? startGate(wo.value.id, {
       reservationOn: reservationEnabled(),
       partialMode: productionSettings.partialMode,
-      allowStartWithLimitedStock: productionSettings.allowStartWithLimitedStock,
     })
   : { allowed: true as const })
 const startBlocked = computed(() => !gate.value.allowed)

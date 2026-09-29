@@ -5,8 +5,8 @@
  * and its control right-aligned.
  *
  * Cross-reference: PRD v0.5 UC-00 — S-1 reservation method, S-2 entry-point
- * gating, S-3 partial consume / partial completion (mutually exclusive), S-4 start
- * with limited stock. The "Product components must be reserved" master toggle is
+ * gating, S-3 partial consume / partial completion (mutually exclusive), which
+ * also decide the start gate — the PRD's separate S-4 toggle is not built. The "Product components must be reserved" master toggle is
  * built as the Figma draws it — the PRD's Key Concepts define reservation as
  * something that can be disabled (UC-00/L-12 still say otherwise; see
  * productionSettings.ts).
@@ -40,24 +40,21 @@ function togglePartial(mode: Exclude<PartialMode, 'none'>) {
 }
 
 /**
- * UC-04 / D-8 — what the S-4 × S-3 combination actually gates. S-4 decides whether
- * the gate relaxes at all; the partial mode decides HOW, because the two modes
- * protect different things: partial consume lets work begin with whatever has
- * arrived, so one secured component is enough; partial completion posts output in
- * tranches, and even one finished unit needs a complete set.
+ * UC-04 / D-8 — what the partial mode means for starting a work order. The two
+ * modes protect different things: partial consume lets work begin with whatever
+ * has arrived, so one secured component is enough; partial completion posts output
+ * in tranches, and even one finished unit needs a complete set.
  */
 const startGateNote = computed(() => {
   if (!productionSettings.componentsMustBeReserved)
     return 'Reservation is off, so a work order can start without any component reserved.'
-  if (!productionSettings.allowStartWithLimitedStock)
-    return 'A work order can start only once every component is reserved in full.'
   switch (productionSettings.partialMode) {
     case 'consume':
       return 'A work order can start once at least one component holds a reservation.'
     case 'completion':
       return 'A work order can start once every component holds a reservation, even a partial one.'
     default:
-      return 'Limited stock has no effect until partial consume or partial completion is on — a work order still needs every component reserved in full.'
+      return 'A work order can start only once every component is reserved in full.'
   }
 })
 
@@ -117,23 +114,8 @@ const methodOptions = computed(() =>
         {{ t('Partial consume and partial completion cannot both be on — turning one on turns the other off.') }}
       </p>
 
-      <div class="ps-row">
-        <span class="ps-label">
-          {{ t('Can start work order with limited stock') }}
-          <MpTooltip :label="t('When off, a work order can only start once every component is reserved in full.')" placement="top">
-            <MpIcon name="information" size="sm" class="ps-info" />
-          </MpTooltip>
-        </span>
-        <div class="ps-control">
-          <MpToggle
-            id="ps-start-limited" :is-checked="productionSettings.allowStartWithLimitedStock"
-            @change="saveProductionSettings({ allowStartWithLimitedStock: !productionSettings.allowStartWithLimitedStock })"
-          />
-        </div>
-      </div>
-
-      <!-- S-4 × S-3 — spell out the gate the two settings combine into, because
-           the combination is not guessable from either label alone (UC-04). -->
+      <!-- UC-04 — spell out what the partial mode means for STARTING a work
+           order, because neither toggle's label says it. -->
       <p class="ps-note">
         <MpIcon name="information" size="sm" />
         {{ t(startGateNote) }}

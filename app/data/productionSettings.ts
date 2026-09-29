@@ -7,7 +7,9 @@ import { reactive, watch } from 'vue'
  *
  * Cross-reference: PRD v0.5 "Work Order Material Reservation & Stock Request" ›
  * UC-00 — S-1 method, S-2 entry-point gating, S-3 retained v1 settings (partial
- * consume / partial completion, mutually exclusive), S-4 start with limited stock.
+ * consume / partial completion, mutually exclusive). The PRD's S-4 "start with
+ * limited stock" is NOT built — the partial toggles already decide the start gate
+ * (see `startGate`), so a third setting only restated them.
  *
  * Reservation CAN be switched off — "Komponen produk harus direservasi", as the
  * Figma draws it and as the PRD's Key Concepts now define it ("Reservation itself
@@ -39,17 +41,12 @@ export interface ProductionSettings {
   allowBackdate: boolean
 
   // ── Production readiness ─────────────────────────────────────────────────
-  /** S-3 — partial consume / partial completion / neither. See {@link PartialMode}. */
-  partialMode: PartialMode
   /**
-   * S-4 — "Dapat mulai perintah kerja dengan stok terbatas". Governs the work
-   * order START gate ONLY (UC-04 / D-8), and nothing that happens after start.
-   *
-   * Off, Start needs every component reserved in full. On, the gate relaxes — but
-   * HOW it relaxes is decided by {@link ProductionSettings.partialMode}, because
-   * the two partial modes protect different things. See `startGate`.
+   * S-3 — partial consume / partial completion / neither. See {@link PartialMode}.
+   * Also decides the work order START gate (UC-04): each partial mode lets a job
+   * begin short in the way it can actually use. See `startGate`.
    */
-  allowStartWithLimitedStock: boolean
+  partialMode: PartialMode
 
   // ── Component request & reservation ──────────────────────────────────────
   /**
@@ -113,7 +110,6 @@ function load(): ProductionSettings {
     planDateField: 'required',
     allowBackdate: false,
     partialMode: 'none',
-    allowStartWithLimitedStock: false,
     componentsMustBeReserved: true,
     reservationMethod: 'one-step',
   }
@@ -130,6 +126,8 @@ function load(): ProductionSettings {
 /** The shape written by builds before PRD v0.5 — still sitting in localStorage. */
 type LegacySettings = Partial<ProductionSettings> & {
   allowPartialProduction?: boolean
+  /** S-4, removed — the partial toggles decide the start gate on their own. */
+  allowStartWithLimitedStock?: boolean
 }
 
 /**
@@ -144,7 +142,9 @@ type LegacySettings = Partial<ProductionSettings> & {
  *    never allocates stock the tenant didn't already see being allocated.)
  */
 function migrate(saved: LegacySettings): Partial<ProductionSettings> {
-  const { allowPartialProduction, ...rest } = saved
+  // `allowStartWithLimitedStock` is dropped rather than carried: without it the
+  // gate follows the partial toggles alone, which is the new rule.
+  const { allowPartialProduction, allowStartWithLimitedStock: _dropped, ...rest } = saved
   const next: Partial<ProductionSettings> = { ...rest }
   if (next.partialMode === undefined && allowPartialProduction) next.partialMode = 'consume'
   return next

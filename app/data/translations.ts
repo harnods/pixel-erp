@@ -3687,7 +3687,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Allow backdate': 'Izinkan input tanggal mundur',
   'Production readiness': 'Pengaturan kesiapan produksi',
   'Allow partial production': 'Izinkan produksi sebagian',
-  'Can start work order with limited stock': 'Dapat mulai perintah kerja dengan stok terbatas',
   'Component request & reservation': 'Permintaan & reservasi komponen',
   'Product components must be reserved': 'Komponen produk harus direservasi',
   'Triggers reservation when a work order is created': 'Trigger reservasi pada saat pembuatan perintah kerja',
@@ -3698,7 +3697,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Components are reserved by sending a request to the warehouse': 'Reservasi komponen dilakukan dengan mengirim permintaan ke gudang',
   'Close a work order in batches, before the full planned quantity is produced.': 'Tutup perintah kerja secara bertahap, sebelum seluruh jumlah rencana diproduksi.',
   'When off, a work order can only start once every component is reserved.': 'Saat nonaktif, perintah kerja hanya bisa dimulai setelah semua komponen direservasi.',
-  'Reserve every component before starting, or allow starting with limited stock in Production settings': 'Reservasi semua komponen sebelum memulai, atau izinkan mulai dengan stok terbatas di pengaturan Produksi',
 
   // ── Warehouses › Stock request detail (PRD UC-11 + prototype detail screen) ──
   'Request info': 'Info permintaan',
@@ -3761,12 +3759,10 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Allow partial consume': 'Izinkan konsumsi bertahap',
   'Allow partial completion': 'Izinkan penyelesaian bertahap',
   'Issue and consume material in stages, before the full planned quantity is available.': 'Keluarkan dan pakai material secara bertahap, sebelum seluruh kuantitas rencana tersedia.',
-  'When off, a work order can only start once every component is reserved in full.': 'Jika nonaktif, perintah kerja hanya bisa dimulai setelah semua komponen direservasi penuh.',
   'Partial consume and partial completion cannot both be on — turning one on turns the other off.': 'Konsumsi bertahap dan penyelesaian bertahap tidak bisa aktif bersamaan — mengaktifkan salah satu akan menonaktifkan yang lain.',
   'A work order can start only once every component is reserved in full.': 'Perintah kerja baru bisa dimulai setelah semua komponen direservasi penuh.',
   'A work order can start once at least one component holds a reservation.': 'Perintah kerja bisa dimulai setelah minimal satu komponen punya reservasi.',
   'A work order can start once every component holds a reservation, even a partial one.': 'Perintah kerja bisa dimulai setelah semua komponen punya reservasi, meski sebagian.',
-  'Limited stock has no effect until partial consume or partial completion is on — a work order still needs every component reserved in full.': 'Stok terbatas tidak berpengaruh sebelum konsumsi bertahap atau penyelesaian bertahap aktif — semua komponen tetap harus direservasi penuh.',
   'Work orders show an info badge instead of reservation actions: "Reservation via Stock requests only (PPIC / stockist)".': 'Perintah kerja menampilkan info, bukan aksi reservasi: "Reservasi hanya lewat Permintaan stok (PPIC / stockist)".',
 
   // Adjust work order (UC-06)

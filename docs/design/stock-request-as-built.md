@@ -91,6 +91,22 @@ What following Key Concepts means in the code:
   raised stay on the dashboard. Default on. The always-on build's migration
   (reservation-off → Two-step) is removed; the setting passes through as saved.
 
+### D-S4 — No "start with limited stock" setting ⚠️ *PRD fix needed*
+S-4 ("Dapat mulai perintah kerja dengan stok terbatas") and the S-4 column of the
+UC-04 table are **not built**, on the product owner's decision: the partial
+toggles already say whether a job may run short, so S-4 could only repeat them —
+or, left off, silently cancel them. The gate is now:
+
+| Partial mode | Start permitted when |
+| --- | --- |
+| Allow partial consume | at least one component reserved > 0 |
+| Allow partial completion | every component reserved > 0 |
+| neither | every component fully reserved |
+
+This is the v0.5 table with S-4 permanently on. Saved settings drop the old
+`allowStartWithLimitedStock` value. **PRD to update:** S-4, UC-04's table and its
+"S-4 on + neither" row, QA 12, and the S-3/S-4 rationale paragraph under UC-00.
+
 **One other open item remains.** v0.5 adopted the rest of what this build had
 already diverged into (request numbering, per-line destination warehouse, the
 single detail page, By product / By transaction, the separate limited-stock
@@ -112,9 +128,7 @@ is used for the open-count badge, so switching is a one-line change.
   when the Google-Doc v0.5 made reservation always on, and **restored** when the
   Confluence Key Concepts defined it as something that can be disabled (see D0). The
   Figma is therefore no longer stale on this point — UC-00/L-12 are.
-- **Start gate** — v0.5's UC-04 table is implemented as written (see §4). The
-  earlier build relaxed the gate from two independent toggles; v0.5 makes S-4 the
-  master relaxer and the partial mode choose how.
+- **Start gate** — see D-S4 below: the gate follows the partial toggles alone.
 - **Canceled requests stay listed.** The INV draft dropped a cancelled work order's
   request off the dashboard; v0.5 W-3 keeps it, as **Canceled**. A request that
   disappears reads as one that was never raised.
@@ -123,10 +137,10 @@ is used for the open-count badge, so switching is a one-line change.
 
 ## 4. Built to the PRD
 
-- **S-1…S-4** — method One-step / Two-step; under Two-step every reservation entry
+- **S-1…S-3** — method One-step / Two-step; under Two-step every reservation entry
   point on WO surfaces is *hidden* and an info note points to Stock requests.
   Partial consume / partial completion are one `partialMode` union, so they cannot
-  both be on. S-4 governs the start gate only.
+  both be on, and they decide the start gate. S-4 is not built (D-S4).
 - **C-3 / C-4** — saving a WO raises exactly one request; under One-step every line
   auto-reserves by available qty (see D0) and the toast names all three outcomes:
   reserved, reserved short, sent to the stockist. Idempotent. No request at all
@@ -137,9 +151,8 @@ is used for the open-count badge, so switching is a one-line change.
   and the Reserved / Consumed denominators follow. Rejected lines are left out
   because the warehouse declined them; they are flagged on the WO instead (W-7).
 - **UC-04 / D-8** — lifted entirely while reservation is off; otherwise the full
-  truth table: S-4 off → every component fully reserved;
-  S-4 on + partial consume → at least one reserved > 0; S-4 on + partial completion
-  → every component reserved > 0; S-4 on + neither → full reservation. Counts
+  table in D-S4: partial consume → at least one reserved > 0; partial completion →
+  every component reserved > 0; neither → full reservation. Counts
   reservation, never availability.
 - **UC-06 (Adjust half)** — Adjust puts an increase on a new Adjustment-tagged line
   carrying only the delta with its own request date, reduces Adjustment-first on a

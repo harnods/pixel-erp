@@ -740,17 +740,18 @@ export function isFullyReserved(workOrderId: string): boolean {
 export type StartBlockReason = 'none-reserved' | 'some-unreserved' | 'not-fully-reserved'
 
 /**
- * The start gate — PRD v0.5 UC-04 / D-8.
+ * The start gate — PRD v0.5 UC-04 / D-8, decided by the partial mode (S-3) alone:
  *
- * S-4 ("can start with limited stock") decides whether the gate relaxes at all;
- * the partial mode (S-3) decides HOW:
+ * | partialMode  | Start permitted when                        |
+ * | ------------ | ------------------------------------------- |
+ * | `consume`    | AT LEAST ONE component is reserved > 0       |
+ * | `completion` | EVERY component is reserved > 0              |
+ * | `none`       | every component is fully reserved            |
  *
- * | S-4 | partialMode  | Start permitted when                        |
- * | --- | ------------ | ------------------------------------------- |
- * | off | any          | every component is fully reserved            |
- * | on  | `consume`    | AT LEAST ONE component is reserved > 0       |
- * | on  | `completion` | EVERY component is reserved > 0              |
- * | on  | `none`       | every component is fully reserved            |
+ * The PRD puts a separate S-4 "start with limited stock" switch in front of this
+ * table. It is deliberately not built: turning on a partial mode already says the
+ * job may run short, so S-4 could only ever repeat that — or, left off, silently
+ * cancel it.
  *
  * The two rules protect different things. Partial consume lets work proceed with
  * whatever has arrived, so one secured component is enough to begin. Partial
@@ -767,7 +768,7 @@ export type StartBlockReason = 'none-reserved' | 'some-unreserved' | 'not-fully-
  */
 export function startGate(
   workOrderId: string,
-  options: { reservationOn: boolean; partialMode: PartialMode; allowStartWithLimitedStock: boolean },
+  options: { reservationOn: boolean; partialMode: PartialMode },
 ): { allowed: boolean; reason?: StartBlockReason } {
   if (!options.reservationOn) return { allowed: true }
   const req = requestForWorkOrder(workOrderId)
@@ -775,8 +776,6 @@ export function startGate(
 
   const lines = req.lines
   if (lines.every(l => lineCovered(l) >= l.qty)) return { allowed: true }
-
-  if (!options.allowStartWithLimitedStock) return { allowed: false, reason: 'not-fully-reserved' }
 
   switch (options.partialMode) {
     case 'consume':
@@ -788,7 +787,6 @@ export function startGate(
         ? { allowed: true }
         : { allowed: false, reason: 'some-unreserved' }
     default:
-      // S-4 on but neither partial mode — S-4 has no effect (UC-04, row 4).
       return { allowed: false, reason: 'not-fully-reserved' }
   }
 }
