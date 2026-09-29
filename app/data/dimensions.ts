@@ -199,3 +199,55 @@ export function transferDimensionValue(fromId: string, valueName: string, toId: 
   to.updatedAt = now; to.updatedBy = ACTING_USER
   persist()
 }
+
+// ── v6.2 A-2 · the project-code dimension ────────────────────────────────────
+//
+// "Creating a project creates a dimension value equal to the project code, which
+// attaches to budget, production plan, BOM, WO and every downstream document."
+//
+// This is the mechanism that replaced the bespoke "project is a control field"
+// design in v5. Pegging rides the Dimension engine that already ships, so the
+// conditional all-or-nothing rule disappears entirely: the field is simply
+// required on documents in a project's ecosystem, and a document without it is
+// an ordinary expense that consumes no project budget.
+
+/** The reserved dimension that carries project codes as its values. */
+export const PROJECT_DIMENSION_NAME = 'Project'
+
+/**
+ * Find-or-create the Project dimension. Mandatory to fill, because a document in
+ * a project's ecosystem cannot save without it (enforced in UI, import and API
+ * per the PRD — here, UI only).
+ */
+export function ensureProjectDimension(): Dimension {
+  const existing = dimensions.find((d) => d.name === PROJECT_DIMENSION_NAME)
+  if (existing) return existing
+  const dim: Dimension = {
+    id: 'dim-project',
+    name: PROJECT_DIMENSION_NAME,
+    values: [],
+    transactionTypes: 'all',
+    mandatory: true,
+    status: 'active',
+    updatedAt: new Date().toISOString(),
+    updatedBy: ACTING_USER,
+  }
+  dimensions.unshift(dim)
+  persist()
+  return dim
+}
+
+/**
+ * Create (or return) the dimension value for a project code. Called when a
+ * project is created; idempotent, so re-seeding or reopening never duplicates.
+ * Returns the value name, which is what a document line stores.
+ */
+export function ensureProjectDimensionValue(projectCode: string): string {
+  const dim = ensureProjectDimension()
+  const existing = dim.values.find((v) => v.name.toLowerCase() === projectCode.toLowerCase())
+  if (!existing) {
+    dim.values.push({ name: projectCode, userIds: [] })
+    persist()
+  }
+  return projectCode
+}

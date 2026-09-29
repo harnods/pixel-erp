@@ -28,7 +28,7 @@ import {
   type Project, type Phase, type WorkPackage, type WorkPackageType, usesMilestone, usesUnits } from '~/data/projects'
 import { phaseTotal, wpBudget, getBudget } from '~/data/projectBudgets'
 import { wpActual, wpCommitted, phaseActual, phaseCommitted, projectWorkOrders } from '~/data/projectTransactions'
-import { getCustomBom, masterBoms, currentVersion, masterDiverged } from '~/data/projectBoms'
+import { getCustomBom, masterBoms, currentVersion } from '~/data/projectBoms'
 import { phaseLockReason, wpStarted, logStructure, replaceCustomBom, reconfirmWeights } from '~/data/projectActions'
 import { rp, pct, parseAmount, isoToDmy, dmyToIso } from '~/utils/projectFormat'
 import { formatDate } from '~/utils/date'
@@ -338,7 +338,6 @@ function doReconfirm() { pageAction.run(reconfirmWeights(props.project.id, asAct
                         {{ getCustomBom(wp.customBomId)?.name }} v{{ currentVersion(getCustomBom(wp.customBomId)!).version }}
                       </MpTextlink>
                       <span v-else class="pm-warn">{{ t('No BOM yet') }}</span>
-                      <ErpStatusBadge v-if="wp.customBomId && masterDiverged(getCustomBom(wp.customBomId)!)" v-bind="badgeProps('flag', 'master-changed', t)" />
                     </template>
                     <template v-if="wp.site"><span>·</span><span>{{ wp.site }}</span></template>
                   </div>

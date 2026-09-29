@@ -81,6 +81,21 @@ export interface ProjectBudget {
 // ─── Seed (IPB real figures: RAP Rp528.035.550 + 10% Rp52.803.555 = Rp580.839.105) ──
 
 const SEED: ProjectBudget[] = [
+  // ── PRJ-A · the v6.2 demo budget ────────────────────────────────────────
+  // Cost of Production Rp 30.000.000 is the production baseline the WO gate
+  // reads. With Rp 4.200.000 posted and Rp 12.000.000 set aside on an unposted
+  // work order, Available lands on Rp 13.800.000.
+  {
+    projectId: 'prj-a',
+    planRef: 'RAB Meja custom Pak Budi',
+    revenue: 48_000_000,
+    approvedBy: 'Maya Kartika', approvedAt: '2026-09-01',
+    lines: [
+      { wpId: 'wp-prja-1', account: COGM_ACCOUNT, amount: 30_000_000 },
+    ],
+    reserves: {},
+    revisions: [],
+  },
   {
     projectId: 'ps-2603',
     planRef: 'RAB_IPB_Pascasarjana.pdf · RAP_Pasca_sarjana.pdf',
@@ -180,7 +195,7 @@ export function phaseAllocated(phaseId: string, projectId: string): number {
   return b.lines.filter(l => ids.has(l.wpId)).reduce((s, l) => s + l.amount, 0)
 }
 export function phaseReserve(phaseId: string, projectId: string): number {
-  return getBudget(projectId)?.reserves[phaseId] ?? 0
+  return getBudget(projectId)?.reserves?.[phaseId] ?? 0
 }
 export function phaseTotal(phaseId: string, projectId: string): number {
   return phaseAllocated(phaseId, projectId) + phaseReserve(phaseId, projectId)

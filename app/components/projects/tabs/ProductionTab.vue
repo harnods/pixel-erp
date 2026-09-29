@@ -22,7 +22,7 @@ import type { Project } from '~/data/projects'
 import { projectWorkPackages, getWorkPackage } from '~/data/projects'
 import { projectWos, peggedDocuments } from '~/data/projectTransactions'
 import { projectReservations, getStockItem } from '~/data/projectReservations'
-import { getCustomBom, currentVersion, masterDiverged } from '~/data/projectBoms'
+import { getCustomBom, currentVersion } from '~/data/projectBoms'
 import { mrpPreview, runMrp, advanceReservation, releaseReservation, advanceWo } from '~/data/projectActions'
 import { rp, num } from '~/utils/projectFormat'
 import { formatDate } from '~/utils/date'
@@ -150,7 +150,6 @@ const bomView = ref<string | undefined>()
               <td>
                 <span class="pm-row pm-gap-2">
                   <template v-if="w.customBomId">{{ getCustomBom(w.customBomId)?.masterName }} · {{ formatDate(getCustomBom(w.customBomId)?.copiedAt) }}</template>
-                  <ErpStatusBadge v-if="w.customBomId && masterDiverged(getCustomBom(w.customBomId)!)" v-bind="badgeProps('flag', 'master-changed', t)" />
                 </span>
               </td>
               <td><MpTextlink v-if="w.customBomId" :id="`pm-prod-eco-${w.id}`" as="a" @click.prevent="router.replace({ query: { tab: 'changes' } })">{{ t('Raise engineering change') }}</MpTextlink></td>

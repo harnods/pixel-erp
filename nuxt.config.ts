@@ -4,7 +4,10 @@ export default defineNuxtConfig({
   ssr: false,
   compatibilityDate: "2025-07-15",
   devtools: { enabled: true },
-  devServer: { port: 4321 },
+  // 4321 is the repo's documented dev port (see CLAUDE.md two-port workflow).
+  // Honour PORT when the harness assigns one, so a second checkout can run in
+  // parallel instead of colliding with whoever already holds 4321.
+  devServer: { port: Number(process.env.PORT) || 4321 },
 
   // Server-only secret for the Cowork (AI) feature. Value comes from
   // NUXT_GEMINI_API_KEY in .env.local (gitignored) — never hardcoded/committed.

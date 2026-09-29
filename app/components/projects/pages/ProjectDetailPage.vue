@@ -17,6 +17,7 @@ import PmTitleBar from '../PmTitleBar.vue'
 import PmMenu, { type PmMenuItem } from '../PmMenu.vue'
 import PmOverlay from '../PmOverlay.vue'
 import PmActionError from '../PmActionError.vue'
+import OverviewTab from '../tabs/OverviewTab.vue'
 import StructureTab from '../tabs/StructureTab.vue'
 import BudgetTab from '../tabs/BudgetTab.vue'
 import CostTrackingTab from '../tabs/CostTrackingTab.vue'
@@ -55,28 +56,34 @@ const changesPending = computed(() => {
 })
 
 const TABS = computed(() => {
+  // v6.2 §3.1 tab order. "Engineering change" replaces the v5
+  // "Changes — commercial & engineering": the VO object is out of scope in v6.2
+  // (A-4 drops the variation-order approval action), so the tab is the
+  // engineering-change surface. Recognition stays visible although §11 puts the
+  // engine after MVP, so the demo can still show the shape.
   const list = [
+    { key: 'overview', label: 'Overview' },
     { key: 'structure', label: 'Structure' },
     { key: 'budget', label: 'Budget' },
     { key: 'cost', label: 'Cost tracking' },
-    { key: 'recognition', label: 'Recognition & billing' },
-    { key: 'changes', label: 'Changes — commercial & engineering' },
   ]
   if (project.value?.isProduction) list.push({ key: 'production', label: 'Production & materials' })
+  list.push({ key: 'changes', label: 'Engineering change' })
+  list.push({ key: 'recognition', label: 'Recognition & billing' })
   list.push({ key: 'completion', label: 'Completion' })
   return list
 })
 const activeTab = computed({
   get: () => {
     const q = String(route.query.tab ?? 'structure')
-    return TABS.value.some(x => x.key === q) ? q : 'structure'
+    return TABS.value.some(x => x.key === q) ? q : 'overview'
   },
   set: (key: string) => { router.replace({ query: { ...route.query, tab: key } }) },
 })
 // MpTabs' v-model is the tab index (same as WarehouseDetailsPage)
 const activeTabIndex = computed({
   get: () => Math.max(0, TABS.value.findIndex(x => x.key === activeTab.value)),
-  set: (idx: number) => { activeTab.value = TABS.value[idx]?.key ?? 'structure' },
+  set: (idx: number) => { activeTab.value = TABS.value[idx]?.key ?? 'overview' },
 })
 
 // ── Approval gate (Draft only, role-labelled; OQ7 provisional: Finance approves) ──
@@ -210,7 +217,8 @@ const lastEntry = computed(() => projectAudit.value[0])
         <MpTabPanels>
           <MpTabPanel v-for="tab in TABS" :key="tab.key" :value="tab.key">
             <div v-if="activeTab === tab.key" class="pm-mt-5">
-              <StructureTab v-if="tab.key === 'structure'" :project="project" />
+              <OverviewTab v-if="tab.key === 'overview'" :project="project" />
+              <StructureTab v-else-if="tab.key === 'structure'" :project="project" />
               <BudgetTab v-else-if="tab.key === 'budget'" :project="project" />
               <CostTrackingTab v-else-if="tab.key === 'cost'" :project="project" />
               <RecognitionTab v-else-if="tab.key === 'recognition'" :project="project" />

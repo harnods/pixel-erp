@@ -21,7 +21,7 @@ export interface MasterBom {
   id: string
   number: string
   name: string
-  /** increments whenever the master is edited — stored on the copy to detect divergence */
+  /** increments whenever the master is edited; the copy stores the value it was taken from (backstage only) */
   version: number
   archived: boolean
   components: BomComponent[]
@@ -95,6 +95,10 @@ const BOX_COST: BomProdCost[] = [
 ]
 
 const SEED_MASTERS: MasterBom[] = [
+  // ── The v6.2 demo masters. BOM-MJ-001 has BOM-RK-001 as a sub-BOM, so
+  //    duplication has to recurse and the project ends up owning both.
+  { id: 'mbom-mj', number: 'BOM-MJ-001', name: 'Meja makan jati', version: 1, archived: false, components: FURNITURE, productionCost: FURNITURE_COST },
+  { id: 'mbom-rk', number: 'BOM-RK-001', name: 'Rangka kaki', version: 1, archived: false, components: FURNITURE, productionCost: FURNITURE_COST },
   { id: 'mbom-1', number: 'BOM-M-1001', name: 'Meja kuliah lipat + kursi', version: 3, archived: false, components: FURNITURE, productionCost: FURNITURE_COST },
   { id: 'mbom-2', number: 'BOM-M-1002', name: 'Lemari tanam 2 pintu', version: 1, archived: false, components: CABINET, productionCost: CABINET_COST },
   { id: 'mbom-3', number: 'BOM-M-1003', name: 'Kitchen set L 3 m', version: 2, archived: false, components: KITCHEN, productionCost: KITCHEN_COST },
@@ -107,6 +111,12 @@ const v1 = (at: string, by: string, masterName: string, c: BomComponent[], p: Bo
 })
 
 const SEED_CUSTOM: CustomBom[] = [
+  // ── PRJ-A · the frozen project copies ───────────────────────────────────
+  // Codes carry the project prefix (v6.2 §6.4) because one project owns several
+  // BOM objects once sub-BOMs are duplicated alongside their parent. The origin
+  // (master + version at copy) is stored but never rendered.
+  { id: 'cbom-prja-mj', projectId: 'prj-a', wpId: 'wp-prja-1', name: 'PRJ-A-BOM-MJ-001', masterBomId: 'mbom-mj', masterName: 'Meja makan jati', masterVersionAtCopy: 1, copiedAt: '2026-09-02', versions: [v1('2026-09-02', 'Rizal Candra', 'Meja makan jati', FURNITURE, FURNITURE_COST)] },
+  { id: 'cbom-prja-rk', projectId: 'prj-a', wpId: 'wp-prja-1', name: 'PRJ-A-BOM-RK-001', masterBomId: 'mbom-rk', masterName: 'Rangka kaki', masterVersionAtCopy: 1, copiedAt: '2026-09-02', versions: [v1('2026-09-02', 'Rizal Candra', 'Rangka kaki', FURNITURE, FURNITURE_COST)] },
   // master mbom-1 is now v3 but the copy took v2 → divergence badge
   { id: 'cbom-2603-31', projectId: 'ps-2603', wpId: 'wp-2603-31', name: 'Meja kuliah lipat + kursi — PS-2603', masterBomId: 'mbom-1', masterName: 'Meja kuliah lipat + kursi', masterVersionAtCopy: 2, copiedAt: '2026-05-25', versions: [v1('2026-05-25', 'Rizal Candra', 'Meja kuliah lipat + kursi', FURNITURE, FURNITURE_COST)] },
   { id: 'cbom-2603-32', projectId: 'ps-2603', wpId: 'wp-2603-32', name: 'Lemari tanam 2 pintu — PS-2603', masterBomId: 'mbom-2', masterName: 'Lemari tanam 2 pintu', masterVersionAtCopy: 1, copiedAt: '2026-06-08', versions: [v1('2026-06-08', 'Rizal Candra', 'Lemari tanam 2 pintu', CABINET, CABINET_COST)] },
@@ -137,10 +147,12 @@ export function currentVersion(b: CustomBom): BomVersion {
 export function bomUnitCost(v: Pick<BomVersion, 'components' | 'productionCost'>): number {
   return v.components.reduce((s, c) => s + c.qty * (c.unitCost ?? 0), 0) + v.productionCost.reduce((s, p) => s + p.perUnit, 0)
 }
-export function masterDiverged(b: CustomBom): boolean {
-  const m = masterBoms.find(x => x.id === b.masterBomId)
-  return !!m && m.version > b.masterVersionAtCopy
-}
+// v6.2 closes OQ 28: the origin record (source BOM + version at copy) is stored
+// but NEVER surfaced, so there is no "master has changed" badge. masterDiverged()
+// lived here and is deliberately gone. Master-side change and its fan-out to
+// derived projects belong to [PRD] BOM Versioning & ECO-lite in the next wave —
+// the origin is kept precisely so that logic has something to join on, not so
+// this UI can render it.
 
 /** Duplicate a master into a custom BOM v1 linked to the work package. */
 export function copyMasterBom(masterId: string, projectId: string, wpId: string, projectCode: string, by: string, today: string): CustomBom | { error: string } {
