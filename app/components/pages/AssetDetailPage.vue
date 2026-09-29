@@ -33,6 +33,10 @@ import { assetTaxGroups } from '~/data/fixedAssets'
 import CustodyDrawer from '~/components/patterns/CustodyDrawer.vue'
 import { custodyHistoryFor, conditionOf, canEditCustody, stampKey } from '~/data/assetCustody'
 import { approvalTrailFor, pendingFor } from '~/data/assetApprovals'
+import AssetLifeSchedule from '~/components/patterns/AssetLifeSchedule.vue'
+import IntangibleCodePicker from '~/components/patterns/IntangibleCodePicker.vue'
+import { lifeSchedule } from '~/data/assetPreview'
+import { leaseOfAsset } from '~/data/assetLeases'
 
 // The shared detailMatch slot in [...slug].vue passes `order-id` to every
 // detail component, so the prop is named to match rather than special-casing
@@ -111,6 +115,15 @@ const supersededCount = computed(() => {
     + versionViews(asset.value, 'tax').filter((v) => !v.live).length
 })
 const hasTaxBook = computed(() => !!(asset.value && ledgerOf(asset.value.id)?.books.tax))
+
+// OD-45: the whole life on both books, beside the fiscal-year schedule.
+const life = computed(() => {
+  const l = asset.value ? ledgerOf(asset.value.id) : null
+  return l ? lifeSchedule(l) : null
+})
+const isGoodwillAsset = computed(() => !!(asset.value && ledgerOf(asset.value.id)?.isGoodwill))
+// OD-38: a right-of-use asset names the lease it comes from.
+const lease = computed(() => (asset.value ? leaseOfAsset(asset.value.id) : undefined))
 
 // ── Change this asset (UX6) ─────────────────────────────────────────────────
 const changeOpen = ref(false)
@@ -212,6 +225,10 @@ function setTaxGroup(group: string) {
         <p class="ad__sub">
           {{ asset.id }}<template v-if="asset.tag"> · {{ asset.tag }}</template>
           · {{ asset.class }} · {{ asset.branch }} · {{ t('acquired') }} {{ asset.acquired }}
+        </p>
+        <p v-if="lease" class="ad__sub">
+          {{ t('Right-of-use asset of lease') }}
+          <span class="ad__figurelink" @click="router.push('/assets/leases')">{{ lease.id }} {{ lease.name }}</span>
         </p>
         <!-- OD-32: a split keeps the parent and its parts linked both ways. -->
         <p v-if="splitLinks.from || splitLinks.into.length" class="ad__sub">
@@ -376,6 +393,32 @@ function setTaxGroup(group: string) {
         <p class="ad__hint">{{ t('Select any charge to see how it was derived.') }}</p>
       </div>
 
+      <!-- OD-45: the full-life schedule, year by year, on both books. -->
+      <div v-if="tab === 'depreciation' && life" class="ad__card" data-tour="int-schedule">
+        <div class="ad__cardhead">
+          <div>
+            <div class="ad__cardtitle">{{ t(asset.type === 'Intangible' ? 'Amortisation schedule · whole life' : 'Depreciation schedule · whole life') }}</div>
+            <div class="ad__cardsub">
+              {{ life.first }} {{ t('to') }} {{ life.last }} · {{ t('years after 2026 are projected on the live basis') }}
+            </div>
+          </div>
+        </div>
+        <div class="ad__lifewrap">
+          <AssetLifeSchedule :schedule="life" />
+        </div>
+      </div>
+
+      <!-- OD-47: an intangible's statutory code, from the eleven intangible codes. -->
+      <div v-if="tab === 'identity' && asset.type === 'Intangible' && canSeeFinancials" class="ad__card ad__codecard" data-tour="int-code">
+        <div class="ad__panehead">
+          <span class="ad__panetitle">{{ t('Statutory intangible code') }}</span>
+          <span class="ad__paneowner">{{ t('Tax') }}</span>
+        </div>
+        <div class="ad__codebody">
+          <IntangibleCodePicker id="ad-intangible-code" :asset-id="asset.id" :current="asset.statutoryCode" :is-goodwill="isGoodwillAsset" />
+        </div>
+      </div>
+
       <!-- ── Identity and parameters ── -->
       <div v-if="tab === 'identity'" class="ad__panes">
         <div v-for="p in panes" :key="p.head" class="ad__card ad__pane">
@@ -532,6 +575,9 @@ function setTaxGroup(group: string) {
   background: var(--mp-background-neutral);
 }
 .ad__baractions { flex: none; }
+.ad__lifewrap { padding: var(--mp-spacing-0) var(--mp-spacing-4) var(--mp-spacing-4); }
+.ad__codecard { margin-bottom: var(--mp-spacing-4); }
+.ad__codebody { padding: var(--mp-spacing-3) var(--mp-spacing-4); max-width: 480px; }
 
 .ad__jumpwrap { padding: var(--mp-spacing-2); }
 .ad__jumpsearch {

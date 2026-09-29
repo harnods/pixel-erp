@@ -31,6 +31,7 @@ import {
   assetSeeds, STATUTORY_GROUPS, TAX_RATE,
   type AssetSeed, type FixedAsset, type AssetStatus,
 } from './fixedAssets'
+import { journalDateFor, resetAssetPolicy } from './assetPolicy'
 
 // ── Calendar ────────────────────────────────────────────────────────────────
 
@@ -293,7 +294,7 @@ export interface Journal {
   date: string
   period: Period
   source: 'opening' | 'acquisition' | 'depreciation' | 'impairment' | 'disposal' | 'reversal'
-    | 'improvement' | 'correction' | 'impairment-reversal' | 'catch-up'
+    | 'improvement' | 'correction' | 'impairment-reversal' | 'catch-up' | 'lease-remeasurement'
   memo: string
   lines: JournalLine[]
   /** For a reversal, the journal it reverses. */
@@ -308,6 +309,7 @@ const EXPENSE_ACCOUNT: Record<string, string> = {
   'Equipment': '6250 · Depreciation, equipment',
   'Furniture': '6260 · Depreciation, furniture',
   'Intangible assets': '6270 · Amortisation, intangibles',
+  'Right-of-use assets': '6280 · Depreciation, right-of-use assets',
 }
 const ACCUM_ACCOUNT: Record<string, string> = {
   'Buildings': '1610 · Accumulated depreciation, buildings',
@@ -317,6 +319,7 @@ const ACCUM_ACCOUNT: Record<string, string> = {
   'Equipment': '1650 · Accumulated depreciation, equipment',
   'Furniture': '1660 · Accumulated depreciation, furniture',
   'Intangible assets': '1670 · Accumulated amortisation, intangibles',
+  'Right-of-use assets': '1680 · Accumulated depreciation, right-of-use assets',
 }
 
 /**
@@ -472,7 +475,7 @@ export function generateRun(p: Period, on = periodEndDate(CURRENT_PERIOD)): RunR
  * a later run reads the accumulated balances the earlier one creates. Posting
  * closes the period, so the self-check for it runs and its result is kept.
  */
-export function postPeriod(p: Period, postedOn = periodEndDate(p)): RunResult {
+export function postPeriod(p: Period, postedOn = periodEndDate(CURRENT_PERIOD)): RunResult {
   if (nextOpenPeriod.value !== p) {
     return { ok: false, reason: `Post ${nextOpenPeriod.value ? periodLabel(nextOpenPeriod.value) : 'nothing'} first. Periods post in order.`, nextOpen: nextOpenPeriod.value }
   }
@@ -481,7 +484,8 @@ export function postPeriod(p: Period, postedOn = periodEndDate(p)): RunResult {
   const draft = (generateRun(p, postedOn) as { ok: true; run: DepreciationRun }).run
   const number = nextJournal()
   journals.value = [...journals.value, {
-    number, date: periodEndDate(p), period: p, source: 'depreciation',
+    // OD-09: the date follows the company's policy, set once in Asset settings.
+    number, date: journalDateFor(p, postedOn), period: p, source: 'depreciation',
     memo: `Depreciation for ${periodLabel(p)}`, lines: journalLinesFor(draft.lines),
   }]
   const posted: DepreciationRun = { ...draft, state: 'posted', journal: number, postedOn }
@@ -532,6 +536,20 @@ function journalForEvent(assetId: string, e: AssetEvent, l: AssetLedger): Journa
       ]
   if (e.kind === 'improvement') {
     return { number: nextJournal(), date: e.date, period: e.period, source: 'improvement', memo: `Improvement capitalised on ${assetId}`, lines: costLines(e.amount, 'improvement') }
+  }
+  if (e.kind === 'lease-remeasurement') {
+    // OD-39: the liability and the asset move by the same amount, so no gain or loss.
+    const a = e.amount
+    const lines: JournalLine[] = a >= 0
+      ? [
+          { account: '1-1650 · Right-of-use assets', description: `${assetId} remeasured`, debit: a, credit: null, control: '1-1600' },
+          { account: '2-2500 · Lease liability', description: e.leaseId, debit: null, credit: a, control: 'other' },
+        ]
+      : [
+          { account: '2-2500 · Lease liability', description: e.leaseId, debit: -a, credit: null, control: 'other' },
+          { account: '1-1650 · Right-of-use assets', description: `${assetId} remeasured`, debit: null, credit: -a, control: '1-1600' },
+        ]
+    return a ? { number: nextJournal(), date: e.date, period: e.period, source: 'lease-remeasurement', memo: `Remeasurement of lease ${e.leaseId}`, lines } : null
   }
   if (e.kind === 'cost-correction') {
     const c = l.books.accounting.corrections.find((x) => x.eventId === e.id)
@@ -706,12 +724,24 @@ export interface NewAssetInput {
   cost: number
   /** dd/mm/yyyy */
   inServiceDate: string
-  lifeMonths: number
+  /** Null is an indefinite life: no accounting schedule at all (FG9-AC2). */
+  lifeMonths: number | null
   residual: number
   method: Method
   taxGroup: string | null
   location?: string
   custodian?: string
+  /** OD-44/47: an intangible's statutory code, from the eleven-code taxonomy. */
+  statutoryCode?: string | null
+  /** OD-38: a right-of-use asset is created by its lease, under the lease's number. */
+  id?: string
+  leaseId?: string
+  /** A tax book set up by the caller instead of from a statutory group. */
+  tax?: BookSetup | null
+  /** What the capitalisation is credited to. Accounts payable by default. */
+  creditAccount?: string
+  /** What the cost is debited to. Fixed assets at cost by default. */
+  debitAccount?: string
 }
 
 /**
@@ -722,22 +752,27 @@ export interface NewAssetInput {
  * self-check to find.
  */
 export function createAsset(input: NewAssetInput): { ok: true; id: string } | { ok: false; reason: string } {
-  const id = nextAssetId()
+  const id = input.id ?? nextAssetId()
+  if (recordById(id)) return { ok: false, reason: `${id} is already in the register` }
   const period = periodOfDate(input.inServiceDate)
   const type = input.class === 'Intangible assets' ? 'Intangible' : 'Tangible'
+  const tax = input.tax !== undefined ? input.tax : input.taxGroup ? taxSetupFor(input.taxGroup) : null
   const seed: AssetSeed = {
     id, name: input.name, class: input.class, acquired: input.inServiceDate, inServiceDate: input.inServiceDate,
     cost: input.cost, residual: input.residual, commercialLifeMonths: input.lifeMonths,
-    taxGroup: input.taxGroup, fiscalLifeMonths: input.taxGroup ? STATUTORY_GROUPS[input.taxGroup]?.lifeMonths ?? null : null,
-    branch: input.branch, tag: type === 'Tangible' ? `TAG-${id.slice(3)}` : null,
-    location: input.location || null, custodian: input.custodian || null, type, statutoryCode: null, indefiniteLife: false,
+    taxGroup: input.taxGroup, fiscalLifeMonths: tax?.lifeMonths ?? null,
+    branch: input.branch, tag: type === 'Tangible' && !input.leaseId ? `TAG-${id.slice(3)}` : null,
+    location: input.location || null, custodian: input.custodian || null, type,
+    statutoryCode: input.statutoryCode ?? null, indefiniteLife: input.lifeMonths === null,
+    ...(input.leaseId ? { leaseId: input.leaseId } : {}),
   }
   const acq: AcquisitionEvent = {
     id: `${id}-E1`, kind: 'acquisition', period, date: input.inServiceDate, recordedBy: actingUser.value,
     cost: input.cost, inServiceDate: input.inServiceDate,
     accounting: { method: input.method, lifeMonths: input.lifeMonths, residual: input.residual },
-    tax: input.taxGroup ? taxSetupFor(input.taxGroup) : null,
+    tax,
     taxGroup: input.taxGroup,
+    ...(/goodwill/i.test(input.statutoryCode ?? '') ? { isGoodwill: true } : {}),
   }
   assetRecords.value = [...assetRecords.value, seed]
   eventLog.value = { ...eventLog.value, [id]: [acq] }
@@ -747,8 +782,8 @@ export function createAsset(input: NewAssetInput): { ok: true; id: string } | { 
     number: nextJournal(), date: input.inServiceDate, period, source: 'acquisition',
     memo: `Capitalisation of ${id}`,
     lines: [
-      { account: '1-1600 · Fixed assets at cost', description: `${id} ${input.name}`, debit: input.cost, credit: null, control: '1-1600' },
-      { account: '2-1100 · Accounts payable', description: 'Supplier', debit: null, credit: input.cost, control: 'other' },
+      { account: input.debitAccount ?? '1-1600 · Fixed assets at cost', description: `${id} ${input.name}`, debit: input.cost, credit: null, control: '1-1600' },
+      { account: input.creditAccount ?? '2-1100 · Accounts payable', description: input.leaseId ?? 'Supplier', debit: null, credit: input.cost, control: 'other' },
     ],
   }]
   const through = addPeriods(openP, -1)
@@ -949,10 +984,18 @@ export function fyFigures(p: Period = CURRENT_PERIOD) {
   let unclassifiedAccounting = 0
   let impairment = 0
   const disposal = { accounting: 0, tax: 0, count: 0 }
+  const lease = { accounting: 0, tax: 0 }
   for (const s of assetRecords.value) {
     const l = ledgers.value[s.id]!
     const acc = chargesBetween(l, 'accounting', FY_START, p) ?? 0
     if (!l.books.tax) { unclassifiedAccounting += acc; continue }
+    // A right-of-use asset is reported on its own line: the tax deduction is
+    // the lease payment, not a statutory group's depreciation (FG-8.5).
+    if (s.leaseId) {
+      lease.accounting += acc
+      lease.tax += chargesBetween(l, 'tax', FY_START, p) ?? 0
+      continue
+    }
     const tax = chargesBetween(l, 'tax', FY_START, p) ?? 0
     const bucket = s.type === 'Tangible' ? tangible : intangible
     bucket.accounting += acc
@@ -983,7 +1026,7 @@ export function fyFigures(p: Period = CURRENT_PERIOD) {
   const netFiscalCorrection = (tangible.accounting - tangible.tax) + impairment + (disposal.tax - disposal.accounting)
   const netTemporaryDifference = -netFiscalCorrection
   return {
-    tangible, intangible, unclassifiedAccounting, impairment, disposal,
+    tangible, intangible, unclassifiedAccounting, impairment, disposal, lease,
     netFiscalCorrection,
     netTemporaryDifference,
     deferredTax: Math.round(netTemporaryDifference * TAX_RATE),
@@ -1116,7 +1159,9 @@ export function computeSelfCheck(p: Period = CURRENT_PERIOD): Omit<SelfCheckResu
       // the register at any point in FY2026 up to `p`, disposals included.
       const inTaxBook = assetRecords.value.filter((s) => {
         const l = ledgers.value[s.id]!
-        if (!l.books.tax || isAfter(l.registeredFrom, p)) return false
+        // A right-of-use asset's tax book is its lease payments, which are
+        // deducted as they fall due and are on no line of the filing.
+        if (!l.books.tax || isAfter(l.registeredFrom, p) || s.leaseId) return false
         return !(l.disposedIn && isBefore(l.disposedIn, FY_START))
       })
       const half1 = statutoryLines(p, 'Tangible').reduce((n, r) => n + r.assets, 0)
@@ -1176,7 +1221,7 @@ export interface StatutoryLine {
 export function statutoryLines(p: Period, type: 'Tangible' | 'Intangible'): StatutoryLine[] {
   const lines = new Map<string, StatutoryLine>()
   for (const s of assetRecords.value) {
-    if (s.type !== type) continue
+    if (s.type !== type || s.leaseId) continue
     const l = ledgers.value[s.id]!
     if (!l.books.tax || isBefore(p, l.registeredFrom)) continue
     if (l.disposedIn && isBefore(l.disposedIn, FY_START)) continue
@@ -1284,14 +1329,49 @@ function seedLedger() {
   }
 }
 
+/**
+ * State kept outside this file (the lease contracts) that has to be reseeded
+ * with the register. A module registers once; its hook runs now and after
+ * every reset, after the ledger is seeded and before the self-check.
+ */
+const resetHooks: (() => void)[] = []
+export function onAssetStoreReset(fn: () => void) {
+  resetHooks.push(fn)
+  fn()
+  selfCheckResults.value = {}
+  runSelfCheck(CURRENT_PERIOD, '30/09/2026 17:04')
+}
+
+/**
+ * OD-47. Set an intangible's statutory code. It is identity, not a figure:
+ * the filing's intangible half moves to the new code line. Goodwill is
+ * recognised as goodwill when it is created, so a code cannot make an asset
+ * goodwill or stop it being goodwill.
+ */
+export function setStatutoryCode(id: string, code: string): { ok: true } | { ok: false; reason: string } {
+  const s = recordById(id)
+  if (!s) return { ok: false, reason: `No asset ${id}` }
+  if (s.type !== 'Intangible') return { ok: false, reason: `${id} is a tangible asset. Statutory intangible codes apply to intangibles only.` }
+  const toGoodwill = /goodwill/i.test(code)
+  if (toGoodwill !== !!ledgers.value[id]?.isGoodwill) {
+    return { ok: false, reason: toGoodwill
+      ? 'Goodwill arises on a business combination and is recognised as goodwill when it is created. Create it as a new asset.'
+      : `${id} is goodwill. Its code stays Goodwill, and its impairment can never be reversed.` }
+  }
+  assetRecords.value = assetRecords.value.map((x) => (x.id === id ? { ...x, statutoryCode: code } : x))
+  return { ok: true }
+}
+
 /** Return every piece of session state to the sample data. */
 export function resetAssetStore() {
   journalSeq = 118
+  resetAssetPolicy()
   assetRecords.value = [...assetSeeds]
   viewAs.value = 'Owner'
   eventLog.value = Object.fromEntries(assetSeeds.map((s) => [s.id, seedEvents(s)]))
   seedLedger()
   seedTests()
+  for (const fn of resetHooks) fn()
   selfCheckResults.value = {}
   runSelfCheck(CURRENT_PERIOD, '30/09/2026 17:04')
 }

@@ -133,6 +133,12 @@ export interface BookSetup {
    * `period`, which is where this system takes over the schedule.
    */
   opening?: { period: Period; accumulated: number } | null
+  /**
+   * OD-38. The book's own cost where it differs from the asset's. A
+   * right-of-use asset's tax book is the contract payments, deducted as they
+   * fall due, not the discounted liability the accounts capitalise.
+   */
+  cost?: number
 }
 
 // ── Events ──────────────────────────────────────────────────────────────────
@@ -239,6 +245,23 @@ export interface PartialDisposalEvent extends EventBase {
   proportion: number
   proceeds: number
 }
+/**
+ * OD-39. A lease modification remeasures the liability, and the right-of-use
+ * asset moves by the same amount from the effective period (PSAK 73). The
+ * asset's remaining schedule regenerates over the revised term; nothing
+ * before the effective period moves. Accounting only: the tax deduction
+ * follows the contract payments, not the right-of-use charge.
+ */
+export interface LeaseRemeasurementEvent extends EventBase {
+  kind: 'lease-remeasurement'
+  leaseId: string
+  /** The change in the liability, and so in the asset's cost. Signed. */
+  amount: number
+  /** The change in the undiscounted payments still to fall due: the tax book's cost. */
+  taxAmount?: number
+  /** The revised lease term as the asset's new TOTAL life. */
+  lifeMonths?: { accounting?: number; tax?: number }
+}
 
 export type AssetEvent =
   | AcquisitionEvent
@@ -251,6 +274,7 @@ export type AssetEvent =
   | ImpairmentReversalEvent
   | SplitEvent
   | PartialDisposalEvent
+  | LeaseRemeasurementEvent
 
 export type EventKind = AssetEvent['kind']
 
@@ -313,6 +337,10 @@ export function eventLabel(e: AssetEvent): string {
     case 'impairment-reversal': return `Impairment reversed ${e.date}, recoverable ${rupiah(e.recoverable)}`
     case 'split': return `Split into ${e.parts.map((x) => `${x.childId} (${pct(x.proportion)})`).join(', ')} from ${periodLabel(e.period)}`
     case 'partial-disposal': return `${pct(e.proportion)} disposed ${e.date} for ${rupiah(e.proceeds)}`
+    case 'lease-remeasurement': {
+      const term = e.lifeMonths?.accounting ? `, term now ${formatLife(e.lifeMonths.accounting)}` : ''
+      return `Lease ${e.leaseId} remeasured from ${periodLabel(e.period)}: ${e.amount >= 0 ? 'up' : 'down'} ${rupiah(Math.abs(e.amount))}${term}`
+    }
   }
 }
 
@@ -889,10 +917,12 @@ export function buildBook(input: BuildBookInput): BookLedger {
         break
       }
 
-      case 'improvement': {
+      case 'improvement':
+      case 'lease-remeasurement': {
         const prev = current()
         const extended = book === 'accounting' ? e.lifeMonths?.accounting : e.lifeMonths?.tax
-        setCost(P, cost + e.amount)
+        const added = e.kind === 'lease-remeasurement' && book === 'tax' ? e.taxAmount ?? 0 : e.amount
+        setCost(P, cost + added)
         const b = makeBasis({
           fromPeriod: P,
           openingAccumulated: accumulatedThrough(addPeriods(P, -1)),
@@ -998,7 +1028,7 @@ export function buildAssetLedger(assetId: string, events: AssetEvent[]): AssetLe
   const taxCreatedBy: AssetEvent = classification ?? acq
   const tax = taxSetup
     ? buildBook({
-        assetId, book: 'tax', setup: { ...taxSetup, residual: 0 }, cost: acq.cost,
+        assetId, book: 'tax', setup: { ...taxSetup, residual: 0 }, cost: taxSetup.cost ?? acq.cost,
         startPeriod, createdBy: taxCreatedBy, events, registeredFrom, isGoodwill,
       })
     : null
@@ -1184,7 +1214,7 @@ export interface Derivation {
 
 const ADJUSTMENT_KINDS: EventKind[] = [
   'cost-correction', 'estimate-revision', 'improvement', 'impairment',
-  'impairment-reversal', 'split', 'partial-disposal', 'disposal',
+  'impairment-reversal', 'split', 'partial-disposal', 'disposal', 'lease-remeasurement',
 ]
 
 /**

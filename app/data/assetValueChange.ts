@@ -211,6 +211,8 @@ export interface PreviewRow {
 export interface PreviewBook {
   book: Book
   label: string
+  /** OD-11: the charge in the disposal month, to the disposal date. */
+  disposalCharge?: { date: string; charge: number | null; label: string }
   /** The first period whose charge moves. */
   firstChanged: Period
   chargeBefore: number | null
@@ -306,6 +308,11 @@ export function previewValueChange(assetId: string, f: ValueChangeForm, name: (i
     const pd = bb.partialDisposals.find((x) => x.period === P)
     if (f.action === 'dispose-part' && pd) out.gainLoss = pd.gainLoss
     if (f.action === 'dispose' && bb.disposal) out.gainLoss = bb.disposal.gainLoss
+    // OD-11: what is charged in the disposal month, up to the disposal date.
+    // Under the full-month convention that is the whole month's charge.
+    if (f.action === 'dispose' || f.action === 'dispose-part') {
+      out.disposalCharge = { date: eventDate(f.action, P), charge: chargeAt(after, bk, P).charge, label: periodLabel(P) }
+    }
     const cc = bb.corrections[bb.corrections.length - 1]
     if (f.action === 'correct' && cc) out.catchUp = cc.catchUp
     if (f.action === 'revise' && bk === 'tax') out.note = 'Unchanged. The tax life is fixed by the statutory group.'

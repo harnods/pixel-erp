@@ -71,6 +71,8 @@ export interface AssetSeed {
   statutoryCode: string | null
   /** True for goodwill and indefinite-life intangibles. */
   indefiniteLife: boolean
+  /** OD-38: set on a right-of-use asset, the lease contract it comes from. */
+  leaseId?: string
   /** An impairment recognised in the sample year, as the test recorded it. */
   impairment?: { testId: string; date: string; recoverable: number }
   /** A disposal in the sample year. */

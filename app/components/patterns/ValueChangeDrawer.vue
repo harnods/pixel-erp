@@ -462,6 +462,11 @@ const approvalNote = computed(() => {
                     <div class="vcd-compare-label">{{ t('Life') }}</div>
                     <div class="vcd-compare-text">{{ b.lifeBefore }}</div>
                     <div class="vcd-compare-text">{{ b.lifeAfter }}</div>
+                    <template v-if="b.disposalCharge">
+                      <div class="vcd-compare-label">{{ t(`Depreciation to ${b.disposalCharge.date}`) }}</div>
+                      <div class="vcd-compare-num" />
+                      <div class="vcd-compare-num vcd-strong">{{ money(b.disposalCharge.charge) }}</div>
+                    </template>
                     <template v-if="b.gainLoss !== undefined">
                       <div class="vcd-compare-label">{{ t('Gain or loss') }}</div>
                       <div class="vcd-compare-num" />
@@ -474,6 +479,9 @@ const approvalNote = computed(() => {
                     </template>
                   </div>
                   <p v-if="b.note" class="vcd-hint">{{ t(b.note) }}</p>
+                  <p v-if="b.disposalCharge" class="vcd-hint">
+                    {{ t(`${b.disposalCharge.label} is charged up to the disposal date and nothing after it. The module uses the full-month convention, so the disposal month carries a full month's charge, which is included in the carrying amount the gain or loss is measured against.`) }}
+                  </p>
                   <table class="vcd-table">
                     <thead>
                       <tr>

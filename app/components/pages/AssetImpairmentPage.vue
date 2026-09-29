@@ -19,7 +19,9 @@ import {
 import { formatIDR } from '~/utils/currency'
 import { successToast } from '~/utils/toasts'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
-import { fixedAssets, carryingForTest, IMPAIRMENT_INDICATORS } from '~/data/assetStore'
+import { fixedAssets, carryingForTest, IMPAIRMENT_INDICATORS, CURRENT_PERIOD, FY_END } from '~/data/assetStore'
+import { annualObligations, annualDone, annualOutstanding } from '~/data/assetIntangibles'
+import { periodEndDate } from '~/data/assetEngine'
 import { impairmentTests, recordImpairmentTest, type ImpairmentTest } from '~/data/fixedAssetSession'
 
 const { t } = useLocale()
@@ -28,17 +30,14 @@ const router = useRouter()
 const tests = impairmentTests
 
 /**
- * Goodwill and indefinite-life intangibles must be tested every year whether or
- * not an indicator exists. An obligation with no prompt gets met when someone
- * remembers.
+ * OD-52, FG3-AC6. Goodwill and indefinite-life intangibles must be tested
+ * every year whether or not an indicator exists. At year end the list is
+ * raised; before it, 'Show year-end obligations' raises it on demand. Once
+ * shown it stays, completed assets named beside the test that completed
+ * them, so an all-done year still reads as done rather than as nothing due.
  */
-const annualDue = computed(() => fixedAssets.value.filter((a) => a.indefiniteLife))
-const annualDone = computed(() =>
-  annualDue.value.filter((a) => tests.value.some((x) => x.assetId === a.id && x.indicator.includes('Annual'))),
-)
-const annualOutstanding = computed(() =>
-  annualDue.value.filter((a) => !annualDone.value.includes(a)),
-)
+const isYearEnd = CURRENT_PERIOD.endsWith('-12')
+const obligationsShown = ref(isYearEnd || annualOutstanding.value.length > 0)
 
 // ── Recording a test ────────────────────────────────────────────────────────
 // The form asks for the recoverable amount and where it came from, and nothing
@@ -114,32 +113,57 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
       <p class="im__sub">
         {{ t('PSAK 48 · the obligation is to test, so a test that finds nothing is retained as the evidence it happened') }}
       </p>
-      <MpButton is-rounded @click="openForm()">
-        {{ t('Record a test') }}
-      </MpButton>
+      <div class="im__headactions">
+        <MpButton v-if="!obligationsShown" variant="secondary" is-rounded @click="obligationsShown = true">
+          {{ t('Show year-end obligations') }}
+        </MpButton>
+        <MpButton is-rounded @click="openForm()">
+          {{ t('Record a test') }}
+        </MpButton>
+      </div>
     </header>
 
     <!-- The annual obligation, raised rather than remembered. -->
-    <MpBanner v-if="annualOutstanding.length" id="im__note-banner" variant="warning" class="im__note">
+    <MpBanner v-if="obligationsShown && annualOutstanding.length" id="im__note-banner" variant="warning" class="im__note">
       <MpBannerIcon id="b-icon" />
       <MpBannerTitle>
         {{ annualOutstanding.length }}
         {{ t(annualOutstanding.length === 1 ? 'asset is due its annual test' : 'assets are due their annual test') }}
       </MpBannerTitle>
       <MpBannerDescription>
-        {{ annualOutstanding.map((a) => `${a.id} ${a.name}`).join(', ') }}.
         {{ t('Goodwill and indefinite-life intangibles are tested every year whether or not an indicator exists.') }}
-        {{ annualDone.length }} {{ t('of') }} {{ annualDue.length }} {{ t('done.') }}
       </MpBannerDescription>
     </MpBanner>
 
-    <!-- Testing the outstanding asset is one click from the reminder. -->
-    <div v-if="annualOutstanding.length" class="im__dueactions">
-      <MpButton
-        v-for="a in annualOutstanding" :key="a.id"
-        variant="secondary" is-rounded
-        @click="openForm(a.id)"
-      >{{ t('Test') }} {{ a.id }}</MpButton>
+    <!-- OD-52: every asset under the obligation, done or not, by name. -->
+    <div v-if="obligationsShown" class="im__annual" data-tour="imp-annual">
+      <div class="im__annualhead">
+        <div>
+          <div class="im__annualtitle">{{ t(`Annual impairment tests · FY2026, year end ${periodEndDate(FY_END)}`) }}</div>
+          <div class="im__annualsub">
+            {{ annualDone.length }} {{ t('of') }} {{ annualObligations.length }} {{ t('done') }}
+            <template v-if="!annualOutstanding.length"> · {{ t('every required test is recorded for the year') }}</template>
+          </div>
+        </div>
+        <MpButton v-if="!isYearEnd" variant="ghost" is-rounded @click="obligationsShown = false">{{ t('Hide') }}</MpButton>
+      </div>
+      <div v-for="o in annualObligations" :key="o.asset.id" class="im__annualrow">
+        <div class="im__annualasset">
+          <span class="im__assetlink" @click="openAsset(o.asset.id)">{{ o.asset.id }} {{ o.asset.name }}</span>
+          <span class="im__annualwhy">{{ t(o.why) }}</span>
+        </div>
+        <div v-if="o.test" class="im__annualstate">
+          <span class="im__badge im__badge--nil">{{ t('Tested') }}</span>
+          <span class="im__annualnote">{{ o.test.id }} · {{ o.test.date }} · {{ t(o.test.outcome) }}</span>
+        </div>
+        <div v-else class="im__annualstate">
+          <span class="im__badge im__badge--hit">{{ t('Outstanding') }}</span>
+          <MpButton variant="secondary" size="sm" is-rounded @click="openForm(o.asset.id)">{{ t('Test') }} {{ o.asset.id }}</MpButton>
+        </div>
+      </div>
+      <p v-if="!annualObligations.length" class="im__annualnote im__annualempty">
+        {{ t('No goodwill or indefinite-life intangibles are held, so no annual test is required.') }}
+      </p>
     </div>
 
     <!-- ── Record a test ── -->
@@ -255,6 +279,18 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
 .im__title { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
 .im__sub { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0; max-width: 720px; }
 .im__note { margin-bottom: var(--mp-spacing-4); }
+.im__headactions { display: flex; gap: var(--mp-spacing-2); flex: none; }
+.im__annual { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); margin-bottom: var(--mp-spacing-4); }
+.im__annualhead { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.im__annualtitle { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.im__annualsub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); }
+.im__annualrow { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.im__annualrow:last-of-type { border-bottom: 0; }
+.im__annualasset { display: flex; flex-direction: column; gap: var(--mp-spacing-1); min-width: 0; }
+.im__annualwhy { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.im__annualstate { display: flex; align-items: center; gap: var(--mp-spacing-3); flex: none; }
+.im__annualnote { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.im__annualempty { margin: 0; padding: var(--mp-spacing-3) var(--mp-spacing-4); }
 .im__dueactions { display: flex; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-4); flex-wrap: wrap; }
 
 /* Record a test — inline rather than in a drawer, because it is short and the
