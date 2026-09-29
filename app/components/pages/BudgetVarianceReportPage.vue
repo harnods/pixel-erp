@@ -355,7 +355,7 @@ function exportExcel() {
     const cols = flatColumns.value
     const row = (label: string, f: RowPair) => [label, ...cols.map((c) => cell(f, c).text)].map(esc).join(',')
     const lines = [
-      `Budget Variance — ${budget.value.name} — ${rangeCaption.value}`,
+      `Budget variance — ${budget.value.name} — ${rangeCaption.value}`,
       ['', ...cols.map((c) => (banded.value ? c.value.toUpperCase() : ''))].map(esc).join(','),
       ['', ...cols.map((c) => c.bucket.label.toUpperCase())].map(esc).join(','),
       ['Account', ...cols.map((c) => c.label)].map(esc).join(','),
@@ -382,7 +382,7 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
       <div class="bvr-titlebar-left">
         <MpButton class="bvr-breadcrumb" variant="link" type="button" @click="router.push('/financial-report')">{{ t('Financials') }}</MpButton>
         <div class="bvr-title-row">
-          <h1 class="bvr-title">{{ t('Budget Variance') }}: {{ budget.name }} <span class="bvr-title-cur">(IDR)</span></h1>
+          <h1 class="bvr-title">{{ t('Budget variance') }}: {{ budget.name }} <span class="bvr-title-cur">(IDR)</span></h1>
           <MpPopover id="bvr-budget" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
               <MpButton class="bvr-title-caret" variant="ghost" type="button" left-icon="caret-down" :aria-label="t('Switch budget')" />
@@ -563,7 +563,7 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
       <!-- ── Report ── -->
       <div class="bvr-report">
         <div v-if="fullscreen" class="bvr-fs-topbar">
-          <span class="bvr-fs-title">{{ t('Budget Variance') }}: {{ budget.name }} <span class="bvr-title-cur">(IDR)</span></span>
+          <span class="bvr-fs-title">{{ t('Budget variance') }}: {{ budget.name }} <span class="bvr-title-cur">(IDR)</span></span>
           <MpTooltip id="bvr-fs-exit" :label="t('Exit full screen')" placement="bottom-end" use-portal>
             <MpButton class="bvr-fs-btn" variant="ghost" type="button" left-icon="minimize" :aria-label="t('Exit full screen')" @click="fullscreen = false" />
           </MpTooltip>

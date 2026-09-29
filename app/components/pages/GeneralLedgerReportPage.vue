@@ -242,7 +242,7 @@ function exportExcel() {
     exporting.value = false
     const esc = (v: unknown) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
     const header = ['Account', 'Date', 'Number', 'Detail', ...(show('dimension') ? ['Dimensions'] : []), 'Debit', 'Credit', 'Balance']
-    const lines = [`General Ledger — ${rangeCaption.value}`, header.join(',')]
+    const lines = [`General ledger — ${rangeCaption.value}`, header.join(',')]
     for (const a of accounts.value) {
       const label = `${a.code} ${a.name}`
       lines.push([label, '', 'Starting balance', '', ...(show('dimension') ? [''] : []), '', '', a.startingBalance].map(esc).join(','))
@@ -265,7 +265,7 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
     <header v-if="!fullscreen" class="glr-titlebar">
       <div class="glr-titlebar-left">
         <MpButton class="glr-breadcrumb" type="button" @click="router.push('/financial-report')">{{ t('Financials') }}</MpButton>
-        <h1 class="glr-title">{{ t('General Ledger') }} <span class="glr-title-cur">(IDR)</span></h1>
+        <h1 class="glr-title">{{ t('General ledger') }} <span class="glr-title-cur">(IDR)</span></h1>
       </div>
     </header>
 
@@ -375,7 +375,7 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
       <!-- ── Report ── -->
       <div class="glr-report">
         <div v-if="fullscreen" class="glr-fs-topbar">
-          <span class="glr-fs-title">{{ t('General Ledger') }} <span class="glr-title-cur">(IDR)</span></span>
+          <span class="glr-fs-title">{{ t('General ledger') }} <span class="glr-title-cur">(IDR)</span></span>
           <MpTooltip id="glr-fs-exit" :label="t('Exit full screen')" placement="bottom-end" use-portal>
             <MpButton class="glr-fs-btn" type="button" :aria-label="t('Exit full screen')" left-icon="minimize" @click="fullscreen = false" />
           </MpTooltip>

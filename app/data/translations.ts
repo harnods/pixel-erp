@@ -2798,7 +2798,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   // ── Reports › Inventory — index + Dual Unit Inventory Report ──────────────────
   "View report": "Lihat laporan",
   "Coming soon": "Segera hadir",
-  "Dual Unit Inventory": "Persediaan Dua Satuan",
+  "Dual unit inventory": "Persediaan Dua Satuan",
   "Stock mutation and on-hand stock in both base and secondary inventory unit, per batch. For products using a secondary inventory unit.":
     "Mutasi stok dan stok tersedia dalam satuan dasar dan satuan persediaan sekunder, per batch. Untuk produk yang memakai satuan persediaan sekunder.",
   "Stock mutation": "Mutasi stok",
@@ -2811,7 +2811,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "One product’s full stock history in a single card, from beginning balance to ending balance.":
     "Riwayat stok lengkap satu produk dalam satu kartu, dari saldo awal sampai saldo akhir.",
 
-  "Dual Unit Inventory Report": "Laporan Persediaan Dua Satuan",
+  "Dual unit inventory report": "Laporan Persediaan Dua Satuan",
   "Select date": "Pilih tanggal",
   "Search product, SKU or batch": "Cari produk, SKU, atau batch",
   "Period:": "Periode:",
@@ -2968,17 +2968,17 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "You must fill in value": "Anda harus mengisi nilai",
 
   // ── Reports › Financials index (FinancialReportsIndexPage) ───────────────────
-  "Profit & Loss": "Laba Rugi",
-  "Balance Sheet": "Neraca",
-  "Cash Flows": "Arus Kas",
-  "General Ledger": "Buku Besar",
-  "Trial Balance": "Neraca Saldo",
-  "Journal Report": "Laporan Jurnal",
-  "Executive Summary": "Ringkasan Eksekutif",
-  "Statement of Changes in Equity": "Laporan Perubahan Ekuitas",
-  "Budget Variance": "Selisih Anggaran",
-  "Budget Manager": "Pengelola Anggaran",
-  "Anomaly Detection": "Deteksi Anomali",
+  "Profit & loss": "Laba Rugi",
+  "Balance sheet": "Neraca",
+  "Cash flows": "Arus Kas",
+  "General ledger": "Buku Besar",
+  "Trial balance": "Neraca Saldo",
+  "Journal report": "Laporan Jurnal",
+  "Executive summary": "Ringkasan Eksekutif",
+  "Statement of changes in equity": "Laporan Perubahan Ekuitas",
+  "Budget variance": "Selisih Anggaran",
+  "Budget manager": "Pengelola Anggaran",
+  "Anomaly detection": "Deteksi Anomali",
   "Multidimensional": "Multidimensi",
   "Displays your total income, expenses, and net profit over a specific period. Essential for understanding business performance.": "Menampilkan total pendapatan, biaya, dan laba bersih dalam periode tertentu. Penting untuk memahami performa bisnis.",
   "A snapshot of your company's financial position—including assets, liabilities, and equity—at a specific point in time.": "Gambaran posisi keuangan perusahaan Anda—termasuk aset, liabilitas, dan ekuitas—pada waktu tertentu.",

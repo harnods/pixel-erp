@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { MpButton } from '@mekari/pixel3'
-// Reports → Financials index (Reports module → Financials submenu). Lists the
-// financial reports; each "View report" opens its report page. Same flush
+// Reports → Purchases index (Reports module → Purchases submenu). Same flush
 // edge-to-edge card grid as the Sales reports index (SalesReportsIndexPage) —
-// Pixel 3 DT 2.4 enterprise tokens.
+// Pixel 3 DT 2.4 enterprise tokens. No report detail page is built yet, so
+// every "View report" shows the coming-soon toast (same as the other indexes).
 import { infoToast } from '~/utils/toasts'
-
 const { t } = useLocale()
 const router = useRouter()
 
@@ -16,20 +15,18 @@ interface ReportCard {
   description: string
 }
 const reports: ReportCard[] = [
-  { slug: 'profit-and-loss',    title: 'Profit & loss',    description: 'Displays your total income, expenses, and net profit over a specific period. Essential for understanding business performance.' },
-  { slug: 'balance-sheet',      title: 'Balance sheet',    description: "A snapshot of your company's financial position—including assets, liabilities, and equity—at a specific point in time." },
-  { slug: 'cash-flows',         title: 'Cash flows',       description: 'Tracks the movement of cash in and out of your business to help you analyze liquidity and cash availability.' },
-  { slug: 'general-ledger',     title: 'General ledger',   description: 'A complete record of all transactions posted to your accounts, sorted by date. Useful for detailed transaction auditing.' },
-  { slug: 'trial-balance',      title: 'Trial balance',    description: 'A summary of closing balances for all accounts in your chart of accounts to ensure debits and credits match.' },
-  { slug: 'journal-report',     title: 'Journal report',   description: 'Displays the chronological record of all journal entries, showing the debits and credits affected by each transaction.' },
-  { slug: 'executive-summary',  title: 'Executive summary', description: 'A high-level overview of key financial ratios and performance indicators designed for business owners and stakeholders.' },
-  { slug: 'changes-in-equity',  title: 'Statement of changes in equity', description: "Details the changes in the owner's equity throughout the period, including capital injections and retained earnings." },
-  { slug: 'budget-variance',    title: 'Budget variance',  description: 'Compares your actual financial performance against your planned budget to identify overspending or revenue gaps.' },
-  { slug: 'budget-manager',     title: 'Budget manager',   description: 'Set up and manage monthly or yearly budgets for your income and expense accounts.' },
-  { slug: 'anomaly-detection',  title: 'Anomaly detection', description: 'Identifies potential anomalies in transactions and accounts based on AI analysis, such as unusual amounts, excessive data changes, etc.' },
-  { slug: 'multidimensional',   title: 'Multidimensional', description: 'Displays your total income, expenses, and net profit over a specific period. Essential for understanding business performance.' },
+  { slug: 'aged-payables-summary',     title: 'Aged payables summary',     description: 'Shows overdue bills to vendors categorized by days (30, 60, 90+ days). Crucial for managing cash outflows and avoiding late fees.' },
+  { slug: 'vendor-balance-list',       title: 'Vendor balance list',       description: 'Displays the total outstanding amount you owe to each vendor, including unpaid bills and available vendor credits.' },
+  { slug: 'purchases-by-vendor',       title: 'Purchases by vendor',       description: 'Summarizes total spending per supplier. Useful for identifying your key vendors and negotiating better volume discounts.' },
+  { slug: 'purchases-by-product',      title: 'Purchases by product',      description: 'Breakdown of quantity and cost of items purchased. Helps analyze procurement trends and changing costs over time.' },
+  { slug: 'expenses-by-account',       title: 'Expenses by account',       description: 'Groups your operational expenses by chart of accounts (e.g., Rent, Utilities) to show where your budget is being spent.' },
+  { slug: 'purchase-transaction-list', title: 'Purchase transaction list', description: 'A chronological history of all purchase transactions including bills, orders, and expenses.' },
+  { slug: 'purchase-order-status',     title: 'Purchase order status',     description: 'Tracks the lifecycle of purchase orders from creation to goods receipt, billing, and final payment.' },
+  { slug: 'goods-received-report',     title: 'Goods received report',     description: 'Details all inventory items received from suppliers, cross-referenced with their purchase orders.' },
+  { slug: 'expense-transaction-list',  title: 'Expense transaction list',  description: 'A simple list of all direct expense claims and payments recorded within a specific period.' },
 ]
 
+// ── Responsive column count ──────────────────────────────────────────────────
 const MIN_CARD_WIDTH = 260
 const gridEl = ref<HTMLElement | null>(null)
 const cols = ref(4)
@@ -54,15 +51,13 @@ onMounted(async () => {
 })
 onUnmounted(() => ro?.disconnect())
 
-const BUILT: Record<string, string> = {
-  multidimensional: '/financial-report/multidimensional',
-  'general-ledger': '/financial-report/general-ledger',
-  'budget-variance': '/financial-report/budget-variance',
-}
+// Built report detail pages navigate; the rest show a coming-soon toast for now.
+const BUILT: Record<string, string> = {}
 function viewReport(r: ReportCard) {
   const to = BUILT[r.slug]
   if (to) router.push(to)
-  else infoToast(`${t(r.title)} report — coming soon`)
+  // "Goods Received Report" already ends in "Report" — don't double it in the toast.
+  else infoToast(`${t(r.title)}${/report$/i.test(r.title) ? '' : ' report'} — coming soon`)
 }
 </script>
 

@@ -138,6 +138,10 @@ const visibleColumns = computed(() =>
     // Cycle counts only: on the ERP stock-adjustment list the row IS the document,
     // so pointing it at itself would be circular.
     && !(c.key === 'deliveryDoc' && currentPageKey.value !== 'Cycle counts')
+  ).map(c =>
+    // Cycle counts only: checkbox + "Cycle Count #xxxxx" overflows the 160px
+    // `number` min — fixed 208px, same as the Purchases index pages.
+    c.key === 'number' && isCycleCounts.value ? { ...c, kind: undefined, width: '208px' } : c
   )
 )
 // "Memo" sits directly under "Number" — it surfaces the memo beneath the number cell.
