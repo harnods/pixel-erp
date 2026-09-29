@@ -586,6 +586,15 @@ input[type="number"] {
   appearance: textfield;
 }
 
+/* ─── Breadcrumbs are always regular weight ──────────────────────────────────
+   Breadcrumb links were migrated to MpButton, which is semibold by default, and a
+   few pages set semibold explicitly. Every breadcrumb class in the app contains
+   "breadcrumb" (detail-breadcrumb, nw-breadcrumb, cnb-breadcrumb-sep, …), so one
+   attribute rule normalises them all. !important beats MpButton's atomic class. */
+[class*="breadcrumb"] {
+  font-weight: var(--mp-font-weights-regular, 400) !important;
+}
+
 /* ─── Table cell link ─────────────────────────────────────────────────────────
    The identifier value in a table cell (e.g. an order no., product name) is a
    text link that opens the row's detail/preview. Replaces the old row-hover

@@ -1,15 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { MpButton } from '@mekari/pixel3'
+// Reports → Purchases index (Reports module → Purchases submenu). Same flush
+// edge-to-edge card grid as the Sales reports index (SalesReportsIndexPage) —
+// Pixel 3 DT 2.4 enterprise tokens. No report detail page is built yet, so
+// every "View report" shows the coming-soon toast (same as the other indexes).
 import { infoToast } from '~/utils/toasts'
-// Inventory → Reports index (Reports module → Inventory submenu). Same card grid as
-// Reports › WMS (WmsReportsIndexPage): cards fill the stage width as an equal-column
-// grid, the last row is padded with fillers so every column is present top and bottom,
-// and the outer right + bottom borders are clipped.
-//
-// Only "Dual Unit Inventory" is built (PRD Dual Unit Inventory, Story 14). The rest are
-// listed so the section reads complete; their "View report" shows the coming-soon
-// toast, same as the other report indexes.
 const { t } = useLocale()
 const router = useRouter()
 
@@ -17,47 +13,28 @@ interface ReportCard {
   slug: string
   title: string
   description: string
-  /** false → no report page yet; "View report" shows the coming-soon toast. */
-  built: boolean
 }
 const reports: ReportCard[] = [
-  {
-    slug: 'dual-unit',
-    title: 'Dual Unit Inventory',
-    description: 'Stock mutation and on-hand stock in both base and secondary inventory unit, per batch. For products using a secondary inventory unit.',
-    built: true,
-  },
-  {
-    slug: 'stock-mutation',
-    title: 'Stock mutation',
-    description: 'Every stock movement per product over a period, with the running balance after each transaction.',
-    built: false,
-  },
-  {
-    slug: 'inventory-valuation',
-    title: 'Inventory valuation',
-    description: 'On-hand quantity, average cost, and stock value per product at the end of a period.',
-    built: false,
-  },
-  {
-    slug: 'stock-card',
-    title: 'Stock card',
-    description: 'One product’s full stock history in a single card, from beginning balance to ending balance.',
-    built: false,
-  },
+  { slug: 'aged-payables-summary',     title: 'Aged Payables Summary',     description: 'Shows overdue bills to vendors categorized by days (30, 60, 90+ days). Crucial for managing cash outflows and avoiding late fees.' },
+  { slug: 'vendor-balance-list',       title: 'Vendor Balance List',       description: 'Displays the total outstanding amount you owe to each vendor, including unpaid bills and available vendor credits.' },
+  { slug: 'purchases-by-vendor',       title: 'Purchases by Vendor',       description: 'Summarizes total spending per supplier. Useful for identifying your key vendors and negotiating better volume discounts.' },
+  { slug: 'purchases-by-product',      title: 'Purchases by Product',      description: 'Breakdown of quantity and cost of items purchased. Helps analyze procurement trends and changing costs over time.' },
+  { slug: 'expenses-by-account',       title: 'Expenses by Account',       description: 'Groups your operational expenses by chart of accounts (e.g., Rent, Utilities) to show where your budget is being spent.' },
+  { slug: 'purchase-transaction-list', title: 'Purchase Transaction List', description: 'A chronological history of all purchase transactions including bills, orders, and expenses.' },
+  { slug: 'purchase-order-status',     title: 'Purchase Order Status',     description: 'Tracks the lifecycle of purchase orders from creation to goods receipt, billing, and final payment.' },
+  { slug: 'goods-received-report',     title: 'Goods Received Report',     description: 'Details all inventory items received from suppliers, cross-referenced with their purchase orders.' },
+  { slug: 'expense-transaction-list',  title: 'Expense Transaction List',  description: 'A simple list of all direct expense claims and payments recorded within a specific period.' },
 ]
 
 // ── Responsive column count ──────────────────────────────────────────────────
-// Reduce columns as the grid narrows; never more columns than cards.
 const MIN_CARD_WIDTH = 260
 const gridEl = ref<HTMLElement | null>(null)
-const cols = ref(reports.length)
+const cols = ref(4)
 function recompute() {
   const w = gridEl.value?.clientWidth ?? 0
   if (!w) return
-  cols.value = Math.max(1, Math.min(reports.length, Math.floor(w / MIN_CARD_WIDTH)))
+  cols.value = Math.max(1, Math.min(4, Math.floor(w / MIN_CARD_WIDTH)))
 }
-// Empty cells needed to complete the final row.
 const fillerCount = computed(() => {
   const rem = reports.length % cols.value
   return rem === 0 ? 0 : cols.value - rem
@@ -74,9 +51,13 @@ onMounted(async () => {
 })
 onUnmounted(() => ro?.disconnect())
 
+// Built report detail pages navigate; the rest show a coming-soon toast for now.
+const BUILT: Record<string, string> = {}
 function viewReport(r: ReportCard) {
-  if (r.built) router.push(`/inventory-report/${r.slug}`)
-  else infoToast(`${t(r.title)} report — coming soon`)
+  const to = BUILT[r.slug]
+  if (to) router.push(to)
+  // "Goods Received Report" already ends in "Report" — don't double it in the toast.
+  else infoToast(`${t(r.title)}${/report$/i.test(r.title) ? '' : ' report'} — coming soon`)
 }
 </script>
 
@@ -103,8 +84,6 @@ function viewReport(r: ReportCard) {
   display: grid;
   grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
   align-items: stretch;
-  /* Push the outer-right and outer-bottom borders past the clip so the rightmost
-     column and last row never show an outer border. */
   margin: 0 -1px -1px 0;
 }
 .report-card {
@@ -130,7 +109,6 @@ function viewReport(r: ReportCard) {
   white-space: nowrap;
 }
 .report-card-desc {
-  /* Fixed block so every card's action sits on the same baseline across the row. */
   height: var(--mp-sizes-24, 96px);
   margin: 0;
   font-size: var(--mp-font-sizes-md, 14px);
@@ -139,7 +117,7 @@ function viewReport(r: ReportCard) {
   line-height: var(--mp-line-heights-md, 20px);
 }
 
-/* Visual comes from .btn-enterprise--secondary (erp.css); only the placement is local. */
+/* Secondary pill button (Pixel enterprise): white fill, bold border, rounded-full. */
+/* layout only — the button look comes from MpButton (secondary) */
 .report-view-btn { align-self: flex-start; }
-
 </style>

@@ -147,6 +147,11 @@ const pageRegistry: Record<string, Component> = {
   // Reports → Inventory index (report cards). The Dual Unit Inventory report itself
   // resolves via detailMatch (/inventory-report/dual-unit).
   'Inventory report':   defineAsyncComponent(() => import('~/components/pages/InventoryReportsIndexPage.vue')),
+  // Reports → Purchases / Tax / Cash & bank indexes (same flush report-card grid as
+  // Sales). No report detail pages yet — every card shows the coming-soon toast.
+  'Purchase report':    defineAsyncComponent(() => import('~/components/pages/PurchaseReportsIndexPage.vue')),
+  'Tax report':         defineAsyncComponent(() => import('~/components/pages/TaxReportsIndexPage.vue')),
+  'Cash and bank report': defineAsyncComponent(() => import('~/components/pages/CashBankReportsIndexPage.vue')),
   'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
   'Design erp':         defineAsyncComponent(() => import('~/components/pages/DesignErpDashboardPage.vue')),
 
@@ -2237,7 +2242,7 @@ function startResize(e: MouseEvent) {
         </button>
       </div>
 
-      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Sales report' || currentPageKey === 'Buzz branding' || currentPageKey === 'Inventory report' || currentPageKey === 'Financial report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
+      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Sales report' || currentPageKey === 'Buzz branding' || currentPageKey === 'Inventory report' || currentPageKey === 'Financial report' || currentPageKey === 'Purchase report' || currentPageKey === 'Tax report' || currentPageKey === 'Cash and bank report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
         <!-- Several warehouses in scope: where the work is, not which products. -->
         <MpBanner v-if="cycleCountBannerMulti" variant="info" class="cycle-count-banner">
           <MpBannerIcon name="info" />

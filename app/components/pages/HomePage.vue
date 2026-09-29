@@ -109,6 +109,7 @@ const approvals: Approval[] = [
 ]
 const actionsRequiredCount = 10
 
+// Approve only confirms with a toast for now — the item stays in the list.
 function approve(a: Approval) {
   toast.notify({ variant: 'success', title: `${a.title} ${t('approved')}`, maxWidth: 'max-content' })
 }
@@ -325,7 +326,7 @@ const learn: LearnCard[] = [
             </div>
           </div>
 
-          <MpButton class="approvals__all" type="button" @click="router.push('/warehouse-transfers')">
+          <MpButton class="approvals__all" type="button" @click="router.push('/inbox?tab=awaiting-approval&innerTab=all')">
             {{ t('View all awaiting approvals') }}
           </MpButton>
         </div>
@@ -706,7 +707,7 @@ const learn: LearnCard[] = [
   gap: var(--mp-spacing-3);
 }
 .anomaly__head { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.anomaly__icon { color: var(--mp-colors-warning-default); flex-shrink: 0; }
+.anomaly__icon { color: var(--mp-colors-warning-default, #e5810f); flex-shrink: 0; }
 .anomaly__title {
   font-size: var(--mp-font-sizes-md);
   font-weight: var(--mp-font-weights-semi-bold);
@@ -836,9 +837,9 @@ const learn: LearnCard[] = [
   display: flex;
   flex-direction: column;
 }
-.wn--green    { --wn-bg: var(--mp-colors-success-weaker); background: var(--wn-bg); }
-.wn--yellow   { --wn-bg: var(--mp-colors-warning-weaker); background: var(--wn-bg); }
-.wn--blue     { --wn-bg: var(--mp-colors-info-weaker); background: var(--wn-bg); }
+.wn--green    { --wn-bg: var(--mp-colors-success-weaker, #edf9f2); background: var(--wn-bg); }
+.wn--yellow   { --wn-bg: var(--mp-colors-warning-weaker, #FFF9EA); background: var(--wn-bg); }
+.wn--blue     { --wn-bg: var(--mp-colors-info-weaker, #eaf4fc); background: var(--wn-bg); }
 .wn__head { position: relative; z-index: 1; padding: var(--mp-spacing-6) var(--mp-spacing-6) 0; }
 .wn__title {
   margin: 0 0 var(--mp-spacing-2);
@@ -945,8 +946,11 @@ const learn: LearnCard[] = [
   max-height: 296px;
   overflow-y: auto;
 }
+/* MpButton centres its content (justify-content: center), which left every step
+   indented by its own text width — pin the check + text to the start edge. */
 .setup-step {
   display: flex;
+  justify-content: flex-start !important;
   align-items: center;
   gap: var(--mp-spacing-3);
   padding: var(--mp-spacing-3);
@@ -1039,7 +1043,7 @@ const learn: LearnCard[] = [
 }
 .learn-tag--blue    { background: #eaf1fd; color: #3d5bcc; }
 .learn-tag--neutral { background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-secondary, #3a4749); }
-.learn-tag--yellow  { background: var(--mp-colors-warning-weaker, #fdf6dd); color: var(--mp-colors-warning-bolder); }
+.learn-tag--yellow  { background: var(--mp-colors-warning-weaker, #fdf6dd); color: var(--mp-colors-warning-bolder, #a14a0b); }
 .learn-card__title {
   margin: 0 0 var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-lg);
@@ -1055,15 +1059,24 @@ const learn: LearnCard[] = [
 .learn-card__foot { margin-top: auto; display: flex; justify-content: flex-end; }
 
 /* ── Useful links ─────────────────────────────────────────────────────────── */
+/* Groups share the row equally (fill), exactly 24px apart; wrap below 260px each. */
 .useful {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--mp-spacing-6);
 }
+/* MpButton forces a fixed height, centred content, nowrap and semibold text —
+   reset all four so the description wraps at its max-width in regular weight. */
 .useful-link {
+  flex: 1 1 260px;
+  min-width: 0;
   display: flex;
+  justify-content: flex-start !important;
   align-items: flex-start;
   gap: var(--mp-spacing-4);
+  height: auto !important;
+  white-space: normal !important;
+  font-weight: var(--mp-font-weights-regular, 400) !important;
   background: none;
   border: none;
   padding: 0;
@@ -1073,7 +1086,7 @@ const learn: LearnCard[] = [
 .useful-link__icon { color: var(--mp-text-default, #080d0e); flex-shrink: 0; margin-top: 2px; width: 24px; height: 24px; }
 .useful-link__text { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .useful-link__title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.useful-link__desc { font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary); max-width: 280px; }
+.useful-link__desc { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular, 400); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary); }
 .useful-link:hover .useful-link__title { text-decoration: underline; }
 
 /* ── Responsive ───────────────────────────────────────────────────────────────

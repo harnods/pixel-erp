@@ -1,15 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { MpButton } from '@mekari/pixel3'
+// Reports → Tax index (Reports module → Tax submenu). Same flush
+// edge-to-edge card grid as the Sales reports index (SalesReportsIndexPage) —
+// Pixel 3 DT 2.4 enterprise tokens. No report detail page is built yet, so
+// every "View report" shows the coming-soon toast (same as the other indexes).
 import { infoToast } from '~/utils/toasts'
-// Inventory → Reports index (Reports module → Inventory submenu). Same card grid as
-// Reports › WMS (WmsReportsIndexPage): cards fill the stage width as an equal-column
-// grid, the last row is padded with fillers so every column is present top and bottom,
-// and the outer right + bottom borders are clipped.
-//
-// Only "Dual Unit Inventory" is built (PRD Dual Unit Inventory, Story 14). The rest are
-// listed so the section reads complete; their "View report" shows the coming-soon
-// toast, same as the other report indexes.
 const { t } = useLocale()
 const router = useRouter()
 
@@ -17,47 +13,21 @@ interface ReportCard {
   slug: string
   title: string
   description: string
-  /** false → no report page yet; "View report" shows the coming-soon toast. */
-  built: boolean
 }
 const reports: ReportCard[] = [
-  {
-    slug: 'dual-unit',
-    title: 'Dual Unit Inventory',
-    description: 'Stock mutation and on-hand stock in both base and secondary inventory unit, per batch. For products using a secondary inventory unit.',
-    built: true,
-  },
-  {
-    slug: 'stock-mutation',
-    title: 'Stock mutation',
-    description: 'Every stock movement per product over a period, with the running balance after each transaction.',
-    built: false,
-  },
-  {
-    slug: 'inventory-valuation',
-    title: 'Inventory valuation',
-    description: 'On-hand quantity, average cost, and stock value per product at the end of a period.',
-    built: false,
-  },
-  {
-    slug: 'stock-card',
-    title: 'Stock card',
-    description: 'One product’s full stock history in a single card, from beginning balance to ending balance.',
-    built: false,
-  },
+  { slug: 'withholding-tax-summary', title: 'Withholding Tax Summary', description: 'Details all withholding tax (PPh) deductions recorded on sales and purchases, including taxable amounts and tax rates.' },
+  { slug: 'value-added-tax',         title: 'Value Added Tax (PPN)',   description: 'Calculates net VAT obligations by comparing Output Tax (from sales) and Input Tax (from purchases) within the period.' },
 ]
 
 // ── Responsive column count ──────────────────────────────────────────────────
-// Reduce columns as the grid narrows; never more columns than cards.
 const MIN_CARD_WIDTH = 260
 const gridEl = ref<HTMLElement | null>(null)
-const cols = ref(reports.length)
+const cols = ref(4)
 function recompute() {
   const w = gridEl.value?.clientWidth ?? 0
   if (!w) return
-  cols.value = Math.max(1, Math.min(reports.length, Math.floor(w / MIN_CARD_WIDTH)))
+  cols.value = Math.max(1, Math.min(4, Math.floor(w / MIN_CARD_WIDTH)))
 }
-// Empty cells needed to complete the final row.
 const fillerCount = computed(() => {
   const rem = reports.length % cols.value
   return rem === 0 ? 0 : cols.value - rem
@@ -74,8 +44,11 @@ onMounted(async () => {
 })
 onUnmounted(() => ro?.disconnect())
 
+// Built report detail pages navigate; the rest show a coming-soon toast for now.
+const BUILT: Record<string, string> = {}
 function viewReport(r: ReportCard) {
-  if (r.built) router.push(`/inventory-report/${r.slug}`)
+  const to = BUILT[r.slug]
+  if (to) router.push(to)
   else infoToast(`${t(r.title)} report — coming soon`)
 }
 </script>
@@ -103,8 +76,6 @@ function viewReport(r: ReportCard) {
   display: grid;
   grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
   align-items: stretch;
-  /* Push the outer-right and outer-bottom borders past the clip so the rightmost
-     column and last row never show an outer border. */
   margin: 0 -1px -1px 0;
 }
 .report-card {
@@ -130,7 +101,6 @@ function viewReport(r: ReportCard) {
   white-space: nowrap;
 }
 .report-card-desc {
-  /* Fixed block so every card's action sits on the same baseline across the row. */
   height: var(--mp-sizes-24, 96px);
   margin: 0;
   font-size: var(--mp-font-sizes-md, 14px);
@@ -139,7 +109,7 @@ function viewReport(r: ReportCard) {
   line-height: var(--mp-line-heights-md, 20px);
 }
 
-/* Visual comes from .btn-enterprise--secondary (erp.css); only the placement is local. */
+/* Secondary pill button (Pixel enterprise): white fill, bold border, rounded-full. */
+/* layout only — the button look comes from MpButton (secondary) */
 .report-view-btn { align-self: flex-start; }
-
 </style>
