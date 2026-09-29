@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
-import { MpButton, css } from '@mekari/pixel3'
+import { MpButton } from '@mekari/pixel3'
+// Reports → Financials index (Reports module → Financials submenu). Lists the
+// financial reports; each "View report" opens its report page. Same flush
+// edge-to-edge card grid as the Sales reports index (SalesReportsIndexPage) —
+// Pixel 3 DT 2.4 enterprise tokens.
 import { infoToast } from '~/utils/toasts'
 
 const { t } = useLocale()
@@ -60,65 +64,65 @@ function viewReport(r: ReportCard) {
   if (to) router.push(to)
   else infoToast(`${t(r.title)} report — coming soon`)
 }
-
-const clipClass = css({ overflow: 'hidden' })
-
-const gridClass = computed(() => css({
-  display: 'grid',
-  gridTemplateColumns: `repeat(${cols.value}, minmax(0, 1fr))`,
-  alignItems: 'stretch',
-  margin: '0 -1px -1px 0',
-}))
-
-const cardClass = css({
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '3',
-  padding: '5',
-  borderRight: '1px solid token(colors.border.default)',
-  borderBottom: '1px solid token(colors.border.default)',
-})
-
-const fillerClass = css({ padding: '0!' })
-
-const bodyClass = css({
-  display: 'flex',
-  flexDirection: 'column',
-  minHeight: '92px',
-})
-
-const titleClass = css({
-  fontSize: 'xl',
-  fontWeight: 'semiBold',
-  color: 'text.default',
-  lineHeight: 'xl',
-  margin: '0',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-})
-
-const descClass = css({
-  height: '96px',
-  margin: '0',
-  fontSize: 'md',
-  fontWeight: 'regular',
-  color: 'text.secondary',
-  lineHeight: 'md',
-})
 </script>
 
 <template>
-  <div :class="clipClass">
-    <div ref="gridEl" :class="gridClass">
-      <div v-for="r in reports" :key="r.slug" :class="cardClass">
-        <div :class="bodyClass">
-          <h2 :class="titleClass">{{ t(r.title) }}</h2>
-          <p :class="descClass">{{ t(r.description) }}</p>
+  <div class="reports-clip">
+    <div ref="gridEl" class="reports-grid" :style="{ '--cols': cols }">
+      <div v-for="r in reports" :key="r.slug" class="report-card">
+        <div class="report-card-body">
+          <h2 class="report-card-title">{{ t(r.title) }}</h2>
+          <p class="report-card-desc">{{ t(r.description) }}</p>
         </div>
-        <MpButton variant="secondary" size="sm" class="btn-enterprise btn-enterprise--secondary" @click="viewReport(r)">{{ t('View report') }}</MpButton>
+        <MpButton variant="secondary" is-rounded class="report-view-btn" @click="viewReport(r)">{{ t('View report') }}</MpButton>
       </div>
-      <div v-for="n in fillerCount" :key="`filler-${n}`" :class="[cardClass, fillerClass]" aria-hidden="true" />
+      <!-- Empty filler cells keep the last row's columns present (complete grid). -->
+      <div v-for="n in fillerCount" :key="`filler-${n}`" class="report-card report-card--filler" aria-hidden="true" />
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Clips the grid's 1px-overhang outer right + bottom borders. */
+.reports-clip { overflow: hidden; }
+.reports-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
+  align-items: stretch;
+  margin: 0 -1px -1px 0;
+}
+.report-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-3, 12px);
+  padding: var(--mp-spacing-5, 20px);
+  border-right: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default);
+}
+.report-card--filler { padding: 0; }
+
+.report-card-body { display: flex; flex-direction: column; min-height: 92px; }
+.report-card-title {
+  font-family: var(--mp-font-family-title, inherit);
+  font-size: var(--mp-font-sizes-xl, 20px);
+  font-weight: var(--mp-font-weights-semi-bold, 600);
+  color: var(--mp-text-default);
+  line-height: var(--mp-line-heights-xl, 32px);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.report-card-desc {
+  height: var(--mp-sizes-24, 96px);
+  margin: 0;
+  font-size: var(--mp-font-sizes-md, 14px);
+  font-weight: var(--mp-font-weights-regular, 400);
+  color: var(--mp-text-secondary);
+  line-height: var(--mp-line-heights-md, 20px);
+}
+
+/* Secondary pill button (Pixel enterprise): white fill, bold border, rounded-full. */
+/* layout only — the button look comes from MpButton (secondary) */
+.report-view-btn { align-self: flex-start; }
+</style>

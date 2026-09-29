@@ -25,7 +25,7 @@ const aireneOpen = inject<Ref<boolean>>('aireneOpen')
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
   { key: 'date',       label: 'Date',       kind: 'date',                                 sortType: 'date'   },
-  { key: 'number',     label: 'Number',     kind: 'number', sortable: true,                 sortType: 'text'   },
+  { key: 'number',     label: 'Number',     width: '208px', /* purchases-only: fits "Purchase <doc> #xxxxx" */ sortable: true,                 sortType: 'text'   },
   { key: 'attachment', label: '',           width: '40px',  noHeader: true, align: 'center' },
   { key: 'vendorName', label: 'Vendor',     kind: 'name', sortable: true,                 sortType: 'text'   },
   { key: 'dueDate',    label: 'Due date',   kind: 'date',                                 sortType: 'date'   },
