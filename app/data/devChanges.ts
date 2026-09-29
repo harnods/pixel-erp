@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'pm-production-tab',
+    title: 'Production tab — plan, active BOM version and engineering changes in one place',
+    description:
+      'Production & materials and Engineering change are now one Production tab with three read-only lists: the production plan (finished-good target vs actual, expandable to component level showing qty reserved, consumed and requested), the active BOM version per work package, and the engineering changes. ECO numbers now open a real detail page at /projects/:id/engineering-changes/:ecoId with the composition diff. The tab reports rather than acts — running MRP, reserving, releasing and raising an ECO stay on the surfaces that own those actions.',
+    date: '2026-09-29',
+    files: ['ProductionTab.vue', 'ProjectEcoDetailPage.vue', 'ProjectsRouter.vue', 'ProjectDetailPage.vue'],
+  },
+  {
     id: 'pm-v62-phase1',
     title: 'Project MTO v6.2 — project dimension, contract value from SOs, Overview tab',
     description:

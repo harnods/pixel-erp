@@ -21,7 +21,6 @@ import StructureTab from '../tabs/StructureTab.vue'
 import BudgetTab from '../tabs/BudgetTab.vue'
 import CostTrackingTab from '../tabs/CostTrackingTab.vue'
 import RecognitionTab from '../tabs/RecognitionTab.vue'
-import ChangesTab from '../tabs/ChangesTab.vue'
 import ProductionTab from '../tabs/ProductionTab.vue'
 import CompletionTab from '../tabs/CompletionTab.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -65,8 +64,7 @@ const TABS = computed(() => {
     { key: 'budget', label: 'Budget' },
     { key: 'cost', label: 'Cost tracking' },
   ]
-  if (project.value?.isProduction) list.push({ key: 'production', label: 'Production & materials' })
-  list.push({ key: 'changes', label: 'Engineering change' })
+  if (project.value?.isProduction) list.push({ key: 'production', label: 'Production' })
   list.push({ key: 'recognition', label: 'Recognition & billing' })
   list.push({ key: 'completion', label: 'Completion' })
   return list
@@ -210,7 +208,7 @@ const lastEntry = computed(() => projectAudit.value[0])
       <MpTabs id="pm-detail-tabs" data-devchange="pm-pixel-rework" v-model="activeTabIndex" is-manual variant-color="green" class="detail-tabs">
         <MpTabList>
           <MpTab v-for="tab in TABS" :id="`pm-tab-${tab.key}`" :key="tab.key" :value="tab.key">
-            {{ t(tab.label) }}<template v-if="tab.key === 'changes' && changesPending"> ({{ changesPending }})</template>
+            {{ t(tab.label) }}<template v-if="tab.key === 'production' && changesPending"> ({{ changesPending }})</template>
           </MpTab>
         </MpTabList>
         <MpTabPanels>
@@ -220,7 +218,6 @@ const lastEntry = computed(() => projectAudit.value[0])
               <BudgetTab v-else-if="tab.key === 'budget'" :project="project" />
               <CostTrackingTab v-else-if="tab.key === 'cost'" :project="project" />
               <RecognitionTab v-else-if="tab.key === 'recognition'" :project="project" />
-              <ChangesTab v-else-if="tab.key === 'changes'" :project="project" />
               <ProductionTab v-else-if="tab.key === 'production'" :project="project" />
               <CompletionTab v-else-if="tab.key === 'completion'" :project="project" />
             </div>
