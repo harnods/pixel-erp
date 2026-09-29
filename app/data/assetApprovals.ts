@@ -19,7 +19,7 @@
 import { ref, computed } from 'vue'
 import {
   actingUser, viewAs, findAsset, recordEvent, recordImpairmentTest, recordImpairmentReversal,
-  previewEvent, carryingAsBooked, earliestEffectivePeriod, periodEndDate,
+  previewEvent, carryingAsBooked, earliestEffectivePeriod, periodEndDate, onAssetStoreReset,
   type EventResult,
 } from './assetStore'
 import type { AssetEvent } from './assetEngine'
@@ -307,3 +307,5 @@ export function resetApprovals() {
   approvalRequests.value = []
   approvalSettings.value = { ...DEFAULT_SETTINGS }
 }
+// One reset for the whole module: the store runs this with its own.
+onAssetStoreReset(resetApprovals)

@@ -20,16 +20,16 @@
 import { ref, computed } from 'vue'
 import {
   actingUser, viewAs, fixedAssets, findAsset, recordEvent, recordImpairmentTest, createAsset,
-  earliestEffectivePeriod, periodEndDate, resetAssetStore,
+  earliestEffectivePeriod, periodEndDate, resetAssetStore, onAssetStoreReset,
 } from './assetStore'
 import type { AssetEvent } from './assetEngine'
 import {
-  assetLocations, locationBranch, CUSTODIANS, changeCustody, sessionStamp, resetCustody, conditionOf,
+  assetLocations, locationBranch, CUSTODIANS, changeCustody, sessionStamp, conditionOf,
   type Condition,
 } from './assetCustody'
 import {
   isAboveThreshold, raiseRequest, onApprovalDecided, carryingPair, stakeOf,
-  approvalSettings, resetApprovals, type ApprovalItem, type ApprovalRequest,
+  approvalSettings, type ApprovalItem, type ApprovalRequest,
 } from './assetApprovals'
 import { classMaster } from './fixedAssetScreens'
 
@@ -538,8 +538,8 @@ export { conditionOf }
 /** Return the asset module, custody, approvals and counts to the sample data. */
 export function resetAll() {
   resetAssetStore()
-  resetCustody()
-  resetApprovals()
+}
+onAssetStoreReset(() => {
   seq = 3
   countSessions.value = []
-}
+})

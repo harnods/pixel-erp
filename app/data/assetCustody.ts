@@ -11,7 +11,7 @@
  * Session only, like the store. `resetCustody()` returns it to the sample.
  */
 import { ref, computed } from 'vue'
-import { assetRecords, actingUser, fixedAssets, viewAs } from './assetStore'
+import { assetRecords, actingUser, fixedAssets, viewAs, onAssetStoreReset } from './assetStore'
 import type { FixedAsset } from './fixedAssets'
 
 // ── The session clock ───────────────────────────────────────────────────────
@@ -237,3 +237,5 @@ export function resetCustody() {
   conditions.value = { ...SEED_CONDITIONS }
   custodyLog.value = []
 }
+// One reset for the whole module: the store runs this with its own.
+onAssetStoreReset(resetCustody)

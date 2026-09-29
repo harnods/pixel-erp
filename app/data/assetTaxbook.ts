@@ -23,6 +23,7 @@ import {
   type AccountingMethod, type AssetLedger, type Book, type BookLedger, type Period,
   type EstimateRevisionEvent, type TaxClassificationEvent,
 } from './assetEngine'
+import { INTANGIBLE_CODES } from './assetIntangibles'
 
 // ── The class master (TS-01) ────────────────────────────────────────────────
 
@@ -91,16 +92,11 @@ export function groupRefusal(type: AssetType, cls: string, group: string): strin
   return `${group} is for buildings only. A ${cls.toLowerCase()} asset takes one of Tax group 1 to 4.`
 }
 
-/** The eleven intangible statutory codes (Daftar Amortisasi). */
-export const INTANGIBLE_CODES: { code: string; label: string }[] = [
-  { code: '0601', label: 'Patent' }, { code: '0602', label: 'Copyright' },
-  { code: '0603', label: 'Brand or trademark' }, { code: '0604', label: 'Licence' },
-  { code: '0605', label: 'Franchise' }, { code: '0606', label: 'Concession or mining right' },
-  { code: '0607', label: 'Goodwill' }, { code: '0608', label: 'Software' },
-  { code: '0609', label: 'Formula or recipe' }, { code: '0610', label: 'Customer list' },
-  { code: '0699', label: 'Other intangible' },
-]
+/** The eleven intangible statutory codes, from the one list in assetIntangibles.ts. */
+export { INTANGIBLE_CODES }
 export const intangibleCodeOptions = INTANGIBLE_CODES.map((c) => `${c.code} ${c.label}`)
+/** A record may carry a shorter label ('0603 Brand'); the code is what counts. */
+const isIntangibleCode = (v: string) => INTANGIBLE_CODES.some((c) => c.code === v.slice(0, 4))
 
 /** Roles that may set a statutory classification (FG-1.6). */
 export const canClassify = computed(() => viewAs.value === 'Owner' || viewAs.value === 'Accounting' || viewAs.value === 'Tax')
@@ -139,7 +135,7 @@ export function classifyAsset(id: string, input: ClassificationInput): ClassifyR
   let code = s.statutoryCode
   if (s.type === 'Intangible') {
     code = input.statutoryCode ?? s.statutoryCode
-    if (!code || !intangibleCodeOptions.includes(code)) return { ok: false, reason: 'Choose the statutory code', field: 'statutoryCode' }
+    if (!code || !isIntangibleCode(code)) return { ok: false, reason: 'Choose the statutory code', field: 'statutoryCode' }
   }
   const tax = l.books.tax
   const curLife = tax ? tax.bases[tax.bases.length - 1]!.lifeMonths : null
