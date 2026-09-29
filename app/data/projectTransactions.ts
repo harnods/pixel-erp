@@ -184,6 +184,29 @@ function seedWo(o: Omit<ProjectWorkOrder, 'estimate'>): ProjectWorkOrder {
 }
 
 const SEED_WOS: ProjectWorkOrder[] = [
+  // ── PRJ-A · the five work orders the ECO adoption demo walks through ─────
+  // Each one exists to exercise a different computed adoption route (v6.2 §8):
+  //   Draft, no reservation      → Repin in place
+  //   Not started, reserved      → Cancel & recreate
+  //   In progress, no partial    → WO Adjust in place
+  //   In progress, partial       → Split & cutover
+  //   Completed                  → untouched, as-built
+  //
+  // The money is arranged so the gate reads exactly Rp 13.800.000 available:
+  // Rp 4.200.000 posted (across the completed WO and the partial one) and one
+  // unposted set-aside of Rp 12.000.000 on #10011. The two posted WOs carry
+  // set-aside == actual so they contribute no further commitment — a WO that has
+  // spent its whole set-aside has no headroom left to reserve.
+  //
+  // #10014 holds a reservation but no set-aside, which is correct rather than a
+  // shortcut: a reservation never posts to the GL and never enters the
+  // commitment ledger (§7). Reserving material the project already owns does not
+  // consume budget a second time.
+  seedWo({ id: 'pwo-prja-10005', number: 'WO-10005', projectId: 'prj-a', wpId: 'wp-prja-1', status: 'Completed', qty: 4, unit: 'Unit', budgetSetAside: 2_000_000, actual: 2_000_000, customBomId: 'cbom-prja-mj', bomVersion: 1, lines: woLines(4, FURNITURE_MAT, FURNITURE_PROD), createdAt: '2026-09-03', createdBy: 'Rizal Candra', completedAt: '2026-09-18' }),
+  seedWo({ id: 'pwo-prja-10010', number: 'WO-10010', projectId: 'prj-a', wpId: 'wp-prja-1', status: 'In progress', qty: 12, unit: 'Unit', budgetSetAside: 2_200_000, actual: 2_200_000, customBomId: 'cbom-prja-mj', bomVersion: 1, lines: woLines(12, FURNITURE_MAT, FURNITURE_PROD), createdAt: '2026-09-08', createdBy: 'Rizal Candra' }),
+  seedWo({ id: 'pwo-prja-10011', number: 'WO-10011', projectId: 'prj-a', wpId: 'wp-prja-1', status: 'In progress', qty: 20, unit: 'Unit', budgetSetAside: 12_000_000, actual: 0, customBomId: 'cbom-prja-rk', bomVersion: 1, lines: woLines(20, FURNITURE_MAT, FURNITURE_PROD), createdAt: '2026-09-12', createdBy: 'Rizal Candra' }),
+  seedWo({ id: 'pwo-prja-10014', number: 'WO-10014', projectId: 'prj-a', wpId: 'wp-prja-1', status: 'Released', qty: 8, unit: 'Unit', budgetSetAside: 0, actual: 0, customBomId: 'cbom-prja-mj', bomVersion: 1, lines: woLines(8, FURNITURE_MAT, FURNITURE_PROD), createdAt: '2026-09-15', createdBy: 'Rizal Candra' }),
+  seedWo({ id: 'pwo-prja-10021', number: 'WO-10021', projectId: 'prj-a', wpId: 'wp-prja-1', status: 'Draft', qty: 6, unit: 'Unit', budgetSetAside: 0, actual: 0, customBomId: 'cbom-prja-mj', bomVersion: 1, lines: [], createdAt: '2026-09-20', createdBy: 'Rizal Candra' }),
   seedWo({ id: 'pwo-1', number: 'WO-PS-0001', projectId: 'ps-2603', wpId: 'wp-2603-31', status: 'In progress', qty: 64, unit: 'Set', budgetSetAside: 90_000_000, actual: 61_400_000, customBomId: 'cbom-2603-31', bomVersion: 1, lines: woLines(64, FURNITURE_MAT, FURNITURE_PROD), createdAt: '2026-06-01', createdBy: 'Rizal Candra' }),
   seedWo({ id: 'pwo-2', number: 'WO-PS-0002', projectId: 'ps-2603', wpId: 'wp-2603-31', status: 'Released', qty: 56, unit: 'Set', budgetSetAside: 60_000_000, actual: 0, customBomId: 'cbom-2603-31', bomVersion: 1, lines: woLines(40, FURNITURE_MAT, FURNITURE_PROD), createdAt: '2026-06-22', createdBy: 'Rizal Candra' }),
   seedWo({ id: 'pwo-3', number: 'WO-PS-0003', projectId: 'ps-2603', wpId: 'wp-2603-32', status: 'In progress', qty: 12, unit: 'Unit', budgetSetAside: 54_000_000, actual: 22_750_000, customBomId: 'cbom-2603-32', bomVersion: 1, lines: woLines(12, CABINET_MAT, CABINET_PROD), createdAt: '2026-06-15', createdBy: 'Rizal Candra' }),
@@ -372,4 +395,56 @@ export function woJournal(w: ProjectWorkOrder) {
 export function nextWoNumber(): string {
   const max = projectWorkOrders.reduce((m, w) => Math.max(m, Number(w.number.replace('WO-PS-', '')) || 0), 0)
   return `WO-PS-${String(max + 1).padStart(4, '0')}`
+}
+
+// ─── v6.2 §3 · the commitment ledger, at project level ────────────────────────
+//
+//   Available(project) = Budget(Cost of Production, project)
+//                      − Σ actual postings to that account for the project (any source)
+//                      − Σ budget set aside on active WOs not yet posted (commitment)
+//
+// Two rules keep it honest, and both are classic sources of bugs:
+//
+//   1 · Posting MOVES, it does not ADD. When a WO posts, its amount leaves the
+//       commitment column and enters the actual column. woCommitted() already
+//       does this (setAside − actual), so counting both here does not double.
+//   2 · Terminal states RELEASE. A WO that completes, is cancelled or is closed
+//       short releases its unused set-aside immediately, otherwise the project
+//       suffocates under phantom commitments for work that will never happen.
+//
+// OQ 30's working default puts Available at project level for MVP (per account ×
+// project), with work-package allocation deferred — so this is the figure the
+// gate should read, not the per-work-package one.
+
+/** Budget for one account across the whole project. undefined = not set (never 0). */
+export function projectBudgetFor(projectId: string, account: string): number | undefined {
+  const b = getBudget(projectId)
+  if (!b) return undefined
+  const lines = b.lines.filter(l => l.account === account)
+  return lines.length ? lines.reduce((s, l) => s + l.amount, 0) : undefined
+}
+
+/** Actual postings to an account for a project, from ANY source (WO, Sales, Purchase). */
+export function projectActualFor(projectId: string, account: string): number {
+  return projectWorkPackages(projectId).reduce((s, w) => s + wpActual(w.id, account), 0)
+}
+
+/** Set aside on active, not-yet-posted work orders. */
+export function projectCommittedFor(projectId: string, account: string): number {
+  return projectWorkPackages(projectId).reduce((s, w) => s + wpCommitted(w.id, account), 0)
+}
+
+/**
+ * Total − Committed = Available on the Cost of Production line. Returns undefined
+ * when no budget is set, so the caller renders "not set" rather than Rp 0.
+ */
+export function projectGate(projectId: string, account: string = COGM_ACCOUNT) {
+  const total = projectBudgetFor(projectId, account)
+  const committed = projectCommittedFor(projectId, account) + projectActualFor(projectId, account)
+  return { total, committed, available: total === undefined ? undefined : total - committed }
+}
+
+/** Convenience: Available on Cost of Production, or undefined when not set. */
+export function projectAvailable(projectId: string): number | undefined {
+  return projectGate(projectId).available
 }

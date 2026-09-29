@@ -21,14 +21,13 @@ import StructureTab from '../tabs/StructureTab.vue'
 import BudgetTab from '../tabs/BudgetTab.vue'
 import CostTrackingTab from '../tabs/CostTrackingTab.vue'
 import RecognitionTab from '../tabs/RecognitionTab.vue'
-import ChangesTab from '../tabs/ChangesTab.vue'
 import ProductionTab from '../tabs/ProductionTab.vue'
 import CompletionTab from '../tabs/CompletionTab.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import DetailJumpTo, { type JumpItem } from '~/components/patterns/DetailJumpTo.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
-import { projects, getProject, methodLabel, weightTotal, usesMilestone } from '~/data/projects'
+import { projects, getProject, methodLabel, weightTotal, usesMilestone, contractValueOf } from '~/data/projects'
 import { getBudget } from '~/data/projectBudgets'
 import { projectSummary } from '~/data/projectSummary'
 import { pendingChanges } from '~/data/projectChanges'
@@ -55,14 +54,18 @@ const changesPending = computed(() => {
 })
 
 const TABS = computed(() => {
+  // v6.2 §3.1 tab order. "Engineering change" replaces the v5
+  // "Changes — commercial & engineering": the VO object is out of scope in v6.2
+  // (A-4 drops the variation-order approval action), so the tab is the
+  // engineering-change surface. Recognition stays visible although §11 puts the
+  // engine after MVP, so the demo can still show the shape.
   const list = [
     { key: 'structure', label: 'Structure' },
     { key: 'budget', label: 'Budget' },
     { key: 'cost', label: 'Cost tracking' },
-    { key: 'recognition', label: 'Recognition & billing' },
-    { key: 'changes', label: 'Changes — commercial & engineering' },
   ]
-  if (project.value?.isProduction) list.push({ key: 'production', label: 'Production & materials' })
+  if (project.value?.isProduction) list.push({ key: 'production', label: 'Production' })
+  list.push({ key: 'recognition', label: 'Recognition & billing' })
   list.push({ key: 'completion', label: 'Completion' })
   return list
 })
@@ -166,7 +169,7 @@ const lastEntry = computed(() => projectAudit.value[0])
           <div class="content-list-col"><ContentList :label="t('Project manager')" :value="project.pm" /></div>
           <div class="detail-primary-total">
             <span class="detail-total-label">{{ t('Contract value') }}</span>
-            <span class="detail-total-amount">{{ rp(project.contractValue) }}</span>
+            <span class="detail-total-amount">{{ rp(contractValueOf(project)) }}</span>
           </div>
         </div>
 
@@ -196,6 +199,7 @@ const lastEntry = computed(() => projectAudit.value[0])
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Sales order')" :value="project.salesOrderNo || '—'" />
+            <ContentList :label="t('Dimension value')" :value="project.dimensionValueId || '—'" />
             <ContentList :label="t('Priority')" :value="t(project.priority === 'high' ? 'High' : project.priority === 'medium' ? 'Medium' : 'Low')" />
           </div>
         </div>
@@ -204,7 +208,7 @@ const lastEntry = computed(() => projectAudit.value[0])
       <MpTabs id="pm-detail-tabs" data-devchange="pm-pixel-rework" v-model="activeTabIndex" is-manual variant-color="green" class="detail-tabs">
         <MpTabList>
           <MpTab v-for="tab in TABS" :id="`pm-tab-${tab.key}`" :key="tab.key" :value="tab.key">
-            {{ t(tab.label) }}<template v-if="tab.key === 'changes' && changesPending"> ({{ changesPending }})</template>
+            {{ t(tab.label) }}<template v-if="tab.key === 'production' && changesPending"> ({{ changesPending }})</template>
           </MpTab>
         </MpTabList>
         <MpTabPanels>
@@ -214,7 +218,6 @@ const lastEntry = computed(() => projectAudit.value[0])
               <BudgetTab v-else-if="tab.key === 'budget'" :project="project" />
               <CostTrackingTab v-else-if="tab.key === 'cost'" :project="project" />
               <RecognitionTab v-else-if="tab.key === 'recognition'" :project="project" />
-              <ChangesTab v-else-if="tab.key === 'changes'" :project="project" />
               <ProductionTab v-else-if="tab.key === 'production'" :project="project" />
               <CompletionTab v-else-if="tab.key === 'completion'" :project="project" />
             </div>

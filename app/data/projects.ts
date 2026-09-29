@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
+import { ensureProjectDimensionValue } from './dimensions'
 
 /**
  * Project MTO — the one project object (PRD "Project Structure — Project MTO").
@@ -62,6 +63,19 @@ export interface Project {
   dimensions: ProjectDimensions
   /** per-project override of the company escalation threshold (%) — undefined = company default */
   escalationThresholdPct?: number
+  /**
+   * v6.2 A-2 — creating a project creates a dimension value equal to the project
+   * code, which then attaches to the budget, production plan, BOM, WO and every
+   * downstream document. This replaced the bespoke "project is a control field"
+   * design: pegging rides the existing Dimension engine instead of a parallel one.
+   */
+  dimensionValueId?: string
+  /**
+   * v6.2 §11 — contract value = Σ of all SOs carrying the project dimension,
+   * addenda included. Use contractValueOf(); the stored contractValue is the
+   * pre-v6.2 fallback for projects seeded without a SO list.
+   */
+  contractSoIds?: string[]
   status: ProjectStatus
   /** set at approval — method, measure and production flag are locked from then */
   approvedAt?: string
@@ -122,6 +136,21 @@ export interface WorkPackage {
 // ─── Seed ───────────────────────────────────────────────────────────────────────
 
 const SEED_PROJECTS: Project[] = [
+  // ── PRJ-A · the v6.2 demo project ────────────────────────────────────────
+  // Seeded with the exact figures the MVP demo flow depends on: budget Cost of
+  // Production Rp 30.000.000, actual postings Rp 4.200.000, one unposted WO
+  // set-aside Rp 12.000.000 → Available Rp 13.800.000 at the work-order gate.
+  {
+    id: 'prj-a', code: 'PRJ-A', name: 'Meja custom Pak Budi',
+    customer: 'Pak Budi', salesOrderNo: 'SO-0231', contractSoIds: ['SO-0231'],
+    dimensionValueId: 'PRJ-A',
+    isProduction: true, depth: 3, method: 'output', measure: 'unit',
+    contractValue: 48_000_000, pm: 'Rizal Candra', priority: 'high', longTerm: false,
+    defaultWarehouse: 'Workshop Cileungsi',
+    dimensions: { branch: 'Jakarta', department: 'Project delivery', costCenter: 'CC-Furniture' },
+    status: 'active', approvedAt: '2026-09-01', approvedBy: 'Maya Kartika',
+    startDate: '2026-09-02', endDate: '2026-11-28', createdAt: '2026-08-27',
+  },
   {
     id: 'ps-2603', code: 'PS-2603', name: 'Interior Gedung Pascasarjana IPB',
     customer: 'Institut Pertanian Bogor', salesOrderNo: 'SO/2026/0412',
@@ -173,6 +202,7 @@ const SEED_PROJECTS: Project[] = [
 ]
 
 const SEED_PHASES: Phase[] = [
+  { id: 'ph-prja-1', projectId: 'prj-a', name: 'Produksi', auto: false, order: 1 },
   // PS-2603 IPB — weights = phase RAB ÷ total RAB (2,0 / 15,0 / 50,8 / 24,0 / 8,2)
   { id: 'ph-2603-1', projectId: 'ps-2603', name: 'Persiapan', auto: false, progressWeightPct: 2.0, rabValue: 16_704_550, verifiedAt: '2026-04-24', bastNo: 'BAST/IPB/01', order: 1 },
   { id: 'ph-2603-2', projectId: 'ps-2603', name: 'Pekerjaan sipil', auto: false, progressWeightPct: 15.0, rabValue: 125_284_125, verifiedAt: '2026-05-29', bastNo: 'BAST/IPB/02', order: 2 },
@@ -192,6 +222,13 @@ const SEED_PHASES: Phase[] = [
 ]
 
 const SEED_WPS: WorkPackage[] = [
+  {
+    id: 'wp-prja-1', projectId: 'prj-a', phaseId: 'ph-prja-1', code: 'WP-01',
+    name: 'Meja makan jati — 12 unit', type: 'production', auto: false,
+    customBomId: 'cbom-prja-mj', plannedUnits: 12, confirmedUnits: 0, unit: 'Unit',
+    site: 'Workshop Cileungsi', planStart: '2026-09-02', planEnd: '2026-11-20',
+    status: 'in progress', bastPct: 0, order: 1,
+  },
   // PS-2603
   { id: 'wp-2603-11', projectId: 'ps-2603', phaseId: 'ph-2603-1', code: '1.1', name: 'Survei lokasi & mobilisasi', type: 'service', auto: false, site: 'Kampus IPB Dramaga', planStart: '2026-04-06', planEnd: '2026-04-22', actualStart: '2026-04-06', actualEnd: '2026-04-23', status: 'technically_complete', bastPct: 100, order: 1 },
   { id: 'wp-2603-21', projectId: 'ps-2603', phaseId: 'ph-2603-2', code: '2.1', name: 'Partisi & plafon', type: 'service', auto: false, site: 'Kampus IPB Dramaga', planStart: '2026-04-27', planEnd: '2026-05-22', actualStart: '2026-04-27', actualEnd: '2026-05-26', status: 'technically_complete', bastPct: 100, order: 1 },
@@ -239,6 +276,12 @@ const K_WPS = 'pm-work-packages'
 const K_PUNCH = 'pm-punch'
 
 export const projects = reactive<Project[]>(loadSnapshot<Project>(K_PROJECTS) ?? structuredClone(SEED_PROJECTS))
+
+// Seeded projects predate the dimension, so backfill their values on load. The
+// helper is idempotent, so this is safe on every boot and after a snapshot restore.
+for (const p of projects) {
+  p.dimensionValueId = ensureProjectDimensionValue(p.code)
+}
 export const phases = reactive<Phase[]>(loadSnapshot<Phase>(K_PHASES) ?? structuredClone(SEED_PHASES))
 export const workPackages = reactive<WorkPackage[]>(loadSnapshot<WorkPackage>(K_WPS) ?? structuredClone(SEED_WPS))
 
@@ -355,6 +398,9 @@ export function createProject(input: NewProjectInput, today: string): Project {
     contractValue: input.contractValue, pm: input.pm, priority: input.priority, longTerm: input.longTerm,
     defaultWarehouse: input.defaultWarehouse, dimensions: input.dimensions,
     budgetPlanRef: input.budgetPlanRef,
+    // v6.2 A-2 — the project code becomes a dimension value the moment the
+    // project exists, so every downstream document can carry it.
+    dimensionValueId: ensureProjectDimensionValue(code),
     status: 'draft', startDate: input.startDate, endDate: input.endDate, createdAt: today,
   }
   projects.unshift(project)
@@ -470,4 +516,44 @@ export function clone<T>(v: T): T {
 
 export function newId(prefix: string): string {
   return nextId(prefix)
+}
+
+// ── v6.2 §11 · contract value = Σ of all SOs carrying the project dimension ──
+//
+// Contract value is derived, not typed. Addenda are included, which is what makes
+// "scope grew but the invoice did not" detectable: an SO addendum raises the
+// contract, so a change that never reached an SO shows up as a gap.
+
+export interface ProjectSalesOrder {
+  id: string
+  projectId: string
+  /** SO number as the customer sees it */
+  number: string
+  value: number
+  date: string
+  /** an addendum raises contract value on an existing project */
+  isAddendum?: boolean
+}
+
+const K_PSO = 'pm-project-sos'
+const SEED_PSOS: ProjectSalesOrder[] = [
+  { id: 'so-0231', projectId: 'prj-a', number: 'SO-0231', value: 48_000_000, date: '2026-08-27' },
+]
+export const projectSalesOrders = reactive<ProjectSalesOrder[]>(
+  loadSnapshot<ProjectSalesOrder>(K_PSO) ?? structuredClone(SEED_PSOS),
+)
+export function persistProjectSalesOrders(): void { saveSnapshot(K_PSO, projectSalesOrders) }
+
+export function projectSos(projectId: string): ProjectSalesOrder[] {
+  return projectSalesOrders.filter(so => so.projectId === projectId)
+}
+
+/**
+ * Contract value for a project. Σ its SOs when it carries a SO list (v6.2);
+ * otherwise the stored contractValue, so projects seeded before v6.2 still read
+ * correctly rather than collapsing to Rp 0.
+ */
+export function contractValueOf(p: Project): number {
+  const sos = projectSos(p.id)
+  return sos.length ? sos.reduce((sum, so) => sum + so.value, 0) : p.contractValue
 }

@@ -8,7 +8,7 @@ import { MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpTextlink 
 import PmOverlay from './PmOverlay.vue'
 import PmActionError from './PmActionError.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { getCustomBom, currentVersion, masterBoms, masterDiverged, bomUnitCost, diffComponents } from '~/data/projectBoms'
+import { getCustomBom, currentVersion, masterBoms, bomUnitCost } from '~/data/projectBoms'
 import { revertBom } from '~/data/projectActions'
 import { rp, num } from '~/utils/projectFormat'
 import { formatDate } from '~/utils/date'
@@ -29,8 +29,6 @@ const shown = computed(() => {
   return b.versions.find(v => v.version === viewVersion.value) ?? currentVersion(b)
 })
 const master = computed(() => masterBoms.find(m => m.id === bom.value?.masterBomId))
-const compare = ref(false)
-const compareRows = computed(() => (bom.value && master.value ? diffComponents(currentVersion(bom.value).components, master.value.components).filter(r => r.change !== 'same') : []))
 const SOURCE = { copy: { type: 'announcement', label: 'Copy' }, eco: { type: 'information', label: 'Engineering change' }, revert: { type: 'warning', label: 'Revert' } } as const
 
 function doRevert(v: number) {
@@ -50,23 +48,6 @@ function doRevert(v: number) {
         </MpBannerDescription>
       </MpBanner>
 
-      <MpBanner v-if="masterDiverged(bom)" id="bom-master-changed" variant="info">
-        <MpBannerIcon />
-        <MpBannerTitle>{{ t('The master has changed since this copy') }}</MpBannerTitle>
-        <MpBannerDescription>
-          {{ t('Master is now v') }}{{ master?.version }}, {{ t('this copy was taken from v') }}{{ bom.masterVersionAtCopy }}. {{ t('This is informational — nothing changes on the project unless you raise an engineering change.') }}
-          <MpTextlink id="bom-compare-toggle" as="a" @click.prevent="compare = !compare">{{ compare ? t('Hide comparison') : t('Compare with master') }}</MpTextlink>
-        </MpBannerDescription>
-      </MpBanner>
-      <div v-if="compare && masterDiverged(bom)" class="pm-table-wrap">
-        <table class="pm-table">
-          <thead><tr><th>{{ t('Component') }}</th><th>{{ t('Change') }}</th><th class="pm-num">{{ t('This copy') }}</th><th class="pm-num">{{ t('Master') }}</th></tr></thead>
-          <tbody>
-            <tr v-for="r in compareRows" :key="r.name"><td>{{ r.name }}</td><td>{{ r.change === 'added' ? t('Only in master') : r.change === 'removed' ? t('Only in copy') : t('Different') }}</td><td class="pm-num">{{ r.fromQty !== undefined ? `${num(r.fromQty)} ${r.unit}` : '—' }}</td><td class="pm-num">{{ r.toQty !== undefined ? `${num(r.toQty)} ${r.unit}` : '—' }}</td></tr>
-            <tr v-if="!compareRows.length"><td colspan="4" class="pm-muted">{{ t('Components are the same; costs or production steps differ.') }}</td></tr>
-          </tbody>
-        </table>
-      </div>
 
       <MpBanner v-if="bom.archived" id="bom-archived" variant="warning">
         <MpBannerIcon />

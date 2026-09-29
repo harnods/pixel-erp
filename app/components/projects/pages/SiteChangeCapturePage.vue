@@ -109,7 +109,7 @@ const recent = computed(() => changeOrders.filter(v => v.source === 'site').slic
                     <span class="pm-strong">{{ v.no }} · {{ v.title }}</span>
                     <span class="pm-cell-sub">{{ getProject(v.projectId)?.code }} · {{ v.capturedBy }} · {{ formatDate(v.createdAt) }}</span>
                   </td>
-                  <td class="pm-cell-actions"><MpTextlink :id="`sc-open-${v.id}`" as="a" @click.prevent="router.push(`/projects/${v.projectId}?tab=changes`)">{{ t('Open') }}</MpTextlink></td>
+                  <td class="pm-cell-actions"><MpTextlink :id="`sc-open-${v.id}`" as="a" @click.prevent="router.push(`/projects/${v.projectId}`)">{{ t('Open') }}</MpTextlink></td>
                 </tr>
               </tbody>
             </table>

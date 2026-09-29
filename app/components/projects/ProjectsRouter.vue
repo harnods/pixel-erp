@@ -7,6 +7,7 @@
  *   /projects/new                     adaptive create flow
  *   /projects/:id[?tab=…]             project page (tabs)
  *   /projects/:id/work-orders/new     work-order budget gate
+ *   /projects/:id/engineering-changes/:ecoId   ECO detail
  *   /project-approvals                approvals inbox (5 kinds)
  *   /project-documents                pegged cost documents (index)
  *   /project-documents/new            pegged document + budget check
@@ -22,6 +23,7 @@ const PortfolioPage = defineAsyncComponent(() => import('./pages/ProjectsPortfol
 const CreatePage = defineAsyncComponent(() => import('./pages/ProjectCreatePage.vue'))
 const DetailPage = defineAsyncComponent(() => import('./pages/ProjectDetailPage.vue'))
 const WoGatePage = defineAsyncComponent(() => import('./pages/ProjectWoGatePage.vue'))
+const EcoDetailPage = defineAsyncComponent(() => import('./pages/ProjectEcoDetailPage.vue'))
 const ApprovalsPage = defineAsyncComponent(() => import('./pages/ProjectApprovalsPage.vue'))
 const DocumentsPage = defineAsyncComponent(() => import('./pages/ProjectDocumentsPage.vue'))
 const NewDocumentPage = defineAsyncComponent(() => import('./pages/ProjectNewDocumentPage.vue'))
@@ -37,6 +39,7 @@ const view = computed<{ component: Component; props: Record<string, unknown> }>(
       if (!b) return { component: PortfolioPage, props: {} }
       if (b === 'new') return { component: CreatePage, props: {} }
       if (c === 'work-orders' && d === 'new') return { component: WoGatePage, props: { projectId: b } }
+      if (c === 'engineering-changes' && d) return { component: EcoDetailPage, props: { projectId: b, ecoId: d } }
       return { component: DetailPage, props: { projectId: b } }
     case 'project-approvals': return { component: ApprovalsPage, props: {} }
     case 'project-documents': return b === 'new' ? { component: NewDocumentPage, props: {} } : { component: DocumentsPage, props: {} }
