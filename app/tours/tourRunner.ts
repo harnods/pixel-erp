@@ -41,6 +41,7 @@ let running: Running | null = null
 let mounted: { app: { unmount: () => void } } | null = null
 let restore: (() => void) | null = null
 let pollTimer: ReturnType<typeof setTimeout> | null = null
+let watchTimer: ReturnType<typeof setInterval> | null = null
 
 // ── Targets ──────────────────────────────────────────────────────────────────
 
@@ -63,6 +64,7 @@ export function findTarget(marker: string): HTMLElement | null {
 
 function unmountPanel() {
   if (pollTimer) { clearTimeout(pollTimer); pollTimer = null }
+  if (watchTimer) { clearInterval(watchTimer); watchTimer = null }
   restore?.()
   restore = null
   if (mounted) {
@@ -227,6 +229,13 @@ async function enterStep(r: Running) {
       const short = el.getBoundingClientRect().height < window.innerHeight * 0.4
       el.scrollIntoView({ block: short ? 'start' : 'nearest', inline: 'nearest' })
       show(panel, el, step)
+      // A page that re-renders under the same route (one asset detail to
+      // the next) can replace the element after it was found. Watch for
+      // that and anchor again rather than point at a detached node.
+      watchTimer = setInterval(() => {
+        if (!running || running.token !== token) return
+        if (!el.isConnected) { shownWaiting = true; attempt() }
+      }, WAIT_MS)
       return
     }
     // The target is not on screen yet: a drawer still opening, a page still

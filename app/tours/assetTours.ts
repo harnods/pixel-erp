@@ -293,7 +293,7 @@ export const ASSET_TOURS: AssetTour[] = [
         title: 'Enter the corrected cost.',
         body: 'FA-0064 Backup 100kVA Generator was keyed at Rp245.000.000.',
         action: 'Enter 250000000 as the corrected cost and "Supplier invoice is 250 million" as the reason, then select Record correction.',
-        watch: 'September carries Rp1.692.698 on both books, the catch-up for the posted months included; from October the charge is Rp1.302.083. August and earlier do not move.',
+        watch: 'September carries Rp1.692.698 on both books, a catch-up of Rp390.615 for the posted months included; from October the charge is Rp1.302.083. August and earlier do not move.',
         placement: 'left',
       },
       {
@@ -405,7 +405,7 @@ export const ASSET_TOURS: AssetTour[] = [
         title: 'Close the session.',
         body: 'Everything else applies now; the write-off waits for approval.',
         action: 'Select Close session.',
-        watch: 'The banner names AP-0032, waiting for approval.',
+        watch: 'The racking reads Location updated. The generator reads Sent for approval, AP-0032.',
       },
       {
         route: '/asset-approvals',
@@ -428,7 +428,7 @@ export const ASSET_TOURS: AssetTour[] = [
         target: 'count-session',
         title: 'Back on the count report.',
         body: 'The approval trail stays on the transaction and the asset history records who decided what.',
-        watch: 'The session is closed, and FA-0064 is disposed in September 2026. The tours.json version posted it to October; this prototype dates it to the open period.',
+        watch: 'The generator\'s row now reads Approved AP-0032 by Fitri Handayani: disposed with no proceeds on both books. On FA-0064 itself the status is Disposed and the History shows the request and the approval, both on 30/09/2026. The tours.json version posted it to October; this prototype dates it to the open period.',
       },
     ],
   },
@@ -640,7 +640,7 @@ export const ASSET_TOURS: AssetTour[] = [
       {
         target: 'det-history',
         title: 'The trail of the three changes.',
-        body: 'The improvement, the revision and the partial disposal, each recorded by Sari Wulandari in September 2026, above the asset\'s earlier history.',
+        body: 'Three lines by Sari Wulandari above the August posting: the improvement and the revision dated 01/09/2026, and the 25% disposal dated 30/09/2026 with its loss on each book.',
         placement: 'top',
       },
       {
@@ -652,7 +652,9 @@ export const ASSET_TOURS: AssetTour[] = [
       {
         target: 'det-versions',
         title: 'Every basis the asset has had.',
-        body: 'Each version keeps its basis and the period it was superseded from. The Tax book switch shows the tax versions: the revision did not create one there.',
+        body: 'Each version keeps its basis and the period it was superseded from.',
+        action: 'Switch between Accounting book and Tax book at the top of the drawer.',
+        watch: 'Accounting has four versions: entered service, improvement, life revision, partial disposal. Tax has three, because the life revision never reached the tax book.',
         placement: 'left',
       },
     ],
