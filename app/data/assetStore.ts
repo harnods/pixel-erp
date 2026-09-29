@@ -20,9 +20,11 @@ import { ref, computed, watch } from 'vue'
 import {
   type AssetEvent, type AssetLedger, type Book, type BookSetup, type Period,
   type AcquisitionEvent, type ImpairmentEvent, type DisposalEvent, type TaxClassificationEvent,
+  type Method,
   buildAssetLedger, bookOf, bookValueAt, accumulatedAt, chargeAt, chargesBetween,
   isHeldAt, isHeldDuring, periodOfDate, periodEndDate, periodIndex, periodFromIndex,
-  addPeriods, isAfter, isBefore, eventTiming, booksAffected, checkBookIntegrity, hasSchedule,
+  addPeriods, isAfter, isBefore, checkBookIntegrity, hasSchedule, costAt,
+  splitChildAcquisitions, GOODWILL_REVERSAL_REFUSED,
   periodLabel, rupiah,
 } from './assetEngine'
 import {
@@ -47,6 +49,45 @@ export function periodOfMonth(month: number): Period {
 }
 export function monthOfPeriod(p: Period): number {
   return periodIndex(p) - periodIndex(FY_START)
+}
+
+// ── Who is looking (simulated roles) ────────────────────────────────────────
+
+/**
+ * The prototype has no real sign-in. "View as" switches the audience the
+ * screens are drawn for, so the pane scoping (LR-6) and the approver being a
+ * different person from the requester can be tried by hand. Session only.
+ */
+export type ViewAsRole = 'Owner' | 'Accounting' | 'Tax' | 'General Affairs' | 'Approver'
+export const VIEW_AS_ROLES: { role: ViewAsRole; person: string; title: string }[] = [
+  { role: 'Owner', person: 'Rizal Candra', title: 'Owner' },
+  { role: 'Accounting', person: 'Sari Wulandari', title: 'Accounting Manager' },
+  { role: 'Tax', person: 'Dewi Kartika', title: 'Tax Manager' },
+  { role: 'General Affairs', person: 'Rudi Santoso', title: 'General Affairs' },
+  { role: 'Approver', person: 'Fitri Handayani', title: 'Finance Director' },
+]
+export const viewAs = ref<ViewAsRole>('Owner')
+export function setViewAs(r: ViewAsRole) { viewAs.value = r }
+/** The person acting now, who is recorded against anything they do. */
+export const actingUser = computed(() => VIEW_AS_ROLES.find((x) => x.role === viewAs.value)!.person)
+/** LR-6: General Affairs maintains custody without financial values visible. */
+export const canSeeFinancials = computed(() => viewAs.value !== 'General Affairs')
+/** FG-3.6: value changes are recorded by the Owner or the accounting role. */
+export const canChangeValue = computed(() => viewAs.value === 'Owner' || viewAs.value === 'Accounting')
+
+// ── The register's records ──────────────────────────────────────────────────
+
+/**
+ * The records on the register: the sample assets, plus any created this
+ * session, plus the children of a split. Only their identity lives here;
+ * every figure comes from the event log.
+ */
+export const assetRecords = ref<AssetSeed[]>([...assetSeeds])
+const recordById = (id: string) => assetRecords.value.find((s) => s.id === id)
+
+function nextAssetId(): string {
+  const n = Math.max(...assetRecords.value.map((a) => Number(a.id.replace(/\D/g, '')) || 0)) + 1
+  return `FA-${String(n).padStart(4, '0')}`
 }
 
 // ── Seeding the event logs ──────────────────────────────────────────────────
@@ -76,6 +117,7 @@ function seedEvents(s: AssetSeed): AssetEvent[] {
     },
     tax: s.taxGroup ? taxSetupFor(s.taxGroup, s.fiscalLifeMonths) : null,
     taxGroup: s.taxGroup,
+    ...(/goodwill/i.test(s.statutoryCode ?? '') ? { isGoodwill: true } : {}),
   }
   const events: AssetEvent[] = [acq]
   if (s.impairment) {
@@ -109,7 +151,7 @@ const eventLog = ref<Record<string, AssetEvent[]>>({})
 /** Every asset's ledger, rebuilt whenever an event log changes. */
 export const ledgers = computed<Record<string, AssetLedger>>(() => {
   const out: Record<string, AssetLedger> = {}
-  for (const s of assetSeeds) out[s.id] = buildAssetLedger(s.id, eventLog.value[s.id] ?? [])
+  for (const s of assetRecords.value) out[s.id] = buildAssetLedger(s.id, eventLog.value[s.id] ?? [])
   return out
 })
 
@@ -147,7 +189,7 @@ export function accumulatedAsBooked(l: AssetLedger, book: Book, p: Period = CURR
   const through = bookedThrough(p)
   let acc = accumulatedAt(b, isBefore(through, p) ? through : p) ?? 0
   if (isBefore(through, p)) {
-    for (const r of b.live) if (isAfter(r.period, through) && !isAfter(r.period, p)) acc += r.writeDown
+    for (const r of b.live) if (isAfter(r.period, through) && !isAfter(r.period, p)) acc += r.writeDown - (r.transferredOut ?? 0)
     for (const w of b.offScheduleWriteDowns) if (isAfter(w.period, through) && !isAfter(w.period, p)) acc += w.amount
   }
   return acc
@@ -155,16 +197,35 @@ export function accumulatedAsBooked(l: AssetLedger, book: Book, p: Period = CURR
 
 /** Book value as the register carries it at the end of `p`. Null when not held or no book. */
 export function carryingAsBooked(l: AssetLedger, book: Book, p: Period = CURRENT_PERIOD): number | null {
-  if (!bookOf(l, book) || !isHeldAt(l, p)) return null
+  const b = bookOf(l, book)
+  if (!b || !isHeldAt(l, p)) return null
   const acc = accumulatedAsBooked(l, book, p)
-  return acc === null ? null : l.cost - acc
+  return acc === null ? null : costAt(b, p) - acc
+}
+
+/**
+ * Impairment still carried at the end of `p`: how far the asset sits below
+ * the carrying amount it would have had never impaired. Zero once a reversal
+ * reaches the cap. Read from the same unimpaired replay the cap uses, so the
+ * status and the cap cannot disagree.
+ */
+export function impairmentCarried(l: AssetLedger, p: Period = CURRENT_PERIOD): number {
+  const acc = l.books.accounting
+  if (!acc.impairments.some((i) => i.loss > 0 && !isAfter(i.period, p))) return 0
+  const last = acc.reversals.filter((r) => !isAfter(r.period, p)).at(-1)
+  const lastLoss = acc.impairments.filter((i) => i.loss > 0 && !isAfter(i.period, p)).at(-1)!
+  if (last && last.capApplied && !isBefore(last.period, lastLoss.period)) return 0
+  const loss = acc.impairments.filter((i) => !isAfter(i.period, p)).reduce((s, i) => s + i.loss, 0)
+  const back = acc.reversals.filter((r) => !isAfter(r.period, p)).reduce((s, r) => s + r.applied, 0)
+  return Math.max(0, loss - back)
 }
 
 function deriveStatus(l: AssetLedger, p: Period): AssetStatus {
+  if (l.splitIn && !isAfter(l.splitIn, p)) return 'Split'
   if (l.disposedIn && !isAfter(l.disposedIn, p)) return 'Disposed'
   if (!l.books.tax) return 'Incomplete'
   const acc = l.books.accounting
-  if (acc.impairments.some((i) => i.loss > 0 && !isAfter(i.period, p))) return 'Impaired'
+  if (impairmentCarried(l, p) > 0) return 'Impaired'
   const basis = acc.bases[acc.bases.length - 1]!
   const bv = carryingAsBooked(l, 'accounting', p)
   if (basis.lifeMonths !== null && bv !== null && bv <= basis.residual) return 'Fully depreciated'
@@ -179,6 +240,7 @@ export function assetView(s: AssetSeed, p: Period = CURRENT_PERIOD): FixedAsset 
   const accBasis = l.books.accounting.bases[l.books.accounting.bases.length - 1]!
   return {
     ...s,
+    cost: costAt(l.books.accounting, p),
     inServiceDate: l.inServiceDate,
     residual: accBasis.residual,
     method: accBasis.method === 'reducing-balance' ? 'reducing-balance' : 'straight-line',
@@ -192,7 +254,7 @@ export function assetView(s: AssetSeed, p: Period = CURRENT_PERIOD): FixedAsset 
 }
 
 /** The register at the current period end. */
-export const fixedAssets = computed<FixedAsset[]>(() => assetSeeds.map((s) => assetView(s)))
+export const fixedAssets = computed<FixedAsset[]>(() => assetRecords.value.map((s) => assetView(s)))
 
 export function findAsset(id: string): FixedAsset | undefined {
   return fixedAssets.value.find((a) => a.id === id)
@@ -231,6 +293,7 @@ export interface Journal {
   date: string
   period: Period
   source: 'opening' | 'acquisition' | 'depreciation' | 'impairment' | 'disposal' | 'reversal'
+    | 'improvement' | 'correction' | 'impairment-reversal' | 'catch-up'
   memo: string
   lines: JournalLine[]
   /** For a reversal, the journal it reverses. */
@@ -313,7 +376,7 @@ export const runs = ref<DepreciationRun[]>([])
 /** The accounting charges a period's run would carry, from the live schedules. */
 export function runLinesFor(p: Period): RunLine[] {
   const out: RunLine[] = []
-  for (const s of assetSeeds) {
+  for (const s of assetRecords.value) {
     const pc = chargeAt(ledgers.value[s.id]!, 'accounting', p)
     if (pc.charge !== null && pc.charge > 0) out.push({ assetId: s.id, assetClass: s.class, charge: pc.charge })
   }
@@ -357,6 +420,16 @@ export const nextOpenPeriod = computed<Period | null>(() => {
     if (!postedRunFor(p)) return p
   }
   return null
+})
+
+/**
+ * The earliest period a value change can take effect in: the first period
+ * with no posted run. Once every period to today is posted, that is the
+ * period after the last one posted.
+ */
+export const earliestEffectivePeriod = computed<Period>(() => {
+  for (const p of FY_PERIODS) if (!postedRunFor(p)) return p
+  return addPeriods(FY_END, 1)
 })
 
 /** The latest period with a posted run. */
@@ -446,7 +519,54 @@ export type EventResult = { ok: true; event: AssetEvent } | { ok: false; reason:
 
 /** The journal an event posts, if it posts one. A tax-only event posts nothing (LR-2). */
 function journalForEvent(assetId: string, e: AssetEvent, l: AssetLedger): Journal | null {
-  const s = assetSeeds.find((x) => x.id === assetId)!
+  const s = recordById(assetId)!
+  const accum = ACCUM_ACCOUNT[s.class] ?? '1699'
+  const costLines = (amount: number, what: string): JournalLine[] => amount >= 0
+    ? [
+        { account: '1-1600 · Fixed assets at cost', description: `${assetId} ${what}`, debit: amount, credit: null, control: '1-1600' },
+        { account: '2-1100 · Accounts payable', description: 'Supplier', debit: null, credit: amount, control: 'other' },
+      ]
+    : [
+        { account: '2-1100 · Accounts payable', description: 'Supplier', debit: -amount, credit: null, control: 'other' },
+        { account: '1-1600 · Fixed assets at cost', description: `${assetId} ${what}`, debit: null, credit: -amount, control: '1-1600' },
+      ]
+  if (e.kind === 'improvement') {
+    return { number: nextJournal(), date: e.date, period: e.period, source: 'improvement', memo: `Improvement capitalised on ${assetId}`, lines: costLines(e.amount, 'improvement') }
+  }
+  if (e.kind === 'cost-correction') {
+    const c = l.books.accounting.corrections.find((x) => x.eventId === e.id)
+    if (!c || c.correctedCost === c.previousCost) return null
+    // The catch-up on depreciation is part of the period's charge and posts
+    // with that period's run, so this journal moves the cost only.
+    return { number: nextJournal(), date: e.date, period: e.period, source: 'correction', memo: `Cost correction on ${assetId}`, lines: costLines(c.correctedCost - c.previousCost, 'cost correction') }
+  }
+  if (e.kind === 'impairment-reversal') {
+    const r = l.books.accounting.reversals.find((x) => x.eventId === e.id)
+    if (!r || r.applied === 0) return null
+    return {
+      number: nextJournal(), date: e.date, period: e.period, source: 'impairment-reversal',
+      memo: `Impairment reversal on ${assetId}`,
+      lines: [
+        { account: accum, description: `${assetId} write-down reversed`, debit: r.applied, credit: null, control: '1-1700' },
+        { account: '6-5200 · Impairment loss', description: `${assetId} reversal`, debit: null, credit: r.applied, control: '6-5200' },
+      ],
+    }
+  }
+  if (e.kind === 'partial-disposal') {
+    const d = l.books.accounting.partialDisposals.find((x) => x.eventId === e.id)
+    if (!d) return null
+    return {
+      number: nextJournal(), date: e.date, period: e.period, source: 'disposal', memo: `Partial disposal of ${assetId}`,
+      lines: [
+        { account: '1-1100 · Cash and bank', description: 'Proceeds', debit: d.proceeds, credit: null, control: 'other' },
+        { account: accum, description: 'Accumulated derecognised, disposed part', debit: d.accumulated, credit: null, control: '1-1700' },
+        { account: '1-1600 · Fixed assets at cost', description: `${assetId} disposed part`, debit: null, credit: d.cost, control: '1-1600' },
+        d.gainLoss >= 0
+          ? { account: '6-5300 · Gain on disposal', description: 'Gain', debit: null, credit: d.gainLoss, control: '6-5300' }
+          : { account: '6-5300 · Loss on disposal', description: 'Loss', debit: -d.gainLoss, credit: null, control: '6-5300' },
+      ],
+    }
+  }
   if (e.kind === 'impairment') {
     const r = l.books.accounting.impairments.find((i) => i.eventId === e.id)
     if (!r || r.loss === 0) return null
@@ -484,16 +604,62 @@ function journalForEvent(assetId: string, e: AssetEvent, l: AssetLedger): Journa
  * at the end of a period (an impairment, a disposal) cannot land in a period
  * whose successor is posted.
  */
+/**
+ * Why an event cannot be recorded as it stands, or null. LR-4 and FG-3.3: an
+ * event dated inside a posted period is refused and the earliest period it
+ * may take is named. A correction to what a posted period charged is made in
+ * the next open period as a catch-up, never by editing the closed one.
+ */
+export function eventRefusal(assetId: string, e: Omit<AssetEvent, 'id'>): string | null {
+  const l = ledgers.value[assetId]
+  if (!l) return `No asset ${assetId}`
+  if (l.splitIn) return `${assetId} was split in ${periodLabel(l.splitIn)}. Change its parts instead.`
+  if (l.disposedIn) return `${assetId} was disposed of in ${periodLabel(l.disposedIn)}. Nothing further can change it.`
+  if (e.kind === 'impairment-reversal' && l.isGoodwill) return GOODWILL_REVERSAL_REFUSED
+  if (e.kind === 'impairment-reversal' && impairmentCarried(l, e.period) <= 0) return `${assetId} carries no impairment to reverse.`
+  if (e.kind !== 'tax-classification' && postedRunFor(e.period)) {
+    return `${periodLabel(e.period)} is posted. The earliest period this can take effect is ${periodLabel(earliestEffectivePeriod.value)}.`
+  }
+  return null
+}
+
+export interface EventPreview {
+  ok: boolean
+  reason?: string
+  before: AssetLedger
+  after: AssetLedger | null
+  /** The children a split would create, built from their apportioned opening. */
+  children: AssetLedger[]
+}
+
+/** The ledger an event would produce, without recording it. */
+export function previewEvent(assetId: string, event: Omit<AssetEvent, 'id'>): EventPreview {
+  const before = ledgers.value[assetId]!
+  const refusal = eventRefusal(assetId, event)
+  if (refusal) return { ok: false, reason: refusal, before, after: null, children: [] }
+  const log = eventLog.value[assetId] ?? []
+  const e = { ...event, id: `${assetId}-E${log.length + 1}` } as AssetEvent
+  try {
+    const after = buildAssetLedger(assetId, [...log, e])
+    const children = splitChildAcquisitions(after).map((acq) => buildAssetLedger(acq.id.replace(/-E1$/, ''), [acq]))
+    return { ok: true, before, after, children }
+  } catch (err) {
+    return { ok: false, reason: (err as Error).message, before, after: null, children: [] }
+  }
+}
+
+/** The IDs a split into `n` parts would give its children. */
+export function nextChildIds(n: number): string[] {
+  const first = Number(nextAssetId().slice(3))
+  return Array.from({ length: n }, (_, i) => `FA-${String(first + i).padStart(4, '0')}`)
+}
+
 export function recordEvent(assetId: string, event: Omit<AssetEvent, 'id'> & { id?: string }): EventResult {
   const log = eventLog.value[assetId]
   if (!log) return { ok: false, reason: `No asset ${assetId}` }
   const e = { ...event, id: event.id ?? `${assetId}-E${log.length + 1}` } as AssetEvent
-  // The first period whose charge the event changes: its own period for an
-  // event at the start of it, the next one for an event at the end.
-  const firstChanged = eventTiming(e) === 'start' ? e.period : addPeriods(e.period, 1)
-  if (booksAffected(e).includes('accounting') && postedRunFor(firstChanged)) {
-    return { ok: false, reason: `${periodLabel(firstChanged)} is posted, and this would change its charge. Choose an effective date after the last posted period.` }
-  }
+  const refusal = eventRefusal(assetId, e)
+  if (refusal) return { ok: false, reason: refusal }
   const next = [...log, e]
   // Replay before committing: an event the engine cannot apply is refused
   // rather than leaving a log that no longer builds.
@@ -506,7 +672,101 @@ export function recordEvent(assetId: string, event: Omit<AssetEvent, 'id'> & { i
   eventLog.value = { ...eventLog.value, [assetId]: next }
   const j = journalForEvent(assetId, e, built)
   if (j) journals.value = [...journals.value, j]
+  if (e.kind === 'split') addSplitChildren(built, e.parts.map((x) => x.name ?? ''))
   return { ok: true, event: e }
+}
+
+/**
+ * OD-32. The children join the register with their own IDs and event logs,
+ * opened from the parent's apportioned position. Cost and accumulated move
+ * between records inside the same accounts, so no journal is needed.
+ */
+function addSplitChildren(parent: AssetLedger, names: string[]) {
+  const seed = recordById(parent.id)!
+  const acqs = splitChildAcquisitions(parent)
+  const logs: Record<string, AssetEvent[]> = {}
+  const recs: AssetSeed[] = acqs.map((acq, i) => {
+    const id = acq.id.replace(/-E1$/, '')
+    logs[id] = [acq]
+    return {
+      ...seed, id, name: names[i]?.trim() ? names[i]!.trim() : `${seed.name} · part ${i + 1}`,
+      cost: acq.cost, acquired: seed.acquired, inServiceDate: parent.inServiceDate,
+      residual: acq.accounting.residual, tag: seed.tag ? `${seed.tag}-${i + 1}` : null,
+      impairment: undefined, disposal: undefined, splitFrom: parent.id,
+    }
+  })
+  assetRecords.value = [...assetRecords.value, ...recs]
+  eventLog.value = { ...eventLog.value, ...logs }
+}
+
+export interface NewAssetInput {
+  name: string
+  class: string
+  branch: string
+  cost: number
+  /** dd/mm/yyyy */
+  inServiceDate: string
+  lifeMonths: number
+  residual: number
+  method: Method
+  taxGroup: string | null
+  location?: string
+  custodian?: string
+}
+
+/**
+ * Create an asset (TS-01). It appears in the register and the schedule at
+ * once. Capitalisation posts cost against payables. An asset put into service
+ * before the next open period has depreciation the posted runs never charged,
+ * so that is brought up to date in one dated journal rather than left for the
+ * self-check to find.
+ */
+export function createAsset(input: NewAssetInput): { ok: true; id: string } | { ok: false; reason: string } {
+  const id = nextAssetId()
+  const period = periodOfDate(input.inServiceDate)
+  const type = input.class === 'Intangible assets' ? 'Intangible' : 'Tangible'
+  const seed: AssetSeed = {
+    id, name: input.name, class: input.class, acquired: input.inServiceDate, inServiceDate: input.inServiceDate,
+    cost: input.cost, residual: input.residual, commercialLifeMonths: input.lifeMonths,
+    taxGroup: input.taxGroup, fiscalLifeMonths: input.taxGroup ? STATUTORY_GROUPS[input.taxGroup]?.lifeMonths ?? null : null,
+    branch: input.branch, tag: type === 'Tangible' ? `TAG-${id.slice(3)}` : null,
+    location: input.location || null, custodian: input.custodian || null, type, statutoryCode: null, indefiniteLife: false,
+  }
+  const acq: AcquisitionEvent = {
+    id: `${id}-E1`, kind: 'acquisition', period, date: input.inServiceDate, recordedBy: actingUser.value,
+    cost: input.cost, inServiceDate: input.inServiceDate,
+    accounting: { method: input.method, lifeMonths: input.lifeMonths, residual: input.residual },
+    tax: input.taxGroup ? taxSetupFor(input.taxGroup) : null,
+    taxGroup: input.taxGroup,
+  }
+  assetRecords.value = [...assetRecords.value, seed]
+  eventLog.value = { ...eventLog.value, [id]: [acq] }
+  const l = ledgers.value[id]!
+  const openP = earliestEffectivePeriod.value
+  const js: Journal[] = [{
+    number: nextJournal(), date: input.inServiceDate, period, source: 'acquisition',
+    memo: `Capitalisation of ${id}`,
+    lines: [
+      { account: '1-1600 · Fixed assets at cost', description: `${id} ${input.name}`, debit: input.cost, credit: null, control: '1-1600' },
+      { account: '2-1100 · Accounts payable', description: 'Supplier', debit: null, credit: input.cost, control: 'other' },
+    ],
+  }]
+  const through = addPeriods(openP, -1)
+  const total = accumulatedAt(l.books.accounting, through) ?? 0
+  if (total > 0) {
+    const fy = isBefore(through, FY_START) ? 0 : chargesBetween(l, 'accounting', FY_START, through) ?? 0
+    js.push({
+      number: nextJournal(), date: periodEndDate(through), period: through, source: 'catch-up',
+      memo: `Depreciation of ${id} brought up to ${periodLabel(through)}`,
+      lines: [
+        ...(fy ? [{ account: EXPENSE_ACCOUNT[input.class] ?? '6299 · Depreciation, other', description: `${id} FY2026 to ${periodLabel(through)}`, debit: fy, credit: null, control: '6-5100' as const }] : []),
+        ...(total - fy ? [{ account: '3-3000 · Retained earnings', description: `${id} before FY2026`, debit: total - fy, credit: null, control: 'other' as const }] : []),
+        { account: ACCUM_ACCOUNT[input.class] ?? '1699', description: `${id} accumulated`, debit: null, credit: total, control: '1-1700' },
+      ],
+    })
+  }
+  journals.value = [...journals.value, ...js]
+  return { ok: true, id }
 }
 
 /**
@@ -516,7 +776,7 @@ export function recordEvent(assetId: string, event: Omit<AssetEvent, 'id'> & { i
  */
 export function assignTaxGroupTo(id: string, group: string, date = periodEndDate(CURRENT_PERIOD)): EventResult {
   const e: Omit<TaxClassificationEvent, 'id'> = {
-    kind: 'tax-classification', period: CURRENT_PERIOD, date, recordedBy: 'Sari Wulandari',
+    kind: 'tax-classification', period: CURRENT_PERIOD, date, recordedBy: actingUser.value,
     taxGroup: group, tax: taxSetupFor(group),
   }
   return recordEvent(id, e)
@@ -540,8 +800,10 @@ export interface ImpairmentTest {
   basis: 'Fair value less costs of disposal' | 'Value in use'
   source: string
   author: string
-  outcome: 'Impaired' | 'Not impaired'
+  outcome: 'Impaired' | 'Not impaired' | 'Reversal'
   loss: number | null
+  /** For a reversal: what was written back. */
+  reversed?: number | null
 }
 
 /**
@@ -550,8 +812,9 @@ export interface ImpairmentTest {
  * carrying amount and loss are read back from the engine rather than stored.
  */
 interface TestRecord extends Omit<ImpairmentTest, 'carrying' | 'loss' | 'outcome'> {
-  /** The impairment event the test produced, when it found one. */
+  /** The impairment (or reversal) event the test produced, when it found one. */
   eventId: string | null
+  kind?: 'impairment' | 'reversal'
   /** For a test that found nothing: the carrying amount it was compared with. */
   carryingAtTest: number
 }
@@ -559,6 +822,10 @@ const testRecords = ref<TestRecord[]>([])
 
 export const impairmentTests = computed<ImpairmentTest[]>(() =>
   testRecords.value.map((t) => {
+    if (t.kind === 'reversal') {
+      const rv = t.eventId ? ledgers.value[t.assetId]?.books.accounting.reversals.find((r) => r.eventId === t.eventId) ?? null : null
+      return { ...t, carrying: rv?.carryingBefore ?? t.carryingAtTest, loss: null, reversed: rv?.applied ?? 0, outcome: 'Reversal' as const }
+    }
     const imp = t.eventId
       ? ledgers.value[t.assetId]?.books.accounting.impairments.find((i) => i.eventId === t.eventId) ?? null
       : null
@@ -581,6 +848,16 @@ export function carryingForTest(assetId: string, date = periodEndDate(CURRENT_PE
  * finds nothing is kept, because the obligation is to test (LR-8). An
  * impairment is accounting only; the tax book does not move.
  */
+/** What can prompt an impairment test (PSAK 48 indicators, plus the annual test). */
+export const IMPAIRMENT_INDICATORS = [
+  'Physical damage',
+  'Market value has fallen',
+  'Obsolescence',
+  'Idle or held for disposal',
+  'Annual test · indefinite life',
+  'Worse performance than expected',
+]
+
 export function recordImpairmentTest(input: {
   assetId: string
   indicator: string
@@ -588,32 +865,71 @@ export function recordImpairmentTest(input: {
   basis: ImpairmentTest['basis']
   source: string
   date?: string
-}) {
+}): EventResult | { ok: true; event: null } {
   const a = findAsset(input.assetId)
-  if (!a) return
-  const date = input.date ?? periodEndDate(CURRENT_PERIOD)
+  if (!a) return { ok: false, reason: `No asset ${input.assetId}` }
+  const date = input.date ?? periodEndDate(earliestEffectivePeriod.value)
   const period = periodOfDate(date)
   const carrying = carryingForTest(a.id, date) ?? a.cost
-  const n = testRecords.value.length + 1
-  const id = `IT-2026-${String(n).padStart(2, '0')}`
+  const id = `IT-2026-${String(testRecords.value.length + 1).padStart(2, '0')}`
   let eventId: string | null = null
+  // OD-50: a test that finds the asset impaired posts the write-down through
+  // the engine. One that finds nothing is kept all the same (LR-8).
   if (input.recoverable < carrying) {
     const r = recordEvent(a.id, {
-      kind: 'impairment', period, date, recordedBy: 'Rizal Candra',
+      kind: 'impairment', period, date, recordedBy: actingUser.value,
       recoverable: input.recoverable, testId: id,
     } as Omit<ImpairmentEvent, 'id'>)
-    if (r.ok) eventId = r.event.id
+    if (!r.ok) return r
+    eventId = r.event.id
   }
   testRecords.value = [{
     id, assetId: a.id, assetName: a.name, date, indicator: input.indicator,
     recoverable: input.recoverable, basis: input.basis, source: input.source,
-    author: 'Rizal Candra', eventId, carryingAtTest: carrying,
+    author: actingUser.value, eventId, carryingAtTest: carrying, kind: 'impairment',
   }, ...testRecords.value]
+  return eventId ? { ok: true, event: eventsOf(a.id).find((e) => e.id === eventId)! } : { ok: true, event: null }
+}
+
+/**
+ * OD-51. A later test finds the recoverable amount has recovered. The write
+ * back is capped at what the asset would be carried at had it never been
+ * impaired, read from the retained unimpaired schedule. Goodwill is refused.
+ */
+export function recordImpairmentReversal(input: {
+  assetId: string
+  recoverable: number
+  basis: ImpairmentTest['basis']
+  source: string
+  date?: string
+}): EventResult {
+  const a = findAsset(input.assetId)
+  if (!a) return { ok: false, reason: `No asset ${input.assetId}` }
+  const date = input.date ?? periodEndDate(earliestEffectivePeriod.value)
+  const period = periodOfDate(date)
+  const id = `IT-2026-${String(testRecords.value.length + 1).padStart(2, '0')}`
+  const carrying = carryingForTest(a.id, date) ?? a.cost
+  const r = recordEvent(a.id, {
+    kind: 'impairment-reversal', period, date, recordedBy: actingUser.value,
+    recoverable: input.recoverable, testId: id,
+  } as Omit<AssetEvent, 'id'>)
+  if (!r.ok) return r
+  testRecords.value = [{
+    id, assetId: a.id, assetName: a.name, date, indicator: 'Indicator of recovery',
+    recoverable: input.recoverable, basis: input.basis, source: input.source,
+    author: actingUser.value, eventId: r.event.id, carryingAtTest: carrying, kind: 'reversal',
+  }, ...testRecords.value]
+  return r
+}
+
+/** The tests on one asset, newest first, for its history (LR-8, FG3-AC1). */
+export function testsFor(assetId: string): ImpairmentTest[] {
+  return impairmentTests.value.filter((t) => t.assetId === assetId)
 }
 
 // ── Aggregates ──────────────────────────────────────────────────────────────
 
-const seedById = (id: string) => assetSeeds.find((s) => s.id === id)!
+const seedById = (id: string) => recordById(id)!
 
 /** Charges on one book across a range, per asset. Null where the book has none. */
 export function chargeRange(id: string, book: Book, from: Period, to: Period): number | null {
@@ -633,7 +949,7 @@ export function fyFigures(p: Period = CURRENT_PERIOD) {
   let unclassifiedAccounting = 0
   let impairment = 0
   const disposal = { accounting: 0, tax: 0, count: 0 }
-  for (const s of assetSeeds) {
+  for (const s of assetRecords.value) {
     const l = ledgers.value[s.id]!
     const acc = chargesBetween(l, 'accounting', FY_START, p) ?? 0
     if (!l.books.tax) { unclassifiedAccounting += acc; continue }
@@ -641,16 +957,22 @@ export function fyFigures(p: Period = CURRENT_PERIOD) {
     const bucket = s.type === 'Tangible' ? tangible : intangible
     bucket.accounting += acc
     bucket.tax += tax
-    for (const i of l.books.accounting.impairments) {
-      if (!isBefore(i.period, FY_START) && !isAfter(i.period, p)) impairment += i.loss
-    }
+    const inFy = (x: { period: Period }) => !isBefore(x.period, FY_START) && !isAfter(x.period, p)
+    for (const i of l.books.accounting.impairments) if (inFy(i)) impairment += i.loss
+    for (const r of l.books.accounting.reversals) if (inFy(r)) impairment -= r.applied
     const dA = l.books.accounting.disposal
     const dT = l.books.tax.disposal
-    if (dA && !isBefore(dA.period, FY_START) && !isAfter(dA.period, p)) {
+    if (dA && inFy(dA)) {
       disposal.accounting += dA.gainLoss
       disposal.tax += dT?.gainLoss ?? 0
       disposal.count += 1
     }
+    l.books.accounting.partialDisposals.forEach((d, i) => {
+      if (!inFy(d)) return
+      disposal.accounting += d.gainLoss
+      disposal.tax += l.books.tax!.partialDisposals[i]?.gainLoss ?? 0
+      disposal.count += 1
+    })
   }
   /**
    * The fiscal correction on the tangible half, as the working papers carry
@@ -704,18 +1026,26 @@ export interface SelfCheckResult {
 function subLedgerBalances(p: Period): Record<Exclude<ControlAccount, 'other'>, number> {
   const through = bookedThrough(p)
   let cost = 0, accumulated = 0, expense = 0, impairment = 0, gain = 0
-  for (const s of assetSeeds) {
+  for (const s of assetRecords.value) {
     const l = ledgers.value[s.id]!
     if (isHeldAt(l, p)) {
-      cost += l.cost
+      cost += costAt(l.books.accounting, p)
       accumulated += accumulatedAsBooked(l, 'accounting', p) ?? 0
     }
-    if (!isBefore(through, FY_START)) expense += chargesBetween(l, 'accounting', FY_START, through) ?? 0
-    for (const i of l.books.accounting.impairments) {
-      if (!isBefore(i.period, FY_START) && !isAfter(i.period, p)) impairment += i.loss
+    // A disposal in a period not yet posted derecognises that period's
+    // charge along with the rest; the charge reaches the ledger when the
+    // period posts. Until then the ledger is short of it, and so is this.
+    const dp = l.books.accounting.disposal
+    if (dp && isAfter(dp.period, through) && !isAfter(dp.period, p)) {
+      accumulated -= chargesBetween(l, 'accounting', addPeriods(through, 1), dp.period) ?? 0
     }
+    if (!isBefore(through, FY_START)) expense += chargesBetween(l, 'accounting', FY_START, through) ?? 0
+    const inFy = (x: { period: Period }) => !isBefore(x.period, FY_START) && !isAfter(x.period, p)
+    for (const i of l.books.accounting.impairments) if (inFy(i)) impairment += i.loss
+    for (const r of l.books.accounting.reversals) if (inFy(r)) impairment -= r.applied
     const d = l.books.accounting.disposal
-    if (d && !isBefore(d.period, FY_START) && !isAfter(d.period, p)) gain += d.gainLoss
+    if (d && inFy(d)) gain += d.gainLoss
+    for (const x of l.books.accounting.partialDisposals) if (inFy(x)) gain += x.gainLoss
   }
   // Signed as the ledger holds them: debit positive, credit negative.
   return { '1-1600': cost, '1-1700': -accumulated, '6-5100': expense, '6-5200': impairment, '6-5300': -gain }
@@ -754,7 +1084,7 @@ export function computeSelfCheck(p: Period = CURRENT_PERIOD): Omit<SelfCheckResu
       let checked = 0
       let none = 0
       const issues: string[] = []
-      for (const s of assetSeeds) {
+      for (const s of assetRecords.value) {
         const l = ledgers.value[s.id]!
         for (const book of ['accounting', 'tax'] as Book[]) {
           const b = bookOf(l, book)
@@ -771,7 +1101,7 @@ export function computeSelfCheck(p: Period = CURRENT_PERIOD): Omit<SelfCheckResu
         : { state: 'passed', detail: `${checked} schedules checked, all tie${noneNote}` }
     }),
     guarded('C3', () => {
-      const missing = assetSeeds.filter((s) => {
+      const missing = assetRecords.value.filter((s) => {
         const l = ledgers.value[s.id]!
         return isHeldDuring(l, p) && !l.books.tax
       })
@@ -780,13 +1110,13 @@ export function computeSelfCheck(p: Period = CURRENT_PERIOD): Omit<SelfCheckResu
         : { state: 'passed', detail: 'Every asset is on both books' }
     }),
     guarded('C4', () => {
-      const unclassified = assetSeeds.filter((s) => !ledgers.value[s.id]!.books.tax && isHeldDuring(ledgers.value[s.id]!, p))
+      const unclassified = assetRecords.value.filter((s) => !ledgers.value[s.id]!.books.tax && isHeldDuring(ledgers.value[s.id]!, p))
       if (unclassified.length) return { state: 'incomplete', detail: 'Cannot run until every asset carries a statutory group' }
       // The tax book population for the year: every asset with a tax book on
       // the register at any point in FY2026 up to `p`, disposals included.
-      const inTaxBook = assetSeeds.filter((s) => {
+      const inTaxBook = assetRecords.value.filter((s) => {
         const l = ledgers.value[s.id]!
-        if (!l.books.tax || isAfter(l.startPeriod, p)) return false
+        if (!l.books.tax || isAfter(l.registeredFrom, p)) return false
         return !(l.disposedIn && isBefore(l.disposedIn, FY_START))
       })
       const half1 = statutoryLines(p, 'Tangible').reduce((n, r) => n + r.assets, 0)
@@ -845,15 +1175,17 @@ export interface StatutoryLine {
  */
 export function statutoryLines(p: Period, type: 'Tangible' | 'Intangible'): StatutoryLine[] {
   const lines = new Map<string, StatutoryLine>()
-  for (const s of assetSeeds) {
+  for (const s of assetRecords.value) {
     if (s.type !== type) continue
     const l = ledgers.value[s.id]!
-    if (!l.books.tax || isBefore(p, l.startPeriod)) continue
+    if (!l.books.tax || isBefore(p, l.registeredFrom)) continue
     if (l.disposedIn && isBefore(l.disposedIn, FY_START)) continue
     const key = type === 'Tangible' ? (STATUTORY_GROUPS[l.taxGroup!]?.label ?? l.taxGroup!) : (s.statutoryCode ?? 'Not set')
     const line = lines.get(key) ?? { key, assets: 0, cost: 0, charge: 0, bookValue: 0 }
     line.assets += 1
-    line.cost += l.cost
+    // A split parent is on the line for the part of the year it was held,
+    // but its cost has passed to its children, so it is counted once.
+    line.cost += isHeldAt(l, p) || l.disposedIn ? costAt(l.books.accounting, p) : 0
     line.charge += chargesBetween(l, 'tax', FY_START, p) ?? 0
     line.bookValue += bookValueAt(l, 'tax', p) ?? 0
     lines.set(key, line)
@@ -884,13 +1216,13 @@ function seedTests() {
       id: 'IT-2026-01', assetId: 'FA-0068', assetName: seedById('FA-0068').name,
       date: '30/06/2026', indicator: 'Physical damage', recoverable: imp?.recoverable ?? 0,
       basis: 'Fair value less costs of disposal', source: 'Appraisal · PT Penilai Independen',
-      author: 'Rizal Candra', eventId: imp?.eventId ?? null, carryingAtTest: imp?.carryingBefore ?? 0,
+      author: 'Rizal Candra', eventId: imp?.eventId ?? null, carryingAtTest: imp?.carryingBefore ?? 0, kind: 'impairment',
     },
     {
       id: 'IT-2026-02', assetId: 'FA-0093', assetName: seedById('FA-0093').name,
       date: '31/12/2026', indicator: 'Annual test · indefinite life', recoverable: 1_050_000_000,
       basis: 'Value in use', source: 'Management projection',
-      author: 'Sari Wulandari', eventId: null, carryingAtTest: seedById('FA-0093').cost,
+      author: 'Sari Wulandari', eventId: null, carryingAtTest: seedById('FA-0093').cost, kind: 'impairment',
     },
   ]
 }
@@ -955,6 +1287,8 @@ function seedLedger() {
 /** Return every piece of session state to the sample data. */
 export function resetAssetStore() {
   journalSeq = 118
+  assetRecords.value = [...assetSeeds]
+  viewAs.value = 'Owner'
   eventLog.value = Object.fromEntries(assetSeeds.map((s) => [s.id, seedEvents(s)]))
   seedLedger()
   seedTests()

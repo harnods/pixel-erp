@@ -32,6 +32,8 @@
         <IconButton icon="inbox" @click="goToInbox" />
       </MpFlex>
 
+      <!-- Fixed-asset prototype: simulated roles, on the asset screens only. -->
+      <ErpViewAsSwitcher v-if="isAssetScreen" />
       <!-- User snapshot menu (avatar + name → account popover) -->
       <ErpUserMenu />
     </MpFlex>
@@ -68,6 +70,16 @@ const router = useRouter();
 // lands on Deals), so CRM keeps the header search like other module pages.
 const showHeaderSearch = computed(
   () => currentPageKey.value !== 'Home' && currentPageKey.value !== 'Hr',
+);
+
+// The asset module's screens, where the simulated "View as" roles apply.
+const ASSET_SCREENS = new Set([
+  'Assets', 'Depreciation schedule', 'Tax book', 'Impairment tests', 'Period self check',
+  'Custody and counts', 'Asset approvals', 'Leases', 'Asset settings',
+]);
+const route = useRoute();
+const isAssetScreen = computed(
+  () => ASSET_SCREENS.has(currentPageKey.value) || route.path.startsWith('/assets'),
 );
 function goToInbox() {
   setActiveMenuLabel("Notifications");

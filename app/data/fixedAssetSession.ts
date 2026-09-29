@@ -21,6 +21,9 @@ export {
   type ImpairmentTest,
 } from './assetStore'
 
+/** The register's New asset drawer, opened from the title bar the page does not own. */
+export const newAssetDrawerOpen = ref(false)
+
 // ── Approvals ───────────────────────────────────────────────────────────────
 
 export type ApprovalDecision = 'awaiting' | 'approved' | 'sent-back'

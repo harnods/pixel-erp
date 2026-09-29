@@ -33,7 +33,9 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import { infoToast, successToast } from '~/utils/toasts'
 import AssetFiltersDrawer from '~/components/patterns/AssetFiltersDrawer.vue'
-import { fixedAssets } from '~/data/assetStore'
+import NewAssetDrawer from '~/components/patterns/NewAssetDrawer.vue'
+import { fixedAssets, canSeeFinancials, viewAs } from '~/data/assetStore'
+import { newAssetDrawerOpen } from '~/data/fixedAssetSession'
 import {
   assetClasses,
   assetBranches,
@@ -191,8 +193,16 @@ const allColumns = computed<TableColumn[]>(() => {
     { key: 'name', label: t('Asset'), kind: 'name', sortable: true, sortType: 'text' },
     { key: 'class', label: t('Class'), kind: 'default', sortable: true, sortType: 'text' },
     { key: 'acquired', label: t('Acquired'), kind: 'date', sortable: true, sortType: 'date', align: 'left' },
-    { key: 'cost', label: t('Acquisition cost'), kind: 'amount', sortable: true, sortType: 'number', align: 'right' },
   ]
+  // LR-6: a role scoped to the physical pane sees no cost or book value at all.
+  if (!canSeeFinancials.value) {
+    cols.push({ key: 'location', label: t('Location'), kind: 'default', sortable: true, sortType: 'text' })
+    cols.push({ key: 'custodian', label: t('Custodian'), kind: 'default', sortable: true, sortType: 'text' })
+    cols.push({ key: 'branch', label: t('Branch'), kind: 'default', sortable: true, sortType: 'text' })
+    cols.push({ key: 'status', label: t('Status'), kind: 'status', sortable: true, sortType: 'text' })
+    return cols
+  }
+  cols.push({ key: 'cost', label: t('Cost'), kind: 'amount', sortable: true, sortType: 'number', align: 'right' })
   // The tax column only appears when the tax view is on, so a reader in the
   // accounting view is never looking at an empty column wondering whether the
   // data failed to load.
@@ -259,20 +269,25 @@ const router = useRouter()
 function openAsset(a: FixedAsset) {
   router.push(`/assets/${a.id}`)
 }
+function onCreated(id: string) {
+  newAssetDrawerOpen.value = false
+  successToast(t(`${id} created. It is in the register and the schedule`))
+  router.push(`/assets/${id}`)
+}
 function runDepreciation() {
   router.push('/depreciation-schedule')
 }
 
 /** Fiscal book value, or the reason there is not one. Never a zero. */
 function fiscalBookValue(a: FixedAsset): { text: string; muted: boolean } {
-  if (a.status === 'Disposed') return { text: '—', muted: true }
+  if (a.status === 'Disposed' || a.status === 'Split') return { text: '—', muted: true }
   if (a.bookValueFiscal === null) return { text: t(fiscalAbsenceReason(a)), muted: false }
   return { text: formatIDR(a.bookValueFiscal), muted: false }
 }
 function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
   // A disposed asset has no book value — the company no longer holds it, which
   // is a different statement from holding something worth nothing.
-  if (a.status === 'Disposed' || a.bookValueCommercial === null) {
+  if (a.status === 'Disposed' || a.status === 'Split' || a.bookValueCommercial === null) {
     return { text: '—', muted: true }
   }
   return { text: formatIDR(a.bookValueCommercial), muted: false }
@@ -353,7 +368,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
            shrinking the amounts to fit would make the register's primary
            numbers the smallest thing on the screen. -->
       <div class="stats-wrap">
-        <div class="stats-switch">
+        <div v-if="canSeeFinancials" class="stats-switch">
           <MpSegmentedControl
             id="asset-book-switch"
             name="asset-book-switch"
@@ -369,19 +384,24 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
             <div class="stat-amount">{{ totals.count }}</div>
           </div>
 
-          <div class="stat-card stat-card--bordered">
-            <div class="stat-title">{{ t('Acquisition cost') }}</div>
+          <div v-if="!canSeeFinancials" class="stat-card">
+            <div class="stat-title">{{ t(`Viewing as ${viewAs}`) }}</div>
+            <div class="stat-period">{{ t('Cost and book values are not shown to this role') }}</div>
+          </div>
+
+          <div v-if="canSeeFinancials" class="stat-card stat-card--bordered">
+            <div class="stat-title">{{ t('Cost') }}</div>
             <div class="stat-period">{{ t('Held assets') }}</div>
             <div class="stat-amount">{{ formatIDR(totals.cost) }}</div>
           </div>
 
-          <div v-if="book !== 'tax'" class="stat-card stat-card--bordered">
+          <div v-if="canSeeFinancials && book !== 'tax'" class="stat-card stat-card--bordered">
             <div class="stat-title">{{ t('Book value') }}</div>
             <div class="stat-period">{{ t('Accounting · at 30/09/2026') }}</div>
             <div class="stat-amount">{{ formatIDR(totals.bookValueCommercial) }}</div>
           </div>
 
-          <div v-if="book !== 'accounting'" class="stat-card">
+          <div v-if="canSeeFinancials && book !== 'accounting'" class="stat-card">
             <div class="stat-title">{{ t('Tax book value') }}</div>
             <div class="stat-period">{{ t('Tax basis · at 30/09/2026') }}</div>
             <!-- When every filtered asset is unclassified there is no fiscal
@@ -459,7 +479,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
             <MpPopoverListItem @click="openAsset(row as unknown as FixedAsset)">{{ t('View asset') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="infoToast(t('Depreciation schedule is not part of this screen yet.'))">{{ t('Depreciation schedule') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="canSeeFinancials" @click="router.push('/depreciation-schedule')">{{ t('Depreciation schedule') }}</MpPopoverListItem>
             <MpPopoverListItem v-if="!(row as unknown as FixedAsset).taxGroup" @click="assignTaxGroup">{{ t('Assign tax group') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
@@ -496,6 +516,8 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
     @close="filtersOpen = false"
     @apply="onApplyFilters"
   />
+
+  <NewAssetDrawer :is-open="newAssetDrawerOpen" @close="newAssetDrawerOpen = false" @created="onCreated" />
 
   <ExportModal
     :open="exportOpen"

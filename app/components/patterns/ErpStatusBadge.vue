@@ -95,6 +95,7 @@ const statusConfig: Record<string, StatusConfig> = {
   // = no longer held, red = cannot reach the fiscal book until it is fixed.
   impaired:   { type: 'warning',      label: 'Impaired'   },
   disposed:   { type: 'announcement', label: 'Disposed'   },
+  split:      { type: 'announcement', label: 'Split'      },
   'fully depreciated': { type: 'information', label: 'Fully depreciated' },
   incomplete: { type: 'critical',     label: 'Incomplete' },
 

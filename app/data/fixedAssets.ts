@@ -33,6 +33,8 @@ export type AssetStatus =
   | 'Disposed'
   | 'Fully depreciated'
   | 'Incomplete'
+  /** Replaced by its children in a split (OD-32). No longer held. */
+  | 'Split'
 
 /** Tangible assets depreciate; intangible assets amortise. Same engine. */
 export type AssetType = 'Tangible' | 'Intangible'
@@ -73,6 +75,8 @@ export interface AssetSeed {
   impairment?: { testId: string; date: string; recoverable: number }
   /** A disposal in the sample year. */
   disposal?: { date: string; proceeds: number }
+  /** A child of a split this session: the parent it came from. */
+  splitFrom?: string
 }
 
 /**
@@ -559,7 +563,7 @@ export function isUnclassified(a: Pick<AssetSeed, 'taxGroup'>): boolean {
  *    reported as an exclusion beside the total rather than folded into it.
  */
 export function registerTotals(rows: FixedAsset[]) {
-  const held = rows.filter((a) => a.status !== 'Disposed')
+  const held = rows.filter((a) => a.status !== 'Disposed' && a.status !== 'Split')
   const classified = held.filter((a) => a.bookValueFiscal !== null)
   return {
     count: rows.length,
@@ -590,5 +594,5 @@ export const assetTaxGroups: string[] = Array.from(
 
 /** Every status, in the order the design lists them. */
 export const assetStatuses: AssetStatus[] = [
-  'Active', 'Impaired', 'Disposed', 'Fully depreciated', 'Incomplete',
+  'Active', 'Impaired', 'Disposed', 'Fully depreciated', 'Incomplete', 'Split',
 ]

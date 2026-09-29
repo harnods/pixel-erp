@@ -155,6 +155,15 @@ export interface AcquisitionEvent extends EventBase {
   /** Null when the asset arrives without a statutory group. */
   tax: BookSetup | null
   taxGroup: string | null
+  /** Goodwill: PSAK 48 never allows its impairment to be reversed. */
+  isGoodwill?: boolean
+  /**
+   * Set on a child created by a split (OD-32): the parent it came from. The
+   * child is on the register from this event's period, not from the
+   * in-service date it inherits, and its books open with the apportioned
+   * accumulated position.
+   */
+  splitFrom?: string
 }
 
 /** OD-02. Setting the statutory group creates the tax book, computed from in-service. */
@@ -186,13 +195,16 @@ export interface DisposalEvent extends EventBase {
   proceeds: number
 }
 
-// The events below are typed now so the store and screens can be written
-// against the full log. Their handling arrives in the next phase; replaying
-// one before then throws rather than silently producing a wrong figure.
-
-/** OD-13. A data-entry error: the cost was wrong. */
+/**
+ * OD-13 and OD-14. A data-entry error: the acquisition cost was wrong. It
+ * takes effect in an open period. What the posted periods charged on the
+ * wrong cost is caught up in that period as a dated adjustment line, so no
+ * posted period is edited (LR-4) and the schedule ends where the right cost
+ * would have taken it.
+ */
 export interface CostCorrectionEvent extends EventBase {
   kind: 'cost-correction'
+  /** The acquisition cost as it should have been recorded. */
   correctedCost: number
   reason: string
 }
@@ -207,14 +219,19 @@ export interface ImprovementEvent extends EventBase {
 export interface ImpairmentReversalEvent extends EventBase {
   kind: 'impairment-reversal'
   recoverable: number
-  reversesEventId: string
+  reversesEventId?: string
+  testId?: string
 }
-/** OD-32. Apportions cost, accumulated and impairment on one ratio, both books. */
+/**
+ * OD-32. The parent is split into children at the start of `period`: cost,
+ * accumulated depreciation and impairment are apportioned on the same ratio
+ * on both books, in this one event. The parent leaves the register; each
+ * child carries on the parent's remaining life under its own ID.
+ */
 export interface SplitEvent extends EventBase {
   kind: 'split'
-  /** The proportion moved to the child, 0 to 1. */
-  proportion: number
-  childId: string
+  /** Proportions sum to 1. */
+  parts: { childId: string; proportion: number; name?: string }[]
 }
 /** OD-33. Disposes of a proportion; the remainder regenerates on both books. */
 export interface PartialDisposalEvent extends EventBase {
@@ -256,7 +273,6 @@ export function eventTiming(e: AssetEvent): 'start' | 'end' {
     case 'impairment-reversal':
     case 'disposal':
     case 'partial-disposal':
-    case 'split':
       return 'end'
     default:
       return 'start'
@@ -278,7 +294,7 @@ export function replayOrder(events: AssetEvent[]): AssetEvent[] {
 /** A short, dated description of an event, for rows, history and derivations. */
 export function eventLabel(e: AssetEvent): string {
   switch (e.kind) {
-    case 'acquisition': return `Entered service ${e.inServiceDate}`
+    case 'acquisition': return e.splitFrom ? `Split from ${e.splitFrom} on ${e.date}` : `Entered service ${e.inServiceDate}`
     case 'tax-classification': return `Statutory group set to ${e.taxGroup} on ${e.date}`
     case 'estimate-revision': {
       const parts: string[] = []
@@ -289,12 +305,21 @@ export function eventLabel(e: AssetEvent): string {
     }
     case 'impairment': return `Impaired ${e.date}, written down to ${rupiah(e.recoverable)}`
     case 'disposal': return `Disposed ${e.date} for ${rupiah(e.proceeds)}`
-    case 'cost-correction': return `Cost corrected to ${rupiah(e.correctedCost)} on ${e.date}`
-    case 'improvement': return `Improvement of ${rupiah(e.amount)} capitalised ${e.date}`
-    case 'impairment-reversal': return `Impairment reversed ${e.date}`
-    case 'split': return `Split ${Math.round(e.proportion * 100)}% to ${e.childId} on ${e.date}`
-    case 'partial-disposal': return `${Math.round(e.proportion * 100)}% disposed ${e.date} for ${rupiah(e.proceeds)}`
+    case 'cost-correction': return `Acquisition cost corrected to ${rupiah(e.correctedCost)} from ${periodLabel(e.period)}`
+    case 'improvement': {
+      const life = e.lifeMonths?.accounting ? `, life extended to ${formatLife(e.lifeMonths.accounting)}` : ''
+      return `Improvement of ${rupiah(e.amount)} capitalised ${e.date}${life}`
+    }
+    case 'impairment-reversal': return `Impairment reversed ${e.date}, recoverable ${rupiah(e.recoverable)}`
+    case 'split': return `Split into ${e.parts.map((x) => `${x.childId} (${pct(x.proportion)})`).join(', ')} from ${periodLabel(e.period)}`
+    case 'partial-disposal': return `${pct(e.proportion)} disposed ${e.date} for ${rupiah(e.proceeds)}`
   }
+}
+
+/** A proportion as a percentage, to two decimals only where needed. */
+export function pct(q: number): string {
+  const v = Math.round(q * 10000) / 100
+  return `${v.toLocaleString('id-ID')}%`
 }
 
 export function formatLife(months: number | null): string {
@@ -340,8 +365,17 @@ export interface ScheduleRow {
   charge: number
   /** An impairment loss recognised at the end of this period, else 0. */
   writeDown: number
-  /** openingAccumulated + charge + writeDown. */
+  /**
+   * A catch-up in this period for charges already posted on a wrong cost
+   * (OD-14). Posted with the period's run, shown as its own line.
+   */
+  adjustment?: number
+  /** Accumulated derecognised at the end of this period by a partial disposal. */
+  transferredOut?: number
+  /** openingAccumulated + charge + adjustment + writeDown - transferredOut. */
   closingAccumulated: number
+  /** The cost carried at the end of this period. */
+  cost: number
   /** cost less closingAccumulated. */
   netBookValue: number
   /** The basis that produced `charge`. */
@@ -391,10 +425,55 @@ export interface DisposalResult {
   gainLoss: number
 }
 
+export interface ReversalResult {
+  eventId: string
+  period: Period
+  date: string
+  carryingBefore: number
+  recoverable: number
+  /** What the asset would be carried at had it never been impaired (LR-3). */
+  unimpaired: number
+  /** recoverable less carrying: the recovery the test found. */
+  uncapped: number
+  /** unimpaired less carrying: the most PSAK 48 allows back. */
+  cap: number
+  applied: number
+  capApplied: boolean
+}
+
+export interface PartialDisposalResult extends DisposalResult {
+  proportion: number
+}
+
+export interface SplitResult {
+  eventId: string
+  period: Period
+  date: string
+  method: Method
+  lifeMonths: number | null
+  /** Accumulated brought to the split: the parent's position at the end of the prior period. */
+  accumulated: number
+  cost: number
+  parts: { childId: string; proportion: number; cost: number; accumulated: number; residual: number }[]
+}
+
+export interface CorrectionResult {
+  eventId: string
+  period: Period
+  previousCost: number
+  correctedCost: number
+  /** Charged in `period` for what the posted periods got wrong. Negative gives back. */
+  catchUp: number
+}
+
 export interface BookLedger {
   assetId: string
   book: Book
   startPeriod: Period
+  /** From when the asset is on the register: in service, or the split that created it. */
+  registeredFrom: Period
+  /** The cost from each period's end on. The first entry holds from the start. */
+  costHistory: { from: Period; cost: number }[]
   bases: Basis[]
   versions: ScheduleVersion[]
   /** The schedule in force: each period taken from the version live in it. */
@@ -402,19 +481,33 @@ export interface BookLedger {
   /** Write-downs on a book with no schedule rows (an indefinite-life asset). */
   offScheduleWriteDowns: { period: Period; amount: number; eventId: string }[]
   impairments: ImpairmentResult[]
+  reversals: ReversalResult[]
+  corrections: CorrectionResult[]
+  partialDisposals: PartialDisposalResult[]
   disposal: DisposalResult | null
+  split: SplitResult | null
 }
 
 export interface AssetLedger {
   id: string
+  /** The cost now, after corrections, improvements and partial disposals. */
   cost: number
+  /** The cost the acquisition recorded. */
+  acquisitionCost: number
   inServiceDate: string
   startPeriod: Period
+  /** On the register from this period: in service, or created by a split. */
+  registeredFrom: Period
   taxGroup: string | null
+  isGoodwill: boolean
   events: AssetEvent[]
   books: { accounting: BookLedger; tax: BookLedger | null }
-  /** The period the asset left the register, if it has. */
+  /** The period the asset was disposed of, if it has been. Held during it. */
   disposedIn: Period | null
+  /** The period a split replaced it with its children. Not held during it. */
+  splitIn: Period | null
+  /** The parent, for a child of a split. */
+  splitFrom: string | null
 }
 
 // ── Charge arithmetic ───────────────────────────────────────────────────────
@@ -463,6 +556,20 @@ export function chargesFor(b: Basis): number[] {
   return decliningCharges(b)
 }
 
+/**
+ * Split a whole-rupiah total on a ratio so the parts add back to it exactly:
+ * each part rounded down, the remaining rupiah to the largest remainders.
+ */
+export function apportion(total: number, weights: number[]): number[] {
+  const sumW = weights.reduce((s, w) => s + w, 0)
+  const raw = weights.map((w) => Math.round(((total * w) / sumW) * 1e6) / 1e6)
+  const out = raw.map((r) => Math.floor(r))
+  let rem = total - out.reduce((s, v) => s + v, 0)
+  const order = raw.map((r, i) => ({ i, f: r - Math.floor(r) })).sort((a, b) => b.f - a.f || a.i - b.i)
+  for (let k = 0; rem > 0; k++, rem--) out[order[k % order.length]!.i]! += 1
+  return out
+}
+
 function rowsFor(b: Basis): ScheduleRow[] {
   let acc = b.openingAccumulated
   return chargesFor(b).map((charge, k) => {
@@ -474,6 +581,7 @@ function rowsFor(b: Basis): ScheduleRow[] {
       charge,
       writeDown: 0,
       closingAccumulated: acc,
+      cost: b.cost,
       netBookValue: b.cost - acc,
       basisId: b.id,
       eventIds: [],
@@ -496,8 +604,15 @@ export function liveRows(versions: ScheduleVersion[]): ScheduleRow[] {
   return out
 }
 
-function notInThisPhase(kind: EventKind): Error {
-  return new Error(`assetEngine: '${kind}' events are typed but not handled yet`)
+/** Named in the refusal, because the reader needs the rule, not only the no. */
+export const GOODWILL_REVERSAL_REFUSED =
+  'PSAK 48 prohibits reversing an impairment of goodwill. The loss stays recognised.'
+
+/** The cost carried at the end of `p`. */
+export function costAt(b: Pick<BookLedger, 'costHistory'>, p: Period): number {
+  let c = b.costHistory[0]!.cost
+  for (const h of b.costHistory) if (!isAfter(h.from, p)) c = h.cost
+  return c
 }
 
 interface BuildBookInput {
@@ -509,16 +624,28 @@ interface BuildBookInput {
   createdBy: AssetEvent
   /** Every later event, in any order; filtered to this book here. */
   events: AssetEvent[]
+  registeredFrom?: Period
+  isGoodwill?: boolean
 }
 
 export function buildBook(input: BuildBookInput): BookLedger {
   const { assetId, book, setup, startPeriod, createdBy } = input
-  const cost = input.cost
+  let cost = input.cost
+  const costHistory: BookLedger['costHistory'] = [{ from: setup.opening?.period ?? startPeriod, cost }]
   const bases: Basis[] = []
   const versions: ScheduleVersion[] = []
   const offScheduleWriteDowns: BookLedger['offScheduleWriteDowns'] = []
   const impairments: ImpairmentResult[] = []
+  const reversals: ReversalResult[] = []
+  const corrections: CorrectionResult[] = []
+  const partialDisposals: PartialDisposalResult[] = []
   let disposal: DisposalResult | null = null
+  let split: SplitResult | null = null
+
+  function setCost(from: Period, c: number) {
+    cost = c
+    costHistory.push({ from, cost: c })
+  }
 
   const cause = (e: AssetEvent) => ({ eventId: e.id, kind: e.kind, label: eventLabel(e), period: e.period })
 
@@ -616,8 +743,54 @@ export function buildBook(input: BuildBookInput): BookLedger {
     && booksAffected(e).includes(book),
   ))
 
+  /**
+   * A change at the end of period P: a write-down (negative for a reversal),
+   * accumulated derecognised by a partial disposal, a new cost. The row for P
+   * carries it and a new basis charges what is left from P + 1. With no
+   * schedule to regenerate (an indefinite life, or a life already ended) the
+   * carrying amount simply moves.
+   */
+  function endOfPeriodChange(e: AssetEvent, P: Period, o: { writeDown: number; transferredOut: number; costAfter: number; residualAfter: number }) {
+    const prev = current()
+    const rowP = liveRows(versions).find((r) => r.period === P) ?? null
+    const accP = accumulatedThrough(P)
+    const closing = accP + o.writeDown - o.transferredOut
+    if (o.costAfter !== cost) setCost(P, o.costAfter)
+    const hasFuture = liveRows(versions).some((r) => isAfter(r.period, P))
+    if (prev.lifeMonths === null || (!rowP && !hasFuture)) {
+      offScheduleWriteDowns.push({ period: P, amount: o.writeDown - o.transferredOut, eventId: e.id })
+      return
+    }
+    const b = makeBasis({
+      fromPeriod: addPeriods(P, 1),
+      openingAccumulated: closing,
+      residual: o.residualAfter,
+      method: prev.method,
+      lifeMonths: prev.lifeMonths,
+      e,
+    })
+    const out = o.transferredOut ? { transferredOut: (rowP?.transferredOut ?? 0) + o.transferredOut } : {}
+    const eventRow: ScheduleRow = rowP
+      ? {
+          ...rowP, ...out,
+          writeDown: rowP.writeDown + o.writeDown,
+          closingAccumulated: closing, cost, netBookValue: cost - closing,
+          eventIds: [...rowP.eventIds, e.id],
+        }
+      : {
+          period: P, openingAccumulated: accP, charge: 0, writeDown: o.writeDown, ...out,
+          closingAccumulated: closing, cost, netBookValue: cost - closing,
+          basisId: prev.id, eventIds: [e.id], adjustmentOnly: true,
+        }
+    pushVersion(e, P, [eventRow, ...rowsFor(b)])
+  }
+
+  /** Sum of what the live schedule charged through `p`, catch-ups included. */
+  const chargedThrough = (rows: ScheduleRow[], p: Period) =>
+    rows.filter((r) => !isAfter(r.period, p)).reduce((s, r) => s + r.charge + (r.adjustment ?? 0), 0)
+
   for (const e of mine) {
-    if (disposal) break // nothing moves a book after derecognition
+    if (disposal || split) break // nothing moves a book after derecognition
     // An event dated before the schedule starts takes effect at its start.
     const P = isBefore(e.period, startPeriod) ? startPeriod : e.period
 
@@ -638,7 +811,6 @@ export function buildBook(input: BuildBookInput): BookLedger {
 
       case 'impairment': {
         const prev = current()
-        const rowP = liveRows(versions).find((r) => r.period === P) ?? null
         const accP = accumulatedThrough(P)
         const carrying = cost - accP
         const loss = Math.max(0, carrying - e.recoverable)
@@ -647,36 +819,127 @@ export function buildBook(input: BuildBookInput): BookLedger {
           carryingBefore: carrying, recoverable: e.recoverable, loss,
         })
         if (loss === 0) break // a test that found nothing changes no basis
+        endOfPeriodChange(e, P, {
+          writeDown: loss, transferredOut: 0, costAfter: cost,
+          residualAfter: Math.min(prev.residual, e.recoverable),
+        })
+        break
+      }
 
-        const hasFuture = liveRows(versions).some((r) => isAfter(r.period, P))
-        if (prev.lifeMonths === null || (!rowP && !hasFuture)) {
-          // No schedule to regenerate: the carrying amount simply falls.
-          offScheduleWriteDowns.push({ period: P, amount: loss, eventId: e.id })
-          break
-        }
-        const next = addPeriods(P, 1)
+      case 'impairment-reversal': {
+        if (input.isGoodwill) throw new Error(GOODWILL_REVERSAL_REFUSED)
+        const accP = accumulatedThrough(P)
+        const carrying = cost - accP
+        // The schedule the asset would have had absent every impairment,
+        // replayed from the same log. This is why LR-3 keeps the basis.
+        const unimpairedBook = buildBook({
+          ...input,
+          events: input.events.filter((x) => x.kind !== 'impairment' && x.kind !== 'impairment-reversal'),
+        })
+        const unimpaired = costAt(unimpairedBook, P) - (accumulatedAt(unimpairedBook, P) ?? 0)
+        const uncapped = Math.max(0, e.recoverable - carrying)
+        const cap = Math.max(0, unimpaired - carrying)
+        const applied = Math.min(uncapped, cap)
+        reversals.push({
+          eventId: e.id, period: P, date: e.date, carryingBefore: carrying, recoverable: e.recoverable,
+          unimpaired, uncapped, cap, applied, capApplied: cap < uncapped,
+        })
+        if (applied === 0) break
+        const unimpairedBasis = basisInForce(unimpairedBook, addPeriods(P, 1))
+        endOfPeriodChange(e, P, {
+          writeDown: -applied, transferredOut: 0, costAfter: cost,
+          residualAfter: Math.min(unimpairedBasis.residual, carrying + applied),
+        })
+        break
+      }
+
+      case 'cost-correction': {
+        const prev = current()
+        const prevP = addPeriods(P, -1)
+        // The book as it would stand had the cost been right from the start,
+        // with every earlier event except other corrections.
+        const right = buildBook({
+          ...input,
+          cost: e.correctedCost,
+          events: input.events.filter((x) => x.kind !== 'cost-correction' && isBefore(x.period, P)),
+        })
+        const catchUp = isBefore(prevP, startPeriod)
+          ? 0
+          : chargedThrough(right.live, prevP) - chargedThrough(liveRows(versions), prevP)
+        const previousCost = cost
+        setCost(P, costAt(right, prevP))
+        corrections.push({ eventId: e.id, period: P, previousCost, correctedCost: cost, catchUp })
+        const acc = accumulatedThrough(prevP)
         const b = makeBasis({
-          fromPeriod: next,
-          openingAccumulated: accP + loss,
-          residual: Math.min(prev.residual, e.recoverable),
+          fromPeriod: P, openingAccumulated: acc + catchUp,
+          residual: prev.residual, method: prev.method, lifeMonths: prev.lifeMonths, e,
+        })
+        const rows = rowsFor(b)
+        if (catchUp !== 0 && rows[0]) {
+          rows[0] = { ...rows[0], openingAccumulated: acc, adjustment: catchUp }
+        } else if (catchUp !== 0) {
+          rows.unshift({
+            period: P, openingAccumulated: acc, charge: 0, adjustment: catchUp, writeDown: 0,
+            closingAccumulated: acc + catchUp, cost, netBookValue: cost - acc - catchUp,
+            basisId: b.id, eventIds: [e.id], adjustmentOnly: true,
+          })
+        }
+        if (rows[0]) rows[0] = { ...rows[0], eventIds: [...rows[0].eventIds.filter((x) => x !== e.id), e.id] }
+        pushVersion(e, P, rows)
+        break
+      }
+
+      case 'improvement': {
+        const prev = current()
+        const extended = book === 'accounting' ? e.lifeMonths?.accounting : e.lifeMonths?.tax
+        setCost(P, cost + e.amount)
+        const b = makeBasis({
+          fromPeriod: P,
+          openingAccumulated: accumulatedThrough(addPeriods(P, -1)),
+          residual: prev.residual,
           method: prev.method,
-          lifeMonths: prev.lifeMonths,
+          lifeMonths: extended ?? prev.lifeMonths,
           e,
         })
-        const eventRow: ScheduleRow = rowP
-          ? {
-              ...rowP,
-              writeDown: loss,
-              closingAccumulated: rowP.closingAccumulated + loss,
-              netBookValue: rowP.netBookValue - loss,
-              eventIds: [...rowP.eventIds, e.id],
-            }
-          : {
-              period: P, openingAccumulated: accP, charge: 0, writeDown: loss,
-              closingAccumulated: accP + loss, netBookValue: cost - accP - loss,
-              basisId: prev.id, eventIds: [e.id], adjustmentOnly: true,
-            }
-        pushVersion(e, P, [eventRow, ...rowsFor(b)])
+        pushVersion(e, P, rowsFor(b))
+        break
+      }
+
+      case 'partial-disposal': {
+        const prev = current()
+        const accP = accumulatedThrough(P)
+        const w = [e.proportion, 1 - e.proportion]
+        // The split primitive: apportion on the ratio, then derecognise the
+        // disposed part. The retained part is this same asset.
+        const dCost = apportion(cost, w)[0]!
+        const dAcc = apportion(accP, w)[0]!
+        const dRes = apportion(prev.residual, w)[0]!
+        partialDisposals.push({
+          eventId: e.id, period: P, date: e.date, proportion: e.proportion, proceeds: e.proceeds,
+          cost: dCost, accumulated: dAcc, carrying: dCost - dAcc, gainLoss: e.proceeds - (dCost - dAcc),
+        })
+        endOfPeriodChange(e, P, {
+          writeDown: 0, transferredOut: dAcc, costAfter: cost - dCost, residualAfter: prev.residual - dRes,
+        })
+        break
+      }
+
+      case 'split': {
+        const prev = current()
+        const acc = accumulatedThrough(addPeriods(P, -1))
+        const w = e.parts.map((x) => x.proportion)
+        const costs = apportion(cost, w)
+        const accs = apportion(acc, w)
+        const res = apportion(prev.residual, w)
+        split = {
+          eventId: e.id, period: P, date: e.date, method: prev.method, lifeMonths: prev.lifeMonths,
+          accumulated: acc, cost,
+          parts: e.parts.map((x, i) => ({
+            childId: x.childId, proportion: x.proportion, cost: costs[i]!, accumulated: accs[i]!, residual: res[i]!,
+          })),
+        }
+        // The parent charges nothing from P: its children do.
+        pushVersion(e, P, [])
         break
       }
 
@@ -690,13 +953,6 @@ export function buildBook(input: BuildBookInput): BookLedger {
         pushVersion(e, P, rowP ? [{ ...rowP, eventIds: [...rowP.eventIds, e.id] }] : [])
         break
       }
-
-      case 'cost-correction':
-      case 'improvement':
-      case 'impairment-reversal':
-      case 'split':
-      case 'partial-disposal':
-        throw notInThisPhase(e.kind)
     }
   }
 
@@ -704,12 +960,18 @@ export function buildBook(input: BuildBookInput): BookLedger {
     assetId,
     book,
     startPeriod,
+    registeredFrom: input.registeredFrom ?? startPeriod,
+    costHistory,
     bases,
     versions,
     live: liveRows(versions),
     offScheduleWriteDowns,
     impairments,
+    reversals,
+    corrections,
+    partialDisposals,
     disposal,
+    split,
   }
 }
 
@@ -719,10 +981,12 @@ export function buildAssetLedger(assetId: string, events: AssetEvent[]): AssetLe
   const acq = events.find((e): e is AcquisitionEvent => e.kind === 'acquisition')
   if (!acq) throw new Error(`assetEngine: ${assetId} has no acquisition event`)
   const startPeriod = periodOfDate(acq.inServiceDate)
+  const registeredFrom = acq.splitFrom ? acq.period : startPeriod
+  const isGoodwill = !!acq.isGoodwill
 
   const accounting = buildBook({
     assetId, book: 'accounting', setup: acq.accounting, cost: acq.cost,
-    startPeriod, createdBy: acq, events,
+    startPeriod, createdBy: acq, events, registeredFrom, isGoodwill,
   })
 
   // The tax book comes from the acquisition, or from a later classification
@@ -735,20 +999,59 @@ export function buildAssetLedger(assetId: string, events: AssetEvent[]): AssetLe
   const tax = taxSetup
     ? buildBook({
         assetId, book: 'tax', setup: { ...taxSetup, residual: 0 }, cost: acq.cost,
-        startPeriod, createdBy: taxCreatedBy, events,
+        startPeriod, createdBy: taxCreatedBy, events, registeredFrom, isGoodwill,
       })
     : null
 
   return {
     id: assetId,
-    cost: acq.cost,
+    cost: accounting.costHistory[accounting.costHistory.length - 1]!.cost,
+    acquisitionCost: acq.cost,
     inServiceDate: acq.inServiceDate,
     startPeriod,
+    registeredFrom,
     taxGroup: classification?.taxGroup ?? acq.taxGroup,
+    isGoodwill,
     events: [...events],
     books: { accounting, tax },
     disposedIn: accounting.disposal?.period ?? null,
+    splitIn: accounting.split?.period ?? null,
+    splitFrom: acq.splitFrom ?? null,
   }
+}
+
+/**
+ * The acquisitions that open each child of a split, from the parent's
+ * apportioned position on both books. Each child keeps the parent's
+ * in-service date, so its remaining life is the parent's remaining life.
+ */
+export function splitChildAcquisitions(parent: AssetLedger): AcquisitionEvent[] {
+  const sa = parent.books.accounting.split
+  if (!sa) return []
+  const st = parent.books.tax?.split ?? null
+  const e = parent.events.find((x) => x.id === sa.eventId)!
+  return sa.parts.map((part, i): AcquisitionEvent => ({
+    id: `${part.childId}-E1`,
+    kind: 'acquisition',
+    period: sa.period,
+    date: sa.date,
+    recordedBy: e.recordedBy,
+    cost: part.cost,
+    inServiceDate: parent.inServiceDate,
+    accounting: {
+      method: sa.method, lifeMonths: sa.lifeMonths, residual: part.residual,
+      opening: { period: sa.period, accumulated: part.accumulated },
+    },
+    tax: st
+      ? {
+          method: st.method, lifeMonths: st.lifeMonths, residual: 0,
+          opening: { period: st.period, accumulated: st.parts[i]!.accumulated },
+        }
+      : null,
+    taxGroup: parent.taxGroup,
+    isGoodwill: parent.isGoodwill,
+    splitFrom: parent.id,
+  }))
 }
 
 // ── Queries ─────────────────────────────────────────────────────────────────
@@ -776,15 +1079,21 @@ export function versionLiveAt(b: BookLedger, p: Period): ScheduleVersion | null 
   return found
 }
 
-/** Held at the end of `p`: in service by then and not yet disposed. */
+/** Held at the end of `p`: on the register by then, not yet disposed or split. */
 export function isHeldAt(l: AssetLedger, p: Period): boolean {
-  if (isBefore(p, l.startPeriod)) return false
+  if (isBefore(p, l.registeredFrom)) return false
+  if (l.splitIn && !isBefore(p, l.splitIn)) return false
   return !l.disposedIn || isBefore(p, l.disposedIn)
 }
 
-/** On the register at some point during `p`, including the month it left. */
+/**
+ * On the register at some point during `p`, including the month it was
+ * disposed of. A split takes effect at the start of its period, so the
+ * parent is not held during it: its children are.
+ */
 export function isHeldDuring(l: AssetLedger, p: Period): boolean {
-  if (isBefore(p, l.startPeriod)) return false
+  if (isBefore(p, l.registeredFrom)) return false
+  if (l.splitIn && !isBefore(p, l.splitIn)) return false
   return !l.disposedIn || !isAfter(p, l.disposedIn)
 }
 
@@ -815,7 +1124,7 @@ export function bookValueAt(l: AssetLedger, book: Book, p: Period): number | nul
   const b = bookOf(l, book)
   if (!b || !isHeldAt(l, p)) return null
   const acc = accumulatedAt(b, p)
-  return acc === null ? null : l.cost - acc
+  return acc === null ? null : costAt(b, p) - acc
 }
 
 export interface PeriodCharge {
@@ -828,10 +1137,12 @@ export interface PeriodCharge {
 export function chargeAt(l: AssetLedger, book: Book, p: Period): PeriodCharge {
   const b = bookOf(l, book)
   if (!b) return { charge: null, absent: 'No statutory group', row: null }
-  if (isBefore(p, l.startPeriod)) return { charge: null, absent: 'Not in service', row: null }
+  if (isBefore(p, l.registeredFrom)) return { charge: null, absent: l.splitFrom ? 'Before the split' : 'Not in service', row: null }
+  if (l.splitIn && !isBefore(p, l.splitIn)) return { charge: null, absent: 'Split', row: null }
   if (l.disposedIn && isAfter(p, l.disposedIn)) return { charge: null, absent: 'Disposed', row: null }
   const row = liveRowAt(b, p)
-  if (row && !row.adjustmentOnly) return { charge: row.charge, row }
+  // The period's charge includes a catch-up booked in it: both reach the run.
+  if (row && (!row.adjustmentOnly || row.adjustment)) return { charge: row.charge + (row.adjustment ?? 0), row }
   if (basisInForce(b, p).lifeMonths === null) return { charge: null, absent: 'Not amortised', row }
   return { charge: null, absent: 'Life ended', row }
 }
@@ -840,8 +1151,8 @@ export function chargeAt(l: AssetLedger, book: Book, p: Period): PeriodCharge {
 export function chargesBetween(l: AssetLedger, book: Book, from: Period, to: Period): number | null {
   const b = bookOf(l, book)
   if (!b) return null
-  const rows = b.live.filter((r) => !r.adjustmentOnly && !isBefore(r.period, from) && !isAfter(r.period, to))
-  return rows.length ? rows.reduce((s, r) => s + r.charge, 0) : null
+  const rows = b.live.filter((r) => (!r.adjustmentOnly || r.adjustment) && !isBefore(r.period, from) && !isAfter(r.period, to))
+  return rows.length ? rows.reduce((s, r) => s + r.charge + (r.adjustment ?? 0), 0) : null
 }
 
 // ── Derivation (OD-41) ──────────────────────────────────────────────────────
@@ -928,8 +1239,8 @@ export function checkBookIntegrity(l: AssetLedger, b: BookLedger): IntegrityResu
   const check = (rows: ScheduleRow[], name: string, mustEnd: boolean) => {
     rows.forEach((r, i) => {
       if (!Number.isInteger(r.charge)) issues.push(`${name} ${r.period}: charge is not whole rupiah`)
-      if (r.openingAccumulated + r.charge + r.writeDown !== r.closingAccumulated) issues.push(`${name} ${r.period}: row does not add up`)
-      if (l.cost - r.closingAccumulated !== r.netBookValue) issues.push(`${name} ${r.period}: book value does not follow`)
+      if (r.openingAccumulated + r.charge + (r.adjustment ?? 0) + r.writeDown - (r.transferredOut ?? 0) !== r.closingAccumulated) issues.push(`${name} ${r.period}: row does not add up`)
+      if (r.cost - r.closingAccumulated !== r.netBookValue) issues.push(`${name} ${r.period}: book value does not follow`)
       const prev = rows[i - 1]
       if (prev && prev.closingAccumulated !== r.openingAccumulated) issues.push(`${name} ${r.period}: chain broken`)
     })
@@ -940,14 +1251,17 @@ export function checkBookIntegrity(l: AssetLedger, b: BookLedger): IntegrityResu
     }
   }
   for (const v of b.versions) {
-    const cutByDisposal = v.createdBy.kind === 'disposal' || v.createdBy.kind === 'partial-disposal'
-    check(v.rows, v.id, !cutByDisposal)
+    const cut = v.createdBy.kind === 'disposal' || v.createdBy.kind === 'split'
+    check(v.rows, v.id, !cut)
   }
-  check(b.live, `${l.id}/${b.book}/live`, !b.disposal)
+  check(b.live, `${l.id}/${b.book}/live`, !b.disposal && !b.split)
   // Each basis must charge exactly its depreciable amount over its own rows.
   for (const v of b.versions) {
-    if (v.createdBy.kind === 'disposal') continue
+    if (v.createdBy.kind === 'disposal' || v.createdBy.kind === 'split') continue
     for (const basis of b.bases) {
+      // A version is checked against the basis it created; a row it carries
+      // over from the basis before (the event month) belongs to that one.
+      if (basis.cause.eventId !== v.createdBy.eventId) continue
       const rows = v.rows.filter((r) => r.basisId === basis.id && !r.adjustmentOnly)
       if (!rows.length || rows[0]!.period !== basis.fromPeriod) continue
       const total = rows.reduce((s, r) => s + r.charge, 0)

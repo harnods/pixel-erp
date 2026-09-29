@@ -13,19 +13,22 @@
  * That is the capability a preparer needs in order to stop keeping a parallel
  * spreadsheet, because it is what they would otherwise rebuild by hand.
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
   MpButton, MpIcon, MpTextlink, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, css,
+  MpPopoverList, MpPopoverListItem, css, MpSegmentedControl,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import { infoToast, successToast } from '~/utils/toasts'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { fixedAssets, assignTaxGroupTo } from '~/data/assetStore'
+import ValueChangeDrawer from '~/components/patterns/ValueChangeDrawer.vue'
+import { fixedAssets, assignTaxGroupTo, canSeeFinancials, viewAs, ledgerOf } from '~/data/assetStore'
 import {
   findAsset, detailFigures, detailPanes, derivation, monthlySchedule, scheduleTotal, assetHistory,
+  versionViews,
 } from '~/data/fixedAssetDetail'
+import { VALUE_ACTIONS, type ValueAction } from '~/data/assetValueChange'
 import { assetTaxGroups } from '~/data/fixedAssets'
 
 // The shared detailMatch slot in [...slug].vue passes `order-id` to every
@@ -42,19 +45,67 @@ const asset = computed(() => findAsset(props.orderId))
 const effectiveTaxGroup = computed(() => asset.value?.taxGroup ?? null)
 
 const figures = computed(() => (asset.value ? detailFigures(asset.value) : []))
-const panes = computed(() => (asset.value ? detailPanes(asset.value) : []))
+// LR-6: General Affairs sees the physical pane and nothing financial.
+const panes = computed(() => {
+  const all = asset.value ? detailPanes(asset.value) : []
+  return canSeeFinancials.value ? all : all.filter((p) => p.owner === 'General Affairs')
+})
 const history = computed(() => (asset.value ? assetHistory(asset.value) : []))
-const schedule = computed(() => (asset.value ? monthlySchedule(asset.value) : []))
-const total = computed(() => scheduleTotal(schedule.value))
+// The whole of FY2026, so a change's effect on the months ahead is visible.
+const schedule = computed(() => (asset.value ? monthlySchedule(asset.value, 12) : []))
+const scheduleToDate = computed(() => schedule.value.filter((r) => r.state !== 'projected'))
+const total = computed(() => scheduleTotal(scheduleToDate.value))
 
 // ── Tabs ────────────────────────────────────────────────────────────────────
 type Tab = 'depreciation' | 'identity' | 'history'
 const tab = ref<Tab>('depreciation')
-const tabs: { key: Tab; label: string }[] = [
+const allTabs: { key: Tab; label: string }[] = [
   { key: 'depreciation', label: 'Depreciation' },
   { key: 'identity', label: 'Identity and parameters' },
   { key: 'history', label: 'History' },
 ]
+const tabs = computed(() => (canSeeFinancials.value ? allTabs : allTabs.filter((x) => x.key === 'identity')))
+watch(canSeeFinancials, (ok) => { if (!ok) tab.value = 'identity' }, { immediate: true })
+
+// ── Previous versions (OD-42) ───────────────────────────────────────────────
+const versionsOpen = ref(false)
+const versionBook = ref<'accounting' | 'tax'>('accounting')
+const versionBookOptions = computed(() => [
+  { id: 'version-accounting', value: 'accounting', label: t('Accounting book') },
+  { id: 'version-tax', value: 'tax', label: t('Tax book') },
+])
+const versions = computed(() => (asset.value ? versionViews(asset.value, versionBook.value) : []))
+const supersededCount = computed(() => {
+  if (!asset.value) return 0
+  return versionViews(asset.value, 'accounting').filter((v) => !v.live).length
+    + versionViews(asset.value, 'tax').filter((v) => !v.live).length
+})
+const hasTaxBook = computed(() => !!(asset.value && ledgerOf(asset.value.id)?.books.tax))
+
+// ── Change this asset (UX6) ─────────────────────────────────────────────────
+const changeOpen = ref(false)
+const changeAction = ref<ValueAction>('revise')
+const isGone = computed(() => asset.value?.status === 'Disposed' || asset.value?.status === 'Split')
+function openChange(a: ValueAction) {
+  if (isGone.value) {
+    infoToast(t(asset.value!.status === 'Split' ? 'This asset was split. Change its parts instead.' : 'This asset is disposed of. Nothing further can change it.'))
+    return
+  }
+  changeAction.value = a
+  changeOpen.value = true
+}
+function onCommitted(message: string, newIds: string[]) {
+  changeOpen.value = false
+  successToast(t(message))
+  if (newIds.length) tab.value = 'history'
+}
+const splitLinks = computed(() => {
+  if (!asset.value) return { from: null as string | null, into: [] as string[] }
+  return {
+    from: asset.value.splitFrom ?? null,
+    into: fixedAssets.value.filter((a) => a.splitFrom === asset.value!.id).map((a) => a.id),
+  }
+})
 
 // ── Derivation ──────────────────────────────────────────────────────────────
 // Opened from a charge, on the basis that charge belongs to, so the panel
@@ -132,18 +183,31 @@ function setTaxGroup(group: string) {
           {{ asset.id }}<template v-if="asset.tag"> · {{ asset.tag }}</template>
           · {{ asset.class }} · {{ asset.branch }} · {{ t('acquired') }} {{ asset.acquired }}
         </p>
+        <!-- OD-32: a split keeps the parent and its parts linked both ways. -->
+        <p v-if="splitLinks.from || splitLinks.into.length" class="ad__sub">
+          <template v-if="splitLinks.from">
+            {{ t('Split from') }}
+            <span class="ad__figurelink" @click="router.push(`/assets/${splitLinks.from}`)">{{ splitLinks.from }}</span>
+          </template>
+          <template v-else>
+            {{ t('Split into') }}
+            <template v-for="(id, i) in splitLinks.into" :key="id">
+              <span class="ad__figurelink" @click="router.push(`/assets/${id}`)">{{ id }}</span><template v-if="i < splitLinks.into.length - 1">, </template>
+            </template>
+          </template>
+        </p>
       </div>
 
       <div class="ad__baractions">
-        <MpPopover id="ad-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+        <MpPopover v-if="canSeeFinancials" id="ad-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
             <MpButton variant="secondary" is-rounded right-icon="chevrons-down">{{ t('Actions') }}</MpButton>
           </MpPopoverTrigger>
-          <MpPopoverContent class="erp-dropdown-menu">
+          <MpPopoverContent class="erp-dropdown-menu ad__actionsmenu">
+            <!-- UX6: one entry point for every change to the asset's value. -->
+            <div class="ad__menuhead">{{ t('Change this asset') }}</div>
             <MpPopoverList>
-              <MpPopoverListItem @click="infoToast(t('Editing an asset is not part of this prototype.'))">{{ t('Edit asset') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="infoToast(t('Disposal is not part of this prototype.'))">{{ t('Dispose') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="router.push('/impairment-tests')">{{ t('Record an impairment test') }}</MpPopoverListItem>
+              <MpPopoverListItem v-for="a in VALUE_ACTIONS" :key="a.key" @click="openChange(a.key)">{{ t(a.label) }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -152,7 +216,7 @@ function setTaxGroup(group: string) {
 
     <div class="ad__body">
       <!-- The one thing that blocks every tax output, fixable from here. -->
-      <div v-if="!effectiveTaxGroup" class="ad__blocked">
+      <div v-if="!effectiveTaxGroup && canSeeFinancials && !isGone" class="ad__blocked">
         <MpIcon name="information" size="sm" />
         <div class="ad__blockedbody">
           <div class="ad__blockedtitle">{{ t('No statutory group') }}</div>
@@ -172,10 +236,16 @@ function setTaxGroup(group: string) {
         </MpPopover>
       </div>
 
+      <!-- LR-6: the scoped role reads the physical pane only. -->
+      <div v-if="!canSeeFinancials" class="ad__scoped">
+        <MpIcon name="information" size="sm" />
+        <span>{{ t(`Viewing as ${viewAs}. Cost, book values and schedules are not shown to this role.`) }}</span>
+      </div>
+
       <!-- ── Headline figures ── -->
       <!-- The house index-page stats band: divider-separated columns sitting
            directly on the stage, caption above the figure. -->
-      <div class="stats-section">
+      <div v-if="canSeeFinancials" class="stats-section">
         <div
           v-for="(f, i) in figures" :key="f.label"
           class="stat-card" :class="{ 'stat-card--bordered': i < figures.length - 1 }"
@@ -200,11 +270,14 @@ function setTaxGroup(group: string) {
 
       <!-- ── Depreciation ── -->
       <div v-if="tab === 'depreciation'" class="ad__card">
-        <div class="ad__cardhead">
+        <div class="ad__cardhead ad__cardhead--split">
           <div>
             <div class="ad__cardtitle">{{ t('FY2026 schedule') }}</div>
-            <div class="ad__cardsub">{{ t('January to September 2026 · periods closed so far') }}</div>
+            <div class="ad__cardsub">{{ t('January to December 2026 · months after September are projected on the live basis') }}</div>
           </div>
+          <MpButton variant="secondary" is-rounded @click="versionsOpen = true">
+            {{ t('Previous versions') }}<template v-if="supersededCount"> ({{ supersededCount }})</template>
+          </MpButton>
         </div>
         <table class="ad__table">
           <thead>
@@ -216,9 +289,14 @@ function setTaxGroup(group: string) {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="r in schedule" :key="r.period" class="ad__tr">
+            <tr v-for="r in schedule" :key="r.period" class="ad__tr" :class="{ 'ad__tr--projected': r.state === 'projected', 'ad__tr--basis': r.basisMarker }">
               <td class="ad__td">
-                <span class="ad__period">{{ r.period }}</span>
+                <span class="ad__period">
+                  {{ r.period }}
+                  <span v-if="r.state !== 'posted'" class="ad__state">{{ t(r.state === 'open' ? 'Open' : 'Projected') }}</span>
+                </span>
+                <!-- OD-42: where the basis changed, the boundary is marked. -->
+                <span v-if="r.basisMarker" class="ad__basismarker">{{ t(r.basisMarker) }}</span>
                 <!-- The month an event landed in is the month the reader needs
                      it named, not a footnote under the table. -->
                 <span v-if="r.event" class="ad__event-inline">{{ t(r.event) }}</span>
@@ -285,6 +363,60 @@ function setTaxGroup(group: string) {
         </div>
       </div>
     </div>
+
+    <ValueChangeDrawer
+      :is-open="changeOpen" :asset="asset" :action="changeAction"
+      @close="changeOpen = false" @committed="onCommitted"
+    />
+
+    <!-- ── Previous versions (OD-42, LR-3) ── -->
+    <Teleport to="body">
+      <div v-if="versionsOpen" class="ad__overlay">
+        <aside class="ad__drawer ad__drawer--wide" role="dialog" :aria-label="t('Schedule versions')">
+          <header class="ad__drawerhead">
+            <div>
+              <div class="ad__drawertitle">{{ t('Schedule versions') }}</div>
+              <div class="ad__drawersub">{{ asset.id }} · {{ t('superseded versions stay readable with their basis') }}</div>
+            </div>
+            <MpButton class="ad__drawerclose" variant="ghost" is-rounded :aria-label="t('Close')" @click="versionsOpen = false">
+              <MpIcon name="close" size="sm" />
+            </MpButton>
+          </header>
+          <div class="ad__drawerbody">
+            <div v-if="hasTaxBook" class="ad__booktabs">
+              <MpSegmentedControl id="version-book-switch" name="version-book-switch" v-model="versionBook" :data="versionBookOptions" />
+            </div>
+            <p v-if="versions.length === 1" class="ad__drawernote">{{ t('This book has one version. Nothing has changed its basis.') }}</p>
+            <div v-for="v in versions" :key="v.id" class="ad__version">
+              <div class="ad__versionhead">
+                <span class="ad__versiontitle">{{ t('Version') }} {{ v.number }} · {{ t(v.label) }}</span>
+                <span class="ad__versionstate">{{ v.live ? t('Live') : `${t('Superseded from')} ${v.supersededFrom}` }}</span>
+              </div>
+              <div class="ad__versionsub">{{ t('From') }} {{ v.fromPeriod }}</div>
+              <div class="ad__versionbasis">
+                <ContentList v-for="b in v.basis" :key="b.k" horizontal :label="t(b.k)" :value="b.v" />
+              </div>
+              <table class="ad__table ad__table--compact">
+                <thead>
+                  <tr>
+                    <th class="ad__th">{{ t('Period') }}</th>
+                    <th class="ad__th ad__th--num">{{ t('Charge') }}</th>
+                    <th class="ad__th ad__th--num">{{ t('Book value') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="r in v.rows" :key="r.period" class="ad__tr">
+                    <td class="ad__td">{{ r.label }}<span v-if="r.adjustmentOnly" class="ad__event-inline">{{ t('Adjustment only') }}</span></td>
+                    <td class="ad__td ad__td--num">{{ formatIDR(r.charge + (r.adjustment ?? 0)) }}</td>
+                    <td class="ad__td ad__td--num">{{ formatIDR(r.netBookValue) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </Teleport>
 
     <!-- ── Derivation panel ── -->
     <Teleport to="body">
@@ -501,6 +633,30 @@ function setTaxGroup(group: string) {
 .ad__step--result .ad__stepvalue { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ad__step--result { border-bottom: 0; }
 .ad__drawernote { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-4); }
+
+.ad__cardhead--split { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4); }
+.ad__state { margin-left: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.ad__tr--projected .ad__td { color: var(--mp-text-secondary); }
+/* A basis boundary is drawn on the row, so two bases are never read as one. */
+.ad__tr--basis .ad__td { border-top: 2px solid var(--mp-border-selected, var(--mp-border-default)); }
+.ad__basismarker { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-selected); margin-top: var(--mp-spacing-1); }
+.ad__scoped {
+  display: flex; align-items: flex-start; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4);
+  background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
+}
+.ad__menuhead { padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+:global(.ad__actionsmenu) { min-width: 240px; }
+.ad__drawer--wide { width: 560px; }
+.ad__booktabs { display: flex; gap: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); margin-bottom: var(--mp-spacing-4); }
+.ad__version { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); margin-bottom: var(--mp-spacing-4); overflow: hidden; }
+.ad__versionhead { display: flex; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4) 0; }
+.ad__versiontitle { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.ad__versionstate { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
+.ad__versionsub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); padding: 0 var(--mp-spacing-4); }
+.ad__versionbasis { padding: var(--mp-spacing-2) var(--mp-spacing-4); }
+.ad__table--compact .ad__td { padding: var(--mp-spacing-2) var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); }
 
 .ad__missing { padding: var(--mp-spacing-10); text-align: center; }
 .ad__missingtitle { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin-bottom: var(--mp-spacing-2); }

@@ -18,7 +18,7 @@ import {
   type TieRow,
 } from './assetStore'
 import { STATUTORY_GROUPS, type FixedAsset } from './fixedAssets'
-import { formatLife, isAfter, isBefore, rupiah, type Period } from './assetEngine'
+import { formatLife, isAfter, isBefore, rupiah, pct, type Period } from './assetEngine'
 
 // ── Asset profit and loss impact ────────────────────────────────────────────
 
@@ -39,7 +39,7 @@ export interface ImpactRow {
 function inStatement(a: FixedAsset, type: FixedAsset['type'], p: Period): boolean {
   const l = ledgers.value[a.id]!
   if (a.type !== type || !l.books.tax) return false
-  if (isAfter(l.startPeriod, p)) return false
+  if (isAfter(l.registeredFrom, p)) return false
   return !(l.disposedIn && isBefore(l.disposedIn, FY_START))
 }
 
@@ -112,6 +112,20 @@ export function disposalImpactRows(p: Period = CURRENT_PERIOD): ImpactRow[] {
       fiscal: l.books.tax.disposal?.gainLoss ?? null,
     })
   }
+  for (const a of fixedAssets.value) {
+    const l = ledgers.value[a.id]!
+    if (!l.books.tax) continue
+    l.books.accounting.partialDisposals.forEach((d, i) => {
+      if (isBefore(d.period, FY_START) || isAfter(d.period, p)) return
+      out.push({
+        label: 'Gain or loss on partial disposal',
+        basis: `${a.id} ${a.name} · ${pct(d.proportion)} disposed ${d.date}`,
+        assetId: a.id,
+        commercial: d.gainLoss,
+        fiscal: l.books.tax!.partialDisposals[i]?.gainLoss ?? null,
+      })
+    })
+  }
   return out
 }
 
@@ -128,6 +142,16 @@ export function impairmentImpactRows(p: Period = CURRENT_PERIOD): ImpactRow[] {
         basis: `${a.id} ${a.name} · written down ${i.date}`,
         assetId: a.id,
         commercial: -i.loss,
+        fiscal: null,
+      })
+    }
+    for (const r of l.books.accounting.reversals) {
+      if (r.applied === 0 || isBefore(r.period, FY_START) || isAfter(r.period, p)) continue
+      out.push({
+        label: 'Impairment reversal',
+        basis: `${a.id} ${a.name} · written back ${r.date}${r.capApplied ? ', capped at the unimpaired amount' : ''}`,
+        assetId: a.id,
+        commercial: r.applied,
         fiscal: null,
       })
     }
@@ -176,6 +200,21 @@ export function differenceByAsset(p: Period = CURRENT_PERIOD): DifferenceRow[] {
         reason: `Impairment to ${rupiah(i.recoverable)} recognised in the accounts only, not deductible`,
       })
     }
+    for (const r of l.books.accounting.reversals) {
+      if (r.applied === 0 || isBefore(r.period, FY_START) || isAfter(r.period, p)) continue
+      rows.push({
+        id: a.id, name: a.name, difference: r.applied, tag: 'Impairment reversal',
+        reason: `Reversal of ${rupiah(r.applied)} recognised in the accounts only, as the impairment was`,
+      })
+    }
+    l.books.accounting.partialDisposals.forEach((d, i) => {
+      const t = l.books.tax?.partialDisposals[i]
+      if (!t || isBefore(d.period, FY_START) || isAfter(d.period, p)) return
+      rows.push({
+        id: a.id, name: a.name, difference: d.gainLoss - t.gainLoss, tag: 'Partial disposal',
+        reason: `On the ${pct(d.proportion)} disposed: accounting ${d.gainLoss >= 0 ? 'gain' : 'loss'} of ${rupiah(Math.abs(d.gainLoss))} against a tax ${t.gainLoss >= 0 ? 'gain' : 'loss'} of ${rupiah(Math.abs(t.gainLoss))}`,
+      })
+    })
     const dA = l.books.accounting.disposal
     const dT = l.books.tax?.disposal
     if (dA && dT && !isBefore(dA.period, FY_START) && !isAfter(dA.period, p)) {

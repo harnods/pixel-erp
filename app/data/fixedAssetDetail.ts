@@ -14,12 +14,12 @@
  * spreadsheet.
  */
 import {
-  ledgerOf, findAsset as findInStore, runs, CURRENT_PERIOD, FY_START,
+  ledgerOf, findAsset as findInStore, runs, testsFor, postedRunFor, CURRENT_PERIOD, FY_START,
 } from './assetStore'
 import {
   derive, chargeAt, bookOf, eventLabel, periodLabel, periodShort, periodFromLabel,
-  addPeriods, periodIndex, formatLife, METHOD_LABEL, rupiah, periodEndDate,
-  type Book, type Period, type ScheduleVersion, type AssetEvent,
+  addPeriods, periodIndex, formatLife, METHOD_LABEL, rupiah, periodEndDate, pct, isAfter,
+  type Book, type Period, type ScheduleVersion, type AssetEvent, type Basis, type ScheduleRow,
 } from './assetEngine'
 import { TAX_RATE, type FixedAsset } from './fixedAssets'
 
@@ -52,13 +52,17 @@ export function detailFigures(a: FixedAsset, p: Period = CURRENT_PERIOD): Detail
   // posted run), and the accumulated is derived from them so the two agree.
   const accAccum = a.bookValueCommercial === null ? null : a.cost - a.bookValueCommercial
   const taxAccum = a.bookValueFiscal === null ? null : a.cost - a.bookValueFiscal
-  const disposed = a.status === 'Disposed'
+  const disposed = a.status === 'Disposed' || a.status === 'Split'
+  const gone = a.status === 'Split' ? 'Split' : 'Disposed'
+  const l = ledgerOf(a.id)
+  const adjusted = l && l.cost !== l.acquisitionCost
 
   const figures: DetailFigure[] = [
     {
-      label: 'Acquisition cost',
+      label: adjusted ? 'Cost' : 'Acquisition cost',
       value: a.cost,
       caption: `Both books · acquired ${a.acquired}`,
+      sub: adjusted ? `Recorded at ${fmt(l!.acquisitionCost)}, since changed` : undefined,
     },
   ]
 
@@ -73,7 +77,7 @@ export function detailFigures(a: FixedAsset, p: Period = CURRENT_PERIOD): Detail
       : accAccum === null
         ? undefined
         : `Accumulated ${fmt(accAccum)}`,
-    absent: disposed ? 'Disposed' : undefined,
+    absent: disposed ? gone : undefined,
   })
 
   figures.push({
@@ -85,7 +89,7 @@ export function detailFigures(a: FixedAsset, p: Period = CURRENT_PERIOD): Detail
     sub: taxAccum === null ? undefined : `Accumulated ${fmt(taxAccum)}`,
     // Disposed and unclassified are different absences and must not share a
     // label: one means no longer held, the other means nothing to compute from.
-    absent: disposed ? 'Disposed' : a.taxGroup ? undefined : 'Not computed',
+    absent: disposed ? gone : a.taxGroup ? undefined : 'Not computed',
   })
 
   // The number the whole module exists to produce.
@@ -99,7 +103,7 @@ export function detailFigures(a: FixedAsset, p: Period = CURRENT_PERIOD): Detail
     sub: diff === null
       ? undefined
       : `Deferred tax ${fmt(Math.round(Math.abs(diff) * TAX_RATE))} at ${Math.round(TAX_RATE * 100)}%`,
-    absent: diff === null ? (disposed ? 'Disposed' : 'Needs both books') : undefined,
+    absent: diff === null ? (disposed ? gone : 'Needs both books') : undefined,
   })
 
   return figures
@@ -246,6 +250,10 @@ export function derivation(a: FixedAsset, basis: Book, period = periodLabel(CURR
     value: `Month ${d.monthInBasis} of ${b.remainingMonths}, full month${d.isFinalMonth ? ', final month takes the rounding residue' : ''}`,
   })
   for (const x of d.adjustments) steps.push({ label: `Adjustment ${x.timing}`, value: x.label })
+  if (d.row?.adjustment) {
+    steps.push({ label: 'Charge on this basis', value: fmt(d.row.charge) })
+    steps.push({ label: 'Catch-up for posted periods', value: `${fmt(d.row.adjustment)}, what the posted periods charged on the wrong cost` })
+  }
   steps.push({ label: `Charge for ${period}`, value: fmt(d.charge), isResult: true })
   return steps
 }
@@ -270,11 +278,18 @@ export interface ScheduleMonth {
   taxAbsent?: string
   /** What happened in this month, when something did. */
   event?: string
+  /**
+   * OD-42 / FG-2.3: the basis changed in this period, on one book or both.
+   * A marked boundary, so two bases are never silently mixed.
+   */
+  basisMarker?: string
+  /** Posted, open (not yet posted) or projected (after today). */
+  state: 'posted' | 'open' | 'projected'
 }
 
 function rowEvent(e: AssetEvent): string {
   switch (e.kind) {
-    case 'acquisition': return 'Entered service'
+    case 'acquisition': return e.splitFrom ? `Split from ${e.splitFrom}` : 'Entered service'
     case 'impairment': return `Impaired ${e.date}, accounting basis reset`
     case 'disposal': return `Disposed ${e.date}`
     case 'tax-classification': return `Statutory group set to ${e.taxGroup}`
@@ -289,7 +304,7 @@ export function monthlySchedule(a: FixedAsset, months = 9): ScheduleMonth[] {
     const p = addPeriods(FY_START, m)
     const acc = chargeAt(l, 'accounting', p)
     const tax = chargeAt(l, 'tax', p)
-    const events = l.events.filter((e) => (e.kind === 'acquisition' ? l.startPeriod : e.period) === p)
+    const events = l.events.filter((e) => (e.kind === 'acquisition' ? l.registeredFrom : e.period) === p)
     // A tax group set this session is recorded in the current period, but it
     // does not belong on a monthly charge row as if it changed that month.
     const named = events.filter((e) => e.kind !== 'tax-classification')
@@ -301,8 +316,73 @@ export function monthlySchedule(a: FixedAsset, months = 9): ScheduleMonth[] {
       ...(acc.charge === null ? { accountingAbsent: acc.absent } : {}),
       ...(tax.charge === null ? { taxAbsent: tax.absent } : {}),
       ...(named.length ? { event: named.map(rowEvent).join(' · ') } : {}),
+      ...basisMarkerAt(l.books.accounting.bases, l.books.tax?.bases ?? [], p),
+      state: isAfter(p, CURRENT_PERIOD) ? 'projected' : postedRunFor(p) ? 'posted' : 'open',
     }
     return row
+  })
+}
+
+function basisMarkerAt(acc: Basis[], tax: Basis[], p: Period): { basisMarker?: string } {
+  // Several events can start a basis in one period; name every cause, in order.
+  const started = (bs: Basis[]) => bs.filter((b) => b.fromPeriod === p && b.id !== 'B1')
+  const a = started(acc)
+  const t = started(tax)
+  if (!a.length && !t.length) return {}
+  const books = a.length && t.length ? 'both books' : a.length ? 'accounting' : 'tax'
+  const causes = [...new Set([...a, ...t].map((b) => BASIS_CAUSE[b.cause.kind] ?? 'changed'))]
+  return { basisMarker: `New basis from here, ${books}: ${causes.join(', then ')}` }
+}
+
+const BASIS_CAUSE: Partial<Record<AssetEvent['kind'], string>> = {
+  'estimate-revision': 'estimate revised',
+  'impairment': 'after the impairment',
+  'impairment-reversal': 'after the reversal',
+  'cost-correction': 'cost corrected',
+  'improvement': 'improvement added',
+  'partial-disposal': 'after the partial disposal',
+}
+
+/** A superseded or live version, with the basis that produced it, readable as it was. */
+export interface VersionView {
+  id: string
+  number: number
+  book: Book
+  live: boolean
+  label: string
+  fromPeriod: string
+  supersededFrom: string | null
+  basis: { k: string; v: string }[]
+  rows: (ScheduleRow & { label: string })[]
+}
+
+/**
+ * Every version an asset's book has had, newest first. The superseded ones
+ * stay readable with their basis (LR-3): the charge they would have made and
+ * the carrying amount they would have reached, even after being replaced.
+ */
+export function versionViews(a: FixedAsset, book: Book): VersionView[] {
+  const b = bookOf(ledgerOf(a.id)!, book)
+  if (!b) return []
+  return [...b.versions].reverse().map((v) => {
+    const basis = b.bases.find((x) => x.cause.eventId === v.createdBy.eventId) ?? b.bases[0]!
+    // The charge this basis makes: its own first row, not a row it carried over.
+    const first = v.rows.find((r) => r.basisId === basis.id && !r.adjustmentOnly) ?? v.rows.find((r) => !r.adjustmentOnly)
+    return {
+      id: v.id, number: v.number, book, live: v.supersededFrom === null,
+      label: v.createdBy.label,
+      fromPeriod: periodLabel(v.fromPeriod),
+      supersededFrom: v.supersededFrom ? periodLabel(v.supersededFrom) : null,
+      basis: [
+        { k: 'Cost', v: fmt(basis.cost) },
+        { k: 'Opening carrying', v: fmt(basis.openingCarrying) },
+        { k: 'Method', v: METHOD_LABEL[basis.method] },
+        { k: 'Life', v: basis.lifeMonths === null ? 'Indefinite' : `${formatLife(basis.lifeMonths)}, ${basis.remainingMonths} months from ${periodLabel(basis.fromPeriod)}` },
+        ...(book === 'accounting' ? [{ k: 'Residual', v: fmt(basis.residual) }] : []),
+        { k: 'Monthly charge', v: first ? fmt(first.charge) : 'None' },
+      ],
+      rows: v.rows.slice(0, 18).map((r) => ({ ...r, label: periodLabel(r.period) })),
+    }
   })
 }
 
@@ -349,6 +429,10 @@ export function assetHistory(a: FixedAsset) {
   for (const e of [...l.events].reverse()) {
     switch (e.kind) {
       case 'acquisition':
+        if (e.splitFrom) {
+          push({ when: e.date, who: e.recordedBy, what: `Created by the split of ${e.splitFrom}`, note: `Opened at ${fmt(e.cost)} cost, ${fmt(e.accounting.opening?.accumulated ?? 0)} accumulated` })
+          break
+        }
         if (e.taxGroup) {
           push({ when: e.date, who: e.recordedBy, what: `Statutory group set to ${e.taxGroup}`, note: 'Applied from the asset class default' })
         } else {
@@ -359,22 +443,73 @@ export function assetHistory(a: FixedAsset) {
       case 'tax-classification':
         push({ when: e.date, who: e.recordedBy, what: `Statutory group set to ${e.taxGroup}`, note: 'Tax book computed from the in-service date' })
         break
-      case 'impairment':
-        push({ when: e.date, who: e.recordedBy, what: 'Impairment recognised after a test', note: 'Accounting only, tax does not recognise it until realised' })
-        break
-      case 'disposal': {
-        const gA = l.books.accounting.disposal?.gainLoss ?? 0
-        const gT = l.books.tax?.disposal?.gainLoss ?? null
-        const word = (n: number) => (n >= 0 ? 'Gain' : 'Loss')
+      case 'impairment': {
+        const r = l.books.accounting.impairments.find((i) => i.eventId === e.id)
         push({
-          when: e.date, who: e.recordedBy, what: 'Disposed',
-          note: gT === null ? `${word(gA)} on the accounting basis` : `${word(gA)} on the accounting basis, ${word(gT).toLowerCase()} on the tax basis`,
+          when: e.date, who: e.recordedBy,
+          what: `Impairment of ${fmt(r?.loss ?? 0)} recognised${e.testId ? ` after test ${e.testId}` : ''}`,
+          note: `Written down to ${fmt(e.recoverable)} from ${fmt(r?.carryingBefore ?? 0)}. Accounting only, tax does not recognise it until realised`,
         })
         break
       }
-      default:
-        push({ when: e.date, who: e.recordedBy, what: eventLabel(e), note: null })
+      case 'impairment-reversal': {
+        const r = l.books.accounting.reversals.find((x) => x.eventId === e.id)
+        push({
+          when: e.date, who: e.recordedBy,
+          what: `Impairment reversal of ${fmt(r?.applied ?? 0)}${e.testId ? ` after test ${e.testId}` : ''}`,
+          note: r ? `Recovery found ${fmt(r.uncapped)}, cap ${fmt(r.cap)} (unimpaired carrying ${fmt(r.unimpaired)}). ${r.capApplied ? 'The cap applied' : 'The recovery applied in full'}. Accounting only` : null,
+        })
+        break
+      }
+      case 'cost-correction': {
+        const c = l.books.accounting.corrections.find((x) => x.eventId === e.id)
+        push({
+          when: e.date, who: e.recordedBy,
+          what: `Cost corrected from ${fmt(c?.previousCost ?? 0)} to ${fmt(e.correctedCost)}, from ${periodLabel(e.period)}`,
+          note: `${e.reason}.${c?.catchUp ? ` Catch-up of ${fmt(c.catchUp)} in ${periodLabel(e.period)} for posted periods.` : ''} Prior version kept.`,
+        })
+        break
+      }
+      case 'estimate-revision':
+        push({ when: e.date, who: e.recordedBy, what: eventLabel(e), note: `${e.book === 'accounting' ? 'Accounting book only' : 'Tax book only'}. Applied periods unchanged, prior version kept` })
+        break
+      case 'improvement':
+        push({ when: e.date, who: e.recordedBy, what: eventLabel(e), note: 'Added to this asset\'s cost on both books. Tax treatment assumed pending tax team confirmation' })
+        break
+      case 'split':
+        push({ when: e.date, who: e.recordedBy, what: eventLabel(e), note: 'Cost, accumulated depreciation and impairment apportioned on both books' })
+        break
+      case 'partial-disposal': {
+        const dA = l.books.accounting.partialDisposals.find((x) => x.eventId === e.id)
+        const dT = l.books.tax?.partialDisposals.find((x) => x.eventId === e.id)
+        const gl = (n: number) => `${n >= 0 ? 'gain' : 'loss'} ${fmt(Math.abs(n))}`
+        push({
+          when: e.date, who: e.recordedBy, what: `${pct(e.proportion)} disposed for ${fmt(e.proceeds)}`,
+          note: dA ? `Accounting ${gl(dA.gainLoss)}${dT ? `, tax ${gl(dT.gainLoss)}` : ''}. The rest carries on as this asset` : null,
+        })
+        break
+      }
+      case 'disposal': {
+        const gA = l.books.accounting.disposal?.gainLoss ?? 0
+        const gT = l.books.tax?.disposal?.gainLoss ?? null
+        const gl = (n: number) => `${n >= 0 ? 'gain' : 'loss'} of ${fmt(Math.abs(n))}`
+        push({
+          when: e.date, who: e.recordedBy, what: `Disposed for ${fmt(e.proceeds)}`,
+          note: gT === null ? `Accounting ${gl(gA)}` : `Accounting ${gl(gA)}, tax ${gl(gT)}`,
+        })
+        break
+      }
     }
+  }
+  // LR-8 / FG3-AC1: every test on the asset, including one that found nothing.
+  for (const t of testsFor(a.id)) {
+    const what = t.outcome === 'Reversal'
+      ? `Impairment test ${t.id}: value recovered`
+      : `Impairment test ${t.id}: ${t.outcome === 'Impaired' ? 'impaired' : 'no impairment'}`
+    push({
+      when: t.date, who: t.author, what,
+      note: `${t.indicator}. Carrying ${fmt(t.carrying)}, recoverable ${fmt(t.recoverable)} (${t.basis}, ${t.source})`,
+    })
   }
   // Newest first; the acquisition's two rows keep their logged order.
   return rows

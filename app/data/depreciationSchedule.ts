@@ -17,7 +17,7 @@ import {
   type JournalLine,
 } from './assetStore'
 import {
-  chargeAt, accumulatedAt, isHeldDuring, isAfter, addPeriods, periodLabel, periodShort, eventLabel,
+  chargeAt, accumulatedAt, isHeldDuring, isAfter, addPeriods, periodLabel, periodShort, eventLabel, costAt,
 } from './assetEngine'
 import type { FixedAsset } from './fixedAssets'
 
@@ -106,6 +106,8 @@ function conventionFor(a: FixedAsset, p: string): string | undefined {
   if (p === l.startPeriod) notes.push(`Full month · in service from ${l.inServiceDate.slice(0, 5)}`)
   const basis = acc.bases.find((b) => b.id === row.basisId)!
   if (basis.fromPeriod === p && basis.cause.kind !== 'acquisition') notes.push('Recomputed over the remaining life')
+  if (basis.fromPeriod === p && l.splitFrom && basis.cause.kind === 'acquisition') notes.push(`Opened from the split of ${l.splitFrom}`)
+  if (row.adjustment) notes.push(`Includes a catch-up of ${row.adjustment.toLocaleString('id-ID')} for posted periods`)
   if (acc.disposal?.period === p) notes.push(`Full month · disposed ${acc.disposal.date.slice(0, 5)}`)
   const last = acc.live.filter((r) => !r.adjustmentOnly).at(-1)
   if (last?.period === p && !acc.disposal) notes.push('Final month · takes the rounding residue')
@@ -136,7 +138,7 @@ export function fy2026Schedule(): SchedulePeriod[] {
       // period sits in the closing balance on the asset record, and the
       // following period's opening picks it up.
       const close = row ? row.closingAccumulated : accumulatedAt(l.books.accounting, p) ?? open
-      const events = l.events.filter((e) => e.kind !== 'acquisition' && e.kind !== 'tax-classification' && e.period === p)
+      const events = l.events.filter((e) => (e.kind === 'acquisition' ? !!e.splitFrom : e.kind !== 'tax-classification') && e.period === p)
       allRows.push({
         asset,
         accounting: acc.charge,
@@ -146,7 +148,7 @@ export function fy2026Schedule(): SchedulePeriod[] {
         ...(p === l.startPeriod ? { event: 'Entered service' } : events.length ? { event: events.map(eventLabel).join(' · ') } : {}),
         openingAccumulated: open,
         closingAccumulated: close,
-        closingBookValue: asset.cost - close,
+        closingBookValue: (row?.cost ?? costAt(l.books.accounting, p)) - close,
         convention: conventionFor(asset, p),
       })
     }
@@ -156,7 +158,7 @@ export function fy2026Schedule(): SchedulePeriod[] {
     // depreciation and a book value in months they charge nothing. An asset
     // stays in until the month it is disposed; from the following month its
     // cost and accumulated leave the balance, which is what derecognition means.
-    const cost = allRows.reduce((s, r) => s + r.asset.cost, 0)
+    const cost = allRows.reduce((s, r) => s + costAt(ledgers.value[r.asset.id]!.books.accounting, p), 0)
     const openingAccumulated = allRows.reduce((s, r) => s + (r.openingAccumulated ?? 0), 0)
     const closingAccumulated = allRows.reduce((s, r) => s + (r.closingAccumulated ?? 0), 0)
     const closingBookValue = allRows.reduce((s, r) => s + (r.closingBookValue ?? 0), 0)

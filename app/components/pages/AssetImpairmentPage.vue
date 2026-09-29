@@ -19,7 +19,7 @@ import {
 import { formatIDR } from '~/utils/currency'
 import { successToast } from '~/utils/toasts'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
-import { fixedAssets, carryingForTest } from '~/data/assetStore'
+import { fixedAssets, carryingForTest, IMPAIRMENT_INDICATORS } from '~/data/assetStore'
 import { impairmentTests, recordImpairmentTest, type ImpairmentTest } from '~/data/fixedAssetSession'
 
 const { t } = useLocale()
@@ -58,14 +58,7 @@ const assetOptions = computed(() =>
     .filter((a) => a.status !== 'Disposed')
     .map((a) => ({ value: a.id, label: `${a.id} · ${a.name}` })),
 )
-const indicatorOptions = [
-  'Physical damage',
-  'Market value has fallen',
-  'Obsolescence',
-  'Idle or held for disposal',
-  'Annual test · indefinite life',
-  'Worse performance than expected',
-]
+const indicatorOptions = IMPAIRMENT_INDICATORS
 const basisOptions: ImpairmentTest['basis'][] = [
   'Fair value less costs of disposal',
   'Value in use',
@@ -99,16 +92,17 @@ function submitTest() {
   if (!amount) { formError.value = t('Enter the recoverable amount'); return }
   if (!formSource.value.trim()) { formError.value = t('Say where the recoverable amount came from'); return }
 
-  recordImpairmentTest({
+  const r = recordImpairmentTest({
     assetId: formAsset.value,
     indicator: formIndicator.value,
     recoverable: amount,
     basis: formBasis.value,
     source: formSource.value.trim(),
   })
+  // A refusal (a posted period, a disposed asset) is the form's error, not a toast.
+  if (!r.ok) { formError.value = t(r.reason); return }
   formOpen.value = false
-  const impaired = carryingOf.value !== null && amount < carryingOf.value
-  successToast(impaired ? t('Test recorded — impairment recognised') : t('Test recorded — no impairment'))
+  successToast(r.event ? t('Test recorded. Impairment written down in the accounts') : t('Test recorded. No impairment'))
 }
 
 function openAsset(id: string) { router.push(`/assets/${id}`) }

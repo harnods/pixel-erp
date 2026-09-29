@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { defineAsyncComponent, defineComponent, type Component, h, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
+import { newAssetDrawerOpen } from '~/data/fixedAssetSession'
 import { infoToast } from '~/utils/toasts'
 import { MpAvatar, MpBadge, MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 
@@ -1861,7 +1862,7 @@ function startResize(e: MouseEvent) {
         <!-- Accounting › Fixed assets › Assets. rule/btn-icon-add-only — the
              create button is the one button that carries a leading icon. -->
         <div v-else-if="currentPageKey === 'Assets'" class="page-title-actions">
-          <MpButton is-rounded left-icon="add" @click="infoToast(t('Creating an asset is not part of this prototype yet.'))">
+          <MpButton is-rounded left-icon="add" @click="newAssetDrawerOpen = true">
             {{ t('New asset') }}
           </MpButton>
         </div>
