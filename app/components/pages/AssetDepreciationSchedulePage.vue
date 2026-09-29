@@ -156,7 +156,7 @@ function stateLabel(p: SchedulePeriod) {
     <!-- The September / FY-to-date toggle is gone: every month is a row now,
          so a control switching between two of them said the same thing twice —
          and sitting beside Post it implied a year could be posted at once. -->
-    <div v-if="actionable" class="ds__run">
+    <div v-if="actionable" class="ds__run" data-tour="run-current">
       <div class="ds__runbody">
         <div class="ds__runlabel">{{ t('Current period') }}</div>
         <div class="ds__runperiod">{{ actionable.label }}</div>
@@ -219,7 +219,7 @@ function stateLabel(p: SchedulePeriod) {
     </div>
 
     <!-- ── The schedule ── -->
-    <div class="ds__card">
+    <div class="ds__card" data-tour="run-table">
       <table class="ds__table">
         <thead>
           <!-- Accounting only. The tax charge is a yearly output — it reaches
@@ -416,7 +416,7 @@ function stateLabel(p: SchedulePeriod) {
             </MpButton>
           </header>
 
-          <div class="ds__drawerbody">
+          <div class="ds__drawerbody" data-tour="run-post">
             <table class="ds__jtable">
               <thead>
                 <tr>
@@ -449,7 +449,7 @@ function stateLabel(p: SchedulePeriod) {
 
           <footer class="ds__drawerfoot">
             <MpButton variant="ghost" is-rounded @click="confirming = null">{{ t('Cancel') }}</MpButton>
-            <MpButton is-rounded @click="confirmPost">{{ t('Post journal') }}</MpButton>
+            <MpButton is-rounded data-tour="dlg-primary" @click="confirmPost">{{ t('Post journal') }}</MpButton>
           </footer>
         </aside>
       </div>

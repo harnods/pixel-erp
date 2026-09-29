@@ -287,7 +287,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
         </p>
       </div>
 
-      <div class="ad__baractions">
+      <div class="ad__baractions" data-tour="det-actions">
         <MpButton
           v-if="canEditCustody && asset.type === 'Tangible' && !isGone"
           variant="secondary" is-rounded @click="custodyOpen = true"
@@ -317,7 +317,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
 
     <div class="ad__body">
       <!-- The one thing that blocks every tax output, fixable from here. -->
-      <div v-if="!effectiveTaxGroup && canSeeFinancials && !isGone" class="ad__blocked">
+      <div v-if="!effectiveTaxGroup && canSeeFinancials && !isGone" class="ad__blocked" data-tour="det-fiscal">
         <MpIcon name="information" size="sm" />
         <div class="ad__blockedbody">
           <div class="ad__blockedtitle">{{ t('No statutory group') }}</div>
@@ -343,7 +343,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
       <!-- ── Headline figures ── -->
       <!-- The house index-page stats band: divider-separated columns sitting
            directly on the stage, caption above the figure. -->
-      <div v-if="canSeeFinancials" class="stats-section">
+      <div v-if="canSeeFinancials" class="stats-section" data-tour="det-figures">
         <div
           v-for="(f, i) in figures" :key="f.label"
           class="stat-card" :class="{ 'stat-card--bordered': i < figures.length - 1 }"
@@ -357,7 +357,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
       </div>
 
       <!-- ── Tabs ── -->
-      <div class="ad__tabs" role="tablist">
+      <div class="ad__tabs" role="tablist" data-tour="det-tabs">
         <button
           v-for="tb in tabs" :key="tb.key" class="ad__tab"
           :class="{ 'ad__tab--on': tab === tb.key }"
@@ -367,7 +367,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
       </div>
 
       <!-- ── Depreciation ── -->
-      <div v-if="tab === 'depreciation'" class="ad__card">
+      <div v-if="tab === 'depreciation'" class="ad__card" data-tour="det-sched">
         <div class="ad__cardhead ad__cardhead--split">
           <div>
             <div class="ad__cardtitle">{{ t('FY2026 schedule') }}</div>
@@ -484,7 +484,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
       </div>
 
       <!-- ── History ── -->
-      <div v-if="tab === 'history'" class="ad__card">
+      <div v-if="tab === 'history'" class="ad__card" data-tour="det-history">
         <p v-if="!history.length" class="ad__hint">{{ t('No custody change has been recorded on this asset yet.') }}</p>
         <div v-for="(h, i) in history" :key="i" class="ad__event">
           <div class="ad__eventwhen">{{ h.when }}</div>
@@ -517,7 +517,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
               <MpIcon name="close" size="sm" />
             </MpButton>
           </header>
-          <div class="ad__drawerbody">
+          <div class="ad__drawerbody" data-tour="det-versions">
             <div v-if="hasTaxBook" class="ad__booktabs">
               <MpSegmentedControl id="version-book-switch" name="version-book-switch" v-model="versionBook" :data="versionBookOptions" />
             </div>
@@ -605,7 +605,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
             </MpButton>
           </header>
 
-          <div class="ad__drawerbody">
+          <div class="ad__drawerbody" data-tour="deriv-body">
             <div v-for="(s, i) in derivationSteps" :key="i" class="ad__step" :class="{ 'ad__step--result': s.isResult }">
               <div class="ad__steplabel">{{ s.label }}</div>
               <div class="ad__stepvalue">{{ s.value }}</div>

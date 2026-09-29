@@ -123,7 +123,7 @@ const exemptLabel = (e: string | null) => (e === 'short-term' ? 'Short-term' : e
     <p v-if="!selected" class="ls__hint">{{ t('Select a lease to see its schedules.') }}</p>
 
     <!-- ── The selected lease ── -->
-    <section v-if="selected && detail" class="ls__detail">
+    <section v-if="selected && detail" class="ls__detail" data-tour="lease-detail">
       <div class="ls__detailhead">
         <div>
           <div class="ls__detailtitle">{{ selected.id }} · {{ selected.name }}</div>

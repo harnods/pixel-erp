@@ -213,7 +213,7 @@ function submit() {
           </div>
 
           <!-- ── Modify ── -->
-          <div v-else class="ld-body">
+          <div v-else class="ld-body" data-tour="lease-modify">
             <template v-if="lease">
               <p class="ld-hint ld-lead">
                 {{ lease.name }} · {{ t('currently') }} {{ leaseSchedule(lease).current.termMonths }} {{ t('months at') }}

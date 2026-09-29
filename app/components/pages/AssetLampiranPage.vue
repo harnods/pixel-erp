@@ -43,7 +43,7 @@ function openUnclassified() {
 
 <template>
   <div class="lp">
-    <header class="lp__head">
+    <header class="lp__head" data-tour="lamp-export">
       <p class="lp__sub">
         {{ t(`Fiscal depreciation and amortisation · FY2026 to ${periodLabel(CURRENT_PERIOD)} · PT Central Perk Indonesia`) }}
       </p>
@@ -74,7 +74,7 @@ function openUnclassified() {
       </MpBannerDescription>
     </MpBanner>
 
-    <div class="lp__counts">
+    <div class="lp__counts" data-tour="lamp-both">
       <div class="lp__count"><span class="lp__countk">{{ t('Half 1 · tangible') }}</span><span class="lp__countv">{{ status.tangible }}</span></div>
       <div class="lp__count"><span class="lp__countk">{{ t('Half 2 · intangible') }}</span><span class="lp__countv">{{ status.intangible }}</span></div>
       <div class="lp__count" :class="{ 'lp__count--bad': !status.ready }">

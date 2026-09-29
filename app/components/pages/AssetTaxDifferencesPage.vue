@@ -74,7 +74,7 @@ function signed(v: number) {
     </div>
 
     <!-- ── Per asset, with the reason ── -->
-    <div v-if="view === 'asset'" class="td__card">
+    <div v-if="view === 'asset'" class="td__card" data-tour="diff-table">
       <div class="td__cardhead">
         <span class="td__cardtitle">{{ t('Per asset and event') }}</span>
         <span class="td__hint">{{ t('Tangible assets. Positive is a further deduction on the fiscal book; negative is added back.') }}</span>

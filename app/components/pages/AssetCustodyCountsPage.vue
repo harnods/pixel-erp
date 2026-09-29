@@ -263,7 +263,7 @@ function onCustodySaved(m: string) {
       <p class="cc__sub">
         {{ t('Who holds each asset and where, and count sessions that check the register against the floor.') }}
       </p>
-      <div class="cc__actions">
+      <div class="cc__actions" data-tour="count-new">
         <MpButton is-rounded left-icon="add" @click="openSetup">{{ t('New count session') }}</MpButton>
       </div>
     </header>
@@ -332,7 +332,7 @@ function onCustodySaved(m: string) {
 
     <!-- ── The session on screen ── -->
     <template v-if="active">
-      <div class="cc__sessionbar">
+      <div class="cc__sessionbar" data-tour="count-session">
         <div>
           <div class="cc__cardtitle">{{ active.id }} · {{ active.scopeLabel }}</div>
           <div class="cc__hint">
@@ -625,7 +625,7 @@ function onCustodySaved(m: string) {
       </div>
 
       <!-- FG-4.3: no custodian is a normal state, surfaced rather than blocked. -->
-      <div class="cc__card">
+      <div class="cc__card" data-tour="cust-unassigned">
         <div class="cc__cardhead">
           <span class="cc__cardtitle">{{ t('Unassigned') }}</span>
           <span class="cc__hint">{{ unassignedAssets.length }} {{ t('with no custodian, no location, or a custodian who left') }}</span>

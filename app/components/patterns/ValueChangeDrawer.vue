@@ -217,7 +217,7 @@ const approvalNote = computed(() => {
             </MpButton>
           </header>
 
-          <div class="vcd-body">
+          <div class="vcd-body" data-tour="vc-body">
             <div class="vcd-row">
               <div class="vcd-field">
                 <label class="vcd-label" for="vcd-action">{{ t('What is changing') }}</label>
@@ -362,7 +362,7 @@ const approvalNote = computed(() => {
             </template>
 
             <!-- ── Preview ── -->
-            <section class="vcd-preview">
+            <section class="vcd-preview" data-tour="vc-preview">
               <div class="vcd-preview-title">{{ t('Preview') }}</div>
 
               <div v-if="preview.refusal" class="vcd-refusal">
@@ -510,7 +510,7 @@ const approvalNote = computed(() => {
             <p v-else-if="approvalNote" class="vcd-hint vcd-foot-error">{{ t(approvalNote) }}</p>
             <div class="vcd-footright">
               <MpButton variant="ghost" is-rounded @click="emit('close')">{{ t('Cancel') }}</MpButton>
-              <MpButton is-rounded @click="commit">{{ t(commitLabel) }}</MpButton>
+              <MpButton is-rounded data-tour="dlg-primary" @click="commit">{{ t(commitLabel) }}</MpButton>
             </div>
           </footer>
         </div>

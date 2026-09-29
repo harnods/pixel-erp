@@ -199,7 +199,7 @@ function onExport() {
 
     <!-- Events. Each shows the same transaction landing differently on the two
          bases, which is the whole argument for holding both. -->
-    <div class="fb__card">
+    <div class="fb__card" data-tour="cmp-disposal">
       <div class="fb__cardhead">
         <span class="fb__cardtitle">{{ t('Disposal and impairment') }}</span>
         <span class="fb__hint">{{ t('A disposal\'s gain or loss on each book: the tax figure is proceeds less the fiscal carrying amount') }}</span>
@@ -241,7 +241,7 @@ function onExport() {
       </table>
     </div>
 
-    <div class="fb__foot">
+    <div class="fb__foot" data-tour="cmp-deftax">
       <div class="fb__footrow">
         <span class="fb__footlabel">{{ t('Net temporary difference') }}</span>
         <span class="fb__footvalue">{{ formatIDR(H.netTemporaryDifference) }}</span>

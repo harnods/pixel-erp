@@ -88,7 +88,7 @@ function submit() {
             </MpButton>
           </header>
 
-          <div class="cld-body">
+          <div class="cld-body" data-tour="cls-body">
             <p v-if="!canClassify" class="cld-note">
               {{ t(`Viewing as ${viewAs}. A statutory classification needs the Owner, Accounting or Tax role.`) }}
             </p>
@@ -129,7 +129,7 @@ function submit() {
             <p v-if="errors.form" class="cld-error cld-foot-error">{{ t(errors.form) }}</p>
             <div class="cld-footright">
               <MpButton variant="ghost" is-rounded @click="emit('close')">{{ t('Cancel') }}</MpButton>
-              <MpButton is-rounded :is-disabled="!canClassify" @click="submit">{{ t('Save classification') }}</MpButton>
+              <MpButton is-rounded data-tour="dlg-primary" :is-disabled="!canClassify" @click="submit">{{ t('Save classification') }}</MpButton>
             </div>
           </footer>
         </div>

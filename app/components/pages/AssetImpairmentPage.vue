@@ -167,7 +167,7 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
     </div>
 
     <!-- ── Record a test ── -->
-    <div v-if="formOpen" class="im__form">
+    <div v-if="formOpen" class="im__form" data-tour="imp-form">
       <div class="im__formhead">
         <span class="im__formtitle">{{ t('Record an impairment test') }}</span>
         <MpButton variant="ghost" is-rounded :aria-label="t('Close')" @click="formOpen = false">
@@ -220,7 +220,7 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
 
       <div class="im__formactions">
         <MpButton variant="ghost" is-rounded @click="formOpen = false">{{ t('Cancel') }}</MpButton>
-        <MpButton is-rounded @click="submitTest">{{ t('Save') }}</MpButton>
+        <MpButton is-rounded data-tour="dlg-primary" @click="submitTest">{{ t('Save') }}</MpButton>
       </div>
     </div>
 

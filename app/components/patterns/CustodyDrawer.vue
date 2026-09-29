@@ -74,7 +74,7 @@ function save() {
             </MpButton>
           </header>
 
-          <div class="cud-body">
+          <div class="cud-body" data-tour="cust-body">
             <div v-if="!canEditCustody" class="cud-refusal">
               <MpIcon name="info" size="sm" />
               <span>{{ t(`Viewing as ${viewAs}. Custody is maintained by General Affairs or the Owner.`) }}</span>

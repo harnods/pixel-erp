@@ -166,7 +166,7 @@ const stateIcon: Record<CheckState, string> = {
       </div>
     </div>
 
-    <div class="sc__list">
+    <div class="sc__list" data-tour="recon-checks">
       <div v-for="c in checks" :key="c.id" class="sc__check" :class="`sc__check--${c.state}`">
         <MpIcon :name="stateIcon[c.state]" size="sm" class="sc__checkicon" />
         <div class="sc__checkbody">
@@ -180,7 +180,7 @@ const stateIcon: Record<CheckState, string> = {
       </div>
     </div>
 
-    <div class="sc__card">
+    <div class="sc__card" data-tour="recon-table">
       <div class="sc__cardhead">{{ t('Sub-ledger to ledger, account by account') }}</div>
       <table class="sc__table">
         <thead>

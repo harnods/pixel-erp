@@ -393,7 +393,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
          the totals it governs, where it also reads as what it is — a choice
          about which figures the whole screen reports. -->
     <template #filters>
-      <div class="filter-left">
+      <div class="filter-left" data-tour="reg-filters">
         <ErpFilterSelect id="asset-type" v-model="typeFilter" :placeholder="t('Type')" :options="typeOptions" />
         <ErpFilterSelect id="asset-class" v-model="classFilter" :placeholder="t('Class')" :options="classOptions" />
         <ErpFilterSelect id="asset-status" v-model="statusFilter" :placeholder="t('Status')" :options="statusOptions" />
@@ -437,7 +437,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
            a three-segment control do not fit on one row at this width, and
            shrinking the amounts to fit would make the register's primary
            numbers the smallest thing on the screen. -->
-      <div class="stats-wrap">
+      <div class="stats-wrap" data-tour="reg-stats">
         <div v-if="canSeeFinancials" class="stats-switch">
           <MpSegmentedControl
             id="asset-book-switch"
