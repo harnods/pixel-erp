@@ -35,6 +35,7 @@ import { infoToast, successToast } from '~/utils/toasts'
 import AssetFiltersDrawer from '~/components/patterns/AssetFiltersDrawer.vue'
 import NewAssetDrawer from '~/components/patterns/NewAssetDrawer.vue'
 import { fixedAssets, canSeeFinancials, viewAs } from '~/data/assetStore'
+import { conditionOf, unassignedAssets } from '~/data/assetCustody'
 import { newAssetDrawerOpen } from '~/data/fixedAssetSession'
 import {
   assetClasses,
@@ -125,7 +126,11 @@ const filtered = computed<FixedAsset[]>(() => {
       a.name.toLowerCase().includes(q) ||
       a.id.toLowerCase().includes(q) ||
       (a.tag ?? '').toLowerCase().includes(q) ||
-      (a.custodian ?? '').toLowerCase().includes(q)
+      (a.custodian ?? '').toLowerCase().includes(q) ||
+      // TS-05: location and condition are searchable too, so "Medan
+      // Warehouse" or "damaged" finds what sits there or needs attention.
+      (a.location ?? '').toLowerCase().includes(q) ||
+      (conditionOf(a) ?? '').toLowerCase() === q
     )
   })
 })
@@ -198,6 +203,7 @@ const allColumns = computed<TableColumn[]>(() => {
   if (!canSeeFinancials.value) {
     cols.push({ key: 'location', label: t('Location'), kind: 'default', sortable: true, sortType: 'text' })
     cols.push({ key: 'custodian', label: t('Custodian'), kind: 'default', sortable: true, sortType: 'text' })
+    cols.push({ key: 'condition', label: t('Condition'), kind: 'default' })
     cols.push({ key: 'branch', label: t('Branch'), kind: 'default', sortable: true, sortType: 'text' })
     cols.push({ key: 'status', label: t('Status'), kind: 'status', sortable: true, sortType: 'text' })
     return cols
@@ -351,7 +357,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
 
         <div class="filter-search">
           <MpIcon name="search" size="sm" />
-          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search asset, tag, custodian…')" />
+          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search asset, tag, custodian, location…')" />
         </div>
       </div>
     </template>
@@ -384,9 +390,15 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
             <div class="stat-amount">{{ totals.count }}</div>
           </div>
 
-          <div v-if="!canSeeFinancials" class="stat-card">
+          <div v-if="!canSeeFinancials" class="stat-card stat-card--bordered" data-tour="reg-view">
             <div class="stat-title">{{ t(`Viewing as ${viewAs}`) }}</div>
             <div class="stat-period">{{ t('Cost and book values are not shown to this role') }}</div>
+          </div>
+          <div v-if="!canSeeFinancials" class="stat-card">
+            <div class="stat-title">{{ t('Custody gaps') }}</div>
+            <div class="stat-period">{{ t('No custodian or no location') }}</div>
+            <div class="stat-amount">{{ unassignedAssets.length }}</div>
+            <span v-if="unassignedAssets.length" class="stat-link stat-link--warn" @click="router.push('/custody-and-counts')">{{ t('Assign on Custody and counts') }}</span>
           </div>
 
           <div v-if="canSeeFinancials" class="stat-card stat-card--bordered">
@@ -439,6 +451,21 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
           <template v-if="(row as unknown as FixedAsset).tag"> · {{ (row as unknown as FixedAsset).tag }}</template>
         </span>
       </span>
+    </template>
+
+    <!-- FG-4.3: a missing custodian or location is a named gap, not a blank. -->
+    <template #cell-location="{ row }">
+      <span v-if="(row as unknown as FixedAsset).location">{{ (row as unknown as FixedAsset).location }}</span>
+      <span v-else class="cell-absent">{{ t('Not recorded') }}</span>
+    </template>
+    <template #cell-custodian="{ row }">
+      <span v-if="(row as unknown as FixedAsset).custodian">{{ (row as unknown as FixedAsset).custodian }}</span>
+      <span v-else-if="(row as unknown as FixedAsset).type === 'Tangible'" class="cell-absent">{{ t('Unassigned') }}</span>
+      <span v-else class="cell-muted">{{ t('Not physical') }}</span>
+    </template>
+    <template #cell-condition="{ row }">
+      <span v-if="conditionOf(row as unknown as FixedAsset)">{{ t(conditionOf(row as unknown as FixedAsset)!) }}</span>
+      <span v-else class="cell-muted">{{ t('Not physical') }}</span>
     </template>
 
     <template #cell-cost="{ row }">
@@ -579,7 +606,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
   white-space: nowrap;
 }
 /* A total that cannot be computed says so. Never Rp0,00. */
-.stat-amount--absent { color: var(--mp-text-critical); }
+.stat-amount--absent { color: var(--mp-text-danger); }
 .stat-link {
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-link);
@@ -589,7 +616,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
 }
 .stat-link:hover { text-decoration: underline; }
 /* The exclusion reads as something to act on, not as decoration. */
-.stat-link--warn { color: var(--mp-text-critical); }
+.stat-link--warn { color: var(--mp-text-danger); }
 
 /* rule/table-name-link-span — a span styled as a link, not a button. */
 .asset-name {
@@ -624,7 +651,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
 
 /* A figure that is absent for a stated reason, not a zero. Red carries the
    same weight as the Incomplete badge on the same row. */
-.cell-absent { color: var(--mp-text-critical); font-weight: var(--mp-font-weights-semi-bold); }
+.cell-absent { color: var(--mp-text-danger); font-weight: var(--mp-font-weights-semi-bold); }
 /* A figure that no longer applies — a disposed asset has no book value. */
 .cell-muted { color: var(--mp-text-subtle); }
 

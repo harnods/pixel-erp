@@ -416,9 +416,10 @@ export const settingToggles: { head: string; items: SettingToggle[] }[] = [
   {
     head: 'Approval rules',
     items: [
-      { label: 'Disposal needs approval', detail: 'Approver: Finance Controller', isOn: true },
-      { label: 'Write-off needs approval', detail: 'Approver: Finance Controller', isOn: true },
-      { label: 'Impairment needs approval', detail: 'Off by default', isOn: false },
+      // LR-5: off by default, per event. The live switches are in assetApprovals.ts.
+      { label: 'Disposal needs approval', detail: 'Off by default', isOn: false },
+      { label: 'Write-off needs approval', detail: 'Off by default', isOn: false },
+      { label: 'Value change needs approval', detail: 'Off by default', isOn: false },
     ],
   },
 ]

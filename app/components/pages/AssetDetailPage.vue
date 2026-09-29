@@ -30,6 +30,9 @@ import {
 } from '~/data/fixedAssetDetail'
 import { VALUE_ACTIONS, type ValueAction } from '~/data/assetValueChange'
 import { assetTaxGroups } from '~/data/fixedAssets'
+import CustodyDrawer from '~/components/patterns/CustodyDrawer.vue'
+import { custodyHistoryFor, conditionOf, canEditCustody, stampKey } from '~/data/assetCustody'
+import { approvalTrailFor, pendingFor } from '~/data/assetApprovals'
 
 // The shared detailMatch slot in [...slug].vue passes `order-id` to every
 // detail component, so the prop is named to match rather than special-casing
@@ -47,10 +50,37 @@ const effectiveTaxGroup = computed(() => asset.value?.taxGroup ?? null)
 const figures = computed(() => (asset.value ? detailFigures(asset.value) : []))
 // LR-6: General Affairs sees the physical pane and nothing financial.
 const panes = computed(() => {
-  const all = asset.value ? detailPanes(asset.value) : []
+  const all = (asset.value ? detailPanes(asset.value) : []).map((p) => (p.owner === 'General Affairs' && asset.value
+    ? { ...p, fields: [...p.fields, { k: 'Condition', v: conditionOf(asset.value) ?? 'Not recorded' }] }
+    : p))
   return canSeeFinancials.value ? all : all.filter((p) => p.owner === 'General Affairs')
 })
-const history = computed(() => (asset.value ? assetHistory(asset.value) : []))
+const ledgerHistory = computed(() => (asset.value ? assetHistory(asset.value) : []))
+// OD-21 / OD-31: custody changes and the approval trail made this session sit
+// above the ledger history, newest first. They are all dated today.
+const sessionHistory = computed(() => {
+  if (!asset.value) return []
+  const custody = custodyHistoryFor(asset.value.id).map((c) => ({
+    when: c.at, who: c.by,
+    what: `${c.field} changed from ${c.from ?? (c.field === 'Custodian' ? 'Unassigned' : 'Not recorded')} to ${c.to ?? (c.field === 'Custodian' ? 'Unassigned' : 'Not recorded')}`,
+    note: c.source ? `${c.reason} · from count ${c.source}` : c.reason, key: stampKey(c.at),
+  }))
+  const trail = approvalTrailFor(asset.value.id).map((r) => ({ ...r, key: stampKey(r.when) }))
+  return [...custody, ...trail].sort((a, b) => b.key - a.key).map(({ key: _k, ...r }) => r)
+})
+// LR-6: General Affairs reads the custody history only; ledger rows and the
+// approval trail carry amounts.
+const history = computed(() => (canSeeFinancials.value
+  ? [...sessionHistory.value, ...ledgerHistory.value]
+  : sessionHistory.value.filter((r) => /^(Custodian|Location|Condition) changed/.test(r.what))))
+const pending = computed(() => (asset.value ? pendingFor(asset.value.id) : []))
+
+// ── Custody (OD-19, OD-22) ──────────────────────────────────────────────────
+const custodyOpen = ref(false)
+function onCustodySaved(message: string) {
+  custodyOpen.value = false
+  successToast(t(message))
+}
 // The whole of FY2026, so a change's effect on the months ahead is visible.
 const schedule = computed(() => (asset.value ? monthlySchedule(asset.value, 12) : []))
 const scheduleToDate = computed(() => schedule.value.filter((r) => r.state !== 'projected'))
@@ -64,8 +94,8 @@ const allTabs: { key: Tab; label: string }[] = [
   { key: 'identity', label: 'Identity and parameters' },
   { key: 'history', label: 'History' },
 ]
-const tabs = computed(() => (canSeeFinancials.value ? allTabs : allTabs.filter((x) => x.key === 'identity')))
-watch(canSeeFinancials, (ok) => { if (!ok) tab.value = 'identity' }, { immediate: true })
+const tabs = computed(() => (canSeeFinancials.value ? allTabs : allTabs.filter((x) => x.key !== 'depreciation')))
+watch(canSeeFinancials, (ok) => { if (!ok && tab.value === 'depreciation') tab.value = 'identity' }, { immediate: true })
 
 // ── Previous versions (OD-42) ───────────────────────────────────────────────
 const versionsOpen = ref(false)
@@ -199,6 +229,10 @@ function setTaxGroup(group: string) {
       </div>
 
       <div class="ad__baractions">
+        <MpButton
+          v-if="canEditCustody && asset.type === 'Tangible' && !isGone"
+          variant="secondary" is-rounded @click="custodyOpen = true"
+        >{{ t('Change custody') }}</MpButton>
         <MpPopover v-if="canSeeFinancials" id="ad-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
             <MpButton variant="secondary" is-rounded right-icon="chevrons-down">{{ t('Actions') }}</MpButton>
@@ -234,6 +268,12 @@ function setTaxGroup(group: string) {
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
+      </div>
+
+      <!-- FG-7: a change held for approval is named where the asset is read. -->
+      <div v-for="p in pending" :key="p.id" class="ad__scoped">
+        <MpIcon name="info" size="sm" />
+        <span>{{ t(`${p.id} awaiting approval: ${p.title}. Nothing is recorded until it is decided.`) }}</span>
       </div>
 
       <!-- LR-6: the scoped role reads the physical pane only. -->
@@ -353,6 +393,7 @@ function setTaxGroup(group: string) {
 
       <!-- ── History ── -->
       <div v-if="tab === 'history'" class="ad__card">
+        <p v-if="!history.length" class="ad__hint">{{ t('No custody change has been recorded on this asset yet.') }}</p>
         <div v-for="(h, i) in history" :key="i" class="ad__event">
           <div class="ad__eventwhen">{{ h.when }}</div>
           <div class="ad__eventbody">
@@ -363,6 +404,8 @@ function setTaxGroup(group: string) {
         </div>
       </div>
     </div>
+
+    <CustodyDrawer :is-open="custodyOpen" :asset="asset" @close="custodyOpen = false" @saved="onCustodySaved" />
 
     <ValueChangeDrawer
       :is-open="changeOpen" :asset="asset" :action="changeAction"
@@ -511,8 +554,8 @@ function setTaxGroup(group: string) {
 .ad__blocked {
   display: flex; align-items: flex-start; gap: var(--mp-spacing-3);
   padding: var(--mp-spacing-3) var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4);
-  background: var(--mp-background-warning-subtle); border-radius: var(--mp-radii-md);
-  color: var(--mp-text-warning);
+  background: var(--mp-colors-background-warning); border-radius: var(--mp-radii-md);
+  color: var(--mp-colors-text-warning);
 }
 .ad__blockedbody { flex: 1; min-width: 0; }
 .ad__blockedtitle { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); }
@@ -544,7 +587,7 @@ function setTaxGroup(group: string) {
   font-variant-numeric: tabular-nums;
 }
 /* Never a zero where the figure does not exist. */
-.stat-amount--absent { color: var(--mp-text-critical); font-size: var(--mp-font-sizes-lg); }
+.stat-amount--absent { color: var(--mp-text-danger); font-size: var(--mp-font-sizes-lg); }
 .stat-sub {
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
   line-height: var(--mp-line-heights-sm, 16px); font-variant-numeric: tabular-nums;
@@ -604,7 +647,7 @@ function setTaxGroup(group: string) {
    backdrop, close is the × only. */
 /* 1300 matches BillsFiltersDrawer: the app header is 1100, and a drawer
    below it renders with its own header hidden behind the chrome. */
-.ad__overlay { position: fixed; inset: 0; background: var(--mp-background-overlay); z-index: 1300; }
+.ad__overlay { position: fixed; inset: 0; background: var(--mp-colors-background-overlay); z-index: 1300; }
 .ad__drawer {
   position: absolute; top: 0; right: 0; bottom: 0; width: 420px; max-width: 92vw;
   background: var(--mp-background-neutral); display: flex; flex-direction: column;

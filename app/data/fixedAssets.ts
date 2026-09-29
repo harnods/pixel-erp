@@ -161,8 +161,10 @@ export const assetSeeds: AssetSeed[] = [
     fiscalLifeMonths: 96,
     branch: 'Central Jakarta',
     tag: 'TAG-VEH-047',
-    location: 'HQ vehicle pool',
-    custodian: 'Dewi Lestari (Directors)',
+    // Returned by the previous holder and not yet reassigned: the register's
+    // one held asset with no custodian or location (FG-4.3, SIM-4).
+    location: null,
+    custodian: null,
     type: 'Tangible',
     statutoryCode: null,
     indefiniteLife: false,

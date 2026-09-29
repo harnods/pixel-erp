@@ -16,14 +16,17 @@ import { MpButton, MpIcon, MpInput, MpCheckbox } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { formatIDR } from '~/utils/currency'
 import {
-  VALUE_ACTIONS, blankForm, periodOptions, previewValueChange, effectiveNote,
+  VALUE_ACTIONS, blankForm, periodOptions, previewValueChange, effectiveNote, parseRupiah,
   type ValueAction, type ValueChangeForm,
 } from '~/data/assetValueChange'
 import {
   recordEvent, recordImpairmentTest, recordImpairmentReversal, ledgerOf,
-  canChangeValue, viewAs, IMPAIRMENT_INDICATORS,
+  canChangeValue, viewAs, actingUser, IMPAIRMENT_INDICATORS,
 } from '~/data/assetStore'
 import { pct } from '~/data/assetEngine'
+import {
+  gateChange, kindForAction, approvalNeeded, carryingPair, stakeOf, valueChangeStake, type HeldChange,
+} from '~/data/assetApprovals'
 import type { FixedAsset } from '~/data/fixedAssets'
 
 const props = defineProps<{
@@ -123,22 +126,42 @@ function commit() {
   if (pv.refusal) { commitError.value = pv.refusal; return }
   const f = form.value
   const id = props.asset.id
-  let r: { ok: boolean; reason?: string }
+  // FG-7: the held change is exactly what recording now would do, so
+  // approving it later goes through the same store functions.
+  let change: HeldChange
   if (f.action === 'impair') {
-    r = recordImpairmentTest({
+    change = { type: 'impairment-test', input: {
       assetId: id, indicator: f.indicator, recoverable: Number(f.recoverable.replace(/\D/g, '')),
       basis: f.basis, source: f.source.trim(), date: pv.event!.date,
-    })
+    } }
   } else if (f.action === 'reverse') {
-    r = recordImpairmentReversal({
+    change = { type: 'impairment-reversal', input: {
       assetId: id, recoverable: Number(f.recoverable.replace(/\D/g, '')),
       basis: f.basis, source: f.source.trim(), date: pv.event!.date,
-    })
+    } }
   } else {
-    r = recordEvent(id, pv.event!)
+    change = { type: 'event', event: pv.event! }
   }
+  const record = (): { ok: boolean; reason?: string } => change.type === 'impairment-test'
+    ? recordImpairmentTest(change.input)
+    : change.type === 'impairment-reversal' ? recordImpairmentReversal(change.input) : recordEvent(id, change.event)
+  if (f.action !== 'split') {
+    const gated = gateChange(id, kindForAction(f.action, parseRupiah(f.proceeds) ?? 0), `${commitLabel.value} on ${id}`, change, changeStake(id, f.action, change), record)
+    if (!gated.ok) { commitError.value = gated.reason; return }
+    if (gated.held) {
+      emit('committed', `Sent for approval as ${gated.held.id}. Nothing is recorded until it is approved.`, [])
+      return
+    }
+    emit('committed', doneMessage(f.action, id, pv.impairment?.loss ?? 0, []), [])
+    return
+  }
+  const r = record()
   if (!r.ok) { commitError.value = r.reason ?? 'The change could not be recorded'; return }
   const newIds = pv.children.map((c) => c.id)
+  emit('committed', doneMessage(f.action, id, pv.impairment?.loss ?? 0, newIds), newIds)
+}
+
+function doneMessage(action: ValueAction, id: string, loss: number, newIds: string[]): string {
   const done: Record<ValueAction, string> = {
     correct: `Cost of ${id} corrected`,
     revise: `Estimate revised on ${id}`,
@@ -146,12 +169,37 @@ function commit() {
     split: `${id} split into ${newIds.join(', ')}`,
     'dispose-part': `Part of ${id} disposed of`,
     dispose: `${id} disposed of`,
-    impair: pv.impairment?.loss ? `Test recorded. ${id} written down in the accounts` : `Test recorded on ${id}. No impairment found`,
+    impair: loss ? `Test recorded. ${id} written down in the accounts` : `Test recorded on ${id}. No impairment found`,
     reverse: `Impairment reversal recorded on ${id}`,
   }
-  const msg = done[f.action]
-  emit('committed', msg, newIds)
+  return `${done[action]} by ${actingUser.value}`
 }
+
+/** What the change puts at stake, for the approval threshold. */
+function changeStake(id: string, action: ValueAction, change: HeldChange): number {
+  const pair = carryingPair(id)
+  if (action === 'dispose') return stakeOf(pair.accounting, pair.tax)
+  if (action === 'dispose-part') return Math.round(stakeOf(pair.accounting, pair.tax) * (Number(form.value.percent.replace(',', '.')) || 0) / 100)
+  if (change.type === 'impairment-test') return Math.max(0, (pair.accounting ?? 0) - change.input.recoverable)
+  if (change.type === 'impairment-reversal') return Math.max(0, change.input.recoverable - (pair.accounting ?? 0))
+  return valueChangeStake(id, change.event)
+}
+
+/** LR-5: tell the preparer before commit whether this goes straight to the books. */
+const approvalNote = computed(() => {
+  if (form.value.action === 'split' || preview.value.error || preview.value.refusal) return ''
+  const f = form.value
+  const kind = kindForAction(f.action, parseRupiah(f.proceeds) ?? 0)
+  const ev = preview.value.event
+  if (!ev) return ''
+  const change: HeldChange = f.action === 'impair'
+    ? { type: 'impairment-test', input: { assetId: props.asset.id, indicator: f.indicator, recoverable: Number(f.recoverable.replace(/\D/g, '')), basis: f.basis, source: f.source } }
+    : f.action === 'reverse'
+      ? { type: 'impairment-reversal', input: { assetId: props.asset.id, recoverable: Number(f.recoverable.replace(/\D/g, '')), basis: f.basis, source: f.source } }
+      : { type: 'event', event: ev }
+  const why = approvalNeeded(kind, changeStake(props.asset.id, f.action, change))
+  return why ? `${why}. Committing raises an approval request; nothing is recorded until it is approved.` : ''
+})
 </script>
 
 <template>
@@ -451,6 +499,7 @@ function commit() {
 
           <footer class="vcd-foot">
             <p v-if="commitError" class="vcd-error vcd-foot-error">{{ t(commitError) }}</p>
+            <p v-else-if="approvalNote" class="vcd-hint vcd-foot-error">{{ t(approvalNote) }}</p>
             <div class="vcd-footright">
               <MpButton variant="ghost" is-rounded @click="emit('close')">{{ t('Cancel') }}</MpButton>
               <MpButton is-rounded @click="commit">{{ t(commitLabel) }}</MpButton>
@@ -465,7 +514,7 @@ function commit() {
 <style scoped>
 /* 1300 matches BillsFiltersDrawer: the app header is 1100, and a drawer
    below it renders with its own header hidden behind the chrome. */
-.vcd-overlay { position: fixed; inset: 0; background: var(--mp-background-overlay); z-index: 1300; }
+.vcd-overlay { position: fixed; inset: 0; background: var(--mp-colors-background-overlay); z-index: 1300; }
 /* Wider than a filter drawer: the preview sets two books side by side with
    before and after columns. */
 .vcd-panel {
@@ -493,7 +542,7 @@ function commit() {
 .vcd-sublabel { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .vcd-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: 0; line-height: var(--mp-line-heights-sm); }
 /* rule/form-errors-inline: the error sits with the field, not in a toast. */
-.vcd-error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-critical); margin: 0; line-height: var(--mp-line-heights-sm); }
+.vcd-error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); margin: 0; line-height: var(--mp-line-heights-sm); }
 
 .vcd-part { display: flex; align-items: flex-end; gap: var(--mp-spacing-3); }
 .vcd-part-share { width: 112px; flex: none; display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
@@ -507,8 +556,8 @@ function commit() {
   padding: var(--mp-spacing-3) var(--mp-spacing-4); margin-bottom: var(--mp-spacing-3);
   border-radius: var(--mp-radii-md); font-size: var(--mp-font-sizes-sm);
 }
-.vcd-refusal { background: var(--mp-background-critical-subtle); color: var(--mp-text-critical); }
-.vcd-warning { background: var(--mp-background-warning-subtle); color: var(--mp-text-warning); }
+.vcd-refusal { background: var(--mp-colors-background-danger); color: var(--mp-text-danger); }
+.vcd-warning { background: var(--mp-colors-background-warning); color: var(--mp-colors-text-warning); }
 
 .vcd-block { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); padding: var(--mp-spacing-3) var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); }
 .vcd-block-title { display: flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin-bottom: var(--mp-spacing-2); }
