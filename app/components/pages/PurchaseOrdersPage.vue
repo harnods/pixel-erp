@@ -45,7 +45,7 @@ const duplicatePurchaseOrder = inject<(id: string) => void>('duplicatePurchaseOr
 // ─── Column definitions (date/number widths match the Expenses index) ─────────
 const columns: TableColumn[] = [
   { key: 'date',       label: 'Date',        kind: 'date',   sortType: 'date'                },
-  { key: 'number',     label: 'Number',      kind: 'number', sortable: true, sortType: 'text' },
+  { key: 'number',     label: 'Number',      width: '208px', /* purchases-only: fits "Purchase <doc> #xxxxx" */ sortable: true, sortType: 'text' },
   { key: 'attachment', label: '',            width: '40px',  noHeader: true, align: 'center' },
   { key: 'vendorName', label: 'Vendor',      kind: 'name',   sortable: true                  },
   { key: 'dueDate',    label: 'Due date',    kind: 'date'                                    },

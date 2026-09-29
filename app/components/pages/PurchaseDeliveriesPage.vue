@@ -26,7 +26,7 @@ const { t } = useLocale()
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
   { key: 'date',              label: t('Date'),              kind: 'date',                                sortType: 'date'   },
-  { key: 'number',            label: t('Number'),            kind: 'number', sortable: true,                sortType: 'number' },
+  { key: 'number',            label: t('Number'),            width: '208px', /* purchases-only: fits "Purchase <doc> #xxxxx" */ sortable: true,                sortType: 'number' },
   { key: 'processed',         label: '',                  width: '44px',  align: 'center', noHeader: true },
   { key: 'vendorName',        label: t('Vendor'),            kind: 'name', sortable: true,                sortType: 'text'   },
   { key: 'fulfillmentStatus', label: t('Fulfillment status'),kind: 'status',                                sortType: 'text'   },
