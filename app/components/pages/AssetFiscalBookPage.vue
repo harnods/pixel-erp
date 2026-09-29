@@ -21,9 +21,10 @@ import { formatIDR } from '~/utils/currency'
 import { infoToast, successToast } from '~/utils/toasts'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import {
-  impactByClass, impactByTaxGroup, amortisationYtd, type ImpactRow,
+  impactByClass, impactByTaxGroup, amortisationYtd, disposalImpactRows, impairmentImpactRows,
+  statementFigures, type ImpactRow,
 } from '~/data/fixedAssetScreens'
-import { ASSET_HEADLINE_FIGURES as H, fixedAssets } from '~/data/fixedAssets'
+import { fixedAssets } from '~/data/assetStore'
 
 const { t } = useLocale()
 
@@ -35,7 +36,7 @@ const groupingOptions = [
   { id: 'grp-tax', value: 'taxGroup', label: 'By tax group' },
 ]
 const depreciationRows = computed<ImpactRow[]>(() =>
-  grouping.value === 'class' ? impactByClass : impactByTaxGroup,
+  grouping.value === 'class' ? impactByClass() : impactByTaxGroup(),
 )
 
 const depreciationTotal = computed(() => ({
@@ -44,13 +45,19 @@ const depreciationTotal = computed(() => ({
 }))
 
 const amortisationTotal = computed(() => ({
-  commercial: amortisationYtd.reduce((s, r) => s + (r.commercial ?? 0), 0),
-  fiscal: amortisationYtd.reduce((s, r) => s + (r.fiscal ?? 0), 0),
+  commercial: amortisationYtd.value.reduce((s, r) => s + (r.commercial ?? 0), 0),
+  fiscal: amortisationYtd.value.reduce((s, r) => s + (r.fiscal ?? 0), 0),
 }))
 
+/** Disposals and impairments in the year, each on both books. */
+const disposals = computed(() => disposalImpactRows())
+const impairments = computed(() => impairmentImpactRows())
+/** Net temporary difference and deferred tax, computed from the books. */
+const H = statementFigures
+
 /** The asset with no statutory group, excluded from every fiscal figure here. */
-const unclassified = computed(() => fixedAssets.filter((a) => a.taxGroup === null))
-const unclassifiedCharge = H.unclassifiedCommercialYTD
+const unclassified = computed(() => fixedAssets.value.filter((a) => a.taxGroup === null))
+const unclassifiedCharge = computed(() => H.value.unclassifiedAccounting)
 
 /** A signed figure, or the words that explain why there is not one. */
 function cell(v: number | null, absence = 'Not recognised') {
@@ -200,25 +207,25 @@ function onExport() {
           </tr>
         </thead>
         <tbody>
-          <tr class="fb__tr">
+          <tr v-for="r in disposals" :key="r.basis ?? r.label" class="fb__tr">
             <td class="fb__td">
-              {{ t('Gain or loss on disposal') }}
-              <span class="fb__basis">FA-0071 Cummins 250kVA Generator · {{ t('sold 15/08/2026') }}</span>
+              {{ t(r.label) }}
+              <span class="fb__basis">{{ r.basis }}</span>
             </td>
-            <td class="fb__td fb__td--num fb__td--pos">{{ formatIDR(H.disposalCommercialGain) }}</td>
-            <td class="fb__td fb__td--num fb__td--neg">{{ formatIDR(H.disposalFiscalLoss) }}</td>
-            <td class="fb__td fb__td--num">{{ formatIDR(H.disposalCommercialGain - H.disposalFiscalLoss) }}</td>
+            <td class="fb__td fb__td--num" :class="(r.commercial ?? 0) >= 0 ? 'fb__td--pos' : 'fb__td--neg'">{{ cell(r.commercial).text }}</td>
+            <td class="fb__td fb__td--num" :class="(r.fiscal ?? 0) >= 0 ? 'fb__td--pos' : 'fb__td--neg'">{{ cell(r.fiscal).text }}</td>
+            <td class="fb__td fb__td--num">{{ cell(diff(r.commercial, r.fiscal)).text }}</td>
           </tr>
-          <tr class="fb__tr">
+          <tr v-for="r in impairments" :key="r.basis ?? r.label" class="fb__tr">
             <td class="fb__td">
-              {{ t('Impairment') }}
-              <span class="fb__basis">FA-0068 Forklift Toyota 3T · {{ t('written down 30/06/2026') }}</span>
+              {{ t(r.label) }}
+              <span class="fb__basis">{{ r.basis }}</span>
             </td>
-            <td class="fb__td fb__td--num fb__td--neg">{{ formatIDR(H.impairmentCommercialOnly) }}</td>
+            <td class="fb__td fb__td--num fb__td--neg">{{ cell(r.commercial).text }}</td>
             <!-- The cell that must never be 0. Fiscal does not recognise an
                  impairment until the loss is realised. -->
             <td class="fb__td fb__td--num fb__td--absent">{{ t('Not recognised') }}</td>
-            <td class="fb__td fb__td--num">{{ formatIDR(H.impairmentCommercialOnly) }}</td>
+            <td class="fb__td fb__td--num">{{ cell(r.commercial).text }}</td>
           </tr>
         </tbody>
       </table>
@@ -234,7 +241,7 @@ function onExport() {
           {{ t('Deferred tax effect') }}
           <span class="fb__footnote">{{ t('at 22% · a disclosure, not a journal entry') }}</span>
         </span>
-        <span class="fb__footvalue">{{ formatIDR(H.deferredTaxAt22pct) }}</span>
+        <span class="fb__footvalue">{{ formatIDR(H.deferredTax) }}</span>
       </div>
     </div>
 

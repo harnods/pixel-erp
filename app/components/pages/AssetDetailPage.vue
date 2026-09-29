@@ -22,11 +22,10 @@ import { formatIDR } from '~/utils/currency'
 import { infoToast, successToast } from '~/utils/toasts'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { fixedAssets } from '~/data/fixedAssets'
+import { fixedAssets, assignTaxGroupTo } from '~/data/assetStore'
 import {
   findAsset, detailFigures, detailPanes, derivation, monthlySchedule, scheduleTotal, assetHistory,
 } from '~/data/fixedAssetDetail'
-import { assignedTaxGroup, assignTaxGroupTo } from '~/data/fixedAssetSession'
 import { assetTaxGroups } from '~/data/fixedAssets'
 
 // The shared detailMatch slot in [...slug].vue passes `order-id` to every
@@ -40,11 +39,7 @@ const router = useRouter()
 const asset = computed(() => findAsset(props.orderId))
 
 /** The statutory group, including one assigned in this session. */
-const effectiveTaxGroup = computed(() => {
-  const a = asset.value
-  if (!a) return null
-  return a.taxGroup ?? assignedTaxGroup(a.id)
-})
+const effectiveTaxGroup = computed(() => asset.value?.taxGroup ?? null)
 
 const figures = computed(() => (asset.value ? detailFigures(asset.value) : []))
 const panes = computed(() => (asset.value ? detailPanes(asset.value) : []))
@@ -81,8 +76,8 @@ const jumpSearch = ref('')
 const jumpResults = computed(() => {
   const q = jumpSearch.value.trim().toLowerCase()
   const rows = q
-    ? fixedAssets.filter((a) => a.name.toLowerCase().includes(q) || a.id.toLowerCase().includes(q))
-    : fixedAssets
+    ? fixedAssets.value.filter((a) => a.name.toLowerCase().includes(q) || a.id.toLowerCase().includes(q))
+    : fixedAssets.value
   return rows.slice(0, 40)
 })
 function jumpTo(id: string) {
@@ -94,7 +89,8 @@ function goRegister() { router.push('/assets') }
 
 function setTaxGroup(group: string) {
   if (!asset.value) return
-  assignTaxGroupTo(asset.value.id, group)
+  const r = assignTaxGroupTo(asset.value.id, group)
+  if (!r.ok) { infoToast(r.reason); return }
   successToast(t(`Statutory group set to ${group}`))
 }
 </script>

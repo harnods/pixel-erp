@@ -64,23 +64,23 @@ function periodEnd(month: number): string {
   return `${String(last).padStart(2, '0')}/${String(month + 1).padStart(2, '0')}/2026`
 }
 
-const pendingNumber = computed(() =>
-  nextJournalNumber(
-    periods.value.map((p) => runFor(p.month)?.journal).filter((j): j is string => !!j),
-  ),
-)
+// Read inside the computed so it re-reads after every post and reversal.
+const pendingNumber = computed(() => (periods.value, nextJournalNumber()))
 
 function confirmPost() {
   const p = confirming.value
   if (!p) return
-  postRun(p.month, pendingNumber.value, periodEnd(p.month))
-  successToast(t(`${p.label} posted · ${pendingNumber.value}`))
+  const number = pendingNumber.value
+  const r = postRun(p.month)
+  if (!r.ok) { infoToast(r.reason); return }
+  successToast(t(`${p.label} posted · ${number}`))
   confirming.value = null
 }
 
 function reverse(p: SchedulePeriod) {
-  reverseRun(p.month)
-  infoToast(t(`${p.label} reversed — the run is a draft again`))
+  const r = reverseRun(p.month)
+  if (!r.ok) { infoToast(r.reason); return }
+  infoToast(t(`${p.label} reversed by ${r.run.reversal?.journal}, the run is a draft again`))
 }
 
 function viewJournal(p: SchedulePeriod) {

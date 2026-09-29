@@ -19,7 +19,7 @@ import {
 import { formatIDR } from '~/utils/currency'
 import { successToast } from '~/utils/toasts'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
-import { fixedAssets } from '~/data/fixedAssets'
+import { fixedAssets, carryingForTest } from '~/data/assetStore'
 import { impairmentTests, recordImpairmentTest, type ImpairmentTest } from '~/data/fixedAssetSession'
 
 const { t } = useLocale()
@@ -32,7 +32,7 @@ const tests = impairmentTests
  * not an indicator exists. An obligation with no prompt gets met when someone
  * remembers.
  */
-const annualDue = computed(() => fixedAssets.filter((a) => a.indefiniteLife))
+const annualDue = computed(() => fixedAssets.value.filter((a) => a.indefiniteLife))
 const annualDone = computed(() =>
   annualDue.value.filter((a) => tests.value.some((x) => x.assetId === a.id && x.indicator.includes('Annual'))),
 )
@@ -54,7 +54,7 @@ const formSource = ref('')
 const formError = ref('')
 
 const assetOptions = computed(() =>
-  fixedAssets
+  fixedAssets.value
     .filter((a) => a.status !== 'Disposed')
     .map((a) => ({ value: a.id, label: `${a.id} · ${a.name}` })),
 )
@@ -73,9 +73,8 @@ const basisOptions: ImpairmentTest['basis'][] = [
 
 /** The carrying amount is read from the schedule, never typed. */
 const carryingOf = computed(() => {
-  const a = fixedAssets.find((x) => x.id === formAsset.value)
-  if (!a) return null
-  return a.bookValueCommercial ?? a.cost
+  if (!formAsset.value) return null
+  return carryingForTest(formAsset.value)
 })
 
 function openForm(assetId = '') {

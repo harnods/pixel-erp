@@ -17,9 +17,7 @@ import { MpIcon, MpButton } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import { successToast } from '~/utils/toasts'
 import { selfCheckRunAt, rerunSelfCheck } from '~/data/fixedAssetSession'
-import { tieCheckRows } from '~/data/fixedAssetScreens'
-import { ASSET_HEADLINE_FIGURES as H } from '~/data/fixedAssets'
-import { unclassifiedAssets } from '~/data/fixedAssetSession'
+import { selfCheckFor, computeSelfCheck, CURRENT_PERIOD, type CheckResult } from '~/data/assetStore'
 
 const { t } = useLocale()
 
@@ -32,8 +30,6 @@ interface Check {
   detail: string
 }
 
-const unclassified = unclassifiedAssets
-
 /**
  * Re-running restates the result and the time it was taken. The timestamp is
  * the point: a check retained against a period is what a preparer shows an
@@ -44,46 +40,31 @@ function runAgain() {
   successToast(t('Check re-run'))
 }
 
+/**
+ * The result retained against the period, as the store last ran it. The
+ * store re-runs it whenever the module changes, and Run again restates it.
+ */
+const result = computed(() => selfCheckFor(CURRENT_PERIOD) ?? { ...computeSelfCheck(CURRENT_PERIOD), runAt: '' })
+const tieCheckRows = computed(() => result.value.tie)
+
+/** What each check compares. The result and its detail come from the store. */
+const CHECK_TEXT: Record<CheckResult['id'], { name: string; what: string }> = {
+  C1: { name: 'Register to control account', what: 'The asset listing total against the general ledger balance' },
+  C2: { name: 'Schedule integrity', what: 'Every schedule sums to its depreciable base, both books' },
+  C3: { name: 'Tax book coverage', what: 'The tax book population against the register population' },
+  C4: { name: 'Export coverage', what: 'The statutory export population against the tax book' },
+}
+
 /** The four checks, in the order the design lists them. */
-const checks = computed<Check[]>(() => {
-  const tieBreak = tieCheckRows.find((r) => r.difference !== 0)
-  return [
-    {
-      id: 'C1',
-      name: t('Register to control account'),
-      what: t('The asset listing total against the general ledger balance'),
-      state: tieBreak ? 'failed' : 'passed',
-      detail: tieBreak
-        ? `${tieBreak.account} ${tieBreak.name} ${t('differs by')} ${formatIDR(tieBreak.difference)}`
-        : t('Every account agrees'),
-    },
-    {
-      id: 'C2',
-      name: t('Schedule integrity'),
-      what: t('Every schedule sums to its depreciable base, both books'),
-      state: 'passed',
-      detail: t('24 schedules checked, all tie'),
-    },
-    {
-      id: 'C3',
-      name: t('Tax book coverage'),
-      what: t('The tax book population against the register population'),
-      state: unclassified.value.length ? 'failed' : 'passed',
-      detail: unclassified.value.length
-        ? `${unclassified.value.length} ${t('asset in the register is not in the tax book:')} ${unclassified.value.map((a) => a.id).join(', ')}`
-        : t('Every asset is on both books'),
-    },
-    {
-      id: 'C4',
-      name: t('Export coverage'),
-      what: t('The statutory export population against the tax book'),
-      state: unclassified.value.length ? 'incomplete' : 'passed',
-      detail: unclassified.value.length
-        ? t('Cannot run until every asset carries a statutory group')
-        : t('The export covers the whole tax book'),
-    },
-  ]
-})
+const checks = computed<Check[]>(() =>
+  result.value.checks.map((c) => ({
+    id: c.id,
+    name: t(CHECK_TEXT[c.id].name),
+    what: t(CHECK_TEXT[c.id].what),
+    state: c.state,
+    detail: t(c.detail),
+  })),
+)
 
 const passed = computed(() => checks.value.filter((c) => c.state === 'passed').length)
 const failed = computed(() => checks.value.filter((c) => c.state === 'failed').length)

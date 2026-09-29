@@ -33,8 +33,8 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import { infoToast, successToast } from '~/utils/toasts'
 import AssetFiltersDrawer from '~/components/patterns/AssetFiltersDrawer.vue'
+import { fixedAssets } from '~/data/assetStore'
 import {
-  fixedAssets,
   assetClasses,
   assetBranches,
   assetTaxGroups,
@@ -113,7 +113,7 @@ const isFiltered = computed(() =>
 // ── Rows ────────────────────────────────────────────────────────────────────
 const filtered = computed<FixedAsset[]>(() => {
   const q = search.value.trim().toLowerCase()
-  return fixedAssets.filter((a) => {
+  return fixedAssets.value.filter((a) => {
     if (classFilter.value && a.class !== classFilter.value) return false
     if (branchFilter.value && a.branch !== branchFilter.value) return false
     if (statusFilter.value && a.status !== statusFilter.value) return false
@@ -216,7 +216,7 @@ const totals = computed(() => registerTotals(filtered.value))
 // ── The unclassified asset ──────────────────────────────────────────────────
 // Reported in the stats row rather than in a banner: it is one row out of
 // twenty-four, and the place to act on it is the filtered table.
-const unclassified = computed(() => fixedAssets.filter((a) => a.taxGroup === null))
+const unclassified = computed(() => fixedAssets.value.filter((a) => a.taxGroup === null))
 
 /** Filter the table down to the assets the fiscal total had to leave out. */
 function showUnclassified() {
