@@ -1,34 +1,27 @@
 /**
- * The depreciation schedule — FY2026 by period, both books.
+ * The depreciation schedule: FY2026 by period, both books.
  *
  * The register answers "what do we own"; the asset record answers "why is this
  * figure what it is". Neither answers the question the schedule exists for:
  * *when*. How much is booked each month, which months are closed, and what is
  * still coming.
  *
- * Rows are periods, not assets. Twelve rows read as a schedule at a glance,
- * where twenty-four asset rows for a single month read as a listing — and the
- * per-asset detail is still one expand away, which is where it belongs.
- *
- * Every figure is aggregated from `monthlySchedule()`, the same per-asset
- * arithmetic the asset record shows, so a period total and the rows behind it
- * can never disagree.
+ * Every figure is aggregated from the live per-asset schedules in the engine,
+ * the same rows the asset record shows, so a period total and the rows behind
+ * it can never disagree. Whether a period is posted is read from the runs in
+ * the store, so posting or reversing a period moves this screen.
  */
-import { fixedAssets, type FixedAsset } from './fixedAssets'
-import { monthlySchedule, type ScheduleMonth } from './fixedAssetDetail'
-import { CURRENT_MONTH, runFor } from './fixedAssetSession'
+import {
+  fixedAssets, ledgers, postedRunFor, draftRunFor, journalLinesFor, runLinesFor, peekJournalNumber,
+  CURRENT_PERIOD, FY_START,
+  type JournalLine,
+} from './assetStore'
+import {
+  chargeAt, accumulatedAt, isHeldDuring, isAfter, addPeriods, periodLabel, periodShort, eventLabel,
+} from './assetEngine'
+import type { FixedAsset } from './fixedAssets'
 
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-]
-const MONTH_SHORT = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-]
-
-/** The one disposal in FY2026 — FA-0071, sold 15/08/2026. */
-const DISPOSAL_MONTH = 7
+export type { JournalLine }
 
 /** One asset's contribution to a period — a roll-forward line. */
 export interface PeriodAssetRow {
@@ -96,32 +89,27 @@ export interface SchedulePeriod {
 }
 
 /**
- * FY2026, month by month, aggregated across the whole register.
- *
- * The full twelve months: the reason to open a schedule is to see what is
- * coming, and a table that stops at the current period answers only half the
- * question. Future months carry state 'projected'.
- */
-/**
  * How a period's charge was measured, when it is worth saying.
  *
- * Indonesian practice charges a full month in the month an asset enters
- * service — PSAK does not mandate day-proration and Pasal 11 works in whole
- * months — so the ordinary case needs no annotation. What a preparer actually
- * checks is the exception: the month an asset arrived, the month it left, the
- * month a basis was reset. Naming only those keeps the column scannable;
- * stamping 'Full month' on every untroubled row would bury them.
+ * The engine charges a full month in the month an asset enters service and
+ * in the month it leaves (the full-month convention, see assetEngine.ts), so
+ * the ordinary case needs no annotation. What a preparer checks is the
+ * exception: the month an asset arrived, the month it left, the month a basis
+ * was reset, the final month that takes the rounding residue.
  */
-function conventionFor(a: FixedAsset, r: ScheduleMonth, m: number): string | undefined {
-  if (r.accounting === null) return undefined
-  const [dd = '1', mm = '1', yyyy = '1970'] = a.acquired.split('/')
-  const acquiredThisMonth = Number(yyyy) === 2026 && Number(mm) - 1 === m
-  if (acquiredThisMonth) {
-    return `Full month · in service from ${dd}/${mm}`
-  }
-  if (a.status === 'Impaired' && m === 6) return 'Recomputed over the remaining life'
-  if (a.status === 'Disposed' && m === 7) return 'Full month · disposed 15/08'
-  return undefined
+function conventionFor(a: FixedAsset, p: string): string | undefined {
+  const l = ledgers.value[a.id]!
+  const acc = l.books.accounting
+  const row = acc.live.find((r) => r.period === p)
+  if (!row || row.adjustmentOnly) return undefined
+  const notes: string[] = []
+  if (p === l.startPeriod) notes.push(`Full month · in service from ${l.inServiceDate.slice(0, 5)}`)
+  const basis = acc.bases.find((b) => b.id === row.basisId)!
+  if (basis.fromPeriod === p && basis.cause.kind !== 'acquisition') notes.push('Recomputed over the remaining life')
+  if (acc.disposal?.period === p) notes.push(`Full month · disposed ${acc.disposal.date.slice(0, 5)}`)
+  const last = acc.live.filter((r) => !r.adjustmentOnly).at(-1)
+  if (last?.period === p && !acc.disposal) notes.push('Final month · takes the rounding residue')
+  return notes.length ? notes.join(' · ') : undefined
 }
 
 /**
@@ -132,98 +120,62 @@ function conventionFor(a: FixedAsset, r: ScheduleMonth, m: number): string | und
  * question. Future months carry state 'projected'.
  */
 export function fy2026Schedule(): SchedulePeriod[] {
-  // One pass per asset rather than per asset per month — monthlySchedule()
-  // rebuilds an asset's whole run on every call.
-  const perAsset = fixedAssets.map((a) => ({ asset: a, months: monthlySchedule(a, 12) }))
-
-  /**
-   * Accumulated depreciation carried into January 2026.
-   *
-   * Derived by subtracting the year's charges from the accumulated implied by
-   * the 30/09 book value, so the roll-forward lands exactly on the figure the
-   * register and the asset record already show rather than on a second
-   * estimate of it.
-   */
-  const opening = new Map<string, number | null>()
-  for (const { asset, months } of perAsset) {
-    const chargedToSep = months
-      .slice(0, CURRENT_MONTH + 1)
-      .reduce((s, r) => s + (r.accounting ?? 0), 0)
-
-    if (asset.bookValueCommercial !== null) {
-      const accumAtSep = asset.cost - asset.bookValueCommercial
-      opening.set(asset.id, accumAtSep - chargedToSep)
-      continue
+  const assets = fixedAssets.value
+  return Array.from({ length: 12 }, (_, m) => {
+    const p = addPeriods(FY_START, m)
+    const prev = addPeriods(p, -1)
+    const allRows: PeriodAssetRow[] = []
+    for (const asset of assets) {
+      const l = ledgers.value[asset.id]!
+      if (!isHeldDuring(l, p)) continue
+      const acc = chargeAt(l, 'accounting', p)
+      const tax = chargeAt(l, 'tax', p)
+      const open = accumulatedAt(l.books.accounting, prev) ?? 0
+      const row = l.books.accounting.live.find((r) => r.period === p)
+      // The roll-forward adds the period's charge only. A write-down in the
+      // period sits in the closing balance on the asset record, and the
+      // following period's opening picks it up.
+      const close = row ? row.closingAccumulated : accumulatedAt(l.books.accounting, p) ?? open
+      const events = l.events.filter((e) => e.kind !== 'acquisition' && e.kind !== 'tax-classification' && e.period === p)
+      allRows.push({
+        asset,
+        accounting: acc.charge,
+        tax: tax.charge,
+        ...(acc.charge === null ? { accountingAbsent: acc.absent } : {}),
+        ...(tax.charge === null ? { taxAbsent: tax.absent } : {}),
+        ...(p === l.startPeriod ? { event: 'Entered service' } : events.length ? { event: events.map(eventLabel).join(' · ') } : {}),
+        openingAccumulated: open,
+        closingAccumulated: close,
+        closingBookValue: asset.cost - close,
+        convention: conventionFor(asset, p),
+      })
     }
 
-    // A disposed asset has no book value — it is no longer held — but it still
-    // charged depreciation up to the month it left, so it needs an opening
-    // balance or the roll-forward will not add up. Derive it from the asset's
-    // own life: months elapsed before January, at cost ÷ life.
-    if (!asset.commercialLifeMonths) { opening.set(asset.id, null); continue }
-    const [dd = '1', mm = '1', yyyy = '1970'] = asset.acquired.split('/')
-    const acq = new Date(Number(yyyy), Number(mm) - 1, Number(dd))
-    const monthsBefore = Math.max(0, (2026 - acq.getFullYear()) * 12 - acq.getMonth())
-    const rate = asset.cost / asset.commercialLifeMonths
-    opening.set(asset.id, Math.round(rate * monthsBefore))
-  }
-
-  // Running accumulated, advanced month by month as the map is built.
-  const running = new Map<string, number | null>(opening)
-
-  return MONTH_NAMES.map((name, m) => {
-    const allRows: PeriodAssetRow[] = perAsset
-      .map(({ asset, months }): PeriodAssetRow | null => {
-        const r = months[m]
-        if (!r) return null
-
-        const open = running.get(asset.id) ?? null
-        const close = open === null || r.accounting === null ? open : open + r.accounting
-        running.set(asset.id, close)
-
-        return {
-          asset,
-          accounting: r.accounting,
-          tax: r.tax,
-          accountingAbsent: r.accountingAbsent,
-          taxAbsent: r.taxAbsent,
-          event: r.event,
-          openingAccumulated: open,
-          closingAccumulated: close,
-          closingBookValue: close === null ? null : asset.cost - close,
-          convention: conventionFor(asset, r, m),
-        }
-      })
-      .filter((r): r is PeriodAssetRow => r !== null)
-
-    // The roll-forward covers the assets the register still holds at the end of
-    // the period — including fully depreciated ones, which carry accumulated
+    // The roll-forward covers the assets the register holds during the
+    // period, including fully depreciated ones, which carry accumulated
     // depreciation and a book value in months they charge nothing. An asset
-    // stays in until the month it is disposed, so b/f + charge = c/f holds on
-    // every row; from the following month its cost and accumulated leave the
-    // balance entirely, which is what derecognition means.
-    const held = allRows.filter((r) => r.asset.status !== 'Disposed' || m <= DISPOSAL_MONTH)
-    const cost = held.reduce((s, r) => s + r.asset.cost, 0)
-    const openingAccumulated = held.reduce((s, r) => s + (r.openingAccumulated ?? 0), 0)
-    const closingAccumulated = held.reduce((s, r) => s + (r.closingAccumulated ?? 0), 0)
-    const closingBookValue = held.reduce((s, r) => s + (r.closingBookValue ?? 0), 0)
+    // stays in until the month it is disposed; from the following month its
+    // cost and accumulated leave the balance, which is what derecognition means.
+    const cost = allRows.reduce((s, r) => s + r.asset.cost, 0)
+    const openingAccumulated = allRows.reduce((s, r) => s + (r.openingAccumulated ?? 0), 0)
+    const closingAccumulated = allRows.reduce((s, r) => s + (r.closingAccumulated ?? 0), 0)
+    const closingBookValue = allRows.reduce((s, r) => s + (r.closingBookValue ?? 0), 0)
 
-    // An asset that is not in service, disposed or past its life contributes
-    // nothing and would pad the breakdown with rows that only say "nothing".
+    // An asset past its life or not amortised contributes nothing and would
+    // pad the breakdown with rows that only say "nothing".
     const rows = allRows.filter((r) => r.accounting !== null || r.tax !== null)
-
     const accounting = rows.reduce((s, r) => s + (r.accounting ?? 0), 0)
     const taxRows = rows.filter((r) => r.tax !== null)
     const tax = taxRows.length ? taxRows.reduce((s, r) => s + (r.tax as number), 0) : null
 
     return {
       month: m,
-      label: `${name} 2026`,
-      short: `${MONTH_SHORT[m]} 2026`,
+      label: periodLabel(p),
+      short: periodShort(p),
       accounting,
       tax,
       difference: tax === null ? null : accounting - tax,
-      state: m > CURRENT_MONTH ? 'projected' : runFor(m) ? 'posted' : 'draft',
+      state: isAfter(p, CURRENT_PERIOD) ? 'projected' : postedRunFor(p) ? 'posted' : 'draft',
       assetCount: rows.filter((r) => r.accounting !== null).length,
       cost,
       openingAccumulated,
@@ -253,70 +205,18 @@ export function scheduleTotals(periods: SchedulePeriod[]) {
 }
 
 /**
- * The journal a period's run will post.
- *
- * Only the accounting charge reaches the ledger. Indonesian statutory
- * reporting is a computation on the commercial ledger rather than a parallel
- * one, so a tax line here would overstate depreciation expense with nothing
- * appearing out of balance — the tax figure is reported, never posted.
- *
- * Expense is split by asset class because that is how the chart of accounts
- * separates it; accumulated depreciation is credited the same way.
+ * The journal a period's run will post: the accounting charge only (LR-2),
+ * split by asset class because that is how the chart of accounts separates
+ * it. Read from the generated draft when there is one, so the preview is
+ * exactly what posting will write.
  */
-export interface JournalLine {
-  account: string
-  description: string
-  debit: number | null
-  credit: number | null
-}
-
-const EXPENSE_ACCOUNT: Record<string, string> = {
-  'Buildings': '6210 · Depreciation — buildings',
-  'Production machinery': '6220 · Depreciation — machinery',
-  'Vehicles': '6230 · Depreciation — vehicles',
-  'IT equipment': '6240 · Depreciation — IT equipment',
-  'Equipment': '6250 · Depreciation — equipment',
-  'Furniture': '6260 · Depreciation — furniture',
-  'Intangible assets': '6270 · Amortisation — intangibles',
-}
-const ACCUM_ACCOUNT: Record<string, string> = {
-  'Buildings': '1610 · Accumulated depreciation — buildings',
-  'Production machinery': '1620 · Accumulated depreciation — machinery',
-  'Vehicles': '1630 · Accumulated depreciation — vehicles',
-  'IT equipment': '1640 · Accumulated depreciation — IT equipment',
-  'Equipment': '1650 · Accumulated depreciation — equipment',
-  'Furniture': '1660 · Accumulated depreciation — furniture',
-  'Intangible assets': '1670 · Accumulated amortisation — intangibles',
-}
-
 export function journalFor(period: SchedulePeriod): JournalLine[] {
-  const byClass = new Map<string, number>()
-  for (const r of period.rows) {
-    if (r.accounting === null) continue
-    byClass.set(r.asset.class, (byClass.get(r.asset.class) ?? 0) + r.accounting)
-  }
-  const classes = [...byClass.entries()].sort((a, b) => b[1] - a[1])
-
-  const debits: JournalLine[] = classes.map(([cls, amount]) => ({
-    account: EXPENSE_ACCOUNT[cls] ?? '6299 · Depreciation — other',
-    description: cls,
-    debit: amount,
-    credit: null,
-  }))
-  const credits: JournalLine[] = classes.map(([cls, amount]) => ({
-    account: ACCUM_ACCOUNT[cls] ?? '1699 · Accumulated depreciation — other',
-    description: cls,
-    debit: null,
-    credit: amount,
-  }))
-  return [...debits, ...credits]
+  const p = addPeriods(FY_START, period.month)
+  const draft = draftRunFor(p)
+  return journalLinesFor(draft ? draft.lines : runLinesFor(p))
 }
 
-/** The next journal number in the FY2026 sequence. */
-export function nextJournalNumber(existing: string[]): string {
-  const highest = existing
-    .map((j) => Number(j.split('-').at(-1)))
-    .filter((n) => Number.isFinite(n))
-    .reduce((a, b) => Math.max(a, b), 0)
-  return `JV-2026-${String(highest + 123).padStart(4, '0')}`
+/** The number the next journal will take. */
+export function nextJournalNumber(_existing?: string[]): string {
+  return peekJournalNumber()
 }

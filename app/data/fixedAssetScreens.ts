@@ -1,15 +1,24 @@
 /**
  * The tables behind the fixed-asset screens other than the register.
  *
- * Same sample company and the same figures as `fixedAssets.ts`: everything
- * here ties to the headline totals in that file. Several rows exist to show a
- * divergence between the two books rather than to fill a table, so the values
- * should not be recomputed or rounded.
+ * Every figure here is computed from the session store (`assetStore.ts`),
+ * which replays each asset's event log through the engine. Nothing money-
+ * valued is stored in this file, so an action on any screen moves these rows.
+ * What remains static is reference data: custody, counts, leases, the class
+ * master and the settings switches.
  *
  * Where the design renders an em dash for a field that does not apply, the
  * value is `null` here. The dash is a display decision and belongs to the
  * component, not to the data.
  */
+import { computed } from 'vue'
+import {
+  fixedAssets, ledgers, chargeRange, fyFigures, statutoryLines, tieRows,
+  CURRENT_PERIOD, FY_START,
+  type TieRow,
+} from './assetStore'
+import { STATUTORY_GROUPS, type FixedAsset } from './fixedAssets'
+import { formatLife, isAfter, isBefore, rupiah, type Period } from './assetEngine'
 
 // ── Asset profit and loss impact ────────────────────────────────────────────
 
@@ -22,58 +31,119 @@ export interface ImpactRow {
   /** How the figure was arrived at, shown under the label. */
   basis?: string | null
   assets?: number
+  /** The asset a single-asset line is about, for a link. */
+  assetId?: string
 }
 
-/** Depreciation grouped by asset class. */
-export const impactByClass: ImpactRow[] = [
-  { label: 'Buildings', commercial: 159500000, fiscal: 195500000, assets: 2 },
-  { label: 'Production machinery', commercial: 120000000, fiscal: 84843750, assets: 2 },
-  { label: 'Vehicles', commercial: 129187500, fiscal: 92765625, assets: 3 },
-  { label: 'Equipment', commercial: 106671875, fiscal: 128187500, assets: 6 },
-  { label: 'IT equipment', commercial: 36468750, fiscal: 36468750, assets: 3 },
-  { label: 'Furniture', commercial: 13921875, fiscal: 17718750, assets: 3 },
-]
+/** Assets the fiscal statement covers: on the register this FY and on both books. */
+function inStatement(a: FixedAsset, type: FixedAsset['type'], p: Period): boolean {
+  const l = ledgers.value[a.id]!
+  if (a.type !== type || !l.books.tax) return false
+  if (isAfter(l.startPeriod, p)) return false
+  return !(l.disposedIn && isBefore(l.disposedIn, FY_START))
+}
+
+function grouped(key: (a: FixedAsset) => string, p: Period): ImpactRow[] {
+  const rows = new Map<string, ImpactRow>()
+  for (const a of fixedAssets.value) {
+    if (!inStatement(a, 'Tangible', p)) continue
+    const k = key(a)
+    const r = rows.get(k) ?? { label: k, commercial: 0, fiscal: 0, assets: 0 }
+    r.commercial = (r.commercial ?? 0) + (chargeRange(a.id, 'accounting', FY_START, p) ?? 0)
+    r.fiscal = (r.fiscal ?? 0) + (chargeRange(a.id, 'tax', FY_START, p) ?? 0)
+    r.assets = (r.assets ?? 0) + 1
+    rows.set(k, r)
+  }
+  return [...rows.values()].sort((x, y) => (y.commercial ?? 0) - (x.commercial ?? 0))
+}
+
+/** Depreciation, FY2026 to the period, grouped by asset class. Tangible, classified. */
+export function impactByClass(p: Period = CURRENT_PERIOD): ImpactRow[] {
+  return grouped((a) => a.class, p)
+}
 
 /**
  * The same depreciation grouped by statutory group. This is the grouping the
  * tax return expects, which is why both views exist.
  */
-export const impactByTaxGroup: ImpactRow[] = [
-  { label: 'Permanent building · 20 yr', commercial: 144000000, fiscal: 180000000, assets: 1 },
-  { label: 'Non-permanent building · 10 yr', commercial: 15500000, fiscal: 15500000, assets: 1 },
-  { label: 'Tax group 1 · 4 yr', commercial: 64359375, fiscal: 68156250, assets: 7 },
-  { label: 'Tax group 2 · 8 yr', commercial: 145406250, fiscal: 147375000, assets: 5 },
-  { label: 'Tax group 3 · 16 yr', commercial: 196484375, fiscal: 144453125, assets: 5 },
-]
+export function impactByTaxGroup(p: Period = CURRENT_PERIOD): ImpactRow[] {
+  return grouped((a) => STATUTORY_GROUPS[a.taxGroup!]?.label ?? a.taxGroup!, p)
+}
+
+function yearsLabel(months: number | null): string {
+  if (months === null) return 'Indefinite life'
+  return months % 12 === 0 ? `${months / 12} yr` : formatLife(months)
+}
 
 /**
- * Amortisation, FY2026 to September.
+ * Amortisation, FY2026 to the period, one line per intangible.
  *
- * Goodwill and the registered brand carry `commercial: null` — an indefinite
- * life means no commercial schedule exists, not one that happens to charge
- * nothing. Rendering 0 would claim the opposite.
+ * An indefinite-life asset carries `commercial: null`: no commercial schedule
+ * exists, not one that happens to charge nothing. Rendering 0 would claim the
+ * opposite.
  */
-export const amortisationYtd: ImpactRow[] = [
-  { label: 'FA-0091 Goodwill — PT Mitra Logistik', basis: 'Indefinite life accounting · Tax group 4, 20 yr tax', commercial: null, fiscal: 90000000 },
-  { label: 'FA-0093 Registered brand — Central Perk', basis: 'Indefinite life accounting · Tax group 4, 20 yr tax', commercial: null, fiscal: 33750000 },
-  { label: 'FA-0092 Software licence — WMS', basis: '5 yr accounting · Tax group 1, 4 yr tax', commercial: 72000000, fiscal: 90000000 },
-  { label: 'FA-0094 Patent — conveyor mechanism', basis: '10 yr accounting · Tax group 2, 8 yr tax', commercial: 24000000, fiscal: 30000000 },
-]
+export function amortisationRows(from: Period = FY_START, to: Period = CURRENT_PERIOD): ImpactRow[] {
+  return fixedAssets.value
+    .filter((a) => inStatement(a, 'Intangible', to))
+    .map((a) => ({
+      label: `${a.id} ${a.name}`,
+      assetId: a.id,
+      basis: `${yearsLabel(a.commercialLifeMonths)} accounting · ${a.taxGroup}, ${yearsLabel(a.fiscalLifeMonths)} tax`,
+      commercial: a.commercialLifeMonths === null ? null : chargeRange(a.id, 'accounting', from, to) ?? 0,
+      fiscal: chargeRange(a.id, 'tax', from, to) ?? 0,
+    }))
+}
 
-/** The same four intangibles, September only. */
-export const amortisationSeptember: ImpactRow[] = [
-  { label: 'FA-0091 Goodwill — PT Mitra Logistik', basis: 'Indefinite life accounting · Tax group 4, 20 yr tax', commercial: null, fiscal: 10000000 },
-  { label: 'FA-0093 Registered brand — Central Perk', basis: 'Indefinite life accounting · Tax group 4, 20 yr tax', commercial: null, fiscal: 3750000 },
-  { label: 'FA-0092 Software licence — WMS', basis: '5 yr accounting · Tax group 1, 4 yr tax', commercial: 8000000, fiscal: 10000000 },
-  { label: 'FA-0094 Patent — conveyor mechanism', basis: '10 yr accounting · Tax group 2, 8 yr tax', commercial: 2666667, fiscal: 3333333 },
-]
+/** FY2026 amortisation to the current period. */
+export const amortisationYtd = computed(() => amortisationRows())
+
+/** Gains and losses on disposal in the year, both books. */
+export function disposalImpactRows(p: Period = CURRENT_PERIOD): ImpactRow[] {
+  const out: ImpactRow[] = []
+  for (const a of fixedAssets.value) {
+    const l = ledgers.value[a.id]!
+    const dA = l.books.accounting.disposal
+    if (!l.books.tax || !dA || isBefore(dA.period, FY_START) || isAfter(dA.period, p)) continue
+    out.push({
+      label: 'Gain or loss on disposal',
+      basis: `${a.id} ${a.name} · sold ${dA.date}`,
+      assetId: a.id,
+      commercial: dA.gainLoss,
+      fiscal: l.books.tax.disposal?.gainLoss ?? null,
+    })
+  }
+  return out
+}
+
+/** Impairment losses in the year. The tax book does not recognise them. */
+export function impairmentImpactRows(p: Period = CURRENT_PERIOD): ImpactRow[] {
+  const out: ImpactRow[] = []
+  for (const a of fixedAssets.value) {
+    const l = ledgers.value[a.id]!
+    if (!l.books.tax) continue
+    for (const i of l.books.accounting.impairments) {
+      if (i.loss === 0 || isBefore(i.period, FY_START) || isAfter(i.period, p)) continue
+      out.push({
+        label: 'Impairment',
+        basis: `${a.id} ${a.name} · written down ${i.date}`,
+        assetId: a.id,
+        commercial: -i.loss,
+        fiscal: null,
+      })
+    }
+  }
+  return out
+}
+
+/** The statement's headline figures: difference, deferred tax, exclusions. */
+export const statementFigures = computed(() => fyFigures())
 
 // ── Commercial to fiscal difference ─────────────────────────────────────────
 
 export interface DifferenceRow {
   id: string | null
   name: string
-  /** The gap between the two books, in rupiah. */
+  /** The gap between the two books, in rupiah. Summed, it is the net temporary difference. */
   difference: number | null
   /** Why they disagree. The report exists to answer this, not to state the gap. */
   reason: string
@@ -81,72 +151,42 @@ export interface DifferenceRow {
   tag: string | null
 }
 
-/** Per asset, largest divergence first. */
-export const differenceByAsset: DifferenceRow[] = [
-  {
-    id: 'FA-0071',
-    name: 'Cummins 250kVA Generator',
-    difference: 122343750,
-    reason: 'Accounting gain of 51.250.000 against a tax loss of 71.093.750 — the tax basis was far higher at disposal',
-    tag: 'Disposal',
-  },
-  {
-    id: 'FA-0012',
-    name: 'Head Office Building',
-    difference: 36000000,
-    reason: 'Tax life shorter than accounting — 20 years against 25',
-    tag: null,
-  },
-  {
-    id: 'FA-0004',
-    name: 'Building Central AC',
-    difference: 22500000,
-    reason: 'Accounting life exhausted in 2024, tax still depreciating until 2027',
-    tag: null,
-  },
-  {
-    id: 'FA-0021',
-    name: 'Medan Partitions & Desks',
-    difference: 3796875,
-    reason: 'Tax group 1 gives 4 tax years against 8 accounting',
-    tag: null,
-  },
-  {
-    id: 'FA-0068',
-    name: 'Forklift Toyota 3T',
-    difference: 1125000,
-    reason: 'Post-impairment accounting charge of 4.000.000 runs below the tax 4.375.000',
-    tag: null,
-  },
-  {
-    id: 'FA-0068',
-    name: 'Forklift Toyota 3T',
-    difference: -17250000,
-    reason: 'Impairment to 184.000.000 recognised in the accounts only — not deductible',
-    tag: 'Impairment',
-  },
-  {
-    id: 'FA-0071',
-    name: 'Cummins 250kVA Generator',
-    difference: -16875000,
-    reason: 'Depreciation to disposal — tax life 16 years against 10 accounting',
-    tag: null,
-  },
-  {
-    id: 'FA-0031',
-    name: 'Production Machine Line A',
-    difference: -35156250,
-    reason: 'Tax life longer than accounting — 16 years against 10',
-    tag: null,
-  },
-  {
-    id: 'FA-0047',
-    name: 'Toyota Innova B 1234 XYZ',
-    difference: -21656250,
-    reason: 'Tax life longer than accounting — 8 years against 5',
-    tag: null,
-  },
-]
+/** Per asset and event, tangible and classified, largest divergence first. */
+export function differenceByAsset(p: Period = CURRENT_PERIOD): DifferenceRow[] {
+  const rows: DifferenceRow[] = []
+  for (const a of fixedAssets.value) {
+    if (!inStatement(a, 'Tangible', p)) continue
+    const l = ledgers.value[a.id]!
+    const acc = chargeRange(a.id, 'accounting', FY_START, p) ?? 0
+    const tax = chargeRange(a.id, 'tax', FY_START, p) ?? 0
+    if (acc !== tax) {
+      const accLife = a.commercialLifeMonths
+      const taxLife = a.fiscalLifeMonths
+      let reason: string
+      if (acc === 0) reason = `Accounting life ended, tax still depreciating over ${yearsLabel(taxLife)}`
+      else if (tax === 0) reason = `Tax life ended, accounting still depreciating over ${yearsLabel(accLife)}`
+      else if (a.status === 'Impaired') reason = `Post-impairment accounting charge runs below the tax charge, which the impairment does not move`
+      else reason = `Tax life ${taxLife! < accLife! ? 'shorter' : 'longer'} than accounting: ${yearsLabel(taxLife)} against ${yearsLabel(accLife)}`
+      rows.push({ id: a.id, name: a.name, difference: tax - acc, reason, tag: null })
+    }
+    for (const i of l.books.accounting.impairments) {
+      if (i.loss === 0 || isBefore(i.period, FY_START) || isAfter(i.period, p)) continue
+      rows.push({
+        id: a.id, name: a.name, difference: -i.loss, tag: 'Impairment',
+        reason: `Impairment to ${rupiah(i.recoverable)} recognised in the accounts only, not deductible`,
+      })
+    }
+    const dA = l.books.accounting.disposal
+    const dT = l.books.tax?.disposal
+    if (dA && dT && !isBefore(dA.period, FY_START) && !isAfter(dA.period, p)) {
+      rows.push({
+        id: a.id, name: a.name, difference: dA.gainLoss - dT.gainLoss, tag: 'Disposal',
+        reason: `Accounting ${dA.gainLoss >= 0 ? 'gain' : 'loss'} of ${rupiah(Math.abs(dA.gainLoss))} against a tax ${dT.gainLoss >= 0 ? 'gain' : 'loss'} of ${rupiah(Math.abs(dT.gainLoss))}: the tax carrying amount differed at disposal`,
+      })
+    }
+  }
+  return rows.sort((x, y) => Math.abs(y.difference ?? 0) - Math.abs(x.difference ?? 0))
+}
 
 // ── Statutory export (Lampiran 9) ───────────────────────────────────────────
 
@@ -154,14 +194,12 @@ export interface StatutoryRow {
   [k: string]: string | number | null
 }
 
-/** Half 1: tangible assets. */
-export const statutoryHalf1: StatutoryRow[] = [
-  { taxGroup: 'Tax group 1 · 4 yr', assets: 7, cost: 727500000, charge2026: 68156250, fiscalBookValue: 189708333 },
-  { taxGroup: 'Tax group 2 · 8 yr', assets: 5, cost: 1572000000, charge2026: 147375000, fiscalBookValue: 716677083 },
-  { taxGroup: 'Tax group 3 · 16 yr', assets: 5, cost: 3210000000, charge2026: 144453125, fiscalBookValue: 2149661458 },
-  { taxGroup: 'Permanent building · 20 yr', assets: 1, cost: 4800000000, charge2026: 180000000, fiscalBookValue: 3220000000 },
-  { taxGroup: 'Non-permanent building · 10 yr', assets: 1, cost: 310000000, charge2026: 15500000, fiscalBookValue: 294500000 },
-]
+/** Half 1: tangible assets, by statutory group. */
+export function statutoryHalf1(p: Period = CURRENT_PERIOD): StatutoryRow[] {
+  return statutoryLines(p, 'Tangible').map((l) => ({
+    taxGroup: l.key, assets: l.assets, cost: l.cost, charge2026: l.charge, fiscalBookValue: l.bookValue,
+  }))
+}
 
 /**
  * Half 2: intangible assets (Daftar Amortisasi).
@@ -169,12 +207,11 @@ export const statutoryHalf1: StatutoryRow[] = [
  * The filing has two halves. An export covering only the first completes half
  * a return, which is a different promise from completing one.
  */
-export const statutoryHalf2: StatutoryRow[] = [
-  { statutoryCode: '0607 Goodwill', assets: 1, cost: 2400000000, charge2026: 90000000, fiscalBookValue: 2090000000 },
-  { statutoryCode: '0603 Brand', assets: 1, cost: 900000000, charge2026: 33750000, fiscalBookValue: 750000000 },
-  { statutoryCode: '0699 Other intangible', assets: 1, cost: 480000000, charge2026: 90000000, fiscalBookValue: 270000000 },
-  { statutoryCode: '0601 Patent', assets: 1, cost: 320000000, charge2026: 30000000, fiscalBookValue: 236666667 },
-]
+export function statutoryHalf2(p: Period = CURRENT_PERIOD): StatutoryRow[] {
+  return statutoryLines(p, 'Intangible').map((l) => ({
+    statutoryCode: l.key, assets: l.assets, cost: l.cost, charge2026: l.charge, fiscalBookValue: l.bookValue,
+  }))
+}
 
 /** The eleven statutory intangible codes. Buildings groups do not apply. */
 export const intangibleTaxonomy: string[] = [
@@ -240,12 +277,40 @@ export const varianceRows = [
 
 // ── Approvals ───────────────────────────────────────────────────────────────
 
-/** Authorisation attaches to the decision, not to the asset. */
-export const approvalRows = [
-  { id: 'AP-0031', what: 'Disposal · FA-0071 Cummins 250kVA Generator', raisedBy: 'Rizal Candra', raisedOn: '15/08/2026', detail: 'Proceeds 400.000.000 · accounting gain 51.250.000, tax loss 71.093.750', status: 'Awaiting you' },
-  { id: 'AP-0032', what: 'Write-off · FA-0004 Building Central AC', raisedBy: 'Fitri Handayani', raisedOn: '03/09/2026', detail: 'Book value 0 · 10.000.000 still on the tax basis', status: 'Awaiting you' },
-  { id: 'AP-0033', what: 'Partial disposal · FA-0051 Office Chairs (6 of 60)', raisedBy: 'Rudi Santoso', raisedOn: '10/09/2026', detail: 'Raised from count session SO-2026-03', status: 'Awaiting you' },
-]
+export interface ApprovalRow {
+  id: string
+  what: string
+  raisedBy: string
+  raisedOn: string
+  detail: string
+  status: string
+}
+
+/**
+ * Authorisation attaches to the decision, not to the asset. The figures in
+ * each request are read from the engine, so they are the figures the
+ * decision would post.
+ */
+export const approvalRows = computed<ApprovalRow[]>(() => {
+  const l71 = ledgers.value['FA-0071']!
+  const dA = l71.books.accounting.disposal
+  const dT = l71.books.tax?.disposal
+  const fa04 = fixedAssets.value.find((a) => a.id === 'FA-0004')!
+  const gl = (n: number | undefined) => (n === undefined ? 'not computed' : `${n >= 0 ? 'gain' : 'loss'} ${Math.abs(n).toLocaleString('id-ID')}`)
+  return [
+    {
+      id: 'AP-0031', what: 'Disposal · FA-0071 Cummins 250kVA Generator', raisedBy: 'Rizal Candra', raisedOn: '15/08/2026',
+      detail: `Proceeds ${(dA?.proceeds ?? 0).toLocaleString('id-ID')} · accounting ${gl(dA?.gainLoss)}, tax ${gl(dT?.gainLoss)}`,
+      status: 'Awaiting you',
+    },
+    {
+      id: 'AP-0032', what: 'Write-off · FA-0004 Building Central AC', raisedBy: 'Fitri Handayani', raisedOn: '03/09/2026',
+      detail: `Book value ${(fa04.bookValueCommercial ?? 0).toLocaleString('id-ID')} · ${(fa04.bookValueFiscal ?? 0).toLocaleString('id-ID')} still on the tax basis`,
+      status: 'Awaiting you',
+    },
+    { id: 'AP-0033', what: 'Partial disposal · FA-0051 Office Chairs (6 of 60)', raisedBy: 'Rudi Santoso', raisedOn: '10/09/2026', detail: 'Raised from count session SO-2026-03', status: 'Awaiting you' },
+  ]
+})
 
 // ── Leases ──────────────────────────────────────────────────────────────────
 
@@ -261,29 +326,14 @@ export const leaseRows = [
 
 // ── Period self-check ───────────────────────────────────────────────────────
 
-export interface TieRow {
-  account: string
-  name: string
-  subLedger: number
-  generalLedger: number
-  /** Non-zero means the two disagree and the check has found something. */
-  difference: number
-}
+export type { TieRow }
 
 /**
- * The sub-ledger against the ledger, account by account.
- *
- * One row deliberately does not tie: depreciation expense is out by 4.000.000,
- * which is the impairment-adjusted charge on FA-0068. A self-check that always
- * passes proves nothing, so the sample data contains something to find.
+ * The sub-ledger against the ledger, account by account, at the current
+ * period end. The ledger side is built from the journals the module posted,
+ * so a journal the register does not explain shows here as a difference.
  */
-export const tieCheckRows: TieRow[] = [
-  { account: '1-1600', name: 'Fixed assets — at cost', subLedger: 14309500000, generalLedger: 14309500000, difference: 0 },
-  { account: '1-1700', name: 'Accumulated depreciation', subLedger: -3569854168, generalLedger: -3569854168, difference: 0 },
-  { account: '6-5100', name: 'Depreciation expense — YTD', subLedger: 605500000, generalLedger: 609500000, difference: -4000000 },
-  { account: '6-5200', name: 'Impairment loss', subLedger: 17250000, generalLedger: 17250000, difference: 0 },
-  { account: '6-5300', name: 'Gain on disposal of assets', subLedger: -51250000, generalLedger: -51250000, difference: 0 },
-]
+export const tieCheckRows = computed<TieRow[]>(() => tieRows())
 
 // ── Asset settings ──────────────────────────────────────────────────────────
 
@@ -333,78 +383,3 @@ export const settingToggles: { head: string; items: SettingToggle[] }[] = [
     ],
   },
 ]
-
-// ── Derivation ──────────────────────────────────────────────────────────────
-
-/**
- * The periods the derivation panel can be opened for, and the inputs each one
- * used. `m31` and `m68` are months in service for FA-0031 and FA-0068;
- * `open68` is FA-0068's opening basis, which changes in July because the
- * June impairment reset it.
- */
-export const derivationPeriods = {
-  jul: { label: 'July 2026', start: '01/07/2026', end: '31/07/2026', m31: 37, m68: 51, open68: 184000000, jv: 'JV-2026-07-012', posted: '31/07/2026' },
-  aug: { label: 'August 2026', start: '01/08/2026', end: '31/08/2026', m31: 38, m68: 52, open68: 180000000, jv: 'JV-2026-08-013', posted: '31/08/2026' },
-  sep: { label: 'September 2026', start: '01/09/2026', end: '30/09/2026', m31: 39, m68: 53, open68: 176000000, jv: 'JV-2026-09-014', posted: '30/09/2026' },
-  ytd: { label: 'FY2026 to 30/09/2026', start: '01/01/2026', end: '30/09/2026', m31: 39, m68: 53, open68: 184000000, jv: '9 journals · JV-2026-01-006 to JV-2026-09-014', posted: 'Jan–Sep 2026' },
-} as const
-
-// ── Asset record ────────────────────────────────────────────────────────────
-
-/** The headline figures on FA-0031, with how each was derived. */
-export const assetDetailFigures = [
-  { label: 'Acquisition cost', value: '1.250.000.000', note: 'Both books' },
-  { label: 'Accumulated · accounting', value: '406.250.000', note: '39 months × 10.416.667' },
-  { label: 'Book value · accounting', value: '843.750.000', note: 'Straight line, 10 years' },
-  { label: 'Accumulated · tax', value: '253.906.250', note: '39 months × 6.510.417' },
-  { label: 'Tax book value', value: '996.093.750', note: 'Tax group 3, Straight line, 16 years' },
-  { label: 'Cumulative difference', value: '152.343.750', note: 'Deferred tax liability 33.515.625' },
-]
-
-/**
- * The record splits into panes by audience. General Affairs maintains the
- * physical pane without acquisition cost or book value being visible, which
- * is what keeps custody on one record instead of a second register.
- */
-export const assetDetailPanes = [
-  {
-    head: 'Physical identity · General Affairs',
-    fields: [
-      { k: 'Physical tag', v: 'TAG-SBY-114' },
-      { k: 'Serial number', v: '4F7-220931-A' },
-      { k: 'Location', v: 'Plant Rungkut, Bay 3 · Surabaya' },
-      { k: 'Custodian', v: 'Agus Priyanto — Production' },
-      { k: 'Last handover record', v: 'HANDOVER-2026-0188 · 12/08/2026' },
-    ],
-  },
-  {
-    head: 'Tax parameters · Tax Manager',
-    fields: [
-      { k: 'Tax group', v: 'Tax group 3 — 16 years' },
-      { k: 'Tax method', v: 'Straight line (6,25%)' },
-      { k: 'Tax depreciation starts', v: '01/08/2023' },
-      { k: 'Migration position', v: 'Computed in full from acquisition' },
-      { k: 'In Lampiran 9', v: 'Yes — Tax group 3 line' },
-    ],
-  },
-  {
-    head: 'Accounting · Accounting Manager',
-    fields: [
-      { k: 'Acquisition cost', v: '1.250.000.000' },
-      { k: 'Residual value', v: '0' },
-      { k: 'Useful life', v: '10 years · straight line' },
-      { k: 'Accounts', v: '1-1620 / 6-5120' },
-      { k: 'Branch', v: 'Surabaya' },
-    ],
-  },
-]
-
-/** What has happened to this asset, newest first. */
-export const assetDetailHistory = [
-  { when: '30/09/2026', who: 'System', what: 'Depreciation posted for September 2026 — JV-2026-09-014', note: null },
-  { when: '12/08/2026', who: 'Rizal Candra', what: 'Custodian changed to Agus Priyanto (Production)', note: 'Reason: production shift rotation' },
-  { when: '01/04/2026', who: 'Rizal Candra', what: 'Useful life reviewed — kept at 10 years', note: 'Prospective, no restatement' },
-  { when: '15/01/2024', who: 'Sari Wulandari', what: 'Tax group set to tax group 3 (16 years)', note: 'Completed during data migration' },
-  { when: '01/08/2023', who: 'Sari Wulandari', what: 'Capitalised and placed in service', note: 'HANDOVER-2023-0412' },
-]
-

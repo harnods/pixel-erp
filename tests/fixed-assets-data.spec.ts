@@ -1,22 +1,60 @@
 /**
- * Fixed-asset register — the dataset must tie to the approved figures.
+ * Fixed-asset register: the computed figures must tie to one another.
  *
- * These are not arbitrary assertions: each one is a figure the design states
- * must hold across every screen. If one fails, the register is showing a number
- * the rest of the module contradicts.
+ * The register no longer stores a figure. Book values and charges are
+ * computed by the engine from the seed inputs, so these assert that every
+ * total a screen shows is the sum of the per-asset figures behind it, and
+ * that the absence rules hold (null, never 0).
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import {
-  fixedAssets,
-  assetChargeYtd,
-  assetChargeSeptember,
-  septemberTotals,
-  ASSET_HEADLINE_FIGURES as H,
   registerTotals,
   isUnclassified,
   fiscalAbsenceReason,
-  type AssetCharge,
 } from '~/data/fixedAssets'
+import {
+  fixedAssets as registerRef, chargeRange, fyFigures, resetAssetStore, ledgerOf, CURRENT_PERIOD,
+} from '~/data/assetStore'
+import { chargeAt } from '~/data/assetEngine'
+
+let fixedAssets = registerRef.value
+beforeEach(() => {
+  resetAssetStore()
+  fixedAssets = registerRef.value
+})
+
+interface AssetCharge { commercial: number; fiscal: number | null }
+const charges = (from: string, to: string): Record<string, AssetCharge> => Object.fromEntries(
+  registerRef.value
+    .filter((a) => a.type === 'Tangible')
+    .map((a) => [a.id, {
+      commercial: chargeRange(a.id, 'accounting', from, to) ?? 0,
+      fiscal: ledgerOf(a.id)!.books.tax ? chargeRange(a.id, 'tax', from, to) ?? 0 : null,
+    }]),
+)
+const H = new Proxy({} as ReturnType<typeof fyFigures> & Record<string, number>, {
+  get: (_t, k) => {
+    const f = fyFigures()
+    const map: Record<string, number> = {
+      depreciationCommercialYTD: f.tangible.accounting,
+      depreciationFiscalYTD: f.tangible.tax,
+      unclassifiedCommercialYTD: f.unclassifiedAccounting,
+      disposalCommercialGain: f.disposal.accounting,
+      disposalFiscalLoss: f.disposal.tax,
+      impairmentCommercialOnly: -f.impairment,
+      netTemporaryDifference: f.netTemporaryDifference,
+      deferredTaxAt22pct: f.deferredTax,
+      taxRate: f.taxRate,
+    }
+    return map[k as string]
+  },
+})
+const assetChargeYtd = new Proxy({} as Record<string, AssetCharge>, { get: (_t, k) => charges('2026-01', CURRENT_PERIOD)[k as string], ownKeys: () => Object.keys(charges('2026-01', CURRENT_PERIOD)), getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }) })
+const assetChargeSeptember = new Proxy({} as Record<string, AssetCharge>, { get: (_t, k) => charges(CURRENT_PERIOD, CURRENT_PERIOD)[k as string], ownKeys: () => Object.keys(charges(CURRENT_PERIOD, CURRENT_PERIOD)), getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }) })
+const septemberTotals = {
+  get commercial() { return registerRef.value.filter((a) => a.type === 'Tangible').reduce((s, a) => s + (chargeAt(ledgerOf(a.id)!, 'accounting', CURRENT_PERIOD).charge ?? 0), 0) },
+  get fiscal() { return registerRef.value.filter((a) => a.type === 'Tangible').reduce((s, a) => s + (chargeAt(ledgerOf(a.id)!, 'tax', CURRENT_PERIOD).charge ?? 0), 0) },
+}
 
 describe('the register', () => {
   it('holds 24 assets, 20 tangible and 4 intangible', () => {
@@ -102,6 +140,11 @@ describe('the headline figures', () => {
 
   it('shows the two books diverging by 10.265.625', () => {
     expect(H.depreciationCommercialYTD - H.depreciationFiscalYTD).toBe(10_265_625)
+  })
+
+  it('ties the net temporary difference to the working papers', () => {
+    expect(H.netTemporaryDifference).toBe(94_828_125)
+    expect(H.deferredTaxAt22pct).toBe(20_862_188)
   })
 
   it('computes deferred tax at 22% of the net temporary difference', () => {

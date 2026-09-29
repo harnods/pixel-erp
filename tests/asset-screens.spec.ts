@@ -6,22 +6,27 @@
  * that the statutory export covers both halves of the filing.
  */
 import { describe, it, expect } from 'vitest'
-import {
-  impactByClass,
-  impactByTaxGroup,
-  amortisationYtd,
-  differenceByAsset,
-  statutoryHalf1,
-  statutoryHalf2,
-  intangibleTaxonomy,
-  countRows,
-  varianceRows,
-  approvalRows,
-  leaseRows,
-  tieCheckRows,
-  classMaster,
-} from '~/data/fixedAssetScreens'
-import { ASSET_HEADLINE_FIGURES as H, fixedAssets } from '~/data/fixedAssets'
+import * as screens from '~/data/fixedAssetScreens'
+import { fixedAssets as registerRef, fyFigures, journals, runSelfCheck, resetAssetStore } from '~/data/assetStore'
+
+const { intangibleTaxonomy, countRows, varianceRows, leaseRows, classMaster } = screens
+const impactByClass = screens.impactByClass()
+const impactByTaxGroup = screens.impactByTaxGroup()
+const amortisationYtd = screens.amortisationYtd.value
+const differenceByAsset = screens.differenceByAsset()
+const statutoryHalf1 = screens.statutoryHalf1()
+const statutoryHalf2 = screens.statutoryHalf2()
+const approvalRows = screens.approvalRows.value
+const fixedAssets = registerRef.value
+const f = fyFigures()
+const H = {
+  depreciationFiscalYTD: f.tangible.tax,
+  amortisationCommercialYTD: f.intangible.accounting,
+  amortisationFiscalYTD: f.intangible.tax,
+  disposalCommercialGain: f.disposal.accounting,
+  disposalFiscalLoss: f.disposal.tax,
+  netTemporaryDifference: f.netTemporaryDifference,
+}
 
 describe('the profit and loss impact statement', () => {
   it('reports the same depreciation whichever way it is grouped', () => {
@@ -75,6 +80,11 @@ describe('the difference report', () => {
       H.disposalCommercialGain - H.disposalFiscalLoss,
     )
   })
+
+  it('sums to the net temporary difference', () => {
+    const total = differenceByAsset.reduce((s, r) => s + (r.difference ?? 0), 0)
+    expect(total).toBe(H.netTemporaryDifference)
+  })
 })
 
 describe('the statutory export', () => {
@@ -95,15 +105,22 @@ describe('the statutory export', () => {
 })
 
 describe('the period self-check', () => {
-  it('contains something to find, so a pass means something', () => {
-    // A check that can only pass proves nothing. The sample data has one
-    // account out by the impairment-adjusted charge.
-    const breaks = tieCheckRows.filter((r) => r.difference !== 0)
-    expect(breaks.length).toBeGreaterThan(0)
+  it('can find something, so a pass means something', () => {
+    // LR-1 means the seeded ledger ties. A check that can only pass proves
+    // nothing, so introduce a journal the register does not explain.
+    resetAssetStore()
+    expect(screens.tieCheckRows.value.every((r) => r.difference === 0)).toBe(true)
+    journals.value = [...journals.value, {
+      number: 'JV-X', date: '30/09/2026', period: '2026-09', source: 'depreciation', memo: 'x',
+      lines: [{ account: '6-5100', description: 'x', debit: 1, credit: null, control: '6-5100' }],
+    }]
+    runSelfCheck()
+    expect(screens.tieCheckRows.value.filter((r) => r.difference !== 0).length).toBeGreaterThan(0)
+    resetAssetStore()
   })
 
   it('states the difference rather than leaving it to be worked out', () => {
-    for (const r of tieCheckRows) {
+    for (const r of screens.tieCheckRows.value) {
       expect(r.difference).toBe(r.subLedger - r.generalLedger)
     }
   })

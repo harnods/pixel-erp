@@ -12,12 +12,20 @@
  *    named on the row they happened in.
  */
 import { describe, it, expect } from 'vitest'
-import { fixedAssets, assetChargeYtd } from '~/data/fixedAssets'
+import { fixedAssets as registerRef, chargeRange, ledgerOf } from '~/data/assetStore'
 import {
   monthlySchedule, scheduleTotal, detailFigures, derivation,
 } from '~/data/fixedAssetDetail'
 
+const fixedAssets = registerRef.value
 const byId = (id: string) => fixedAssets.find((a) => a.id === id)!
+/** Year to date on both books, from the engine's live schedules. */
+const assetChargeYtd: Record<string, { commercial: number; fiscal: number | null }> = Object.fromEntries(
+  fixedAssets.map((a) => [a.id, {
+    commercial: chargeRange(a.id, 'accounting', '2026-01', '2026-09') ?? 0,
+    fiscal: ledgerOf(a.id)!.books.tax ? chargeRange(a.id, 'tax', '2026-01', '2026-09') ?? 0 : null,
+  }]),
+)
 
 describe('the FY2026 schedule', () => {
   it('covers January through September — the periods closed so far', () => {
@@ -39,17 +47,15 @@ describe('the FY2026 schedule', () => {
     }
   })
 
-  it('never lands the rounding residual in one odd month', () => {
-    // Cumulative rounding: consecutive charges differ by at most one rupiah,
-    // so no month reads as a mistake.
+  it('charges a level amount every month, the residue left for the final one', () => {
+    // LR-7: the rounding residue falls in the final period of the schedule,
+    // so every month before it on one basis charges exactly the same.
     for (const a of fixedAssets) {
       if (a.status === 'Impaired') continue // a real step change, not rounding
       const charges = monthlySchedule(a)
         .map((r) => r.accounting)
         .filter((v): v is number => v !== null)
-      for (let i = 1; i < charges.length; i++) {
-        expect(Math.abs(charges[i]! - charges[i - 1]!)).toBeLessThanOrEqual(1)
-      }
+      for (let i = 1; i < charges.length; i++) expect(charges[i]).toBe(charges[0])
     }
   })
 
@@ -108,8 +114,10 @@ describe('events are named in the month they happened', () => {
   })
 
   it('names the impairment that reset the accounting basis', () => {
+    // Named in June, the month of the 30/06 test. The charge is on the new
+    // basis from July, the first month after the write-down.
     const rows = monthlySchedule(byId('FA-0068'))
-    expect(rows[6]!.event).toContain('Impaired')
+    expect(rows[5]!.event).toContain('Impaired')
     // The accounting charge steps down from July; tax does not recognise it.
     expect(rows[6]!.accounting).toBeLessThan(rows[5]!.accounting!)
     expect(rows[6]!.tax).toBe(rows[5]!.tax)

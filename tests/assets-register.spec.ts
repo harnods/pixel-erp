@@ -7,13 +7,15 @@
  * the reader can identify.
  */
 import { describe, it, expect } from 'vitest'
+import { fixedAssets as registerRef } from '~/data/assetStore'
 import {
-  fixedAssets,
   registerTotals,
   fiscalAbsenceReason,
   isUnclassified,
   type FixedAsset,
 } from '~/data/fixedAssets'
+
+const fixedAssets = registerRef.value
 
 /** The register's own sort, extracted so it can be tested without mounting. */
 function dateOrder(d: string): number {
