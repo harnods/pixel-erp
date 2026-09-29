@@ -116,8 +116,8 @@ function signed(v: number) { return v < 0 ? `(${formatIDR(-v)})` : formatIDR(v) 
 .rf__cardhead { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
 .rf__cardtitle { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .rf__status { font-size: var(--mp-font-sizes-sm); }
-.rf__status--ok { color: var(--mp-text-success); }
-.rf__status--bad { color: var(--mp-text-critical); }
+.rf__status--ok { color: var(--mp-colors-text-success); }
+.rf__status--bad { color: var(--mp-text-danger); }
 .rf__table { width: 100%; border-collapse: collapse; }
 .rf__th { text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); letter-spacing: 0.04em; text-transform: uppercase; color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-bottom: 1px solid var(--mp-border-default); }
 .rf__th--num { text-align: right; }
@@ -125,7 +125,7 @@ function signed(v: number) { return v < 0 ? `(${formatIDR(-v)})` : formatIDR(v) 
 .rf__td--num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rf__td--strong { font-weight: var(--mp-font-weights-semi-bold); }
 .rf__td--ok { color: var(--mp-text-secondary); }
-.rf__td--bad { color: var(--mp-text-critical); font-weight: var(--mp-font-weights-semi-bold); }
+.rf__td--bad { color: var(--mp-text-danger); font-weight: var(--mp-font-weights-semi-bold); }
 .rf__tr--total .rf__td { font-weight: var(--mp-font-weights-semi-bold); background: var(--mp-background-neutral-subtle); border-bottom: 0; }
 .rf__foot { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: 0; padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 .rf__link { color: var(--mp-text-link); cursor: pointer; margin-left: var(--mp-spacing-2); }

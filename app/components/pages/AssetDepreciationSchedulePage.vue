@@ -485,7 +485,7 @@ function stateLabel(p: SchedulePeriod) {
 /* ── Journal preview drawer ── */
 /* 1300 matches BillsFiltersDrawer: the app header is 1100, and a drawer below
    it renders with its own header hidden behind the chrome. */
-.ds__overlay { position: fixed; inset: 0; background: var(--mp-background-overlay); z-index: 1300; }
+.ds__overlay { position: fixed; inset: 0; background: var(--mp-colors-background-overlay); z-index: 1300; }
 .ds__drawer {
   position: absolute; top: 0; right: 0; bottom: 0; width: 560px; max-width: 94vw;
   background: var(--mp-background-neutral); display: flex; flex-direction: column;

@@ -147,7 +147,7 @@ function openUnclassified() {
 .lp__link:hover { text-decoration: underline; }
 .lp__counts { display: flex; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-4); }
 .lp__count { display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding: var(--mp-spacing-3) var(--mp-spacing-4); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); min-width: 160px; }
-.lp__count--bad .lp__countv { color: var(--mp-text-critical); }
+.lp__count--bad .lp__countv { color: var(--mp-text-danger); }
 .lp__countk { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .lp__countv { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 .lp__card { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); overflow: hidden; margin-bottom: var(--mp-spacing-4); }

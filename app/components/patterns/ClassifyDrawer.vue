@@ -140,7 +140,7 @@ function submit() {
 
 <style scoped>
 /* 1300 matches BillsFiltersDrawer: the app header is 1100. */
-.cld-overlay { position: fixed; inset: 0; background: var(--mp-background-overlay); z-index: 1300; }
+.cld-overlay { position: fixed; inset: 0; background: var(--mp-colors-background-overlay); z-index: 1300; }
 .cld-panel {
   position: absolute; top: 0; right: 0; bottom: 0; width: 480px; max-width: 96vw;
   background: var(--mp-background-neutral); display: flex; flex-direction: column;
@@ -162,7 +162,7 @@ function submit() {
 .cld-hint, .cld-note { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: 0; line-height: var(--mp-line-heights-sm); }
 .cld-note { margin-bottom: var(--mp-spacing-4); }
 /* rule/form-errors-inline: the error sits with the field, not in a toast. */
-.cld-error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-critical); margin: 0; line-height: var(--mp-line-heights-sm); }
+.cld-error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); margin: 0; line-height: var(--mp-line-heights-sm); }
 .cld-foot {
   display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3);
   padding: var(--mp-spacing-4) var(--mp-spacing-6); flex: none; border-top: 1px solid var(--mp-border-default);

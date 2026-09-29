@@ -617,7 +617,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
 <style scoped>
 .asset-note { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .asset-note--bulk { padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); color: var(--mp-text-default); justify-content: space-between; }
-.asset-name__missing { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-critical); margin-top: var(--mp-spacing-1); }
+.asset-name__missing { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); margin-top: var(--mp-spacing-1); }
 /* rule/filter-bar-anatomy — left: inline filters + All filters; right: tools
    then search. rule/filter-bar-left-gap — the left gap is always 16px. */
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); flex: 0 1 auto; min-width: 0; }
@@ -666,7 +666,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
   white-space: nowrap;
 }
 /* A total that cannot be computed says so. Never Rp0,00. */
-.stat-amount--absent { color: var(--mp-text-critical); }
+.stat-amount--absent { color: var(--mp-text-danger); }
 .stat-link {
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-link);
@@ -676,7 +676,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
 }
 .stat-link:hover { text-decoration: underline; }
 /* The exclusion reads as something to act on, not as decoration. */
-.stat-link--warn { color: var(--mp-text-critical); }
+.stat-link--warn { color: var(--mp-text-danger); }
 
 /* rule/table-name-link-span — a span styled as a link, not a button. */
 .asset-name {
@@ -711,7 +711,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
 
 /* A figure that is absent for a stated reason, not a zero. Red carries the
    same weight as the Incomplete badge on the same row. */
-.cell-absent { color: var(--mp-text-critical); font-weight: var(--mp-font-weights-semi-bold); }
+.cell-absent { color: var(--mp-text-danger); font-weight: var(--mp-font-weights-semi-bold); }
 /* A figure that no longer applies — a disposed asset has no book value. */
 .cell-muted { color: var(--mp-text-subtle); }
 

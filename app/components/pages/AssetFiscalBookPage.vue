@@ -293,9 +293,9 @@ function onExport() {
 
 /* A figure that is legitimately absent. Never a zero — a zero would say the
    basis recognised the event and valued it at nothing. */
-.fb__td--absent { color: var(--mp-text-warning); font-weight: var(--mp-font-weights-semi-bold); }
-.fb__td--pos { color: var(--mp-text-success); }
-.fb__td--neg { color: var(--mp-text-critical); }
+.fb__td--absent { color: var(--mp-colors-text-warning); font-weight: var(--mp-font-weights-semi-bold); }
+.fb__td--pos { color: var(--mp-colors-text-success); }
+.fb__td--neg { color: var(--mp-text-danger); }
 
 .fb__foot { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); padding: var(--mp-spacing-1) var(--mp-spacing-4); }
 .fb__footrow { display: flex; align-items: baseline; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-3) 0; }

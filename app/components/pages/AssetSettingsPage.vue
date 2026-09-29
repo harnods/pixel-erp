@@ -191,7 +191,7 @@ function toggleOther() { infoToast(t('Not in this prototype')) }
 .st__editlabel { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .st__editbtns { display: flex; gap: var(--mp-spacing-2); }
 .st__edithint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: var(--mp-spacing-2) 0 0; }
-.st__error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-critical); margin: var(--mp-spacing-2) 0 0; }
+.st__error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); margin: var(--mp-spacing-2) 0 0; }
 
 .st__toggles { display: flex; flex-direction: column; }
 .st__toggle { display: flex; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }

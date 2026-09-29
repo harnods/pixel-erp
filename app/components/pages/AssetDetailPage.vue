@@ -597,7 +597,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
   display: flex; align-items: flex-start; gap: var(--mp-spacing-3);
   padding: var(--mp-spacing-3) var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4);
   background: var(--mp-background-warning-subtle); border-radius: var(--mp-radii-md);
-  color: var(--mp-text-warning);
+  color: var(--mp-colors-text-warning);
 }
 .ad__blockedbody { flex: 1; min-width: 0; }
 .ad__blockedtitle { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); }
@@ -629,7 +629,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
   font-variant-numeric: tabular-nums;
 }
 /* Never a zero where the figure does not exist. */
-.stat-amount--absent { color: var(--mp-text-critical); font-size: var(--mp-font-sizes-lg); }
+.stat-amount--absent { color: var(--mp-text-danger); font-size: var(--mp-font-sizes-lg); }
 .stat-sub {
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
   line-height: var(--mp-line-heights-sm, 16px); font-variant-numeric: tabular-nums;
@@ -689,7 +689,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
    backdrop, close is the × only. */
 /* 1300 matches BillsFiltersDrawer: the app header is 1100, and a drawer
    below it renders with its own header hidden behind the chrome. */
-.ad__overlay { position: fixed; inset: 0; background: var(--mp-background-overlay); z-index: 1300; }
+.ad__overlay { position: fixed; inset: 0; background: var(--mp-colors-background-overlay); z-index: 1300; }
 .ad__drawer {
   position: absolute; top: 0; right: 0; bottom: 0; width: 420px; max-width: 92vw;
   background: var(--mp-background-neutral); display: flex; flex-direction: column;
@@ -736,7 +736,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
 .ad__drawer--wide { width: 560px; }
 .ad__paneaction { padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 .ad__fieldlabel { display: block; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin-bottom: var(--mp-spacing-2); }
-.ad__fielderror { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-critical); margin-top: var(--mp-spacing-3); }
+.ad__fielderror { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); margin-top: var(--mp-spacing-3); }
 .ad__classplan { margin-top: var(--mp-spacing-4); display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .ad__drawerfoot { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-6); }
 .ad__booktabs { display: flex; gap: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); margin-bottom: var(--mp-spacing-4); }

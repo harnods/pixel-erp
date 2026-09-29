@@ -135,7 +135,7 @@ function apply() {
 
 <style scoped>
 /* 1300 matches BillsFiltersDrawer: the app header is 1100. */
-.bed-overlay { position: fixed; inset: 0; background: var(--mp-background-overlay); z-index: 1300; }
+.bed-overlay { position: fixed; inset: 0; background: var(--mp-colors-background-overlay); z-index: 1300; }
 .bed-panel {
   position: absolute; top: 0; right: 0; bottom: 0; width: 600px; max-width: 96vw;
   background: var(--mp-background-neutral); display: flex; flex-direction: column;
@@ -165,7 +165,7 @@ function apply() {
 .bed-id { color: var(--mp-text-secondary); font-variant-numeric: tabular-nums; }
 .bed-skips { margin: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-2) var(--mp-spacing-6); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
 /* rule/form-errors-inline: the error sits with the form, not in a toast. */
-.bed-error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-critical); margin: 0; }
+.bed-error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); margin: 0; }
 .bed-foot {
   display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3);
   padding: var(--mp-spacing-4) var(--mp-spacing-6); flex: none; border-top: 1px solid var(--mp-border-default);

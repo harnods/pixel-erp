@@ -200,8 +200,8 @@ function signed(v: number) {
 .td__tag { margin-left: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-sm); padding: 0 var(--mp-spacing-1); }
 .td__tr--total .td__td { font-weight: var(--mp-font-weights-semi-bold); background: var(--mp-background-neutral-subtle); border-bottom: 0; }
 .td__check { margin-left: var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular); }
-.td__check--ok { color: var(--mp-text-success); }
-.td__check--bad { color: var(--mp-text-critical); }
+.td__check--ok { color: var(--mp-colors-text-success); }
+.td__check--bad { color: var(--mp-text-danger); }
 .td__foot { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: 0; padding: var(--mp-spacing-3) var(--mp-spacing-4); }
 .td__summary { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); }
 .td__sumrow { display: flex; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-3) var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); }

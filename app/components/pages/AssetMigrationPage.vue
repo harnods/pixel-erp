@@ -231,7 +231,7 @@ function activate() {
 .mg__link:hover { text-decoration: underline; }
 .mg__tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-4); }
 .mg__tile { display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding: var(--mp-spacing-3) var(--mp-spacing-4); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); }
-.mg__tile--bad { border-color: var(--mp-border-critical); }
+.mg__tile--bad { border-color: var(--mp-colors-border-danger); }
 .mg__tilek { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .mg__tilev { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 .mg__tilesub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
@@ -244,10 +244,10 @@ function activate() {
 .mg__th--num { text-align: right; }
 .mg__td { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-bottom: 1px solid var(--mp-border-default); vertical-align: top; }
 .mg__td--num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.mg__td--bad { color: var(--mp-text-critical); font-weight: var(--mp-font-weights-semi-bold); }
-.mg__td--ok { color: var(--mp-text-success); }
-.mg__td--error { color: var(--mp-text-critical); text-align: right; }
-.mg__tr--diff { background: var(--mp-background-critical-subtle); }
+.mg__td--bad { color: var(--mp-text-danger); font-weight: var(--mp-font-weights-semi-bold); }
+.mg__td--ok { color: var(--mp-colors-text-success); }
+.mg__td--error { color: var(--mp-text-danger); text-align: right; }
+.mg__tr--diff { background: var(--mp-colors-background-danger); }
 .mg__why { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); }
 .mg__edited { font-weight: var(--mp-font-weights-semi-bold); }
 .mg__editlink { margin-left: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); }

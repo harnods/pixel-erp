@@ -72,7 +72,7 @@ function go(key: string) {
 </template>
 
 <style scoped>
-.ndd-overlay { position: fixed; inset: 0; background: var(--mp-background-overlay); z-index: 1300; display: flex; align-items: center; justify-content: center; }
+.ndd-overlay { position: fixed; inset: 0; background: var(--mp-colors-background-overlay); z-index: 1300; display: flex; align-items: center; justify-content: center; }
 .ndd-dialog { width: 560px; max-width: 94vw; background: var(--mp-background-neutral); border-radius: var(--mp-radii-md); border: 1px solid var(--mp-border-default); overflow: hidden; }
 .ndd-head { display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-4) var(--mp-spacing-3) var(--mp-spacing-6); background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default); }
 .ndd-title { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
