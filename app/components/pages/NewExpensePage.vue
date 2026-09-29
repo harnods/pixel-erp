@@ -777,10 +777,14 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
             <MpFormErrorMessage>{{ t('You must select transaction date') }}</MpFormErrorMessage>
           </MpFormControl>
           <MpFormControl id="ex-transno" is-required>
-            <div class="ex-label-row">
-              <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
-              <MpButton type="button" class="ex-label-icon" left-icon="settings" :aria-label="t('Transaction no. settings')" @click="noSettingsOpen = true" />
-            </div>
+            <MpFormLabel>
+              <span class="ex-label-row">
+                {{ t('Transaction no.') }}
+                <MpButton class="ex-label-icon" :aria-label="t('Transaction no. settings')" @click="noSettingsOpen = true">
+                  <MpIcon name="settings" size="sm" />
+                </MpButton>
+              </span>
+            </MpFormLabel>
             <MpInput id="ex-transno-input" v-model="transactionNo" placeholder="Auto" is-full-width is-disabled />
           </MpFormControl>
           <!-- Due date — only relevant while the bill is still unpaid -->
@@ -1467,8 +1471,14 @@ else if (duplicateSource.value) prefillFromBill(duplicateSource.value, { include
   justify-content: flex-start; gap: 16px 24px; padding: 20px 0;
 }
 .ex-section-divider { border-bottom: 1px dashed var(--mp-border-default, #e3e7e9); }
-.ex-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); }
-.ex-label-icon { display: flex; align-items: center; color: var(--mp-text-secondary); cursor: pointer; }
+/* Transaction no. settings — a bare icon inside the label, same as the Sales
+   forms (.si-label-icon in NewSalesInvoicePage), not a filled icon button. */
+.ex-label-row { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
+.ex-label-icon {
+  display: inline-flex !important; align-items: center; justify-content: center;
+  padding: 0 !important; border: none !important; background: none !important; min-width: 0 !important;
+  cursor: pointer; color: var(--mp-text-secondary);
+}
 .ex-datepicker { width: 100%; }
 .ex-datepicker :deep(.mp-datepicker__root) { width: 100%; }
 
