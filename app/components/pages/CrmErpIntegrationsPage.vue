@@ -15,7 +15,7 @@
  * mirroring CrmModulesPage so every Settings surface matches.
  */
 import { computed, reactive, ref, watch } from 'vue'
-import { MpButton, MpIcon } from '@mekari/pixel3'
+import { css, MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -30,7 +30,8 @@ import {
 const { t } = useLocale()
 const router = useRouter()
 
-function manage(id: string) { router.push(`/crm/settings/erp-integrations/${id}`) }
+function viewDetail(id: string) { router.push(`/crm/settings/erp-integrations/${id}`) }
+function edit(id: string) { router.push(`/crm/settings/erp-integrations/${id}/edit`) }
 
 // MpBadge type per config state (text carries the meaning; colour reinforces it).
 const STATE_BADGE_TYPE: Record<ConfigState, 'completed' | 'critical' | 'warning' | 'information' | 'announcement'> = {
@@ -84,11 +85,9 @@ const rows = computed<IntegrationRow[]>(() =>
 // goal > rule/table-column-standard). A flexible spacer after Last updated pushes
 // the sticky [Manage] actions column flush right.
 const columns: TableColumn[] = [
-  { key: 'name',      label: 'Module',               width: '200px', sortable: true, sortType: 'text' },
-  { key: 'enabled',   label: 'Conversion status',    width: '160px'                                    },
-  { key: 'target',    label: 'ERP transaction type', width: '200px'                                    },
-  { key: 'state',     label: 'Mapping readiness',    width: '160px', sortable: true, sortType: 'text' },
-  { key: 'readiness', label: 'Mapped fields',        width: '160px'                                    },
+  { key: 'name',      label: 'Module',               kind: 'name',   sortable: true, sortType: 'text' },
+  { key: 'target',    label: 'ERP transaction type',                                                    },
+  { key: 'enabled',   label: 'Status',               kind: 'status'                                    },
   { key: 'updatedAt', label: 'Last updated',         kind: 'date',   sortable: true, sortType: 'date' },
 ]
 
@@ -115,6 +114,61 @@ const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disable
 const visibleColumns = computed<TableColumn[]>(() => columns.filter((c) => columnVisibility[c.key]))
 function hideColumn(key: string) { columnVisibility[key] = false }
 watch(statusFilter, () => setPage(1))
+
+// Layout classes removed — using scoped CSS .detail-* classes (matching CrmModulesPage).
+
+const cruNameClass = css({
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 'var(--mp-spacing-0\\.5, 2px)',
+  minWidth: '0',
+})
+
+const cruEmailClass = css({
+  fontSize: 'sm',
+  color: 'text.secondary',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+})
+
+const cellTextClass = css({
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  minWidth: '0',
+})
+
+const cellLinkClass = css({
+  color: 'var(--mp-colors-text-link, #165082)',
+  textDecoration: 'none',
+  cursor: 'pointer',
+  _hover: {
+    textDecoration: 'underline',
+    textUnderlineOffset: '2px',
+  },
+})
+
+const ceiMutedClass = css({
+  color: 'text.secondary',
+})
+
+const filterLeftClass = css({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '4',
+})
+
+const filterRightClass = css({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '3',
+})
+
+const filterBtnGroupClass = css({
+  display: 'flex',
+  alignItems: 'center',
+})
 </script>
 
 <template>
@@ -139,7 +193,7 @@ watch(statusFilter, () => setPage(1))
         filter-empty-label="module"
         :search="search"
         :has-active-filter="hasActiveFilter"
-        actions-width="120px"
+        actions-width="60px"
         @page-change="setPage"
         @per-page-change="setPerPage"
         @sort="toggleSort"
@@ -148,7 +202,7 @@ watch(statusFilter, () => setPage(1))
         @clear-filters="clearFilters"
       >
         <template #filters>
-          <div class="filter-left">
+          <div :class="filterLeftClass">
             <ErpFilterSelect
               id="cei-status-filter"
               :model-value="statusFilter"
@@ -157,8 +211,8 @@ watch(statusFilter, () => setPage(1))
               @update:model-value="(v: string) => (statusFilter = v)"
             />
           </div>
-          <div class="filter-right">
-            <div class="filter-btn-group">
+          <div :class="filterRightClass">
+            <div :class="filterBtnGroupClass">
               <ColumnSettingsMenu id="cei-columns" :items="columnItems" :visibility="columnVisibility" />
             </div>
             <div class="filter-search">
@@ -170,10 +224,13 @@ watch(statusFilter, () => setPage(1))
         </template>
 
         <template #cell-name="{ row }">
-          <div class="cru-name">
-            <span class="cell-link cell-text" @click.stop="manage((row as unknown as IntegrationRow).id)">{{ (row as unknown as IntegrationRow).name }}</span>
-            <span class="cru-email">{{ (row as unknown as IntegrationRow).system ? t('System module') : t('Custom module') }}</span>
+          <div :class="cruNameClass">
+            <span :class="[cellLinkClass, cellTextClass]" @click.stop="viewDetail((row as unknown as IntegrationRow).id)">{{ (row as unknown as IntegrationRow).name }}</span>
+            <span :class="cruEmailClass">{{ (row as unknown as IntegrationRow).system ? t('System module') : t('Custom module') }}</span>
           </div>
+        </template>
+        <template #cell-target="{ row }">
+          <span :class="{ [ceiMutedClass]: (row as unknown as IntegrationRow).targetLabel === '—' }">{{ (row as unknown as IntegrationRow).targetLabel }}</span>
         </template>
         <template #cell-enabled="{ row }">
           <ErpStatusBadge
@@ -181,24 +238,22 @@ watch(statusFilter, () => setPage(1))
             :label="(row as unknown as IntegrationRow).enabled ? t('Enabled') : t('Disabled')"
           />
         </template>
-        <template #cell-target="{ row }">
-          <span :class="{ 'cei-muted': (row as unknown as IntegrationRow).targetLabel === '—' }">{{ (row as unknown as IntegrationRow).targetLabel }}</span>
-        </template>
-        <template #cell-state="{ row }">
-          <ErpStatusBadge
-            :type="STATE_BADGE_TYPE[(row as unknown as IntegrationRow).state]"
-            :label="t(CONFIG_STATE_SHORT[(row as unknown as IntegrationRow).state])"
-          />
-        </template>
-        <template #cell-readiness="{ row }">
-          <span :class="{ 'cei-muted': (row as unknown as IntegrationRow).readinessLabel === '—' }">{{ (row as unknown as IntegrationRow).readinessLabel }}</span>
-        </template>
         <template #cell-updatedAt="{ row }">
           <LastUpdatedCell :at="(row as unknown as IntegrationRow).updatedAt" :by="(row as unknown as IntegrationRow).updatedBy" />
         </template>
 
         <template #actions="{ row }">
-          <MpButton class="btn-enterprise btn-enterprise--secondary" type="button" @click.stop="manage((row as unknown as IntegrationRow).id)">{{ t('Manage') }}</MpButton>
+          <MpPopover :id="`cei-actions-${(row as unknown as IntegrationRow).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
+            </MpPopoverTrigger>
+            <MpPopoverContent class="erp-dropdown-menu">
+              <MpPopoverList>
+                <MpPopoverListItem @click="viewDetail((row as unknown as IntegrationRow).id)">{{ t('View details') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="edit((row as unknown as IntegrationRow).id)">{{ t('Edit') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
         </template>
       </ErpTablePage>
     </div>
@@ -207,29 +262,13 @@ watch(statusFilter, () => setPage(1))
 
 <style scoped>
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-.detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
+.detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle); padding-inline: var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
 .detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .detail-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
-/* padding-top gives the filter-bar select a few px of breathing room so its top
-   border / focus ring doesn't land on the scroll box's clip edge and get shaved. */
 .detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: var(--mp-spacing-1) var(--mp-spacing-6) var(--mp-spacing-6); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); display: flex; flex-direction: column; }
 
-.cru-name { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5, 2px); min-width: 0; }
-.cru-email { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.cell-link { color: var(--mp-colors-text-link, #165082); text-decoration: none; cursor: pointer; }
-.cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
-.cei-muted { color: var(--mp-text-secondary); }
-
-/* The shared table top-aligns the actions cell (for kebabs on tall rows); this
-   table's rows are two lines (module + type caption), so centre the [Manage]
-   button vertically instead. */
 :deep(.erp-td--actions) { vertical-align: middle; padding-top: var(--mp-spacing-2); padding-bottom: var(--mp-spacing-2); }
-
-.filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
-.filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.filter-btn-group { display: flex; align-items: center; }
 .search-clear-btn { display: inline-flex !important; align-items: center; justify-content: center; flex-shrink: 0; width: 18px !important; height: 18px !important; min-width: 0 !important; padding: 0 !important; border: none !important; background: none !important; cursor: pointer; color: var(--mp-colors-icon-default, #536062); border-radius: var(--mp-radii-full, 999px) !important; }
 .search-clear-btn:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); }
 </style>
