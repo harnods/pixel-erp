@@ -132,10 +132,21 @@ const columnItems = computed(() => allCols.value.map((c, i) => ({ key: c.key, la
 const columns = computed<TableColumn[]>(() => allCols.value.filter((c) => columnVisibilityReady.value[c.key]))
 const hasActiveFilter = computed(() => !!statusFilter.value)
 
-const flatRows = computed(() => paginated.value.map((r) => ({
-  ...r, ...r.values,
-  value: r.values.dealValue ?? 0,
-})))
+const flatRows = computed(() => {
+  const mod = getCrmModule(moduleId.value)
+  const fields = mod?.fields ?? []
+  return paginated.value.map((r) => {
+    const row: Record<string, unknown> = { ...r }
+    for (const f of fields) {
+      if (f.isPrimary || f.id === 'record-name') {
+        row[f.id] = r.name
+      } else {
+        row[f.id] = r.values[f.id] ?? r.values[f.label?.replace(/\s+/g, '_').toLowerCase()] ?? r.values[f.id.replace(/-/g, '_')] ?? ''
+      }
+    }
+    return row
+  })
+})
 
 
 // ── Kanban ──
@@ -248,10 +259,9 @@ function ownerInitials(name: string) { return name.split(' ').map((p) => p[0]).s
         :filter-empty-label="t('record')"
         @update:current-page="setPage" @update:per-page="setPerPage" @toggle-sort="toggleSort"
       >
-        <template #cell-name="{ row }">
+        <template #cell-record-name="{ row }">
           <a class="cell-link" @click="goDetail((row as unknown as GenericModuleRecord).id)">{{ (row as unknown as GenericModuleRecord).name }}</a>
         </template>
-        <template #cell-value="{ row }">{{ formatMoney((row as unknown as GenericModuleRecord).values.dealValue ?? 0, (row as unknown as GenericModuleRecord).values.currency ?? 'IDR') }}</template>
       </ErpTablePage>
     </div>
 
