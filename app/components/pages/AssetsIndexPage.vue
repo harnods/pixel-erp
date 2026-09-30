@@ -631,8 +631,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
 
     <template #empty>
       <div class="asset-empty">
-        <div class="asset-empty__title">{{ search ? t(`"${search}" not found`) : t('Asset not found') }}</div>
-        <div class="asset-empty__desc">{{ search ? t('Check the keyword or clear the filters.') : t('No asset matches these filters. Try adjusting them.') }}</div>
+        <div class="asset-empty__title">{{ t('Nothing matches these filters') }}</div>
         <MpButton variant="secondary" is-rounded @click="clearFilters">{{ t('Clear filters') }}</MpButton>
       </div>
     </template>
@@ -772,6 +771,5 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
   gap: var(--mp-spacing-3);
   padding: var(--mp-spacing-10) 0;
 }
-.asset-empty__title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.asset-empty__desc { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.asset-empty__title { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 </style>
