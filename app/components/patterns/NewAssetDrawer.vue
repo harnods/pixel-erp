@@ -135,13 +135,13 @@ function submit() {
   const years = Number(v.lifeYears.replace(',', '.'))
   const indefinite = isIntangible.value && v.indefinite
   if (!indefinite && (!years || years <= 0)) e.lifeYears = 'You must fill in useful life'
-  if (isIntangible.value && !v.statutoryCode) e.statutoryCode = 'You must select statutory intangible code'
+  if (isIntangible.value && !v.statutoryCode) e.statutoryCode = 'You must select intangible code'
   if (isIntangible.value && v.taxGroup && !INTANGIBLE_TAX_GROUPS.includes(v.taxGroup)) e.taxGroup = 'Building groups do not apply to intangibles. Select Tax group 1 to 4'
   const residual = parseRupiah(v.residual) ?? 0
   if (cost && residual >= cost) e.residual = 'Residual value must be less than the acquisition cost'
   if (!isIntangible.value && v.location && !locationBranch(v.location)) e.location = 'Choose a location from the list'
   if (!isIntangible.value && v.custodian && !CUSTODIANS.some((c) => c.name === v.custodian)) e.custodian = 'Choose a custodian from the list'
-  if (v.cls && v.cls !== 'Intangible assets' && !v.taxGroup) e.taxGroup = 'You must select statutory group'
+  if (v.cls && v.cls !== 'Intangible assets' && !v.taxGroup) e.taxGroup = 'You must select tax group'
   const def = classDef(v.cls)
   if (def && v.taxGroup) {
     const g = groupRefusal(def.type, def.class, v.taxGroup)
@@ -206,7 +206,7 @@ function submit() {
             </div>
             <template v-if="isIntangible">
               <div class="nad-field">
-                <label class="nad-label" for="nad-code">{{ t('Statutory intangible code') }}</label>
+                <label class="nad-label" for="nad-code">{{ t('Intangible code') }}</label>
                 <IntangibleCodePicker id="nad-code" v-model="f.statutoryCode" />
                 <p v-if="errors.statutoryCode" class="nad-error">{{ t(errors.statutoryCode) }}</p>
               </div>
@@ -234,7 +234,7 @@ function submit() {
               </div>
             </div>
             <div class="nad-field">
-              <label class="nad-label" for="nad-group">{{ t('Statutory group') }}</label>
+              <label class="nad-label" for="nad-group">{{ t('Tax group') }}</label>
               <ErpFilterSelect id="nad-group" v-model="f.taxGroup" :placeholder="t('Choose a group')" :options="groupOptions" width="100%" />
               <p v-if="errors.taxGroup" class="nad-error">{{ t(errors.taxGroup) }}</p>
               <p v-else class="nad-hint">{{ t('Filled from the class. Sets the tax life') }}</p>
@@ -259,7 +259,7 @@ function submit() {
               <AssetLifeSchedule
                 v-if="preview"
                 :schedule="preview"
-                :caption="`${preview.monthly.accounting === null ? 'Accounting: not amortised' : 'Accounting ' + formatIDRWhole(preview.monthly.accounting) + ' a month'} · ${preview.monthly.tax === null ? 'Tax: no statutory group' : 'Tax ' + formatIDRWhole(preview.monthly.tax) + ' a month'}`"
+                :caption="`${preview.monthly.accounting === null ? 'Accounting: not amortised' : 'Accounting ' + formatIDRWhole(preview.monthly.accounting) + ' a month'} · ${preview.monthly.tax === null ? 'Tax: no tax group' : 'Tax ' + formatIDRWhole(preview.monthly.tax) + ' a month'}`"
               />
               <p v-else class="nad-hint">{{ t('Enter acquisition cost, in-service date and useful life to see the schedule') }}</p>
             </div>

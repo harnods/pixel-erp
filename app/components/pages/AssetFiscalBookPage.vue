@@ -32,7 +32,7 @@ type Grouping = 'class' | 'taxGroup'
 const grouping = ref<Grouping>('class')
 const groupingOptions = [
   { id: 'grp-class', value: 'class', label: 'By class' },
-  { id: 'grp-tax', value: 'taxGroup', label: 'By statutory group' },
+  { id: 'grp-tax', value: 'taxGroup', label: 'By tax group' },
 ]
 const depreciationRows = computed<ImpactRow[]>(() =>
   grouping.value === 'class' ? impactByClass() : impactByTaxGroup(),
@@ -98,7 +98,7 @@ function exportStatement() { infoToast(t('Not in this prototype')) }
       </MpBannerTitle>
       <MpBannerDescription>
         {{ unclassified.map((a) => `${a.id} ${a.name}`).join(', ') }} ·
-        {{ t('no statutory group') }} ·
+        {{ t('no tax group') }} ·
         {{ t('accounting charge of') }} {{ formatIDRWhole(unclassifiedCharge) }} {{ t('excluded from both columns') }}
       </MpBannerDescription>
     </MpBanner>
@@ -114,7 +114,7 @@ function exportStatement() { infoToast(t('Not in this prototype')) }
       <table class="fb__table">
         <thead>
           <tr>
-            <th class="fb__th">{{ grouping === 'class' ? t('Asset class') : t('Statutory group') }}</th>
+            <th class="fb__th">{{ grouping === 'class' ? t('Asset class') : t('Tax group') }}</th>
             <th class="fb__th fb__th--num">{{ t('Accounting') }}</th>
             <th class="fb__th fb__th--num">{{ t('Tax') }}</th>
             <th class="fb__th fb__th--num">{{ t('Difference') }}</th>

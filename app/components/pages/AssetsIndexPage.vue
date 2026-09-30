@@ -605,7 +605,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
             <MpPopoverListItem @click="openAsset(row as unknown as FixedAsset)">{{ t('View asset') }}</MpPopoverListItem>
             <MpPopoverListItem v-if="canSeeFinancials" @click="router.push('/depreciation-schedule')">{{ t('View depreciation schedule') }}</MpPopoverListItem>
             <MpPopoverListItem v-if="canSeeFinancials" @click="assignTaxGroup(row as unknown as FixedAsset)">
-              {{ (row as unknown as FixedAsset).taxGroup ? t('Change tax group') : t('Assign tax group') }}
+              {{ (row as unknown as FixedAsset).taxGroup ? t('Change tax group') : t('Set tax group') }}
             </MpPopoverListItem>
             <MpPopoverListItem @click="noDeleteId = (row as unknown as FixedAsset).id">{{ t('Remove from the register') }}</MpPopoverListItem>
           </MpPopoverList>
@@ -621,7 +621,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
         </MpPopoverTrigger>
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
-            <MpPopoverListItem v-if="canSeeFinancials" @click="openBulk(selectedRows, 'taxGroup', deselectAll)">{{ t('Assign tax group') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="canSeeFinancials" @click="openBulk(selectedRows, 'taxGroup', deselectAll)">{{ t('Set tax group') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openBulk(selectedRows, 'location', deselectAll)">{{ t('Bulk edit') }}</MpPopoverListItem>
             <MpPopoverListItem @click="infoToast(t('Not in this prototype'))">{{ t('Export selected') }}</MpPopoverListItem>
           </MpPopoverList>

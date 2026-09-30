@@ -54,7 +54,7 @@ function go(key: string) {
             <template v-if="postedCharges">{{ asset.id }} {{ asset.name }} {{ t(`has depreciation posted in ${postedCharges} ${postedCharges === 1 ? 'period' : 'periods'}.`) }}</template>
             <template v-if="!isGone">{{ t('Choose what happened instead.') }}</template>
           </p>
-          <p v-if="isGone" class="ndd-lead">{{ t(`This asset is already ${asset.status.toLowerCase()}. Its record is kept for the figures it produced.`) }}</p>
+          <p v-if="isGone" class="ndd-lead">{{ t(`This asset is already ${asset.status.toLowerCase()}. Its record stays in the register.`) }}</p>
           <div v-else class="ndd-paths">
             <div v-for="p in paths" :key="p.key" class="ndd-path">
               <div>
