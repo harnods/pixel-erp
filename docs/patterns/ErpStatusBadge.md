@@ -25,7 +25,7 @@ The `status` prop is **case-insensitive**. Unknown statuses fall back to `type="
 
 | Badge type | Colour | Statuses |
 |---|---|---|
-| `completed` | green | `paid`, `approved`, `active`, `completed`, `verified`, `success`, `reconciled` |
+| `completed` | green | `paid`, `approved`, `active`, `completed`, `verified`, `success`, `reconciled`, `finalized` |
 | `warning` | yellow | `open`, `pending`, `draft`, `in review`, `on progress`, `partially reconciled` |
 | `critical` | red | `overdue`, `rejected`, `failed`, `expired`, `error` |
 | `announcement` | **gray** | `closed`, `voided`, `inactive`, `archived`, `cancelled`, `not started`, `not reconciled` |
@@ -38,6 +38,7 @@ the same:
 
 | Status | Badge type | Klikpajak copy |
 |---|---|---|
+| `finalized` | `completed` (green) | Difinalisasi — reconciled and signed off |
 | `reconciled` | `completed` (green) | Selesai rekonsiliasi |
 | `partially reconciled` | `warning` (yellow) | Terekonsiliasi sebagian |
 | `not reconciled` | `announcement` (gray) | Belum direkonsiliasi |

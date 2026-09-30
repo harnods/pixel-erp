@@ -1,320 +1,180 @@
 <script setup lang="ts">
 /**
- * Matching rules — how the reconciliation engine decides what to auto-match,
- * suggest, or flag.
+ * VAT reconciliation setup — which Jurnal tax codes count as PPN Keluaran
+ * (PRD OD-001 v1.0, US-016).
  *
- * Settings on the left, a live "how the engine will behave" preview on the right
- * that recomputes from the current threshold values, so the user can see the
- * effect of a slider before saving. Save / Restore defaults are title-bar actions
- * in [...slug].vue.
+ * This replaced the old "Matching rules" page. v1.0 makes the matching model
+ * deterministic and fixed (§4): exact key, exact corroboration, direction check,
+ * no tolerance window, no confidence thresholds, no AI in the engine. There is
+ * nothing left to tune — so the only thing the user configures is *what data
+ * comes in*, and the rules the engine applies are stated rather than adjustable.
+ *
+ * Setup is mandatory before the index is reachable; the gate lives in
+ * VatReconciliationPeriodsPage. Save is a title-bar action in [...slug].vue.
  */
 import type { Ref } from 'vue'
-import { MpIcon, MpToggle, MpSlider, MpSegmentedControl } from '@mekari/pixel3'
-import { MATCH_META } from '~/data/vatReconciliation'
+import { MpIcon, MpCheckbox } from '@mekari/pixel3'
+import {
+  VAT_OUT_TAX_CODES, loadVatSetup, saveVatSetup, taxCodeLabels,
+  SNAPSHOT_TAX_CODE_IDS, FIRST_PERIOD_ID, periodLabelById,
+} from '~/data/vatReconciliation'
+import { infoToast } from '~/utils/toasts'
 
 const { t } = useLocale()
 
-interface Rules {
-  npwp: string
-  invoiceRef: string
-  party: string
-  dateWindow: number
-  dppTolerance: number
-  ppnTolerance: number
-  autoMatchThreshold: number
-  suggestThreshold: number
-  aiSuggestions: boolean
-  autoApprove: boolean
-}
+const selected = ref<string[]>(loadVatSetup()?.taxCodeIds ?? [...SNAPSHOT_TAX_CODE_IDS])
+const saved = ref(loadVatSetup())
 
-const DEFAULTS: Rules = {
-  npwp: 'exact',
-  invoiceRef: 'fuzzy',
-  party: 'fuzzy',
-  dateWindow: 3,
-  dppTolerance: 0,
-  ppnTolerance: 100,
-  autoMatchThreshold: 95,
-  suggestThreshold: 70,
-  aiSuggestions: true,
-  autoApprove: false,
-}
-
-const rules = reactive<Rules>({ ...DEFAULTS })
-
-// "Restore defaults" is a title-bar action (see [...slug].vue) — it bumps this
-// injected counter rather than reaching into the page.
-const resetSignal = inject<Ref<number>>('matchingRulesReset', ref(0))
-watch(resetSignal, () => Object.assign(rules, DEFAULTS))
-
-/**
- * `options` is shaped for MpSegmentedControl's `data` prop ({ id, label, value }),
- * so the control renders itself instead of us hand-rolling a pill group.
- */
-const attributeRules = [
-  {
-    key: 'npwp' as const,
-    title: 'NPWP (tax ID)',
-    description: 'The taxpayer identification number on both records.',
-    weight: 'High',
-    options: [
-      { id: 'npwp-exact', label: 'Exact match', value: 'exact' },
-      { id: 'npwp-ignore', label: 'Ignore', value: 'ignore' },
-    ],
-  },
-  {
-    key: 'invoiceRef' as const,
-    title: 'Invoice / faktur reference',
-    description: 'Compare the ERP reference against the Coretax faktur number.',
-    weight: 'Medium',
-    options: [
-      { id: 'ref-exact', label: 'Exact', value: 'exact' },
-      { id: 'ref-fuzzy', label: 'Fuzzy', value: 'fuzzy' },
-      { id: 'ref-ignore', label: 'Ignore', value: 'ignore' },
-    ],
-  },
-  {
-    key: 'party' as const,
-    title: 'Party name',
-    description: 'Customer or vendor display name.',
-    weight: 'Low',
-    options: [
-      { id: 'party-exact', label: 'Exact', value: 'exact' },
-      { id: 'party-fuzzy', label: 'Fuzzy', value: 'fuzzy' },
-      { id: 'party-ignore', label: 'Ignore', value: 'ignore' },
-    ],
-  },
-]
-
-/** Sliders are MpSlider; these describe the three tolerance/threshold groups. */
-const toleranceSliders = [
-  { key: 'dateWindow' as const, title: 'Date window', description: 'Maximum days between the ERP date and the Coretax date.', min: 0, max: 14, step: 1, suffix: 'days' as const },
-  { key: 'dppTolerance' as const, title: 'DPP tolerance', description: 'Acceptable difference in the taxable base amount.', min: 0, max: 10000, step: 100, suffix: 'rp' as const },
-  { key: 'ppnTolerance' as const, title: 'PPN tolerance', description: 'Acceptable difference in the tax amount.', min: 0, max: 5000, step: 50, suffix: 'rp' as const },
-]
-
-const thresholdSliders = [
-  { key: 'autoMatchThreshold' as const, title: 'Auto-match threshold', description: 'Above this confidence the pair is matched without review.', min: 71, max: 100, step: 1, suffix: 'pct' as const },
-  { key: 'suggestThreshold' as const, title: 'Suggested match threshold', description: 'Above this confidence the pair appears as a suggestion to review.', min: 50, max: 95, step: 1, suffix: 'pct' as const },
-]
-
-/** Formats a slider's current value for the read-out box beside it. */
-function readout(value: number, suffix: 'days' | 'rp' | 'pct'): string {
-  if (suffix === 'rp') return `Rp${value.toLocaleString('id-ID')}`
-  if (suffix === 'pct') return `${value}%`
-  return `${value} ${value === 1 ? t('day') : t('days')}`
-}
-
-/**
- * Confidence bands, derived so they always agree with the two thresholds. Colours
- * come from MATCH_META so this preview can't drift from the workspace rows it
- * predicts (auto-matched → matched, suggested → the Airene AI treatment, …).
- */
-const bands = computed(() => [
-  { band: `${rules.autoMatchThreshold}–100%`, label: t('Auto-matched'), meta: MATCH_META.matched },
-  { band: `${rules.suggestThreshold}–${rules.autoMatchThreshold - 1}%`, label: t('Suggested match'), meta: MATCH_META.suggested },
-  { band: `0–${rules.suggestThreshold - 1}%`, label: t('Discrepancy or unmatched'), meta: MATCH_META['erp-only'] },
-])
-
-const ruleHistory = [
-  { time: '21 May 2026', user: 'Rizal Candra', what: 'Lowered PPN tolerance to Rp100' },
-  { time: '14 May 2026', user: 'Rizal Candra', what: 'Enabled AI explanations' },
-  { time: '01 Apr 2026', user: 'Andini Sari', what: 'Initial setup' },
-]
-
-/**
- * Keep the suggest threshold strictly below the auto-match threshold — the bands
- * are rendered from the gap between them, and an inverted pair would print a
- * nonsense range like "95–69%".
- */
-watch(() => rules.autoMatchThreshold, (v) => {
-  if (rules.suggestThreshold >= v) rules.suggestThreshold = v - 1
+onMounted(() => {
+  const s = loadVatSetup()
+  if (s) { saved.value = s; selected.value = [...s.taxCodeIds] }
 })
-watch(() => rules.suggestThreshold, (v) => {
-  if (v >= rules.autoMatchThreshold) rules.autoMatchThreshold = Math.min(100, v + 1)
-})
+
+function toggle(id: string, on: boolean) {
+  selected.value = on
+    ? [...new Set([...selected.value, id])]
+    : selected.value.filter(x => x !== id)
+}
+
+/** At least one code, or reconciliation has nothing to pull. */
+const canSave = computed(() => selected.value.length > 0)
+
+/**
+ * Changing setup after a period was reconciled doesn't rewrite that period — it
+ * keeps the snapshot of the codes it ran with. Re-run is where the change takes
+ * effect, and it warns first (US-016).
+ */
+const changedSinceSnapshot = computed(() =>
+  [...selected.value].sort().join() !== [...SNAPSHOT_TAX_CODE_IDS].sort().join())
+
+function save() {
+  if (!canSave.value) return
+  saved.value = saveVatSetup([...selected.value])
+  infoToast(t('Tax code setup saved'))
+}
+
+// "Save changes" is a title-bar action (see [...slug].vue) — it bumps this
+// counter, the same way Restore defaults used to.
+const saveSignal = inject<Ref<number>>('vatSetupSave', ref(0))
+watch(saveSignal, save)
+
+/**
+ * The matching model is fixed in v1.0 (§4), so the page states it rather than
+ * offering controls. Each line is a rule the engine applies to every pair.
+ */
+const fixedRules = [
+  {
+    title: 'Match key',
+    description: 'Sales invoice number against the faktur Referensi. Normalized first: trimmed, case-insensitive, separators ignored.',
+    value: 'Exact',
+  },
+  {
+    title: 'Corroboration',
+    description: 'DPP, PPN and PPnBM must agree to the rupiah, and the buyer NPWP or NIK must match. PPnBM of 0 on both sides is not a mismatch.',
+    value: 'Exact',
+  },
+  {
+    title: 'Faktur date',
+    description: 'A faktur must be dated on or after the invoice it belongs to. One dated earlier is flagged, never matched. There is no tolerance window — Coretax enforces the issuance deadline at upload.',
+    value: 'Direction checked',
+  },
+  {
+    title: 'Faktur status',
+    description: 'Only Approved faktur are matched. Draft, Batal and Rejected are excluded and tagged.',
+    value: 'Approved only',
+  },
+]
 </script>
 
 <template>
   <div class="vm-page">
-    <!-- Settings column -->
     <div class="vm-main">
-      <!-- Matching attributes -->
+      <!-- US-016 — the one thing the user actually configures -->
       <section class="vm-card">
         <header class="vm-card-head">
           <div class="vm-card-icon"><MpIcon name="sliders" size="md" /></div>
           <div>
-            <div class="vm-card-title">{{ t('Matching attributes') }}</div>
-            <div class="vm-card-sub">{{ t('Pick which fields the engine compares, and how strictly.') }}</div>
+            <div class="vm-card-title">{{ t('PPN Keluaran tax codes') }}</div>
+            <div class="vm-card-sub">{{ t('Sales invoices carrying these tax codes are pulled into reconciliation.') }}</div>
           </div>
         </header>
         <div class="vm-card-body">
-          <div v-for="attr in attributeRules" :key="attr.key" class="vm-rule">
+          <label v-for="c in VAT_OUT_TAX_CODES" :key="c.id" class="vm-rule vm-code">
+            <MpCheckbox
+              :id="`vm-code-${c.id}`"
+              :is-checked="selected.includes(c.id)"
+              :aria-label="c.name"
+              @change="(v: boolean) => toggle(c.id, v)"
+            />
             <div class="vm-rule-text">
               <div class="vm-rule-title-row">
-                <span class="vm-rule-title">{{ t(attr.title) }}</span>
-                <span class="vm-weight">{{ t('Weight') }} · {{ t(attr.weight) }}</span>
+                <span class="vm-rule-title">{{ c.code }}</span>
+                <span class="vm-weight">{{ c.name }}</span>
               </div>
-              <div class="vm-rule-desc">{{ t(attr.description) }}</div>
+              <div class="vm-rule-desc">{{ c.account }}</div>
             </div>
-            <MpSegmentedControl
-              :id="`vm-seg-${attr.key}`"
-              :name="`vm-seg-${attr.key}`"
-              v-model="rules[attr.key]"
-              :data="attr.options.map(o => ({ ...o, label: t(o.label) }))"
-            />
+          </label>
+
+          <div class="vm-note">
+            <MpIcon name="info" size="sm" color="icon.information" class="vm-note-icon" />
+            <div>
+              {{ t('Journal entries and bank deposits that post to these accounts are pulled in too, even when the line carries no tax code.') }}
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- Tolerances -->
+      <!-- §4 — applied to every match, nothing to tune -->
       <section class="vm-card">
         <header class="vm-card-head">
           <div class="vm-card-icon"><MpIcon name="calculator" size="md" /></div>
           <div>
-            <div class="vm-card-title">{{ t('Tolerances') }}</div>
-            <div class="vm-card-sub">{{ t('How much drift can be ignored before the engine flags a discrepancy.') }}</div>
+            <div class="vm-card-title">{{ t('How matching works') }}</div>
+            <div class="vm-card-sub">{{ t('Applied to every pair and not configurable.') }}</div>
           </div>
         </header>
         <div class="vm-card-body">
-          <div v-for="s in toleranceSliders" :key="s.key" class="vm-slider">
-            <div class="vm-slider-head">
-              <div>
-                <div class="vm-rule-title">{{ t(s.title) }}</div>
-                <div class="vm-rule-desc">{{ t(s.description) }}</div>
-              </div>
-              <div class="vm-readout">{{ readout(rules[s.key], s.suffix) }}</div>
-            </div>
-            <MpSlider
-              :id="`vm-slider-${s.key}`"
-              :value="rules[s.key]"
-              :min="s.min"
-              :max="s.max"
-              :step="s.step"
-              :aria-label="t(s.title)"
-              @change="(v: number | number[]) => rules[s.key] = Number(v)"
-            >
-              <template #label><span class="vm-sr-only">{{ t(s.title) }}</span></template>
-              <template #value><span /></template>
-              <template #min>{{ readout(s.min, s.suffix) }}</template>
-              <template #max>{{ readout(s.max, s.suffix) }}</template>
-            </MpSlider>
-          </div>
-        </div>
-      </section>
-
-      <!-- Confidence thresholds -->
-      <section class="vm-card">
-        <header class="vm-card-head">
-          <div class="vm-card-icon"><MpIcon name="chart-line" size="md" /></div>
-          <div>
-            <div class="vm-card-title">{{ t('Confidence thresholds') }}</div>
-            <div class="vm-card-sub">{{ t('The engine scores every match. These thresholds decide what happens next.') }}</div>
-          </div>
-        </header>
-        <div class="vm-card-body">
-          <div v-for="s in thresholdSliders" :key="s.key" class="vm-slider">
-            <div class="vm-slider-head">
-              <div>
-                <div class="vm-rule-title">{{ t(s.title) }}</div>
-                <div class="vm-rule-desc">{{ t(s.description) }}</div>
-              </div>
-              <div class="vm-readout">{{ readout(rules[s.key], s.suffix) }}</div>
-            </div>
-            <MpSlider
-              :id="`vm-slider-${s.key}`"
-              :value="rules[s.key]"
-              :min="s.min"
-              :max="s.max"
-              :step="s.step"
-              :aria-label="t(s.title)"
-              @change="(v: number | number[]) => rules[s.key] = Number(v)"
-            >
-              <template #label><span class="vm-sr-only">{{ t(s.title) }}</span></template>
-              <template #value><span /></template>
-              <template #min>{{ readout(s.min, s.suffix) }}</template>
-              <template #max>{{ readout(s.max, s.suffix) }}</template>
-            </MpSlider>
-          </div>
-
-          <div class="vm-note">
-            <!-- MpIcon ignores CSS `color`, so the tint comes from the prop.
-                 There is no Airene icon token; information is the nearest. -->
-            <MpIcon name="magic" size="sm" color="icon.information" class="vm-note-icon" />
-            <div>
-              {{ t('Pairs scoring below') }} {{ rules.suggestThreshold }}%
-              {{ t('are flagged as discrepancies or unmatched, depending on which fields differ.') }}
-              <span class="vm-note-accent">{{ t('AI explanations') }}</span>
-              {{ t('tell users why each suggestion was made.') }}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Automation -->
-      <section class="vm-card">
-        <header class="vm-card-head">
-          <div class="vm-card-icon"><MpIcon name="magic" size="md" /></div>
-          <div>
-            <div class="vm-card-title">{{ t('Automation') }}</div>
-            <div class="vm-card-sub">{{ t('What the engine does on its own when it finds a high-confidence match.') }}</div>
-          </div>
-        </header>
-        <div class="vm-card-body">
-          <div class="vm-toggle-row">
+          <div v-for="r in fixedRules" :key="r.title" class="vm-rule">
             <div class="vm-rule-text">
-              <div class="vm-rule-title">{{ t('Use AI to explain suggestions') }}</div>
-              <div class="vm-rule-desc">{{ t('Show plain-language reasoning next to each suggested match and discrepancy.') }}</div>
+              <div class="vm-rule-title-row">
+                <span class="vm-rule-title">{{ t(r.title) }}</span>
+              </div>
+              <div class="vm-rule-desc">{{ t(r.description) }}</div>
             </div>
-            <MpToggle v-model:is-checked="rules.aiSuggestions" :aria-label="t('Use AI to explain suggestions')" />
-          </div>
-          <div class="vm-toggle-row">
-            <div class="vm-rule-text">
-              <div class="vm-rule-title">{{ t('Auto-approve high-confidence matches') }}</div>
-              <div class="vm-rule-desc">{{ t('Pairs above the auto-match threshold are accepted with no manual review. You can still unmatch them later.') }}</div>
-            </div>
-            <MpToggle v-model:is-checked="rules.autoApprove" :aria-label="t('Auto-approve high-confidence matches')" />
+            <span class="vm-fixed-value">{{ t(r.value) }}</span>
           </div>
         </div>
       </section>
     </div>
 
-    <!-- Preview column -->
     <aside class="vm-aside">
       <div class="vm-preview">
         <div class="vm-preview-head">
           <MpIcon name="info" size="sm" color="icon.information" />
-          <div class="vm-card-title">{{ t('How the engine will behave') }}</div>
-        </div>
-        <div class="vm-bands">
-          <div
-            v-for="b in bands"
-            :key="b.label"
-            class="vm-band"
-            :style="{ background: b.meta.bg }"
-          >
-            <span class="vm-band-range" :style="{ color: b.meta.fg }">{{ b.band }}</span>
-            <span class="vm-band-label">{{ b.label }}</span>
-          </div>
+          <div class="vm-card-title">{{ t('What this affects') }}</div>
         </div>
         <div class="vm-preview-note">
-          <span class="vm-preview-note-strong">{{ t('Current period preview') }}:</span>
-          {{ t('with these rules, the last 248 invoices would have been') }}
-          <span class="vm-stat vm-stat--ok">221 {{ t('auto-matched') }}</span>,
-          <span class="vm-stat vm-stat--ai">18 {{ t('suggestions') }}</span>,
-          {{ t('and') }}
-          <span class="vm-stat vm-stat--bad">9 {{ t('flagged') }}</span>.
+          <span class="vm-preview-note-strong">{{ t('Selected') }}:</span>
+          {{ selected.length ? taxCodeLabels(selected) : t('none yet') }}.
+          {{ t('Periods are reconciled from') }}
+          {{ periodLabelById(FIRST_PERIOD_ID) }} {{ t('onward.') }}
+        </div>
+        <div v-if="changedSinceSnapshot" class="vm-preview-note vm-preview-note--warn">
+          <span class="vm-preview-note-strong">{{ t('Heads up') }}:</span>
+          {{ t('periods already reconciled keep the tax codes they ran with') }}
+          ({{ taxCodeLabels(SNAPSHOT_TAX_CODE_IDS) }}).
+          {{ t('Re-running one will use the current selection instead.') }}
         </div>
       </div>
 
-      <div class="vm-history">
+      <div v-if="saved" class="vm-history">
         <div class="vm-history-head">
           <MpIcon name="log" size="sm" />
-          <span>{{ t('Rule history') }}</span>
+          <span>{{ t('Setup history') }}</span>
         </div>
-        <div v-for="(h, i) in ruleHistory" :key="i" class="vm-history-row" :class="{ 'is-last': i === ruleHistory.length - 1 }">
-          <span class="vm-history-meta">{{ h.time }} · {{ h.user }}</span>
-          <span class="vm-history-what">{{ h.what }}</span>
+        <div class="vm-history-row is-last">
+          <span class="vm-history-meta">{{ new Date(saved.savedAt).toLocaleString('en-GB') }}</span>
+          <span class="vm-history-what">{{ taxCodeLabels(saved.taxCodeIds) }}</span>
         </div>
       </div>
     </aside>
@@ -388,6 +248,16 @@ watch(() => rules.suggestThreshold, (v) => {
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-1);
 }
+.vm-fixed-value {
+  flex: none;
+  padding: var(--mp-spacing-1) var(--mp-spacing-3);
+  border-radius: var(--mp-radii-full);
+  background: var(--mp-colors-neutral-100);
+  color: var(--mp-text-secondary);
+  font-size: var(--mp-font-sizes-sm);
+  font-weight: var(--mp-font-weights-semi-bold);
+  white-space: nowrap;
+}
 .vm-readout {
   padding: var(--mp-spacing-1) var(--mp-spacing-3); border-radius: var(--mp-radii-sm);
   background: var(--mp-background-neutral-subtle); border: 1px solid var(--mp-border-default);
@@ -450,6 +320,14 @@ watch(() => rules.suggestThreshold, (v) => {
   background: var(--mp-background-neutral-subtle); border: 1px solid var(--mp-border-default);
   font-size: var(--mp-font-sizes-xs); color: var(--mp-text-secondary); line-height: 1.5;
 }
+.vm-preview-note--warn {
+  margin-top: var(--mp-spacing-3);
+  padding: var(--mp-spacing-3);
+  border-radius: var(--mp-radii-md);
+  background: var(--mp-colors-orange-100);
+  color: var(--mp-colors-orange-800);
+}
+.vm-code { cursor: pointer; align-items: flex-start; gap: var(--mp-spacing-3); }
 .vm-preview-note-strong { font-weight: var(--mp-font-weights-bold); }
 .vm-stat { font-weight: var(--mp-font-weights-bold); }
 .vm-stat--ok { color: var(--mp-colors-emerald-800); }

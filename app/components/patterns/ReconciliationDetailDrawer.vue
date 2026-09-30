@@ -50,7 +50,7 @@ const diffFields = computed(() => new Set(props.pair?.fields ?? []))
 
 /** Candidates are only worth showing while the pair is still open for matching. */
 const showCandidates = computed(() =>
-  props.pair ? ['suggested', 'erp-only', 'djp-only'].includes(props.pair.match) : false,
+  props.pair ? ['not-in-coretax', 'no-match-in-erp', 'duplicate-reference'].includes(props.pair.match) : false,
 )
 
 interface CompareField { key: string; label: string; money?: boolean }
@@ -84,21 +84,23 @@ function isDiff(f: CompareField): boolean {
 
 const reasonTitle = computed(() => {
   if (!props.pair) return ''
-  switch (props.pair.match) {
-    case 'suggested':
-      return `${t('AI suggested match')} · ${Math.round(props.pair.confidence * 100)}% ${t('confidence')}`
-    case 'discrepancy':
-      return t('Discrepancy detected')
-    default:
-      return t('Unmatched record')
-  }
+  // The drawer header is the long form of the status. The point of the status
+  // model is that a row says what is wrong, never just that it is "unmatched".
+  return t(MATCH_META[props.pair.match].longLabel)
 })
 
 const activity = computed(() => [
   { icon: 'refresh', text: t('Synced from Coretax'), who: t('System'), time: '21 May 2026, 14:32' },
+  ...(props.pair?.match === 'matched' && props.pair.matchedBy === 'manual'
+    ? [{
+        icon: 'done',
+        text: t('Matched manually after review'),
+        who: 'Rizal Candra', time: '21 May 2026, 15:04',
+      }]
+    : []),
   {
     icon: 'magic',
-    text: props.pair?.match === 'matched'
+    text: props.pair?.match === 'matched' && props.pair.matchedBy !== 'manual'
       ? t('Auto-matched on NPWP, DPP, PPN and date')
       : t('Flagged for review by matching engine'),
     who: t('Reconciliation engine'), time: '21 May 2026, 14:32',
@@ -257,33 +259,77 @@ const activity = computed(() => [
               {{ t('Open in Coretax') }}
             </MpButton>
             <div class="rdd-footer-actions">
+              <!-- Rows 1-2: the only thing left to do is undo it. -->
               <template v-if="pair.match === 'matched'">
                 <MpButton variant="secondary" is-rounded @click="act(t('Match canceled'), true)">
                   {{ t('Unmatch') }}
                 </MpButton>
               </template>
-              <template v-else-if="pair.match === 'suggested'">
-                <MpButton variant="secondary" is-rounded @click="act(t('Suggestion ignored'), true)">
-                  {{ t('Ignore') }}
-                </MpButton>
+              <!-- Rows 8 and 11: the engine will not decide; a person confirms. -->
+              <template v-else-if="pair.match === 'return-netted'">
                 <MpButton variant="primary" is-rounded left-icon="check" @click="act(t('Match confirmed'), true)">
-                  {{ t('Match') }}
+                  {{ t('Confirm match') }}
                 </MpButton>
               </template>
-              <template v-else-if="pair.match === 'discrepancy'">
-                <MpButton variant="secondary" is-rounded left-icon="edit" @click="act(t('Opening ERP record…'))">
-                  {{ t('Adjust ERP record') }}
-                </MpButton>
-                <MpButton variant="primary" is-rounded left-icon="check" @click="act(t('Discrepancy accepted'), true)">
-                  {{ t('Accept anyway') }}
+              <template v-else-if="pair.match === 'duplicate-reference'">
+                <MpButton variant="primary" is-rounded @click="act(t('Opening faktur list…'))">
+                  {{ t('Select faktur') }}
                 </MpButton>
               </template>
-              <template v-else>
-                <MpButton variant="secondary" is-rounded left-icon="flag" @click="act(t('Record flagged for follow-up'))">
-                  {{ t('Flag') }}
+              <!-- Row 3 (US-008) / row 4 (US-009): a document is missing. -->
+              <template v-else-if="pair.match === 'not-in-coretax'">
+                <MpButton variant="secondary" is-rounded @click="act(t('Opening match picker…'))">
+                  {{ t('Find & match') }}
                 </MpButton>
-                <MpButton variant="primary" is-rounded left-icon="add" @click="act(t('Opening create form…'), true)">
-                  {{ pair.match === 'erp-only' ? t('Create faktur') : t('Create purchase invoice') }}
+                <MpButton variant="primary" is-rounded @click="act(t('Opening Klikpajak…'), true)">
+                  {{ t('Create faktur pajak') }}
+                </MpButton>
+              </template>
+              <template v-else-if="pair.match === 'no-match-in-erp'">
+                <MpButton variant="secondary" is-rounded @click="act(t('Opening match picker…'))">
+                  {{ t('Find & match') }}
+                </MpButton>
+                <MpButton variant="primary" is-rounded @click="act(t('Opening sales invoice…'), true)">
+                  {{ side === 'input' ? t('Create purchase invoice') : t('Create sales invoice') }}
+                </MpButton>
+              </template>
+              <!-- Row 5 (US-010): correct the invoice, or supersede the faktur. -->
+              <template v-else-if="pair.match === 'invoice-edited'">
+                <MpButton variant="secondary" is-rounded left-icon="edit" @click="act(t('Opening sales invoice…'))">
+                  {{ t('Edit sales invoice') }}
+                </MpButton>
+                <MpButton variant="primary" is-rounded @click="act(t('Opening Klikpajak…'), true)">
+                  {{ t('Create faktur pengganti') }}
+                </MpButton>
+              </template>
+              <!-- Row 6 (US-011): the invoice is gone, the faktur must follow. -->
+              <template v-else-if="pair.match === 'invoice-voided'">
+                <MpButton variant="primary" is-rounded @click="act(t('Opening Klikpajak…'), true)">
+                  {{ t('Cancel faktur') }}
+                </MpButton>
+              </template>
+              <!-- Row 7 (US-012): pengganti net, or park it on the buyer. -->
+              <template v-else-if="pair.match === 'return-not-reflected'">
+                <MpButton variant="secondary" is-rounded left-icon="time" @click="act(t('Marked as waiting on buyer'), true)">
+                  {{ t('Waiting on buyer') }}
+                </MpButton>
+                <MpButton variant="primary" is-rounded @click="act(t('Opening Klikpajak…'), true)">
+                  {{ t('Create faktur pengganti (net)') }}
+                </MpButton>
+              </template>
+              <!-- Rows 9-10: a date is wrong on one side or the other. -->
+              <template v-else-if="pair.match === 'faktur-predates' || pair.match === 'return-date-mismatch'">
+                <MpButton variant="secondary" is-rounded left-icon="edit" @click="act(t('Opening sales invoice…'))">
+                  {{ t('Correct invoice date') }}
+                </MpButton>
+                <MpButton variant="primary" is-rounded @click="act(t('Opening Coretax…'))">
+                  {{ t('Correct faktur date') }}
+                </MpButton>
+              </template>
+              <!-- Row 12: nothing can be matched into a finalized period. -->
+              <template v-else-if="pair.match === 'period-finalized'">
+                <MpButton variant="secondary" is-rounded @click="act(t('Opening period…'))">
+                  {{ t('Unfinalize period') }}
                 </MpButton>
               </template>
             </div>

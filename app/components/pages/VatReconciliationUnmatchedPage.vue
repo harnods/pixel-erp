@@ -28,7 +28,8 @@ import { infoToast } from '~/utils/toasts'
 import ReconciliationDetailDrawer from '~/components/patterns/ReconciliationDetailDrawer.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import {
-  MATCH_META, reconIssues, issueRows, formatAmountPlain, periodLabelById, SIDE_LABELS,
+  MATCH_META, ATTENTION_STATES, reconIssues, issueRows, formatAmountPlain, periodLabelById, SIDE_LABELS,
+  activePeriodId,
   type ReconIssue, type MatchState, type ReconSide, type ReconIssueRow,
 } from '~/data/vatReconciliation'
 
@@ -46,25 +47,24 @@ const scopedSide = computed<ReconSide | null>(() => {
   const jenis = route.query.jenis
   return jenis === 'input' || jenis === 'output' ? jenis : null
 })
+// The queue belongs to a masa — it is only ever reached from a period row, so
+// both the feed and the scope line read the same ?masa=.
+const scopedPeriodId = computed(() => String(route.query.masa ?? activePeriodId))
 const scopedPeriod = computed(() => periodLabelById(String(route.query.masa ?? '')))
 
 const issues = computed(() =>
-  reconIssues().filter(i => !scopedSide.value || i.side === scopedSide.value),
+  reconIssues(scopedPeriodId.value).filter(i => !scopedSide.value || i.side === scopedSide.value),
 )
 const rows = computed(() =>
-  issueRows().filter(r => !scopedSide.value || r.side === scopedSide.value),
+  issueRows(scopedPeriodId.value).filter(r => !scopedSide.value || r.side === scopedSide.value),
 )
 
 /**
  * Status select options — real values only, no "All issues" entry: clearing the
  * select (x) is what shows everything (docs/patterns/Form.md → Select).
  */
-const STATUS_OPTIONS: { label: string; value: MatchState }[] = [
-  { label: t('Suggested'),    value: 'suggested'   },
-  { label: t('Discrepancy'),  value: 'discrepancy' },
-  { label: t('ERP only'),     value: 'erp-only'    },
-  { label: t('Coretax only'), value: 'djp-only'    },
-]
+const STATUS_OPTIONS: { label: string; value: MatchState }[] =
+  ATTENTION_STATES.map(v => ({ label: t(MATCH_META[v].chipLabel), value: v }))
 
 const {
   statusFilter, currentPage, perPage, paginated, total, setPage, setPerPage, setSort,
@@ -80,13 +80,20 @@ const statusLabel = computed(
   () => STATUS_OPTIONS.find(o => o.value === statusFilter.value)?.label ?? '',
 )
 
-const counts = computed(() => ({
-  all: issues.value.length,
-  suggested: issues.value.filter(i => i.match === 'suggested').length,
-  discrepancy: issues.value.filter(i => i.match === 'discrepancy').length,
-  'erp-only': issues.value.filter(i => i.match === 'erp-only').length,
-  'djp-only': issues.value.filter(i => i.match === 'djp-only').length,
-}))
+const counts = computed(() => {
+  const by = (m: MatchState) => issues.value.filter(i => i.match === m).length
+  return {
+    all: issues.value.length,
+    // The five tiles group the eleven statuses by what the user does next:
+    // confirm something, correct something, or chase a missing document.
+    pendingReview: by('return-netted') + by('duplicate-reference'),
+    correction: by('invoice-edited') + by('invoice-voided'),
+    dates: by('faktur-predates') + by('return-date-mismatch'),
+    returns: by('return-not-reflected'),
+    notInCoretax: by('not-in-coretax'),
+    noMatchInErp: by('no-match-in-erp'),
+  }
+})
 
 /**
  * `iconColor` is MpIcon's `color` prop, not CSS: MpIcon inline-styles
@@ -95,10 +102,12 @@ const counts = computed(() => ({
  * `--mp-colors-*` (`icon.danger` → `--mp-colors-icon-danger`).
  */
 const tiles = computed(() => [
-  { label: 'Need review', sub: 'Suggested matches', value: counts.value.suggested, accent: 'info', icon: 'magic', iconColor: 'icon.information' },
-  { label: 'Discrepancies', sub: 'Amount or date diffs', value: counts.value.discrepancy, accent: 'warning', icon: 'warning-triangle', iconColor: 'icon.warning' },
-  { label: 'ERP only', sub: 'No faktur in Coretax', value: counts.value['erp-only'], accent: 'critical', icon: 'database', iconColor: 'icon.danger' },
-  { label: 'Coretax only', sub: 'Not recorded in ERP', value: counts.value['djp-only'], accent: 'critical', icon: 'cloud', iconColor: 'icon.danger' },
+  { label: 'Pending review', sub: 'You confirm the match', value: counts.value.pendingReview, accent: 'info', icon: 'magic', iconColor: 'icon.information' },
+  { label: 'Needs correction', sub: 'Invoice edited or voided', value: counts.value.correction, accent: 'warning', icon: 'edit', iconColor: 'icon.warning' },
+  { label: 'Date problems', sub: 'Dates out of order', value: counts.value.dates, accent: 'warning', icon: 'time', iconColor: 'icon.warning' },
+  { label: 'Returns', sub: 'Return not reflected', value: counts.value.returns, accent: 'warning', icon: 'undo', iconColor: 'icon.warning' },
+  { label: 'Not in Coretax', sub: 'No faktur issued', value: counts.value.notInCoretax, accent: 'critical', icon: 'database', iconColor: 'icon.danger' },
+  { label: 'No match in ERP', sub: 'Not recorded in Jurnal', value: counts.value.noMatchInErp, accent: 'critical', icon: 'cloud', iconColor: 'icon.danger' },
 ])
 
 // ── Detail drawer ─────────────────────────────────────────────────────────────
@@ -263,7 +272,7 @@ function sourceLabel(side: ReconSide) {
 .vu-filters { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 
 /* ── Summary tiles ── */
-.vu-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--mp-spacing-3); }
+.vu-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: var(--mp-spacing-3); }
 .vu-tile {
   border-radius: var(--mp-radii-md); padding: var(--mp-spacing-3) var(--mp-spacing-4);
   display: flex; align-items: flex-start; gap: var(--mp-spacing-3);

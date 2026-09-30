@@ -16,12 +16,16 @@
  * context beside the H1, and the breadcrumb goes back to the index (both in
  * [...slug].vue, which also owns the title-bar actions).
  */
+import type { Ref } from 'vue'
 import { MpIcon, MpButton, MpBadge, MpAireneButton } from '@mekari/pixel3'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { formatIDR } from '~/utils/currency'
 import { infoToast } from '~/utils/toasts'
 import ReconciliationDetailDrawer from '~/components/patterns/ReconciliationDetailDrawer.vue'
 import {
-  MATCH_META, SIDE_LABELS, pairsForSide, reconTotals, matchCounts,
+  MATCH_META, ATTENTION_STATES, SIDE_LABELS, pairsForPeriod, activePeriodId,
+  periodLabelById, runPeriod, reconVersion, reconTotals, matchCounts,
+  isPeriodFinalized, canFinalizePeriod, finalizePeriod, unfinalizePeriod, periodFinalization,
   lastSyncedAt, formatAmountPlain, partyOf, exposureOf,
   type ReconPair, type ReconSide, type MatchState,
 } from '~/data/vatReconciliation'
@@ -31,7 +35,6 @@ const { currentPageKey } = useNavigation()
 
 const side = computed<ReconSide>(() => (currentPageKey.value === 'Faktur masukan' ? 'input' : 'output'))
 const L = computed(() => SIDE_LABELS[side.value])
-const pairs = computed(() => pairsForSide(side.value))
 
 // ── Filters ───────────────────────────────────────────────────────────────────
 /**
@@ -50,9 +53,65 @@ const pairs = computed(() => pairsForSide(side.value))
  */
 const route = useRoute()
 
+// Scoped to the masa the index sent us (?masa=). Without this every period
+// rendered April's fixtures under its own header.
+const periodId = computed(() => String(route.query.masa ?? activePeriodId))
+// reconVersion is read so the pairs re-derive after a run — the data layer is
+// plain functions, so this is the dependency that makes the screen change.
+const pairs = computed(() => {
+  void reconVersion.value
+  return pairsForPeriod(periodId.value, side.value)
+})
+
+const periodName = computed(() => periodLabelById(periodId.value) ?? '')
+
+// ── Finalize (US-021) ─────────────────────────────────────────────────────────
+/**
+ * Finalizing records that this masa was signed off. It does not lock Jurnal —
+ * invoices behind it stay editable — so the only thing it blocks is this module
+ * rewriting the signed-off result: Re-run is refused until it is unfinalized.
+ */
+const finalized = computed(() => {
+  void reconVersion.value
+  return isPeriodFinalized(periodId.value)
+})
+const canFinalize = computed(() => {
+  void reconVersion.value
+  return canFinalizePeriod(periodId.value)
+})
+const finalization = computed(() => {
+  void reconVersion.value
+  return periodFinalization(periodId.value)
+})
+/** Same DD/MM/YYYY the index uses, so a sign-off date reads the same in both. */
+function formatDate(iso: string) {
+  return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    .format(new Date(iso))
+}
+
+const finalizeOpen = ref(false)
+const unfinalizeOpen = ref(false)
+
+function doFinalize() {
+  finalizePeriod(periodId.value)
+  infoToast(`${periodName.value} ${t('finalized')}`)
+}
+function doUnfinalize() {
+  unfinalizePeriod(periodId.value)
+  infoToast(`${periodName.value} ${t('unfinalized')}`)
+}
+
+/** Title-bar Finalize/Unfinalize, wired from [...slug].vue like the other actions. */
+const finalizeSignal = inject<Ref<number>>('vatFinalize', ref(0))
+watch(finalizeSignal, () => {
+  if (finalized.value) unfinalizeOpen.value = true
+  else if (canFinalize.value) finalizeOpen.value = true
+})
+
 const isAttentionScope = computed(() => route.query.tab !== 'All faktur')
 
-const ATTENTION_STATES: MatchState[] = ['suggested', 'discrepancy', 'erp-only', 'djp-only']
+// Imported from the data layer so the filter can never fall behind the status
+// model (PRD §5.1) the way a hand-listed copy did.
 
 const statusFilter = ref<MatchState | ''>('')
 const query = ref('')
@@ -96,8 +155,16 @@ const taxGap = computed(() =>
   (djpTotals.value.dpp + djpTotals.value.ppn) - (erpTotals.value.dpp + erpTotals.value.ppn))
 
 /** Pairs the engine wants a human to look at. */
-const reviewCount = computed(() => counts.value.suggested! + counts.value.discrepancy!)
-const unmatchedCount = computed(() => counts.value['erp-only']! + counts.value['djp-only']!)
+/**
+ * Footer counts (US-020). "Unmatched" is only the two states where a document is
+ * missing outright; everything else is a row that has both sides but needs a
+ * correction or a confirmation, which is what "need review" means here.
+ */
+const unmatchedCount = computed(() =>
+  counts.value['not-in-coretax']! + counts.value['no-match-in-erp']!)
+const waitingCount = computed(() => counts.value['return-not-reflected']!)
+const reviewCount = computed(() =>
+  pairs.value.length - counts.value.matched! - unmatchedCount.value - waitingCount.value)
 
 /**
  * Options for the `Status` select, scoped to the active tab. Under "Needs
@@ -109,10 +176,14 @@ const statusOptions = computed(() => {
   const states = isAttentionScope.value
     ? ATTENTION_STATES
     : (['matched', ...ATTENTION_STATES] as MatchState[])
-  return states.map(k => ({
-    value: k,
-    label: `${t(MATCH_META[k].chipLabel)} (${counts.value[k] ?? 0})`,
-  }))
+  return states
+    // A status with no rows behind it is a dead end in a select, so it isn't
+    // offered — the count in the label is what makes the absence legible.
+    .filter(k => (counts.value[k] ?? 0) > 0)
+    .map(k => ({
+      value: k,
+      label: `${t(MATCH_META[k].chipLabel)} (${counts.value[k] ?? 0})`,
+    }))
 })
 
 // ── Detail drawer ─────────────────────────────────────────────────────────────
@@ -135,17 +206,54 @@ function isOutlineDot(pair: ReconPair) {
 }
 function isDiffField(pair: ReconPair, field: string) { return (pair.fields ?? []).includes(field) }
 /** The AI banner only makes sense where the engine actually reasoned about the pair. */
+// Any row that is not a clean auto-match explains itself — the status names the
+// cause, the reason line gives the detail behind it.
 function showsReason(pair: ReconPair) {
-  return !!pair.reason && (pair.match === 'suggested' || pair.match === 'discrepancy')
+  return !!pair.reason
 }
 
-function acceptAll() {
-  infoToast(`${counts.value.suggested} ${t('matches confirmed')}`)
+/**
+ * Re-run (US-002): re-pull both sides and recompute every status. This is the
+ * only way a row's status changes on its own — v1.0 dropped the auto-revert.
+ */
+/**
+ * Matching runs automatically per masa pajak, so this is a refresh, not a start:
+ * it re-pulls both sides and recomputes every status against what has synced
+ * since. It is the only thing that moves a status on its own (US-002).
+ */
+function reRun() {
+  // US-002: a finalized period is a record. Rewriting it silently would defeat
+  // the point, so the way back in is explicit.
+  if (finalized.value) { infoToast(t('Unfinalize first to re-run this period')); return }
+  runPeriod(periodId.value)
+  infoToast(`${t('Match re-run')} — ${matchCounts(pairs.value).matched} ${t('matched')}`)
+}
+
+/**
+ * Airene suggests candidates for Find & match; it never sets a status. The
+ * matching engine itself is deterministic (US-014/015 live in OD-001-AI-01).
+ */
+function reviewWithAirene() {
+  infoToast(t('Airene is looking for candidates…'))
 }
 </script>
 
 <template>
   <div class="vr-page">
+    <!-- Signed off: say who and when, and that Jurnal is not locked (R5). -->
+    <div v-if="finalized && finalization" class="vr-finalized">
+      <MpIcon name="receipt-lock" size="sm" color="icon.success" />
+      <span class="vr-finalized-text">
+        <strong>{{ t('Finalized') }}</strong>
+        {{ t('by') }} {{ finalization.finalizedBy }} · {{ formatDate(finalization.finalizedAt) }}.
+        {{ t('Sales invoices stay editable in Jurnal; changes will be flagged here.') }}
+      </span>
+      <div class="vr-toolbar-spacer" />
+      <MpButton variant="secondary" size="sm" is-rounded @click="unfinalizeOpen = true">
+        {{ t('Unfinalize') }}
+      </MpButton>
+    </div>
+
     <!-- KPI strip -->
     <div class="vr-kpis">
       <div class="vr-kpi">
@@ -229,11 +337,15 @@ function acceptAll() {
       </div>
 
       <div class="filter-right">
+        <MpButton variant="secondary" size="sm" is-rounded left-icon="refresh" @click="reRun">
+          {{ t('Re-run') }}
+        </MpButton>
+
         <MpAireneButton
           v-if="reviewCount > 0"
           id="vr-airene-review"
           is-show-badge
-          @click="acceptAll"
+          @click="reviewWithAirene"
         >
           {{ t('Review with Airene') }}
         </MpAireneButton>
@@ -350,13 +462,6 @@ function acceptAll() {
                 :color="isOutlineDot(pair) ? metaFor(pair).iconColorOutline : metaFor(pair).iconColor"
               />
             </div>
-            <span
-              v-if="pair.match === 'suggested' || pair.match === 'discrepancy'"
-              class="vr-connector-pct"
-              :style="{ color: metaFor(pair).fg }"
-            >
-              {{ Math.round(pair.confidence * 100) }}%
-            </span>
           </div>
 
           <!-- Coretax side -->
@@ -410,26 +515,11 @@ function acceptAll() {
           >
             <!-- Light tint behind it → state colour, not inverse. -->
             <MpIcon :name="metaFor(pair).icon" size="sm" :color="metaFor(pair).iconColorOutline" />
-            <span class="vr-reason-title">
-              {{ pair.match === 'suggested'
-                ? `${t('AI suggested match')} · ${Math.round(pair.confidence * 100)}% ${t('confidence')}`
-                : t('Discrepancy detected') }}
-            </span>
+            <span class="vr-reason-title">{{ t(metaFor(pair).longLabel) }}</span>
             <span class="vr-reason-body">· {{ pair.reason }}</span>
             <div class="vr-toolbar-spacer" />
-            <template v-if="pair.match === 'suggested'">
-              <MpButton
-                variant="primary" size="sm" is-rounded left-icon="check"
-                @click="infoToast(t('Match confirmed'))"
-              >
-                {{ t('Match') }}
-              </MpButton>
-              <MpButton variant="ghost" size="sm" is-rounded @click="infoToast(t('Suggestion ignored'))">
-                {{ t('Ignore') }}
-              </MpButton>
-            </template>
-            <MpButton v-else variant="secondary" size="sm" is-rounded @click="openDetail(pair)">
-              {{ t('Review discrepancy') }}
+            <MpButton variant="secondary" size="sm" is-rounded @click="openDetail(pair)">
+              {{ t('Review') }}
             </MpButton>
           </div>
         </div>
@@ -441,10 +531,32 @@ function acceptAll() {
           · {{ counts.matched }} {{ t('matched') }}
           · {{ reviewCount }} {{ t('need review') }}
           · {{ unmatchedCount }} {{ t('unmatched') }}
+          <!-- Rows parked on the buyer are not work the user can do, so they are
+               counted apart rather than inflating "need review" (US-020). -->
+          <template v-if="waitingCount">· {{ waitingCount }} {{ t('waiting on buyer') }}</template>
         </span>
         <span>{{ t('Last sync') }}: {{ lastSyncedAt }}</span>
       </div>
     </div>
+
+    <ConfirmModal
+      v-model:is-open="finalizeOpen"
+      :title="`${t('Finalize')} ${periodName}?`"
+      :description="t('This records what was reconciled and who signed it off. It does not lock Jurnal — sales invoices in this period stay editable, and any change will be flagged here.')"
+      :confirm-label="t('Finalize')"
+      :cancel-label="t('Cancel')"
+      :is-danger="false"
+      @confirm="doFinalize"
+    />
+    <ConfirmModal
+      v-model:is-open="unfinalizeOpen"
+      :title="`${t('Unfinalize')} ${periodName}?`"
+      :description="t('The period goes back to Reconciled and can be re-run. The sign-off is logged either way.')"
+      :confirm-label="t('Unfinalize')"
+      :cancel-label="t('Cancel')"
+      :is-danger="false"
+      @confirm="doUnfinalize"
+    />
 
     <ReconciliationDetailDrawer
       v-model:is-open="drawerOpen"
@@ -456,6 +568,20 @@ function acceptAll() {
 </template>
 
 <style scoped>
+/* Sign-off banner — green like the status, informational not celebratory. */
+.vr-finalized {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  border: 1px solid var(--mp-colors-green-200);
+  border-radius: var(--mp-radii-md);
+  background: var(--mp-colors-green-100);
+  color: var(--mp-colors-emerald-800);
+}
+.vr-finalized-text { font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); }
+
+
 .vr-page { display: flex; flex-direction: column; gap: var(--mp-spacing-4); min-height: 0; }
 
 /* ── KPI strip ── */

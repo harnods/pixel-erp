@@ -18,7 +18,7 @@
  */
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpButton, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -31,7 +31,8 @@ import ReconciliationFiltersDrawer, {
 // symbol on every cell is redundant — see docs/patterns/currency-format.md, a
 // labelled money column is not a currency display.
 import {
-  reconPeriodRows, reconPeriodOptions, formatAmountPlain, type ReconPeriodRow,
+  reconPeriodRows, reconPeriodOptions, formatAmountPlain, loadVatSetup, reconVersion,
+  type ReconPeriodRow,
 } from '~/data/vatReconciliation'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -46,6 +47,16 @@ const route = useRoute()
  * masa and the two quick filters are not tabs.
  */
 const isAttentionScope = computed(() => route.query.tab === 'Needs attention')
+
+/**
+ * Setup gate (US-016). Reconciliation pulls the ERP side by tax code, so until
+ * somebody has said which codes count as PPN Keluaran there is nothing honest to
+ * put in this table — an index built from the wrong codes is worse than no
+ * index. First run therefore shows the gate, not an empty state: an empty state
+ * says "nothing here yet", and that would be a lie.
+ */
+const isSetUp = ref(true)
+onMounted(() => { isSetUp.value = !!loadVatSetup() })
 
 // ─── Columns ──────────────────────────────────────────────────────────────────
 // Amount columns are right-aligned; the count badge rides along inside the cell
@@ -66,7 +77,12 @@ const columns: TableColumn[] = [
   { key: 'status',      label: t('Status'),        width: '140px',                                 sortType: 'text'   },
 ]
 
-const rows = computed<ReconPeriodRow[]>(() => reconPeriodRows())
+// reconVersion is read so a period reconciled in the workspace updates its row
+// here too — status, matched count and Reconciled on all move together.
+const rows = computed<ReconPeriodRow[]>(() => {
+  void reconVersion.value
+  return reconPeriodRows()
+})
 
 // ─── Filters ──────────────────────────────────────────────────────────────────
 // Two quick filters, the documented maximum — Invoice type first because it's
@@ -89,7 +105,7 @@ const {
     (row.masa.includes(s) || row.jenis.toLowerCase().includes(s))
     // Tab scope is ANDed with everything else, so a filter can narrow within
     // the scope but never widen past it.
-    && (!isAttentionScope.value || row.status !== 'reconciled')
+    && (!isAttentionScope.value || (row.status !== 'reconciled' && row.status !== 'finalized'))
     && (!jenisFilter.value || row.side === jenisFilter.value)
     && (!status || row.status === status)
     && (appliedFilters.periods.length === 0 || appliedFilters.periods.includes(row.periodId))
@@ -117,8 +133,13 @@ const statusOptions = computed(() => {
     { label: t('Not reconciled'),       value: 'not reconciled'       },
     { label: t('Partially reconciled'), value: 'partially reconciled' },
     { label: t('Reconciled'),           value: 'reconciled'           },
+    { label: t('Finalized'),            value: 'finalized'            },
   ]
-  return isAttentionScope.value ? all.filter(o => o.value !== 'reconciled') : all
+  // A finished period is finished whichever way it got there, so Needs attention
+  // hides both of the done states rather than only one.
+  return isAttentionScope.value
+    ? all.filter(o => o.value !== 'reconciled' && o.value !== 'finalized')
+    : all
 })
 const jenisOptions = [
   { label: t('Output tax invoice'), value: 'output' },
@@ -176,7 +197,20 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 </script>
 
 <template>
+  <!-- US-016 — no index until setup is saved -->
+  <div v-if="!isSetUp" class="vp-setup-gate">
+    <div class="vp-setup-icon"><MpIcon name="sliders" size="32px" color="icon.information" /></div>
+    <h2 class="vp-setup-title">{{ t('Set up VAT reconciliation') }}</h2>
+    <p class="vp-setup-body">
+      {{ t('Choose which tax codes count as PPN Keluaran. Reconciliation pulls sales invoices carrying those codes, and the journal entries posted to their accounts.') }}
+    </p>
+    <MpButton variant="primary" is-rounded @click="router.push('/matching-rules')">
+      {{ t('Start setup') }}
+    </MpButton>
+  </div>
+
   <ErpTablePage
+    v-else
     :columns="visibleColumns"
     :rows="(paginated as unknown as Record<string, unknown>[])"
     :total="total"
@@ -377,6 +411,38 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 </template>
 
 <style scoped>
+/* First-run gate — centred, one action, no table chrome behind it. */
+.vp-setup-gate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--mp-spacing-4);
+  padding: var(--mp-spacing-10) var(--mp-spacing-6);
+  max-width: 520px;
+  margin: 0 auto;
+}
+.vp-setup-icon {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--mp-radii-full);
+  background: var(--mp-colors-blue-100);
+}
+.vp-setup-title {
+  margin: 0;
+  font-size: var(--mp-font-sizes-xl);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+.vp-setup-body {
+  margin: 0;
+  font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-secondary);
+}
+
 /* ── Cells ──────────────────────────────────────────────────────────────── */
 .cell-text {
   overflow: hidden;

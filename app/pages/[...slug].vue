@@ -34,7 +34,10 @@ import { reviewFiles, purchaseInvoiceReviewFiles, addProcessingReviewFile } from
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { useRecommendationWarehouse } from '~/composables/useRecommendationWarehouse'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
-import { matchCounts, pairsForSide, reconUnfinishedCount, periodLabelById } from '~/data/vatReconciliation'
+import {
+  matchCounts, pairsForPeriod, activePeriodId, reconUnfinishedCount, periodLabelById,
+  reconVersion, isPeriodFinalized, canFinalizePeriod,
+} from '~/data/vatReconciliation'
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
 import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
 import { purchaseOrders, purchaseInvoices } from '~/data'
@@ -83,9 +86,19 @@ const MODULE_PARENT: Record<string, { label: string; to: string; title?: string 
   // locale shows the standard VAT terms, which is what `title` carries.
   'Faktur keluaran':             { label: 'VAT reconciliation', to: '/vat-reconciliation', title: 'Output tax invoice' },
   'Faktur masukan':              { label: 'VAT reconciliation', to: '/vat-reconciliation', title: 'Input tax invoice' },
-  'Matching rules':              { label: 'VAT reconciliation', to: '/vat-reconciliation' },
+  'Matching rules':              { label: 'VAT reconciliation', to: '/vat-reconciliation', title: 'Setup' },
   'Unmatched and discrepancies': { label: 'VAT reconciliation', to: '/vat-reconciliation' },
 }
+/**
+ * Whether the masa under the workspace can be signed off, so the title bar can
+ * offer Finalize / Unfinalize without the page having to hoist the button up.
+ */
+const vatFinalizeState = computed(() => {
+  void reconVersion.value
+  const masa = String(route.query.masa ?? activePeriodId)
+  return { finalized: isPeriodFinalized(masa), canFinalize: canFinalizePeriod(masa) }
+})
+
 const titleBreadcrumb = computed(() => MODULE_PARENT[currentPageKey.value] ?? null)
 const resolvedPageTitle = computed(() => {
   const entry = MODULE_PARENT[currentPageKey.value]
@@ -821,11 +834,16 @@ const currentComponent = computed<Component>(() => {
   return pageRegistry[currentPageKey.value] ?? PlaceholderPage
 })
 
-// VAT matching rules — the title bar owns Save / Restore defaults (every page's
-// primary actions live there), but the form state belongs to the page. The page
-// injects this counter and resets itself whenever it changes.
-const matchingRulesReset = ref(0)
-provide('matchingRulesReset', matchingRulesReset)
+// VAT reconciliation setup — the title bar owns Save (every page's primary
+// actions live there) but the form state belongs to the page, which injects this
+// counter and saves itself whenever it changes.
+const vatSetupSave = ref(0)
+provide('vatSetupSave', vatSetupSave)
+
+// VAT reconciliation Finalize / Unfinalize — same arrangement: the title bar
+// owns the button, the page owns the state and the confirmation.
+const vatFinalize = ref(0)
+provide('vatFinalize', vatFinalize)
 
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
@@ -878,6 +896,7 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   // Only the work scope is badged — "All reconciliations" is a calendar, and a
   // count on it would just restate the row count.
   if (currentPageKey.value === 'Vat reconciliation') {
+    void reconVersion.value
     const unfinished = reconUnfinishedCount()
     return unfinished ? { 'Needs attention': unfinished } : {}
   }
@@ -952,7 +971,8 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   }
   if (currentPageKey.value === 'Faktur keluaran' || currentPageKey.value === 'Faktur masukan') {
     const side = currentPageKey.value === 'Faktur masukan' ? 'input' : 'output'
-    const c = matchCounts(pairsForSide(side))
+    void reconVersion.value
+    const c = matchCounts(pairsForPeriod(String(route.query.masa ?? activePeriodId), side))
     const attention = (c.all ?? 0) - (c.matched ?? 0)
     return attention ? { 'Needs attention': attention } : {}
   }
@@ -1656,13 +1676,13 @@ function startResize(e: MouseEvent) {
               class="btn-enterprise btn-enterprise--secondary"
               @click="router.push('/matching-rules')"
             >
-              {{ t('Matching rules') }}
+              {{ t('Setup') }}
             </button>
             <button
               class="btn-enterprise btn-enterprise--primary"
               @click="infoToast(t('Coretax synced. 12 new faktur pulled'))"
             >
-              {{ t('Sync with Coretax') }}
+              {{ t('Sync with Klikpajak') }}
             </button>
           </template>
         </div>
@@ -1670,33 +1690,33 @@ function startResize(e: MouseEvent) {
         <div v-else-if="currentPageKey === 'Faktur keluaran' || currentPageKey === 'Faktur masukan'" class="page-title-actions">
           <button
             class="btn-enterprise btn-enterprise--secondary"
-            @click="infoToast(t('Coretax synced. 12 new faktur pulled'))"
-          >
-            {{ t('Sync with Coretax') }}
-          </button>
-          <button
-            class="btn-enterprise btn-enterprise--secondary"
             @click="infoToast(t('Export started'))"
           >
             {{ t('Export') }}
           </button>
+          <!-- Finalize is only offered once the whole masa is reconciled; while
+               it isn't, the button says why rather than disappearing (US-021). -->
           <button
-            class="btn-enterprise btn-enterprise--primary"
-            @click="infoToast(t('Period finalized'))"
+            v-if="vatFinalizeState.finalized"
+            class="btn-enterprise btn-enterprise--secondary"
+            @click="vatFinalize++"
           >
-            {{ t('Finalize period') }}
+            {{ t('Unfinalize') }}
+          </button>
+          <button
+            v-else
+            class="btn-enterprise btn-enterprise--primary"
+            :disabled="!vatFinalizeState.canFinalize"
+            :title="vatFinalizeState.canFinalize ? '' : t('Every faktur in this period must be reconciled first')"
+            @click="vatFinalize++"
+          >
+            {{ t('Finalize') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Matching rules'" class="page-title-actions">
           <button
-            class="btn-enterprise btn-enterprise--secondary"
-            @click="matchingRulesReset++; infoToast(t('Defaults restored'))"
-          >
-            {{ t('Restore defaults') }}
-          </button>
-          <button
             class="btn-enterprise btn-enterprise--primary"
-            @click="infoToast(t('Matching rules saved'))"
+            @click="vatSetupSave++"
           >
             {{ t('Save changes') }}
           </button>

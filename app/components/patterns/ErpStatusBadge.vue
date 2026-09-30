@@ -56,9 +56,11 @@ const statusConfig: Record<string, StatusConfig> = {
   high:       { type: 'completed',    label: 'High'       },
   fulfilled:  { type: 'completed',    label: 'Fulfilled'  },
   ready:      { type: 'completed',    label: 'Ready'      },
-  // VAT reconciliation periods — the three states Klikpajak ships, so the two
-  // products read the same. `not reconciled` sits with the gray group below.
+  // VAT reconciliation periods (PRD OD-001 §5.2). `not reconciled` sits with the
+  // gray group below; `finalized` is green like `reconciled` because it is the
+  // same result signed off, not a different one.
   reconciled: { type: 'completed',    label: 'Reconciled' },
+  finalized:  { type: 'completed',    label: 'Finalized'  },
 
   // ── warning — yellow ──────────────────────────────
   open:       { type: 'warning',      label: 'Open'       },

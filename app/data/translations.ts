@@ -2078,6 +2078,118 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'All tax payments made in a period, with their billing codes, so you can tie every payment back to a return.':
     'Seluruh pembayaran pajak dalam satu masa beserta kode billing-nya, agar setiap pembayaran dapat ditelusuri ke SPT-nya.',
 
+
+  // ── PRD OD-001 v1.0 §5.1 — row statuses ──────────────────────────────────────
+  // Badge label first (short, holds a table cell), then the long form the drawer
+  // and the workspace banner show. Indonesian keeps the domain nouns — faktur,
+  // pengganti, retur — because that is what a tax preparer says out loud.
+  'Not in Coretax': 'Belum ada faktur',
+  'Not found in Coretax': 'Belum ada faktur di Coretax',
+  'Not in ERP': 'Belum ada di ERP',
+  'No match in ERP': 'Belum ada pasangan di ERP',
+  'Invoice edited': 'Invoice diubah',
+  'Not reconciled — invoice edited': 'Belum direkonsiliasi — invoice diubah',
+  'Invoice voided': 'Invoice dibatalkan',
+  'Not reconciled — invoice voided': 'Belum direkonsiliasi — invoice dibatalkan',
+  'Return missing': 'Retur belum tercatat',
+  'Return not reflected': 'Retur belum tercermin',
+  'Not reconciled — return not reflected': 'Belum direkonsiliasi — retur belum tercermin',
+  'Return netted': 'Faktur neto retur',
+  'Pending review — return netted': 'Perlu konfirmasi — faktur diterbitkan neto',
+  'Date order': 'Urutan tanggal',
+  'Not reconciled — faktur predates invoice': 'Belum direkonsiliasi — faktur mendahului invoice',
+  'Return date': 'Tanggal retur',
+  'Return date mismatch': 'Tanggal retur tidak sama',
+  'Not reconciled — return date mismatch': 'Belum direkonsiliasi — tanggal retur tidak sama',
+  'Duplicate ref': 'Referensi ganda',
+  'Duplicate reference': 'Referensi ganda',
+  'Pending review — duplicate reference': 'Perlu konfirmasi — referensi ganda',
+  'Period finalized': 'Masa difinalisasi',
+  'Not reconciled — period finalized': 'Belum direkonsiliasi — masa sudah difinalisasi',
+
+  // ── Named fix actions, one per status ────────────────────────────────────────
+  'Find & match': 'Cari & cocokkan',
+  'Confirm match': 'Konfirmasi kecocokan',
+  'Select faktur': 'Pilih faktur',
+  'Edit sales invoice': 'Ubah faktur penjualan',
+  'Create faktur pengganti': 'Buat faktur pengganti',
+  'Create faktur pengganti (net)': 'Buat faktur pengganti (neto)',
+  'Cancel faktur': 'Batalkan faktur',
+  'Waiting on buyer': 'Menunggu pembeli',
+  'Unfinalize period': 'Batalkan finalisasi masa',
+  'Re-run': 'Jalankan ulang',
+
+  // ── Setup (US-016) ───────────────────────────────────────────────────────────
+  'Set up VAT reconciliation': 'Atur rekonsiliasi PPN',
+  'Choose which tax codes count as PPN Keluaran. Reconciliation pulls sales invoices carrying those codes, and the journal entries posted to their accounts.':
+    'Pilih kode pajak yang dihitung sebagai PPN Keluaran. Rekonsiliasi akan menarik faktur penjualan dengan kode tersebut, beserta jurnal yang masuk ke akunnya.',
+  'Start setup': 'Mulai pengaturan',
+  'PPN Keluaran tax codes': 'Kode pajak PPN Keluaran',
+  'Sales invoices carrying these tax codes are pulled into reconciliation.': 'Faktur penjualan dengan kode pajak ini akan ditarik ke rekonsiliasi.',
+  'Journal entries and bank deposits that post to these accounts are pulled in too, even when the line carries no tax code.':
+    'Jurnal umum dan setoran bank yang masuk ke akun ini ikut ditarik, meski barisnya tidak memiliki kode pajak.',
+  'How matching works': 'Cara pencocokan bekerja',
+  'Applied to every pair and not configurable.': 'Berlaku untuk setiap pasangan dan tidak dapat diubah.',
+  'Match key': 'Kunci pencocokan',
+  'Corroboration': 'Data pendukung',
+  'Faktur status': 'Status faktur',
+  'Approved only': 'Hanya Approved',
+  'Sales invoice number against the faktur Referensi. Normalized first: trimmed, case-insensitive, separators ignored.':
+    'Nomor faktur penjualan dicocokkan dengan Referensi pada faktur pajak. Dinormalkan lebih dulu: spasi dipangkas, huruf besar-kecil diabaikan, pemisah diabaikan.',
+  'DPP, PPN and PPnBM must agree to the rupiah, and the buyer NPWP or NIK must match. PPnBM of 0 on both sides is not a mismatch.':
+    'DPP, PPN, dan PPnBM harus sama persis, dan NPWP atau NIK pembeli harus cocok. PPnBM 0 di kedua sisi bukan ketidakcocokan.',
+  'A faktur must be dated on or after the invoice it belongs to. One dated earlier is flagged, never matched. There is no tolerance window — Coretax enforces the issuance deadline at upload.':
+    'Tanggal faktur harus sama dengan atau setelah tanggal invoice-nya. Faktur yang lebih awal akan ditandai, bukan dicocokkan. Tidak ada rentang toleransi — batas penerbitan sudah ditegakkan Coretax saat unggah.',
+  'Only Approved faktur are matched. Draft, Batal and Rejected are excluded and tagged.':
+    'Hanya faktur Approved yang dicocokkan. Draft, Batal, dan Rejected dikecualikan dan diberi tanda.',
+  'What this affects': 'Yang terpengaruh',
+  'none yet': 'belum ada',
+  'Periods are reconciled from': 'Rekonsiliasi dimulai dari',
+  'onward.': 'dan seterusnya.',
+  'Heads up': 'Perhatian',
+  'periods already reconciled keep the tax codes they ran with': 'masa yang sudah direkonsiliasi tetap memakai kode pajak saat dijalankan',
+  'Re-running one will use the current selection instead.': 'Menjalankan ulang akan memakai pilihan saat ini.',
+  'Setup history': 'Riwayat pengaturan',
+  'Tax code setup saved': 'Pengaturan kode pajak tersimpan',
+  'Sync with Klikpajak': 'Sinkronkan dengan Klikpajak',
+
+  // ── Queue tiles ──────────────────────────────────────────────────────────────
+  'Pending review': 'Perlu konfirmasi',
+  'You confirm the match': 'Anda yang mengonfirmasi',
+  'Needs correction': 'Perlu perbaikan',
+  'Invoice edited or voided': 'Invoice diubah atau dibatalkan',
+  'Date problems': 'Masalah tanggal',
+  'Dates out of order': 'Urutan tanggal tidak wajar',
+  'Returns': 'Retur',
+  'No faktur issued': 'Faktur belum diterbitkan',
+  'Not recorded in Jurnal': 'Belum tercatat di Jurnal',
+
+  // ── Toasts ───────────────────────────────────────────────────────────────────
+  'waiting on buyer': 'menunggu pembeli',
+  // ── Finalize (US-021) ────────────────────────────────────────────────────────
+  // "Finalisasi" is the term Klikpajak already uses for signing off a masa.
+  'Finalized': 'Difinalisasi',
+  'Finalize': 'Finalisasi',
+  'Unfinalize': 'Batalkan finalisasi',
+  'finalized': 'difinalisasi',
+  'unfinalized': 'dibatalkan finalisasinya',
+  'Sales invoices stay editable in Jurnal; changes will be flagged here.':
+    'Faktur penjualan tetap bisa diubah di Jurnal; perubahannya akan ditandai di sini.',
+  'This records what was reconciled and who signed it off. It does not lock Jurnal — sales invoices in this period stay editable, and any change will be flagged here.':
+    'Ini mencatat apa yang direkonsiliasi dan siapa yang menyetujuinya. Jurnal tidak dikunci — faktur penjualan pada masa ini tetap bisa diubah, dan setiap perubahan akan ditandai di sini.',
+  'The period goes back to Reconciled and can be re-run. The sign-off is logged either way.':
+    'Masa pajak kembali ke status Selesai rekonsiliasi dan bisa dijalankan ulang. Persetujuannya tetap tercatat.',
+  'Every faktur in this period must be reconciled first': 'Seluruh faktur pada masa ini harus direkonsiliasi lebih dulu',
+  'Unfinalize first to re-run this period': 'Batalkan finalisasi dulu untuk menjalankan ulang masa ini',
+  'Match re-run': 'Pencocokan dijalankan ulang',
+  'Re-running match…': 'Menjalankan ulang pencocokan…',
+  'Airene is looking for candidates…': 'Airene sedang mencari kandidat…',
+  'Opening Klikpajak…': 'Membuka Klikpajak…',
+  'Opening match picker…': 'Membuka pemilih pasangan…',
+  'Opening faktur list…': 'Membuka daftar faktur…',
+  'Opening period…': 'Membuka masa pajak…',
+  'Marked as waiting on buyer': 'Ditandai menunggu pembeli',
+
   // ── VAT reconciliation (Reports › Tax › VAT reconciliation) ──────────────────
   // Nav + module labels. "Faktur keluaran/masukan" and "Selisih pajak" are the
   // Indonesian domain terms and stay as-is in both locales.
@@ -2144,10 +2256,9 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Discrepancies': 'Selisih',
   'Unmatched': 'Belum cocok',
   'Unmatched record': 'Data belum cocok',
-  'ERP only': 'Hanya di ERP',
-  'Coretax only': 'Hanya di Coretax',
-  'ERP only · unmatched': 'Hanya di ERP · belum cocok',
-  'Coretax only · unmatched': 'Hanya di Coretax · belum cocok',
+  'Matched manually after review': 'Dicocokkan manual setelah ditinjau',
+  'Correct invoice date': 'Perbaiki tanggal invoice',
+  'Correct faktur date': 'Perbaiki tanggal faktur',
   'All issues': 'Semua masalah',
 
   // Workspace columns + KPIs
@@ -2171,8 +2282,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Review with Airene': 'Tinjau dengan Airene',
   'No faktur match your filters': 'Faktur tidak sesuai filter Anda',
   'Recheck the filters you have applied and try filtering again.': 'Cek kembali filter yang Anda terapkan dan filter ulang.',
-  'No match in ERP': 'Tidak ada padanan di ERP',
-  'Not found in Coretax': 'Tidak ditemukan di Coretax',
   'Create a sales invoice from this faktur to reconcile.': 'Buat faktur penjualan dari faktur ini untuk merekonsiliasi.',
   'Create a purchase invoice from this faktur to reconcile.': 'Buat faktur pembelian dari faktur ini untuk merekonsiliasi.',
   'Issue a faktur pajak in Coretax to match this invoice.': 'Terbitkan faktur pajak di Coretax agar cocok dengan faktur ini.',
@@ -2216,8 +2325,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   // Toast confirmations
   'Sync with Coretax': 'Sinkronkan dengan Coretax',
   'Coretax synced. 12 new faktur pulled': 'Coretax berhasil disinkronkan. 12 faktur baru ditarik',
-  'Finalize period': 'Finalisasi masa pajak',
-  'Period finalized': 'Masa pajak berhasil difinalisasi',
   'Export started': 'Ekspor berhasil dimulai',
   'Match confirmed': 'Kecocokan berhasil dikonfirmasi',
   'matches confirmed': 'kecocokan berhasil dikonfirmasi',
@@ -2262,14 +2369,16 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Exact': 'Persis',
   'Fuzzy': 'Mirip',
 
-  'Tolerances': 'Toleransi',
-  'How much drift can be ignored before the engine flags a discrepancy.': 'Seberapa besar perbedaan yang bisa diabaikan sebelum mesin menandai selisih.',
-  'Date window': 'Rentang tanggal',
-  'Maximum days between the ERP date and the Coretax date.': 'Jumlah hari maksimum antara tanggal ERP dan tanggal Coretax.',
-  'DPP tolerance': 'Toleransi DPP',
-  'Acceptable difference in the taxable base amount.': 'Perbedaan dasar pengenaan pajak yang masih diterima.',
-  'PPN tolerance': 'Toleransi PPN',
-  'Acceptable difference in the tax amount.': 'Perbedaan jumlah pajak yang masih diterima.',
+  // Replaced the three tolerance sliders. The date window and the DPP/PPN
+  // tolerances are gone: a window let a faktur predate its invoice, and rounding
+  // tolerance belongs to OD-003, not here.
+  'Fixed rules': 'Aturan tetap',
+  'Applied to every match and not configurable.': 'Berlaku untuk setiap pencocokan dan tidak dapat diubah.',
+  'Faktur date': 'Tanggal faktur',
+  'A faktur must be dated on or after the invoice it belongs to. One dated earlier is flagged, never matched.': 'Tanggal faktur harus sama dengan atau setelah tanggal invoice-nya. Faktur yang lebih awal akan ditandai, bukan dicocokkan.',
+  'Direction checked': 'Urutan tanggal dicek',
+  'Amount tolerance': 'Toleransi jumlah',
+  'DPP, PPN and PPnBM must agree exactly. Any difference is raised as a discrepancy for review.': 'DPP, PPN, dan PPnBM harus sama persis. Setiap perbedaan diangkat sebagai selisih untuk ditinjau.',
 
   'Confidence thresholds': 'Ambang keyakinan',
   'The engine scores every match. These thresholds decide what happens next.': 'Mesin memberi skor pada setiap kecocokan. Ambang ini menentukan tindakan selanjutnya.',
