@@ -22,7 +22,7 @@
         <div class="gts-v">
           {{ guidedToursOn
             ? `On. A Guided tours menu in the top bar lists the ${ASSET_TOURS.length} walkthroughs. This switch is the only setting kept after a reload.`
-            : 'Off. The prototype is free to explore. Turn this on for a Guided tours menu in the top bar. This switch is the only setting kept after a reload.' }}
+            : 'Off. The asset screens are free to explore. Turn this on for a Guided tours menu in the top bar. This switch is the only setting kept after a reload.' }}
         </div>
       </div>
     </div>

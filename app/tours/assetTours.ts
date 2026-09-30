@@ -50,7 +50,7 @@ export interface AssetTour {
   steps: TourStep[]
 }
 
-const EXPORT_NOTE = 'Export is not part of this prototype, so the tour ends on the screen before it.'
+const EXPORT_NOTE = 'The tour stops here, on the screen before the export itself.'
 
 export const ASSET_TOURS: AssetTour[] = [
   // ── SIM-1 ─────────────────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ export const ASSET_TOURS: AssetTour[] = [
         target: 'diff-table',
         title: 'Open the accounting to tax difference report.',
         body: 'Each asset and event is listed with the reason its two books disagree, so the fiscal correction can be traced back to its source.',
-        watch: 'FA-0077 now appears with a tax life longer than accounting (8 years against 5), and the per-asset total still ties to the statement figure, Rp79.921.875.',
+        watch: 'FA-0077 now appears with a tax life longer than accounting (8 years against 5), adding back Rp14.906.250 for January to September. The net temporary difference at the foot ties to the statement: -Rp227.671.869.',
         placement: 'top',
       },
       {
@@ -129,7 +129,7 @@ export const ASSET_TOURS: AssetTour[] = [
         target: 'cmp-deftax',
         title: 'Read the deferred tax effect off the net temporary difference.',
         body: 'The figure sits on the same statement as the difference it derives from.',
-        watch: 'With FA-0077 now in the tax book the net temporary difference is Rp79.921.875 and the deferred tax effect at 22% is Rp17.582.813. Before the classification they were Rp94.828.125 and Rp20.862.188.',
+        watch: 'With FA-0077 now in the tax book the net temporary difference is -Rp227.671.869 and the deferred tax effect at 22% is a liability of Rp50.087.811. Before the classification they were -Rp242.578.119 and Rp53.367.186. The statement covers depreciation, amortisation, disposal and impairment; leases are shown separately and left out of the net.',
         placement: 'top',
       },
       {
@@ -137,7 +137,7 @@ export const ASSET_TOURS: AssetTour[] = [
         target: 'lamp-both',
         title: 'Lampiran 9 can now be produced.',
         body: `Classifying the last asset lifts the refusal. ${EXPORT_NOTE}`,
-        watch: '23 tangible assets in half 1 and 4 intangible assets in half 2, none unclassified.',
+        watch: '20 tangible assets in half 1 and 4 intangible assets in half 2, none unclassified. Right-of-use assets from leases are not part of the filing.',
       },
     ],
   },
@@ -159,6 +159,7 @@ export const ASSET_TOURS: AssetTour[] = [
         body: 'The run is generated on demand, not by a calendar job.',
         action: 'Leave the period at September 2026 and select Generate.',
         watch: 'Both books are generated in one pass. There is no separate tax run to remember.',
+        ifMissing: 'The September 2026 draft is already generated, so the Generate button has gone. Select Skip this step to review the draft.',
       },
       {
         target: 'run-table',
@@ -174,7 +175,7 @@ export const ASSET_TOURS: AssetTour[] = [
         title: 'Set the journal date by policy.',
         body: 'The company states the date once, as a policy, rather than choosing it on each run.',
         action: 'Choose "A fixed day of the following month" and keep day 5.',
-        watch: 'The line above the control now reads that the September 2026 run will be dated 05/10/2026. The tours.json version switched to the posting date, but in this prototype the posting date is 30/09/2026, the same as the period end, so it would show no change.',
+        watch: 'The line above the control now reads that the September 2026 run will be dated 05/10/2026.',
       },
       {
         route: '/depreciation-schedule',
@@ -195,7 +196,7 @@ export const ASSET_TOURS: AssetTour[] = [
         target: 'run-table',
         title: 'The reference is on the run.',
         body: 'Each posted period carries its journal number and date, which is what makes a drill-down from the ledger possible.',
-        watch: 'September 2026 now reads Posted, with its JV-2026 journal number, dated 05/10/2026.',
+        watch: 'September 2026 now reads Posted, JV-2026-0135 dated 05/10/2026, Rp140.217.604 across 21 assets.',
         placement: 'top',
       },
       {
@@ -210,7 +211,7 @@ export const ASSET_TOURS: AssetTour[] = [
         target: 'recon-checks',
         title: 'Read what the self-check could not confirm.',
         body: 'A check that cannot run is never reported as a pass.',
-        watch: '2 of 4 checks pass. Tax book coverage finds FA-0077 in the register but not in the tax book, and export coverage cannot run until every asset has a statutory group. The tours.json version said there was nothing left to find; with FA-0077 unclassified there is.',
+        watch: '2 of 4 checks pass. Tax book coverage finds FA-0077 in the register but not in the tax book, and export coverage cannot run until every asset has a statutory group.',
         placement: 'top',
       },
     ],
@@ -343,6 +344,7 @@ export const ASSET_TOURS: AssetTour[] = [
         title: 'Assign a custodian and a location to FA-0047.',
         body: 'A missing custodian is a named gap, not a blank.',
         action: 'Select Assign on Toyota Innova B 1234 XYZ.',
+        ifMissing: 'Nothing is left unassigned: FA-0047 already has a custodian and a location. Select Skip this step to carry on.',
         placement: 'top',
       },
       {
@@ -356,8 +358,8 @@ export const ASSET_TOURS: AssetTour[] = [
         target: 'cust-table',
         title: 'Read everything one person holds.',
         body: 'Custody is also a view by person.',
-        action: 'Select Rudi Santoso (Warehouse).',
-        watch: 'Seven assets across the Medan and Rungkut locations.',
+        action: 'Select the Rudi Santoso (Warehouse) row.',
+        watch: 'Seven assets across Medan Warehouse, its office, Medan pool and Rungkut Warehouse, with Reassign all and Mark as left for when he moves on.',
         placement: 'top',
       },
       {
@@ -365,7 +367,7 @@ export const ASSET_TOURS: AssetTour[] = [
         target: 'appr-rules',
         role: 'Owner',
         title: 'Turn on approval for write-offs.',
-        body: 'View as switches to Owner for this step: only the Owner changes approval rules. Every rule is off by default, and with it off a count write-off would complete at once. The tours.json version assumed approval was already on.',
+        body: 'View as switches to Owner for this step: only the Owner changes approval rules. Every rule is off by default, and with it off a count write-off would complete at once.',
         action: 'Turn on Write-off needs approval.',
       },
       {
@@ -382,7 +384,7 @@ export const ASSET_TOURS: AssetTour[] = [
         title: 'Scope the count to Medan Warehouse and freeze the population.',
         body: 'A frozen population makes the result reproducible.',
         action: 'Keep the scope on Location, choose Medan Warehouse, then select Freeze population and start.',
-        watch: 'Four tagged assets are frozen (FA-0068, FA-0083, FA-0023, FA-0064), with Rudi Santoso as counter. The tours.json version said six; the sample data holds four there.',
+        watch: 'Four tagged assets are frozen (FA-0068, FA-0083, FA-0023, FA-0064), with Rudi Santoso as counter.',
       },
       {
         target: 'count-mobile',
@@ -419,14 +421,16 @@ export const ASSET_TOURS: AssetTour[] = [
         role: 'Approver',
         title: 'The write-off arrives in the Finance Director\'s queue.',
         body: 'View as switches to Approver (Fitri Handayani): the person who raised a request cannot approve it.',
-        watch: 'AP-0032 writes off FA-0064 Backup 100kVA Generator: Rp225.859.370 in the accounts and Rp225.859.370 for tax. The tours.json version quoted nil and 10.000.000; the generator still carries its full carrying amount on both books.',
+        action: 'Read the request. Approve comes on the next step.',
+        watch: 'AP-0032 writes off FA-0064 Backup 100kVA Generator at Rp224.583.328 in the accounts and Rp224.583.328 for tax: the book value that will be written off once September\'s charge is taken.',
         placement: 'top',
       },
       {
         target: 'appr-approve',
         title: 'Approve the write-off.',
-        body: 'Approval applies the held change through the engine.',
+        body: 'Approval applies the held change on both books.',
         action: 'Select Approve.',
+        ifMissing: 'AP-0032 is already approved, so there is no Approve button left to select. Select Skip this step to read the result on the count report.',
         placement: 'left',
       },
       {
@@ -434,7 +438,7 @@ export const ASSET_TOURS: AssetTour[] = [
         target: 'count-session',
         title: 'Back on the count report.',
         body: 'The approval trail stays on the transaction and the asset history records who decided what.',
-        watch: 'The generator\'s row now reads Approved AP-0032 by Fitri Handayani: disposed with no proceeds on both books. On FA-0064 itself the status is Disposed and the History shows the request and the approval, both on 30/09/2026. The tours.json version posted it to October; this prototype dates it to the open period.',
+        watch: 'The generator\'s row now reads Approved AP-0032 by Fitri Handayani: disposed with no proceeds on both books. On FA-0064 itself the status is Disposed and the History shows the request and the approval, both on 30/09/2026. The disposal is dated in the open period, September 2026, with no proceeds, so the whole Rp224.583.328 is a loss on each book.',
       },
     ],
   },
@@ -461,13 +465,14 @@ export const ASSET_TOURS: AssetTour[] = [
         target: 'lease-monthly',
         title: 'Read the monthly effect.',
         body: 'A recognised lease reaches profit and loss as depreciation plus interest, not as rent.',
+        watch: 'For September 2026: Rp30.911.248 of right-of-use depreciation plus Rp10.159.110 of interest, Rp41.070.358 in the accounts, against a tax deduction of the Rp38.500.000 contract payment.',
         placement: 'top',
       },
       {
         target: 'lease-sched',
         title: 'Read the liability against the right-of-use depreciation.',
         body: 'Two schedules from one contract.',
-        watch: 'Interest falls every month as the liability unwinds, while the right-of-use charge stays flat.',
+        watch: 'Interest falls every month as the liability unwinds (Rp10.159.110 in September, Rp9.946.553 in October), while the right-of-use charge stays flat at Rp30.911.248.',
         placement: 'top',
       },
       {
@@ -496,6 +501,7 @@ export const ASSET_TOURS: AssetTour[] = [
         target: 'lease-sched',
         title: 'The remaining schedule moved; the posted months did not.',
         body: 'Nothing posted before the modification changes.',
+        watch: 'From September 2026 the right-of-use charge is Rp30.027.109. In the lease list LS-004 now reads modified, running to 31/01/2031, with a right-of-use book value of Rp1.561.409.659.',
         placement: 'top',
       },
     ],
@@ -509,13 +515,13 @@ export const ASSET_TOURS: AssetTour[] = [
     persona: 'Accounting Manager',
     role: 'Accounting',
     blurb: 'Intangibles in the same register, a permanent divergence on goodwill, the annual test obligation, and both halves of the filing.',
-    closing: 'Four intangibles sat in the same register as everything else, goodwill showed a divergence that never reverses, the derivation panel defended the tax amortisation with the same engine, the year end raised a test obligation, and a test that found nothing was kept as the evidence. The filing counts both halves, and says plainly why it cannot be produced yet.',
+    closing: 'Four intangibles sat in the same register as everything else, goodwill showed a divergence that never reverses, the derivation panel defended the tax amortisation the same way it defends depreciation, the year end raised a test obligation, and a test that found nothing was kept as the evidence. The filing counts both halves, and says plainly why it cannot be produced yet.',
     steps: [
       {
         route: '/assets',
         target: 'reg-filters',
         title: 'Filter the register to intangible assets.',
-        body: 'Intangibles live in the same register, with the same engine.',
+        body: 'Intangibles live in the same register and are amortised by the same schedules.',
         action: 'Choose Intangible in the Type filter.',
         watch: 'Four rows with an Intangible badge. Nobody holds a patent in a warehouse, so there is no custodian.',
       },
@@ -531,7 +537,7 @@ export const ASSET_TOURS: AssetTour[] = [
       {
         target: 'deriv-body',
         title: 'The derivation of the tax amortisation.',
-        body: 'The same engine as the tangible assets.',
+        body: 'The same arithmetic as the tangible assets.',
         watch: 'Rp2.400.000.000 over 240 months, month 31 of 240, charge Rp10.000.000. The divergence is permanent: the accounting side never amortises.',
         placement: 'left',
       },
@@ -541,7 +547,7 @@ export const ASSET_TOURS: AssetTour[] = [
         title: 'Year end raises the annual test obligation.',
         body: 'Goodwill and indefinite-life intangibles are tested every year whether or not anything is wrong.',
         action: 'Select Test FA-0091.',
-        watch: '1 of 2 done: the brand FA-0093 is already tested, goodwill FA-0091 is outstanding. The tours.json version rewound both tests and tested the brand; here the brand\'s test is sample data, so the tour tests goodwill.',
+        watch: '1 of 2 done: the brand FA-0093 is already tested, goodwill FA-0091 is outstanding.',
         placement: 'top',
       },
       {
@@ -563,7 +569,7 @@ export const ASSET_TOURS: AssetTour[] = [
         target: 'lamp-both',
         title: 'Both halves of the statutory filing, counts stated.',
         body: `A filing covering only tangible assets completes half a return. ${EXPORT_NOTE}`,
-        watch: '22 tangible and 4 intangible assets, with FA-0077 unclassified, so the page refuses to produce the file and says which asset and how much cost is missing. The tours.json version showed 19 tangible and a finished export.',
+        watch: '19 tangible and 4 intangible assets, with FA-0077 unclassified, so the page refuses to produce the file and says which asset is missing and how much cost (Rp265.000.000). Right-of-use assets from leases are not part of the filing.',
       },
     ],
   },

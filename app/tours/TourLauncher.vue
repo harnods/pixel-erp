@@ -21,7 +21,7 @@
       </MpButton>
     </MpPopoverTrigger>
     <MpPopoverContent class="erp-dropdown-menu gtl-menu">
-      <div class="gtl-heading">Walkthroughs of the asset prototype. Starting one resets the session sample data.</div>
+      <div class="gtl-heading">Walkthroughs of the fixed asset module. Starting one resets the session sample data.</div>
       <MpPopoverList>
         <MpPopoverListItem
           v-for="t in ASSET_TOURS"

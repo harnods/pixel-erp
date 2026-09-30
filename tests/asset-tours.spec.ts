@@ -79,12 +79,30 @@ describe('tour steps point at real routes and real markers', () => {
         const all = t.steps.map((s) => `${s.body} ${s.action ?? ''}`).join(' ')
         // An action never asks for an export; a step that reaches one says so.
         for (const s of t.steps) expect(s.action ?? '').not.toMatch(/\b(export|download|import)\b/i)
-        if (/Lampiran 9/.test(all)) expect(all).toMatch(/Export is not part of this prototype/)
+        if (/Lampiran 9/.test(all)) expect(all).toMatch(/The tour stops here, on the screen before the export itself/)
       })
     })
   }
   it('seven tours, SIM-1 to SIM-7', () => {
     expect(ASSET_TOURS.map((t) => t.code)).toEqual(['SIM-1', 'SIM-2', 'SIM-3', 'SIM-4', 'SIM-5', 'SIM-6', 'SIM-7'])
+  })
+  it('tour copy talks about the product, never about how it was built', () => {
+    for (const t of ASSET_TOURS) {
+      const copy = [t.blurb, t.closing, ...t.steps.flatMap((s) => [s.title, s.body, s.action ?? '', s.watch ?? '', s.ifMissing ?? ''])].join(' ')
+      expect(copy, t.code).not.toMatch(/tours\.json|prototype|\bengine\b|\bdesign\b|\baudit\b|\bbuild\b|computes today/i)
+    }
+  })
+  it('a step whose target goes away once done says so, rather than waiting', () => {
+    const sim4 = ASSET_TOURS.find((t) => t.code === 'SIM-4')!
+    const approve = sim4.steps.find((s) => s.target === 'appr-approve')!
+    expect(approve.ifMissing).toMatch(/already approved/)
+    const before = sim4.steps[sim4.steps.indexOf(approve) - 1]!
+    expect(before.action).toMatch(/Approve comes on the next step/)
+  })
+  it('the waiting panel always offers a way on', () => {
+    const runner = readFileSync(join(APP, 'tours', 'tourRunner.ts'), 'utf8')
+    const waiting = runner.slice(runner.indexOf("kind: 'waiting'"), runner.indexOf("kind: 'waiting'") + 700)
+    expect(waiting).toMatch(/nextLabel: index === m - 1 \? 'Finish' : 'Skip this step'/)
   })
   it('no em dashes in tour copy', () => {
     expect(readFileSync(join(APP, 'tours', 'assetTours.ts'), 'utf8')).not.toMatch(/\u2014/)

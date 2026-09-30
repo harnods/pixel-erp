@@ -252,8 +252,8 @@ async function enterStep(r: Running) {
         caption,
         title: step.title,
         body: step.ifMissing ?? 'The part of the screen this step points at is not showing yet.',
-        action: step.ifMissing ? step.action : prev ? `Finish the previous step first: ${prev}` : undefined,
-        watch: step.ifMissing ? undefined : 'Or select Skip this step to carry on.',
+        action: step.ifMissing ? undefined : prev ? `Finish the previous step first: ${prev}` : undefined,
+        watch: step.ifMissing ? undefined : index === m - 1 ? 'Or select Finish to end the tour.' : 'Or select Skip this step to carry on.',
         nextLabel: index === m - 1 ? 'Finish' : 'Skip this step',
         backLabel: 'Back',
       }, null, null)
