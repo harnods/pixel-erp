@@ -568,10 +568,10 @@ function journalForEvent(assetId: string, e: AssetEvent, l: AssetLedger): Journa
   const costLines = (amount: number, what: string): JournalLine[] => amount >= 0
     ? [
         { account: '1-1600 · Fixed assets at cost', description: `${assetId} ${what}`, debit: amount, credit: null, control: '1-1600' },
-        { account: '2-1100 · Accounts payable', description: 'Supplier', debit: null, credit: amount, control: 'other' },
+        { account: '2-1100 · Accounts payable', description: 'Vendor', debit: null, credit: amount, control: 'other' },
       ]
     : [
-        { account: '2-1100 · Accounts payable', description: 'Supplier', debit: -amount, credit: null, control: 'other' },
+        { account: '2-1100 · Accounts payable', description: 'Vendor', debit: -amount, credit: null, control: 'other' },
         { account: '1-1600 · Fixed assets at cost', description: `${assetId} ${what}`, debit: null, credit: -amount, control: '1-1600' },
       ]
   if (e.kind === 'improvement') {
@@ -672,7 +672,7 @@ export function eventRefusal(assetId: string, e: Omit<AssetEvent, 'id'>): string
   const l = ledgers.value[assetId]
   if (!l) return `No asset ${assetId}`
   if (l.splitIn) return `${assetId} was split in ${periodLabel(l.splitIn)}. Change its parts instead.`
-  if (l.disposedIn) return `${assetId} was disposed of in ${periodLabel(l.disposedIn)}. Nothing further can change it.`
+  if (l.disposedIn) return `${assetId} was disposed of in ${periodLabel(l.disposedIn)}. It can no longer be changed.`
   if (e.kind === 'impairment-reversal' && l.isGoodwill) return GOODWILL_REVERSAL_REFUSED
   if (e.kind === 'impairment-reversal' && impairmentCarried(l, e.period) <= 0) return `${assetId} carries no impairment to reverse.`
   if (e.kind !== 'tax-classification' && postedRunFor(e.period)) {
@@ -825,7 +825,7 @@ export function createAsset(input: NewAssetInput): { ok: true; id: string } | { 
     memo: `Capitalisation of ${id}`,
     lines: [
       { account: input.debitAccount ?? '1-1600 · Fixed assets at cost', description: `${id} ${input.name}`, debit: input.cost, credit: null, control: '1-1600' },
-      { account: input.creditAccount ?? '2-1100 · Accounts payable', description: input.leaseId ?? 'Supplier', debit: null, credit: input.cost, control: 'other' },
+      { account: input.creditAccount ?? '2-1100 · Accounts payable', description: input.leaseId ?? 'Vendor', debit: null, credit: input.cost, control: 'other' },
     ],
   }]
   const through = addPeriods(openP, -1)
@@ -1380,7 +1380,7 @@ function seedLedger() {
       memo: `Capitalisation of ${s.id}`,
       lines: [
         { account: '1-1600 · Fixed assets at cost', description: `${s.id} ${s.name}`, debit: l.cost, credit: null, control: '1-1600' },
-        { account: '2-1100 · Accounts payable', description: 'Supplier', debit: null, credit: l.cost, control: 'other' },
+        { account: '2-1100 · Accounts payable', description: 'Vendor', debit: null, credit: l.cost, control: 'other' },
       ],
     })
   }

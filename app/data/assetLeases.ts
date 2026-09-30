@@ -277,18 +277,18 @@ export const SHORT_TERM_MONTHS = 12
 export function validateLease(v: LeaseInput): Record<string, string> {
   const e: Record<string, string> = {}
   if (!canChangeValue.value) e.form = `Viewing as ${viewAs.value}. Recording a lease needs the Owner or Accounting role.`
-  if (!v.name.trim()) e.name = 'Name the lease'
-  if (!v.branch) e.branch = 'Choose a branch'
+  if (!v.name.trim()) e.name = 'You must fill in lease name'
+  if (!v.branch) e.branch = 'You must select branch'
   const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(v.startDate.trim())
   const d = m ? new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])) : null
-  if (!m || !d || d.getDate() !== Number(m[1]) || d.getMonth() !== Number(m[2]) - 1) e.startDate = 'Enter the commencement date as dd/mm/yyyy'
-  else if (Number(m[3]) < 2020) e.startDate = 'This prototype holds leases starting from 2020'
-  else if (isAfter(periodOfDate(v.startDate.trim()), CURRENT_PERIOD)) e.startDate = 'A lease is recorded when it commences, on or before today'
+  if (!m || !d || d.getDate() !== Number(m[1]) || d.getMonth() !== Number(m[2]) - 1) e.startDate = 'Enter the commencement date in format dd/mm/yyyy'
+  else if (Number(m[3]) < 2020) e.startDate = 'Enter a commencement date from 2020 onwards'
+  else if (isAfter(periodOfDate(v.startDate.trim()), CURRENT_PERIOD)) e.startDate = 'Commencement date cannot be after today'
   if (!Number.isInteger(v.termMonths) || v.termMonths <= 0) e.termMonths = 'Enter the term in whole months'
-  if (!v.monthlyPayment || v.monthlyPayment <= 0) e.monthlyPayment = 'Enter the monthly payment'
-  if (!(v.annualRatePct >= 0) || v.annualRatePct > 50) e.annualRatePct = 'Enter the discount rate as a percentage, 0 to 50'
+  if (!v.monthlyPayment || v.monthlyPayment <= 0) e.monthlyPayment = 'You must fill in monthly payment'
+  if (!(v.annualRatePct >= 0) || v.annualRatePct > 50) e.annualRatePct = 'Enter a discount rate from 0% to 50%'
   if (v.exemption === 'short-term' && v.termMonths > SHORT_TERM_MONTHS) {
-    e.exemption = `A short-term lease runs ${SHORT_TERM_MONTHS} months or less. This one runs ${v.termMonths}.`
+    e.exemption = `A short-term lease runs ${SHORT_TERM_MONTHS} months or less. This term is ${v.termMonths} months`
   }
   return e
 }
@@ -375,13 +375,13 @@ export function previewModification(leaseId: string, v: ModificationInput): Modi
   const blank: ModificationPreview = { ok: false, errors: {}, liabilityBefore: 0, liabilityAfter: 0, adjustment: 0, newEnd: null, remainingMonths: 0 }
   if (!l) return { ...blank, refusal: `No lease ${leaseId}` }
   const errors: Record<string, string> = {}
-  if (l.exemption) return { ...blank, refusal: `${l.id} is exempt. There is no liability or right-of-use asset to remeasure.` }
+  if (l.exemption) return { ...blank, refusal: `${l.id} is exempt. It has no liability or right-of-use asset to remeasure` }
   const s = leaseSchedule(l)
   if (!Number.isInteger(v.extraMonths)) errors.extraMonths = 'Enter the change in term in whole months'
-  if (!v.payment || v.payment <= 0) errors.payment = 'Enter the revised monthly payment'
-  if (!(v.annualRatePct >= 0) || v.annualRatePct > 50) errors.annualRatePct = 'Enter the discount rate as a percentage, 0 to 50'
-  if (isBefore(v.period, s.startPeriod) || isAfter(v.period, s.endPeriod)) errors.period = `Choose a period inside the term, ${periodLabel(s.startPeriod)} to ${periodLabel(s.endPeriod)}`
-  else if (monthsBetween(v.period, s.endPeriod) + 1 + v.extraMonths <= 0) errors.extraMonths = 'The revised term must leave at least one month from the effective period'
+  if (!v.payment || v.payment <= 0) errors.payment = 'You must fill in revised monthly payment'
+  if (!(v.annualRatePct >= 0) || v.annualRatePct > 50) errors.annualRatePct = 'Enter a discount rate from 0% to 50%'
+  if (isBefore(v.period, s.startPeriod) || isAfter(v.period, s.endPeriod)) errors.period = `Select a period from ${periodLabel(s.startPeriod)} to ${periodLabel(s.endPeriod)}`
+  else if (monthsBetween(v.period, s.endPeriod) + 1 + v.extraMonths <= 0) errors.extraMonths = 'Revised term must run at least 1 month from the effective period'
   if (Object.keys(errors).length) return { ...blank, errors }
   const { r, event } = modificationEvent(l, v)
   const out: ModificationPreview = {
@@ -408,9 +408,9 @@ export function previewModification(leaseId: string, v: ModificationInput): Modi
 
 /** Record a modification. The asset's event is the commit; the lease follows it. */
 export function modifyLease(leaseId: string, v: ModificationInput): { ok: true } | { ok: false; reason: string } {
-  if (!v.reason.trim()) return { ok: false, reason: 'Say what changed in the contract' }
+  if (!v.reason.trim()) return { ok: false, reason: 'You must fill in what changed in the contract' }
   const pv = previewModification(leaseId, v)
-  if (!pv.ok) return { ok: false, reason: pv.refusal ?? Object.values(pv.errors)[0] ?? 'The modification cannot be recorded' }
+  if (!pv.ok) return { ok: false, reason: pv.refusal ?? Object.values(pv.errors)[0] ?? 'Lease modification could not be recorded. Try again' }
   const l = findLease(leaseId)!
   let eventId: string | null = null
   if (l.rouAssetId) {

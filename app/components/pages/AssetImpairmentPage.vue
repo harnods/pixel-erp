@@ -86,10 +86,10 @@ function openForm(assetId = '') {
  */
 function submitTest() {
   const amount = Number(String(formRecoverable.value).replace(/[^\d]/g, ''))
-  if (!formAsset.value) { formError.value = t('Choose the asset being tested'); return }
-  if (!formIndicator.value) { formError.value = t('Choose what prompted the test'); return }
-  if (!amount) { formError.value = t('Enter the recoverable amount'); return }
-  if (!formSource.value.trim()) { formError.value = t('Say where the recoverable amount came from'); return }
+  if (!formAsset.value) { formError.value = t('You must select an asset'); return }
+  if (!formIndicator.value) { formError.value = t('You must select an indicator'); return }
+  if (!amount) { formError.value = t('You must fill in recoverable amount'); return }
+  if (!formSource.value.trim()) { formError.value = t('You must fill in source'); return }
 
   const r = recordImpairmentTest({
     assetId: formAsset.value,
@@ -101,7 +101,7 @@ function submitTest() {
   // A refusal (a posted period, a disposed asset) is the form's error, not a toast.
   if (!r.ok) { formError.value = t(r.reason); return }
   formOpen.value = false
-  successToast(r.event ? t('Test recorded. Impairment written down in the accounts') : t('Test recorded. No impairment'))
+  successToast(r.event ? t('Impairment test saved. Impairment loss posted') : t('Impairment test saved. No impairment'))
 }
 
 function openAsset(id: string) { router.push(`/assets/${id}`) }
@@ -110,15 +110,12 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
 <template>
   <div class="im">
     <header class="im__head">
-      <p class="im__sub">
-        {{ t('PSAK 48 · the obligation is to test, so a test that finds nothing is retained as the evidence it happened') }}
-      </p>
       <div class="im__headactions">
         <MpButton v-if="!obligationsShown" variant="secondary" is-rounded @click="obligationsShown = true">
-          {{ t('Show year-end obligations') }}
+          {{ t('Show annual tests') }}
         </MpButton>
-        <MpButton is-rounded @click="openForm()">
-          {{ t('Record a test') }}
+        <MpButton is-rounded left-icon="add" @click="openForm()">
+          {{ t('New test') }}
         </MpButton>
       </div>
     </header>
@@ -131,7 +128,7 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
         {{ t(annualOutstanding.length === 1 ? 'asset is due its annual test' : 'assets are due their annual test') }}
       </MpBannerTitle>
       <MpBannerDescription>
-        {{ t('Goodwill and indefinite-life intangibles are tested every year whether or not an indicator exists.') }}
+        {{ t('PSAK 48 requires goodwill and indefinite-life intangibles to be tested every year, with or without an indicator.') }}
       </MpBannerDescription>
     </MpBanner>
 
@@ -139,10 +136,10 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
     <div v-if="obligationsShown" class="im__annual" data-tour="imp-annual">
       <div class="im__annualhead">
         <div>
-          <div class="im__annualtitle">{{ t(`Annual impairment tests · FY2026, year end ${periodEndDate(FY_END)}`) }}</div>
+          <div class="im__annualtitle">{{ t(`Annual impairment tests · FY2026 · year end ${periodEndDate(FY_END)}`) }}</div>
           <div class="im__annualsub">
             {{ annualDone.length }} {{ t('of') }} {{ annualObligations.length }} {{ t('done') }}
-            <template v-if="!annualOutstanding.length"> · {{ t('every required test is recorded for the year') }}</template>
+            <template v-if="!annualOutstanding.length"> · {{ t('all required tests recorded') }}</template>
           </div>
         </div>
         <MpButton v-if="!isYearEnd" variant="ghost" is-rounded @click="obligationsShown = false">{{ t('Hide') }}</MpButton>
@@ -162,14 +159,14 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
         </div>
       </div>
       <p v-if="!annualObligations.length" class="im__annualnote im__annualempty">
-        {{ t('No goodwill or indefinite-life intangibles are held, so no annual test is required.') }}
+        {{ t('No goodwill or indefinite-life intangibles. No annual test is due.') }}
       </p>
     </div>
 
     <!-- ── Record a test ── -->
     <div v-if="formOpen" class="im__form" data-tour="imp-form">
       <div class="im__formhead">
-        <span class="im__formtitle">{{ t('Record an impairment test') }}</span>
+        <span class="im__formtitle">{{ t('New impairment test') }}</span>
         <MpButton variant="ghost" is-rounded :aria-label="t('Close')" @click="formOpen = false">
           <MpIcon name="close" size="sm" />
         </MpButton>
@@ -178,41 +175,36 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
       <div class="im__formgrid">
         <div class="im__formfield">
           <label class="im__formlabel">{{ t('Asset') }}</label>
-          <ErpFilterSelect id="im-asset" v-model="formAsset" :placeholder="t('Choose an asset')" :options="assetOptions" width="100%" />
+          <ErpFilterSelect id="im-asset" v-model="formAsset" :placeholder="t('Select asset')" :options="assetOptions" width="100%" />
         </div>
 
         <div class="im__formfield">
-          <label class="im__formlabel">{{ t('What prompted the test') }}</label>
-          <ErpFilterSelect id="im-indicator" v-model="formIndicator" :placeholder="t('Choose an indicator')" :options="indicatorOptions" width="100%" />
+          <label class="im__formlabel">{{ t('Indicator') }}</label>
+          <ErpFilterSelect id="im-indicator" v-model="formIndicator" :placeholder="t('Select indicator')" :options="indicatorOptions" width="100%" />
         </div>
 
         <div class="im__formfield">
           <label class="im__formlabel">{{ t('Carrying amount') }}</label>
-          <!-- Read from the schedule, never typed: a test compares against what
-               the asset is actually carried at. -->
           <div class="im__readonly">
-            {{ carryingOf === null ? t('Choose an asset first') : formatIDRWhole(carryingOf) }}
+            {{ carryingOf === null ? t('Select an asset first') : formatIDRWhole(carryingOf) }}
           </div>
-          <div class="im__formnote">{{ t('Read from the schedule at today\'s date') }}</div>
+          <div class="im__formnote">{{ t('From the depreciation schedule at today\'s date') }}</div>
         </div>
 
         <div class="im__formfield">
           <label class="im__formlabel">{{ t('Recoverable amount') }}</label>
           <MpInput id="im-recoverable" v-model="formRecoverable" />
-          <div class="im__formnote">
-            {{ t('From your valuer or your own projection — the product does not compute this') }}
-          </div>
+          <div class="im__formnote">{{ t('From an appraisal or a value-in-use projection') }}</div>
         </div>
 
         <div class="im__formfield">
           <label class="im__formlabel">{{ t('Basis') }}</label>
-          <ErpFilterSelect id="im-basis" v-model="formBasis" :placeholder="t('Choose a basis')" :options="basisOptions" width="100%" />
+          <ErpFilterSelect id="im-basis" v-model="formBasis" :placeholder="t('Select basis')" :options="basisOptions" width="100%" />
         </div>
 
         <div class="im__formfield">
           <label class="im__formlabel">{{ t('Source') }}</label>
-          <MpInput id="im-source" v-model="formSource" />
-          <div class="im__formnote">{{ t('Who or what the figure came from') }}</div>
+          <MpInput id="im-source" v-model="formSource" :placeholder="t('Example: Appraisal, PT Penilai Independen')" />
         </div>
       </div>
 
@@ -220,7 +212,7 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
 
       <div class="im__formactions">
         <MpButton variant="ghost" is-rounded @click="formOpen = false">{{ t('Cancel') }}</MpButton>
-        <MpButton is-rounded data-tour="dlg-primary" @click="submitTest">{{ t('Save') }}</MpButton>
+        <MpButton is-rounded data-tour="dlg-primary" @click="submitTest">{{ t('Save test') }}</MpButton>
       </div>
     </div>
 
@@ -245,13 +237,11 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
         <div class="im__field">
           <div class="im__k">{{ t('Carrying amount') }}</div>
           <div class="im__v im__v--num">{{ formatIDRWhole(x.carrying) }}</div>
-          <div class="im__note2">{{ t('read from the schedule at the test date') }}</div>
+          <div class="im__note2">{{ t('At the test date') }}</div>
         </div>
         <div class="im__field">
           <div class="im__k">{{ t('Recoverable amount') }}</div>
           <div class="im__v im__v--num">{{ formatIDRWhole(x.recoverable) }}</div>
-          <!-- The one figure the product does not produce. Saying where it came
-               from is the point of holding the test as a record. -->
           <div class="im__note2">{{ x.basis }} · {{ x.source }}</div>
         </div>
         <div class="im__field">
@@ -261,7 +251,7 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
             <template v-else>{{ t('No impairment') }}</template>
           </div>
           <div v-if="x.loss" class="im__note2">
-            {{ t('accounting only · tax does not recognise it until realised') }}
+            {{ t('Accounting book only. Tax recognises the loss when it is realised') }}
           </div>
         </div>
       </div>
@@ -275,9 +265,7 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
 
 <style scoped>
 .im { max-width: 980px; }
-.im__head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); min-height: 32px; }
-.im__title { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
-.im__sub { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0; max-width: 720px; }
+.im__head { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); min-height: 32px; }
 .im__note { margin-bottom: var(--mp-spacing-4); }
 .im__headactions { display: flex; gap: var(--mp-spacing-2); flex: none; }
 .im__annual { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); margin-bottom: var(--mp-spacing-4); }
@@ -291,7 +279,6 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
 .im__annualstate { display: flex; align-items: center; gap: var(--mp-spacing-3); flex: none; }
 .im__annualnote { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .im__annualempty { margin: 0; padding: var(--mp-spacing-3) var(--mp-spacing-4); }
-.im__dueactions { display: flex; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-4); flex-wrap: wrap; }
 
 /* Record a test — inline rather than in a drawer, because it is short and the
    list behind it is the context for what you are entering. */

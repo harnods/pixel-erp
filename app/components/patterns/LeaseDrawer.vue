@@ -38,7 +38,7 @@ const f = ref(blank())
 const errors = ref<Record<string, string>>({})
 
 const exemptionOptions = [
-  { value: 'short-term', label: `Short-term · ${SHORT_TERM_MONTHS} months or less` },
+  { value: 'short-term', label: `Short-term (${SHORT_TERM_MONTHS} months or less)` },
   { value: 'low-value', label: 'Low-value underlying asset' },
 ]
 
@@ -114,10 +114,11 @@ watch(() => [props.isOpen, props.mode, props.leaseId], () => {
 const FIELD_NAMES: Record<string, string> = {
   name: 'Lease name', branch: 'Branch', startDate: 'Commencement date', termMonths: 'Term',
   monthlyPayment: 'Monthly payment', annualRatePct: 'Discount rate', exemption: 'Exemption',
+  period: 'Effective from', extraMonths: 'Change in term', payment: 'Revised monthly payment', reason: 'What changed in the contract',
 }
 const fieldSummary = computed(() => {
   const names = Object.keys(errors.value).filter((k) => k !== 'form').map((k) => FIELD_NAMES[k] ?? k)
-  return names.length ? `Check ${names.join(', ')} above` : ''
+  return names.length ? `Check these fields: ${names.join(', ')}` : ''
 })
 function revealFirstError() {
   nextTick(() => {
@@ -133,17 +134,17 @@ function submit() {
     if (!r.ok) { errors.value = r.errors; revealFirstError(); return }
     const l = r.lease
     emit('done', l.rouAssetId
-      ? `${l.id} recorded · right-of-use asset ${l.rouAssetId} added to the register at ${formatIDRWhole(leaseSchedule(l).initialLiability)}`
-      : `${l.id} recorded as ${l.exemption} · no right-of-use asset, payments are expensed`, l.id)
+      ? `Lease ${l.id} saved. Right-of-use asset ${l.rouAssetId} added at ${formatIDRWhole(leaseSchedule(l).initialLiability)}`
+      : `Lease ${l.id} saved as ${l.exemption}. Payments are expensed`, l.id)
     return
   }
   if (!props.leaseId) return
   const pv = modPreview.value
   if (!pv || !pv.ok) { errors.value = { ...(pv?.errors ?? {}), ...(pv?.refusal ? { form: pv.refusal } : {}) }; return }
-  if (!m.value.reason.trim()) { errors.value = { reason: 'Say what changed in the contract' }; return }
+  if (!m.value.reason.trim()) { errors.value = { reason: 'You must fill in what changed in the contract' }; return }
   const r = modifyLease(props.leaseId, toMod())
   if (!r.ok) { errors.value = { form: r.reason }; return }
-  emit('done', `Lease remeasured · ${pv.rou?.id ?? 'right-of-use asset'} ${pv.adjustment >= 0 ? 'increased' : 'reduced'} by ${formatIDRWhole(Math.abs(pv.adjustment))} over ${monthsLabel(pv.remainingMonths)}`, props.leaseId)
+  emit('done', `Lease remeasured. ${pv.rou?.id ?? 'Right-of-use asset'} ${pv.adjustment >= 0 ? 'increased' : 'reduced'} by ${formatIDRWhole(Math.abs(pv.adjustment))} over ${monthsLabel(pv.remainingMonths)}`, props.leaseId)
 }
 </script>
 
@@ -169,11 +170,11 @@ function submit() {
             <div class="ld-row">
               <div class="ld-field">
                 <label class="ld-label" for="ld-underlying">{{ t('Underlying asset') }}</label>
-                <MpInput id="ld-underlying" v-model="f.underlying" :placeholder="t('What is leased')" />
+                <MpInput id="ld-underlying" v-model="f.underlying" :placeholder="t('Example: Warehouse, Jl. Cakung Cilincing')" />
               </div>
               <div class="ld-field">
                 <label class="ld-label" for="ld-branch">{{ t('Branch') }}</label>
-                <ErpFilterSelect id="ld-branch" v-model="f.branch" :placeholder="t('Choose a branch')" :options="assetBranches" width="100%" :is-clearable="false" />
+                <ErpFilterSelect id="ld-branch" v-model="f.branch" :placeholder="t('Select branch')" :options="assetBranches" width="100%" :is-clearable="false" />
                 <p v-if="errors.branch" class="ld-error">{{ t(errors.branch) }}</p>
               </div>
             </div>
@@ -192,13 +193,14 @@ function submit() {
                 <label class="ld-label" for="ld-rate">{{ t('Discount rate (% a year)') }}</label>
                 <MpInput id="ld-rate" v-model="f.rate" :is-invalid="!!errors.annualRatePct" />
                 <p v-if="errors.annualRatePct" class="ld-error">{{ t(errors.annualRatePct) }}</p>
+                <p v-else class="ld-hint">{{ t('Use your borrowing rate if the lease states none') }}</p>
               </div>
             </div>
             <div class="ld-field">
               <label class="ld-label" for="ld-payment">{{ t('Monthly payment') }}</label>
               <MpInput id="ld-payment" v-model="f.payment" :is-invalid="!!errors.monthlyPayment" />
               <p v-if="errors.monthlyPayment" class="ld-error">{{ t(errors.monthlyPayment) }}</p>
-              <p v-else class="ld-hint">{{ t('Paid at the end of each month. The rate is the incremental borrowing rate if the lease states none.') }}</p>
+              <p v-else class="ld-hint">{{ t('Paid at the end of each month') }}</p>
             </div>
             <div class="ld-field">
               <label class="ld-label" for="ld-options">{{ t('Extension or termination options') }}</label>
@@ -206,30 +208,31 @@ function submit() {
             </div>
             <div class="ld-field">
               <MpCheckbox id="ld-exempt" :is-checked="f.exempt" @change="f.exempt = !f.exempt">
-                {{ t('Exempt: short-term or low-value') }}
+                {{ t('Exempt (short-term or low-value)') }}
               </MpCheckbox>
-              <ErpFilterSelect v-if="f.exempt" id="ld-exemption" v-model="f.exemption" :placeholder="t('Exemption')" :options="exemptionOptions" width="100%" :is-clearable="false" />
+              <ErpFilterSelect v-if="f.exempt" id="ld-exemption" v-model="f.exemption" :placeholder="t('Select exemption')" :options="exemptionOptions" width="100%" :is-clearable="false" />
               <p v-if="errors.exemption" class="ld-error">{{ t(errors.exemption) }}</p>
-              <p v-else class="ld-hint">{{ t('An exempt lease has no right-of-use asset and no liability. Its payments are expensed as they fall due.') }}</p>
+              <p v-else class="ld-hint">{{ t('No right-of-use asset or liability. Payments are expensed when due') }}</p>
             </div>
 
             <div class="ld-preview">
-              <div class="ld-preview-title">{{ t('What this lease recognises') }}</div>
+              <div class="ld-preview-title">{{ t('Summary') }}</div>
               <template v-if="createPreview">
                 <template v-if="createPreview.exempt">
-                  <p class="ld-line">{{ t('No right-of-use asset and no liability.') }}</p>
-                  <p class="ld-line">{{ t('Expensed') }} {{ formatIDRWhole(toInput().monthlyPayment) }} {{ t('a month, to') }} {{ createPreview.end }}.</p>
+                  <p class="ld-line">{{ t('No right-of-use asset or liability') }}</p>
+                  <div class="ld-kv"><span>{{ t('Monthly expense') }}</span><strong>{{ formatIDRWhole(toInput().monthlyPayment) }}</strong></div>
+                  <div class="ld-kv"><span>{{ t('Term ends') }}</span><strong>{{ createPreview.end }}</strong></div>
                 </template>
                 <template v-else>
                   <div class="ld-kv"><span>{{ t('Lease liability at commencement') }}</span><strong>{{ formatIDRWhole(createPreview.liability) }}</strong></div>
                   <div class="ld-kv"><span>{{ t('Right-of-use asset cost') }}</span><strong>{{ formatIDRWhole(createPreview.liability) }}</strong></div>
-                  <div class="ld-kv"><span>{{ t('Depreciation, straight line over the term') }}</span><strong>{{ formatIDRWhole(createPreview.monthlyRou) }} / {{ t('month') }}</strong></div>
-                  <div class="ld-kv"><span>{{ t('First month interest') }}</span><strong>{{ formatIDRWhole(createPreview.firstInterest) }}</strong></div>
-                  <div class="ld-kv"><span>{{ t('Payments over the term, the tax deduction') }}</span><strong>{{ formatIDRWhole(createPreview.total) }}</strong></div>
-                  <p class="ld-hint">{{ t(`Ends ${createPreview.end}. The asset joins the register and depreciates in every run from its first month.`) }}</p>
+                  <div class="ld-kv"><span>{{ t('Monthly depreciation (straight line)') }}</span><strong>{{ formatIDRWhole(createPreview.monthlyRou) }}</strong></div>
+                  <div class="ld-kv"><span>{{ t('First month\'s interest') }}</span><strong>{{ formatIDRWhole(createPreview.firstInterest) }}</strong></div>
+                  <div class="ld-kv"><span>{{ t('Total payments (tax deduction)') }}</span><strong>{{ formatIDRWhole(createPreview.total) }}</strong></div>
+                  <div class="ld-kv"><span>{{ t('Term ends') }}</span><strong>{{ createPreview.end }}</strong></div>
                 </template>
               </template>
-              <p v-else class="ld-hint">{{ t('Enter the commencement date, term, payment and rate to see the figures.') }}</p>
+              <p v-else class="ld-hint">{{ t('Enter the commencement date, term, monthly payment and discount rate to see the summary') }}</p>
             </div>
           </div>
 
@@ -237,20 +240,20 @@ function submit() {
           <div v-else class="ld-body" data-tour="lease-modify">
             <template v-if="lease">
               <p class="ld-hint ld-lead">
-                {{ lease.name }} · {{ t('currently') }} {{ t(`${monthsLabel(leaseSchedule(lease).current.termMonths)} at`) }}
-                {{ formatIDRWhole(leaseSchedule(lease).current.payment) }} · {{ t('ends') }} {{ periodLabel(leaseSchedule(lease).endPeriod) }}
+                {{ lease.name }} · {{ t(`${monthsLabel(leaseSchedule(lease).current.termMonths)} at`) }}
+                {{ formatIDRWhole(leaseSchedule(lease).current.payment) }} · {{ t('Ends') }} {{ periodLabel(leaseSchedule(lease).endPeriod) }}
               </p>
               <div class="ld-row">
                 <div class="ld-field">
                   <label class="ld-label" for="ld-mod-period">{{ t('Effective from') }}</label>
-                  <ErpFilterSelect id="ld-mod-period" v-model="m.period" :placeholder="t('Choose a period')" :options="periodOptions" width="100%" :is-clearable="false" />
+                  <ErpFilterSelect id="ld-mod-period" v-model="m.period" :placeholder="t('Select period')" :options="periodOptions" width="100%" :is-clearable="false" />
                   <p v-if="errors.period" class="ld-error">{{ t(errors.period) }}</p>
                 </div>
                 <div class="ld-field">
                   <label class="ld-label" for="ld-mod-extra">{{ t('Change in term (months)') }}</label>
                   <MpInput id="ld-mod-extra" v-model="m.extraMonths" :is-invalid="!!errors.extraMonths" />
                   <p v-if="errors.extraMonths" class="ld-error">{{ t(errors.extraMonths) }}</p>
-                  <p v-else class="ld-hint">{{ t('Negative shortens it.') }}</p>
+                  <p v-else class="ld-hint">{{ t('Use a negative number to shorten the term') }}</p>
                 </div>
               </div>
               <div class="ld-row">
@@ -267,7 +270,7 @@ function submit() {
               </div>
               <div class="ld-field">
                 <label class="ld-label" for="ld-mod-reason">{{ t('What changed in the contract') }}</label>
-                <MpInput id="ld-mod-reason" v-model="m.reason" :placeholder="t('e.g. Addendum 2 signed, twelve-month extension')" :is-invalid="!!errors.reason" />
+                <MpInput id="ld-mod-reason" v-model="m.reason" :placeholder="t('Example: Addendum 2 signed, 12-month extension')" :is-invalid="!!errors.reason" />
                 <p v-if="errors.reason" class="ld-error">{{ t(errors.reason) }}</p>
               </div>
 
@@ -276,16 +279,16 @@ function submit() {
                 <template v-if="modPreview && !Object.keys(modPreview.errors).length && !modPreview.refusal">
                   <div class="ld-kv"><span>{{ t('Liability before') }}</span><strong>{{ formatIDRWhole(modPreview.liabilityBefore) }}</strong></div>
                   <div class="ld-kv"><span>{{ t('Liability remeasured') }}</span><strong>{{ formatIDRWhole(modPreview.liabilityAfter) }}</strong></div>
-                  <div class="ld-kv"><span>{{ t('Right-of-use asset adjusted by the same amount') }}</span><strong>{{ modPreview.adjustment >= 0 ? '+' : '−' }}{{ formatIDRWhole(Math.abs(modPreview.adjustment)) }}</strong></div>
+                  <div class="ld-kv"><span>{{ t('Right-of-use asset adjustment') }}</span><strong>{{ modPreview.adjustment >= 0 ? '+' : '−' }}{{ formatIDRWhole(Math.abs(modPreview.adjustment)) }}</strong></div>
                   <template v-if="modPreview.rou">
-                    <div class="ld-kv"><span>{{ t(`${modPreview.rou.id} depreciation from ${periodLabel(m.period)}`) }}</span><strong>{{ formatIDRWhole(modPreview.rou.chargeBefore ?? 0) }} → {{ formatIDRWhole(modPreview.rou.chargeAfter ?? 0) }}</strong></div>
+                    <div class="ld-kv"><span>{{ t(`${modPreview.rou.id} monthly depreciation from ${periodLabel(m.period)}`) }}</span><strong>{{ formatIDRWhole(modPreview.rou.chargeBefore ?? 0) }} → {{ formatIDRWhole(modPreview.rou.chargeAfter ?? 0) }}</strong></div>
                   </template>
                   <p class="ld-hint">
-                    {{ t(`Remaining ${monthsLabel(modPreview.remainingMonths)}, ending ${modPreview.newEnd ? periodLabel(modPreview.newEnd) : ''}. No gain or loss. Nothing posted before ${periodLabel(m.period)} moves.`) }}
+                    {{ t(`${monthsLabel(modPreview.remainingMonths)} remaining, ending ${modPreview.newEnd ? periodLabel(modPreview.newEnd) : ''}. Periods before ${periodLabel(m.period)} are not changed`) }}
                   </p>
                 </template>
                 <p v-else-if="modPreview?.refusal" class="ld-error">{{ t(modPreview.refusal) }}</p>
-                <p v-else class="ld-hint">{{ t('Complete the changes to see the remeasurement.') }}</p>
+                <p v-else class="ld-hint">{{ t('Enter the changes to see the remeasurement') }}</p>
               </div>
             </template>
           </div>
@@ -295,7 +298,7 @@ function submit() {
             <p v-else-if="fieldSummary" class="ld-error ld-foot-error" data-testid="ld-field-summary">{{ t(fieldSummary) }}</p>
             <div class="ld-footright">
               <MpButton variant="secondary" is-rounded @click="emit('close')">{{ t('Cancel') }}</MpButton>
-              <MpButton is-rounded data-tour="dlg-primary" @click="submit">{{ t(mode === 'create' ? 'Record lease' : 'Remeasure') }}</MpButton>
+              <MpButton is-rounded data-tour="dlg-primary" @click="submit">{{ t(mode === 'create' ? 'Save lease' : 'Remeasure lease') }}</MpButton>
             </div>
           </footer>
         </div>

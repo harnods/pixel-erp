@@ -52,10 +52,7 @@ const exemptLabel = (e: string | null) => (e === 'short-term' ? 'Short-term' : e
 <template>
   <div class="ls">
     <header class="ls__head">
-      <p class="ls__sub">
-        {{ t('PSAK 73 · each lease creates a right-of-use asset in the register, depreciating through the normal engine') }}
-      </p>
-      <MpButton is-rounded @click="drawer = { mode: 'create', leaseId: null }">
+      <MpButton is-rounded left-icon="add" @click="drawer = { mode: 'create', leaseId: null }">
         {{ t('New lease') }}
       </MpButton>
     </header>
@@ -68,17 +65,17 @@ const exemptLabel = (e: string | null) => (e === 'short-term' ? 'Short-term' : e
       </div>
       <div class="stat-card stat-card--bordered">
         <div class="stat-title">{{ t('Lease liability') }}</div>
-        <div class="stat-period">{{ t('Outstanding · at 30/09/2026') }}</div>
+        <div class="stat-period">{{ t('Outstanding at 30/09/2026') }}</div>
         <div class="stat-amount">{{ formatIDRWhole(leaseTotals.liability) }}</div>
       </div>
       <div class="stat-card stat-card--bordered">
         <div class="stat-title">{{ t('Right-of-use book value') }}</div>
-        <div class="stat-period">{{ t('Accounting · at 30/09/2026') }}</div>
+        <div class="stat-period">{{ t('Accounting book at 30/09/2026') }}</div>
         <div class="stat-amount">{{ formatIDRWhole(leaseTotals.rou) }}</div>
       </div>
       <div class="stat-card">
         <div class="stat-title">{{ t('Exempt lease expense') }}</div>
-        <div class="stat-period">{{ t('FY2026 to 30/09') }}</div>
+        <div class="stat-period">{{ t('FY2026 to 30/09/2026') }}</div>
         <div class="stat-amount">{{ formatIDRWhole(leaseTotals.expensed) }}</div>
       </div>
     </div>
@@ -91,7 +88,7 @@ const exemptLabel = (e: string | null) => (e === 'short-term' ? 'Short-term' : e
             <th class="ls__th">{{ t('Term') }}</th>
             <th class="ls__th">{{ t('Right-of-use asset') }}</th>
             <th class="ls__th ls__th--num">{{ t('Liability') }}</th>
-            <th class="ls__th ls__th--num">{{ t('ROU book value') }}</th>
+            <th class="ls__th ls__th--num">{{ t('Right-of-use book value') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -121,7 +118,7 @@ const exemptLabel = (e: string | null) => (e === 'short-term' ? 'Short-term' : e
         </tbody>
       </table>
     </div>
-    <p v-if="!selected" class="ls__hint">{{ t('Select a lease to see its schedules.') }}</p>
+    <p v-if="!selected" class="ls__hint">{{ t('Select a lease to view its schedule') }}</p>
 
     <!-- ── The selected lease ── -->
     <section v-if="selected && detail" class="ls__detail" data-tour="lease-detail">
@@ -132,7 +129,7 @@ const exemptLabel = (e: string | null) => (e === 'short-term' ? 'Short-term' : e
             {{ selected.underlying }} · {{ selected.branch }} · {{ detail.term }} ·
             {{ t(`${monthsLabel(leaseSchedule(selected).current.termMonths)} at`) }} {{ formatIDRWhole(leaseSchedule(selected).current.payment) }} ·
             {{ (leaseSchedule(selected).current.annualRate * 100).toFixed(2).replace(/\.?0+$/, '') }}% {{ t('a year') }} ·
-            {{ t('options:') }} {{ selected.options }}
+            {{ t('Options:') }} {{ selected.options }}
           </div>
         </div>
         <MpButton v-if="!selected.exemption && canChangeValue" variant="secondary" is-rounded @click="drawer = { mode: 'modify', leaseId: selected.id }">
@@ -144,22 +141,17 @@ const exemptLabel = (e: string | null) => (e === 'short-term' ? 'Short-term' : e
       <div class="ls__monthly" data-tour="lease-monthly">
         <template v-if="selected.exemption">
           <div class="ls__mk"><span>{{ t(`Lease expense · ${periodLabel(CURRENT_PERIOD)}`) }}</span><strong>{{ formatIDRWhole(detail.month.expensed) }}</strong></div>
-          <div class="ls__mk"><span>{{ t('Right-of-use asset and liability') }}</span><strong>{{ t('None · exempt') }}</strong></div>
+          <div class="ls__mk"><span>{{ t('Right-of-use asset and liability') }}</span><strong>{{ t('None (exempt)') }}</strong></div>
           <div class="ls__mk"><span>{{ t('Tax deduction') }}</span><strong>{{ formatIDRWhole(detail.month.payment) }}</strong></div>
         </template>
         <template v-else>
           <div class="ls__mk"><span>{{ t(`Depreciation · operating expense · ${periodLabel(CURRENT_PERIOD)}`) }}</span><strong>{{ formatIDRWhole(detail.month.rouCharge ?? 0) }}</strong></div>
           <div class="ls__mk"><span>{{ t('Interest · finance cost') }}</span><strong>{{ formatIDRWhole(detail.month.interest) }}</strong></div>
           <div class="ls__mk"><span>{{ t('Accounting total') }}</span><strong>{{ formatIDRWhole((detail.month.rouCharge ?? 0) + detail.month.interest) }}</strong></div>
-          <div class="ls__mk"><span>{{ t('Tax deduction · the contract payment') }}</span><strong>{{ formatIDRWhole(detail.month.payment) }}</strong></div>
+          <div class="ls__mk"><span>{{ t('Tax deduction (contract payment)') }}</span><strong>{{ formatIDRWhole(detail.month.payment) }}</strong></div>
         </template>
       </div>
 
-      <p v-if="selected.rouAssetId" class="ls__hint">
-        {{ t('The right-of-use asset is an ordinary register row:') }}
-        <span class="ls__roulink" @click="openRou(selected.rouAssetId)">{{ selected.rouAssetId }}</span>.
-        {{ t('It depreciates in every run and ties like any other asset.') }}
-      </p>
       <div v-if="selected.modifications.length" class="ls__mods">
         <div v-for="x in selected.modifications" :key="x.id" class="ls__mod">
           {{ x.id }} · {{ t('from') }} {{ periodLabel(x.period) }} ·
@@ -183,7 +175,7 @@ const exemptLabel = (e: string | null) => (e === 'short-term' ? 'Short-term' : e
               <th class="ls__th ls__th--num">{{ t('Interest') }}</th>
               <th class="ls__th ls__th--num">{{ t('Payment') }}</th>
               <th class="ls__th ls__th--num">{{ t('Closing') }}</th>
-              <th class="ls__th ls__th--num">{{ t(selected.exemption ? 'Expensed' : 'ROU depreciation') }}</th>
+              <th class="ls__th ls__th--num">{{ t(selected.exemption ? 'Expensed' : 'Right-of-use depreciation') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -200,7 +192,7 @@ const exemptLabel = (e: string | null) => (e === 'short-term' ? 'Short-term' : e
               <td class="ls__td ls__td--num">{{ selected.exemption ? formatIDRWhole(r.payment) : formatIDRWhole(r.rouCharge ?? 0) }}</td>
             </tr>
             <tr v-if="!shownRows.length" class="ls__tr ls__tr--static">
-              <td class="ls__td" colspan="6">{{ t('No months of this lease fall in FY2026.') }}</td>
+              <td class="ls__td" colspan="6">{{ t('No months of this lease fall in FY2026. Select Whole term to see the full schedule') }}</td>
             </tr>
           </tbody>
         </table>
@@ -215,8 +207,7 @@ const exemptLabel = (e: string | null) => (e === 'short-term' ? 'Short-term' : e
 </template>
 
 <style scoped>
-.ls__head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); min-height: 32px; }
-.ls__sub { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0; max-width: 720px; }
+.ls__head { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); min-height: 32px; }
 
 .stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; margin-bottom: var(--mp-spacing-6); }
 .stat-card {
