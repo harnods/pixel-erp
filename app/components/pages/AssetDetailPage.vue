@@ -18,7 +18,7 @@ import {
   MpButton, MpIcon, MpTextlink, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, css, MpSegmentedControl,
 } from '@mekari/pixel3'
-import { formatIDR } from '~/utils/currency'
+import { formatIDRWhole } from '~/utils/currency'
 import { infoToast, successToast } from '~/utils/toasts'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -32,6 +32,9 @@ import { VALUE_ACTIONS, type ValueAction } from '~/data/assetValueChange'
 import { assetTaxGroups } from '~/data/fixedAssets'
 import CustodyDrawer from '~/components/patterns/CustodyDrawer.vue'
 import { custodyHistoryFor, conditionOf, canEditCustody, stampKey } from '~/data/assetCustody'
+import { bulkHistoryFor } from '~/data/assetUiBulkHistory'
+import { signedFigures } from '~/data/assetUiFigures'
+import { plainDurations } from '~/data/assetUiDuration'
 import { approvalTrailFor, pendingFor } from '~/data/assetApprovals'
 import AssetLifeSchedule from '~/components/patterns/AssetLifeSchedule.vue'
 import IntangibleCodePicker from '~/components/patterns/IntangibleCodePicker.vue'
@@ -55,7 +58,8 @@ const asset = computed(() => findAsset(props.orderId))
 /** The statutory group, including one assigned in this session. */
 const effectiveTaxGroup = computed(() => asset.value?.taxGroup ?? null)
 
-const figures = computed(() => (asset.value ? detailFigures(asset.value) : []))
+// The cumulative difference is captioned "Accounting less tax", so it keeps its sign.
+const figures = computed(() => (asset.value ? signedFigures(asset.value, detailFigures(asset.value)) : []))
 // LR-6: General Affairs sees the physical pane and nothing financial.
 const panes = computed(() => {
   const all = (asset.value ? detailPanes(asset.value) : []).map((p) => (p.owner === 'General Affairs' && asset.value
@@ -73,8 +77,12 @@ const sessionHistory = computed(() => {
     what: `${c.field} changed from ${c.from ?? (c.field === 'Custodian' ? 'Unassigned' : 'Not recorded')} to ${c.to ?? (c.field === 'Custodian' ? 'Unassigned' : 'Not recorded')}`,
     note: c.source ? `${c.reason} · from count ${c.source}` : c.reason, key: stampKey(c.at),
   }))
+  // OD-34: a bulk edit and its reversal are written on each asset they touched.
+  const bulk = bulkHistoryFor(asset.value.id).map((b) => ({
+    when: b.at, who: b.by, what: `${b.field} changed from ${b.from} to ${b.to}`, note: b.note, key: stampKey(b.at),
+  }))
   const trail = approvalTrailFor(asset.value.id).map((r) => ({ ...r, key: stampKey(r.when) }))
-  return [...custody, ...trail].sort((a, b) => b.key - a.key).map(({ key: _k, ...r }) => r)
+  return [...custody, ...bulk, ...trail].sort((a, b) => b.key - a.key).map(({ key: _k, ...r }) => r)
 })
 // LR-6: General Affairs reads the custody history only; ledger rows and the
 // approval trail carry amounts.
@@ -349,10 +357,10 @@ watch(() => [route.query.change, asset.value?.id], () => {
           class="stat-card" :class="{ 'stat-card--bordered': i < figures.length - 1 }"
         >
           <div class="stat-title">{{ t(f.label) }}</div>
-          <div class="stat-period">{{ t(f.caption) }}</div>
+          <div class="stat-period">{{ t(plainDurations(f.caption)) }}</div>
           <div v-if="f.value === null" class="stat-amount stat-amount--absent">{{ t(f.absent ?? 'Not computed') }}</div>
-          <div v-else class="stat-amount">{{ formatIDR(f.value) }}</div>
-          <div v-if="f.sub" class="stat-sub">{{ t(f.sub) }}</div>
+          <div v-else class="stat-amount">{{ formatIDRWhole(f.value) }}</div>
+          <div v-if="f.sub" class="stat-sub">{{ t(plainDurations(f.sub)) }}</div>
         </div>
       </div>
 
@@ -404,29 +412,29 @@ watch(() => [route.query.change, asset.value?.id], () => {
               <td class="ad__td ad__td--num">
                 <span v-if="r.accounting === null" class="ad__absent">{{ t(r.accountingAbsent ?? 'Not computed') }}</span>
                 <span v-else class="ad__figurelink" @click="explain('accounting', r.period)">
-                  {{ formatIDR(r.accounting) }}
+                  {{ formatIDRWhole(r.accounting) }}
                 </span>
               </td>
               <td class="ad__td ad__td--num">
                 <span v-if="r.tax === null" class="ad__absent">{{ t(r.taxAbsent ?? 'Not computed') }}</span>
                 <span v-else class="ad__figurelink" @click="explain('tax', r.period)">
-                  {{ formatIDR(r.tax) }}
+                  {{ formatIDRWhole(r.tax) }}
                 </span>
               </td>
               <td class="ad__td ad__td--num">
-                {{ r.accounting !== null && r.tax !== null ? formatIDR(r.accounting - r.tax) : '—' }}
+                {{ r.accounting !== null && r.tax !== null ? formatIDRWhole(r.accounting - r.tax) : '—' }}
               </td>
             </tr>
             <tr class="ad__tr ad__tr--total">
               <td class="ad__td">{{ t('FY2026 to 30/09') }}</td>
               <td class="ad__td ad__td--num">
-                {{ total.accounting === null ? '—' : formatIDR(total.accounting) }}
+                {{ total.accounting === null ? '—' : formatIDRWhole(total.accounting) }}
               </td>
               <td class="ad__td ad__td--num">
-                {{ total.tax === null ? '—' : formatIDR(total.tax) }}
+                {{ total.tax === null ? '—' : formatIDRWhole(total.tax) }}
               </td>
               <td class="ad__td ad__td--num">
-                {{ total.accounting !== null && total.tax !== null ? formatIDR(total.accounting - total.tax) : '—' }}
+                {{ total.accounting !== null && total.tax !== null ? formatIDRWhole(total.accounting - total.tax) : '—' }}
               </td>
             </tr>
           </tbody>
@@ -470,7 +478,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
             <span class="ad__paneowner">{{ t(p.owner) }}</span>
           </div>
           <div class="ad__panefields">
-            <ContentList v-for="f in p.fields" :key="f.k" horizontal :label="t(f.k)" :value="f.v" />
+            <ContentList v-for="f in p.fields" :key="f.k" horizontal :label="t(f.k)" :value="plainDurations(f.v)" />
           </div>
           <div v-if="p.head === 'Tax parameters' && canSeeFinancials && !isGone" class="ad__paneaction">
             <MpButton size="sm" variant="secondary" is-rounded @click="classifyOpen = true">
@@ -542,8 +550,8 @@ watch(() => [route.query.change, asset.value?.id], () => {
                 <tbody>
                   <tr v-for="r in v.rows" :key="r.period" class="ad__tr">
                     <td class="ad__td">{{ r.label }}<span v-if="r.adjustmentOnly" class="ad__event-inline">{{ t('Adjustment only') }}</span></td>
-                    <td class="ad__td ad__td--num">{{ formatIDR(r.charge + (r.adjustment ?? 0)) }}</td>
-                    <td class="ad__td ad__td--num">{{ formatIDR(r.netBookValue) }}</td>
+                    <td class="ad__td ad__td--num">{{ formatIDRWhole(r.charge + (r.adjustment ?? 0)) }}</td>
+                    <td class="ad__td ad__td--num">{{ formatIDRWhole(r.netBookValue) }}</td>
                   </tr>
                 </tbody>
               </table>

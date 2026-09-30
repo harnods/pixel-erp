@@ -23,7 +23,7 @@
  */
 import { computed, ref } from 'vue'
 import { MpButton, MpIcon, MpTooltip } from '@mekari/pixel3'
-import { formatIDR } from '~/utils/currency'
+import { formatIDRWhole } from '~/utils/currency'
 import { successToast, infoToast } from '~/utils/toasts'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import {
@@ -99,7 +99,7 @@ function generate() {
       return
     }
   }
-  genDone.value = t(`Draft generated for ${label} · ${r.run.lines.length} assets · ${formatIDR(r.run.total)}. Nothing is posted yet.`)
+  genDone.value = t(`Draft generated for ${label} · ${r.run.lines.length} assets · ${formatIDRWhole(r.run.total)}. Nothing is posted yet.`)
   successToast(genDone.value)
 }
 const draftFor = (month: number) => draftRunFor(periodOfMonth(month))
@@ -170,7 +170,7 @@ function stateLabel(p: SchedulePeriod) {
       </div>
       <div class="ds__runfig">
         <div class="ds__runfiglabel">{{ t('Posts to the general ledger') }}</div>
-        <div class="ds__runfigvalue">{{ formatIDR(actionable.accounting) }}</div>
+        <div class="ds__runfigvalue">{{ formatIDRWhole(actionable.accounting) }}</div>
       </div>
       <MpButton is-rounded @click="confirming = actionable">{{ t('Review and post') }}</MpButton>
     </div>
@@ -195,13 +195,13 @@ function stateLabel(p: SchedulePeriod) {
           {{ t('Accounting · posted through') }}
           {{ totals.bookedThrough ?? t('nothing posted yet') }}
         </div>
-        <div class="stat-amount">{{ formatIDR(totals.booked.accounting ?? 0) }}</div>
+        <div class="stat-amount">{{ formatIDRWhole(totals.booked.accounting ?? 0) }}</div>
       </div>
 
       <div class="stat-card stat-card--bordered">
         <div class="stat-title">{{ t('FY2026 forecast') }}</div>
         <div class="stat-period">{{ t('Accounting · full year including projected') }}</div>
-        <div class="stat-amount">{{ formatIDR(totals.year.accounting ?? 0) }}</div>
+        <div class="stat-amount">{{ formatIDRWhole(totals.year.accounting ?? 0) }}</div>
       </div>
 
       <!-- The tax side reaches the SPT Tahunan once a year, so it belongs here
@@ -212,7 +212,7 @@ function stateLabel(p: SchedulePeriod) {
         <div class="stat-title">{{ t('Tax difference · FY2026') }}</div>
         <div class="stat-period">{{ t('Computed yearly for the tax return, posts nothing') }}</div>
         <div class="stat-amount">
-          {{ formatIDR((totals.year.accounting ?? 0) - (totals.year.tax ?? 0)) }}
+          {{ formatIDRWhole((totals.year.accounting ?? 0) - (totals.year.tax ?? 0)) }}
         </div>
         <span class="stat-link" @click="router.push('/tax-book')">{{ t('Open Tax book') }}</span>
       </div>
@@ -264,11 +264,11 @@ function stateLabel(p: SchedulePeriod) {
                   {{ p.assetCount }} {{ t(p.assetCount === 1 ? 'asset' : 'assets') }}
                 </span>
               </td>
-              <td class="ds__td ds__td--num ds__td--quiet ds__td--opt">{{ formatIDR(p.cost) }}</td>
-              <td class="ds__td ds__td--num ds__td--quiet ds__td--opt">{{ formatIDR(p.openingAccumulated) }}</td>
-              <td class="ds__td ds__td--num ds__td--charge">{{ formatIDR(p.accounting) }}</td>
-              <td class="ds__td ds__td--num ds__td--quiet ds__td--opt">{{ formatIDR(p.closingAccumulated) }}</td>
-              <td class="ds__td ds__td--num">{{ formatIDR(p.closingBookValue) }}</td>
+              <td class="ds__td ds__td--num ds__td--quiet ds__td--opt">{{ formatIDRWhole(p.cost) }}</td>
+              <td class="ds__td ds__td--num ds__td--quiet ds__td--opt">{{ formatIDRWhole(p.openingAccumulated) }}</td>
+              <td class="ds__td ds__td--num ds__td--charge">{{ formatIDRWhole(p.accounting) }}</td>
+              <td class="ds__td ds__td--num ds__td--quiet ds__td--opt">{{ formatIDRWhole(p.closingAccumulated) }}</td>
+              <td class="ds__td ds__td--num">{{ formatIDRWhole(p.closingBookValue) }}</td>
               <td class="ds__td ds__td--state" @click.stop>
                 <div class="ds__stateinner">
                   <ErpStatusBadge
@@ -320,20 +320,20 @@ function stateLabel(p: SchedulePeriod) {
                   </span>
                 </span>
               </td>
-              <td class="ds__td ds__td--num ds__td--quiet ds__td--opt">{{ formatIDR(r.asset.cost) }}</td>
+              <td class="ds__td ds__td--num ds__td--quiet ds__td--opt">{{ formatIDRWhole(r.asset.cost) }}</td>
               <td class="ds__td ds__td--num ds__td--quiet ds__td--opt">
-                {{ r.openingAccumulated === null ? '—' : formatIDR(r.openingAccumulated) }}
+                {{ r.openingAccumulated === null ? '—' : formatIDRWhole(r.openingAccumulated) }}
               </td>
               <!-- Never 0 where the figure does not exist. -->
               <td class="ds__td ds__td--num">
                 <span v-if="r.accounting === null" class="ds__absent">{{ t(r.accountingAbsent ?? 'Not computed') }}</span>
-                <template v-else>{{ formatIDR(r.accounting) }}</template>
+                <template v-else>{{ formatIDRWhole(r.accounting) }}</template>
               </td>
               <td class="ds__td ds__td--num ds__td--quiet ds__td--opt">
-                {{ r.closingAccumulated === null ? '—' : formatIDR(r.closingAccumulated) }}
+                {{ r.closingAccumulated === null ? '—' : formatIDRWhole(r.closingAccumulated) }}
               </td>
               <td class="ds__td ds__td--num">
-                {{ r.closingBookValue === null ? '—' : formatIDR(r.closingBookValue) }}
+                {{ r.closingBookValue === null ? '—' : formatIDRWhole(r.closingBookValue) }}
               </td>
               <td class="ds__td" />
             </tr>
@@ -343,9 +343,9 @@ function stateLabel(p: SchedulePeriod) {
             <td class="ds__td">{{ t('FY2026') }}</td>
             <td class="ds__td ds__td--opt" />
             <td class="ds__td ds__td--opt" />
-            <td class="ds__td ds__td--num">{{ formatIDR(totals.year.accounting ?? 0) }}</td>
+            <td class="ds__td ds__td--num">{{ formatIDRWhole(totals.year.accounting ?? 0) }}</td>
             <td class="ds__td ds__td--opt" />
-            <td class="ds__td ds__td--num">{{ formatIDR(periods[11]?.closingBookValue ?? 0) }}</td>
+            <td class="ds__td ds__td--num">{{ formatIDRWhole(periods[11]?.closingBookValue ?? 0) }}</td>
             <td class="ds__td" />
           </tr>
         </tbody>
@@ -383,15 +383,15 @@ function stateLabel(p: SchedulePeriod) {
                 <span class="ds__periodname">{{ m.label }}</span>
                 <span class="ds__count"> {{ m.assets }} {{ t(m.assets === 1 ? 'asset' : 'assets') }}</span>
               </td>
-              <td class="ds__td ds__td--num">{{ formatIDR(m.accounting) }}</td>
-              <td class="ds__td ds__td--num">{{ formatIDR(m.tax) }}</td>
-              <td class="ds__td ds__td--num">{{ formatIDR(m.accounting - m.tax) }}</td>
+              <td class="ds__td ds__td--num">{{ formatIDRWhole(m.accounting) }}</td>
+              <td class="ds__td ds__td--num">{{ formatIDRWhole(m.tax) }}</td>
+              <td class="ds__td ds__td--num">{{ formatIDRWhole(m.accounting - m.tax) }}</td>
             </tr>
             <tr class="ds__tr ds__tr--total ds__tr--static">
               <td class="ds__td">{{ t(`Next ${horizon} months`) }}</td>
-              <td class="ds__td ds__td--num">{{ formatIDR(projectedTotals.accounting) }}</td>
-              <td class="ds__td ds__td--num">{{ formatIDR(projectedTotals.tax) }}</td>
-              <td class="ds__td ds__td--num">{{ formatIDR(projectedTotals.accounting - projectedTotals.tax) }}</td>
+              <td class="ds__td ds__td--num">{{ formatIDRWhole(projectedTotals.accounting) }}</td>
+              <td class="ds__td ds__td--num">{{ formatIDRWhole(projectedTotals.tax) }}</td>
+              <td class="ds__td ds__td--num">{{ formatIDRWhole(projectedTotals.accounting - projectedTotals.tax) }}</td>
             </tr>
           </tbody>
         </table>
@@ -431,13 +431,13 @@ function stateLabel(p: SchedulePeriod) {
                     <span class="ds__jacct">{{ l.account }}</span>
                     <span class="ds__jdesc">{{ l.description }}</span>
                   </td>
-                  <td class="ds__jtd ds__jtd--num">{{ l.debit === null ? '' : formatIDR(l.debit) }}</td>
-                  <td class="ds__jtd ds__jtd--num">{{ l.credit === null ? '' : formatIDR(l.credit) }}</td>
+                  <td class="ds__jtd ds__jtd--num">{{ l.debit === null ? '' : formatIDRWhole(l.debit) }}</td>
+                  <td class="ds__jtd ds__jtd--num">{{ l.credit === null ? '' : formatIDRWhole(l.credit) }}</td>
                 </tr>
                 <tr class="ds__jtotal">
                   <td class="ds__jtd">{{ t('Total') }}</td>
-                  <td class="ds__jtd ds__jtd--num">{{ formatIDR(journalTotal) }}</td>
-                  <td class="ds__jtd ds__jtd--num">{{ formatIDR(journalTotal) }}</td>
+                  <td class="ds__jtd ds__jtd--num">{{ formatIDRWhole(journalTotal) }}</td>
+                  <td class="ds__jtd ds__jtd--num">{{ formatIDRWhole(journalTotal) }}</td>
                 </tr>
               </tbody>
             </table>

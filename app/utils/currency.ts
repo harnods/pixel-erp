@@ -90,3 +90,19 @@ export function formatMoney(amount: number, currency: string): string {
   const text = `${symbol}${magnitudeForSetting(amount)}`;
   return Number.isFinite(amount) && amount < 0 ? `(${text})` : text;
 }
+
+/**
+ * LR-7: IDR carries no decimals. `Rp4.000.000` whatever the Amount display
+ * setting says, rounded to the rupiah, sign before the symbol. The asset
+ * module uses this on every screen, because its figures are whole rupiah by
+ * rule and a schedule shown with `,00` reads as if it could hold cents.
+ *
+ *   formatIDRWhole(4000000)    → "Rp4.000.000"
+ *   formatIDRWhole(-100000000) → "-Rp100.000.000"
+ */
+export function formatIDRWhole(amount: number): string {
+  const { currencySymbol } = useCurrencySettings();
+  const n = Number.isFinite(amount) ? Math.round(amount) : 0;
+  const sign = n < 0 ? "-" : "";
+  return `${sign}${currencySymbol.value}${groupedDigits(n, 0)}`;
+}

@@ -14,7 +14,7 @@
  */
 import { computed, ref } from 'vue'
 import { MpIcon, MpButton } from '@mekari/pixel3'
-import { formatIDR } from '~/utils/currency'
+import { formatIDRWhole } from '~/utils/currency'
 import { successToast, infoToast } from '~/utils/toasts'
 import { rerunSelfCheck } from '~/data/fixedAssetSession'
 import {
@@ -196,10 +196,10 @@ const stateIcon: Record<CheckState, string> = {
           <tr v-for="r in tieCheckRows" :key="r.account" class="sc__tr" :class="{ 'sc__tr--break': r.difference !== 0 }">
             <td class="sc__td sc__td--mono">{{ r.account }}</td>
             <td class="sc__td">{{ r.name }}</td>
-            <td class="sc__td sc__td--num">{{ formatIDR(r.subLedger) }}</td>
-            <td class="sc__td sc__td--num">{{ formatIDR(r.generalLedger) }}</td>
+            <td class="sc__td sc__td--num">{{ formatIDRWhole(r.subLedger) }}</td>
+            <td class="sc__td sc__td--num">{{ formatIDRWhole(r.generalLedger) }}</td>
             <td class="sc__td sc__td--num" :class="{ 'sc__td--bad': r.difference !== 0 }">
-              {{ r.difference === 0 ? '—' : formatIDR(r.difference) }}
+              {{ r.difference === 0 ? '—' : formatIDRWhole(r.difference) }}
             </td>
           </tr>
         </tbody>

@@ -18,7 +18,7 @@ import {
   allowedGroupsFor, classifyAsset, groupLifeMonths, hasLmAuthority, canClassify, intangibleCodeOptions,
   FISCAL_LIFE_FIXED,
 } from '~/data/assetTaxbook'
-import { formatLife } from '~/data/assetEngine'
+import { formatMonths } from '~/data/assetUiDuration'
 
 const props = defineProps<{ isOpen: boolean; assetId: string | null }>()
 const emit = defineEmits<{
@@ -115,7 +115,7 @@ function submit() {
                 {{ t(FISCAL_LIFE_FIXED(group, statutoryMonths)) }}
               </p>
               <p v-else-if="statutoryMonths" class="cld-hint">
-                {{ t(`The group fixes ${formatLife(statutoryMonths)}. You hold LM authority, so a different life can be recorded; it is kept in the history.`) }}
+                {{ t(`The group fixes ${formatMonths(statutoryMonths)}. You hold LM authority, so a different life can be recorded; it is kept in the history.`) }}
               </p>
             </div>
             <div class="cld-field">

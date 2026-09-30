@@ -22,7 +22,7 @@ import {
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import CustodyDrawer from '~/components/patterns/CustodyDrawer.vue'
-import { formatIDR } from '~/utils/currency'
+import { formatIDRWhole } from '~/utils/currency'
 import { infoToast, successToast } from '~/utils/toasts'
 import { findAsset, canSeeFinancials, actingUser, viewAs } from '~/data/assetStore'
 import {
@@ -185,7 +185,7 @@ function writeOffFigure(v: Variance): string {
   if (!v.assetId || !canSeeFinancials.value) return ''
   const a = findAsset(v.assetId)
   if (!a || a.bookValueCommercial === null) return ''
-  return `${formatIDR(a.bookValueCommercial)} accounting · ${a.bookValueFiscal === null ? 'no tax book' : `${formatIDR(a.bookValueFiscal)} tax`}`
+  return `${formatIDRWhole(a.bookValueCommercial)} accounting · ${a.bookValueFiscal === null ? 'no tax book' : `${formatIDRWhole(a.bookValueFiscal)} tax`}`
 }
 
 // ── Close and abandon (FG5-AC1, OD-26) ──────────────────────────────────────
@@ -563,7 +563,7 @@ function onCustodySaved(m: string) {
         <div class="cc__hint">
           {{ t(r.status === 'awaiting' ? 'Awaiting approval' : r.status === 'approved' ? `Approved ${r.decidedOn} by ${r.decidedBy}` : `Sent back ${r.decidedOn} by ${r.decidedBy}`) }}
           · {{ t('raised by') }} {{ r.raisedBy }} {{ r.raisedOn }}
-          <template v-if="canSeeFinancials"> · {{ t('total') }} {{ formatIDR(requestTotal(r).accounting) }} {{ t('accounting') }}, {{ formatIDR(requestTotal(r).tax) }} {{ t('tax') }}</template>
+          <template v-if="canSeeFinancials"> · {{ t('total') }} {{ formatIDRWhole(requestTotal(r).accounting) }} {{ t('accounting') }}, {{ formatIDRWhole(requestTotal(r).tax) }} {{ t('tax') }}</template>
         </div>
       </div>
     </template>

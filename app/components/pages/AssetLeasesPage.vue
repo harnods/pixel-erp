@@ -16,7 +16,8 @@
  */
 import { computed, ref } from 'vue'
 import { MpBadge, MpButton } from '@mekari/pixel3'
-import { formatIDR } from '~/utils/currency'
+import { formatIDRWhole } from '~/utils/currency'
+import { monthsLabel } from '~/data/assetUiDuration'
 import { successToast } from '~/utils/toasts'
 import LeaseDrawer from '~/components/patterns/LeaseDrawer.vue'
 import { periodLabel, periodShort } from '~/data/assetEngine'
@@ -68,17 +69,17 @@ const exemptLabel = (e: string | null) => (e === 'short-term' ? 'Short-term' : e
       <div class="stat-card stat-card--bordered">
         <div class="stat-title">{{ t('Lease liability') }}</div>
         <div class="stat-period">{{ t('Outstanding · at 30/09/2026') }}</div>
-        <div class="stat-amount">{{ formatIDR(leaseTotals.liability) }}</div>
+        <div class="stat-amount">{{ formatIDRWhole(leaseTotals.liability) }}</div>
       </div>
       <div class="stat-card stat-card--bordered">
         <div class="stat-title">{{ t('Right-of-use book value') }}</div>
         <div class="stat-period">{{ t('Accounting · at 30/09/2026') }}</div>
-        <div class="stat-amount">{{ formatIDR(leaseTotals.rou) }}</div>
+        <div class="stat-amount">{{ formatIDRWhole(leaseTotals.rou) }}</div>
       </div>
       <div class="stat-card">
         <div class="stat-title">{{ t('Exempt lease expense') }}</div>
         <div class="stat-period">{{ t('FY2026 to 30/09') }}</div>
-        <div class="stat-amount">{{ formatIDR(leaseTotals.expensed) }}</div>
+        <div class="stat-amount">{{ formatIDRWhole(leaseTotals.expensed) }}</div>
       </div>
     </div>
 
@@ -110,11 +111,11 @@ const exemptLabel = (e: string | null) => (e === 'short-term' ? 'Short-term' : e
             </td>
             <td class="ls__td ls__td--num">
               <template v-if="s.lease.exemption"><span class="ls__absent">{{ t('None') }}</span></template>
-              <template v-else>{{ formatIDR(s.liability) }}</template>
+              <template v-else>{{ formatIDRWhole(s.liability) }}</template>
             </td>
             <td class="ls__td ls__td--num">
               <template v-if="s.rouBookValue === null"><span class="ls__absent">{{ t('No asset') }}</span></template>
-              <template v-else>{{ formatIDR(s.rouBookValue) }}</template>
+              <template v-else>{{ formatIDRWhole(s.rouBookValue) }}</template>
             </td>
           </tr>
         </tbody>
@@ -129,7 +130,7 @@ const exemptLabel = (e: string | null) => (e === 'short-term' ? 'Short-term' : e
           <div class="ls__detailtitle">{{ selected.id }} · {{ selected.name }}</div>
           <div class="ls__detailsub">
             {{ selected.underlying }} · {{ selected.branch }} · {{ detail.term }} ·
-            {{ leaseSchedule(selected).current.termMonths }} {{ t('months at') }} {{ formatIDR(leaseSchedule(selected).current.payment) }} ·
+            {{ t(`${monthsLabel(leaseSchedule(selected).current.termMonths)} at`) }} {{ formatIDRWhole(leaseSchedule(selected).current.payment) }} ·
             {{ (leaseSchedule(selected).current.annualRate * 100).toFixed(2).replace(/\.?0+$/, '') }}% {{ t('a year') }} ·
             {{ t('options:') }} {{ selected.options }}
           </div>
@@ -142,15 +143,15 @@ const exemptLabel = (e: string | null) => (e === 'short-term' ? 'Short-term' : e
       <!-- The monthly effect: different lines of the P&L, and a different tax deduction. -->
       <div class="ls__monthly" data-tour="lease-monthly">
         <template v-if="selected.exemption">
-          <div class="ls__mk"><span>{{ t(`Lease expense · ${periodLabel(CURRENT_PERIOD)}`) }}</span><strong>{{ formatIDR(detail.month.expensed) }}</strong></div>
+          <div class="ls__mk"><span>{{ t(`Lease expense · ${periodLabel(CURRENT_PERIOD)}`) }}</span><strong>{{ formatIDRWhole(detail.month.expensed) }}</strong></div>
           <div class="ls__mk"><span>{{ t('Right-of-use asset and liability') }}</span><strong>{{ t('None · exempt') }}</strong></div>
-          <div class="ls__mk"><span>{{ t('Tax deduction') }}</span><strong>{{ formatIDR(detail.month.payment) }}</strong></div>
+          <div class="ls__mk"><span>{{ t('Tax deduction') }}</span><strong>{{ formatIDRWhole(detail.month.payment) }}</strong></div>
         </template>
         <template v-else>
-          <div class="ls__mk"><span>{{ t(`Depreciation · operating expense · ${periodLabel(CURRENT_PERIOD)}`) }}</span><strong>{{ formatIDR(detail.month.rouCharge ?? 0) }}</strong></div>
-          <div class="ls__mk"><span>{{ t('Interest · finance cost') }}</span><strong>{{ formatIDR(detail.month.interest) }}</strong></div>
-          <div class="ls__mk"><span>{{ t('Accounting total') }}</span><strong>{{ formatIDR((detail.month.rouCharge ?? 0) + detail.month.interest) }}</strong></div>
-          <div class="ls__mk"><span>{{ t('Tax deduction · the contract payment') }}</span><strong>{{ formatIDR(detail.month.payment) }}</strong></div>
+          <div class="ls__mk"><span>{{ t(`Depreciation · operating expense · ${periodLabel(CURRENT_PERIOD)}`) }}</span><strong>{{ formatIDRWhole(detail.month.rouCharge ?? 0) }}</strong></div>
+          <div class="ls__mk"><span>{{ t('Interest · finance cost') }}</span><strong>{{ formatIDRWhole(detail.month.interest) }}</strong></div>
+          <div class="ls__mk"><span>{{ t('Accounting total') }}</span><strong>{{ formatIDRWhole((detail.month.rouCharge ?? 0) + detail.month.interest) }}</strong></div>
+          <div class="ls__mk"><span>{{ t('Tax deduction · the contract payment') }}</span><strong>{{ formatIDRWhole(detail.month.payment) }}</strong></div>
         </template>
       </div>
 
@@ -162,7 +163,7 @@ const exemptLabel = (e: string | null) => (e === 'short-term' ? 'Short-term' : e
       <div v-if="selected.modifications.length" class="ls__mods">
         <div v-for="x in selected.modifications" :key="x.id" class="ls__mod">
           {{ x.id }} · {{ t('from') }} {{ periodLabel(x.period) }} ·
-          {{ x.extraMonths >= 0 ? '+' : '' }}{{ x.extraMonths }} {{ t('months') }} · {{ formatIDR(x.payment) }} {{ t('a month') }} · {{ x.reason }} · {{ x.recordedBy }}
+          {{ x.extraMonths >= 0 ? '+' : '' }}{{ t(monthsLabel(x.extraMonths)) }} · {{ formatIDRWhole(x.payment) }} {{ t('a month') }} · {{ x.reason }} · {{ x.recordedBy }}
         </div>
       </div>
 
@@ -190,13 +191,13 @@ const exemptLabel = (e: string | null) => (e === 'short-term' ? 'Short-term' : e
               <td class="ls__td">
                 {{ periodShort(r.period) }}
                 <span v-if="r.state !== 'posted'" class="ls__state">{{ t(r.state === 'open' ? 'Open' : 'Projected') }}</span>
-                <span v-if="r.remeasured" class="ls__remeasured">{{ t(`Remeasured ${formatIDR(r.remeasured.from)} → ${formatIDR(r.remeasured.to)}`) }}</span>
+                <span v-if="r.remeasured" class="ls__remeasured">{{ t(`Remeasured ${formatIDRWhole(r.remeasured.from)} → ${formatIDRWhole(r.remeasured.to)}`) }}</span>
               </td>
-              <td class="ls__td ls__td--num">{{ selected.exemption ? '—' : formatIDR(r.opening) }}</td>
-              <td class="ls__td ls__td--num">{{ selected.exemption ? '—' : formatIDR(r.interest) }}</td>
-              <td class="ls__td ls__td--num">{{ formatIDR(r.payment) }}</td>
-              <td class="ls__td ls__td--num">{{ selected.exemption ? '—' : formatIDR(r.closing) }}</td>
-              <td class="ls__td ls__td--num">{{ selected.exemption ? formatIDR(r.payment) : formatIDR(r.rouCharge ?? 0) }}</td>
+              <td class="ls__td ls__td--num">{{ selected.exemption ? '—' : formatIDRWhole(r.opening) }}</td>
+              <td class="ls__td ls__td--num">{{ selected.exemption ? '—' : formatIDRWhole(r.interest) }}</td>
+              <td class="ls__td ls__td--num">{{ formatIDRWhole(r.payment) }}</td>
+              <td class="ls__td ls__td--num">{{ selected.exemption ? '—' : formatIDRWhole(r.closing) }}</td>
+              <td class="ls__td ls__td--num">{{ selected.exemption ? formatIDRWhole(r.payment) : formatIDRWhole(r.rouCharge ?? 0) }}</td>
             </tr>
             <tr v-if="!shownRows.length" class="ls__tr ls__tr--static">
               <td class="ls__td" colspan="6">{{ t('No months of this lease fall in FY2026.') }}</td>

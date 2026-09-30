@@ -6,12 +6,12 @@
  * so the schedule a preparer approves is the one the record then shows. A
  * book with no schedule states why instead of showing zeros.
  */
-import { formatIDR } from '~/utils/currency'
+import { formatIDRWhole } from '~/utils/currency'
 import type { LifeSchedule } from '~/data/assetPreview'
 
 defineProps<{ schedule: LifeSchedule; caption?: string }>()
 const { t } = useLocale()
-const money = (v: number | null) => (v === null ? '' : formatIDR(v))
+const money = (v: number | null) => (v === null ? '' : formatIDRWhole(v))
 </script>
 
 <template>

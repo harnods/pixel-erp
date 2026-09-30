@@ -16,7 +16,7 @@ import { computed, ref } from 'vue'
 import {
   MpButton, MpIcon, MpInput, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
 } from '@mekari/pixel3'
-import { formatIDR } from '~/utils/currency'
+import { formatIDRWhole } from '~/utils/currency'
 import { successToast } from '~/utils/toasts'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { fixedAssets, carryingForTest, IMPAIRMENT_INDICATORS, CURRENT_PERIOD, FY_END } from '~/data/assetStore'
@@ -191,7 +191,7 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
           <!-- Read from the schedule, never typed: a test compares against what
                the asset is actually carried at. -->
           <div class="im__readonly">
-            {{ carryingOf === null ? t('Choose an asset first') : formatIDR(carryingOf) }}
+            {{ carryingOf === null ? t('Choose an asset first') : formatIDRWhole(carryingOf) }}
           </div>
           <div class="im__formnote">{{ t('Read from the schedule at today\'s date') }}</div>
         </div>
@@ -244,12 +244,12 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
         </div>
         <div class="im__field">
           <div class="im__k">{{ t('Carrying amount') }}</div>
-          <div class="im__v im__v--num">{{ formatIDR(x.carrying) }}</div>
+          <div class="im__v im__v--num">{{ formatIDRWhole(x.carrying) }}</div>
           <div class="im__note2">{{ t('read from the schedule at the test date') }}</div>
         </div>
         <div class="im__field">
           <div class="im__k">{{ t('Recoverable amount') }}</div>
-          <div class="im__v im__v--num">{{ formatIDR(x.recoverable) }}</div>
+          <div class="im__v im__v--num">{{ formatIDRWhole(x.recoverable) }}</div>
           <!-- The one figure the product does not produce. Saying where it came
                from is the point of holding the test as a record. -->
           <div class="im__note2">{{ x.basis }} · {{ x.source }}</div>
@@ -257,7 +257,7 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
         <div class="im__field">
           <div class="im__k">{{ t('Result') }}</div>
           <div class="im__v im__v--num" :class="{ 'im__v--loss': x.loss }">
-            <template v-if="x.loss">{{ formatIDR(0 - x.loss) }}</template>
+            <template v-if="x.loss">{{ formatIDRWhole(0 - x.loss) }}</template>
             <template v-else>{{ t('No impairment') }}</template>
           </div>
           <div v-if="x.loss" class="im__note2">

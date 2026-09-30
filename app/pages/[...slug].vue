@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { defineAsyncComponent, defineComponent, type Component, h, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
 import { newAssetDrawerOpen } from '~/data/fixedAssetSession'
+import { gateFinancialPage } from '~/utils/assetRoleGate'
 import { infoToast } from '~/utils/toasts'
 import { MpAvatar, MpBadge, MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 
@@ -100,18 +101,19 @@ const pageRegistry: Record<string, Component> = {
   // slugs to `/custody-and-counts`, so the key is 'Custody and counts'. Keys
   // below match what pathToLabel() produces, not what the sidebar displays.
   'Assets':            defineAsyncComponent(() => import('~/components/pages/AssetsIndexPage.vue')),
-  'Depreciation schedule': defineAsyncComponent(() => import('~/components/pages/AssetDepreciationSchedulePage.vue')),
-  'Tax book':          defineAsyncComponent(() => import('~/components/pages/AssetFiscalBookPage.vue')),
-  'Tax differences':   defineAsyncComponent(() => import('~/components/pages/AssetTaxDifferencesPage.vue')),
-  'Lampiran 9':        defineAsyncComponent(() => import('~/components/pages/AssetLampiranPage.vue')),
+  // LR-6: pages holding accounting or tax figures are gated for General Affairs.
+  'Depreciation schedule': gateFinancialPage(() => import('~/components/pages/AssetDepreciationSchedulePage.vue')),
+  'Tax book':          gateFinancialPage(() => import('~/components/pages/AssetFiscalBookPage.vue')),
+  'Tax differences':   gateFinancialPage(() => import('~/components/pages/AssetTaxDifferencesPage.vue')),
+  'Lampiran 9':        gateFinancialPage(() => import('~/components/pages/AssetLampiranPage.vue')),
   // `/asset-roll-forward` slugs to 'Asset roll forward' (the hyphen is a word break).
-  'Asset roll forward': defineAsyncComponent(() => import('~/components/pages/AssetRollForwardPage.vue')),
-  'Asset migration':   defineAsyncComponent(() => import('~/components/pages/AssetMigrationPage.vue')),
-  'Impairment tests':  defineAsyncComponent(() => import('~/components/pages/AssetImpairmentPage.vue')),
-  'Period self check': defineAsyncComponent(() => import('~/components/pages/AssetSelfCheckPage.vue')),
+  'Asset roll forward': gateFinancialPage(() => import('~/components/pages/AssetRollForwardPage.vue')),
+  'Asset migration':   gateFinancialPage(() => import('~/components/pages/AssetMigrationPage.vue')),
+  'Impairment tests':  gateFinancialPage(() => import('~/components/pages/AssetImpairmentPage.vue')),
+  'Period self check': gateFinancialPage(() => import('~/components/pages/AssetSelfCheckPage.vue')),
   'Custody and counts': defineAsyncComponent(() => import('~/components/pages/AssetCustodyCountsPage.vue')),
   'Asset approvals':   defineAsyncComponent(() => import('~/components/pages/AssetApprovalsPage.vue')),
-  'Leases':            defineAsyncComponent(() => import('~/components/pages/AssetLeasesPage.vue')),
+  'Leases':            gateFinancialPage(() => import('~/components/pages/AssetLeasesPage.vue')),
   'Asset settings':    defineAsyncComponent(() => import('~/components/pages/AssetSettingsPage.vue')),
   'Sales invoices':    defineAsyncComponent(() => import('~/components/pages/SalesInvoicesPage.vue')),
   'Purchase invoices': defineAsyncComponent(() => import('~/components/pages/PurchaseInvoicesPage.vue')),

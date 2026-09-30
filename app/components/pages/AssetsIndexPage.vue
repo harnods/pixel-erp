@@ -25,7 +25,7 @@
  */
 import { computed, ref, watch } from 'vue'
 import { MpBadge, MpButton, MpIcon, MpTooltip, MpButtonGroup, MpSegmentedControl, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem } from '@mekari/pixel3'
-import { formatIDR } from '~/utils/currency'
+import { formatIDRWhole } from '~/utils/currency'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
@@ -40,7 +40,8 @@ import ClassifyDrawer from '~/components/patterns/ClassifyDrawer.vue'
 import BulkEditDrawer from '~/components/patterns/BulkEditDrawer.vue'
 import NoDeleteDialog from '~/components/patterns/NoDeleteDialog.vue'
 import { missingParameters } from '~/data/assetTaxbook'
-import { latestBulkOperation, reverseBulkEdit, BULK_FIELDS, type BulkField } from '~/data/assetBulkEdit'
+import { latestBulkOperation, BULK_FIELDS, type BulkField } from '~/data/assetBulkEdit'
+import { reverseBulkEditWithHistory } from '~/data/assetUiBulkHistory'
 import { newAssetDrawerOpen } from '~/data/fixedAssetSession'
 import {
   assetClasses,
@@ -296,7 +297,7 @@ const lastBulk = latestBulkOperation
 function bulkFieldLabel(f: BulkField) { return BULK_FIELDS.find((x) => x.key === f)!.label }
 function reverseLastBulk() {
   if (!lastBulk.value) return
-  const r = reverseBulkEdit(lastBulk.value.number)
+  const r = reverseBulkEditWithHistory(lastBulk.value.number)
   if (!r.ok) { infoToast(t(r.reason)); return }
   successToast(t(`${r.op.number} reversed on ${r.op.items.length} ${r.op.items.length === 1 ? 'asset' : 'assets'}`))
 }
@@ -328,9 +329,11 @@ const exportColumns = [
   { key: 'custodian', label: t('Custodian') },
   { key: 'tag', label: t('Physical tag') },
 ]
+// Scope fence: every export and download in the asset module is deferred.
+// The dialog still shows what the file would hold; its button says so.
 function onExport() {
   exportOpen.value = false
-  successToast(t('Export ready — check your downloads'))
+  infoToast(t('Not in this prototype'))
 }
 
 // ── Row actions ─────────────────────────────────────────────────────────────
@@ -351,7 +354,7 @@ function runDepreciation() {
 function fiscalBookValue(a: FixedAsset): { text: string; muted: boolean } {
   if (a.status === 'Disposed' || a.status === 'Split') return { text: '—', muted: true }
   if (a.bookValueFiscal === null) return { text: t(fiscalAbsenceReason(a)), muted: false }
-  return { text: formatIDR(a.bookValueFiscal), muted: false }
+  return { text: formatIDRWhole(a.bookValueFiscal), muted: false }
 }
 function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
   // A disposed asset has no book value — the company no longer holds it, which
@@ -359,7 +362,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
   if (a.status === 'Disposed' || a.status === 'Split' || a.bookValueCommercial === null) {
     return { text: '—', muted: true }
   }
-  return { text: formatIDR(a.bookValueCommercial), muted: false }
+  return { text: formatIDRWhole(a.bookValueCommercial), muted: false }
 }
 </script>
 
@@ -468,13 +471,13 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
           <div v-if="canSeeFinancials" class="stat-card stat-card--bordered">
             <div class="stat-title">{{ t('Cost') }}</div>
             <div class="stat-period">{{ t('Held assets') }}</div>
-            <div class="stat-amount">{{ formatIDR(totals.cost) }}</div>
+            <div class="stat-amount">{{ formatIDRWhole(totals.cost) }}</div>
           </div>
 
           <div v-if="canSeeFinancials && book !== 'tax'" class="stat-card stat-card--bordered">
             <div class="stat-title">{{ t('Book value') }}</div>
             <div class="stat-period">{{ t('Accounting · at 30/09/2026') }}</div>
-            <div class="stat-amount">{{ formatIDR(totals.bookValueCommercial) }}</div>
+            <div class="stat-amount">{{ formatIDRWhole(totals.bookValueCommercial) }}</div>
           </div>
 
           <div v-if="canSeeFinancials && book !== 'accounting'" class="stat-card">
@@ -484,7 +487,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
                  total to state. Rp0,00 would claim the population is worth
                  nothing on the tax basis; it has no tax basis at all. -->
             <div v-if="totals.count && !totals.unclassified || totals.bookValueFiscal" class="stat-amount">
-              {{ formatIDR(totals.bookValueFiscal) }}
+              {{ formatIDRWhole(totals.bookValueFiscal) }}
             </div>
             <div v-else class="stat-amount stat-amount--absent">{{ t('Not computed') }}</div>
             <!-- The exclusion is the link, so naming the problem and reaching it
@@ -563,7 +566,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
     </template>
 
     <template #cell-cost="{ row }">
-      {{ formatIDR((row as unknown as FixedAsset).cost) }}
+      {{ formatIDRWhole((row as unknown as FixedAsset).cost) }}
     </template>
 
     <template #cell-bookValueCommercial="{ row }">

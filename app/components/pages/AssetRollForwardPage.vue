@@ -12,7 +12,7 @@
  */
 import { computed, ref } from 'vue'
 import { MpSegmentedControl } from '@mekari/pixel3'
-import { formatIDR } from '~/utils/currency'
+import { formatIDRWhole } from '~/utils/currency'
 import { rollForward } from '~/data/assetTaxbook'
 import { CURRENT_PERIOD, FY_START } from '~/data/assetStore'
 import { periodLabel, addPeriods, type Book } from '~/data/assetEngine'
@@ -30,8 +30,8 @@ const rf = computed(() => rollForward(book.value))
 const hasTransfers = computed(() => rf.value.rows.some((r) => r.transfers !== 0))
 const ties = computed(() => rf.value.total.unexplained === 0 && rf.value.rows.every((r) => r.unexplained === 0))
 
-function neg(v: number) { return v === 0 ? formatIDR(0) : `(${formatIDR(v)})` }
-function signed(v: number) { return v < 0 ? `(${formatIDR(-v)})` : formatIDR(v) }
+function neg(v: number) { return v === 0 ? formatIDRWhole(0) : `(${formatIDRWhole(v)})` }
+function signed(v: number) { return v < 0 ? `(${formatIDRWhole(-v)})` : formatIDRWhole(v) }
 </script>
 
 <template>
@@ -69,34 +69,34 @@ function signed(v: number) { return v < 0 ? `(${formatIDR(-v)})` : formatIDR(v) 
           <tr v-for="r in rf.rows" :key="r.class" class="rf__tr">
             <td class="rf__td">{{ r.class }}</td>
             <td class="rf__td rf__td--num">{{ r.assets }}</td>
-            <td class="rf__td rf__td--num">{{ formatIDR(r.opening) }}</td>
-            <td class="rf__td rf__td--num">{{ formatIDR(r.additions) }}</td>
+            <td class="rf__td rf__td--num">{{ formatIDRWhole(r.opening) }}</td>
+            <td class="rf__td rf__td--num">{{ formatIDRWhole(r.additions) }}</td>
             <td v-if="hasTransfers" class="rf__td rf__td--num">{{ signed(r.transfers) }}</td>
             <td class="rf__td rf__td--num">{{ neg(r.disposals) }}</td>
             <td class="rf__td rf__td--num">{{ neg(r.depreciation) }}</td>
             <td class="rf__td rf__td--num">
               <template v-if="book === 'tax'">{{ t('Not recognised') }}</template>
-              <template v-else>{{ r.impairment < 0 ? formatIDR(-r.impairment) : neg(r.impairment) }}</template>
+              <template v-else>{{ r.impairment < 0 ? formatIDRWhole(-r.impairment) : neg(r.impairment) }}</template>
             </td>
-            <td class="rf__td rf__td--num rf__td--strong">{{ formatIDR(r.closing) }}</td>
-            <td class="rf__td rf__td--num" :class="r.unexplained ? 'rf__td--bad' : 'rf__td--ok'">{{ formatIDR(r.unexplained) }}</td>
+            <td class="rf__td rf__td--num rf__td--strong">{{ formatIDRWhole(r.closing) }}</td>
+            <td class="rf__td rf__td--num" :class="r.unexplained ? 'rf__td--bad' : 'rf__td--ok'">{{ formatIDRWhole(r.unexplained) }}</td>
           </tr>
         </tbody>
         <tfoot>
           <tr class="rf__tr rf__tr--total">
             <td class="rf__td">{{ t('Total') }}</td>
             <td class="rf__td rf__td--num">{{ rf.total.assets }}</td>
-            <td class="rf__td rf__td--num">{{ formatIDR(rf.total.opening) }}</td>
-            <td class="rf__td rf__td--num">{{ formatIDR(rf.total.additions) }}</td>
+            <td class="rf__td rf__td--num">{{ formatIDRWhole(rf.total.opening) }}</td>
+            <td class="rf__td rf__td--num">{{ formatIDRWhole(rf.total.additions) }}</td>
             <td v-if="hasTransfers" class="rf__td rf__td--num">{{ signed(rf.total.transfers) }}</td>
             <td class="rf__td rf__td--num">{{ neg(rf.total.disposals) }}</td>
             <td class="rf__td rf__td--num">{{ neg(rf.total.depreciation) }}</td>
             <td class="rf__td rf__td--num">
               <template v-if="book === 'tax'">{{ t('Not recognised') }}</template>
-              <template v-else>{{ rf.total.impairment < 0 ? formatIDR(-rf.total.impairment) : neg(rf.total.impairment) }}</template>
+              <template v-else>{{ rf.total.impairment < 0 ? formatIDRWhole(-rf.total.impairment) : neg(rf.total.impairment) }}</template>
             </td>
-            <td class="rf__td rf__td--num">{{ formatIDR(rf.total.closing) }}</td>
-            <td class="rf__td rf__td--num" :class="rf.total.unexplained ? 'rf__td--bad' : 'rf__td--ok'">{{ formatIDR(rf.total.unexplained) }}</td>
+            <td class="rf__td rf__td--num">{{ formatIDRWhole(rf.total.closing) }}</td>
+            <td class="rf__td rf__td--num" :class="rf.total.unexplained ? 'rf__td--bad' : 'rf__td--ok'">{{ formatIDRWhole(rf.total.unexplained) }}</td>
           </tr>
         </tfoot>
       </table>
