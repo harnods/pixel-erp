@@ -23,10 +23,10 @@ import { formatLife } from './assetEngine'
 export type BulkField = 'taxGroup' | 'location' | 'custodian' | 'class'
 
 export const BULK_FIELDS: { key: BulkField; label: string; hint: string }[] = [
-  { key: 'taxGroup', label: 'Statutory group', hint: 'Sets the tax book from each asset\'s in-service date. Posts nothing.' },
-  { key: 'class', label: 'Asset class', hint: 'Each asset inherits the class\'s statutory group, accounting life and method.' },
-  { key: 'location', label: 'Location', hint: 'Custody only. Moves no figure.' },
-  { key: 'custodian', label: 'Custodian', hint: 'Custody only. Moves no figure.' },
+  { key: 'taxGroup', label: 'Statutory group', hint: 'Recalculates the tax book from each asset\'s in-service date. No journal is posted.' },
+  { key: 'class', label: 'Asset class', hint: 'Each asset takes the class\'s statutory group, useful life and method.' },
+  { key: 'location', label: 'Location', hint: 'Custody only. No figures change.' },
+  { key: 'custodian', label: 'Custodian', hint: 'Custody only. No figures change.' },
 ]
 
 export interface BulkLine {
@@ -62,17 +62,17 @@ function currentValue(id: string, field: BulkField): string {
 export function planBulkEdit(ids: string[], field: BulkField, value: string): BulkPlan {
   const v = value.trim()
   let refusal: string | null = null
-  if (!v) refusal = 'Choose the value to apply'
-  else if ((field === 'taxGroup') && !canClassify.value) refusal = `Viewing as ${viewAs.value}. A statutory classification needs the Owner, Accounting or Tax role.`
-  else if (field === 'class' && !canChangeClass.value) refusal = `Viewing as ${viewAs.value}. Changing a class needs the Owner or Accounting role.`
-  else if ((field === 'location' || field === 'custodian') && viewAs.value === 'Approver') refusal = `Viewing as ${viewAs.value}. Custody fields need another role.`
+  if (!v) refusal = 'You must select new value'
+  else if ((field === 'taxGroup') && !canClassify.value) refusal = `Viewing as ${viewAs.value}. Only Owner, Accounting or Tax can change the statutory classification.`
+  else if (field === 'class' && !canChangeClass.value) refusal = `Viewing as ${viewAs.value}. Only Owner or Accounting can change the asset class.`
+  else if ((field === 'location' || field === 'custodian') && viewAs.value === 'Approver') refusal = `Viewing as ${viewAs.value}. Approvers cannot change custody.`
   const lines: BulkLine[] = ids.map((id) => {
     const s = assetRecords.value.find((x) => x.id === id)!
     const l = ledgers.value[id]!
     const before = currentValue(id, field)
     let after = v
     let skip: string | null = null
-    if (l.disposedIn || l.splitIn) skip = l.splitIn ? 'Split, change its parts instead' : 'Disposed of'
+    if (l.disposedIn || l.splitIn) skip = l.splitIn ? 'Split. Change its parts instead' : 'Disposed'
     else if (before === v) skip = 'Already has this value'
     else if (field === 'taxGroup') {
       skip = groupRefusal(s.type, s.class, v)
@@ -81,7 +81,7 @@ export function planBulkEdit(ids: string[], field: BulkField, value: string): Bu
       const p = planClassChange(id, v)
       if (!p.ok) skip = p.reason!
       else after = p.changes.map((c) => (c.field === 'Class' ? c.after : `${c.field} ${c.after}`)).join(' · ')
-    } else if (s.type === 'Intangible') skip = 'An intangible has no physical custody'
+    } else if (s.type === 'Intangible') skip = 'Intangible. No physical custody'
     return { id, name: s.name, before, after, skip }
   })
   return {
@@ -158,7 +158,7 @@ export function reversalRefusal(op: BulkOperation): string | null {
   for (const it of op.items) {
     const log = ledgers.value[it.id]!.events
     const tail = log.slice(log.length - it.eventIds.length).map((e) => e.id)
-    if (it.eventIds.length && tail.join() !== it.eventIds.join()) return `${it.id} has changed since ${op.number}. Undo that change first, so the whole operation reverses together.`
+    if (it.eventIds.length && tail.join() !== it.eventIds.join()) return `${it.id} changed after ${op.number}. Undo that change first, then reverse the bulk edit.`
   }
   return null
 }
@@ -176,7 +176,7 @@ function undo(items: AppliedItem[]): string | null {
 
 export function reverseBulkEdit(number: string): BulkResult {
   const op = bulkOperations.value.find((x) => x.number === number)
-  if (!op) return { ok: false, reason: `No bulk edit ${number}` }
+  if (!op) return { ok: false, reason: `Bulk edit ${number} not found` }
   const refusal = reversalRefusal(op)
   if (refusal) return { ok: false, reason: refusal }
   const r = undo(op.items)

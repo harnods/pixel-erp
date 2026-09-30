@@ -57,16 +57,16 @@ function submit() {
   const a = asset.value
   if (!a) return
   const e: Record<string, string> = {}
-  if (!group.value) e.group = 'Choose the statutory group'
+  if (!group.value) e.group = 'You must select statutory group'
   const years = Number(lifeYears.value.replace(',', '.'))
-  if (!years || years <= 0) e.fiscalLife = 'Enter the fiscal life in years'
-  if (a.type === 'Intangible' && !code.value) e.statutoryCode = 'Choose the statutory code'
+  if (!years || years <= 0) e.fiscalLife = 'You must fill in tax life'
+  if (a.type === 'Intangible' && !code.value) e.statutoryCode = 'You must select statutory code'
   errors.value = e
   if (Object.keys(e).length) return
   const r = classifyAsset(a.id, { group: group.value, statutoryCode: code.value || null, fiscalLifeMonths: Math.round(years * 12) })
   if (!r.ok) {
     const refusedLife = r.field === 'fiscalLife' && lifeLocked.value
-    errors.value = { [r.field ?? 'form']: refusedLife ? `Refused: ${lifeYears.value} years is not the group's life. ${r.reason}` : r.reason }
+    errors.value = { [r.field ?? 'form']: refusedLife ? `${lifeYears.value} years does not match the group's life. ${r.reason}` : r.reason }
     return
   }
   emit('done', r.message)
@@ -90,16 +90,16 @@ function submit() {
 
           <div class="cld-body" data-tour="cls-body">
             <p v-if="!canClassify" class="cld-note">
-              {{ t(`Viewing as ${viewAs}. A statutory classification needs the Owner, Accounting or Tax role.`) }}
+              {{ t(`Viewing as ${viewAs}. Only Owner, Accounting or Tax can change the statutory classification.`) }}
             </p>
             <div class="cld-field">
               <label class="cld-label" for="cld-group">{{ t('Statutory group') }}</label>
               <ErpFilterSelect id="cld-group" v-model="group" :placeholder="t('Choose a group')" :options="groups" width="100%" :is-clearable="false" />
               <p v-if="errors.group" class="cld-error">{{ t(errors.group) }}</p>
               <p v-else class="cld-hint">
-                <template v-if="asset.type === 'Intangible'">{{ t('Intangibles take one of Tax group 1 to 4. Building groups are not offered.') }}</template>
-                <template v-else-if="asset.class === 'Buildings'">{{ t('A building takes Permanent or Non-permanent, never Tax group 1 to 4.') }}</template>
-                <template v-else>{{ t('Building groups are for buildings only and are not offered.') }}</template>
+                <template v-if="asset.type === 'Intangible'">{{ t('Intangibles use Tax group 1 to 4') }}</template>
+                <template v-else-if="asset.class === 'Buildings'">{{ t('Buildings use Permanent or Non-permanent building') }}</template>
+                <template v-else>{{ t('Building groups apply to buildings only') }}</template>
               </p>
             </div>
             <div v-if="asset.type === 'Intangible'" class="cld-field">
@@ -108,21 +108,21 @@ function submit() {
               <p v-if="errors.statutoryCode" class="cld-error">{{ t(errors.statutoryCode) }}</p>
             </div>
             <div class="cld-field">
-              <label class="cld-label" for="cld-life">{{ t('Fiscal life (years)') }}</label>
+              <label class="cld-label" for="cld-life">{{ t('Tax life (years)') }}</label>
               <MpInput id="cld-life" v-model="lifeYears" :is-invalid="!!errors.fiscalLife" />
               <p v-if="errors.fiscalLife" class="cld-error">{{ t(errors.fiscalLife) }}</p>
               <p v-else-if="lifeLocked && statutoryMonths" class="cld-hint">
                 {{ t(FISCAL_LIFE_FIXED(group, statutoryMonths)) }}
               </p>
               <p v-else-if="statutoryMonths" class="cld-hint">
-                {{ t(`The group fixes ${formatMonths(statutoryMonths)}. You hold LM authority, so a different life can be recorded; it is kept in the history.`) }}
+                {{ t(`The group sets ${formatMonths(statutoryMonths)}. You can record a different life. It is kept in the history`) }}
               </p>
             </div>
             <div class="cld-field">
-              <span class="cld-label">{{ t('Fiscal method') }}</span>
-              <span class="cld-static">{{ t('Straight line, the method the company elected under Pasal 11') }}</span>
+              <span class="cld-label">{{ t('Tax method') }}</span>
+              <span class="cld-static">{{ t('Straight line (Pasal 11)') }}</span>
             </div>
-            <p class="cld-note">{{ t('The tax book is computed from the in-service date on this life. It posts nothing.') }}</p>
+            <p class="cld-note">{{ t('The tax book is recalculated from the in-service date. No journal is posted.') }}</p>
           </div>
 
           <footer class="cld-foot">

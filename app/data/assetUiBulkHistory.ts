@@ -32,7 +32,7 @@ export function planBulkEditFromLists(ids: string[], field: BulkField, value: st
   const plan = planBulkEdit(ids, field, value)
   if (plan.refusal || !plan.value) return plan
   if (field === 'location' && !assetLocations.value.some((l) => l.name === plan.value)) {
-    return { ...plan, refusal: 'Choose a location from the list. Add a new one in Asset settings first.' }
+    return { ...plan, refusal: 'Choose a location from the list. Add new locations in Asset settings' }
   }
   if (field === 'custodian' && !CUSTODIANS.some((c) => c.name === plan.value)) {
     return { ...plan, refusal: 'Choose a custodian from the list' }

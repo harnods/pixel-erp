@@ -299,7 +299,7 @@ function reverseLastBulk() {
   if (!lastBulk.value) return
   const r = reverseBulkEditWithHistory(lastBulk.value.number)
   if (!r.ok) { infoToast(t(r.reason)); return }
-  successToast(t(`${r.op.number} reversed on ${r.op.items.length} ${r.op.items.length === 1 ? 'asset' : 'assets'}`))
+  successToast(t(`Bulk edit ${r.op.number} reversed on ${r.op.items.length} ${r.op.items.length === 1 ? 'asset' : 'assets'}`))
 }
 
 // ── No delete (OD-36) ───────────────────────────────────────────────────────
@@ -343,7 +343,7 @@ function openAsset(a: FixedAsset) {
 }
 function onCreated(id: string) {
   newAssetDrawerOpen.value = false
-  successToast(t(`${id} created. It is in the register and the schedule`))
+  successToast(t(`Asset ${id} created`))
   router.push(`/assets/${id}`)
 }
 function runDepreciation() {
@@ -424,7 +424,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
 
         <div class="filter-search">
           <MpIcon name="search" size="sm" />
-          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search asset, tag, custodian, location…')" />
+          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search asset, tag, custodian or location')" />
         </div>
       </div>
     </template>
@@ -459,18 +459,18 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
 
           <div v-if="!canSeeFinancials" class="stat-card stat-card--bordered" data-tour="reg-view">
             <div class="stat-title">{{ t(`Viewing as ${viewAs}`) }}</div>
-            <div class="stat-period">{{ t('Cost and book values are not shown to this role') }}</div>
+            <div class="stat-period">{{ t('Cost and book values are hidden for this role') }}</div>
           </div>
           <div v-if="!canSeeFinancials" class="stat-card">
-            <div class="stat-title">{{ t('Custody gaps') }}</div>
-            <div class="stat-period">{{ t('No custodian or no location') }}</div>
+            <div class="stat-title">{{ t('Missing custody') }}</div>
+            <div class="stat-period">{{ t('No custodian or location') }}</div>
             <div class="stat-amount">{{ unassignedAssets.length }}</div>
-            <span v-if="unassignedAssets.length" class="stat-link stat-link--warn" @click="router.push('/custody-and-counts')">{{ t('Assign on Custody and counts') }}</span>
+            <span v-if="unassignedAssets.length" class="stat-link stat-link--warn" @click="router.push('/custody-and-counts')">{{ t('Assign custody') }}</span>
           </div>
 
           <div v-if="canSeeFinancials" class="stat-card stat-card--bordered">
             <div class="stat-title">{{ t('Cost') }}</div>
-            <div class="stat-period">{{ t('Held assets') }}</div>
+            <div class="stat-period">{{ t('Excludes disposed assets') }}</div>
             <div class="stat-amount">{{ formatIDRWhole(totals.cost) }}</div>
           </div>
 
@@ -482,7 +482,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
 
           <div v-if="canSeeFinancials && book !== 'accounting'" class="stat-card">
             <div class="stat-title">{{ t('Tax book value') }}</div>
-            <div class="stat-period">{{ t('Tax basis · at 30/09/2026') }}</div>
+            <div class="stat-period">{{ t('Tax · at 30/09/2026') }}</div>
             <!-- When every filtered asset is unclassified there is no fiscal
                  total to state. Rp0,00 would claim the population is worth
                  nothing on the tax basis; it has no tax basis at all. -->
@@ -498,7 +498,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
               @click="showUnclassified"
             >
               {{ totals.unclassified }}
-              {{ t(totals.unclassified === 1 ? 'asset excluded, no tax group' : 'assets excluded, no tax group') }}
+              {{ t(totals.unclassified === 1 ? 'asset excluded: no tax group' : 'assets excluded: no tax group') }}
             </span>
           </div>
         </div>
@@ -508,11 +508,11 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
         <!-- OD-35: every missing parameter, not only the tax group. -->
         <div v-if="incompleteCount && !incompleteFilter" class="asset-note">
           <span class="stat-link stat-link--warn" @click="showIncomplete">
-            {{ incompleteCount }} {{ t(incompleteCount === 1 ? 'asset has incomplete parameters' : 'assets have incomplete parameters') }}
+            {{ incompleteCount }} {{ t(incompleteCount === 1 ? 'asset is missing details' : 'assets are missing details') }}
           </span>
         </div>
         <div v-else-if="incompleteFilter" class="asset-note">
-          {{ t('Showing assets missing a parameter an output depends on. Each row says what is missing.') }}
+          {{ t('Showing assets with missing details') }}
         </div>
 
         <!-- OD-34: the latest bulk edit, reversible as one unit. -->
@@ -522,7 +522,7 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
             {{ t('on') }} {{ lastBulk.items.length }} {{ t(lastBulk.items.length === 1 ? 'asset' : 'assets') }} · {{ lastBulk.by }} {{ lastBulk.appliedAt }}
             <template v-if="lastBulk.reversedAt"> · {{ t('reversed') }} {{ lastBulk.reversedAt }}</template>
           </span>
-          <MpButton v-if="!lastBulk.reversedAt" size="sm" variant="secondary" is-rounded @click="reverseLastBulk">{{ t('Reverse') }}</MpButton>
+          <MpButton v-if="!lastBulk.reversedAt" size="sm" variant="secondary" is-rounded @click="reverseLastBulk">{{ t('Reverse bulk edit') }}</MpButton>
         </div>
       </div>
     </template>
@@ -603,9 +603,9 @@ function commercialBookValue(a: FixedAsset): { text: string; muted: boolean } {
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
             <MpPopoverListItem @click="openAsset(row as unknown as FixedAsset)">{{ t('View asset') }}</MpPopoverListItem>
-            <MpPopoverListItem v-if="canSeeFinancials" @click="router.push('/depreciation-schedule')">{{ t('Depreciation schedule') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="canSeeFinancials" @click="router.push('/depreciation-schedule')">{{ t('View depreciation schedule') }}</MpPopoverListItem>
             <MpPopoverListItem v-if="canSeeFinancials" @click="assignTaxGroup(row as unknown as FixedAsset)">
-              {{ (row as unknown as FixedAsset).taxGroup ? t('Change statutory group') : t('Assign tax group') }}
+              {{ (row as unknown as FixedAsset).taxGroup ? t('Change tax group') : t('Assign tax group') }}
             </MpPopoverListItem>
             <MpPopoverListItem @click="noDeleteId = (row as unknown as FixedAsset).id">{{ t('Remove from the register') }}</MpPopoverListItem>
           </MpPopoverList>

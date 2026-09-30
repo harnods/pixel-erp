@@ -78,9 +78,6 @@ function apply() {
                 id="afd-taxgroup" v-model="draftTaxGroup"
                 :placeholder="t('Any group')" :options="assetTaxGroups" width="100%"
               />
-              <p class="afd-hint">
-                {{ t('An asset with no group is excluded from every tax output. Filter the register by Status to find them.') }}
-              </p>
             </div>
           </div>
 
@@ -123,7 +120,6 @@ function apply() {
 .afd-body { padding: var(--mp-spacing-6); overflow: auto; flex: 1; }
 .afd-field { display: flex; flex-direction: column; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-6); }
 .afd-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.afd-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: 0; line-height: var(--mp-line-heights-sm); }
 
 .afd-foot {
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2);

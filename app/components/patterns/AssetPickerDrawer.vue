@@ -52,11 +52,11 @@ function done() { emit('update:modelValue', [...sel.value]); emit('update:isOpen
           <div class="apd-searchbar">
             <div class="apd-search">
               <MpIcon name="search" size="sm" />
-              <input v-model="search" class="apd-search-input" type="text" placeholder="Search assets…" />
+              <input v-model="search" class="apd-search-input" type="text" placeholder="Search assets" />
             </div>
           </div>
           <div class="apd-body">
-            <p v-if="!rows.length" class="apd-empty">No assets yet. Upload photos in Assets · Photo stocks first.</p>
+            <p v-if="!rows.length" class="apd-empty">No assets yet. Upload photos in Photo stocks.</p>
             <div v-else class="apd-grid">
               <button v-for="a in rows" :key="a.id" type="button" class="apd-item" :class="{ 'apd-item--on': sel.has(a.id) }" @click="toggle(a.id)">
                 <span class="apd-thumb">

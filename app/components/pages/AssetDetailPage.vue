@@ -106,7 +106,7 @@ type Tab = 'depreciation' | 'identity' | 'history'
 const tab = ref<Tab>('depreciation')
 const allTabs: { key: Tab; label: string }[] = [
   { key: 'depreciation', label: 'Depreciation' },
-  { key: 'identity', label: 'Identity and parameters' },
+  { key: 'identity', label: 'Details' },
   { key: 'history', label: 'History' },
 ]
 const tabs = computed(() => (canSeeFinancials.value ? allTabs : allTabs.filter((x) => x.key !== 'depreciation')))
@@ -142,7 +142,7 @@ const changeAction = ref<ValueAction>('revise')
 const isGone = computed(() => asset.value?.status === 'Disposed' || asset.value?.status === 'Split')
 function openChange(a: ValueAction) {
   if (isGone.value) {
-    infoToast(t(asset.value!.status === 'Split' ? 'This asset was split. Change its parts instead.' : 'This asset is disposed of. Nothing further can change it.'))
+    infoToast(t(asset.value!.status === 'Split' ? 'This asset was split. Change its parts instead' : 'This asset is disposed and can no longer change'))
     return
   }
   changeAction.value = a
@@ -221,7 +221,7 @@ function confirmClassChange() {
   const r = changeAssetClass(asset.value.id, newClass.value)
   if (!r.ok) { infoToast(t(r.reason)); return }
   classOpen.value = false
-  successToast(t(`${asset.value.id} moved to ${newClass.value}. The class defaults are applied`))
+  successToast(t(`Asset class changed to ${newClass.value}`))
 }
 
 // ── No delete (OD-36): the correction paths instead ─────────────────────────
@@ -276,7 +276,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
           · {{ asset.class }} · {{ asset.branch }} · {{ t('acquired') }} {{ asset.acquired }}
         </p>
         <p v-if="lease" class="ad__sub">
-          {{ t('Right-of-use asset of lease') }}
+          {{ t('Right-of-use asset · lease') }}
           <span class="ad__figurelink" @click="router.push('/assets/leases')">{{ lease.id }} {{ lease.name }}</span>
         </p>
         <!-- OD-32: a split keeps the parent and its parts linked both ways. -->
@@ -305,13 +305,13 @@ watch(() => [route.query.change, asset.value?.id], () => {
           </MpPopoverTrigger>
           <MpPopoverContent class="erp-dropdown-menu ad__actionsmenu">
             <!-- UX6: one entry point for every change to the asset's value. -->
-            <div class="ad__menuhead">{{ t('Change this asset') }}</div>
+            <div class="ad__menuhead">{{ t('Value changes') }}</div>
             <MpPopoverList>
               <MpPopoverListItem v-for="a in VALUE_ACTIONS" :key="a.key" @click="openChange(a.key)">{{ t(a.label) }}</MpPopoverListItem>
             </MpPopoverList>
             <div class="ad__menuhead">{{ t('Classification') }}</div>
             <MpPopoverList>
-              <MpPopoverListItem @click="classifyOpen = true">{{ t('Statutory classification') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="classifyOpen = true">{{ t('Edit statutory classification') }}</MpPopoverListItem>
               <MpPopoverListItem @click="openClassChange">{{ t('Change asset class') }}</MpPopoverListItem>
             </MpPopoverList>
             <MpPopoverList>
@@ -329,22 +329,22 @@ watch(() => [route.query.change, asset.value?.id], () => {
         <div class="ad__blockedbody">
           <div class="ad__blockedtitle">{{ t('No statutory group') }}</div>
           <div class="ad__blockedtext">
-            {{ t('This asset is excluded from the tax book, the difference total and the statutory filing until a group is set.') }}
+            {{ t('Excluded from the tax book, tax differences and Lampiran 9 until a statutory group is set.') }}
           </div>
         </div>
-        <MpButton variant="secondary" is-rounded @click="classifyOpen = true">{{ t('Set group') }}</MpButton>
+        <MpButton variant="secondary" is-rounded @click="classifyOpen = true">{{ t('Set statutory group') }}</MpButton>
       </div>
 
       <!-- FG-7: a change held for approval is named where the asset is read. -->
       <div v-for="p in pending" :key="p.id" class="ad__scoped">
         <MpIcon name="info" size="sm" />
-        <span>{{ t(`${p.id} awaiting approval: ${p.title}. Nothing is recorded until it is decided.`) }}</span>
+        <span>{{ t(`${p.id} awaiting approval: ${p.title}. It is recorded once approved.`) }}</span>
       </div>
 
       <!-- LR-6: the scoped role reads the physical pane only. -->
       <div v-if="!canSeeFinancials" class="ad__scoped">
         <MpIcon name="information" size="sm" />
-        <span>{{ t(`Viewing as ${viewAs}. Cost, book values and schedules are not shown to this role.`) }}</span>
+        <span>{{ t(`Viewing as ${viewAs}. Cost, book values and schedules are hidden for this role.`) }}</span>
       </div>
 
       <!-- ── Headline figures ── -->
@@ -378,7 +378,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
         <div class="ad__cardhead ad__cardhead--split">
           <div>
             <div class="ad__cardtitle">{{ t('FY2026 schedule') }}</div>
-            <div class="ad__cardsub">{{ t('January to December 2026 · months after September are projected on the live basis') }}</div>
+            <div class="ad__cardsub">{{ t('January–December 2026 · October onward projected') }}</div>
           </div>
           <MpButton variant="secondary" is-rounded @click="versionsOpen = true">
             {{ t('Previous versions') }}<template v-if="supersededCount"> ({{ supersededCount }})</template>
@@ -438,16 +438,15 @@ watch(() => [route.query.change, asset.value?.id], () => {
             </tr>
           </tbody>
         </table>
-        <p class="ad__hint">{{ t('Select any charge to see how it was derived.') }}</p>
       </div>
 
       <!-- OD-45: the full-life schedule, year by year, on both books. -->
       <div v-if="tab === 'depreciation' && life" class="ad__card" data-tour="int-schedule">
         <div class="ad__cardhead">
           <div>
-            <div class="ad__cardtitle">{{ t(asset.type === 'Intangible' ? 'Amortisation schedule · whole life' : 'Depreciation schedule · whole life') }}</div>
+            <div class="ad__cardtitle">{{ t(asset.type === 'Intangible' ? 'Lifetime amortisation schedule' : 'Lifetime depreciation schedule') }}</div>
             <div class="ad__cardsub">
-              {{ life.first }} {{ t('to') }} {{ life.last }} · {{ t('years after 2026 are projected on the live basis') }}
+              {{ life.first }}–{{ life.last }} · {{ t('2027 onward projected') }}
             </div>
           </div>
         </div>
@@ -467,7 +466,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
         </div>
       </div>
 
-      <!-- ── Identity and parameters ── -->
+      <!-- ── Details ── -->
       <div v-if="tab === 'identity'" class="ad__panes">
         <div v-for="p in panes" :key="p.head" class="ad__card ad__pane">
           <div class="ad__panehead">
@@ -479,9 +478,9 @@ watch(() => [route.query.change, asset.value?.id], () => {
           <div class="ad__panefields">
             <ContentList v-for="f in p.fields" :key="f.k" horizontal :label="t(f.k)" :value="plainDurations(f.v)" />
           </div>
-          <div v-if="p.head === 'Tax parameters' && canSeeFinancials && !isGone" class="ad__paneaction">
+          <div v-if="p.head === 'Tax' && canSeeFinancials && !isGone" class="ad__paneaction">
             <MpButton size="sm" variant="secondary" is-rounded @click="classifyOpen = true">
-              {{ effectiveTaxGroup ? t('Change classification') : t('Classify') }}
+              {{ effectiveTaxGroup ? t('Edit statutory classification') : t('Set statutory group') }}
             </MpButton>
           </div>
           <div v-if="p.head === 'Accounting' && canSeeFinancials && !isGone" class="ad__paneaction">
@@ -492,7 +491,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
 
       <!-- ── History ── -->
       <div v-if="tab === 'history'" class="ad__card" data-tour="det-history">
-        <p v-if="!history.length" class="ad__hint">{{ t('No custody change has been recorded on this asset yet.') }}</p>
+        <p v-if="!history.length" class="ad__hint">{{ t('No history yet. Changes to this asset will appear here.') }}</p>
         <div v-for="(h, i) in history" :key="i" class="ad__event">
           <div class="ad__eventwhen">{{ h.when }}</div>
           <div class="ad__eventbody">
@@ -518,7 +517,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
           <header class="ad__drawerhead">
             <div>
               <div class="ad__drawertitle">{{ t('Schedule versions') }}</div>
-              <div class="ad__drawersub">{{ asset.id }} · {{ t('superseded versions stay readable with their basis') }}</div>
+              <div class="ad__drawersub">{{ asset.id }}</div>
             </div>
             <MpButton class="ad__drawerclose" variant="ghost" is-rounded :aria-label="t('Close')" @click="versionsOpen = false">
               <MpIcon name="close" size="sm" />
@@ -528,11 +527,11 @@ watch(() => [route.query.change, asset.value?.id], () => {
             <div v-if="hasTaxBook" class="ad__booktabs">
               <MpSegmentedControl id="version-book-switch" name="version-book-switch" v-model="versionBook" :data="versionBookOptions" />
             </div>
-            <p v-if="versions.length === 1" class="ad__drawernote">{{ t('This book has one version. Nothing has changed its basis.') }}</p>
+            <p v-if="versions.length === 1" class="ad__drawernote">{{ t('No previous versions on this book.') }}</p>
             <div v-for="v in versions" :key="v.id" class="ad__version">
               <div class="ad__versionhead">
                 <span class="ad__versiontitle">{{ t('Version') }} {{ v.number }} · {{ t(v.label) }}</span>
-                <span class="ad__versionstate">{{ v.live ? t('Live') : `${t('Superseded from')} ${v.supersededFrom}` }}</span>
+                <span class="ad__versionstate">{{ v.live ? t('Current') : `${t('Replaced from')} ${v.supersededFrom}` }}</span>
               </div>
               <div class="ad__versionsub">{{ t('From') }} {{ v.fromPeriod }}</div>
               <div class="ad__versionbasis">
@@ -570,7 +569,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
           <header class="ad__drawerhead">
             <div>
               <div class="ad__drawertitle">{{ t('Change asset class') }}</div>
-              <div class="ad__drawersub">{{ asset.id }} · {{ t('now') }} {{ asset.class }}</div>
+              <div class="ad__drawersub">{{ asset.id }} · {{ t('Current class') }}: {{ asset.class }}</div>
             </div>
             <MpButton class="ad__drawerclose" variant="ghost" is-rounded :aria-label="t('Close')" @click="classOpen = false">
               <MpIcon name="close" size="sm" />
@@ -579,14 +578,14 @@ watch(() => [route.query.change, asset.value?.id], () => {
           <div class="ad__drawerbody">
             <label class="ad__fieldlabel" for="ad-newclass">{{ t('New class') }}</label>
             <ErpFilterSelect id="ad-newclass" v-model="newClass" :placeholder="t('Choose a class')" :options="classOptions" width="100%" :is-clearable="false" />
-            <p class="ad__drawernote">{{ t('The asset inherits the class\'s statutory group, accounting life and method from the class master. Posted periods do not move.') }}</p>
+            <p class="ad__drawernote">{{ t('The asset takes the new class\'s statutory group, useful life and method. Posted periods stay unchanged.') }}</p>
             <template v-if="classPlan">
               <p v-if="!classPlan.ok" class="ad__fielderror">{{ t(classPlan.reason ?? '') }}</p>
               <div v-else class="ad__classplan">
                 <ContentList v-for="c in classPlan.changes" :key="c.field" horizontal :label="t(c.field)" :value="`${c.before} → ${c.after}`" />
               </div>
             </template>
-            <p v-if="!canChangeClass" class="ad__fielderror">{{ t(`Viewing as ${viewAs}. Changing a class needs the Owner or Accounting role.`) }}</p>
+            <p v-if="!canChangeClass" class="ad__fielderror">{{ t(`Viewing as ${viewAs}. Only Owner or Accounting can change the asset class.`) }}</p>
             <div class="ad__drawerfoot">
               <MpButton variant="ghost" is-rounded @click="classOpen = false">{{ t('Cancel') }}</MpButton>
               <MpButton is-rounded :is-disabled="!classPlan?.ok || !canChangeClass" @click="confirmClassChange">{{ t('Change class') }}</MpButton>
@@ -599,12 +598,12 @@ watch(() => [route.query.change, asset.value?.id], () => {
     <!-- ── Derivation panel ── -->
     <Teleport to="body">
       <div v-if="derivationOpen" class="ad__overlay">
-        <aside class="ad__drawer" role="dialog" :aria-label="t('How this figure was derived')">
+        <aside class="ad__drawer" role="dialog" :aria-label="t('Charge breakdown')">
           <header class="ad__drawerhead">
             <div>
-              <div class="ad__drawertitle">{{ t('How this figure was derived') }}</div>
+              <div class="ad__drawertitle">{{ t('Charge breakdown') }}</div>
               <div class="ad__drawersub">
-                {{ asset.id }} · {{ derivationBasis === 'accounting' ? t('Accounting basis') : t('Tax basis') }}
+                {{ asset.id }} · {{ derivationBasis === 'accounting' ? t('Accounting') : t('Tax') }} · {{ derivationPeriod }}
               </div>
             </div>
             <MpButton class="ad__drawerclose" variant="ghost" is-rounded :aria-label="t('Close')" @click="derivationOpen = false">
@@ -617,9 +616,6 @@ watch(() => [route.query.change, asset.value?.id], () => {
               <div class="ad__steplabel">{{ s.label }}</div>
               <div class="ad__stepvalue">{{ s.value }}</div>
             </div>
-            <p class="ad__drawernote">
-              {{ t('Read from the basis that produced this figure, not recomputed from today\'s parameters — so a charge from before a correction still explains itself.') }}
-            </p>
           </div>
         </aside>
       </div>
@@ -629,7 +625,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
   <!-- Not found -->
   <div v-else class="ad__missing">
     <div class="ad__missingtitle">{{ t('Asset not found') }}</div>
-    <MpTextlink id="ad-back" as="a" @click.prevent="goRegister">{{ t('Back to Assets') }}</MpTextlink>
+    <MpTextlink id="ad-back" as="a" @click.prevent="goRegister">{{ t('Back to assets') }}</MpTextlink>
   </div>
 </template>
 
