@@ -65,8 +65,8 @@ export function detailFigures(a: FixedAsset, p: Period = CURRENT_PERIOD): Detail
     {
       label: adjusted ? 'Cost' : 'Acquisition cost',
       value: a.cost,
-      caption: `Both books · acquired ${a.acquired}`,
-      sub: adjusted ? `Recorded at ${fmt(l!.acquisitionCost)}, since changed` : undefined,
+      caption: `Acquired ${a.acquired}`,
+      sub: adjusted ? `Originally ${fmt(l!.acquisitionCost)}` : undefined,
     },
   ]
 
@@ -77,7 +77,7 @@ export function detailFigures(a: FixedAsset, p: Period = CURRENT_PERIOD): Detail
       ? `Carried at cost ${asOf}`
       : `${lifeYears(a.commercialLifeMonths)} ${METHOD_LABEL[a.method].toLowerCase()} · ${asOf}`,
     sub: a.commercialLifeMonths === null
-      ? 'Indefinite life, not amortised, tested for impairment'
+      ? 'Indefinite life · tested for impairment yearly'
       : accAccum === null
         ? undefined
         : `Accumulated ${fmt(accAccum)}`,
@@ -89,7 +89,7 @@ export function detailFigures(a: FixedAsset, p: Period = CURRENT_PERIOD): Detail
     value: a.bookValueFiscal,
     caption: a.taxGroup
       ? `${a.taxGroup}, ${lifeYears(a.fiscalLifeMonths)} · ${asOf}`
-      : 'No statutory group set',
+      : 'No statutory group',
     sub: taxAccum === null ? undefined : `Accumulated ${fmt(taxAccum)}`,
     // Disposed and unclassified are different absences and must not share a
     // label: one means no longer held, the other means nothing to compute from.
@@ -106,13 +106,13 @@ export function detailFigures(a: FixedAsset, p: Period = CURRENT_PERIOD): Detail
   figures.push({
     label: 'Cumulative difference',
     value: diff,
-    caption: `Accounting charge less tax charge, to date · ${asOf}`,
+    caption: `Accounting less tax · ${asOf}`,
     sub: diff === null
       ? undefined
       : diff === 0
-        ? 'The books agree: no deferred tax'
+        ? 'No deferred tax'
         : `Deferred tax ${dt > 0 ? 'asset' : 'liability'} ${fmt(Math.abs(dt))} at ${Math.round(TAX_RATE * 100)}%`,
-    absent: diff === null ? (disposed ? gone : 'Needs both books') : undefined,
+    absent: diff === null ? (disposed ? gone : 'Not computed') : undefined,
   })
 
   return figures
@@ -146,7 +146,7 @@ export function detailPanes(a: FixedAsset): DetailPane[] {
   // Intangibles have no physical presence, so the pane would be empty fields.
   if (a.type === 'Tangible') {
     panes.push({
-      head: 'Physical identity',
+      head: 'Physical details',
       owner: 'General Affairs',
       fields: [
         { k: 'Physical tag', v: a.tag ?? 'Not tagged' },
@@ -157,26 +157,26 @@ export function detailPanes(a: FixedAsset): DetailPane[] {
     })
   } else {
     panes.push({
-      head: 'Identity',
+      head: 'General',
       owner: 'Accounting Manager',
       fields: [
         { k: 'Statutory code', v: a.statutoryCode ?? 'Not set' },
-        { k: 'Nature', v: a.location ?? 'Not recorded' },
+        { k: 'Description', v: a.location ?? 'Not recorded' },
         { k: 'Branch', v: a.branch },
       ],
     })
   }
 
   panes.push({
-    head: 'Tax parameters',
+    head: 'Tax',
     owner: 'Tax Manager',
     fields: [
       { k: 'Statutory group', v: a.taxGroup ?? 'Not set' },
       { k: 'Tax life', v: a.taxGroup ? lifeYears(a.fiscalLifeMonths) : 'Not set' },
       { k: 'Statutory code', v: a.statutoryCode ?? 'Not set' },
       {
-        k: 'In the statutory filing',
-        v: a.taxGroup ? `Yes, ${a.taxGroup} line` : 'No, excluded until classified',
+        k: 'In Lampiran 9',
+        v: a.taxGroup ? `Yes · ${a.taxGroup}` : 'No · set a statutory group first',
       },
     ],
   })
@@ -191,7 +191,7 @@ export function detailPanes(a: FixedAsset): DetailPane[] {
       { k: 'Residual value', v: fmt(a.residual) },
       {
         k: 'Useful life',
-        v: a.commercialLifeMonths === null ? 'Indefinite, not amortised' : `${lifeYears(a.commercialLifeMonths)} · ${METHOD_LABEL[a.method].toLowerCase()}`,
+        v: a.commercialLifeMonths === null ? 'Indefinite · not amortised' : `${lifeYears(a.commercialLifeMonths)} · ${METHOD_LABEL[a.method].toLowerCase()}`,
       },
       { k: 'Asset class', v: a.class },
     ],
@@ -226,14 +226,14 @@ export function derivation(a: FixedAsset, basis: Book, period = periodLabel(CURR
   if (basis === 'tax' && !l.books.tax) {
     return [
       { label: 'Statutory group', value: 'Not set' },
-      { label: 'Why there is no charge', value: 'Without a statutory group there is no life and no rate, so nothing can be computed.' },
+      { label: 'Reason', value: 'No statutory group, so no tax life or rate' },
       { label: `Charge for ${period}`, value: 'Not computed', isResult: true },
     ]
   }
   if (d.basis && d.basis.lifeMonths === null) {
     return [
       { label: 'Useful life', value: 'Indefinite' },
-      { label: 'Why there is no charge', value: 'An indefinite-life asset is not amortised. It is tested for impairment annually instead.' },
+      { label: 'Reason', value: 'Indefinite life: not amortised, tested for impairment yearly' },
       ...d.adjustments.map((x) => ({ label: `Adjustment ${x.timing}`, value: x.label })),
       { label: `Charge for ${period}`, value: 'Not amortised', isResult: true },
     ]
@@ -247,21 +247,21 @@ export function derivation(a: FixedAsset, basis: Book, period = periodLabel(CURR
 
   const b = d.basis
   const steps: DerivationStep[] = [
-    { label: 'Schedule version', value: `v${d.version?.number ?? 1} · ${b.cause.label}` },
-    { label: 'Opening basis', value: b.openingAccumulated ? `${fmt(b.openingCarrying)} carrying (${fmt(b.cost)} cost less ${fmt(b.openingAccumulated)})` : fmt(b.cost) },
+    { label: 'Schedule version', value: `Version ${d.version?.number ?? 1} · ${b.cause.label}` },
+    { label: 'Opening amount', value: b.openingAccumulated ? `${fmt(b.openingCarrying)} (cost ${fmt(b.cost)} less ${fmt(b.openingAccumulated)} accumulated)` : fmt(b.cost) },
     { label: 'Method', value: METHOD_LABEL[b.method] },
     { label: 'Life', value: `${lifeYears(b.lifeMonths)}${b.monthsElapsed ? `, ${plural(b.remainingMonths, 'month')} remaining from ${periodLabel(b.fromPeriod)}` : ''}` },
   ]
   if (basis === 'accounting') steps.push({ label: 'Residual value', value: fmt(b.residual) })
-  steps.push({ label: 'To depreciate on this basis', value: `${fmt(b.depreciable)} over ${plural(b.remainingMonths, 'month')}` })
+  steps.push({ label: 'Depreciable amount', value: `${fmt(b.depreciable)} over ${plural(b.remainingMonths, 'month')}` })
   steps.push({
     label: 'Period',
-    value: `Month ${d.monthInBasis} of ${b.remainingMonths}, full month${d.isFinalMonth ? ', final month takes the rounding residue' : ''}`,
+    value: `Month ${d.monthInBasis} of ${b.remainingMonths}${d.isFinalMonth ? ' · final month, includes rounding' : ''}`,
   })
   for (const x of d.adjustments) steps.push({ label: `Adjustment ${x.timing}`, value: x.label })
   if (d.row?.adjustment) {
-    steps.push({ label: 'Charge on this basis', value: fmt(d.row.charge) })
-    steps.push({ label: 'Catch-up for posted periods', value: `${fmt(d.row.adjustment)}, what the posted periods charged on the wrong cost` })
+    steps.push({ label: 'Monthly charge', value: fmt(d.row.charge) })
+    steps.push({ label: 'Catch-up for posted periods', value: fmt(d.row.adjustment) })
   }
   steps.push({ label: `Charge for ${period}`, value: fmt(d.charge), isResult: true })
   return steps
@@ -299,7 +299,7 @@ export interface ScheduleMonth {
 function rowEvent(e: AssetEvent): string {
   switch (e.kind) {
     case 'acquisition': return e.splitFrom ? `Split from ${e.splitFrom}` : 'Entered service'
-    case 'impairment': return `Impaired ${e.date}, accounting basis reset`
+    case 'impairment': return `Impaired ${e.date} · accounting only`
     case 'disposal': return `Disposed ${e.date}`
     case 'tax-classification': return `Statutory group set to ${e.taxGroup}`
     default: return eventLabel(e)
@@ -340,7 +340,7 @@ function basisMarkerAt(acc: Basis[], tax: Basis[], p: Period): { basisMarker?: s
   if (!a.length && !t.length) return {}
   const books = a.length && t.length ? 'both books' : a.length ? 'accounting' : 'tax'
   const causes = [...new Set([...a, ...t].map((b) => BASIS_CAUSE[b.cause.kind] ?? 'changed'))]
-  return { basisMarker: `New basis from here, ${books}: ${causes.join(', then ')}` }
+  return { basisMarker: `New basis, ${books}: ${causes.join(', then ')}` }
 }
 
 const BASIS_CAUSE: Partial<Record<AssetEvent['kind'], string>> = {
@@ -384,10 +384,10 @@ export function versionViews(a: FixedAsset, book: Book): VersionView[] {
       supersededFrom: v.supersededFrom ? periodLabel(v.supersededFrom) : null,
       basis: [
         { k: 'Cost', v: fmt(basis.cost) },
-        { k: 'Opening carrying', v: fmt(basis.openingCarrying) },
+        { k: 'Opening book value', v: fmt(basis.openingCarrying) },
         { k: 'Method', v: METHOD_LABEL[basis.method] },
         { k: 'Life', v: basis.lifeMonths === null ? 'Indefinite' : `${formatLife(basis.lifeMonths)}, ${plural(basis.remainingMonths, 'month')} from ${periodLabel(basis.fromPeriod)}` },
-        ...(book === 'accounting' ? [{ k: 'Residual', v: fmt(basis.residual) }] : []),
+        ...(book === 'accounting' ? [{ k: 'Residual value', v: fmt(basis.residual) }] : []),
         { k: 'Monthly charge', v: first ? fmt(first.charge) : 'None' },
       ],
       rows: v.rows.slice(0, 18).map((r) => ({ ...r, label: periodLabel(r.period) })),
@@ -432,7 +432,7 @@ export function assetHistory(a: FixedAsset) {
     rows.push({ when: latest.postedOn ?? '', who: 'System', what: `Depreciation posted for ${periodLabel(latest.period)} · ${latest.journal}`, note: null, sort: dateKey(periodEndDate(latest.period)) + 0.5 })
   }
   for (const r of charged.filter((x) => x.state === 'reversed')) {
-    rows.push({ when: r.reversal?.on ?? '', who: 'Rizal Candra', what: `Depreciation for ${periodLabel(r.period)} reversed · ${r.reversal?.journal}`, note: `${r.journal} kept, reversed by a second journal`, sort: dateKey(periodEndDate(r.period)) + 0.6 })
+    rows.push({ when: r.reversal?.on ?? '', who: 'Rizal Candra', what: `Depreciation for ${periodLabel(r.period)} reversed · ${r.reversal?.journal}`, note: `${r.journal} kept and offset by a reversing journal`, sort: dateKey(periodEndDate(r.period)) + 0.6 })
   }
   const push = (x: Omit<Row, 'sort'>) => rows.push({ ...x, sort: dateKey(x.when) })
   for (const e of [...l.events].reverse()) {
@@ -443,21 +443,21 @@ export function assetHistory(a: FixedAsset) {
           break
         }
         if (e.taxGroup) {
-          push({ when: e.date, who: e.recordedBy, what: `Statutory group set to ${e.taxGroup}`, note: 'Applied from the asset class default' })
+          push({ when: e.date, who: e.recordedBy, what: `Statutory group set to ${e.taxGroup}`, note: 'From the asset class default' })
         } else {
-          push({ when: e.date, who: e.recordedBy, what: 'Created without a statutory group', note: 'Blocks every tax output until set' })
+          push({ when: e.date, who: e.recordedBy, what: 'Created without a statutory group', note: 'Excluded from tax outputs until set' })
         }
         push({ when: e.date, who: e.recordedBy, what: 'Asset created', note: e.inServiceDate !== e.date ? `In service from ${e.inServiceDate}` : null })
         break
       case 'tax-classification':
-        push({ when: e.date, who: e.recordedBy, what: `Statutory group set to ${e.taxGroup}`, note: 'Tax book computed from the in-service date' })
+        push({ when: e.date, who: e.recordedBy, what: `Statutory group set to ${e.taxGroup}`, note: 'Tax book calculated from the in-service date' })
         break
       case 'impairment': {
         const r = l.books.accounting.impairments.find((i) => i.eventId === e.id)
         push({
           when: e.date, who: e.recordedBy,
           what: `Impairment of ${fmt(r?.loss ?? 0)} recognised${e.testId ? ` after test ${e.testId}` : ''}`,
-          note: `Written down to ${fmt(e.recoverable)} from ${fmt(r?.carryingBefore ?? 0)}. Accounting only, tax does not recognise it until realised`,
+          note: `Written down to ${fmt(e.recoverable)} from ${fmt(r?.carryingBefore ?? 0)}. Accounting only: tax recognises it when realised`,
         })
         break
       }
@@ -466,7 +466,7 @@ export function assetHistory(a: FixedAsset) {
         push({
           when: e.date, who: e.recordedBy,
           what: `Impairment reversal of ${fmt(r?.applied ?? 0)}${e.testId ? ` after test ${e.testId}` : ''}`,
-          note: r ? `Recovery found ${fmt(r.uncapped)}, cap ${fmt(r.cap)} (unimpaired carrying ${fmt(r.unimpaired)}). ${r.capApplied ? 'The cap applied' : 'The recovery applied in full'}. Accounting only` : null,
+          note: r ? `Recovery ${fmt(r.uncapped)}, capped at ${fmt(r.cap)} (book value without impairment ${fmt(r.unimpaired)}). ${r.capApplied ? 'Cap applied' : 'Applied in full'}. Accounting only` : null,
         })
         break
       }
@@ -475,15 +475,15 @@ export function assetHistory(a: FixedAsset) {
         push({
           when: e.date, who: e.recordedBy,
           what: `Cost corrected from ${fmt(c?.previousCost ?? 0)} to ${fmt(e.correctedCost)}, from ${periodLabel(e.period)}`,
-          note: `${e.reason}.${c?.catchUp ? ` Catch-up of ${fmt(c.catchUp)} in ${periodLabel(e.period)} for posted periods.` : ''} Prior version kept.`,
+          note: `${e.reason}.${c?.catchUp ? ` Catch-up of ${fmt(c.catchUp)} in ${periodLabel(e.period)} for posted periods.` : ''} Previous version kept.`,
         })
         break
       }
       case 'estimate-revision':
-        push({ when: e.date, who: e.recordedBy, what: eventLabel(e), note: `${e.book === 'accounting' ? 'Accounting book only' : 'Tax book only'}. Applied periods unchanged, prior version kept` })
+        push({ when: e.date, who: e.recordedBy, what: eventLabel(e), note: `${e.book === 'accounting' ? 'Accounting book only' : 'Tax book only'}. Posted periods unchanged, previous version kept` })
         break
       case 'improvement':
-        push({ when: e.date, who: e.recordedBy, what: eventLabel(e), note: 'Added to this asset\'s cost on both books. Tax treatment assumed pending tax team confirmation' })
+        push({ when: e.date, who: e.recordedBy, what: eventLabel(e), note: 'Added to this asset\'s cost on both books' })
         break
       case 'split':
         push({ when: e.date, who: e.recordedBy, what: eventLabel(e), note: 'Cost, accumulated depreciation and impairment apportioned on both books' })
@@ -494,7 +494,7 @@ export function assetHistory(a: FixedAsset) {
         const gl = (n: number) => `${n >= 0 ? 'gain' : 'loss'} ${fmt(Math.abs(n))}`
         push({
           when: e.date, who: e.recordedBy, what: `${pct(e.proportion)} disposed for ${fmt(e.proceeds)}`,
-          note: dA ? `Accounting ${gl(dA.gainLoss)}${dT ? `, tax ${gl(dT.gainLoss)}` : ''}. The rest carries on as this asset` : null,
+          note: dA ? `Accounting ${gl(dA.gainLoss)}${dT ? `, tax ${gl(dT.gainLoss)}` : ''}. The remainder stays on this asset` : null,
         })
         break
       }
@@ -517,7 +517,7 @@ export function assetHistory(a: FixedAsset) {
       : `Impairment test ${t.id}: ${t.outcome === 'Impaired' ? 'impaired' : 'no impairment'}`
     push({
       when: t.date, who: t.author, what,
-      note: `${t.indicator}. Carrying ${fmt(t.carrying)}, recoverable ${fmt(t.recoverable)} (${t.basis}, ${t.source})`,
+      note: `${t.indicator}. Book value ${fmt(t.carrying)}, recoverable ${fmt(t.recoverable)} (${t.basis}, ${t.source})`,
     })
   }
   // Newest first; the acquisition's two rows keep their logged order.

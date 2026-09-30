@@ -46,23 +46,19 @@ const value = computed({
     error.value = ''
     if (!props.assetId) { emit('update:modelValue', v); return }
     if (!v || v.slice(0, 4) === (props.current ?? '').slice(0, 4)) return
-    if (!canChangeValue.value) { error.value = `Viewing as ${viewAs.value}. Setting a statutory code needs the Owner or Accounting role.`; return }
+    if (!canChangeValue.value) { error.value = `Viewing as ${viewAs.value}. Only Owner or Accounting can set the statutory code.`; return }
     const r = setStatutoryCode(props.assetId, v)
     if (!r.ok) { error.value = r.reason; return }
-    successToast(t(`${props.assetId} statutory code set to ${v}`))
+    successToast(t(`Statutory code set to ${v}`))
   },
 })
 </script>
 
 <template>
   <div class="icp">
-    <ErpFilterSelect :id="id" v-model="value" :placeholder="t('Choose a statutory code')" :options="options" width="100%" :is-clearable="false" />
+    <ErpFilterSelect :id="id" v-model="value" :placeholder="t('Select statutory code')" :options="options" width="100%" :is-clearable="false" />
     <p v-if="error" class="icp__error">{{ t(error) }}</p>
-    <p v-else class="icp__hint">
-      {{ isGoodwill && assetId
-        ? t('Goodwill keeps code 0607. It is recognised as goodwill when it is created.')
-        : t('The eleven codes of the intangible schedule. Buildings and tangible codes do not apply.') }}
-    </p>
+    <p v-else-if="isGoodwill && assetId" class="icp__hint">{{ t('Goodwill always uses code 0607') }}</p>
   </div>
 </template>
 

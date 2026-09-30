@@ -56,7 +56,7 @@ function close() { emit('update:isOpen', false) }
 
 async function generate() {
   error.value = ''
-  if (!prompt.value.trim()) { error.value = 'Describe the image you want to generate.'; return }
+  if (!prompt.value.trim()) { error.value = 'You must fill in image description'; return }
   generating.value = true
   resultUrl.value = ''
   const b = buzzBrand(brandId.value)
@@ -83,11 +83,11 @@ async function generate() {
         subjects,
       },
     })
-    if (res?.error || !res?.dataUrl) { error.value = res?.error || 'Could not generate the image.'; return }
+    if (res?.error || !res?.dataUrl) { error.value = res?.error || 'Could not generate the image. Try again'; return }
     resultUrl.value = res.dataUrl
     resultMime.value = res.mime || 'image/png'
   } catch (err: any) {
-    error.value = String(err?.data?.error ?? err?.message ?? 'Could not generate the image.')
+    error.value = String(err?.data?.error ?? err?.message ?? 'Could not generate the image. Try again')
   } finally {
     generating.value = false
   }
@@ -108,7 +108,7 @@ async function saveToAssets() {
   })
   await putImage({ id: asset.id, mime: resultMime.value, dataUrl: resultUrl.value })
   saving.value = false
-  toast.notify({ variant: 'success', title: 'Saved to Photo stocks.', maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: 'Image saved to Photo stocks', maxWidth: 'max-content' })
   emit('saved', asset.id)
   close()
 }
@@ -127,7 +127,7 @@ async function saveToAssets() {
           <div class="gad__form">
             <MpFormControl id="gad-prompt" is-required :is-invalid="!!error && !resultUrl">
               <MpFormLabel>Describe the image</MpFormLabel>
-              <MpTextarea id="gad-prompt-input" v-model="prompt" :rows="3" is-full-width placeholder="e.g. An Indonesian HR manager smiling at a laptop in a bright office" @input="error = ''" />
+              <MpTextarea id="gad-prompt-input" v-model="prompt" :rows="3" is-full-width placeholder="Example: An Indonesian HR manager smiling at a laptop in a bright office" @input="error = ''" />
               <MpFormErrorMessage v-if="!resultUrl">{{ error }}</MpFormErrorMessage>
             </MpFormControl>
 
@@ -155,7 +155,7 @@ async function saveToAssets() {
 
             <MpFormControl id="gad-assets">
               <MpFormLabel>Your assets (optional)</MpFormLabel>
-              <p class="gad__hintline">Pick one of your assets to generate a new pose or scene of it.</p>
+              <p class="gad__hintline">Use one of your assets as the subject</p>
               <div class="gad__subjects">
                 <span v-for="id in subjectIds" :key="id" class="gad__subject">
                   <img v-if="subjectThumbs.get(id)" :src="subjectThumbs.get(id)" alt="" class="gad__subject-img" />
@@ -168,7 +168,7 @@ async function saveToAssets() {
             <!-- Preview -->
             <div v-if="generating" class="gad__preview gad__preview--loading">
               <MpSpinner size="md" />
-              <p class="gad__hint">Generating with Gemini…</p>
+              <p class="gad__hint">Generating image…</p>
             </div>
             <div v-else-if="resultUrl" class="gad__result">
               <img :src="resultUrl" alt="Generated asset" class="gad__img" />

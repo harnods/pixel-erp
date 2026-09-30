@@ -25,7 +25,7 @@ const router = useRouter()
     <MpBannerIcon id="asset-role-gate-icon" />
     <MpBannerTitle>{{ t('This page holds financial figures') }}</MpBannerTitle>
     <MpBannerDescription>
-      {{ t(`Viewing as ${viewAs}. General Affairs sees the physical record only: tag, location, custodian and condition. Cost, book values and tax figures are not shown to this role.`) }}
+      {{ t(`Viewing as ${viewAs}. General Affairs sees the physical record only: tag, location, custodian and condition.`) }}
     </MpBannerDescription>
     <MpBannerLink id="asset-role-gate-link">
       <MpButton variant="textLink" size="sm" data-testid="asset-role-gate-link" @click="router.push('/custody-and-counts')">

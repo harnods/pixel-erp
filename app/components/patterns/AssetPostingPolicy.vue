@@ -29,7 +29,7 @@ watch(journalPolicyDay, (d) => { dayDraft.value = String(d) })
 
 function guard(): boolean {
   if (canChangeValue.value) return true
-  error.value = `Viewing as ${viewAs.value}. Changing the posting policy needs the Owner or Accounting role.`
+  error.value = `Viewing as ${viewAs.value}. Only Owner or Accounting can change the posting policy.`
   return false
 }
 
@@ -39,17 +39,17 @@ const policy = computed({
     error.value = ''
     if (!v || v === journalDatePolicy.value || !guard()) return
     journalDatePolicy.value = v as JournalDatePolicy
-    successToast(t(`Journal date now follows ${journalDatePolicyLabel()}.`))
+    successToast(t(`Journal date set to ${journalDatePolicyLabel()}`))
   },
 })
 
 function applyDay() {
   error.value = ''
   const n = Number(dayDraft.value)
-  if (!Number.isInteger(n) || n < 1 || n > 28) { error.value = 'Enter a day from 1 to 28, so every month has it'; return }
+  if (!Number.isInteger(n) || n < 1 || n > 28) { error.value = 'Enter a day from 1 to 28'; return }
   if (n === journalPolicyDay.value || !guard()) return
   journalPolicyDay.value = n
-  successToast(t(`Journal date now follows ${journalDatePolicyLabel()}.`))
+  successToast(t(`Journal date set to ${journalDatePolicyLabel()}`))
 }
 
 const autoPost = computed({
@@ -58,7 +58,7 @@ const autoPost = computed({
     error.value = ''
     if (!guard()) return
     autoPostRuns.value = v
-    successToast(t(v ? 'Runs now post as soon as they are generated. Each can still be reversed.' : 'Runs now wait as a draft for review before posting.'))
+    successToast(t(v ? 'Automatic posting turned on' : 'Automatic posting turned off'))
   },
 })
 
@@ -76,7 +76,6 @@ const example = computed(() => {
       <div class="app__text">
         <div class="app__k">{{ t('Journal date') }}</div>
         <div class="app__v">
-          {{ t('The date every depreciation journal carries.') }}
           <template v-if="example">{{ t(`The ${example.label} run will be dated ${example.date}.`) }}</template>
         </div>
       </div>
@@ -93,8 +92,8 @@ const example = computed(() => {
         <div class="app__k">{{ t('Post automatically when a run is generated') }}</div>
         <div class="app__v">
           {{ autoPost
-            ? t('On. Generating a run posts it at once. It can still be reversed from the schedule.')
-            : t('Off. A generated run waits as a draft until someone reviews and posts it.') }}
+            ? t('Generated runs post immediately. You can still reverse them from the schedule.')
+            : t('Generated runs stay as drafts until someone posts them.') }}
         </div>
       </div>
       <MpToggle v-model:is-checked="autoPost" :aria-label="t('Post automatically when a run is generated')" />

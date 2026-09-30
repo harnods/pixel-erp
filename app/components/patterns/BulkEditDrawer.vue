@@ -45,7 +45,6 @@ const valueOptions = computed(() => {
   if (field.value === 'custodian') return bulkCustodianOptions()
   return field.value === 'taxGroup' ? statutoryGroupOptions : assetClassMaster.value.map((c) => c.class)
 })
-const isListField = computed(() => field.value === 'location' || field.value === 'custodian')
 
 const plan = computed(() => planBulkEditFromLists(props.ids, field.value, value.value))
 
@@ -53,7 +52,7 @@ function apply() {
   const r = applyBulkEditWithHistory(plan.value)
   if (!r.ok) { error.value = r.reason; return }
   const n = r.op.items.length
-  emit('done', `${r.op.number} applied to ${n} ${n === 1 ? 'asset' : 'assets'}. Reverse it from the register if it was wrong.`)
+  emit('done', `Bulk edit ${r.op.number} applied to ${n} ${n === 1 ? 'asset' : 'assets'}`)
 }
 </script>
 
@@ -80,9 +79,8 @@ function apply() {
               </div>
               <div class="bed-field">
                 <label class="bed-label" for="bed-value">{{ t('New value') }}</label>
-                <ErpFilterSelect id="bed-value" v-model="value" :placeholder="t('Choose')" :options="valueOptions" width="100%" :is-clearable="false" />
-                <p v-if="field === 'location'" class="bed-hint bed-hint--tight">{{ t('From the maintained location list. Add a new one in Asset settings.') }}</p>
-                <p v-else-if="isListField" class="bed-hint bed-hint--tight">{{ t('From the custodian list.') }}</p>
+                <ErpFilterSelect id="bed-value" v-model="value" :placeholder="t('Select value')" :options="valueOptions" width="100%" :is-clearable="false" />
+                <p v-if="field === 'location'" class="bed-hint bed-hint--tight">{{ t('Add new locations in Asset settings') }}</p>
               </div>
             </div>
             <p class="bed-hint">{{ t(fieldHint) }}</p>
@@ -102,7 +100,7 @@ function apply() {
                   <thead>
                     <tr>
                       <th class="bed-th">{{ t('Asset') }}</th>
-                      <th class="bed-th">{{ t('Now') }}</th>
+                      <th class="bed-th">{{ t('Current') }}</th>
                       <th class="bed-th">{{ t('After') }}</th>
                     </tr>
                   </thead>
@@ -122,7 +120,7 @@ function apply() {
                   <li v-for="l in plan.skipped" :key="l.id"><span class="bed-id">{{ l.id }}</span> {{ l.name }} · {{ t(l.skip ?? '') }}</li>
                 </ul>
               </div>
-              <p class="bed-hint">{{ t('Applied as one operation with its own number, and reversed as one.') }}</p>
+              <p class="bed-hint">{{ t('You can reverse the whole edit from the register') }}</p>
             </template>
             <p v-else-if="plan.refusal && plan.value" class="bed-error">{{ t(plan.refusal) }}</p>
           </div>

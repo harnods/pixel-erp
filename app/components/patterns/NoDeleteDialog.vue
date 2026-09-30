@@ -25,10 +25,10 @@ const postedCharges = computed(() => {
 const isGone = computed(() => asset.value?.status === 'Disposed' || asset.value?.status === 'Split')
 
 const paths = computed(() => [
-  { key: 'dispose', title: 'It was sold, scrapped or lost', body: 'Dispose of it. It leaves the register with a gain or loss on both books, and its history stays readable.', action: 'Dispose' },
-  { key: 'correct', title: 'It was entered with the wrong cost', body: 'Correct the error. Posted periods are caught up in the next open period, never edited.', action: 'Correct an error' },
-  { key: 'split', title: 'It should have been several assets', body: 'Split it into parts with their own numbers. Cost and accumulated depreciation follow the ratio.', action: 'Split' },
-  { key: 'run', title: 'A depreciation run was wrong', body: `Reverse the latest posted run${lastPostedPeriod.value ? ` (${periodLabel(lastPostedPeriod.value)})` : ''}. A reversing journal is posted beside it and the period opens again.`, action: 'Open the schedule' },
+  { key: 'dispose', title: 'It was sold, scrapped or lost', body: 'Records a gain or loss on both books. The history is kept.', action: 'Dispose asset' },
+  { key: 'correct', title: 'It was entered with the wrong cost', body: 'Posted periods are caught up in the next open period.', action: 'Correct cost' },
+  { key: 'split', title: 'It should be several assets', body: 'Each part gets its own number. Cost and accumulated depreciation are split by ratio.', action: 'Split asset' },
+  { key: 'run', title: 'A depreciation run was wrong', body: `Reverse the latest posted run${lastPostedPeriod.value ? ` (${periodLabel(lastPostedPeriod.value)})` : ''}. A reversing journal is posted and the period reopens.`, action: 'Open schedule' },
 ])
 
 function go(key: string) {
@@ -53,9 +53,9 @@ function go(key: string) {
           <p class="ndd-lead">
             {{ asset.id }} {{ asset.name }}
             <template v-if="postedCharges">{{ t(`has depreciation posted in ${postedCharges} ${postedCharges === 1 ? 'period' : 'periods'}.`) }}</template>
-            {{ t('Deleting it would leave the ledger holding figures the register no longer explains, so no role can delete an asset. Choose what actually happened:') }}
+            {{ t('Choose what happened instead.') }}
           </p>
-          <p v-if="isGone" class="ndd-lead">{{ t(`It is already ${asset.status.toLowerCase()}. Its record stays as the evidence for the figures it produced.`) }}</p>
+          <p v-if="isGone" class="ndd-lead">{{ t(`This asset is already ${asset.status.toLowerCase()}. Its record is kept for the figures it produced.`) }}</p>
           <div v-else class="ndd-paths">
             <div v-for="p in paths" :key="p.key" class="ndd-path">
               <div>
