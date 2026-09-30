@@ -36,6 +36,7 @@ import {
   planPurchaseRequests, prSkipReasonLabel, recomputeQtyForVendor, type PrLine,
 } from '~/data/replenishmentPurchaseRequest'
 import { vendorItemsForSku, vendorNameFor } from '~/data/vendorItems'
+import { vendors } from '~/data/vendors'
 import { formatIDR } from '~/utils/currency'
 
 const props = defineProps<{
@@ -82,6 +83,16 @@ const plan = computed(() => planPurchaseRequests(props.rows, { ...overrides }, {
 /** Every vendor that can supply this SKU — the alternate picker's options. */
 function alternativesFor(sku: string) {
   return vendorItemsForSku(sku)
+}
+
+/**
+ * Vendors that do NOT list this SKU yet (US-019 VR-04 / AC-05). Still selectable:
+ * saving the request creates the vendor–SKU link, and until that vendor has its
+ * own history the quantity is sized with the category lead time.
+ */
+function otherVendorsFor(sku: string) {
+  const linked = new Set(vendorItemsForSku(sku).map((v) => v.vendorId))
+  return vendors.filter((v) => !linked.has(v.id))
 }
 
 function rowKeyFor(sku: string, warehouseId: string) { return `${sku}::${warehouseId}` }
@@ -246,7 +257,6 @@ function confirm() {
                     <span class="rp-po-product-sub">{{ line.sku }}</span>
                     <!-- Switching vendor re-groups this line and re-sizes the qty. -->
                     <MpPopover
-                      v-if="alternativesFor(line.sku).length"
                       :id="`rp-pr-vendor-${line.sku}-${line.warehouseId}`"
                       is-close-on-select
                       use-portal
@@ -265,6 +275,15 @@ function confirm() {
                             @click="chooseVendor(rowKeyFor(line.sku, line.warehouseId), alt.vendorId)"
                           >
                             {{ vendorNameFor(alt.vendorId) }} · {{ alt.leadTimeDays }} {{ t('days') }}
+                          </MpPopoverListItem>
+                          <!-- Not linked to this product yet — picking one links it on save. -->
+                          <MpPopoverListItem
+                            v-for="v in otherVendorsFor(line.sku)"
+                            :key="`other-${v.id}`"
+                            :is-active="v.id === line.vendorId"
+                            @click="chooseVendor(rowKeyFor(line.sku, line.warehouseId), v.id)"
+                          >
+                            {{ v.name }} · {{ t('new for this product') }}
                           </MpPopoverListItem>
                           <!-- A request needs no vendor at all (US-022 AC-06). -->
                           <MpPopoverListItem
@@ -287,6 +306,14 @@ function confirm() {
                       @update:model-value="(v: string) => setQty(rowKeyFor(line.sku, line.warehouseId), v)"
                     />
                     <span v-if="termsNote(line)" class="rp-po-cell-note">{{ termsNote(line) }}</span>
+                    <!-- US-019 AC-05: a vendor new to this product sizes with the category lead time. -->
+                    <span v-if="line.newVendorLink" class="rp-po-cell-note">
+                      {{ t('New vendor for this product — estimated lead time') }} ({{ line.context.leadTimeDays }} {{ t('days') }})
+                    </span>
+                    <!-- US-019 EH-01: the preferred vendor was deactivated. -->
+                    <span v-if="rowFor(rowKeyFor(line.sku, line.warehouseId))?.inactivePreferredVendor" class="rp-po-cell-note">
+                      {{ t('Preferred vendor is inactive — purchasing will confirm the vendor.') }}
+                    </span>
                     <!-- Offered, never applied behind the user's back (AC-03). -->
                     <span
                       v-if="pendingRecommend[rowKeyFor(line.sku, line.warehouseId)]"

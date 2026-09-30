@@ -6,7 +6,6 @@
  * there. Same split as PurchaseRequestFiltersDrawer.vue.
  */
 export interface ReplenishmentFiltersValue {
-  keyword: string
   vendorIds: string[]
   categories: string[]
   coverFrom: string
@@ -26,16 +25,17 @@ export const REPLENISHMENT_SIGNALS: { id: string; name: string }[] = [
   { id: 'estimated-lead', name: 'Estimated lead time' },
   { id: 'waiting-lead', name: 'Waiting for real lead time' },
   { id: 'below-lead', name: 'Stocks out before resupply' },
+  // Numbers from a recalculation older than the nightly window (US-002 EH-01).
+  { id: 'stale', name: 'Stale velocity' },
 ]
 
 export function emptyReplenishmentFilters(): ReplenishmentFiltersValue {
-  return { keyword: '', vendorIds: [], categories: [], coverFrom: '', coverTo: '', signals: [] }
+  return { vendorIds: [], categories: [], coverFrom: '', coverTo: '', signals: [] }
 }
 
 /** How many controls are actually set — drives the "All filters (N)" pill. */
 export function countReplenishmentFilters(v: ReplenishmentFiltersValue): number {
-  return (v.keyword ? 1 : 0)
-    + (v.vendorIds.length ? 1 : 0)
+  return (v.vendorIds.length ? 1 : 0)
     + (v.categories.length ? 1 : 0)
     + (v.coverFrom || v.coverTo ? 1 : 0)
     + (v.signals.length ? 1 : 0)
@@ -99,11 +99,8 @@ function toggleSignal(id: string) { draft.signals = toggle(draft.signals, id) }
         </header>
 
         <div class="rp-filters-body">
-          <MpFormControl id="rp-filters-keyword-fc">
-            <MpFormLabel>{{ t('Keywords') }}</MpFormLabel>
-            <MpInput id="rp-filters-keyword" v-model="draft.keyword" is-full-width />
-          </MpFormControl>
-
+          <!-- No Keywords field: the page's search box already searches SKU, product,
+               vendor and warehouse (US-013) — two keyword inputs would disagree. -->
           <MpFormControl id="rp-filters-vendor-fc">
             <MpFormLabel>{{ t('Vendor') }}</MpFormLabel>
             <div class="rp-filters-checkbox-list">

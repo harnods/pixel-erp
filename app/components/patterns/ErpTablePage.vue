@@ -60,6 +60,8 @@ export interface TableColumn {
   isFixed?: boolean  // sticky right (for a data column; actions are always sticky)
   noHeader?: boolean // render empty <th> — use for icon-only columns (e.g. attachment)
   noSkeleton?: boolean // skip the loading skeleton bar — use for layout-only columns (spacer, action columns)
+  /** Column is required: no "Hide column" in its header menu (mirror it as a disabled column-settings item). */
+  lockHide?: boolean
   /** Marks a trailing action column (e.g. an Approve + icon-button group) that must
    *  hug the right edge next to the sticky [...] column. The flexible spacer is then
    *  placed BEFORE this column instead of before the actions slot, so the whole action
@@ -608,7 +610,7 @@ const bulkCountLabel = computed(() => {
                         <MpPopoverListItem @click="onSortOpt(col.key, 'desc')"><span class="erp-sort-opt"><MpIcon name="arrows-down" size="sm" />Z - A<MpTooltip v-if="sortKey === col.key && sortDir === 'desc'" :id="`erp-sort-reset-${col.key}-d`" label="Click to reset sort" placement="top" use-portal class="erp-sort-check-tt"><MpIcon name="check" size="sm" class="erp-sort-check" /></MpTooltip></span></MpPopoverListItem>
                       </template>
                       <div class="erp-sort-divider" />
-                      <MpPopoverListItem @click="emit('hideColumn', col.key)"><span class="erp-sort-opt"><MpIcon name="hide" size="sm" />Hide column</span></MpPopoverListItem>
+                      <MpPopoverListItem v-if="!col.lockHide" @click="emit('hideColumn', col.key)"><span class="erp-sort-opt"><MpIcon name="hide" size="sm" />Hide column</span></MpPopoverListItem>
                     </MpPopoverList>
                   </MpPopoverContent>
                 </MpPopover>

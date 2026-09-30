@@ -36,6 +36,12 @@ export interface VendorItem {
   sku: string
   /** At most one true per SKU — maintained by setPreferredVendor(). */
   isPreferred: boolean
+  /**
+   * Set when this link was the PREFERRED vendor at the moment it was deactivated
+   * (US-001 EH-01): the worklist then says "Preferred vendor is inactive" until
+   * someone picks a new preferred vendor. Cleared by setPreferredVendor().
+   */
+  wasPreferred?: boolean
   leadTimeDays: number
   /** Unit we BUY in, e.g. Pallet / Carton / Unit. May differ from the stock unit. */
   purchaseUnit: string
@@ -339,6 +345,14 @@ export function vendorItemsForVendor(vendorId: string): VendorItem[] {
   return vendorItems.filter((v) => v.vendorId === vendorId && v.active)
 }
 
+/**
+ * The preferred vendor link that was deactivated, if nobody has chosen a new
+ * preferred vendor since (US-001 EH-01 / US-019 EH-01).
+ */
+export function inactivePreferredVendorItem(sku: string): VendorItem | undefined {
+  return vendorItems.find((v) => v.sku === sku && !v.active && v.wasPreferred)
+}
+
 /** SKUs with no usable vendor — the draft-PO skip list (US-021 EH-01). */
 export function skusWithoutVendor(): string[] {
   return CATALOG.map((c) => c.sku).filter((sku) => vendorItemsForSku(sku).length === 0)
@@ -414,6 +428,8 @@ export function setPreferredVendor(sku: string, vendorId: string): void {
   for (const v of vendorItems) {
     if (v.sku !== sku) continue
     v.isPreferred = v.vendorId === vendorId
+    // Choosing a preferred vendor resolves any "preferred vendor is inactive" notice.
+    delete v.wasPreferred
   }
   persist()
 }
@@ -421,6 +437,7 @@ export function setPreferredVendor(sku: string, vendorId: string): void {
 export function deactivateVendorItem(sku: string, vendorId: string): void {
   const row = vendorItems.find((v) => v.sku === sku && v.vendorId === vendorId)
   if (!row) return
+  if (row.isPreferred) row.wasPreferred = true
   row.active = false
   row.isPreferred = false
   // Promote a survivor so the SKU doesn't silently lose its default.

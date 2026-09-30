@@ -1,20 +1,15 @@
 <script setup lang="ts">
 /**
- * Replenishment › "Needs setup" and "Not tracked" tabs.
+ * Replenishment › "Needs setup" tab (PRD US-010, US-011).
  *
- * These are tabs rather than filters on the worklist because they are different
- * jobs with different columns and no draft-PO action:
- *   • Needs setup — products that CANNOT be suggested yet (cold start, no vendor,
- *     no lead time). Leaving them in the worklist would break "select all → create
- *     draft PO" on every run and force a partial-failure summary every time. It is
- *     also usually a different person: data hygiene, done once.
- *   • Not tracked — muted products. This deliberately has NO tab of its own: a tab
- *     reads as a queue, and a product someone muted on purpose is not a queue. It is
- *     revealed on demand from the Needs setup tab instead, which keeps the one thing
- *     that would otherwise become impossible — turning tracking back ON — a single
- *     click away rather than a dead end.
- *
- * One component serves both views via `mode`; the columns and bulk action differ.
+ * One list of every product that is NOT on "To order" for a reason a person has to
+ * act on:
+ *   • Missing lead time — it cannot be suggested until a vendor, a purchase or a
+ *     default lead time exists.
+ *   • Tracking off (muted) — US-010 AC-02: "all N SKUs replenishment will move into
+ *     the Need Setup worklist", and tracking can be turned back on from here, one by
+ *     one or in bulk. A muted SKU that is now at risk, or moving Fast again, says so
+ *     on its row (US-011, US-010 AC-03) — muting never becomes a blind spot.
  */
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import {
@@ -32,11 +27,8 @@ import {
 import { setTracked } from '~/data/replenishmentSettings'
 import { ALL_WAREHOUSES } from '~/composables/useReplenishmentWarehouse'
 
-const props = defineProps<{ mode: 'needs-setup' | 'not-tracked' }>()
-
-// Local, so the Needs setup tab can reveal the muted list without it being a tab.
-const mode = ref<'needs-setup' | 'not-tracked'>(props.mode)
-watch(() => props.mode, (m) => { mode.value = m })
+// `mode` is kept for the route's props; both groups now live in one list.
+defineProps<{ mode?: 'needs-setup' }>()
 
 const router = useRouter()
 const { t } = useLocale()
@@ -62,19 +54,23 @@ const worklist = computed(() => {
 })
 
 /** Sort keys flattened BEFORE useTableState, which sorts the whole set on plain keys. */
-type SetupRow = WorklistRow & { availableQty: number; fsnClass: string }
+type SetupRow = WorklistRow & { availableQty: number; fsnClass: string; reason: string }
 
 const baseRows = computed<SetupRow[]>(() =>
-  (mode.value === 'needs-setup' ? worklist.value.needsSetup : worklist.value.notTracked)
-    .map((row) => ({ ...row, availableQty: row.atp.available, fsnClass: row.fsn.committed })),
+  [...worklist.value.needsSetup, ...worklist.value.notTracked].map((row) => ({
+    ...row,
+    availableQty: row.atp.available,
+    fsnClass: row.fsn.committed,
+    reason: row.bucket === 'not-tracked' ? 'Tracking off' : 'Missing lead time',
+  })),
 )
 
 const {
   search, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState<SetupRow>(baseRows, {
-  filterFn: (row, s) =>
-    !s || row.sku.toLowerCase().includes(s) || row.productName.toLowerCase().includes(s),
+  filterFn: (row, s) => !s
+    || [row.sku, row.productName, row.warehouseName].some((v) => v.toLowerCase().includes(s)),
 })
 
 watch(warehouseId, () => setPage(1))
@@ -83,28 +79,17 @@ const hasActiveFilter = computed(() => !!search.value)
 function clearFilters() { search.value = '' }
 
 // Widths from `kind` (rule/table-column-kind). No "Sales history" column: demand
-// no longer routes a product here (D18 — 0 sales simply drops off), so a
-// "Needs N days" read was stale and pointed at a fix that does not exist.
-const SETUP_COLUMNS: TableColumn[] = [
-  { key: 'productName',   label: 'Product',   kind: 'name', sortable: true, sortType: 'text' },
-  { key: 'sku',           label: 'SKU',                     sortable: true, sortType: 'text' },
-  { key: 'warehouseName', label: 'Warehouse', kind: 'name', sortable: true, sortType: 'text' },
-  { key: 'availableQty',  label: 'Available',               sortable: true, sortType: 'number', align: 'right' },
-  { key: 'missing',       label: 'Missing',   kind: 'address' },
-]
-
-const TRACKED_COLUMNS: TableColumn[] = [
+// no longer routes a product here (D18 — 0 sales simply drops off).
+const columns: TableColumn[] = [
   { key: 'productName',   label: 'Product',   kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'sku',           label: 'SKU',                       sortable: true, sortType: 'text' },
   { key: 'warehouseName', label: 'Warehouse', kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'availableQty',  label: 'Available',                 sortable: true, sortType: 'number', align: 'right' },
   { key: 'fsnClass',      label: 'FSN',       kind: 'status', sortable: true, sortType: 'text' },
-  { key: 'atRisk',        label: 'Status',    kind: 'status' },
+  { key: 'reason',        label: 'Reason',    kind: 'address', sortable: true, sortType: 'text' },
 ]
 
-const columns = computed(() => (mode.value === 'needs-setup' ? SETUP_COLUMNS : TRACKED_COLUMNS))
-
-sortKey.value = mode.value === 'needs-setup' ? 'availableQty' : 'productName'
+sortKey.value = 'availableQty'
 sortDir.value = 'asc'
 
 const warehouseSelectOptions = computed(() => [
@@ -114,7 +99,6 @@ const warehouseSelectOptions = computed(() => [
 
 const num = (v: number) => v.toLocaleString('id-ID')
 
-const notTrackedCount = computed(() => worklist.value.notTracked.length)
 
 const FSN_BADGE: Record<string, { type: string; label: string }> = {
   fast: { type: 'information', label: 'Fast' },
@@ -140,8 +124,16 @@ function turnOnTracking(row: WorklistRow) {
   toast.notify({ variant: 'success', title: t('Tracking turned on.'), maxWidth: 'max-content' })
 }
 
+function selectedRows(sel: Set<number>): WorklistRow[] {
+  return [...sel].map((i) => paginated.value[i]).filter(Boolean) as WorklistRow[]
+}
+/** Only muted rows can have tracking turned back on; missing-lead-time rows need setup. */
+function mutedIn(sel: Set<number>): WorklistRow[] {
+  return selectedRows(sel).filter((r) => r.bucket === 'not-tracked')
+}
+
 function bulkTrackOn(sel: Set<number>, deselectAll: () => void) {
-  const selected = [...sel].map((i) => paginated.value[i]).filter(Boolean) as WorklistRow[]
+  const selected = mutedIn(sel)
   if (!selected.length) return
   for (const row of selected) setTracked(row.sku, row.warehouseId, true)
   deselectAll()
@@ -171,7 +163,7 @@ function onSaved() {
     :sort-dir="sortDir"
     :loading="loading"
     :has-active-filter="hasActiveFilter"
-    :has-checkbox="mode === 'not-tracked'"
+    :has-checkbox="true"
     bulk-label="product"
     filter-empty-label="product"
     @page-change="setPage"
@@ -180,22 +172,6 @@ function onSaved() {
     @sort-change="setSort"
     @clear-filters="clearFilters"
   >
-    <template #stats>
-      <div class="rp-setup-head">
-        <!-- Muted products get no tab, but they must stay reachable: this is the
-             only route back to turning tracking on. Hidden behind a link, and only
-             shown when there is actually something muted. -->
-        <p v-if="mode === 'needs-setup' && notTrackedCount" class="rp-setup-aside">
-          {{ notTrackedCount }}
-          {{ notTrackedCount === 1 ? t('product is not tracked') : t('products are not tracked') }}
-          <a class="rp-setup-link" @click="mode = 'not-tracked'">{{ t('Show') }}</a>
-        </p>
-        <p v-else-if="mode === 'not-tracked'" class="rp-setup-aside">
-          <a class="rp-setup-link" @click="mode = 'needs-setup'">← {{ t('Back to Needs setup') }}</a>
-        </p>
-      </div>
-    </template>
-
     <template #filters>
       <div class="filter-left">
         <!-- Scope selector, like the worklist: one value always in force (not clearable). -->
@@ -214,7 +190,7 @@ function onSaved() {
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
-          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search product or SKU')" />
+          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search product or warehouse')" />
           <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
@@ -224,11 +200,16 @@ function onSaved() {
       </div>
     </template>
 
-    <template v-if="mode === 'not-tracked'" #bulk-actions="{ deselectAll, selectedRows }">
+    <template #bulk-actions="{ deselectAll, selectedRows: sel }">
       <button
+        v-if="mutedIn(sel as Set<number>).length"
         class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
-        @click="bulkTrackOn(selectedRows as Set<number>, deselectAll)"
-      >{{ t('Turn on tracking') }}</button>
+        @click="bulkTrackOn(sel as Set<number>, deselectAll)"
+      >{{ t('Turn on tracking') }} ({{ mutedIn(sel as Set<number>).length }})</button>
+      <span v-else class="rp-bulk-info">
+        <MpIcon name="info" size="sm" />
+        {{ t('Only products with tracking off can be turned back on. Missing lead times are fixed in Vendors or Replenishment settings.') }}
+      </span>
     </template>
 
     <template #cell-productName="{ row }">
@@ -245,17 +226,28 @@ function onSaved() {
       {{ num((row as any).atp.available) }} {{ (row as any).unit }}
     </template>
 
-    <!-- What is missing, as chips — one per unmet input, with the reason to act on -->
-    <template #cell-missing="{ row }">
+    <!-- Why the product is here, and what to do about it. -->
+    <template #cell-reason="{ row }">
       <div class="rp-missing">
         <div class="rp-badges">
-          <MpBadge v-for="m in (row as any).missing" :key="m" for="tableStatus" type="warning">
-            {{ t(m) }}
+          <template v-if="(row as any).bucket === 'not-tracked'">
+            <MpBadge for="tableStatus" type="announcement">{{ t('Tracking off') }}</MpBadge>
+            <!-- US-011: muting never suppresses a genuine stockout risk. -->
+            <MpBadge v-if="(row as any).flags.mutedButActive" for="tableStatus" type="critical">
+              {{ t('Below reorder point') }}
+            </MpBadge>
+          </template>
+          <MpBadge v-for="m in (row as any).missing" v-else :key="m" for="tableStatus" type="warning">
+            {{ t('Missing') }}: {{ t(m) }}
           </MpBadge>
-          <span v-if="!(row as any).missing.length" class="rp-num-sub">—</span>
         </div>
-        <span v-if="(row as any).leadTimeTier === 'none'" class="rp-missing-reason">
+        <span v-if="(row as any).bucket !== 'not-tracked' && (row as any).leadTimeTier === 'none'" class="rp-missing-reason">
           {{ t('No lead time yet — add a preferred vendor, make a purchase, or set a default lead time.') }}
+        </span>
+        <!-- US-010 AC-03: a muted SKU that is moving Fast again is suggested back. -->
+        <span v-if="(row as any).bucket === 'not-tracked' && (row as any).fsn.committed === 'fast'" class="rp-missing-reason">
+          {{ t('Moving fast again.') }}
+          <a class="rp-setup-link" @click="turnOnTracking(row as unknown as WorklistRow)">{{ t('Turn tracking back on') }}</a>
         </span>
       </div>
     </template>
@@ -265,16 +257,6 @@ function onSaved() {
         for="tableStatus"
         :type="FSN_BADGE[(row as any).fsn.committed]?.type ?? 'announcement'"
       >{{ t(FSN_BADGE[(row as any).fsn.committed]?.label ?? 'Unclassified') }}</MpBadge>
-    </template>
-
-    <!-- Muting must never become a blind spot (US-014) — say so on the row. -->
-    <template #cell-atRisk="{ row }">
-      <div class="rp-badges">
-        <MpBadge v-if="(row as any).flags.mutedButActive" for="tableStatus" type="critical">
-          {{ t('Below reorder point') }}
-        </MpBadge>
-        <MpBadge v-else for="tableStatus" type="announcement">{{ t('Not tracked') }}</MpBadge>
-      </div>
     </template>
 
     <template #actions="{ row }">
@@ -300,7 +282,7 @@ function onSaved() {
               {{ t('Replenishment settings') }}
             </MpPopoverListItem>
             <MpPopoverListItem
-              v-if="mode === 'not-tracked'"
+              v-if="(row as any).bucket === 'not-tracked'"
               @click="turnOnTracking(row as unknown as WorklistRow)"
             >{{ t('Turn on tracking') }}</MpPopoverListItem>
           </MpPopoverList>
@@ -311,22 +293,11 @@ function onSaved() {
     <template #empty>
       <div class="empty-full">
         <img src="/illustrations/empty-folder.png" alt="" class="empty-illustration" width="288" height="240" />
-        <p class="empty-full-title">
-          {{ mode === 'needs-setup' ? t('No products need setup') : t('No untracked products') }}
-        </p>
+        <p class="empty-full-title">{{ t('No products need setup') }}</p>
         <p class="empty-full-desc">
-          {{ mode === 'needs-setup'
-            ? t('Every tracked product has sales history, a lead time and a vendor.')
-            : t('Every product in scope is tracked for replenishment.') }}
+          {{ t('Every product has a lead time and is tracked for replenishment.') }}
         </p>
         <button
-          v-if="mode === 'not-tracked'"
-          class="btn-enterprise btn-enterprise--secondary empty-full-cta"
-          type="button"
-          @click="mode = 'needs-setup'"
-        >{{ t('Back to Needs setup') }}</button>
-        <button
-          v-else
           class="btn-enterprise btn-enterprise--secondary empty-full-cta"
           type="button"
           @click="router.push('/replenishment')"
@@ -351,8 +322,6 @@ function onSaved() {
 </template>
 
 <style scoped>
-.rp-setup-head { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.rp-setup-aside { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
 .rp-setup-link { margin-left: var(--mp-spacing-1); color: var(--mp-text-link); cursor: pointer; }
 
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-2); }
@@ -404,4 +373,8 @@ function onSaved() {
   color: var(--mp-text-secondary); max-width: 400px; text-align: center;
 }
 .empty-full-cta { margin-top: var(--mp-spacing-4); }
+.rp-bulk-info {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5, 6px);
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
+}
 </style>

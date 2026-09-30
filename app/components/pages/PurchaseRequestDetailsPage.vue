@@ -10,6 +10,8 @@ import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { getPurchaseRequestDetail } from '~/data/purchaseRequestDetails'
 import { purchaseRequests } from '~/data/purchaseRequests'
+import { vendorItemFor } from '~/data/vendorItems'
+import { leadTimeTierLabel } from '~/data/leadTimeHistory'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -20,6 +22,25 @@ const hasApproval = true
 
 const router = useRouter()
 const request = computed(() => getPurchaseRequestDetail(props.orderId))
+
+/**
+ * Replenishment basis per line (US-017 AC-02, US-019 AC-01, US-023): the suggested
+ * qty the requester started from, how far they moved it, and the suggested
+ * vendor's lead time / MOQ / purchase multiplier — so purchasing sees WHY this
+ * quantity was asked for without opening the worklist.
+ */
+const replenishmentBySku = computed(() => {
+  const origin = request.value.replenishment
+  const map = new Map<string, { recommended: number; deviation: number; note: string }>()
+  if (!origin) return map
+  for (const l of origin.lines) {
+    const vi = l.suggestedVendorId ? vendorItemFor(l.sku, l.suggestedVendorId) : null
+    const parts = [`${t('Lead time')} ${l.leadTimeDays} ${t('days')} (${l.leadTimeTier === 'computed' ? t('measured from receipts') : leadTimeTierLabel(l.leadTimeTier as never)})`]
+    if (vi) parts.push(`${t('MOQ')} ${vi.moq} ${vi.purchaseUnit}`, `${t('Purchase multiplier')} ${vi.packSize}`)
+    map.set(l.sku, { recommended: l.recommendedQty, deviation: l.deviation, note: parts.join(' · ') })
+  }
+  return map
+})
 
 const activityOpen = ref(false)
 // Destructive delete → confirm modal (rule/btn-danger-confirm)
@@ -199,6 +220,12 @@ function goBack() { router.push('/purchase-requests') }
           <!-- col 4: references -->
           <div class="content-list-col">
             <ContentList :label="t('Request no.')" :value="`${t('Purchase Request')} #${request.number}`" />
+            <!-- US-023 AC-02: trace back to the worklist run that raised it. -->
+            <ContentList
+              v-if="request.replenishment"
+              :label="t('Source')"
+              :value="`${t('Replenishment run')} #${request.replenishment.runNo} · ${t('as of')} ${formatDateLong(request.replenishment.asOf)}`"
+            />
           </div>
           <!-- col 5: tags -->
           <div class="content-list-col">
@@ -218,6 +245,7 @@ function goBack() { router.push('/purchase-requests') }
             <tr>
               <th class="detail-th">{{ t('Product') }}</th>
               <th class="detail-th">{{ t('Description') }}</th>
+              <th v-if="request.replenishment" class="detail-th detail-th--num">{{ t('Suggested qty') }}</th>
               <th class="detail-th detail-th--num">{{ t('Requested qty') }}</th>
               <th class="detail-th detail-th--num">{{ t('Available qty') }}</th>
               <th class="detail-th">{{ t('Unit') }}</th>
@@ -230,11 +258,27 @@ function goBack() { router.push('/purchase-requests') }
                   <span class="detail-item-primary">
                     <a class="cell-link detail-item-name" @click.stop>{{ it.product }}</a>
                     <span class="detail-item-sku">{{ t('SKU') }}: {{ it.sku }}</span>
+                    <span v-if="replenishmentBySku.get(it.sku)" class="detail-item-sku">
+                      {{ replenishmentBySku.get(it.sku)!.note }}
+                    </span>
                   </span>
                 </div>
               </td>
               <td class="detail-td detail-td--muted">{{ it.description }}</td>
-              <td class="detail-td detail-td--num">{{ it.requestedQty }}</td>
+              <td v-if="request.replenishment" class="detail-td detail-td--num detail-td--muted">
+                {{ replenishmentBySku.get(it.sku)?.recommended ?? '—' }}
+              </td>
+              <td class="detail-td detail-td--num">
+                {{ it.requestedQty }}
+                <!-- US-017 AC-02: the requester's change from the suggestion is recorded. -->
+                <span
+                  v-if="replenishmentBySku.get(it.sku)?.deviation"
+                  class="detail-item-sku detail-item-deviation"
+                >
+                  {{ replenishmentBySku.get(it.sku)!.deviation > 0 ? '+' : '' }}{{ replenishmentBySku.get(it.sku)!.deviation }}
+                  {{ t('vs suggested') }}
+                </span>
+              </td>
               <td class="detail-td detail-td--num">{{ it.availableQty }}</td>
               <td class="detail-td">{{ it.unit }}</td>
             </tr>
@@ -700,4 +744,5 @@ function goBack() { router.push('/purchase-requests') }
   gap: var(--mp-spacing-3);
   padding-top: var(--mp-spacing-4);
 }
+.detail-item-deviation { display: block; }
 </style>

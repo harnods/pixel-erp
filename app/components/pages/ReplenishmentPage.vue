@@ -11,7 +11,7 @@
  */
 import { ref, reactive, computed, onMounted, onUnmounted, watch, inject, type Ref } from 'vue'
 import {
-  toast, MpBadge, MpIcon, MpTooltip,
+  toast, MpBadge, MpIcon, MpTooltip, MpBanner, MpBannerDescription,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
@@ -30,15 +30,16 @@ import {
   replenishmentWorklist, recalculateReplenishment, ensureRunHistory,
   invalidateReplenishmentCaches, type WorklistRow,
 } from '~/data/replenishment'
-import { lastRun } from '~/data/replenishmentRuns'
+import { lastRun, isRunStale } from '~/data/replenishmentRuns'
 import { setTracked } from '~/data/replenishmentSettings'
 import { createPurchaseRequests } from '~/data/replenishmentPurchaseRequest'
 import { REPL_ASOF_ISO } from '~/data/replenishmentConfig'
+import { readStore, writeStore } from '~/data/replenishmentStore'
+import { downloadCsv, splitCsv, type CsvRow } from '~/utils/csv'
 import { CATALOG } from '~/data/catalog'
 import { vendors } from '~/data/vendors'
 import { ALL_WAREHOUSES } from '~/composables/useReplenishmentWarehouse'
 import { formatDate } from '~/utils/date'
-import { infoToast } from '~/utils/toasts'
 
 const router = useRouter()
 const { t } = useLocale()
@@ -54,7 +55,7 @@ onMounted(() => {
 // ─── Warehouse scope ─────────────────────────────────────────────────────────
 // A scope selector, not a filter: one value is always in force, so it is excluded
 // from "active filters" (there is nothing to clear).
-const { options: whOptions, canSelectAll, warehouseId, isAllWarehouses, setWarehouse } =
+const { options: whOptions, canSelectAll, warehouseId, isAllWarehouses, setWarehouse, resetFrom } =
   useReplenishmentWarehouse()
 
 // Mirror the scope into the shared singleton so the tab badges in [...slug].vue
@@ -94,6 +95,15 @@ function recalculate() {
 if (recalcSignal) watch(recalcSignal, () => recalculate())
 
 const asOfLabel = computed(() => formatDate(REPL_ASOF_ISO))
+
+/**
+ * Stale numbers (US-013 VR-02 / EH-01): no recalculation within the nightly window.
+ * The worklist still loads — a banner says so, and "Stale velocity" filters it.
+ */
+const isStale = computed(() => {
+  void recalcTick.value
+  return isRunStale(REPL_ASOF_ISO)
+})
 const lastRunLabel = computed(() => {
   void recalcTick.value
   const run = lastRun()
@@ -168,10 +178,6 @@ const FSN_OPTIONS = [
 
 function matchesDrawer(row: WorklistRow): boolean {
   const f = appliedFilters.value
-  if (f.keyword) {
-    const k = f.keyword.toLowerCase()
-    if (!row.sku.toLowerCase().includes(k) && !row.productName.toLowerCase().includes(k)) return false
-  }
   if (f.vendorIds.length && (!row.vendor || !f.vendorIds.includes(row.vendor.id))) return false
   if (f.categories.length && !f.categories.includes(row.category)) return false
 
@@ -191,22 +197,48 @@ function matchesDrawer(row: WorklistRow): boolean {
     if (signal === 'estimated-lead' && !row.flags.leadTimeEstimated) return false
     if (signal === 'waiting-lead' && row.leadTimeTier !== 'none') return false
     if (signal === 'below-lead' && !row.flags.belowLeadTime) return false
+    // Velocity is only as fresh as the last run, so staleness applies to every row.
+    if (signal === 'stale' && !isStale.value) return false
   }
   return true
 }
 
-const {
-  search, currentPage, paginated, total, perPage,
-  setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
-} = useTableState<SortableRow>(baseRows, {
+/** Search covers SKU, product, vendor and warehouse name (US-013 AC-01). */
+function matchesSearch(row: SortableRow, s: string): boolean {
+  if (!s) return true
+  return [row.sku, row.productName, row.vendor?.name ?? '', row.warehouseName]
+    .some((v) => v.toLowerCase().includes(s))
+}
+
+/** One predicate for the table AND the stat cards, so they can never disagree. */
+function matchesAll(row: SortableRow, s: string): boolean {
+  if (!matchesSearch(row, s)) return false
   // The FSN quick filter is read straight from its own ref rather than through
-  // useTableState's generic `status` slot — it is a class, not a status, and the
-  // closure stays reactive either way.
-  filterFn: (row, s) => {
-    if (s && !row.sku.toLowerCase().includes(s) && !row.productName.toLowerCase().includes(s)) return false
-    if (fsnFilter.value && row.fsn.committed !== fsnFilter.value) return false
-    return matchesDrawer(row)
-  },
+  // useTableState's generic `status` slot — it is a class, not a status.
+  if (fsnFilter.value && row.fsn.committed !== fsnFilter.value) return false
+  return matchesDrawer(row)
+}
+
+const {
+  search, currentPage, paginated, sorted, total, perPage,
+  setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
+} = useTableState<SortableRow>(baseRows, { filterFn: matchesAll })
+
+/**
+ * Stat cards follow the warehouse scope AND every active filter (US-013 AC-01:
+ * "from the filtered warehouse in the worklist index"), so the numbers above the
+ * table always describe the rows in it.
+ */
+const cardStats = computed(() => {
+  const s = search.value.trim().toLowerCase()
+  const rows = baseRows.value.filter((r) => matchesAll(r, s))
+  return {
+    // Unique SKUs, not SKU-warehouse pairs — one SKU short in two warehouses is
+    // still one product to order.
+    toOrderSkus: new Set(rows.map((r) => r.sku)).size,
+    stocksOut: rows.filter((r) => r.flags.belowLeadTime).length,
+    noVendor: rows.filter((r) => !r.vendor).length,
+  }
 })
 
 watch(fsnFilter, () => setPage(1))
@@ -256,16 +288,66 @@ const ALL_COLUMNS: TableColumn[] = [
   { key: 'safetyDays',    label: 'Safety days',     sortable: true, sortType: 'number', align: 'right' },
 ]
 
-// Hidden by default — the eight visible columns already answer "what and how much".
-const HIDDEN_BY_DEFAULT = new Set(['reorderPoint', 'leadTimeDays', 'velocityValue', 'safetyDays'])
+/**
+ * Column settings (US-013 AC-01): every column shows by default; Product,
+ * Suggested qty, Days of cover, Warehouse and Vendor can never be hidden; and the
+ * choice is remembered, so the user lands on the same set on every visit.
+ */
+const LOCKED_COLUMNS = new Set(['productName', 'suggestedQty', 'coverValue', 'warehouseName', 'vendorName'])
+for (const c of ALL_COLUMNS) if (LOCKED_COLUMNS.has(c.key)) c.lockHide = true
+const COLUMNS_STORAGE_KEY = 'erp-db:replenishment-worklist-columns'
+const savedColumns = readStore<Record<string, boolean>>(COLUMNS_STORAGE_KEY, {})
 const columnVisibility = reactive<Record<string, boolean>>(
-  Object.fromEntries(ALL_COLUMNS.map((c) => [c.key, !HIDDEN_BY_DEFAULT.has(c.key)])),
+  Object.fromEntries(ALL_COLUMNS.map((c) => [
+    c.key, LOCKED_COLUMNS.has(c.key) ? true : (savedColumns[c.key] ?? true),
+  ])),
 )
+watch(columnVisibility, (v) => writeStore(COLUMNS_STORAGE_KEY, { ...v }), { deep: true })
 const columns = computed(() => ALL_COLUMNS.filter((c) => columnVisibility[c.key]))
 const columnItems = computed(() =>
-  ALL_COLUMNS.map((c, i) => ({ key: c.key, label: t(c.label), disabled: i === 0 })),
+  ALL_COLUMNS.map((c) => ({ key: c.key, label: t(c.label), disabled: LOCKED_COLUMNS.has(c.key) })),
 )
-function hideColumn(key: string) { columnVisibility[key] = false }
+function hideColumn(key: string) { if (!LOCKED_COLUMNS.has(key)) columnVisibility[key] = false }
+
+// ─── Export (US-013 AC-01) ───────────────────────────────────────────────────
+/**
+ * Exports the WHOLE filtered, sorted worklist — not just the visible page — in
+ * files of at most 1,000 rows each, so a large list downloads as several files.
+ */
+const EXPORT_MAX_ROWS = 1000
+function exportWorklist() {
+  const header: CsvRow = [
+    'Product', 'SKU', 'Warehouse', 'FSN', 'Signals', 'On hand qty', 'Reserved qty',
+    'Available qty', 'In transit qty', 'Unit', 'Days of cover', 'Suggested qty', 'Vendor',
+    'Reorder point', 'Lead time (days)', 'Demand velocity (per day)', 'Safety days',
+  ]
+  const rows: CsvRow[] = sorted.value.map((r) => [
+    r.productName, r.sku, r.warehouseName, r.fsn.committed,
+    [
+      r.flags.provisional ? 'Provisional' : '', r.flags.volatile ? 'Volatile demand' : '',
+      r.flags.leadTimeEstimated ? 'Estimated lead time' : '',
+      r.leadTimeTier === 'none' ? 'Waiting for real lead time' : '',
+    ].filter(Boolean).join('; '),
+    r.atp.onHand, r.atp.reserved, r.atp.available, r.atp.onOrder, r.unit,
+    r.cover.coverDays === null ? '' : r.cover.coverDays.toFixed(1),
+    r.suggestion.rawQty, r.vendor?.name ?? '',
+    r.reorderPointSource === 'none' ? '' : r.reorderPoint, r.leadTimeDays,
+    r.velocity.avgDailySales.toFixed(2), r.safetyDays,
+  ])
+  const files = splitCsv(header, rows, EXPORT_MAX_ROWS)
+  files.forEach((lines, i) => {
+    downloadCsv(lines, files.length > 1
+      ? `replenishment-worklist-${REPL_ASOF_ISO}-part${i + 1}.csv`
+      : `replenishment-worklist-${REPL_ASOF_ISO}.csv`)
+  })
+  toast.notify({
+    variant: 'success',
+    title: files.length > 1
+      ? `${t('Worklist exported in')} ${files.length} ${t('files')}.`
+      : t('Worklist exported.'),
+    maxWidth: 'max-content',
+  })
+}
 
 // ─── Formatting ──────────────────────────────────────────────────────────────
 const num = (v: number, digits = 0) =>
@@ -488,26 +570,38 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
           <div class="stat-card stat-card--bordered">
             <div class="stat-title">{{ t('To order') }}</div>
             <div class="stat-period">{{ t('At or below reorder point') }}</div>
-            <div class="stat-amount stat-amount--warning">{{ worklist.totals.due }}</div>
-            <span class="stat-asof">{{ t('of') }} {{ worklist.totals.pairs }} {{ t('stocked products') }}</span>
+            <div class="stat-amount stat-amount--warning">{{ cardStats.toOrderSkus }}</div>
+            <span class="stat-asof">{{ t('of') }} {{ worklist.totals.skus }} {{ t('stocked products') }}</span>
           </div>
           <div class="stat-card stat-card--bordered">
             <div class="stat-title">{{ t('Stocks out before resupply') }}</div>
             <div class="stat-period">{{ t('Cover below lead time + safety days') }}</div>
-            <div class="stat-amount stat-amount--danger">{{ worklist.totals.belowLeadTime }}</div>
+            <div class="stat-amount stat-amount--danger">{{ cardStats.stocksOut }}</div>
             <span class="stat-asof">{{ t('on the worklist') }}</span>
           </div>
           <div class="stat-card stat-card--bordered">
             <div class="stat-title">{{ t('Needs setup') }}</div>
-            <div class="stat-period">{{ t('Missing demand, lead time or vendor') }}</div>
-            <div class="stat-amount">{{ worklist.totals.needsSetup }}</div>
+            <div class="stat-period">{{ t('Missing lead time, or tracking turned off') }}</div>
+            <div class="stat-amount">{{ worklist.totals.needsSetup + worklist.notTracked.length }}</div>
           </div>
           <div class="stat-card">
             <div class="stat-title">{{ t('No vendor') }}</div>
             <div class="stat-period">{{ t('Due but not orderable') }}</div>
-            <div class="stat-amount">{{ worklist.totals.noVendor }}</div>
+            <div class="stat-amount">{{ cardStats.noVendor }}</div>
           </div>
         </div>
+        <!-- US-014 EH-01: a remembered warehouse that is gone resets the scope, visibly. -->
+        <MpBanner v-if="resetFrom" variant="info">
+          <MpBannerDescription>
+            {{ t('A saved filter was reset') }} ({{ resetFrom }} {{ t('is no longer available') }}). {{ t('Pick a warehouse to save a new one.') }}
+          </MpBannerDescription>
+        </MpBanner>
+        <!-- US-013 EH-01: stale numbers never block the worklist — they are called out. -->
+        <MpBanner v-if="isStale" variant="warning">
+          <MpBannerDescription>
+            {{ t('Data as of') }} {{ lastRunLabel || asOfLabel }} — {{ t('refresh pending. Recalculate to update demand and suggested quantities.') }}
+          </MpBannerDescription>
+        </MpBanner>
         <div class="rp-freshness">
           <span>{{ t('As of') }} {{ asOfLabel }}</span>
           <span v-if="lastRunLabel" class="rp-freshness-sep">·</span>
@@ -578,7 +672,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
               class="filter-icon-btn"
               type="button"
               :aria-label="t('Export')"
-              @click="infoToast(t('Export is not available in this prototype.'))"
+              @click="exportWorklist"
             >
               <MpIcon name="download" size="md" />
             </button>
@@ -588,7 +682,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
-          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search product or SKU')" />
+          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search product, vendor or warehouse')" />
           <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
@@ -714,7 +808,11 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
         <a class="cell-link rp-num-value" @click.stop="openBreakdown(row as unknown as WorklistRow)">
           {{ num((row as any).suggestion.rawQty) }} {{ (row as any).unit }}
         </a>
-        <span v-if="adjustmentNote(row as unknown as WorklistRow)" class="rp-num-sub">
+        <!-- US-004 AC-03: due, but an open PO already covers the gap. -->
+        <span v-if="(row as any).suggestion.coveredBy.length" class="rp-num-sub">
+          {{ t('Covered by') }} {{ (row as any).suggestion.coveredBy.join(', ') }}
+        </span>
+        <span v-else-if="adjustmentNote(row as unknown as WorklistRow)" class="rp-num-sub">
           {{ adjustmentNote(row as unknown as WorklistRow) }}
         </span>
       </div>
@@ -728,6 +826,10 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
           <span v-if="(row as any).alternates.length" class="rp-vendor-sub">
             +{{ (row as any).alternates.length }}
             {{ (row as any).alternates.length === 1 ? t('more vendor') : t('more vendors') }}
+          </span>
+          <!-- US-001 EH-01: lead time fell back to the next listed vendor. -->
+          <span v-if="(row as any).inactivePreferredVendor" class="rp-vendor-sub rp-vendor-sub--warning">
+            {{ t('Preferred vendor is inactive') }}
           </span>
         </div>
       </template>
@@ -958,6 +1060,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
 
 .rp-vendor { display: flex; flex-direction: column; min-width: 0; }
 .rp-vendor-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
+.rp-vendor-sub--warning { color: var(--mp-colors-text-warning); }
 .filter-icon-btn--airene { color: var(--mp-airene-default); }
 .rp-badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .rp-signal-none { color: var(--mp-text-subtle); }

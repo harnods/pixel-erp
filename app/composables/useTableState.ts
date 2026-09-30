@@ -109,6 +109,8 @@ export function useTableState<T>(
     total,
     totalPages,
     paginated,
+    /** Every filtered row in sort order, across all pages (e.g. for export). */
+    sorted,
     perPage,
     setPage,
     setPerPage,

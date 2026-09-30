@@ -13,6 +13,7 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { getPurchaseOrderDetail, purchaseOrders } from '~/data'
+import { purchaseRequests } from '~/data/purchaseRequests'
 import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
 import { applicableDimensions } from '~/data/dimensions'
 
@@ -33,6 +34,13 @@ const rejectPurchaseOrder = inject<(id: string, reason: string) => void>('reject
 const duplicatePurchaseOrder = inject<(id: string, banner?: { user: string; date: string; reason?: string } | null) => void>('duplicatePurchaseOrder')
 
 const order = computed(() => getPurchaseOrderDetail(props.orderId))
+
+/** "Purchase Request #90012" for the request this PO was converted from, if any. */
+const originRequestLabel = computed(() => {
+  const id = order.value.replenishment?.purchaseRequestId
+  const pr = id ? purchaseRequests.find((r) => r.id === id) : undefined
+  return pr ? `Purchase Request #${pr.number}` : id ?? ''
+})
 const { dimensionsActivated } = useDimensionsActivation()
 const showDimensionsColumn = computed(() => dimensionsActivated.value && applicableDimensions('purchases').length > 0)
 function dimensionValuesFor(dimensions?: Record<string, string>): { name: string; value: string }[] {
@@ -413,6 +421,12 @@ function goBack() { closePurchaseOrder?.() }
           <!-- col 4: references -->
           <div class="content-list-col">
             <ContentList label="Transaction no." :value="`Purchase Order #${order.number}`" />
+            <!-- US-023 AC-02: a PO converted from a replenishment request links back to it. -->
+            <ContentList v-if="order.replenishment?.purchaseRequestId" label="Purchase request">
+              <a class="cell-link" @click.prevent="navigateTo(`/purchase-requests/${order.replenishment.purchaseRequestId}`)">
+                {{ originRequestLabel }}
+              </a>
+            </ContentList>
             <ContentList label="Reference no." :value="order.referenceNo" />
             <ContentList label="Warehouse" :value="order.warehouse" />
           </div>

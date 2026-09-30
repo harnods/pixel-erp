@@ -148,12 +148,15 @@ describe('worklist — buckets', () => {
     expect(list.totals.pairs).toBeGreaterThan(200)
   })
 
-  it('every due row has a demand basis, a reorder point and a positive quantity', () => {
+  it('every due row has a demand basis, a reorder point and a quantity — or is covered by a PO', () => {
     for (const row of list.rows) {
       expect(row.velocity.avgDailySales).toBeGreaterThan(0)
       expect(row.reorderPointSource).not.toBe('none')
-      expect(row.atp.available + row.atp.onOrder).toBeLessThan(row.reorderPoint + 1)
-      if (row.vendorItem) expect(row.suggestion.purchaseQty).toBeGreaterThan(0)
+      // US-013 VR-01: the trigger is AVAILABLE stock only; in transit nets the qty.
+      expect(row.atp.available).toBeLessThan(row.reorderPoint + 1)
+      // US-004 AC-03: a due row either needs ordering or names the PO covering it.
+      if (row.suggestion.coveredBy.length) expect(row.suggestion.rawQty).toBe(0)
+      else if (row.vendorItem) expect(row.suggestion.purchaseQty).toBeGreaterThan(0)
     }
   })
 
@@ -205,8 +208,9 @@ describe('worklist — counts cannot drift from the table', () => {
     }
   })
 
-  it('replenishmentSetupCount equals the needs-setup count', () => {
-    expect(replenishmentSetupCount()).toBe(replenishmentWorklist('all').needsSetup.length)
+  it('replenishmentSetupCount = needs-setup + muted products (US-010 AC-02)', () => {
+    const wl = replenishmentWorklist('all')
+    expect(replenishmentSetupCount()).toBe(wl.needsSetup.length + wl.notTracked.length)
   })
 
   it('per-warehouse due counts sum to the total', () => {

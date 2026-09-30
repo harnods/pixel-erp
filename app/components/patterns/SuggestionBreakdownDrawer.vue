@@ -17,6 +17,7 @@ import type { WorklistRow } from '~/data/replenishment'
 import { leadTimeTierLabel, leadTimeSamplesFor } from '~/data/leadTimeHistory'
 import { formatIDR } from '~/utils/currency'
 import { formatDate } from '~/utils/date'
+import { downloadCsv } from '~/utils/csv'
 
 const props = defineProps<{ isOpen: boolean; row: WorklistRow | null }>()
 const emit = defineEmits<{
@@ -82,27 +83,6 @@ const modelledDays = computed(() => props.row?.velocity.modelledDays ?? 0)
 const longestWindow = computed(() => props.row?.velocity.lookbackDays ?? 0)
 
 /** CSV-escape one cell. */
-function csvCell(v: string | number): string {
-  const s = String(v ?? '')
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-}
-
-/** Turn rows into a CSV file and download it. Bounded client-side data, so this
- *  genuinely runs here (unlike the worklist's server-split export). */
-function downloadCsv(lines: (string | number)[][], name: string) {
-  if (!import.meta.client) return
-  const csv = lines.map((r) => r.map(csvCell).join(',')).join('\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = name
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
-}
-
 /** The full contributing SALES detail — the entry point the drawer doesn't list. */
 function exportSales() {
   const row = props.row
@@ -167,6 +147,10 @@ function exportPurchase() {
             <p v-if="row.suggestion.rawQty > 0 && row.vendorItem" class="rp-bd-headline-note">
               {{ t('Rounded to MOQ and pack size when you raise the purchase order.') }}
             </p>
+            <!-- US-004 AC-03: due, but open POs already bring it up to the target. -->
+            <p v-if="row.suggestion.coveredBy.length" class="rp-bd-headline-note">
+              {{ t('Covered by') }} {{ row.suggestion.coveredBy.join(', ') }} — {{ t('nothing more to order.') }}
+            </p>
             <p v-if="row.suggestion.suppressed" class="rp-bd-headline-note rp-bd-headline-note--muted">
               <template v-if="row.suggestion.suppressReason === 'above-reorder-point'">
                 {{ t('Nothing to order — stock is at or above the reorder point.') }}
@@ -226,6 +210,9 @@ function exportPurchase() {
                   {{ row.leadTimeExcludedNoPo }}
                   {{ row.leadTimeExcludedNoPo === 1 ? t('receipt excluded') : t('receipts excluded') }}
                   — {{ t('bought directly with no purchase order') }}
+                </span>
+                <span v-if="row.inactivePreferredVendor" class="rp-bd-dd-note rp-bd-caption--warning">
+                  {{ t('Preferred vendor is inactive — lead time falls back to the next listed vendor. Update the preferred vendor if needed.') }}
                 </span>
                 <a class="rp-bd-link" @click="emit('edit-vendors', row)">{{ t('Vendors, lead time and MOQ') }}</a>
               </div>

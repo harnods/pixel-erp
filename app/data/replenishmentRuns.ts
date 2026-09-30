@@ -77,3 +77,20 @@ export function writeRun(run: Omit<ReplenishmentRun, 'runNo'>): ReplenishmentRun
 export function resetRunState(): void {
   clearStore(STORAGE_KEY)
 }
+
+/** A nightly job keeps numbers fresh; older than this and the worklist is stale. */
+export const REPL_STALE_AFTER_HOURS = 24
+
+/**
+ * Whether the worklist's numbers are stale (PRD US-013 VR-02 / EH-01, US-002 EH-01
+ * "stale velocity"): no recalculation has run within 24 hours of the data's as-of
+ * day. The worklist still loads — it shows a "data as of …, refresh pending"
+ * banner instead of blocking.
+ */
+export function isRunStale(asOf: string, run: ReplenishmentRun | null = lastRun()): boolean {
+  if (!run) return true
+  const asOfEnd = new Date(`${asOf}T23:59:59`).getTime()
+  const ranAt = new Date(run.ranAt).getTime()
+  if (Number.isNaN(ranAt)) return true
+  return asOfEnd - ranAt > REPL_STALE_AFTER_HOURS * 3_600_000
+}

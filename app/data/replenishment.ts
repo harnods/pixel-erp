@@ -45,6 +45,7 @@ import {
 } from './demandHistory'
 import {
   preferredVendorItem, vendorItemFor, vendorItemsForSku, vendorNameFor, type VendorItem,
+  inactivePreferredVendorItem,
 } from './vendorItems'
 import {
   currentRunNo, hasRunHistory, writeRun,
@@ -378,6 +379,12 @@ export interface SuggestionResult {
   unitsPerPurchaseUnit: number
   raisedByMoq: boolean
   raisedByPack: boolean
+  /**
+   * PO / receipt numbers that already cover the whole shortfall (US-004 AC-03):
+   * the SKU is due by available stock, but in-transit brings it to the target, so
+   * the suggested qty is 0. Empty when the row still needs ordering.
+   */
+  coveredBy: string[]
   suppressed: boolean
   suppressReason: 'above-reorder-point' | 'no-demand-basis' | 'no-lead-time' | 'not-tracked' | null
   /** Ordered arithmetic steps, for the trust drawer. */
@@ -449,15 +456,18 @@ export function applyMoqAndPack(
  *  - `exclusive` = "Reorder only below the reorder point" — sitting AT the point
  *    is covered; only strictly below is due.
  * Defined once, read by both the engine and the badges.
+ *
+ * The trigger compares AVAILABLE stock only (US-013 VR-01, US-004 AC-03): in-transit
+ * is netted in the suggested QUANTITY, never in the trigger — so a SKU whose
+ * shortfall an open PO already covers still shows, with a suggested qty of 0 and a
+ * "Covered by PO #" note, instead of silently vanishing.
  */
 export function isSuppressed(
   available: number,
-  onOrder: number,
   reorderPoint: number,
   mode: ReplBoundaryMode,
 ): boolean {
-  const position = available + onOrder
-  return mode === 'inclusive' ? position > reorderPoint : position >= reorderPoint
+  return mode === 'inclusive' ? available > reorderPoint : available >= reorderPoint
 }
 
 // ── Reorder point ────────────────────────────────────────────────────────────
@@ -617,6 +627,11 @@ export interface WorklistRow {
 
   vendor: { id: string; name: string } | null
   vendorItem: VendorItem | null
+  /**
+   * The previously preferred vendor, now inactive (US-001 EH-01). Lead time has
+   * fallen back to the next listed vendor; the user should pick a new preferred one.
+   */
+  inactivePreferredVendor: { id: string; name: string } | null
   alternates: VendorItem[]
 
   suggestion: SuggestionResult
@@ -696,7 +711,7 @@ export function buildRow(
 
   const suppressedByCover = canRecommend
     && rop.source !== 'none'
-    && isSuppressed(atp.available, atp.onOrder, rop.value, cfg.reorderBoundary)
+    && isSuppressed(atp.available, rop.value, cfg.reorderBoundary)
 
   const rounded = applyMoqAndPack(suppressedByCover ? 0 : rawQty, vendorItem ?? undefined)
 
@@ -739,6 +754,9 @@ export function buildRow(
     unitsPerPurchaseUnit: vendorItem?.unitsPerPurchaseUnit ?? 1,
     raisedByMoq: rounded.raisedByMoq,
     raisedByPack: rounded.raisedByPack,
+    coveredBy: canRecommend && !suppressedByCover && rawQty === 0 && atp.onOrder > 0
+      ? [...new Set(atp.onOrderDocs.map((d) => d.purchaseNo || d.number))]
+      : [],
     suppressed: suppressReason !== null,
     suppressReason,
     trace,
@@ -771,7 +789,7 @@ export function buildRow(
   const mutedButActive = !settings.tracked
     && hasDemandBasis
     && rop.source !== 'none'
-    && !isSuppressed(atp.available, atp.onOrder, rop.value, cfg.reorderBoundary)
+    && !isSuppressed(atp.available, rop.value, cfg.reorderBoundary)
 
   const coverGap = rop.value > 0
     ? Math.min(1, Math.max(0, (rop.value - (atp.available + atp.onOrder)) / rop.value))
@@ -813,6 +831,10 @@ export function buildRow(
 
     vendor: vendorItem ? { id: vendorItem.vendorId, name: vendorNameFor(vendorItem.vendorId) } : null,
     vendorItem,
+    inactivePreferredVendor: (() => {
+      const gone = inactivePreferredVendorItem(sku)
+      return gone ? { id: gone.vendorId, name: vendorNameFor(gone.vendorId) } : null
+    })(),
     alternates,
 
     suggestion,
@@ -844,6 +866,8 @@ export interface Worklist {
   mutedButActive: WorklistRow[]
   totals: {
     pairs: number
+    /** Distinct SKUs stocked in scope — the "of N" behind the To order card (US-013). */
+    skus: number
     due: number
     oversold: number
     belowLeadTime: number
@@ -1165,6 +1189,7 @@ export function replenishmentWorklist(
   const notTracked: WorklistRow[] = []
   const mutedButActive: WorklistRow[] = []
   let pairs = 0
+  const skuSet = new Set<string>()
   let oversold = 0
   let belowLeadTime = 0
   let overstock = 0
@@ -1175,6 +1200,7 @@ export function replenishmentWorklist(
     for (const product of warehouseProducts(wh.id)) {
       const row = buildRow(product.sku, wh.id, cfg, asOf)
       pairs++
+      skuSet.add(product.sku)
       if (row.atp.oversold) oversold++
       // Overstocked = already at or above the order-up-to target (US-007).
       if (row.suggestion.targetQty > 0 && row.atp.available >= row.suggestion.targetQty) overstock++
@@ -1206,6 +1232,7 @@ export function replenishmentWorklist(
     mutedButActive,
     totals: {
       pairs,
+      skus: skuSet.size,
       due: rows.length,
       oversold,
       belowLeadTime,
@@ -1230,8 +1257,13 @@ export function replenishmentDueCount(warehouseId?: string): number {
   return replenishmentWorklist(warehouseId ?? 'all').totals.due
 }
 
+/**
+ * The Needs setup tab count: missing lead time PLUS muted products (US-010 AC-02 —
+ * muted SKUs move into the Needs setup worklist, where tracking is turned back on).
+ */
 export function replenishmentSetupCount(warehouseId?: string): number {
-  return replenishmentWorklist(warehouseId ?? 'all').totals.needsSetup
+  const wl = replenishmentWorklist(warehouseId ?? 'all')
+  return wl.totals.needsSetup + wl.notTracked.length
 }
 
 // ── Recalculation (the "cycle") ──────────────────────────────────────────────

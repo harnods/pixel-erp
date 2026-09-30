@@ -189,7 +189,8 @@ describe('the product level rolls up the ACTION, not a threshold (D13a)', () => 
     for (const w of a.dueWarehouses) {
       const row = buildRow(sku, w.warehouseId, cfg)
       expect(row.flags.dueForReorder).toBe(true)
-      expect(row.atp.available + row.atp.onOrder).toBeLessThanOrEqual(row.reorderPoint)
+      // US-013 VR-01: the trigger is available stock only; in transit nets the qty.
+      expect(row.atp.available).toBeLessThanOrEqual(row.reorderPoint)
       expect(w.qty).toBe(row.suggestion.rawQty)
     }
   })

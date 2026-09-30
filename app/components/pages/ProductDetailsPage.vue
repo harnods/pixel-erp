@@ -854,6 +854,11 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                 <span>
                   Due in {{ actionRollup.dueCount }} of {{ actionRollup.warehouseCount }} warehouses
                 </span>
+                <!-- US-021 AC-04 / D13a: the ACTION rollup — how much to ask for in total,
+                     never a summed min. stock. -->
+                <span v-if="actionRollup.dueCount" class="pd-rollup-total">
+                  Total suggested order qty: {{ actionRollup.totalSuggestedQty.toLocaleString('id-ID') }} {{ product.unit }}
+                </span>
                 <a class="pd-link pd-link--inline" @click="goToWarehouseStock">Min. stock per warehouse</a>
               </template>
               <span v-else>—</span>
@@ -2093,4 +2098,5 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 .pd-lead-wh { color: var(--mp-text-secondary); }
 .pd-lead-days { float: right; margin-left: var(--mp-spacing-3); color: var(--mp-text-default); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pd-lead-est { margin-left: 4px; color: var(--mp-text-subtle); font-size: var(--mp-font-sizes-xs, 11px); }
+.pd-rollup-total { display: block; }
 </style>

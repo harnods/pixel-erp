@@ -157,20 +157,22 @@ describe('applyMoqAndPack — MOQ, pack size, UoM conversion (US-009)', () => {
 describe('isSuppressed — the reorder-point boundary (US-007 AC-02, US-005 AC-06)', () => {
   // PRD: ROP 100 → "at or below" triggers at 100; "only below" triggers at 99.
   it('inclusive ("Reorder at or below") makes sitting exactly at the point due', () => {
-    expect(isSuppressed(100, 0, 100, 'inclusive')).toBe(false)
-    expect(isSuppressed(99, 0, 100, 'inclusive')).toBe(false)
-    expect(isSuppressed(101, 0, 100, 'inclusive')).toBe(true)
+    expect(isSuppressed(100, 100, 'inclusive')).toBe(false)
+    expect(isSuppressed(99, 100, 'inclusive')).toBe(false)
+    expect(isSuppressed(101, 100, 'inclusive')).toBe(true)
   })
 
   it('exclusive ("Reorder only below") treats sitting exactly at the point as covered', () => {
-    expect(isSuppressed(100, 0, 100, 'exclusive')).toBe(true)
-    expect(isSuppressed(99, 0, 100, 'exclusive')).toBe(false)
-    expect(isSuppressed(101, 0, 100, 'exclusive')).toBe(true)
+    expect(isSuppressed(100, 100, 'exclusive')).toBe(true)
+    expect(isSuppressed(99, 100, 'exclusive')).toBe(false)
+    expect(isSuppressed(101, 100, 'exclusive')).toBe(true)
   })
 
-  it('counts on-order toward coverage (US-006 AC-03)', () => {
-    expect(isSuppressed(60, 50, 100, 'inclusive')).toBe(true)
-    expect(isSuppressed(60, 10, 100, 'inclusive')).toBe(false)
+  it('in transit never suppresses the trigger — it is netted in the qty instead (US-013 VR-01)', () => {
+    // 60 available against ROP 100 is due however much is on order; the open PO
+    // shows up as a suggested qty of 0 + "Covered by PO #", not as a hidden row.
+    expect(isSuppressed(60, 100, 'inclusive')).toBe(false)
+    expect(suggestedRawQty(14, 7, 0, 100 / 21, 60, 50)).toBe(0)
   })
 })
 

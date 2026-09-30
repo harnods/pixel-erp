@@ -3,6 +3,7 @@
 import { ref, computed } from 'vue'
 import { warehouses } from '~/data/warehouses'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
+import { readStore, writeStore } from '~/data/replenishmentStore'
 
 /**
  * useReplenishmentWarehouse — the warehouse scope the Replenishment worklist is
@@ -24,7 +25,9 @@ import { getWarehouseConfig } from '~/data/warehouseConfig'
  */
 export const ALL_WAREHOUSES = 'all'
 
-const selectedId = ref<string>(ALL_WAREHOUSES)
+/** The scope is remembered per user (US-014 CON-02 "filter state per user"). */
+const STORAGE_KEY = 'erp-db:replenishment-warehouse-scope'
+const selectedId = ref<string>(readStore<string>(STORAGE_KEY, ALL_WAREHOUSES) || ALL_WAREHOUSES)
 
 export function useReplenishmentWarehouse() {
   const { activeWarehouse, assignedWarehouses } = useWarehouseContext()
@@ -60,6 +63,18 @@ export function useReplenishmentWarehouse() {
     return list[0]?.id ?? ''
   })
 
+  /**
+   * US-014 EH-01: the remembered warehouse is no longer available (removed,
+   * deactivated, or replenishment turned off for it), so the scope was reset. The
+   * page shows "A saved filter was reset" with this name until the user picks again.
+   */
+  const resetFrom = computed<string | null>(() => {
+    const saved = selectedId.value
+    if (saved === ALL_WAREHOUSES || !saved) return null
+    if (options.value.some((w) => w.id === saved)) return null
+    return warehouses.find((w) => w.id === saved)?.name ?? saved
+  })
+
   /** True when the current scope spans more than one warehouse. */
   const isAllWarehouses = computed(() => warehouseId.value === ALL_WAREHOUSES)
 
@@ -73,7 +88,8 @@ export function useReplenishmentWarehouse() {
   function setWarehouse(id: string) {
     if (!id) return
     selectedId.value = id
+    writeStore(STORAGE_KEY, id)
   }
 
-  return { options, canSelectAll, warehouseId, isAllWarehouses, setWarehouse }
+  return { options, canSelectAll, warehouseId, isAllWarehouses, setWarehouse, resetFrom }
 }

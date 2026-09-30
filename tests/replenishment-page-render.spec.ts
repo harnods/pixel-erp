@@ -120,10 +120,11 @@ describe('ReplenishmentPage — the worklist renders', () => {
   })
 })
 
-describe('ReplenishmentSetupPage — Needs setup, and the muted disclosure', () => {
+describe('ReplenishmentSetupPage — Needs setup (missing lead time + muted)', () => {
   it('renders the Needs setup rows with their missing-input chips', async () => {
     const wrapper = await mountLoaded(ReplenishmentSetupPage, { mode: 'needs-setup' })
-    const expected = Math.min(25, replenishmentWorklist('all').needsSetup.length)
+    const wl = replenishmentWorklist('all')
+    const expected = Math.min(25, wl.needsSetup.length + wl.notTracked.length)
     expect(wrapper.findAll('.erp-tr').length).toBe(expected)
     // No page-description subtitle (rule/no-page-description-subtitle), and no stale
     // "Sales history" column — demand no longer routes a product here (D18).
@@ -131,18 +132,23 @@ describe('ReplenishmentSetupPage — Needs setup, and the muted disclosure', () 
     expect(wrapper.text()).not.toContain('Sales history')
   })
 
-  it('hides the muted disclosure while nothing is muted', async () => {
-    // Not-tracked products have no tab, and the link to them must not appear
-    // either until there is actually something to show — otherwise it is the same
-    // noise the tab was, just smaller.
-    const wrapper = await mountLoaded(ReplenishmentSetupPage, { mode: 'needs-setup' })
-    expect(wrapper.text()).not.toContain('not tracked')
-  })
-
-  it('still renders the muted list, so un-muting is never a dead end', async () => {
-    const wrapper = await mountLoaded(ReplenishmentSetupPage, { mode: 'not-tracked' })
-    // Nothing is muted by default, so this must be the explicit empty state.
-    expect(wrapper.text()).toContain('No untracked products')
+  it('lists muted products in Needs setup with a "Tracking off" reason (US-010 AC-02)', async () => {
+    const { setTracked } = await import('~/data/replenishmentSettings')
+    const { invalidateReplenishmentCaches } = await import('~/data/replenishment')
+    const due = replenishmentWorklist('all').rows[0]!
+    setTracked(due.sku, due.warehouseId, false)
+    invalidateReplenishmentCaches()
+    try {
+      const wrapper = await mountLoaded(ReplenishmentSetupPage, { mode: 'needs-setup' })
+      const wl = replenishmentWorklist('all')
+      expect(wrapper.findAll('.erp-tr').length).toBe(Math.min(25, wl.needsSetup.length + wl.notTracked.length))
+      expect(wrapper.text()).toContain('Tracking off')
+      // No separate "Show" disclosure any more — the rows are right here.
+      expect(wrapper.text()).not.toContain('products are not tracked')
+    } finally {
+      setTracked(due.sku, due.warehouseId, true)
+      invalidateReplenishmentCaches()
+    }
   })
 })
 

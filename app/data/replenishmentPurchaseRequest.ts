@@ -30,10 +30,10 @@ import type {
 } from './types'
 import { addPurchaseRequest } from './purchaseRequests'
 import { productBySku } from './inventory'
-import { vendorItemFor, vendorNameFor, type VendorItem } from './vendorItems'
+import { vendorItemFor, vendorNameFor, upsertVendorItem, type VendorItem } from './vendorItems'
 import { shiftDays } from './master'
 import { currentRunNo } from './replenishmentRuns'
-import { REPL_ASOF_ISO } from './replenishmentConfig'
+import { REPL_ASOF_ISO, leadTimeForCategory } from './replenishmentConfig'
 import type { WorklistRow } from './replenishment'
 
 const TAX_LABEL = 'PPN 11%'
@@ -48,6 +48,12 @@ export interface PrLine {
   /** null = purchasing sources it (US-022 AC-06). */
   vendorId: string | null
   vendorItem: VendorItem | null
+  /**
+   * The chosen vendor has no link to this SKU yet (US-019 VR-04 / AC-05). The link
+   * is created when the request is saved; until then lead time falls back to the
+   * category default and is tagged "estimated lead time".
+   */
+  newVendorLink: boolean
   /** Engine recommendation in STOCK units, unrounded (D12). */
   recommendedQty: number
   /** What will be requested — user-editable (US-020 AC-02). */
@@ -152,10 +158,27 @@ export function requestedQtyFor(row: WorklistRow): number {
  * concern even though the vendor changed.
  */
 export function recomputeQtyForVendor(row: WorklistRow, vendorId: string | null): number {
+  return Math.max(0, Math.ceil(targetForVendor(row, vendorId) - (row.atp.available + row.atp.onOrder)))
+}
+
+/**
+ * Lead time to size the request with for a chosen vendor: its own term when the
+ * vendor supplies this SKU, else the category default (US-019 AC-04/AC-05 — "lead
+ * time falls through the ladder … tagged estimated lead time").
+ */
+export function leadTimeForVendor(row: WorklistRow, vendorId: string | null): { days: number; estimated: boolean } {
   const vi = vendorId ? vendorItemFor(row.sku, vendorId) : null
-  const leadDays = vi?.leadTimeDays ?? row.leadTimeDays
-  const target = (leadDays + row.safetyDays + row.coverageDays) * row.velocity.avgDailySales
-  return Math.max(0, Math.ceil(target - (row.atp.available + row.atp.onOrder)))
+  if (vi) return { days: vi.leadTimeDays, estimated: false }
+  if (vendorId) {
+    const cat = leadTimeForCategory(row.category)
+    return { days: cat ?? row.leadTimeDays, estimated: true }
+  }
+  return { days: row.leadTimeDays, estimated: row.leadTimeEstimated }
+}
+
+function targetForVendor(row: WorklistRow, vendorId: string | null): number {
+  const leadDays = leadTimeForVendor(row, vendorId).days
+  return (leadDays + row.safetyDays + row.coverageDays) * row.velocity.avgDailySales
 }
 
 /**
@@ -208,7 +231,9 @@ export function planPurchaseRequests(
     }
 
     // An unsourced line is a valid request, not a skip — purchasing sources it.
-    const vendorId = vi ? vi.vendorId : null
+    // A chosen vendor with no SKU link is still that vendor (US-019 AC-05).
+    const vendorId = chosen ?? null
+    const newVendorLink = !!chosen && !vi
     const key = `${vendorId ?? UNSOURCED}::${row.warehouseId}`
     const group = groups.get(key) ?? {
       key,
@@ -225,6 +250,7 @@ export function planPurchaseRequests(
       warehouseId: row.warehouseId,
       vendorId,
       vendorItem: vi ?? null,
+      newVendorLink,
       recommendedQty,
       finalQty,
       manuallyEdited: override !== undefined && override !== recommendedQty,
@@ -232,8 +258,8 @@ export function planPurchaseRequests(
       unitCost: vi?.unitCost ?? 0,
       availableQty: row.atp.available,
       context: {
-        leadTimeDays: vi?.leadTimeDays ?? row.leadTimeDays,
-        leadTimeTier: row.leadTimeTier,
+        leadTimeDays: leadTimeForVendor(row, vendorId).days,
+        leadTimeTier: newVendorLink ? 'category' : row.leadTimeTier,
         safetyDays: row.safetyDays,
         coverageDays: row.coverageDays,
         avgDailySales: row.velocity.avgDailySales,
@@ -363,6 +389,16 @@ export function createPurchaseRequests(
       }
     }
     if (!lines.length) continue
+    // US-019 VR-04: requesting from a vendor that does not list this SKU creates the
+    // vendor–SKU link, with no MOQ / multiplier yet and the category lead time as
+    // its term (never a 0-day lead time feeding the next recalculation).
+    for (const l of lines) {
+      if (!l.newVendorLink || !l.vendorId) continue
+      upsertVendorItem({
+        sku: l.sku, vendorId: l.vendorId, moq: 0, packSize: 0,
+        leadTimeDays: l.context.leadTimeDays, isPreferred: false,
+      })
+    }
     const group = { ...planned, lines }
     const pr = createPurchaseRequestFromGroup(group, createdBy)
     created.push({
