@@ -364,7 +364,7 @@ describe('closure gate', () => {
     e.entries.push({ id: 'z1', category: 'Labour', description: 'l', vendor: 'v', date: TODAY, amount: 1_000_000, markupPct: 20, src: 'Expense', docNo: 'E', decision: null, invoiced: false, hours: null })
 
     expect(canClose(e)).toBe(false)
-    expect(closeHint(e)).toMatch(/Review every worked line/)
+    expect(closeHint(e)).toMatch(/review and invoice every cost line/)
 
     decideEntries(e.id, ['z1'], 'bill')
     expect(canClose(e)).toBe(false)                          // reviewed but not invoiced
@@ -388,7 +388,7 @@ describe('closure gate', () => {
 
     addAddendum(e.id, 120_000_000, 'Late change request', false)
     expect(canClose(e)).toBe(false)
-    expect(closeHint(e)).toMatch(/approved or rejected/)
+    expect(closeHint(e)).toMatch(/Approve or reject every pending addendum/)
     expect(closeEngagement(e.id)).toBe(false)
   })
 })

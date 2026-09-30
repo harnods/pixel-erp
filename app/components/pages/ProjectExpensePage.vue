@@ -105,7 +105,7 @@ async function save() {
   if (beneficiaryError.value || amountError.value) {
     toast.notify({
       variant: 'error',
-      title: amountError.value ? t('Add at least one line with an amount') : t('Beneficiary is required'),
+      title: amountError.value ? t('Enter an amount on at least one line') : t('You must fill in beneficiary'),
     })
     return
   }
@@ -116,7 +116,7 @@ async function save() {
 
   toast.notify({
     variant: 'success',
-    title: `${res.docNo} ${t('saved')}. ${res.taggedIds.length} ${t('line(s) tagged to a project')}${res.untagged ? `, ${res.untagged} ${t('posted with no project association')}` : ''}.`,
+    title: `${t('Expense')} ${res.docNo} ${t('saved')}`,
     maxWidth: 'max-content',
   })
   if (res.taggedIds.length) router.push({ path: `/project-accounting/${res.taggedIds[0]}`, query: { tab: 'execution' } })
@@ -136,14 +136,13 @@ function cancel() {
       <div class="detail-bar-left">
         <MpTextlink id="px-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="cancel">{{ t('Project accounting') }}</MpTextlink>
         <h1 class="detail-title">{{ t('New expense') }}</h1>
-        <p class="detail-subtitle">{{ t('Project is tagged per line item') }}</p>
       </div>
     </header>
 
     <div class="detail-stage">
       <!-- Live budget position for the project this document is being tagged to. -->
       <section v-if="contextStats.length" class="px-context">
-        <p class="px-context-title">{{ t('Project budget') }} · {{ contextProject?.name }}</p>
+        <p class="px-context-title">{{ t('Budget') }} · {{ contextProject?.name }}</p>
         <ProjectStatCards :stats="contextStats" />
       </section>
 
@@ -157,7 +156,7 @@ function cancel() {
           <div class="px-dropzone">
             <p class="px-dropzone-title">{{ t('Drop your receipt file here') }}</p>
             <p class="px-dropzone-desc">
-              {{ t('Airene will read your file and fill in the details automatically. Supported formats: PDF, PNG, JPG. Maximum file size: 10 MB.') }}
+              {{ t('Airene fills in the details from your receipt. File must be in PDF, PNG or JPG with a maximum of 10 MB') }}
             </p>
           </div>
         </aside>
@@ -169,7 +168,7 @@ function cancel() {
               <MpFormLabel>{{ t('Beneficiary') }}</MpFormLabel>
               <MpInput
                 id="px-beneficiary-input" v-model="beneficiary" is-full-width :is-invalid="beneficiaryError"
-                :placeholder="t('Vendor name')" @update:model-value="beneficiaryError = false"
+                :placeholder="t('e.g. PT Baja Utama')" @update:model-value="beneficiaryError = false"
               />
               <MpFormErrorMessage>{{ t('You must fill in beneficiary') }}</MpFormErrorMessage>
             </MpFormControl>
@@ -198,7 +197,7 @@ function cancel() {
                   <th class="px-th">{{ t('Account') }}</th>
                   <th class="px-th">{{ t('Description') }}</th>
                   <th class="px-th px-th--project">{{ t('Project') }}</th>
-                  <th class="px-th px-th--project px-th--num">{{ t('Hours') }}</th>
+                  <th class="px-th px-th--project px-th--num">{{ t('Hours (optional)') }}</th>
                   <th class="px-th">{{ t('Tax') }}</th>
                   <th class="px-th px-th--num">{{ t('Amount') }}</th>
                   <th class="px-th" />
@@ -257,9 +256,6 @@ function cancel() {
                 <MpIcon name="add" size="sm" />
                 {{ t('Add line') }}
               </button>
-              <p class="px-hint">
-                {{ t('Hours are optional and analytical only — the amount is what posts and what the client is charged. Project is tagged per line, matching multi-dimensional tagging in Jurnal — one transaction can split cost across several projects. A line with no project posts normally with no project association.') }}
-              </p>
             </div>
             <div class="px-totals">
               <div class="px-total-row">
@@ -276,7 +272,7 @@ function cancel() {
           <MpFormControl id="px-memo" class="px-memo">
             <MpFormLabel>{{ t('Memo') }}</MpFormLabel>
             <MpTextarea id="px-memo-input" v-model="memo" is-full-width />
-            <p class="px-hint">{{ t('Only visible to you and your team.') }}</p>
+            <p class="px-hint">{{ t('Only visible to you and your team') }}</p>
           </MpFormControl>
 
           <div class="px-actions">
@@ -310,7 +306,6 @@ function cancel() {
   line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px);
   color: var(--mp-text-default);
 }
-.detail-subtitle { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .detail-stage {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
   background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;

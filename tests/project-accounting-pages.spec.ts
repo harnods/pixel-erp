@@ -72,9 +72,9 @@ describe('ProjectAccountingPage — the portfolio', () => {
   it('shows the portfolio stat strip', async () => {
     const w = await mountPage(ProjectAccountingPage)
     const text = w.text()
-    expect(text).toContain('Revenue recognised')
-    expect(text).toContain('Outstanding invoices')
-    expect(text).toContain('Contract addenda pending')
+    expect(text).toContain('Revenue recognized')
+    expect(text).toContain('Unpaid invoices')
+    expect(text).toContain('Addenda awaiting approval')
     w.unmount()
   })
 
@@ -200,7 +200,7 @@ describe('ProjectEngagementDetailsPage — one tree per recognition method', () 
 
     expect(text).toContain('Margin to date')
     expect(text).toContain('Closure gate')
-    expect(text).toContain('Every milestone must be verified and every invoice collected.')
+    expect(text).toContain('To close, verify every milestone and record payment for every invoice.')
     w.unmount()
   })
 
@@ -224,7 +224,7 @@ describe('NewEngagementPage', () => {
     const w = await mountPage(NewEngagementPage)
     const text = w.text()
 
-    expect(text).toContain('How this project earns its revenue')
+    expect(text).toContain('Revenue recognition method')
     expect(text).toContain('Input by Simplified Cost')
     expect(text).toContain('Input by Cost')
     expect(text).toContain('Output by Milestone')
@@ -239,8 +239,8 @@ describe('NewEngagementPage', () => {
     await pick!.trigger('click')
     await flushPromises()
 
-    expect(w.text()).toContain('Output milestones')
-    expect(w.text()).toContain('Weights sum to 100%.')
+    expect(w.findAll('h2').map(h => h.text())).toContain('Milestones')
+    expect(w.text()).toContain('Weights add up to 100%')
     expect(w.text()).not.toContain('Agreed margin on cost')
     w.unmount()
   })
@@ -333,8 +333,10 @@ describe('ProjectExpensePage', () => {
     const text = w.text()
 
     expect(text).toContain('New expense')
-    expect(text).toContain('Project is tagged per line item')
-    expect(text).toContain('Hours')
+    // Project is a per-line column, not a document-level field.
+    const headers = w.findAll('th').map(th => th.text())
+    expect(headers).toContain('Project')
+    expect(headers).toContain('Hours (optional)')
     expect(text).toContain('Drop your receipt file here')
     w.unmount()
   })
@@ -359,7 +361,7 @@ describe('ProjectInvoicePage', () => {
     const text = w.text()
 
     expect(text).toContain('New invoice')
-    expect(text).toContain('Lines are prefilled from the reviewed, uninvoiced work on this engagement.')
+    expect(text).toContain('Prefilled with reviewed cost lines not yet invoiced')
     // e3's two decided-but-uninvoiced lines are already reflected in the totals.
     expect(text).toContain('Balance due')
     w.unmount()
