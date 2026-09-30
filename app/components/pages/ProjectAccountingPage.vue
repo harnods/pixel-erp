@@ -113,7 +113,6 @@ sortDir.value = 'asc'
 const statusOptions = computed(() => [...new Set(rows.value.map(r => r.statusLabel))].map(s => ({ value: s, label: s })))
 
 function clearSearch() { search.value = '' }
-function clearFilters() { statusFilter.value = '' }
 function clearAll() { search.value = ''; statusFilter.value = '' }
 function openEngagement(id: string) { router.push(`/project-accounting/${id}`) }
 
@@ -146,7 +145,7 @@ function spendTone(pct: number | null): string {
       :sort-key="sortKey"
       :sort-dir="sortDir"
       :has-active-search="hasActiveSearch"
-      :has-active-filter="hasActiveFilter"
+      :has-active-filter="hasActiveSearch || hasActiveFilter"
       :search="search"
       bulk-label="project"
       filter-empty-label="project"
@@ -157,7 +156,7 @@ function spendTone(pct: number | null): string {
       @sort-change="setSort"
       @hide-column="hideColumn"
       @clear-search="clearSearch"
-      @clear-filters="clearFilters"
+      @clear-filters="clearAll"
       @clear-all="clearAll"
     >
       <!-- ── Filter bar ── -->
@@ -267,7 +266,7 @@ function spendTone(pct: number | null): string {
         >
           <span class="pa-wip-label">
             {{ Math.abs((row as unknown as Row).wip) < 1000
-              ? t('Fully billed')
+              ? t('Billing up to date')
               : (row as unknown as Row).wip > 0 ? t('Unbilled') : t('Overbilled') }}
           </span>
           <span v-if="Math.abs((row as unknown as Row).wip) >= 1000" class="pa-num pa-wip-amount">

@@ -159,7 +159,7 @@ function cancel() { router.push('/project-accounting') }
         <!-- ── Recognition method ── -->
         <section class="ne-section">
           <h2 class="ne-section-title">{{ t('Revenue recognition method') }}</h2>
-          <p class="ne-hint ne-hint--lead">{{ t('The method cannot be changed after the engagement is created.') }}</p>
+          <p class="ne-hint ne-hint--lead">{{ t('The method cannot be changed after the engagement is created') }}</p>
           <div class="ne-methods">
             <button
               v-for="m in METHOD_CHOICES"
