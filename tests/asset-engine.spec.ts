@@ -166,7 +166,7 @@ describe('non-destructive regeneration (LR-3, OD-42)', () => {
 describe('tax group assignment (OD-02)', () => {
   it('produces a tax schedule for FA-0077 and removes Not computed everywhere', () => {
     expect(findAsset('FA-0077')!.bookValueFiscal).toBeNull()
-    expect(monthlySchedule(findAsset('FA-0077')!).every((r) => r.taxAbsent === 'No statutory group')).toBe(true)
+    expect(monthlySchedule(findAsset('FA-0077')!).every((r) => r.taxAbsent === 'No tax group')).toBe(true)
 
     expect(assignTaxGroupTo('FA-0077', 'Tax group 2').ok).toBe(true)
 

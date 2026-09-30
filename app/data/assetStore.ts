@@ -470,7 +470,7 @@ export type RunResult =
 export function generateRun(p: Period, on = periodEndDate(CURRENT_PERIOD)): RunResult {
   const nextOpen = nextOpenPeriod.value
   if (postedRunFor(p)) {
-    return { ok: false, reason: `${periodLabel(p)} is closed. The next open period is ${nextOpen ? periodLabel(nextOpen) : 'none'}.`, nextOpen }
+    return { ok: false, reason: nextOpen ? `${periodLabel(p)} is closed. The next open period is ${periodLabel(nextOpen)}.` : `${periodLabel(p)} is closed.`, nextOpen }
   }
   if (isAfter(p, CURRENT_PERIOD)) {
     return { ok: false, reason: `${periodLabel(p)} has not started yet.`, nextOpen }
@@ -1213,7 +1213,7 @@ export function computeSelfCheck(p: Period = CURRENT_PERIOD): Omit<SelfCheckResu
           if (!r.ok) issues.push(...r.issues.slice(0, 1))
         }
       }
-      const noneNote = none ? `, ${none} with no schedule because the life is indefinite` : ''
+      const noneNote = none ? `, ${none} not scheduled (indefinite life)` : ''
       return issues.length
         ? { state: 'failed', detail: `${issues.length} of ${checked} schedules do not tie: ${issues.join('; ')}` }
         : { state: 'passed', detail: `${checked} schedules checked, all tie${noneNote}` }
@@ -1229,7 +1229,7 @@ export function computeSelfCheck(p: Period = CURRENT_PERIOD): Omit<SelfCheckResu
     }),
     guarded('C4', () => {
       const unclassified = assetRecords.value.filter((s) => !ledgers.value[s.id]!.books.tax && isHeldDuring(ledgers.value[s.id]!, p))
-      if (unclassified.length) return { state: 'incomplete', detail: 'Cannot run until every asset carries a statutory group' }
+      if (unclassified.length) return { state: 'incomplete', detail: 'Set a tax group on every asset to run this check' }
       // The tax book population for the year: every asset with a tax book on
       // the register at any point in FY2026 up to `p`, disposals included.
       const inTaxBook = assetRecords.value.filter((s) => {
@@ -1243,8 +1243,8 @@ export function computeSelfCheck(p: Period = CURRENT_PERIOD): Omit<SelfCheckResu
       const half2 = statutoryLines(p, 'Intangible').reduce((n, r) => n + r.assets, 0)
       const missing = inTaxBook.length - half1 - half2
       return missing
-        ? { state: 'failed', detail: `${missing} ${missing === 1 ? 'asset in the tax book is' : 'assets in the tax book are'} on no line of the export` }
-        : { state: 'passed', detail: 'The export covers the whole tax book' }
+        ? { state: 'failed', detail: `${missing} ${missing === 1 ? 'asset in the tax book is' : 'assets in the tax book are'} missing from Lampiran 9` }
+        : { state: 'passed', detail: 'Lampiran 9 covers every asset in the tax book' }
     }),
   ]
   return { period: p, checks, tie }
@@ -1437,12 +1437,12 @@ function restateSelfChecks() {
 export function setStatutoryCode(id: string, code: string): { ok: true } | { ok: false; reason: string } {
   const s = recordById(id)
   if (!s) return { ok: false, reason: `No asset ${id}` }
-  if (s.type !== 'Intangible') return { ok: false, reason: `${id} is a tangible asset. Statutory intangible codes apply to intangibles only.` }
+  if (s.type !== 'Intangible') return { ok: false, reason: `${id} is a tangible asset. Intangible codes apply to intangible assets only.` }
   const toGoodwill = /goodwill/i.test(code)
   if (toGoodwill !== !!ledgers.value[id]?.isGoodwill) {
     return { ok: false, reason: toGoodwill
-      ? 'Goodwill arises on a business combination and is recognised as goodwill when it is created. Create it as a new asset.'
-      : `${id} is goodwill. Its code stays Goodwill, and its impairment can never be reversed.` }
+      ? 'To record goodwill, create it as a new asset.'
+      : `${id} is goodwill. Its code cannot change.` }
   }
   assetRecords.value = assetRecords.value.map((x) => (x.id === id ? { ...x, statutoryCode: code } : x))
   return { ok: true }
@@ -1460,9 +1460,9 @@ export function retractEvent(assetId: string, eventId: string): string | null {
   const e = log?.find((x) => x.id === eventId)
   if (!log || !e) return `No event ${eventId} on ${assetId}`
   // Only the latest: a later event was built on this one, so it goes first.
-  if (log[log.length - 1]!.id !== eventId) return `${assetId} has changed since. Its later change has to be undone first.`
+  if (log[log.length - 1]!.id !== eventId) return `${assetId} changed after this. Undo the later change first`
   if (e.kind !== 'tax-classification' && e.kind !== 'estimate-revision') return `${eventId} posted to the ledger and cannot be withdrawn`
-  if (e.kind === 'estimate-revision' && postedRunFor(e.period)) return `${periodLabel(e.period)} is posted since, so the revision stands. Record a new revision instead.`
+  if (e.kind === 'estimate-revision' && postedRunFor(e.period)) return `${periodLabel(e.period)} is now posted. Record a new revision instead.`
   eventLog.value = { ...eventLog.value, [assetId]: log.filter((x) => x.id !== eventId) }
   return null
 }

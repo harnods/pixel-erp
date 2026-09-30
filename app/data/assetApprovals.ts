@@ -212,7 +212,7 @@ export const canApprove = computed(() => viewAs.value === 'Approver' || viewAs.v
 export function decisionRefusal(r: ApprovalRequest): string | null {
   if (r.status !== 'awaiting') return `${r.id} is already ${r.status === 'approved' ? 'approved' : 'sent back'}`
   if (r.raisedBy === actingUser.value) {
-    return `You requested ${r.id}. An approver cannot approve an event they raised`
+    return `You requested ${r.id}. Another approver must decide it`
   }
   if (!canApprove.value) return 'Only an Approver or the Owner can approve or send back requests'
   return null

@@ -23,8 +23,8 @@ import { formatLife } from './assetEngine'
 export type BulkField = 'taxGroup' | 'location' | 'custodian' | 'class'
 
 export const BULK_FIELDS: { key: BulkField; label: string; hint: string }[] = [
-  { key: 'taxGroup', label: 'Statutory group', hint: 'Recalculates the tax book from each asset\'s in-service date. No journal is posted.' },
-  { key: 'class', label: 'Asset class', hint: 'Each asset takes the class\'s statutory group, useful life and method.' },
+  { key: 'taxGroup', label: 'Tax group', hint: 'Recalculates the tax book from each asset\'s in-service date. No journal is posted.' },
+  { key: 'class', label: 'Asset class', hint: 'Each asset takes the class\'s tax group, useful life and method.' },
   { key: 'location', label: 'Location', hint: 'Custody only. No figures change.' },
   { key: 'custodian', label: 'Custodian', hint: 'Custody only. No figures change.' },
 ]
@@ -63,7 +63,7 @@ export function planBulkEdit(ids: string[], field: BulkField, value: string): Bu
   const v = value.trim()
   let refusal: string | null = null
   if (!v) refusal = 'You must select new value'
-  else if ((field === 'taxGroup') && !canClassify.value) refusal = `Viewing as ${viewAs.value}. Only Owner, Accounting or Tax can change the statutory classification.`
+  else if ((field === 'taxGroup') && !canClassify.value) refusal = `Viewing as ${viewAs.value}. Only Owner, Accounting or Tax can change the tax group.`
   else if (field === 'class' && !canChangeClass.value) refusal = `Viewing as ${viewAs.value}. Only Owner or Accounting can change the asset class.`
   else if ((field === 'location' || field === 'custodian') && viewAs.value === 'Approver') refusal = `Viewing as ${viewAs.value}. Approvers cannot change custody.`
   const lines: BulkLine[] = ids.map((id) => {

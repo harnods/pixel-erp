@@ -248,7 +248,7 @@ describe('FG-7 approvals', () => {
     expect(requestById(id)!.raisedBy).toBe(actingUser.value)
     const r = approveRequest(id)
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toMatch(/cannot approve an event they raised/)
+    if (!r.ok) expect(r.reason).toMatch(/Another approver must decide it/)
     expect(findAsset('FA-0055')!.status).not.toBe('Disposed')
     // Someone else with authority can.
     setViewAs('Owner')

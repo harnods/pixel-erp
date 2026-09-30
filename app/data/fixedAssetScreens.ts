@@ -26,7 +26,7 @@ import { formatLife, isAfter, isBefore, rupiah, pct, type Period } from './asset
  * The sign convention every difference in the module uses, stated once so
  * each screen can say it in the same words.
  */
-export const DIFFERENCE_CONVENTION = 'Difference is accounting less tax. Positive is added back in the fiscal correction. Negative is a further deduction.'
+export const DIFFERENCE_CONVENTION = 'Difference is accounting less tax. Positive is added back as a tax adjustment (koreksi fiskal). Negative is a further deduction.'
 
 /** One line of the impact statement: the same event on both bases. */
 export interface ImpactRow {
@@ -178,7 +178,7 @@ export function impairmentImpactRows(p: Period = CURRENT_PERIOD): ImpactRow[] {
       if (r.applied === 0 || isBefore(r.period, FY_START) || isAfter(r.period, p)) continue
       out.push({
         label: 'Impairment reversal',
-        basis: `${a.id} ${a.name} · written back ${r.date}${r.capApplied ? ', capped at the unimpaired amount' : ''}`,
+        basis: `${a.id} ${a.name} · written back ${r.date}${r.capApplied ? ', limited to book value without impairment' : ''}`,
         assetId: a.id,
         commercial: r.applied,
         fiscal: null,
@@ -370,8 +370,8 @@ export interface CountRow {
   tone: CountTone
 }
 
-/** SO-2026-03 · Medan Warehouse · population frozen 01/09/2026 · 6 assets · counter Rudi Santoso */
-export const countSession = 'SO-2026-03 · Medan Warehouse · population frozen 01/09/2026 · 6 assets · counter Rudi Santoso'
+/** SO-2026-03 · Medan Warehouse · started 01/09/2026 · 6 assets · counter Rudi Santoso */
+export const countSession = 'SO-2026-03 · Medan Warehouse · started 01/09/2026 · 6 assets · counter Rudi Santoso'
 
 export const countRows: CountRow[] = [
   { tag: 'TAG-MDN-068', asset: 'Forklift Toyota 3T', location: 'Medan Warehouse', result: 'Here, as recorded', tone: 'ok' },
@@ -450,7 +450,7 @@ export const approvalRows = computed<ApprovalRow[]>(() => {
 export const leaseRows = [
   { id: 'LS-004', name: 'Cakung Leased Warehouse', term: '01/02/2025 – 31/01/2030', liability: 1850000000, rouAsset: 'ROU-0004', rouBookValue: 1418750000 },
   { id: 'LS-005', name: 'Medan Branch Office', term: '01/07/2024 – 30/06/2029', liability: 960000000, rouAsset: 'ROU-0005', rouBookValue: 624000000 },
-  { id: 'LS-006', name: 'Fleet — 4 × Hino Dutro', term: '01/03/2026 – 28/02/2031', liability: 1240000000, rouAsset: 'ROU-0006', rouBookValue: 1116000000 },
+  { id: 'LS-006', name: 'Fleet, 4 × Hino Dutro', term: '01/03/2026 – 28/02/2031', liability: 1240000000, rouAsset: 'ROU-0006', rouBookValue: 1116000000 },
 ]
 
 // ── Period self-check ───────────────────────────────────────────────────────
@@ -472,12 +472,12 @@ export const tieCheckRows = computed<TieRow[]>(() => tieRows())
  * rather than needing to be fixed later.
  */
 export const classMaster = [
-  { class: 'Buildings', defaultTaxGroup: 'Permanent building', fiscalLife: '20 yr', commercialLife: '25 yr', method: 'Straight line', accounts: '1-1610 / 6-5110' },
-  { class: 'Production machinery', defaultTaxGroup: 'Tax group 3', fiscalLife: '16 yr', commercialLife: '16 yr', method: 'Straight line', accounts: '1-1620 / 6-5120' },
-  { class: 'Vehicles', defaultTaxGroup: 'Tax group 2', fiscalLife: '8 yr', commercialLife: '8 yr', method: 'Straight line', accounts: '1-1630 / 6-5130' },
-  { class: 'Equipment', defaultTaxGroup: 'Tax group 2', fiscalLife: '8 yr', commercialLife: '8 yr', method: 'Straight line', accounts: '1-1640 / 6-5140' },
-  { class: 'IT equipment', defaultTaxGroup: 'Tax group 1', fiscalLife: '4 yr', commercialLife: '4 yr', method: 'Straight line', accounts: '1-1650 / 6-5150' },
-  { class: 'Furniture', defaultTaxGroup: 'Tax group 1', fiscalLife: '4 yr', commercialLife: '8 yr', method: 'Straight line', accounts: '1-1660 / 6-5160' },
+  { class: 'Buildings', defaultTaxGroup: 'Permanent building', fiscalLife: '20 years', commercialLife: '25 years', method: 'Straight line', accounts: '1-1610 / 6-5110' },
+  { class: 'Production machinery', defaultTaxGroup: 'Tax group 3', fiscalLife: '16 years', commercialLife: '16 years', method: 'Straight line', accounts: '1-1620 / 6-5120' },
+  { class: 'Vehicles', defaultTaxGroup: 'Tax group 2', fiscalLife: '8 years', commercialLife: '8 years', method: 'Straight line', accounts: '1-1630 / 6-5130' },
+  { class: 'Equipment', defaultTaxGroup: 'Tax group 2', fiscalLife: '8 years', commercialLife: '8 years', method: 'Straight line', accounts: '1-1640 / 6-5140' },
+  { class: 'IT equipment', defaultTaxGroup: 'Tax group 1', fiscalLife: '4 years', commercialLife: '4 years', method: 'Straight line', accounts: '1-1650 / 6-5150' },
+  { class: 'Furniture', defaultTaxGroup: 'Tax group 1', fiscalLife: '4 years', commercialLife: '8 years', method: 'Straight line', accounts: '1-1660 / 6-5160' },
 ]
 
 /**
@@ -498,9 +498,9 @@ export const settingToggles: { head: string; items: SettingToggle[] }[] = [
   {
     head: 'Depreciation policy',
     items: [
-      { label: 'Journal date is the last day of the period', detail: 'Alternative: the date the run is posted', isOn: true },
+      { label: 'Journal date is the last day of the period', detail: '', isOn: true },
       { label: 'Post automatically after review', detail: 'A draft is always created first', isOn: true },
-      { label: 'Pro-rata the first period by day', detail: 'Off: a full month from the in-service date', isOn: false },
+      { label: 'Pro-rata the first period by day', detail: 'When off, the first period counts as a full month', isOn: false },
     ],
   },
   {

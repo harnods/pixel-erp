@@ -22,14 +22,14 @@ export type ValueAction =
   | 'correct' | 'revise' | 'improve' | 'split' | 'dispose-part' | 'dispose' | 'impair' | 'reverse'
 
 export const VALUE_ACTIONS: { key: ValueAction; label: string; hint: string }[] = [
-  { key: 'correct', label: 'Correct an error', hint: 'Fix a cost entered wrongly. Posted periods are adjusted in the effective period.' },
+  { key: 'correct', label: 'Correct an error', hint: 'Any catch-up posts in the effective period.' },
   { key: 'revise', label: 'Revise useful life or method', hint: 'Accounting book only, from the effective period.' },
-  { key: 'improve', label: 'Capitalise an improvement', hint: 'Added to this asset\'s cost from the effective period.' },
-  { key: 'split', label: 'Split', hint: 'Each part gets its own asset number, split by the same shares on both books.' },
-  { key: 'dispose-part', label: 'Dispose of part', hint: 'Sell or scrap a share. The rest stays on this asset.' },
+  { key: 'improve', label: 'Capitalise an improvement', hint: 'Adds to cost from the effective period.' },
+  { key: 'split', label: 'Split', hint: 'Each part gets its own asset number.' },
+  { key: 'dispose-part', label: 'Dispose of part', hint: 'Sell or scrap a share of this asset.' },
   { key: 'dispose', label: 'Dispose', hint: 'Sell or scrap the whole asset.' },
-  { key: 'impair', label: 'Record an impairment test', hint: 'Saved whatever the result. An impairment loss posts to the accounting book only.' },
-  { key: 'reverse', label: 'Reverse an impairment', hint: 'Capped at the carrying amount the asset would have without the impairment.' },
+  { key: 'impair', label: 'Record an impairment test', hint: 'Any loss posts to the accounting book only.' },
+  { key: 'reverse', label: 'Reverse an impairment', hint: 'Limited to the book value without the impairment.' },
 ]
 
 /** Events applied after the period's charge rather than before it. */
@@ -315,9 +315,9 @@ export function previewValueChange(assetId: string, f: ValueChangeForm, name: (i
     }
     const cc = bb.corrections[bb.corrections.length - 1]
     if (f.action === 'correct' && cc) out.catchUp = cc.catchUp
-    if (f.action === 'revise' && bk === 'tax') out.note = 'Tax life is set by the statutory group.'
-    if (f.action === 'improve' && bk === 'tax') out.note = 'Added to the tax cost and depreciated over the remaining tax life.'
-    if ((f.action === 'impair' || f.action === 'reverse') && bk === 'tax') out.note = 'Tax recognises an impairment loss only when it is realised.'
+    if (f.action === 'revise' && bk === 'tax') out.note = 'Tax life is set by the tax group.'
+    if (f.action === 'improve' && bk === 'tax') out.note = 'Depreciated over the remaining tax life.'
+    if ((f.action === 'impair' || f.action === 'reverse') && bk === 'tax') out.note = 'Not deductible until the loss is realised.'
     return out
   })
 
@@ -358,7 +358,7 @@ export function previewValueChange(assetId: string, f: ValueChangeForm, name: (i
     const ups = books.filter((b) => b.catchUp)
     if (ups.length) {
       const what = ups.map((b) => `${rupiah(b.catchUp!)} on the ${b.book === 'accounting' ? 'accounting' : 'tax'} book`).join(' and ')
-      warnings.push(`Posted periods charged depreciation on the wrong cost. ${periodLabel(P)} includes a catch-up of ${what}.`)
+      warnings.push(`${periodLabel(P)} includes a catch-up of ${what} for posted periods.`)
     }
   }
   if (f.action === 'reverse' && impairmentCarried(before, P) <= 0) warnings.push('No impairment is carried on this asset.')

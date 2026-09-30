@@ -319,7 +319,7 @@ export function replayOrder(events: AssetEvent[]): AssetEvent[] {
 export function eventLabel(e: AssetEvent): string {
   switch (e.kind) {
     case 'acquisition': return e.splitFrom ? `Split from ${e.splitFrom} on ${e.date}` : `Entered service ${e.inServiceDate}`
-    case 'tax-classification': return `Statutory group set to ${e.taxGroup} on ${e.date}`
+    case 'tax-classification': return `Tax group set to ${e.taxGroup} on ${e.date}`
     case 'estimate-revision': {
       const parts: string[] = []
       if (e.lifeMonths !== undefined) parts.push(e.lifeMonths === null ? 'life made indefinite' : `life revised to ${formatLife(e.lifeMonths)}`)
@@ -639,7 +639,7 @@ export function liveRows(versions: ScheduleVersion[]): ScheduleRow[] {
 
 /** Named in the refusal, because the reader needs the rule, not only the no. */
 export const GOODWILL_REVERSAL_REFUSED =
-  'PSAK 48 prohibits reversing an impairment of goodwill. The loss stays recognised.'
+  'PSAK 48 does not allow a goodwill impairment to be reversed.'
 
 /** The cost carried at the end of `p`. */
 export function costAt(b: Pick<BookLedger, 'costHistory'>, p: Period): number {
@@ -1171,7 +1171,7 @@ export interface PeriodCharge {
 
 export function chargeAt(l: AssetLedger, book: Book, p: Period): PeriodCharge {
   const b = bookOf(l, book)
-  if (!b) return { charge: null, absent: 'No statutory group', row: null }
+  if (!b) return { charge: null, absent: 'No tax group', row: null }
   if (isBefore(p, l.registeredFrom)) return { charge: null, absent: l.splitFrom ? 'Before the split' : 'Not in service', row: null }
   if (l.splitIn && !isBefore(p, l.splitIn)) return { charge: null, absent: 'Split', row: null }
   if (l.disposedIn && isAfter(p, l.disposedIn)) return { charge: null, absent: 'Disposed', row: null }

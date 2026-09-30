@@ -51,8 +51,8 @@ export function journalDateFor(p: Period, postedOn: string = POSTING_DATE): stri
 /** A one-line statement of the policy, for the run header and settings. */
 export function journalDatePolicyLabel(): string {
   switch (journalDatePolicy.value) {
-    case 'posting-date': return 'the date the run is posted'
-    case 'policy-day': return `day ${journalPolicyDay.value} of the following month`
-    default: return 'the last day of the period'
+    case 'posting-date': return 'posting date'
+    case 'policy-day': return `day ${journalPolicyDay.value} of next month`
+    default: return 'end of period'
   }
 }

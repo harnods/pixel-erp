@@ -105,12 +105,12 @@ export interface FixedAsset extends AssetSeed {
  * the method the sample company elected; buildings may only use it.
  */
 export const STATUTORY_GROUPS: Record<string, { lifeMonths: number; label: string }> = {
-  'Tax group 1': { lifeMonths: 48, label: 'Tax group 1 · 4 yr' },
-  'Tax group 2': { lifeMonths: 96, label: 'Tax group 2 · 8 yr' },
-  'Tax group 3': { lifeMonths: 192, label: 'Tax group 3 · 16 yr' },
-  'Tax group 4': { lifeMonths: 240, label: 'Tax group 4 · 20 yr' },
-  'Permanent building': { lifeMonths: 240, label: 'Permanent building · 20 yr' },
-  'Non-permanent building': { lifeMonths: 120, label: 'Non-permanent building · 10 yr' },
+  'Tax group 1': { lifeMonths: 48, label: 'Tax group 1 · 4 years' },
+  'Tax group 2': { lifeMonths: 96, label: 'Tax group 2 · 8 years' },
+  'Tax group 3': { lifeMonths: 192, label: 'Tax group 3 · 16 years' },
+  'Tax group 4': { lifeMonths: 240, label: 'Tax group 4 · 20 years' },
+  'Permanent building': { lifeMonths: 240, label: 'Permanent building · 20 years' },
+  'Non-permanent building': { lifeMonths: 120, label: 'Non-permanent building · 10 years' },
 }
 
 /** The corporate income tax rate the deferred tax is measured at. */

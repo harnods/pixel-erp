@@ -85,7 +85,7 @@ export function allowedGroupsFor(type: AssetType, cls: string): string[] {
 }
 
 export function groupRefusal(type: AssetType, cls: string, group: string): string | null {
-  if (!STATUTORY_GROUPS[group]) return `${group} is not a statutory group`
+  if (!STATUTORY_GROUPS[group]) return `${group} is not a tax group`
   if (allowedGroupsFor(type, cls).includes(group)) return null
   if (type === 'Intangible') return `${group} is for buildings only. Select Tax group 1 to 4 for an intangible asset`
   if (cls === 'Buildings') return `${group} is not for buildings. Select Permanent building or Non-permanent building`
@@ -104,7 +104,7 @@ export const canClassify = computed(() => viewAs.value === 'Owner' || viewAs.val
 export const hasLmAuthority = computed(() => viewAs.value === 'Owner')
 
 export const FISCAL_LIFE_FIXED = (group: string, months: number) =>
-  `${group} sets the fiscal life at ${formatLife(months)}. A different life needs LM authority, which ${viewAs.value} does not have.`
+  `${group} sets the tax life at ${formatLife(months)}. Only the Owner can record a different life.`
 
 export interface ClassificationInput {
   group: string
@@ -125,17 +125,17 @@ export function classifyAsset(id: string, input: ClassificationInput): ClassifyR
   const s = assetRecords.value.find((x) => x.id === id)
   const l = ledgers.value[id]
   if (!s || !l) return { ok: false, reason: `No asset ${id}` }
-  if (!canClassify.value) return { ok: false, reason: `Only the Owner, Accounting or Tax role can set a statutory group. You are viewing as ${viewAs.value}.` }
+  if (!canClassify.value) return { ok: false, reason: `Only the Owner, Accounting or Tax role can set a tax group. You are viewing as ${viewAs.value}.` }
   const refusal = groupRefusal(s.type, s.class, input.group)
   if (refusal) return { ok: false, reason: refusal, field: 'group' }
   const statutory = groupLifeMonths(input.group)!
   const life = input.fiscalLifeMonths ?? statutory
   if (life !== statutory && !hasLmAuthority.value) return { ok: false, reason: FISCAL_LIFE_FIXED(input.group, statutory), field: 'fiscalLife' }
-  if (!(life > 0)) return { ok: false, reason: 'Enter the fiscal life in years', field: 'fiscalLife' }
+  if (!(life > 0)) return { ok: false, reason: 'You must fill in tax life', field: 'fiscalLife' }
   let code = s.statutoryCode
   if (s.type === 'Intangible') {
     code = input.statutoryCode ?? s.statutoryCode
-    if (!code || !isIntangibleCode(code)) return { ok: false, reason: 'Choose the statutory code', field: 'statutoryCode' }
+    if (!code || !isIntangibleCode(code)) return { ok: false, reason: 'You must select statutory code', field: 'statutoryCode' }
   }
   const tax = l.books.tax
   const curLife = tax ? tax.bases[tax.bases.length - 1]!.lifeMonths : null
@@ -152,7 +152,7 @@ export function classifyAsset(id: string, input: ClassificationInput): ClassifyR
     eventId = r.event.id
   }
   if (code !== s.statutoryCode) updateAssetRecord(id, { statutoryCode: code })
-  return { ok: true, eventId, message: `${id} classified to ${input.group}, fiscal life ${formatLife(life)}` }
+  return { ok: true, eventId, message: `Tax group set to ${input.group}, tax life ${formatLife(life)}` }
 }
 
 /** A fiscal opening agreed at migration survives a later reclassification. */
@@ -192,14 +192,14 @@ export function planClassChange(id: string, cls: string): ClassChangePlan {
   const none = (reason: string): ClassChangePlan => ({ ok: false, reason, changes: [], events: [] })
   if (!s || !l) return none(`No asset ${id}`)
   if (!def) return none(`No class ${cls}`)
-  if (l.disposedIn || l.splitIn) return none(`${id} is disposed of or split, so its class cannot change`)
+  if (l.disposedIn || l.splitIn) return none(`${id} is disposed of or split. Its class cannot change`)
   if (def.type !== s.type) return none(`${cls} is for ${def.type.toLowerCase()} assets only. ${id} is ${s.type.toLowerCase()}`)
   if (s.class === cls) return none(`${id} is already in ${cls}`)
   const changes: FieldChange[] = [{ field: 'Class', before: s.class, after: cls }]
   const events: ClassChangePlan['events'] = []
   const P = earliestEffectivePeriod.value
   if (l.taxGroup !== def.defaultTaxGroup) {
-    changes.push({ field: 'Statutory group', before: l.taxGroup ?? 'Not set', after: def.defaultTaxGroup })
+    changes.push({ field: 'Tax group', before: l.taxGroup ?? 'Not set', after: def.defaultTaxGroup })
     changes.push({ field: 'Tax life', before: l.books.tax ? formatLife(l.books.tax.bases.at(-1)!.lifeMonths) : 'Not set', after: formatLife(groupLifeMonths(def.defaultTaxGroup)) })
     events.push({
       kind: 'tax-classification', period: CURRENT_PERIOD, date: '30/09/2026', recordedBy: actingName(),
@@ -513,7 +513,7 @@ export function impactBy(dim: 'class' | 'group' | 'line', p: Period = CURRENT_PE
 export function missingParameters(a: FixedAsset): string[] {
   if (a.status === 'Disposed' || a.status === 'Split') return []
   const out: string[] = []
-  if (!a.taxGroup) out.push('Statutory group')
+  if (!a.taxGroup) out.push('Tax group')
   if (a.type === 'Intangible' && !a.statutoryCode) out.push('Statutory code')
   if (a.commercialLifeMonths === null && !a.indefiniteLife) out.push('Useful life')
   if (a.type === 'Tangible' && !a.location) out.push('Location')

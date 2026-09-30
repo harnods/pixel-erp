@@ -86,10 +86,10 @@ describe('an absent charge says why', () => {
     expect(rows[3]!.accounting).toBeGreaterThan(0)
   })
 
-  it('says "No statutory group" on the tax side of the unclassified asset', () => {
+  it('says "No tax group" on the tax side of the unclassified asset', () => {
     const rows = monthlySchedule(byId('FA-0077'))
     expect(rows.every((r) => r.tax === null)).toBe(true)
-    expect(rows.every((r) => r.taxAbsent === 'No statutory group')).toBe(true)
+    expect(rows.every((r) => r.taxAbsent === 'No tax group')).toBe(true)
     expect(rows.every((r) => r.accounting !== null)).toBe(true)
   })
 

@@ -72,7 +72,7 @@ describe('OD-02 constrained picker and FG1-AC1, FG1-AC6', () => {
     setViewAs('Tax')
     const r = classifyAsset('FA-0077', { group: 'Tax group 2', fiscalLifeMonths: 60 })
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toMatch(/LM authority/)
+    if (!r.ok) expect(r.reason).toMatch(/Only the Owner can record a different life/)
     expect(classifyAsset('FA-0077', { group: 'Tax group 2' }).ok).toBe(true)
     setViewAs('Owner')
     expect(classifyAsset('FA-0077', { group: 'Tax group 2', fiscalLifeMonths: 60 }).ok).toBe(true)

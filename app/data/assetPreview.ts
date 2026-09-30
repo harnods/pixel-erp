@@ -81,7 +81,7 @@ export function lifeSchedule(l: AssetLedger): LifeSchedule {
     totals: { accounting: total('accounting'), tax: total('tax') },
     monthly: { accounting: acc0.charge, tax: tax0.charge },
     ...(l.books.accounting.live.length ? {} : { accountingAbsent: l.books.accounting.bases.at(-1)?.lifeMonths === null ? 'Not amortised' : 'No charge' }),
-    ...(l.books.tax ? {} : { taxAbsent: 'No statutory group' }),
+    ...(l.books.tax ? {} : { taxAbsent: 'No tax group' }),
   }
 }
 

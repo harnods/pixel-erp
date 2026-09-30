@@ -89,7 +89,7 @@ export function detailFigures(a: FixedAsset, p: Period = CURRENT_PERIOD): Detail
     value: a.bookValueFiscal,
     caption: a.taxGroup
       ? `${a.taxGroup}, ${lifeYears(a.fiscalLifeMonths)} · ${asOf}`
-      : 'No statutory group',
+      : 'No tax group',
     sub: taxAccum === null ? undefined : `Accumulated ${fmt(taxAccum)}`,
     // Disposed and unclassified are different absences and must not share a
     // label: one means no longer held, the other means nothing to compute from.
@@ -171,12 +171,12 @@ export function detailPanes(a: FixedAsset): DetailPane[] {
     head: 'Tax',
     owner: 'Tax Manager',
     fields: [
-      { k: 'Statutory group', v: a.taxGroup ?? 'Not set' },
+      { k: 'Tax group', v: a.taxGroup ?? 'Not set' },
       { k: 'Tax life', v: a.taxGroup ? lifeYears(a.fiscalLifeMonths) : 'Not set' },
       { k: 'Statutory code', v: a.statutoryCode ?? 'Not set' },
       {
         k: 'In Lampiran 9',
-        v: a.taxGroup ? `Yes · ${a.taxGroup}` : 'No · set a statutory group first',
+        v: a.taxGroup ? `Yes · ${a.taxGroup}` : 'No · set a tax group first',
       },
     ],
   })
@@ -225,8 +225,7 @@ export function derivation(a: FixedAsset, basis: Book, period = periodLabel(CURR
 
   if (basis === 'tax' && !l.books.tax) {
     return [
-      { label: 'Statutory group', value: 'Not set' },
-      { label: 'Reason', value: 'No statutory group, so no tax life or rate' },
+      { label: 'Tax group', value: 'Not set' },
       { label: `Charge for ${period}`, value: 'Not computed', isResult: true },
     ]
   }
@@ -301,7 +300,7 @@ function rowEvent(e: AssetEvent): string {
     case 'acquisition': return e.splitFrom ? `Split from ${e.splitFrom}` : 'Entered service'
     case 'impairment': return `Impaired ${e.date} · accounting only`
     case 'disposal': return `Disposed ${e.date}`
-    case 'tax-classification': return `Statutory group set to ${e.taxGroup}`
+    case 'tax-classification': return `Tax group set to ${e.taxGroup}`
     default: return eventLabel(e)
   }
 }
@@ -432,7 +431,7 @@ export function assetHistory(a: FixedAsset) {
     rows.push({ when: latest.postedOn ?? '', who: 'System', what: `Depreciation posted for ${periodLabel(latest.period)} · ${latest.journal}`, note: null, sort: dateKey(periodEndDate(latest.period)) + 0.5 })
   }
   for (const r of charged.filter((x) => x.state === 'reversed')) {
-    rows.push({ when: r.reversal?.on ?? '', who: 'Rizal Candra', what: `Depreciation for ${periodLabel(r.period)} reversed · ${r.reversal?.journal}`, note: `${r.journal} kept and offset by a reversing journal`, sort: dateKey(periodEndDate(r.period)) + 0.6 })
+    rows.push({ when: r.reversal?.on ?? '', who: 'Rizal Candra', what: `Depreciation for ${periodLabel(r.period)} reversed · ${r.reversal?.journal}`, note: `${r.journal} offset by a reversing journal`, sort: dateKey(periodEndDate(r.period)) + 0.6 })
   }
   const push = (x: Omit<Row, 'sort'>) => rows.push({ ...x, sort: dateKey(x.when) })
   for (const e of [...l.events].reverse()) {
@@ -443,21 +442,21 @@ export function assetHistory(a: FixedAsset) {
           break
         }
         if (e.taxGroup) {
-          push({ when: e.date, who: e.recordedBy, what: `Statutory group set to ${e.taxGroup}`, note: 'From the asset class default' })
+          push({ when: e.date, who: e.recordedBy, what: `Tax group set to ${e.taxGroup}`, note: 'From the asset class default' })
         } else {
-          push({ when: e.date, who: e.recordedBy, what: 'Created without a statutory group', note: 'Excluded from tax outputs until set' })
+          push({ when: e.date, who: e.recordedBy, what: 'Created without a tax group', note: 'Excluded from tax reports until set' })
         }
         push({ when: e.date, who: e.recordedBy, what: 'Asset created', note: e.inServiceDate !== e.date ? `In service from ${e.inServiceDate}` : null })
         break
       case 'tax-classification':
-        push({ when: e.date, who: e.recordedBy, what: `Statutory group set to ${e.taxGroup}`, note: 'Tax book calculated from the in-service date' })
+        push({ when: e.date, who: e.recordedBy, what: `Tax group set to ${e.taxGroup}`, note: 'Tax book calculated from the in-service date' })
         break
       case 'impairment': {
         const r = l.books.accounting.impairments.find((i) => i.eventId === e.id)
         push({
           when: e.date, who: e.recordedBy,
           what: `Impairment of ${fmt(r?.loss ?? 0)} recognised${e.testId ? ` after test ${e.testId}` : ''}`,
-          note: `Written down to ${fmt(e.recoverable)} from ${fmt(r?.carryingBefore ?? 0)}. Accounting only: tax recognises it when realised`,
+          note: `Written down to ${fmt(e.recoverable)} from ${fmt(r?.carryingBefore ?? 0)}. Accounting book only`,
         })
         break
       }
