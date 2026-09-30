@@ -98,10 +98,10 @@ const taxTotal = computed(() => lines.reduce((a, l) => a + invoiceLineTax(l), 0)
 const grandTotal = computed(() => subtotal.value + taxTotal.value)
 
 const sourceNote = computed(() => {
-  if (kind === 'tm') return t('Lines are prefilled from the reviewed, uninvoiced work on this engagement.')
-  if (kind === 'output') return t('Recognition has already posted for this milestone — saving this invoice completes the same action.')
-  if (kind === 'billing') return t('Prefilled from the milestone billing schedule.')
-  return t('A blank invoice against this project.')
+  if (kind === 'tm') return t('Prefilled with reviewed cost lines not yet invoiced')
+  if (kind === 'output') return t('Prefilled from the verified milestone. Its revenue is already recognized')
+  if (kind === 'billing') return t('Prefilled from the billing schedule')
+  return ''
 })
 
 // ── Budget context strip ──────────────────────────────────────────────────────
@@ -115,8 +115,8 @@ const contextStats = computed<ProjectStat[]>(() => {
   if (!e) return []
   const thisDoc = lines.filter(l => l.project === e.id).reduce((a, l) => a + invoiceLineAmount(l), 0)
   return [
-    { key: 'cv', label: t('Contract value'), value: formatIdr(e.method === 'tm' ? e.feeEstimate : e.contractValue) },
-    { key: 'rec', label: t('Recognized'), value: formatIdr(revenue(e)) },
+    { key: 'cv', label: e.method === 'tm' ? t('Fee estimate') : t('Contract value'), value: formatIdr(e.method === 'tm' ? e.feeEstimate : e.contractValue) },
+    { key: 'rec', label: t('Revenue recognized'), value: formatIdr(revenue(e)) },
     { key: 'billed', label: t('Billed to date'), value: formatIdr(billed(e)) },
     { key: 'doc', label: t('This invoice'), value: formatIdr(thisDoc) },
   ]
@@ -134,11 +134,11 @@ function back() {
 async function save() {
   customerError.value = !customer.value.trim()
   if (customerError.value) {
-    toast.notify({ variant: 'error', title: t('Customer is required') })
+    toast.notify({ variant: 'error', title: t('You must fill in customer') })
     return
   }
   if (grandTotal.value <= 0) {
-    toast.notify({ variant: 'error', title: t('Add at least one line with a quantity and unit price'), maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: t('Enter a quantity and unit price on at least one line'), maxWidth: 'max-content' })
     return
   }
   isSaving.value = true
@@ -154,10 +154,10 @@ async function save() {
   })
   isSaving.value = false
   if (!inv) {
-    toast.notify({ variant: 'error', title: t('This project no longer exists') })
+    toast.notify({ variant: 'error', title: t('Project not found. It may have been deleted') })
     return
   }
-  toast.notify({ variant: 'success', title: `${t('Invoice')} ${inv.id} ${t('saved for')} ${formatIdr(inv.amount)}`, maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: `${t('Invoice')} ${inv.id} ${t('saved')}`, maxWidth: 'max-content' })
   back()
 }
 </script>
@@ -169,13 +169,13 @@ async function save() {
       <div class="detail-bar-left">
         <MpTextlink id="pi-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="back">{{ t('Project accounting') }}</MpTextlink>
         <h1 class="detail-title">{{ t('New invoice') }}</h1>
-        <p class="detail-subtitle">{{ sourceNote }}</p>
+        <p v-if="sourceNote" class="detail-subtitle">{{ sourceNote }}</p>
       </div>
     </header>
 
     <div class="detail-stage">
       <section v-if="contextStats.length" class="pi-context">
-        <p class="pi-context-title">{{ t('Project budget') }} · {{ contextProject?.name }}</p>
+        <p class="pi-context-title">{{ t('Project') }} · {{ contextProject?.name }}</p>
         <ProjectStatCards :stats="contextStats" />
       </section>
 
@@ -236,7 +236,7 @@ async function save() {
                 <th class="pi-th">{{ t('Description') }}</th>
                 <th class="pi-th pi-th--num">{{ t('Qty') }}</th>
                 <th class="pi-th pi-th--num">{{ t('Unit price') }}</th>
-                <th class="pi-th pi-th--num">{{ t('Disc %') }}</th>
+                <th class="pi-th pi-th--num">{{ t('Discount (%)') }}</th>
                 <th class="pi-th">{{ t('Tax') }}</th>
                 <th class="pi-th pi-th--project">{{ t('Project') }}</th>
                 <th class="pi-th pi-th--num">{{ t('Amount') }}</th>
@@ -288,9 +288,6 @@ async function save() {
               <MpIcon name="add" size="sm" />
               {{ t('Add line') }}
             </button>
-            <p class="pi-hint">
-              {{ t('Project is tagged per line here too, so a single invoice can bill more than one project. Saving posts the invoice against the tagged project and returns you to Invoices & payments.') }}
-            </p>
           </div>
           <div class="pi-totals">
             <div class="pi-total-row">
@@ -312,12 +309,12 @@ async function save() {
           <MpFormControl id="pi-message">
             <MpFormLabel>{{ t('Message') }}</MpFormLabel>
             <MpTextarea id="pi-message-input" v-model="message" is-full-width />
-            <p class="pi-hint">{{ t('Visible to customer.') }}</p>
+            <p class="pi-hint">{{ t('Shown on the invoice') }}</p>
           </MpFormControl>
           <MpFormControl id="pi-memo">
             <MpFormLabel>{{ t('Memo') }}</MpFormLabel>
             <MpTextarea id="pi-memo-input" v-model="memo" is-full-width />
-            <p class="pi-hint">{{ t('Only visible to you and your team.') }}</p>
+            <p class="pi-hint">{{ t('Only visible to you and your team') }}</p>
           </MpFormControl>
         </div>
 

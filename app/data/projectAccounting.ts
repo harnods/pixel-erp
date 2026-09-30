@@ -377,18 +377,18 @@ export function methodLabel(m: RecognitionMethod): string {
 
 export function methodFormal(m: RecognitionMethod): string {
   return {
-    tm: 'Cost incurred plus agreed margin',
-    input: 'Cost spent ÷ cost planned',
-    output: 'Verified milestones, each weighted',
+    tm: 'Cost plus agreed margin',
+    input: 'Share of budgeted cost spent',
+    output: 'Weighted milestones, as verified',
   }[m]
 }
 
-export const STAGES: { key: EngagementStage; label: string; sub: string }[] = [
-  { key: 'setup', label: 'Setup & contract', sub: 'Recognition method, cost budget, contract history' },
-  { key: 'execution', label: 'Costs', sub: 'Every cost tagged to this project' },
-  { key: 'recognition', label: 'Revenue recognition', sub: 'How the work becomes recognised revenue' },
-  { key: 'billing', label: 'Invoices & payments', sub: 'Sent to the client, and collected' },
-  { key: 'closed', label: 'Project health', sub: 'Budget variance, margin, closing' },
+export const STAGES: { key: EngagementStage; label: string }[] = [
+  { key: 'setup', label: 'Setup & contract' },
+  { key: 'execution', label: 'Costs' },
+  { key: 'recognition', label: 'Revenue recognition' },
+  { key: 'billing', label: 'Invoices & payments' },
+  { key: 'closed', label: 'Project health' },
 ]
 
 export function stageIndex(k: EngagementStage): number {
@@ -484,11 +484,11 @@ export function canClose(e: Engagement): boolean {
 }
 
 export function closeHint(e: Engagement): string {
-  if (pendingVos(e).length) return 'Every addendum must be approved or rejected before closing.'
-  if (canClose(e)) return 'Recognition final, every invoice collected, no open addendum.'
-  if (e.method === 'tm') return 'Review every worked line, invoice it, and collect every invoice first.'
-  if (e.method === 'input') return '% complete must reach 100 and every milestone invoice must be paid.'
-  return 'Every milestone must be verified and every invoice collected.'
+  if (pendingVos(e).length) return 'Approve or reject every pending addendum before closing.'
+  if (canClose(e)) return 'Ready to close. Revenue is final, every invoice is paid and no addendum is pending.'
+  if (e.method === 'tm') return 'To close, review and invoice every cost line, then record payment for every invoice.'
+  if (e.method === 'input') return 'To close, the project must be 100% complete and every billing milestone paid.'
+  return 'To close, verify every milestone and record payment for every invoice.'
 }
 
 /** Unbilled worked value by age — a collection risk, not a recognition question. */

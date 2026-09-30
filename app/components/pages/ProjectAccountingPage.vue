@@ -28,10 +28,10 @@ const { t } = useLocale()
 // ── Stats ─────────────────────────────────────────────────────────────────────
 const totals = computed(() => portfolioTotals())
 const stats = computed(() => [
-  { key: 'revenue', label: t('Revenue recognised'), value: formatIdr(totals.value.revenue), sub: t('Across all projects'), adverse: false },
-  { key: 'cost', label: t('Cost incurred'), value: formatIdr(totals.value.cost), sub: t('Across all projects'), adverse: false },
-  { key: 'outstanding', label: t('Outstanding invoices'), value: formatIdr(totals.value.outstanding), sub: t('Issued, not yet collected'), adverse: totals.value.outstanding > 0 },
-  { key: 'addenda', label: t('Contract addenda pending'), value: String(totals.value.pendingAddenda), sub: t('Must be settled before closure'), adverse: totals.value.pendingAddenda > 0 },
+  { key: 'revenue', label: t('Revenue recognized'), value: formatIdr(totals.value.revenue), sub: t('All projects, to date'), adverse: false },
+  { key: 'cost', label: t('Cost incurred'), value: formatIdr(totals.value.cost), sub: t('All projects, to date'), adverse: false },
+  { key: 'outstanding', label: t('Unpaid invoices'), value: formatIdr(totals.value.outstanding), sub: t('Sent, awaiting payment'), adverse: totals.value.outstanding > 0 },
+  { key: 'addenda', label: t('Addenda awaiting approval'), value: String(totals.value.pendingAddenda), sub: t('Blocks project closing'), adverse: totals.value.pendingAddenda > 0 },
 ])
 
 /**
@@ -66,7 +66,7 @@ const rows = computed<Row[]>(() => engagements.map((e: Engagement) => {
   return {
     id: e.id,
     name: e.name,
-    meta: `${e.client} · ${t('PM')} ${e.pm}`,
+    meta: `${e.client} · ${t('Managed by')} ${e.pm}`,
     method: e.method,
     methodName: methodLabel(e.method),
     methodFormal: methodFormal(e.method),
@@ -85,10 +85,10 @@ const rows = computed<Row[]>(() => engagements.map((e: Engagement) => {
 const allCols: TableColumn[] = [
   { key: 'name', label: t('Project'), width: '250px', sortable: true, sortType: 'text' },
   { key: 'method', label: t('Revenue recognition'), width: '165px' },
-  { key: 'revenueValue', label: t('Revenue recognised'), width: '150px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'spendPct', label: t('Budgeted / spent'), width: '185px', align: 'right' },
+  { key: 'revenueValue', label: t('Revenue recognized'), width: '150px', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'spendPct', label: t('Budget spent'), width: '185px', align: 'right' },
   { key: 'billedValue', label: t('Billed'), width: '135px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'wip', label: t('Billing progress'), width: '145px', align: 'right' },
+  { key: 'wip', label: t('Unbilled / overbilled'), width: '145px', align: 'right' },
   { key: 'statusLabel', label: t('Project status'), width: '120px', sortable: true, sortType: 'text' },
 ]
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, true])))
@@ -235,8 +235,8 @@ function spendTone(pct: number | null): string {
             </span>
             <span class="pa-sub">
               {{ (row as unknown as Row).budget === null
-                ? t('no budget set')
-                : ((row as unknown as Row).spendPct as number) > 100 ? t('over budget') : t('of budget incurred') }}
+                ? t('No budget')
+                : ((row as unknown as Row).spendPct as number) > 100 ? t('Over budget') : t('of budget') }}
             </span>
           </div>
           <div class="pa-bar">
@@ -267,7 +267,7 @@ function spendTone(pct: number | null): string {
         >
           <span class="pa-wip-label">
             {{ Math.abs((row as unknown as Row).wip) < 1000
-              ? t('Billing matched')
+              ? t('Fully billed')
               : (row as unknown as Row).wip > 0 ? t('Unbilled') : t('Overbilled') }}
           </span>
           <span v-if="Math.abs((row as unknown as Row).wip) >= 1000" class="pa-num pa-wip-amount">
@@ -284,8 +284,8 @@ function spendTone(pct: number | null): string {
       <template #empty>
         <div class="empty-full">
           <img src="/illustrations/empty-folder.png" alt="" class="empty-illustration" width="288" height="240" />
-          <p class="empty-full-title">{{ t('No projects yet') }}</p>
-          <p class="empty-full-desc">{{ t('An engagement letter, SOW or sales order becomes a tracked project here.') }}</p>
+          <p class="empty-full-title">{{ t('No projects') }}</p>
+          <p class="empty-full-desc">{{ t('Projects will appear here.') }}</p>
           <button
             type="button"
             class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before"

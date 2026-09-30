@@ -50,17 +50,17 @@ const METHOD_CHOICES: { key: RecognitionMethod; title: string; desc: string }[] 
   {
     key: 'tm',
     title: 'Input by Simplified Cost',
-    desc: 'The client reimburses what the job cost and pays an agreed margin on top — no percentage of progress is calculated. Consulting, audit, retainer, cost-reimbursable work. Accountants call this cost-plus.',
+    desc: 'Revenue is each reviewed cost line plus the agreed margin. For consulting, audit and retainer work.',
   },
   {
     key: 'input',
     title: 'Input by Cost',
-    desc: 'The job is as far along as the money spent says it is: cost spent ÷ cost planned. Billing runs on its own schedule. The input method, cost-to-cost.',
+    desc: 'Revenue follows the share of budgeted cost spent. Invoices follow a separate billing schedule. For construction and fit-out work.',
   },
   {
     key: 'output',
     title: 'Output by Milestone',
-    desc: 'Revenue arrives only when a milestone is signed off, each one weighted. Verifying one earns and bills it in a single action. The output method.',
+    desc: 'Revenue is recognized when a weighted milestone is verified, and the milestone is then ready to invoice. For events and staged deliveries.',
   },
 ]
 
@@ -95,13 +95,13 @@ async function save() {
   nameError.value = !draft.name.trim()
   clientError.value = !draft.client.trim()
   if (nameError.value || clientError.value) {
-    toast.notify({ variant: 'error', title: t('Engagement name and client are required') })
+    toast.notify({ variant: 'error', title: t('Fill in engagement name and client') })
     return
   }
   if (isOutput.value && !weightsOk.value) {
     toast.notify({
       variant: 'error',
-      title: t('Milestone weights must sum to 100% before this engagement can leave Setup'),
+      title: t('Milestone weights must add up to 100%'),
       maxWidth: 'max-content',
     })
     return
@@ -110,7 +110,7 @@ async function save() {
   await new Promise(r => setTimeout(r, 300))
   const created = createEngagement(draft)
   isSaving.value = false
-  toast.notify({ variant: 'success', title: t('Engagement created and activated') })
+  toast.notify({ variant: 'success', title: t('Engagement created') })
   router.push(`/project-accounting/${created.id}`)
 }
 
@@ -132,9 +132,6 @@ function cancel() { router.push('/project-accounting') }
         <!-- ── Engagement details ── -->
         <section class="ne-section">
           <h2 class="ne-section-title">{{ t('Engagement details') }}</h2>
-          <p class="ne-section-desc">
-            {{ t('An engagement letter, SOW or sales order becomes a tracked structure. How the project earns, chosen below, decides how revenue is recognized later; the budget applies either way.') }}
-          </p>
 
           <div class="ne-grid ne-grid--2">
             <MpFormControl id="ne-name" is-required :is-invalid="nameError">
@@ -161,10 +158,8 @@ function cancel() { router.push('/project-accounting') }
 
         <!-- ── Recognition method ── -->
         <section class="ne-section">
-          <h2 class="ne-section-title">{{ t('How this project earns its revenue') }}</h2>
-          <p class="ne-section-desc">
-            {{ t('This picks the recognition engine used for the rest of the engagement — it is a property of the contract, not a reporting preference.') }}
-          </p>
+          <h2 class="ne-section-title">{{ t('Revenue recognition method') }}</h2>
+          <p class="ne-hint ne-hint--lead">{{ t('The method cannot be changed after the engagement is created.') }}</p>
           <div class="ne-methods">
             <button
               v-for="m in METHOD_CHOICES"
@@ -188,7 +183,7 @@ function cancel() { router.push('/project-accounting') }
         <section class="ne-section">
           <div class="ne-grid ne-grid--3">
             <MpFormControl id="ne-pm">
-              <MpFormLabel>{{ t('PM / owner') }}</MpFormLabel>
+              <MpFormLabel>{{ t('Project manager') }}</MpFormLabel>
               <MpInput id="ne-pm-input" v-model="draft.pm" is-full-width :placeholder="t('e.g. Made Ardika')" />
             </MpFormControl>
 
@@ -201,12 +196,12 @@ function cancel() { router.push('/project-accounting') }
             </MpFormControl>
 
             <MpFormControl id="ne-budget">
-              <MpFormLabel>{{ t('Estimated cost / budget') }}</MpFormLabel>
+              <MpFormLabel>{{ t('Cost budget') }}</MpFormLabel>
               <MpInputGroup id="ne-budget-group" is-full-width>
                 <MpInputLeftAddon>Rp</MpInputLeftAddon>
                 <MpInput id="ne-budget-input" v-model="draft.budget" type="number" placeholder="0" is-full-width />
               </MpInputGroup>
-              <p class="ne-hint">{{ t('Available on every method. Drives Budget vs. Actual on the cost rollup.') }}</p>
+              <p class="ne-hint">{{ t('Used when no expense accounts are budgeted below') }}</p>
             </MpFormControl>
           </div>
 
@@ -219,18 +214,13 @@ function cancel() { router.push('/project-accounting') }
                 <MpInputRightAddon>%</MpInputRightAddon>
               </MpInputGroup>
             </MpFormControl>
-            <p class="ne-hint">
-              {{ t('This is the margin the contract entitles you to. Reviewers can waive it line by line, but they cannot exceed it.') }}
-            </p>
+            <p class="ne-hint">{{ t('Maximum margin charged on a cost line. Reviewers can waive it per line') }}</p>
           </div>
         </section>
 
         <!-- ── Project budget ── -->
         <section class="ne-section">
           <h2 class="ne-section-title">{{ t('Project budget') }}</h2>
-          <p class="ne-section-desc">
-            {{ t('Plan projected revenue and expense per account. Once set, every later step compares it against actuals — the same budget-variance shape used in Financials, scoped to this project. Leaving it empty falls back to the single estimated cost figure above.') }}
-          </p>
 
           <h3 class="ne-subhead">{{ t('Projected revenue') }}</h3>
           <div v-for="l in draft.budgetLines.revenue" :key="l.id" class="ne-line">
@@ -259,19 +249,16 @@ function cancel() { router.push('/project-accounting') }
               {{ t('Expense account') }}
             </button>
             <p class="ne-summary">
-              {{ t('Projected revenue') }} {{ formatIdr(plannedRevenue) }} ·
-              {{ t('projected cost') }} {{ formatIdr(plannedCost) }} ·
-              {{ t('projected margin') }} {{ formatIdr(plannedRevenue - plannedCost) }}
+              {{ t('Projected revenue') }}: {{ formatIdr(plannedRevenue) }} ·
+              {{ t('Projected expense') }}: {{ formatIdr(plannedCost) }} ·
+              {{ t('Projected margin') }}: {{ formatIdr(plannedRevenue - plannedCost) }}
             </p>
           </div>
         </section>
 
         <!-- ── Output milestones ── -->
         <section v-if="isOutput" class="ne-section">
-          <h2 class="ne-section-title">{{ t('Output milestones') }}</h2>
-          <p class="ne-section-desc">
-            {{ t('Weights must sum to 100%. Verifying a milestone recognizes its share of contract value and creates its invoice in one action. A single 100% milestone reproduces completed-contract behaviour.') }}
-          </p>
+          <h2 class="ne-section-title">{{ t('Milestones') }}</h2>
           <div v-for="m in draft.milestones" :key="m.id" class="ne-line">
             <MpInput :id="`ne-ms-label-${m.id}`" v-model="m.label" is-full-width :placeholder="t('Milestone name')" />
             <MpInputGroup :id="`ne-ms-pct-group-${m.id}`" class="ne-line-pct">
@@ -294,8 +281,8 @@ function cancel() { router.push('/project-accounting') }
             </button>
             <p class="ne-summary" :class="weightsOk ? 'ne-summary--ok' : 'ne-summary--bad'">
               {{ weightsOk
-                ? t('Weights sum to 100%.')
-                : `${t('Weights sum to')} ${weightSum}% — ${t('must be 100% to leave Setup.')}` }}
+                ? t('Weights add up to 100%')
+                : `${t('Weights add up to')} ${weightSum}%. ${t('They must add up to 100%')}` }}
             </p>
           </div>
         </section>
@@ -306,7 +293,6 @@ function cancel() { router.push('/project-accounting') }
             {{ isSaving ? t('Saving...') : t('Save') }}
           </button>
           <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancel">{{ t('Cancel') }}</button>
-          <p class="ne-hint ne-hint--inline">{{ t('Saving activates the engagement so costs can be tagged to it straight away.') }}</p>
         </div>
       </div>
     </div>
@@ -347,13 +333,13 @@ function cancel() { router.push('/project-accounting') }
   margin: 0 0 var(--mp-spacing-1); font-size: var(--mp-font-sizes-xl, 20px);
   font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-xl, 32px); color: var(--mp-text-default);
 }
-.ne-section-desc { margin: 0 0 var(--mp-spacing-5); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); max-width: 820px; }
 .ne-subhead {
   margin: var(--mp-spacing-5) 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm);
   font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; color: var(--mp-text-secondary);
 }
 .ne-hint { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.ne-hint--inline { margin: 0; }
+.ne-hint--lead { margin: 0 0 var(--mp-spacing-4); }
+.ne-section-title:not(:has(+ .ne-hint--lead)) { margin-bottom: var(--mp-spacing-4); }
 
 .ne-grid { display: grid; gap: var(--mp-spacing-4); }
 .ne-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
