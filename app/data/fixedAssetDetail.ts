@@ -465,7 +465,7 @@ export function assetHistory(a: FixedAsset) {
         push({
           when: e.date, who: e.recordedBy,
           what: `Impairment reversal of ${fmt(r?.applied ?? 0)}${e.testId ? ` after test ${e.testId}` : ''}`,
-          note: r ? `Recovery ${fmt(r.uncapped)}, capped at ${fmt(r.cap)} (book value without impairment ${fmt(r.unimpaired)}). ${r.capApplied ? 'Cap applied' : 'Applied in full'}. Accounting only` : null,
+          note: r ? `Recovery ${fmt(r.uncapped)}, capped at ${fmt(r.cap)} (book value without impairment ${fmt(r.unimpaired)}). ${r.capApplied ? 'Cap applied' : 'Applied in full'}. Accounting book only` : null,
         })
         break
       }

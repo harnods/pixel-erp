@@ -450,7 +450,7 @@ export const approvalRows = computed<ApprovalRow[]>(() => {
 export const leaseRows = [
   { id: 'LS-004', name: 'Cakung Leased Warehouse', term: '01/02/2025 – 31/01/2030', liability: 1850000000, rouAsset: 'ROU-0004', rouBookValue: 1418750000 },
   { id: 'LS-005', name: 'Medan Branch Office', term: '01/07/2024 – 30/06/2029', liability: 960000000, rouAsset: 'ROU-0005', rouBookValue: 624000000 },
-  { id: 'LS-006', name: 'Fleet, 4 × Hino Dutro', term: '01/03/2026 – 28/02/2031', liability: 1240000000, rouAsset: 'ROU-0006', rouBookValue: 1116000000 },
+  { id: 'LS-006', name: 'Fleet — 4 × Hino Dutro', term: '01/03/2026 – 28/02/2031', liability: 1240000000, rouAsset: 'ROU-0006', rouBookValue: 1116000000 },
 ]
 
 // ── Period self-check ───────────────────────────────────────────────────────

@@ -23,7 +23,7 @@ import { formatLife } from './assetEngine'
 export type BulkField = 'taxGroup' | 'location' | 'custodian' | 'class'
 
 export const BULK_FIELDS: { key: BulkField; label: string; hint: string }[] = [
-  { key: 'taxGroup', label: 'Tax group', hint: 'Recalculates the tax book from each asset\'s in-service date. No journal is posted.' },
+  { key: 'taxGroup', label: 'Tax group', hint: 'Recalculates the tax book. No journal is posted.' },
   { key: 'class', label: 'Asset class', hint: 'Each asset takes the class\'s tax group, useful life and method.' },
   { key: 'location', label: 'Location', hint: 'Custody only. No figures change.' },
   { key: 'custodian', label: 'Custodian', hint: 'Custody only. No figures change.' },
