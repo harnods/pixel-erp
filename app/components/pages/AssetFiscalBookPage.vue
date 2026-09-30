@@ -83,7 +83,7 @@ function exportStatement() { infoToast(t('Not in this prototype')) }
       <div class="fb__headright">
         <span class="fb__link" @click="router.push('/tax-differences')">{{ t('Tax differences') }}</span>
         <span class="fb__link" @click="router.push('/lampiran-9')">{{ t('Lampiran 9') }}</span>
-        <span class="fb__link" @click="router.push('/asset-roll-forward')">{{ t('Asset roll forward') }}</span>
+        <span class="fb__link" @click="router.push('/asset-roll-forward')">{{ t('Asset roll-forward') }}</span>
         <MpButton variant="secondary" is-rounded @click="exportStatement">
           {{ t('Export') }}
         </MpButton>
