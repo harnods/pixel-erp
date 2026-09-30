@@ -26,7 +26,7 @@ import { formatLife, isAfter, isBefore, rupiah, pct, type Period } from './asset
  * The sign convention every difference in the module uses, stated once so
  * each screen can say it in the same words.
  */
-export const DIFFERENCE_CONVENTION = 'Difference is the accounting charge less the tax charge: positive is added back in the fiscal correction, negative is a further deduction.'
+export const DIFFERENCE_CONVENTION = 'Difference is accounting less tax. Positive is added back in the fiscal correction. Negative is a further deduction.'
 
 /** One line of the impact statement: the same event on both bases. */
 export interface ImpactRow {
@@ -90,7 +90,7 @@ export function impactByTaxGroup(p: Period = CURRENT_PERIOD): ImpactRow[] {
 
 function yearsLabel(months: number | null): string {
   if (months === null) return 'Indefinite life'
-  return months % 12 === 0 ? `${months / 12} yr` : formatLife(months)
+  return formatLife(months)
 }
 
 /**
@@ -109,7 +109,7 @@ export function amortisationRows(from: Period = FY_START, to: Period = CURRENT_P
       return {
         label: `${a.id} ${a.name}`,
         assetId: a.id,
-        basis: `${yearsLabel(a.commercialLifeMonths)} accounting · ${a.taxGroup}, ${yearsLabel(a.fiscalLifeMonths)} tax`,
+        basis: `Accounting: ${yearsLabel(a.commercialLifeMonths)} · Tax: ${yearsLabel(a.fiscalLifeMonths)}, ${a.taxGroup}`,
         commercial,
         fiscal,
         // Not amortised in the accounts while tax amortises is a temporary
@@ -200,7 +200,7 @@ export function leaseImpactRow(p: Period = CURRENT_PERIOD): ImpactRow {
     && !isAfter(ledgers.value[a.id]!.registeredFrom, p)).length
   return {
     label: 'Right-of-use depreciation against lease payments',
-    basis: 'Accounting depreciates the right-of-use asset; tax deducts the payments as they fall due',
+    basis: 'Tax deducts the lease payments when due',
     commercial: lease.accounting, fiscal: lease.tax, difference: lease.accounting - lease.tax, assets,
   }
 }
@@ -270,31 +270,31 @@ export function differenceByAsset(p: Period = CURRENT_PERIOD): DifferenceRow[] {
     const tax = chargeRange(a.id, 'tax', FY_START, p) ?? 0
     if (intangible && acc !== tax) {
       const reason = a.commercialLifeMonths === null
-        ? `Not amortised in the accounts (indefinite life, tested for impairment); tax amortises over ${yearsLabel(a.fiscalLifeMonths)}`
-        : `Amortisation over ${yearsLabel(a.commercialLifeMonths)} in the accounts against ${yearsLabel(a.fiscalLifeMonths)} for tax`
+        ? `Indefinite life, not amortised in accounting · tax amortises over ${yearsLabel(a.fiscalLifeMonths)}`
+        : `Different lives · accounting ${yearsLabel(a.commercialLifeMonths)}, tax ${yearsLabel(a.fiscalLifeMonths)}`
       rows.push({ id: a.id, name: a.name, difference: acc - tax, reason, tag: 'Amortisation' })
     } else if (acc !== tax) {
       const accLife = a.commercialLifeMonths
       const taxLife = a.fiscalLifeMonths
       let reason: string
-      if (acc === 0) reason = `Accounting life ended, tax still depreciating over ${yearsLabel(taxLife)}`
-      else if (tax === 0) reason = `Tax life ended, accounting still depreciating over ${yearsLabel(accLife)}`
-      else if (a.status === 'Impaired') reason = `Post-impairment accounting charge runs below the tax charge, which the impairment does not move`
-      else reason = `Tax life ${taxLife! < accLife! ? 'shorter' : 'longer'} than accounting: ${yearsLabel(taxLife)} against ${yearsLabel(accLife)}`
+      if (acc === 0) reason = `Accounting life ended · tax still depreciating over ${yearsLabel(taxLife)}`
+      else if (tax === 0) reason = `Tax life ended · accounting still depreciating over ${yearsLabel(accLife)}`
+      else if (a.status === 'Impaired') reason = `Impairment lowered the accounting charge · tax charge unchanged`
+      else reason = `Tax life ${taxLife! < accLife! ? 'shorter' : 'longer'} than accounting · tax ${yearsLabel(taxLife)}, accounting ${yearsLabel(accLife)}`
       rows.push({ id: a.id, name: a.name, difference: acc - tax, reason, tag: null })
     }
     for (const i of l.books.accounting.impairments) {
       if (i.loss === 0 || isBefore(i.period, FY_START) || isAfter(i.period, p)) continue
       rows.push({
         id: a.id, name: a.name, difference: i.loss, tag: 'Impairment',
-        reason: `Impairment to ${rupiah(i.recoverable)} recognised in the accounts only, not deductible`,
+        reason: `Written down to ${rupiah(i.recoverable)} in accounting only · not deductible for tax`,
       })
     }
     for (const r of l.books.accounting.reversals) {
       if (r.applied === 0 || isBefore(r.period, FY_START) || isAfter(r.period, p)) continue
       rows.push({
         id: a.id, name: a.name, difference: -r.applied, tag: 'Impairment reversal',
-        reason: `Reversal of ${rupiah(r.applied)} recognised in the accounts only, as the impairment was`,
+        reason: `Impairment reversal of ${rupiah(r.applied)} in accounting only · tax book unchanged`,
       })
     }
     l.books.accounting.partialDisposals.forEach((d, i) => {
@@ -302,7 +302,7 @@ export function differenceByAsset(p: Period = CURRENT_PERIOD): DifferenceRow[] {
       if (!t || isBefore(d.period, FY_START) || isAfter(d.period, p)) return
       rows.push({
         id: a.id, name: a.name, difference: t.gainLoss - d.gainLoss, tag: 'Partial disposal',
-        reason: `On the ${pct(d.proportion)} disposed: accounting ${d.gainLoss >= 0 ? 'gain' : 'loss'} of ${rupiah(Math.abs(d.gainLoss))} against a tax ${t.gainLoss >= 0 ? 'gain' : 'loss'} of ${rupiah(Math.abs(t.gainLoss))}`,
+        reason: `${pct(d.proportion)} disposed · accounting ${d.gainLoss >= 0 ? 'gain' : 'loss'} ${rupiah(Math.abs(d.gainLoss))}, tax ${t.gainLoss >= 0 ? 'gain' : 'loss'} ${rupiah(Math.abs(t.gainLoss))}`,
       })
     })
     const dA = l.books.accounting.disposal
@@ -310,7 +310,7 @@ export function differenceByAsset(p: Period = CURRENT_PERIOD): DifferenceRow[] {
     if (dA && dT && !isBefore(dA.period, FY_START) && !isAfter(dA.period, p)) {
       rows.push({
         id: a.id, name: a.name, difference: dT.gainLoss - dA.gainLoss, tag: 'Disposal',
-        reason: `Accounting ${dA.gainLoss >= 0 ? 'gain' : 'loss'} of ${rupiah(Math.abs(dA.gainLoss))} against a tax ${dT.gainLoss >= 0 ? 'gain' : 'loss'} of ${rupiah(Math.abs(dT.gainLoss))}: the tax carrying amount differed at disposal`,
+        reason: `Accounting ${dA.gainLoss >= 0 ? 'gain' : 'loss'} ${rupiah(Math.abs(dA.gainLoss))}, tax ${dT.gainLoss >= 0 ? 'gain' : 'loss'} ${rupiah(Math.abs(dT.gainLoss))} · book values differed at disposal`,
       })
     }
   }
@@ -379,7 +379,7 @@ export const countRows: CountRow[] = [
   { tag: 'TAG-MDN-064', asset: 'Backup 100kVA Generator', location: 'Medan Warehouse', result: 'Different location', tone: 'warn' },
   { tag: 'TAG-MDN-083', asset: 'Medan Warehouse Renovation', location: 'Medan Warehouse', result: 'Not countable', tone: 'muted' },
   { tag: 'TAG-VEH-029', asset: 'Toyota Hilux B 9087 KLM', location: 'Medan pool', result: 'Not found', tone: 'bad' },
-  { tag: null, asset: 'Air compressor (untagged)', location: 'Medan Warehouse', result: 'Unrecorded — found on the floor', tone: 'bad' },
+  { tag: null, asset: 'Air compressor (untagged)', location: 'Medan Warehouse', result: 'Unrecorded · found on site', tone: 'bad' },
 ]
 
 /** Custody, who holds what. */
@@ -399,7 +399,7 @@ export const varianceRows = [
   { id: 'V-01', asset: 'TAG-VEH-029 Toyota Hilux', kind: 'Not found', explanation: 'Moved to the Surabaya branch without a handover record', status: 'Open', action: 'Reclassify location' },
   { id: 'V-02', asset: 'Air compressor (untagged)', kind: 'Unrecorded', explanation: 'Bought from petty cash and expensed instead of capitalised', status: 'Open', action: 'Capitalise as new asset' },
   { id: 'V-03', asset: 'TAG-MDN-064 Genset Backup', kind: 'Wrong location', explanation: 'Recorded in Medan Warehouse, found in the Medan pool', status: 'Resolved', action: 'Location updated' },
-  { id: 'V-04', asset: 'TAG-HQ-004 AC Central', kind: 'Not found', explanation: 'Removed in 2025, never written off', status: 'Open', action: 'Write off — needs approval' },
+  { id: 'V-04', asset: 'TAG-HQ-004 AC Central', kind: 'Not found', explanation: 'Removed in 2025, never written off', status: 'Open', action: 'Write off · needs approval' },
   { id: 'V-05', asset: 'TAG-SBY-051 Office Chairs ×60', kind: 'Short by 6 of 60', explanation: 'Six units damaged and discarded without a record', status: 'Open', action: 'Partial disposal' },
   { id: 'V-06', asset: 'TAG-IT-018 Server Rack', kind: 'Here, as recorded', explanation: 'Mis-scan, since confirmed', status: 'Resolved', action: 'No action' },
 ]
@@ -434,7 +434,7 @@ export const approvalRows = computed<ApprovalRow[]>(() => {
     },
     {
       id: 'AP-0032', what: 'Write-off · FA-0004 Building Central AC', raisedBy: 'Fitri Handayani', raisedOn: '03/09/2026',
-      detail: `Book value ${(fa04.bookValueCommercial ?? 0).toLocaleString('id-ID')} · ${(fa04.bookValueFiscal ?? 0).toLocaleString('id-ID')} still on the tax basis`,
+      detail: `Book value ${(fa04.bookValueCommercial ?? 0).toLocaleString('id-ID')} accounting · ${(fa04.bookValueFiscal ?? 0).toLocaleString('id-ID')} tax`,
       status: 'Awaiting you',
     },
     { id: 'AP-0033', what: 'Partial disposal · FA-0051 Office Chairs (6 of 60)', raisedBy: 'Rudi Santoso', raisedOn: '10/09/2026', detail: 'Raised from count session SO-2026-03', status: 'Awaiting you' },

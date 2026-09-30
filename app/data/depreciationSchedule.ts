@@ -17,7 +17,7 @@ import {
   type JournalLine,
 } from './assetStore'
 import {
-  chargeAt, accumulatedAt, isHeldDuring, isAfter, addPeriods, periodLabel, periodShort, eventLabel, costAt,
+  chargeAt, accumulatedAt, isHeldDuring, isAfter, addPeriods, periodLabel, periodShort, eventLabel, costAt, rupiah,
 } from './assetEngine'
 import type { FixedAsset } from './fixedAssets'
 
@@ -106,11 +106,11 @@ function conventionFor(a: FixedAsset, p: string): string | undefined {
   if (p === l.startPeriod) notes.push(`Full month · in service from ${l.inServiceDate.slice(0, 5)}`)
   const basis = acc.bases.find((b) => b.id === row.basisId)!
   if (basis.fromPeriod === p && basis.cause.kind !== 'acquisition') notes.push('Recomputed over the remaining life')
-  if (basis.fromPeriod === p && l.splitFrom && basis.cause.kind === 'acquisition') notes.push(`Opened from the split of ${l.splitFrom}`)
-  if (row.adjustment) notes.push(`Includes a catch-up of ${row.adjustment.toLocaleString('id-ID')} for posted periods`)
+  if (basis.fromPeriod === p && l.splitFrom && basis.cause.kind === 'acquisition') notes.push(`Created from the split of ${l.splitFrom}`)
+  if (row.adjustment) notes.push(`Includes a ${rupiah(row.adjustment)} catch-up for posted periods`)
   if (acc.disposal?.period === p) notes.push(`Full month · disposed ${acc.disposal.date.slice(0, 5)}`)
   const last = acc.live.filter((r) => !r.adjustmentOnly).at(-1)
-  if (last?.period === p && !acc.disposal) notes.push('Final month · takes the rounding residue')
+  if (last?.period === p && !acc.disposal) notes.push('Final month · includes rounding difference')
   return notes.length ? notes.join(' · ') : undefined
 }
 
