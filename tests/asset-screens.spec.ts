@@ -76,8 +76,9 @@ describe('the difference report', () => {
 
   it('leads with the disposal, the widest divergence', () => {
     expect(differenceByAsset[0].id).toBe('FA-0071')
+    // Accounting charge less tax charge: a gain is a negative charge.
     expect(differenceByAsset[0].difference).toBe(
-      H.disposalCommercialGain - H.disposalFiscalLoss,
+      H.disposalFiscalLoss - H.disposalCommercialGain,
     )
   })
 

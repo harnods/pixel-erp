@@ -71,8 +71,8 @@ describe('recording a lease (FG8-AC1, FG8-AC2)', () => {
   })
 
   it('keeps the design figures: leases are reported apart from the tangible statement', () => {
-    expect(fyFigures().netTemporaryDifference).toBe(94_828_125)
-    expect(fyFigures().deferredTax).toBe(20_862_188)
+    expect(fyFigures().netTemporaryDifference).toBe(-242_578_119)
+    expect(fyFigures().deferredTax).toBe(-53_367_186)
     expect(computeSelfCheck().checks.every((c) => c.id === 'C3' || c.id === 'C4' || c.state === 'passed')).toBe(true)
   })
 })

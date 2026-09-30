@@ -86,7 +86,13 @@ export interface ReconciliationEvidence {
   by: string
   commercial: { registerCost: number; ledgerCost: number; registerAccumulated: number; ledgerAccumulated: number }
   fiscal: { register: number; prior: number }
+  /**
+   * The count the result line names: the assets that differ when the run
+   * differs, the whole population when it reconciles.
+   */
   assets: number
+  /** Every asset the migration covers. */
+  population: number
   differing: { id: string; name: string; fiscalOpening: number; priorFiscal: number; difference: number }[]
   result: 'reconciled' | 'differs'
   /** Set on the run that activation used. */
@@ -186,7 +192,8 @@ export function reconcileMigration(activation: ReconciliationEvidence['activatio
       register: rows.reduce((s, r) => s + (r.fiscalOpening ?? 0), 0),
       prior: rows.reduce((s, r) => s + (r.priorFiscal ?? 0), 0),
     },
-    assets: rows.length,
+    assets: differing.length === 0 && commercialTies ? rows.length : differing.length,
+    population: rows.length,
     differing,
     result: differing.length === 0 && commercialTies ? 'reconciled' : 'differs',
     activation,

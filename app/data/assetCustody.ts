@@ -128,9 +128,13 @@ export function custodyHistoryFor(assetId: string): CustodyChange[] {
   return custodyLog.value.filter((c) => c.assetId === assetId).slice().reverse()
 }
 
-/** Held tangible assets: the ones custody applies to. */
+/**
+ * Held tangible assets: the ones custody applies to. A right-of-use asset is
+ * the right to use something the lessor owns; it has no physical custodian
+ * in this prototype, so it is not a custody gap.
+ */
 export const heldTangible = computed(() =>
-  fixedAssets.value.filter((a) => a.type === 'Tangible' && a.status !== 'Disposed' && a.status !== 'Split'),
+  fixedAssets.value.filter((a) => a.type === 'Tangible' && !a.leaseId && a.status !== 'Disposed' && a.status !== 'Split'),
 )
 
 /** FG-4.3: no custodian, or one who has left. A normal state, surfaced rather than blocked. */
@@ -221,10 +225,15 @@ export function reassignAll(from: string, to: string, reason: string): CustodyRe
 export const custodianSummary = computed(() =>
   CUSTODIANS.map((c) => {
     const held = heldBy(c.name)
+    const locations = [...new Set(held.map((a) => a.location).filter((x): x is string => !!x))]
+    // The branch follows where the assets are, from the location list, not
+    // the custodian's home branch, which goes stale when assets move.
+    const branches = [...new Set(locations.map((x) => locationBranch(x)).filter((x): x is string => !!x))]
     return {
       ...c,
+      branch: branches.length ? branches.join(', ') : c.branch,
       held,
-      locations: [...new Set(held.map((a) => a.location).filter((x): x is string => !!x))],
+      locations,
       hasLeft: leftCustodians.value.includes(c.name),
     }
   }).filter((c) => c.held.length || c.hasLeft),

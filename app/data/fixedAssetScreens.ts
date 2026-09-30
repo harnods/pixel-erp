@@ -22,12 +22,24 @@ import { formatLife, isAfter, isBefore, rupiah, pct, type Period } from './asset
 
 // ── Asset profit and loss impact ────────────────────────────────────────────
 
+/**
+ * The sign convention every difference in the module uses, stated once so
+ * each screen can say it in the same words.
+ */
+export const DIFFERENCE_CONVENTION = 'Difference is the accounting charge less the tax charge: positive is added back in the fiscal correction, negative is a further deduction.'
+
 /** One line of the impact statement: the same event on both bases. */
 export interface ImpactRow {
   label: string
   /** `null` where that basis does not recognise the event at all. */
   commercial: number | null
   fiscal: number | null
+  /**
+   * The accounting charge less the tax charge (DIFFERENCE_CONVENTION). For
+   * a disposal the columns are gains, so this is the tax gain less the
+   * accounting gain; for an impairment it is the loss the tax book ignores.
+   */
+  difference: number
   /** How the figure was arrived at, shown under the label. */
   basis?: string | null
   assets?: number
@@ -53,9 +65,10 @@ function grouped(key: (a: FixedAsset) => string, p: Period): ImpactRow[] {
   for (const a of fixedAssets.value) {
     if (!inStatement(a, 'Tangible', p)) continue
     const k = key(a)
-    const r = rows.get(k) ?? { label: k, commercial: 0, fiscal: 0, assets: 0 }
+    const r = rows.get(k) ?? { label: k, commercial: 0, fiscal: 0, difference: 0, assets: 0 }
     r.commercial = (r.commercial ?? 0) + (chargeRange(a.id, 'accounting', FY_START, p) ?? 0)
     r.fiscal = (r.fiscal ?? 0) + (chargeRange(a.id, 'tax', FY_START, p) ?? 0)
+    r.difference = r.commercial - r.fiscal
     r.assets = (r.assets ?? 0) + 1
     rows.set(k, r)
   }
@@ -90,13 +103,20 @@ function yearsLabel(months: number | null): string {
 export function amortisationRows(from: Period = FY_START, to: Period = CURRENT_PERIOD): ImpactRow[] {
   return fixedAssets.value
     .filter((a) => inStatement(a, 'Intangible', to))
-    .map((a) => ({
-      label: `${a.id} ${a.name}`,
-      assetId: a.id,
-      basis: `${yearsLabel(a.commercialLifeMonths)} accounting · ${a.taxGroup}, ${yearsLabel(a.fiscalLifeMonths)} tax`,
-      commercial: a.commercialLifeMonths === null ? null : chargeRange(a.id, 'accounting', from, to) ?? 0,
-      fiscal: chargeRange(a.id, 'tax', from, to) ?? 0,
-    }))
+    .map((a) => {
+      const commercial = a.commercialLifeMonths === null ? null : chargeRange(a.id, 'accounting', from, to) ?? 0
+      const fiscal = chargeRange(a.id, 'tax', from, to) ?? 0
+      return {
+        label: `${a.id} ${a.name}`,
+        assetId: a.id,
+        basis: `${yearsLabel(a.commercialLifeMonths)} accounting · ${a.taxGroup}, ${yearsLabel(a.fiscalLifeMonths)} tax`,
+        commercial,
+        fiscal,
+        // Not amortised in the accounts while tax amortises is a temporary
+        // difference too: the whole tax charge is a further deduction.
+        difference: (commercial ?? 0) - fiscal,
+      }
+    })
 }
 
 /** FY2026 amortisation to the current period. */
@@ -108,18 +128,20 @@ export function disposalImpactRows(p: Period = CURRENT_PERIOD): ImpactRow[] {
   for (const a of fixedAssets.value) {
     const l = ledgers.value[a.id]!
     const dA = l.books.accounting.disposal
-    if (!l.books.tax || !dA || isBefore(dA.period, FY_START) || isAfter(dA.period, p)) continue
+    // A right-of-use asset stays on the lease line (see leaseImpactRow).
+    if (a.leaseId || !l.books.tax || !dA || isBefore(dA.period, FY_START) || isAfter(dA.period, p)) continue
     out.push({
       label: 'Gain or loss on disposal',
       basis: `${a.id} ${a.name} · sold ${dA.date}`,
       assetId: a.id,
       commercial: dA.gainLoss,
       fiscal: l.books.tax.disposal?.gainLoss ?? null,
+      difference: (l.books.tax.disposal?.gainLoss ?? 0) - dA.gainLoss,
     })
   }
   for (const a of fixedAssets.value) {
     const l = ledgers.value[a.id]!
-    if (!l.books.tax) continue
+    if (!l.books.tax || a.leaseId) continue
     l.books.accounting.partialDisposals.forEach((d, i) => {
       if (isBefore(d.period, FY_START) || isAfter(d.period, p)) return
       out.push({
@@ -128,6 +150,7 @@ export function disposalImpactRows(p: Period = CURRENT_PERIOD): ImpactRow[] {
         assetId: a.id,
         commercial: d.gainLoss,
         fiscal: l.books.tax!.partialDisposals[i]?.gainLoss ?? null,
+        difference: (l.books.tax!.partialDisposals[i]?.gainLoss ?? 0) - d.gainLoss,
       })
     })
   }
@@ -139,7 +162,7 @@ export function impairmentImpactRows(p: Period = CURRENT_PERIOD): ImpactRow[] {
   const out: ImpactRow[] = []
   for (const a of fixedAssets.value) {
     const l = ledgers.value[a.id]!
-    if (!l.books.tax) continue
+    if (!l.books.tax || a.leaseId) continue
     for (const i of l.books.accounting.impairments) {
       if (i.loss === 0 || isBefore(i.period, FY_START) || isAfter(i.period, p)) continue
       out.push({
@@ -148,6 +171,7 @@ export function impairmentImpactRows(p: Period = CURRENT_PERIOD): ImpactRow[] {
         assetId: a.id,
         commercial: -i.loss,
         fiscal: null,
+        difference: i.loss,
       })
     }
     for (const r of l.books.accounting.reversals) {
@@ -158,14 +182,63 @@ export function impairmentImpactRows(p: Period = CURRENT_PERIOD): ImpactRow[] {
         assetId: a.id,
         commercial: r.applied,
         fiscal: null,
+        difference: -r.applied,
       })
     }
   }
   return out
 }
 
+/**
+ * The right-of-use line: depreciation in the accounts against the lease
+ * payments deducted for tax. Shown with its difference, but not part of the
+ * net temporary difference (see fyFigures).
+ */
+export function leaseImpactRow(p: Period = CURRENT_PERIOD): ImpactRow {
+  const lease = fyFigures(p).lease
+  const assets = fixedAssets.value.filter((a) => a.leaseId && ledgers.value[a.id]!.books.tax
+    && !isAfter(ledgers.value[a.id]!.registeredFrom, p)).length
+  return {
+    label: 'Right-of-use depreciation against lease payments',
+    basis: 'Accounting depreciates the right-of-use asset; tax deducts the payments as they fall due',
+    commercial: lease.accounting, fiscal: lease.tax, difference: lease.accounting - lease.tax, assets,
+  }
+}
+
+export interface StatementFigures extends ReturnType<typeof fyFigures> {
+  /** Each section's difference, as the statement subtotals it. */
+  sections: { depreciation: number; amortisation: number; disposalAndImpairment: number }
+  /** The lease line, shown and excluded. */
+  leaseLine: ImpactRow
+}
+
+/**
+ * The statement's headline figures, derived from the statement's own lines
+ * (PRD FG-1.2: deferred tax from the statement's own total, so the two
+ * cannot disagree). The net temporary difference is the sum of the section
+ * differences; the deferred tax is that sum at the rate.
+ */
+export function statementFiguresAt(p: Period = CURRENT_PERIOD): StatementFigures {
+  const f = fyFigures(p)
+  const sum = (rows: ImpactRow[]) => rows.reduce((s, r) => s + r.difference, 0)
+  const sections = {
+    depreciation: sum(impactByClass(p)),
+    amortisation: sum(amortisationRows(FY_START, p)),
+    disposalAndImpairment: sum(disposalImpactRows(p)) + sum(impairmentImpactRows(p)),
+  }
+  const net = sections.depreciation + sections.amortisation + sections.disposalAndImpairment
+  return {
+    ...f,
+    sections,
+    leaseLine: leaseImpactRow(p),
+    netTemporaryDifference: net,
+    netFiscalCorrection: net,
+    deferredTax: Math.round(net * f.taxRate),
+  }
+}
+
 /** The statement's headline figures: difference, deferred tax, exclusions. */
-export const statementFigures = computed(() => fyFigures())
+export const statementFigures = computed(() => statementFiguresAt())
 
 // ── Commercial to fiscal difference ─────────────────────────────────────────
 
@@ -180,15 +253,27 @@ export interface DifferenceRow {
   tag: string | null
 }
 
-/** Per asset and event, tangible and classified, largest divergence first. */
+/**
+ * Per asset and event, tangible and intangible, classified, largest
+ * divergence first. Each difference is the accounting charge less the tax
+ * charge (DIFFERENCE_CONVENTION), so the rows sum to the statement's net
+ * temporary difference. Right-of-use assets are on the statement's lease
+ * line, outside that total, so they are not here either.
+ */
 export function differenceByAsset(p: Period = CURRENT_PERIOD): DifferenceRow[] {
   const rows: DifferenceRow[] = []
   for (const a of fixedAssets.value) {
-    if (!inStatement(a, 'Tangible', p)) continue
+    const intangible = inStatement(a, 'Intangible', p)
+    if (!intangible && !inStatement(a, 'Tangible', p)) continue
     const l = ledgers.value[a.id]!
     const acc = chargeRange(a.id, 'accounting', FY_START, p) ?? 0
     const tax = chargeRange(a.id, 'tax', FY_START, p) ?? 0
-    if (acc !== tax) {
+    if (intangible && acc !== tax) {
+      const reason = a.commercialLifeMonths === null
+        ? `Not amortised in the accounts (indefinite life, tested for impairment); tax amortises over ${yearsLabel(a.fiscalLifeMonths)}`
+        : `Amortisation over ${yearsLabel(a.commercialLifeMonths)} in the accounts against ${yearsLabel(a.fiscalLifeMonths)} for tax`
+      rows.push({ id: a.id, name: a.name, difference: acc - tax, reason, tag: 'Amortisation' })
+    } else if (acc !== tax) {
       const accLife = a.commercialLifeMonths
       const taxLife = a.fiscalLifeMonths
       let reason: string
@@ -196,19 +281,19 @@ export function differenceByAsset(p: Period = CURRENT_PERIOD): DifferenceRow[] {
       else if (tax === 0) reason = `Tax life ended, accounting still depreciating over ${yearsLabel(accLife)}`
       else if (a.status === 'Impaired') reason = `Post-impairment accounting charge runs below the tax charge, which the impairment does not move`
       else reason = `Tax life ${taxLife! < accLife! ? 'shorter' : 'longer'} than accounting: ${yearsLabel(taxLife)} against ${yearsLabel(accLife)}`
-      rows.push({ id: a.id, name: a.name, difference: tax - acc, reason, tag: null })
+      rows.push({ id: a.id, name: a.name, difference: acc - tax, reason, tag: null })
     }
     for (const i of l.books.accounting.impairments) {
       if (i.loss === 0 || isBefore(i.period, FY_START) || isAfter(i.period, p)) continue
       rows.push({
-        id: a.id, name: a.name, difference: -i.loss, tag: 'Impairment',
+        id: a.id, name: a.name, difference: i.loss, tag: 'Impairment',
         reason: `Impairment to ${rupiah(i.recoverable)} recognised in the accounts only, not deductible`,
       })
     }
     for (const r of l.books.accounting.reversals) {
       if (r.applied === 0 || isBefore(r.period, FY_START) || isAfter(r.period, p)) continue
       rows.push({
-        id: a.id, name: a.name, difference: r.applied, tag: 'Impairment reversal',
+        id: a.id, name: a.name, difference: -r.applied, tag: 'Impairment reversal',
         reason: `Reversal of ${rupiah(r.applied)} recognised in the accounts only, as the impairment was`,
       })
     }
@@ -216,7 +301,7 @@ export function differenceByAsset(p: Period = CURRENT_PERIOD): DifferenceRow[] {
       const t = l.books.tax?.partialDisposals[i]
       if (!t || isBefore(d.period, FY_START) || isAfter(d.period, p)) return
       rows.push({
-        id: a.id, name: a.name, difference: d.gainLoss - t.gainLoss, tag: 'Partial disposal',
+        id: a.id, name: a.name, difference: t.gainLoss - d.gainLoss, tag: 'Partial disposal',
         reason: `On the ${pct(d.proportion)} disposed: accounting ${d.gainLoss >= 0 ? 'gain' : 'loss'} of ${rupiah(Math.abs(d.gainLoss))} against a tax ${t.gainLoss >= 0 ? 'gain' : 'loss'} of ${rupiah(Math.abs(t.gainLoss))}`,
       })
     })
@@ -224,7 +309,7 @@ export function differenceByAsset(p: Period = CURRENT_PERIOD): DifferenceRow[] {
     const dT = l.books.tax?.disposal
     if (dA && dT && !isBefore(dA.period, FY_START) && !isAfter(dA.period, p)) {
       rows.push({
-        id: a.id, name: a.name, difference: dA.gainLoss - dT.gainLoss, tag: 'Disposal',
+        id: a.id, name: a.name, difference: dT.gainLoss - dA.gainLoss, tag: 'Disposal',
         reason: `Accounting ${dA.gainLoss >= 0 ? 'gain' : 'loss'} of ${rupiah(Math.abs(dA.gainLoss))} against a tax ${dT.gainLoss >= 0 ? 'gain' : 'loss'} of ${rupiah(Math.abs(dT.gainLoss))}: the tax carrying amount differed at disposal`,
       })
     }

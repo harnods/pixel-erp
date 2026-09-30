@@ -22,7 +22,7 @@ import { infoToast, successToast } from '~/utils/toasts'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import {
   impactByClass, impactByTaxGroup, amortisationYtd, disposalImpactRows, impairmentImpactRows,
-  statementFigures, type ImpactRow,
+  statementFigures, DIFFERENCE_CONVENTION, type ImpactRow,
 } from '~/data/fixedAssetScreens'
 import { fixedAssets } from '~/data/assetStore'
 
@@ -42,11 +42,13 @@ const depreciationRows = computed<ImpactRow[]>(() =>
 const depreciationTotal = computed(() => ({
   commercial: depreciationRows.value.reduce((s, r) => s + (r.commercial ?? 0), 0),
   fiscal: depreciationRows.value.reduce((s, r) => s + (r.fiscal ?? 0), 0),
+  difference: depreciationRows.value.reduce((s, r) => s + r.difference, 0),
 }))
 
 const amortisationTotal = computed(() => ({
   commercial: amortisationYtd.value.reduce((s, r) => s + (r.commercial ?? 0), 0),
   fiscal: amortisationYtd.value.reduce((s, r) => s + (r.fiscal ?? 0), 0),
+  difference: amortisationYtd.value.reduce((s, r) => s + r.difference, 0),
 }))
 
 /** Disposals and impairments in the year, each on both books. */
@@ -64,9 +66,9 @@ function cell(v: number | null, absence = 'Not recognised') {
   if (v === null) return { text: t(absence), absent: true }
   return { text: formatIDR(v), absent: false }
 }
-function diff(a: number | null, b: number | null) {
-  if (a === null || b === null) return null
-  return a - b
+/** Signed, so the direction reads without a legend. */
+function signed(v: number) {
+  return v === 0 ? formatIDR(0) : `${v > 0 ? '+' : '−'}${formatIDR(Math.abs(v))}`
 }
 
 // rule/export-modal — export opens the shared modal, never a silent download.
@@ -118,6 +120,9 @@ function onExport() {
       </MpBannerDescription>
     </MpBanner>
 
+    <!-- The sign convention, once for the page. -->
+    <p class="fb__convention" data-testid="fb-convention">{{ t(DIFFERENCE_CONVENTION) }}</p>
+
     <div class="fb__card">
       <div class="fb__cardhead">
         <span class="fb__cardtitle">{{ t('Depreciation') }}</span>
@@ -143,15 +148,15 @@ function onExport() {
             </td>
             <td class="fb__td fb__td--num">{{ cell(r.commercial).text }}</td>
             <td class="fb__td fb__td--num">{{ cell(r.fiscal).text }}</td>
-            <td class="fb__td fb__td--num" :class="{ 'fb__td--pos': (diff(r.commercial, r.fiscal) ?? 0) > 0, 'fb__td--neg': (diff(r.commercial, r.fiscal) ?? 0) < 0 }">
-              {{ cell(diff(r.commercial, r.fiscal)).text }}
+            <td class="fb__td fb__td--num" :class="{ 'fb__td--pos': r.difference > 0, 'fb__td--neg': r.difference < 0 }">
+              {{ signed(r.difference) }}
             </td>
           </tr>
           <tr class="fb__tr fb__tr--total">
             <td class="fb__td">{{ t('Total depreciation') }}</td>
             <td class="fb__td fb__td--num">{{ formatIDR(depreciationTotal.commercial) }}</td>
             <td class="fb__td fb__td--num">{{ formatIDR(depreciationTotal.fiscal) }}</td>
-            <td class="fb__td fb__td--num">{{ formatIDR(depreciationTotal.commercial - depreciationTotal.fiscal) }}</td>
+            <td class="fb__td fb__td--num">{{ signed(depreciationTotal.difference) }}</td>
           </tr>
         </tbody>
       </table>
@@ -183,15 +188,13 @@ function onExport() {
               {{ cell(r.commercial, 'Not amortised').text }}
             </td>
             <td class="fb__td fb__td--num">{{ cell(r.fiscal).text }}</td>
-            <td class="fb__td fb__td--num">
-              {{ r.commercial === null ? formatIDR(0 - (r.fiscal ?? 0)) : formatIDR((r.commercial ?? 0) - (r.fiscal ?? 0)) }}
-            </td>
+            <td class="fb__td fb__td--num">{{ signed(r.difference) }}</td>
           </tr>
           <tr class="fb__tr fb__tr--total">
             <td class="fb__td">{{ t('Total amortisation') }}</td>
             <td class="fb__td fb__td--num">{{ formatIDR(amortisationTotal.commercial) }}</td>
             <td class="fb__td fb__td--num">{{ formatIDR(amortisationTotal.fiscal) }}</td>
-            <td class="fb__td fb__td--num">{{ formatIDR(amortisationTotal.commercial - amortisationTotal.fiscal) }}</td>
+            <td class="fb__td fb__td--num">{{ signed(amortisationTotal.difference) }}</td>
           </tr>
         </tbody>
       </table>
@@ -221,7 +224,7 @@ function onExport() {
             </td>
             <td class="fb__td fb__td--num" :class="(r.commercial ?? 0) >= 0 ? 'fb__td--pos' : 'fb__td--neg'">{{ cell(r.commercial).text }}</td>
             <td class="fb__td fb__td--num" :class="(r.fiscal ?? 0) >= 0 ? 'fb__td--pos' : 'fb__td--neg'">{{ cell(r.fiscal).text }}</td>
-            <td class="fb__td fb__td--num">{{ cell(diff(r.commercial, r.fiscal)).text }}</td>
+            <td class="fb__td fb__td--num">{{ signed(r.difference) }}</td>
           </tr>
           <tr v-if="!disposals.length" class="fb__tr">
             <td class="fb__td fb__td--absent" colspan="4">{{ t('No disposal this year. When one is recorded its fiscal gain or loss appears here.') }}</td>
@@ -235,7 +238,36 @@ function onExport() {
             <!-- The cell that must never be 0. Fiscal does not recognise an
                  impairment until the loss is realised. -->
             <td class="fb__td fb__td--num fb__td--absent">{{ t('Not recognised') }}</td>
-            <td class="fb__td fb__td--num">{{ cell(r.commercial).text }}</td>
+            <td class="fb__td fb__td--num">{{ signed(r.difference) }}</td>
+          </tr>
+          <tr class="fb__tr fb__tr--total">
+            <td class="fb__td">{{ t('Total disposal and impairment') }}</td>
+            <td class="fb__td" colspan="2" />
+            <td class="fb__td fb__td--num">{{ signed(H.sections.disposalAndImpairment) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Right-of-use assets: shown with their difference, kept out of the
+         total. The PRD does not put them in the asset statement's net
+         temporary difference, and their tax deduction is the payment. -->
+    <div class="fb__card" data-testid="fb-lease">
+      <div class="fb__cardhead">
+        <span class="fb__cardtitle">{{ t('Leases') }}</span>
+        <span class="fb__hint">{{ t('Shown for completeness, not included in the net temporary difference') }}</span>
+      </div>
+      <table class="fb__table">
+        <tbody>
+          <tr class="fb__tr">
+            <td class="fb__td">
+              {{ t(H.leaseLine.label) }}
+              <span class="fb__count">{{ H.leaseLine.assets }} {{ t(H.leaseLine.assets === 1 ? 'asset' : 'assets') }}</span>
+              <span class="fb__basis">{{ t(H.leaseLine.basis ?? '') }}</span>
+            </td>
+            <td class="fb__td fb__td--num">{{ cell(H.leaseLine.commercial).text }}</td>
+            <td class="fb__td fb__td--num">{{ cell(H.leaseLine.fiscal).text }}</td>
+            <td class="fb__td fb__td--num">{{ signed(H.leaseLine.difference) }} <span class="fb__excluded">{{ t('excluded') }}</span></td>
           </tr>
         </tbody>
       </table>
@@ -243,15 +275,18 @@ function onExport() {
 
     <div class="fb__foot" data-tour="cmp-deftax">
       <div class="fb__footrow">
-        <span class="fb__footlabel">{{ t('Net temporary difference') }}</span>
-        <span class="fb__footvalue">{{ formatIDR(H.netTemporaryDifference) }}</span>
+        <span class="fb__footlabel">
+          {{ t('Net temporary difference') }}
+          <span class="fb__footnote">{{ t('depreciation, amortisation, disposal and impairment above; leases excluded') }}</span>
+        </span>
+        <span class="fb__footvalue" data-testid="fb-net">{{ signed(H.netTemporaryDifference) }}</span>
       </div>
       <div class="fb__footrow fb__footrow--strong">
         <span class="fb__footlabel">
           {{ t('Deferred tax effect') }}
-          <span class="fb__footnote">{{ t('at 22% · a disclosure, not a journal entry') }}</span>
+          <span class="fb__footnote">{{ t(`at ${Math.round(H.taxRate * 100)}% of the net temporary difference · ${H.deferredTax >= 0 ? 'a deferred tax asset' : 'a deferred tax liability'} · a disclosure, not a journal entry`) }}</span>
         </span>
-        <span class="fb__footvalue">{{ formatIDR(H.deferredTax) }}</span>
+        <span class="fb__footvalue" data-testid="fb-deferred">{{ formatIDR(Math.abs(H.deferredTax)) }}</span>
       </div>
     </div>
 
@@ -281,6 +316,8 @@ function onExport() {
 .fb__cardhead { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
 .fb__cardtitle { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .fb__hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.fb__convention { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: 0 0 var(--mp-spacing-3); }
+.fb__excluded { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 
 .fb__table { width: 100%; border-collapse: collapse; }

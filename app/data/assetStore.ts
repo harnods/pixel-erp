@@ -782,6 +782,8 @@ export interface NewAssetInput {
   creditAccount?: string
   /** What the cost is debited to. Fixed assets at cost by default. */
   debitAccount?: string
+  /** A tag the asset already carries, such as one captured in a count. Generated from the ID otherwise. */
+  tag?: string
 }
 
 /**
@@ -801,7 +803,7 @@ export function createAsset(input: NewAssetInput): { ok: true; id: string } | { 
     id, name: input.name, class: input.class, acquired: input.inServiceDate, inServiceDate: input.inServiceDate,
     cost: input.cost, residual: input.residual, commercialLifeMonths: input.lifeMonths,
     taxGroup: input.taxGroup, fiscalLifeMonths: tax?.lifeMonths ?? null,
-    branch: input.branch, tag: type === 'Tangible' && !input.leaseId ? `TAG-${id.slice(3)}` : null,
+    branch: input.branch, tag: type === 'Tangible' && !input.leaseId ? (input.tag?.trim() || `TAG-${id.slice(3)}`) : null,
     location: input.location || null, custodian: input.custodian || null, type,
     statutoryCode: input.statutoryCode ?? null, indefiniteLife: input.lifeMonths === null,
     ...(input.leaseId ? { leaseId: input.leaseId } : {}),
@@ -1073,17 +1075,35 @@ export function fyFigures(p: Period = CURRENT_PERIOD) {
     })
   }
   /**
-   * The fiscal correction on the tangible half, as the working papers carry
-   * it: depreciation the tax book allows less than the accounts (positive
-   * adds back), the impairment added back, and the disposal restated on the
-   * tax basis. The design calls its magnitude the net temporary difference.
+   * One sign convention everywhere: a difference is the accounting charge
+   * less the tax charge, so positive is what the fiscal correction adds back.
+   * A gain is a negative charge, an impairment a charge the tax book does
+   * not recognise. The net temporary difference is the sum of the lines the
+   * statement shows: depreciation, amortisation (goodwill and an indefinite
+   * life included: not amortised in the accounts, amortised for tax),
+   * impairment and disposal. The lease line is shown beside it but not in
+   * it: the PRD does not put right-of-use assets in the asset statement's
+   * total, and their tax deduction is the payment, not a statutory group.
    */
-  const netFiscalCorrection = (tangible.accounting - tangible.tax) + impairment + (disposal.tax - disposal.accounting)
-  const netTemporaryDifference = -netFiscalCorrection
+  const lines = {
+    depreciation: tangible.accounting - tangible.tax,
+    amortisation: intangible.accounting - intangible.tax,
+    impairment,
+    disposal: disposal.tax - disposal.accounting,
+    lease: lease.accounting - lease.tax,
+  }
+  const netTemporaryDifference = lines.depreciation + lines.amortisation + lines.impairment + lines.disposal
   return {
     tangible, intangible, unclassifiedAccounting, impairment, disposal, lease,
-    netFiscalCorrection,
+    lines,
+    /** The same figure: what the fiscal correction adds back (negative deducts further). */
+    netFiscalCorrection: netTemporaryDifference,
     netTemporaryDifference,
+    /**
+     * At the rate, from the net temporary difference. Positive: the accounts
+     * charged more than tax allowed, which builds a deferred tax asset;
+     * negative builds a deferred tax liability.
+     */
     deferredTax: Math.round(netTemporaryDifference * TAX_RATE),
     taxRate: TAX_RATE,
   }
@@ -1320,7 +1340,8 @@ function seedTests() {
     },
     {
       id: 'IT-2026-02', assetId: 'FA-0093', assetName: seedById('FA-0093').name,
-      date: '31/12/2026', indicator: 'Annual test · indefinite life', recoverable: 1_050_000_000,
+      // Dated inside the current period: a test cannot carry a date after today.
+      date: '30/09/2026', indicator: 'Annual test · indefinite life', recoverable: 1_050_000_000,
       basis: 'Value in use', source: 'Management projection',
       author: 'Sari Wulandari', eventId: null, carryingAtTest: seedById('FA-0093').cost, kind: 'impairment',
     },

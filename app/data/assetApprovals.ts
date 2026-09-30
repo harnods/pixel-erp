@@ -150,6 +150,31 @@ export function stakeOf(accounting: number | null, tax: number | null): number {
 }
 
 /**
+ * The carrying amounts a held change will actually take off the books, read
+ * from a replay of the change as it will be recorded. A write-off is dated at
+ * the end of the open period, so the full-month convention charges that
+ * month first and the loss is the carrying amount after it: the figure put
+ * to the approver must be that one, not the register's figure as last
+ * posted. Any other change reads the register's pair.
+ */
+export function carryingAtChange(assetId: string, change: HeldChange): { accounting: number | null; tax: number | null } {
+  if (change.type === 'event' && change.event.kind === 'disposal') {
+    const pv = previewEvent(assetId, change.event)
+    if (pv.ok && pv.after) {
+      const dA = pv.after.books.accounting.disposal
+      const dT = pv.after.books.tax?.disposal
+      return { accounting: dA ? dA.carrying : null, tax: dT ? dT.carrying : null }
+    }
+  }
+  return carryingPair(assetId)
+}
+
+/** What writing an asset off now would remove from each book, as it will be recorded. */
+export function writeOffCarrying(assetId: string): { accounting: number | null; tax: number | null } {
+  return carryingAtChange(assetId, { type: 'event', event: writeOffEvent() })
+}
+
+/**
  * How much a value change moves the carrying amount: the difference the
  * held event would make on the accounting book at its period, from a replay.
  */
@@ -270,7 +295,7 @@ export function gateChange(assetId: string, kind: ApprovalKind, label: string, c
     return { ok: false, reason: `${assetId} already has ${pendingFor(assetId)[0]!.id} awaiting approval. Wait for that decision first.` }
   }
   const a = findAsset(assetId)!
-  const pair = carryingPair(assetId)
+  const pair = carryingAtChange(assetId, change)
   const req = raiseRequest({
     kind, title: `${KIND_LABEL[kind]} · ${assetId} ${a.name}`, reason: why,
     items: [{ assetId, assetName: a.name, label, change, ...pair }],

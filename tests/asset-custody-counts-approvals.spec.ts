@@ -277,7 +277,9 @@ describe('FG-7 approvals', () => {
     expect(c.requests).toHaveLength(1)
     const req = c.requests[0]!
     expect(req.items.map((i) => i.assetId).sort()).toEqual(['FA-0021', 'FA-0023'])
-    expect(requestTotal(req)).toEqual({ accounting: 79010435 + 24046875, tax: 79010435 + 7593750 })
+    // What the write-offs will record: the carrying amounts after the open
+    // period's charge (was 79.010.435 + 24.046.875 as last posted).
+    expect(requestTotal(req)).toEqual({ accounting: 77083352 + 23625000, tax: 77083352 + 6750000 })
     expect(sessionById(id)!.status).toBe('awaiting-approval')
     expect(findAsset('FA-0029')!.location).toBe('Medan Warehouse')
     expect(findAsset('FA-0023')!.status).not.toBe('Disposed')

@@ -28,7 +28,7 @@ import {
   type Condition,
 } from './assetCustody'
 import {
-  isAboveThreshold, raiseRequest, onApprovalDecided, carryingPair, stakeOf,
+  isAboveThreshold, raiseRequest, onApprovalDecided, carryingPair, stakeOf, carryingAtChange,
   approvalSettings, type ApprovalItem, type ApprovalRequest,
 } from './assetApprovals'
 import { classMaster } from './fixedAssetScreens'
@@ -435,17 +435,20 @@ export function closeSession(id: string): CloseResult {
         inServiceDate: periodEndDate(earliestEffectivePeriod.value).replace(/^\d{2}/, '01'),
         lifeMonths: parseInt(m.commercialLife, 10) * 12, residual: 0, method: 'straight-line',
         taxGroup: m.defaultTaxGroup, location: loc ?? undefined,
+        // Keep the tag the count captured, so the next count matches it.
+        ...(v.tag ? { tag: v.tag } : {}),
       })
       r.outcome = res.ok ? `Capitalised as ${res.id}` : `Not capitalised: ${res.reason}`
       r.applied = res.ok
       applied++
     } else if (r.kind === 'write-off' || r.kind === 'impairment') {
       const a = findAsset(v.assetId!)!
-      const pair = carryingPair(a.id)
       const isWO = r.kind === 'write-off'
       const change: ApprovalItem['change'] = isWO
         ? { type: 'event', event: writeOffEventNow() }
         : { type: 'impairment-test', input: { assetId: a.id, indicator: 'Physical damage', recoverable: r.recoverable!, basis: 'Fair value less costs of disposal', source: `Count ${id}` } }
+      // What the write-off will record, after the open period's charge.
+      const pair = carryingAtChange(a.id, change)
       const stake = isWO ? stakeOf(pair.accounting, pair.tax) : Math.max(0, (pair.accounting ?? 0) - r.recoverable!)
       const kind = isWO ? 'write-off' as const : 'value-change' as const
       const item = { assetId: a.id, assetName: a.name, label: isWO ? `Write off ${a.id} ${a.name}` : `Impair ${a.id} ${a.name} to Rp${r.recoverable!.toLocaleString('id-ID')}`, change, ...pair, varianceId: v.id }

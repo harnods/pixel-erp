@@ -92,17 +92,23 @@ export function detailFigures(a: FixedAsset, p: Period = CURRENT_PERIOD): Detail
     absent: disposed ? gone : a.taxGroup ? undefined : 'Not computed',
   })
 
-  // The number the whole module exists to produce.
+  // The number the whole module exists to produce, on the module's one sign
+  // convention: accounting charge less tax charge, to date. Positive means
+  // the accounts have charged more and the correction adds it back; it is
+  // the tax book value less the accounting book value.
   const diff = a.bookValueFiscal !== null && a.bookValueCommercial !== null
-    ? a.bookValueCommercial - a.bookValueFiscal
+    ? a.bookValueFiscal - a.bookValueCommercial
     : null
+  const dt = diff === null ? 0 : Math.round(diff * TAX_RATE)
   figures.push({
     label: 'Cumulative difference',
-    value: diff === null ? null : Math.abs(diff),
-    caption: `Accounting less tax · ${asOf}`,
+    value: diff,
+    caption: `Accounting charge less tax charge, to date · ${asOf}`,
     sub: diff === null
       ? undefined
-      : `Deferred tax ${fmt(Math.round(Math.abs(diff) * TAX_RATE))} at ${Math.round(TAX_RATE * 100)}%`,
+      : diff === 0
+        ? 'The books agree: no deferred tax'
+        : `Deferred tax ${dt > 0 ? 'asset' : 'liability'} ${fmt(Math.abs(dt))} at ${Math.round(TAX_RATE * 100)}%`,
     absent: diff === null ? (disposed ? gone : 'Needs both books') : undefined,
   })
 

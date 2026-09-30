@@ -14,8 +14,7 @@
 import { computed, ref } from 'vue'
 import { MpSegmentedControl, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
-import { differenceByAsset } from '~/data/fixedAssetScreens'
-import { statementFigures } from '~/data/fixedAssetScreens'
+import { differenceByAsset, statementFigures, DIFFERENCE_CONVENTION } from '~/data/fixedAssetScreens'
 import { impactBy } from '~/data/assetTaxbook'
 import { fixedAssets, CURRENT_PERIOD } from '~/data/assetStore'
 import { periodLabel } from '~/data/assetEngine'
@@ -35,7 +34,7 @@ const viewOptions = [
 const byAsset = computed(() => differenceByAsset())
 const assetTotal = computed(() => byAsset.value.reduce((s, r) => s + (r.difference ?? 0), 0))
 const H = statementFigures
-/** The per-asset view is the tangible half; it must equal the statement's figure. */
+/** The per-asset view covers what the statement totals; it must equal the statement's figure. */
 const ties = computed(() => assetTotal.value === H.value.netTemporaryDifference)
 
 const impact = computed(() => impactBy(view.value === 'asset' ? 'line' : view.value))
@@ -72,12 +71,14 @@ function signed(v: number) {
     <div class="td__bar">
       <MpSegmentedControl id="td-view" name="td-view" v-model="view" :data="viewOptions" />
     </div>
+    <!-- The sign convention, once for the page. -->
+    <p class="td__convention" data-testid="td-convention">{{ t(DIFFERENCE_CONVENTION) }}</p>
 
     <!-- ── Per asset, with the reason ── -->
     <div v-if="view === 'asset'" class="td__card" data-tour="diff-table">
       <div class="td__cardhead">
         <span class="td__cardtitle">{{ t('Per asset and event') }}</span>
-        <span class="td__hint">{{ t('Tangible assets. Positive is a further deduction on the fiscal book; negative is added back.') }}</span>
+        <span class="td__hint">{{ t('Tangible and intangible, classified. Right-of-use assets are on the lease line, outside the total.') }}</span>
       </div>
       <table class="td__table">
         <thead>
@@ -106,7 +107,7 @@ function signed(v: number) {
             <td class="td__td" colspan="2">
               {{ t('Net temporary difference') }}
               <span class="td__check" :class="ties ? 'td__check--ok' : 'td__check--bad'">
-                {{ ties ? t('Ties to the statement') : t(`Does not tie: the statement carries ${formatIDR(H.netTemporaryDifference)}`) }}
+                {{ ties ? t('Ties to the statement') : t(`Does not tie: the statement carries ${signed(H.netTemporaryDifference)}`) }}
               </span>
             </td>
             <td class="td__td td__td--num">{{ signed(assetTotal) }}</td>
@@ -121,7 +122,7 @@ function signed(v: number) {
         <span class="td__cardtitle">
           {{ view === 'line' ? t('Profit and loss impact, per line') : view === 'class' ? t('By asset class') : t('By statutory group') }}
         </span>
-        <span class="td__hint">{{ t('Charges to profit. A gain on disposal is negative. Tangible and intangible, classified assets only.') }}</span>
+        <span class="td__hint">{{ t('Charges to profit. A gain on disposal is negative. Tangible and intangible, classified assets only; leases shown below the total.') }}</span>
       </div>
       <table class="td__table">
         <thead>
@@ -153,6 +154,16 @@ function signed(v: number) {
             <td class="td__td td__td--num">{{ formatIDR(impact.total.fiscal) }}</td>
             <td class="td__td td__td--num">{{ signed(impact.total.difference) }}</td>
           </tr>
+          <tr v-if="impact.lease.assets" class="td__tr td__tr--lease" data-testid="td-lease">
+            <td class="td__td">
+              {{ t(impact.lease.key) }}
+              <span class="td__hint td__hint--block">{{ t('Not included in the net temporary difference') }}</span>
+            </td>
+            <td class="td__td td__td--num">{{ impact.lease.assets }}</td>
+            <td class="td__td td__td--num">{{ formatIDR(impact.lease.accounting) }}</td>
+            <td class="td__td td__td--num">{{ formatIDR(impact.lease.fiscal) }}</td>
+            <td class="td__td td__td--num">{{ signed(impact.lease.difference) }}</td>
+          </tr>
         </tfoot>
       </table>
       <p v-if="impact.excluded" class="td__foot">
@@ -163,13 +174,13 @@ function signed(v: number) {
     <!-- ── Deferred tax (OD-07) ── -->
     <div class="td__summary">
       <div class="td__sumrow">
-        <span>{{ t('Net temporary difference, tangible') }}</span>
-        <span class="td__sumval">{{ formatIDR(H.netTemporaryDifference) }}</span>
+        <span>{{ t('Net temporary difference') }} <span class="td__hint">{{ t('depreciation, amortisation, disposal and impairment; leases excluded') }}</span></span>
+        <span class="td__sumval" data-testid="td-net">{{ signed(H.netTemporaryDifference) }}</span>
       </div>
       <div class="td__sumrow td__sumrow--strong">
         <span>
           {{ t('Deferred tax effect') }}
-          <span class="td__hint">{{ t(`at ${Math.round(H.taxRate * 100)}% · ${H.deferredTax >= 0 ? 'a deferred tax liability' : 'a deferred tax asset'} · a disclosure, not a journal`) }}</span>
+          <span class="td__hint">{{ t(`at ${Math.round(H.taxRate * 100)}% · ${H.deferredTax >= 0 ? 'a deferred tax asset' : 'a deferred tax liability'} · a disclosure, not a journal`) }}</span>
         </span>
         <span class="td__sumval">{{ formatIDR(Math.abs(H.deferredTax)) }}</span>
       </div>
@@ -181,6 +192,8 @@ function signed(v: number) {
 .td__head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); min-height: 32px; }
 .td__sub { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0; }
 .td__links { display: flex; gap: var(--mp-spacing-4); }
+.td__convention { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: 0 0 var(--mp-spacing-3); }
+.td__hint--block { display: block; }
 /* rule/table-name-link-span */
 .td__link, .td__assetlink { color: var(--mp-text-link); cursor: pointer; }
 .td__link:hover, .td__assetlink:hover { text-decoration: underline; }

@@ -299,7 +299,9 @@ export function lampiranRows(type: AssetType, p: Period = CURRENT_PERIOD): Lampi
   const out: LampiranRow[] = []
   const opening = addPeriods(FY_START, -1)
   for (const s of assetRecords.value) {
-    if (s.type !== type) continue
+    // A right-of-use asset is not a fiscal fixed asset: its tax deduction is
+    // the lease payment as it falls due, so it is on neither half.
+    if (s.type !== type || s.leaseId) continue
     const l = ledgers.value[s.id]!
     if (!inFiling(l, p)) continue
     const group = type === 'Tangible' ? l.taxGroup! : `${s.statutoryCode ?? 'Code not set'} · ${l.taxGroup}`
@@ -437,7 +439,7 @@ export interface ImpactLine {
   accounting: number
   /** Deductible on the fiscal book: impairment is never, disposal on the tax carrying amount. */
   fiscal: number
-  /** fiscal less accounting: positive is a further deduction, negative is added back. */
+  /** Accounting less fiscal: positive is added back in the fiscal correction, negative is a further deduction. */
   difference: number
 }
 
@@ -447,7 +449,11 @@ export interface ImpactLine {
  * negative charge. Only classified assets are in it, so both columns describe
  * the same population; the rest is counted separately.
  */
-export function impactBy(dim: 'class' | 'group' | 'line', p: Period = CURRENT_PERIOD): { rows: ImpactLine[]; total: ImpactLine; excludedAccounting: number; excluded: number } {
+export function impactBy(dim: 'class' | 'group' | 'line', p: Period = CURRENT_PERIOD): {
+  rows: ImpactLine[]; total: ImpactLine; excludedAccounting: number; excluded: number
+  /** Right-of-use assets: shown on their own line, outside the total. */
+  lease: ImpactLine
+} {
   const rows = new Map<string, ImpactLine>()
   const add = (key: string, id: string | null, acc: number, fis: number) => {
     const r = rows.get(key) ?? { key, assets: 0, accounting: 0, fiscal: 0, difference: 0, ids: new Set<string>() } as ImpactLine & { ids: Set<string> }
@@ -459,6 +465,7 @@ export function impactBy(dim: 'class' | 'group' | 'line', p: Period = CURRENT_PE
   const inFy = (x: { period: Period }) => !isBefore(x.period, FY_START) && !isAfter(x.period, p)
   let excludedAccounting = 0
   let excluded = 0
+  const lease: ImpactLine = { key: 'Right-of-use depreciation against lease payments', assets: 0, accounting: 0, fiscal: 0, difference: 0 }
   for (const s of assetRecords.value) {
     const l = ledgers.value[s.id]!
     const acc = chargesBetween(l, 'accounting', FY_START, p) ?? 0
@@ -467,6 +474,11 @@ export function impactBy(dim: 'class' | 'group' | 'line', p: Period = CURRENT_PE
       continue
     }
     const tax = chargesBetween(l, 'tax', FY_START, p) ?? 0
+    // The same boundary as the statement: the lease line is shown, not totalled.
+    if (s.leaseId) {
+      if (acc || tax) { lease.assets += 1; lease.accounting += acc; lease.fiscal += tax }
+      continue
+    }
     const k = (line: string) => (dim === 'class' ? s.class : dim === 'group' ? l.taxGroup! : line)
     add(k(s.type === 'Tangible' ? 'Depreciation' : 'Amortisation'), s.id, acc, tax)
     for (const i of l.books.accounting.impairments) if (inFy(i) && i.loss) add(k('Impairment loss'), s.id, i.loss, 0)
@@ -481,13 +493,14 @@ export function impactBy(dim: 'class' | 'group' | 'line', p: Period = CURRENT_PE
   const order = ['Depreciation', 'Amortisation', 'Impairment loss', 'Loss (gain) on disposal']
   const out = [...rows.values()].map((r) => {
     const ids = (r as ImpactLine & { ids?: Set<string> }).ids
-    return { key: r.key, assets: ids?.size ?? 0, accounting: r.accounting, fiscal: r.fiscal, difference: r.fiscal - r.accounting }
+    return { key: r.key, assets: ids?.size ?? 0, accounting: r.accounting, fiscal: r.fiscal, difference: r.accounting - r.fiscal }
   }).sort((a, b) => (dim === 'line' ? order.indexOf(a.key) - order.indexOf(b.key) : a.key.localeCompare(b.key)))
   const total = out.reduce<ImpactLine>((t, r) => ({
     key: 'Total', assets: t.assets + r.assets, accounting: t.accounting + r.accounting, fiscal: t.fiscal + r.fiscal, difference: t.difference + r.difference,
   }), { key: 'Total', assets: 0, accounting: 0, fiscal: 0, difference: 0 })
-  if (dim === 'line') total.assets = new Set(assetRecords.value.filter((s) => ledgers.value[s.id]!.books.tax).map((s) => s.id)).size
-  return { rows: out, total, excludedAccounting, excluded }
+  if (dim === 'line') total.assets = new Set(assetRecords.value.filter((s) => ledgers.value[s.id]!.books.tax && !s.leaseId).map((s) => s.id)).size
+  lease.difference = lease.accounting - lease.fiscal
+  return { rows: out, total, excludedAccounting, excluded, lease }
 }
 
 // ── Incomplete parameters (OD-35) ───────────────────────────────────────────

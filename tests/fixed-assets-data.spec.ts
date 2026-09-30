@@ -143,8 +143,8 @@ describe('the headline figures', () => {
   })
 
   it('ties the net temporary difference to the working papers', () => {
-    expect(H.netTemporaryDifference).toBe(94_828_125)
-    expect(H.deferredTaxAt22pct).toBe(20_862_188)
+    expect(H.netTemporaryDifference).toBe(-242_578_119)
+    expect(H.deferredTaxAt22pct).toBe(-53_367_186)
   })
 
   it('computes deferred tax at 22% of the net temporary difference', () => {

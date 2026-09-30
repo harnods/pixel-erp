@@ -295,8 +295,12 @@ describe('the headline figures, computed', () => {
     expect(f.disposal.accounting).toBe(51_250_000)
     expect(f.disposal.tax).toBe(-71_093_750)
     expect(f.impairment).toBe(17_250_000)
-    expect(f.netTemporaryDifference).toBe(94_828_125)
-    expect(f.deferredTax).toBe(20_862_188)
+    // Depreciation +10.265.625, amortisation -147.749.994, impairment
+    // +17.250.000, disposal -122.343.750: accounting less tax, summed.
+    // (Was 94.828.125 / 20.862.188 before amortisation was counted and the
+    // depreciation sign was made consistent.)
+    expect(f.netTemporaryDifference).toBe(-242_578_119)
+    expect(f.deferredTax).toBe(-53_367_186)
   })
 })
 

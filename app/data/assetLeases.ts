@@ -460,7 +460,13 @@ export interface LeaseSummary {
   lease: LeaseContract
   term: string
   liability: number
+  /**
+   * The right-of-use carrying amount at the end of the period, after that
+   * period's charge, on the same cut-off as the liability beside it.
+   */
   rouBookValue: number | null
+  /** The register's figure: charges through the last posted run only. */
+  rouBookValueBooked: number | null
   /** This month: the asset charge (operating expense) and the interest (finance cost). */
   month: { rouCharge: number | null; interest: number; payment: number; expensed: number }
   fyExpensed: number
@@ -476,7 +482,8 @@ export function leaseSummary(l: LeaseContract, p: Period = CURRENT_PERIOD): Leas
     lease: l,
     term: `${l.startDate} – ${periodEndDate(s.endPeriod)}`,
     liability: l.exemption ? 0 : liabilityAt(l, p),
-    rouBookValue: reg ? reg.bookValueCommercial : led ? bookValueAt(led, 'accounting', p) : null,
+    rouBookValue: led ? bookValueAt(led, 'accounting', p) : null,
+    rouBookValueBooked: reg ? reg.bookValueCommercial : null,
     month: {
       rouCharge: led ? chargeAt(led, 'accounting', p).charge : null,
       interest: l.exemption ? 0 : row?.interest ?? 0,
