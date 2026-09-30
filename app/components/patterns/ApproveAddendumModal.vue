@@ -39,10 +39,10 @@ function confirm() { emit('confirm'); close() }
 <template>
   <Transition name="aam">
     <div v-if="isOpen" class="aam-overlay" @click.self="close">
-      <div class="aam-panel" role="alertdialog" aria-modal="true" :aria-label="t('Approve this addendum?')">
-        <p class="aam-title">{{ t('Approve this addendum?') }}</p>
+      <div class="aam-panel" role="alertdialog" aria-modal="true" :aria-label="t('Approve addendum?')">
+        <p class="aam-title">{{ t('Approve addendum?') }}</p>
         <p class="aam-desc">
-          {{ t('Approving changes the contract value on this engagement. It cannot be undone from here — a further addendum would be needed to reverse it.') }}
+          {{ t('The contract value will change. To reverse it, submit another addendum.') }}
         </p>
 
         <div class="aam-box">
@@ -63,8 +63,7 @@ function confirm() { emit('confirm'); close() }
         <p class="aam-reason"><b>{{ t('Reason') }}:</b> {{ reason }}</p>
         <p class="aam-effect">{{ effect }}</p>
         <p class="aam-approver">
-          {{ t('You are approving as Anggun Prakoso · Finance Controller. This is a separate act from raising the addendum —') }}
-          {{ raisedBy }} {{ t('raised it.') }}
+          {{ t('Submitted by') }} {{ raisedBy }}. {{ t('Approving as') }} Anggun Prakoso · {{ t('Finance Controller') }}
         </p>
 
         <div class="aam-footer">

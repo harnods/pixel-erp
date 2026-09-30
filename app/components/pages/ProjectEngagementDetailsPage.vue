@@ -24,7 +24,7 @@ import ProjectStatCards, { type ProjectStat } from '~/components/patterns/Projec
 import ApproveAddendumModal from '~/components/patterns/ApproveAddendumModal.vue'
 import { formatDate, formatDateLong } from '~/utils/date'
 import {
-  findEngagement, STAGES, stageIndex, lifecycleLabel, methodLabel, methodFormal,
+  findEngagement, STAGES, stageIndex, lifecycleLabel, methodLabel,
   revenue, actualCost, pocPct, billed, collected, wipNet, openEntries, readyToInvoice,
   entryAmount, entryFinal, entryLabel, daysAgo, ageBuckets, budgetOf, budgetReport,
   canClose, closeHint, pendingVos, advanceStage,
@@ -72,6 +72,8 @@ function continueTo(key: EngagementStage) {
 function goList() { router.push('/project-accounting') }
 
 // ── Stats, per tab ────────────────────────────────────────────────────────────
+function costLinesLabel(n: number) { return `${n} ${n === 1 ? t('cost line') : t('cost lines')}` }
+
 const stats = computed<ProjectStat[]>(() => {
   const e = engagement.value
   if (!e) return []
@@ -83,9 +85,9 @@ const stats = computed<ProjectStat[]>(() => {
   if (activeStage.value === 'setup' || activeStage.value === 'execution') {
     return [
       { key: 'value', label: valueLabel, value: formatIdr(valueAmt), sub: e.vos.some(v => v.status === 'Approved') ? t('Revised by addendum') : '' },
-      { key: 'budget', label: t('Budgeted cost'), value: budget === null ? t('Not set') : formatIdr(budget), sub: t('Set at Setup'), tone: budget === null ? 'muted' : 'default' },
-      { key: 'cost', label: t('Cost incurred'), value: formatIdr(cost), sub: `${e.entries.length} ${t('tagged lines')}`, tone: budget !== null && cost > budget ? 'adverse' : 'default' },
-      { key: 'variance', label: t('Budget variance'), value: budget === null ? t('Not set') : formatIdrSigned(budget - cost), sub: t('Budgeted less incurred'), tone: budget === null ? 'muted' : (budget - cost < 0 ? 'adverse' : 'positive') },
+      { key: 'budget', label: t('Budgeted cost'), value: budget === null ? t('Not set') : formatIdr(budget), sub: t('From the budget plan'), tone: budget === null ? 'muted' : 'default' },
+      { key: 'cost', label: t('Cost incurred'), value: formatIdr(cost), sub: costLinesLabel(e.entries.length), tone: budget !== null && cost > budget ? 'adverse' : 'default' },
+      { key: 'variance', label: t('Budget variance'), value: budget === null ? t('Not set') : formatIdrSigned(budget - cost), sub: t('Budgeted cost minus cost incurred'), tone: budget === null ? 'muted' : (budget - cost < 0 ? 'adverse' : 'positive') },
     ]
   }
 
@@ -95,9 +97,9 @@ const stats = computed<ProjectStat[]>(() => {
       const wip = open.reduce((a, x) => a + entryAmount(x), 0)
       const risk = open.filter(x => daysAgo(x.date) > 60).reduce((a, x) => a + entryAmount(x), 0)
       return [
-        { key: 'cost', label: t('Cost incurred'), value: formatIdr(cost), sub: `${e.entries.length} ${t('tagged lines')}` },
-        { key: 'wip', label: t('Awaiting review'), value: formatIdr(wip), sub: `${open.length} ${t('lines, not yet revenue')}` },
-        { key: 'risk', label: t('Older than 60 days'), value: formatIdr(risk), sub: t('Hard to defend to the client'), tone: risk > 0 ? 'adverse' : 'default' },
+        { key: 'cost', label: t('Cost incurred'), value: formatIdr(cost), sub: costLinesLabel(e.entries.length) },
+        { key: 'wip', label: t('Awaiting review'), value: formatIdr(wip), sub: `${costLinesLabel(open.length)} ${t('not yet recognised')}` },
+        { key: 'risk', label: t('Older than 60 days'), value: formatIdr(risk), sub: t('Awaiting review, by line date'), tone: risk > 0 ? 'adverse' : 'default' },
         { key: 'rev', label: t('Revenue recognised'), value: formatIdr(revenue(e)) },
       ]
     }
@@ -106,7 +108,7 @@ const stats = computed<ProjectStat[]>(() => {
         { key: 'cv', label: t('Contract value'), value: formatIdr(e.contractValue) },
         { key: 'budget', label: t('Budgeted cost'), value: budget === null ? t('Not set') : formatIdr(budget), tone: budget === null ? 'muted' : 'default' },
         { key: 'cost', label: t('Cost incurred'), value: formatIdr(cost), tone: budget !== null && cost > budget ? 'adverse' : 'default' },
-        { key: 'poc', label: t('Percentage complete'), value: `${pocPct(e).toFixed(0)}%`, sub: t('Cost incurred ÷ cost budgeted'), tone: 'positive' },
+        { key: 'poc', label: t('Percentage complete'), value: `${pocPct(e).toFixed(0)}%`, sub: t('Cost incurred ÷ budgeted cost'), tone: 'positive' },
       ]
     }
     const verified = (e.milestones ?? []).filter(m => m.verified).length
@@ -126,9 +128,9 @@ const stats = computed<ProjectStat[]>(() => {
       { key: 'collected', label: t('Collected'), value: formatIdr(collected(e)), tone: 'positive' },
       {
         key: 'net',
-        label: net > 0 ? t('Unbilled (asset)') : net < 0 ? t('Overbilled (liability)') : t('Billing in step with recognition'),
+        label: net < 0 ? t('Billed in advance') : t('Unbilled revenue'),
         value: formatIdr(Math.abs(net)),
-        sub: net > 0 ? t('Recognized but not yet invoiced') : net < 0 ? t('Billed ahead of recognition') : t('Recognition vs. billing'),
+        sub: net > 0 ? t('Recognised, not yet invoiced') : net < 0 ? t('Invoiced ahead of revenue recognised') : t('Billing matches revenue recognised'),
         tone: net > 0 ? 'adverse' : net < 0 ? 'adverse' : 'positive',
       },
     ]
@@ -138,7 +140,7 @@ const stats = computed<ProjectStat[]>(() => {
     { key: 'rev', label: t('Revenue recognised'), value: formatIdr(revenue(e)) },
     { key: 'cost', label: t('Cost incurred'), value: formatIdr(cost) },
     { key: 'cash', label: t('Cash collected'), value: formatIdr(collected(e)), tone: 'positive' },
-    { key: 'bva', label: t('Budget vs. actual'), value: budget === null ? t('Not set') : formatIdrSigned(budget - cost), tone: budget === null ? 'muted' : 'default' },
+    { key: 'bva', label: t('Budget variance'), value: budget === null ? t('Not set') : formatIdrSigned(budget - cost), tone: budget === null ? 'muted' : 'default' },
   ]
 })
 
@@ -147,11 +149,11 @@ const contractRows = computed(() => {
   const e = engagement.value
   if (!e) return []
   return [
-    { k: t('Revenue recognition'), v: `${methodLabel(e.method)} (${methodFormal(e.method)})` },
+    { k: t('Revenue recognition'), v: methodLabel(e.method) },
     { k: e.method === 'tm' ? t('Fee estimate') : t('Contract value'), v: formatIdr(e.method === 'tm' ? e.feeEstimate : e.contractValue) },
-    { k: t('Cost budget'), v: e.budget === null ? t('Not set') : formatIdr(e.budget) },
+    { k: t('Budgeted cost'), v: e.budget === null ? t('Not set') : formatIdr(e.budget) },
     { k: t('Client'), v: e.client },
-    { k: t('PM / owner'), v: e.pm },
+    { k: t('Project manager'), v: e.pm },
     { k: t('Status'), v: e.stage === 'closed' ? `${t('Closed')} ${formatDateLong(e.closedAt ?? '')}` : lifecycleLabel(e.stage) },
   ]
 })
@@ -176,14 +178,14 @@ const voConfirmId = ref<string | null>(null)
 function submitAddendum() {
   const e = engagement.value
   if (!e) return
-  if (voReason.value.trim().length < 5) { voWarn.value = t('A reason is required (minimum 5 characters).'); return }
+  if (voReason.value.trim().length < 5) { voWarn.value = t('Enter a reason of at least 5 characters'); return }
   const val = Number(voValue.value)
-  if (!val || val <= 0) { voWarn.value = t('Enter the new contract value.'); return }
+  if (!val || val <= 0) { voWarn.value = t('Enter the revised contract value'); return }
   addAddendum(e.id, val, voReason.value, voDistinct.value)
   voValue.value = ''; voReason.value = ''; voDistinct.value = false; voWarn.value = ''
   toast.notify({
     variant: 'success',
-    title: t('Addendum raised. It now needs a separate approval from Finance before the contract value moves.'),
+    title: t('Addendum submitted. Awaiting Finance approval'),
     maxWidth: 'max-content',
   })
 }
@@ -197,15 +199,15 @@ const voEffect = computed(() => {
   if (!e || !vo) return ''
   if (e.method === 'output') {
     return vo.distinct
-      ? `${t('Distinct added scope: every existing milestone keeps the money it is already worth, and the addition gets its own milestone priced at')} ${formatIdr(vo.newValue - vo.oldValue)}. ${t('Verified milestones are untouched.')}`
-      : t('Not distinct: verified milestones stay locked — a physical sign-off is never reopened. Milestone verification is blocked until the unverified weights are reconfirmed against the new value.')
+      ? `${t('Existing milestones keep their amounts. The added scope gets its own milestone of')} ${formatIdr(vo.newValue - vo.oldValue)}.`
+      : t('Verified milestones stay locked. Verification is blocked until the unverified milestone weights are confirmed against the new value.')
   }
   if (e.method === 'input') {
     return vo.distinct
-      ? `${t('Distinct added scope: revenue already recognized')} (${formatIdr(revenue(e))}) ${t('is untouched and the addition is measured prospectively.')}`
-      : `${t('Not distinct — the same partially-satisfied obligation. Recognized revenue is recalculated as')} ${pocPct(e).toFixed(0)}% ${t('of the new contract value, a one-time catch-up of')} ${formatIdr(Math.round((pocPct(e) / 100) * vo.newValue - revenue(e)))} ${t('landing in the current period.')}`
+      ? `${t('Revenue recognised to date')} (${formatIdr(revenue(e))}) ${t('stays as is. The added scope is recognised from this period on.')}`
+      : `${t('Revenue is recalculated at')} ${pocPct(e).toFixed(0)}% ${t('of the new contract value. A one-time catch-up adjustment of')} ${formatIdr(Math.round((pocPct(e) / 100) * vo.newValue - revenue(e)))} ${t('posts in the current period.')}`
   }
-  return t('The fee estimate is replaced. Work already reviewed and billed is not restated.')
+  return t('The fee estimate is replaced. Reviewed and billed work is not restated.')
 })
 
 function doApproveVo() {
@@ -214,7 +216,7 @@ function doApproveVo() {
   if (!e || !id) return
   approveAddendum(e.id, id)
   voConfirmId.value = null
-  toast.notify({ variant: 'success', title: t('Addendum approved by Finance'), maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Addendum approved'), maxWidth: 'max-content' })
 }
 
 function doRejectVo(id: string) {
@@ -230,11 +232,11 @@ const voRows = computed(() => {
   const head = {
     id: '__original',
     date: t('At creation'),
-    reason: t('Original contract as entered at Setup'),
+    reason: t('Original contract'),
     oldValue: '—',
     newValue: formatIdr(original),
     scope: t('Original'),
-    trail: t('Locked on creation — never edited in place'),
+    trail: t('Locked at creation'),
     adjNote: '',
     status: 'active',
     statusLabel: t('Active'),
@@ -248,11 +250,11 @@ const voRows = computed(() => {
     newValue: formatIdr(v.newValue),
     scope: v.distinct ? t('Distinct scope') : t('Not distinct'),
     trail: v.approvedBy
-      ? `${t('Raised by')} ${v.raisedBy} · ${t('approved by')} ${v.approvedBy}`
+      ? `${t('Submitted by')} ${v.raisedBy} · ${t('approved by')} ${v.approvedBy}`
       : v.status === 'Rejected'
-        ? `${t('Raised by')} ${v.raisedBy} · ${t('rejected by Finance')}`
-        : `${t('Raised by')} ${v.raisedBy} · ${t('awaiting Finance/Controller')}`,
-    adjNote: v.adjustment ? `${t('Cumulative catch-up')} ${formatIdr(v.adjustment)} ${t('recognized in the current period')}` : '',
+        ? `${t('Submitted by')} ${v.raisedBy} · ${t('rejected by Finance')}`
+        : `${t('Submitted by')} ${v.raisedBy} · ${t('awaiting Finance approval')}`,
+    adjNote: v.adjustment ? `${t('Catch-up adjustment of')} ${formatIdr(v.adjustment)} ${t('in the current period')}` : '',
     status: v.status.toLowerCase(),
     statusLabel: v.status,
     pending: v.status === 'Pending',
@@ -265,10 +267,10 @@ const scopeFormOpen = ref(false)
 function saveScopeMilestone() {
   const e = engagement.value
   if (!e) return
-  if (!scopeLabel.value.trim()) { toast.notify({ variant: 'error', title: t('Name the milestone for the added scope') }); return }
+  if (!scopeLabel.value.trim()) { toast.notify({ variant: 'error', title: t('Enter a milestone name') }); return }
   const added = addScopeMilestone(e.id, scopeLabel.value)
   scopeLabel.value = ''; scopeFormOpen.value = false
-  toast.notify({ variant: 'success', title: `${t('Milestone added at')} ${formatIdr(added)}`, maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: `${t('Milestone added')} · ${formatIdr(added)}`, maxWidth: 'max-content' })
 }
 
 // ── Costs tab: the tagged-transaction rollup ─────────────────────────────────
@@ -322,11 +324,11 @@ const hourStats = computed<ProjectStat[]>(() => {
   if (!e) return []
   const h = totalHours.value
   return [
-    { key: 'h', label: t('Hours logged'), value: `${h} h`, sub: `${hourLines.value.length} ${t('of')} ${e.entries.length} ${t('cost lines carry hours')}` },
-    { key: 'cph', label: t('Cost per hour'), value: h ? formatIdr(Math.round(hourCost.value / h)) : '—', sub: t('Actual cost ÷ hours') },
+    { key: 'h', label: t('Hours logged'), value: `${h} h`, sub: `${hourLines.value.length} ${t('of')} ${costLinesLabel(e.entries.length)} ${t('have hours')}` },
+    { key: 'cph', label: t('Cost per hour'), value: h ? formatIdr(Math.round(hourCost.value / h)) : '—', sub: t('Cost incurred ÷ hours') },
     e.method === 'tm'
-      ? { key: 'chg', label: t('Chargeable per hour'), value: h ? formatIdr(Math.round((hourCost.value * (1 + e.markupPct / 100)) / h)) : '—', sub: `${t('At the agreed')} ${e.markupPct}% ${t('margin')}`, tone: 'positive' as const }
-      : { key: 'exp', label: t('Cost explained by hours'), value: formatIdr(hourCost.value), sub: `${t('Of')} ${formatIdr(actualCost(e))} ${t('booked')}`, tone: 'positive' as const },
+      ? { key: 'chg', label: t('Billable per hour'), value: h ? formatIdr(Math.round((hourCost.value * (1 + e.markupPct / 100)) / h)) : '—', sub: `${t('Includes')} ${e.markupPct}% ${t('margin')}`, tone: 'positive' as const }
+      : { key: 'exp', label: t('Cost with hours'), value: formatIdr(hourCost.value), sub: `${t('Of')} ${formatIdr(actualCost(e))} ${t('cost incurred')}`, tone: 'positive' as const },
   ]
 })
 const hourCoverage = computed(() => {
@@ -334,8 +336,8 @@ const hourCoverage = computed(() => {
   if (!e) return ''
   const uncovered = actualCost(e) - hourCost.value
   return uncovered > 0
-    ? `${formatIdr(uncovered)} ${t('of cost carries no hours, so it sits outside this rate analysis — material and subcontractor lines usually should.')}`
-    : t('Every cost line on this project carries hours.')
+    ? `${formatIdr(uncovered)} ${t('of cost has no hours and is excluded from these rates.')}`
+    : ''
 })
 
 // ── Revenue recognition: cost-plus review queue ──────────────────────────────
@@ -354,7 +356,7 @@ function toggleOne(id: string) {
 }
 function inBucket(lo: number, hi: number) { return openLines.value.filter(x => { const d = daysAgo(x.date); return d > lo && d <= hi }) }
 const bulkChips = computed(() => [
-  { key: 'all', label: `${t('All')} ${openLines.value.length} ${t('open')}`, pick: () => openLines.value },
+  { key: 'all', label: `${t('All open')} (${openLines.value.length})`, pick: () => openLines.value },
   { key: '90', label: `${t('90+ days')} (${inBucket(90, 1e9).length})`, pick: () => inBucket(90, 1e9) },
   { key: '6190', label: `${t('61–90 days')} (${inBucket(60, 90).length})`, pick: () => inBucket(60, 90) },
   { key: '60', label: `${t('Over 60 days')} (${inBucket(60, 1e9).length})`, pick: () => inBucket(60, 1e9) },
@@ -367,9 +369,15 @@ const selectionTotal = computed(() => (engagement.value?.entries ?? [])
   .reduce((a, x) => a + entryAmount(x), 0))
 
 const pendingTitle = computed(() => {
-  if (pendingAction.value === 'bill') return t('Confirm charging cost plus the agreed margin')
-  if (pendingAction.value === 'atcost') return t('Why is the margin being waived on these lines?')
-  return t('Why is the client not being charged for these lines at all?')
+  if (pendingAction.value === 'bill') return t('Charge cost + margin?')
+  if (pendingAction.value === 'atcost') return t('Reason for charging at cost only')
+  return t('Reason for not charging the client')
+})
+
+const pendingConfirmLabel = computed(() => {
+  if (pendingAction.value === 'bill') return t('Charge cost + margin')
+  if (pendingAction.value === 'atcost') return t('Charge at cost only')
+  return t("Don't charge client")
 })
 
 function startAction(type: Exclude<CostDecision, null>) {
@@ -383,7 +391,7 @@ function confirmDecision() {
   const e = engagement.value
   if (!e || !pendingAction.value) return
   if (pendingAction.value !== 'bill' && pendingReason.value.trim().length < 5) {
-    pendingWarn.value = t('A reason is required (minimum 5 characters).')
+    pendingWarn.value = t('Enter a reason of at least 5 characters')
     return
   }
   const count = selected.value.length
@@ -393,7 +401,7 @@ function confirmDecision() {
   pendingReason.value = ''
   toast.notify({
     variant: 'success',
-    title: `${count} ${t('item(s)')}, ${formatIdr(total)}, ${t('recorded. Ready to invoice on the Invoices & payments tab.')}`,
+    title: `${costLinesLabel(count)} ${t('reviewed')} · ${formatIdr(total)}. ${t('Ready to invoice')}`,
     maxWidth: 'max-content',
   })
 }
@@ -404,15 +412,15 @@ const tmRows = computed(() => {
   if (!e) return []
   const gross = e.entries.reduce((a, x) => a + entryAmount(x), 0)
   const rows = [
-    { k: t('Cost incurred'), note: t('Every expense, purchase and payroll line tagged to this project'), val: formatIdr(actualCost(e)) },
-    { k: t('Agreed margin on cost'), note: t('Set on the contract at Setup, applied to every allowed line'), val: `+${e.markupPct}%` },
-    { k: t('Value at cost + margin'), note: t('What the client could be charged if every line is allowed'), val: formatIdr(gross) },
-    { k: t('Revenue recognised to date'), note: t('Reviewed lines only — unreviewed cost is not yet revenue'), val: formatIdr(revenue(e)) },
+    { k: t('Cost incurred'), note: t('Cost lines tagged to this project'), val: formatIdr(actualCost(e)) },
+    { k: t('Agreed margin on cost'), note: t('From the contract'), val: `+${e.markupPct}%` },
+    { k: t('Value at cost + margin'), note: t('If every line is charged in full'), val: formatIdr(gross) },
+    { k: t('Revenue recognised to date'), note: t('Reviewed lines only'), val: formatIdr(revenue(e)) },
   ]
   if (totalHours.value > 0) {
     rows.splice(1, 0, {
-      k: t('Hours behind that cost'),
-      note: t('Optional on the expense line — analysis only, never part of the amount'),
+      k: t('Hours logged'),
+      note: '',
       val: `${totalHours.value} h ${t('at')} ${formatIdrShort(Math.round(hourCost.value / totalHours.value))}/h`,
     })
   }
@@ -450,10 +458,10 @@ const outputMilestones = computed(() => {
       label: m.label,
       pct: `${Math.round(m.pct * 100) / 100}%`,
       amount: m.verified ? formatIdr(m.recognized) : formatIdr((e.contractValue * m.pct) / 100),
-      statusLabel: m.invId ? t('Verified & invoiced') : m.verified ? t('Verified · awaiting invoice') : t('Not verified'),
+      statusLabel: m.invId ? t('Invoiced') : m.verified ? t('Awaiting invoice') : t('Not verified'),
       // A real status key, so the badge stays correct even without the type override.
       statusKey: m.invId ? 'invoiced' : m.verified ? 'pending' : 'not started',
-      note: awaitingInvoice ? t('Raise its invoice on Invoices & payments') : '',
+      note: awaitingInvoice ? t('Create the invoice in Invoices & payments') : '',
       canVerify: !m.verified && weightsOk.value && !e.weightsNeedConfirm,
       showUnverify: m.verified,
       locked: !!m.invId,
@@ -474,22 +482,22 @@ function doConfirmWeights() {
   const ok = confirmWeights(e.id, weightDraft.value)
   if (!ok) {
     const sum = weightDraft.value.reduce((a, w) => a + (Number(w.pct) || 0), 0)
-    toast.notify({ variant: 'error', title: `${t('Weights currently sum to')} ${sum}%. ${t('They must sum to 100% of the new contract value.')}`, maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: `${t('Weights total')} ${sum}%. ${t('Adjust them to total 100%')}`, maxWidth: 'max-content' })
     return
   }
-  toast.notify({ variant: 'success', title: t('Milestone weights confirmed against the revised contract value') , maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Milestone weights confirmed'), maxWidth: 'max-content' })
 }
 
 function doVerify(mid: string) {
   const e = engagement.value
   if (!e) return
   if (e.weightsNeedConfirm) {
-    toast.notify({ variant: 'error', title: t('Confirm milestone weights before verifying further milestones'), maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: t('Confirm milestone weights before verifying'), maxWidth: 'max-content' })
     return
   }
   const amount = verifyMilestone(e.id, mid)
   if (amount) {
-    toast.notify({ variant: 'success', title: `${formatIdr(amount)} ${t('recognized. The milestone is queued for billing.')}`, maxWidth: 'max-content' })
+    toast.notify({ variant: 'success', title: `${t('Milestone verified')}. ${formatIdr(amount)} ${t('recognised')}`, maxWidth: 'max-content' })
   }
 }
 
@@ -497,10 +505,10 @@ function doUnverify(mid: string) {
   const e = engagement.value
   if (!e) return
   if (!unverifyMilestone(e.id, mid)) {
-    toast.notify({ variant: 'error', title: t('This milestone has already been invoiced. Void the invoice before reversing the verification.'), maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: t('Milestone already invoiced. Void the invoice first'), maxWidth: 'max-content' })
     return
   }
-  toast.notify({ variant: 'success', title: t('Verification reversed — the recognized revenue has been backed out'), maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Verification reversed'), maxWidth: 'max-content' })
 }
 
 // ── Invoices & payments ───────────────────────────────────────────────────────
@@ -521,10 +529,10 @@ const billingRows = computed(() => {
       id: m.id,
       label: m.label,
       amount: formatIdr((e.contractValue * m.pct) / 100),
-      statusLabel: m.status === 'paid' ? t('Paid') : m.status === 'invoiced' ? t('Invoiced, unpaid') : t('Not yet invoiced'),
+      statusLabel: m.status === 'paid' ? t('Paid') : m.status === 'invoiced' ? t('Unpaid') : t('Not invoiced'),
       statusKey: m.status === 'paid' ? 'paid' : m.status === 'invoiced' ? 'unpaid' : 'not started',
       hasAction: m.status !== 'paid',
-      actionLabel: m.status === 'notdue' ? t('Invoice now') : t('Record payment'),
+      actionLabel: m.status === 'notdue' ? t('Create invoice') : t('Record payment'),
       action: m.status === 'notdue'
         ? () => newInvoice('billing', m.label, m.id)
         : () => { if (m.invId) recordPayment(e.id, m.invId) },
@@ -536,21 +544,13 @@ const billingRows = computed(() => {
       id: m.id,
       label: m.label,
       amount: m.verified ? formatIdr(m.recognized) : formatIdr((e.contractValue * m.pct) / 100),
-      statusLabel: awaitingInvoice ? t('Verified, not yet invoiced') : m.verified ? t('Verified & invoiced') : t('Awaiting verification'),
+      statusLabel: awaitingInvoice ? t('Awaiting invoice') : m.verified ? t('Invoiced') : t('Not verified'),
       statusKey: awaitingInvoice ? 'pending' : m.verified ? 'invoiced' : 'not started',
       hasAction: awaitingInvoice || (!m.verified && !e.weightsNeedConfirm),
       actionLabel: awaitingInvoice ? t('Create invoice') : t('Mark physically verified'),
       action: awaitingInvoice ? () => newInvoice('output', m.label, m.id) : () => doVerify(m.id),
     }
   })
-})
-
-const billingNote = computed(() => {
-  const e = engagement.value
-  if (!e) return ''
-  return e.method === 'input'
-    ? t('Independent of recognition above — the difference is reported as unbilled or overbilled revenue.')
-    : t('Driven by milestone verification — an invoice appears here the moment a milestone is verified.')
 })
 
 function doRecordPayment(invId: string) {
@@ -570,8 +570,7 @@ const marginSub = computed(() => {
   const e = engagement.value
   if (!e) return ''
   const rev = revenue(e)
-  const share = rev > 0 ? `${((margin.value / rev) * 100).toFixed(0)}% ${t('of revenue earned')}` : t('no revenue earned yet')
-  return `${t('Margin')} · ${share} · ${methodLabel(e.method)}`
+  return rev > 0 ? `${((margin.value / rev) * 100).toFixed(0)}% ${t('of revenue recognised')}` : t('No revenue recognised yet')
 })
 const closable = computed(() => (engagement.value ? canClose(engagement.value) : false))
 
@@ -586,14 +585,6 @@ function doClose() {
 }
 
 const budgetRows = computed(() => (engagement.value ? budgetReport(engagement.value) : []))
-const budgetNote = computed(() => {
-  switch (activeStage.value) {
-    case 'execution': return t('Cost side is live: every tagged transaction line posts against its account here.')
-    case 'recognition': return t('Revenue side is live: actual revenue is what has been recognized so far, not what has been billed.')
-    case 'billing': return t('Recognized revenue against plan, with cost to date — the collection position sits in the stats above.')
-    default: return t('Final variance. This is the record that feeds estimating for the next similar job.')
-  }
-})
 const showBudgetVariance = computed(() => activeStage.value !== 'setup')
 </script>
 
@@ -654,22 +645,14 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
           <MpTabPanel value="setup">
             <div class="pa-two-col">
               <section class="pa-card">
-                <div class="pa-card-head">
-                  <div>
-                    <h2 class="pa-card-title">{{ t('Contract') }}</h2>
-                    <p class="pa-card-desc">
-                      {{ t('Locked when it was created. Every change since is a dated addendum — nothing here is overwritten in place.') }}
-                    </p>
-                  </div>
-                </div>
+                <h2 class="pa-card-title pa-card-title--spaced">{{ t('Contract') }}</h2>
                 <div class="pa-fields">
                   <ContentList v-for="r in contractRows" :key="r.k" :label="r.k" :value="r.v" />
                 </div>
               </section>
 
               <section class="pa-card">
-                <h2 class="pa-card-title">{{ t('Budget plan') }}</h2>
-                <p class="pa-card-desc">{{ t('The baseline set at Setup. It stays fixed — an addendum never restates it.') }}</p>
+                <h2 class="pa-card-title pa-card-title--spaced">{{ t('Budget plan') }}</h2>
                 <div class="pa-fields">
                   <ContentList v-for="(p, i) in planRows" :key="`${p.label}-${i}`" :label="p.kind">
                     <span class="pa-plan-row">
@@ -683,10 +666,9 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
 
             <!-- Distinct added scope owes the contract its own milestone. -->
             <section v-if="engagement.scopePending" class="pa-card pa-card--notice">
-              <h2 class="pa-card-title">{{ t('Add a milestone for the distinct scope') }}</h2>
+              <h2 class="pa-card-title">{{ t('Add a milestone for the added scope') }}</h2>
               <p class="pa-card-desc">
-                {{ t('The approved addendum added') }} {{ formatIdr(engagement.scopePending.added) }}
-                {{ t('of separately identifiable work, so it earns its own milestone priced at its own value. The existing milestones keep the amounts they already had — only their weights restate against the larger contract.') }}
+                {{ t('The approved addendum added') }} {{ formatIdr(engagement.scopePending.added) }} {{ t('of separate scope. Existing milestones keep their amounts.') }}
               </p>
               <button
                 v-if="!scopeFormOpen"
@@ -697,7 +679,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
               <div v-else class="pa-inline-form">
                 <MpInput
                   id="pa-scope-label" v-model="scopeLabel" is-full-width
-                  :placeholder="t('e.g. Separate guard house handed over')"
+                  :placeholder="t('Example: Guard house handed over')"
                 />
                 <span class="pa-inline-amount">{{ formatIdr(engagement.scopePending.added) }}</span>
                 <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="saveScopeMilestone">{{ t('Save milestone') }}</button>
@@ -732,10 +714,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
 
             <!-- ── Edit contract: append-only addenda ── -->
             <section class="pa-card">
-              <h2 class="pa-card-title">{{ t('Edit contract') }}</h2>
-              <p class="pa-card-desc">
-                {{ t('The contract froze the moment it was created, so there is nothing to correct in place — a revised value is recorded as an addendum instead, dated and attributed. The project manager raises it; a Finance/Controller approval is a separate act before anything moves. A reason of at least 5 characters is required.') }}
-              </p>
+              <h2 class="pa-card-title pa-card-title--spaced">{{ t('Contract addenda') }}</h2>
 
               <div class="pa-vo-form">
                 <MpFormControl id="pa-vo-value" is-required>
@@ -749,7 +728,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                   <MpFormLabel>{{ t('Reason') }}</MpFormLabel>
                   <MpInput
                     id="pa-vo-reason-input" v-model="voReason" is-full-width
-                    :placeholder="t('e.g. Additional foundation work requested by client')"
+                    :placeholder="t('Example: Additional foundation work requested by client')"
                   />
                 </MpFormControl>
                 <button type="button" class="btn-enterprise btn-enterprise--primary pa-vo-submit" @click="submitAddendum">
@@ -759,23 +738,21 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
 
               <div class="pa-box">
                 <h3 class="pa-box-title">{{ t('Is the added scope distinct?') }}</h3>
-                <p class="pa-card-desc">
-                  {{ t('Under PSAK 72 this, not how the project earns, decides whether revenue already earned is trued up. The system cannot infer it — someone has to say which it is.') }}
-                </p>
+                <p class="pa-card-desc">{{ t('Under PSAK 72, this decides whether revenue already recognised is adjusted.') }}</p>
                 <div class="pa-choices">
                   <button
                     type="button" class="pa-choice" :class="{ 'pa-choice--picked': !voDistinct }"
                     :aria-pressed="!voDistinct" @click="voDistinct = false"
                   >
-                    <span class="pa-choice-title">{{ t('Not distinct — same obligation') }}</span>
-                    <span class="pa-choice-desc">{{ t('More concrete, an extended foundation, a mezzanine on the same building. One-time cumulative catch-up in the current period. The common case.') }}</span>
+                    <span class="pa-choice-title">{{ t('Not distinct: same scope') }}</span>
+                    <span class="pa-choice-desc">{{ t('Extends the existing work, e.g. a larger foundation. Revenue to date is adjusted in the current period.') }}</span>
                   </button>
                   <button
                     type="button" class="pa-choice" :class="{ 'pa-choice--picked': voDistinct }"
                     :aria-pressed="voDistinct" @click="voDistinct = true"
                   >
-                    <span class="pa-choice-title">{{ t('Distinct — separate scope') }}</span>
-                    <span class="pa-choice-desc">{{ t('Separately identifiable and priced near its standalone value, e.g. also build a separate structure. Treated prospectively; on milestones it gets its own.') }}</span>
+                    <span class="pa-choice-title">{{ t('Distinct: separate scope') }}</span>
+                    <span class="pa-choice-desc">{{ t('New work priced on its own, e.g. a separate structure. Recognised from this period on, with its own milestone.') }}</span>
                   </button>
                 </div>
               </div>
@@ -809,7 +786,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                     <td class="pa-td pa-td--actions">
                       <template v-if="v.pending">
                         <button type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="voConfirmId = v.id">
-                          {{ t('Approve as Finance') }}
+                          {{ t('Approve') }}
                         </button>
                         <button type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="doRejectVo(v.id)">
                           {{ t('Reject') }}
@@ -819,9 +796,6 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                   </tr>
                 </tbody>
               </table>
-              <p class="pa-note">
-                {{ t('Contract history is append-only. Rejected addenda stay on the list on purpose — the fact that a change was asked for and refused is part of the record.') }}
-              </p>
             </section>
           </MpTabPanel>
 
@@ -829,16 +803,11 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
           <MpTabPanel value="execution">
             <section class="pa-card">
               <div class="pa-card-head">
-                <div>
-                  <h2 class="pa-card-title">{{ t('Tagged transaction lines') }}</h2>
-                  <p class="pa-card-desc">
-                    {{ t("Read-only rollup. Material, subcontractor, payroll and expense costs are all entered in the ERP's own Expense, Purchase and Sales forms and tagged to this project per line — there is no cost-entry form here.") }}
-                  </p>
-                </div>
+                <h2 class="pa-card-title">{{ t('Cost lines') }}</h2>
                 <div class="pa-card-actions">
                   <MpInputGroup id="pa-roll-search" class="filter-search">
                     <MpInputLeftAddon><MpIcon name="search" size="md" /></MpInputLeftAddon>
-                    <MpInput v-model="rollSearch" type="text" :placeholder="t('Search lines...')" />
+                    <MpInput v-model="rollSearch" type="text" :placeholder="t('Search...')" />
                   </MpInputGroup>
                 </div>
               </div>
@@ -848,7 +817,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                   <tr>
                     <th class="pa-th pa-th--sortable" @click="sortRoll('source')">{{ t('Source') }}{{ sortMark('source') }}</th>
                     <th class="pa-th">{{ t('Document') }}</th>
-                    <th class="pa-th">{{ t('Account / description') }}</th>
+                    <th class="pa-th">{{ t('Description') }}</th>
                     <th class="pa-th pa-th--sortable" @click="sortRoll('date')">{{ t('Date') }}{{ sortMark('date') }}</th>
                     <th class="pa-th pa-th--num pa-th--sortable" @click="sortRoll('cost')">{{ t('Cost') }}{{ sortMark('cost') }}</th>
                   </tr>
@@ -879,7 +848,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                 </tbody>
               </table>
               <p v-if="!rollSorted.length" class="pa-note">
-                {{ rollSearch.trim() ? t('No tagged line matches your search.') : t('No transaction lines tagged to this project yet.') }}
+                {{ rollSearch.trim() ? `"${rollSearch.trim()}" ${t('not found')}` : t('No cost lines yet. Cost lines tagged to this project will appear here.') }}
               </p>
 
               <ErpPagination
@@ -889,23 +858,17 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                 @page-change="rollPage = $event"
                 @per-page-change="rollPerPage = $event"
               />
-              <p class="pa-note">
-                {{ t("Read-only. Every cost line originates in a real ERP document — Expense, Purchase or Sales — tagged to this project per line. Staff time is booked the same way, as a payroll expense line.") }}
-              </p>
             </section>
 
             <section v-if="hourLines.length" class="pa-card">
-              <h2 class="pa-card-title">{{ t('Hours & rate') }}</h2>
-              <p class="pa-card-desc">
-                {{ t('Built from the optional hours on the cost lines. Nothing here changes what posted — the amount is still the anchor. This is the analysis the hours make possible.') }}
-              </p>
+              <h2 class="pa-card-title pa-card-title--spaced">{{ t('Hours and rates') }}</h2>
               <ProjectStatCards :stats="hourStats" />
-              <p class="pa-note">{{ hourCoverage }}</p>
+              <p v-if="hourCoverage" class="pa-note">{{ hourCoverage }}</p>
             </section>
 
             <div class="pa-actions">
               <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="continueTo('recognition')">
-                {{ t('Continue to Revenue recognition') }}
+                {{ t('Continue to revenue recognition') }}
               </button>
             </div>
           </MpTabPanel>
@@ -915,39 +878,34 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
             <!-- ── Cost-plus ── -->
             <template v-if="engagement.method === 'tm'">
               <section class="pa-card">
-                <h2 class="pa-card-title">{{ t('Input by Simplified Cost — the client reimburses cost and pays a margin on top') }}</h2>
-                <p class="pa-card-desc">
-                  {{ t('Revenue earned = allowed cost × (1 + agreed margin). There is no percentage of progress here: the client reimburses what the job cost and pays the margin written into the contract.') }}
-                </p>
+                <h2 class="pa-card-title pa-card-title--spaced">{{ t('Input by Simplified Cost') }}</h2>
                 <div class="pa-progress">
                   <div class="pa-progress-fill" data-tone="ok" :style="{ width: `${tmEarnedPct.toFixed(0)}%` }" />
                 </div>
                 <div v-for="r in tmRows" :key="r.k" class="pa-kv-row pa-kv-row--wide">
                   <dt class="pa-kv-key">
                     <span class="pa-kv-strong">{{ r.k }}</span>
-                    <span class="pa-tiny">{{ r.note }}</span>
+                    <span v-if="r.note" class="pa-tiny">{{ r.note }}</span>
                   </dt>
                   <dd class="pa-kv-val pa-num">{{ r.val }}</dd>
                 </div>
                 <p class="pa-note">
                   {{ tmOpenValue > 0
-                    ? `${formatIdr(tmOpenValue)} ${t('of chargeable value is still awaiting a review decision, so it is not recognized yet.')}`
-                    : t('Every cost line has been reviewed — recognized revenue equals the full chargeable value of the work.') }}
+                    ? `${formatIdr(tmOpenValue)} ${t('awaiting review, not yet recognised.')}`
+                    : t('All cost lines reviewed.') }}
                 </p>
               </section>
 
               <section class="pa-card">
                 <h2 class="pa-card-title">{{ t('Review queue') }}</h2>
-                <p class="pa-card-desc">
-                  {{ t('Every cost line — labour, material or subcontractor — needs a decision on what the client is charged before it can be invoiced. Until then it is cost incurred but not yet revenue.') }}
-                </p>
+                <p class="pa-card-desc">{{ t('Choose how to charge each line before invoicing it.') }}</p>
                 <div class="pa-chips">
                   <button
                     v-for="c in bulkChips" :key="c.key" type="button"
                     class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
                     @click="applyChip(c.pick)"
                   >{{ c.label }}</button>
-                  <button type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="clearSelection">{{ t('Clear') }}</button>
+                  <button type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="clearSelection">{{ t('Clear selection') }}</button>
                 </div>
 
                 <table class="pa-table">
@@ -959,7 +917,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                       <th class="pa-th">{{ t('Item') }}</th>
                       <th class="pa-th">{{ t('Date') }}</th>
                       <th class="pa-th pa-th--num">{{ t('Amount') }}</th>
-                      <th class="pa-th">{{ t('Waiting to bill') }}</th>
+                      <th class="pa-th">{{ t('Age') }}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -975,30 +933,22 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                           class="pa-age"
                           :data-tone="daysAgo(x.date) <= 30 ? 'ok' : daysAgo(x.date) <= 60 ? 'default' : daysAgo(x.date) <= 90 ? 'near' : 'over'"
                         >{{ daysAgo(x.date) }} {{ daysAgo(x.date) === 1 ? t('day') : t('days') }}</span>
-                        <div class="pa-tiny">
-                          {{ daysAgo(x.date) <= 30 ? t('Recent — fine to bill')
-                            : daysAgo(x.date) <= 60 ? t('Getting old')
-                              : daysAgo(x.date) <= 90 ? t('Chase this before the client forgets')
-                                : t('The client may refuse to pay this') }}
-                        </div>
                       </td>
                     </tr>
                   </tbody>
                 </table>
-                <p v-if="!openLines.length" class="pa-note">{{ t('Nothing open — every cost line has been reviewed.') }}</p>
+                <p v-if="!openLines.length" class="pa-note">{{ t('No lines to review. New cost lines tagged to this project will appear here.') }}</p>
               </section>
 
               <section v-if="selected.length && !pendingAction" class="pa-card pa-card--bar">
                 <div>
                   <p class="pa-bar-title">{{ selected.length }} {{ t('selected') }} · {{ formatIdr(selectionTotal) }}</p>
-                  <p class="pa-card-desc">
-                    {{ t('Cost plus means the client reimburses cost and pays the margin — but only on lines you allow. Waiving the margin or absorbing a cost both need a reason.') }}
-                  </p>
+                  <p class="pa-card-desc">{{ t('Charging at cost only or not charging requires a reason.') }}</p>
                 </div>
                 <div class="pa-bar-actions">
                   <button type="button" class="btn-enterprise btn-enterprise--primary" @click="startAction('bill')">{{ t('Charge cost + margin') }}</button>
                   <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="startAction('atcost')">{{ t('Charge at cost only') }}</button>
-                  <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="startAction('absorb')">{{ t('Do not charge the client') }}</button>
+                  <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="startAction('absorb')">{{ t("Don't charge client") }}</button>
                 </div>
               </section>
 
@@ -1006,11 +956,11 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                 <h2 class="pa-card-title">{{ pendingTitle }}</h2>
                 <MpTextarea
                   id="pa-decision-reason" v-model="pendingReason" is-full-width
-                  :placeholder="t('e.g. Scope discount agreed with client')"
+                  :placeholder="pendingAction === 'bill' ? t('Add a note (optional)') : t('Example: Scope discount agreed with client')"
                 />
                 <p v-if="pendingWarn" class="pa-warn">{{ pendingWarn }}</p>
                 <div class="pa-actions">
-                  <button type="button" class="btn-enterprise btn-enterprise--primary" @click="confirmDecision">{{ t('Confirm') }}</button>
+                  <button type="button" class="btn-enterprise btn-enterprise--primary" @click="confirmDecision">{{ pendingConfirmLabel }}</button>
                   <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="pendingAction = null">{{ t('Cancel') }}</button>
                 </div>
               </section>
@@ -1019,25 +969,20 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
             <!-- ── Cost-to-cost ── -->
             <template v-else-if="engagement.method === 'input'">
               <section class="pa-card">
-                <h2 class="pa-card-title">{{ t('Input by Cost — the money spent is the measure of progress') }}</h2>
-                <p class="pa-card-desc">
-                  {{ t('Progress = cost spent ÷ cost planned. Revenue earned = that percentage × the contract value, recalculated live as cost lines post. Billing runs on its own milestone schedule and is reconciled as unbilled or overbilled revenue.') }}
-                </p>
+                <h2 class="pa-card-title pa-card-title--spaced">{{ t('Input by Cost') }}</h2>
                 <div class="pa-progress">
                   <div class="pa-progress-fill" data-tone="ok" :style="{ width: `${pocPct(engagement).toFixed(0)}%` }" />
                 </div>
-                <p class="pa-lead">{{ t('Revenue earned to date') }}: <b>{{ formatIdr(revenue(engagement)) }}</b></p>
-                <p class="pa-note">
+                <p class="pa-lead">{{ t('Revenue recognised to date') }}: <b>{{ formatIdr(revenue(engagement)) }}</b></p>
+                <p v-if="engagement.budget === null || actualCost(engagement) > engagement.budget" class="pa-note">
                   {{ engagement.budget === null
-                    ? t('No budget set at Setup — % complete cannot be computed until an estimated cost exists.')
-                    : actualCost(engagement) > engagement.budget
-                      ? t('Actual cost has exceeded the estimate — revisit the budget or raise an addendum.')
-                      : t('Billing runs on its own schedule; the gap is reported as unbilled or overbilled revenue.') }}
+                    ? t('Set a budgeted cost to calculate percentage complete.')
+                    : t('Cost incurred exceeds the budgeted cost. Review the budget or submit an addendum.') }}
                 </p>
               </section>
 
               <section class="pa-card">
-                <h2 class="pa-card-title">{{ t('Cost lines feeding this calculation') }}</h2>
+                <h2 class="pa-card-title">{{ t('Cost lines') }}</h2>
                 <table class="pa-table">
                   <thead>
                     <tr>
@@ -1062,14 +1007,12 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
             <!-- ── Output by milestone ── -->
             <template v-else>
               <section class="pa-card">
-                <h2 class="pa-card-title">{{ t('Output method — verified milestones') }}</h2>
-                <p class="pa-card-desc">
-                  {{ t('Marking a milestone physically verified recognizes its share of contract value and opens the ERP sales invoice prefilled — one action drives both. Recognition and billing are not on independent clocks here.') }}
-                </p>
+                <h2 class="pa-card-title">{{ t('Output by Milestone') }}</h2>
+                <p class="pa-card-desc">{{ t("Verifying a milestone recognises its share of the contract value.") }}</p>
                 <p class="pa-summary" :class="weightsOk ? 'pa-summary--ok' : 'pa-summary--bad'">
                   {{ weightsOk
                     ? t('Milestone weights sum to 100%.')
-                    : `${t('Milestone weights sum to')} ${Math.round(weightSum)}% — ${t('verification is blocked until they sum to 100%.')}` }}
+                    : `${t('Milestone weights total')} ${Math.round(weightSum)}%. ${t('Adjust them to 100% to verify milestones.')}` }}
                 </p>
 
                 <table class="pa-table">
@@ -1100,7 +1043,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                           class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
                           :disabled="m.locked" @click="doUnverify(m.id)"
                         >
-                          {{ m.locked ? t('Invoiced — locked') : t('Unverify') }}
+                          {{ m.locked ? t('Invoiced') : t('Reverse verification') }}
                         </button>
                       </td>
                     </tr>
@@ -1111,7 +1054,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
               <section v-if="engagement.weightsNeedConfirm" class="pa-card pa-card--danger">
                 <h2 class="pa-card-title">{{ t('Milestone weights need confirming') }}</h2>
                 <p class="pa-card-desc">
-                  {{ t('An addendum changed the contract value. Confirm or edit the weights so they still sum to 100% of the new value before any further milestone can be verified.') }}
+                  {{ t('An addendum changed the contract value. Weights must total 100% before more milestones can be verified.') }}
                 </p>
                 <div v-for="w in weightDraft" :key="w.id" class="pa-weight-row">
                   <span class="pa-weight-label">{{ w.label }}</span>
@@ -1128,7 +1071,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
 
             <div class="pa-actions">
               <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="continueTo('billing')">
-                {{ t('Continue to Invoices & payments') }}
+                {{ t('Continue to invoices & payments') }}
               </button>
             </div>
           </MpTabPanel>
@@ -1137,14 +1080,11 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
           <MpTabPanel value="billing">
             <template v-if="engagement.method === 'tm'">
               <section class="pa-card">
-                <h2 class="pa-card-title">{{ t('Create invoice') }}</h2>
-                <p class="pa-card-desc">
-                  {{ t('Opens the ERP sales invoice form with every reviewed, uninvoiced item prefilled as a line, project tagged.') }}
-                </p>
+                <h2 class="pa-card-title pa-card-title--spaced">{{ t('Ready to invoice') }}</h2>
                 <p class="pa-lead">
                   {{ readyLines.length
-                    ? `${readyLines.length} ${t('reviewed item(s) ready, totalling')} ${formatIdr(readyAmount)}.`
-                    : t('Nothing ready — review more cost lines on the Revenue recognition tab.') }}
+                    ? `${costLinesLabel(readyLines.length)} · ${formatIdr(readyAmount)}`
+                    : t('No reviewed lines to invoice. Review cost lines in Revenue recognition.') }}
                 </p>
                 <button
                   v-if="readyLines.length" type="button" class="btn-enterprise btn-enterprise--primary"
@@ -1153,10 +1093,8 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
               </section>
 
               <section class="pa-card">
-                <h2 class="pa-card-title">{{ t('Unbilled value ageing') }}</h2>
-                <p class="pa-card-desc">
-                  {{ t('Worked value still awaiting a review decision, by age. The older a line gets, the harder it is to defend to the client — a collection risk, not a recognition question.') }}
-                </p>
+                <h2 class="pa-card-title">{{ t('Unbilled ageing') }}</h2>
+                <p class="pa-card-desc">{{ t('Lines awaiting review, by age') }}</p>
                 <div v-for="b in bucketRows" :key="b.label" class="pa-bucket">
                   <span class="pa-bucket-label">{{ b.label }}</span>
                   <span class="pa-bucket-track">
@@ -1169,7 +1107,6 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
 
             <section v-else class="pa-card">
               <h2 class="pa-card-title">{{ t('Milestone billing schedule') }}</h2>
-              <p class="pa-card-desc">{{ billingNote }}</p>
               <table class="pa-table">
                 <thead>
                   <tr>
@@ -1201,8 +1138,8 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
               <table class="pa-table">
                 <thead>
                   <tr>
-                    <th class="pa-th">{{ t('Invoice') }}</th>
-                    <th class="pa-th">{{ t('Label') }}</th>
+                    <th class="pa-th">{{ t('Invoice number') }}</th>
+                    <th class="pa-th">{{ t('Description') }}</th>
                     <th class="pa-th">{{ t('Date') }}</th>
                     <th class="pa-th pa-th--num">{{ t('Amount') }}</th>
                     <th class="pa-th">{{ t('Status') }}</th>
@@ -1229,12 +1166,9 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                   </tr>
                 </tbody>
               </table>
-              <p v-if="!engagement.invoices.length" class="pa-note">{{ t('No invoices yet.') }}</p>
+              <p v-if="!engagement.invoices.length" class="pa-note">{{ t('No invoices yet. Invoices for this engagement will appear here.') }}</p>
             </section>
 
-            <p class="pa-note">
-              {{ t('Closure lives on the Project health tab, alongside budget variance and margin.') }} {{ closeHint(engagement) }}
-            </p>
           </MpTabPanel>
 
           <!-- ═══ Project health ═════════════════════════════════════════════ -->
@@ -1243,20 +1177,14 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
               <p class="pa-figure-label">{{ t('Margin to date') }}</p>
               <p class="pa-figure" :data-tone="margin < 0 ? 'adverse' : 'default'">{{ formatIdrSigned(margin) }}</p>
               <p class="pa-card-desc">{{ marginSub }}</p>
-              <p class="pa-card-desc">
-                {{ engagement.stage === 'closed'
-                  ? `${t('Engagement closed')} ${formatDateLong(engagement.closedAt ?? '')}`
-                  : t('Live figures — the engagement is still open.') }}
+              <p v-if="engagement.stage === 'closed'" class="pa-card-desc">
+                {{ `${t('Closed on')} ${formatDateLong(engagement.closedAt ?? '')}` }}
               </p>
             </section>
 
-            <p v-if="engagement.stage === 'closed'" class="pa-note">
-              {{ t('Closed. The final margin feeds back into estimating for the next similar engagement.') }}
-            </p>
-
-            <section v-else class="pa-card pa-card--bar">
+            <section v-if="engagement.stage !== 'closed'" class="pa-card pa-card--bar">
               <div>
-                <h2 class="pa-card-title">{{ closable ? t('Ready to close') : t('Closure gate') }}</h2>
+                <h2 class="pa-card-title">{{ closable ? t('Ready to close') : t('Not ready to close') }}</h2>
                 <p class="pa-card-desc">{{ closeHint(engagement) }}</p>
               </div>
               <button type="button" class="btn-enterprise btn-enterprise--primary" @click="doClose">{{ t('Close engagement') }}</button>
@@ -1268,11 +1196,8 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
       <!-- ── Budget variance — shown on every tab except Setup ── -->
       <section v-if="showBudgetVariance" class="pa-card">
         <h2 class="pa-card-title">{{ t('Budget variance') }}</h2>
-        <p class="pa-card-desc">
-          {{ t('Projected revenue and expense from the project budget, against actuals. Same shape as the Financials budget variance report, scoped to this project.') }}
-        </p>
         <p v-if="engagement.budget === null" class="pa-warn">
-          {{ t('No budget was set at Setup, so cost variance cannot be computed — actuals still post.') }}
+          {{ t('Set a budgeted cost to calculate cost variance.') }}
         </p>
         <div class="pa-table-scroll">
           <table class="pa-table">
@@ -1302,7 +1227,6 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
             </tbody>
           </table>
         </div>
-        <p class="pa-note">{{ budgetNote }}</p>
       </section>
     </div>
 
@@ -1366,6 +1290,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
 .pa-card-title {
   margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
 }
+.pa-card-title--spaced { margin-bottom: var(--mp-spacing-4); }
 .pa-card-desc { margin: var(--mp-spacing-1) 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); max-width: 860px; }
 .pa-lead { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .pa-note { margin: var(--mp-spacing-3) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
