@@ -138,7 +138,7 @@ export interface ScopeOption { value: string; label: string }
 export const locationScopeOptions = computed<ScopeOption[]>(() => {
   const branches = [...new Set(assetLocations.value.map((l) => l.branch))]
   return [
-    ...branches.map((b) => ({ value: `branch:${b}`, label: `All of ${b} (${assetLocations.value.filter((l) => l.branch === b).length} locations)` })),
+    ...branches.map((b) => ({ value: `branch:${b}`, label: `All locations in ${b} (${assetLocations.value.filter((l) => l.branch === b).length})` })),
     ...assetLocations.value.map((l) => ({ value: l.name, label: `${l.name} · ${l.branch}` })),
   ]
 })
@@ -146,7 +146,7 @@ export const custodianScopeOptions = computed<ScopeOption[]>(() => CUSTODIANS.ma
 
 function scopeLabel(type: ScopeType, scope: string): string {
   if (type === 'custodian') return `Held by ${scope}`
-  return scope.startsWith('branch:') ? `All of ${scope.slice(7)}` : scope
+  return scope.startsWith('branch:') ? `All locations in ${scope.slice(7)}` : scope
 }
 
 /** The locations a scope covers, for choosing where a scan was made. */
@@ -178,17 +178,17 @@ export type SessionResult = { ok: true; session: CountSession } | { ok: false; r
  * refusal names that session (FG5-AC2).
  */
 export function createSession(type: ScopeType, scope: string): SessionResult {
-  if (!canCount.value) return { ok: false, reason: `Viewing as ${viewAs.value}. Counts are run by General Affairs, internal audit or the Owner.` }
-  if (!scope) return { ok: false, reason: type === 'location' ? 'Choose the location to count' : 'Choose the custodian whose assets to count' }
+  if (!canCount.value) return { ok: false, reason: 'Only General Affairs, Accounting or the Owner can run counts' }
+  if (!scope) return { ok: false, reason: type === 'location' ? 'You must select location' : 'You must select custodian' }
   const population = populationFor(type, scope)
-  if (!population.length) return { ok: false, reason: `Nothing to count: no tagged asset is recorded ${type === 'location' ? `at ${scopeLabel(type, scope)}` : `as held by ${scope}`}.` }
+  if (!population.length) return { ok: false, reason: `No tagged assets ${type === 'location' ? `at ${scopeLabel(type, scope)}` : `held by ${scope}`}. Select another ${type}` }
   for (const s of openSessions.value) {
     const overlap = population.filter((p) => s.population.some((q) => q.assetId === p.assetId))
     if (overlap.length) {
       const names = overlap.slice(0, 3).map((p) => p.assetId).join(', ')
       return {
         ok: false,
-        reason: `${overlap.length} of these assets (${names}${overlap.length > 3 ? ', …' : ''}) ${overlap.length === 1 ? 'is' : 'are'} already in open session ${s.id} (${s.scopeLabel}). An asset cannot be in two open sessions. Close or abandon ${s.id} first.`,
+        reason: `${overlap.length} ${overlap.length === 1 ? 'asset is' : 'assets are'} already in open session ${s.id} (${names}${overlap.length > 3 ? ', …' : ''}). Close or abandon ${s.id} first`,
       }
     }
   }
@@ -205,9 +205,9 @@ export function createSession(type: ScopeType, scope: string): SessionResult {
 export function abandonSession(id: string, reason: string): SessionResult {
   const s = sessionById(id)
   if (!s) return { ok: false, reason: `No session ${id}` }
-  if (s.status === 'awaiting-approval') return { ok: false, reason: `${id} has write-offs awaiting approval. They must be decided before the session can be abandoned.` }
+  if (s.status === 'awaiting-approval') return { ok: false, reason: `${id} has requests awaiting approval. Wait for the decision before abandoning it` }
   if (!isOpenSession(s)) return { ok: false, reason: `${id} is already ${s.status}` }
-  if (!reason.trim()) return { ok: false, reason: 'Say why the session is abandoned' }
+  if (!reason.trim()) return { ok: false, reason: 'You must fill in reason' }
   update(id, (x) => ({ ...x, status: 'abandoned', abandonReason: reason.trim(), closedOn: sessionStamp(), closedBy: actingUser.value }))
   return { ok: true, session: sessionById(id)! }
 }
@@ -225,11 +225,11 @@ export interface ScanOutcome { code: string; result: 'counted' | 'duplicate' | '
 export function recordScans(id: string, text: string, foundAt: string, condition: Condition = 'Good'): { ok: true; outcomes: ScanOutcome[] } | { ok: false; reason: string } {
   const s = sessionById(id)
   if (!s) return { ok: false, reason: `No session ${id}` }
-  if (s.status !== 'counting') return { ok: false, reason: `${id} is no longer counting. Reopen the count to scan more.` }
-  if (!canCount.value) return { ok: false, reason: `Viewing as ${viewAs.value}. Counts are recorded by General Affairs, internal audit or the Owner.` }
+  if (s.status !== 'counting') return { ok: false, reason: `${id} is no longer counting. Select Back to counting to scan more` }
+  if (!canCount.value) return { ok: false, reason: 'Only General Affairs, Accounting or the Owner can record scans' }
   const codes = text.split(/[\s,;]+/).map((c) => c.trim().toUpperCase()).filter(Boolean)
-  if (!codes.length) return { ok: false, reason: 'Type or paste a tag code' }
-  if (!foundAt) return { ok: false, reason: 'Say where you are counting' }
+  if (!codes.length) return { ok: false, reason: 'You must fill in tag code' }
+  if (!foundAt) return { ok: false, reason: 'You must select location' }
   const outcomes: ScanOutcome[] = []
   const scans = [...s.scans]
   for (const code of codes) {
@@ -237,7 +237,7 @@ export function recordScans(id: string, text: string, foundAt: string, condition
     scans.push({ code, at: sessionStamp(), by: actingUser.value, foundAt, condition })
     const pop = s.population.find((p) => p.tag === code)
     if (pop) outcomes.push({ code, result: 'counted', message: `${code} ${pop.name}` })
-    else if (fixedAssets.value.some((a) => a.tag === code)) outcomes.push({ code, result: 'outside', message: `${code} is on the register but outside this count` })
+    else if (fixedAssets.value.some((a) => a.tag === code)) outcomes.push({ code, result: 'outside', message: `${code} is outside this count` })
     else outcomes.push({ code, result: 'unrecorded', message: `${code} is not on the register` })
   }
   update(id, (x) => ({ ...x, scans }))
@@ -258,7 +258,7 @@ export function finishCounting(id: string): SessionResult {
 }
 export function reopenCounting(id: string): SessionResult {
   const s = sessionById(id)
-  if (!s || s.status !== 'resolving') return { ok: false, reason: 'Only a session being resolved can go back to counting' }
+  if (!s || s.status !== 'resolving') return { ok: false, reason: 'Only a session in resolving can go back to counting' }
   update(id, (x) => ({ ...x, status: 'counting' }))
   return { ok: true, session: sessionById(id)! }
 }
@@ -284,7 +284,7 @@ export function variancesOf(s: CountSession): Variance[] {
   const out: Variance[] = []
   for (const l of countLines(s)) {
     if (l.result === 'not-found') {
-      out.push({ id: `V-${l.assetId}`, kind: 'not-found', assetId: l.assetId, tag: l.tag, name: l.name, expected: l.expectedLocation, foundAt: null, explanation: `Expected at ${l.expectedLocation ?? 'no recorded location'}, not scanned` })
+      out.push({ id: `V-${l.assetId}`, kind: 'not-found', assetId: l.assetId, tag: l.tag, name: l.name, expected: l.expectedLocation, foundAt: null, explanation: `Not scanned. Expected at ${l.expectedLocation ?? 'no recorded location'}` })
     } else if (l.result === 'wrong-location') {
       out.push({ id: `V-${l.assetId}`, kind: 'wrong-location', assetId: l.assetId, tag: l.tag, name: l.name, expected: l.expectedLocation, foundAt: l.scan!.foundAt, explanation: `Recorded at ${l.expectedLocation ?? 'no location'}, found at ${l.scan!.foundAt}` })
     } else if (l.result === 'damaged') {
@@ -297,7 +297,7 @@ export function variancesOf(s: CountSession): Variance[] {
     if (a) {
       out.push({ id: `V-${a.id}`, kind: 'unexpected', assetId: a.id, tag: sc.code, name: a.name, expected: a.location, foundAt: sc.foundAt, explanation: `On the register at ${a.location ?? 'no location'}, found at ${sc.foundAt}` })
     } else {
-      out.push({ id: `V-${sc.code}`, kind: 'unrecorded', assetId: null, tag: sc.code, name: 'Not on the register', expected: null, foundAt: sc.foundAt, explanation: `Tag ${sc.code} found at ${sc.foundAt}, no asset carries it` })
+      out.push({ id: `V-${sc.code}`, kind: 'unrecorded', assetId: null, tag: sc.code, name: 'Not on the register', expected: null, foundAt: sc.foundAt, explanation: `Tag ${sc.code} found at ${sc.foundAt}. No asset has this tag` })
     }
   }
   return out
@@ -306,26 +306,26 @@ export function variancesOf(s: CountSession): Variance[] {
 /** The choices each finding allows (OD-25). */
 export const RESOLUTION_OPTIONS: Record<FindingKind, { value: ResolutionKind; label: string; hint: string }[]> = {
   'not-found': [
-    { value: 'write-off', label: 'Write off', hint: 'The asset is gone. Disposed with no proceeds on both books.' },
-    { value: 'transfer', label: 'Transfer', hint: 'It was moved without a record. Update its location and custodian.' },
-    { value: 'record-correction', label: 'Record correction', hint: 'A mis-scan: confirmed present on a recount. Nothing changes.' },
+    { value: 'write-off', label: 'Write off', hint: 'Disposes the asset with no proceeds on both books.' },
+    { value: 'transfer', label: 'Transfer', hint: 'Updates the location and custodian.' },
+    { value: 'record-correction', label: 'Record correction', hint: 'Found on a recount. The register does not change.' },
   ],
   'wrong-location': [
-    { value: 'transfer', label: 'Transfer', hint: 'It was moved. Relocate it to where it was found.' },
-    { value: 'record-correction', label: 'Record correction', hint: 'The register was wrong. Correct the recorded location.' },
+    { value: 'transfer', label: 'Transfer', hint: 'Moves the asset to where it was found.' },
+    { value: 'record-correction', label: 'Record correction', hint: 'Corrects the recorded location.' },
   ],
   damaged: [
-    { value: 'impairment', label: 'Impairment', hint: 'Record an impairment test with the recoverable amount. Accounting book only.' },
-    { value: 'write-off', label: 'Write off', hint: 'Beyond use. Disposed with no proceeds on both books.' },
-    { value: 'record-correction', label: 'Record correction', hint: 'Keep it as it is, recording its condition.' },
+    { value: 'impairment', label: 'Impairment', hint: 'Records an impairment test on the Accounting book.' },
+    { value: 'write-off', label: 'Write off', hint: 'Disposes the asset with no proceeds on both books.' },
+    { value: 'record-correction', label: 'Record correction', hint: 'Keeps the asset and records its condition.' },
   ],
   unexpected: [
-    { value: 'transfer', label: 'Transfer', hint: 'It was moved here. Relocate it to where it was found.' },
-    { value: 'record-correction', label: 'Record correction', hint: 'The register was wrong. Correct the recorded location.' },
+    { value: 'transfer', label: 'Transfer', hint: 'Moves the asset to where it was found.' },
+    { value: 'record-correction', label: 'Record correction', hint: 'Corrects the recorded location.' },
   ],
   unrecorded: [
-    { value: 'capitalise', label: 'Capitalise as new asset', hint: 'Add it to the register without leaving the session.' },
-    { value: 'record-correction', label: 'Record correction', hint: 'Not a company asset, or expensed correctly. No register change.' },
+    { value: 'capitalise', label: 'Capitalise as new asset', hint: 'Adds a new asset to the register.' },
+    { value: 'record-correction', label: 'Record correction', hint: 'Not a company asset. The register does not change.' },
   ],
 }
 
@@ -344,21 +344,21 @@ export function resolveVariance(sessionId: string, varianceId: string, input: Re
   const s = sessionById(sessionId)
   if (!s) return { ok: false, field: 'session', reason: `No session ${sessionId}` }
   if (s.status !== 'resolving') return { ok: false, field: 'session', reason: s.status === 'counting' ? 'Finish the count before resolving variances' : `${s.id} is ${s.status}` }
-  if (!canCount.value) return { ok: false, field: 'role', reason: `Viewing as ${viewAs.value}. Resolutions are proposed by General Affairs, internal audit or the Owner.` }
+  if (!canCount.value) return { ok: false, field: 'role', reason: 'Only General Affairs, Accounting or the Owner can resolve variances' }
   const v = variancesOf(s).find((x) => x.id === varianceId)
   if (!v) return { ok: false, field: 'variance', reason: `No variance ${varianceId}` }
-  if (!RESOLUTION_OPTIONS[v.kind].some((o) => o.value === input.kind)) return { ok: false, field: 'kind', reason: 'Choose how this variance resolves' }
+  if (!RESOLUTION_OPTIONS[v.kind].some((o) => o.value === input.kind)) return { ok: false, field: 'kind', reason: 'You must select resolution' }
   if (input.kind === 'transfer' || (input.kind === 'record-correction' && (v.kind === 'wrong-location' || v.kind === 'unexpected'))) {
-    if (!input.location || !locationBranch(input.location)) return { ok: false, field: 'location', reason: 'Choose the location from the list' }
+    if (!input.location || !locationBranch(input.location)) return { ok: false, field: 'location', reason: 'You must select location' }
   }
-  if (input.kind === 'impairment' && (!input.recoverable || input.recoverable < 0)) return { ok: false, field: 'recoverable', reason: 'Enter the recoverable amount the test found' }
+  if (input.kind === 'impairment' && (!input.recoverable || input.recoverable < 0)) return { ok: false, field: 'recoverable', reason: 'You must fill in recoverable amount' }
   if (input.kind === 'capitalise') {
     const n = input.newAsset
-    if (!n?.name.trim()) return { ok: false, field: 'name', reason: 'Name the asset' }
-    if (!classMaster.some((c) => c.class === n.class)) return { ok: false, field: 'class', reason: 'Choose its class' }
-    if (!n.cost || n.cost <= 0) return { ok: false, field: 'cost', reason: 'Enter what it cost' }
+    if (!n?.name.trim()) return { ok: false, field: 'name', reason: 'You must fill in asset name' }
+    if (!classMaster.some((c) => c.class === n.class)) return { ok: false, field: 'class', reason: 'You must select class' }
+    if (!n.cost || n.cost <= 0) return { ok: false, field: 'cost', reason: 'You must fill in cost' }
   }
-  if (!input.reason.trim()) return { ok: false, field: 'reason', reason: 'Say what happened. The explanation is the audit evidence.' }
+  if (!input.reason.trim()) return { ok: false, field: 'reason', reason: 'You must fill in reason' }
   update(sessionId, (x) => ({ ...x, resolutions: { ...x.resolutions, [varianceId]: { ...input, reason: input.reason.trim(), by: actingUser.value, at: sessionStamp() } } }))
   return { ok: true }
 }
@@ -396,11 +396,11 @@ export type CloseResult =
 export function closeSession(id: string): CloseResult {
   const s = sessionById(id)
   if (!s) return { ok: false, reason: `No session ${id}` }
-  if (s.status === 'counting') return { ok: false, reason: 'Finish the count first. Unscanned assets become not found, and each needs a resolution.' }
+  if (s.status === 'counting') return { ok: false, reason: 'Finish the count before closing the session' }
   if (s.status !== 'resolving') return { ok: false, reason: `${id} is ${s.status}` }
-  if (!canCount.value) return { ok: false, reason: `Viewing as ${viewAs.value}. Closing a count needs General Affairs, internal audit or the Owner.` }
+  if (!canCount.value) return { ok: false, reason: 'Only General Affairs, Accounting or the Owner can close counts' }
   const open = unresolvedOf(s)
-  if (open.length) return { ok: false, reason: `${open.length} ${open.length === 1 ? 'variance is' : 'variances are'} still unresolved. Resolve each one before closing ${id}.` }
+  if (open.length) return { ok: false, reason: `${open.length} ${open.length === 1 ? 'variance is' : 'variances are'} still unresolved. Resolve each one before closing ${id}` }
 
   const variances = variancesOf(s)
   const resolutions = { ...s.resolutions }
@@ -420,9 +420,9 @@ export function closeSession(id: string): CloseResult {
         if (r.custodian) input.custodian = r.custodian
         if (v.kind === 'damaged') input.condition = s.scans.find((x) => x.code === v.tag)?.condition ?? 'Damaged'
         const res = changeCustody(v.assetId, input, `${r.kind === 'transfer' ? 'Transfer' : 'Record correction'} from count ${id}: ${r.reason}`, src)
-        r.outcome = res.ok ? `${res.changed.join(' and ')} updated` : `No register change (${res.reason})`
+        r.outcome = res.ok ? `${res.changed.join(' and ')} updated` : `Register not changed: ${res.reason}`
       } else {
-        r.outcome = 'No register change'
+        r.outcome = 'Register not changed'
       }
       r.applied = true
       applied++
@@ -460,7 +460,7 @@ export function closeSession(id: string): CloseResult {
       } else {
         // Authorisation off: it completes now and records who acted (FG-7.3).
         const res = isWO ? recordEvent(a.id, change.type === 'event' ? change.event : writeOffEventNow()) : recordImpairmentTest((change as { type: 'impairment-test'; input: Parameters<typeof recordImpairmentTest>[0] }).input)
-        r.outcome = res.ok ? (isWO ? 'Written off: disposed with no proceeds on both books' : 'Impairment test recorded') : `Not applied: ${res.reason}`
+        r.outcome = res.ok ? (isWO ? 'Written off with no proceeds on both books' : 'Impairment test recorded') : `Not applied: ${res.reason}`
         r.applied = res.ok
         applied++
       }
@@ -476,7 +476,7 @@ export function closeSession(id: string): CloseResult {
     requests.push(raiseRequest({
       kind, sessionId: id,
       title: `${label} · count ${id} · ${items.length} ${items.length === 1 ? 'asset' : 'assets'}`,
-      reason: `${kind === 'write-off' ? 'Write-off' : 'Value change'} needs approval (Asset settings). One request for the whole count`,
+      reason: `${kind === 'write-off' ? 'Write-off' : 'Value change'} approval is on in Asset settings`,
       items,
     }))
   }
@@ -484,7 +484,7 @@ export function closeSession(id: string): CloseResult {
     requests.push(raiseRequest({
       kind: x.kind, sessionId: id,
       title: `${x.kind === 'write-off' ? 'Write-off' : 'Impairment'} · ${x.item.assetId} ${x.item.assetName} · count ${id}`,
-      reason: `${x.reason}, so it is authorised on its own`, items: [x.item],
+      reason: x.reason, items: [x.item],
     }))
   }
   for (const req of requests) for (const it of req.items) {
@@ -514,7 +514,7 @@ onApprovalDecided((req) => {
   for (const it of req.items) {
     if (!it.varianceId || !resolutions[it.varianceId]) continue
     if (req.status === 'approved') {
-      resolutions[it.varianceId] = { ...resolutions[it.varianceId]!, applied: true, outcome: it.change.type === 'event' ? `Approved ${req.id} by ${req.decidedBy}: disposed with no proceeds on both books` : `Approved ${req.id} by ${req.decidedBy}: impairment test recorded` }
+      resolutions[it.varianceId] = { ...resolutions[it.varianceId]!, applied: true, outcome: it.change.type === 'event' ? `${req.id} approved by ${req.decidedBy}. Written off with no proceeds on both books` : `${req.id} approved by ${req.decidedBy}. Impairment test recorded` }
     } else {
       delete resolutions[it.varianceId]
     }
@@ -530,7 +530,7 @@ onApprovalDecided((req) => {
     closedOn: closes ? sessionStamp() : null,
     closedBy: closes ? req.decidedBy : null,
     returnedNote: req.status === 'sent-back'
-      ? `${req.id} was sent back by ${req.decidedBy}: ${req.note}. Resolve ${req.items.length === 1 ? 'that variance' : 'those variances'} again.`
+      ? `${req.id} sent back by ${req.decidedBy}: ${req.note}. Resolve ${req.items.length === 1 ? 'the variance' : 'the variances'} again.`
       : x.returnedNote,
   }))
 })

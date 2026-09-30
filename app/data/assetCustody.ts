@@ -67,9 +67,9 @@ export function locationBranch(name: string): string | null {
 /** Asset settings: add a location to the list. Returns an error to show, or null. */
 export function addLocation(name: string, branch: string): string | null {
   const n = name.trim()
-  if (!n) return 'Name the location'
-  if (!BRANCHES.includes(branch)) return 'Choose the branch it belongs to'
-  if (assetLocations.value.some((l) => l.name.toLowerCase() === n.toLowerCase())) return `${n} is already on the list`
+  if (!n) return 'You must fill in location name'
+  if (!BRANCHES.includes(branch)) return 'You must select branch'
+  if (assetLocations.value.some((l) => l.name.toLowerCase() === n.toLowerCase())) return `${n} already exists`
   assetLocations.value = [...assetLocations.value, { name: n, branch }]
   return null
 }
@@ -164,16 +164,16 @@ export function changeCustody(assetId: string, input: CustodyInput, reason: stri
   const rec = assetRecords.value.find((s) => s.id === assetId)
   const view = fixedAssets.value.find((a) => a.id === assetId)
   if (!rec || !view) return { ok: false, field: 'asset', reason: `No asset ${assetId}` }
-  if (view.type !== 'Tangible') return { ok: false, field: 'asset', reason: `${assetId} is not a physical asset, so it has no custody` }
-  if (view.status === 'Disposed' || view.status === 'Split') return { ok: false, field: 'asset', reason: `${assetId} is no longer held` }
-  if (!canEditCustody.value) return { ok: false, field: 'role', reason: `Viewing as ${viewAs.value}. Custody is maintained by General Affairs or the Owner.` }
+  if (view.type !== 'Tangible') return { ok: false, field: 'asset', reason: `${assetId} is not a tangible asset. Custody applies to tangible assets only` }
+  if (view.status === 'Disposed' || view.status === 'Split') return { ok: false, field: 'asset', reason: `${assetId} is disposed or split and has no custody` }
+  if (!canEditCustody.value) return { ok: false, field: 'role', reason: 'Only General Affairs, Accounting or the Owner can change custody' }
   if (input.location !== undefined && input.location !== null && !locationBranch(input.location)) {
-    return { ok: false, field: 'location', reason: 'Choose a location from the list. Add a new one in Asset settings first.' }
+    return { ok: false, field: 'location', reason: 'Select a location from the list. Add new locations in Asset settings' }
   }
   if (input.custodian !== undefined && input.custodian !== null && !CUSTODIANS.some((c) => c.name === input.custodian)) {
-    return { ok: false, field: 'custodian', reason: 'Choose a custodian from the list' }
+    return { ok: false, field: 'custodian', reason: 'Select a custodian from the list' }
   }
-  if (!reason.trim()) return { ok: false, field: 'reason', reason: 'Say why custody is changing. The reason is what makes the history usable later.' }
+  if (!reason.trim()) return { ok: false, field: 'reason', reason: 'You must fill in reason' }
 
   const at = sessionStamp()
   const by = actingUser.value
@@ -194,7 +194,7 @@ export function changeCustody(assetId: string, input: CustodyInput, reason: stri
     changes.push({ assetId, field: 'Condition', from: cur, to: input.condition, by, at, reason: reason.trim(), source })
     conditions.value = { ...conditions.value, [assetId]: input.condition }
   }
-  if (!changes.length) return { ok: false, field: 'custodian', reason: 'Nothing has changed: custodian, location and condition are as recorded' }
+  if (!changes.length) return { ok: false, field: 'custodian', reason: 'No changes to save' }
   if (next.custodian !== rec.custodian || next.location !== rec.location) {
     assetRecords.value = assetRecords.value.map((s) => (s.id === assetId ? next : s))
   }
@@ -204,16 +204,16 @@ export function changeCustody(assetId: string, input: CustodyInput, reason: stri
 
 /** A custodian leaves. Nothing moves until someone reassigns; the assets are listed meanwhile. */
 export function markCustodianLeft(name: string): string | null {
-  if (!canEditCustody.value) return `Viewing as ${viewAs.value}. Custody is maintained by General Affairs or the Owner.`
+  if (!canEditCustody.value) return 'Only General Affairs, Accounting or the Owner can change custody'
   if (!leftCustodians.value.includes(name)) leftCustodians.value = [...leftCustodians.value, name]
   return null
 }
 
 /** Reassign everything one custodian holds. Each asset gets its own logged change. */
 export function reassignAll(from: string, to: string, reason: string): CustodyResult {
-  if (from === to) return { ok: false, field: 'custodian', reason: 'Choose someone other than the current holder' }
+  if (from === to) return { ok: false, field: 'custodian', reason: 'Select a custodian other than the current one' }
   const ids = heldBy(from).map((a) => a.id)
-  if (!ids.length) return { ok: false, field: 'custodian', reason: `${from} holds nothing` }
+  if (!ids.length) return { ok: false, field: 'custodian', reason: `${from} has no assets to reassign` }
   for (const id of ids) {
     const r = changeCustody(id, { custodian: to }, reason)
     if (!r.ok) return r

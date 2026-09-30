@@ -24,7 +24,7 @@ import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import CustodyDrawer from '~/components/patterns/CustodyDrawer.vue'
 import { formatIDRWhole } from '~/utils/currency'
 import { infoToast, successToast } from '~/utils/toasts'
-import { findAsset, canSeeFinancials, actingUser, viewAs } from '~/data/assetStore'
+import { findAsset, canSeeFinancials, actingUser } from '~/data/assetStore'
 import {
   custodianSummary, unassignedAssets, CUSTODIANS, CONDITIONS, markCustodianLeft, reassignAll, leftCustodians,
   canEditCustody, assetLocations, type Condition,
@@ -74,7 +74,7 @@ function startSession() {
   setupOpen.value = false
   scope.value = ''
   activeId.value = r.session.id
-  successToast(t(`${r.session.id} opened. Population frozen: ${r.session.population.length} assets in scope.`))
+  successToast(t(`${r.session.id} started. ${r.session.population.length} ${r.session.population.length === 1 ? 'asset' : 'assets'} to count`))
 }
 
 // ── Capture (OD-24) ─────────────────────────────────────────────────────────
@@ -88,7 +88,7 @@ const allLocationOptions = computed(() => {
   const inScope = activeLocations.value
   return [
     ...inScope.map((l) => ({ value: l, label: l })),
-    ...assetLocations.value.filter((l) => !inScope.includes(l.name)).map((l) => ({ value: l.name, label: `${l.name} (outside the scope)` })),
+    ...assetLocations.value.filter((l) => !inScope.includes(l.name)).map((l) => ({ value: l.name, label: `${l.name} (outside this count)` })),
   ]
 })
 function capture() {
@@ -102,7 +102,7 @@ function capture() {
 const lines = computed(() => (active.value ? countLines(active.value) : []))
 const countedCount = computed(() => lines.value.filter((l) => l.scan).length)
 const RESULT_LABEL: Record<LineResult, string> = {
-  found: 'Here, as recorded',
+  found: 'Found',
   'wrong-location': 'Different location',
   damaged: 'Found damaged',
   'not-counted': 'Not counted yet',
@@ -117,7 +117,7 @@ function finish() {
   const r = finishCounting(active.value.id)
   if (!r.ok) { infoToast(t(r.reason)); return }
   const n = variancesOf(r.session).length
-  successToast(t(n ? `Count finished. ${n} ${n === 1 ? 'variance' : 'variances'} to resolve.` : 'Count finished. Everything is where the register says.'))
+  successToast(t(n ? `Count finished. ${n} ${n === 1 ? 'variance' : 'variances'} to resolve` : 'Count finished. No variances'))
 }
 function backToCounting() {
   if (!active.value) return
@@ -197,9 +197,9 @@ function close() {
   const r = closeSession(id)
   if (!r.ok) { closeError.value = r.reason; return }
   if (r.requests.length) {
-    successToast(t(`${r.applied} applied to the register. ${r.requests.map((x) => x.id).join(', ')} sent for approval.`))
+    successToast(t(`${r.applied} ${r.applied === 1 ? 'resolution' : 'resolutions'} applied. ${r.requests.map((x) => x.id).join(', ')} sent for approval`))
   } else {
-    successToast(t(`${id} closed. ${r.applied} ${r.applied === 1 ? 'resolution' : 'resolutions'} applied to the register.`))
+    successToast(t(`${id} closed. ${r.applied} ${r.applied === 1 ? 'resolution' : 'resolutions'} applied`))
   }
 }
 const abandoning = ref(false)
@@ -211,7 +211,7 @@ function abandon() {
   if (!r.ok) { abandonError.value = r.reason; return }
   abandoning.value = false
   abandonReason.value = ''
-  infoToast(t(`${r.session.id} abandoned. It is kept, marked abandoned, and is not audit evidence.`))
+  infoToast(t(`${r.session.id} abandoned`))
 }
 const requests = computed(() => (active.value
   ? sessionRequestIds(active.value).map((id) => requestById(id)).filter((r): r is NonNullable<typeof r> => !!r)
@@ -242,12 +242,12 @@ watch(openCustodian, () => { reassignTo.value = ''; reassignReason.value = ''; r
 function markLeft(name: string) {
   const e = markCustodianLeft(name)
   if (e) { reassignError.value = e; return }
-  infoToast(t(`${name} marked as left. Their assets are listed as unassigned until reassigned.`))
+  infoToast(t(`${name} marked as left`))
 }
 function reassign(from: string) {
   const r = reassignAll(from, reassignTo.value, reassignReason.value)
   if (!r.ok) { reassignError.value = r.reason; return }
-  successToast(t(`Everything ${from} held is now with ${reassignTo.value}`))
+  successToast(t(`Assets reassigned to ${reassignTo.value}`))
   openCustodian.value = null
 }
 const custodyAsset = ref<FixedAsset | null>(null)
@@ -260,9 +260,6 @@ function onCustodySaved(m: string) {
 <template>
   <div class="cc">
     <header class="cc__head">
-      <p class="cc__sub">
-        {{ t('Who holds each asset and where, and count sessions that check the register against the floor.') }}
-      </p>
       <div class="cc__actions" data-tour="count-new">
         <MpButton is-rounded left-icon="add" @click="openSetup">{{ t('New count session') }}</MpButton>
       </div>
@@ -272,7 +269,7 @@ function onCustodySaved(m: string) {
     <div v-if="setupOpen" class="cc__card" data-tour="count-setup">
       <div class="cc__cardhead">
         <span class="cc__cardtitle">{{ t('New count session') }}</span>
-        <span class="cc__hint">{{ t('The population is frozen when the session opens') }}</span>
+        <span class="cc__hint">{{ t('The asset list is fixed when the count starts') }}</span>
       </div>
       <div class="cc__pad">
         <div class="cc__setup">
@@ -282,17 +279,17 @@ function onCustodySaved(m: string) {
           </div>
           <div class="cc__field cc__field--grow">
             <label class="cc__label" for="cc-scope">{{ scopeType === 'location' ? t('Location') : t('Custodian') }}</label>
-            <ErpFilterSelect id="cc-scope" v-model="scope" :placeholder="scopeType === 'location' ? t('Choose a location') : t('Choose a custodian')" :options="scopeOptions" width="100%" />
+            <ErpFilterSelect id="cc-scope" v-model="scope" :placeholder="scopeType === 'location' ? t('Select location') : t('Select custodian')" :options="scopeOptions" width="100%" />
           </div>
         </div>
         <p v-if="scope" class="cc__hint">
-          {{ setupPopulation.length }} {{ t(setupPopulation.length === 1 ? 'tagged asset will be frozen' : 'tagged assets will be frozen') }}<template v-if="setupPopulation.length">: {{ setupPopulation.map((p) => p.assetId).join(', ') }}</template>
-          · {{ t('counter') }} {{ actingUser }}
+          {{ setupPopulation.length }} {{ t(setupPopulation.length === 1 ? 'tagged asset in scope' : 'tagged assets in scope') }}<template v-if="setupPopulation.length">: {{ setupPopulation.map((p) => p.assetId).join(', ') }}</template>
+          · {{ t('counted by') }} {{ actingUser }}
         </p>
         <p v-if="setupError" class="cc__error">{{ t(setupError) }}</p>
         <div class="cc__rowactions">
           <MpButton variant="ghost" is-rounded @click="setupOpen = false">{{ t('Cancel') }}</MpButton>
-          <MpButton is-rounded @click="startSession">{{ t('Freeze population and start') }}</MpButton>
+          <MpButton is-rounded @click="startSession">{{ t('Start count') }}</MpButton>
         </div>
       </div>
     </div>
@@ -301,18 +298,18 @@ function onCustodySaved(m: string) {
     <div class="cc__card">
       <div class="cc__cardhead">
         <span class="cc__cardtitle">{{ t('Count sessions') }}</span>
-        <span class="cc__hint">{{ countSessions.filter(isOpenSession).length }} {{ t('open') }} · {{ countSessions.length }} {{ t('in total') }}</span>
+        <span class="cc__hint">{{ countSessions.filter(isOpenSession).length }} {{ t('open') }} · {{ countSessions.length }} {{ t('total') }}</span>
       </div>
       <p v-if="!countSessions.length" class="cc__empty">
-        {{ t('No count yet. Start one scoped to a location or a custodian; its population is frozen so the result is reproducible.') }}
+        {{ t('Count sessions will appear here. Start one with New count session.') }}
       </p>
       <table v-else class="cc__table">
         <thead>
           <tr>
             <th class="cc__th">{{ t('Session') }}</th>
             <th class="cc__th">{{ t('Scope') }}</th>
-            <th class="cc__th">{{ t('Frozen') }}</th>
-            <th class="cc__th">{{ t('Counter') }}</th>
+            <th class="cc__th">{{ t('Started') }}</th>
+            <th class="cc__th">{{ t('Counted by') }}</th>
             <th class="cc__th cc__th--num">{{ t('Assets') }}</th>
             <th class="cc__th">{{ t('Status') }}</th>
           </tr>
@@ -336,12 +333,11 @@ function onCustodySaved(m: string) {
         <div>
           <div class="cc__cardtitle">{{ active.id }} · {{ active.scopeLabel }}</div>
           <div class="cc__hint">
-            {{ t('Population frozen') }} {{ active.frozenOn }} · {{ active.population.length }} {{ t('assets') }} · {{ t('counter') }} {{ active.counter }}
-            · {{ countedCount }} {{ t('counted') }}
+            {{ t('Started') }} {{ active.frozenOn }} · {{ active.population.length }} {{ t('assets') }} · {{ t('counted by') }} {{ active.counter }}
           </div>
         </div>
         <div class="cc__actions">
-          <MpButton v-if="isOpenSession(active)" variant="ghost" is-rounded @click="abandoning = true; abandonError = ''">{{ t('Abandon') }}</MpButton>
+          <MpButton v-if="isOpenSession(active)" variant="ghost" is-rounded @click="abandoning = true; abandonError = ''">{{ t('Abandon session') }}</MpButton>
           <MpButton v-if="active.status === 'resolving'" variant="secondary" is-rounded @click="backToCounting">{{ t('Back to counting') }}</MpButton>
           <MpButton v-if="active.status === 'counting'" is-rounded @click="finish">{{ t('Finish count') }}</MpButton>
           <MpButton v-if="active.status === 'resolving'" is-rounded @click="close">{{ t('Close session') }}</MpButton>
@@ -353,21 +349,18 @@ function onCustodySaved(m: string) {
       <MpBanner v-if="active.status === 'closed'" id="cc-closed-banner" variant="success" class="cc__note">
         <MpBannerIcon id="cc-closed-icon" />
         <MpBannerTitle>{{ t(`Closed ${active.closedOn} by ${active.closedBy}`) }}</MpBannerTitle>
-        <MpBannerDescription>
-          {{ t('Every variance was resolved and applied to the register before closing, so this count stands as evidence that the register matches what is physically held.') }}
-        </MpBannerDescription>
       </MpBanner>
       <MpBanner v-else-if="active.status === 'abandoned'" id="cc-abandoned-banner" variant="warning" class="cc__note">
         <MpBannerIcon id="cc-abandoned-icon" />
         <MpBannerTitle>{{ t(`Abandoned ${active.closedOn} by ${active.closedBy}`) }}</MpBannerTitle>
-        <MpBannerDescription>{{ active.abandonReason }}. {{ t('Excluded from audit evidence; nothing it found was applied.') }}</MpBannerDescription>
+        <MpBannerDescription>{{ t('Reason') }}: {{ active.abandonReason }}. {{ t('No findings were applied.') }}</MpBannerDescription>
       </MpBanner>
       <MpBanner v-else-if="active.status === 'awaiting-approval'" id="cc-await-banner" variant="info" class="cc__note">
         <MpBannerIcon id="cc-await-icon" />
-        <MpBannerTitle>{{ t('Waiting for approval') }}: {{ requests.filter((r) => r.status === 'awaiting').map((r) => r.id).join(', ') }}</MpBannerTitle>
+        <MpBannerTitle>{{ t('Awaiting approval') }}: {{ requests.filter((r) => r.status === 'awaiting').map((r) => r.id).join(', ') }}</MpBannerTitle>
         <MpBannerDescription>
-          {{ t('Everything else is applied. The write-offs reach the books only when approved; the session closes then.') }}
-          <span class="cc__link" @click="router.push('/asset-approvals')">{{ t('Open Asset approvals') }}</span>
+          {{ t('Other resolutions are applied. The session closes once the requests are approved.') }}
+          <span class="cc__link" @click="router.push('/asset-approvals')">{{ t('Go to Asset approvals') }}</span>
         </MpBannerDescription>
       </MpBanner>
       <MpBanner v-else-if="active.returnedNote" id="cc-returned-banner" variant="warning" class="cc__note">
@@ -377,9 +370,9 @@ function onCustodySaved(m: string) {
       </MpBanner>
       <MpBanner v-else-if="active.status === 'resolving' && unresolved.length" id="cc-open-banner" variant="warning" class="cc__note">
         <MpBannerIcon id="cc-open-icon" />
-        <MpBannerTitle>{{ unresolved.length }} {{ t(unresolved.length === 1 ? 'variance is unresolved' : 'variances are unresolved') }}</MpBannerTitle>
+        <MpBannerTitle>{{ unresolved.length }} {{ t(unresolved.length === 1 ? 'unresolved variance' : 'unresolved variances') }}</MpBannerTitle>
         <MpBannerDescription>
-          {{ t('The session cannot close until each one is resolved as a write-off, an impairment, a transfer or a record correction. A session closed with findings outstanding would record a verification that did not happen.') }}
+          {{ t('Resolve each one to close the session.') }}
         </MpBannerDescription>
       </MpBanner>
 
@@ -388,7 +381,6 @@ function onCustodySaved(m: string) {
         <div v-if="active.status === 'counting'" class="cc__card cc__capture" data-tour="count-mobile">
           <div class="cc__cardhead">
             <span class="cc__cardtitle">{{ t('Scan') }}</span>
-            <span class="cc__hint">{{ t('Type or paste tag codes') }}</span>
           </div>
           <div class="cc__pad">
             <div class="cc__field">
@@ -396,19 +388,19 @@ function onCustodySaved(m: string) {
               <!-- A textarea, so a pasted column keeps its line breaks. A
                    scanner's Enter records at once. -->
               <MpTextarea id="cc-scan" v-model="scanText" :is-invalid="!!scanError" is-full-width @keydown.enter.exact.prevent="capture" />
-              <p class="cc__hint">{{ t('A scanner types the code and presses Enter. Several codes can be pasted at once.') }}</p>
+              <p class="cc__hint">{{ t('Scan, type or paste one or more codes. Press Enter to record.') }}</p>
             </div>
             <div class="cc__field">
               <label class="cc__label" for="cc-scan-at">{{ t('Counting at') }}</label>
-              <ErpFilterSelect id="cc-scan-at" v-model="scanAt" :placeholder="t('Choose a location')" :options="allLocationOptions" width="100%" :is-clearable="false" />
+              <ErpFilterSelect id="cc-scan-at" v-model="scanAt" :placeholder="t('Select location')" :options="allLocationOptions" width="100%" :is-clearable="false" />
             </div>
             <div class="cc__field">
               <label class="cc__label" for="cc-scan-cond">{{ t('Condition') }}</label>
-              <ErpFilterSelect id="cc-scan-cond" v-model="scanCondition" :placeholder="t('Condition')" :options="conditionOptions" width="100%" :is-clearable="false" />
+              <ErpFilterSelect id="cc-scan-cond" v-model="scanCondition" :placeholder="t('Select condition')" :options="conditionOptions" width="100%" :is-clearable="false" />
             </div>
             <p v-if="scanError" class="cc__error">{{ t(scanError) }}</p>
             <div class="cc__rowactions">
-              <MpButton is-rounded @click="capture">{{ t('Record') }}</MpButton>
+              <MpButton is-rounded @click="capture">{{ t('Record scan') }}</MpButton>
             </div>
             <ul v-if="lastOutcomes.length" class="cc__outcomes">
               <li v-for="o in lastOutcomes" :key="o.code" :class="`cc__outcome--${o.result}`">{{ t(o.message) }}</li>
@@ -456,16 +448,16 @@ function onCustodySaved(m: string) {
       <!-- ── Variances ── -->
       <div v-if="active.status !== 'counting'" class="cc__card" data-tour="var-table">
         <div class="cc__cardhead">
-          <span class="cc__cardtitle">{{ t('Variance resolution') }}</span>
+          <span class="cc__cardtitle">{{ t('Variances') }}</span>
           <span class="cc__hint">{{ unresolved.length }} {{ t('open') }} · {{ variances.length - unresolved.length }} {{ t('resolved') }}</span>
         </div>
-        <p v-if="!variances.length" class="cc__empty">{{ t('No variances. Every asset in the frozen population was found where the register says.') }}</p>
+        <p v-if="!variances.length" class="cc__empty">{{ t('No variances. Every asset was found as recorded.') }}</p>
         <table v-else class="cc__table">
           <thead>
             <tr>
               <th class="cc__th">{{ t('Asset') }}</th>
               <th class="cc__th">{{ t('Finding') }}</th>
-              <th class="cc__th">{{ t('What was found') }}</th>
+              <th class="cc__th">{{ t('Details') }}</th>
               <th class="cc__th">{{ t('Resolution') }}</th>
               <th class="cc__th" />
             </tr>
@@ -485,15 +477,15 @@ function onCustodySaved(m: string) {
                     <template v-else>{{ t(resolutionLabel(active.resolutions[v.id]!.kind)) }}</template>
                     <template v-if="active.resolutions[v.id]!.location"> · {{ active.resolutions[v.id]!.location }}</template>
                   </span>
-                  <span class="cc__where">{{ active.resolutions[v.id]!.outcome ?? `${t('Applied at close')} · ${active.resolutions[v.id]!.reason}` }}</span>
+                  <span class="cc__where">{{ active.resolutions[v.id]!.outcome ?? `${t('Applies when the session closes')} · ${active.resolutions[v.id]!.reason}` }}</span>
                   <span v-if="active.resolutions[v.id]!.kind === 'write-off' && writeOffFigure(v)" class="cc__where">{{ t('Removes') }} {{ writeOffFigure(v) }}</span>
                 </template>
                 <span v-else class="cc__res cc__res--bad">{{ t('Unresolved') }}</span>
               </td>
               <td class="cc__td cc__td--action">
                 <template v-if="active.status === 'resolving'">
-                  <MpButton variant="secondary" is-rounded @click="startResolve(v)">{{ active.resolutions[v.id] ? t('Change') : t('Resolve') }}</MpButton>
-                  <span v-if="active.resolutions[v.id]" class="cc__link cc__undo" @click="clearResolution(active.id, v.id)">{{ t('Clear') }}</span>
+                  <MpButton variant="secondary" is-rounded @click="startResolve(v)">{{ active.resolutions[v.id] ? t('Edit') : t('Resolve') }}</MpButton>
+                  <span v-if="active.resolutions[v.id]" class="cc__link cc__undo" @click="clearResolution(active.id, v.id)">{{ t('Clear resolution') }}</span>
                 </template>
               </td>
             </tr>
@@ -505,19 +497,19 @@ function onCustodySaved(m: string) {
           <div class="cc__cardtitle">{{ t('Resolve') }} {{ editing.tag }} {{ editing.name }} · {{ t(FINDING_LABEL[editing.kind]) }}</div>
           <div class="cc__setup">
             <div class="cc__field cc__field--grow">
-              <label class="cc__label" for="cc-res-kind">{{ t('Resolve as') }}</label>
-              <ErpFilterSelect id="cc-res-kind" v-model="resKind" :placeholder="t('Choose a resolution')" :options="resOptions" width="100%" :is-clearable="false" />
+              <label class="cc__label" for="cc-res-kind">{{ t('Resolution') }}</label>
+              <ErpFilterSelect id="cc-res-kind" v-model="resKind" :placeholder="t('Select resolution')" :options="resOptions" width="100%" :is-clearable="false" />
               <p v-if="resErr('kind')" class="cc__error">{{ t(resErr('kind')) }}</p>
               <p v-else-if="resHint" class="cc__hint">{{ t(resHint) }}</p>
             </div>
             <template v-if="needsLocation">
               <div class="cc__field cc__field--grow">
-                <label class="cc__label" for="cc-res-loc">{{ t('Location now') }}</label>
-                <ErpFilterSelect id="cc-res-loc" v-model="resLocation" :placeholder="t('Choose a location')" :options="locationOptions" width="100%" />
+                <label class="cc__label" for="cc-res-loc">{{ t('Current location') }}</label>
+                <ErpFilterSelect id="cc-res-loc" v-model="resLocation" :placeholder="t('Select location')" :options="locationOptions" width="100%" />
                 <p v-if="resErr('location')" class="cc__error">{{ t(resErr('location')) }}</p>
               </div>
               <div class="cc__field cc__field--grow">
-                <label class="cc__label" for="cc-res-cust">{{ t('Custodian now') }}</label>
+                <label class="cc__label" for="cc-res-cust">{{ t('Current custodian') }}</label>
                 <ErpFilterSelect id="cc-res-cust" v-model="resCustodian" :placeholder="t('Unchanged')" :options="custodianOptions" width="100%" />
               </div>
             </template>
@@ -534,7 +526,7 @@ function onCustodySaved(m: string) {
               </div>
               <div class="cc__field cc__field--grow">
                 <label class="cc__label" for="cc-res-class">{{ t('Class') }}</label>
-                <ErpFilterSelect id="cc-res-class" v-model="resClass" :placeholder="t('Choose a class')" :options="classOptions" width="100%" />
+                <ErpFilterSelect id="cc-res-class" v-model="resClass" :placeholder="t('Select class')" :options="classOptions" width="100%" />
                 <p v-if="resErr('class')" class="cc__error">{{ t(resErr('class')) }}</p>
               </div>
               <div class="cc__field cc__field--grow">
@@ -545,7 +537,7 @@ function onCustodySaved(m: string) {
             </template>
           </div>
           <div class="cc__field">
-            <label class="cc__label" for="cc-res-reason">{{ t('What happened') }}</label>
+            <label class="cc__label" for="cc-res-reason">{{ t('Reason') }}</label>
             <MpInput id="cc-res-reason" v-model="resReason" :is-invalid="!!resErr('reason')" />
             <p v-if="resErr('reason') || resErr('session') || resErr('role') || resErr('variance')" class="cc__error">{{ t(resErr('reason') || resErr('session') || resErr('role') || resErr('variance')) }}</p>
           </div>
@@ -562,7 +554,7 @@ function onCustodySaved(m: string) {
         <div class="cc__cardtitle">{{ r.id }} · {{ r.title }}</div>
         <div class="cc__hint">
           {{ t(r.status === 'awaiting' ? 'Awaiting approval' : r.status === 'approved' ? `Approved ${r.decidedOn} by ${r.decidedBy}` : `Sent back ${r.decidedOn} by ${r.decidedBy}`) }}
-          · {{ t('raised by') }} {{ r.raisedBy }} {{ r.raisedOn }}
+          · {{ t('requested by') }} {{ r.raisedBy }} {{ r.raisedOn }}
           <template v-if="canSeeFinancials"> · {{ t('total') }} {{ formatIDRWhole(requestTotal(r).accounting) }} {{ t('accounting') }}, {{ formatIDRWhole(requestTotal(r).tax) }} {{ t('tax') }}</template>
         </div>
       </div>
@@ -573,7 +565,6 @@ function onCustodySaved(m: string) {
       <div class="cc__card" data-tour="cust-table">
         <div class="cc__cardhead">
           <span class="cc__cardtitle">{{ t('Custody') }}</span>
-          <span class="cc__hint">{{ t('Select a custodian to see everything they hold') }}</span>
         </div>
         <table class="cc__table">
           <thead>
@@ -603,8 +594,8 @@ function onCustodySaved(m: string) {
                   <div v-if="canEditCustody && c.held.length" class="cc__reassign">
                     <div class="cc__setup">
                       <div class="cc__field cc__field--grow">
-                        <label class="cc__label" :for="`cc-re-${c.person}`">{{ t('Reassign everything to') }}</label>
-                        <ErpFilterSelect :id="`cc-re-${c.person}`" v-model="reassignTo" :placeholder="t('Choose a custodian')" :options="custodianOptions.filter((o) => o.value !== c.name)" width="100%" />
+                        <label class="cc__label" :for="`cc-re-${c.person}`">{{ t('Reassign all assets to') }}</label>
+                        <ErpFilterSelect :id="`cc-re-${c.person}`" v-model="reassignTo" :placeholder="t('Select custodian')" :options="custodianOptions.filter((o) => o.value !== c.name)" width="100%" />
                       </div>
                       <div class="cc__field cc__field--grow">
                         <label class="cc__label" :for="`cc-rr-${c.person}`">{{ t('Reason') }}</label>
@@ -628,9 +619,9 @@ function onCustodySaved(m: string) {
       <div class="cc__card" data-tour="cust-unassigned">
         <div class="cc__cardhead">
           <span class="cc__cardtitle">{{ t('Unassigned') }}</span>
-          <span class="cc__hint">{{ unassignedAssets.length }} {{ t('with no custodian, no location, or a custodian who left') }}</span>
+          <span class="cc__hint">{{ unassignedAssets.length }} {{ t(unassignedAssets.length === 1 ? 'asset needs a custodian or location' : 'assets need a custodian or location') }}</span>
         </div>
-        <p v-if="!unassignedAssets.length" class="cc__empty">{{ t('Every held physical asset has a custodian and a location.') }}</p>
+        <p v-if="!unassignedAssets.length" class="cc__empty">{{ t('All assets have a custodian and location.') }}</p>
         <table v-else class="cc__table">
           <tbody>
             <tr v-for="a in unassignedAssets" :key="a.id" class="cc__tr">
@@ -648,7 +639,7 @@ function onCustodySaved(m: string) {
             </tr>
           </tbody>
         </table>
-        <p v-if="!canEditCustody" class="cc__empty">{{ t(`Viewing as ${viewAs}. Custody is maintained by General Affairs or the Owner.`) }}</p>
+        <p v-if="!canEditCustody" class="cc__empty">{{ t('Only General Affairs, Accounting or the Owner can change custody.') }}</p>
       </div>
     </div>
 
@@ -662,15 +653,15 @@ function onCustodySaved(m: string) {
           <MpModalCloseButton />
         </MpModalHeader>
         <MpModalBody>
-          <p class="cc__hint cc__modaltext">{{ t('The session stays on the list marked abandoned. Nothing it found is applied, and it is not evidence that anything was verified.') }}</p>
+          <p class="cc__hint cc__modaltext">{{ t('None of its findings will be applied. The session stays on the list as abandoned.') }}</p>
           <div class="cc__field">
-            <label class="cc__label" for="cc-abandon">{{ t('Why is this session abandoned?') }}</label>
+            <label class="cc__label" for="cc-abandon">{{ t('Reason') }}</label>
             <MpInput id="cc-abandon" v-model="abandonReason" :is-invalid="!!abandonError" />
             <p v-if="abandonError" class="cc__error">{{ t(abandonError) }}</p>
           </div>
         </MpModalBody>
         <MpModalFooter>
-          <MpButton variant="ghost" is-rounded @click="abandoning = false">{{ t('Keep the session') }}</MpButton>
+          <MpButton variant="ghost" is-rounded @click="abandoning = false">{{ t('Keep session') }}</MpButton>
           <MpButton variant="danger" is-rounded @click="abandon">{{ t('Abandon session') }}</MpButton>
         </MpModalFooter>
       </MpModalContent>
@@ -678,13 +669,12 @@ function onCustodySaved(m: string) {
     </MpModal>
 
     <CustodyDrawer v-if="custodyAsset" :is-open="!!custodyAsset" :asset="custodyAsset" @close="custodyAsset = null" @saved="onCustodySaved" />
-    <p v-if="!canCount" class="cc__hint">{{ t(`Viewing as ${viewAs}. Counts are run by General Affairs, internal audit or the Owner.`) }}</p>
+    <p v-if="!canCount" class="cc__hint">{{ t('Only General Affairs, Accounting or the Owner can run counts.') }}</p>
   </div>
 </template>
 
 <style scoped>
-.cc__head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); min-height: 32px; }
-.cc__sub { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0; max-width: 720px; }
+.cc__head { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); min-height: 32px; }
 .cc__actions { display: flex; gap: var(--mp-spacing-2); flex: none; }
 .cc__note { margin-bottom: var(--mp-spacing-4); }
 .cc__sessionbar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); }

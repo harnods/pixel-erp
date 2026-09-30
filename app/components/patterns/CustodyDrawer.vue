@@ -15,7 +15,6 @@ import {
   assetLocations, CUSTODIANS, CONDITIONS, changeCustody, conditionOf, canEditCustody, leftCustodians,
   type Condition,
 } from '~/data/assetCustody'
-import { actingUser, viewAs } from '~/data/assetStore'
 import type { FixedAsset } from '~/data/fixedAssets'
 
 const props = defineProps<{ isOpen: boolean; asset: FixedAsset }>()
@@ -55,7 +54,7 @@ function save() {
     condition: (condition.value || 'Good') as Condition,
   }, reason.value)
   if (!r.ok) { error.value = r; return }
-  emit('saved', `${r.changed.join(', ')} updated on ${props.asset.id} by ${actingUser.value}`)
+  emit('saved', `Custody saved`)
 }
 </script>
 
@@ -77,33 +76,32 @@ function save() {
           <div class="cud-body" data-tour="cust-body">
             <div v-if="!canEditCustody" class="cud-refusal">
               <MpIcon name="info" size="sm" />
-              <span>{{ t(`Viewing as ${viewAs}. Custody is maintained by General Affairs or the Owner.`) }}</span>
+              <span>{{ t('Only General Affairs, Accounting or the Owner can change custody.') }}</span>
             </div>
 
             <div class="cud-field">
               <label class="cud-label" for="cud-custodian">{{ t('Custodian') }}</label>
               <ErpFilterSelect id="cud-custodian" v-model="custodian" :placeholder="t('Unassigned')" :options="custodianOptions" width="100%" />
               <p v-if="err('custodian')" class="cud-error">{{ t(err('custodian')) }}</p>
-              <p v-else class="cud-hint">{{ t('Now') }}: {{ asset.custodian ?? t('Unassigned') }}</p>
+              <p v-else class="cud-hint">{{ t('Current') }}: {{ asset.custodian ?? t('Unassigned') }}</p>
             </div>
 
             <div class="cud-field">
               <label class="cud-label" for="cud-location">{{ t('Location') }}</label>
               <ErpFilterSelect id="cud-location" v-model="location" :placeholder="t('Not recorded')" :options="locationOptions" width="100%" />
               <p v-if="err('location')" class="cud-error">{{ t(err('location')) }}</p>
-              <p v-else class="cud-hint">{{ t('From the maintained list. A missing location is added in Asset settings. A location in another branch moves the asset to that branch.') }}</p>
+              <p v-else class="cud-hint">{{ t('A location in another branch moves the asset to that branch. Add new locations in Asset settings.') }}</p>
             </div>
 
             <div class="cud-field">
               <label class="cud-label" for="cud-condition">{{ t('Condition') }}</label>
-              <ErpFilterSelect id="cud-condition" v-model="condition" :placeholder="t('Condition')" :options="conditionOptions" width="100%" :is-clearable="false" />
+              <ErpFilterSelect id="cud-condition" v-model="condition" :placeholder="t('Select condition')" :options="conditionOptions" width="100%" :is-clearable="false" />
             </div>
 
             <div class="cud-field">
-              <label class="cud-label" for="cud-reason">{{ t('Reason for the change') }}</label>
+              <label class="cud-label" for="cud-reason">{{ t('Reason') }}</label>
               <MpInput id="cud-reason" v-model="reason" :is-invalid="!!err('reason')" />
               <p v-if="err('reason')" class="cud-error">{{ t(err('reason')) }}</p>
-              <p v-else class="cud-hint">{{ t('Kept in the asset history with the previous holder, the new holder, who changed it and when.') }}</p>
             </div>
           </div>
 
