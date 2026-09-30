@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-generic-actions-column',
+    title: 'Custom module: actions column with kebab menu',
+    description:
+      'Index table now has a [...] actions column at the right with View details, Edit, Archive, and Delete options. Archive and Delete show a confirmation modal before proceeding.',
+    date: '2026-10-01',
+    files: ['CrmGenericModulePage.vue'],
+  },
+  {
     id: 'crm-generic-empty-state',
     title: 'Custom module: proper empty state on index page',
     description:
