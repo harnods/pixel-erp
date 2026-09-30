@@ -51,7 +51,11 @@ export function detailFigures(a: FixedAsset, p: Period = CURRENT_PERIOD): Detail
   // The book values are what the register carries (charges through the last
   // posted run), and the accumulated is derived from them so the two agree.
   const accAccum = a.bookValueCommercial === null ? null : a.cost - a.bookValueCommercial
-  const taxAccum = a.bookValueFiscal === null ? null : a.cost - a.bookValueFiscal
+  // A right-of-use asset's tax book is the lease payments, not the asset's
+  // cost, so its tax accumulated runs from that base (FG-8.4).
+  const lease = a.leaseId ? ledgerOf(a.id) : null
+  const taxCost = lease?.books.tax?.costHistory.at(-1)?.cost ?? a.cost
+  const taxAccum = a.bookValueFiscal === null ? null : taxCost - a.bookValueFiscal
   const disposed = a.status === 'Disposed' || a.status === 'Split'
   const gone = a.status === 'Split' ? 'Split' : 'Disposed'
   const l = ledgerOf(a.id)
@@ -95,10 +99,9 @@ export function detailFigures(a: FixedAsset, p: Period = CURRENT_PERIOD): Detail
   // The number the whole module exists to produce, on the module's one sign
   // convention: accounting charge less tax charge, to date. Positive means
   // the accounts have charged more and the correction adds it back; it is
-  // the tax book value less the accounting book value.
-  const diff = a.bookValueFiscal !== null && a.bookValueCommercial !== null
-    ? a.bookValueFiscal - a.bookValueCommercial
-    : null
+  // the accounting accumulated less the tax accumulated (for an owned asset
+  // that equals tax book value less accounting book value).
+  const diff = accAccum !== null && taxAccum !== null ? accAccum - taxAccum : null
   const dt = diff === null ? 0 : Math.round(diff * TAX_RATE)
   figures.push({
     label: 'Cumulative difference',

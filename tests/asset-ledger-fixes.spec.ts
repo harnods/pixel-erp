@@ -276,3 +276,19 @@ describe('9. custody leaves right-of-use assets out and reads the branch from th
     expect(c.branch).toBe('Central Jakarta')
   })
 })
+
+describe('a right-of-use record measures its difference against the lease payments', () => {
+  it('ROU-0004 cumulative difference is depreciation to date less payments deducted to date', () => {
+    resetAssetStore()
+    const a = findAsset('ROU-0004')!
+    const l = ledgers.value['ROU-0004']!
+    const taxCost = l.books.tax!.costHistory.at(-1)!.cost
+    const expected = (a.cost - a.bookValueCommercial!) - (taxCost - a.bookValueFiscal!)
+    const f = detailFigures(a).find((x) => x.label === 'Cumulative difference')!
+    expect(f.value).toBe(expected)
+    // 3 years in on a 5 year lease: the gap is a fraction of the payments, not
+    // the whole remaining-payments balance the old calculation reported.
+    expect(f.value).toBe(-144_186_288)
+    expect(Math.abs(f.value!)).toBeLessThan(200_000_000)
+  })
+})
