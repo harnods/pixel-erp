@@ -241,6 +241,9 @@ async function enterStep(r: Running) {
     // The target is not on screen yet: a drawer still opening, a page still
     // loading, or an action on the previous step not done. Say so, and keep
     // looking, rather than pointing at nothing.
+    // A missing target must never trap the reader: the panel always offers
+    // a way on (Skip this step, or Finish on the last step), and it keeps
+    // looking so the step anchors as soon as the target appears.
     if (!shownWaiting && Date.now() - started > 1200) {
       shownWaiting = true
       const prev = index > 0 ? tour.steps[index - 1]!.action : undefined
@@ -248,8 +251,10 @@ async function enterStep(r: Running) {
         kind: 'waiting',
         caption,
         title: step.title,
-        body: 'The part of the screen this step points at is not showing yet.',
-        action: prev ? `Finish the previous step first: ${prev}` : undefined,
+        body: step.ifMissing ?? 'The part of the screen this step points at is not showing yet.',
+        action: step.ifMissing ? step.action : prev ? `Finish the previous step first: ${prev}` : undefined,
+        watch: step.ifMissing ? undefined : 'Or select Skip this step to carry on.',
+        nextLabel: index === m - 1 ? 'Finish' : 'Skip this step',
         backLabel: 'Back',
       }, null, null)
     }

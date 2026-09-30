@@ -29,6 +29,12 @@ export interface TourStep {
   action?: string
   /** What to notice. */
   watch?: string
+  /**
+   * Shown instead of the generic waiting text when the target is missing,
+   * for a step whose target can legitimately be gone (the reader already did
+   * what it asks). The panel still offers Skip this step.
+   */
+  ifMissing?: string
   placement?: TourPlacement
 }
 
