@@ -38,7 +38,7 @@ import {
   generateRun, postPeriod, draftRunFor, lastPostedPeriod, nextOpenPeriod, periodOfMonth, FY_PERIODS, CURRENT_PERIOD,
   canChangeValue, viewAs, journals,
 } from '~/data/assetStore'
-import { isAfter, periodLabel, periodEndDate } from '~/data/assetEngine'
+import { isAfter, periodLabel, periodEndDate, formatLife } from '~/data/assetEngine'
 import { journalDateFor, journalDatePolicyLabel, autoPostRuns } from '~/data/assetPolicy'
 import { projection, PROJECTION_HORIZONS } from '~/data/assetPreview'
 
@@ -85,7 +85,7 @@ const genDone = ref('')
 function generate() {
   genError.value = ''
   genDone.value = ''
-  if (!canChangeValue.value) { genError.value = t(`Viewing as ${viewAs.value}. Generating a run needs the Owner or Accounting role.`); return }
+  if (!canChangeValue.value) { genError.value = t(`Only the Owner or Accounting role can generate a run. You are viewing as ${viewAs.value}.`); return }
   const r = generateRun(genPeriod.value)
   if (!r.ok) { genError.value = t(r.reason); return }
   const label = periodLabel(r.run.period)
@@ -94,12 +94,12 @@ function generate() {
   if (autoPostRuns.value && nextOpenPeriod.value === r.run.period) {
     const pr = postPeriod(r.run.period)
     if (pr.ok) {
-      genDone.value = t(`${label} generated and posted automatically · ${pr.run.journal} · ${r.run.lines.length} assets`)
+      genDone.value = t(`${label} generated and posted · ${pr.run.journal} · ${r.run.lines.length} ${r.run.lines.length === 1 ? 'asset' : 'assets'}`)
       successToast(genDone.value)
       return
     }
   }
-  genDone.value = t(`Draft generated for ${label} · ${r.run.lines.length} assets · ${formatIDRWhole(r.run.total)}. Nothing is posted yet.`)
+  genDone.value = t(`${label} draft generated · ${r.run.lines.length} ${r.run.lines.length === 1 ? 'asset' : 'assets'} · ${formatIDRWhole(r.run.total)}`)
   successToast(genDone.value)
 }
 const draftFor = (month: number) => draftRunFor(periodOfMonth(month))
@@ -127,14 +127,14 @@ function confirmPost() {
   const number = pendingNumber.value
   const r = postRun(p.month)
   if (!r.ok) { infoToast(r.reason); return }
-  successToast(t(`${p.label} posted · ${number} · self-check run and retained for the period`))
+  successToast(t(`${p.label} depreciation posted · ${number}`))
   confirming.value = null
 }
 
 function reverse(p: SchedulePeriod) {
   const r = reverseRun(p.month)
   if (!r.ok) { infoToast(r.reason); return }
-  infoToast(t(`${p.label} reversed by ${r.run.reversal?.journal}, the run is a draft again`))
+  infoToast(t(`${p.label} posting reversed · ${r.run.reversal?.journal}`))
 }
 
 function viewJournal(p: SchedulePeriod) {
@@ -162,14 +162,14 @@ function stateLabel(p: SchedulePeriod) {
         <div class="ds__runperiod">{{ actionable.label }}</div>
         <div class="ds__runnote">
           {{ actionable.assetCount }} {{ t(actionable.assetCount === 1 ? 'asset' : 'assets') }}
-          · {{ t('journal dated') }} {{ periodEnd(actionable.month) }}
+          · {{ t('journal date') }} {{ periodEnd(actionable.month) }}
           <span data-tour="set-jdate-effect">({{ t(journalDatePolicyLabel()) }})</span>
           · {{ draftFor(actionable.month) ? t(`draft generated ${draftFor(actionable.month)!.generatedOn}`) : t('no draft yet') }}
           <template v-if="autoPostRuns"> · {{ t('posts automatically when generated') }}</template>
         </div>
       </div>
       <div class="ds__runfig">
-        <div class="ds__runfiglabel">{{ t('Posts to the general ledger') }}</div>
+        <div class="ds__runfiglabel">{{ t('Depreciation to post') }}</div>
         <div class="ds__runfigvalue">{{ formatIDRWhole(actionable.accounting) }}</div>
       </div>
       <MpButton is-rounded @click="confirming = actionable">{{ t('Review and post') }}</MpButton>
@@ -178,29 +178,28 @@ function stateLabel(p: SchedulePeriod) {
     <!-- On-demand generation for a chosen period. -->
     <div class="ds__gen" data-tour="run-empty">
       <div class="ds__genfield">
-        <label class="ds__genlabel" for="ds-gen-period">{{ t('Generate a run for') }}</label>
-        <ErpFilterSelect id="ds-gen-period" v-model="genPeriod" :placeholder="t('Choose a period')" :options="genOptions" width="220px" :is-clearable="false" />
+        <label class="ds__genlabel" for="ds-gen-period">{{ t('Run period') }}</label>
+        <ErpFilterSelect id="ds-gen-period" v-model="genPeriod" :placeholder="t('Select period')" :options="genOptions" width="220px" :is-clearable="false" />
       </div>
-      <MpButton variant="secondary" is-rounded @click="generate">{{ t('Generate') }}</MpButton>
+      <MpButton variant="secondary" is-rounded @click="generate">{{ t('Generate run') }}</MpButton>
       <p v-if="genError" class="ds__generror">{{ genError }}</p>
       <p v-else-if="genDone" class="ds__gendone">{{ genDone }}</p>
-      <p v-else class="ds__genhint">{{ t('Both books in one pass. Generating again replaces the draft, never a posted run.') }}</p>
+      <p v-else class="ds__genhint">{{ t('Generating again replaces the draft. Posted runs are not affected.') }}</p>
     </div>
 
     <!-- ── Year figures ── -->
     <div class="stats-section">
       <div class="stat-card stat-card--bordered">
-        <div class="stat-title">{{ t('Booked to date') }}</div>
+        <div class="stat-title">{{ t('Posted to date') }}</div>
         <div class="stat-period">
-          {{ t('Accounting · posted through') }}
-          {{ totals.bookedThrough ?? t('nothing posted yet') }}
+          {{ totals.bookedThrough ? t(`Accounting · through ${totals.bookedThrough}`) : t('No periods posted') }}
         </div>
         <div class="stat-amount">{{ formatIDRWhole(totals.booked.accounting ?? 0) }}</div>
       </div>
 
       <div class="stat-card stat-card--bordered">
         <div class="stat-title">{{ t('FY2026 forecast') }}</div>
-        <div class="stat-period">{{ t('Accounting · full year including projected') }}</div>
+        <div class="stat-period">{{ t('Accounting · posted and projected') }}</div>
         <div class="stat-amount">{{ formatIDRWhole(totals.year.accounting ?? 0) }}</div>
       </div>
 
@@ -210,11 +209,11 @@ function stateLabel(p: SchedulePeriod) {
            hands off. -->
       <div class="stat-card">
         <div class="stat-title">{{ t('Tax difference · FY2026') }}</div>
-        <div class="stat-period">{{ t('Computed yearly for the tax return, posts nothing') }}</div>
+        <div class="stat-period">{{ t('Accounting less tax · full year') }}</div>
         <div class="stat-amount">
           {{ formatIDRWhole((totals.year.accounting ?? 0) - (totals.year.tax ?? 0)) }}
         </div>
-        <span class="stat-link" @click="router.push('/tax-book')">{{ t('Open Tax book') }}</span>
+        <span class="stat-link" @click="router.push('/tax-book')">{{ t('View Tax book') }}</span>
       </div>
     </div>
 
@@ -235,10 +234,10 @@ function stateLabel(p: SchedulePeriod) {
           <tr>
             <th class="ds__th ds__th--period">{{ t('Period') }}</th>
             <th class="ds__th ds__th--num ds__th--opt">{{ t('Cost') }}</th>
-            <th class="ds__th ds__th--num ds__th--opt">{{ t('Accumulated b/f') }}</th>
+            <th class="ds__th ds__th--num ds__th--opt">{{ t('Opening accumulated') }}</th>
             <th class="ds__th ds__th--num">{{ t('Charge') }}</th>
-            <th class="ds__th ds__th--num ds__th--opt">{{ t('Accumulated c/f') }}</th>
-            <th class="ds__th ds__th--num">{{ t('Net book value') }}</th>
+            <th class="ds__th ds__th--num ds__th--opt">{{ t('Closing accumulated') }}</th>
+            <th class="ds__th ds__th--num">{{ t('Book value') }}</th>
             <th class="ds__th ds__th--state">{{ t('Status') }}</th>
           </tr>
         </thead>
@@ -310,9 +309,9 @@ function stateLabel(p: SchedulePeriod) {
                   <span class="ds__name" @click="openAsset(r.asset.id)">{{ r.asset.name }}</span>
                   <span class="ds__id">
                     {{ r.asset.id }} ·
-                    <template v-if="r.asset.indefiniteLife">{{ t('indefinite life') }}</template>
+                    <template v-if="r.asset.indefiniteLife">{{ t('Indefinite life') }}</template>
                     <template v-else-if="r.asset.commercialLifeMonths">
-                      {{ Math.round(r.asset.commercialLifeMonths / 12) }} {{ t('yr straight line') }}
+                      {{ t('Straight line') }}, {{ t(formatLife(r.asset.commercialLifeMonths)) }}
                     </template>
                     <!-- Only where the charge is not the ordinary full month:
                          the exception is the thing worth reading. -->
@@ -356,15 +355,14 @@ function stateLabel(p: SchedulePeriod) {
     <div class="ds__proj">
       <div class="ds__projhead">
         <div>
-          <div class="ds__projtitle">{{ t('Forward projection') }}</div>
+          <div class="ds__projtitle">{{ t('Projected depreciation') }}</div>
           <div class="ds__projsub">
-            {{ t('Both books, from') }} {{ projected[0]?.label }} {{ t('to') }} {{ projected[projected.length - 1]?.label }}.
-            {{ t('Assumes no additions or disposals.') }}
+            {{ projected[0]?.label }} {{ t('to') }} {{ projected[projected.length - 1]?.label }} · {{ t('assumes no additions or disposals') }}
           </div>
         </div>
         <div class="ds__genfield">
-          <label class="ds__genlabel" for="ds-horizon">{{ t('Horizon') }}</label>
-          <ErpFilterSelect id="ds-horizon" v-model="horizon" :placeholder="t('Horizon')" :options="horizonOptions" width="160px" :is-clearable="false" />
+          <label class="ds__genlabel" for="ds-horizon">{{ t('Range') }}</label>
+          <ErpFilterSelect id="ds-horizon" v-model="horizon" :placeholder="t('Select range')" :options="horizonOptions" width="160px" :is-clearable="false" />
         </div>
       </div>
       <div class="ds__card">
@@ -443,7 +441,7 @@ function stateLabel(p: SchedulePeriod) {
             </table>
 
             <p class="ds__jnote">
-              {{ t('Depreciation is posted on the accounting basis only. The statutory figure is computed once a year for the tax return and reaches no ledger.') }}
+              {{ t('Posts the accounting book only. The tax book has no journal.') }}
             </p>
           </div>
 
@@ -470,7 +468,6 @@ function stateLabel(p: SchedulePeriod) {
 .ds__runlabel { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .ds__runperiod { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ds__runnote { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); }
-.ds__runrule { color: var(--mp-text-secondary); }
 .ds__runfig { text-align: right; flex: none; }
 .ds__runfiglabel { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .ds__runfigvalue {
