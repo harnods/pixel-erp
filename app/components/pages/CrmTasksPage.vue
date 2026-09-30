@@ -7,8 +7,9 @@
  */
 import { ref, computed } from 'vue'
 import { infoToast } from '~/utils/toasts'
-import { MpButton, MpIcon, MpSelect, MpSegmentedControl, MpSkeleton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast } from '@mekari/pixel3'
+import { MpButton, MpIcon, MpSegmentedControl, MpSkeleton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { useTableState } from '~/composables/useTableState'
 import { formatDate } from '~/utils/date'
@@ -43,8 +44,6 @@ const priorityOptions = [
   { value: 'high', label: 'High' }, { value: 'medium', label: 'Medium' }, { value: 'low', label: 'Low' },
 ]
 const stageOptions = taskStages.map((s) => ({ value: s, label: s }))
-const stageFilterLabel = computed(() => stageOptions.find((o) => o.value === statusFilter.value)?.label ?? '')
-const priorityFilterLabel = computed(() => priorityOptions.find((o) => o.value === priorityFilter.value)?.label ?? '')
 
 // Source pre-filtered by the priority quick-filter; useTableState handles the rest.
 const source = computed(() => crmTasks.filter((t) => !priorityFilter.value || t.priority === priorityFilter.value))
@@ -67,12 +66,12 @@ const hasActiveFilter = computed(() => !!statusFilter.value || !!priorityFilter.
 function clearFilters() { statusFilter.value = ''; priorityFilter.value = '' }
 
 const columns: TableColumn[] = [
-  { key: 'title',     label: 'Task name',   sortType: 'text', width: '280px' },
-  { key: 'stage',     label: 'Task stage',  width: '150px' },
-  { key: 'relatedTo', label: 'Related to',  sortType: 'text', width: '220px' },
-  { key: 'dueDate',   label: 'Due date',    sortType: 'date', width: '150px' },
-  { key: 'priority',  label: 'Priority',    width: '120px' },
-  { key: 'owner',     label: 'Owner',       sortType: 'text', width: '200px' },
+  { key: 'title',     label: 'Task name',   sortType: 'text', kind: 'name' },
+  { key: 'stage',     label: 'Task stage',  kind: 'status' },
+  { key: 'relatedTo', label: 'Related to',  sortType: 'text', kind: 'name' },
+  { key: 'dueDate',   label: 'Due date',    sortType: 'date', kind: 'date' },
+  { key: 'priority',  label: 'Priority',    kind: 'status' },
+  { key: 'owner',     label: 'Owner',       sortType: 'text', kind: 'name' },
 ]
 
 // ── Kanban ────────────────────────────────────────────────────────────────────
@@ -95,10 +94,10 @@ function onDrop(stage: TaskStage) {
         <h1 class="crm-title">Tasks</h1>
       </div>
       <div class="crm-titlebar__right">
-        <button class="crm-btn crm-btn--primary" type="button" @click="soon('New task')">
+        <MpButton class="btn-enterprise btn-enterprise--primary" type="button" @click="soon('New task')">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
           New task
-        </button>
+        </MpButton>
       </div>
     </header>
 
@@ -115,7 +114,6 @@ function onDrop(stage: TaskStage) {
         has-checkbox
         bulk-label="task"
         :loading="loading"
-        actions-width="52px"
         filter-empty-label="task"
         :search="search"
         :has-active-filter="hasActiveFilter"
@@ -127,39 +125,31 @@ function onDrop(stage: TaskStage) {
       >
         <template #filters>
           <div class="filter-left">
-            <MpPopover id="task-stage-filter" is-close-on-select>
-              <MpPopoverTrigger>
-                <MpSelect id="task-stage-select" placeholder="Status" :model-value="statusFilter" is-clearable :class="css({ width: '150px' })" @mousedown.prevent @clear="statusFilter = ''">
-                  <option v-if="statusFilter" :value="statusFilter">{{ stageFilterLabel }}</option>
-                </MpSelect>
-              </MpPopoverTrigger>
-              <MpPopoverContent :class="css({ minWidth: '150px', width: 'max-content' })">
-                <MpPopoverList>
-                  <MpPopoverListItem v-for="opt in stageOptions" :key="opt.value" :is-active="opt.value === statusFilter" @click="statusFilter = opt.value">{{ opt.label }}</MpPopoverListItem>
-                </MpPopoverList>
-              </MpPopoverContent>
-            </MpPopover>
-            <MpPopover id="task-prio-filter" is-close-on-select>
-              <MpPopoverTrigger>
-                <MpSelect id="task-prio-select" placeholder="Priority" :model-value="priorityFilter" is-clearable :class="css({ width: '150px' })" @mousedown.prevent @clear="priorityFilter = ''">
-                  <option v-if="priorityFilter" :value="priorityFilter">{{ priorityFilterLabel }}</option>
-                </MpSelect>
-              </MpPopoverTrigger>
-              <MpPopoverContent :class="css({ minWidth: '150px', width: 'max-content' })">
-                <MpPopoverList>
-                  <MpPopoverListItem v-for="opt in priorityOptions" :key="opt.value" :is-active="opt.value === priorityFilter" @click="priorityFilter = opt.value">{{ opt.label }}</MpPopoverListItem>
-                </MpPopoverList>
-              </MpPopoverContent>
-            </MpPopover>
+            <ErpFilterSelect
+              id="task-stage-select"
+              :model-value="statusFilter"
+              placeholder="Status"
+              :options="stageOptions"
+              width="150px"
+              @update:model-value="(v: string) => (statusFilter = v)"
+            />
+            <ErpFilterSelect
+              id="task-prio-select"
+              :model-value="priorityFilter"
+              placeholder="Priority"
+              :options="priorityOptions"
+              width="150px"
+              @update:model-value="(v: string) => (priorityFilter = v)"
+            />
           </div>
           <div class="filter-right">
             <MpSegmentedControl id="task-view-switch" name="task-view-switch" v-model="view" :data="viewOptions" />
             <div class="filter-search">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               <input v-model="search" class="filter-search-input" type="text" placeholder="Search...">
-              <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+              <MpButton v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg>
-              </button>
+              </MpButton>
             </div>
           </div>
         </template>
@@ -187,9 +177,9 @@ function onDrop(stage: TaskStage) {
         <template #actions="{ row }">
           <MpPopover :id="`task-actions-${(row as CrmTask).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
             <MpPopoverTrigger>
-              <button class="row-kebab" type="button" aria-label="More actions">
+              <MpButton class="row-kebab" type="button" aria-label="More actions">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
@@ -207,30 +197,22 @@ function onDrop(stage: TaskStage) {
     <template v-else>
       <div class="crm-filter">
         <div class="crm-filter__left">
-          <MpPopover id="task-stage-filter-k" is-close-on-select>
-            <MpPopoverTrigger>
-              <MpSelect id="task-stage-select-k" placeholder="Status" :model-value="statusFilter" is-clearable :class="css({ width: '150px' })" @mousedown.prevent @clear="statusFilter = ''">
-                <option v-if="statusFilter" :value="statusFilter">{{ stageFilterLabel }}</option>
-              </MpSelect>
-            </MpPopoverTrigger>
-            <MpPopoverContent :class="css({ minWidth: '150px', width: 'max-content' })">
-              <MpPopoverList>
-                <MpPopoverListItem v-for="opt in stageOptions" :key="opt.value" :is-active="opt.value === statusFilter" @click="statusFilter = opt.value">{{ opt.label }}</MpPopoverListItem>
-              </MpPopoverList>
-            </MpPopoverContent>
-          </MpPopover>
-          <MpPopover id="task-prio-filter-k" is-close-on-select>
-            <MpPopoverTrigger>
-              <MpSelect id="task-prio-select-k" placeholder="Priority" :model-value="priorityFilter" is-clearable :class="css({ width: '150px' })" @mousedown.prevent @clear="priorityFilter = ''">
-                <option v-if="priorityFilter" :value="priorityFilter">{{ priorityFilterLabel }}</option>
-              </MpSelect>
-            </MpPopoverTrigger>
-            <MpPopoverContent :class="css({ minWidth: '150px', width: 'max-content' })">
-              <MpPopoverList>
-                <MpPopoverListItem v-for="opt in priorityOptions" :key="opt.value" :is-active="opt.value === priorityFilter" @click="priorityFilter = opt.value">{{ opt.label }}</MpPopoverListItem>
-              </MpPopoverList>
-            </MpPopoverContent>
-          </MpPopover>
+          <ErpFilterSelect
+            id="task-stage-select-k"
+            :model-value="statusFilter"
+            placeholder="Status"
+            :options="stageOptions"
+            width="150px"
+            @update:model-value="(v: string) => (statusFilter = v)"
+          />
+          <ErpFilterSelect
+            id="task-prio-select-k"
+            :model-value="priorityFilter"
+            placeholder="Priority"
+            :options="priorityOptions"
+            width="150px"
+            @update:model-value="(v: string) => (priorityFilter = v)"
+          />
         </div>
         <div class="crm-filter__right">
           <MpSegmentedControl id="task-view-switch-k" name="task-view-switch-k" v-model="view" :data="viewOptions" />

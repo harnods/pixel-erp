@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import {
   MpIcon, MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  toast, css,
+  MpButton, toast, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -24,14 +24,14 @@ function goEdit(id: string) { router.push(`/approval-workflows/${id}/edit`) }
 // amountText below) plus truncation on the cell itself, so a long value never
 // bleeds into the next column.
 const columns: TableColumn[] = [
-  { key: 'name',            label: 'Workflow name',     width: '200px', sortType: 'text' },
-  { key: 'description',     label: 'Description',       width: '220px' },
-  { key: 'appliesTo',       label: 'Applies to',        width: '230px', sortType: 'text' },
-  { key: 'minAmount',       label: 'Amount higher than', width: '160px', align: 'right', sortType: 'number' },
-  { key: 'levels',          label: 'Approval levels',   width: '130px' },
-  { key: 'createdBy',       label: 'Transaction created by', width: '190px' },
-  { key: 'status',          label: 'Status',            width: '110px', sortType: 'text' },
-  { key: 'lastUpdated',     label: 'Last updated',      width: '150px' },
+  { key: 'name',            label: 'Workflow name',     kind: 'name', sortType: 'text' },
+  { key: 'description',     label: 'Description',       kind: 'address' },
+  { key: 'appliesTo',       label: 'Applies to',        sortType: 'text' },
+  { key: 'minAmount',       label: 'Amount higher than', kind: 'amount', align: 'right', sortType: 'number' },
+  { key: 'levels',          label: 'Approval levels'  },
+  { key: 'createdBy',       label: 'Transaction created by' },
+  { key: 'status',          label: 'Status',            kind: 'status', sortType: 'text' },
+  { key: 'lastUpdated',     label: 'Last updated',      kind: 'date' },
 ]
 
 function appliesToText(row: ApprovalWorkflowRule) {
@@ -230,13 +230,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #actions="{ row }">
       <MpPopover :id="`awf-actions-${(row as unknown as ApprovalWorkflowRule).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="row-kebab btn-enterprise" :aria-label="t('More actions')">
+          <MpButton class="row-kebab btn-enterprise" :aria-label="t('More actions')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <circle cx="12" cy="5" r="2" />
               <circle cx="12" cy="12" r="2" />
               <circle cx="12" cy="19" r="2" />
             </svg>
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -267,12 +267,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </ErpTablePage>
 
   <!-- ── Delete confirmation modal ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="awf-delete-modal"
     :is-open="deleteModalOpen"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeDeleteModal"
   >
@@ -286,8 +284,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="closeDeleteModal">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">{{ t('Delete') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="closeDeleteModal">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">{{ t('Delete') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -296,12 +294,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
   <!-- ── Turn off confirmation modal — reversible, so primary button is the
        standard (non-danger) state, per the Archive-confirmation pattern. ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="awf-turn-off-modal"
     :is-open="turnOffModalOpen"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeTurnOffModal"
   >
@@ -315,8 +311,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="closeTurnOffModal">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="confirmTurnOff">{{ t('Turn off') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="closeTurnOffModal">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" @click="confirmTurnOff">{{ t('Turn off') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -327,9 +323,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
        billing component, to preview the Approval workflows form both ways ──── -->
   <MpPopover id="awf-demo-fab" is-close-on-select use-portal placement="top-end">
     <MpPopoverTrigger>
-      <button class="demo-fab btn-enterprise" :aria-label="t('Change scenario state')">
+      <MpButton class="demo-fab btn-enterprise" :aria-label="t('Change scenario state')">
         <MpIcon name="sliders" size="md" color="icon.inverse" />
-      </button>
+      </MpButton>
     </MpPopoverTrigger>
     <MpPopoverContent :class="css({ minWidth: '260px', width: 'max-content' })">
       <p class="demo-fab-heading">{{ t('Project Accounting billing component') }}</p>

@@ -17,7 +17,7 @@ import { useAireneBridge } from '~/composables/useAireneBridge'
 import { formatDateTime } from '~/utils/date'
 import {
   getTask, taskRuns, addRun, deleteRun, deleteTask, unscheduleTask, updateTask, nextRunId,
-  agentForTaskTitle, agentForModule, COWORK_SKILLS,
+  agentForTaskTitle, agentForModule, getAgent, COWORK_SKILLS,
   type CoworkTask, type CoworkRun,
 } from '~/data/cowork'
 
@@ -227,6 +227,13 @@ async function downloadPdf() {
 
 // ── Open chat about this result ───────────────────────────────────────────────
 const airene = useAireneBridge()
+
+// Several agents can collaborate on a task (multi-agent room) — shown together.
+const taskAgents = computed(() => {
+  const ids = task.value?.agentIds
+  if (ids?.length) return ids.map((id) => getAgent(id)).filter(Boolean)
+  return taskAgent.value ? [taskAgent.value] : []
+})
 function buildChatContext(): string {
   const p = plan.value
   if (!p || !task.value) return ''
@@ -410,9 +417,11 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           <p class="ctd-value ctd-model"><MpIcon name="airene-brand" size="sm" /> {{ modelLabel }}</p>
 
           <p class="ctd-label">Agent</p>
-          <div v-if="taskAgent" class="ctd-agent">
-            <img class="ctd-agent__av" :src="taskAgent.avatar" :alt="taskAgent.name" loading="lazy">
-            <span class="ctd-agent__name">{{ taskAgent.name }}</span>
+          <div v-if="taskAgents.length" class="ctd-agents">
+            <div v-for="a in taskAgents" :key="a!.id" class="ctd-agent">
+              <img class="ctd-agent__av" :src="a!.avatar" :alt="a!.name" loading="lazy">
+              <span class="ctd-agent__name">{{ a!.name }}</span>
+            </div>
           </div>
           <div v-else class="ctd-chips">
             <span v-for="a in agents" :key="a" class="ctd-chip">{{ a }}</span>
@@ -459,9 +468,11 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
           <p class="ctd-value ctd-model"><MpIcon name="airene-brand" size="sm" /> {{ modelLabel }}</p>
 
           <p class="ctd-label">Agent</p>
-          <div v-if="taskAgent" class="ctd-agent">
-            <img class="ctd-agent__av" :src="taskAgent.avatar" :alt="taskAgent.name" loading="lazy">
-            <span class="ctd-agent__name">{{ taskAgent.name }}</span>
+          <div v-if="taskAgents.length" class="ctd-agents">
+            <div v-for="a in taskAgents" :key="a!.id" class="ctd-agent">
+              <img class="ctd-agent__av" :src="a!.avatar" :alt="a!.name" loading="lazy">
+              <span class="ctd-agent__name">{{ a!.name }}</span>
+            </div>
           </div>
           <div v-else class="ctd-chips">
             <span v-for="a in agents" :key="a" class="ctd-chip">{{ a }}</span>
@@ -649,8 +660,9 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 .ctd-value { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .ctd-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); }
 .ctd-chip { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); background: var(--mp-background-neutral-subtle, #f8f9f9); border-radius: var(--mp-radii-full, 999px); padding: 3px 10px; }
+.ctd-agents { display: flex; flex-direction: column; gap: var(--mp-spacing-2, 8px); }
 .ctd-agent { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); }
-.ctd-agent__av { width: 32px; height: 32px; object-fit: contain; flex-shrink: 0; }
+.ctd-agent__av { width: 32px; height: 32px; object-fit: contain; flex-shrink: 0; background: transparent; }
 .ctd-agent__name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-default); }
 .ctd-freq { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .ctd-freq__row { display: flex; gap: var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }

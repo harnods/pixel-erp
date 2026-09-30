@@ -201,8 +201,11 @@ function clear(e: MouseEvent) {
 <style scoped>
 /* Rendered via MpButton, not a raw HTML control — default look reset (see
    IconButton/.demo-fab precedent). */
-.ttc-field { display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0 !important; width: 200px; height: var(--mp-sizes-9, 36px); padding: 0 var(--mp-spacing-3) !important; background: var(--mp-background-neutral) !important; border: 1px solid var(--mp-border-default) !important; border-radius: var(--mp-radii-md) !important; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); cursor: pointer; }
-.ttc-field:hover { background: var(--mp-background-neutral-hovered) !important; }
+/* Height + resting border MUST equal MpInput md (rule/select-field-metrics):
+   38px tall (--mp-sizes-9.5), border = --mp-colors-border-form. Short --mp-*
+   aliases are EMPTY in this Pixel build → use the full --mp-colors-* tokens. */
+.ttc-field { display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0 !important; width: 200px; height: var(--mp-sizes-9\.5, 38px); padding: 0 var(--mp-spacing-3) !important; background: var(--mp-colors-background-neutral, #fff) !important; border: 1px solid var(--mp-colors-border-form, #1d1f2429) !important; border-radius: var(--mp-radii-md) !important; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-colors-text-default, #080d0e); cursor: pointer; }
+.ttc-field:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; }
 .ttc-field--full { width: 100%; }
 
 .ttc-field__value {
@@ -233,15 +236,15 @@ function clear(e: MouseEvent) {
 
 .ttc-col--parents {
   position: relative;
-  border-right: 1px solid var(--mp-border-bold);
+  border-right: 1px solid var(--mp-border-bold, #8c9596);
 }
 
 .ttc-col--children {
   position: absolute;
   left: 100%;
   margin-left: var(--mp-spacing-1); /* 4px */
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-bold);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   box-shadow: var(--mp-shadows-md, 0 4px 12px rgba(0, 0, 0, 0.12)); /* pixel-police-allow-shadow: floating cascade flyout panel */
 }
@@ -259,8 +262,8 @@ function clear(e: MouseEvent) {
   cursor: pointer;
   white-space: nowrap;
 }
-.ttc-row:hover { background: var(--mp-background-neutral-hovered); }
-.ttc-row--active { background: var(--mp-background-neutral-hovered); }
+.ttc-row:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+.ttc-row--active { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .ttc-row--selected {
   color: var(--mp-text-selected);
   font-weight: var(--mp-font-weights-semi-bold);

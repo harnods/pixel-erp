@@ -76,11 +76,7 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
         <div class="rpm-modal" role="dialog" aria-label="Reject production request?" @click.stop>
           <header class="rpm-header">
             <h2 class="rpm-header-title">Reject production request?</h2>
-            <button class="rpm-close" type="button" aria-label="Close" @click="close">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-              </svg>
-            </button>
+            <MpButton class="rpm-close" variant="ghost" size="sm" left-icon="close" aria-label="Close" @click="close" />
           </header>
 
           <div class="rpm-body">
@@ -126,7 +122,7 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
 
           <footer class="rpm-footer">
             <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
-            <button class="btn-enterprise btn-enterprise--danger" type="button" @click="handleReject">Reject</button>
+            <MpButton class="btn-enterprise btn-enterprise--danger" @click="handleReject">Reject</MpButton>
           </footer>
         </div>
       </div>
@@ -158,13 +154,7 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
   background: var(--mp-background-neutral-subtle);
 }
 .rpm-header-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); }
-.rpm-close {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
-  border: none; background: none; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-text-secondary);
-}
-.rpm-close:hover { background: var(--mp-background-neutral-hovered); }
+.rpm-close { color: var(--mp-text-secondary); }
 
 .rpm-body { padding: var(--mp-spacing-6); display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
 .rpm-product { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-xl, 32px); color: var(--mp-text-default); }

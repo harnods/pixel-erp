@@ -28,17 +28,7 @@
 .crm-subtitle { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary, #656f80); }
 .crm-titlebar__right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 
-.crm-btn {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
-  height: 36px; padding: 0 var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px);
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
-  cursor: pointer; white-space: nowrap; border: 1px solid transparent;
-}
-.crm-btn--secondary { background: var(--mp-background-neutral, #fff); border-color: var(--mp-border-bold, #8c9596); color: var(--mp-text-default, #272b32); }
-.crm-btn--secondary:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
-/* Enterprise primary — emerald, matching .btn-enterprise--primary. */
-.crm-btn--primary { background: var(--mp-colors-emerald-700, #029861); border-color: var(--mp-colors-emerald-700, #029861); color: var(--mp-text-inverse, #fff); }
-.crm-btn--primary:hover { background: var(--mp-colors-emerald-800, #186f4a); border-color: var(--mp-colors-emerald-800, #186f4a); }
+/* Buttons use the global .btn-enterprise--* overrides (app/assets/css/erp.css). */
 
 /* ── Filter bar ── */
 .crm-filter {

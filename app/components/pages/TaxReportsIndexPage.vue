@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
-// Reports → Tax index (Reports module → Tax submenu). Lists the tax reports;
-// each "View report" opens its own page. Same flush edge-to-edge card grid as the
-// Sales / Inventory / WMS reports indexes, Pixel 3 DT 2.4 enterprise tokens.
+import { MpButton } from '@mekari/pixel3'
+// Reports → Tax index (Reports module → Tax submenu). Same flush edge-to-edge
+// card grid as the Sales reports index (SalesReportsIndexPage) — Pixel 3 DT 2.4
+// enterprise tokens.
 //
 // VAT reconciliation is the only built card — it opens the module at
-// /vat-reconciliation. The rest are placeholders (coming-soon toast), same as the
-// unbuilt cards on the sibling report indexes.
+// /vat-reconciliation. The rest are placeholders (coming-soon toast), same as
+// the unbuilt cards on the sibling report indexes.
 import { infoToast } from '~/utils/toasts'
 const { t } = useLocale()
 const router = useRouter()
@@ -20,8 +21,8 @@ const reports: ReportCard[] = [
   { slug: 'vat-reconciliation',      title: 'VAT reconciliation',      description: 'Matches your sales and purchase invoices against the faktur pajak recorded in DJP Coretax, per tax period, and shows what is still unreconciled.' },
   { slug: 'output-tax-invoice-list', title: 'Output tax invoice list', description: 'Every faktur pajak you issued in a period, with its transaction code, DPP, and PPN. The working list behind your SPT Masa PPN.' },
   { slug: 'input-tax-invoice-list',  title: 'Input tax invoice list',  description: 'Every faktur pajak you received in a period, showing which ones are creditable and which are still waiting on a vendor.' },
-  { slug: 'vat-summary',             title: 'VAT summary',             description: 'Output PPN against input PPN per tax period, so you can see the amount payable or overpaid before you file.' },
-  { slug: 'withholding-tax-summary', title: 'Withholding tax summary', description: 'PPh withheld and paid per article and per period, summarized from your transactions.' },
+  { slug: 'value-added-tax',         title: 'Value added tax (PPN)',   description: 'Calculates net VAT obligations by comparing Output Tax (from sales) and Input Tax (from purchases) within the period.' },
+  { slug: 'withholding-tax-summary', title: 'Withholding tax summary', description: 'Details all withholding tax (PPh) deductions recorded on sales and purchases, including taxable amounts and tax rates.' },
   { slug: 'tax-payment-list',        title: 'Tax payment list',        description: 'All tax payments made in a period, with their billing codes, so you can tie every payment back to a return.' },
 ]
 
@@ -67,7 +68,7 @@ function viewReport(r: ReportCard) {
           <h2 class="report-card-title">{{ t(r.title) }}</h2>
           <p class="report-card-desc">{{ t(r.description) }}</p>
         </div>
-        <button type="button" class="report-view-btn" @click="viewReport(r)">{{ t('View report') }}</button>
+        <MpButton variant="secondary" is-rounded class="report-view-btn" @click="viewReport(r)">{{ t('View report') }}</MpButton>
       </div>
       <!-- Empty filler cells keep the last row's columns present (complete grid). -->
       <div v-for="n in fillerCount" :key="`filler-${n}`" class="report-card report-card--filler" aria-hidden="true" />
@@ -111,7 +112,7 @@ function viewReport(r: ReportCard) {
   white-space: nowrap;
 }
 .report-card-desc {
-  min-height: 96px;
+  min-height: var(--mp-sizes-24, 96px);
   margin: 0;
   font-size: var(--mp-font-sizes-md, 14px);
   font-weight: var(--mp-font-weights-regular, 400);
@@ -119,21 +120,6 @@ function viewReport(r: ReportCard) {
   line-height: var(--mp-line-heights-md, 20px);
 }
 
-/* Secondary pill button (Pixel enterprise): white fill, bold border, rounded-full. */
-.report-view-btn {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--mp-spacing-2, 8px) var(--mp-spacing-4, 16px);
-  border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-neutral, #fff);
-  color: var(--mp-text-secondary);
-  font-size: var(--mp-font-sizes-md, 14px);
-  font-weight: var(--mp-font-weights-semi-bold, 600);
-  line-height: var(--mp-line-heights-md, 20px);
-  cursor: pointer;
-}
-.report-view-btn:hover { background: var(--mp-background-neutral-hovered); }
+/* layout only — the button look comes from MpButton (secondary) */
+.report-view-btn { align-self: flex-start; }
 </style>

@@ -5,54 +5,78 @@
  * any key/value display across the ERP.
  *
  * Rules (see docs/patterns/ContentList.md):
- *   • vertical padding 8px top & bottom; NO gap between label and value
- *   • label = 12px secondary; value = 14px default
- *   • empty value renders as "—"
+ *   Two layouts:
+ *   • VERTICAL (default) — label stacked above value; 8px top/bottom, NO gap between.
+ *   • HORIZONTAL (`horizontal`) — label LEFT (min 184px) + 24px gap + value fills the
+ *     rest; 8px top/bottom. Used on detail pages where key/value read as a row.
+ *   • label = 12px secondary; value = 14px default; empty value renders as "—".
  *
  * Usage:
  *   <ContentList label="Customer" value="Anomali Coffee" />
+ *   <ContentList horizontal label="Vendor" value="PT Maju Jaya" />        // label left / value right
  *   <ContentList label="Tags"><ErpTagList :tags="tags" /></ContentList>   // rich value via slot
  *   <ContentList label="Email">
  *     <span class="content-list__line">a@x.com</span>
  *     <span class="content-list__line">b@x.com</span>
  *   </ContentList>
  */
-defineProps<{
-  /** Caption above the value (12px, secondary). Omit for a value-only field. */
+import { computed } from 'vue'
+import { css } from '@mekari/pixel3'
+
+const props = defineProps<{
+  /** Caption above (vertical) or left of (horizontal) the value — 12px, secondary. */
   label?: string
   /** Plain-text value (14px, default). For rich values use the default slot. */
   value?: string | number
+  /** Horizontal layout: label left (min 184px) + 24px gap + value fills the rest. */
+  horizontal?: boolean
 }>()
+
+const rootClass = computed(() =>
+  css({
+    display: 'flex',
+    flexDirection: props.horizontal ? 'row' : 'column',
+    alignItems: props.horizontal ? 'baseline' : undefined,
+    gap: props.horizontal ? '6' : undefined,
+    /* 8px top & bottom; no gap between label and value */
+    paddingTop: '2',
+    paddingBottom: '2',
+  })
+)
+
+const labelClass = computed(() =>
+  css({
+    fontSize: props.horizontal ? 'md' : 'sm',
+    lineHeight: props.horizontal ? 'lg' : 'sm',
+    color: 'text.secondary',
+    flex: props.horizontal ? '0 0 184px' : undefined,
+    minWidth: props.horizontal ? '184px' : undefined,
+  })
+)
+
+const valueClass = computed(() =>
+  css({
+    fontSize: 'md',
+    lineHeight: 'lg',
+    color: 'text.default',
+    flex: props.horizontal ? '1 1 auto' : undefined,
+    minWidth: props.horizontal ? '0' : undefined,
+  })
+)
 </script>
 
 <template>
-  <div class="content-list">
-    <span v-if="label" class="content-list__label">{{ label }}</span>
-    <div class="content-list__value">
+  <div :class="rootClass">
+    <span v-if="label" :class="labelClass">{{ label }}</span>
+    <div :class="valueClass">
       <slot>{{ value ?? '—' }}</slot>
     </div>
   </div>
 </template>
 
 <style scoped>
-.content-list {
-  display: flex;
-  flex-direction: column;
-  /* 8px top & bottom; no gap between label and value */
-  padding: var(--mp-spacing-2) 0;
-}
-.content-list__label {
-  font-size: var(--mp-font-sizes-sm);
-  line-height: var(--mp-line-heights-sm, 16px);
-  color: var(--mp-text-secondary);
-}
-.content-list__value {
-  font-size: var(--mp-font-sizes-md);
-  line-height: var(--mp-line-heights-lg, 20px);
-  color: var(--mp-text-default);
-}
-/* multi-line value helper (e.g. several email addresses) */
-.content-list__value :deep(.content-list__line) {
+/* multi-line value helper (e.g. several email addresses) — :deep() requires a style block */
+:deep(.content-list__line) {
   display: block;
 }
 </style>

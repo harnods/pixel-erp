@@ -10,7 +10,7 @@
  */
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpButton, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -24,17 +24,17 @@ const { t } = useLocale()
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'number',          label: 'Number',               width: '160px', sortable: true  },
-  { key: 'bomName',         label: 'BOM name',             width: '200px', sortable: true  },
-  { key: 'category',        label: 'Category',             width: '120px'                  },
-  { key: 'type',            label: 'Type',                 width: '140px'                  },
-  { key: 'trackRouting',    label: 'Track routing',        width: '130px'                  },
-  { key: 'status',          label: 'Status',               width: '170px'                  },
-  { key: 'parentNumber',    label: 'Parent work order',    width: '170px'                  },
-  { key: 'producedQty',     label: 'Produced qty',         width: '130px', align: 'right'  },
-  { key: 'productionPlan',  label: 'Production plan dates', width: '230px'                  },
-  { key: 'startDate',       label: 'Start date',           width: '130px'                  },
-  { key: 'endDate',         label: 'End date',             width: '130px'                  },
+  { key: 'number',          label: 'Number',               kind: 'number', sortable: true  },
+  { key: 'bomName',         label: 'BOM name',             kind: 'name', sortable: true  },
+  { key: 'category',        label: 'Category'                  },
+  { key: 'type',            label: 'Type'                  },
+  { key: 'trackRouting',    label: 'Track routing'                  },
+  { key: 'status',          label: 'Status',               kind: 'status'                  },
+  { key: 'parentNumber',    label: 'Parent work order',    kind: 'number'                  },
+  { key: 'producedQty',     label: 'Produced qty',         align: 'right'  },
+  { key: 'productionPlan',  label: 'Production plan dates'                  },
+  { key: 'startDate',       label: 'Start date',           kind: 'date'                  },
+  { key: 'endDate',         label: 'End date',             kind: 'date'                  },
 ]
 
 // ─── Filters ───────────────────────────────────────────────────────────────────
@@ -231,10 +231,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
-        <button class="filter-all-btn" type="button" @click="isFiltersDrawerOpen = true">
+        <MpButton class="filter-all-btn" type="button" variant="ghost" @click="isFiltersDrawerOpen = true">
           <MpIcon name="filter" size="sm" />
           {{ t('All filters') }}
-        </button>
+        </MpButton>
       </div>
 
       <!-- Right: icon buttons + search -->
@@ -242,9 +242,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <div class="filter-btn-group">
           <ColumnSettingsMenu id="wo-columns" :items="columnItems" :visibility="columnVisibility" />
           <MpTooltip id="tt-wo-export" :label="t('Export')" placement="bottom" use-portal>
-            <button class="filter-icon-btn" :aria-label="t('Export')">
+            <MpButton class="filter-icon-btn" variant="ghost" :aria-label="t('Export')">
               <MpIcon name="download" size="md" />
-            </button>
+            </MpButton>
           </MpTooltip>
         </div>
 
@@ -309,11 +309,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #actions="{ row }">
       <MpPopover :id="`wo-actions-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="row-kebab" :aria-label="t('More actions')">
+          <MpButton class="row-kebab" variant="ghost" :aria-label="t('More actions')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
             </svg>
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -351,9 +351,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   <!-- ── Demo scenario FAB (bottom-right) ── -->
   <MpPopover id="wo-demo-fab" is-close-on-select use-portal placement="top-end">
     <MpPopoverTrigger>
-      <button class="demo-fab" :aria-label="t('Change scenario state')">
+      <MpButton class="demo-fab" variant="ghost" :aria-label="t('Change scenario state')">
         <MpIcon name="sliders" size="md" color="icon.inverse" />
-      </button>
+      </MpButton>
     </MpPopoverTrigger>
     <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
       <p class="demo-fab-heading">{{ t('Scenario state') }}</p>

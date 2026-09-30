@@ -10,7 +10,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpAutocomplete,
-  MpCheckbox, MpRadio, MpIcon, MpTooltip, toast,
+  MpCheckbox, MpRadio, MpIcon, MpTooltip, MpButton, toast,
 } from '@mekari/pixel3'
 import SelectAccessDrawer, { type AccessOption } from '~/components/patterns/SelectAccessDrawer.vue'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
@@ -176,7 +176,7 @@ function nextCode() {
     <!-- ── Title bar ── -->
     <div class="cca-titlebar">
       <div class="cca-titlebar-left">
-        <button class="cca-breadcrumb" @click="goBack">{{ t('Cash management') }}</button>
+        <MpButton variant="textLink" class="cca-breadcrumb" @click="goBack">{{ t('Cash management') }}</MpButton>
         <h1 class="cca-title">{{ isEdit ? t('Edit account') : t('New account') }}</h1>
       </div>
     </div>
@@ -205,9 +205,7 @@ function nextCode() {
               <MpFormControl id="cca-code" class="cca-field-code" is-required>
                 <div class="cca-label-inline">
                   <MpFormLabel>{{ t('Account code') }}</MpFormLabel>
-                  <button class="cca-gear" type="button" :aria-label="t('Account code settings')" @click="codeSettingsOpen = true">
-                    <MpIcon name="settings" size="sm" />
-                  </button>
+                  <MpButton class="cca-gear" type="button" variant="ghost" left-icon="settings" :aria-label="t('Account code settings')" @click="codeSettingsOpen = true" />
                 </div>
                 <MpInput id="cca-code-input" v-model="code" :is-disabled="true" :placeholder="t('Auto')" />
               </MpFormControl>
@@ -310,13 +308,11 @@ function nextCode() {
                         <span v-if="u.subtitle" class="cca-sel-sub">{{ u.subtitle }}</span>
                       </span>
                       <MpTooltip :id="`cca-rm-user-${u.id}`" label="Remove" placement="top" use-portal class="cca-sel-tip">
-                        <button class="cca-sel-remove" type="button" :aria-label="t('Remove')" @click="removeUser(u.id)">
-                          <MpIcon name="minus-circular" size="sm" />
-                        </button>
+                        <MpButton class="cca-sel-remove" type="button" variant="ghost" left-icon="minus-circular" :aria-label="t('Remove')" @click="removeUser(u.id)" />
                       </MpTooltip>
                     </div>
                   </div>
-                  <button class="btn-enterprise btn-enterprise--secondary cca-add-btn" type="button" @click="userDrawerOpen = true">{{ t('Add user') }}</button>
+                  <MpButton class="btn-enterprise btn-enterprise--secondary cca-add-btn" type="button" @click="userDrawerOpen = true">{{ t('Add user') }}</MpButton>
                 </div>
 
                 <label class="cca-radio-item">
@@ -331,13 +327,11 @@ function nextCode() {
                         <span class="cca-sel-name">{{ r.name }}</span>
                       </span>
                       <MpTooltip :id="`cca-rm-role-${r.id}`" label="Remove" placement="top" use-portal class="cca-sel-tip">
-                        <button class="cca-sel-remove" type="button" :aria-label="t('Remove')" @click="removeRole(r.id)">
-                          <MpIcon name="minus-circular" size="sm" />
-                        </button>
+                        <MpButton class="cca-sel-remove" type="button" variant="ghost" left-icon="minus-circular" :aria-label="t('Remove')" @click="removeRole(r.id)" />
                       </MpTooltip>
                     </div>
                   </div>
-                  <button class="btn-enterprise btn-enterprise--secondary cca-add-btn" type="button" @click="roleDrawerOpen = true">{{ t('Add role') }}</button>
+                  <MpButton class="btn-enterprise btn-enterprise--secondary cca-add-btn" type="button" @click="roleDrawerOpen = true">{{ t('Add role') }}</MpButton>
                 </div>
               </div>
               <p v-if="accessError" class="cca-access-error">{{ accessError }}</p>
@@ -348,8 +342,8 @@ function nextCode() {
         <!-- ── Actions ── -->
         <div class="cca-action-group">
           <div class="cca-action-right">
-            <button class="cca-btn-cancel" @click="goBack">{{ t('Cancel') }}</button>
-            <button class="cca-btn-save" :disabled="isSaving" @click="save">{{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}</button>
+            <MpButton class="cca-btn-cancel" variant="ghost" @click="goBack">{{ t('Cancel') }}</MpButton>
+            <MpButton class="cca-btn-save" variant="primary" :is-disabled="isSaving" @click="save">{{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}</MpButton>
           </div>
         </div>
 

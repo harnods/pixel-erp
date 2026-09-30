@@ -54,8 +54,9 @@ Reuse as-is; do not redesign per module.
    right** — one **primary** `+ New [entity]` + optional **secondary** (e.g. Import).
    Bulk ops (export, column settings) go in the filter bar's right group, not here.
 3. **Filter bar** (`#filters` slot — `space-between`, no border):
-   - **Left**: **quick filter(s)** (`MpSelect` **fixed 160px**, long label truncates
-     with `…`; `MpPopover` dropdown shows full text) + **All filters** pill (filter
+   - **Left**: **quick filter(s)** (`ErpFilterSelect` — never `MpSelect`/native
+     `<select>`, `rule/select-erpfilterselect`; long label truncates with `…`, the
+     `MpPopover` menu shows full text) + **All filters** pill (filter
      icon left). Quick-filter rules (see
      [Form.md → Select](Form.md#select)): **placeholder = filter name** (e.g. `Status`),
      options = real values only (**no "All …"**), `(x)` clears to show-all. **Max 2
@@ -180,7 +181,7 @@ Mark as completed · Duplicate · *(divider)* · Share via WhatsApp · Share via
 - [ ] Register in `pageRegistry` (`app/pages/[...slug].vue`); key = sidebar label.
 - [ ] Title-bar `v-if` block in `[...slug].vue` (primary create + optional secondary).
 - [ ] New statuses → `ErpStatusBadge` (+ [ErpStatusBadge.md](ErpStatusBadge.md)).
-- [ ] Quick filter(s) (max 2): `MpSelect`+`MpPopover`, placeholder = filter name, no "All …" option, `(x)` clears — **ask which filters & options**.
+- [ ] Quick filter(s) (max 2): `ErpFilterSelect` (never `MpSelect`/native `<select>`), placeholder = filter name, no "All …" option, `(×)` clears — **ask which filters & options**.
 - [ ] Row hover actions: number → View details, customer/vendor → Open preview, others → ask.
 - [ ] Actions kebab → `MpPopover` menu: View details first, ask for the rest, `Share via …` in a divider-separated group.
 - [ ] First-load skeleton via `:loading`.

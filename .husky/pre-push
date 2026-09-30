@@ -1,0 +1,4 @@
+# Same gate as CI (scripts/pixel-police-ci.sh), run locally before a push ever
+# leaves this machine. Diffs against the merge-base with origin/main by
+# default — see resolve_base() in the script for the fallback chain.
+bash scripts/pixel-police-ci.sh

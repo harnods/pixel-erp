@@ -6,7 +6,7 @@
  * the highest-priority location with available qty when an outbound doesn't already
  * specify one; unranked/new locations fall to the end, ascending by code.
  */
-import { MpIcon } from '@mekari/pixel3'
+import { MpIcon, MpButton } from '@mekari/pixel3'
 import { getStorageLeaves, type StorageLeaf } from '~/data/storageLocations'
 import { rankStorageLeaves } from '~/data/warehouseConfig'
 
@@ -64,15 +64,15 @@ async function save() {
 
 <template>
   <Transition name="lp">
-    <div v-if="isOpen" class="lp-overlay" @click.self="close">
+    <div v-if="isOpen" class="lp-overlay">
       <div class="lp-panel" role="dialog" aria-label="Storage location priority">
 
         <!-- Header -->
         <header class="lp-header">
           <span class="lp-title">Storage location priority</span>
-          <button class="lp-close" type="button" aria-label="Close" @click="close">
+          <MpButton class="lp-close" variant="ghost" type="button" aria-label="Close" @click="close">
             <MpIcon name="close" size="md" />
-          </button>
+          </MpButton>
         </header>
 
         <!-- Body -->
@@ -118,15 +118,15 @@ async function save() {
             </li>
           </ol>
 
-          <button v-if="rows.length" type="button" class="lp-reset" @click="resetToDefault">
+          <MpButton v-if="rows.length" type="button" class="lp-reset" variant="ghost" @click="resetToDefault">
             Reset to default order (ascending name)
-          </button>
+          </MpButton>
         </div>
 
         <!-- Footer -->
         <footer class="lp-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="isSaving" @click="save">{{ isSaving ? 'Saving…' : 'Save changes' }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="close">Cancel</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" :is-disabled="isSaving" @click="save">{{ isSaving ? 'Saving…' : 'Save changes' }}</MpButton>
         </footer>
 
       </div>

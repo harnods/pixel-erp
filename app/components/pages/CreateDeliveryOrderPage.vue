@@ -13,7 +13,7 @@ import { addOutgoing, nextDeliveryOrderNo, outgoingOrders, canEditOutboundOrder 
 import { setWmsShipping } from '~/data/deliveryTasks'
 import { editOutboundOrder, proposeSkuReduction } from '~/data/outboundSync'
 import { orderSkuLines } from '~/data/inventory'
-import { lockedOutboundQtyForSku, pendingPickingLinesForSku, getPickingTask } from '~/data/pickingTasks'
+import { lockedOutboundQtyForSku, pendingPickingLinesForSku, getPickingTask, skusWithPickingTask } from '~/data/pickingTasks'
 import { CATALOG } from '~/data/catalog'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { scrollToFirstError } from '~/utils/form'
@@ -116,6 +116,9 @@ interface LineRow {
   /** Edit mode — qty already committed to a started picking task: can't remove this
    *  row or set qty below it (D7 AC#4). 0 = freely editable. */
   lockedQty: number
+  /** A picking task already exists for this SKU (even an Open one) — the product
+   *  is settled, so the combobox is locked. */
+  productLocked: boolean
   /** Edit mode — the SKU's qty on the order when editing began. Its reservation is
    *  already held, so only the INCREASE beyond it needs fresh Available (create = 0). */
   origQty: number
@@ -123,7 +126,7 @@ interface LineRow {
 
 let rowSeq = 0
 function makeRow(): LineRow {
-  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, qtyInsufficient: false, qtyLocked: false, productError: false, lockedQty: 0, origQty: 0 }
+  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, qtyInsufficient: false, qtyLocked: false, productError: false, lockedQty: 0, origQty: 0, productLocked: false }
 }
 
 /** Tooltip/error text for an invalid qty cell (edit mode included). */
@@ -133,6 +136,12 @@ function qtyErrorMsg(row: LineRow): string {
   return ''
 }
 function qtyInvalid(row: LineRow): boolean { return row.qtyInsufficient || row.qtyLocked }
+
+/** Tooltip text for the product cell — why it can't be edited, or what's wrong with it. */
+function productMsg(row: LineRow): string {
+  if (row.productLocked) return t('This SKU is already on a picking task and can\'t be changed')
+  return t('You must select product')
+}
 
 function availableQty(sku: string): number {
   if (!warehouseId.value) return Infinity
@@ -164,7 +173,16 @@ function onProductSearch(e: Event) {
   productFilter.value = (e.target as HTMLInputElement).value
 }
 
+// WMS doesn't author product copy — a line's description is the product's own, read
+// from product details and shown as text. Only the ERP package, where a document
+// line can carry its own wording for the customer/vendor, keeps it editable.
+const { activeScenario } = useScenario()
+const isWms = computed(() => activeScenario.value.startsWith('WMS'))
+
 function onProductSelect(row: LineRow, id: string) {
+  // The combobox is disabled for a locked row; belt-and-braces so a stray event
+  // can't rewrite a line a picking task is already pointing at.
+  if (row.productLocked) return
   productFilter.value = ''
   const p = CATALOG.find((c) => c.id === id)
   if (!p) { row.productName = ''; row.productSku = ''; row.productImg = ''; row.description = ''; row.unit = ''; return }
@@ -172,7 +190,9 @@ function onProductSelect(row: LineRow, id: string) {
   row.productName = p.name
   row.productSku = p.sku
   row.productImg = p.img
-  if (!row.description) row.description = p.desc
+  // WMS mirrors the product, always. ERP only fills a blank, so a line the user
+  // has worded themselves survives a product change.
+  if (isWms.value || !row.description) row.description = p.desc
   if (!row.unit) row.unit = p.unit
   const last = rows.value[rows.value.length - 1]
   if (last && last.id === row.id) rows.value.push(makeRow())
@@ -198,6 +218,9 @@ function prefillFromOrder() {
   transactionDate.value = o.transactionDate ? toDisplayDate(o.transactionDate.slice(0, 10)) : todayDisplay
   estimatedDelivery.value = o.dueDate ? toDisplayDate(o.dueDate) : todayDisplay
   memo.value = o.memo ?? ''
+  // A line already on a picking list keeps its product, whatever that list's
+  // status — an Open task has already told a picker which SKU to fetch.
+  const taskedSkus = skusWithPickingTask(o.id)
   const lines = orderSkuLines(o).map((l) => {
     const cat = CATALOG.find((c) => c.sku === l.product.sku)
     return {
@@ -211,6 +234,7 @@ function prefillFromOrder() {
       unit: l.product.unit,
       qtyError: false, qtyInsufficient: false, qtyLocked: false, productError: false,
       lockedQty: lockedOutboundQtyForSku(o.id, l.product.sku),
+      productLocked: taskedSkus.has(l.product.sku),
       origQty: l.qty,
     } as LineRow
   })
@@ -451,7 +475,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goRequests">{{ t('Outbound delivery') }}</button>
+          <MpButton variant="textLink" class="detail-breadcrumb" @click="goRequests">{{ t('Outbound delivery') }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ isEdit ? t('Edit delivery order') : t('New delivery order') }}</h1>
@@ -513,9 +537,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <MpFormControl id="cr-transno">
               <div class="cr-label-row">
                 <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
-                <button type="button" class="cr-label-icon" :aria-label="t('Transaction no. settings')" @click="noSettingsOpen = true">
-                  <MpIcon name="settings" size="sm" />
-                </button>
+                <MpButton type="button" class="cr-label-icon" variant="ghost" left-icon="settings" :aria-label="t('Transaction no. settings')" @click="noSettingsOpen = true" />
               </div>
               <MpInput
                 id="cr-transno-input"
@@ -657,9 +679,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
                   <td class="cr-td cr-td--input" :class="{ 'cr-td--prod-error': row.productError }">
                     <MpTooltip
-                      v-if="row.productError"
+                      v-if="row.productError || row.productLocked"
                       :id="`cr-prod-tooltip-${row.id}`"
-                      :label="t('You must select product')"
+                      :label="productMsg(row)"
                       placement="top"
                       use-portal
                       class="cr-qty-tooltip-wrap"
@@ -671,6 +693,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                         label-prop="name"
                         value-prop="id"
                         is-searchable is-clearable use-portal is-full-width is-manual-filter
+                        :is-disabled="row.productLocked"
                         @update:model-value="(v: string) => onProductSelect(row, v)"
                         @input="onProductSearch"
                       >
@@ -698,6 +721,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       label-prop="name"
                       value-prop="id"
                       is-searchable is-clearable use-portal is-full-width is-manual-filter
+                      :is-disabled="row.productLocked"
                       @update:model-value="(v: string) => onProductSelect(row, v)"
                       @input="onProductSearch"
                     >
@@ -720,8 +744,17 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
                   <template v-if="row.productId">
                     <td class="cr-td cr-td--sku">{{ row.productSku }}</td>
+                    <!-- Description: the product's own in WMS — disabled rather than
+                         removed, so the column keeps its width and the cell still
+                         reads as the field it is. Editable in ERP, where a document
+                         line legitimately carries its own wording. -->
                     <td class="cr-td cr-td--input">
-                      <MpInput :id="`cr-desc-${row.id}`" v-model="row.description" is-full-width />
+                      <MpInput
+                        :id="`cr-desc-${row.id}`"
+                        v-model="row.description"
+                        :is-disabled="isWms"
+                        is-full-width
+                      />
                     </td>
                     <td class="cr-td cr-td--input cr-td--qty-cell" :class="{ 'cr-td--qty-insufficient': qtyInvalid(row) }">
                       <MpTooltip
@@ -757,9 +790,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td v-else :colspan="hasAnyProduct ? 4 : 1" class="cr-td" />
 
                   <td class="cr-td cr-td--del">
-                    <button v-if="row.productId" class="cr-del-btn" type="button" @click="removeRow(row.id)">
-                      <MpIcon name="minus-circular" size="sm" />
-                    </button>
+                    <MpButton v-if="row.productId" class="cr-del-btn" type="button" variant="ghost" left-icon="minus-circular" @click="removeRow(row.id)" />
                   </td>
                 </tr>
               </tbody>
@@ -788,7 +819,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <MpButton variant="ghost" is-rounded @click="goRequests">{{ t('Cancel') }}</MpButton>
-      <button v-if="!isEdit" class="cr-btn-secondary" :disabled="isSaving || isSavingAndAdding" @click="handleSaveAndAdd">{{ isSavingAndAdding ? t('Saving…') : t('Save & add another') }}</button>
+      <MpButton v-if="!isEdit" class="cr-btn-secondary" variant="secondary" is-rounded :is-disabled="isSaving || isSavingAndAdding" @click="handleSaveAndAdd">{{ isSavingAndAdding ? t('Saving…') : t('Save & add another') }}</MpButton>
       <MpButton variant="primary" is-rounded :is-disabled="isSaving || isSavingAndAdding" @click="handleSave">{{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}</MpButton>
     </footer>
 
@@ -934,8 +965,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
 .cr-td--input { padding: 0; vertical-align: middle; }
 .cr-td--qty-cell { vertical-align: middle; }
-.cr-td--qty-insufficient { background: #FCEEED; border-bottom-color: #E2483D; }
-.cr-td--prod-error { background: #FCEEED; border-bottom-color: #E2483D; }
+.cr-td--qty-insufficient { background: var(--mp-colors-danger-weaker); border-bottom-color: var(--mp-colors-danger-default); }
+.cr-td--prod-error { background: var(--mp-colors-danger-weaker); border-bottom-color: var(--mp-colors-danger-default); }
 .cr-td--input :deep([class*='input']),
 .cr-td--input :deep([class*='autocomplete']) { border-radius: 0; border-color: transparent; }
 .cr-td--qty-insufficient :deep([class*='input']) { background: transparent; }

@@ -3,28 +3,52 @@
     <!-- Main nav (52px collapsed, 216px expanded) -->
     <nav class="sidebar" :class="{ 'is-expanded': navExpanded, 'arrow-left': arrowPointsLeft }" aria-label="Main navigation">
       <!-- Toggle -->
-      <div class="sidebar-header">
-        <button class="sidebar-toggle" @click="handleToggle" title="Toggle sidebar">
+      <div class="sidebar-header" data-devchange="sidebar-collapsed-tooltip">
+        <MpButton variant="ghost" class="sidebar-toggle" @click="handleToggle" title="Toggle sidebar">
           <img :src="toggleIcon" alt="Toggle sidebar" />
-        </button>
+        </MpButton>
       </div>
 
       <!-- Nav groups -->
       <div v-for="(group, gi) in navGroups" :key="gi" class="nav-group">
-        <button
-          v-for="item in group"
-          :key="item.name"
-          class="nav-item"
-          :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
-          :title="t(item.name)"
-          @click="() => handleNavClick(item)"
-          @mouseenter="(e) => handleItemMouseEnter(e, item)"
-          @mouseleave="scheduleClose"
-        >
-          <img :src="`https://cdn.mekari.design/icons/${item.iconLine ?? item.icon + '-outline'}.svg`" class="nav-icon-line" alt="" />
-          <img :src="`https://cdn.mekari.design/icons/${item.iconFill ?? item.icon + '-fill'}.svg`" class="nav-icon-fill" alt="" />
-          <span class="nav-label">{{ t(item.name) }}</span>
-        </button>
+        <template v-for="item in group" :key="item.name">
+          <!-- Collapsed rail: styled Pixel tooltip on hover. Rendered only when a
+               tooltip is wanted (see navItemTooltip) so an excluded/active item
+               carries no tooltip node at all — avoids a stale empty tooltip box. -->
+          <MpTooltip
+            v-if="navItemTooltip(item)"
+            :id="`erp-nav-tt-${item.name}`"
+            :label="navItemTooltip(item)!"
+            placement="right"
+            use-portal
+          >
+            <MpButton
+              variant="ghost"
+              class="nav-item"
+              :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
+              @click="() => handleNavClick(item)"
+              @mouseenter="(e) => handleItemMouseEnter(e, item)"
+              @mouseleave="scheduleClose"
+            >
+              <img :src="`https://cdn.mekari.design/icons/${item.iconLine ?? item.icon + '-outline'}.svg`" class="nav-icon-line" alt="" />
+              <img :src="`https://cdn.mekari.design/icons/${item.iconFill ?? item.icon + '-fill'}.svg`" class="nav-icon-fill" alt="" />
+              <span class="nav-label">{{ t(item.name) }}</span>
+            </MpButton>
+          </MpTooltip>
+          <MpButton
+            v-else
+            variant="ghost"
+            class="nav-item"
+            :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
+            @click="() => handleNavClick(item)"
+            @mouseenter="(e) => handleItemMouseEnter(e, item)"
+            @mouseleave="scheduleClose"
+          >
+            <img :src="`https://cdn.mekari.design/icons/${item.iconLine ?? item.icon + '-outline'}.svg`" class="nav-icon-line" alt="" />
+            <img :src="`https://cdn.mekari.design/icons/${item.iconFill ?? item.icon + '-fill'}.svg`" class="nav-icon-fill" alt="" />
+            <span class="nav-label">{{ t(item.name) }}</span>
+          </MpButton>
+        </template>
       </div>
     </nav>
 
@@ -40,7 +64,8 @@
             <template v-for="sub in group" :key="sub.label">
               <!-- Accordion item (e.g. Fixed assets): expandable header + children -->
               <template v-if="sub.children">
-                <button
+                <MpButton
+                  variant="ghost"
                   class="panel-item panel-item--accordion"
                   :class="{ 'is-open': isAccordionOpen(sub) }"
                   @click="handlePanelAccordionClick(sub)"
@@ -49,22 +74,24 @@
                   <svg class="panel-accordion-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
                   </svg>
-                </button>
-                <button
+                </MpButton>
+                <MpButton
                   v-for="child in sub.children"
                   v-show="isAccordionOpen(sub)"
                   :key="child.label"
+                  variant="ghost"
                   class="panel-item panel-item--child"
                   :class="{ active: activePanelSubItem === child.label }"
                   @click="handlePanelSubItemClick(child)"
                 >
                   <span>{{ t(child.label) }}</span>
                   <MpBadge v-if="child.count != null" class="panel-item-count" for="additionalInformation" type="warning" size="sm">{{ child.count }}</MpBadge>
-                </button>
+                </MpButton>
               </template>
               <!-- Plain item -->
-              <button
+              <MpButton
                 v-else
+                variant="ghost"
                 class="panel-item"
                 :class="{ active: activePanelSubItem === sub.label }"
                 @click="handlePanelSubItemClick(sub)"
@@ -83,7 +110,7 @@
                   class="panel-item-icon panel-item-icon--settings"
                   alt=""
                 />
-              </button>
+              </MpButton>
             </template>
           </template>
         </div>
@@ -102,9 +129,10 @@
     >
       <template v-for="(group, gi) in flyoutGroups" :key="gi">
         <div class="submenu-group" :class="{ 'has-border': gi < flyoutGroups.length - 1 }">
-          <button
+          <MpButton
             v-for="sub in group"
             :key="sub.label"
+            variant="ghost"
             class="submenu-item"
             :class="{ active: activePanelSubItem === sub.label }"
             @click="handleFlyoutSubItemClick(sub)"
@@ -112,7 +140,7 @@
             <span>{{ t(sub.label) }}</span>
             <img v-if="sub.iconType === 'shortcut'" :src="shortcutIcon" class="submenu-item-icon submenu-item-icon--shortcut" alt="" />
             <img v-else-if="sub.iconType === 'settings'" :src="settingsIcon" class="submenu-item-icon" alt="" />
-          </button>
+          </MpButton>
         </div>
       </template>
     </div>
@@ -120,7 +148,7 @@
 </template>
 
 <script setup lang="ts">
-import { MpIcon, MpBadge } from '@mekari/pixel3'
+import { MpIcon, MpBadge, MpTooltip, MpButton } from '@mekari/pixel3'
 import toggleIconUrl from '~/assets/images/sidebar-toggle.svg?url'
 import shortcutIconUrl from '~/assets/images/shortcut-icon.svg?url'
 import { receiptCountsByStage } from '~/data/receipts'
@@ -312,6 +340,26 @@ const flyoutGroups = computed<SubItem[][]>(
   () => flyoutItem.value?.submenu ?? (flyoutItem.value?.panelSubmenu as SubItem[][] | undefined) ?? [],
 )
 
+// Collapsed-rail hover tooltip (Pixel MpTooltip component). Only relevant while the
+// nav is collapsed to icons — once expanded the label is already visible next to
+// the icon. Suppressed in two cases:
+//  1. The item reveals a flyout on hover (a `submenu`, or a `panelSubmenu` that
+//     opted into a hover preview via flyoutOnHover, e.g. Reports). The flyout
+//     already names the section, and a tooltip would collide with it.
+//  2. The active item that owns a level-2 panel — its panel is already open and
+//     naming it, so a tooltip would be redundant.
+// A panel-only item that shows nothing on hover (e.g. Inventory, Settings) still
+// gets the tooltip when it isn't the active one.
+function navItemTooltip(item: NavItem) {
+  if (navExpanded.value) return undefined
+  const opensFlyout = !!item.submenu || (!!item.panelSubmenu && !!item.flyoutOnHover)
+  if (opensFlyout) return undefined
+  const hasLevel2 = !!(item.submenu || item.panelSubmenu)
+  const isActive = activeItem.value === item.name
+  if (isActive && hasLevel2) return undefined
+  return t(item.name)
+}
+
 // ─── Nav data ────────────────────────────────────────────────────────────────
 
 // Settings level-2 panel — shared so WMS Standalone shows the same Settings list as ERP.
@@ -347,6 +395,7 @@ const settingsPanelSubmenu: PanelSubItem[][] = [
     { label: 'Payment terms' },
     { label: 'Payment methods' },
     { label: 'Tags' },
+    { label: 'Dimensions' },
   ],
   [
     // Data migration sits on its own with a divider above it.
@@ -372,25 +421,8 @@ const wmsSettingsPanelSubmenu: PanelSubItem[][] = [
 const erpNavGroups: NavItem[][] = [
   [
     { name: 'Home', icon: 'home' },
-    {
-      // Cowork opens a persistent level-2 panel (Overview / Tasks / Schedule /
-      // Connections), each its own /cowork* route rendered in the stage.
-      name: 'Cowork', icon: 'magic', iconLine: 'airene-outline', iconFill: 'airene-black',
-      panelSubmenu: [
-        [
-          { label: 'Chats', to: 'Cowork chats' },
-          { label: 'New task', to: 'Cowork' },
-          { label: 'Tasks', to: 'Cowork tasks' },
-          { label: 'Schedule', to: 'Cowork schedule' },
-        ],
-        [
-          { label: 'Connections', to: 'Cowork connections' },
-          { label: 'Agents', to: 'Cowork agents' },
-          { label: 'Skills', to: 'Cowork skills' },
-          { label: 'File manager', to: 'Cowork knowledge' },
-        ],
-      ],
-    },
+    // Cowork nav entry hidden — Cowork now lives as its own standalone app
+    // (Mekari Envoy). Routes/pages are left intact, just not linked from here.
     {
       // Dashboard is a section: its level-2 panel holds the dashboards. Only "WMS
       // overview" has content today (Inbound/Outbound page tabs → analytics); the
@@ -1219,7 +1251,7 @@ function cancelClose() {
 
 .sidebar {
   width: 52px;                        /* custom — not in token scale */
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -1274,7 +1306,7 @@ function cancelClose() {
   gap: var(--mp-spacing-0\.5);
   padding-bottom: var(--mp-spacing-2);
   margin-bottom: var(--mp-spacing-1);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 
 .nav-group:last-child { border-bottom: none; }
@@ -1307,7 +1339,7 @@ function cancelClose() {
 .nav-item:hover img, .nav-item.is-flyout-open img { filter: brightness(0) saturate(100%) invert(26%) sepia(60%) saturate(600%) hue-rotate(185deg) brightness(85%) contrast(95%); }
 .nav-item:hover .nav-label, .nav-item.is-flyout-open .nav-label { color: var(--mp-text-link, #165082); }
 
-.nav-item.active { background-color: var(--mp-background-neutral-pressed); }
+.nav-item.active { background-color: var(--mp-background-neutral-pressed, #ebf0f1); }
 .nav-item.active .nav-icon-line { display: none; }
 .nav-item .nav-icon-fill { display: none; }
 .nav-item.active .nav-icon-fill {
@@ -1343,7 +1375,7 @@ function cancelClose() {
 /* ── Secondary sidebar panel ── */
 .sidebar-panel {
   width: 188px;               /* custom — not in token scale */
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -1375,7 +1407,7 @@ function cancelClose() {
 
 .panel-divider {
   height: 1px;               /* custom — intentional 1px divider */
-  background: var(--mp-border-default);
+  background: var(--mp-border-default, #e3e7e9);
   margin: var(--mp-spacing-1) 0;
 }
 
@@ -1401,7 +1433,7 @@ function cancelClose() {
 .panel-item:hover { background-color: var(--mp-background-neutral-subtle-hovered); }
 
 .panel-item.active {
-  background-color: #E2E8F0;
+  background-color: var(--mp-background-neutral-pressed, #E2E8F0);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-link, #165082);
 }
@@ -1476,8 +1508,8 @@ function cancelClose() {
   position: fixed;
   z-index: 1000;
   width: 188px;
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-bold);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   box-shadow: var(--mp-shadows-sm);
   padding: var(--mp-spacing-2) 0;
@@ -1498,7 +1530,7 @@ function cancelClose() {
 .submenu-group { display: flex; flex-direction: column; }
 
 .submenu-group.has-border {
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   padding-bottom: var(--mp-spacing-2);
 }
 
@@ -1525,7 +1557,7 @@ function cancelClose() {
 .submenu-item:hover { background-color: var(--mp-background-neutral-subtle-hovered); }
 
 .submenu-item.active {
-  background-color: #E2E8F0;
+  background-color: var(--mp-background-neutral-pressed, #E2E8F0);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-link, #165082);
 }

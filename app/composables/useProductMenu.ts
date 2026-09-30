@@ -12,7 +12,10 @@ function load(): boolean {
   return localStorage.getItem(STORAGE_KEY) === '1'
 }
 
-const showProductMenu = ref(load())
+// Temporarily disabled — the ERP module rail + the "Show ERP Menu" toggle are hidden
+// for now (always off), regardless of any previously stored preference.
+const showProductMenu = ref(false)
+void load
 
 export function useProductMenu() {
   function toggleProductMenu() {

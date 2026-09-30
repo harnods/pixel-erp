@@ -10,7 +10,7 @@
  * clicking the +/- marker reveals the individual approvers (avatar, role,
  * status, timestamp, and a rejection comment when applicable).
  */
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon, MpAvatar, css } from '@mekari/pixel3'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon, MpAvatar, MpButton, css } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { type ApprovalLevel, type ApprovalStep } from '~/data/tasks'
 import { formatDateTime } from '~/utils/date'
@@ -61,15 +61,14 @@ function stepPrep(status: ApprovalStep['status']) {
       @close="open = false"
     >
       <MpPopoverTrigger>
-        <button
+        <MpButton
           v-tooltip="{ label: 'Approval log', placement: 'top' }"
           class="row-icon-btn"
           aria-label="Approval log"
-          type="button"
           @click.stop="open = !open"
         >
           <MpIcon name="task-todo" size="md" />
-        </button>
+        </MpButton>
       </MpPopoverTrigger>
       <MpPopoverContent
         :class="css({ width: '360px', padding: '0', overflow: 'hidden' })"
@@ -94,7 +93,7 @@ function stepPrep(status: ApprovalStep['status']) {
             <!-- Approval stages -->
             <template v-for="(level, li) in levels" :key="li">
               <div class="alp-row">
-                <button
+                <MpButton
                   class="alp-marker"
                   :aria-label="expanded.has(li) ? 'Collapse' : 'Expand'"
                   @click.stop="toggleStage(li)"
@@ -105,7 +104,7 @@ function stepPrep(status: ApprovalStep['status']) {
                   <svg v-else width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                   </svg>
-                </button>
+                </MpButton>
                 <div class="alp-row-content">
                   <span class="alp-row-title">{{ level.label }}</span>
                   <div class="alp-row-sub-line">
@@ -230,16 +229,18 @@ function stepPrep(status: ApprovalStep['status']) {
 .alp-marker {
   position: relative;
   z-index: 1;
-  display: flex;
+  display: flex !important;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  min-width: 0 !important;
   width: var(--mp-sizes-5, 20px);
   height: var(--mp-sizes-5, 20px);
   margin-top: var(--mp-spacing-2, 8px);
-  border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm);
-  background: var(--mp-background-neutral);
+  padding: 0 !important;
+  border: 1px solid var(--mp-border-bold) !important;
+  border-radius: var(--mp-radii-sm) !important;
+  background: var(--mp-background-neutral) !important;
   color: var(--mp-text-secondary);
   cursor: pointer;
 }

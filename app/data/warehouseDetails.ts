@@ -34,6 +34,24 @@ const BATCH_OVERLAY_KEY = 'wh-batch-overlay-v1'
 const batchOverlay = reactive<BatchOverlay>(loadSnapshot<BatchOverlay>(BATCH_OVERLAY_KEY) ?? {})
 function persistBatchOverlay() { saveSnapshot(BATCH_OVERLAY_KEY, batchOverlay) }
 
+// ── Persisted min-stock overlay ──────────────────────────────────────────────
+// Per-warehouse reorder floor, edited from a product's "Stock by warehouses" tab.
+// Min. stock is the one figure in that table a person DECIDES rather than counts —
+// on hand / reserved / available / in transit are all measured, so they stay read
+// only. Everything downstream (the warehouse's own Products tab, low-stock counts)
+// reads min. stock through here, so an edit can't leave two pages disagreeing.
+type MinStockOverlay = Record<string, Record<string, number>> // warehouseId → sku → minStock
+const MIN_STOCK_OVERLAY_KEY = 'wh-min-stock-overlay-v1'
+const minStockOverlay = reactive<MinStockOverlay>(loadSnapshot<MinStockOverlay>(MIN_STOCK_OVERLAY_KEY) ?? {})
+function persistMinStockOverlay() { saveSnapshot(MIN_STOCK_OVERLAY_KEY, minStockOverlay) }
+
+/** Override one warehouse's min. stock for one SKU. 0 means "no floor" — a real
+ *  choice (some warehouses don't stock a line at all), so it is stored, not cleared. */
+export function setWarehouseMinStock(warehouseId: string, sku: string, minStock: number): void {
+  ;(minStockOverlay[warehouseId] ??= {})[sku] = Math.max(0, Math.round(minStock))
+  persistMinStockOverlay()
+}
+
 // ── Persisted storage-location (bin) barcode overlay ─────────────────────────
 // Only Storage-type locations (bins) get a barcode — Organizational nodes (Floor/
 // Zone/Aisle, …) are groupings, not a physical place something is scanned into.
@@ -284,6 +302,31 @@ export function availableForSku(warehouseId: string, sku: string): number {
 /** On-hand units for a SKU in a warehouse — 0 if the SKU isn't stocked. */
 export function onHandForSku(warehouseId: string, sku: string): number {
   return getWarehouseDetail(warehouseId)?.stock.find((s) => s.sku === sku)?.onHand ?? 0
+}
+
+/** The first active warehouse that actually holds allocatable stock — used as a
+ *  sensible default when a form has no warehouse selected yet (some warehouses,
+ *  e.g. the default HQ, carry no assortment). Falls back to the first active. */
+export function firstStockedWarehouseId(): string {
+  const active = warehouses.filter((w) => w.status === 'active')
+  const stocked = active.find((w) => (getWarehouseDetail(w.id)?.stock ?? []).some((s) => s.available > 0))
+  return (stocked ?? active[0])?.id ?? ''
+}
+
+/** Total allocatable units for a SKU across ALL active warehouses — shown in
+ *  product pickers when no specific warehouse is selected. Memoised (built once
+ *  by iterating every warehouse detail) so per-row lookups stay O(1). */
+let _totalAvailableCache: Map<string, number> | null = null
+export function totalAvailableForSku(sku: string): number {
+  if (!_totalAvailableCache) {
+    _totalAvailableCache = new Map()
+    for (const w of warehouses.filter((x) => x.status === 'active')) {
+      for (const s of getWarehouseDetail(w.id)?.stock ?? []) {
+        _totalAvailableCache.set(s.sku, (_totalAvailableCache.get(s.sku) ?? 0) + s.available)
+      }
+    }
+  }
+  return _totalAvailableCache.get(sku) ?? 0
 }
 
 /**
@@ -703,13 +746,15 @@ function generateStock(products: Product[], seed: number, warehouseId: string): 
       : (onHand > 8 ? (i * 13 + seed) % Math.max(1, Math.floor(onHand / 3)) : 0)
     const reserved = isSerial ? Math.min(reservedRaw, onHand - 1) : reservedRaw
     const onTheWay = (i * 7) % 60
-    const minStock = Math.round((((i * 11) % 200) + 10) / 10) * 10
+    const skuForRow = cycle > 1 ? `${c.sku}-${cycle}` : c.sku
+    const minStockBase = Math.round((((i * 11) % 200) + 10) / 10) * 10
+    const minStock = minStockOverlay[warehouseId]?.[skuForRow] ?? minStockBase
     out.push({
       id: `${seed}-p${i}`,
       name: cycle > 1 ? `${c.name} #${cycle}` : c.name,
       photo: c.img,
       subtitle: c.desc,
-      sku: cycle > 1 ? `${c.sku}-${cycle}` : c.sku,
+      sku: skuForRow,
       barcode: String(8_991_000_000_000 + seed * 100_000 + i),
       category: c.category,
       categories: MULTI_CATEGORIES[c.sku],

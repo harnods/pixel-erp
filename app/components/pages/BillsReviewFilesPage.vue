@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  MpIcon, MpButton, MpSelect, MpSkeleton, MpPopover, MpPopoverTrigger, MpPopoverContent,
+  MpIcon, MpButton, MpSelect, MpSkeleton, MpSpinner, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, css, toast,
   MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter,
 } from '@mekari/pixel3'
@@ -8,19 +8,20 @@ import { formatIDR } from '~/utils/currency'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
-import GlobalFileDropOverlay from '~/components/patterns/GlobalFileDropOverlay.vue'
+import ErpDropzone from '~/components/patterns/ErpDropzone.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import {
-  reviewFiles, purchaseInvoiceReviewFiles, deleteReviewFiles,
-  moveReviewFilesToPurchaseInvoice, moveReviewFilesToExpenses, addProcessingReviewFile,
+  reviewFiles, purchaseInvoiceReviewFiles, bankStatementDropboxFiles, deleteReviewFiles,
+  moveReviewFilesToPurchaseInvoice, moveReviewFilesToExpenses,
 } from '~/data'
+import { startUpload, uploadCenterOpen } from '~/data/uploadCenter'
 import type { ReviewFile, FileClassification } from '~/data'
 
-/** Which surface's review queue this table is showing. Both Expenses and
- *  Purchase invoices have a "Review files" tab over the same table; only the
- *  underlying queue and the review route differ. */
-const props = withDefaults(defineProps<{ surface?: 'expenses' | 'purchase-invoices' }>(), {
+/** Which surface's review queue this table is showing. Expenses, Purchase
+ *  invoices and Cash management (bank statements) each have a "Dropbox" tab over
+ *  the same table; only the underlying queue and the review route differ. */
+const props = withDefaults(defineProps<{ surface?: 'expenses' | 'purchase-invoices' | 'bank-statement' }>(), {
   surface: 'expenses',
 })
 
@@ -28,24 +29,36 @@ const { t } = useLocale()
 const router = useRouter()
 const toggleAirene = inject<() => void>('toggleAirene')
 
-const queue = computed(() => (props.surface === 'purchase-invoices' ? purchaseInvoiceReviewFiles : reviewFiles))
-const reviewBase = computed(() => (props.surface === 'purchase-invoices' ? '/purchase-invoices/review' : '/expenses/review'))
+const queue = computed(() =>
+  props.surface === 'purchase-invoices' ? purchaseInvoiceReviewFiles
+  : props.surface === 'bank-statement' ? bankStatementDropboxFiles
+  : reviewFiles)
+const reviewBase = computed(() =>
+  props.surface === 'purchase-invoices' ? '/purchase-invoices/review'
+  : props.surface === 'bank-statement' ? '/cash-management/review'
+  : '/expenses/review')
 
-// Dragging a file anywhere onto this tab drops it into the queue as a
-// "processing" row — same entry point as the "Upload bills" import menu item.
-function onGlobalFileDrop(fileList: FileList) {
-  for (const f of Array.from(fileList)) addProcessingReviewFile(f.name, props.surface)
+// The full-width dropzone above the filter bar is the single drop target for this
+// tab (replaces the old drag-anywhere overlay). It behaves EXACTLY like the
+// "Upload bills"/"Upload vendor invoices" modal: files go through the header upload
+// monitor (startUpload) and land as file-name-only rows — OCR is NOT run yet, so
+// the other columns stay empty until the file is scanned.
+function onDropzoneFiles(fileList: FileList) {
+  const files = Array.from(fileList)
+  if (!files.length) return
+  startUpload(files, props.surface, props.surface === 'purchase-invoices' ? 'Upload vendor invoices' : props.surface === 'bank-statement' ? 'Upload bank statement' : 'Upload bills')
+  uploadCenterOpen.value = true
 }
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'file',            label: 'File',           width: '220px', sortable: true,                 sortType: 'text'   },
-  { key: 'number',          label: 'Number',         width: '160px', sortable: true,                 sortType: 'text'   },
-  { key: 'beneficiaryName', label: 'Beneficiary',    width: '220px', sortable: true,                 sortType: 'text'   },
-  { key: 'confidence',      label: 'Confidence',     width: '120px', sortable: true,                 sortType: 'number' },
-  { key: 'classification',  label: 'Classification', width: '160px',                                 sortType: 'text'   },
-  { key: 'date',            label: 'Date',           width: '120px',                                 sortType: 'date'   },
-  { key: 'amount',          label: 'Amount',         width: '160px', align: 'right', sortable: true,  sortType: 'number' },
+  { key: 'file',            label: 'File',           kind: 'name', sortable: true,                 sortType: 'text'   },
+  { key: 'number',          label: 'Number',         kind: 'number', sortable: true,                 sortType: 'text'   },
+  { key: 'beneficiaryName', label: 'Vendor',          kind: 'name', sortable: true,                 sortType: 'text'   },
+  { key: 'confidence',      label: 'Confidence',     sortable: true,                 sortType: 'number' },
+  { key: 'classification',  label: 'Classification', kind: 'status',                                 sortType: 'text'   },
+  { key: 'date',            label: 'Date',           kind: 'date',                                   sortType: 'date'   },
+  { key: 'amount',          label: 'Amount',         kind: 'amount', align: 'right', sortable: true,  sortType: 'number' },
 ]
 
 // ─── Row type ─────────────────────────────────────────────────────────────────
@@ -120,9 +133,16 @@ function confidenceLabel(score: number): 'High' | 'Medium' | 'Low' {
   return 'Low'
 }
 
-// Column show/hide (first column always on; Last updated appended, hidden by default)
-const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: 'Last updated', width: '200px' }]
-const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, c.key !== 'lastUpdated'])))
+// Last updated = the real upload time + uploader for freshly-uploaded files;
+// seed rows have no audit fields, so fall back to the deterministic mock.
+function lastUpdatedInfo(row: Row): { at: string; by: string } {
+  return row.uploadedAt ? { at: row.uploadedAt, by: row.uploadedBy || '—' } : lastUpdatedFor(row.id)
+}
+
+// Column show/hide (first column always on; Last updated shown by default)
+const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: 'Last updated', kind: 'date' }]
+// Last updated (upload date/time + uploader) is shown by default on the Dropbox tab.
+const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, true])))
 const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnVisibility[c.key]))
 function hideColumn(key: string) { columnVisibility[key] = false }
@@ -229,8 +249,6 @@ function confirmBulkDelete() {
     :sort-key="sortKey"
     :sort-dir="sortDir"
     has-checkbox
-    actions-width="52px"
-    last-column-flexible
     bulk-label="file"
     @page-change="setPage"
     @per-page-change="setPerPage"
@@ -239,17 +257,25 @@ function confirmBulkDelete() {
     @hide-column="hideColumn"
   >
 
+    <!-- ── Full-width drop target (above the filter bar) ── -->
+    <template #stats>
+      <ErpDropzone
+        :id="`${surface}-inbox-dropzone`"
+        class="inbox-dropzone"
+        accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.zip"
+        hide-list
+        @change="onDropzoneFiles"
+      />
+    </template>
+
     <!-- ── Bulk actions ── -->
     <template #bulk-actions="{ selectedRows, deselectAll }">
       <template v-if="allSelectedSameNonNativeClassification(selectedRows as Set<number>)">
         <MpPopover id="review-files-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
           <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--primary btn-enterprise--sm btn-enterprise--icon-after">
+            <MpButton class="btn-enterprise btn-enterprise--primary btn-enterprise--sm btn-enterprise--icon-after" variant="primary" size="sm" right-icon="chevrons-down">
               {{ t('Actions') }}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
+            </MpButton>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
@@ -259,19 +285,21 @@ function confirmBulkDelete() {
           </MpPopoverContent>
         </MpPopover>
       </template>
-      <button
+      <MpButton
         v-else
         class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
+        variant="primary" size="sm"
         @click="reviewSelected(selectedRows as Set<number>)"
       >
         {{ t('Review') }}
-      </button>
-      <button
+      </MpButton>
+      <MpButton
         class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm"
+        variant="ghost" size="sm"
         @click="openBulkDeleteModal(selectedRows as Set<number>, deselectAll)"
       >
         {{ t('Delete') }}
-      </button>
+      </MpButton>
     </template>
 
     <!-- ── Filter bar ── -->
@@ -309,29 +337,20 @@ function confirmBulkDelete() {
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
-
-        <MpButton class="filter-all-btn">
-          <MpIcon name="filter" size="sm" />
-          {{ t('All filters') }}
-        </MpButton>
       </div>
 
       <!-- Right: icon buttons + search -->
       <div class="filter-right">
         <div class="filter-btn-group">
           <!-- Airene -->
-          <button class="filter-icon-btn filter-icon-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
+          <MpButton class="filter-icon-btn filter-icon-btn--airene" variant="ghost" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
               <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
               <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
             </svg>
-          </button>
+          </MpButton>
           <!-- Column settings -->
           <ColumnSettingsMenu id="tt-columns-review" :items="columnItems" :visibility="columnVisibility" />
-          <!-- Export -->
-          <MpButton class="filter-icon-btn" :aria-label="t('Export')">
-            <MpIcon name="download" size="md" />
-          </MpButton>
         </div>
 
         <!-- Pill search -->
@@ -359,42 +378,53 @@ function confirmBulkDelete() {
           :class="(row as Row).processing ? 'file-cell__name--processing' : 'cell-link'"
           @click.stop="openRowReview(row as Row)"
         >{{ value }}</a>
+        <!-- AI OCR in progress — spinner + label next to the filename. -->
+        <span v-if="(row as Row).scanning" class="file-cell__scanning">
+          <MpSpinner class="file-cell__spinner" />
+          {{ t('Scanning…') }}
+        </span>
       </div>
     </template>
 
     <!-- ── Cell: Number ── -->
     <template #cell-number="{ row, value }">
       <MpSkeleton v-if="(row as Row).processing" class="review-skeleton" height="12px" rounded="md" duration="0s" width="100%" />
+      <span v-else-if="(row as Row).scanned === false" class="rf-pending">—</span>
       <template v-else>{{ formatNumber(value as string | undefined) }}</template>
     </template>
 
-    <!-- ── Cell: Beneficiary ── -->
+    <!-- ── Cell: Vendor ── -->
     <template #cell-beneficiaryName="{ row, value }">
       <MpSkeleton v-if="(row as Row).processing" class="review-skeleton" height="12px" rounded="md" duration="0s" width="100%" />
+      <span v-else-if="(row as Row).scanned === false" class="rf-pending">—</span>
       <span v-else class="cell-text">{{ value }}</span>
     </template>
 
     <!-- ── Cell: Confidence ── -->
     <template #cell-confidence="{ row, value }">
       <MpSkeleton v-if="(row as Row).processing" class="review-skeleton" height="12px" rounded="md" duration="0s" width="100%" />
+      <span v-else-if="(row as Row).scanned === false" class="rf-pending">—</span>
       <template v-else>{{ t(confidenceLabel(value as number)) }}</template>
     </template>
 
     <!-- ── Cell: Classification ── -->
     <template #cell-classification="{ row, value }">
       <MpSkeleton v-if="(row as Row).processing" class="review-skeleton" height="12px" rounded="md" duration="0s" width="100%" />
+      <span v-else-if="(row as Row).scanned === false" class="rf-pending">—</span>
       <ErpStatusBadge v-else :status="value as string" />
     </template>
 
     <!-- ── Cell: Date ── -->
     <template #cell-date="{ row, value }">
       <MpSkeleton v-if="(row as Row).processing" class="review-skeleton" height="12px" rounded="md" duration="0s" width="100%" />
+      <span v-else-if="(row as Row).scanned === false" class="rf-pending">—</span>
       <template v-else>{{ formatDate(value as string) }}</template>
     </template>
 
     <!-- ── Cell: Amount ── -->
     <template #cell-amount="{ row, value }">
       <MpSkeleton v-if="(row as Row).processing" class="review-skeleton" height="12px" rounded="md" duration="0s" width="100%" />
+      <span v-else-if="(row as Row).scanned === false" class="rf-pending">—</span>
       <template v-else>{{ formatIDR(value as number) }}</template>
     </template>
 
@@ -406,13 +436,13 @@ function confirmBulkDelete() {
         is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end"
       >
         <MpPopoverTrigger>
-          <button class="row-kebab btn-enterprise" :aria-label="t('More actions')">
+          <MpButton class="row-kebab btn-enterprise" variant="ghost" :aria-label="t('More actions')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <circle cx="12" cy="5" r="2" />
               <circle cx="12" cy="12" r="2" />
               <circle cx="12" cy="19" r="2" />
             </svg>
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -429,17 +459,15 @@ function confirmBulkDelete() {
     </template>
 
     <template #cell-lastUpdated="{ row }">
-      <LastUpdatedCell v-bind="lastUpdatedFor((row as Record<string, unknown>).id as string)" />
+      <LastUpdatedCell v-bind="lastUpdatedInfo(row as Row)" />
     </template>
   </ErpTablePage>
 
   <!-- ── Bulk delete confirmation modal (same pattern as BillsIndexPage) ── -->
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="review-files-bulk-delete-modal"
     :is-open="bulkDeleteModalOpen"
     size="md"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="closeBulkDeleteModal"
   >
@@ -453,19 +481,23 @@ function confirmBulkDelete() {
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="closeBulkDeleteModal">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="confirmBulkDelete">{{ t('Delete') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" @click="closeBulkDeleteModal">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--danger" variant="danger" @click="confirmBulkDelete">{{ t('Delete') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
   </MpModal>
-
-  <GlobalFileDropOverlay @drop="onGlobalFileDrop" />
 </template>
 
 <style scoped>
+/* Full-width drop target above the filter bar (the tab's only drop zone). */
+.inbox-dropzone { width: 100%; }
+
 /* Processing-row skeleton bar — matches Figma's OCR "processing" row state
    (node 4260:65434): solid neutral-subtle bar, no shimmer, full cell width. */
+/* Uploaded-but-not-yet-scanned rows show a muted dash in every OCR column. */
+.rf-pending { color: var(--mp-text-placeholder, #9aa4ac); }
+
 .review-skeleton {
   display: block !important;
   width: 100%;
@@ -499,6 +531,19 @@ function confirmBulkDelete() {
   color: var(--mp-text-default);
   cursor: default;
 }
+
+/* AI OCR-in-progress cue next to the filename. */
+.file-cell__scanning {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+  white-space: nowrap;
+}
+.file-cell__spinner { width: 14px; height: 14px; }
+.file-cell__spinner :deep(svg) { width: 14px; height: 14px; }
 
 /* Row action kebab button */
 .row-kebab {

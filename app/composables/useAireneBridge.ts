@@ -11,6 +11,17 @@ export interface ChatMessage {
   /** Short "what I did" line for an assistant reply — shown as the collapsible
    *  "Done ›" reasoning header above the answer. */
   reasoning?: string
+  /** Multi-agent rooms: the agent that authored this assistant turn (id from
+   *  `coworkAgents`). When set, the message shows that agent's avatar + name so a
+   *  room with several agents reads like a group chat. Absent = the room's single
+   *  active agent (plain answer, no name). */
+  agentId?: string
+  /** Record chips shown beneath a message — a linked ERP record (work order,
+   *  sales order, …). Clicking navigates to it. */
+  attachments?: { label: string; sublabel?: string; icon?: string; to: string }[]
+  /** Suggestion chips shown beneath an agent's message (e.g. "Prepare an
+   *  executive summary") — clicking sends the text as the next turn. */
+  suggestions?: string[]
 }
 
 /**

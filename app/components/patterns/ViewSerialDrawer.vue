@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
-import { MpIcon, MpBadge, MpSpinner } from '@mekari/pixel3'
+import { MpIcon, MpBadge, MpSpinner, MpButton } from '@mekari/pixel3'
 import ScanBar from '~/components/patterns/ScanBar.vue'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { productBySku } from '~/data/inventory'
@@ -240,14 +240,14 @@ function close() { emit('update:open', false) }
 
 <template>
   <Transition name="vsd">
-  <div v-if="open" class="vsd-overlay" @click.self="close">
+  <div v-if="open" class="vsd-overlay">
     <div class="vsd-panel" role="dialog" :aria-label="t('View serial numbers')">
 
       <header class="vsd-header">
         <h2 class="vsd-title">{{ t('Serial number detail') }}</h2>
-        <button class="vsd-close" type="button" :aria-label="t('Close')" @click="close">
+        <MpButton class="vsd-close" variant="ghost" type="button" :aria-label="t('Close')" @click="close">
           <MpIcon name="close" size="md" />
-        </button>
+        </MpButton>
       </header>
 
       <div class="vsd-content" :class="{ 'vsd-content--hug': isPacking }">
@@ -323,11 +323,11 @@ function close() { emit('update:open', false) }
               <path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
             <input v-model="serialSearch" class="vsd-filter-search" type="text" :placeholder="t('Search...')" />
-            <button v-if="serialSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="serialSearch = ''">
+            <MpButton v-if="serialSearch" class="search-clear-btn search-clear-btn--overlay" variant="ghost" type="button" :aria-label="t('Clear search')" @click="serialSearch = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
         </div>
 
@@ -476,7 +476,7 @@ function close() { emit('update:open', false) }
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   background: var(--mp-background-neutral, #fff); outline: none;
 }
-.vsd-filter-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.vsd-filter-search:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .vsd-filter-search::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
   display: inline-flex; align-items: center; justify-content: center;

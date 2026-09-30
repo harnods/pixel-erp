@@ -5,6 +5,18 @@ import type { SalesInvoice, SalesOrderItem, SILineItem } from './types'
 
 export type { SILineItem }
 
+// Demo-only "Dimensions" values (Settings > Dimensions line tagging isn't
+// wired to this generated store) — rotated deterministically so the detail
+// page's read-only Dimensions column has something plausible to show.
+const DEMO_BRANCHES = ['Jakarta', 'Bandung', 'Surabaya']
+const DEMO_CHANNELS = ['Online', 'Offline']
+function demoDimensions(idx: number, j: number): Record<string, string> {
+  return {
+    Branch: DEMO_BRANCHES[(idx + j) % DEMO_BRANCHES.length]!,
+    'Sales channel': DEMO_CHANNELS[(idx + j) % DEMO_CHANNELS.length]!,
+  }
+}
+
 /**
  * Presentational detail for the Sales Invoice *details* page. Mirrors
  * [salesOrderDetails.ts](salesOrderDetails.ts): the base record in
@@ -210,7 +222,7 @@ function buildDetail(base: SalesInvoice, idx: number): SalesInvoiceDetail {
     paymentTerms: pick(PAYMENT_TERMS, idx),
     referenceNo: `SO #${10090 + idx}`,
     warehouse: pick(WAREHOUSES, idx),
-    lineItems: items.map(it => ({ ...it, taxLabel: base.hasPpn ? TAX_LABEL : 'No PPN' })),
+    lineItems: items.map((it, j) => ({ ...it, taxLabel: base.hasPpn ? TAX_LABEL : 'No PPN', dimensions: demoDimensions(idx, j) })),
     message: 'After making the payment, please confirm via WhatsApp:\n+6281299999999. Thank you.',
     memo: 'Invoiced against the delivered sales order.',
     attachments: [{ name: `${base.number}-Signed.pdf`, sizeKB: 78 }],

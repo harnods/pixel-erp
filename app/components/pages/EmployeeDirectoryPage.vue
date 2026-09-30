@@ -39,28 +39,28 @@ const rows = computed<Row[]>(() => employees.map((e) => ({
 // ─── Columns (spec order). Core set visible; the long tail hidden by default
 // (revealed via column settings) — same convention as Bills' "Last updated". ──
 const columns: TableColumn[] = [
-  { key: 'name',             label: 'Employee name',     width: '260px', sortable: true, sortType: 'text' },
-  { key: 'employeeId',       label: 'Employee ID',       width: '140px', sortType: 'text' },
-  { key: 'nik',              label: 'Citizen ID',        width: '180px', sortType: 'text' },
-  { key: 'branch',           label: 'Branch',            width: '190px', sortType: 'text' },
-  { key: 'department',       label: 'Organization',      width: '160px', sortType: 'text' },
-  { key: 'jobPosition',      label: 'Job position',      width: '220px', sortType: 'text' },
-  { key: 'jobLevel',         label: 'Job level',         width: '140px', sortType: 'text' },
-  { key: 'employmentStatus', label: 'Employment status', width: '170px', sortType: 'text' },
-  { key: 'status',           label: 'Status',            width: '120px', sortType: 'text' },
-  { key: 'joinDate',         label: 'Date of joining',   width: '160px', sortType: 'date' },
-  { key: 'signDate',         label: 'Signing date',      width: '150px', sortType: 'date' },
-  { key: 'contractEndDate',  label: 'End date',          width: '150px', sortType: 'date' },
-  { key: 'resignDate',       label: 'Resignation date',  width: '170px', sortType: 'date' },
-  { key: 'barcode',          label: 'Barcode',           width: '140px', sortType: 'text' },
-  { key: 'email',            label: 'Email',             width: '300px', sortType: 'text' },
-  { key: 'phone',            label: 'Phone no.',         width: '170px' },
-  { key: 'address',          label: 'Address',           width: '260px' },
-  { key: 'dateOfBirth',      label: 'Birth date',        width: '150px', sortType: 'date' },
-  { key: 'placeOfBirth',     label: 'Birth place',       width: '150px', sortType: 'text' },
-  { key: 'religion',         label: 'Religion',          width: '140px', sortType: 'text' },
-  { key: 'gender',           label: 'Gender',            width: '120px', sortType: 'text' },
-  { key: 'maritalStatus',    label: 'Marital status',    width: '150px', sortType: 'text' },
+  { key: 'name',             label: 'Employee name',     kind: 'name', sortable: true, sortType: 'text' },
+  { key: 'employeeId',       label: 'Employee ID',       kind: 'number', sortType: 'text' },
+  { key: 'nik',              label: 'Citizen ID',        kind: 'number', sortType: 'text' },
+  { key: 'branch',           label: 'Branch',            sortType: 'text' },
+  { key: 'department',       label: 'Organization',      sortType: 'text' },
+  { key: 'jobPosition',      label: 'Job position',      sortType: 'text' },
+  { key: 'jobLevel',         label: 'Job level',         sortType: 'text' },
+  { key: 'employmentStatus', label: 'Employment status', sortType: 'text' },
+  { key: 'status',           label: 'Status',            kind: 'status', sortType: 'text' },
+  { key: 'joinDate',         label: 'Date of joining',   kind: 'date', sortType: 'date' },
+  { key: 'signDate',         label: 'Signing date',      kind: 'date', sortType: 'date' },
+  { key: 'contractEndDate',  label: 'End date',          kind: 'date', sortType: 'date' },
+  { key: 'resignDate',       label: 'Resignation date',  kind: 'date', sortType: 'date' },
+  { key: 'barcode',          label: 'Barcode',           kind: 'number', sortType: 'text' },
+  { key: 'email',            label: 'Email',             sortType: 'text' },
+  { key: 'phone',            label: 'Phone no.' },
+  { key: 'address',          label: 'Address',           kind: 'address' },
+  { key: 'dateOfBirth',      label: 'Birth date',        kind: 'date', sortType: 'date' },
+  { key: 'placeOfBirth',     label: 'Birth place',       sortType: 'text' },
+  { key: 'religion',         label: 'Religion',          sortType: 'text' },
+  { key: 'gender',           label: 'Gender',            sortType: 'text' },
+  { key: 'maritalStatus',    label: 'Marital status',    sortType: 'text' },
 ]
 // All spec columns visible by default; column settings can hide any of them.
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(columns.map((c) => [c.key, true])))
@@ -204,7 +204,6 @@ function initials(name: string): string {
     :sort-key="sortKey"
     :sort-dir="sortDir"
     has-checkbox
-    actions-width="52px"
     filter-empty-label="employee"
     :search="search"
     :has-active-filter="hasActiveFilter"
@@ -274,18 +273,16 @@ function initials(name: string): string {
       <div class="filter-right">
         <div class="filter-btn-group">
           <MpTooltip id="emp-tt-airene" label="Ask Airene" placement="bottom" use-portal>
-            <button class="filter-icon-btn filter-icon-btn--airene" type="button" aria-label="Ask Airene" @click="toggleAirene?.()">
+            <MpButton class="filter-icon-btn filter-icon-btn--airene" type="button" aria-label="Ask Airene" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                 <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
                 <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
               </svg>
-            </button>
+            </MpButton>
           </MpTooltip>
           <ColumnSettingsMenu id="emp-columns" :items="columnItems" :visibility="columnVisibility" />
           <MpTooltip id="emp-tt-export" label="Export" placement="bottom" use-portal>
-            <button class="filter-icon-btn" type="button" aria-label="Export" @click="exportCsv">
-              <MpIcon name="download" size="md" />
-            </button>
+            <MpButton class="filter-icon-btn" type="button" aria-label="Export" left-icon="download" @click="exportCsv" />
           </MpTooltip>
         </div>
 
@@ -294,11 +291,11 @@ function initials(name: string): string {
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
           <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
-          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+          <MpButton v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
             </svg>
-          </button>
+          </MpButton>
         </div>
       </div>
     </template>
@@ -371,28 +368,28 @@ function initials(name: string): string {
     @apply="applyDrawerFilters"
   />
 
-  <MpModal id="emp-resign-modal" :is-open="resignModalOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="resignModalOpen = false">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="emp-resign-modal" :is-open="resignModalOpen" size="md" :is-keep-alive="false" @close="resignModalOpen = false">
     <MpModalContent>
       <MpModalHeader>Resign {{ resignTarget?.fullName }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>{{ resignTarget?.fullName }} will be marked as resigned with today as the resignation date. You can undo this by editing the employee.</MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="resignModalOpen = false">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="confirmResign">Resign</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="resignModalOpen = false">Cancel</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" @click="confirmResign">Resign</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
     <MpModalOverlay />
   </MpModal>
 
-  <MpModal id="emp-delete-modal" :is-open="deleteModalOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="deleteModalOpen = false">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="emp-delete-modal" :is-open="deleteModalOpen" size="md" :is-keep-alive="false" @close="deleteModalOpen = false">
     <MpModalContent>
       <MpModalHeader>Delete {{ deleteTarget?.fullName }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>Deleted employees cannot be restored.</MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="deleteModalOpen = false">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">Delete</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="deleteModalOpen = false">Cancel</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">Delete</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -448,8 +445,8 @@ function initials(name: string): string {
 }
 .filter-all-btn:hover { background: var(--mp-background-neutral-hovered) !important; }
 .filter-all-btn--active {
-  background: var(--mp-background-selected, var(--mp-background-information)) !important;
-  border-color: var(--mp-border-selected, var(--mp-border-information)) !important;
+  background: var(--mp-background-neutral-subtle) !important;
+  border-color: var(--mp-colors-border-bold, #8c9596) !important;
   color: var(--mp-text-selected, var(--mp-text-information)) !important;
 }
 .filter-btn-group { display: flex; align-items: center; }

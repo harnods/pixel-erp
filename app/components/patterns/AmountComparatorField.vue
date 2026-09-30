@@ -87,20 +87,22 @@ function onAmountInput(field: 'value' | 'min' | 'max', e: Event) {
       </MpPopoverContent>
     </MpPopover>
 
+    <!-- No placeholders (rule/input-no-placeholder) — the comparator label + field
+         label already say what the value is. -->
     <template v-if="comparator === 'between'">
       <input
-        :id="`${id}-min`" class="acf-input" type="text" inputmode="numeric" placeholder="Min"
+        :id="`${id}-min`" class="acf-input" type="text" inputmode="numeric"
         :value="formatThousands(min)" @input="onAmountInput('min', $event)"
       >
       <span class="acf-sep">–</span>
       <input
-        :id="`${id}-max`" class="acf-input" type="text" inputmode="numeric" placeholder="Max"
+        :id="`${id}-max`" class="acf-input" type="text" inputmode="numeric"
         :value="formatThousands(max)" @input="onAmountInput('max', $event)"
       >
     </template>
     <input
       v-else
-      :id="`${id}-value`" class="acf-input" type="text" inputmode="numeric" placeholder="Value"
+      :id="`${id}-value`" class="acf-input" type="text" inputmode="numeric"
       :value="formatThousands(value)" @input="onAmountInput('value', $event)"
     >
   </div>

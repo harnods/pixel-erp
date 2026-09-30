@@ -3,7 +3,7 @@ import { ref, reactive, computed, nextTick, onMounted, onUnmounted, watch } from
 import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTooltip, MpIcon, MpSpinner, MpSelect, MpToggle, MpCheckbox,
+  MpTooltip, MpIcon, MpSpinner, MpSelect, MpToggle, MpCheckbox, MpButton,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpAccordion, MpAccordionHeader, MpAccordionIcon, MpAccordionItem, MpAccordionPanel,
   css, toast,
@@ -23,6 +23,8 @@ import {
   adjustmentApprovalLog,
   type AdjustmentLine,
 } from '~/data/stockAdjustments'
+import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
+import { applicableDimensions, getDimensionById } from '~/data/dimensions'
 import { wmsStockAdjustments, getWmsAdjustment, canCancelWmsAdjustment, cancelWmsAdjustment, canCloseWmsCount, closeWmsCount, startWmsCount, approveWmsAdjustment, type MisplacedSerial } from '~/data/wmsStockAdjustments'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
@@ -30,6 +32,7 @@ import { putAwayTasks } from '~/data/putAwayTasks'
 import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
 import { pickingTasks } from '~/data/pickingTasks'
 import { getPickingLineItems } from '~/data/pickingTaskDetails'
+import { assigneeDisplayName } from '~/data/users'
 
 // The catch-all route binds the id via the generic `orderId` prop for every detail page.
 const props = defineProps<{ orderId: string }>()
@@ -45,6 +48,12 @@ const { activeScenario } = useScenario()
 const hideCosting = computed(() => isWmsRecord.value || activeScenario.value.startsWith('WMS'))
 const adjustment = computed(() => isWmsRecord.value ? getWmsAdjustment(props.orderId) : getAdjustment(props.orderId))
 const isCount = computed(() => adjustment.value?.kind === 'count')
+const { dimensionsActivated } = useDimensionsActivation()
+const showDimensionsColumn = computed(() => dimensionsActivated.value && applicableDimensions('stock-adjustment').length > 0)
+function dimensionValuesFor(dimensions?: Record<string, string>): { name: string; value: string }[] {
+  if (!dimensions) return []
+  return Object.entries(dimensions).map(([id, value]) => ({ name: getDimensionById(id)?.name ?? id, value }))
+}
 const isWmsCount = computed(() => isWmsRecord.value && isCount.value)
 // Also true for 'closed' — closing discards a.lines, so there's no real
 // counted data left to show either, same as a task that never started.
@@ -463,7 +472,7 @@ const activityEntries = computed(() => {
       { label: t('Transaction date'), value: formatDateLong(a.date) },
       { label: t('Warehouse'), value: a.warehouseName },
       ...(a.kind !== 'count' ? [{ label: t('Category'), value: a.category }] : []),
-      ...(!isWmsRecord.value ? [{ label: t('Account'), value: accountCode.value ? `${accountCode.value} ${a.account}` : a.account }] : []),
+      ...(!hideCosting.value ? [{ label: t('Account'), value: accountCode.value ? `${accountCode.value} ${a.account}` : a.account }] : []),
       ...(isWmsCount.value && a.assignee ? [{ label: t('Assignee'), value: a.assignee }] : []),
       ...(isWmsCount.value && a.startDate ? [{ label: t('Start date'), value: formatDateTimeLong(a.startDate) }] : []),
       ...(isWmsCount.value && a.endDate ? [{ label: t('End date'), value: formatDateTimeLong(a.endDate) }] : []),
@@ -643,7 +652,7 @@ onUnmounted(() => {
 
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">{{ isWmsRecord ? (adjustment?.kind === 'in-out' ? t('Stock in/out') : t('Cycle counts')) : t('All stock adjustments') }}</button>
+        <MpButton variant="link" class="detail-breadcrumb" @click="goBack">{{ isWmsRecord ? (adjustment?.kind === 'in-out' ? t('Stock in/out') : t('Cycle counts')) : t('All stock adjustments') }}</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ adjustment.number }}</h1>
           <ErpStatusBadge
@@ -652,27 +661,27 @@ onUnmounted(() => {
           />
           <MpPopover id="sad-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" :aria-label="t('Switch transaction')">
+              <MpButton variant="ghost" class="detail-jump-chevron" :aria-label="t('Switch transaction')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
+                  <MpButton v-if="jumpSearch" variant="ghost" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
-                  </button>
+                  </MpButton>
                 </div>
                 <div class="detail-jump-list">
-                  <button v-for="a in jumpResults" :key="a.id" class="detail-jump-item" @click="jumpTo(a.id)">
+                  <MpButton v-for="a in jumpResults" :key="a.id" variant="ghost" class="detail-jump-item" @click="jumpTo(a.id)">
                     <span class="detail-jump-item-number">{{ a.number }}</span>
                     <span class="detail-jump-item-customer">{{ a.warehouseName }} · {{ a.category }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found') }}</p>
                 </div>
               </div>
@@ -682,13 +691,13 @@ onUnmounted(() => {
       </div>
 
       <div class="detail-titlerow-right">
-        <button v-if="canApprove && !isWmsCount" class="btn-enterprise btn-enterprise--primary" @click="approve">{{ t('Approve') }}</button>
+        <MpButton v-if="canApprove && !isWmsCount" variant="primary" class="btn-enterprise btn-enterprise--primary" @click="approve">{{ t('Approve') }}</MpButton>
         <template v-if="!isWmsRecord">
           <MpTooltip id="sad-tt-approval" :label="t('Approval log')" placement="bottom" use-portal>
-            <button class="detail-icon-btn" :aria-label="t('Approval log')" @click="approvalLogOpen = true"><MpIcon name="task-todo" size="md" /></button>
+            <MpButton variant="ghost" class="detail-icon-btn" :aria-label="t('Approval log')" left-icon="task-todo" @click="approvalLogOpen = true" />
           </MpTooltip>
           <MpTooltip id="sad-tt-comments" :label="t('Comments')" placement="bottom" use-portal>
-            <button class="detail-icon-btn" :aria-label="t('Comments')"><MpIcon name="comment" size="md" /></button>
+            <MpButton variant="ghost" class="detail-icon-btn" :aria-label="t('Comments')" left-icon="comment" />
           </MpTooltip>
         </template>
       </div>
@@ -711,7 +720,9 @@ onUnmounted(() => {
             </ContentList>
           </div>
           <div class="content-list-col">
-            <ContentList :label="t('Assignee')" :value="adjustment.assignee || '—'" />
+            <!-- Unassigned when the person has left the company: the name is still
+                 stamped on the task, but nobody is responsible for it any more. -->
+            <ContentList :label="t('Assignee')" :value="assigneeDisplayName(adjustment.assignee) || t('Unassigned')" />
           </div>
         </template>
 
@@ -719,7 +730,7 @@ onUnmounted(() => {
         <template v-else>
           <div class="content-list-col">
             <ContentList :label="t('Transaction date')" :value="formatDateLong(adjustment.date)" />
-            <ContentList v-if="!isWmsRecord" :label="t('Account')" :value="accountCode ? `${accountCode} ${adjustment.account}` : adjustment.account" />
+            <ContentList v-if="!hideCosting" :label="t('Account')" :value="accountCode ? `${accountCode} ${adjustment.account}` : adjustment.account" />
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Transaction no.')" :value="adjustment.number" />
@@ -743,8 +754,8 @@ onUnmounted(() => {
       <!-- Filter bar (WMS stock count only) -->
       <div v-if="isWmsCount" class="detail-loc-filterbar">
         <div class="detail-loc-toggle">
-          <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': locViewMode === 'location' }" @click="locViewMode = 'location'">{{ t('By location') }}</button>
-          <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': locViewMode === 'sku' }" @click="locViewMode = 'sku'">{{ t('By SKU') }}</button>
+          <MpButton variant="ghost" class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': locViewMode === 'location' }" @click="locViewMode = 'location'">{{ t('By location') }}</MpButton>
+          <MpButton variant="ghost" class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': locViewMode === 'sku' }" @click="locViewMode = 'sku'">{{ t('By SKU') }}</MpButton>
         </div>
         <div class="detail-loc-search-wrap">
           <svg class="detail-loc-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -752,11 +763,11 @@ onUnmounted(() => {
             <path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
           <input v-model="locSearch" class="detail-loc-search" type="text" :placeholder="t('Search...')" />
-          <button v-if="locSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="locSearch = ''">
+          <MpButton v-if="locSearch" variant="ghost" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="locSearch = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
             </svg>
-          </button>
+          </MpButton>
         </div>
       </div>
 
@@ -820,14 +831,10 @@ onUnmounted(() => {
                       <td class="detail-td detail-td--action">
                         <template v-if="!isNotStarted">
                           <MpTooltip v-if="isBatchTrackedSku(item.sku)" :id="`sad-tt-batch-${item.key}`" :label="t('View batch')" placement="top" use-portal>
-                            <button class="detail-view-btn" type="button" :aria-label="t('View batch')" @click="openViewBatch(item)">
-                              <MpIcon name="competencies" size="md" />
-                            </button>
+                            <MpButton variant="ghost" class="detail-view-btn" type="button" :aria-label="t('View batch')" left-icon="competencies" @click="openViewBatch(item)" />
                           </MpTooltip>
                           <MpTooltip v-else-if="isSerialTrackedSku(item.sku)" :id="`sad-tt-serial-${item.key}`" :label="t('View serial number')" placement="top" use-portal>
-                            <button class="detail-view-btn" type="button" :aria-label="t('View serial number')" @click="openViewSerial(item)">
-                              <MpIcon name="competencies" size="md" />
-                            </button>
+                            <MpButton variant="ghost" class="detail-view-btn" type="button" :aria-label="t('View serial number')" left-icon="competencies" @click="openViewSerial(item)" />
                           </MpTooltip>
                         </template>
                       </td>
@@ -928,14 +935,10 @@ onUnmounted(() => {
                 <td class="detail-td detail-td--action">
                   <template v-if="!isNotStarted">
                     <MpTooltip v-if="isBatchTrackedSku(row.sku)" :id="`sad-tt-batch-sku-${row.sku}`" :label="t('View batch')" placement="top" use-portal>
-                      <button class="detail-view-btn" type="button" :aria-label="t('View batch')" @click="openViewBatchForSku(row)">
-                        <MpIcon name="competencies" size="md" />
-                      </button>
+                      <MpButton variant="ghost" class="detail-view-btn" type="button" :aria-label="t('View batch')" left-icon="competencies" @click="openViewBatchForSku(row)" />
                     </MpTooltip>
                     <MpTooltip v-else-if="isSerialTrackedSku(row.sku)" :id="`sad-tt-serial-sku-${row.sku}`" :label="t('View serial number')" placement="top" use-portal>
-                      <button class="detail-view-btn" type="button" :aria-label="t('View serial number')" @click="openViewSerialForSku(row)">
-                        <MpIcon name="competencies" size="md" />
-                      </button>
+                      <MpButton variant="ghost" class="detail-view-btn" type="button" :aria-label="t('View serial number')" left-icon="competencies" @click="openViewSerialForSku(row)" />
                     </MpTooltip>
                   </template>
                 </td>
@@ -963,6 +966,7 @@ onUnmounted(() => {
                 </template>
                 <th v-else class="detail-th detail-th--num">{{ t('Qty in/out') }}</th>
                 <th class="detail-th">{{ t('Unit') }}</th>
+                <th v-if="!isCount && showDimensionsColumn" class="detail-th">{{ t('Dimensions') }}</th>
                 <th v-if="!hideCosting" class="detail-th detail-th--num">{{ t('Average cost') }}</th>
               </tr>
             </thead>
@@ -978,13 +982,13 @@ onUnmounted(() => {
                   <td v-if="isBatchTrackedSku(item.sku)" class="detail-td detail-td--counted-batch" style="padding: 0;">
                     <div class="detail-counted-qty">{{ fmt(item.counted) }}</div>
                     <div class="detail-counted-action">
-                      <button class="detail-view-link" type="button" @click="openViewBatch(item)">{{ t('View batch') }}</button>
+                      <MpButton variant="link" class="detail-view-link" type="button" @click="openViewBatch(item)">{{ t('View batch') }}</MpButton>
                     </div>
                   </td>
                   <td v-else-if="isSerialTrackedSku(item.sku)" class="detail-td detail-td--counted-batch" style="padding: 0;">
                     <div class="detail-counted-qty">{{ fmt(item.counted) }}</div>
                     <div class="detail-counted-action">
-                      <button class="detail-view-link" type="button" @click="openViewSerial(item)">{{ t('View serial numbers') }}</button>
+                      <MpButton variant="link" class="detail-view-link" type="button" @click="openViewSerial(item)">{{ t('View serial numbers') }}</MpButton>
                     </div>
                   </td>
                   <td v-else class="detail-td detail-td--num">{{ fmt(item.counted) }}</td>
@@ -994,18 +998,21 @@ onUnmounted(() => {
                   <td v-if="isBatchTrackedSku(item.sku)" class="detail-td detail-td--counted-batch" style="padding: 0;">
                     <div class="detail-counted-qty detail-counted-qty--delta" :class="{ 'detail-diff--pos': item.difference > 0, 'detail-diff--neg': item.difference < 0 }">{{ diffLabel(item.difference) }}</div>
                     <div class="detail-counted-action">
-                      <button class="detail-view-link" type="button" @click="openViewBatch(item)">{{ t('View batch') }}</button>
+                      <MpButton variant="link" class="detail-view-link" type="button" @click="openViewBatch(item)">{{ t('View batch') }}</MpButton>
                     </div>
                   </td>
                   <td v-else-if="isSerialTrackedSku(item.sku)" class="detail-td detail-td--counted-batch" style="padding: 0;">
                     <div class="detail-counted-qty detail-counted-qty--delta" :class="{ 'detail-diff--pos': item.difference > 0, 'detail-diff--neg': item.difference < 0 }">{{ diffLabel(item.difference) }}</div>
                     <div class="detail-counted-action">
-                      <button class="detail-view-link" type="button" @click="openViewSerial(item)">{{ t('View serial numbers') }}</button>
+                      <MpButton variant="link" class="detail-view-link" type="button" @click="openViewSerial(item)">{{ t('View serial numbers') }}</MpButton>
                     </div>
                   </td>
                   <td v-else class="detail-td detail-td--num">{{ diffLabel(item.difference) }}</td>
                 </template>
                 <td class="detail-td">{{ item.unit }}</td>
+                <td v-if="!isCount && showDimensionsColumn" class="detail-td">
+                  <ErpLineDimensionsView :values="dimensionValuesFor(item.dimensions)" />
+                </td>
                 <td v-if="!hideCosting" class="detail-td detail-td--num">{{ formatIDR(item.averageCost) }}</td>
               </tr>
             </tbody>
@@ -1051,9 +1058,9 @@ onUnmounted(() => {
                         @change="toggleAllMisplaced"
                       />
                       <span class="detail-misplaced-bulkbar__count">{{ misplacedSelectedLabel }}</span>
-                      <button class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="goCreateTransfer(misplacedSerials.filter(m => selectedMisplaced.has(m.serial)))">
+                      <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="goCreateTransfer(misplacedSerials.filter(m => selectedMisplaced.has(m.serial)))">
                         {{ t('Create warehouse transfer') }}
-                      </button>
+                      </MpButton>
                       <a class="detail-misplaced-bulkbar__clear" @click="clearMisplacedSelection">{{ t('Clear') }}</a>
                     </div>
                   </th>
@@ -1097,9 +1104,7 @@ onUnmounted(() => {
                          button — .detail-view-btn's own padding:0 (see its rule) keeps
                          btn-enterprise's 8/16px padding from squeezing the icon. -->
                     <MpTooltip :id="`sad-tt-transfer-${m.serial}`" :label="t('Create warehouse transfer')" placement="top" use-portal>
-                      <button class="detail-view-btn btn-enterprise" type="button" :aria-label="t('Create warehouse transfer')" @click="goCreateTransfer([m])">
-                        <MpIcon name="warehouse" size="md" />
-                      </button>
+                      <MpButton variant="ghost" class="detail-view-btn btn-enterprise" type="button" :aria-label="t('Create warehouse transfer')" left-icon="warehouse" @click="goCreateTransfer([m])" />
                     </MpTooltip>
                   </td>
                 </tr>
@@ -1157,7 +1162,7 @@ onUnmounted(() => {
                 <th class="detail-th">{{ t('Date') }}</th>
                 <th class="detail-th">{{ t('Warehouse') }}</th>
                 <th class="detail-th">{{ t('Category') }}</th>
-                <th class="detail-th">{{ t('Account') }}</th>
+                <th v-if="!hideCosting" class="detail-th">{{ t('Account') }}</th>
                 <th class="detail-th">{{ t('Status') }}</th>
               </tr>
             </thead>
@@ -1169,7 +1174,7 @@ onUnmounted(() => {
                 <td class="detail-td">{{ formatDateLong(linkedStockCount.date) }}</td>
                 <td class="detail-td">{{ linkedStockCount.warehouseName }}</td>
                 <td class="detail-td">{{ linkedStockCount.category }}</td>
-                <td class="detail-td">{{ linkedStockCountAccountCode ? `${linkedStockCountAccountCode} ${linkedStockCount.account}` : linkedStockCount.account }}</td>
+                <td v-if="!hideCosting" class="detail-td">{{ linkedStockCountAccountCode ? `${linkedStockCountAccountCode} ${linkedStockCount.account}` : linkedStockCount.account }}</td>
                 <td class="detail-td"><ErpStatusBadge :status="linkedStockCount.status" /></td>
               </tr>
             </tbody>
@@ -1204,24 +1209,24 @@ onUnmounted(() => {
 
       <!-- WMS stock count footer -->
       <template v-if="isWmsCount">
-        <button v-if="canCloseTask" class="detail-btn detail-btn--secondary" @click="askClose">{{ t('Close task') }}</button>
-        <button class="detail-btn detail-btn--secondary" @click="printPdf">{{ t('Print stock card') }}</button>
-        <button v-if="canApprove" class="detail-btn detail-btn--primary" @click="approve">{{ t('Approve') }}</button>
+        <MpButton v-if="canCloseTask" variant="secondary" class="detail-btn detail-btn--secondary" @click="askClose">{{ t('Close task') }}</MpButton>
+        <MpButton variant="secondary" class="detail-btn detail-btn--secondary" @click="printPdf">{{ t('Print stock card') }}</MpButton>
+        <MpButton v-if="canApprove" variant="primary" class="detail-btn detail-btn--primary" @click="approve">{{ t('Approve') }}</MpButton>
         <!-- Not started / In progress: split button. Operator view of a Counted
              task gets the same button, labeled for what it actually is — the
              operator revising their own submitted count, not starting fresh.
              Completed/Closed: no actions left, terminal record. -->
         <div v-if="adjustment.status === 'not_started' || adjustment.status === 'in_progress' || isOperatorView" class="detail-split-btn">
-          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="startCounting">
+          <MpButton variant="primary" class="detail-btn detail-btn--primary detail-split-btn__main" @click="startCounting">
             {{ isOperatorView ? t('Update counting') : (adjustment.status === 'in_progress' ? t('Continue counting') : t('Start counting')) }}
-          </button>
+          </MpButton>
           <MpPopover id="sad-wms-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
-              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
+              <MpButton variant="primary" class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
@@ -1234,15 +1239,15 @@ onUnmounted(() => {
 
       <!-- ERP + WMS stock in/out footer -->
       <template v-else>
-        <button class="detail-btn detail-btn--secondary" @click="printPdf">{{ t('Print PDF') }}</button>
+        <MpButton variant="secondary" class="detail-btn detail-btn--secondary" @click="printPdf">{{ t('Print PDF') }}</MpButton>
         <MpPopover id="sad-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <button class="detail-btn detail-btn--primary">
+            <MpButton variant="primary" class="detail-btn detail-btn--primary">
               {{ t('Actions') }}
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-            </button>
+            </MpButton>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
@@ -1296,9 +1301,8 @@ onUnmounted(() => {
     />
 
     <!-- Cancel stock adjustment -->
-    <MpModal
-      id="sad-cancel" :is-open="cancelOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="sad-cancel" :is-open="cancelOpen" size="md" :is-keep-alive="false" @close="cancelOpen = false"
     >
       <MpModalContent>
         <MpModalHeader>{{ t('Cancel stock adjustment?') }}<MpModalCloseButton /></MpModalHeader>
@@ -1307,8 +1311,8 @@ onUnmounted(() => {
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="cancelOpen = false">{{ t('Keep adjustment') }}</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ t('Cancel adjustment') }}</button>
+            <MpButton variant="ghost" class="btn-enterprise btn-enterprise--ghost" @click="cancelOpen = false">{{ t('Keep adjustment') }}</MpButton>
+            <MpButton variant="danger" class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ t('Cancel adjustment') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -1316,9 +1320,8 @@ onUnmounted(() => {
     </MpModal>
 
     <!-- Close task (WMS cycle count) -->
-    <MpModal
-      id="sad-close" :is-open="closeOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeOpen = false"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="sad-close" :is-open="closeOpen" size="md" :is-keep-alive="false" @close="closeOpen = false"
     >
       <MpModalContent>
         <MpModalHeader>{{ t('Close this count task?') }}<MpModalCloseButton /></MpModalHeader>
@@ -1327,8 +1330,8 @@ onUnmounted(() => {
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="closeOpen = false">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmClose">{{ t('Close') }}</button>
+            <MpButton variant="ghost" class="btn-enterprise btn-enterprise--ghost" @click="closeOpen = false">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="danger" class="btn-enterprise btn-enterprise--danger" @click="confirmClose">{{ t('Close') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -1336,9 +1339,8 @@ onUnmounted(() => {
     </MpModal>
 
     <!-- Start-counting blocked: an inbound/outbound task sharing a SKU is still in progress -->
-    <MpModal
-      id="sad-start-blocked" :is-open="startBlockedOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="startBlockedOpen = false"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="sad-start-blocked" :is-open="startBlockedOpen" size="md" :is-keep-alive="false" @close="startBlockedOpen = false"
     >
       <MpModalContent>
         <MpModalHeader>{{ t('Cannot start counting yet') }}<MpModalCloseButton /></MpModalHeader>
@@ -1351,7 +1353,7 @@ onUnmounted(() => {
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--primary" @click="startBlockedOpen = false">{{ t('Got it') }}</button>
+            <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" @click="startBlockedOpen = false">{{ t('Got it') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -1360,9 +1362,8 @@ onUnmounted(() => {
 
     <!-- Approve with misplaced serials still unresolved — a reminder, not a
          blocker: the manager can approve now and reconcile the bins after. -->
-    <MpModal
-      id="sad-misplaced-approve-warn" :is-open="approveMisplacedWarnOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="approveMisplacedWarnOpen = false"
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="sad-misplaced-approve-warn" :is-open="approveMisplacedWarnOpen" size="md" :is-keep-alive="false" @close="approveMisplacedWarnOpen = false"
     >
       <MpModalContent>
         <MpModalHeader>{{ t('Misplaced serial numbers not resolved') }}<MpModalCloseButton /></MpModalHeader>
@@ -1373,8 +1374,8 @@ onUnmounted(() => {
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise" @click="approveMisplacedWarnOpen = false">{{ t('Back to review') }}</button>
-            <button class="btn-enterprise btn-enterprise--primary" @click="approveAnyway">{{ t('Approve anyway') }}</button>
+            <MpButton variant="ghost" class="btn-enterprise" @click="approveMisplacedWarnOpen = false">{{ t('Back to review') }}</MpButton>
+            <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" @click="approveAnyway">{{ t('Approve anyway') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -1385,7 +1386,7 @@ onUnmounted(() => {
 
   <div v-else class="sad-not-found">
     <p>{{ t('Stock adjustment not found.') }}</p>
-    <button class="detail-breadcrumb" @click="goBack">{{ t('Back to stock adjustments') }}</button>
+    <MpButton variant="link" class="detail-breadcrumb" @click="goBack">{{ t('Back to stock adjustments') }}</MpButton>
   </div>
 
   <ApprovalLogModal
@@ -1402,9 +1403,7 @@ onUnmounted(() => {
     id="sad-demo-fab" is-close-on-select use-portal placement="top-end"
   >
     <MpPopoverTrigger>
-      <button class="demo-fab" :aria-label="t('Change scenario state')">
-        <MpIcon name="sliders" size="md" color="icon.inverse" />
-      </button>
+      <MpButton variant="ghost" class="demo-fab" :aria-label="t('Change scenario state')" left-icon="sliders" />
     </MpPopoverTrigger>
     <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content' })">
       <template v-if="!isWmsRecord">
@@ -1442,7 +1441,7 @@ onUnmounted(() => {
 .detail-jump { display: flex; flex-direction: column; }
 .detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }
 .detail-jump-search { width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; padding-right: 34px; }
-.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-jump-search:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -1477,7 +1476,7 @@ onUnmounted(() => {
 .detail-loc-search-wrap { position: relative; display: flex; align-items: center; }
 .detail-loc-search-icon { position: absolute; left: var(--mp-spacing-3); color: var(--mp-icon-subtle); pointer-events: none; flex-shrink: 0; }
 .detail-loc-search { height: 36px; padding: 0 var(--mp-spacing-3) 0 calc(var(--mp-spacing-3) + 16px + var(--mp-spacing-2)); padding-right: 30px; border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full); background: var(--mp-background-neutral); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; width: 240px; box-sizing: border-box; }
-.detail-loc-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-loc-search:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .detail-loc-search::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn--overlay { position: absolute; right: var(--mp-spacing-3, 12px); top: 50%; transform: translateY(-50%); }
 .detail-td--empty { padding: 0; }

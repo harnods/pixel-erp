@@ -31,6 +31,41 @@ export function setSkuBarcode(sku: string, barcode: string): void {
   persistSkuBarcodeOverlay()
 }
 
+// ── Persisted product tax-info overlay ────────────────────────────────────────
+// Tax classification is edited on the product form but doesn't live on `Product`:
+// it applies to seed CATALOG products just as much as user-created ones, and
+// CATALOG is read-only. An overlay keyed by SKU covers both in one mechanism —
+// same shape as the barcode overlay above.
+//
+// Presence of a key (not truthiness of its fields) is what makes the overlay win,
+// so a user who deliberately CLEARS a seed product's classification gets an empty
+// Tax info section rather than the seeded value silently reappearing.
+export interface ProductTaxInfo {
+  /** 'Goods' | 'Service' — the DJP Barang/Jasa scope. Empty when unclassified. */
+  productClassification: string
+  /** Full DJP catalogue label, "<code> - <description>" (see taxClassificationCodes.ts). */
+  djpCode: string
+  djpUnit: string
+}
+type ProductTaxOverlay = Record<string, ProductTaxInfo> // sku → tax info
+const PRODUCT_TAX_KEY = 'product-tax-overlay-v1'
+const productTaxOverlay = reactive<ProductTaxOverlay>(loadSnapshot<ProductTaxOverlay>(PRODUCT_TAX_KEY) ?? {})
+
+/** Save (or clear) one product's tax classification. Always call this on save,
+ *  even with empty fields — that's what records an intentional "unclassified". */
+export function setProductTaxInfo(sku: string, info: ProductTaxInfo): void {
+  productTaxOverlay[sku] = { ...info }
+  saveSnapshot(PRODUCT_TAX_KEY, productTaxOverlay)
+}
+
+/** A product's current tax classification: the user's saved overlay if there is
+ *  one, else the seeded backfill, else undefined (never classified). */
+export function getProductTaxInfo(sku: string): ProductTaxInfo | undefined {
+  if (sku in productTaxOverlay) return productTaxOverlay[sku]
+  const seeded = DJP_SKUS.get(sku)
+  return seeded ? { productClassification: 'Goods', ...seeded } : undefined
+}
+
 export type ProductType = 'single-tracked' | 'single-not-tracked' | 'bundle' | 'assembled'
 
 export const PRODUCT_TYPE_LABEL: Record<ProductType, string> = {
@@ -136,10 +171,11 @@ const CATEGORY_DJP: Record<string, { code: string; unit: string }> = {
   Equipment:            { code: djpCodeFor('841900'), unit: 'Unit' },     // machinery for treatment by heating/roasting
   Accessory:            { code: djpCodeFor('850900'), unit: 'Piece' },
 }
-/** SKU -> DJP code/unit, for the roughly-half of products that have tax info
- *  filled in. Exported so other modules (e.g. sales invoice line items) can check
- *  DJP eligibility off this same set rather than recomputing/guessing their own. */
-export const DJP_SKUS = new Map(
+/** SKU -> DJP code/unit, for the roughly-half of products that ship pre-classified.
+ *  This is only the SEED backfill — anything the user saves on the product form
+ *  overrides it. Read tax info through `getProductTaxInfo()`, never off this map,
+ *  or you'll miss every edit the user has made. */
+const DJP_SKUS = new Map(
   PRODUCTS.filter((_, i) => i % 2 === 1).map((p) => {
     const entry = CATEGORY_DJP[p.category]
     return [p.sku, { djpCode: entry.code, djpUnit: entry.unit }]
@@ -187,9 +223,9 @@ export function productIndexRows(warehouseIds?: string[]): ProductIndexRow[] {
       averageCost: p.averageCost,
       lastPurchaseCost: p.lastPurchaseCost,
       defaultPurchaseCost: p.buyPrice,
-      productClassification: DJP_SKUS.has(p.sku) ? 'Goods' : '',
-      djpCode: DJP_SKUS.get(p.sku)?.djpCode ?? '',
-      djpUnit: DJP_SKUS.get(p.sku)?.djpUnit ?? '',
+      productClassification: getProductTaxInfo(p.sku)?.productClassification ?? '',
+      djpCode: getProductTaxInfo(p.sku)?.djpCode ?? '',
+      djpUnit: getProductTaxInfo(p.sku)?.djpUnit ?? '',
       pendingApproval: PENDING_SKUS.has(p.sku),
     }
   })

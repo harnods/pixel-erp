@@ -1,5 +1,5 @@
 import { computed, type Ref } from 'vue'
-import { reviewFiles, purchaseInvoiceReviewFiles } from '~/data'
+import { reviewFiles, purchaseInvoiceReviewFiles, persistReviewFiles } from '~/data'
 import type { ReviewFile } from '~/data'
 
 /**
@@ -35,10 +35,10 @@ export function useReviewQueue(fileId: () => string) {
     return i === -1 ? 0 : i
   })
 
-  /** Back to the surface's own Review files tab. */
+  /** Back to the surface's own Inbox tab. */
   function goBack() {
-    if (isPurchaseInvoices.value) router.push({ path: '/purchase-invoices', query: { tab: 'Review files' } })
-    else router.push({ path: '/expenses', query: { tab: 'Review files' } })
+    if (isPurchaseInvoices.value) router.push({ path: '/purchase-invoices', query: { tab: 'Dropbox' } })
+    else router.push({ path: '/expenses', query: { tab: 'Dropbox' } })
   }
 
   /**
@@ -61,7 +61,11 @@ export function useReviewQueue(fileId: () => string) {
   function removeFromQueue(id: string) {
     const list = queue.value
     const i = list.findIndex((rf) => rf.id === id)
-    if (i !== -1) list.splice(i, 1)
+    if (i !== -1) {
+      list.splice(i, 1)
+      // Persist so a reviewed+saved file stays gone from the Dropbox after refresh.
+      persistReviewFiles()
+    }
   }
 
   return {

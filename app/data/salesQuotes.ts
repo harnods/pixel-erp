@@ -79,3 +79,9 @@ function build(): SalesQuote[] {
 }
 
 export const salesQuotes: SalesQuote[] = build()
+
+/** "Awaiting approval" queue for the Sales quotes › Awaiting approval tab. */
+export function awaitingSalesQuotes(): SalesQuote[] {
+  return salesQuotes.filter(r => r.number % 7 === 0)
+}
+export function awaitingSalesQuotesCount(): number { return awaitingSalesQuotes().length }

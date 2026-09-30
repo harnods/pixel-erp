@@ -58,7 +58,7 @@ function handleConfirm() {
 </script>
 
 <template>
-  <MpModal id="alloc-modal" :is-open="open" size="lg" :is-keep-alive="false" @close="emit('close')">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="alloc-modal" :is-open="open" size="lg" :is-keep-alive="false" @close="emit('close')">
     <MpModalContent>
       <MpModalHeader>
         Choose where to reduce

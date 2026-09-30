@@ -2,7 +2,7 @@
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpSpinner,
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpTooltip,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpTooltip, MpButton,
   css, toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -158,33 +158,33 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
 
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">{{ t('Shipping') }}</button>
+        <MpButton class="detail-breadcrumb" @click="goBack">{{ t('Shipping') }}</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ task.taskNo }}</h1>
           <ErpStatusBadge :status="status" badge-for="additionalInformation" size="md" />
           <MpPopover id="del-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" :aria-label="t('Switch delivery')">
+              <MpButton class="detail-jump-chevron" :aria-label="t('Switch delivery')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
+                  <MpButton v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
-                  </button>
+                  </MpButton>
                 </div>
                 <div class="detail-jump-list">
-                  <button v-for="t in jumpResults" :key="t.id" class="detail-jump-item" @click="jumpTo(t.id)">
+                  <MpButton v-for="t in jumpResults" :key="t.id" class="detail-jump-item" @click="jumpTo(t.id)">
                     <span class="detail-jump-item-number">{{ t.taskNo }}</span>
                     <span class="detail-jump-item-customer">{{ t.salesNo }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No deliveries found.') }}</p>
                 </div>
               </div>
@@ -231,11 +231,11 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
             <input v-model="itemSearch" class="del-search" type="text" :placeholder="t('Search...')" />
-            <button v-if="itemSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="itemSearch = ''">
+            <MpButton v-if="itemSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="itemSearch = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
         </div>
         <section class="detail-items-section" :class="{ 'detail-items-section--bordered': isProgressive }">
@@ -265,14 +265,10 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
                   <td class="detail-td">{{ item.unit }}</td>
                   <td class="detail-td detail-td--action">
                     <MpTooltip v-if="isBatchTrackedSku(item.skuCode)" :id="`del-tt-batch-${item.key}`" :label="t('View batch')" placement="top" use-portal>
-                      <button class="del-view-btn" type="button" :aria-label="t('View batch')" @click="openViewBatch(item)">
-                        <MpIcon name="competencies" size="md" />
-                      </button>
+                      <MpButton class="del-view-btn" type="button" :aria-label="t('View batch')" left-icon="competencies" @click="openViewBatch(item)" />
                     </MpTooltip>
                     <MpTooltip v-else-if="isSerialTrackedSku(item.skuCode)" :id="`del-tt-serial-${item.key}`" :label="t('View serial number')" placement="top" use-portal>
-                      <button class="del-view-btn" type="button" :aria-label="t('View serial number')" @click="openViewSerial(item)">
-                        <MpIcon name="competencies" size="md" />
-                      </button>
+                      <MpButton class="del-view-btn" type="button" :aria-label="t('View serial number')" left-icon="competencies" @click="openViewSerial(item)" />
                     </MpTooltip>
                   </td>
                 </tr>
@@ -411,12 +407,12 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <MpPopover id="del-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--secondary">
+          <MpButton class="detail-btn detail-btn--secondary">
             {{ t('Print') }}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -425,16 +421,16 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
-      <button v-if="isPending" class="detail-btn detail-btn--primary" @click="goHandover">
+      <MpButton v-if="isPending" class="detail-btn detail-btn--primary" @click="goHandover">
         {{ t('Create shipment') }}
-      </button>
+      </MpButton>
     </footer>
 
   </div>
 
   <div v-else class="del-not-found">
     <p>{{ t('Delivery not found.') }}</p>
-    <button class="detail-breadcrumb" @click="goBack">{{ t('Back to Shipping') }}</button>
+    <MpButton class="detail-breadcrumb" @click="goBack">{{ t('Back to Shipping') }}</MpButton>
   </div>
 
   <ViewBatchDrawer

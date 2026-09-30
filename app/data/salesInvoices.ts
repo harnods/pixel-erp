@@ -80,3 +80,13 @@ export function deleteSalesInvoices(ids: string[]): number {
   }
   return removed
 }
+
+/**
+ * "Awaiting approval" queue — a deterministic subset (every 7th by number) that
+ * feeds the Sales invoices › Awaiting approval tab. Prototype approval flow: the
+ * same predicate drives both the tab's filtered list and its count badge.
+ */
+export function awaitingSalesInvoices(): SalesInvoice[] {
+  return salesInvoices.filter(r => r.number % 7 === 0)
+}
+export function awaitingSalesInvoicesCount(): number { return awaitingSalesInvoices().length }

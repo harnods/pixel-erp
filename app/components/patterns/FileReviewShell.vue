@@ -14,13 +14,15 @@
  * Extracted from BillReviewPage.vue, which still carries its own copy; the two
  * should be reconciled when that page is next touched.
  */
-import { ref, computed, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import {
-  MpIcon, MpTextlink, css,
+  MpIcon, MpTextlink, MpSpinner, css,
   MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
+  MpButton,
 } from '@mekari/pixel3'
 import type { ReviewFile } from '~/data'
+import { getReviewBlob } from '~/utils/reviewBlobStore'
 
 const props = defineProps<{
   /** The whole review run this file belongs to — drives "N of M" and the switcher. */
@@ -113,6 +115,35 @@ function previewSrc(page: number) {
   return images[page - 1] ?? images[images.length - 1]
 }
 
+// The actual uploaded document, loaded from IndexedDB by file id (present for
+// user-uploaded files; absent for seed rows → fall back to scenario previews).
+// Rendered as plain <img>s (single image, or the PDF's pages rasterised by
+// /api/expenses/pdf-pages) so the preview has our own light background instead
+// of Chrome's dark built-in PDF-viewer chrome.
+const realImages = ref<string[] | null>(null)
+const realLoading = ref(false)
+
+async function loadRealFile(id: string) {
+  realImages.value = null
+  const rec = await getReviewBlob(id)
+  if (!rec?.dataUrl) return
+  const isPdf = rec.mime === 'application/pdf' || (rec.fileName || '').toLowerCase().endsWith('.pdf')
+  if (!isPdf) { realImages.value = [rec.dataUrl]; return }
+  realLoading.value = true
+  try {
+    const res = await $fetch<{ pages: string[] }>('/api/expenses/pdf-pages', {
+      method: 'POST',
+      body: { dataBase64: rec.dataUrl },
+    })
+    realImages.value = res.pages?.length ? res.pages : null
+  } catch {
+    realImages.value = null
+  } finally {
+    realLoading.value = false
+  }
+}
+watch(() => props.fileId, (id) => { void loadRealFile(id) }, { immediate: true })
+
 defineExpose({ reviewFile, queueIndex, queueTotal })
 </script>
 
@@ -132,11 +163,11 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
           <!-- Chevron → jump-to-file switcher (search + queue) -->
           <MpPopover id="frs-file-nav" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" :aria-label="t('Switch file')">
+              <MpButton class="detail-jump-chevron" :aria-label="t('Switch file')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
@@ -144,7 +175,7 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search file…')" />
                 </div>
                 <div class="detail-jump-list">
-                  <button
+                  <MpButton
                     v-for="rf in jumpResults" :key="rf.id"
                     class="detail-jump-item"
                     :class="{ 'detail-jump-item--active': rf.id === fileId }"
@@ -152,7 +183,7 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
                   >
                     <span class="detail-jump-item-number">{{ rf.position }}. {{ rf.file }}</span>
                     <span class="detail-jump-item-customer">{{ rf.beneficiary.name || t('Unclassified') }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No files found.') }}</p>
                 </div>
               </div>
@@ -175,16 +206,16 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
             </div>
           </div>
           <div class="detail-loc-toggle" role="group" :aria-label="t('Zoom')">
-            <button
-              type="button" class="detail-loc-toggle-btn"
+            <MpButton
+              class="detail-loc-toggle-btn"
               :class="{ 'detail-loc-toggle-btn--active': zoomMode === 'fit' }"
               @click="zoomMode = 'fit'"
-            >{{ t('Fit') }}</button>
-            <button
-              type="button" class="detail-loc-toggle-btn"
+            >{{ t('Fit') }}</MpButton>
+            <MpButton
+              class="detail-loc-toggle-btn"
               :class="{ 'detail-loc-toggle-btn--active': zoomMode === '100' }"
               @click="zoomMode = '100'"
-            >100%</button>
+            >100%</MpButton>
           </div>
         </div>
         <MpBanner
@@ -198,12 +229,28 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
             <MpTextlink id="frs-reupload-link" as="a" href="#" @click.prevent="emit('reupload')">{{ t('Reupload file') }}</MpTextlink>
           </MpBannerDescription>
         </MpBanner>
-        <div
-          v-for="page in pageCount" :key="page"
-          class="br-preview" :class="{ 'br-preview--zoom': zoomMode === '100' }"
-        >
-          <img :src="previewSrc(page)" alt="" class="br-preview-img" />
+        <!-- Real uploaded document (from IndexedDB): a single image, or the PDF's
+             pages rasterised to PNGs — shown as <img>s on our own background.
+             Falls back to the scenario preview images for seed rows. -->
+        <template v-if="realImages">
+          <div
+            v-for="(src, i) in realImages" :key="i"
+            class="br-preview" :class="{ 'br-preview--zoom': zoomMode === '100' }"
+          >
+            <img :src="src" alt="" class="br-preview-img" />
+          </div>
+        </template>
+        <div v-else-if="realLoading" class="br-preview-loading">
+          <MpSpinner />
         </div>
+        <template v-else>
+          <div
+            v-for="page in pageCount" :key="page"
+            class="br-preview" :class="{ 'br-preview--zoom': zoomMode === '100' }"
+          >
+            <img :src="previewSrc(page)" alt="" class="br-preview-img" />
+          </div>
+        </template>
       </div>
 
       <!-- Resize divider -->
@@ -246,10 +293,11 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
 
 /* chevron next to the title → jump-to-file switcher */
 .detail-jump-chevron {
-  display: inline-flex; align-items: center; justify-content: center;
+  display: inline-flex !important; align-items: center; justify-content: center;
   width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px);
-  background: none; border: none; padding: 0;
+  background: none !important; border: none !important; padding: 0 !important;
   border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default);
+  min-width: 0 !important;
 }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 
@@ -262,15 +310,16 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none;
 }
-.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-jump-search:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
 /* The detail pages cap this list at 5 recent records; a review queue is a fixed
    run the user works through in order, so every file stays listed and scrolls. */
 .detail-jump-list { display: flex; flex-direction: column; max-height: 280px; overflow-y: auto; }
 .detail-jump-item {
-  display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5);
-  width: 100%; text-align: left; background: none; border: none; cursor: pointer;
-  padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-md);
+  display: flex !important; flex-direction: column; gap: var(--mp-spacing-0\.5);
+  width: 100%; text-align: left; background: none !important; border: none !important; cursor: pointer;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3) !important; border-radius: var(--mp-radii-md);
+  min-width: 0 !important;
 }
 .detail-jump-item:hover { background: var(--mp-background-neutral-subtle); }
 .detail-jump-item--active { background: var(--mp-background-neutral-subtle); }
@@ -308,7 +357,7 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
 /* Fit / 100% zoom toggle — same segmented-pill pattern as WMS picking's
    Combined / By orders toggle (PickingTaskDetailsPage.vue, CreatePickingPage.vue). */
 .detail-loc-toggle { display: flex; align-items: center; gap: 2px; flex-shrink: 0; background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-full); padding: 2px; }
-.detail-loc-toggle-btn { height: 28px; padding: 0 var(--mp-spacing-3); border: none; border-radius: var(--mp-radii-full); background: none; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); cursor: pointer; white-space: nowrap; }
+.detail-loc-toggle-btn { display: inline-flex !important; height: 28px; padding: 0 var(--mp-spacing-3) !important; border: none !important; border-radius: var(--mp-radii-full); background: none !important; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); cursor: pointer; white-space: nowrap; min-width: 0 !important; }
 .detail-loc-toggle-btn:hover { color: var(--mp-text-default); }
 .detail-loc-toggle-btn--active { background: var(--mp-background-stage, #fff); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); box-shadow: inset 0 0 0 1px var(--mp-border-default); }
 .frs-unreadable-banner { flex-shrink: 0; }
@@ -318,6 +367,14 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
   overflow: auto;
 }
 .br-preview-img { display: block; width: 100%; height: auto; }
+/* Spinner while the PDF's pages rasterise server-side. */
+.br-preview-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  padding: var(--mp-spacing-8);
+}
 .br-preview--zoom .br-preview-img { width: auto; max-width: none; }
 
 .ex-divider {

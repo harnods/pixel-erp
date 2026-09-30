@@ -8,7 +8,7 @@
  */
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpSelect, MpCheckbox, MpTooltip, MpIcon, css,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpSelect, MpCheckbox, MpTooltip, MpIcon, MpInput, MpButton, css,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -22,7 +22,7 @@ import {
   getProductDetail, getProductTransactions, getProductWarehouseStock, getProductBatches, getProductSerialStock,
   getProductAllSerials, type ProductBatchSummary,
 } from '~/data/productDetails'
-import { getWarehouseDetail, type WarehouseStockItem } from '~/data/warehouseDetails'
+import { getWarehouseDetail, setWarehouseMinStock, type WarehouseStockItem } from '~/data/warehouseDetails'
 import { cutoverState } from '~/data/wmsCutover'
 import { formatDateTimeLong } from '~/utils/date'
 import { generateBarcodeLabelPdf, generateBarcodeSheetPdf } from '~/utils/barcodeLabelPdf'
@@ -52,6 +52,20 @@ const isMigrationPending = computed(() =>
 
 function goBack() { router.push('/product-list') }
 
+// ── Tax info ───────────────────────────────────────────────────────────────────
+// `djpCode` carries the DJP catalogue entry as one "<code> - <description>" label
+// (that's how the classification list is stored, see taxClassificationCodes.ts).
+// The PRD treats the Classification Code and its Description as two separate
+// attributes — the description is looked up from the DJP master, never typed — so
+// split the stored label back apart for display rather than duplicating the data.
+const hasTaxInfo = computed(() => !!product.value?.djpCode)
+const djpCodeOnly = computed(() => product.value?.djpCode?.split(' - ')[0] ?? '')
+const djpDescription = computed(() => {
+  const label = product.value?.djpCode ?? ''
+  const sep = label.indexOf(' - ')
+  return sep === -1 ? '' : label.slice(sep + 3)
+})
+
 // ── Tabs — driven by ?section= (NOT ?tab=: this route's first segment, "product-list",
 // is also the index page's pageKey, whose OWN ?tab= is managed globally in
 // [...slug].vue — reusing that name here would fight with it) so back/forward still
@@ -64,7 +78,11 @@ const stockTabName = computed(() => {
   if (t === 'Serial number') return 'serials'
   return 'warehouses'
 })
-const TAB_NAMES = computed(() => ['transactions', 'unit-conversions', stockTabName.value])
+// Stock by warehouses is last and always present — and for a quantity-tracked
+// product it IS the tracking tab, so de-dupe instead of listing it twice. The
+// list has to match the rendered tab order exactly: MpTabs addresses tabs by
+// index, so an entry missing here sends ?section= to the wrong tab.
+const TAB_NAMES = computed(() => ['transactions', 'unit-conversions', ...new Set([stockTabName.value, 'warehouses'])])
 const activeTabIndex = computed({
   get(): number {
     const tab = route.query.section as string | undefined
@@ -133,6 +151,32 @@ const pagedWarehouseStock = computed(() => {
   const start = (whPage.value - 1) * whPerPage.value
   return warehouseStock.value.slice(start, start + whPerPage.value)
 })
+
+// Min. stock is the only figure here a person SETS — on hand, reserved, available
+// and in transit are all measured by the warehouse, so they stay read only. Edits
+// are held in a draft until Save: min. stock drives low-stock counts and
+// replenishment, so a half-typed number shouldn't take effect on the way to the
+// right one.
+const whEditing = ref(false)
+const whMinDraft = reactive<Record<string, string>>({})
+function startEditMinStock() {
+  for (const id of Object.keys(whMinDraft)) delete whMinDraft[id]
+  for (const s of warehouseStock.value) whMinDraft[s.warehouseId] = String(s.minStock)
+  whEditing.value = true
+}
+function saveMinStock() {
+  if (!product.value) return
+  for (const s of warehouseStock.value) {
+    const cleaned = (whMinDraft[s.warehouseId] ?? '').replace(/\D/g, '')
+    // A cleared field means "I didn't finish typing", not "no floor" — leave the
+    // warehouse as it was. Zero is still settable by typing it.
+    if (cleaned === '') continue
+    const next = Number(cleaned)
+    if (next === s.minStock) continue
+    setWarehouseMinStock(s.warehouseId, product.value.sku, next)
+  }
+  whEditing.value = false
+}
 
 // ── Stock by batches tab (batch-tracked products only) ────────────────────────────
 const allBatches = computed(() => product.value ? getProductBatches(product.value.sku) : [])
@@ -279,7 +323,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Products</button>
+        <MpButton class="detail-breadcrumb" variant="ghost" @click="goBack">Products</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ product.name }}</h1>
         </div>
@@ -287,12 +331,12 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 
       <MpPopover id="pd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--primary">
+          <MpButton class="detail-btn detail-btn--primary" variant="primary">
             Actions
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -342,9 +386,8 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
         </div>
       </section>
 
-      <!-- Purchase info / Sales info — ERP only, WMS doesn't deal in pricing/accounting.
-           Tax info sits in the same row but gates on product.djpCode independently,
-           since tax classification applies regardless of ERP/WMS scenario. -->
+      <!-- Purchase info / Sales info / Tax info — all three are ERP only; WMS
+           doesn't deal in pricing/accounting and has no tax module. -->
       <div class="pd-two-col">
         <section v-if="!isWms" class="pd-section pd-section--flex">
           <h2 class="pd-section-title">Purchase info</h2>
@@ -375,13 +418,28 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
           </div>
         </section>
 
-        <!-- Tax info — only shown once tax info has actually been filled in on the
-             product. Same vertical-list pattern as Sales info (single column, fixed 270px). -->
-        <section v-if="product.djpCode" class="pd-section pd-section--flex">
+        <!-- Tax info — ERP only (WMS Standalone has no tax module), and always
+             rendered once we're in ERP, whether or not the product is classified:
+             tax classification is optional at creation and is typically completed
+             later by Tax/Finance (PRD-03a BR-002), so the section doubles as the
+             signal that a product still has a classification gap. Same vertical-list
+             pattern as Sales info (single column, fixed 270px). -->
+        <section v-if="!isWms" class="pd-section pd-section--flex">
           <h2 class="pd-section-title">Tax info</h2>
-          <div class="pd-field-col pd-field-col--fixed">
+          <div v-if="!hasTaxInfo" class="pd-tax-empty">
+            <MpIcon name="information" size="sm" color="icon.subtle" />
+            <span>
+              Tax info is incomplete.
+              <a class="pd-link" @click.prevent="router.push(`/product-list/${product.sku}/edit`)">Add tax info</a>
+              to use this product on a tax document.
+            </span>
+          </div>
+          <div v-else class="pd-field-col pd-field-col--fixed">
             <ContentList label="Product classification" :value="product.productClassification" />
-            <ContentList label="DJP code" :value="product.djpCode" />
+            <ContentList label="DJP code" :value="djpCodeOnly" />
+            <ContentList label="DJP description">
+              <ClampText :text="djpDescription" :lines="3" />
+            </ContentList>
             <ContentList label="DJP unit" :value="product.djpUnit" />
           </div>
         </section>
@@ -398,7 +456,11 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
           <MpTab id="pd-tab-units" value="unit-conversions">Unit conversions</MpTab>
           <MpTab v-if="product.trackStockBy === 'Batch'" id="pd-tab-batches" value="batches">Stock by batches</MpTab>
           <MpTab v-else-if="product.trackStockBy === 'Serial number'" id="pd-tab-serials" value="serials">Stock by serial numbers</MpTab>
-          <MpTab v-else id="pd-tab-warehouses" value="warehouses">Stock by warehouses</MpTab>
+          <!-- Every product sits in warehouses, whatever it's tracked by — and this is
+               the only place a warehouse's min. stock can be set, so batch- and
+               serial-tracked products need it too, not just quantity-tracked ones.
+               Kept last so no existing tab shifts position. -->
+          <MpTab id="pd-tab-warehouses" value="warehouses">Stock by warehouses</MpTab>
         </MpTabList>
         <MpTabPanels>
 
@@ -437,11 +499,11 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                   <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                 </svg>
                 <input v-model="txSearch" class="pd-search-input" type="text" placeholder="Search..." />
-                <button v-if="txSearch" class="pd-search-clear" type="button" aria-label="Clear search" @click="txSearch = ''">
+                <MpButton v-if="txSearch" class="pd-search-clear" variant="secondary" type="button" aria-label="Clear search" @click="txSearch = ''">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                   </svg>
-                </button>
+                </MpButton>
               </div>
             </div>
 
@@ -473,7 +535,9 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                   <tr v-for="tx in pagedTransactions" :key="tx.id" class="pd-tr">
                     <td class="pd-td">{{ formatDate(tx.date) }}</td>
                     <td class="pd-td">
-                      <a class="cell-link cell-text" @click.stop>{{ tx.number }}</a>
+                      <!-- Plain text, not a link: a warehouse manager shouldn't be able to
+                           open transactions from warehouses they aren't assigned to. -->
+                      <span class="pd-tx-number">{{ tx.number }}</span>
                     </td>
                     <td class="pd-td">
                       <div class="pd-movement" :class="tx.delta >= 0 ? 'pd-movement--pos' : 'pd-movement--neg'">
@@ -528,20 +592,21 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                     <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                   </svg>
                   <input v-model="batchSearch" class="pd-search-input" type="text" placeholder="Search..." />
-                  <button v-if="batchSearch" class="pd-search-clear" type="button" aria-label="Clear search" @click="batchSearch = ''">
+                  <MpButton v-if="batchSearch" class="pd-search-clear" variant="secondary" type="button" aria-label="Clear search" @click="batchSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
-                  </button>
+                  </MpButton>
                 </div>
-                <button
+                <MpButton
                   v-if="filteredBatches.length"
                   class="detail-btn detail-btn--secondary"
+                  variant="secondary"
                   type="button"
                   @click="printAllBatchBarcodes"
                 >
                   Print all barcode
-                </button>
+                </MpButton>
               </div>
             </div>
 
@@ -590,11 +655,11 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                     <td class="pd-td pd-td--action">
                       <MpPopover :id="`pd-batch-actions-${b.batchNo}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                         <MpPopoverTrigger>
-                          <button class="row-kebab" aria-label="More actions" @click.stop>
+                          <MpButton class="row-kebab" variant="secondary" aria-label="More actions" @click.stop>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                               <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
                             </svg>
-                          </button>
+                          </MpButton>
                         </MpPopoverTrigger>
                         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                           <MpPopoverList>
@@ -628,14 +693,15 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
           <MpTabPanel v-else-if="product.trackStockBy === 'Serial number'" value="serials">
             <div class="pd-section-head">
               <h3 class="linked-section-title">Serial numbers</h3>
-              <button
+              <MpButton
                 v-if="serialTotal > 0"
                 class="detail-btn detail-btn--secondary"
+                variant="secondary"
                 type="button"
                 @click="printAllSerialBarcodes"
               >
                 Print all barcode
-              </button>
+              </MpButton>
             </div>
             <div v-if="pagedSerialStock.length" class="pd-table-scroll">
               <table class="pd-table">
@@ -682,8 +748,32 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             />
           </MpTabPanel>
 
-          <!-- Stock by warehouses -->
-          <MpTabPanel v-else value="warehouses">
+          <!-- Stock by warehouses — shown for every product, alongside the batch /
+               serial breakdown rather than instead of it. -->
+          <MpTabPanel value="warehouses">
+            <div v-if="pagedWarehouseStock.length" class="pd-filter-bar pd-filter-bar--end">
+              <div v-if="whEditing" class="pd-filter-right">
+                <MpButton
+                  class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+                  variant="ghost"
+                  type="button"
+                  @click="whEditing = false"
+                >Cancel</MpButton>
+                <MpButton
+                  class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
+                  variant="primary"
+                  type="button"
+                  @click="saveMinStock"
+                >Save</MpButton>
+              </div>
+              <MpButton
+                v-else
+                class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+                variant="secondary"
+                type="button"
+                @click="startEditMinStock"
+              >Edit</MpButton>
+            </div>
             <div v-if="pagedWarehouseStock.length" class="pd-table-scroll">
               <table class="pd-table">
                 <colgroup>
@@ -715,7 +805,17 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                     <td class="pd-td pd-td--num">{{ s.reserved.toLocaleString('id-ID') }}</td>
                     <td class="pd-td pd-td--num">{{ s.available.toLocaleString('id-ID') }}</td>
                     <td class="pd-td pd-td--num">{{ s.onTheWay.toLocaleString('id-ID') }}</td>
-                    <td class="pd-td pd-td--num">{{ s.minStock.toLocaleString('id-ID') }}</td>
+                    <td class="pd-td pd-td--num">
+                      <MpInput
+                        v-if="whEditing"
+                        :id="`pd-wh-min-stock-${s.warehouseId}`"
+                        v-model="whMinDraft[s.warehouseId]"
+                        type="number"
+                        :aria-label="`Min. stock for ${s.warehouseName}`"
+                        :class="css({ width: '88px' })"
+                      />
+                      <template v-else>{{ s.minStock.toLocaleString('id-ID') }}</template>
+                    </td>
                     <td class="pd-td">{{ s.unit }}</td>
                   </tr>
                 </tbody>
@@ -855,6 +955,19 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 .pd-field-col { display: flex; flex-direction: column; }
 .pd-field-col--flex { flex: 1; min-width: 0; }
 .pd-field-col--fixed { width: 270px; }
+/* Tax info empty state — an unclassified product isn't an error, just a gap Tax/
+   Finance still has to close, so this reads as an inline hint, not a warning. */
+.pd-tax-empty {
+  display: flex;
+  gap: var(--mp-spacing-2);
+  align-items: flex-start;
+  padding: var(--mp-spacing-2) 0;
+  max-width: 360px;
+  font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-lg, 20px);
+  color: var(--mp-text-secondary);
+}
+.pd-tax-empty :deep(svg) { flex: none; margin-top: 2px; }
 .pd-two-col { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
 .pd-purchase-row { display: flex; gap: var(--mp-spacing-6); }
 .pd-link { color: var(--mp-text-link); cursor: pointer; }
@@ -902,6 +1015,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 }
 .pd-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
 .pd-td--action { text-align: right; padding-top: var(--mp-spacing-1); padding-bottom: var(--mp-spacing-1); }
+.pd-tx-number { color: var(--mp-text-default); }
 .row-kebab { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
 .row-kebab:hover { background: var(--mp-background-neutral-hovered); }
 .pd-tr:hover .pd-td { background: var(--mp-background-neutral-hovered); }

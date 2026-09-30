@@ -8,7 +8,7 @@
 import { ref, computed, watch } from 'vue'
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  MpInput, MpAutocomplete, MpDatePicker, MpRadio, MpFormControl, MpFormLabel, MpFormErrorMessage,
+  MpInput, MpAutocomplete, MpDatePicker, MpRadio, MpFormControl, MpFormLabel, MpFormErrorMessage, MpButton,
 } from '@mekari/pixel3'
 import { formatDateLong } from '~/utils/date'
 
@@ -102,7 +102,7 @@ function save() {
 </script>
 
 <template>
-  <MpModal id="set-recurring-modal" :is-open="isOpen" size="md" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="emit('close')">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="set-recurring-modal" :is-open="isOpen" size="md" :is-keep-alive="false" @close="emit('close')">
     <MpModalContent>
       <MpModalHeader>{{ t('Set as recurring') }}<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
@@ -158,8 +158,8 @@ function save() {
       </MpModalBody>
       <MpModalFooter>
         <div class="sr-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="emit('close')">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="save">{{ t('Save') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="emit('close')">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" @click="save">{{ t('Save') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>

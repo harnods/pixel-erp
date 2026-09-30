@@ -54,11 +54,17 @@ export interface WarehouseConfig {
   /** Negative stock rule — how many days back to look for a negative-stock event. */
   cycleCountNegLookbackDays: number
   /** Variance signal rule — variance % (vs. last count) that trips the flag. */
-  cycleCountVarianceThreshold: number
   /** Min stock rule — days a watch-listed SKU must stay at/below minimum before it's flagged. */
   cycleCountMinGuardDays: number
   /** SKUs that always show on the cycle count recommendation list — the "watch list" the Min stock rule flags against. */
   cycleCountWatchList: string[]
+  // Replenishment — Inventory › Replenishment, per-warehouse.
+  /** ON = this warehouse appears in the replenishment worklist and gets reorder points calculated. */
+  replenishmentEnabled: boolean
+  /** Overrides the global safety days for this warehouse. null = use the global value. */
+  replenishmentSafetyDays: number | null
+  /** Count in-transit warehouse transfers toward this warehouse's on-order qty. */
+  replenishmentIncludeInTransit: boolean
 }
 
 const DEFAULTS: WarehouseConfig = {
@@ -77,9 +83,14 @@ const DEFAULTS: WarehouseConfig = {
   cycleCountRuleMin: true,
   cycleCountRuleOrder: ['neg', 'var', 'min'],
   cycleCountNegLookbackDays: 30,
-  cycleCountVarianceThreshold: 20,
   cycleCountMinGuardDays: 14,
   cycleCountWatchList: [],
+  // On by default, unlike cycle-count recommendations: replenishment is the point
+  // of the module, and a worklist that is empty until someone finds a toggle reads
+  // as broken rather than as unconfigured.
+  replenishmentEnabled: true,
+  replenishmentSafetyDays: null,
+  replenishmentIncludeInTransit: true,
 }
 
 function loadAll(): Record<string, WarehouseConfig> {

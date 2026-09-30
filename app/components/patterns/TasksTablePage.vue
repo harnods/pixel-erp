@@ -135,15 +135,15 @@ function closeRejectModal() {
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'date',        label: 'Date',         width: '120px',                                sortType: 'date'   },
-  { key: 'number',       label: 'Number',       width: '240px', sortable: true,                sortType: 'number' },
-  { key: 'warehouse',    label: 'Warehouse',    width: '160px', sortable: true,                sortType: 'text'   },
-  { key: 'details',      label: 'Details',      width: '260px', sortable: true,                sortType: 'text'   },
-  { key: 'reason',       label: 'Reason',       width: '200px', sortable: true,                sortType: 'text'   },
-  { key: 'requestedBy',  label: 'Requested by', width: '160px', sortable: true,                sortType: 'text'   },
-  { key: 'balanceDue',   label: 'Balance due',  width: '160px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'total',        label: 'Total',        width: '160px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'dueDate',      label: 'Due date',     width: '120px',                                sortType: 'date'   },
+  { key: 'date',        label: 'Date',         kind: 'date',                                sortType: 'date'   },
+  { key: 'number',       label: 'Number',       kind: 'number', sortable: true,                sortType: 'number' },
+  { key: 'warehouse',    label: 'Warehouse',    kind: 'name', sortable: true,                sortType: 'text'   },
+  { key: 'details',      label: 'Details',      sortable: true,                sortType: 'text'   },
+  { key: 'reason',       label: 'Reason',       kind: 'status', sortable: true,                sortType: 'text'   },
+  { key: 'requestedBy',  label: 'Requested by', kind: 'name', sortable: true,                sortType: 'text'   },
+  { key: 'balanceDue',   label: 'Balance due',  kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'total',        label: 'Total',        kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'dueDate',      label: 'Due date',     kind: 'date',                                sortType: 'date'   },
 ]
 
 // Column show/hide — Date & Number are always on (locked in the menu).
@@ -330,19 +330,19 @@ function formatDate(iso: string) {
 
     <!-- ── Bulk bar → approve / reject selected rows ── -->
     <template #bulk-actions="{ selectedRows, deselectAll }">
-      <button
+      <MpButton
         class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
         @click="bulkApprove(selectedRows as Set<number>, deselectAll)"
       >
         Approve
-      </button>
-      <button
+      </MpButton>
+      <MpButton
         class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
         :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
         @click="openBulkRejectModal(selectedRows as Set<number>, deselectAll)"
       >
         Reject
-      </button>
+      </MpButton>
     </template>
 
     <!-- ── Filter bar (existing pattern: filters, icon buttons, search) ── -->
@@ -447,7 +447,7 @@ function formatDate(iso: string) {
          popover, bottom-end/4px gap, plain-CSS tooltip — see memory) ── -->
     <template #actions="{ row }">
       <div class="row-actions">
-        <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click.stop="approveTask(row as Task)">Approve</button>
+        <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" variant="secondary" @click.stop="approveTask(row as Task)">Approve</MpButton>
         <div class="row-actions__icons">
           <ApprovalLogPopover
             :id="`${idPrefix}-applog-${(row as Task).id}`"

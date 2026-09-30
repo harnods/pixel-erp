@@ -25,14 +25,12 @@ function unmatch() { emit('unmatch'); close() }
 </script>
 
 <template>
-  <MpDrawer
+  <MpDrawer :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="matched-details-drawer"
     :is-open="isOpen"
     placement="right"
     size="2xl"
     variant="floating"
-    is-close-on-esc
-    is-close-on-overlay-click
     :is-keep-alive="false"
     @close="close"
   >
@@ -125,8 +123,8 @@ function unmatch() { emit('unmatch'); close() }
           </div>
 
           <div class="mdd-footer">
-            <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="close">Cancel</button>
-            <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="unmatch">Unmatch</button>
+            <MpButton type="button" class="btn-enterprise btn-enterprise--ghost" variant="ghost" @click="close">Cancel</MpButton>
+            <MpButton type="button" class="btn-enterprise btn-enterprise--secondary" variant="secondary" @click="unmatch">Unmatch</MpButton>
           </div>
         </div>
       </MpDrawerBody>

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { toast } from '@mekari/pixel3'
+import { MpButton, toast } from '@mekari/pixel3'
+import ErpDropzoneIcon from '~/components/patterns/ErpDropzoneIcon.vue'
 
 const router = useRouter()
 const { t } = useLocale()
@@ -97,7 +98,7 @@ function fmtBytes(bytes: number) {
     <!-- ── Page title bar (neutral-subtle bg, 72px, matches ErpTablePage title pattern) ── -->
     <div class="iw-titlebar">
       <div class="iw-titlebar-left">
-        <button class="iw-breadcrumb" @click="goBack">{{ t('Warehouses') }}</button>
+        <MpButton class="iw-breadcrumb" @click="goBack">{{ t('Warehouses') }}</MpButton>
         <h1 class="iw-title">{{ t('Import warehouses') }}</h1>
       </div>
     </div>
@@ -125,10 +126,10 @@ function fmtBytes(bytes: number) {
                   <div class="iw-spacer" />
                 </div>
                 <div class="iw-step-form">
-                  <button class="iw-btn-download">{{ t('Download template file') }}</button>
+                  <MpButton class="iw-btn-download">{{ t('Download template file') }}</MpButton>
                   <!-- Accordion: Format requirements -->
                   <div class="iw-accordion" :class="{ 'iw-accordion--open': formatOpen }">
-                    <button class="iw-accordion-header" @click="formatOpen = !formatOpen">
+                    <MpButton class="iw-accordion-header" @click="formatOpen = !formatOpen">
                       <span class="iw-accordion-label">{{ t('Format requirements') }}</span>
                       <svg
                         class="iw-accordion-chevron"
@@ -137,7 +138,7 @@ function fmtBytes(bytes: number) {
                       >
                         <path d="M9 18L15 12L9 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                       </svg>
-                    </button>
+                    </MpButton>
                     <div v-if="formatOpen" class="iw-accordion-body">
                       <ul class="iw-accordion-list">
                         <li>{{ t('Date format: DD/MM/YYYY') }}</li>
@@ -180,19 +181,7 @@ function fmtBytes(bytes: number) {
                   @dragleave="dragOver = false"
                   @drop.prevent="onDrop"
                 >
-                  <div class="iw-dropzone-icon">
-                    <svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                      <path d="M0 40C0 17.9086 17.9086 0 40 0C62.0914 0 80 17.9086 80 40C80 62.0914 62.0914 80 40 80C17.9086 80 0 62.0914 0 40Z" fill="#F8F9F9"/>
-                      <g clip-path="url(#clip0_iw_dropzone)">
-                        <path d="M60.9122 40C60.9122 33.0985 58.9766 27.9245 55.5268 24.4744C52.0767 21.0243 46.9019 19.0878 40 19.0878C33.0982 19.0878 27.9245 21.0243 24.4744 24.4744C21.0243 27.9245 19.0878 33.0982 19.0878 40C19.0878 46.9019 21.0243 52.0767 24.4744 55.5268C27.9245 58.9766 33.0985 60.9122 40 60.9122C46.9019 60.9122 52.0767 58.977 55.5268 55.5268C58.977 52.0767 60.9122 46.9019 60.9122 40ZM38.4561 50.3575V32.42C36.3209 34.0186 34.3782 36.2406 33.283 38.431C32.9017 39.193 31.975 39.5015 31.2128 39.1206C30.4502 38.7394 30.1406 37.8117 30.5219 37.0491C32.2908 33.5116 35.7727 30.0307 39.3103 28.2619L39.4762 28.1903C39.8711 28.0478 40.3107 28.0718 40.6909 28.2619C44.2283 30.0309 47.7094 33.5128 49.4781 37.0504C49.859 37.8128 49.5496 38.7395 48.7872 39.1206C48.0249 39.5016 47.0984 39.193 46.717 38.431C45.6218 36.2406 43.679 34.0186 41.5439 32.42V50.3575C41.5439 51.21 40.8525 51.9014 40 51.9014C39.1475 51.9013 38.4561 51.21 38.4561 50.3575ZM64 40C64 47.4701 61.8939 53.5239 57.7089 57.7089C53.5239 61.8939 47.4701 64 40 64C32.5299 64 26.4761 61.8938 22.2911 57.7089C18.1062 53.5239 16 47.4701 16 40C16 32.5299 18.1062 26.4761 22.2911 22.2911C26.4761 18.1062 32.5299 16 40 16C47.4701 16 53.5239 18.1062 57.7089 22.2911C61.8938 26.4761 64 32.5299 64 40Z" fill="#536062"/>
-                      </g>
-                      <defs>
-                        <clipPath id="clip0_iw_dropzone">
-                          <rect width="48" height="48" fill="white" transform="translate(16 16)"/>
-                        </clipPath>
-                      </defs>
-                    </svg>
-                  </div>
+                  <ErpDropzoneIcon />
                   <div class="iw-dropzone-copy">
                     <p class="iw-dropzone-cta">
                       {{ t('Drop your file here or') }}
@@ -225,11 +214,11 @@ function fmtBytes(bytes: number) {
                     <span class="iw-file-name">{{ uploadedFile.name }}</span>
                     <span class="iw-file-size">{{ fmtBytes(uploadedFile.size) }}</span>
                   </div>
-                  <button class="iw-file-remove" :aria-label="t('Remove file')" @click="removeFile">
+                  <MpButton class="iw-file-remove" :aria-label="t('Remove file')" @click="removeFile">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
-                  </button>
+                  </MpButton>
                 </div>
 
               </div>
@@ -240,11 +229,11 @@ function fmtBytes(bytes: number) {
           <!-- ── Action group ── -->
           <div class="iw-action-group">
             <div class="iw-action-right">
-              <button class="iw-btn-cancel" @click="goBack">{{ t('Cancel') }}</button>
-              <button
+              <MpButton class="iw-btn-cancel" @click="goBack">{{ t('Cancel') }}</MpButton>
+              <MpButton
                 class="iw-btn-import"
                 @click="doImport"
-              >{{ t('Import') }}</button>
+              >{{ t('Import') }}</MpButton>
             </div>
           </div>
 
@@ -258,29 +247,29 @@ function fmtBytes(bytes: number) {
       <div v-if="fabOpen" class="iw-fab-menu">
         <div class="iw-fab-group">
           <p class="iw-fab-group-label">{{ t('Import outcome') }}</p>
-          <button
+          <MpButton
             v-for="s in (['success', 'partial', 'error'] as const)"
             :key="s"
             class="iw-fab-item"
             :class="{ 'iw-fab-item--active': importScenario === s }"
             @click="applyScenario(s)"
-          >{{ s === 'success' ? t('Success') : s === 'partial' ? t('Partial (3 rows failed)') : t('Import failed') }}</button>
+          >{{ s === 'success' ? t('Success') : s === 'partial' ? t('Partial (3 rows failed)') : t('Import failed') }}</MpButton>
         </div>
         <div class="iw-fab-divider" />
         <div class="iw-fab-group">
           <p class="iw-fab-group-label">{{ t('Dropzone state') }}</p>
-          <button class="iw-fab-item" @click="applyFileSelected">{{ t('File selected') }}</button>
-          <button class="iw-fab-item" @click="applyDropzoneError('format')">{{ t('Wrong format') }}</button>
-          <button class="iw-fab-item" @click="applyDropzoneError('size')">{{ t('File too large') }}</button>
+          <MpButton class="iw-fab-item" @click="applyFileSelected">{{ t('File selected') }}</MpButton>
+          <MpButton class="iw-fab-item" @click="applyDropzoneError('format')">{{ t('Wrong format') }}</MpButton>
+          <MpButton class="iw-fab-item" @click="applyDropzoneError('size')">{{ t('File too large') }}</MpButton>
         </div>
       </div>
-      <button class="iw-fab" :class="{ 'iw-fab--open': fabOpen }" :aria-label="t('Preview scenarios')" @click="fabOpen = !fabOpen">
+      <MpButton class="iw-fab" :class="{ 'iw-fab--open': fabOpen }" :aria-label="t('Preview scenarios')" @click="fabOpen = !fabOpen">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
           <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
           <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
         </svg>
-      </button>
+      </MpButton>
     </div>
 
   </div>

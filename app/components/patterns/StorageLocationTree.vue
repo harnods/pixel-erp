@@ -144,11 +144,11 @@ async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 |
       <div class="wh-search">
         <MpIcon name="search" size="md" />
         <input v-model="search" class="wh-search-input" type="text" placeholder="Search..." />
-        <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+        <MpButton v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
           </svg>
-        </button>
+        </MpButton>
       </div>
       <MpButton variant="tertiary" is-rounded left-icon="add" @click="openNew">New location</MpButton>
     </div>
@@ -206,11 +206,11 @@ async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 |
             <td class="wh-btd wh-loc-td--action">
               <MpPopover :id="`slt-actions-${row.node.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                 <MpPopoverTrigger>
-                  <button class="row-kebab" aria-label="More actions" @click.stop>
+                  <MpButton class="row-kebab" aria-label="More actions" @click.stop>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                       <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
                     </svg>
-                  </button>
+                  </MpButton>
                 </MpPopoverTrigger>
                 <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
                   <MpPopoverList>
@@ -242,12 +242,10 @@ async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 |
     />
 
     <!-- Delete confirmation -->
-    <MpModal
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
       id="slt-delete-modal"
       :is-open="!!deleteTarget"
       size="md"
-      is-close-on-esc
-      is-close-on-overlay-click
       :is-keep-alive="false"
       @close="deleteTarget = null"
     >
@@ -266,8 +264,8 @@ async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 |
         </MpModalBody>
         <MpModalFooter>
           <div class="slt-modal-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="deleteTarget = null">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">Delete</button>
+            <MpButton class="btn-enterprise btn-enterprise--ghost" @click="deleteTarget = null">Cancel</MpButton>
+            <MpButton class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">Delete</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -293,7 +291,7 @@ async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 |
 <style scoped>
 .slt-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-4); }
 .wh-search { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-1\.5) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full); background: var(--mp-background-neutral); color: var(--mp-text-secondary); min-width: 220px; }
-.wh-search:focus-within { border-color: var(--mp-border-bold); box-shadow: 0 0 0 1px var(--mp-border-bold); }
+.wh-search:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .wh-search-input { flex: 1; border: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); outline: none; }
 .wh-search-input::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {

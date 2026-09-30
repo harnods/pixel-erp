@@ -1,6 +1,11 @@
 import { reactive } from "vue";
 import { operatorForWarehouse } from "./warehouseTeam";
-import { outgoingOrders, isMarketplaceOrder, addOutgoing, type OutgoingOrder } from "./outgoing";
+import {
+  outgoingOrders, isMarketplaceOrder, addOutgoing, isManualTriggerDelivery,
+  deliveryPostingStatusOf, setDeliveryPostingStatus, setDeliveryDocument, type OutgoingOrder,
+} from "./outgoing";
+import { posterKindFor, bindSeededDocument } from "./deliveryDocuments";
+import { addWmsAdjustment } from "./wmsStockAdjustments";
 import { packingTasks, pickedLinesForPacking, getPackingTask, addPackingTask, startPacking, endPacking, type PackingTask } from "./packingTasks";
 import { addPickingTask, startPicking, endPicking } from "./pickingTasks";
 import { loadSnapshot, saveSnapshot } from "./persist";
@@ -279,6 +284,58 @@ export function setWmsShipping(
 
 /** Courier + tracking for an order's current shipment — from the ready-to-ship
  *  delivery if set there, else the pending registry. Undefined when nothing on file. */
+// ── Per-PACKAGE shipping details (courier + tracking no.) ─────────────────────
+// One outbound can go out as several parcels, and each parcel is its own shipment
+// with its own AWB — so the courier/tracking that ends up on a shipping label lives
+// per PACKAGE (the packing task that produced it), not per order.
+//
+// The order-level registry above is still the parent default: a package with no
+// entry of its own inherits whatever the outbound carries (wmsShippingForPackage),
+// so filling the order in once covers every parcel under it until someone splits
+// them. Picking prints from the parent only — there is no parcel yet at that point.
+const wmsPackageShipping = reactive<Record<string, WmsShipping>>(
+  loadSnapshot<Record<string, WmsShipping>>("wms-package-shipping-v1") ?? {},
+);
+function persistWmsPackageShipping(): void {
+  saveSnapshot("wms-package-shipping-v1", wmsPackageShipping);
+}
+
+/** Record courier + tracking no. for ONE package (packing task id). */
+export function setWmsPackageShipping(
+  packageId: string,
+  details: { courier: string; trackingNo?: string },
+): void {
+  if (!packageId) return;
+  wmsPackageShipping[packageId] = {
+    courier: details.courier.trim(),
+    trackingNo: (details.trackingNo ?? "").trim(),
+  };
+  persistWmsPackageShipping();
+  // A delivery already created from this package ships under the same details —
+  // otherwise the parcel's label and its shipment would disagree.
+  const del = deliveryTasks.find(
+    (t) => t.status === "ready to ship" && packingTaskIdsForDelivery(t).includes(packageId),
+  );
+  if (del) {
+    del.courier = wmsPackageShipping[packageId]!.courier;
+    del.trackingNo = wmsPackageShipping[packageId]!.trackingNo || undefined;
+    persistDelivery();
+  }
+}
+
+/** This package's own details, falling back to the parent outbound's (the carry-down
+ *  rule) — undefined only when neither has a courier on file yet. */
+export function wmsShippingForPackage(packageId: string, orderId: string): WmsShipping | undefined {
+  const own = wmsPackageShipping[packageId];
+  if (own?.courier) return own;
+  return wmsShippingForOrder(orderId);
+}
+
+/** Has this package been given details of its own (rather than inheriting)? */
+export function hasOwnPackageShipping(packageId: string): boolean {
+  return !!wmsPackageShipping[packageId]?.courier;
+}
+
 export function wmsShippingForOrder(orderId: string): WmsShipping | undefined {
   const t = readyDeliveryForOrder(orderId);
   if (t?.courier) return { courier: t.courier, trackingNo: t.trackingNo ?? "" };
@@ -319,9 +376,13 @@ export function addDeliveryTask(opts: {
   // Seed courier + tracking from anything captured before the delivery existed
   // (e.g. the shipping-details modal at packing, or the manual New delivery form),
   // unless the caller already provides a courier (marketplace channel-fixed values).
-  const pending = opts.courier ? undefined : wmsShipping[opts.salesOrderId];
-  const courier = opts.courier ?? pending?.courier;
-  const trackingNo = opts.trackingNo ?? pending?.trackingNo;
+  // This package's own details win over the order's default — they were entered
+  // against THIS parcel (shipping-details modal at packing), and its label already
+  // carries them, so the delivery must ship under the same courier/AWB.
+  const own = opts.courier ? undefined : wmsPackageShipping[opts.packingTaskId];
+  const pending = opts.courier || own?.courier ? undefined : wmsShipping[opts.salesOrderId];
+  const courier = opts.courier ?? own?.courier ?? pending?.courier;
+  const trackingNo = opts.trackingNo ?? (own?.courier ? own.trackingNo : undefined) ?? pending?.trackingNo;
   // A pending tracking no. belongs to THIS shipment only — consume it so the next
   // partial delivery doesn't inherit a stale AWB (courier stays as the default).
   if (pending?.trackingNo) {
@@ -683,6 +744,31 @@ export function getShipment(shipmentSeq: string): ShipmentSummary | undefined {
   };
 }
 
+/** Hand a shipment document to someone else — the escape hatch for one still held by
+ *  someone who has lost access to the company.
+ *
+ *  A shipment isn't its own record: it's the deliveries that share a shipment no.,
+ *  and getShipment() reports the FIRST one's assignee. So reassigning has to move
+ *  every delivery in the batch, or the shipment would keep showing whoever happens
+ *  to sort first. Only while the shipment doc is still open — once completed, the
+ *  assignee is the record of who took it out. Canceled deliveries are left alone;
+ *  they're pending acknowledgement, not work anyone owes. */
+export function reassignShipment(shipmentSeq: string, assignee: string): boolean {
+  const shipment = getShipment(shipmentSeq);
+  if (!shipment || shipment.status !== "open") return false;
+  if (!assignee.trim()) return false;
+  const live = shipment.deliveries.filter((d) => d.status !== "canceled");
+  if (!live.length) return false;
+  let changed = false;
+  for (const d of live) {
+    if (d.assignee === assignee) continue;
+    d.assignee = assignee;
+    changed = true;
+  }
+  if (changed) persistDelivery();
+  return changed;
+}
+
 /** Every shipment batch (one row per shipment no.), scoped to warehouses when
  *  given — for the "Shipped" tab, which lists shipments rather than deliveries. */
 export function listShipments(warehouseIds?: string[]): ShipmentSummary[] {
@@ -748,13 +834,20 @@ export function completeShipment(
     if (t.status === "out for delivery") {
       t.status = "shipped";
       t.shippedQty = t.toShipQty;
-      // Deduct on-hand for exactly what shipped, per SKU, and consume that much of the
-      // order's reservation. onHand ↓ and reserved ↓ by the same amount, so Available
-      // is unchanged (the units left the building, they weren't returned to stock).
-      for (const [sku, qty] of shippedQtyBySku(t)) {
-        if (qty <= 0) continue;
-        applyStockInOut(t.warehouseId, [{ sku, qty: -qty }]);
-        consumeReservation(t.salesOrderId, t.warehouseId, sku, qty);
+      // D5 AC#10 — hold-conditional posting. With manual_trigger_delivery = TRUE the
+      // WMS does NOT post the delivery document here: reserved stays held, on-hand is
+      // not deducted, no JE. The PHYSICAL ship still happens either way (status,
+      // shippedQty above), which is what keeps D1 AC#8's two fields from collapsing
+      // and what closes cancellation in D2 AC#7.
+      const order = outgoingOrders.find((o) => o.id === t.salesOrderId);
+      if (order && isManualTriggerDelivery(order)) {
+        setDeliveryPostingStatus(order.id, "held");
+      } else {
+        // Deduct on-hand for exactly what shipped, per SKU, and consume that much of the
+        // order's reservation. onHand ↓ and reserved ↓ by the same amount, so Available
+        // is unchanged (the units left the building, they weren't returned to stock).
+        postDeliveryDocumentFor(t);
+        if (order) setDeliveryPostingStatus(order.id, "posted");
       }
     }
     t.shipmentStatus = "completed";
@@ -765,6 +858,87 @@ export function completeShipment(
   }
   persistDelivery();
   return { ok: true };
+}
+
+/** The one and only place on-hand deducts and the reservation is consumed for a
+ *  shipped delivery — "the single-poster rule" (D5 AC#10). The hold moves only WHEN
+ *  this runs (ship event vs source trigger), never WHERE, so both paths land here. */
+function postDeliveryDocumentFor(t: DeliveryTask): void {
+  const lines: { sku: string; qty: number }[] = [];
+  for (const [sku, qty] of shippedQtyBySku(t)) {
+    if (qty <= 0) continue;
+    applyStockInOut(t.warehouseId, [{ sku, qty: -qty }]);
+    consumeReservation(t.salesOrderId, t.warehouseId, sku, qty);
+    lines.push({ sku, qty: -qty });
+  }
+  if (!lines.length) return;
+
+  // The document IS the posting, so record which one it was and let the Shipping
+  // index link straight to it. On the Stock In/Out path we create the real record
+  // (skipStockMutation: the movement above already happened, this must not deduct
+  // twice). The Sales-Delivery path has no creation pipeline in this prototype, so
+  // it binds a seeded document — see data/deliveryDocuments.ts.
+  const order = outgoingOrders.find((o) => o.id === t.salesOrderId);
+  if (!order || order.deliveryDocument) return;
+  const kind = posterKindFor(order);
+  if (kind === "stock-in-out") {
+    const adj = addWmsAdjustment({
+      kind: "in-out",
+      category: "General",
+      warehouseId: t.warehouseId,
+      warehouseName: t.warehouseName,
+      date: new Date().toISOString().slice(0, 10),
+      tags: [],
+      memo: `Stock movement out — outbound ${order.number} shipped (${t.taskNo}).`,
+      lines,
+      skipStockMutation: true,
+    });
+    setDeliveryDocument(order.id, { kind, id: adj.id, number: adj.number });
+  } else {
+    const doc = bindSeededDocument(order, kind);
+    if (doc) setDeliveryDocument(order.id, doc);
+  }
+}
+
+/**
+ * A7 AC#6 — Trigger Sales Delivery (source-triggered posting).
+ *
+ * The ONLY path that posts a delivery document for an outbound with
+ * manual_trigger_delivery = TRUE. The actor is always the SOURCE (Omni or the ERP
+ * SO), never the warehouse: WMS deliberately exposes no manual post on the outbound
+ * task, which is why this lives here as an action keyed by the order rather than as
+ * a button on a WMS task page.
+ *
+ * Posts exactly one document (release reserved + deduct on-hand), flips
+ * delivery_posting_status to Posted, and is idempotent — a second trigger for the
+ * same key reports duplicate_ignored and posts nothing.
+ */
+export type TriggerDeliveryResult =
+  | { ok: true; state: "posted" }
+  | { ok: true; state: "duplicate_ignored" }
+  | { ok: false; error: "not_found" | "outbound_still_not_shipped" | "delivery_already_posted" };
+
+export function triggerDeliveryPosting(orderId: string): TriggerDeliveryResult {
+  const order = outgoingOrders.find((o) => o.id === orderId);
+  if (!order) return { ok: false, error: "not_found" };
+
+  // Nothing to post against until the goods have physically gone.
+  const shipped = deliveryTasks.filter((t) => t.salesOrderId === orderId && t.status === "shipped");
+  if (!shipped.length) return { ok: false, error: "outbound_still_not_shipped" };
+
+  if (deliveryPostingStatusOf(order) === "posted") {
+    // Already posted. An outbound the WMS posted itself (flag FALSE) is a caller
+    // error; a repeat of THIS action on a held-then-posted outbound is the
+    // idempotency case the AC calls duplicate_ignored.
+    return isManualTriggerDelivery(order)
+      ? { ok: true, state: "duplicate_ignored" }
+      : { ok: false, error: "delivery_already_posted" };
+  }
+
+  for (const t of shipped) postDeliveryDocumentFor(t);
+  setDeliveryPostingStatus(order.id, "posted");
+  persistDelivery();
+  return { ok: true, state: "posted" };
 }
 
 /** Per-SKU quantity actually SHIPPED (completed) for one order, across every one of

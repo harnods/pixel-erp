@@ -4,8 +4,10 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
-import { MpIcon, toast } from '@mekari/pixel3'
-import { getShipment, acknowledgeCanceledShipment } from '~/data/deliveryTasks'
+import { MpIcon, MpButton, toast } from '@mekari/pixel3'
+import { getShipment, acknowledgeCanceledShipment, reassignShipment } from '~/data/deliveryTasks'
+import ReassignTaskModal from '~/components/patterns/ReassignTaskModal.vue'
+import { useLineManagerAccess, isReassignableStatus } from '~/composables/useLineManagerAccess'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { formatDateTimeLong } from '~/utils/date'
 import { generateShipmentPdf } from '~/utils/shipmentPdf'
@@ -15,6 +17,16 @@ const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 
 const shipment = computed(() => getShipment(props.orderId))
+
+// Change assignee — manager-only escape hatch. A shipment doc is only ever open or
+// completed, so "Open or In Progress" means open here.
+const { canReassignTasks } = useLineManagerAccess()
+const reassignOpen = ref(false)
+const canChangeAssignee = computed(() => canReassignTasks.value && isReassignableStatus(shipment.value?.status))
+function applyReassign(assignee: string) {
+  if (!reassignShipment(props.orderId, assignee)) return
+  toast.notify({ variant: 'success', title: `Assignee changed to ${assignee}`, maxWidth: 'max-content' })
+}
 
 interface Row {
   id: string; salesOrderId: string; salesNo: string; packingTaskId: string; packingTaskNo: string
@@ -101,7 +113,7 @@ function openComplete() {
 
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Shipping document</button>
+        <MpButton variant="link" class="detail-breadcrumb" @click="goBack">Shipping document</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ shipment.shipmentNo }}</h1>
           <ErpStatusBadge :status="shipment.status" badge-for="additionalInformation" size="md" />
@@ -122,7 +134,7 @@ function openComplete() {
         <span class="shd-cancel-banner-text">
           An order in this shipment was cancelled. Acknowledge to remove it from this shipment — it stays on its own order's detail.
         </span>
-        <button class="shd-cancel-banner-btn" type="button" @click="acknowledgeCancel">Acknowledge</button>
+        <MpButton variant="secondary" class="shd-cancel-banner-btn" type="button" @click="acknowledgeCancel">Acknowledge</MpButton>
       </div>
 
       <section class="shd-summary">
@@ -210,8 +222,11 @@ function openComplete() {
     </div>
 
     <footer class="detail-footer">
-      <button class="detail-btn detail-btn--secondary" @click="printPdf">Print PDF</button>
-      <button v-if="shipment.status === 'open'" class="detail-btn detail-btn--primary" @click="openComplete">Complete shipment</button>
+      <!-- Change assignee — the escape hatch when the holder has lost access to the
+           company. Manager-only (or an operator with LM access), open shipments only. -->
+      <MpButton v-if="canChangeAssignee" variant="secondary" class="btn-enterprise detail-btn detail-btn--secondary" @click="reassignOpen = true">Change assignee</MpButton>
+      <MpButton variant="secondary" class="detail-btn detail-btn--secondary" @click="printPdf">Print PDF</MpButton>
+      <MpButton v-if="shipment.status === 'open'" variant="primary" class="detail-btn detail-btn--primary" @click="openComplete">Complete shipment</MpButton>
     </footer>
 
     <PdfPreviewModal
@@ -226,8 +241,16 @@ function openComplete() {
 
   <div v-else class="shd-not-found">
     <p>Shipment not found.</p>
-    <button class="detail-breadcrumb" @click="goBack">Back to Shipping document</button>
+    <MpButton variant="link" class="detail-breadcrumb" @click="goBack">Back to Shipping document</MpButton>
   </div>
+
+    <ReassignTaskModal
+      v-model:open="reassignOpen"
+      :task-no="shipment?.shipmentNo ?? ''"
+      :current-assignee="shipment?.assignee ?? ''"
+      :warehouse-id="shipment?.warehouseId ?? ''"
+      @reassign="applyReassign"
+    />
 </template>
 
 <style scoped>

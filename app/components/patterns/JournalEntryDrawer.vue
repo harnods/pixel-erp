@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * "Journal entry" modal — shown from a "View journal entry" link. Read-only,
+ * "Journal entry" modal, shown from a "View journal entry" link. Read-only,
  * single Account/Debit/Credit table with a balancing Total row. Generic: takes
  * a heading + a list of rows so any transaction type can reuse it, not just bills.
  */
@@ -8,27 +8,35 @@ import { MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalOverlay, Mp
 import { formatIDR } from '~/utils/currency'
 
 export interface JournalEntryRow {
+  /** Always lead with the account number (chart-of-accounts code), e.g. "2-10000 Accounts Payable". */
   account: string
   debit?: number
   credit?: number
+  /** Optional cost-center/project tag, shown in a trailing Dimension column when any row has one. */
+  dimension?: string
 }
 
-const props = defineProps<{ isOpen: boolean; heading: string; rows: JournalEntryRow[] }>()
+const props = withDefaults(defineProps<{
+  isOpen: boolean
+  heading: string
+  rows: JournalEntryRow[]
+  /** MpModal size; bump to 'xl' when the Dimension column is shown so the extra column has room. */
+  size?: 'md' | 'lg' | 'xl'
+}>(), { size: 'lg' })
 const emit = defineEmits<{ (e: 'update:isOpen', v: boolean): void }>()
 
 const totalDebit = computed(() => props.rows.reduce((s, r) => s + (r.debit ?? 0), 0))
 const totalCredit = computed(() => props.rows.reduce((s, r) => s + (r.credit ?? 0), 0))
+const hasDimension = computed(() => props.rows.some(r => r.dimension))
 
 function close() { emit('update:isOpen', false) }
 </script>
 
 <template>
-  <MpModal
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
     id="journal-entry-modal"
     :is-open="isOpen"
-    size="lg"
-    is-close-on-esc
-    is-close-on-overlay-click
+    :size="size"
     :is-keep-alive="false"
     @close="close"
   >
@@ -39,34 +47,40 @@ function close() { emit('update:isOpen', false) }
       </MpModalHeader>
       <MpModalBody>
         <h3 class="jed-heading">{{ heading }}</h3>
-        <table class="jed-table">
-          <colgroup>
-            <col />
-            <col class="jed-col-num" />
-            <col class="jed-col-num" />
-          </colgroup>
-          <thead>
-            <tr>
-              <th class="jed-th">Account</th>
-              <th class="jed-th jed-th--num">Debit</th>
-              <th class="jed-th jed-th--num">Credit</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(row, i) in rows" :key="i" class="jed-row">
-              <td class="jed-td">{{ row.account }}</td>
-              <td class="jed-td jed-td--num">{{ row.debit ? formatIDR(row.debit) : '' }}</td>
-              <td class="jed-td jed-td--num">{{ row.credit ? formatIDR(row.credit) : '' }}</td>
-            </tr>
-          </tbody>
-          <tfoot>
-            <tr class="jed-total-row">
-              <td class="jed-td jed-td--total-label">Total</td>
-              <td class="jed-td jed-td--num">{{ formatIDR(totalDebit) }}</td>
-              <td class="jed-td jed-td--num">{{ formatIDR(totalCredit) }}</td>
-            </tr>
-          </tfoot>
-        </table>
+        <div class="jed-scroll">
+          <table class="jed-table">
+            <colgroup>
+              <col />
+              <col class="jed-col-num" />
+              <col class="jed-col-num" />
+              <col v-if="hasDimension" class="jed-col-dimension" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th class="jed-th">Account</th>
+                <th class="jed-th jed-th--num">Debit</th>
+                <th class="jed-th jed-th--num">Credit</th>
+                <th v-if="hasDimension" class="jed-th">Dimension</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, i) in rows" :key="i" class="jed-row">
+                <td class="jed-td">{{ row.account }}</td>
+                <td class="jed-td jed-td--num">{{ row.debit ? formatIDR(row.debit) : '' }}</td>
+                <td class="jed-td jed-td--num">{{ row.credit ? formatIDR(row.credit) : '' }}</td>
+                <td v-if="hasDimension" class="jed-td">{{ row.dimension }}</td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr class="jed-total-row">
+                <td class="jed-td jed-td--total-label">Total</td>
+                <td class="jed-td jed-td--num">{{ formatIDR(totalDebit) }}</td>
+                <td class="jed-td jed-td--num">{{ formatIDR(totalCredit) }}</td>
+                <td v-if="hasDimension" class="jed-td"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       </MpModalBody>
     </MpModalContent>
     <MpModalOverlay />
@@ -76,9 +90,14 @@ function close() { emit('update:isOpen', false) }
 <style scoped>
 .jed-heading { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 
+/* Rows scroll internally past ~420px; the header and Total row stay pinned
+   in view (sticky) so the reader can always see the columns and the running
+   balance while scrolling a long posting. */
+.jed-scroll { max-height: 420px; overflow-y: auto; }
 .jed-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
 .jed-col-num { width: 180px; }
-.jed-th { height: 28px; text-align: left;
+.jed-col-dimension { width: 160px; }
+.jed-th { height: 28px; text-align: left; position: sticky; top: 0; z-index: 1;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
   background: var(--mp-background-surface, #f1f5f9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
@@ -91,9 +110,11 @@ function close() { emit('update:isOpen', false) }
   line-height: var(--mp-line-heights-lg, 20px);
 }
 .jed-td--num { text-align: right; white-space: nowrap; padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-4); }
-.jed-row .jed-td { border-bottom: 1px solid var(--mp-border-default); }
+.jed-row .jed-td { border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .jed-row:last-child .jed-td { border-bottom: 1px solid var(--mp-border-bold, #758195); }
+.jed-total-row { position: sticky; bottom: 0; }
 .jed-total-row .jed-td {
+  background: var(--mp-background-stage, #fff);
   border-top: 1px solid var(--mp-border-bold, #758195);
   border-bottom: 1px solid var(--mp-border-bold, #758195);
 }

@@ -33,6 +33,21 @@ const _locale = ref<'en' | 'id'>('en')
   t: (en: string) => en,
 })
 
+/**
+ * `useDimensionsActivation` is auto-imported the same way (app/composables/
+ * useDimensionsActivation.ts) and is now read by every transaction form and
+ * report that gates a Dimensions column on it — so any spec that mounts one of
+ * those pages would throw "useDimensionsActivation is not defined". Same shape
+ * as the real composable, including its module-level singleton ref, so two
+ * components mounted in one spec agree on the flag; it starts OFF, which is the
+ * fresh-tenant state (nothing persisted) every spec assumes.
+ */
+const _dimensionsActivated = ref(false)
+;(globalThis as unknown as { useDimensionsActivation: () => unknown }).useDimensionsActivation = () => ({
+  dimensionsActivated: _dimensionsActivated,
+  activateDimensions: () => { _dimensionsActivated.value = true },
+})
+
 const g = globalThis as unknown as { Node?: { prototype: Record<string, unknown> } }
 
 if (typeof g.Node !== 'undefined' && typeof g.Node.prototype.getBoundingClientRect !== 'function') {

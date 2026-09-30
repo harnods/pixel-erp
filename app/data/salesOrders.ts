@@ -89,6 +89,33 @@ export function computeTotals(
   return { subtotal, discountPerLine, globalDiscount, taxLabel: 'PPN 11%', taxAmount, shippingFee, total }
 }
 
+/** Per-line processed vs. unprocessed breakdown for the "Mark as completed" modal.
+ *  Prototype mock (no real fulfillment ledger): an `open` order has processed
+ *  nothing; a `partially processed` order has ~half of each line's qty processed,
+ *  so a multi-qty line still leaves a remainder. `closed`/`voided` orders never
+ *  reach this modal (the trigger is hidden for them). */
+export interface SalesOrderCompletionRow {
+  product: string
+  sku: string
+  qty: number
+  processedQty: number
+  unprocessedQty: number
+  unit: string
+}
+export function salesOrderCompletionRows(order: SalesOrder): SalesOrderCompletionRow[] {
+  return order.items.map((it) => {
+    const processedQty = order.status === 'open' ? 0 : Math.ceil(it.qty / 2)
+    return {
+      product: it.product,
+      sku: it.sku,
+      qty: it.qty,
+      processedQty,
+      unprocessedQty: Math.max(0, it.qty - processedQty),
+      unit: it.unit,
+    }
+  })
+}
+
 function build(): SalesOrder[] {
   const out: SalesOrder[] = []
   for (let i = 0; i < 100; i++) {
@@ -129,3 +156,10 @@ function build(): SalesOrder[] {
 }
 
 export const salesOrders: SalesOrder[] = build()
+
+/** "Awaiting approval" queue for the Sales orders › Awaiting approval tab
+ *  (deterministic every-7th subset; drives both the list and the count badge). */
+export function awaitingSalesOrders(): SalesOrder[] {
+  return salesOrders.filter(r => r.number % 7 === 0)
+}
+export function awaitingSalesOrdersCount(): number { return awaitingSalesOrders().length }

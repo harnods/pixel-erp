@@ -9,8 +9,10 @@
  *   - A batch that WAS picked verifies up to its picked qty; over-scanning or a
  *     batch not picked is rejected.
  *   - Finish is blocked until every tracked line is fully verified.
- *   - The same verification works from the in-drawer scan bar (stage 2), and the
- *     serial drawer shows a "Verified" badge for scanned serials.
+ *   - The same verification works from the in-drawer scan bar (stage 2). The serial
+ *     drawer shows a "Verified" badge per serial; the batch drawer, whose units are
+ *     a qty rather than a yes/no, shows a Packed qty PER BATCH that starts at 0 and
+ *     climbs as each one is matched.
  */
 import { describe, it, expect, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -189,6 +191,33 @@ describe('PackItemsPage — in-drawer scan verification (stage 2)', () => {
     await scan(wrapper, serials[0]!, '[role="dialog"] .scan-bar-input')
     expect(packedInput(wrapper)).toBe('1')                 // page state updated
     expect(wrapper.find('[role="dialog"]').text()).toContain('Verified') // badge shown
+    wrapper.unmount()
+  })
+
+  it('the batch drawer shows Packed qty PER BATCH — 0 at first, climbing as it is matched', async () => {
+    // A line total tells the operator how much is left to match, not WHICH batch
+    // still needs scanning. The per-batch column is the picking drawer's two-number
+    // shape (Qty to pick / Picked qty) carried into packing.
+    const { pkId, batchNo } = batchPackingTask(2)
+    const wrapper = mount(PackItemsPage, { props: { orderId: pkId } })
+    await flushPromises()
+
+    await wrapper.find('button[aria-label="View batch"]').trigger('click')
+    await flushPromises()
+    const cells = () => wrapper.findAll('[role="dialog"] .vbd-table tbody td').map(td => td.text())
+
+    expect(wrapper.find('[role="dialog"] .vbd-table thead').text()).toContain('Packed qty')
+    // Picked 2, packed 0 — nothing matched yet.
+    expect(cells()).toContain('2')
+    expect(cells()).toContain('0')
+
+    await scan(wrapper, batchNo, '[role="dialog"] .scan-bar-input')
+    expect(cells().filter(c => c === '1')).toHaveLength(1) // one unit of THIS batch matched
+    expect(packedInput(wrapper)).toBe('1')
+
+    await scan(wrapper, batchNo, '[role="dialog"] .scan-bar-input')
+    // Fully matched: the cell reads the picked qty back, and says so in green.
+    expect(wrapper.find('[role="dialog"] .vbd-qty--done').text()).toBe('2')
     wrapper.unmount()
   })
 })

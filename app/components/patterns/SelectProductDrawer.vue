@@ -53,12 +53,12 @@ async function save() {
 
 <template>
   <Transition name="spd">
-  <div v-if="open" class="spd-overlay" @click.self="close">
+  <div v-if="open" class="spd-overlay">
     <div class="spd-panel" role="dialog" aria-label="Select product">
       <!-- Header -->
       <header class="spd-header">
         <h2 class="spd-title">Select product</h2>
-        <button class="spd-close" aria-label="Close" @click="close"><MpIcon name="close" size="md" /></button>
+        <MpButton class="spd-close" variant="ghost" aria-label="Close" @click="close"><MpIcon name="close" size="md" /></MpButton>
       </header>
 
       <!-- Body — two panels -->
@@ -68,18 +68,18 @@ async function save() {
           <div class="spd-search">
             <MpIcon name="search" size="sm" />
             <input v-model="leftSearch" class="spd-search-input" type="text" placeholder="Search..." />
-            <button v-if="leftSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="leftSearch = ''">
+            <MpButton v-if="leftSearch" class="search-clear-btn" variant="ghost" type="button" aria-label="Clear search" @click="leftSearch = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
           <div class="spd-col-head">
             <span class="spd-col-title">Products</span>
-            <button class="spd-link" type="button" @click="addAll">Add all</button>
+            <MpButton class="spd-link" variant="ghost" type="button" @click="addAll">Add all</MpButton>
           </div>
           <div class="spd-list">
-            <button v-for="p in available" :key="p.sku" class="spd-item" type="button" @click="add(p.sku)">
+            <MpButton v-for="p in available" :key="p.sku" class="spd-item" variant="ghost" type="button" @click="add(p.sku)">
               <img v-if="p.img" class="spd-thumb" :src="p.img" :alt="p.name" loading="lazy" />
               <span v-else class="spd-thumb spd-thumb--empty" />
               <span class="spd-info">
@@ -88,7 +88,7 @@ async function save() {
                 <span v-if="p.minStock !== undefined" class="spd-min-stock">Min. stock {{ p.minStock.toLocaleString('id-ID') }}{{ p.unit ? ` ${p.unit}` : '' }}</span>
               </span>
               <span class="spd-act spd-act--add"><MpIcon name="add" size="sm" /></span>
-            </button>
+            </MpButton>
             <p v-if="!available.length" class="spd-empty">No products found.</p>
           </div>
         </section>
@@ -100,18 +100,18 @@ async function save() {
           <div class="spd-search">
             <MpIcon name="search" size="sm" />
             <input v-model="rightSearch" class="spd-search-input" type="text" placeholder="Search..." />
-            <button v-if="rightSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="rightSearch = ''">
+            <MpButton v-if="rightSearch" class="search-clear-btn" variant="ghost" type="button" aria-label="Clear search" @click="rightSearch = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
           <div class="spd-col-head">
             <span class="spd-col-title">Selected products ({{ selectedCount }})</span>
-            <button class="spd-link" type="button" @click="removeAll">Remove all</button>
+            <MpButton class="spd-link" variant="ghost" type="button" @click="removeAll">Remove all</MpButton>
           </div>
           <div class="spd-list">
-            <button v-for="p in selected" :key="p.sku" class="spd-item" type="button" @click="remove(p.sku)">
+            <MpButton v-for="p in selected" :key="p.sku" class="spd-item" variant="ghost" type="button" @click="remove(p.sku)">
               <img v-if="p.img" class="spd-thumb" :src="p.img" :alt="p.name" loading="lazy" />
               <span v-else class="spd-thumb spd-thumb--empty" />
               <span class="spd-info">
@@ -120,7 +120,7 @@ async function save() {
                 <span v-if="p.minStock !== undefined" class="spd-min-stock">Min. stock {{ p.minStock.toLocaleString('id-ID') }}{{ p.unit ? ` ${p.unit}` : '' }}</span>
               </span>
               <span class="spd-act spd-act--remove"><MpIcon name="minus-circular" size="sm" /></span>
-            </button>
+            </MpButton>
             <p v-if="!selected.length" class="spd-empty">No products selected yet.</p>
           </div>
         </section>
@@ -155,49 +155,50 @@ async function save() {
 .spd-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  border-bottom: 1px solid var(--mp-border-default); background: var(--mp-background-neutral-subtle);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); background: var(--mp-background-neutral-subtle, #f4f5f7);
 }
-.spd-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.spd-close { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
-.spd-close:hover { background: var(--mp-background-neutral-hovered); }
+.spd-title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default, #1d1f24); }
+.spd-close { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border: none; background: none; border-radius: var(--mp-radii-md, 6px); cursor: pointer; color: var(--mp-icon-default, #536062); }
+.spd-close:hover { background: var(--mp-background-neutral-hovered, #eceef0); }
 
 .spd-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1px 1fr; }
 .spd-col { display: flex; flex-direction: column; min-height: 0; padding: var(--mp-spacing-4); gap: var(--mp-spacing-3); }
-.spd-divider { background: var(--mp-border-default); }
-.spd-search { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px); color: var(--mp-icon-default); flex-shrink: 0; }
-.spd-search-input { flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.spd-search-input::placeholder { color: var(--mp-text-placeholder); }
+.spd-divider { background: var(--mp-border-default, #e3e7e9); }
+.spd-search { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); color: var(--mp-icon-default, #536062); flex-shrink: 0; }
+.spd-search:focus-within { border-color: var(--mp-border-bold, #8c9596); box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
+.spd-search-input { flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default, #1d1f24); }
+.spd-search-input::placeholder { color: var(--mp-text-placeholder, #97a0af); }
 .search-clear-btn {
   display: inline-flex; align-items: center; justify-content: center;
   flex-shrink: 0; width: 18px; height: 18px; padding: 0;
   border: none; background: none; cursor: pointer;
-  color: var(--mp-icon-default, var(--mp-text-secondary));
+  color: var(--mp-icon-default, var(--mp-text-secondary, #656f80));
   border-radius: var(--mp-radii-full, 999px);
 }
-.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eceef0); }
 .spd-col-head { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
-.spd-col-title { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.spd-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
+.spd-col-title { font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default, #1d1f24); }
+.spd-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-link, #165082); }
 .spd-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 .spd-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
 .spd-item {
   display: flex; align-items: center; gap: var(--mp-spacing-3); width: 100%; text-align: left;
   padding: var(--mp-spacing-2) var(--mp-spacing-1); background: none; border: none; cursor: pointer;
-  border-bottom: 1px solid var(--mp-border-default); position: relative;
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); position: relative;
 }
-.spd-item:hover { background: var(--mp-background-neutral-subtle); }
-.spd-thumb { width: 32px; height: 32px; border-radius: var(--mp-radii-md); object-fit: cover; flex-shrink: 0; border: 1px solid var(--mp-border-subtle); background: var(--mp-background-neutral); }
-.spd-thumb--empty { background: var(--mp-background-neutral-subtle); }
+.spd-item:hover { background: var(--mp-background-neutral-subtle, #f4f5f7); }
+.spd-thumb { width: 32px; height: 32px; border-radius: var(--mp-radii-md, 6px); object-fit: cover; flex-shrink: 0; border: 1px solid var(--mp-border-subtle, #eef0f3); background: var(--mp-background-neutral, #fff); }
+.spd-thumb--empty { background: var(--mp-background-neutral-subtle, #f4f5f7); }
 .spd-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
-.spd-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.spd-sku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.spd-min-stock { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.spd-name { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default, #1d1f24); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spd-sku { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary, #656f80); }
+.spd-min-stock { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary, #656f80); }
 .spd-act { display: none; align-items: center; justify-content: center; flex-shrink: 0; width: 24px; height: 24px; }
 .spd-item:hover .spd-act { display: inline-flex; }
-.spd-act--add { color: var(--mp-text-link); }
-.spd-act--remove { color: var(--mp-text-secondary); }
-.spd-empty { margin: 0; padding: var(--mp-spacing-4) var(--mp-spacing-1); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.spd-act--add { color: var(--mp-text-link, #165082); }
+.spd-act--remove { color: var(--mp-text-secondary, #656f80); }
+.spd-empty { margin: 0; padding: var(--mp-spacing-4) var(--mp-spacing-1); font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-secondary, #656f80); }
 
-.spd-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
+.spd-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 </style>

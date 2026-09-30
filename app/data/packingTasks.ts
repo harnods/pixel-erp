@@ -424,6 +424,21 @@ export function getPackingTask(taskId: string): PackingTask | undefined {
   return packingTasks.find((t) => t.id === taskId);
 }
 
+/** Hand this task to someone else — the escape hatch for a task still held by
+ *  someone who has lost access to the company. Only while the task is Open or
+ *  In Progress: past that the assignee is a record of who did the work, not who
+ *  owes it. Access is gated in the UI (useLineManagerAccess); this only refuses
+ *  states where a handover would be meaningless. */
+export function reassignPackingTask(taskId: string, assignee: string): boolean {
+  const t = getPackingTask(taskId);
+  if (!t || (t.status !== "open" && t.status !== "in progress")) return false;
+  if (!assignee.trim() || assignee === t.assignee) return false;
+  t.assignee = assignee;
+  persistPacking();
+  return true;
+}
+
+
 /** Days a task has been open (start → end, or start → today while in progress). */
 export function packingTaskAgingDays(task: PackingTask): number {
   if (!task.startDate) return 0;

@@ -59,6 +59,25 @@ export interface OutgoingOrder {
   skuQty: number;
   /** total units ordered to ship out */
   orderQty: number;
+  /** A6 param 13 — `manual_trigger_delivery`. Set on the ERP SO and passed to WMS
+   *  at outbound creation (Omni SO × ERP SO × WMS case); WMS stores it on the
+   *  outbound. FALSE (default) = WMS posts the delivery document itself at the ship
+   *  event, today's behaviour. TRUE = WMS holds the posting at manifest completion
+   *  and waits for the source (Omni / ERP SO) to trigger it (A7 AC#6). */
+  manualTriggerDelivery?: boolean;
+  /** The delivery document that actually posted this outbound — what the Shipping
+   *  index links to. Stock In/Out is the WMS-package document; a Sales Delivery is
+   *  only ever the poster in ERP-full on a Sales Order source (see
+   *  deliveryDocumentFor). */
+  deliveryDocument?: DeliveryDocumentRef;
+  /** D1 status-model point 4 — the delivery document's posting state, kept as its
+   *  OWN field. Physical progress (`status`, `shippedQty`) and financial posting
+   *  never collapse into one another: a held outbound still advances to Completed on
+   *  the physical ship (D1 AC#8).
+   *    "posted" = a Sales Delivery / Stock Movement Out exists for it
+   *    "held"   = shipped, but no delivery document yet
+   *  Undefined until the ship event — nothing has been posted OR held yet. */
+  deliveryPostingStatus?: "posted" | "held";
   /** units shipped so far (0 = none, < orderQty = partial, = orderQty = full) */
   shippedQty: number;
   /** shipped units PER SKU (derived by syncOutboundOrderStatuses from completed
@@ -481,6 +500,10 @@ function generateTrackingScenario(): OutgoingOrder[] {
       salesNo: `Sales Order #${demoSo.number}`,
       source: "Sales Order",
       salesOrderId: demoSo.id,
+      // A6 param 13 demo: the Omni SO × ERP SO × WMS case. WMS holds the delivery
+      // document at the ship event and waits for the source to trigger it, so this
+      // order is the one that shows Held in the Shipping index (D5 AC#10).
+      manualTriggerDelivery: true,
       warehouseId: "wh-006",
       warehouseName: "Gudang Makassar Selatan",
       skuQty: 3,
@@ -736,9 +759,73 @@ export function cancelOutgoingOrder(orderId: string, reason?: string, canceledBy
 
 /** D2 cancel gate — an outbound order can be cancelled while NOTHING has truly
  *  shipped (shippedQty is only posted once a shipment is COMPLETED). A partially/
- *  fully shipped order is terminal for cancel (posting guard). */
+ *  fully shipped order is terminal for cancel (posting guard).
+ *
+ *  D2 AC#7 (Holded Delivery Cancel guard): it is the SHIP EVENT, not the delivery
+ *  posting, that closes cancellation. A shipped outbound whose posting is still
+ *  Held is therefore NOT cancellable either — which is why this reads shippedQty
+ *  and never deliveryPostingStatus. Keep it that way: gating on the posting status
+ *  would hand back a cancel for goods that have physically left. */
 export function canCancelOutboundOrder(order: OutgoingOrder): boolean {
   return order.status !== "canceled" && (order.shippedQty ?? 0) === 0;
+}
+
+/** The document that posted (or will post) an outbound's stock movement out.
+ *  `kind` decides both the label and where clicking it goes. */
+export interface DeliveryDocumentRef {
+  /** Which document posted the movement. Outbound posts a Sales Delivery (ERP-SO)
+   *  or a Stock In/Out; inbound posts a Purchase Delivery (ERP-PO) or a Stock
+   *  In/Out; a cycle count posts a Stock Count. The WMS package only ever produces
+   *  the Stock In/Out and Stock Count ones — it has no costing and no JE. */
+  kind: "stock-in-out" | "sales-delivery" | "purchase-delivery" | "stock-count";
+  /** record id, for the details route */
+  id: string;
+  /** display number, e.g. "Stock In/Out #20091" */
+  number: string;
+}
+
+/** Where a delivery document's details live. Stock In/Out and Stock Count are both
+ *  stock-adjustment records, so they share that route. */
+export function deliveryDocumentRoute(doc: DeliveryDocumentRef): string {
+  if (doc.kind === "sales-delivery") return `/sales-deliveries/${doc.id}`;
+  if (doc.kind === "purchase-delivery") return `/purchase-deliveries/${doc.id}`;
+  return `/stock-adjustments/${doc.id}`;
+}
+
+/** Does WMS hold this outbound's delivery document for the source to trigger?
+ *  (A6 param 13 — default FALSE, so an order without the flag posts as it does today.) */
+export function isManualTriggerDelivery(order: OutgoingOrder): boolean {
+  return order.manualTriggerDelivery === true;
+}
+
+/** The outbound's delivery-document posting state, as the Shipping index and the
+ *  trigger action read it.
+ *
+ *  An order that shipped BEFORE this field existed (every seeded shipped order, and
+ *  anything unflagged) posted at its ship event — that is precisely the old
+ *  behaviour — so it reports "posted" rather than inventing a hold that never
+ *  happened. Only a manual_trigger_delivery outbound is held by default, and only
+ *  once it has actually shipped is that hold meaningful. */
+export function deliveryPostingStatusOf(order: OutgoingOrder): "posted" | "held" {
+  if (order.deliveryPostingStatus) return order.deliveryPostingStatus;
+  if ((order.shippedQty ?? 0) > 0 && !isManualTriggerDelivery(order)) return "posted";
+  return "held";
+}
+
+/** Record the outcome of a ship event / source trigger on the order. */
+export function setDeliveryPostingStatus(orderId: string, status: "posted" | "held"): void {
+  const order = outgoingOrders.find((o) => o.id === orderId);
+  if (!order) return;
+  order.deliveryPostingStatus = status;
+  persistOutgoing();
+}
+
+/** Attach the document that posted this outbound. */
+export function setDeliveryDocument(orderId: string, doc: DeliveryDocumentRef): void {
+  const order = outgoingOrders.find((o) => o.id === orderId);
+  if (!order) return;
+  order.deliveryDocument = doc;
+  persistOutgoing();
 }
 
 /** D7 edit gate — an outbound order is editable while nothing has shipped and it

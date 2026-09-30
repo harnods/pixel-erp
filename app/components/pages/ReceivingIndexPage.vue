@@ -4,7 +4,7 @@ import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton, toast, css,
+  MpModalOverlay, MpModalCloseButton, MpButton, toast, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
@@ -17,6 +17,8 @@ import {
 } from '~/data/receivingTasks'
 import { putAwayTasksFor } from '~/data/putAwayTasks'
 import { warehouses } from '~/data/warehouses'
+import { deliveryDocumentRoute } from '~/data/outgoing'
+import { inboundPosterKindFor, bindSeededDocumentById } from '~/data/deliveryDocuments'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const { t } = useLocale()
@@ -44,6 +46,7 @@ const baseColumnItems: { key: string; label: string; disabled?: boolean; sortTyp
   { key: 'skuCount', label: 'Sku qty', sortType: 'number' },
   { key: 'expectedQty', label: 'Expected qty', sortType: 'number' },
   { key: 'receivedQty', label: 'Received qty', sortType: 'number' },
+  { key: 'deliveryDoc', label: 'Delivery document', sortType: 'text' },
   { key: 'status', label: 'Status', sortType: 'text' },
   { key: 'startDate', label: 'Start date', sortType: 'date' },
   { key: 'endDate', label: 'End date', sortType: 'date' },
@@ -282,6 +285,22 @@ function aging(t: ReceivingTask) {
 
 // ─── Row actions ─────────────────────────────────────────────────────────────
 const router = useRouter()
+
+// ── Delivery document (design-consistent with the Shipping index) ──────────────
+// The posting document behind a receiving task. A purchase-order receipt posts a
+// Purchase Delivery in ERP-full; a direct receipt — and everything in the WMS
+// package, which has no costing or JE — posts a Stock In/Out. Only a task that has
+// actually received stock has one, so open tasks show an em dash.
+// Only a task whose receiving has ENDED has posted anything: "completed", and
+// "pending put-away" (received in full or short, now waiting to be put away — a
+// short close still ends here). An open or in-progress task has posted nothing,
+// whatever it has counted so far. There is no "partially completed" TASK status —
+// partial reception is a state of the receipt, and its task still ends completed.
+const RECEIVING_POSTED = new Set(['completed', 'pending put-away'])
+function receivingDoc(task: { id: string; purchaseNo?: string; receivedQty: number; status: string }) {
+  if (!RECEIVING_POSTED.has(task.status) || task.receivedQty <= 0) return undefined
+  return bindSeededDocumentById(task.id, inboundPosterKindFor(!!task.purchaseNo))
+}
 const route = useRoute()
 // Deep-link from WMS Overview: ?status=<task status> pre-filters the list.
 onMounted(() => {
@@ -390,16 +409,16 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <div class="filter-right">
         <div class="filter-btn-group">
           <MpTooltip id="tt-rcvg-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
-            <button class="filter-icon-btn filter-icon-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
+            <MpButton variant="secondary" class="filter-icon-btn filter-icon-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                 <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
                 <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
               </svg>
-            </button>
+            </MpButton>
           </MpTooltip>
           <ColumnSettingsMenu id="rcvg-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-rcvg-export" :label="t('Export')" placement="bottom" use-portal>
-            <button class="filter-icon-btn" :aria-label="t('Export')"><MpIcon name="download" size="md" /></button>
+            <MpButton variant="secondary" class="filter-icon-btn" left-icon="download" :aria-label="t('Export')" />
           </MpTooltip>
         </div>
         <div class="filter-search">
@@ -407,11 +426,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
           <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
-          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
+          <MpButton v-if="search" variant="secondary" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
             </svg>
-          </button>
+          </MpButton>
         </div>
       </div>
     </div>
@@ -428,6 +447,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <col v-if="colVis.skuCount" style="width: 100px" />
           <col v-if="colVis.expectedQty" style="width: 120px" />
           <col v-if="colVis.receivedQty" style="width: 100px" />
+          <col v-if="colVis.deliveryDoc" class="rcvg-col-doc" />
           <col v-if="colVis.status" style="width: 130px" />
           <col style="width: 100px" />
           <col v-if="colVis.startDate" style="width: 180px" />
@@ -442,16 +462,17 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 <div class="rcvg-bulk-bar__left">
                   <MpCheckbox id="rcvg-bulk-all" :is-checked="allSelected" :is-indeterminate="someSelected" @change="toggleAll" @click.stop />
                   <span class="rcvg-bulk-bar__count">{{ bulkCountLabel }}</span>
-                  <button v-if="canCreatePutAway" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="bulkCreatePutAway">{{ t('Create put-away') }}</button>
+                  <MpButton v-if="canCreatePutAway" variant="primary" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="bulkCreatePutAway">{{ t('Create put-away') }}</MpButton>
                   <span v-else-if="selectedTasksSpanMultipleWarehouses" class="rcvg-bulk-bar__hint">
                     {{ t('Select tasks from a single warehouse to create put-away') }}
                   </span>
-                  <button
+                  <MpButton
                     v-if="bulkCancelable"
+                    variant="secondary"
                     class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
                     :class="css({ color: 'var(--mp-text-critical)' })"
                     @click="bulkCancelOpen = true"
-                  >{{ t('Cancel receiving task') }}</button>
+                  >{{ t('Cancel receiving task') }}</MpButton>
                 </div>
                 <div class="rcvg-bulk-bar__right">
                   <span>{{ t('Press') }}</span><kbd class="rcvg-bulk-bar__kbd">Esc</kbd><span>{{ t('to deselect') }}</span>
@@ -484,6 +505,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             </th>
             <th v-if="colVis.receivedQty" class="rcvg-th rcvg-th--right">
               <span class="rcvg-th-inner"><span>{{ t('Received qty') }}</span><ErpColumnSortMenu col-key="receivedQty" :sort-type="sortTypeOf('receivedQty')" :sort-key="sortKey" :sort-dir="sortDir" @sort-change="onSortChange" @hide-column="hideColumn" /></span>
+            </th>
+            <th v-if="colVis.deliveryDoc" class="rcvg-th">
+              <span class="rcvg-th-inner"><span>{{ t('Delivery document') }}</span><ErpColumnSortMenu col-key="deliveryDoc" :sort-type="sortTypeOf('deliveryDoc')" :sort-key="sortKey" :sort-dir="sortDir" @sort-change="onSortChange" @hide-column="hideColumn" /></span>
             </th>
             <th v-if="colVis.status" class="rcvg-th">
               <span class="rcvg-th-inner"><span>{{ t('Status') }}</span><ErpColumnSortMenu col-key="status" :sort-type="sortTypeOf('status')" :sort-key="sortKey" :sort-dir="sortDir" @sort-change="onSortChange" @hide-column="hideColumn" /></span>
@@ -528,6 +552,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <td v-if="colVis.skuCount" class="rcvg-td">{{ task.skuCount }}</td>
             <td v-if="colVis.expectedQty" class="rcvg-td rcvg-td--right">{{ fmt(expectedQtyTotal(task)) }}</td>
             <td v-if="colVis.receivedQty" class="rcvg-td rcvg-td--right">{{ fmt(task.receivedQty) }}</td>
+            <td v-if="colVis.deliveryDoc" class="rcvg-td">
+              <a
+                v-if="receivingDoc(task)"
+                class="cell-link cell-text"
+                @click.stop="router.push(deliveryDocumentRoute(receivingDoc(task)!))"
+              >{{ receivingDoc(task)!.number }}</a>
+              <span v-else>—</span>
+            </td>
             <td v-if="colVis.status" class="rcvg-td">
               <div class="rcvg-status-cell">
                 <ErpStatusBadge :status="task.status" />
@@ -563,11 +595,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               <td class="rcvg-td rcvg-td--actions">
                 <MpPopover :id="`rcvg-actions-${task.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                   <MpPopoverTrigger>
-                    <button class="row-kebab" :aria-label="t('More actions')" @click.stop>
+                    <MpButton variant="secondary" class="row-kebab" :aria-label="t('More actions')" @click.stop>
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                         <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
                       </svg>
-                    </button>
+                    </MpButton>
                   </MpPopoverTrigger>
                   <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                     <MpPopoverList>
@@ -606,8 +638,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </div>
 
   <!-- ── Cancel confirmation modal ── -->
-  <MpModal id="rcvg-cancel-modal" :is-open="cancelModalOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="rcvg-cancel-modal" :is-open="cancelModalOpen" size="md" :is-keep-alive="false" @close="closeCancelModal">
     <MpModalContent>
       <MpModalHeader>Cancel {{ taskToCancel?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
@@ -615,8 +646,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">{{ t('Keep task') }}</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancelTask">{{ t('Cancel task') }}</button>
+          <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">{{ t('Keep task') }}</MpButton>
+          <MpButton variant="danger" class="btn-enterprise btn-enterprise--danger" @click="confirmCancelTask">{{ t('Cancel task') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -624,8 +655,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </MpModal>
 
   <!-- ── Bulk cancel confirmation modal ── -->
-  <MpModal id="rcvg-bulk-cancel-modal" :is-open="bulkCancelOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="bulkCancelOpen = false">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="rcvg-bulk-cancel-modal" :is-open="bulkCancelOpen" size="md" :is-keep-alive="false" @close="bulkCancelOpen = false">
     <MpModalContent>
       <MpModalHeader>Cancel {{ cancelableTaskObjs.length }} {{ cancelableTaskObjs.length === 1 ? 'task' : 'tasks' }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
@@ -633,8 +663,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="bulkCancelOpen = false">{{ t('Keep tasks') }}</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="confirmBulkCancel">{{ t('Cancel tasks') }}</button>
+          <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary" @click="bulkCancelOpen = false">{{ t('Keep tasks') }}</MpButton>
+          <MpButton variant="danger" class="btn-enterprise btn-enterprise--danger" @click="confirmBulkCancel">{{ t('Cancel tasks') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -644,7 +674,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   <!-- ── Demo scenario FAB ── -->
   <MpPopover id="rcvg-demo-fab" is-close-on-select use-portal placement="top-end">
     <MpPopoverTrigger>
-      <button class="demo-fab" :aria-label="t('Change scenario state')"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
+      <MpButton variant="secondary" class="demo-fab" left-icon="sliders" :aria-label="t('Change scenario state')" />
     </MpPopoverTrigger>
     <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
       <p class="demo-fab-heading">{{ t('Scenario state') }}</p>
@@ -656,6 +686,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 </template>
 
 <style scoped>
+/* Column width as a class, not an inline style (Pixel Police: no hardcoded px inline). */
+.rcvg-col-doc { width: 190px; }
 .rcvg-page { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
 
 /* Filter bar */

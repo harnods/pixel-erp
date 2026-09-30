@@ -7,7 +7,7 @@
 import { h } from 'vue'
 import { infoToast } from '~/utils/toasts'
 import {
-  MpIcon, toast,
+  MpButton, MpIcon, toast,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 
@@ -93,7 +93,7 @@ const unlinkedBanks = [
   <section v-if="which === 'approvals'" class="card">
     <header class="card__head">
       <h3 class="card__title">Pending approvals</h3>
-      <button class="card__link" type="button" @click="soon('Inbox')">View inbox <MpIcon name="arrows-right" size="sm" /></button>
+      <MpButton class="card__link" type="button" left-icon="arrows-right" @click="soon('Inbox')">View inbox</MpButton>
     </header>
     <div class="ai-note">
       <Sparkle :size="16" />
@@ -109,7 +109,7 @@ const unlinkedBanks = [
         </div>
         <MpPopover :id="`appr-menu-${a.text}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
-            <button class="icon-btn" type="button" aria-label="Actions"><MpIcon name="menu-kebab" size="md" /></button>
+            <MpButton class="icon-btn" type="button" aria-label="Actions" left-icon="menu-kebab" />
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
             <MpPopoverList>
@@ -127,7 +127,7 @@ const unlinkedBanks = [
   <section v-else-if="which === 'cash-flow'" class="card card--pad">
     <header class="card__head">
       <h3 class="card__title">Cash flow</h3>
-      <button class="card__link" type="button" @click="soon('Cash management')">Cash management <MpIcon name="arrows-right" size="sm" /></button>
+      <MpButton class="card__link" type="button" left-icon="arrows-right" @click="soon('Cash management')">Cash management</MpButton>
     </header>
     <div class="ai-note">
       <Sparkle :size="16" />
@@ -153,7 +153,7 @@ const unlinkedBanks = [
   <section v-else-if="which === 'recent-tx'" class="card">
     <header class="card__head">
       <h3 class="card__title">Recent transactions</h3>
-      <button class="card__link" type="button" @click="soon('All transactions')">View all <MpIcon name="arrows-right" size="sm" /></button>
+      <MpButton class="card__link" type="button" left-icon="arrows-right" @click="soon('All transactions')">View all</MpButton>
     </header>
     <div class="req-list">
       <div v-for="tx in recentTx" :key="tx.no" class="req">
@@ -190,7 +190,7 @@ const unlinkedBanks = [
   <section v-else-if="which === 'warehouse'" class="card card--pad">
     <header class="card__head">
       <h3 class="card__title">Warehouse overview</h3>
-      <button class="card__link" type="button" @click="soon('WMS overview')">Full report <MpIcon name="arrows-right" size="sm" /></button>
+      <MpButton class="card__link" type="button" left-icon="arrows-right" @click="soon('WMS overview')">Full report</MpButton>
     </header>
     <div class="ai-note">
       <Sparkle :size="16" />
@@ -217,7 +217,7 @@ const unlinkedBanks = [
   <section v-else-if="which === 'production'" class="card card--pad">
     <header class="card__head">
       <h3 class="card__title">Production output</h3>
-      <button class="card__link" type="button" @click="soon('Production')">Full report <MpIcon name="arrows-right" size="sm" /></button>
+      <MpButton class="card__link" type="button" left-icon="arrows-right" @click="soon('Production')">Full report</MpButton>
     </header>
     <div class="hc-stats">
       <div class="hc-stat">
@@ -243,7 +243,7 @@ const unlinkedBanks = [
   <section v-else-if="which === 'pnl'" class="card card--pad">
     <header class="card__head">
       <h3 class="card__title">Profit &amp; loss</h3>
-      <button class="card__link" type="button" @click="soon('P&L report')">Last month <MpIcon name="caret-down" size="sm" /></button>
+      <MpButton class="card__link" type="button" left-icon="caret-down" @click="soon('P&L report')">Last month</MpButton>
     </header>
     <p class="pnl__label">Net profit for August</p>
     <p class="pnl__value">Rp1.24 M <span class="pnl__pct">100%</span></p>
@@ -261,7 +261,7 @@ const unlinkedBanks = [
   <section v-else-if="which === 'expenses'" class="card card--pad">
     <header class="card__head">
       <h3 class="card__title">Expenses</h3>
-      <button class="card__link" type="button" @click="soon('Expenses')">This month <MpIcon name="caret-down" size="sm" /></button>
+      <MpButton class="card__link" type="button" left-icon="caret-down" @click="soon('Expenses')">This month</MpButton>
     </header>
     <p class="pnl__value">Rp600 M</p>
     <p class="pnl__label">Total this month</p>
@@ -282,7 +282,7 @@ const unlinkedBanks = [
       <div v-for="b in unlinkedBanks" :key="b.name" class="bank__row">
         <span class="bank__logo">{{ b.short }}</span>
         <span class="bank__name">{{ b.name }}</span>
-        <button class="bank__link" type="button" @click="soon(`Connect ${b.name}`)">Connect</button>
+        <MpButton class="bank__link" type="button" @click="soon(`Connect ${b.name}`)">Connect</MpButton>
       </div>
     </div>
   </section>

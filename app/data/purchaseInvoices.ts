@@ -49,3 +49,11 @@ function buildPurchaseInvoices(): PurchaseInvoice[] {
 }
 
 export const purchaseInvoices: PurchaseInvoice[] = buildPurchaseInvoices()
+
+/**
+ * Awaiting-approval subset — a realistic handful of the newest invoices pending
+ * sign-off, NOT the whole ledger. The "Awaiting approval" tab and its tab-count
+ * badge read from this; the full `purchaseInvoices` still backs the "All purchase
+ * invoices" tab and receipt review.
+ */
+export const purchaseInvoicesAwaitingApproval: PurchaseInvoice[] = purchaseInvoices.slice(0, 8)

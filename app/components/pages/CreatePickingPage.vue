@@ -675,7 +675,7 @@ async function doCreate() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goBack">{{ (route.query.from as string)?.startsWith('order:') ? t('Order details') : t('Picking') }}</button>
+          <MpButton variant="textLink" class="detail-breadcrumb" @click="goBack">{{ (route.query.from as string)?.startsWith('order:') ? t('Order details') : t('Picking') }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('New picking list') }}</h1>
@@ -753,8 +753,8 @@ async function doCreate() {
 
         <div class="pk-filter-bar">
           <div class="detail-loc-toggle">
-            <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'combined' }" @click="viewMode = 'combined'">{{ t('Combined') }}</button>
-            <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'orders' }" @click="viewMode = 'orders'">{{ t('By orders') }}</button>
+            <MpButton variant="ghost" class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'combined' }" @click="viewMode = 'combined'">{{ t('Combined') }}</MpButton>
+            <MpButton variant="ghost" class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'orders' }" @click="viewMode = 'orders'">{{ t('By orders') }}</MpButton>
           </div>
           <MpButton v-if="anyExcluded" variant="textLink" size="sm" @click="resetExclusions">{{ t('Reset') }}</MpButton>
         </div>
@@ -859,16 +859,12 @@ async function doCreate() {
                   <template v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS">
                     <td v-if="isBatchTrackedSku(row.sku)" class="pk-td pk-td--action">
                       <MpTooltip :id="`tt-batch-${row.sku}`" :label="t('Manage batch')" placement="top" use-portal>
-                        <button class="pk-manage-icon-btn" type="button" @click.stop="openBatchDrawer(row.sku)">
-                          <MpIcon name="competencies" size="md" />
-                        </button>
+                        <MpButton class="pk-manage-icon-btn" type="button" variant="ghost" left-icon="competencies" @click.stop="openBatchDrawer(row.sku)" />
                       </MpTooltip>
                     </td>
                     <td v-else-if="isSerialTrackedSku(row.sku)" class="pk-td pk-td--action">
                       <MpTooltip :id="`tt-serial-${row.sku}`" :label="t('Manage serial numbers')" placement="top" use-portal>
-                        <button class="pk-manage-icon-btn" type="button" @click.stop="openSerialDrawer(row.sku)">
-                          <MpIcon name="competencies" size="md" />
-                        </button>
+                        <MpButton class="pk-manage-icon-btn" type="button" variant="ghost" left-icon="competencies" @click.stop="openSerialDrawer(row.sku)" />
                       </MpTooltip>
                     </td>
                     <td v-else class="pk-td pk-td--action"></td>
@@ -1018,7 +1014,7 @@ async function doCreate() {
   />
 
   <!-- Partial pick confirmation -->
-  <MpModal id="pk-partial-confirm" :is-open="showPartialConfirm" size="md" is-close-on-esc :is-keep-alive="false" @close="showPartialConfirm = false">
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="pk-partial-confirm" :is-open="showPartialConfirm" size="md" :is-keep-alive="false" @close="showPartialConfirm = false">
     <MpModalOverlay />
     <MpModalContent>
       <MpModalHeader>

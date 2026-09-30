@@ -113,9 +113,9 @@ function handleSave() {
     </div>
 
     <footer class="ex-footer">
-      <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</button>
-      <button class="btn-enterprise btn-enterprise--secondary" @click="goToNext()()">{{ t('Skip without saving') }}</button>
-      <button class="btn-enterprise btn-enterprise--primary" :disabled="!action" @click="handleSave">{{ isLastFile ? t('Save') : t('Save & next') }}</button>
+      <MpButton variant="ghost" class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</MpButton>
+      <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary" @click="goToNext()()">{{ t('Skip without saving') }}</MpButton>
+      <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" :is-disabled="!action" @click="handleSave">{{ isLastFile ? t('Save') : t('Save & next') }}</MpButton>
     </footer>
 
     <template #overlays>

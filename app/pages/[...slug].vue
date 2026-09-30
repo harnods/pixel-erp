@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { defineAsyncComponent, defineComponent, type Component, h, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
 import { infoToast } from '~/utils/toasts'
-import { MpBadge, MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
+import { MpAvatar, MpBadge, MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 
 // Shown while a page chunk is being fetched. 200ms delay = no flash for cached chunks.
 const PageLoader = defineComponent({ render: () => h('div', { class: 'stage-loading' }, [h(MpSpinner, { size: 'lg' })]) })
 function asyncPage(loader: () => Promise<{ default: Component }>): Component {
   return defineAsyncComponent({ loader, loadingComponent: PageLoader, delay: 200 })
 }
-import { type CoworkAgent } from '~/data/cowork'
+import { getCrmModule } from '~/data/crm'
+import { getAgent, type CoworkAgent } from '~/data/cowork'
 import { type CoworkChatSession } from '~/composables/useCoworkChats'
 import { useAireneChat, DEFAULT_CONTEXT_SUGGESTIONS } from '~/composables/useAireneChat'
 import { receiptCountsByStage, receipts } from '~/data/receipts'
@@ -29,8 +30,15 @@ import { awaitingPurchaseRequestCount } from '~/data/purchaseRequests'
 import { openWmsCountTaskCount, awaitingWmsCountApprovalCount } from '~/data/wmsStockAdjustments'
 import { recommendationCount, topRecommendedProductNames } from '~/data/cycleCountRecommendations'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
+import { awaitingSalesInvoicesCount } from '~/data/salesInvoices'
+import { awaitingSalesOrdersCount } from '~/data/salesOrders'
+import { awaitingSalesQuotesCount } from '~/data/salesQuotes'
 import { bills } from '~/data/bills'
-import { reviewFiles, purchaseInvoiceReviewFiles, addProcessingReviewFile } from '~/data/reviewFiles'
+import { warehouses } from '~/data/warehouses'
+import { reviewFiles, purchaseInvoiceReviewFiles } from '~/data/reviewFiles'
+import { startUpload, uploadCenterOpen } from '~/data/uploadCenter'
+import ImportVendorInvoicesModal from '~/components/patterns/ImportVendorInvoicesModal.vue'
+import ImportSpreadsheetModal from '~/components/patterns/ImportSpreadsheetModal.vue'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { useRecommendationWarehouse } from '~/composables/useRecommendationWarehouse'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
@@ -40,11 +48,13 @@ import {
 } from '~/data/vatReconciliation'
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
 import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
-import { purchaseOrders, purchaseInvoices } from '~/data'
+import { purchaseOrders, purchaseInvoicesAwaitingApproval } from '~/data'
 import { loadSnapshot, saveSnapshot } from '~/data/persist'
 
 const { pageTitle, currentPageKey } = useNavigation()
 const { t } = useLocale()
+const { dimensionsActivated } = useDimensionsActivation()
+const { requestDimensionCreate } = useDimensionsFormDrawer()
 const route = useRoute()
 const router = useRouter()
 
@@ -135,6 +145,7 @@ const pageRegistry: Record<string, Component> = {
   'Cowork connections': defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
   'Cowork agents':     defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
   'Cowork skills':     defineAsyncComponent(() => import('~/components/pages/CoworkPage.vue')),
+  'Cowork workspaces': defineAsyncComponent(() => import('~/components/pages/CoworkWorkspacesPage.vue')),
   // KB renders full-bleed via detailMatch; this entry keeps the registry/title resolvable.
   'Cowork knowledge':  defineAsyncComponent(() => import('~/components/pages/CoworkKbPage.vue')),
   'Hr':                defineAsyncComponent(() => import('~/components/pages/HrHomePage.vue')),
@@ -148,6 +159,11 @@ const pageRegistry: Record<string, Component> = {
   'Product list':      defineAsyncComponent(() => import('~/components/pages/ProductsPage.vue')),
   'Storage locations': defineAsyncComponent(() => import('~/components/pages/StorageLocationsPage.vue')),
   'Couriers':          defineAsyncComponent(() => import('~/components/pages/CouriersPage.vue')),
+  // Contacts — one index page serves all three role lists; the route slug picks
+  // which role it filters by. New/detail/edit resolve via detailMatch below.
+  'Customers':         defineAsyncComponent(() => import('~/components/pages/ContactsIndexPage.vue')),
+  'Vendors':           defineAsyncComponent(() => import('~/components/pages/ContactsIndexPage.vue')),
+  'Other contacts':    defineAsyncComponent(() => import('~/components/pages/ContactsIndexPage.vue')),
   'On the way':        defineAsyncComponent(() => import('~/components/pages/ReceiptIndexPage.vue')),
   'Receiving':         defineAsyncComponent(() => import('~/components/pages/ReceivingIndexPage.vue')),
   'Put-away':          defineAsyncComponent(() => import('~/components/pages/PutAwayIndexPage.vue')),
@@ -164,6 +180,8 @@ const pageRegistry: Record<string, Component> = {
   'Stock inout':       defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Purchase orders':   defineAsyncComponent(() => import('~/components/pages/PurchaseOrdersPage.vue')),
   'Purchase requests': defineAsyncComponent(() => import('~/components/pages/PurchaseRequestsPage.vue')),
+  'Purchase quotes':     defineAsyncComponent(() => import('~/components/pages/PurchaseQuotesPage.vue')),
+  'Purchase deliveries': defineAsyncComponent(() => import('~/components/pages/PurchaseDeliveriesPage.vue')),
   'Cash management':   defineAsyncComponent(() => import('~/components/pages/CashManagementPage.vue')),
   // ── VAT reconciliation (Reports › Tax › VAT reconciliation) ──────────────────
   // The whole module is off-nav: Reports › Tax is the card index, and the card
@@ -184,9 +202,17 @@ const pageRegistry: Record<string, Component> = {
   'Data migration':     defineAsyncComponent(() => import('~/components/pages/DataMigrationPage.vue')),
   'Warehouse settings': defineAsyncComponent(() => import('~/components/pages/SettingsWarehousePage.vue')),
   'Approval workflows':  defineAsyncComponent(() => import('~/components/pages/ApprovalWorkflowsPage.vue')),
+  // Settings → Users & roles. '/users-and-roles' → pathToLabel → 'Users and roles'.
+  // The page itself is served by its tabs (User list / Custom role) — this entry
+  // keeps the key resolvable before a tab is picked.
+  'Users and roles':    defineAsyncComponent(() => import('~/components/pages/UsersListPage.vue')),
   // 'Mekari pay' (sentence-cased key) — /mekari-pay → pathToLabel → 'Mekari pay'.
   'Mekari pay':         defineAsyncComponent(() => import('~/components/pages/MekariPayPaywallPage.vue')),
   'Tax':                defineAsyncComponent(() => import('~/components/pages/TaxPaywallPage.vue')),
+  'Dimensions':         defineAsyncComponent(() => import('~/components/pages/DimensionsPage.vue')),
+  // Reports → Financials index (report cards). The Multidimensional report itself
+  // resolves via detailMatch (/financial-report/multidimensional).
+  'Financial report':   defineAsyncComponent(() => import('~/components/pages/FinancialReportsIndexPage.vue')),
   // Reports → WMS index (four report cards). Report detail pages resolve via detailMatch.
   'Wms report':         defineAsyncComponent(() => import('~/components/pages/WmsReportsIndexPage.vue')),
   // Reports → Sales index (flush report-card grid, same format as WMS).
@@ -194,9 +220,12 @@ const pageRegistry: Record<string, Component> = {
   // Reports → Inventory index (report cards). The Dual Unit Inventory report itself
   // resolves via detailMatch (/inventory-report/dual-unit).
   'Inventory report':   defineAsyncComponent(() => import('~/components/pages/InventoryReportsIndexPage.vue')),
-  // Reports → Tax index (report cards). VAT reconciliation is the built card and
-  // opens /vat-reconciliation; the rest are coming-soon.
+  // Reports → Purchases / Tax / Cash & bank indexes (same flush report-card grid
+  // as Sales). Tax is the only one with a built card — VAT reconciliation opens
+  // /vat-reconciliation; every other card shows the coming-soon toast.
+  'Purchase report':    defineAsyncComponent(() => import('~/components/pages/PurchaseReportsIndexPage.vue')),
   'Tax report':         defineAsyncComponent(() => import('~/components/pages/TaxReportsIndexPage.vue')),
+  'Cash and bank report': defineAsyncComponent(() => import('~/components/pages/CashBankReportsIndexPage.vue')),
   'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
   'Design erp':         defineAsyncComponent(() => import('~/components/pages/DesignErpDashboardPage.vue')),
 
@@ -232,6 +261,13 @@ const pageRegistry: Record<string, Component> = {
 
 const SalesOrderDetailsPage = asyncPage(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
 const SalesInvoiceDetailsPage = asyncPage(() => import('~/components/pages/SalesInvoiceDetailsPage.vue'))
+const SalesQuoteDetailsPage = asyncPage(() => import('~/components/pages/SalesQuoteDetailsPage.vue'))
+const SalesDeliveryDetailsPage = asyncPage(() => import('~/components/pages/SalesDeliveryDetailsPage.vue'))
+const PurchaseQuoteDetailsPage = asyncPage(() => import('~/components/pages/PurchaseQuoteDetailsPage.vue'))
+const PurchaseDeliveryDetailsPage = asyncPage(() => import('~/components/pages/PurchaseDeliveryDetailsPage.vue'))
+const PurchaseInvoiceDetailsPage = asyncPage(() => import('~/components/pages/PurchaseInvoiceDetailsPage.vue'))
+const PurchaseRequestDetailsPage = asyncPage(() => import('~/components/pages/PurchaseRequestDetailsPage.vue'))
+const NewPurchaseRequestPage = asyncPage(() => import('~/components/pages/NewPurchaseRequestPage.vue'))
 const ImportWarehousesPage = asyncPage(() => import('~/components/pages/ImportWarehousesPage.vue'))
 const NewWarehousePage = asyncPage(() => import('~/components/pages/NewWarehousePage.vue'))
 const WarehouseDetailsPage = asyncPage(() => import('~/components/pages/WarehouseDetailsPage.vue'))
@@ -250,6 +286,8 @@ const BuzzBrandFormPage = asyncPage(() => import('~/components/pages/BuzzBrandFo
 const BuzzBrandDetailPage = asyncPage(() => import('~/components/pages/BuzzBrandDetailPage.vue'))
 const BuzzCampaignDetailPage = asyncPage(() => import('~/components/pages/BuzzCampaignDetailPage.vue'))
 const CoworkAgentDetailPage = asyncPage(() => import('~/components/pages/CoworkAgentDetailPage.vue'))
+const CoworkWorkspacesPage = asyncPage(() => import('~/components/pages/CoworkWorkspacesPage.vue'))
+const CoworkWorkspaceDetailPage = asyncPage(() => import('~/components/pages/CoworkWorkspaceDetailPage.vue'))
 const CoworkKbPage = asyncPage(() => import('~/components/pages/CoworkKbPage.vue'))
 const CoworkKbDocDetailPage = asyncPage(() => import('~/components/pages/CoworkKbDocDetailPage.vue'))
 const CashConnectBankPage = asyncPage(() => import('~/components/pages/CashConnectBankPage.vue'))
@@ -257,6 +295,8 @@ const InternalTransferFormPage = asyncPage(() => import('~/components/pages/Inte
 const InternalTransferDetailsPage = asyncPage(() => import('~/components/pages/InternalTransferDetailsPage.vue'))
 const BankStatementReviewPage = asyncPage(() => import('~/components/pages/BankStatementReviewPage.vue'))
 const PlaceholderPage = asyncPage(() => import('~/components/pages/PlaceholderPage.vue'))
+const NewContactPage = asyncPage(() => import('~/components/pages/NewContactPage.vue'))
+const ContactDetailsPage = asyncPage(() => import('~/components/pages/ContactDetailsPage.vue'))
 const BillsIndexPage = asyncPage(() => import('~/components/pages/BillsIndexPage.vue'))
 const BillsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/BillsAwaitingApprovalPage.vue'))
 const BillsReviewFilesPage = asyncPage(() => import('~/components/pages/BillsReviewFilesPage.vue'))
@@ -327,6 +367,12 @@ const VatReconciliationPeriodsPage = asyncPage(() => import('~/components/pages/
 const VatReconciliationUnmatchedPage = asyncPage(() => import('~/components/pages/VatReconciliationUnmatchedPage.vue'))
 // Both faktur sides scope themselves from ?tab= (Needs attention / All faktur).
 const VatReconciliationWorkspacePage = asyncPage(() => import('~/components/pages/VatReconciliationWorkspacePage.vue'))
+const InviteUserPage = asyncPage(() => import('~/components/pages/InviteUserPage.vue'))
+// The "New custom role" title-bar button lives here, but the drawer it opens is
+// rendered inside CustomRolesPage — the two talk through this shared intent.
+const { openCreate: openCustomRoleCreate } = useCustomRoleDrawer()
+const UsersListPage = asyncPage(() => import('~/components/pages/UsersListPage.vue'))
+const CustomRolesPage = asyncPage(() => import('~/components/pages/CustomRolesPage.vue'))
 
 // ── Purchase Orders overlay state (list/detail/form share the URL /purchase-orders
 // without real sub-routes yet — mirrors the pattern this feature was originally
@@ -393,14 +439,38 @@ watch(() => [currentPageKey.value, route.query.fromPr] as const, ([key, fromPr])
 }, { immediate: true })
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
 const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue'))
+const CrmDealDetailPage = asyncPage(() => import('~/components/pages/CrmDealDetailPage.vue'))
+const NewCrmDealPage = asyncPage(() => import('~/components/pages/NewCrmDealPage.vue'))
 const CrmOrdersPage = asyncPage(() => import('~/components/pages/CrmOrdersPage.vue'))
 const CrmTasksPage = asyncPage(() => import('~/components/pages/CrmTasksPage.vue'))
 const CrmCustomersPage = asyncPage(() => import('~/components/pages/CrmCustomersPage.vue'))
 const CrmProductsPage = asyncPage(() => import('~/components/pages/CrmProductsPage.vue'))
 const CrmSettingsPage = asyncPage(() => import('~/components/pages/CrmSettingsPage.vue'))
+const CrmReportsPage = asyncPage(() => import('~/components/pages/CrmReportsPage.vue'))
+const CrmReportBuilderPage = asyncPage(() => import('~/components/pages/CrmReportBuilderPage.vue'))
+const CrmReportViewerPage = asyncPage(() => import('~/components/pages/CrmReportViewerPage.vue'))
+const CrmActivityLogPage = asyncPage(() => import('~/components/pages/CrmActivityLogPage.vue'))
+const CrmModulesPage = asyncPage(() => import('~/components/pages/CrmModulesPage.vue'))
+const CrmErpIntegrationsPage = asyncPage(() => import('~/components/pages/CrmErpIntegrationsPage.vue'))
+const CrmErpIntegrationDetailPage = asyncPage(() => import('~/components/pages/CrmErpIntegrationDetailPage.vue'))
+const CrmErpIntegrationEditorPage = asyncPage(() => import('~/components/pages/CrmErpIntegrationEditorPage.vue'))
+const CrmNewSalesOrderPage = asyncPage(() => import('~/components/pages/CrmNewSalesOrderPage.vue'))
+const CrmGenericModulePage = asyncPage(() => import('~/components/pages/CrmGenericModulePage.vue'))
+const CrmGenericRecordDetailPage = asyncPage(() => import('~/components/pages/CrmGenericRecordDetailPage.vue'))
+const NewCrmGenericRecordPage = asyncPage(() => import('~/components/pages/NewCrmGenericRecordPage.vue'))
+const CrmModuleBuilderPage = asyncPage(() => import('~/components/pages/CrmModuleBuilderPage.vue'))
+const CrmContactsListPage = asyncPage(() => import('~/components/pages/CrmContactsListPage.vue'))
+const CrmCompaniesListPage = asyncPage(() => import('~/components/pages/CrmCompaniesListPage.vue'))
+const CrmContactRecordPage = asyncPage(() => import('~/components/pages/CrmContactRecordPage.vue'))
+const CrmCompanyRecordPage = asyncPage(() => import('~/components/pages/CrmCompanyRecordPage.vue'))
+const NewCrmContactPage = asyncPage(() => import('~/components/pages/NewCrmContactPage.vue'))
+const NewCrmCompanyPage = asyncPage(() => import('~/components/pages/NewCrmCompanyPage.vue'))
 const CrmOrderDetailPage = asyncPage(() => import('~/components/pages/CrmOrderDetailPage.vue'))
 const CrmProductDetailPage = asyncPage(() => import('~/components/pages/CrmProductDetailPage.vue'))
 const CrmCustomerDetailPage = asyncPage(() => import('~/components/pages/CrmCustomerDetailPage.vue'))
+const NewCustomerPage = asyncPage(() => import('~/components/pages/NewCustomerPage.vue'))
+const CrmContactsPage = asyncPage(() => import('~/components/pages/CrmContactsPage.vue'))
+const CrmContactDetailPage = asyncPage(() => import('~/components/pages/CrmContactDetailPage.vue'))
 // CRM (Qontak) level-1 pages — all full-bleed, own their title bar/stage.
 // There's no CRM home: the bare /crm lands directly on Deals.
 const CRM_PAGES: Record<string, Component> = {
@@ -413,6 +483,11 @@ const CRM_PAGES: Record<string, Component> = {
   'settings':  CrmSettingsPage,
 }
 const NewSalesInvoicePage = asyncPage(() => import('~/components/pages/NewSalesInvoicePage.vue'))
+const NewSalesOrderPage = asyncPage(() => import('~/components/pages/NewSalesOrderPage.vue'))
+const NewSalesQuotePage = asyncPage(() => import('~/components/pages/NewSalesQuotePage.vue'))
+const NewSalesDeliveryPage = asyncPage(() => import('~/components/pages/NewSalesDeliveryPage.vue'))
+const NewPurchaseQuotePage = asyncPage(() => import('~/components/pages/NewPurchaseQuotePage.vue'))
+const NewPurchaseDeliveryPage = asyncPage(() => import('~/components/pages/NewPurchaseDeliveryPage.vue'))
 const BillReviewPage = asyncPage(() => import('~/components/pages/BillReviewPage.vue'))
 const InvoiceReviewPage = asyncPage(() => import('~/components/pages/InvoiceReviewPage.vue'))
 const ReceiptReviewPage = asyncPage(() => import('~/components/pages/ReceiptReviewPage.vue'))
@@ -421,6 +496,9 @@ const WmsOverviewPage = asyncPage(() => import('~/components/pages/WmsOverviewPa
 const WmsReportDetailPage = asyncPage(() => import('~/components/pages/WmsReportDetailPage.vue'))
 const DualUnitInventoryReportPage = asyncPage(() => import('~/components/pages/DualUnitInventoryReportPage.vue'))
 const CreditMemoReportPage = asyncPage(() => import('~/components/pages/CreditMemoReportPage.vue'))
+const MultidimensionalReportPage = asyncPage(() => import('~/components/pages/MultidimensionalReportPage.vue'))
+const GeneralLedgerReportPage = asyncPage(() => import('~/components/pages/GeneralLedgerReportPage.vue'))
+const BudgetVarianceReportPage = asyncPage(() => import('~/components/pages/BudgetVarianceReportPage.vue'))
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
 const EmployeeDetailsPage = asyncPage(() => import('~/components/pages/EmployeeDetailsPage.vue'))
 const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
@@ -456,11 +534,74 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs[0] === 'crm') {
     const sub = segs[1] ?? ''
     const id = segs[2]
-    // /crm/orders/:id, /crm/products/:id, /crm/customers/:id → CRM detail pages.
+    // /crm/contacts → Contacts list; /crm/contacts/:id → contact detail.
+    if (sub === 'contacts') return id ? { component: CrmContactDetailPage, id } : { component: CrmContactsPage, id: '' }
+    // /crm/customers → L2 [Contacts, Companies] (first-class contacts/companies, M2M).
+    if (sub === 'customers' && id === 'contacts') {
+      if (segs[3] === 'new') return { component: NewCrmContactPage, id: 'new' }
+      // /crm/customers/contacts/:id/edit → the create form in edit mode.
+      if (segs[3] && segs[4] === 'edit') return { component: NewCrmContactPage, id: segs[3] }
+      return segs[3] ? { component: CrmContactRecordPage, id: segs[3] } : { component: CrmContactsListPage, id: '' }
+    }
+    if (sub === 'customers' && id === 'companies') {
+      if (segs[3] === 'new') return { component: NewCrmCompanyPage, id: 'new' }
+      // /crm/customers/companies/:id/edit → the create form in edit mode.
+      if (segs[3] && segs[4] === 'edit') return { component: NewCrmCompanyPage, id: segs[3] }
+      return segs[3] ? { component: CrmCompanyRecordPage, id: segs[3] } : { component: CrmCompaniesListPage, id: '' }
+    }
+    if (sub === 'customers') return { component: CrmContactsListPage, id: '' } // bare → Contacts
+    // /crm/deals/new → full detail create form; /crm/deals/:id/edit → edit form (both a PAGE).
+    if (sub === 'deals' && id === 'new') return { component: NewCrmDealPage, id: 'new' }
+    if (sub === 'deals' && id && segs[3] === 'edit') return { component: NewCrmDealPage, id }
+    if (sub === 'deals' && id && (segs[3] === 'create-order' || segs[3] === 'create-quote')) return { component: CrmNewSalesOrderPage, id }
+    // /crm/<moduleId>[/recordId] → any published custom module (created via
+    // "+ New module") gets the generic records workspace/detail, driven entirely
+    // by its own pipeline/properties (no per-module page needed). Guarded by a
+    // real, non-system module lookup so it can't hijack reserved CRM subpaths.
+    {
+      const customMod = sub && sub !== 'deals' ? getCrmModule(sub) : undefined
+      if (customMod && !customMod.system) {
+        if (id === 'new') return { component: NewCrmGenericRecordPage, id: 'new' }
+        if (id && segs[3] === 'edit') return { component: NewCrmGenericRecordPage, id }
+        return id ? { component: CrmGenericRecordDetailPage, id } : { component: CrmGenericModulePage, id: '' }
+      }
+    }
+    // /crm/orders/:id, /crm/products/:id → CRM detail pages.
+    if (id && sub === 'deals') return { component: CrmDealDetailPage, id }
     if (id && sub === 'orders') return { component: CrmOrderDetailPage, id }
     if (id && sub === 'products') return { component: CrmProductDetailPage, id }
-    if (id && sub === 'customers') return { component: CrmCustomerDetailPage, id }
+    // Reports + Activity logs (level-1); Settings (level-2 section via id, default company).
+    if (sub === 'reports' && id === 'new') return { component: CrmReportBuilderPage, id: 'new' }
+    // Level-2 sidebar views (CrmSidebar.vue's Reports children) — library, not
+    // a single report id.
+    if (sub === 'reports' && (id === 'mine' || id === 'shared' || id === 'archived')) return { component: CrmReportsPage, id }
+    if (sub === 'reports' && id && segs[3] === 'edit') return { component: CrmReportBuilderPage, id }
+    if (sub === 'reports' && id) return { component: CrmReportViewerPage, id }
+    if (sub === 'reports') return { component: CrmReportsPage, id: id ?? '' }
+    if (sub === 'activity') return { component: CrmActivityLogPage, id: id ?? '' }
+    // Deals settings = the module builder for the 'deals' system module, as its own level-2 menu.
+    if (sub === 'settings' && id === 'deals') return { component: CrmModuleBuilderPage, id: 'deals' }
+    // "New module" is also handled by the builder — orderId 'new' — so every
+    // config tab (Setup/Properties/Pipeline/Layout) is available immediately,
+    // before the module is actually created (see CrmModuleBuilderPage.vue).
+    if (sub === 'settings' && id === 'modules' && segs[3]) return { component: CrmModuleBuilderPage, id: segs[3] }
+    if (sub === 'settings' && id === 'modules') return { component: CrmModulesPage, id: '' }
+    // /crm/settings/properties is deprecated — fall through to generic settings
+    // ERP Integration Settings (PRD: ERP Transaction Conversion Settings V1).
+    if (sub === 'settings' && id === 'erp-integrations' && segs[4] === 'edit') return { component: CrmErpIntegrationEditorPage, id: segs[3] }
+    if (sub === 'settings' && id === 'erp-integrations' && segs[3]) return { component: CrmErpIntegrationDetailPage, id: segs[3] }
+    if (sub === 'settings' && id === 'erp-integrations') return { component: CrmErpIntegrationsPage, id: '' }
+    if (sub === 'settings') return { component: CrmSettingsPage, id: id ?? 'company' }
     return { component: CRM_PAGES[sub] ?? CrmDealsPage, id: sub }
+  }
+  // Contacts: /{customers|vendors|other-contacts}/new → create form,
+  // /:id → contact detail, /:id/edit → the same form in edit mode. The bare
+  // list route falls through to the padded index page in pageRegistry.
+  if (segs[0] === 'customers' || segs[0] === 'vendors' || segs[0] === 'other-contacts') {
+    const id = segs[1]
+    if (id === 'new') return { component: NewContactPage, id: 'new' }
+    if (id && segs[2] === 'edit') return { component: NewContactPage, id }
+    if (id) return { component: ContactDetailsPage, id }
   }
   // /cowork-chats → the full-stage Cowork chat (owns its title bar + stage).
   if (segs[0] === 'cowork-chats') return { component: CoworkChatsPage, id: '' }
@@ -479,6 +620,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /cowork-skills/:id → Cowork skill detail (actions + definition).
   if (segs.length >= 2 && segs[0] === 'cowork-skills') {
     return { component: CoworkSkillDetailPage, id: segs[1]! }
+  }
+  // /cowork-workspaces/:id → workspace detail (own header + tabs).
+  if (segs.length >= 2 && segs[0] === 'cowork-workspaces') {
+    return { component: CoworkWorkspaceDetailPage, id: segs[1]! }
   }
   // /cowork-knowledge → KB file manager (folder via ?folder=); /cowork-knowledge/doc/:id → doc detail.
   if (segs[0] === 'cowork-knowledge') {
@@ -508,6 +653,14 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /sales-report/credit-memo → Credit Memo report (Reports → Sales → View report).
   if (segs.length >= 2 && segs[0] === 'sales-report' && segs[1] === 'credit-memo') {
     return { component: CreditMemoReportPage, id: segs[1]! }
+  }
+  // /financial-report/:slug → the built Financials reports (Reports → Financials
+  // → View report). Only these slugs match; anything else falls through to the
+  // Financials reports index.
+  if (segs.length >= 2 && segs[0] === 'financial-report') {
+    if (segs[1] === 'multidimensional') return { component: MultidimensionalReportPage, id: segs[1] }
+    if (segs[1] === 'general-ledger') return { component: GeneralLedgerReportPage, id: segs[1] }
+    if (segs[1] === 'budget-variance') return { component: BudgetVarianceReportPage, id: segs[1] }
   }
   // /inventory-report/dual-unit → Dual Unit Inventory Report (Reports → Inventory →
   // View report). Only the built slug matches; anything else falls through to the
@@ -611,6 +764,12 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'new') return { component: CreateApprovalWorkflowPage, id: 'new' }
     if (segs.length >= 3 && segs[2] === 'edit') return { component: CreateApprovalWorkflowPage, id: segs[1]! }
   }
+  // /users-and-roles/invite → invite form; /:id/edit → edit access (same page).
+  // The bare index falls through to the tabbed User list / Custom role pages.
+  if (segs.length >= 2 && segs[0] === 'users-and-roles') {
+    if (segs[1] === 'invite') return { component: InviteUserPage, id: 'invite' }
+    if (segs.length >= 3 && segs[2] === 'edit') return { component: InviteUserPage, id: segs[1]! }
+  }
   // /warehouse-transfers/:id → detail page. /new and /:id/edit are the create/edit
   // forms (not built yet → placeholder). The bare index falls through to the registry.
   if (segs.length >= 2 && segs[0] === 'warehouse-transfers') {
@@ -694,8 +853,73 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'delivery') {
     return { component: DeliveryTaskDetailsPage, id: segs[1] }
   }
+  // /sales-orders/new → create form (must precede the :id match)
+  if (segs.length >= 2 && segs[0] === 'sales-orders' && segs[1] === 'new') {
+    return { component: NewSalesOrderPage, id: 'new' }
+  }
+  // /sales-orders/:id/edit → reuse the create form in edit mode
+  if (segs.length >= 3 && segs[0] === 'sales-orders' && segs[2] === 'edit') {
+    return { component: NewSalesOrderPage, id: segs[1] }
+  }
   if (segs.length >= 2 && segs[0] === 'sales-orders') {
     return { component: SalesOrderDetailsPage, id: segs[1] }
+  }
+  // /purchase-quotes/{new,:id/edit,:id}
+  if (segs.length >= 2 && segs[0] === 'purchase-quotes' && segs[1] === 'new') {
+    return { component: NewPurchaseQuotePage, id: 'new' }
+  }
+  if (segs.length >= 3 && segs[0] === 'purchase-quotes' && segs[2] === 'edit') {
+    return { component: NewPurchaseQuotePage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'purchase-quotes') {
+    return { component: PurchaseQuoteDetailsPage, id: segs[1] }
+  }
+  // /purchase-deliveries/{new,:id/edit,:id}
+  if (segs.length >= 2 && segs[0] === 'purchase-deliveries' && segs[1] === 'new') {
+    return { component: NewPurchaseDeliveryPage, id: 'new' }
+  }
+  if (segs.length >= 3 && segs[0] === 'purchase-deliveries' && segs[2] === 'edit') {
+    return { component: NewPurchaseDeliveryPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'purchase-deliveries') {
+    return { component: PurchaseDeliveryDetailsPage, id: segs[1] }
+  }
+  // /purchase-requests/{new,:id} (index-only key otherwise renders the list)
+  if (segs.length >= 2 && segs[0] === 'purchase-requests' && segs[1] === 'new') {
+    return { component: NewPurchaseRequestPage, id: 'new' }
+  }
+  if (segs.length >= 3 && segs[0] === 'purchase-requests' && segs[2] === 'edit') {
+    return { component: NewPurchaseRequestPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'purchase-requests' && segs[1] !== 'awaiting-approval') {
+    return { component: PurchaseRequestDetailsPage, id: segs[1] }
+  }
+  // /purchase-invoices/:id → detail (index has tabs; guard the tab slugs)
+  if (segs.length >= 2 && segs[0] === 'purchase-invoices'
+      && !['awaiting-approval', 'dropbox', 'new'].includes(segs[1]!)) {
+    return { component: PurchaseInvoiceDetailsPage, id: segs[1] }
+  }
+  // /sales-quotes/new → create form (must precede the :id match)
+  if (segs.length >= 2 && segs[0] === 'sales-quotes' && segs[1] === 'new') {
+    return { component: NewSalesQuotePage, id: 'new' }
+  }
+  // /sales-quotes/:id/edit → reuse the create form in edit mode
+  if (segs.length >= 3 && segs[0] === 'sales-quotes' && segs[2] === 'edit') {
+    return { component: NewSalesQuotePage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'sales-quotes') {
+    return { component: SalesQuoteDetailsPage, id: segs[1] }
+  }
+  // /sales-deliveries/new → create form (must precede the :id match)
+  if (segs.length >= 2 && segs[0] === 'sales-deliveries' && segs[1] === 'new') {
+    return { component: NewSalesDeliveryPage, id: 'new' }
+  }
+  // /sales-deliveries/:id/edit → reuse the create form in edit mode
+  if (segs.length >= 3 && segs[0] === 'sales-deliveries' && segs[2] === 'edit') {
+    return { component: NewSalesDeliveryPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'sales-deliveries') {
+    return { component: SalesDeliveryDetailsPage, id: segs[1] }
   }
   // /sales-invoices/new → New sales invoice form (must precede the :id match)
   if (segs.length >= 2 && segs[0] === 'sales-invoices' && segs[1] === 'new') {
@@ -856,9 +1080,12 @@ const pageTabs: Record<string, string[]> = {
   'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipments'],
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
-  'Expenses': ['Bills', 'Awaiting Approval', 'Review files'],
-  'Purchase invoices': ['All purchase invoices', 'Awaiting Approval', 'Review files'],
+  'Expenses': ['Bills', 'Awaiting Approval', 'Dropbox'],
+  'Purchase invoices': ['All purchase invoices', 'Awaiting Approval', 'Dropbox'],
   'Purchase requests': ['All requests', 'Awaiting approval'],
+  'Sales invoices': ['All sales invoices', 'Awaiting approval'],
+  'Sales orders': ['All sales orders', 'Awaiting approval'],
+  'Sales quotes': ['All sales quotes', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
@@ -872,6 +1099,8 @@ const pageTabs: Record<string, string[]> = {
   // controls on-system — Pixel has no filter-chip component.
   'Faktur keluaran': ['Needs attention', 'All faktur'],
   'Faktur masukan':  ['Needs attention', 'All faktur'],
+  // Settings → Users & roles (Jurnal benchmark: User list / Custom role).
+  'Users and roles':   ['User list', 'Custom role'],
   // XPM (Mekari Expense) — section tabs read by the page via ?tab=.
   'Xpm transactions':  ['All', 'Card', 'Reimbursement', 'Cash advance', 'Bill', 'Travel'],
   'Xpm cards':         ['Virtual cards', 'Physical cards'],
@@ -888,7 +1117,7 @@ const pageTabs: Record<string, string[]> = {
 // page is ever mounted at a time and filtering one is filtering the section.
 const activeWarehouseFilter = useActiveWarehouseFilter()
 // Cycle counts' Recommendations tab has its own single-warehouse selector.
-const { warehouseId: recommendationWarehouseId } = useRecommendationWarehouse()
+const { warehouseId: recommendationWarehouseId, setWarehouse: setRecommendationWarehouse } = useRecommendationWarehouse()
 const currentTabCounts = computed<Record<string, number>>(() => {
   const wh = activeWarehouseFilter.value
   // WMS Overview tabs (Inbound / Outbound delivery) show no count badge.
@@ -930,16 +1159,27 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     const awaiting = awaitingApprovalCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
   }
+  // Sales modules — the Awaiting approval tab badges its own deterministic queue.
+  if (currentPageKey.value === 'Sales invoices') {
+    const n = awaitingSalesInvoicesCount(); return n ? { 'Awaiting approval': n } : {}
+  }
+  if (currentPageKey.value === 'Sales orders') {
+    const n = awaitingSalesOrdersCount(); return n ? { 'Awaiting approval': n } : {}
+  }
+  if (currentPageKey.value === 'Sales quotes') {
+    const n = awaitingSalesQuotesCount(); return n ? { 'Awaiting approval': n } : {}
+  }
   if (currentPageKey.value === 'Expenses') {
     const out: Record<string, number> = {}
     if (bills.length) out['Awaiting Approval'] = bills.length
-    if (reviewFiles.length) out['Review files'] = reviewFiles.length
+    // Dropbox badge = files still sitting in the inbox, not yet reviewed.
+    if (reviewFiles.length) out['Dropbox'] = reviewFiles.length
     return out
   }
   if (currentPageKey.value === 'Purchase invoices') {
     const out: Record<string, number> = {}
-    if (purchaseInvoices.length) out['Awaiting Approval'] = purchaseInvoices.length
-    if (purchaseInvoiceReviewFiles.length) out['Review files'] = purchaseInvoiceReviewFiles.length
+    if (purchaseInvoicesAwaitingApproval.length) out['Awaiting Approval'] = purchaseInvoicesAwaitingApproval.length
+    if (purchaseInvoiceReviewFiles.length) out['Dropbox'] = purchaseInvoiceReviewFiles.length
     return out
   }
   if (currentPageKey.value === 'Purchase requests') {
@@ -1037,13 +1277,77 @@ function selectTab(tab: string) {
   router.push({ query: { ...route.query, tab } })
 }
 
-// Daily banner (Cycle counts index, Count task tab only) — top 3 recommended
-// product names, only shown once the Recommendations tab actually has SKUs
-// flagged for counting.
-const cycleCountBannerNames = computed(() => topRecommendedProductNames(3))
-const cycleCountBannerVisible = computed(() =>
-  currentPageKey.value === 'Cycle counts' && activeTab.value === 'Count task' && cycleCountBannerNames.value.length > 0,
+// ── Daily "Recommended for counting today" banner (Cycle counts index, Count
+// task tab only) ─────────────────────────────────────────────────────────────
+// Recommendations are computed per warehouse, so this banner is too: it answers
+// for exactly the warehouse(s) the index is filtered to, and never names a SKU
+// from a warehouse the table is hiding.
+const onCycleCountTab = computed(() =>
+  currentPageKey.value === 'Cycle counts' && activeTab.value === 'Count task',
 )
+
+// The warehouses the banner speaks for. No filter set means "every warehouse the
+// user can see" — the same question a multi-warehouse filter asks, so it gets the
+// same answer shape.
+const cycleCountBannerScope = computed(() => {
+  const picked = activeWarehouseFilter.value
+  const all = warehouses.filter(w => w.status === 'active' && !w.isDefault)
+  return picked.length ? all.filter(w => picked.includes(w.id)) : all
+})
+// Warehouses with recommendations switched off (or nothing flagged) drop out
+// rather than reporting a bare "0 SKUs".
+const cycleCountBannerCounts = computed(() =>
+  cycleCountBannerScope.value
+    .map(w => ({ id: w.id, name: w.name, count: recommendationCount(w.id) }))
+    .filter(w => w.count > 0),
+)
+const cycleCountBannerTotal = computed(() =>
+  cycleCountBannerCounts.value.reduce((sum, w) => sum + w.count, 0),
+)
+
+// Two shapes, chosen by how many warehouses are IN SCOPE — not by how many have
+// something flagged. With several in scope, naming 3 products across them answers
+// the wrong question (the manager wants to know where the work is) and, worse,
+// reads as if the list covered every warehouse in the filter. So each warehouse
+// reports its own count, as a link straight into the Recommendations tab already
+// filtered to it. Only a scope of exactly one warehouse names the products, where
+// there is nothing to misattribute.
+const cycleCountBannerMulti = computed(() =>
+  onCycleCountTab.value && cycleCountBannerScope.value.length > 1 && cycleCountBannerCounts.value.length > 0,
+)
+const cycleCountBannerSingleId = computed(() =>
+  cycleCountBannerScope.value.length === 1 ? cycleCountBannerScope.value[0]!.id : undefined,
+)
+const cycleCountBannerNames = computed(() =>
+  topRecommendedProductNames(3, cycleCountBannerSingleId.value ? [cycleCountBannerSingleId.value] : activeWarehouseFilter.value),
+)
+const cycleCountBannerVisible = computed(() =>
+  onCycleCountTab.value && cycleCountBannerNames.value.length > 0,
+)
+
+// Recommendations are opt-in per warehouse. Filter to one that has them switched
+// off and there is nothing to recommend — but silently dropping the banner reads
+// as a bug ("where did it go?"), so say why and point at the setting instead.
+// Only when EVERY filtered warehouse is off: if any one is on, its list is the
+// useful thing to show.
+const cycleCountRecOffNames = computed(() => {
+  const ids = activeWarehouseFilter.value
+  if (!ids.length) return []
+  const off = warehouses.filter(w => ids.includes(w.id) && !getWarehouseConfig(w.id).cycleCountRec)
+  return off.length === ids.length ? off.map(w => w.name) : []
+})
+const cycleCountRecOffConfigId = computed(() =>
+  activeWarehouseFilter.value.length === 1 ? activeWarehouseFilter.value[0] : null,
+)
+const cycleCountRecOffVisible = computed(() =>
+  onCycleCountTab.value && cycleCountBannerNames.value.length === 0 && cycleCountRecOffNames.value.length > 0,
+)
+
+/** Open the Recommendations tab, pre-filtered to one warehouse when given. */
+function openRecommendations(warehouseId?: string) {
+  if (warehouseId) setRecommendationWarehouse(warehouseId)
+  selectTab('Recommendations')
+}
 
 // Real component to render in the stage for a given page + tab (else placeholder).
 // WMS analytics — one page, direction per tab. Shared by the ERP "WMS analytics"
@@ -1055,6 +1359,10 @@ const wmsOverviewTabComponents: Record<string, Component> = {
 const tabComponents: Record<string, Record<string, Component>> = {
   'Wms analytics': wmsOverviewTabComponents,
   'Dashboard':     wmsOverviewTabComponents,
+  // Sales modules — one index page serves both tabs; it self-filters on ?tab=.
+  'Sales invoices':   { 'All sales invoices':   pageRegistry['Sales invoices']!,   'Awaiting approval': pageRegistry['Sales invoices']! },
+  'Sales orders':     { 'All sales orders':     pageRegistry['Sales orders']!,     'Awaiting approval': pageRegistry['Sales orders']! },
+  'Sales quotes':     { 'All sales quotes':     pageRegistry['Sales quotes']!,     'Awaiting approval': pageRegistry['Sales quotes']! },
   'Inbound delivery': {
     'Receipts': ReceiptIndexPage,
     'Receiving': ReceivingIndexPage,
@@ -1088,14 +1396,14 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Expenses': {
     'Bills': BillsIndexPage,
     'Awaiting Approval': BillsAwaitingApprovalPage,
-    'Review files': BillsReviewFilesPage,
+    'Dropbox': BillsReviewFilesPage,
   },
   // Purchase invoices reuses the same review-files table over its own queue —
   // the `surface` prop swaps both the data and the review route.
   'Purchase invoices': {
     'All purchase invoices': PurchaseInvoicesPage,
     'Awaiting Approval': PurchaseInvoicesAwaitingApprovalPage,
-    'Review files': () => h(BillsReviewFilesPage, { surface: 'purchase-invoices' }),
+    'Dropbox': () => h(BillsReviewFilesPage, { surface: 'purchase-invoices' }),
   },
   // Awaiting approval reuses the Expenses approval-queue table (Approve button +
   // task/comment icons), context-adapted to purchase requests.
@@ -1121,6 +1429,10 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Product list': {
     'All products': ProductsPage,
     'Awaiting approval': ProductsPage,
+  },
+  'Users and roles': {
+    'User list': UsersListPage,
+    'Custom role': CustomRolesPage,
   },
   // XPM (Mekari Expense) — each tab renders the same page; the page filters by ?tab=.
   'Xpm transactions': {
@@ -1157,6 +1469,8 @@ const showNewWarehouseTransfer = computed(() =>
 function newWarehouseTransfer() { router.push('/warehouse-transfers/new') }
 function newExpense() { router.push('/expenses/new') }
 function newSalesInvoice() { router.push('/sales-invoices/new') }
+// Sales-invoice Import ▸ dropdown → "Import from spreadsheet" opens the shared modal.
+const salesInvoiceImportOpen = ref(false)
 function newEmployee() { router.push('/employee-directory/new') }
 // Import dropdown: add new employees from a file, or bulk-update existing records.
 function importEmployees(mode: 'add' | 'update') {
@@ -1172,10 +1486,28 @@ function toggleAirene() { aireneOpen.value = !aireneOpen.value }
 provide('toggleAirene', toggleAirene)
 provide('aireneOpen', aireneOpen)
 
+/** Multi-agent rooms: the agent that authored an assistant turn (name+avatar
+ *  header above its message). Null for single-agent chats. */
+function msgAgent(msg: { role: string; agentId?: string }) {
+  return msg.role === 'assistant' && msg.agentId ? getAgent(msg.agentId) ?? null : null
+}
+
 // ── Couriers: "Add courier" lives here in the title bar, but its modal state
 // lives in CouriersPage.vue — signal it to open, same mechanism as toggleAirene.
 const courierAddSignal = ref(0)
 provide('courierAddSignal', courierAddSignal)
+
+// ── Contacts: "+ Contact" in the title bar; the index page owns the navigation
+// (it knows which role list is active), so signal it the same way.
+const contactAddSignal = ref(0)
+provide('contactAddSignal', contactAddSignal)
+const isContactsIndex = computed(() =>
+  ['Customers', 'Vendors', 'Other contacts'].includes(currentPageKey.value))
+// Type-specific create label for the contacts index page-title button.
+const contactAddLabel = computed(() =>
+  currentPageKey.value === 'Vendors' ? 'New vendor'
+  : currentPageKey.value === 'Other contacts' ? 'New contact'
+  : 'New customer')
 
 // ── Import dropdown ───────────────────────────────────────────────────────
 const importDropdownOpen = ref(false)
@@ -1187,21 +1519,37 @@ function onImportOutsideClick(e: MouseEvent) {
   }
 }
 
-// "Upload bills" (Import dropdown, Expenses) — drops each file into the Review
-// files table as a processing row (see addProcessingReviewFile), same entry
-// point as the dropzone card on the Review files tab itself.
-const uploadBillsInputEl = ref<HTMLInputElement | null>(null)
+// "Upload bills" (Expenses) and "Upload vendor invoices" (Purchase invoices) both
+// open the SAME OCR dropzone modal — only the surface + copy differ. On Upload the
+// files go to the upload center (progress in the header activity popover) and land
+// in that surface's Dropbox, where OCR runs.
+const uploadModalOpen = ref(false)
+const uploadModalSurface = ref<'expenses' | 'purchase-invoices'>('purchase-invoices')
+const uploadModalTitle = computed(() =>
+  uploadModalSurface.value === 'expenses' ? 'Upload bills' : 'Upload vendor invoices')
+const uploadModalDesc = computed(() =>
+  uploadModalSurface.value === 'expenses'
+    ? "Drop your bill files here. We'll upload them to Dropbox and scan each one into a bill."
+    : "Drop your vendor invoice files here. We'll upload them to Dropbox and scan each one into a purchase invoice.")
+
+// Open on the next macrotask: the triggering click also closes the Import
+// dropdown, and toggling both in the same tick makes MpModal skip its open
+// transition (content mounts stuck at opacity 0). Deferring lets it animate in.
 function openUploadBills() {
   importDropdownOpen.value = false
-  uploadBillsInputEl.value?.click()
+  uploadModalSurface.value = 'expenses'
+  setTimeout(() => { uploadModalOpen.value = true }, 0)
 }
-function onUploadBillsChange(ev: Event) {
-  const input = ev.target as HTMLInputElement
-  if (input.files) {
-    for (const f of Array.from(input.files)) addProcessingReviewFile(f.name)
-    selectTab('Review files')
-  }
-  input.value = ''
+function openVendorUploadModal() {
+  importDropdownOpen.value = false
+  uploadModalSurface.value = 'purchase-invoices'
+  setTimeout(() => { uploadModalOpen.value = true }, 0)
+}
+function onUploadModalUpload(files: File[]) {
+  if (!files.length) return
+  startUpload(files, uploadModalSurface.value, uploadModalTitle.value)
+  uploadCenterOpen.value = true       // pop the header activity center so progress is visible
+  selectTab('Dropbox')
 }
 
 // ── Stock adjustments "Actions" dropdown (page title) ─────────────────────
@@ -1467,18 +1815,25 @@ function startResize(e: MouseEvent) {
         </div>
         <h1 v-else class="page-title-text">{{ t(resolvedPageTitle) }}</h1>
         <div class="page-actions">
-          <button class="page-actions-toggle btn-enterprise btn-enterprise--primary btn-enterprise--icon-after" type="button" @click.stop="titleActionsOpen = !titleActionsOpen">
-            {{ t('Actions') }}
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
+          <MpButton class="page-actions-toggle" variant="primary" is-rounded right-icon="chevrons-down" @click.stop="titleActionsOpen = !titleActionsOpen">{{ t('Actions') }}</MpButton>
           <div class="page-actions-inner" :class="{ 'page-actions-inner--open': titleActionsOpen }" @click="titleActionsOpen = false">
         <div v-if="currentPageKey === 'Sales invoices'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
-            {{ t('Import') }}
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
+          <MpPopover id="si-import-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
+                {{ t('Import') }}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem @click="salesInvoiceImportOpen = true">{{ t('Import from spreadsheet') }}</MpPopoverListItem>
+                <MpPopoverListItem>{{ t('Import from other applications') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newSalesInvoice">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1496,6 +1851,12 @@ function startResize(e: MouseEvent) {
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/cowork-agents/new')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             New agent
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Cowork workspaces'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push({ path: '/cowork-workspaces', query: { new: '1' } })">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            New workspace
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Buzz photo stocks'" class="page-title-actions">
@@ -1530,10 +1891,17 @@ function startResize(e: MouseEvent) {
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Cowork skills'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push({ path: '/cowork-skills', query: { new: '1' } })">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            Create skill
-          </button>
+          <MpPopover id="skill-create-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <MpButton is-rounded variant="primary" right-icon="chevrons-down">Create skill</MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '240px' })">
+              <MpPopoverList>
+                <MpPopoverListItem @click="router.push({ path: '/cowork-skills', query: { new: 'import' } })">Import from repository</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push({ path: '/cowork-skills', query: { new: 'ai' } })">Create with AI</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
         </div>
         <div v-else-if="currentPageKey === 'Employee directory'" class="page-title-actions">
           <div class="page-import-btn">
@@ -1587,24 +1955,16 @@ function startResize(e: MouseEvent) {
           <button class="btn-enterprise btn-enterprise--secondary">
             {{ t('Import') }}
           </button>
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/sales-quotes/new')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-            New sales quote
+            {{ t('New sales quote') }}
           </button>
         </div>
-        <div v-else-if="currentPageKey === 'Sales deliveries'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--secondary">
-            {{ t('Import') }}
-          </button>
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            New sales delivery
-          </button>
-        </div>
+        <!-- Sales deliveries: no title-bar New/Import — a delivery is created from a
+             sales order (fulfillment), never standalone. -->
+        <div v-else-if="currentPageKey === 'Sales deliveries'" class="page-title-actions" />
         <div v-else-if="currentPageKey === 'Cash management'" class="page-title-actions">
           <!-- Secondary: "+ New account" -->
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="router.push('/cash-management/new')">
@@ -1729,6 +2089,27 @@ function startResize(e: MouseEvent) {
             {{ t('New approval workflow') }}
           </button>
         </div>
+        <div v-else-if="currentPageKey === 'Dimensions' && dimensionsActivated" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="requestDimensionCreate()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New dimension') }}
+          </button>
+        </div>
+        <!-- Settings → Users & roles: the create action follows the active tab. -->
+        <div v-else-if="currentPageKey === 'Users and roles'" class="page-title-actions">
+          <MpButton
+            v-if="activeTab === 'Custom role'"
+            variant="primary" is-rounded left-icon="add"
+            @click="openCustomRoleCreate()"
+          >{{ t('New custom role') }}</MpButton>
+          <MpButton
+            v-else
+            variant="primary" is-rounded left-icon="add"
+            @click="router.push('/users-and-roles/invite')"
+          >{{ t('Invite user') }}</MpButton>
+        </div>
         <div v-else-if="currentPageKey === 'Work orders'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/work-orders/new')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1813,25 +2194,25 @@ function startResize(e: MouseEvent) {
             <!-- Dropdown -->
             <div v-if="importDropdownOpen" class="import-dropdown" @click.stop>
 
-              <!-- Group 1: spreadsheet + upload bills -->
+              <!-- Group 1: spreadsheet + upload vendor invoices (OCR) -->
               <div class="import-group import-group--bordered">
                 <MpButton variant="ghost" class="import-item import-item--start">{{ t('Import from spreadsheet') }}</MpButton>
-                <MpButton variant="ghost" class="import-item import-item--start import-item--ai">
-                  <span>Upload bills</span>
+                <MpButton variant="ghost" class="import-item import-item--start import-item--ai" @click="openVendorUploadModal">
+                  <span>Upload vendor invoices</span>
                   <MpIcon name="airene-brand" size="16px" class="import-item__ai-icon" />
                 </MpButton>
               </div>
 
-              <!-- Group 2: Forward bills to -->
+              <!-- Group 2: Forward invoices to -->
               <div class="import-group">
                 <div class="import-forward">
                   <div class="import-forward__labels">
-                    <span class="import-forward__title">Forward bills to</span>
+                    <span class="import-forward__title">Forward invoices to</span>
                     <span class="import-forward__email">dropbox.680128@jurnal.id</span>
                   </div>
                   <a class="import-forward__copy" @click.prevent>Copy address</a>
                   <p class="import-forward__desc">
-                    Any bill or receipt attachment forwarded to this email will be automatically recorded as a draft.
+                    Any invoice forwarded to this email will be automatically recorded as a draft.
                   </p>
                 </div>
               </div>
@@ -1873,11 +2254,6 @@ function startResize(e: MouseEvent) {
                   <span>Upload bills</span>
                   <MpIcon name="airene-brand" size="16px" class="import-item__ai-icon" />
                 </MpButton>
-                <input
-                  ref="uploadBillsInputEl" type="file" class="visually-hidden-input"
-                  accept=".csv,.png,.xlsx,.pdf,.jpg,.jpeg" multiple
-                  @change="onUploadBillsChange"
-                />
               </div>
 
               <!-- Group 2: Forward bills to -->
@@ -1958,6 +2334,9 @@ function startResize(e: MouseEvent) {
             </div>
           </div>
         </div>
+        <div v-else-if="isContactsIndex" class="page-title-actions">
+          <MpButton variant="primary" is-rounded left-icon="add" @click="contactAddSignal++">{{ t(contactAddLabel) }}</MpButton>
+        </div>
         <div v-else-if="currentPageKey === 'Couriers'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="courierAddSignal++">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1978,6 +2357,18 @@ function startResize(e: MouseEvent) {
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             New purchase order
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Purchase quotes'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/purchase-quotes/new')">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            {{ t('New purchase quote') }}
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Purchase deliveries'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/purchase-deliveries/new')">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            {{ t('New purchase delivery') }}
           </button>
         </div>
         <!-- ── XPM (Mekari Expense) title-bar actions ── -->
@@ -2034,7 +2425,7 @@ function startResize(e: MouseEvent) {
           @click="purchaseOrdersTab = 'awaiting'"
         >
           Awaiting approval
-          <MpBadge for="additionalInformation" size="sm" type="warning">{{ poAwaitingCount }}</MpBadge>
+          <MpBadge class="page-tab-count" for="additionalInformation" size="sm" type="warning">{{ poAwaitingCount }}</MpBadge>
         </button>
         <button
           class="page-tab"
@@ -2042,7 +2433,7 @@ function startResize(e: MouseEvent) {
           @click="purchaseOrdersTab = 'rejected'"
         >
           Rejected
-          <MpBadge for="additionalInformation" size="sm" type="critical">{{ poRejectedCount }}</MpBadge>
+          <MpBadge class="page-tab-count" for="additionalInformation" size="sm" type="warning">{{ poRejectedCount }}</MpBadge>
         </button>
       </div>
 
@@ -2064,13 +2455,39 @@ function startResize(e: MouseEvent) {
         </button>
       </div>
 
-      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Sales report' || currentPageKey === 'Buzz branding' || currentPageKey === 'Inventory report' || currentPageKey === 'Tax report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
-        <MpBanner v-if="cycleCountBannerVisible" variant="info" class="cycle-count-banner">
+      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Sales report' || currentPageKey === 'Buzz branding' || currentPageKey === 'Inventory report' || currentPageKey === 'Financial report' || currentPageKey === 'Purchase report' || currentPageKey === 'Tax report' || currentPageKey === 'Cash and bank report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
+        <!-- Several warehouses in scope: where the work is, not which products. -->
+        <MpBanner v-if="cycleCountBannerMulti" variant="info" class="cycle-count-banner">
+          <MpBannerIcon name="info" />
+          <MpBannerTitle>Recommended for counting today</MpBannerTitle>
+          <MpBannerDescription>
+            <template v-for="(w, i) in cycleCountBannerCounts" :key="w.id">
+              <MpButton variant="textLink" size="sm" @click="openRecommendations(w.id)">
+                {{ w.count }} {{ w.count === 1 ? 'SKU' : 'SKUs' }}
+              </MpButton>
+              <span>&nbsp;in {{ w.name }}</span>
+              <span v-if="i < cycleCountBannerCounts.length - 2">, </span>
+              <span v-else-if="i === cycleCountBannerCounts.length - 2"> and </span>
+            </template>
+            <span>&nbsp;{{ cycleCountBannerTotal === 1 ? 'is' : 'are' }} recommended for counting today.</span>
+          </MpBannerDescription>
+        </MpBanner>
+        <!-- Exactly one warehouse in scope: the top 3 products themselves. -->
+        <MpBanner v-else-if="cycleCountBannerVisible" variant="info" class="cycle-count-banner">
           <MpBannerIcon name="info" />
           <MpBannerTitle>Recommended for counting today</MpBannerTitle>
           <MpBannerDescription>{{ cycleCountBannerNames.join(', ') }}</MpBannerDescription>
           <MpBannerLink>
-            <MpButton variant="textLink" size="sm" @click="selectTab('Recommendations')">View all recommendations</MpButton>
+            <MpButton variant="textLink" size="sm" @click="openRecommendations(cycleCountBannerSingleId)">View all recommendations</MpButton>
+          </MpBannerLink>
+        </MpBanner>
+        <!-- Nothing to recommend because the setting is off, not because nothing needs counting. -->
+        <MpBanner v-else-if="cycleCountRecOffVisible" variant="info" class="cycle-count-banner">
+          <MpBannerIcon name="info" />
+          <MpBannerTitle>{{ cycleCountRecOffNames.length === 1 ? `Cycle count recommendations are off for ${cycleCountRecOffNames[0]}` : 'Cycle count recommendations are off for the selected warehouses' }}</MpBannerTitle>
+          <MpBannerDescription>Turn them on in Configure warehouse to see which SKUs need counting here.</MpBannerDescription>
+          <MpBannerLink v-if="cycleCountRecOffConfigId">
+            <MpButton variant="textLink" size="sm" @click="router.push(`/warehouses/${cycleCountRecOffConfigId}/configure`)">Configure warehouse</MpButton>
           </MpBannerLink>
         </MpBanner>
         <component v-if="activeTabComponent" :is="activeTabComponent" />
@@ -2283,17 +2700,38 @@ function startResize(e: MouseEvent) {
             <!-- Active chat messages -->
             <template v-if="messages.length > 0">
               <div v-for="(msg, i) in messages" :key="i" class="chat-message" :class="'chat-message--' + msg.role">
-                <!-- Assistant avatar -->
-                <img v-if="msg.role === 'assistant'" src="~/assets/airene-mascot.png" width="24" height="25" alt="" class="chat-avatar" />
-                <div class="chat-bubble" :class="'chat-bubble--' + msg.role">
-                  <!-- eslint-disable-next-line vue/no-v-html -->
-                  <span v-if="msg.role === 'assistant'" class="chat-bubble__text chat-bubble__rich" v-html="renderMessage(msg.text)" />
-                  <span v-else class="chat-bubble__text">{{ msg.text }}</span>
+                <!-- User avatar (right); the AI answer has no avatar. -->
+                <MpAvatar v-if="msg.role === 'user'" name="Rizal Candra" size="lg" class="chat-user-av" />
+                <div class="chat-msg-col">
+                  <!-- Multi-agent room: which agent is speaking (avatar + name) -->
+                  <div v-if="msgAgent(msg)" class="chat-agent-head">
+                    <MpAvatar :name="msgAgent(msg)!.name" :src="msgAgent(msg)!.avatar" size="lg" class="chat-agent-head__av" />
+                    <span class="chat-agent-head__name" :style="{ color: msgAgent(msg)!.color }">{{ msgAgent(msg)!.name }}</span>
+                  </div>
+                  <div class="chat-bubble" :class="'chat-bubble--' + msg.role">
+                    <!-- eslint-disable-next-line vue/no-v-html -->
+                    <span v-if="msg.role === 'assistant'" class="chat-bubble__text chat-bubble__rich" v-html="renderMessage(msg.text)" />
+                    <span v-else class="chat-bubble__text">{{ msg.text }}</span>
+                  </div>
+                  <!-- Linked records (work order, sales order, …) -->
+                  <div v-if="msg.attachments?.length" class="chat-attach">
+                    <button v-for="(at, k) in msg.attachments" :key="k" type="button" class="chat-attach__chip" @click="router.push(at.to)">
+                      <MpIcon :name="at.icon || 'attachment'" size="sm" class="chat-attach__icon" />
+                      <span class="chat-attach__meta">
+                        <span class="chat-attach__label">{{ at.label }}</span>
+                        <span v-if="at.sublabel" class="chat-attach__sub">{{ at.sublabel }}</span>
+                      </span>
+                      <MpIcon name="caret-right" size="sm" class="chat-attach__go" />
+                    </button>
+                  </div>
+                  <!-- Agent suggestions -->
+                  <div v-if="msg.suggestions?.length" class="chat-msg-suggest">
+                    <button v-for="(sg, k) in msg.suggestions" :key="k" type="button" class="chat-suggest-chip" @click="sendMessage(sg)">{{ sg }}</button>
+                  </div>
                 </div>
               </div>
               <!-- Typing indicator -->
               <div v-if="isTyping" class="chat-message chat-message--assistant">
-                <img src="~/assets/airene-mascot.png" width="24" height="25" alt="" class="chat-avatar" />
                 <div class="chat-bubble chat-bubble--assistant chat-typing">
                   <span class="typing-dot" /><span class="typing-dot" /><span class="typing-dot" />
                 </div>
@@ -2378,6 +2816,25 @@ function startResize(e: MouseEvent) {
     @draft="unsavedChangesModal.chooseDraft"
     @cancel="unsavedChangesModal.chooseCancel"
   />
+
+  <!-- Shared OCR dropzone modal — "Upload vendor invoices" (Purchase invoices) /
+       "Upload bills" (Expenses); surface + copy switch per trigger. Kept mounted and
+       toggled via :open (MpModal needs the open transition to become visible). -->
+  <ImportVendorInvoicesModal
+    :open="uploadModalOpen"
+    :title="uploadModalTitle"
+    :description="uploadModalDesc"
+    @close="uploadModalOpen = false"
+    @upload="onUploadModalUpload"
+  />
+
+  <!-- Sales-invoice "Import from spreadsheet" (rule/import-modal) -->
+  <ImportSpreadsheetModal
+    :open="salesInvoiceImportOpen"
+    entity-label="sales invoices"
+    @close="salesInvoiceImportOpen = false"
+    @upload="salesInvoiceImportOpen = false"
+  />
 </template>
 
 <style scoped>
@@ -2403,7 +2860,7 @@ function startResize(e: MouseEvent) {
 
 .page-title-bar {
   height: var(--mp-sizes-18, 72px);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2430,7 +2887,7 @@ function startResize(e: MouseEvent) {
     display: none;
     position: absolute; top: calc(100% + 6px); right: 0; z-index: 60;
     min-width: 220px; flex-direction: column; align-items: stretch; gap: var(--mp-spacing-2);
-    background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default);
+    background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default, #e3e7e9);
     border-radius: var(--mp-radii-md, 8px); padding: var(--mp-spacing-2);
     box-shadow: var(--mp-shadows-md, 0 8px 24px rgba(0,0,0,0.12));
   }
@@ -2536,7 +2993,7 @@ function startResize(e: MouseEvent) {
 }
 
 .btn-enterprise--active {
-  background: var(--mp-background-neutral-hovered);
+  background: var(--mp-background-neutral-hovered, #eef0f3);
 }
 
 .import-dropdown {
@@ -2544,8 +3001,8 @@ function startResize(e: MouseEvent) {
   top: calc(100% + var(--mp-spacing-1));
   right: 0;
   width: 220px;
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-bold);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   box-shadow: var(--mp-shadows-sm);
   padding: var(--mp-spacing-2) 0;
@@ -2559,7 +3016,7 @@ function startResize(e: MouseEvent) {
 }
 
 .import-group--bordered {
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   padding-bottom: var(--mp-spacing-2);
   margin-bottom: 0;
 }
@@ -2581,7 +3038,7 @@ function startResize(e: MouseEvent) {
   text-align: left;
 }
 .import-item:hover {
-  background: var(--mp-background-neutral-subtle) !important;
+  background: var(--mp-background-neutral-subtle, #f8f9f9) !important;
 }
 
 .import-item--ai {
@@ -2663,7 +3120,7 @@ function startResize(e: MouseEvent) {
 
 .stage {
   flex: 1;
-  background: var(--mp-background-stage);
+  background: var(--mp-background-stage, #ffffff);
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   overflow-x: hidden;
   overflow-y: auto;
@@ -2700,7 +3157,7 @@ function startResize(e: MouseEvent) {
   display: flex;
   gap: var(--mp-spacing-5);
   padding: 0 var(--mp-spacing-6);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   flex-shrink: 0;
 }
 
@@ -2709,7 +3166,7 @@ function startResize(e: MouseEvent) {
   align-items: flex-end;
   gap: var(--mp-spacing-5);
   padding: 0 var(--mp-spacing-6);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   flex-shrink: 0;
 }
 
@@ -2779,7 +3236,7 @@ function startResize(e: MouseEvent) {
 .airene-slot {
   /* width is set dynamically via :style */
   flex-shrink: 0;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   padding: var(--mp-spacing-3);
   display: flex;
   gap: var(--mp-spacing-2);
@@ -2807,18 +3264,18 @@ function startResize(e: MouseEvent) {
   display: block;
   width: 2px;
   height: var(--mp-spacing-10, 40px);
-  background: var(--mp-border-default);
+  background: var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-full, 999px);
   transition: background 0.15s;
 }
 .airene-divider:hover::after {
-  background: var(--mp-border-bold);
+  background: var(--mp-border-bold, #8c9596);
 }
 
 /* White inner card */
 .airene-card {
   flex: 1;
-  background: var(--mp-background-neutral);
+  background: var(--mp-background-neutral, #ffffff);
   border-radius: var(--mp-radii-lg, 12px);
   overflow: hidden;
   display: flex;
@@ -2860,7 +3317,7 @@ function startResize(e: MouseEvent) {
   min-width: 0;
   max-width: 100%;
 }
-.airene-new-chat:hover { background: var(--mp-background-neutral-hovered); }
+.airene-new-chat:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 .airene-chat-title {
   min-width: 0;
@@ -2885,8 +3342,8 @@ function startResize(e: MouseEvent) {
   top: calc(100% + var(--mp-spacing-1));
   left: 0;
   width: 256px;
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-lg, 10px);
   box-shadow: var(--mp-shadows-md);
   z-index: 200;
@@ -2910,11 +3367,11 @@ function startResize(e: MouseEvent) {
   text-align: left;
   border-radius: var(--mp-radii-md);
 }
-.airene-history-new-btn:hover { background: var(--mp-background-neutral-subtle); }
+.airene-history-new-btn:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 
 .airene-history-sep {
   height: 1px;
-  background: var(--mp-border-default);
+  background: var(--mp-border-default, #e3e7e9);
   margin: var(--mp-spacing-1) 0;
 }
 
@@ -2945,7 +3402,7 @@ function startResize(e: MouseEvent) {
   text-overflow: ellipsis;
   border-radius: var(--mp-radii-sm);
 }
-.airene-history-item:hover { background: var(--mp-background-neutral-subtle); }
+.airene-history-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 
 .airene-header-icons {
   display: flex;
@@ -2966,7 +3423,7 @@ function startResize(e: MouseEvent) {
   color: var(--mp-text-secondary);
   padding: var(--mp-spacing-2);
 }
-.airene-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
+.airene-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* Kebab (…) menu — clear / delete chat */
 .airene-kebab-wrapper { position: relative; display: inline-flex; }
@@ -2995,7 +3452,7 @@ function startResize(e: MouseEvent) {
   color: var(--mp-text-default);
   border-radius: var(--mp-radii-md, 8px);
 }
-.airene-kebab-item:hover { background: var(--mp-background-neutral-subtle); }
+.airene-kebab-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .airene-kebab-item--danger { color: var(--mp-text-critical, #d3382e); }
 
 /* ── Chat body ───────────────────────────────────────────────────────────── */
@@ -3022,7 +3479,7 @@ function startResize(e: MouseEvent) {
   display: flex;
   align-items: flex-start;
   gap: var(--mp-spacing-2);
-  margin-bottom: var(--mp-spacing-3);
+  margin-bottom: 28px;
   flex-shrink: 0;
 }
 
@@ -3034,6 +3491,35 @@ function startResize(e: MouseEvent) {
   flex-shrink: 0;
   border-radius: var(--mp-radii-full, 50%);
 }
+/* User avatar — matches the Cowork › Chats page (36px, to the right). */
+.chat-user-av { flex-shrink: 0; width: 36px !important; height: 36px !important; }
+.chat-user-av :deep(> *) { width: 36px !important; height: 36px !important; }
+.chat-msg-col { display: flex; flex-direction: column; min-width: 0; max-width: 100%; }
+/* Multi-agent room: agent name + avatar above its message. */
+.chat-agent-head { display: inline-flex; align-items: center; gap: var(--mp-spacing-2, 8px); margin-bottom: var(--mp-spacing-1, 4px); }
+.chat-agent-head__av { flex-shrink: 0; width: 36px !important; height: 36px !important; background: transparent !important; }
+/* Transparent avatar (no coloured disc) — the agent artwork sits on its own. */
+.chat-agent-head__av :deep(*) { background-color: transparent !important; box-shadow: none !important; }
+.chat-agent-head__av :deep(> *) { width: 36px !important; height: 36px !important; }
+.chat-agent-head__name { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); }
+
+/* @agent mention chip inside a message */
+.chat-bubble__rich :deep(.agent-mention) { font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-link, #1d55d4); }
+
+/* Linked-record chips under a message */
+.chat-attach { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-3, 12px); margin-top: var(--mp-spacing-2, 8px); }
+.chat-attach__chip { display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5, 6px); max-width: 100%; padding: 0; border: none; background: none; cursor: pointer; font-family: inherit; text-align: left; }
+.chat-attach__chip:hover .chat-attach__label { text-decoration: underline; text-underline-offset: 2px; }
+.chat-attach__icon { flex-shrink: 0; color: var(--mp-icon-default, #536062); }
+.chat-attach__meta { display: flex; flex-direction: column; min-width: 0; }
+.chat-attach__label { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-link, #1d55d4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-attach__sub { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-attach__go { flex-shrink: 0; color: var(--mp-text-link, #1d55d4); }
+
+/* Suggestion chips under an agent message */
+.chat-msg-suggest { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2, 8px); margin-top: var(--mp-spacing-2, 8px); }
+.chat-suggest-chip { padding: var(--mp-spacing-1, 4px) var(--mp-spacing-3, 12px); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral, #fff); cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-link, #1d55d4); }
+.chat-suggest-chip:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); border-color: var(--mp-border-bold, #8c9596); }
 
 .chat-bubble {
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
@@ -3048,16 +3534,27 @@ function startResize(e: MouseEvent) {
   white-space: pre-wrap;
 }
 
+/* User bubble — subtle gray (not brand), avatar to its right. */
 .chat-bubble--user {
-  background: var(--mp-airene-default);
-  color: var(--mp-text-inverse);
-  border-radius: var(--mp-radii-lg, 12px) var(--mp-radii-sm) var(--mp-radii-lg, 12px) var(--mp-radii-lg, 12px);
+  background: var(--mp-background-neutral-subtle, #f1f3f4);
+  color: var(--mp-text-default);
+  border-radius: var(--mp-radii-lg, 12px);
 }
 
+/* AI answer — no avatar, no bubble: plain text spanning the column. */
 .chat-bubble--assistant {
-  background: var(--mp-background-neutral-subtle);
+  background: transparent;
   color: var(--mp-text-default);
-  border-radius: var(--mp-radii-sm) var(--mp-radii-lg, 12px) var(--mp-radii-lg, 12px) var(--mp-radii-lg, 12px);
+  border-radius: 0;
+  padding: 0;
+  max-width: 100%;
+}
+/* …but the typing loader keeps a subtle pill so the dots have a surface. */
+.chat-typing.chat-bubble--assistant {
+  background: var(--mp-background-neutral-subtle, #f1f3f4);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border-radius: var(--mp-radii-lg, 12px);
+  width: fit-content;
 }
 
 /* Rich (markdown-rendered) assistant text — v-html content needs :deep() to be
@@ -3142,7 +3639,7 @@ function startResize(e: MouseEvent) {
   width: var(--mp-sizes-1\.5, 6px);
   height: var(--mp-sizes-1\.5, 6px);
   border-radius: var(--mp-radii-full, 50%);
-  background: var(--mp-text-secondary);
+  background: var(--mp-text-secondary, #3a4749);
   flex-shrink: 0;
   animation: typingBounce 1.2s infinite ease-in-out;
 }
@@ -3190,7 +3687,7 @@ function startResize(e: MouseEvent) {
   width: 9px;              /* mascot eye — fixed pixel positions */
   height: 9px;
   border-radius: var(--mp-radii-full, 50%);
-  background: var(--mp-background-neutral);
+  background: var(--mp-background-neutral, #ffffff);
   overflow: hidden;          /* clips pupil inside the white disc */
   display: flex;
   align-items: center;
@@ -3290,8 +3787,8 @@ function startResize(e: MouseEvent) {
 
 /* Input box: white rounded rectangle */
 .airene-input-box {
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-lg, 12px);
   padding: var(--mp-spacing-2);
   display: flex;
@@ -3312,8 +3809,8 @@ function startResize(e: MouseEvent) {
   align-items: center;
   gap: var(--mp-spacing-1);
   padding: 3px var(--mp-spacing-1\.5) 3px var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-full, 999px);
   font-size: var(--mp-font-sizes-sm);
   font-weight: var(--mp-font-weights-regular);
@@ -3345,7 +3842,7 @@ function startResize(e: MouseEvent) {
   border-radius: var(--mp-radii-full, 50%);
 }
 .airene-context-remove:hover {
-  background: var(--mp-background-neutral-hovered);
+  background: var(--mp-background-neutral-hovered, #eef0f3);
   color: var(--mp-text-default);
 }
 
@@ -3392,7 +3889,7 @@ function startResize(e: MouseEvent) {
   border-radius: var(--mp-radii-sm);
   color: var(--mp-text-secondary);
 }
-.airene-add-btn:hover { background: var(--mp-background-neutral-subtle); }
+.airene-add-btn:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 
 .airene-input-right {
   display: flex;
@@ -3419,12 +3916,12 @@ function startResize(e: MouseEvent) {
   width: var(--mp-sizes-8, 32px);
   height: var(--mp-sizes-8, 32px);
   border: none;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   border-radius: var(--mp-radii-full, 999px);
   cursor: pointer;
   flex-shrink: 0;
 }
-.airene-send-btn:hover { background: var(--mp-background-neutral-hovered); }
+.airene-send-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* Disclaimer */
 .airene-disclaimer {

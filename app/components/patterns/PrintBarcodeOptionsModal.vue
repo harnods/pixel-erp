@@ -32,9 +32,8 @@ function confirm() {
 </script>
 
 <template>
-  <MpModal
-    id="print-barcode-options-modal" :is-open="open" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="emit('close')"
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="print-barcode-options-modal" :is-open="open" size="md" :is-keep-alive="false" @close="emit('close')"
   >
     <MpModalContent>
       <MpModalHeader>Print barcode<MpModalCloseButton /></MpModalHeader>

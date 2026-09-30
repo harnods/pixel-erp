@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { MpButton } from '@mekari/pixel3'
 // WMS → Reports index (Reports module → WMS submenu). Lists the four WMS reports;
 // each "View report" opens its raw-data table. Design: Figma Reports/WMS/Index
 // (node 4543-36259), built with Pixel 3 DT 2.4 enterprise tokens.
@@ -79,7 +80,7 @@ function viewReport(slug: string) {
           <h2 class="report-card-title">{{ t(r.title) }}</h2>
           <p class="report-card-desc">{{ t(r.description) }}</p>
         </div>
-        <button type="button" class="report-view-btn" @click="viewReport(r.slug)">{{ t('View report') }}</button>
+        <MpButton variant="secondary" is-rounded class="report-view-btn" @click="viewReport(r.slug)">{{ t('View report') }}</MpButton>
       </div>
       <!-- Empty filler cells keep the last row's columns present (complete grid). -->
       <div v-for="n in fillerCount" :key="`filler-${n}`" class="report-card report-card--filler" aria-hidden="true" />
@@ -130,20 +131,6 @@ function viewReport(slug: string) {
 }
 
 /* Secondary pill button (Pixel enterprise): white fill, bold border, rounded-full. */
-.report-view-btn {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--mp-spacing-2, 8px) var(--mp-spacing-4, 16px);
-  border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-neutral, #fff);
-  color: var(--mp-text-secondary);
-  font-size: var(--mp-font-sizes-md, 14px);
-  font-weight: var(--mp-font-weights-semi-bold, 600);
-  line-height: var(--mp-line-heights-md, 20px);
-  cursor: pointer;
-}
-.report-view-btn:hover { background: var(--mp-background-neutral-hovered); }
+/* layout only — the button look comes from MpButton (secondary) */
+.report-view-btn { align-self: flex-start; }
 </style>
