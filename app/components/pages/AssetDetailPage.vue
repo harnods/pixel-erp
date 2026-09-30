@@ -577,7 +577,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
           </header>
           <div class="ad__drawerbody">
             <label class="ad__fieldlabel" for="ad-newclass">{{ t('New class') }}</label>
-            <ErpFilterSelect id="ad-newclass" v-model="newClass" :placeholder="t('Choose a class')" :options="classOptions" width="100%" :is-clearable="false" />
+            <ErpFilterSelect id="ad-newclass" v-model="newClass" :placeholder="t('Select class')" :options="classOptions" width="100%" :is-clearable="false" />
             <p class="ad__drawernote">{{ t('The asset takes the new class\'s tax group, useful life and method. Posted periods stay unchanged.') }}</p>
             <template v-if="classPlan">
               <p v-if="!classPlan.ok" class="ad__fielderror">{{ t(classPlan.reason ?? '') }}</p>

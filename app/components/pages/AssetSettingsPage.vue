@@ -127,7 +127,7 @@ function toggleOther() { infoToast(t('Not in this prototype')) }
     <div class="st__card">
       <div class="st__cardhead">
         <span class="st__cardtitle">{{ t('Asset classes') }}</span>
-        <span class="st__hint">{{ t('New assets take the group, life and method of their class') }}</span>
+        <span class="st__hint">{{ t('New assets take the tax group, life and method of their class') }}</span>
       </div>
       <table class="st__table">
         <thead>

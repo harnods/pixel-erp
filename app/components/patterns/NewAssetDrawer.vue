@@ -182,12 +182,12 @@ function submit() {
             <div class="nad-row">
               <div class="nad-field">
                 <label class="nad-label" for="nad-class">{{ t('Class') }}</label>
-                <ErpFilterSelect id="nad-class" v-model="f.cls" :placeholder="t('Choose a class')" :options="classOptions" width="100%" :is-clearable="false" />
+                <ErpFilterSelect id="nad-class" v-model="f.cls" :placeholder="t('Select class')" :options="classOptions" width="100%" :is-clearable="false" />
                 <p v-if="errors.cls" class="nad-error">{{ t(errors.cls) }}</p>
               </div>
               <div class="nad-field">
                 <label class="nad-label" for="nad-branch">{{ t('Branch') }}</label>
-                <ErpFilterSelect id="nad-branch" v-model="f.branch" :placeholder="t('Choose a branch')" :options="assetBranches" width="100%" :is-clearable="false" />
+                <ErpFilterSelect id="nad-branch" v-model="f.branch" :placeholder="t('Select branch')" :options="assetBranches" width="100%" :is-clearable="false" />
                 <p v-if="errors.branch" class="nad-error">{{ t(errors.branch) }}</p>
               </div>
             </div>
@@ -235,20 +235,20 @@ function submit() {
             </div>
             <div class="nad-field">
               <label class="nad-label" for="nad-group">{{ t('Tax group') }}</label>
-              <ErpFilterSelect id="nad-group" v-model="f.taxGroup" :placeholder="t('Choose a group')" :options="groupOptions" width="100%" />
+              <ErpFilterSelect id="nad-group" v-model="f.taxGroup" :placeholder="t('Select tax group')" :options="groupOptions" width="100%" />
               <p v-if="errors.taxGroup" class="nad-error">{{ t(errors.taxGroup) }}</p>
               <p v-else class="nad-hint">{{ t('Filled from the class. Sets the tax life') }}</p>
             </div>
             <div v-if="!isIntangible" class="nad-row">
               <div class="nad-field">
                 <label class="nad-label" for="nad-location">{{ t('Location') }} <span class="nad-optional">{{ t('Optional') }}</span></label>
-                <ErpFilterSelect id="nad-location" v-model="f.location" :placeholder="t('Choose a location')" :options="locationOptions" width="100%" />
+                <ErpFilterSelect id="nad-location" v-model="f.location" :placeholder="t('Select location')" :options="locationOptions" width="100%" />
                 <p v-if="errors.location" class="nad-error">{{ t(errors.location) }}</p>
                 <p v-else class="nad-hint">{{ t('Add new locations in Asset settings') }}</p>
               </div>
               <div class="nad-field">
                 <label class="nad-label" for="nad-custodian">{{ t('Custodian') }} <span class="nad-optional">{{ t('Optional') }}</span></label>
-                <ErpFilterSelect id="nad-custodian" v-model="f.custodian" :placeholder="t('Choose a custodian')" :options="custodianOptions" width="100%" />
+                <ErpFilterSelect id="nad-custodian" v-model="f.custodian" :placeholder="t('Select custodian')" :options="custodianOptions" width="100%" />
                 <p v-if="errors.custodian" class="nad-error">{{ t(errors.custodian) }}</p>
               </div>
             </div>

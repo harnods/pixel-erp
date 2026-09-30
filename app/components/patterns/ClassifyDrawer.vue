@@ -76,10 +76,10 @@ function submit() {
   <Teleport to="body">
     <Transition name="cld">
       <div v-if="isOpen && asset" class="cld-overlay">
-        <div class="cld-panel" role="dialog" :aria-label="t('Tax group')">
+        <div class="cld-panel" role="dialog" :aria-label="asset.taxGroup ? t('Change tax group') : t('Set tax group')">
           <header class="cld-head">
             <div>
-              <div class="cld-title">{{ t('Tax group') }}</div>
+              <div class="cld-title">{{ asset.taxGroup ? t('Change tax group') : t('Set tax group') }}</div>
               <div class="cld-sub">{{ asset.id }} {{ asset.name }} · {{ asset.class }} · {{ t(asset.type) }}</div>
             </div>
             <MpButton class="cld-close" variant="ghost" is-rounded :aria-label="t('Close')" @click="emit('close')">
@@ -93,7 +93,7 @@ function submit() {
             </p>
             <div class="cld-field">
               <label class="cld-label" for="cld-group">{{ t('Tax group') }}</label>
-              <ErpFilterSelect id="cld-group" v-model="group" :placeholder="t('Choose a group')" :options="groups" width="100%" :is-clearable="false" />
+              <ErpFilterSelect id="cld-group" v-model="group" :placeholder="t('Select tax group')" :options="groups" width="100%" :is-clearable="false" />
               <p v-if="errors.group" class="cld-error">{{ t(errors.group) }}</p>
               <p v-else class="cld-hint">
                 <template v-if="asset.type === 'Intangible'">{{ t('Intangibles use Tax group 1 to 4') }}</template>
@@ -103,7 +103,7 @@ function submit() {
             </div>
             <div v-if="asset.type === 'Intangible'" class="cld-field">
               <label class="cld-label" for="cld-code">{{ t('Intangible code') }}</label>
-              <ErpFilterSelect id="cld-code" v-model="code" :placeholder="t('Choose a code')" :options="intangibleCodeOptions" width="100%" :is-clearable="false" />
+              <ErpFilterSelect id="cld-code" v-model="code" :placeholder="t('Select intangible code')" :options="intangibleCodeOptions" width="100%" :is-clearable="false" />
               <p v-if="errors.statutoryCode" class="cld-error">{{ t(errors.statutoryCode) }}</p>
             </div>
             <div class="cld-field">
@@ -114,7 +114,7 @@ function submit() {
                 {{ t(`${group} sets ${formatMonths(statutoryMonths)}. Only the Owner can change it`) }}
               </p>
               <p v-else-if="statutoryMonths" class="cld-hint">
-                {{ t(`${group} sets ${formatMonths(statutoryMonths)}. A different life is kept in the history`) }}
+                {{ t(`${group} sets ${formatMonths(statutoryMonths)}. A different life is recorded in the history`) }}
               </p>
             </div>
             <div class="cld-field">
