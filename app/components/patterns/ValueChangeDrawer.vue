@@ -388,7 +388,7 @@ const approvalNote = computed(() => {
                   <div class="vcd-kv"><span>{{ t('Recoverable amount') }}</span><span>{{ money(Number(form.recoverable.replace(/\D/g, ''))) }}</span></div>
                   <div class="vcd-kv vcd-kv--result">
                     <span>{{ t('Outcome') }}</span>
-                    <span>{{ preview.impairment?.loss ? `${t('Impaired')}: ${t('impairment loss of')} ${formatIDRWhole(preview.impairment.loss)}` : t('No impairment') }}</span>
+                    <span>{{ preview.impairment?.loss ? `${t('Impairment loss')} ${formatIDRWhole(preview.impairment.loss)}` : t('No impairment') }}</span>
                   </div>
                 </div>
 
@@ -513,7 +513,7 @@ const approvalNote = computed(() => {
                     </thead>
                     <tbody>
                       <tr v-for="r in b.rows" :key="r.period" :class="{ 'vcd-tr--applied': r.applied, 'vcd-tr--changed': r.before !== r.after }">
-                        <td class="vcd-td">{{ r.label }}<span v-if="r.applied" class="vcd-td-sub">{{ t('Posted') }}</span></td>
+                        <td class="vcd-td">{{ r.label }}<span v-if="r.applied" class="vcd-td-sub">{{ t('Before the change') }}</span></td>
                         <td class="vcd-td vcd-td--num">{{ r.before === null ? t(r.beforeAbsent ?? 'None') : formatIDRWhole(r.before) }}</td>
                         <td class="vcd-td vcd-td--num">{{ r.after === null ? t(r.afterAbsent ?? 'None') : formatIDRWhole(r.after) }}</td>
                         <td class="vcd-td vcd-td--num">{{ money(r.carryingAfter) }}</td>

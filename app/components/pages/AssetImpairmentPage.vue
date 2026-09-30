@@ -175,18 +175,18 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
       <div class="im__formgrid">
         <div class="im__formfield">
           <label class="im__formlabel">{{ t('Asset') }}</label>
-          <ErpFilterSelect id="im-asset" v-model="formAsset" :placeholder="t('Choose an asset')" :options="assetOptions" width="100%" />
+          <ErpFilterSelect id="im-asset" v-model="formAsset" :placeholder="t('Select asset')" :options="assetOptions" width="100%" />
         </div>
 
         <div class="im__formfield">
           <label class="im__formlabel">{{ t('Indicator') }}</label>
-          <ErpFilterSelect id="im-indicator" v-model="formIndicator" :placeholder="t('Choose an indicator')" :options="indicatorOptions" width="100%" />
+          <ErpFilterSelect id="im-indicator" v-model="formIndicator" :placeholder="t('Select indicator')" :options="indicatorOptions" width="100%" />
         </div>
 
         <div class="im__formfield">
           <label class="im__formlabel">{{ t('Carrying amount') }}</label>
           <div class="im__readonly">
-            {{ carryingOf === null ? t('Choose an asset first') : formatIDRWhole(carryingOf) }}
+            {{ carryingOf === null ? t('Select an asset first') : formatIDRWhole(carryingOf) }}
           </div>
           <div class="im__formnote">{{ t('From the depreciation schedule at today\'s date') }}</div>
         </div>
@@ -199,7 +199,7 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
 
         <div class="im__formfield">
           <label class="im__formlabel">{{ t('Basis') }}</label>
-          <ErpFilterSelect id="im-basis" v-model="formBasis" :placeholder="t('Choose a basis')" :options="basisOptions" width="100%" />
+          <ErpFilterSelect id="im-basis" v-model="formBasis" :placeholder="t('Select basis')" :options="basisOptions" width="100%" />
         </div>
 
         <div class="im__formfield">

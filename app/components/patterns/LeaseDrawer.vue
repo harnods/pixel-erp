@@ -114,6 +114,7 @@ watch(() => [props.isOpen, props.mode, props.leaseId], () => {
 const FIELD_NAMES: Record<string, string> = {
   name: 'Lease name', branch: 'Branch', startDate: 'Commencement date', termMonths: 'Term',
   monthlyPayment: 'Monthly payment', annualRatePct: 'Discount rate', exemption: 'Exemption',
+  period: 'Effective from', extraMonths: 'Change in term', payment: 'Revised monthly payment', reason: 'What changed in the contract',
 }
 const fieldSummary = computed(() => {
   const names = Object.keys(errors.value).filter((k) => k !== 'form').map((k) => FIELD_NAMES[k] ?? k)
@@ -173,7 +174,7 @@ function submit() {
               </div>
               <div class="ld-field">
                 <label class="ld-label" for="ld-branch">{{ t('Branch') }}</label>
-                <ErpFilterSelect id="ld-branch" v-model="f.branch" :placeholder="t('Choose a branch')" :options="assetBranches" width="100%" :is-clearable="false" />
+                <ErpFilterSelect id="ld-branch" v-model="f.branch" :placeholder="t('Select branch')" :options="assetBranches" width="100%" :is-clearable="false" />
                 <p v-if="errors.branch" class="ld-error">{{ t(errors.branch) }}</p>
               </div>
             </div>
@@ -209,7 +210,7 @@ function submit() {
               <MpCheckbox id="ld-exempt" :is-checked="f.exempt" @change="f.exempt = !f.exempt">
                 {{ t('Exempt (short-term or low-value)') }}
               </MpCheckbox>
-              <ErpFilterSelect v-if="f.exempt" id="ld-exemption" v-model="f.exemption" :placeholder="t('Exemption')" :options="exemptionOptions" width="100%" :is-clearable="false" />
+              <ErpFilterSelect v-if="f.exempt" id="ld-exemption" v-model="f.exemption" :placeholder="t('Select exemption')" :options="exemptionOptions" width="100%" :is-clearable="false" />
               <p v-if="errors.exemption" class="ld-error">{{ t(errors.exemption) }}</p>
               <p v-else class="ld-hint">{{ t('No right-of-use asset or liability. Payments are expensed when due') }}</p>
             </div>
@@ -245,7 +246,7 @@ function submit() {
               <div class="ld-row">
                 <div class="ld-field">
                   <label class="ld-label" for="ld-mod-period">{{ t('Effective from') }}</label>
-                  <ErpFilterSelect id="ld-mod-period" v-model="m.period" :placeholder="t('Choose a period')" :options="periodOptions" width="100%" :is-clearable="false" />
+                  <ErpFilterSelect id="ld-mod-period" v-model="m.period" :placeholder="t('Select period')" :options="periodOptions" width="100%" :is-clearable="false" />
                   <p v-if="errors.period" class="ld-error">{{ t(errors.period) }}</p>
                 </div>
                 <div class="ld-field">
