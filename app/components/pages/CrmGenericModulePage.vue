@@ -57,6 +57,7 @@ function onApplyFilters(v: CrmGenericFiltersValue) {
   filtersValue.fieldFilters = { ...v.fieldFilters }
   search.value = v.keyword
 }
+function clearFilters() { search.value = ''; statusFilter.value = ''; Object.assign(filtersValue, emptyCrmGenericFilters()) }
 
 // ── Pipeline / kanban detection ──
 const pipelineFieldId = computed(() => genericPipelineFieldId(moduleId.value))
@@ -170,7 +171,7 @@ const columnVisibilityReady = computed(() => {
 })
 const columnItems = computed(() => allCols.value.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 })))
 const columns = computed<TableColumn[]>(() => allCols.value.filter((c) => columnVisibilityReady.value[c.key]))
-const hasActiveFilter = computed(() => !!statusFilter.value || Object.keys(filtersValue.fieldFilters).some((k) => !!filtersValue.fieldFilters[k]))
+const hasActiveFilter = computed(() => !!search.value || !!statusFilter.value || Object.keys(filtersValue.fieldFilters).some((k) => !!filtersValue.fieldFilters[k]))
 
 const flatRows = computed(() => {
   return paginated.value.map((r) => {
@@ -295,11 +296,21 @@ function ownerInitials(name: string) { return name.split(' ').map((p) => p[0]).s
         :rows="(flatRows as unknown as Record<string, unknown>[])"
         :total="total" :current-page="currentPage" :per-page="perPage"
         :sort-key="sortKey" :sort-dir="sortDir" :search="search" :has-active-filter="hasActiveFilter"
-        :filter-empty-label="t('record')"
+        :has-active-search="!!search" :filter-empty-label="t('record')"
         @update:current-page="setPage" @update:per-page="setPerPage" @toggle-sort="toggleSort"
+        @clear-filters="clearFilters"
       >
         <template #cell-record-name="{ row }">
           <a class="cell-link" @click="goDetail((row as unknown as GenericModuleRecord).id)">{{ (row as unknown as GenericModuleRecord).name }}</a>
+        </template>
+
+        <template #empty>
+          <div class="gmp-empty" data-devchange="crm-generic-empty-state">
+            <img src="/illustrations/empty-folder.png" alt="" class="gmp-empty-illustration" width="288" height="240" />
+            <p class="gmp-empty-title">{{ t('No records') }}</p>
+            <p class="gmp-empty-desc">{{ t('Records will appear here once created.') }}</p>
+            <MpButton variant="secondary" is-rounded left-icon="add" @click="openCreate">{{ t('New record') }}</MpButton>
+          </div>
         </template>
       </ErpTablePage>
     </div>
@@ -368,4 +379,9 @@ function ownerInitials(name: string) { return name.split(' ').map((p) => p[0]).s
 .deal__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
 .deal__owner { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .deal__avatar { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 22px; height: 22px; border-radius: var(--mp-radii-full, 999px); font-size: 10px; font-weight: var(--mp-font-weights-semi-bold); line-height: 1; background: var(--mp-background-neutral-subtle, #eef1f1); color: var(--mp-text-secondary); }
+
+.gmp-empty { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-2); }
+.gmp-empty-illustration { width: 288px; height: 240px; object-fit: contain; }
+.gmp-empty-title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.gmp-empty-desc { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-secondary); }
 </style>

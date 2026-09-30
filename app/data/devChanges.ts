@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-generic-empty-state',
+    title: 'Custom module: proper empty state on index page',
+    description:
+      'Index page now shows the standard empty state (illustration + title + caption + secondary CTA) when no records exist, matching the Deals and Companies pattern per rule/empty-state-structure.',
+    date: '2026-10-01',
+    files: ['CrmGenericModulePage.vue'],
+  },
+  {
     id: 'crm-generic-product-list',
     title: 'Custom module: full product list on record detail page',
     description:

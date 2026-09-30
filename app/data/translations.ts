@@ -687,6 +687,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Choose who, within the selected team(s), can access this module.': 'Pilih siapa, dari tim yang dipilih, yang bisa mengakses modul ini.',
   'New record': 'Record baru',
   'No records': 'Belum ada record',
+  'Records will appear here once created.': 'Record akan muncul di sini setelah dibuat.',
   'Record not found': 'Record tidak ditemukan',
   'Search records…': 'Cari record…',
   'Data source': 'Sumber data',
