@@ -16,7 +16,7 @@
  */
 import { computed } from 'vue'
 import { MpButton, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription } from '@mekari/pixel3'
-import { formatIDR } from '~/utils/currency'
+import { formatIDRWhole } from '~/utils/currency'
 import { infoToast } from '~/utils/toasts'
 import { lampiranRows, lampiranStatus, type LampiranRow } from '~/data/assetTaxbook'
 import { CURRENT_PERIOD } from '~/data/assetStore'
@@ -34,7 +34,7 @@ const halves = computed(() => [
 function sum(rows: LampiranRow[], k: 'cost' | 'charge' | 'openingFiscal' | 'closingFiscal') {
   return rows.reduce((s, r) => s + (r[k] ?? 0), 0)
 }
-function money(v: number | null) { return v === null ? '–' : formatIDR(v) }
+function money(v: number | null) { return v === null ? '–' : formatIDRWhole(v) }
 
 function openUnclassified() {
   router.push({ path: '/assets', query: { filter: 'unclassified' } })
@@ -59,7 +59,7 @@ function openUnclassified() {
       <MpBannerDescription>
         {{ status.unclassified.length }}
         {{ t(status.unclassified.length === 1 ? 'asset held this year has no statutory group' : 'assets held this year have no statutory group') }}
-        ({{ status.unclassified.map((a) => a.id).join(', ') }}), {{ t('so') }} {{ formatIDR(status.unreportedCost) }}
+        ({{ status.unclassified.map((a) => a.id).join(', ') }}), {{ t('so') }} {{ formatIDRWhole(status.unreportedCost) }}
         {{ t('of cost would be missing from the filing.') }}
         <span class="lp__link" @click="openUnclassified">
           {{ t(status.unclassified.length === 1 ? 'Open the unclassified asset in the register' : `Open the ${status.unclassified.length} unclassified assets in the register`) }}
@@ -112,11 +112,11 @@ function openUnclassified() {
                 <span class="lp__link" @click="router.push(`/assets/${r.id}`)">{{ r.id }}</span> {{ r.name }}
               </td>
               <td class="lp__td lp__td--num">{{ r.acquired }}</td>
-              <td class="lp__td lp__td--num">{{ formatIDR(r.cost) }}</td>
+              <td class="lp__td lp__td--num">{{ formatIDRWhole(r.cost) }}</td>
               <td class="lp__td lp__td--num">{{ money(r.openingFiscal) }}</td>
               <td class="lp__td">{{ t(r.commercialMethod) }}</td>
               <td class="lp__td">{{ t(r.fiscalMethod) }}</td>
-              <td class="lp__td lp__td--num">{{ formatIDR(r.charge) }}</td>
+              <td class="lp__td lp__td--num">{{ formatIDRWhole(r.charge) }}</td>
               <td class="lp__td lp__td--num">{{ money(r.closingFiscal) }}</td>
               <td class="lp__td lp__td--note">{{ r.note ? t(r.note) : '' }}</td>
             </tr>
@@ -124,11 +124,11 @@ function openUnclassified() {
           <tfoot>
             <tr class="lp__tr lp__tr--total">
               <td class="lp__td" colspan="4">{{ t('Total') }}</td>
-              <td class="lp__td lp__td--num">{{ formatIDR(sum(h.rows, 'cost')) }}</td>
-              <td class="lp__td lp__td--num">{{ formatIDR(sum(h.rows, 'openingFiscal')) }}</td>
+              <td class="lp__td lp__td--num">{{ formatIDRWhole(sum(h.rows, 'cost')) }}</td>
+              <td class="lp__td lp__td--num">{{ formatIDRWhole(sum(h.rows, 'openingFiscal')) }}</td>
               <td class="lp__td" colspan="2" />
-              <td class="lp__td lp__td--num">{{ formatIDR(sum(h.rows, 'charge')) }}</td>
-              <td class="lp__td lp__td--num">{{ formatIDR(sum(h.rows, 'closingFiscal')) }}</td>
+              <td class="lp__td lp__td--num">{{ formatIDRWhole(sum(h.rows, 'charge')) }}</td>
+              <td class="lp__td lp__td--num">{{ formatIDRWhole(sum(h.rows, 'closingFiscal')) }}</td>
               <td class="lp__td" />
             </tr>
           </tfoot>

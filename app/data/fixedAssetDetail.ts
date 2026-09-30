@@ -18,7 +18,7 @@ import {
 } from './assetStore'
 import {
   derive, chargeAt, bookOf, eventLabel, periodLabel, periodShort, periodFromLabel,
-  addPeriods, periodIndex, formatLife, METHOD_LABEL, rupiah, periodEndDate, pct, isAfter,
+  addPeriods, periodIndex, formatLife, plural, METHOD_LABEL, rupiah, periodEndDate, pct, isAfter,
   type Book, type Period, type ScheduleVersion, type AssetEvent, type Basis, type ScheduleRow,
 } from './assetEngine'
 import { TAX_RATE, type FixedAsset } from './fixedAssets'
@@ -247,10 +247,10 @@ export function derivation(a: FixedAsset, basis: Book, period = periodLabel(CURR
     { label: 'Schedule version', value: `v${d.version?.number ?? 1} · ${b.cause.label}` },
     { label: 'Opening basis', value: b.openingAccumulated ? `${fmt(b.openingCarrying)} carrying (${fmt(b.cost)} cost less ${fmt(b.openingAccumulated)})` : fmt(b.cost) },
     { label: 'Method', value: METHOD_LABEL[b.method] },
-    { label: 'Life', value: `${lifeYears(b.lifeMonths)}${b.monthsElapsed ? `, ${b.remainingMonths} months remaining from ${periodLabel(b.fromPeriod)}` : ''}` },
+    { label: 'Life', value: `${lifeYears(b.lifeMonths)}${b.monthsElapsed ? `, ${plural(b.remainingMonths, 'month')} remaining from ${periodLabel(b.fromPeriod)}` : ''}` },
   ]
   if (basis === 'accounting') steps.push({ label: 'Residual value', value: fmt(b.residual) })
-  steps.push({ label: 'To depreciate on this basis', value: `${fmt(b.depreciable)} over ${b.remainingMonths} months` })
+  steps.push({ label: 'To depreciate on this basis', value: `${fmt(b.depreciable)} over ${plural(b.remainingMonths, 'month')}` })
   steps.push({
     label: 'Period',
     value: `Month ${d.monthInBasis} of ${b.remainingMonths}, full month${d.isFinalMonth ? ', final month takes the rounding residue' : ''}`,
@@ -383,7 +383,7 @@ export function versionViews(a: FixedAsset, book: Book): VersionView[] {
         { k: 'Cost', v: fmt(basis.cost) },
         { k: 'Opening carrying', v: fmt(basis.openingCarrying) },
         { k: 'Method', v: METHOD_LABEL[basis.method] },
-        { k: 'Life', v: basis.lifeMonths === null ? 'Indefinite' : `${formatLife(basis.lifeMonths)}, ${basis.remainingMonths} months from ${periodLabel(basis.fromPeriod)}` },
+        { k: 'Life', v: basis.lifeMonths === null ? 'Indefinite' : `${formatLife(basis.lifeMonths)}, ${plural(basis.remainingMonths, 'month')} from ${periodLabel(basis.fromPeriod)}` },
         ...(book === 'accounting' ? [{ k: 'Residual', v: fmt(basis.residual) }] : []),
         { k: 'Monthly charge', v: first ? fmt(first.charge) : 'None' },
       ],

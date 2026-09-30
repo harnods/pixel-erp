@@ -1,9 +1,8 @@
 /**
  * How the asset screens write a length of time: "1 month", "2 months",
- * "1 year", "2 years 1 month". The engine's own formatter (formatLife) and the
- * preview strings built on it say "1 months" and "1 years"; the screens pass
- * those strings through `plainDurations` so no screen shows the wrong plural.
- * A later step can move the data layer onto `formatMonths` directly.
+ * "1 year", "2 years 1 month". The engine's formatter (formatLife) now gets the
+ * plural right at the source; `plainDurations` stays as a guard for any
+ * sentence built elsewhere and is a no-op on correct text.
  */
 
 /** "1 month", "12 months". */

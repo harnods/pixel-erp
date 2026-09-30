@@ -17,7 +17,7 @@
  */
 import { computed, ref } from 'vue'
 import { MpButton, MpSegmentedControl, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription } from '@mekari/pixel3'
-import { formatIDR } from '~/utils/currency'
+import { formatIDRWhole } from '~/utils/currency'
 import { infoToast, successToast } from '~/utils/toasts'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import {
@@ -64,11 +64,11 @@ const unclassifiedCharge = computed(() => H.value.unclassifiedAccounting)
 /** A signed figure, or the words that explain why there is not one. */
 function cell(v: number | null, absence = 'Not recognised') {
   if (v === null) return { text: t(absence), absent: true }
-  return { text: formatIDR(v), absent: false }
+  return { text: formatIDRWhole(v), absent: false }
 }
 /** Signed, so the direction reads without a legend. */
 function signed(v: number) {
-  return v === 0 ? formatIDR(0) : `${v > 0 ? '+' : '−'}${formatIDR(Math.abs(v))}`
+  return v === 0 ? formatIDRWhole(0) : `${v > 0 ? '+' : '−'}${formatIDRWhole(Math.abs(v))}`
 }
 
 // rule/export-modal — export opens the shared modal, never a silent download.
@@ -115,7 +115,7 @@ function onExport() {
       <MpBannerDescription>
         {{ unclassified.map((a) => `${a.id} ${a.name}`).join(', ') }}
         {{ t('has no statutory group, so there is no tax figure to compare against. Its accounting charge of') }}
-        {{ formatIDR(unclassifiedCharge) }}
+        {{ formatIDRWhole(unclassifiedCharge) }}
         {{ t('is excluded from both columns so the two describe the same population.') }}
       </MpBannerDescription>
     </MpBanner>
@@ -154,8 +154,8 @@ function onExport() {
           </tr>
           <tr class="fb__tr fb__tr--total">
             <td class="fb__td">{{ t('Total depreciation') }}</td>
-            <td class="fb__td fb__td--num">{{ formatIDR(depreciationTotal.commercial) }}</td>
-            <td class="fb__td fb__td--num">{{ formatIDR(depreciationTotal.fiscal) }}</td>
+            <td class="fb__td fb__td--num">{{ formatIDRWhole(depreciationTotal.commercial) }}</td>
+            <td class="fb__td fb__td--num">{{ formatIDRWhole(depreciationTotal.fiscal) }}</td>
             <td class="fb__td fb__td--num">{{ signed(depreciationTotal.difference) }}</td>
           </tr>
         </tbody>
@@ -192,8 +192,8 @@ function onExport() {
           </tr>
           <tr class="fb__tr fb__tr--total">
             <td class="fb__td">{{ t('Total amortisation') }}</td>
-            <td class="fb__td fb__td--num">{{ formatIDR(amortisationTotal.commercial) }}</td>
-            <td class="fb__td fb__td--num">{{ formatIDR(amortisationTotal.fiscal) }}</td>
+            <td class="fb__td fb__td--num">{{ formatIDRWhole(amortisationTotal.commercial) }}</td>
+            <td class="fb__td fb__td--num">{{ formatIDRWhole(amortisationTotal.fiscal) }}</td>
             <td class="fb__td fb__td--num">{{ signed(amortisationTotal.difference) }}</td>
           </tr>
         </tbody>
@@ -286,7 +286,7 @@ function onExport() {
           {{ t('Deferred tax effect') }}
           <span class="fb__footnote">{{ t(`at ${Math.round(H.taxRate * 100)}% of the net temporary difference · ${H.deferredTax >= 0 ? 'a deferred tax asset' : 'a deferred tax liability'} · a disclosure, not a journal entry`) }}</span>
         </span>
-        <span class="fb__footvalue" data-testid="fb-deferred">{{ formatIDR(Math.abs(H.deferredTax)) }}</span>
+        <span class="fb__footvalue" data-testid="fb-deferred">{{ formatIDRWhole(Math.abs(H.deferredTax)) }}</span>
       </div>
     </div>
 

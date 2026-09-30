@@ -201,6 +201,20 @@ describe('8 · pluralisation', () => {
     expect(formatMonths(12)).toBe('1 year')
     expect(monthsLabel(1)).toBe('1 month')
   })
+  it('the engine formatter is right at the source', async () => {
+    const { formatLife, plural } = await import('~/data/assetEngine')
+    expect(formatLife(12)).toBe('1 year')
+    expect(formatLife(24)).toBe('2 years')
+    expect(formatLife(1)).toBe('1 month')
+    expect(formatLife(7)).toBe('7 months')
+    expect(plural(1, 'month')).toBe('1 month')
+    expect(plural(0, 'month')).toBe('0 months')
+  })
+  it('the three tax pages show whole rupiah', () => {
+    for (const f of ['AssetFiscalBookPage', 'AssetLampiranPage', 'AssetTaxDifferencesPage']) {
+      expect(src(`app/components/pages/${f}.vue`)).not.toMatch(/\bformatIDR\b/)
+    }
+  })
   it('the value-change preview life row goes through it', () => {
     expect(src('app/components/patterns/ValueChangeDrawer.vue')).toContain('plainDurations(b.lifeAfter)')
   })

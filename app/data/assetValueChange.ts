@@ -14,7 +14,7 @@ import {
   type EventPreview, type ImpairmentTest,
 } from './assetStore'
 import {
-  chargeAt, bookValueAt, addPeriods, periodLabel, periodEndDate, formatLife, rupiah, isBefore,
+  chargeAt, bookValueAt, addPeriods, periodLabel, periodEndDate, formatLife, plural, rupiah, isBefore,
   type AssetEvent, type AssetLedger, type Book, type Period, type Method,
 } from './assetEngine'
 
@@ -252,7 +252,7 @@ function lifeOf(l: AssetLedger, book: Book, p: Period): string {
   if (!b) return 'No book'
   let found = b.bases[0]!
   for (const x of b.bases) if (!isBefore(p, x.fromPeriod)) found = x
-  return found.lifeMonths === null ? 'Indefinite' : `${formatLife(found.lifeMonths)}, ${found.remainingMonths} months from ${periodLabel(found.fromPeriod)}`
+  return found.lifeMonths === null ? 'Indefinite' : `${formatLife(found.lifeMonths)}, ${plural(found.remainingMonths, 'month')} from ${periodLabel(found.fromPeriod)}`
 }
 
 /** What committing would do, on both books, read from a replay of the log. */

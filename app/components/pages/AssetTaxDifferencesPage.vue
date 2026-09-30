@@ -13,7 +13,7 @@
  */
 import { computed, ref } from 'vue'
 import { MpSegmentedControl, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription } from '@mekari/pixel3'
-import { formatIDR } from '~/utils/currency'
+import { formatIDRWhole } from '~/utils/currency'
 import { differenceByAsset, statementFigures, DIFFERENCE_CONVENTION } from '~/data/fixedAssetScreens'
 import { impactBy } from '~/data/assetTaxbook'
 import { fixedAssets, CURRENT_PERIOD } from '~/data/assetStore'
@@ -42,7 +42,7 @@ const impact = computed(() => impactBy(view.value === 'asset' ? 'line' : view.va
 const unclassified = computed(() => fixedAssets.value.filter((a) => a.taxGroup === null && a.status !== 'Disposed' && a.status !== 'Split'))
 
 function signed(v: number) {
-  return v === 0 ? formatIDR(0) : `${v > 0 ? '+' : '−'}${formatIDR(Math.abs(v))}`
+  return v === 0 ? formatIDRWhole(0) : `${v > 0 ? '+' : '−'}${formatIDRWhole(Math.abs(v))}`
 }
 </script>
 
@@ -138,10 +138,10 @@ function signed(v: number) {
           <tr v-for="r in impact.rows" :key="r.key" class="td__tr">
             <td class="td__td">{{ t(r.key) }}</td>
             <td class="td__td td__td--num">{{ r.assets }}</td>
-            <td class="td__td td__td--num">{{ formatIDR(r.accounting) }}</td>
+            <td class="td__td td__td--num">{{ formatIDRWhole(r.accounting) }}</td>
             <td class="td__td td__td--num">
               <template v-if="r.key === 'Impairment loss'">{{ t('Not recognised') }}</template>
-              <template v-else>{{ formatIDR(r.fiscal) }}</template>
+              <template v-else>{{ formatIDRWhole(r.fiscal) }}</template>
             </td>
             <td class="td__td td__td--num">{{ signed(r.difference) }}</td>
           </tr>
@@ -150,8 +150,8 @@ function signed(v: number) {
           <tr class="td__tr td__tr--total">
             <td class="td__td">{{ t('Total') }}</td>
             <td class="td__td td__td--num">{{ impact.total.assets }}</td>
-            <td class="td__td td__td--num">{{ formatIDR(impact.total.accounting) }}</td>
-            <td class="td__td td__td--num">{{ formatIDR(impact.total.fiscal) }}</td>
+            <td class="td__td td__td--num">{{ formatIDRWhole(impact.total.accounting) }}</td>
+            <td class="td__td td__td--num">{{ formatIDRWhole(impact.total.fiscal) }}</td>
             <td class="td__td td__td--num">{{ signed(impact.total.difference) }}</td>
           </tr>
           <tr v-if="impact.lease.assets" class="td__tr td__tr--lease" data-testid="td-lease">
@@ -160,14 +160,14 @@ function signed(v: number) {
               <span class="td__hint td__hint--block">{{ t('Not included in the net temporary difference') }}</span>
             </td>
             <td class="td__td td__td--num">{{ impact.lease.assets }}</td>
-            <td class="td__td td__td--num">{{ formatIDR(impact.lease.accounting) }}</td>
-            <td class="td__td td__td--num">{{ formatIDR(impact.lease.fiscal) }}</td>
+            <td class="td__td td__td--num">{{ formatIDRWhole(impact.lease.accounting) }}</td>
+            <td class="td__td td__td--num">{{ formatIDRWhole(impact.lease.fiscal) }}</td>
             <td class="td__td td__td--num">{{ signed(impact.lease.difference) }}</td>
           </tr>
         </tfoot>
       </table>
       <p v-if="impact.excluded" class="td__foot">
-        {{ t(`Excluded: ${impact.excluded} ${impact.excluded === 1 ? 'asset' : 'assets'} with no tax book, carrying ${formatIDR(impact.excludedAccounting)} of accounting charge.`) }}
+        {{ t(`Excluded: ${impact.excluded} ${impact.excluded === 1 ? 'asset' : 'assets'} with no tax book, carrying ${formatIDRWhole(impact.excludedAccounting)} of accounting charge.`) }}
       </p>
     </div>
 
@@ -182,7 +182,7 @@ function signed(v: number) {
           {{ t('Deferred tax effect') }}
           <span class="td__hint">{{ t(`at ${Math.round(H.taxRate * 100)}% · ${H.deferredTax >= 0 ? 'a deferred tax asset' : 'a deferred tax liability'} · a disclosure, not a journal`) }}</span>
         </span>
-        <span class="td__sumval">{{ formatIDR(Math.abs(H.deferredTax)) }}</span>
+        <span class="td__sumval">{{ formatIDRWhole(Math.abs(H.deferredTax)) }}</span>
       </div>
     </div>
   </div>

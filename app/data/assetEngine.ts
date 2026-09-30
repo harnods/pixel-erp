@@ -352,8 +352,13 @@ export function pct(q: number): string {
 
 export function formatLife(months: number | null): string {
   if (months === null) return 'Indefinite'
-  if (months % 12 === 0) return `${months / 12} years`
-  return `${months} months`
+  if (months % 12 === 0) return plural(months / 12, 'year')
+  return plural(months, 'month')
+}
+
+/** "1 month", "2 months": a count with its unit, singular only for one. */
+export function plural(n: number, unit: string): string {
+  return `${n} ${Math.abs(n) === 1 ? unit : `${unit}s`}`
 }
 
 // ── Bases, rows and versions ────────────────────────────────────────────────
