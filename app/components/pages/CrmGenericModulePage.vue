@@ -18,15 +18,15 @@ import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePa
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpIconSegmented from '~/components/patterns/ErpIconSegmented.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
-import CrmGenericFiltersDrawer, { emptyCrmGenericFilters, type CrmGenericFiltersValue } from '~/components/patterns/CrmGenericFiltersDrawer.vue'
+import CrmGenericFiltersDrawer, { emptyCrmGenericFilters, type CrmGenericFiltersValue, type CrmGenericFilterField } from '~/components/patterns/CrmGenericFiltersDrawer.vue'
 import { useTableState } from '~/composables/useTableState'
 import { formatMoney } from '~/utils/currency'
 import { successToast } from '~/utils/toasts'
 import {
   getCrmModule, genericRecordsFor, genericModuleStages, genericStageBadgeType,
   moveGenericRecordStage, createGenericRecord, CRM_CURRENT_USER,
-  genericPipelineFieldId, moduleStores,
-  type GenericModuleRecord, type CrmFieldType,
+  genericPipelineFieldId, moduleStores, isRelatedListType,
+  type GenericModuleRecord, type CrmFieldType, type DealProperty,
 } from '~/data/crm'
 
 // `orderId` unused here (always '' for the list page) — kept only so this
@@ -52,7 +52,9 @@ const filtersOpen = ref(false)
 function openFilters() { filtersOpen.value = true }
 const filtersValue = reactive<CrmGenericFiltersValue>(emptyCrmGenericFilters())
 function onApplyFilters(v: CrmGenericFiltersValue) {
-  Object.assign(filtersValue, v)
+  filtersValue.keyword = v.keyword
+  filtersValue.keywordColumn = v.keywordColumn
+  filtersValue.fieldFilters = { ...v.fieldFilters }
   search.value = v.keyword
 }
 
@@ -81,7 +83,16 @@ const { search, statusFilter, currentPage, perPage, sortKey, sortDir, total, pag
     filterFn: (row, s, status) => {
       const matchesFilter = !status || row.stage === status
       const matchesSearch = !s || [row.name, row.id, row.owner, ...Object.values(row.values).map((v) => String(v ?? ''))].join(' ').toLowerCase().includes(s)
-      return matchesFilter && matchesSearch
+      const ff = filtersValue.fieldFilters
+      const matchesFieldFilters = Object.keys(ff).every((fieldId) => {
+        const expected = ff[fieldId]
+        if (!expected) return true
+        const field = filterFields.value.find((f) => f.id === fieldId)
+        if (!field) return true
+        const actual = row.values[field.variableName] ?? row.values[fieldId] ?? row.values[fieldId.replace(/-/g, '_')] ?? ''
+        return String(actual) === expected
+      })
+      return matchesFilter && matchesSearch && matchesFieldFilters
     },
   })
 function fieldTypeToColumnKind(type: CrmFieldType): TableColumn['kind'] {
@@ -97,22 +108,51 @@ function fieldSortType(type: CrmFieldType): 'text' | 'number' {
   return type === 'number' || type === 'currency' ? 'number' : 'text'
 }
 
-const layoutColumns = computed<TableColumn[]>(() => {
-  const mod = getCrmModule(moduleId.value)
-  if (!mod || !mod.fields.length) {
-    return [{ key: 'name', label: t('Name'), kind: 'name', sortable: true, sortType: 'text' }]
+const NON_TABLE_TYPES = new Set(['File', 'Image', 'file_upload', 'image_upload'])
+
+const layoutProps = computed<DealProperty[]>(() => {
+  const stores = moduleStores(moduleId.value)
+  const detailTab = stores.detailLayout.tabs.find((tab) => tab.key === 'details')
+  if (!detailTab?.sections?.length) return []
+  const seen = new Set<string>()
+  const result: DealProperty[] = []
+  for (const section of detailTab.sections) {
+    for (const col of section.cols) {
+      for (const propId of col) {
+        if (seen.has(propId)) continue
+        seen.add(propId)
+        const prop = stores.properties.find((p) => p.id === propId)
+        if (prop && !isRelatedListType(prop.type) && !NON_TABLE_TYPES.has(prop.type)) result.push(prop)
+      }
+    }
   }
-  const placed = mod.fields.filter((f) => f.section)
-  if (!placed.length) {
+  return result
+})
+
+const PICKLIST_TYPES = new Set(['Dropdown select', 'Radio select', 'pick_list', 'radio_select', 'Single checkbox', 'Multiple checkboxes', 'multi_select', 'single_checkbox'])
+
+const filterFields = computed<CrmGenericFilterField[]>(() => {
+  return layoutProps.value
+    .filter((p) => PICKLIST_TYPES.has(p.type))
+    .map((p) => ({
+      id: p.id,
+      variableName: p.variableName,
+      label: p.name,
+      options: (p.config?.options ?? []).map((o) => ({ value: o.label, label: o.label })),
+    }))
+})
+
+const layoutColumns = computed<TableColumn[]>(() => {
+  const props = layoutProps.value
+  if (!props.length) {
     return [{ key: 'name', label: t('Name'), kind: 'name', sortable: true, sortType: 'text' }]
   }
   const cols: TableColumn[] = []
-  for (const f of placed) {
-    if (f.type === 'product-list') continue
-    const kind = fieldTypeToColumnKind(f.type)
+  for (const p of props) {
+    const kind = fieldTypeToColumnKind(p.type)
     cols.push({
-      key: f.id, label: t(f.label), kind, sortable: true,
-      sortType: fieldSortType(f.type),
+      key: p.id, label: t(p.name), kind, sortable: true,
+      sortType: fieldSortType(p.type),
       ...(kind === 'amount' ? { align: 'right' as const } : {}),
     })
   }
@@ -130,18 +170,16 @@ const columnVisibilityReady = computed(() => {
 })
 const columnItems = computed(() => allCols.value.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 })))
 const columns = computed<TableColumn[]>(() => allCols.value.filter((c) => columnVisibilityReady.value[c.key]))
-const hasActiveFilter = computed(() => !!statusFilter.value)
+const hasActiveFilter = computed(() => !!statusFilter.value || Object.keys(filtersValue.fieldFilters).some((k) => !!filtersValue.fieldFilters[k]))
 
 const flatRows = computed(() => {
-  const mod = getCrmModule(moduleId.value)
-  const fields = mod?.fields ?? []
   return paginated.value.map((r) => {
     const row: Record<string, unknown> = { ...r }
-    for (const f of fields) {
-      if (f.isPrimary || f.id === 'record-name') {
-        row[f.id] = r.name
+    for (const p of layoutProps.value) {
+      if (p.id === 'record-name') {
+        row[p.id] = r.name
       } else {
-        row[f.id] = r.values[f.id] ?? r.values[f.label?.replace(/\s+/g, '_').toLowerCase()] ?? r.values[f.id.replace(/-/g, '_')] ?? ''
+        row[p.id] = r.values[p.variableName] ?? r.values[p.id] ?? r.values[p.id.replace(/-/g, '_')] ?? ''
       }
     }
     return row
@@ -252,6 +290,7 @@ function ownerInitials(name: string) { return name.split(' ').map((p) => p[0]).s
 
       <ErpTablePage
         v-else
+        data-devchange="crm-generic-index-all-props"
         :columns="columns"
         :rows="(flatRows as unknown as Record<string, unknown>[])"
         :total="total" :current-page="currentPage" :per-page="perPage"
@@ -270,6 +309,7 @@ function ownerInitials(name: string) { return name.split(' ').map((p) => p[0]).s
       :is-open="filtersOpen"
       :model-value="filtersValue"
       :columns="columnItems"
+      :filter-fields="filterFields"
       @update:is-open="(v: boolean) => (filtersOpen = v)"
       @apply="onApplyFilters"
     />

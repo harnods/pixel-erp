@@ -1902,6 +1902,12 @@ export interface GenericModuleRecord {
     description?: string
     memo?: string
   }
+  products?: DealLineItem[]
+  orderDiscountType?: AdjustmentType
+  orderDiscount?: number
+  tax?: number
+  taxType?: AdjustmentType
+  shippingFee?: number
   createdAt: string
 }
 const genericModuleRecords = reactive<Record<string, GenericModuleRecord[]>>(
@@ -2015,6 +2021,101 @@ export function moveGenericRecordStage(moduleId: string, id: string, stage: stri
   addActivityEntry('Update', mod?.name ?? moduleId, [
     { label: 'Stage', from: oldStage, to: stage },
   ], { recordLabel: `${mod?.name ?? moduleId} ${r.id}` })
+}
+
+export function deleteGenericRecord(moduleId: string, id: string): boolean {
+  const list = genericModuleRecords[moduleId]
+  if (!list) return false
+  const idx = list.findIndex((r) => r.id === id)
+  if (idx === -1) return false
+  list.splice(idx, 1)
+  persistGenericModuleRecords()
+  return true
+}
+
+export function setGenericRecordProducts(moduleId: string, id: string, p: DealProductsPayload): boolean {
+  const rec = getGenericRecord(moduleId, id)
+  if (!rec) return false
+  rec.products = p.items.map((it) => {
+    const cat = CATALOG.find((c) => c.sku === it.sku)
+    return {
+      productId: cat?.id ?? it.sku,
+      productName: it.product,
+      sku: it.sku || undefined,
+      description: it.description || undefined,
+      image: cat?.img,
+      unit: it.unit,
+      quantity: it.qty,
+      originalPrice: it.unitPrice,
+      discountType: it.discountPct ? 'percentage' as const : 'none' as const,
+      discount: it.discountPct,
+    }
+  })
+  rec.orderDiscountType = p.globalDiscountType === 'Rp' ? 'fixed' : 'percentage'
+  rec.orderDiscount = p.globalDiscountValue
+  rec.shippingFee = p.shippingFee
+  if (rec.products.length && rec.tax == null) { rec.taxType = 'percentage'; rec.tax = 11 }
+  persistGenericModuleRecords()
+  return true
+}
+
+export function genericRecordTotals(rec: GenericModuleRecord) {
+  const lines = rec.products ?? []
+  const subtotal = lines.reduce((n, li) => n + li.quantity * li.originalPrice, 0)
+  const afterLine = lines.reduce((n, li) => n + lineSubtotal(li), 0)
+  const discountPerLine = subtotal - afterLine
+  const globalDiscount = rec.orderDiscount
+    ? (rec.orderDiscountType === 'percentage' ? Math.round(afterLine * (rec.orderDiscount / 100)) : rec.orderDiscount)
+    : 0
+  const taxBase = Math.max(0, afterLine - globalDiscount)
+  const taxAmount = rec.tax ? (rec.taxType === 'percentage' ? Math.round(taxBase * (rec.tax / 100)) : rec.tax) : 0
+  const taxLabel = rec.tax ? (rec.taxType === 'percentage' ? `PPN ${rec.tax}%` : 'Tax') : ''
+  const shippingFee = rec.shippingFee ?? 0
+  const total = Math.max(0, taxBase + taxAmount + shippingFee)
+  return { subtotal, discountPerLine, globalDiscount, taxAmount, taxLabel, shippingFee, total }
+}
+
+export function genericRecordActivityLog(moduleId: string, rec: GenericModuleRecord): DealActivityEntry[] {
+  const mod = getCrmModule(moduleId)
+  const moduleName = mod?.name ?? moduleId
+  const stages = genericModuleStages(moduleId)
+  const events: DealActivityEntry[] = []
+  const created = rec.owner || 'System'
+
+  const detailFields: DealActivityDetail[] = [
+    { label: 'Record name', value: rec.name },
+    { label: 'Owner', value: rec.owner || '—' },
+  ]
+  if (rec.stage) detailFields.push({ label: 'Stage', value: rec.stage })
+  const vals = rec.values as Record<string, unknown>
+  for (const [k, v] of Object.entries(vals)) {
+    if (v != null && v !== '') detailFields.push({ label: k.replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase()), value: String(v) })
+  }
+
+  events.push({
+    date: isoAt(rec.createdAt, 0, 9), user: created, activity: `Created ${moduleName.toLowerCase()} record`,
+    details: detailFields,
+  })
+
+  if (stages.length > 1 && rec.stage) {
+    const curIdx = stages.findIndex((s) => s.name === rec.stage)
+    for (let i = 1; i <= curIdx && i < stages.length; i++) {
+      events.push({
+        date: isoAt(rec.createdAt, i, 11), user: rec.owner, activity: 'Stage updated',
+        details: [{ label: 'Stage', value: `${stages[i - 1]!.name} → ${stages[i]!.name}` }],
+      })
+    }
+  }
+
+  if (rec.products?.length) {
+    const dayOffset = stages.length > 1 ? Math.min(stages.findIndex((s) => s.name === rec.stage) + 1, stages.length) : 1
+    events.push({
+      date: isoAt(rec.createdAt, dayOffset, 14), user: rec.owner, activity: 'Products updated',
+      details: rec.products.map((p) => ({ label: p.productName, value: `${p.quantity} ${p.unit} × ${formatMoney(p.originalPrice, vals.currency as string ?? 'IDR')}` })),
+    })
+  }
+
+  return events.sort((a, b) => b.date.localeCompare(a.date))
 }
 
 // ── Custom module creation ("+ New module", Settings ▸ Modules) ──────────────────

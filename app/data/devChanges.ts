@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-generic-product-list',
+    title: 'Custom module: full product list on record detail page',
+    description:
+      'Record detail page now renders a full product list table matching Deals — search bar, Add product button, ProductCell rows, empty states, totals section (subtotal, discounts, tax, shipping, total), and CrmEditProductsDrawer for adding/editing products.',
+    date: '2026-09-30',
+    files: ['CrmGenericRecordDetailPage.vue', 'crm.ts'],
+  },
+  {
+    id: 'crm-generic-filters-auto-fields',
+    title: 'Custom module: "All filters" drawer auto-generates filter controls',
+    description:
+      'The "All filters" drawer now automatically shows filter dropdowns for every dropdown/checkbox/radio type field that is placed in the module\'s detail layout. Filters apply to the index table.',
+    date: '2026-09-30',
+    files: ['CrmGenericFiltersDrawer.vue', 'CrmGenericModulePage.vue'],
+  },
+  {
     id: 'crm-generic-dynamic-pages',
     title: 'Custom module: dynamic creation form, detail page, and filters drawer',
     description:
@@ -434,6 +450,22 @@ export const DEV_CHANGES: DevChange[] = [
       'Card properties in the pipeline editor now show only properties that exist in the module\'s detail layout. The "Add property" drawer also only offers layout properties. For custom modules, the pipeline "Group by" field picker only lists picklist properties present in the layout.',
     date: '2026-09-24',
     files: ['CrmModuleBuilderPage.vue'],
+  },
+  {
+    id: 'crm-generic-detail-page-overhaul',
+    title: 'Custom module detail page redesign',
+    description:
+      'Detail page now follows Deals format: Move to dropdown (pipeline only), kebab menu with Edit/Delete, pipeline stepper (when configured), sections driven 100% by detailLayout config. Date fields are formatted.',
+    date: '2026-09-30',
+    files: ['CrmGenericRecordDetailPage.vue'],
+  },
+  {
+    id: 'crm-generic-index-all-props',
+    title: 'Custom module index shows all properties',
+    description:
+      'The table on the custom module index page now shows ALL properties as columns instead of only those placed in layout sections.',
+    date: '2026-09-30',
+    files: ['CrmGenericModulePage.vue'],
   },
 ]
 

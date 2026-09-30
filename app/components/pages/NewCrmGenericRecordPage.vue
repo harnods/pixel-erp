@@ -1,16 +1,11 @@
 <script setup lang="ts">
-/**
- * NewCrmGenericRecordPage — create/edit form for ANY custom module record.
- * Mirrors the Deals "New deal" form layout (title bar → scrollable stage → footer)
- * but fields are dynamically derived from the module's properties placed in the
- * detail layout, not hardcoded.
- */
 import { ref, computed, reactive } from 'vue'
 import {
   MpButton, MpButtonGroup, MpFormControl, MpFormLabel, MpInput, MpTextarea,
-  MpDatePicker, MpTextlink,
+  MpDatePicker, MpTextlink, MpUpload,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import NewSalesOrderPage from '~/components/pages/NewSalesOrderPage.vue'
 import {
   getCrmModule, moduleStores, genericPipelineFieldId,
   genericModuleStages, createGenericRecord, getGenericRecord,
@@ -32,19 +27,30 @@ const hasKanban = computed(() => !!pipelineFieldId.value)
 const stages = computed(() => genericModuleStages(moduleId.value))
 
 const stores = computed(() => moduleStores(moduleId.value))
-const layoutProps = computed<DealProperty[]>(() => {
+
+interface FormSection {
+  id: string
+  columns: number
+  cols: { props: DealProperty[] }[]
+  hasPrimary: boolean
+}
+
+const formSections = computed<FormSection[]>(() => {
   const detailTab = stores.value.detailLayout.tabs.find((tab) => tab.key === 'details')
   if (!detailTab?.sections?.length) return []
-  const allPropIds: string[] = []
-  for (const section of detailTab.sections) {
-    for (const col of section.cols) {
-      for (const propId of col) allPropIds.push(propId)
-    }
-  }
-  return allPropIds
-    .filter((id) => id !== 'record-name')
-    .map((id) => stores.value.properties.find((p) => p.id === id))
-    .filter((p): p is DealProperty => !!p && p.type !== 'Product list' && p.type !== 'Related list')
+  return detailTab.sections.map((section) => {
+    let hasPrimary = false
+    const cols = section.cols.map((col) => {
+      const colProps: DealProperty[] = []
+      for (const propId of col) {
+        if (propId === 'record-name') { hasPrimary = true; continue }
+        const prop = stores.value.properties.find((p) => p.id === propId)
+        if (prop) colProps.push(prop)
+      }
+      return { props: colProps }
+    })
+    return { id: section.id, columns: section.columns || 2, cols, hasPrimary }
+  })
 })
 
 const formValues = reactive<Record<string, any>>({})
@@ -52,15 +58,23 @@ const recordName = ref('')
 
 function initFromRecord(rec: GenericModuleRecord) {
   recordName.value = rec.name
-  for (const p of layoutProps.value) {
-    formValues[p.id] = rec.values[p.variableName] ?? rec.values[p.id] ?? ''
+  for (const section of formSections.value) {
+    for (const col of section.cols) {
+      for (const p of col.props) {
+        formValues[p.id] = rec.values[p.variableName] ?? rec.values[p.id] ?? ''
+      }
+    }
   }
   if (hasKanban.value) formValues.__stage = rec.stage
 }
 
 function initNew() {
   recordName.value = ''
-  for (const p of layoutProps.value) formValues[p.id] = ''
+  for (const section of formSections.value) {
+    for (const col of section.cols) {
+      for (const p of col.props) formValues[p.id] = ''
+    }
+  }
   if (hasKanban.value && stages.value.length) formValues.__stage = stages.value[0]!.name
 }
 
@@ -73,12 +87,23 @@ if (isEdit.value) {
 
 function back() { router.push(`/crm/${moduleId.value}`) }
 
+function allFormProps(): DealProperty[] {
+  const all: DealProperty[] = []
+  for (const section of formSections.value) {
+    for (const col of section.cols) {
+      for (const p of col.props) all.push(p)
+    }
+  }
+  return all
+}
+
 function onSave() {
+  const formProps = allFormProps()
   if (isEdit.value) {
     const rec = getGenericRecord(moduleId.value, props.orderId)
     if (!rec) return
     rec.name = recordName.value
-    for (const p of layoutProps.value) {
+    for (const p of formProps) {
       rec.values[p.variableName] = formValues[p.id]
       rec.values[p.id] = formValues[p.id]
     }
@@ -88,7 +113,7 @@ function onSave() {
   } else {
     const rec = createGenericRecord(moduleId.value)
     rec.name = recordName.value
-    for (const p of layoutProps.value) {
+    for (const p of formProps) {
       rec.values[p.variableName] = formValues[p.id]
       rec.values[p.id] = formValues[p.id]
     }
@@ -98,12 +123,18 @@ function onSave() {
   }
 }
 
-function propInputType(type: string): 'text' | 'number' | 'date' | 'textarea' | 'select' {
+function propInputType(type: string): 'text' | 'number' | 'date' | 'textarea' | 'select' | 'product-list' | 'related-list' | 'file' {
+  if (type === 'Product list') return 'product-list'
+  if (type === 'Related list') return 'related-list'
+  if (['File', 'Image'].includes(type)) return 'file'
   if (['Number', 'Percentage', 'Currency'].includes(type)) return 'number'
   if (['Date picker', 'Date and time picker', 'Date range'].includes(type)) return 'date'
   if (['Multi-line text'].includes(type)) return 'textarea'
   if (['Dropdown select', 'Radio select', 'pick_list', 'radio_select'].includes(type)) return 'select'
   return 'text'
+}
+function isEmbeddedListType(type: string): boolean {
+  return type === 'Product list' || type === 'Related list'
 }
 function propOptions(prop: DealProperty): { value: string; label: string }[] {
   return (prop.config?.options ?? []).map((o) => ({ value: o.label, label: o.label }))
@@ -120,6 +151,7 @@ function propOptions(prop: DealProperty): { value: string; label: string }[] {
     </header>
 
     <div class="si-form-stage">
+      <!-- Record name (from Overview section, always first & full-width) -->
       <section class="si-section">
         <MpFormControl id="f-record-name" class="si-field si-field--wide" is-required>
           <MpFormLabel>{{ t('Record name') }}</MpFormLabel>
@@ -127,6 +159,7 @@ function propOptions(prop: DealProperty): { value: string; label: string }[] {
         </MpFormControl>
       </section>
 
+      <!-- Stage selector (only when kanban configured) -->
       <section v-if="hasKanban" class="si-section">
         <MpFormControl id="f-stage" class="si-field">
           <MpFormLabel>{{ t('Stage') }}</MpFormLabel>
@@ -135,50 +168,85 @@ function propOptions(prop: DealProperty): { value: string; label: string }[] {
             :model-value="formValues.__stage ?? ''"
             :options="stages.map((s) => ({ value: s.name, label: s.name }))"
             :is-clearable="false"
-            is-full-width
+            width="100%"
             @update:model-value="(v: string) => (formValues.__stage = v)"
           />
         </MpFormControl>
       </section>
 
-      <section v-if="layoutProps.length" class="si-section si-section--grid">
-        <template v-for="prop in layoutProps" :key="prop.id">
-          <MpFormControl :id="`f-${prop.id}`" class="si-field" :is-required="false">
-            <MpFormLabel>{{ t(prop.name) }}</MpFormLabel>
-
-            <MpTextarea
-              v-if="propInputType(prop.type) === 'textarea'"
-              :model-value="formValues[prop.id] ?? ''"
-              is-full-width
-              :rows="3"
-              @update:model-value="(v: string) => (formValues[prop.id] = v)"
-            />
-            <MpDatePicker
-              v-else-if="propInputType(prop.type) === 'date'"
-              :model-value="formValues[prop.id] ?? ''"
-              format="DD/MM/YYYY"
-              value-type="format"
-              use-portal
-              @update:model-value="(v: string) => (formValues[prop.id] = v)"
-            />
-            <ErpFilterSelect
-              v-else-if="propInputType(prop.type) === 'select'"
-              :id="`f-${prop.id}-select`"
-              :model-value="formValues[prop.id] ?? ''"
-              :options="propOptions(prop)"
-              is-full-width
-              @update:model-value="(v: string) => (formValues[prop.id] = v)"
-            />
-            <MpInput
-              v-else
-              :model-value="formValues[prop.id] ?? ''"
-              is-full-width
-              :type="propInputType(prop.type) === 'number' ? 'number' : 'text'"
-              @update:model-value="(v: string) => (formValues[prop.id] = v)"
-            />
-          </MpFormControl>
+      <!-- Sections from layout — each section rendered as a grid matching its cols -->
+      <template v-for="section in formSections" :key="section.id">
+        <!-- Product list — embedded line-item table -->
+        <template v-for="col in section.cols" :key="`emb-${section.id}`">
+          <template v-for="prop in col.props" :key="`emb-${prop.id}`">
+            <section v-if="prop.type === 'Product list'" class="si-section si-product-list">
+              <div class="si-product-list-wrap">
+                <NewSalesOrderPage embedded products-only @cancel="back" />
+              </div>
+            </section>
+            <section v-else-if="prop.type === 'Related list'" class="si-section si-embedded-list">
+              <h3 class="si-embedded-list-title">{{ t(prop.name) }}</h3>
+              <div class="si-embedded-list-empty">
+                <p class="si-embedded-list-text">{{ t('No items added yet.') }}</p>
+                <MpButton variant="secondary" is-rounded left-icon="add" size="sm">{{ t('Add item') }}</MpButton>
+              </div>
+            </section>
+          </template>
         </template>
-      </section>
+
+        <!-- Regular fields — rendered in column grid -->
+        <section
+          v-if="section.cols.some((c) => c.props.some((p) => !isEmbeddedListType(p.type)))"
+          class="si-section si-section--cols"
+          :style="{ gridTemplateColumns: `repeat(${section.columns}, minmax(0, 1fr))` }"
+        >
+          <div v-for="(col, ci) in section.cols" :key="ci" class="si-col">
+            <template v-for="prop in col.props" :key="prop.id">
+              <MpFormControl v-if="!isEmbeddedListType(prop.type)" :id="`f-${prop.id}`" class="si-field">
+                <MpFormLabel>{{ t(prop.name) }}</MpFormLabel>
+
+                <MpTextarea
+                  v-if="propInputType(prop.type) === 'textarea'"
+                  :model-value="formValues[prop.id] ?? ''"
+                  is-full-width
+                  :rows="3"
+                  @update:model-value="(v: string) => (formValues[prop.id] = v)"
+                />
+                <MpDatePicker
+                  v-else-if="propInputType(prop.type) === 'date'"
+                  :model-value="formValues[prop.id] ?? ''"
+                  format="DD/MM/YYYY"
+                  value-type="format"
+                  use-portal
+                  @update:model-value="(v: string) => (formValues[prop.id] = v)"
+                />
+                <ErpFilterSelect
+                  v-else-if="propInputType(prop.type) === 'select'"
+                  :id="`f-${prop.id}-select`"
+                  :model-value="formValues[prop.id] ?? ''"
+                  :options="propOptions(prop)"
+                  width="100%"
+                  @update:model-value="(v: string) => (formValues[prop.id] = v)"
+                />
+                <MpUpload
+                  v-else-if="propInputType(prop.type) === 'file'"
+                  :id="`f-${prop.id}-upload`"
+                  :button-text="t('Choose file')"
+                  :placeholder="t('or drag and drop here')"
+                  is-full-width
+                />
+                <MpInput
+                  v-else
+                  :model-value="formValues[prop.id] ?? ''"
+                  is-full-width
+                  :type="propInputType(prop.type) === 'number' ? 'number' : 'text'"
+                  @update:model-value="(v: string) => (formValues[prop.id] = v)"
+                />
+              </MpFormControl>
+            </template>
+          </div>
+        </section>
+      </template>
 
       <MpButtonGroup class="si-form-footer">
         <MpButton variant="ghost" is-rounded @click="back">{{ t('Cancel') }}</MpButton>
@@ -190,8 +258,6 @@ function propOptions(prop: DealProperty): { value: string; label: string }[] {
 
 <style scoped>
 .si-form-page {
-  --si-field-wide: 318px;
-  --si-field: 228px;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -242,9 +308,17 @@ function propOptions(prop: DealProperty): { value: string; label: string }[] {
   gap: var(--mp-spacing-6);
 }
 .si-section { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
-.si-section--grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--mp-spacing-5); }
+.si-section--cols { display: grid; gap: var(--mp-spacing-5); }
+.si-col { display: flex; flex-direction: column; gap: var(--mp-spacing-5); min-width: 0; }
 .si-field { min-width: 0; }
-.si-field--wide { max-width: var(--si-field-wide); }
+.si-field :deep(.efs) { display: flex; width: 100%; }
+.si-field--wide { max-width: 318px; }
+.si-embedded-list { border: 1px solid var(--mp-border-default, #dde1e1); border-radius: var(--mp-radii-lg, 8px); padding: var(--mp-spacing-4) var(--mp-spacing-5); }
+.si-embedded-list-title { margin: 0 0 var(--mp-spacing-3) 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.si-embedded-list-empty { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-6) 0; }
+.si-embedded-list-text { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.si-product-list-wrap :deep(.si-form-footer),
+.si-product-list-wrap :deep(.erp-action-footer) { display: none; }
 .si-form-footer {
   margin-top: auto;
   display: flex; align-items: center; justify-content: flex-end;
