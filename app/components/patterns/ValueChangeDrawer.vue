@@ -23,7 +23,7 @@ import {
 } from '~/data/assetValueChange'
 import {
   recordEvent, recordImpairmentTest, recordImpairmentReversal, ledgerOf,
-  canChangeValue, viewAs, actingUser, IMPAIRMENT_INDICATORS,
+  canChangeValue, viewAs, IMPAIRMENT_INDICATORS,
 } from '~/data/assetStore'
 import { pct } from '~/data/assetEngine'
 import {
@@ -122,7 +122,7 @@ function commit() {
   tried.value = true
   commitError.value = ''
   if (!canChangeValue.value) {
-    commitError.value = `Viewing as ${viewAs.value}. Recording a value change needs the Owner or Accounting role; switch View as to try it.`
+    commitError.value = `Viewing as ${viewAs.value}. Recording a value change needs the Owner or Accounting role.`
     return
   }
   const pv = preview.value
@@ -153,14 +153,14 @@ function commit() {
     const gated = gateChange(id, kindForAction(f.action, parseRupiah(f.proceeds) ?? 0), `${commitLabel.value} on ${id}`, change, changeStake(id, f.action, change), record)
     if (!gated.ok) { commitError.value = gated.reason; return }
     if (gated.held) {
-      emit('committed', `Sent for approval as ${gated.held.id}. Nothing is recorded until it is approved.`, [])
+      emit('committed', `Change submitted for approval as ${gated.held.id}`, [])
       return
     }
     emit('committed', doneMessage(f.action, id, pv.impairment?.loss ?? 0, []), [])
     return
   }
   const r = record()
-  if (!r.ok) { commitError.value = r.reason ?? 'The change could not be recorded'; return }
+  if (!r.ok) { commitError.value = r.reason ?? 'Change could not be recorded. Try again'; return }
   const newIds = pv.children.map((c) => c.id)
   emit('committed', doneMessage(f.action, id, pv.impairment?.loss ?? 0, newIds), newIds)
 }
@@ -173,10 +173,10 @@ function doneMessage(action: ValueAction, id: string, loss: number, newIds: stri
     split: `${id} split into ${newIds.join(', ')}`,
     'dispose-part': `Part of ${id} disposed of`,
     dispose: `${id} disposed of`,
-    impair: loss ? `Test recorded. ${id} written down in the accounts` : `Test recorded on ${id}. No impairment found`,
+    impair: loss ? `Impairment test saved. ${id} impairment loss posted` : `Impairment test saved on ${id}. No impairment`,
     reverse: `Impairment reversal recorded on ${id}`,
   }
-  return `${done[action]} by ${actingUser.value}`
+  return done[action]
 }
 
 /** What the change puts at stake, for the approval threshold. */
@@ -202,7 +202,7 @@ const approvalNote = computed(() => {
       ? { type: 'impairment-reversal', input: { assetId: props.asset.id, recoverable: Number(f.recoverable.replace(/\D/g, '')), basis: f.basis, source: f.source } }
       : { type: 'event', event: ev }
   const why = approvalNeeded(kind, changeStake(props.asset.id, f.action, change))
-  return why ? `${why}. Committing raises an approval request; nothing is recorded until it is approved.` : ''
+  return why ? `${why}. Recorded only after approval.` : ''
 })
 </script>
 
@@ -210,10 +210,10 @@ const approvalNote = computed(() => {
   <Teleport to="body">
     <Transition name="vcd">
       <div v-if="isOpen" class="vcd-overlay">
-        <div class="vcd-panel" role="dialog" :aria-label="t('Change this asset')">
+        <div class="vcd-panel" role="dialog" :aria-label="t('Change asset value')">
           <header class="vcd-head">
             <div>
-              <div class="vcd-title">{{ t('Change this asset') }}</div>
+              <div class="vcd-title">{{ t('Change asset value') }}</div>
               <div class="vcd-sub">{{ asset.id }} · {{ asset.name }}</div>
             </div>
             <MpButton class="vcd-close" variant="ghost" is-rounded :aria-label="t('Close')" @click="emit('close')">
@@ -224,9 +224,9 @@ const approvalNote = computed(() => {
           <div class="vcd-body" data-tour="vc-body">
             <div class="vcd-row">
               <div class="vcd-field">
-                <label class="vcd-label" for="vcd-action">{{ t('What is changing') }}</label>
+                <label class="vcd-label" for="vcd-action">{{ t('Change type') }}</label>
                 <ErpFilterSelect
-                  id="vcd-action" v-model="actionModel" :placeholder="t('Choose a change')"
+                  id="vcd-action" v-model="actionModel" :placeholder="t('Select change type')"
                   :options="actionOptions" width="100%" :is-clearable="false"
                 />
                 <p class="vcd-hint">{{ t(actionHint) }}</p>
@@ -234,7 +234,7 @@ const approvalNote = computed(() => {
               <div class="vcd-field">
                 <label class="vcd-label" for="vcd-period">{{ t('Effective period') }}</label>
                 <ErpFilterSelect
-                  id="vcd-period" v-model="form.period" :placeholder="t('Choose a period')"
+                  id="vcd-period" v-model="form.period" :placeholder="t('Select period')"
                   :options="periods" width="100%" :is-clearable="false"
                 />
                 <p class="vcd-hint">{{ t(effectiveNote()) }}</p>
@@ -245,13 +245,13 @@ const approvalNote = computed(() => {
             <template v-if="form.action === 'correct'">
               <div class="vcd-row">
                 <div class="vcd-field">
-                  <label class="vcd-label" for="vcd-cost">{{ t('Correct cost (Rp)') }}</label>
+                  <label class="vcd-label" for="vcd-cost">{{ t('Corrected cost (Rp)') }}</label>
                   <MpInput id="vcd-cost" v-model="form.correctedCost" :is-invalid="!!err('correctedCost')" />
                   <p v-if="err('correctedCost')" class="vcd-error">{{ t(err('correctedCost')) }}</p>
-                  <p v-else class="vcd-hint">{{ t('Recorded now at') }} {{ formatIDRWhole(ledgerOf(asset.id)!.acquisitionCost) }}</p>
+                  <p v-else class="vcd-hint">{{ t('Current cost:') }} {{ formatIDRWhole(ledgerOf(asset.id)!.acquisitionCost) }}</p>
                 </div>
                 <div class="vcd-field">
-                  <label class="vcd-label" for="vcd-reason">{{ t('What the error was') }}</label>
+                  <label class="vcd-label" for="vcd-reason">{{ t('Reason for correction') }}</label>
                   <MpInput id="vcd-reason" v-model="form.reason" :is-invalid="!!err('reason')" />
                   <p v-if="err('reason')" class="vcd-error">{{ t(err('reason')) }}</p>
                 </div>
@@ -266,7 +266,7 @@ const approvalNote = computed(() => {
                 </div>
                 <div class="vcd-field">
                   <label class="vcd-label" for="vcd-method">{{ t('Method') }}</label>
-                  <ErpFilterSelect id="vcd-method" v-model="methodModel" :placeholder="t('Method')" :options="methodOptions" width="100%" :is-clearable="false" />
+                  <ErpFilterSelect id="vcd-method" v-model="methodModel" :placeholder="t('Select method')" :options="methodOptions" width="100%" :is-clearable="false" />
                 </div>
                 <div class="vcd-field">
                   <label class="vcd-label" for="vcd-residual">{{ t('Residual value (Rp)') }}</label>
@@ -274,22 +274,22 @@ const approvalNote = computed(() => {
                 </div>
               </div>
               <p v-if="err('lifeYears') || err('residual')" class="vcd-error">{{ t(err('lifeYears') || err('residual')) }}</p>
-              <p class="vcd-hint">{{ t('Total life from the in-service date. The carrying amount at the effective period is spread over what is left of it.') }}</p>
+              <p class="vcd-hint">{{ t('Total life from the in-service date, not the remaining life') }}</p>
             </template>
 
             <template v-if="form.action === 'improve'">
               <div class="vcd-field">
-                <label class="vcd-label" for="vcd-amount">{{ t('Cost of the improvement (Rp)') }}</label>
+                <label class="vcd-label" for="vcd-amount">{{ t('Improvement cost (Rp)') }}</label>
                 <MpInput id="vcd-amount" v-model="form.amount" :is-invalid="!!err('amount')" />
                 <p v-if="err('amount')" class="vcd-error">{{ t(err('amount')) }}</p>
               </div>
               <div class="vcd-field">
                 <MpCheckbox id="vcd-captest" :is-checked="form.passesCapitalisationTest" @change="form.passesCapitalisationTest = !form.passesCapitalisationTest">
-                  {{ t('It brings future economic benefit and its cost can be measured reliably') }}
+                  {{ t('Brings future economic benefit and the cost can be measured reliably') }}
                 </MpCheckbox>
                 <p v-if="err('passesCapitalisationTest')" class="vcd-error">{{ t(err('passesCapitalisationTest')) }}</p>
                 <MpCheckbox id="vcd-extends" :is-checked="form.extendsLife" @change="form.extendsLife = !form.extendsLife">
-                  {{ t('It also extends the useful life') }}
+                  {{ t('Extends the useful life') }}
                 </MpCheckbox>
               </div>
               <div v-if="form.extendsLife" class="vcd-field">
@@ -317,24 +317,24 @@ const approvalNote = computed(() => {
                 </div>
                 <div class="vcd-part-foot">
                   <MpButton variant="ghost" is-rounded left-icon="add" @click="addPart">{{ t('Add part') }}</MpButton>
-                  <span class="vcd-hint">{{ t('Shares add up to') }} {{ splitTotal.toLocaleString('id-ID') }}%</span>
+                  <span class="vcd-hint">{{ t('Total:') }} {{ splitTotal.toLocaleString('id-ID') }}%</span>
                 </div>
                 <p v-if="err('parts')" class="vcd-error">{{ t(err('parts')) }}</p>
-                <p v-else class="vcd-hint">{{ t('A part with no name is named after this asset.') }}</p>
+                <p v-else class="vcd-hint">{{ t('Leave a name empty to use this asset\'s name') }}</p>
               </div>
             </template>
 
             <template v-if="form.action === 'dispose-part' || form.action === 'dispose'">
               <div class="vcd-row">
                 <div v-if="form.action === 'dispose-part'" class="vcd-field">
-                  <label class="vcd-label" for="vcd-pct">{{ t('Share disposed of (%)') }}</label>
+                  <label class="vcd-label" for="vcd-pct">{{ t('Share to dispose of (%)') }}</label>
                   <MpInput id="vcd-pct" v-model="form.percent" :is-invalid="!!err('percent')" />
                   <p v-if="err('percent')" class="vcd-error">{{ t(err('percent')) }}</p>
                 </div>
                 <div class="vcd-field">
                   <label class="vcd-label" for="vcd-proceeds">{{ t('Proceeds (Rp)') }}</label>
                   <MpInput id="vcd-proceeds" v-model="form.proceeds" />
-                  <p class="vcd-hint">{{ t('Leave empty for a write-off with no proceeds.') }}</p>
+                  <p class="vcd-hint">{{ t('Leave empty to write off with no proceeds') }}</p>
                 </div>
               </div>
             </template>
@@ -342,8 +342,8 @@ const approvalNote = computed(() => {
             <template v-if="form.action === 'impair' || form.action === 'reverse'">
               <div class="vcd-row">
                 <div v-if="form.action === 'impair'" class="vcd-field">
-                  <label class="vcd-label" for="vcd-indicator">{{ t('What prompted the test') }}</label>
-                  <ErpFilterSelect id="vcd-indicator" v-model="form.indicator" :placeholder="t('Choose an indicator')" :options="indicatorOptions" width="100%" :is-clearable="false" />
+                  <label class="vcd-label" for="vcd-indicator">{{ t('Indicator') }}</label>
+                  <ErpFilterSelect id="vcd-indicator" v-model="form.indicator" :placeholder="t('Select indicator')" :options="indicatorOptions" width="100%" :is-clearable="false" />
                   <p v-if="err('indicator')" class="vcd-error">{{ t(err('indicator')) }}</p>
                 </div>
                 <div class="vcd-field">
@@ -354,12 +354,12 @@ const approvalNote = computed(() => {
               </div>
               <div class="vcd-row">
                 <div class="vcd-field">
-                  <label class="vcd-label" for="vcd-basis">{{ t('Measured as') }}</label>
-                  <ErpFilterSelect id="vcd-basis" v-model="basisModel" :placeholder="t('Basis')" :options="basisOptions" width="100%" :is-clearable="false" />
+                  <label class="vcd-label" for="vcd-basis">{{ t('Basis') }}</label>
+                  <ErpFilterSelect id="vcd-basis" v-model="basisModel" :placeholder="t('Select basis')" :options="basisOptions" width="100%" :is-clearable="false" />
                 </div>
                 <div class="vcd-field">
                   <label class="vcd-label" for="vcd-source">{{ t('Source') }}</label>
-                  <MpInput id="vcd-source" v-model="form.source" :is-invalid="!!err('source')" />
+                  <MpInput id="vcd-source" v-model="form.source" :placeholder="t('Example: Appraisal, PT Penilai Independen')" :is-invalid="!!err('source')" />
                   <p v-if="err('source')" class="vcd-error">{{ t(err('source')) }}</p>
                 </div>
               </div>
@@ -373,8 +373,8 @@ const approvalNote = computed(() => {
                 <MpIcon name="information" size="sm" />
                 <span>{{ t(preview.refusal) }}</span>
               </div>
-              <p v-else-if="preview.error && !tried" class="vcd-hint">{{ t('Complete the fields above to see the schedule before and after.') }}</p>
-              <p v-else-if="preview.error" class="vcd-hint">{{ t('Fix the fields marked above to see the preview.') }}</p>
+              <p v-else-if="preview.error && !tried" class="vcd-hint">{{ t('Fill in the fields to see the schedule before and after the change') }}</p>
+              <p v-else-if="preview.error" class="vcd-hint">{{ t('Fix the marked fields to see the preview') }}</p>
 
               <template v-else>
                 <div v-for="w in preview.warnings" :key="w" class="vcd-warning">
@@ -384,22 +384,22 @@ const approvalNote = computed(() => {
 
                 <!-- Impairment test outcome -->
                 <div v-if="form.action === 'impair'" class="vcd-block">
-                  <div class="vcd-kv"><span>{{ t('Carrying amount at the test') }}</span><span>{{ money(preview.impairment?.carrying ?? preview.books[0]?.carryingBefore) }}</span></div>
+                  <div class="vcd-kv"><span>{{ t('Carrying amount at test date') }}</span><span>{{ money(preview.impairment?.carrying ?? preview.books[0]?.carryingBefore) }}</span></div>
                   <div class="vcd-kv"><span>{{ t('Recoverable amount') }}</span><span>{{ money(Number(form.recoverable.replace(/\D/g, ''))) }}</span></div>
                   <div class="vcd-kv vcd-kv--result">
                     <span>{{ t('Outcome') }}</span>
-                    <span>{{ preview.impairment?.loss ? `${t('Impaired')}: ${t('write-down of')} ${formatIDRWhole(preview.impairment.loss)}` : t('No impairment. The test is kept on the asset history.') }}</span>
+                    <span>{{ preview.impairment?.loss ? `${t('Impaired')}: ${t('impairment loss of')} ${formatIDRWhole(preview.impairment.loss)}` : t('No impairment') }}</span>
                   </div>
                 </div>
 
                 <!-- Reversal: uncapped, cap, and which applied -->
                 <div v-if="preview.reversal" class="vcd-block">
                   <div class="vcd-kv"><span>{{ t('Carrying amount now') }}</span><span>{{ formatIDRWhole(preview.reversal.carrying) }}</span></div>
-                  <div class="vcd-kv"><span>{{ t('Recovery found by the test') }}</span><span>{{ formatIDRWhole(preview.reversal.uncapped) }}</span></div>
-                  <div class="vcd-kv"><span>{{ t('Cap: unimpaired carrying amount') }}</span><span>{{ formatIDRWhole(preview.reversal.unimpaired) }}</span></div>
-                  <div class="vcd-kv"><span>{{ t('Most that can be written back') }}</span><span>{{ formatIDRWhole(preview.reversal.cap) }}</span></div>
+                  <div class="vcd-kv"><span>{{ t('Recovery from the test') }}</span><span>{{ formatIDRWhole(preview.reversal.uncapped) }}</span></div>
+                  <div class="vcd-kv"><span>{{ t('Carrying amount without impairment') }}</span><span>{{ formatIDRWhole(preview.reversal.unimpaired) }}</span></div>
+                  <div class="vcd-kv"><span>{{ t('Maximum reversal') }}</span><span>{{ formatIDRWhole(preview.reversal.cap) }}</span></div>
                   <div class="vcd-kv vcd-kv--result">
-                    <span>{{ preview.reversal.capApplied ? t('Cap applied') : t('Recovery applied in full') }}</span>
+                    <span>{{ preview.reversal.capApplied ? t('Reversal (capped at maximum)') : t('Reversal (full recovery)') }}</span>
                     <span>{{ formatIDRWhole(preview.reversal.applied) }}</span>
                   </div>
                 </div>
@@ -424,7 +424,7 @@ const approvalNote = computed(() => {
                         <td v-if="hasTax" class="vcd-td vcd-td--num">{{ money(c.tax) }}</td>
                       </tr>
                       <tr class="vcd-tr--total">
-                        <td class="vcd-td">{{ t('Together') }}</td>
+                        <td class="vcd-td">{{ t('Total') }}</td>
                         <td class="vcd-td vcd-td--num">100%</td>
                         <td class="vcd-td vcd-td--num">{{ money(preview.childTotals?.accounting) }}</td>
                         <td v-if="hasTax" class="vcd-td vcd-td--num">{{ money(preview.childTotals?.tax) }}</td>
@@ -437,10 +437,11 @@ const approvalNote = computed(() => {
                       </tr>
                     </tbody>
                   </table>
-                  <p class="vcd-hint">
-                    {{ preview.childTotals?.accounting === preview.childTotals?.parentAccounting && preview.childTotals?.tax === preview.childTotals?.parentTax
-                      ? t('Equal to the rupiah on both books.')
-                      : t('The parts do not add up to the parent. The split cannot be recorded.') }}
+                  <p
+                    v-if="preview.childTotals?.accounting !== preview.childTotals?.parentAccounting || preview.childTotals?.tax !== preview.childTotals?.parentTax"
+                    class="vcd-error"
+                  >
+                    {{ t('Parts do not add up to the original asset. Adjust the shares') }}
                   </p>
                 </div>
 
@@ -457,8 +458,7 @@ const approvalNote = computed(() => {
                       <div class="vcd-compare-num vcd-strong vcd-pair-num">{{ gainLossBoth.tax === null ? t('None') : gainLoss(gainLossBoth.tax) }}</div>
                     </div>
                   </div>
-                  <p class="vcd-hint">{{ t('Each measured against that book\'s carrying amount for the part disposed of.') }}</p>
-                </div>
+                                  </div>
 
                 <!-- Both books, before and after -->
                 <div v-for="b in preview.books" :key="b.book" class="vcd-block">
@@ -493,14 +493,14 @@ const approvalNote = computed(() => {
                       <div class="vcd-compare-num vcd-strong">{{ gainLoss(b.gainLoss) }}</div>
                     </template>
                     <template v-if="b.catchUp">
-                      <div class="vcd-compare-label">{{ t('Catch-up in the effective period') }}</div>
+                      <div class="vcd-compare-label">{{ t('Catch-up depreciation') }}</div>
                       <div class="vcd-compare-num" />
                       <div class="vcd-compare-num vcd-strong">{{ formatIDRWhole(b.catchUp) }}</div>
                     </template>
                   </div>
                   <p v-if="b.note" class="vcd-hint">{{ t(b.note) }}</p>
                   <p v-if="b.disposalCharge" class="vcd-hint">
-                    {{ t(`${b.disposalCharge.label} is charged up to the disposal date and nothing after it. The module uses the full-month convention, so the disposal month carries a full month's charge, which is included in the carrying amount the gain or loss is measured against.`) }}
+                    {{ t(`${b.disposalCharge.label} is charged in full. No depreciation after the disposal date`) }}
                   </p>
                   <table class="vcd-table">
                     <thead>
@@ -513,7 +513,7 @@ const approvalNote = computed(() => {
                     </thead>
                     <tbody>
                       <tr v-for="r in b.rows" :key="r.period" :class="{ 'vcd-tr--applied': r.applied, 'vcd-tr--changed': r.before !== r.after }">
-                        <td class="vcd-td">{{ r.label }}<span v-if="r.applied" class="vcd-td-sub">{{ t('Before the change') }}</span></td>
+                        <td class="vcd-td">{{ r.label }}<span v-if="r.applied" class="vcd-td-sub">{{ t('Posted') }}</span></td>
                         <td class="vcd-td vcd-td--num">{{ r.before === null ? t(r.beforeAbsent ?? 'None') : formatIDRWhole(r.before) }}</td>
                         <td class="vcd-td vcd-td--num">{{ r.after === null ? t(r.afterAbsent ?? 'None') : formatIDRWhole(r.after) }}</td>
                         <td class="vcd-td vcd-td--num">{{ money(r.carryingAfter) }}</td>

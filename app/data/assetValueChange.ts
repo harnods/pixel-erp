@@ -22,14 +22,14 @@ export type ValueAction =
   | 'correct' | 'revise' | 'improve' | 'split' | 'dispose-part' | 'dispose' | 'impair' | 'reverse'
 
 export const VALUE_ACTIONS: { key: ValueAction; label: string; hint: string }[] = [
-  { key: 'correct', label: 'Correct an error', hint: 'The cost was entered wrong. Posted periods are caught up in the effective period, never edited.' },
-  { key: 'revise', label: 'Revise useful life or method', hint: 'A change in estimate. Accounting book only, from the effective period on.' },
-  { key: 'improve', label: 'Capitalise an improvement', hint: 'Added to this asset\'s cost from the effective period. No second asset is created.' },
-  { key: 'split', label: 'Split', hint: 'Divide the asset into parts with their own numbers, on one ratio, on both books.' },
-  { key: 'dispose-part', label: 'Dispose of part', hint: 'Sell or scrap a proportion. The rest carries on as this asset.' },
+  { key: 'correct', label: 'Correct an error', hint: 'Fix a cost entered wrongly. Posted periods are adjusted in the effective period.' },
+  { key: 'revise', label: 'Revise useful life or method', hint: 'Accounting book only, from the effective period.' },
+  { key: 'improve', label: 'Capitalise an improvement', hint: 'Added to this asset\'s cost from the effective period.' },
+  { key: 'split', label: 'Split', hint: 'Each part gets its own asset number, split by the same shares on both books.' },
+  { key: 'dispose-part', label: 'Dispose of part', hint: 'Sell or scrap a share. The rest stays on this asset.' },
   { key: 'dispose', label: 'Dispose', hint: 'Sell or scrap the whole asset.' },
-  { key: 'impair', label: 'Record an impairment test', hint: 'Kept whatever it finds. An impairment is written down in the accounts only.' },
-  { key: 'reverse', label: 'Reverse an impairment', hint: 'A later test finds the value has recovered. Capped at the unimpaired carrying amount.' },
+  { key: 'impair', label: 'Record an impairment test', hint: 'Saved whatever the result. An impairment loss posts to the accounting book only.' },
+  { key: 'reverse', label: 'Reverse an impairment', hint: 'Capped at the carrying amount the asset would have without the impairment.' },
 ]
 
 /** Events applied after the period's charge rather than before it. */
@@ -123,45 +123,45 @@ export function buildEvent(assetId: string, f: ValueChangeForm): BuiltEvent {
   switch (f.action) {
     case 'correct': {
       const c = parseRupiah(f.correctedCost)
-      if (!c) return fail('correctedCost', 'Enter the cost as it should have been recorded')
-      if (c === l.acquisitionCost) return fail('correctedCost', 'That is the cost already recorded')
-      if (!f.reason.trim()) return fail('reason', 'Say what the error was')
+      if (!c) return fail('correctedCost', 'You must fill in corrected cost')
+      if (c === l.acquisitionCost) return fail('correctedCost', 'Corrected cost matches the current cost. Enter a different amount')
+      if (!f.reason.trim()) return fail('reason', 'You must fill in reason for correction')
       return ok({ ...base, kind: 'cost-correction', correctedCost: c, reason: f.reason.trim() })
     }
     case 'revise': {
       const years = parseNumber(f.lifeYears)
-      if (!years || years <= 0) return fail('lifeYears', 'Enter the new total useful life in years')
+      if (!years || years <= 0) return fail('lifeYears', 'You must fill in total useful life in years')
       const residual = parseRupiah(f.residual) ?? 0
-      if (residual >= l.cost) return fail('residual', 'The residual value must be below the cost')
+      if (residual >= l.cost) return fail('residual', 'Residual value must be less than the cost')
       const cur = l.books.accounting.bases[l.books.accounting.bases.length - 1]!
       const lifeMonths = Math.round(years * 12)
       const e: Record<string, unknown> = { ...base, kind: 'estimate-revision', book: 'accounting' }
       if (lifeMonths !== cur.lifeMonths) e.lifeMonths = lifeMonths
       if (f.method !== cur.method) e.method = f.method
       if (residual !== cur.residual) e.residual = residual
-      if (Object.keys(e).length === 5) return fail('lifeYears', 'Nothing has changed: the life, method and residual are as recorded')
+      if (Object.keys(e).length === 5) return fail('lifeYears', 'Life, method and residual value are unchanged. Change at least one')
       return ok(e)
     }
     case 'improve': {
       const amount = parseRupiah(f.amount)
-      if (!amount) return fail('amount', 'Enter what the improvement cost')
+      if (!amount) return fail('amount', 'You must fill in improvement cost')
       if (!f.passesCapitalisationTest) {
-        return fail('passesCapitalisationTest', 'Only spending that brings future economic benefit, at a cost that can be measured reliably, is added to the asset. A repair or routine servicing is an expense: record it as a bill instead.')
+        return fail('passesCapitalisationTest', 'Repairs and routine servicing are an expense. Record them as a bill instead')
       }
       let lifeMonths: { accounting: number } | undefined
       if (f.extendsLife) {
         const y = parseNumber(f.extendedLifeYears)
-        if (!y || y <= 0) return fail('extendedLifeYears', 'Enter the new total useful life in years')
+        if (!y || y <= 0) return fail('extendedLifeYears', 'You must fill in new total useful life in years')
         lifeMonths = { accounting: Math.round(y * 12) }
       }
       return ok({ ...base, kind: 'improvement', amount, ...(lifeMonths ? { lifeMonths } : {}) })
     }
     case 'split': {
-      if (f.parts.length < 2) return fail('parts', 'A split needs at least two parts')
+      if (f.parts.length < 2) return fail('parts', 'Add at least two parts')
       const pcts = f.parts.map((x) => parseNumber(x.percent))
-      if (pcts.some((x) => x === null || x <= 0)) return fail('parts', 'Give every part a share above 0%')
+      if (pcts.some((x) => x === null || x <= 0)) return fail('parts', 'Each part needs a share above 0%')
       const total = pcts.reduce<number>((s, x) => s + (x ?? 0), 0)
-      if (Math.abs(total - 100) > 1e-9) return fail('parts', `The shares add up to ${total.toLocaleString('id-ID')}%, not 100%`)
+      if (Math.abs(total - 100) > 1e-9) return fail('parts', `Shares add up to ${total.toLocaleString('id-ID')}%. Adjust them to total 100%`)
       const ids = nextChildIds(f.parts.length)
       return ok({
         ...base, kind: 'split',
@@ -170,7 +170,7 @@ export function buildEvent(assetId: string, f: ValueChangeForm): BuiltEvent {
     }
     case 'dispose-part': {
       const pctv = parseNumber(f.percent)
-      if (pctv === null || pctv <= 0 || pctv >= 100) return fail('percent', 'Enter the share disposed of, above 0% and below 100%')
+      if (pctv === null || pctv <= 0 || pctv >= 100) return fail('percent', 'Enter a share above 0% and below 100%')
       const proceeds = parseRupiah(f.proceeds) ?? 0
       return ok({ ...base, kind: 'partial-disposal', proportion: pctv / 100, proceeds })
     }
@@ -179,16 +179,16 @@ export function buildEvent(assetId: string, f: ValueChangeForm): BuiltEvent {
       return ok({ ...base, kind: 'disposal', proceeds })
     }
     case 'impair': {
-      if (!f.indicator) return fail('indicator', 'Choose what prompted the test')
+      if (!f.indicator) return fail('indicator', 'You must select indicator')
       const r = parseRupiah(f.recoverable)
-      if (r === null) return fail('recoverable', 'Enter the recoverable amount')
-      if (!f.source.trim()) return fail('source', 'Say where the recoverable amount came from')
+      if (r === null) return fail('recoverable', 'You must fill in recoverable amount')
+      if (!f.source.trim()) return fail('source', 'You must fill in source')
       return ok({ ...base, kind: 'impairment', recoverable: r })
     }
     case 'reverse': {
       const r = parseRupiah(f.recoverable)
-      if (r === null) return fail('recoverable', 'Enter the recoverable amount the new test found')
-      if (!f.source.trim()) return fail('source', 'Say where the recoverable amount came from')
+      if (r === null) return fail('recoverable', 'You must fill in recoverable amount')
+      if (!f.source.trim()) return fail('source', 'You must fill in source')
       return ok({ ...base, kind: 'impairment-reversal', recoverable: r })
     }
   }
@@ -315,9 +315,9 @@ export function previewValueChange(assetId: string, f: ValueChangeForm, name: (i
     }
     const cc = bb.corrections[bb.corrections.length - 1]
     if (f.action === 'correct' && cc) out.catchUp = cc.catchUp
-    if (f.action === 'revise' && bk === 'tax') out.note = 'Unchanged. The tax life is fixed by the statutory group.'
-    if (f.action === 'improve' && bk === 'tax') out.note = 'Assumed: added to the tax cost and depreciated over the remaining tax life. Pending tax team confirmation (PRD OQ4).'
-    if ((f.action === 'impair' || f.action === 'reverse') && bk === 'tax') out.note = 'Unchanged. Tax does not recognise an impairment until the loss is realised.'
+    if (f.action === 'revise' && bk === 'tax') out.note = 'Tax life is set by the statutory group.'
+    if (f.action === 'improve' && bk === 'tax') out.note = 'Added to the tax cost and depreciated over the remaining tax life.'
+    if ((f.action === 'impair' || f.action === 'reverse') && bk === 'tax') out.note = 'Tax recognises an impairment loss only when it is realised.'
     return out
   })
 
@@ -350,7 +350,7 @@ export function previewValueChange(assetId: string, f: ValueChangeForm, name: (i
   if (f.action === 'revise') {
     const nb = after.books.accounting.bases[after.books.accounting.bases.length - 1]!
     if (nb.lifeEndedAtRevision) {
-      warnings.push(`A useful life of ${formatLife(nb.lifeMonths)} ended before ${periodLabel(P)}. The whole remaining ${rupiah(nb.depreciable)} is charged in ${periodLabel(P)}.`)
+      warnings.push(`A useful life of ${formatLife(nb.lifeMonths)} ends before ${periodLabel(P)}. The remaining ${rupiah(nb.depreciable)} is charged in full in ${periodLabel(P)}.`)
     }
   }
   if (f.action === 'correct') {
@@ -358,7 +358,7 @@ export function previewValueChange(assetId: string, f: ValueChangeForm, name: (i
     const ups = books.filter((b) => b.catchUp)
     if (ups.length) {
       const what = ups.map((b) => `${rupiah(b.catchUp!)} on the ${b.book === 'accounting' ? 'accounting' : 'tax'} book`).join(' and ')
-      warnings.push(`Periods already posted charged depreciation on the wrong cost. ${periodLabel(P)} carries a catch-up of ${what}, so no posted period is edited.`)
+      warnings.push(`Posted periods charged depreciation on the wrong cost. ${periodLabel(P)} includes a catch-up of ${what}.`)
     }
   }
   if (f.action === 'reverse' && impairmentCarried(before, P) <= 0) warnings.push('No impairment is carried on this asset.')
@@ -369,6 +369,6 @@ export function previewValueChange(assetId: string, f: ValueChangeForm, name: (i
 export function effectiveNote(): string {
   const p = earliestEffectivePeriod.value
   return isBefore(CURRENT_PERIOD, p)
-    ? `Every period to ${periodLabel(CURRENT_PERIOD)} is posted. The earliest a change can take effect is ${periodLabel(p)}.`
-    : `Periods before ${periodLabel(p)} are posted. The earliest a change can take effect is ${periodLabel(p)}.`
+    ? `Posted through ${periodLabel(CURRENT_PERIOD)}. Earliest effective period: ${periodLabel(p)}`
+    : `Earliest effective period: ${periodLabel(p)}. Earlier periods are posted`
 }
