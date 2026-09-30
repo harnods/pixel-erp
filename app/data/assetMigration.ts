@@ -34,11 +34,11 @@ export const CUTOVER_DATE = '31/12/2025'
 /** Where the prior tax working paper departs from the statutory computation, and why. */
 const PRIOR_PAPER_ERRORS: Record<string, { reason: string; delta: (id: string) => number }> = {
   'FA-0047': {
-    reason: 'The prior working paper started tax depreciation in February 2024, a month after the vehicle went into service',
+    reason: 'Prior working paper started tax depreciation in February 2024, 1 month after the in-service date',
     delta: (id) => -(firstTaxCharge(id)),
   },
   'FA-0064': {
-    reason: 'The prior working paper carried the generator at a figure rounded to the nearest million',
+    reason: 'Prior working paper rounded this asset to the nearest million',
     delta: (id) => {
       const c = computedFiscalAccumulated(id) ?? 0
       return Math.round(c / 1_000_000) * 1_000_000 - c
@@ -144,16 +144,16 @@ export const canMigrate = computed(() => viewAs.value === 'Owner' || viewAs.valu
 
 /** Edit the fiscal opening for one asset. Returns a refusal or null. */
 export function setFiscalOpening(id: string, accumulated: number | null): string | null {
-  if (migrationActivated.value) return 'The migration is activated. Fiscal openings are on the tax book now; change them there.'
-  if (!canMigrate.value) return `Viewing as ${viewAs.value}. A migration reconciliation needs the Owner or Accounting role.`
+  if (migrationActivated.value) return 'Migration is activated. Change tax openings in the Tax book'
+  if (!canMigrate.value) return 'Only Accounting or the Owner can edit the migration'
   const row = migrationRows.value.find((r) => r.id === id)
-  if (!row || row.computedFiscal === null) return `${id} has no tax book to open`
+  if (!row || row.computedFiscal === null) return `${id} has no tax book`
   if (accumulated === null) {
     const { [id]: _, ...rest } = fiscalEdits.value
     fiscalEdits.value = rest
     return null
   }
-  if (accumulated < 0 || accumulated > row.cost) return `The fiscal accumulated depreciation must be between 0 and the cost of ${rupiah(row.cost)}`
+  if (accumulated < 0 || accumulated > row.cost) return `Enter an amount between 0 and ${rupiah(row.cost)}`
   fiscalEdits.value = { ...fiscalEdits.value, [id]: accumulated }
   return null
 }
@@ -211,7 +211,7 @@ export type ActivationResult = { ok: true; evidence: ReconciliationEvidence } | 
  */
 export function activateMigration(): ActivationResult {
   if (migrationActivated.value) return { ok: false, reason: `Activated on ${migrationActivated.value.at}` }
-  if (!canMigrate.value) return { ok: false, reason: `Viewing as ${viewAs.value}. A migration reconciliation needs the Owner or Accounting role.` }
+  if (!canMigrate.value) return { ok: false, reason: 'Only Accounting or the Owner can activate the migration' }
   const pre = migrationRows.value
   const willDiffer = pre.some((r) => (r.difference ?? 0) !== 0)
   const ev = reconcileMigration(willDiffer ? 'refused' : 'activated')
@@ -221,8 +221,8 @@ export function activateMigration(): ActivationResult {
       ok: false,
       evidence: ev,
       reason: n
-        ? `Activation refused. ${n} ${n === 1 ? 'asset differs' : 'assets differ'} from the prior system: ${ev.differing.map((d) => d.id).join(', ')}`
-        : 'Activation refused. The register does not reconcile to the opening balances in the ledger.',
+        ? `Can't activate. ${n} ${n === 1 ? 'asset differs' : 'assets differ'} from the prior tax working paper: ${ev.differing.map((d) => d.id).join(', ')}`
+        : "Can't activate. The register does not match the ledger opening balances",
     }
   }
   const openingsSet: string[] = []

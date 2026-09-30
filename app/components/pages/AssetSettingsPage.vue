@@ -25,7 +25,6 @@ import {
 } from '~/data/assetTaxbook'
 import { METHOD_LABEL } from '~/data/assetEngine'
 import { formatMonths } from '~/data/assetUiDuration'
-import { viewAs } from '~/data/assetStore'
 import AssetPostingPolicy from '~/components/patterns/AssetPostingPolicy.vue'
 import GuidedToursSetting from '~/tours/GuidedToursSetting.vue'
 
@@ -40,9 +39,9 @@ const otherToggles = computed(() => settingToggles.filter((g) => g.head !== 'App
 
 // ── Approval rules (LR-5, FG-7) ─────────────────────────────────────────────
 const approvalSwitches = [
-  { key: 'disposal' as const, label: 'Disposal needs approval', detail: 'A sale or scrapping with proceeds, whole or in part' },
-  { key: 'writeOff' as const, label: 'Write-off needs approval', detail: 'A disposal with no proceeds, including a write-off from a count. A count raises one request for all its write-offs' },
-  { key: 'valueChange' as const, label: 'Value change needs approval', detail: 'Cost correction, improvement, life or method revision, impairment and its reversal' },
+  { key: 'disposal' as const, label: 'Disposal needs approval', detail: 'Full or partial disposal with proceeds' },
+  { key: 'writeOff' as const, label: 'Write-off needs approval', detail: 'Disposal with no proceeds, including write-offs from a count' },
+  { key: 'valueChange' as const, label: 'Value change needs approval', detail: 'Cost correction, improvement, life or method change, impairment and reversal' },
 ]
 const settingsError = ref('')
 // A refused flip leaves the store as it was, but the native checkbox has
@@ -53,7 +52,7 @@ function flip(key: 'disposal' | 'writeOff' | 'valueChange', on: boolean) {
   settingsError.value = ''
   const e = setApprovalSwitch(key, on)
   if (e) { settingsError.value = e; toggleRedraw.value += 1; return }
-  successToast(t(`${approvalSwitches.find((s) => s.key === key)!.label.replace(' needs approval', '')} approval ${on ? 'on' : 'off'}`))
+  successToast(t(`${approvalSwitches.find((s) => s.key === key)!.label.replace(' needs approval', '')} approval turned ${on ? 'on' : 'off'}`))
 }
 const thresholdText = ref(approvalSettings.value.threshold ? String(approvalSettings.value.threshold) : '')
 function saveThreshold() {
@@ -61,7 +60,7 @@ function saveThreshold() {
   const digits = thresholdText.value.replace(/\D/g, '')
   const e = setApprovalThreshold(digits ? Number(digits) : null)
   if (e) { settingsError.value = e; return }
-  successToast(t(digits ? `Threshold set to ${formatIDRWhole(Number(digits))}` : 'Threshold removed'))
+  successToast(t(digits ? 'Threshold saved' : 'Threshold removed'))
 }
 
 // ── Locations (FG4-AC3) ─────────────────────────────────────────────────────
@@ -70,10 +69,10 @@ const newBranch = ref('')
 const locationError = ref('')
 function saveLocation() {
   locationError.value = ''
-  if (!canEditCustody.value) { locationError.value = `Viewing as ${viewAs.value}. The location list is kept by General Affairs or the Owner.`; return }
+  if (!canEditCustody.value) { locationError.value = 'Only General Affairs, Accounting or the Owner can add locations'; return }
   const e = addLocation(newLocation.value, newBranch.value)
   if (e) { locationError.value = e; return }
-  successToast(t(`${newLocation.value.trim()} added to the location list`))
+  successToast(t('Location added'))
   newLocation.value = ''
 }
 
@@ -93,7 +92,7 @@ const editDef = computed(() => assetClassMaster.value.find((c) => c.class === ed
 const editGroups = computed(() => (editDef.value ? allowedGroupsFor(editDef.value.type, editDef.value.class) : []))
 
 function startEdit(cls: string) {
-  if (!canChangeClass.value) { infoToast(t(`Viewing as ${viewAs.value}. The class master needs the Owner or Accounting role.`)); return }
+  if (!canChangeClass.value) { infoToast(t('Only Accounting or the Owner can edit asset classes')); return }
   const d = assetClassMaster.value.find((c) => c.class === cls)!
   editing.value = cls
   draft.value = { group: d.defaultTaxGroup, lifeYears: String(d.commercialLifeMonths / 12), method: d.method }
@@ -108,7 +107,7 @@ function saveEdit() {
     method: draft.value.method as 'straight-line' | 'reducing-balance',
   })
   if (r) { editError.value = r; return }
-  successToast(t(`${editing.value} updated. New assets in the class inherit it`))
+  successToast(t('Asset class saved'))
   editing.value = null
 }
 
@@ -120,18 +119,15 @@ function toggleOther() { infoToast(t('Not in this prototype')) }
 <template>
   <div class="st">
     <header class="st__head">
-      <p class="st__sub">
-        {{ t('The class master sets an asset up correctly at creation. Every field here has a statutory consequence.') }}
-      </p>
       <MpButton variant="secondary" is-rounded @click="router.push('/asset-migration')">
-        {{ t('Bring existing assets onto both books') }}
+        {{ t('Migrate existing assets') }}
       </MpButton>
     </header>
 
     <div class="st__card">
       <div class="st__cardhead">
         <span class="st__cardtitle">{{ t('Asset classes') }}</span>
-        <span class="st__hint">{{ t('A new asset, or one moved into a class, inherits the group, life and method') }}</span>
+        <span class="st__hint">{{ t('New assets take the group, life and method of their class') }}</span>
       </div>
       <table class="st__table">
         <thead>
@@ -167,7 +163,7 @@ function toggleOther() { infoToast(t('Not in this prototype')) }
                 <div class="st__edit">
                   <div class="st__editfield">
                     <label class="st__editlabel" for="st-group">{{ t('Statutory group') }}</label>
-                    <ErpFilterSelect id="st-group" v-model="draft.group" :placeholder="t('Group')" :options="editGroups" width="100%" :is-clearable="false" />
+                    <ErpFilterSelect id="st-group" v-model="draft.group" :placeholder="t('Select group')" :options="editGroups" width="100%" :is-clearable="false" />
                   </div>
                   <div class="st__editfield">
                     <label class="st__editlabel" for="st-life">{{ t('Accounting life (years)') }}</label>
@@ -175,7 +171,7 @@ function toggleOther() { infoToast(t('Not in this prototype')) }
                   </div>
                   <div class="st__editfield">
                     <label class="st__editlabel" for="st-method">{{ t('Method') }}</label>
-                    <ErpFilterSelect id="st-method" v-model="draft.method" :placeholder="t('Method')" :options="methodOptions" width="100%" :is-clearable="false" />
+                    <ErpFilterSelect id="st-method" v-model="draft.method" :placeholder="t('Select method')" :options="methodOptions" width="100%" :is-clearable="false" />
                   </div>
                   <div class="st__editbtns">
                     <MpButton variant="ghost" is-rounded @click="editing = null">{{ t('Cancel') }}</MpButton>
@@ -184,7 +180,7 @@ function toggleOther() { infoToast(t('Not in this prototype')) }
                 </div>
                 <p v-if="editError" class="st__error">{{ t(editError) }}</p>
                 <p v-else class="st__edithint">
-                  {{ t(`The tax life follows the group. The ${counts[c.class] ?? 0} assets already in ${c.class} keep what they have; change one by moving it between classes or classifying it.`) }}
+                  {{ t('Tax life follows the statutory group. Changes apply to new assets only.') }}
                 </p>
               </td>
             </tr>
@@ -198,7 +194,7 @@ function toggleOther() { infoToast(t('Not in this prototype')) }
     <div class="st__card" data-tour="appr-rules">
       <div class="st__cardhead">
         <span class="st__cardtitle">{{ t('Approval rules') }}</span>
-        <span class="st__hint">{{ t('Off by default. With a rule off the event completes at once and records who acted.') }}</span>
+        <span class="st__hint">{{ t('When a rule is off, the event is recorded immediately') }}</span>
       </div>
       <div class="st__toggles">
         <div v-for="sw in approvalSwitches" :key="sw.key" class="st__toggle">
@@ -211,7 +207,7 @@ function toggleOther() { infoToast(t('Not in this prototype')) }
           />
           <div>
             <div class="st__togglek">{{ t(sw.label) }}</div>
-            <div class="st__togglev">{{ t(sw.detail) }} · {{ t('Approver: Finance Director, never the person who raised it') }}</div>
+            <div class="st__togglev">{{ t(sw.detail) }}</div>
           </div>
         </div>
         <div class="st__toggle st__toggle--form">
@@ -220,22 +216,22 @@ function toggleOther() { infoToast(t('Not in this prototype')) }
             <MpInput id="st-threshold" v-model="thresholdText" />
             <div class="st__togglev">
               {{ approvalSettings.threshold === null
-                ? t('No threshold. Leave empty to rely on the switches alone.')
-                : t(`An event moving more than ${formatIDRWhole(approvalSettings.threshold)} needs its own approval, whatever the switches say.`) }}
+                ? t('Leave empty for no threshold')
+                : t(`Events above ${formatIDRWhole(approvalSettings.threshold)} always need approval`) }}
             </div>
           </div>
           <MpButton variant="secondary" is-rounded @click="saveThreshold">{{ t('Save threshold') }}</MpButton>
         </div>
       </div>
       <p v-if="settingsError" class="st__error">{{ t(settingsError) }}</p>
-      <p v-else-if="!canConfigureApprovals" class="st__note">{{ t(`Viewing as ${viewAs}. Only the Owner changes approval rules.`) }}</p>
+      <p v-else-if="!canConfigureApprovals" class="st__note">{{ t('Only the Owner can change approval rules.') }}</p>
     </div>
 
     <!-- FG4-AC3: a location is chosen from this list, never typed on the asset. -->
     <div class="st__card">
       <div class="st__cardhead">
         <span class="st__cardtitle">{{ t('Locations') }}</span>
-        <span class="st__hint">{{ assetLocations.length }} {{ t('locations · custody and counts choose from this list') }}</span>
+        <span class="st__hint">{{ assetLocations.length }} {{ t('locations') }}</span>
       </div>
       <table class="st__table">
         <thead>
@@ -253,12 +249,12 @@ function toggleOther() { infoToast(t('Not in this prototype')) }
       </table>
       <div class="st__toggle st__toggle--form">
         <div class="st__formfield">
-          <label class="st__togglek" for="st-loc-name">{{ t('New location') }}</label>
+          <label class="st__togglek" for="st-loc-name">{{ t('Location name') }}</label>
           <MpInput id="st-loc-name" v-model="newLocation" />
         </div>
         <div class="st__formfield">
           <label class="st__togglek" for="st-loc-branch">{{ t('Branch') }}</label>
-          <ErpFilterSelect id="st-loc-branch" v-model="newBranch" :placeholder="t('Choose a branch')" :options="BRANCHES" width="100%" />
+          <ErpFilterSelect id="st-loc-branch" v-model="newBranch" :placeholder="t('Select branch')" :options="BRANCHES" width="100%" />
         </div>
         <MpButton variant="secondary" is-rounded @click="saveLocation">{{ t('Add location') }}</MpButton>
       </div>
@@ -293,9 +289,7 @@ function toggleOther() { infoToast(t('Not in this prototype')) }
 
 <style scoped>
 
-.st__head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); min-height: 32px; }
-.st__title { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
-.st__sub { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0; max-width: 720px; }
+.st__head { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); min-height: 32px; }
 
 .st__card { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); overflow: hidden; margin-bottom: var(--mp-spacing-4); }
 .st__cardhead { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }

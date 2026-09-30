@@ -21,7 +21,6 @@ import {
   migrationRows, setFiscalOpening, reconcileMigration, activateMigration, reconciliations, migrationActivated,
   ledgerOpening, canMigrate, CUTOVER_DATE,
 } from '~/data/assetMigration'
-import { viewAs } from '~/data/assetStore'
 
 const { t } = useLocale()
 const router = useRouter()
@@ -43,7 +42,7 @@ const editValue = ref('')
 const editError = ref('')
 function startEdit(id: string, current: number | null) {
   if (migrationActivated.value) return
-  if (!canMigrate.value) { infoToast(t(`Viewing as ${viewAs.value}. A migration reconciliation needs the Owner or Accounting role.`)); return }
+  if (!canMigrate.value) { infoToast(t('Only Accounting or the Owner can edit the migration')); return }
   editing.value = id
   editValue.value = current === null ? '' : String(current)
   editError.value = ''
@@ -64,14 +63,14 @@ const lastResult = ref<string | null>(null)
 function reconcile() {
   const ev = reconcileMigration()
   lastResult.value = null
-  if (ev.result === 'reconciled') successToast(t(`${ev.number}: reconciled. Every asset agrees with the prior system`))
-  else infoToast(t(`${ev.number}: ${ev.differing.length} ${ev.differing.length === 1 ? 'asset differs' : 'assets differ'}`))
+  if (ev.result === 'reconciled') successToast(t(`${ev.number} reconciled`))
+  else infoToast(t(ev.differing.length ? `${ev.number}: ${ev.differing.length} ${ev.differing.length === 1 ? 'asset differs' : 'assets differ'}` : `${ev.number}: register does not match the ledger opening balances`))
 }
 function activate() {
   const r = activateMigration()
   if (!r.ok) { lastResult.value = r.reason; return }
   lastResult.value = null
-  successToast(t(`Activated on the evidence of ${r.evidence.number}. Both books open from ${CUTOVER_DATE}`))
+  successToast(t(`Migration activated. Both books open from ${CUTOVER_DATE}`))
 }
 </script>
 
@@ -79,11 +78,11 @@ function activate() {
   <div class="mg">
     <header class="mg__head">
       <p class="mg__sub">
-        {{ t(`Bring existing assets onto both books · cut-over ${CUTOVER_DATE} · ${rows.length} assets held at the cut-over`) }}
+        {{ t(`Cut-over ${CUTOVER_DATE} · ${rows.length} ${rows.length === 1 ? 'asset' : 'assets'}`) }}
       </p>
       <div class="mg__actions">
-        <MpButton variant="secondary" is-rounded :is-disabled="!!migrationActivated" @click="reconcile">{{ t('Reconcile') }}</MpButton>
-        <MpButton is-rounded :is-disabled="!!migrationActivated || !canMigrate" @click="activate">{{ t('Activate') }}</MpButton>
+        <MpButton variant="secondary" is-rounded :is-disabled="!!migrationActivated" @click="reconcile">{{ t('Run reconciliation') }}</MpButton>
+        <MpButton is-rounded :is-disabled="!!migrationActivated || !canMigrate" @click="activate">{{ t('Activate migration') }}</MpButton>
       </div>
     </header>
 
@@ -91,37 +90,37 @@ function activate() {
       <MpBannerIcon id="mg-ok" />
       <MpBannerTitle>{{ t('Activated') }} {{ migrationActivated.at }} · {{ migrationActivated.by }}</MpBannerTitle>
       <MpBannerDescription>
-        {{ t(`On the evidence of ${migrationActivated.evidence}. `) }}
+        {{ t(`Reconciliation ${migrationActivated.evidence}.`) }}
         <template v-if="migrationActivated.openingsSet.length">
-          {{ t(`Agreed fiscal openings carried onto the tax book for ${migrationActivated.openingsSet.join(', ')}; it charges the remaining life from there.`) }}
+          {{ t(`Edited tax openings applied to ${migrationActivated.openingsSet.join(', ')}.`) }}
         </template>
-        <span class="mg__link" @click="router.push('/asset-roll-forward')">{{ t('See the roll-forward') }}</span>
+        <span class="mg__link" @click="router.push('/asset-roll-forward')">{{ t('View roll-forward') }}</span>
       </MpBannerDescription>
     </MpBanner>
     <MpBanner v-else-if="lastResult" id="mg-refused" variant="danger" class="mg__note">
       <MpBannerIcon id="mg-bad" />
       <MpBannerTitle>{{ t(lastResult) }}</MpBannerTitle>
       <MpBannerDescription>
-        {{ t('Agree each one with the prior working paper: edit the fiscal opening to the figure the tax office has, or leave it and correct the prior paper. The refusal is kept as evidence below.') }}
+        {{ t('Edit the tax opening to match the prior tax working paper, or correct the working paper.') }}
       </MpBannerDescription>
     </MpBanner>
 
     <!-- The commercial side: register against the ledger's opening balances. -->
     <div class="mg__tiles">
       <div class="mg__tile" :class="commercialTies ? 'mg__tile--ok' : 'mg__tile--bad'">
-        <span class="mg__tilek">{{ t('Commercial opening · cost') }}</span>
+        <span class="mg__tilek">{{ t('Accounting opening cost') }}</span>
         <span class="mg__tilev">{{ formatIDRWhole(totals.cost) }}</span>
-        <span class="mg__tilesub">{{ t('Ledger 1-1600 at the cut-over') }} {{ formatIDRWhole(ob.cost) }}</span>
+        <span class="mg__tilesub">{{ t('Ledger 1-1600:') }} {{ formatIDRWhole(ob.cost) }}</span>
       </div>
       <div class="mg__tile" :class="commercialTies ? 'mg__tile--ok' : 'mg__tile--bad'">
-        <span class="mg__tilek">{{ t('Commercial opening · accumulated') }}</span>
+        <span class="mg__tilek">{{ t('Accounting opening accumulated depreciation') }}</span>
         <span class="mg__tilev">{{ formatIDRWhole(totals.commercial) }}</span>
-        <span class="mg__tilesub">{{ t('Ledger 1-1700 at the cut-over') }} {{ formatIDRWhole(ob.accumulated) }}</span>
+        <span class="mg__tilesub">{{ t('Ledger 1-1700:') }} {{ formatIDRWhole(ob.accumulated) }}</span>
       </div>
       <div class="mg__tile" :class="differing.length ? 'mg__tile--bad' : 'mg__tile--ok'">
-        <span class="mg__tilek">{{ t('Fiscal opening · accumulated') }}</span>
+        <span class="mg__tilek">{{ t('Tax opening accumulated depreciation') }}</span>
         <span class="mg__tilev">{{ formatIDRWhole(totals.fiscal) }}</span>
-        <span class="mg__tilesub">{{ t('Prior tax working paper') }} {{ formatIDRWhole(totals.prior) }}</span>
+        <span class="mg__tilesub">{{ t('Prior tax working paper:') }} {{ formatIDRWhole(totals.prior) }}</span>
       </div>
       <div class="mg__tile" :class="differing.length ? 'mg__tile--bad' : 'mg__tile--ok'">
         <span class="mg__tilek">{{ t('Assets that differ') }}</span>
@@ -132,18 +131,18 @@ function activate() {
 
     <div class="mg__card">
       <div class="mg__cardhead">
-        <span class="mg__cardtitle">{{ t('Per asset at the cut-over') }}</span>
-        <span class="mg__hint">{{ t('Commercial from the journal history, fixed. Fiscal computed from the group, editable until activation.') }}</span>
+        <span class="mg__cardtitle">{{ t('Opening balances by asset') }}</span>
+        <span class="mg__hint">{{ t('Tax openings can be edited until activation') }}</span>
       </div>
       <table class="mg__table">
         <thead>
           <tr>
             <th class="mg__th">{{ t('Asset') }}</th>
             <th class="mg__th mg__th--num">{{ t('Cost') }}</th>
-            <th class="mg__th mg__th--num">{{ t('Commercial accumulated') }}</th>
-            <th class="mg__th mg__th--num">{{ t('Fiscal computed') }}</th>
-            <th class="mg__th mg__th--num">{{ t('Fiscal opening') }}</th>
-            <th class="mg__th mg__th--num">{{ t('Prior system') }}</th>
+            <th class="mg__th mg__th--num">{{ t('Accounting accumulated') }}</th>
+            <th class="mg__th mg__th--num">{{ t('Tax computed') }}</th>
+            <th class="mg__th mg__th--num">{{ t('Tax opening') }}</th>
+            <th class="mg__th mg__th--num">{{ t('Prior working paper') }}</th>
             <th class="mg__th mg__th--num">{{ t('Difference') }}</th>
           </tr>
         </thead>
@@ -186,14 +185,13 @@ function activate() {
     <!-- The evidence: every run, refused or not, in the order it happened. -->
     <div class="mg__card">
       <div class="mg__cardhead">
-        <span class="mg__cardtitle">{{ t('Reconciliation evidence') }}</span>
-        <span class="mg__hint">{{ t('Kept for this session') }}</span>
+        <span class="mg__cardtitle">{{ t('Reconciliation history') }}</span>
       </div>
       <table v-if="reconciliations.length" class="mg__table">
         <thead>
           <tr>
             <th class="mg__th">{{ t('Run') }}</th>
-            <th class="mg__th">{{ t('When · who') }}</th>
+            <th class="mg__th">{{ t('Date · user') }}</th>
             <th class="mg__th">{{ t('Result') }}</th>
             <th class="mg__th">{{ t('Assets that differed') }}</th>
             <th class="mg__th">{{ t('Activation') }}</th>
@@ -209,7 +207,7 @@ function activate() {
             </td>
             <td class="mg__td">
               <template v-if="ev.differing.length">
-                <div v-for="d in ev.differing" :key="d.id">{{ d.id }} · {{ formatIDRWhole(d.fiscalOpening) }} {{ t('against') }} {{ formatIDRWhole(d.priorFiscal) }}</div>
+                <div v-for="d in ev.differing" :key="d.id">{{ d.id }} · {{ formatIDRWhole(d.fiscalOpening) }} {{ t('vs') }} {{ formatIDRWhole(d.priorFiscal) }}</div>
               </template>
               <template v-else>{{ t('None') }}</template>
             </td>
@@ -217,7 +215,7 @@ function activate() {
           </tr>
         </tbody>
       </table>
-      <p v-else class="mg__empty">{{ t('No reconciliation run yet. Reconcile, or try to activate: either one is kept here.') }}</p>
+      <p v-else class="mg__empty">{{ t('Reconciliation runs will appear here. Start one with Run reconciliation.') }}</p>
     </div>
   </div>
 </template>

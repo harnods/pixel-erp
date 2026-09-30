@@ -41,7 +41,7 @@ function approve(r: ApprovalRequest) {
   errors.value = { ...errors.value, [r.id]: '' }
   const res = approveRequest(r.id, notes.value[r.id] ?? '')
   if (!res.ok) { errors.value = { ...errors.value, [r.id]: res.reason }; return }
-  successToast(t(`${r.id} approved by ${actingUser.value}. ${r.items.length === 1 ? 'The change is' : `All ${r.items.length} changes are`} recorded on the register.`))
+  successToast(t(`${r.id} approved`))
   // SIM-4: a count's approval lands back on the count report it closes.
   if (r.sessionId) router.push(`/custody-and-counts?session=${r.sessionId}`)
 }
@@ -49,12 +49,12 @@ function sendBack(r: ApprovalRequest) {
   errors.value = { ...errors.value, [r.id]: '' }
   const res = sendBackRequest(r.id, notes.value[r.id] ?? '')
   if (!res.ok) { errors.value = { ...errors.value, [r.id]: res.reason }; return }
-  infoToast(t(`${r.id} sent back to ${r.raisedBy}. Nothing was recorded.`))
+  infoToast(t(`${r.id} sent back to ${r.raisedBy}`))
 }
 
 function selfRaised(r: ApprovalRequest): boolean { return r.status === 'awaiting' && r.raisedBy === actingUser.value }
 
-const statusLabel: Record<string, string> = { awaiting: 'Awaiting a decision', approved: 'Approved', 'sent-back': 'Sent back' }
+const statusLabel: Record<string, string> = { awaiting: 'Awaiting approval', approved: 'Approved', 'sent-back': 'Sent back' }
 </script>
 
 <template>
@@ -62,8 +62,7 @@ const statusLabel: Record<string, string> = { awaiting: 'Awaiting a decision', a
     <header class="ap__head">
       <p class="ap__sub">
         {{ awaitingRequests.length }}
-        {{ t(awaitingRequests.length === 1 ? 'decision awaiting' : 'decisions awaiting') }}
-        · {{ t('disposal, write-off and value change') }} · {{ t('viewing as') }} {{ actingUser }} ({{ viewAs }})
+        {{ t(awaitingRequests.length === 1 ? 'request awaiting approval' : 'requests awaiting approval') }}
       </p>
       <MpButton variant="secondary" is-rounded @click="router.push('/asset-settings')">{{ t('Approval rules') }}</MpButton>
     </header>
@@ -71,19 +70,18 @@ const statusLabel: Record<string, string> = { awaiting: 'Awaiting a decision', a
     <div v-if="!approvalRequests.length" class="ap__done">
       <MpIcon name="info" size="md" />
       <div>
-        <div class="ap__donetitle">{{ t('No approval has been requested') }}</div>
+        <div class="ap__donetitle">{{ t('No approval requests') }}</div>
         <div class="ap__donetext">
           {{ anyOn
-            ? t('Approval is on for some asset events. A request appears here when one of them is recorded.')
-            : t('Approval is off for every asset event, the default. Disposals, write-offs and value changes complete at once and record who acted. Turn approval on per event in Asset settings.') }}
+            ? t('Approval requests will appear here.')
+            : t('Approval is off for all asset events. Turn it on in Approval rules.') }}
         </div>
       </div>
     </div>
     <div v-else-if="!awaitingRequests.length" class="ap__done ap__done--ok">
       <MpIcon name="check" size="md" />
       <div>
-        <div class="ap__donetitle">{{ t('Nothing is waiting for a decision') }}</div>
-        <div class="ap__donetext">{{ t('Decided requests stay below, because the record of what was approved is the point of having approvals.') }}</div>
+        <div class="ap__donetitle">{{ t('No requests awaiting approval') }}</div>
       </div>
     </div>
 
@@ -114,7 +112,7 @@ const statusLabel: Record<string, string> = { awaiting: 'Awaiting a decision', a
           <tbody>
             <tr v-for="it in r.items" :key="it.assetId">
               <td class="ap__td"><span class="ap__assetlink" @click="router.push(`/assets/${it.assetId}`)">{{ it.assetId }}</span> {{ it.assetName }}</td>
-              <td class="ap__td">{{ it.label }}<span v-if="it.applied" class="ap__applied"> · {{ t('recorded') }}</span></td>
+              <td class="ap__td">{{ it.label }}<span v-if="it.applied" class="ap__applied"> · {{ t('Recorded') }}</span></td>
               <td v-if="canSeeFinancials" class="ap__td ap__td--num">{{ it.accounting === null ? t('None') : formatIDRWhole(it.accounting) }}</td>
               <td v-if="canSeeFinancials" class="ap__td ap__td--num">{{ it.tax === null ? t('No tax book') : formatIDRWhole(it.tax) }}</td>
             </tr>
@@ -128,7 +126,7 @@ const statusLabel: Record<string, string> = { awaiting: 'Awaiting a decision', a
       </div>
 
       <div class="ap__meta">
-        <span>{{ t('Raised by') }} <strong>{{ r.raisedBy }}</strong> · {{ r.raisedOn }}</span>
+        <span>{{ t('Requested by') }} <strong>{{ r.raisedBy }}</strong> · {{ r.raisedOn }}</span>
         <span v-if="r.sessionId" class="ap__assetlink" @click="router.push(`/custody-and-counts?session=${r.sessionId}`)">{{ t('Count') }} {{ r.sessionId }}</span>
         <span v-if="r.decidedBy">
           {{ t(r.status === 'approved' ? 'Approved by' : 'Sent back by') }} <strong>{{ r.decidedBy }}</strong> · {{ r.decidedOn }}<template v-if="r.note"> · “{{ r.note }}”</template>

@@ -43,13 +43,13 @@ export const approvalSettings = ref<ApprovalSettings>({ ...DEFAULT_SETTINGS })
 export const canConfigureApprovals = computed(() => viewAs.value === 'Owner')
 
 export function setApprovalSwitch(key: 'disposal' | 'writeOff' | 'valueChange', on: boolean): string | null {
-  if (!canConfigureApprovals.value) return `Viewing as ${viewAs.value}. Only the Owner changes approval rules.`
+  if (!canConfigureApprovals.value) return 'Only the Owner can change approval rules'
   approvalSettings.value = { ...approvalSettings.value, [key]: on }
   return null
 }
 export function setApprovalThreshold(v: number | null): string | null {
-  if (!canConfigureApprovals.value) return `Viewing as ${viewAs.value}. Only the Owner changes approval rules.`
-  if (v !== null && (!Number.isFinite(v) || v <= 0)) return 'Enter an amount above zero, or leave it empty for no threshold'
+  if (!canConfigureApprovals.value) return 'Only the Owner can change approval rules'
+  if (v !== null && (!Number.isFinite(v) || v <= 0)) return 'Enter an amount above 0, or leave it empty for no threshold'
   approvalSettings.value = { ...approvalSettings.value, threshold: v }
   return null
 }
@@ -66,7 +66,7 @@ export function isAboveThreshold(value: number): boolean {
 
 /** Whether an event of this kind and value must wait for approval, and why. */
 export function approvalNeeded(kind: ApprovalKind, value: number): string | null {
-  if (switchFor(kind)) return `${KIND_LABEL[kind]} needs approval (Asset settings)`
+  if (switchFor(kind)) return `${KIND_LABEL[kind]} approval is on in Asset settings`
   if (isAboveThreshold(value)) return `Above the ${rp(approvalSettings.value.threshold!)} approval threshold`
   return null
 }
@@ -212,9 +212,9 @@ export const canApprove = computed(() => viewAs.value === 'Approver' || viewAs.v
 export function decisionRefusal(r: ApprovalRequest): string | null {
   if (r.status !== 'awaiting') return `${r.id} is already ${r.status === 'approved' ? 'approved' : 'sent back'}`
   if (r.raisedBy === actingUser.value) {
-    return `${actingUser.value} raised ${r.id}, so cannot decide it. An approver cannot approve an event they raised. Switch View as to someone else.`
+    return `You requested ${r.id}. An approver cannot approve an event they raised`
   }
-  if (!canApprove.value) return `Viewing as ${viewAs.value}. Deciding needs approving authority: switch View as to Approver.`
+  if (!canApprove.value) return 'Only an Approver or the Owner can approve or send back requests'
   return null
 }
 
@@ -263,7 +263,7 @@ export function sendBackRequest(id: string, note: string): { ok: true } | { ok: 
   if (!r) return { ok: false, reason: `No request ${id}` }
   const refusal = decisionRefusal(r)
   if (refusal) return { ok: false, reason: refusal }
-  if (!note.trim()) return { ok: false, reason: 'Say why it is going back, so the requester knows what to change' }
+  if (!note.trim()) return { ok: false, reason: 'You must fill in note to send back' }
   const decided: ApprovalRequest = { ...r, status: 'sent-back', decidedBy: actingUser.value, decidedOn: sessionStamp(), note: note.trim() }
   approvalRequests.value = approvalRequests.value.map((x) => (x.id === id ? decided : x))
   for (const fn of listeners) fn(decided)
@@ -292,7 +292,7 @@ export function gateChange(assetId: string, kind: ApprovalKind, label: string, c
     return r.ok ? { ok: true, held: null } : { ok: false, reason: r.reason ?? 'The change could not be recorded' }
   }
   if (pendingFor(assetId).length) {
-    return { ok: false, reason: `${assetId} already has ${pendingFor(assetId)[0]!.id} awaiting approval. Wait for that decision first.` }
+    return { ok: false, reason: `${assetId} already has ${pendingFor(assetId)[0]!.id} awaiting approval. Wait for the decision first` }
   }
   const a = findAsset(assetId)!
   const pair = carryingAtChange(assetId, change)
@@ -319,10 +319,10 @@ export function approvalTrailFor(assetId: string): TrailRow[] {
   for (const r of approvalRequests.value) {
     const it = r.items.find((i) => i.assetId === assetId)
     if (!it) continue
-    const scope = r.items.length > 1 ? ` (one of ${r.items.length} items)` : ''
-    rows.push({ when: r.raisedOn, who: r.raisedBy, what: `Approval ${r.id} requested: ${it.label}${scope}`, note: r.reason + (r.sessionId ? ` · from count ${r.sessionId}` : '') })
-    if (r.status === 'approved') rows.push({ when: r.decidedOn!, who: r.decidedBy!, what: `Approval ${r.id} approved`, note: `${r.note ? `${r.note}. ` : ''}Applied through the engine on both books` })
-    if (r.status === 'sent-back') rows.push({ when: r.decidedOn!, who: r.decidedBy!, what: `Approval ${r.id} sent back`, note: `${r.note}. Nothing was recorded` })
+    const scope = r.items.length > 1 ? ` (1 of ${r.items.length} assets)` : ''
+    rows.push({ when: r.raisedOn, who: r.raisedBy, what: `Approval ${r.id} requested: ${it.label}${scope}`, note: r.reason + (r.sessionId ? ` · count ${r.sessionId}` : '') })
+    if (r.status === 'approved') rows.push({ when: r.decidedOn!, who: r.decidedBy!, what: `Approval ${r.id} approved`, note: `${r.note ? `${r.note}. ` : ''}Recorded on both books` })
+    if (r.status === 'sent-back') rows.push({ when: r.decidedOn!, who: r.decidedBy!, what: `Approval ${r.id} sent back`, note: `${r.note}. Not recorded` })
   }
   return rows.sort((a, b) => stampKey(b.when) - stampKey(a.when))
 }
