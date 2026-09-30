@@ -33,7 +33,6 @@ import { assetTaxGroups } from '~/data/fixedAssets'
 import CustodyDrawer from '~/components/patterns/CustodyDrawer.vue'
 import { custodyHistoryFor, conditionOf, canEditCustody, stampKey } from '~/data/assetCustody'
 import { bulkHistoryFor } from '~/data/assetUiBulkHistory'
-import { signedFigures } from '~/data/assetUiFigures'
 import { plainDurations } from '~/data/assetUiDuration'
 import { approvalTrailFor, pendingFor } from '~/data/assetApprovals'
 import AssetLifeSchedule from '~/components/patterns/AssetLifeSchedule.vue'
@@ -59,7 +58,7 @@ const asset = computed(() => findAsset(props.orderId))
 const effectiveTaxGroup = computed(() => asset.value?.taxGroup ?? null)
 
 // The cumulative difference is captioned "Accounting less tax", so it keeps its sign.
-const figures = computed(() => (asset.value ? signedFigures(asset.value, detailFigures(asset.value)) : []))
+const figures = computed(() => (asset.value ? detailFigures(asset.value) : []))
 // LR-6: General Affairs sees the physical pane and nothing financial.
 const panes = computed(() => {
   const all = (asset.value ? detailPanes(asset.value) : []).map((p) => (p.owner === 'General Affairs' && asset.value

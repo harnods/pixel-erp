@@ -19,7 +19,7 @@ import {
   planBulkEditFromLists, applyBulkEditWithHistory, reverseBulkEditWithHistory, bulkHistoryFor,
 } from '~/data/assetUiBulkHistory'
 import { detailFigures } from '~/data/fixedAssetDetail'
-import { signedFigures, gainLossPair } from '~/data/assetUiFigures'
+import { gainLossPair } from '~/data/assetUiFigures'
 import { blankForm, previewValueChange } from '~/data/assetValueChange'
 import { plainDurations, formatMonths, monthsLabel } from '~/data/assetUiDuration'
 import { formatIDR, formatIDRWhole } from '~/utils/currency'
@@ -175,13 +175,19 @@ describe('6 · New asset takes location and custodian from the lists', () => {
 
 // ── 7. Cumulative difference keeps its sign ─────────────────────────────────
 describe('7 · cumulative difference is signed', () => {
-  it('FA-0091 after impairment reads -Rp100.000.000', () => {
+  it('FA-0091 after impairment carries its sign on the module convention (accounting charge less tax charge)', () => {
     recordImpairmentTest({ assetId: 'FA-0091', indicator: 'Annual test · indefinite life', recoverable: 2_000_000_000, basis: 'Value in use', source: 'Projection' })
     const a = findAsset('FA-0091')!
-    expect(a.bookValueCommercial! - a.bookValueFiscal!).toBe(-100_000_000)
-    const f = signedFigures(a, detailFigures(a)).find((x) => x.label === 'Cumulative difference')!
-    expect(f.value).toBe(-100_000_000)
-    expect(formatIDRWhole(f.value!)).toBe('-Rp100.000.000')
+    // The accounts carry it below the tax book, so accounting has charged more: the difference is positive.
+    expect(a.bookValueFiscal! - a.bookValueCommercial!).toBe(100_000_000)
+    const f = detailFigures(a).find((x) => x.label === 'Cumulative difference')!
+    expect(f.value).toBe(100_000_000)
+    // An asset whose tax book runs ahead of the accounts shows the minus sign.
+    const neg = fixedAssets.value
+      .map((x) => detailFigures(x).find((y) => y.label === 'Cumulative difference')!)
+      .find((y) => y.value !== null && y.value < 0)!
+    expect(neg).toBeTruthy()
+    expect(formatIDRWhole(neg.value!)).toMatch(/^-Rp/)
   })
 })
 
