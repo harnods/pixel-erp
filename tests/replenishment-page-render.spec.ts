@@ -165,13 +165,29 @@ describe('SettingsReplenishmentPage — renders and validates', () => {
     expect(wrapper.text()).toContain('Save changes')
   })
 
+  it('follows the settings-page pattern (docs/patterns/settings-page.md)', async () => {
+    const wrapper = await mountLoaded(SettingsReplenishmentPage)
+    // Own title bar: breadcrumb back to the module above the H1.
+    expect(wrapper.find('h1').text()).toBe('Replenishment settings')
+    expect(wrapper.find('#rs-breadcrumb').text()).toBe('Replenishment')
+    // H2 sections, no page/section description subtitles.
+    expect(wrapper.findAll('h2').map((h) => h.text())).toContain('Movement classification (FSN)')
+    expect(wrapper.text()).not.toContain('Classifies products by how often they move')
+    // rule/settings-no-unbuilt-controls — the dead schedule toggle is gone.
+    expect(wrapper.text()).not.toContain('Recalculate on a schedule')
+    // View-mode values are whole sentences, never `${v}d` fragments.
+    expect(wrapper.text()).toMatch(/\d+ days/)
+    expect(wrapper.text()).not.toMatch(/\b\d+d\b/)
+  })
+
   it('shows an inline error instead of disabling Save when a rule is invalid', async () => {
     const wrapper = await mountLoaded(SettingsReplenishmentPage)
     await wrapper.findAll('button').find((b) => b.text().includes('Edit'))!.trigger('click')
     await nextTick()
 
     // Break the FSN bands: Fast must stay above Slow.
-    const fastInput = wrapper.find('input#rs-fast-input')
+    // MpFormControl puts its id on the input it wraps.
+    const fastInput = wrapper.find('input#rs-fast-fc')
     expect(fastInput.exists()).toBe(true)
     await fastInput.setValue('5') // below the Slow default (10)
     await nextTick()
@@ -182,7 +198,9 @@ describe('SettingsReplenishmentPage — renders and validates', () => {
     await save.trigger('click')
     await nextTick()
     // Shown AT the field (rule/form-errors-inline), with a pointer in the action bar.
-    expect(wrapper.find('.rs-field-error').text()).toContain('Fast must be higher than Slow')
+    // MpFormControl is-invalid + MpFormErrorMessage (rule/field-invalid-caption).
+    expect(wrapper.text()).toContain('Fast must be higher than Slow')
+    expect(wrapper.find('input#rs-fast-fc').attributes('aria-invalid')).toBe('true')
     expect(wrapper.text()).toContain('Fix the highlighted fields to save.')
   })
 })

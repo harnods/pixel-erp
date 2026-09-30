@@ -19,6 +19,7 @@ type. Do not add scaffolds back here; extend the target doc instead.
 | `/create-index-page`, "bikin index page", "create index page", "index page" | [index-page-format.md](index-page-format.md) | skill **`erp-table-page`** (mandatory — column-width `kind` standard) |
 | `/create-form-page`, "bikin form page", "create form page", "form page" | [Form.md](Form.md) → "Full form-page example" | — |
 | `/create-detail-page`, "bikin detail page", "create detail page", "detail page" | [details-page-format.md](details-page-format.md) | — |
+| "settings page", "bikin settings page", module settings / configuration | [settings-page.md](settings-page.md) | — |
 
 All three page types share [page-title-bar.md](page-title-bar.md) (the title
 bar) and the `pageRegistry` vs `detailMatch` stage-padding split documented in

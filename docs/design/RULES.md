@@ -840,6 +840,42 @@ ERP override wins.
   omit it on a page that posts to the ledger. **Why:** the posting is always one click
   away. **Lint:** review.
 
+## Settings pages — source: `docs/patterns/settings-page.md`
+
+- **`rule/settings-page-layout`** — *Do:* a module settings page opened from inside a
+  module renders via `detailMatch` and **owns its title bar**. The bar has a
+  **breadcrumb** back to the module (`MpTextlink`) above the **H1 `<Module> settings`**.
+  The one page action, a secondary `Edit` `MpButton`, sits top-right; a `View only`
+  `MpBadge` (`additionalInformation`) replaces it when the user can't edit. Content is
+  **H2 sections** (20px semibold) with a divider between them, max 900px. *Don't:* nest
+  the settings under the module's own H1 with a second in-content heading and Edit
+  button, or add a page/section description subtitle. **Why:** the page says what it is
+  in the title and always has a way back. **Source:** `SettingsReplenishmentPage.vue`.
+  **Lint:** review.
+- **`rule/settings-row`** — *Do:* each setting is **one `MpFormControl` row** in a
+  **label | control** grid (label column `minmax(0,320px)`). The left column is
+  `MpFormLabel` plus a 12px caption explaining the setting and what a blank inherits.
+  The right column is the committed value in view mode, or the control in edit mode,
+  with `MpFormErrorMessage` under it. View-mode values are whole translated sentences
+  (`tf('{n} days', …)`). A per-category policy lists one line per category with the
+  **fallback ("Other categories") last**. *Don't:* stack settings like a create form,
+  concatenate fragments (`${v}d`), or show an unset value as `0`. **Why:** a settings page
+  is read far more than edited; value and explanation must sit side by side, in the same
+  place in both modes. This is a deliberate, documented exception to
+  `rule/form-field-stacking` for settings pages only. **Lint:** review.
+- **`rule/settings-edit-mode`** — *Do:* `Edit` works on a draft. While editing, a
+  **sticky** footer (`MpButtonGroup.erp-action-footer`, no divider above it) holds ghost
+  `Reset to defaults` (optional), ghost `Cancel` and primary `Save changes`
+  (`:is-loading` while saving), with an inline error pointer beside it. A save error
+  stays inline and keeps the draft. Success toasts `"<Module> settings saved"`. Leaving
+  with unsaved changes (route leave + route update + `beforeunload`) asks "Discard
+  unsaved changes?". *Don't:* lose a draft silently, toast an error, or disable Save to
+  signal invalid input. **Why:** settings drive calculations across the module; a lost
+  or half-saved policy is expensive. **Lint:** review.
+- **`rule/settings-no-unbuilt-controls`** — *Do:* show only settings that work. *Don't:*
+  ship a disabled "not available in this prototype" control. **Why:** a dead control
+  reads as broken, or as a permission problem, and becomes a dead end. **Lint:** review.
+
 ## Empty & feedback — source: `docs/patterns/Toast.md`, `docs/design/reachable-states.md`
 
 - **`rule/empty-state-structure`** — *Do:* an empty state = illustration + title +

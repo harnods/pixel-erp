@@ -39,6 +39,7 @@ Identify the surface(s) in your task and load the matching rows. Read
 | A **dropdown / filter / search** | `rule/select-*`, `rule/filter-bar-search-export` | `docs/patterns/ErpFilterBar.md` |
 | A **drawer / side panel**      | `rule/drawer-*`                             | `docs/patterns/Drawer.md` |
 | A **detail page**              | `rule/detail-*`, `rule/type-*`              | `docs/patterns/details-page-format.md` |
+| A **settings page** (module config, view ↔ Edit) | `rule/settings-*`, `rule/form-*`, `rule/type-*` | `docs/patterns/settings-page.md` |
 | An **empty / error / loading** state | `rule/empty-state-structure`, `rule/toast-success-only`, `rule/form-errors-inline` | `docs/patterns/Toast.md` |
 | A **card / surface / page shell** | `rule/surface-*`, `rule/type-*`          | `docs/patterns/pixel-enterprise-overrides.md` |
 | **Copy / labels / terminology** | `rule/copy-*`                              | uxw-mekari guideline, `app/data/translations.ts` |

@@ -201,6 +201,7 @@ const ImportVendorTermsPage = asyncPage(() => import('~/components/pages/ImportV
 const NewWarehousePage = asyncPage(() => import('~/components/pages/NewWarehousePage.vue'))
 const WarehouseDetailsPage = asyncPage(() => import('~/components/pages/WarehouseDetailsPage.vue'))
 const ConfigureWarehousePage = asyncPage(() => import('~/components/pages/ConfigureWarehousePage.vue'))
+const SettingsReplenishmentPage = asyncPage(() => import('~/components/pages/SettingsReplenishmentPage.vue'))
 const StorageLocationDetailsPage = asyncPage(() => import('~/components/pages/StorageLocationDetailsPage.vue'))
 const CashManagementDetailPage = asyncPage(() => import('~/components/pages/CashManagementDetailPage.vue'))
 const CreateCashAccountPage = asyncPage(() => import('~/components/pages/CreateCashAccountPage.vue'))
@@ -466,6 +467,11 @@ const { trigger: triggerBuzz } = useBuzzActions()
 // its own title bar). Add modules here as their detail pages get built.
 const detailMatch = computed<{ component: Component; id: string } | null>(() => {
   const segs = route.path.split('/').filter(Boolean)
+  // /replenishment-settings → a settings page that owns its title bar (breadcrumb
+  // back to Replenishment + H1 + Edit) — docs/patterns/settings-page.md.
+  if (segs.length === 1 && segs[0] === 'replenishment-settings') {
+    return { component: SettingsReplenishmentPage, id: 'settings' }
+  }
   // /crm[/sub] → CRM (Qontak) level-1 pages. Each is full-bleed and owns its own
   // title bar + stage, so it renders outside the standard padded stage/title bar.
   if (segs[0] === 'crm') {

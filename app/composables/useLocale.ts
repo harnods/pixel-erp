@@ -34,6 +34,16 @@ function t(en: string): string {
   return ID_TRANSLATIONS[en] ?? en
 }
 
+/**
+ * Translate a whole sentence with named placeholders — `tf('{n} days', { n: 7 })`.
+ * The KEY keeps its `{name}` slots, so the Indonesian value can put them wherever
+ * its grammar needs; never build copy by concatenating translated fragments
+ * (rule/copy-id-translations).
+ */
+function tf(en: string, vars: Record<string, string | number>): string {
+  return t(en).replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m))
+}
+
 export function useLocale() {
-  return { locale, setLocale, t }
+  return { locale, setLocale, t, tf }
 }

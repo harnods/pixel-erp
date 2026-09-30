@@ -31,6 +31,8 @@ const _locale = ref<'en' | 'id'>('en')
   locale: _locale,
   setLocale: (next: 'en' | 'id') => { _locale.value = next },
   t: (en: string) => en,
+  tf: (en: string, vars: Record<string, string | number>) =>
+    en.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m)),
 })
 
 /**
