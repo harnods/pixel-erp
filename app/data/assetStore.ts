@@ -286,6 +286,16 @@ export interface JournalLine {
   debit: number | null
   credit: number | null
   control: ControlAccount
+  /**
+   * The period the line belongs to, where it differs from the journal's. A
+   * catch-up for an asset put into service before the open period carries
+   * one pair of lines per period it brings up to date, so the ledger at any
+   * earlier period end, and the reversal of any one period, see exactly that
+   * period's charge.
+   */
+  period?: Period
+  /** On a reversal line: the journal whose line it reverses. */
+  ofJournal?: string
 }
 
 export interface Journal {
@@ -336,9 +346,12 @@ export function ledgerBalance(control: ControlAccount, p: Period): number {
   const pl = CONTROL_ACCOUNTS.find((c) => c.account === control)?.pl ?? false
   let total = 0
   for (const j of journals.value) {
-    if (isAfter(j.period, p)) continue
-    if (pl && isBefore(j.period, FY_START)) continue
-    for (const l of j.lines) if (l.control === control) total += (l.debit ?? 0) - (l.credit ?? 0)
+    for (const l of j.lines) {
+      const lp = l.period ?? j.period
+      if (isAfter(lp, p)) continue
+      if (pl && isBefore(lp, FY_START)) continue
+      if (l.control === control) total += (l.debit ?? 0) - (l.credit ?? 0)
+    }
   }
   return total
 }
@@ -512,11 +525,36 @@ export function reversePeriod(p: Period, on = periodEndDate(CURRENT_PERIOD)): Ru
   journals.value = [...journals.value, {
     number, date: periodEndDate(p), period: p, source: 'reversal',
     memo: `Reversal of ${run.journal}`, reverses: run.journal,
-    lines: (original?.lines ?? []).map((l) => ({ ...l, debit: l.credit, credit: l.debit })),
+    lines: [
+      ...(original?.lines ?? []).map((l) => ({ ...l, debit: l.credit, credit: l.debit })),
+      // The period's charge also sits in any catch-up brought up to it, for
+      // an asset that entered the register after the run posted. Reversing
+      // the period takes that out too, or reposting it would book it twice.
+      ...catchUpLinesStillBooked(p).map((x) => ({ ...x.line, debit: x.line.credit, credit: x.line.debit, period: p, ofJournal: x.journal })),
+    ],
   }]
   const reversed: DepreciationRun = { ...run, state: 'reversed', reversal: { journal: number, on } }
   runs.value = runs.value.map((r) => (r.id === run.id ? reversed : r))
   return { ok: true, run: reversed }
+}
+
+/**
+ * Catch-up lines for period `p` that no reversal has taken out yet. A
+ * catch-up line is reversed with its period and never again: when the
+ * period is posted again, its run carries the asset like any other.
+ */
+function catchUpLinesStillBooked(p: Period): { journal: string; line: JournalLine }[] {
+  const reversed = new Set<string>()
+  for (const j of journals.value) {
+    if (j.source !== 'reversal') continue
+    for (const l of j.lines) if (l.ofJournal) reversed.add(`${l.ofJournal}|${l.period ?? j.period}`)
+  }
+  const out: { journal: string; line: JournalLine }[] = []
+  for (const j of journals.value) {
+    if (j.source !== 'catch-up' || reversed.has(`${j.number}|${p}`)) continue
+    for (const l of j.lines) if (l.period === p && l.control !== 'other') out.push({ journal: j.number, line: l })
+  }
+  return out
 }
 
 // ── Recording events ────────────────────────────────────────────────────────
@@ -791,15 +829,30 @@ export function createAsset(input: NewAssetInput): { ok: true; id: string } | { 
   const through = addPeriods(openP, -1)
   const total = accumulatedAt(l.books.accounting, through) ?? 0
   if (total > 0) {
-    const fy = isBefore(through, FY_START) ? 0 : chargesBetween(l, 'accounting', FY_START, through) ?? 0
+    // One pair of lines per period brought up to date, each carrying its
+    // period, so the ledger ties at every earlier period end and a reversal
+    // of any one period takes out exactly that period's charge.
+    const lastBeforeFy = addPeriods(FY_START, -1)
+    const preFy = accumulatedAt(l.books.accounting, isBefore(through, lastBeforeFy) ? through : lastBeforeFy) ?? 0
+    const accum = ACCUM_ACCOUNT[input.class] ?? '1699'
+    const lines: JournalLine[] = preFy
+      ? [
+          { account: '3-3000 · Retained earnings', description: `${id} before FY2026`, debit: preFy, credit: null, control: 'other', period: lastBeforeFy },
+          { account: accum, description: `${id} accumulated before FY2026`, debit: null, credit: preFy, control: '1-1700', period: lastBeforeFy },
+        ]
+      : []
+    for (let x = isBefore(period, FY_START) ? FY_START : period; !isAfter(x, through); x = addPeriods(x, 1)) {
+      const c = chargeAt(l, 'accounting', x).charge
+      if (!c) continue
+      lines.push(
+        { account: EXPENSE_ACCOUNT[input.class] ?? '6299 · Depreciation, other', description: `${id} ${periodLabel(x)}`, debit: c, credit: null, control: '6-5100', period: x },
+        { account: accum, description: `${id} ${periodLabel(x)}`, debit: null, credit: c, control: '1-1700', period: x },
+      )
+    }
     js.push({
       number: nextJournal(), date: periodEndDate(through), period: through, source: 'catch-up',
       memo: `Depreciation of ${id} brought up to ${periodLabel(through)}`,
-      lines: [
-        ...(fy ? [{ account: EXPENSE_ACCOUNT[input.class] ?? '6299 · Depreciation, other', description: `${id} FY2026 to ${periodLabel(through)}`, debit: fy, credit: null, control: '6-5100' as const }] : []),
-        ...(total - fy ? [{ account: '3-3000 · Retained earnings', description: `${id} before FY2026`, debit: total - fy, credit: null, control: 'other' as const }] : []),
-        { account: ACCUM_ACCOUNT[input.class] ?? '1699', description: `${id} accumulated`, debit: null, credit: total, control: '1-1700' },
-      ],
+      lines,
     })
   }
   journals.value = [...journals.value, ...js]
