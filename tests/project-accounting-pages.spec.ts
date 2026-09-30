@@ -72,7 +72,7 @@ describe('ProjectAccountingPage — the portfolio', () => {
   it('shows the portfolio stat strip', async () => {
     const w = await mountPage(ProjectAccountingPage)
     const text = w.text()
-    expect(text).toContain('Revenue recognized')
+    expect(text).toContain('Revenue recognised')
     expect(text).toContain('Unpaid invoices')
     expect(text).toContain('Addenda awaiting approval')
     w.unmount()

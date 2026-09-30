@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Project accounting — the engagement portfolio (Accounting › Project accounting).
+ * Project accounting: the engagement portfolio (Accounting › Project accounting).
  *
  * This is a `pageRegistry` page: it renders INSIDE the shared `.stage`, which
  * already supplies the white surface + 24px padding, so the root adds neither.
@@ -28,7 +28,7 @@ const { t } = useLocale()
 // ── Stats ─────────────────────────────────────────────────────────────────────
 const totals = computed(() => portfolioTotals())
 const stats = computed(() => [
-  { key: 'revenue', label: t('Revenue recognized'), value: formatIdr(totals.value.revenue), sub: t('All projects, to date'), adverse: false },
+  { key: 'revenue', label: t('Revenue recognised'), value: formatIdr(totals.value.revenue), sub: t('All projects, to date'), adverse: false },
   { key: 'cost', label: t('Cost incurred'), value: formatIdr(totals.value.cost), sub: t('All projects, to date'), adverse: false },
   { key: 'outstanding', label: t('Unpaid invoices'), value: formatIdr(totals.value.outstanding), sub: t('Sent, awaiting payment'), adverse: totals.value.outstanding > 0 },
   { key: 'addenda', label: t('Addenda awaiting approval'), value: String(totals.value.pendingAddenda), sub: t('Blocks project closing'), adverse: totals.value.pendingAddenda > 0 },
@@ -85,10 +85,10 @@ const rows = computed<Row[]>(() => engagements.map((e: Engagement) => {
 const allCols: TableColumn[] = [
   { key: 'name', label: t('Project'), width: '250px', sortable: true, sortType: 'text' },
   { key: 'method', label: t('Revenue recognition'), width: '165px' },
-  { key: 'revenueValue', label: t('Revenue recognized'), width: '150px', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'revenueValue', label: t('Revenue recognised'), width: '150px', align: 'right', sortable: true, sortType: 'number' },
   { key: 'spendPct', label: t('Budget spent'), width: '185px', align: 'right' },
   { key: 'billedValue', label: t('Billed'), width: '135px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'wip', label: t('Unbilled / overbilled'), width: '145px', align: 'right' },
+  { key: 'wip', label: t('Billing position'), width: '145px', align: 'right' },
   { key: 'statusLabel', label: t('Project status'), width: '120px', sortable: true, sortType: 'text' },
 ]
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, true])))
@@ -257,7 +257,7 @@ function spendTone(pct: number | null): string {
         <span class="pa-num">{{ formatIdr((row as unknown as Row).billedValue) }}</span>
       </template>
 
-      <!-- ── Billing progress: unbilled (asset) vs overbilled (liability) ──
+      <!-- ── Billing position: unbilled revenue vs billed in advance ──
            Label over amount, so a long figure never clips at this width. -->
       <template #cell-wip="{ row }">
         <div
@@ -267,7 +267,7 @@ function spendTone(pct: number | null): string {
           <span class="pa-wip-label">
             {{ Math.abs((row as unknown as Row).wip) < 1000
               ? t('Billing up to date')
-              : (row as unknown as Row).wip > 0 ? t('Unbilled') : t('Overbilled') }}
+              : (row as unknown as Row).wip > 0 ? t('Unbilled') : t('Billed in advance') }}
           </span>
           <span v-if="Math.abs((row as unknown as Row).wip) >= 1000" class="pa-num pa-wip-amount">
             {{ formatIdr(Math.abs((row as unknown as Row).wip)) }}

@@ -3,7 +3,7 @@
  * ApproveAddendumModal — the Finance/Controller gate on a contract addendum.
  *
  * Approving is a separate act from raising: it moves the contract value and, in
- * some cases, trues up revenue already recognized. The dialog therefore states the
+ * some cases, trues up revenue already recognised. The dialog therefore states the
  * before/after, the stated reason, and the accounting effect BEFORE the click —
  * it cannot be undone from here, only reversed by a further addendum.
  *
@@ -17,7 +17,7 @@ const props = defineProps<{
   oldValue: number
   newValue: number
   reason: string
-  /** Plain-language description of what approving does to recognized revenue. */
+  /** Plain-language description of what approving does to recognised revenue. */
   effect: string
   raisedBy: string
 }>()

@@ -50,17 +50,17 @@ const METHOD_CHOICES: { key: RecognitionMethod; title: string; desc: string }[] 
   {
     key: 'tm',
     title: 'Input by Simplified Cost',
-    desc: 'Revenue is each reviewed cost line plus the agreed margin. For consulting, audit and retainer work.',
+    desc: 'Revenue is each reviewed cost line plus the agreed margin.',
   },
   {
     key: 'input',
     title: 'Input by Cost',
-    desc: 'Revenue follows the share of budgeted cost spent. Invoices follow a separate billing schedule. For construction and fit-out work.',
+    desc: 'Revenue follows the share of budgeted cost spent. Invoices follow a separate billing schedule.',
   },
   {
     key: 'output',
     title: 'Output by Milestone',
-    desc: 'Revenue is recognized when a weighted milestone is verified, and the milestone is then ready to invoice. For events and staged deliveries.',
+    desc: 'Revenue is recognised when a weighted milestone is verified. The milestone is then ready to invoice.',
   },
 ]
 
@@ -196,7 +196,7 @@ function cancel() { router.push('/project-accounting') }
             </MpFormControl>
 
             <MpFormControl id="ne-budget">
-              <MpFormLabel>{{ t('Cost budget') }}</MpFormLabel>
+              <MpFormLabel>{{ t('Budgeted cost') }}</MpFormLabel>
               <MpInputGroup id="ne-budget-group" is-full-width>
                 <MpInputLeftAddon>Rp</MpInputLeftAddon>
                 <MpInput id="ne-budget-input" v-model="draft.budget" type="number" placeholder="0" is-full-width />
