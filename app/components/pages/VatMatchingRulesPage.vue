@@ -13,10 +13,11 @@
  * VatReconciliationPeriodsPage. Save is a title-bar action in [...slug].vue.
  */
 import type { Ref } from 'vue'
-import { MpIcon, MpCheckbox } from '@mekari/pixel3'
+import { MpIcon, MpCheckbox, MpSegmentedControl } from '@mekari/pixel3'
 import {
   VAT_OUT_TAX_CODES, loadVatSetup, saveVatSetup, taxCodeLabels,
   SNAPSHOT_TAX_CODE_IDS, FIRST_PERIOD_ID, periodLabelById,
+  type VatReconScope,
 } from '~/data/vatReconciliation'
 import { infoToast } from '~/utils/toasts'
 
@@ -25,9 +26,21 @@ const { t } = useLocale()
 const selected = ref<string[]>(loadVatSetup()?.taxCodeIds ?? [...SNAPSHOT_TAX_CODE_IDS])
 const saved = ref(loadVatSetup())
 
+/**
+ * VAT Out ships first (OD-001); VAT In is OD-008 and shares this shell. Making
+ * it a choice rather than a build flag means a company that has not adopted VAT
+ * In never sees half a feature, and the team can demo where OD-008 lands
+ * without a second codebase.
+ */
+const scope = ref<VatReconScope>(loadVatSetup()?.scope ?? 'out')
+const scopeOptions = [
+  { id: 'vat-scope-out',  label: 'VAT Out only',   value: 'out'  },
+  { id: 'vat-scope-both', label: 'VAT Out & VAT In', value: 'both' },
+]
+
 onMounted(() => {
   const s = loadVatSetup()
-  if (s) { saved.value = s; selected.value = [...s.taxCodeIds] }
+  if (s) { saved.value = s; selected.value = [...s.taxCodeIds]; scope.value = s.scope ?? 'out' }
 })
 
 function toggle(id: string, on: boolean) {
@@ -49,8 +62,8 @@ const changedSinceSnapshot = computed(() =>
 
 function save() {
   if (!canSave.value) return
-  saved.value = saveVatSetup([...selected.value])
-  infoToast(t('Tax code setup saved'))
+  saved.value = saveVatSetup([...selected.value], scope.value)
+  infoToast(t('Reconciliation setup saved'))
 }
 
 // "Save changes" is a title-bar action (see [...slug].vue) — it bumps this
@@ -89,6 +102,25 @@ const fixedRules = [
 <template>
   <div class="vm-page">
     <div class="vm-main">
+      <!-- Scope first: it decides which sides the rest of the module shows -->
+      <section class="vm-card">
+        <header class="vm-card-head">
+          <div class="vm-card-icon"><MpIcon name="doc" size="md" /></div>
+          <div>
+            <div class="vm-card-title">{{ t('What to reconcile') }}</div>
+            <div class="vm-card-sub">{{ t('VAT Out is sales invoices against faktur keluaran. VAT In adds purchase invoices against faktur masukan.') }}</div>
+          </div>
+        </header>
+        <div class="vm-card-body">
+          <MpSegmentedControl
+            id="vm-seg-scope"
+            name="vm-seg-scope"
+            v-model="scope"
+            :data="scopeOptions.map(o => ({ ...o, label: t(o.label) }))"
+          />
+        </div>
+      </section>
+
       <!-- US-016 — the one thing the user actually configures -->
       <section class="vm-card">
         <header class="vm-card-head">
@@ -156,8 +188,10 @@ const fixedRules = [
         <div class="vm-preview-note">
           <span class="vm-preview-note-strong">{{ t('Selected') }}:</span>
           {{ selected.length ? taxCodeLabels(selected) : t('none yet') }}.
+          {{ selected.length ? '' : '' }}
           {{ t('Periods are reconciled from') }}
-          {{ periodLabelById(FIRST_PERIOD_ID) }} {{ t('onward.') }}
+          {{ periodLabelById(FIRST_PERIOD_ID) }} {{ t('onward,') }}
+          {{ scope === 'both' ? t('for both VAT Out and VAT In.') : t('for VAT Out only.') }}
         </div>
         <div v-if="changedSinceSnapshot" class="vm-preview-note vm-preview-note--warn">
           <span class="vm-preview-note-strong">{{ t('Heads up') }}:</span>

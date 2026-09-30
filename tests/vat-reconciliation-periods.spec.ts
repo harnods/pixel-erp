@@ -18,12 +18,19 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import {
   reconPeriodRows, reconPeriods, periodLabelById, activePeriodId, activePeriod,
-  reconTotals, matchCounts, pairsForPeriod, outputPairs, inputPairs,
+  reconTotals, matchCounts, pairsForPeriod, outputPairs, inputPairs, reconIssues,
   SIDE_LABELS, MATCH_META, ATTENTION_STATES, FIRST_PERIOD_ID, exposureOf,
   finalizePeriod, unfinalizePeriod, isPeriodFinalized, canFinalizePeriod,
   periodFinalization, reconUnfinishedCount, CURRENT_USER, TODAY_ISO,
+  saveVatSetup, reconSides, isSideInScope, SNAPSHOT_TAX_CODE_IDS,
   type ReconSide,
 } from '~/data/vatReconciliation'
+
+// Most of this file predates the VAT-In toggle and asserts two sides per masa.
+// The shipping default is VAT Out only, so the scope is set explicitly here
+// rather than left to whatever the default happens to be — the toggle has its
+// own tests at the bottom.
+saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'both')
 
 const rows = reconPeriodRows()
 const SIDES: ReconSide[] = ['output', 'input']
@@ -255,10 +262,19 @@ describe('VAT reconciliation — the status model matches the PRD', () => {
     }
   })
 
+  // The UXW limit is two words, and every badge now meets it — the earlier
+  // three-word allowance was a concession to the PRD's longer status names,
+  // which live in the drawer and the filter instead.
   it('badge labels stay within the two-word limit', () => {
     for (const state of [...ATTENTION_STATES, 'matched' as const]) {
       expect(MATCH_META[state].label.split(' ').length, MATCH_META[state].label)
-        .toBeLessThanOrEqual(3)
+        .toBeLessThanOrEqual(2)
+    }
+  })
+
+  it('no badge label uses an abbreviation', () => {
+    for (const state of [...ATTENTION_STATES, 'matched' as const]) {
+      expect(MATCH_META[state].label, MATCH_META[state].label).not.toMatch(/\b(ref|no\.|qty|amt)\b/i)
     }
   })
 
@@ -441,5 +457,58 @@ describe('VAT reconciliation — finalize a period', () => {
     const after = reconPeriodRows().filter(r => r.periodId === doneId)
       .map(r => `${r.erpAmount}/${r.djpAmount}/${r.matched}/${r.total}`)
     expect(after).toEqual(before)
+  })
+})
+
+
+/**
+ * VAT Out ships first; VAT In is OD-008 and shares this shell. A company that
+ * has not adopted VAT In should not be shown half a feature, so the scope is a
+ * setup choice and everything that lists or counts per side reads it — the
+ * index, the issue feed and the finalize guard move together, or the product
+ * shows an input side in one place and hides it in another.
+ */
+describe('VAT reconciliation — VAT Out only vs VAT In & Out', () => {
+  afterEach(() => { saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'both') })
+
+  it('defaults to VAT Out only', () => {
+    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS])
+    expect(reconSides()).toEqual(['output'])
+    expect(isSideInScope('output')).toBe(true)
+    expect(isSideInScope('input')).toBe(false)
+  })
+
+  it('VAT Out only lists one row per masa, not two', () => {
+    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'out')
+    const r = reconPeriodRows()
+    expect(r.every(x => x.side === 'output')).toBe(true)
+    expect(new Set(r.map(x => x.periodId)).size).toBe(r.length)
+  })
+
+  it('VAT In & Out lists both', () => {
+    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'both')
+    const r = reconPeriodRows()
+    expect(new Set(r.map(x => x.side))).toEqual(new Set(['output', 'input']))
+    expect(new Set(r.map(x => x.periodId)).size).toBe(r.length / 2)
+  })
+
+  it('the issue feed drops the input side with it', () => {
+    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'out')
+    expect(reconIssues(activePeriodId).every(i => i.side === 'output')).toBe(true)
+    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'both')
+    expect(reconIssues(activePeriodId).some(i => i.side === 'input')).toBe(true)
+  })
+
+  it('the outstanding count follows the scope', () => {
+    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'out')
+    const outOnly = reconUnfinishedCount()
+    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'both')
+    expect(reconUnfinishedCount()).toBeGreaterThan(outOnly)
+  })
+
+  it('finalize is not blocked by an input side the company never adopted', () => {
+    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'out')
+    const done = reconPeriodRows().find(r => r.status === 'reconciled')!
+    expect(canFinalizePeriod(done.periodId)).toBe(true)
   })
 })

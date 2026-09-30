@@ -113,7 +113,13 @@ const isAttentionScope = computed(() => route.query.tab !== 'All faktur')
 // Imported from the data layer so the filter can never fall behind the status
 // model (PRD §5.1) the way a hand-listed copy did.
 
-const statusFilter = ref<MatchState | ''>('')
+/**
+ * `matched-manual` is not a MatchState — it's a view of one. Auto and manual
+ * matches read as the same status to the user, but an audit has to be able to
+ * isolate the ones a person judged, so the select offers it as a pseudo-status.
+ */
+type StatusFilter = MatchState | 'matched-manual' | ''
+const statusFilter = ref<StatusFilter>('')
 const query = ref('')
 
 // Reset the filters when switching sides or scope — the counts differ, so a
@@ -121,7 +127,8 @@ const query = ref('')
 watch([side, isAttentionScope], () => { statusFilter.value = ''; query.value = '' })
 
 const matchesFilter = (p: ReconPair) =>
-  statusFilter.value ? p.match === statusFilter.value
+  statusFilter.value === 'matched-manual' ? p.match === 'matched' && p.matchedBy === 'manual'
+  : statusFilter.value ? p.match === statusFilter.value
   : isAttentionScope.value ? p.match !== 'matched'
   : true
 
@@ -138,7 +145,8 @@ const filtered = computed(() => {
   })
   // Work queues lead with the biggest money at stake; the full ledger and the
   // matched view stay in document order, which is what you want when verifying.
-  const isWorkQueue = statusFilter.value !== 'matched' && (isAttentionScope.value || !!statusFilter.value)
+  const isWorkQueue = statusFilter.value !== 'matched' && statusFilter.value !== 'matched-manual'
+    && (isAttentionScope.value || !!statusFilter.value)
   return isWorkQueue
     ? [...rows].sort((a, b) => exposureOf(b) - exposureOf(a))
     : rows
@@ -176,14 +184,23 @@ const statusOptions = computed(() => {
   const states = isAttentionScope.value
     ? ATTENTION_STATES
     : (['matched', ...ATTENTION_STATES] as MatchState[])
-  return states
+  const opts = states
     // A status with no rows behind it is a dead end in a select, so it isn't
     // offered — the count in the label is what makes the absence legible.
     .filter(k => (counts.value[k] ?? 0) > 0)
     .map(k => ({
-      value: k,
+      value: k as string,
       label: `${t(MATCH_META[k].chipLabel)} (${counts.value[k] ?? 0})`,
     }))
+  // Auto and manual matches are one status to the user but two kinds of evidence
+  // at an audit, so they are separable here even though the badge reads the same.
+  if (!isAttentionScope.value && counts.value['matched-manual']) {
+    opts.splice(1, 0, {
+      value: 'matched-manual',
+      label: `${t('Reconciled (manual)')} (${counts.value['matched-manual']})`,
+    })
+  }
+  return opts
 })
 
 // ── Detail drawer ─────────────────────────────────────────────────────────────
@@ -462,6 +479,13 @@ function reviewWithAirene() {
                 :color="isOutlineDot(pair) ? metaFor(pair).iconColorOutline : metaFor(pair).iconColor"
               />
             </div>
+            <!-- A match a person made is evidence of a decision, not of a rule, so
+                 it is flagged on the row rather than only in the activity trail:
+                 an auditor should see which matches were judged, not have to open
+                 each one to find out (PRD goal G4). -->
+            <span v-if="pair.match === 'matched' && pair.matchedBy === 'manual'" class="vr-manual-tag">
+              {{ t('Manual') }}
+            </span>
           </div>
 
           <!-- Coretax side -->
@@ -798,6 +822,18 @@ function reviewWithAirene() {
   border: 1.5px dashed currentColor;
 }
 .vr-connector-pct { font-size: 10px; font-weight: var(--mp-font-weights-bold); }
+/* Sits under the connector dot: quiet enough not to compete with the status,
+   loud enough that a column of matched rows shows which ones a person judged. */
+.vr-manual-tag {
+  margin-top: var(--mp-spacing-1);
+  padding: 1px var(--mp-spacing-2);
+  border-radius: var(--mp-radii-full);
+  background: var(--mp-colors-neutral-100);
+  color: var(--mp-text-subtle);
+  font-size: var(--mp-font-sizes-xs);
+  font-weight: var(--mp-font-weights-semi-bold);
+  white-space: nowrap;
+}
 
 /* ── Reasoning banner ── */
 .vr-reason {

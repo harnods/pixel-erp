@@ -32,7 +32,7 @@ import ReconciliationFiltersDrawer, {
 // labelled money column is not a currency display.
 import {
   reconPeriodRows, reconPeriodOptions, formatAmountPlain, loadVatSetup, reconVersion,
-  type ReconPeriodRow,
+  reconSides, type ReconPeriodRow,
 } from '~/data/vatReconciliation'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -67,15 +67,23 @@ onMounted(() => { isSetUp.value = !!loadVatSetup() })
 // "Reconciliation" is dropped from both headers that carried it: on a page
 // titled VAT reconciliation it's redundant three times over, and spelling it out
 // clipped the headers at any width the table could afford.
-const columns: TableColumn[] = [
+// The Invoice type column earns its place only when there is more than one
+// kind — under VAT Out only it would repeat the same value down every row.
+const columns = computed<TableColumn[]>(() => [
   { key: 'masa',        label: t('Tax period'),    width: '140px', sortable: true,                 sortType: 'text'   },
   { key: 'reconciledAt',label: t('Reconciled on'), width: '145px', sortable: true,                 sortType: 'date'   },
-  { key: 'jenis',       label: t('Invoice type'),  width: '160px',                                 sortType: 'text'   },
-  { key: 'erpAmount',   label: t('Sales/purchase invoice (Rp)'), width: '195px', align: 'right', sortable: true, sortType: 'number' },
+  ...(showJenisFilter.value
+    ? [{ key: 'jenis', label: t('Invoice type'), width: '160px', sortType: 'text' } as TableColumn]
+    : []),
+  // "Sales/purchase" only earns the slash when both sides are in scope; under
+  // VAT Out the second half names a document that isn't in the table (US-018).
+  { key: 'erpAmount',
+    label: showJenisFilter.value ? t('Sales/purchase invoice (Rp)') : t('Sales invoice (Rp)'),
+    width: '195px', align: 'right', sortable: true, sortType: 'number' },
   { key: 'djpAmount',   label: t('Tax invoice (Rp)'), width: '180px', align: 'right', sortable: true, sortType: 'number' },
   { key: 'selisih',     label: t('Difference (Rp)'), width: '130px', align: 'right', sortable: true, sortType: 'number' },
   { key: 'status',      label: t('Status'),        width: '140px',                                 sortType: 'text'   },
-]
+])
 
 // reconVersion is read so a period reconciled in the workspace updates its row
 // here too — status, matched count and Reconciled on all move together.
@@ -141,13 +149,22 @@ const statusOptions = computed(() => {
     ? all.filter(o => o.value !== 'reconciled' && o.value !== 'finalized')
     : all
 })
-const jenisOptions = [
-  { label: t('Output tax invoice'), value: 'output' },
-  { label: t('Input tax invoice'),  value: 'input'  },
-]
+/**
+ * Only the sides in scope. With VAT Out only there is nothing to choose between,
+ * so the filter hides itself rather than offering a control with one option.
+ */
+const jenisOptions = computed(() => {
+  void reconVersion.value
+  const all = [
+    { label: t('Output tax invoice'), value: 'output' },
+    { label: t('Input tax invoice'),  value: 'input'  },
+  ]
+  return all.filter(o => reconSides().includes(o.value as 'output' | 'input'))
+})
+const showJenisFilter = computed(() => jenisOptions.value.length > 1)
 
 const statusLabel = computed(() => statusOptions.value.find(o => o.value === statusFilter.value)?.label ?? '')
-const jenisLabel = computed(() => jenisOptions.find(o => o.value === jenisFilter.value)?.label ?? '')
+const jenisLabel = computed(() => jenisOptions.value.find(o => o.value === jenisFilter.value)?.label ?? '')
 const isDrawerFilterActive = computed(
   () => appliedFilters.periods.length > 0 || appliedFilters.withDifferenceOnly,
 )
@@ -187,12 +204,16 @@ function openIssues(row: ReconPeriodRow) {
 const loading = ref(true)
 onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
 
-// Column show/hide (first column always on)
-const columnVisibility = reactive<Record<string, boolean>>(
-  Object.fromEntries(columns.map(c => [c.key, true])),
-)
-const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
-const visibleColumns = computed<TableColumn[]>(() => columns.filter(c => columnVisibility[c.key]))
+// Column show/hide (first column always on). Keyed off `columns`, which is now
+// scope-dependent, so a column that isn't offered can't be left hidden-but-on.
+const columnVisibility = reactive<Record<string, boolean>>({})
+watchEffect(() => {
+  for (const c of columns.value) if (!(c.key in columnVisibility)) columnVisibility[c.key] = true
+})
+const columnItems = computed(() =>
+  columns.value.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 })))
+const visibleColumns = computed<TableColumn[]>(() =>
+  columns.value.filter(c => columnVisibility[c.key] !== false))
 function hideColumn(key: string) { columnVisibility[key] = false }
 </script>
 
@@ -235,7 +256,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
       <div class="filter-left">
         <!-- Quick filter 1 — Invoice type. Placeholder = the object name, real
              values only, (x) clears to show-all. -->
-        <MpPopover id="vp-jenis-filter" is-close-on-select>
+        <MpPopover v-if="showJenisFilter" id="vp-jenis-filter" is-close-on-select>
           <MpPopoverTrigger>
             <MpSelect
               id="vp-jenis-select"

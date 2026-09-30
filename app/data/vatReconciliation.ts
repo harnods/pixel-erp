@@ -194,7 +194,7 @@ export const MATCH_META: Record<MatchState, MatchMeta> = {
     iconColor: 'icon.inverse', iconColorOutline: 'icon.information',
   },
   'duplicate-reference': {
-    label: 'Duplicate ref', longLabel: 'Pending review — duplicate reference', chipLabel: 'Duplicate reference',
+    label: 'Duplicate reference', longLabel: 'Pending review — duplicate reference', chipLabel: 'Duplicate reference',
     badgeType: 'information',
     dot: 'var(--mp-colors-blue-600)',
     bg: 'var(--mp-colors-blue-100)',
@@ -247,7 +247,7 @@ export const MATCH_META: Record<MatchState, MatchMeta> = {
     iconColor: 'icon.inverse', iconColorOutline: 'icon.warning',
   },
   'return-date-mismatch': {
-    label: 'Return date', longLabel: 'Not reconciled — return date mismatch', chipLabel: 'Return date mismatch',
+    label: 'Date mismatch', longLabel: 'Not reconciled — return date mismatch', chipLabel: 'Return date mismatch',
     badgeType: 'warning',
     dot: 'var(--mp-colors-orange-600)',
     bg: 'var(--mp-colors-orange-100)',
@@ -269,7 +269,10 @@ export const MATCH_META: Record<MatchState, MatchMeta> = {
 
   // ── A document is missing altogether ───────────────────────────────────────
   'not-in-coretax': {
-    label: 'Not in Coretax', longLabel: 'Not found in Coretax', chipLabel: 'Not found in Coretax',
+    // Badge names the document that is absent, not the system it is absent from:
+    // two words, and it pairs with 'No invoice' opposite it. The PRD's own name
+    // survives in the drawer header and the status filter, where there is room.
+    label: 'No faktur', longLabel: 'Not found in Coretax', chipLabel: 'Not found in Coretax',
     badgeType: 'critical',
     dot: 'var(--mp-colors-red-600)',
     bg: 'var(--mp-colors-red-100)',
@@ -279,9 +282,7 @@ export const MATCH_META: Record<MatchState, MatchMeta> = {
     iconColor: 'icon.inverse', iconColorOutline: 'icon.danger',
   },
   'no-match-in-erp': {
-    // The PRD calls this "No match in ERP"; the badge is one word shorter so
-    // it holds a table cell, and pairs with "Not in Coretax" opposite it.
-    label: 'Not in ERP', longLabel: 'No match in ERP', chipLabel: 'No match in ERP',
+    label: 'No invoice', longLabel: 'No match in ERP', chipLabel: 'No match in ERP',
     badgeType: 'critical',
     dot: 'var(--mp-colors-red-600)',
     bg: 'var(--mp-colors-red-100)',
@@ -655,23 +656,58 @@ export const VAT_OUT_TAX_CODES: VatTaxCode[] = [
   { id: 'ppnbm-40', code: 'PPnBM 40%', name: 'PPnBM Keluaran 40%', rate: 40, account: '2-20400 · PPnBM Keluaran' },
 ]
 
+/**
+ * Which taxes this company reconciles here.
+ *
+ * VAT Out (sales invoice × faktur keluaran) is OD-001 and ships first. VAT In is
+ * OD-008 and shares this shell, so the input side stays built — but a company
+ * that has not adopted it should not be shown half a feature. Defaulting to
+ * `out` means the prototype demonstrates the shipping scope, and flipping it to
+ * `both` shows where OD-008 lands without a second codebase.
+ */
+export type VatReconScope = 'out' | 'both'
+
 /** What a saved setup looks like. Absent means first run. */
 export interface VatReconSetup {
   taxCodeIds: string[]
+  scope: VatReconScope
   savedAt: string
 }
 
 const SETUP_KEY = 'vat-recon-setup'
 
+let setupCache: VatReconSetup | null = null
+let setupLoaded = false
+
 export function loadVatSetup(): VatReconSetup | null {
-  const rows = loadSnapshot<VatReconSetup>(SETUP_KEY)
-  return rows && rows.length ? rows[0]! : null
+  if (!setupLoaded) {
+    const rows = loadSnapshot<VatReconSetup>(SETUP_KEY)
+    setupCache = rows && rows.length ? rows[0]! : null
+    setupLoaded = true
+  }
+  return setupCache
 }
 
-export function saveVatSetup(taxCodeIds: string[]): VatReconSetup {
-  const setup: VatReconSetup = { taxCodeIds, savedAt: new Date().toISOString() }
+export function saveVatSetup(taxCodeIds: string[], scope: VatReconScope = 'out'): VatReconSetup {
+  const setup: VatReconSetup = { taxCodeIds, scope, savedAt: new Date().toISOString() }
+  setupCache = setup
+  setupLoaded = true
   saveSnapshot(SETUP_KEY, [setup])
+  reconVersion.value++
   return setup
+}
+
+/**
+ * The sides in scope for this company. Everything that lists or counts per side
+ * reads this, so turning VAT In off removes it from the index, the filters and
+ * the nav badge together rather than leaving it half-hidden.
+ */
+export function reconSides(): ReconSide[] {
+  return loadVatSetup()?.scope === 'both' ? ['output', 'input'] : ['output']
+}
+
+export function isSideInScope(side: ReconSide): boolean {
+  return reconSides().includes(side)
 }
 
 /**
@@ -944,8 +980,9 @@ export function unfinalizePeriod(periodId: string): void {
  */
 export function canFinalizePeriod(periodId: string): boolean {
   if (isPeriodFinalized(periodId)) return false
-  const sides: ReconSide[] = ['output', 'input']
-  return sides.every((side) => {
+  // Only the sides in scope — a company reconciling VAT Out only must not be
+  // blocked from signing off by an input side it never adopted.
+  return reconSides().every((side) => {
     const pairs = pairsForPeriod(periodId, side)
     return pairs.length > 0 && pairs.every(p => p.match === 'matched')
   })
@@ -1028,10 +1065,11 @@ export function matchCounts(pairs: ReconPair[]): Record<string, number> {
  * a period row, so it renders that period's issues, not April's.
  */
 export function reconIssues(periodId: string = activePeriodId): ReconIssue[] {
-  return [
-    ...pairsForPeriod(periodId, 'output').filter(p => p.match !== 'matched').map(p => ({ ...p, side: 'output' as const })),
-    ...pairsForPeriod(periodId, 'input').filter(p => p.match !== 'matched').map(p => ({ ...p, side: 'input' as const })),
-  ]
+  return reconSides().flatMap(side =>
+    pairsForPeriod(periodId, side)
+      .filter(p => p.match !== 'matched')
+      .map(p => ({ ...p, side })),
+  )
 }
 
 /** Sidebar badge — total pairs needing attention across both sides. */
@@ -1167,7 +1205,7 @@ function periodStatus(matched: number, total: number, periodId: string): ReconPe
  * two rows can never drift from the workspace they link to.
  */
 export function reconPeriodRows(): ReconPeriodRow[] {
-  const SIDES: ReconSide[] = ['output', 'input']
+  const SIDES = reconSides()
 
   return PERIOD_SEEDS.flatMap(seed =>
     SIDES.map((side): ReconPeriodRow => {
