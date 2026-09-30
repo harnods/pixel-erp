@@ -12,6 +12,7 @@
  */
 import { describe, it, expect, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { ref, computed, reactive, watch, onMounted, onUnmounted, nextTick, useSlots } from 'vue'
 import ReplenishmentPage from '~/components/pages/ReplenishmentPage.vue'
 import ReplenishmentSetupPage from '~/components/pages/ReplenishmentSetupPage.vue'
@@ -65,7 +66,8 @@ describe('ReplenishmentPage — the worklist renders', () => {
   it('renders real product names, not placeholders', async () => {
     const wrapper = await mountLoaded(ReplenishmentPage)
     const firstRow = wrapper.findAll('.erp-tr')[0]!
-    const name = firstRow.find('.rp-product-name')
+    // rule/table-product-cell — the shared ProductCell renders the name.
+    const name = firstRow.find('.pc-name')
     expect(name.exists()).toBe(true)
     expect(name.text().length).toBeGreaterThan(3)
   })
@@ -84,14 +86,17 @@ describe('ReplenishmentPage — the worklist renders', () => {
     expect(text).toContain('To order')
     expect(text).toContain('Needs setup')
     expect(text).toContain('As of')
-    expect(text).toContain('Recalculate')
+    // The Recalculate action lives in the title bar only — no duplicate link here.
+    expect(wrapper.find('.rp-freshness-link').exists()).toBe(false)
   })
 
   it('offers exactly the two quick filters plus the All filters pill', async () => {
     const wrapper = await mountLoaded(ReplenishmentPage)
     // docs/patterns/index-page-format.md caps quick filters at 2.
-    expect(wrapper.find('#rp-warehouse-select').exists()).toBe(true)
-    expect(wrapper.find('#rp-fsn-select').exists()).toBe(true)
+    // rule/select-erpfilterselect — both are ErpFilterSelect, never MpSelect.
+    const selects = wrapper.findAllComponents(ErpFilterSelect).map((c) => c.props('id'))
+    expect(selects).toContain('rp-warehouse-select')
+    expect(selects).toContain('rp-fsn-select')
     expect(wrapper.find('.filter-all-btn').exists()).toBe(true)
   })
 
@@ -120,7 +125,10 @@ describe('ReplenishmentSetupPage — Needs setup, and the muted disclosure', () 
     const wrapper = await mountLoaded(ReplenishmentSetupPage, { mode: 'needs-setup' })
     const expected = Math.min(25, replenishmentWorklist('all').needsSetup.length)
     expect(wrapper.findAll('.erp-tr').length).toBe(expected)
-    expect(wrapper.text()).toContain('cannot be suggested yet')
+    // No page-description subtitle (rule/no-page-description-subtitle), and no stale
+    // "Sales history" column — demand no longer routes a product here (D18).
+    expect(wrapper.text()).not.toContain('cannot be suggested yet')
+    expect(wrapper.text()).not.toContain('Sales history')
   })
 
   it('hides the muted disclosure while nothing is muted', async () => {
@@ -167,6 +175,8 @@ describe('SettingsReplenishmentPage — renders and validates', () => {
     expect(save.attributes('disabled')).toBeUndefined()
     await save.trigger('click')
     await nextTick()
-    expect(wrapper.text()).toContain('must be higher than the Slow threshold')
+    // Shown AT the field (rule/form-errors-inline), with a pointer in the action bar.
+    expect(wrapper.find('.rs-field-error').text()).toContain('Fast must be higher than Slow')
+    expect(wrapper.text()).toContain('Fix the highlighted fields to save.')
   })
 })

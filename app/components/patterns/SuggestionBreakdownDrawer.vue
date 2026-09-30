@@ -12,7 +12,7 @@
  * Everything shown is a projection of the row the engine already built, never a
  * second calculation, so the drawer cannot disagree with the table.
  */
-import { MpIcon } from '@mekari/pixel3'
+import { MpIcon, MpButton } from '@mekari/pixel3'
 import type { WorklistRow } from '~/data/replenishment'
 import { leadTimeTierLabel, leadTimeSamplesFor } from '~/data/leadTimeHistory'
 import { formatIDR } from '~/utils/currency'
@@ -22,6 +22,8 @@ const props = defineProps<{ isOpen: boolean; row: WorklistRow | null }>()
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
   (e: 'create-purchase-request', row: WorklistRow): void
+  (e: 'edit-settings', row: WorklistRow): void
+  (e: 'edit-vendors', row: WorklistRow): void
 }>()
 
 const { t } = useLocale()
@@ -109,7 +111,7 @@ function exportSales() {
   for (const d of [...salesDocs.value].sort((a, b) => (a.date < b.date ? 1 : -1))) {
     lines.push([
       d.date, d.number,
-      d.salesNo ?? (d.kind === 'transfer' ? 'Warehouse transfer' : 'Stock adjustment'),
+      d.salesNo ?? (d.kind === 'work-order' ? 'Work order material consume' : ''),
       d.qty, row.unit,
     ])
   }
@@ -129,14 +131,15 @@ function exportPurchase() {
 </script>
 
 <template>
+  <Teleport to="body">
   <Transition name="rp-bd">
-    <div v-if="isOpen && row" class="rp-bd-overlay" @click.self="close">
+    <div v-if="isOpen && row" class="rp-bd-overlay">
       <div class="rp-bd-panel" role="dialog" :aria-label="t('Why this suggestion')">
         <header class="rp-bd-header">
           <span class="rp-bd-title">{{ t('Why this suggestion') }}</span>
-          <button class="rp-bd-close" type="button" :aria-label="t('Close')" @click="close">
+          <MpButton class="rp-bd-close" is-rounded :aria-label="t('Close')" @click="close">
             <MpIcon name="close" size="md" />
-          </button>
+          </MpButton>
         </header>
 
         <div class="rp-bd-body">
@@ -163,9 +166,6 @@ function exportPurchase() {
                  when the purchase request becomes a purchase order — not here. -->
             <p v-if="row.suggestion.rawQty > 0 && row.vendorItem" class="rp-bd-headline-note">
               {{ t('Rounded to MOQ and pack size when you raise the purchase order.') }}
-            </p>
-            <p v-if="row.suggestion.cappedByMaxLevel" class="rp-bd-headline-note">
-              {{ t('Capped by the max level') }}
             </p>
             <p v-if="row.suggestion.suppressed" class="rp-bd-headline-note rp-bd-headline-note--muted">
               <template v-if="row.suggestion.suppressReason === 'above-reorder-point'">
@@ -227,12 +227,14 @@ function exportPurchase() {
                   {{ row.leadTimeExcludedNoPo === 1 ? t('receipt excluded') : t('receipts excluded') }}
                   — {{ t('bought directly with no purchase order') }}
                 </span>
+                <a class="rp-bd-link" @click="emit('edit-vendors', row)">{{ t('Vendors, lead time and MOQ') }}</a>
               </div>
 
               <div class="rp-bd-dt">{{ t('Safety days') }}</div>
               <div class="rp-bd-dd">
                 {{ row.safetyDays }} {{ t('days') }}
                 <span class="rp-bd-dd-note">{{ SOURCE_LABEL[row.safetyDaysSource] }}</span>
+                <a class="rp-bd-link" @click="emit('edit-settings', row)">{{ t('Replenishment settings') }}</a>
               </div>
 
               <!-- Sizes the ORDER, never the trigger (decision D9). -->
@@ -240,8 +242,7 @@ function exportPurchase() {
               <div class="rp-bd-dd">
                 {{ row.coverageDays }} {{ t('days') }}
                 <span class="rp-bd-dd-note">
-                  <template v-if="row.maxLevel !== null">{{ t('Not used — a max level is set') }}</template>
-                  <template v-else>{{ t('how much each order covers — not part of the trigger') }}</template>
+                  {{ t('how much each order covers — not part of the trigger') }}
                 </span>
               </div>
 
@@ -257,11 +258,10 @@ function exportPurchase() {
                    target — so every recommended SKU shows how high it orders up to. -->
               <div class="rp-bd-dt">{{ t('Order up to') }}</div>
               <div class="rp-bd-dd">
-                <template v-if="row.velocity.avgDailySales > 0 || row.maxLevel !== null">
+                <template v-if="row.velocity.avgDailySales > 0">
                   {{ num(row.suggestion.targetQty) }} {{ row.unit }}
                   <span class="rp-bd-dd-note">
-                    <template v-if="row.maxLevel !== null">{{ t('Max level — a fixed ceiling you set') }}</template>
-                    <template v-else>{{ t('velocity × (lead + safety + coverage days)') }}</template>
+                    {{ t('velocity × (lead + safety + coverage days)') }}
                   </span>
                 </template>
                 <template v-else>
@@ -299,7 +299,7 @@ function exportPurchase() {
               </div>
             </div>
             <p class="rp-bd-caption">
-              {{ t('Suggested qty = (lead time + safety days) × velocity − (available + in transit), rounded up.') }}
+              {{ t('Suggested qty = velocity × (lead time + safety days + coverage days) − (available + in transit), rounded up.') }}
             </p>
           </section>
 
@@ -320,19 +320,19 @@ function exportPurchase() {
             <div v-if="salesDocs.length || purchaseDocs.length" class="rp-bd-export">
               <button
                 v-if="salesDocs.length"
-                class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm btn-enterprise--icon-before"
+                class="btn-enterprise btn-enterprise--secondary"
                 type="button"
                 @click="exportSales"
               >
-                <MpIcon name="download" size="sm" /> {{ t('Export sales (CSV)') }}
+                {{ t('Export sales (CSV)') }}
               </button>
               <button
                 v-if="purchaseDocs.length"
-                class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm btn-enterprise--icon-before"
+                class="btn-enterprise btn-enterprise--secondary"
                 type="button"
                 @click="exportPurchase"
               >
-                <MpIcon name="download" size="sm" /> {{ t('Export purchases (CSV)') }}
+                {{ t('Export purchases (CSV)') }}
               </button>
             </div>
             <p v-else class="rp-bd-caption">{{ t('No contributing documents in this window.') }}</p>
@@ -367,6 +367,7 @@ function exportPurchase() {
       </div>
     </div>
   </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -378,7 +379,7 @@ function exportPurchase() {
 
 .rp-bd-overlay {
   position: fixed; inset: 0; z-index: 1300;
-  background: rgba(8, 13, 14, 0.45);
+  background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45));
   display: flex; justify-content: flex-end;
 }
 .rp-bd-panel {
@@ -387,7 +388,7 @@ function exportPurchase() {
   height: calc(100% - 24px);
   display: flex; flex-direction: column;
   background: var(--mp-background-stage, #fff);
-  border-radius: 24px;
+  border-radius: 12px;
   overflow: hidden;
 }
 .rp-bd-header {
@@ -398,10 +399,10 @@ function exportPurchase() {
 }
 .rp-bd-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .rp-bd-close {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  border: none; background: none; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default);
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important; min-width: 0 !important;
+  border: none !important; background: none !important; border-radius: var(--mp-radii-md);
+  cursor: pointer; color: var(--mp-colors-icon-default);
 }
 .rp-bd-close:hover { background: var(--mp-background-neutral-hovered); }
 
@@ -507,7 +508,7 @@ function exportPurchase() {
   margin-top: var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
 }
-.rp-bd-caption--warning { color: var(--mp-text-warning); }
+.rp-bd-caption--warning { color: var(--mp-colors-text-warning); }
 
 .rp-bd-table { margin-top: var(--mp-spacing-3); width: 100%; border-collapse: collapse; }
 .rp-bd-th {
@@ -530,4 +531,5 @@ function exportPurchase() {
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
   border-top: 1px solid var(--mp-border-default);
 }
+.rp-bd-link { display: block; margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
 </style>

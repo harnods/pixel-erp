@@ -34,7 +34,6 @@ function settings(patch: Partial<EffectiveReplenishmentSettings> = {}): Effectiv
   return {
     reorderPointOverride: null, reorderPointSource: 'none',
     safetyDays: 7, safetyDaysSource: 'global',
-    maxLevel: null, maxLevelSource: 'none',
     tracked: true, trackedSource: 'default',
     ...patch,
   }
@@ -73,17 +72,6 @@ describe('suggestedRawQty — the PRD formula (§2.3 / US-008 AC-03)', () => {
     const base = suggestedRawQty(14, 7, 0, 10, 150, 0)
     expect(suggestedRawQty(14, 7, 30, 10, 150, 0)).toBe(base + 300)
     expect(suggestedRawQty(14, 7, 60, 10, 150, 0)).toBe(base + 600)
-  })
-
-  it('a Max level replaces the coverage horizon as the target (US-011 AC-03)', () => {
-    // Order up to 400 units regardless of the coverage-days horizon.
-    expect(suggestedRawQty(14, 7, 30, 10, 150, 0, 400)).toBe(250)
-    expect(suggestedRawQty(14, 7, 999, 10, 150, 0, 400)).toBe(250)
-    // Already at or above the level → nothing to order, never negative.
-    expect(suggestedRawQty(14, 7, 30, 10, 400, 0, 400)).toBe(0)
-    expect(suggestedRawQty(14, 7, 30, 10, 500, 0, 400)).toBe(0)
-    // On-order counts toward the level, so it cannot double-order.
-    expect(suggestedRawQty(14, 7, 30, 10, 150, 100, 400)).toBe(150)
   })
 
   it('is floored at 0 for every plausible input', () => {
@@ -166,15 +154,17 @@ describe('applyMoqAndPack — MOQ, pack size, UoM conversion (US-009)', () => {
   })
 })
 
-describe('isSuppressed — the reorder-point boundary (US-010 AC-02)', () => {
-  it('inclusive treats sitting exactly at the point as covered', () => {
-    expect(isSuppressed(100, 0, 100, 'inclusive')).toBe(true)
+describe('isSuppressed — the reorder-point boundary (US-007 AC-02, US-005 AC-06)', () => {
+  // PRD: ROP 100 → "at or below" triggers at 100; "only below" triggers at 99.
+  it('inclusive ("Reorder at or below") makes sitting exactly at the point due', () => {
+    expect(isSuppressed(100, 0, 100, 'inclusive')).toBe(false)
     expect(isSuppressed(99, 0, 100, 'inclusive')).toBe(false)
     expect(isSuppressed(101, 0, 100, 'inclusive')).toBe(true)
   })
 
-  it('exclusive only suppresses strictly above the point', () => {
-    expect(isSuppressed(100, 0, 100, 'exclusive')).toBe(false)
+  it('exclusive ("Reorder only below") treats sitting exactly at the point as covered', () => {
+    expect(isSuppressed(100, 0, 100, 'exclusive')).toBe(true)
+    expect(isSuppressed(99, 0, 100, 'exclusive')).toBe(false)
     expect(isSuppressed(101, 0, 100, 'exclusive')).toBe(true)
   })
 

@@ -138,3 +138,41 @@ describe('pixel-police — CRM module: Pixel + sanctioned overrides only (full s
     expect(hits, `Drop-shadow on a surface — use a 1px border, not box-shadow:\n${hits.join('\n')}`).toEqual([])
   })
 })
+
+describe('pixel-police — Replenishment surfaces', () => {
+  // The module guards above only scan CRM/HR/Cowork filenames, so these files were
+  // never checked. Scoped to the replenishment worklist, its drawers and the PR/PO
+  // modals it hands off to.
+  const replFiles = vueFiles.filter((f) =>
+    /(Replenishment|SuggestionBreakdownDrawer|VendorItemDrawer|CreatePurchaseRequestModal|ConvertPrToPoModal)/.test(f),
+  )
+
+  it('scans at least the known replenishment files', () => {
+    expect(replFiles.length).toBeGreaterThanOrEqual(9)
+  })
+
+  it('dropdowns use <ErpFilterSelect> — never MpSelect or a native <select> (rule/select-erpfilterselect)', () => {
+    const hits = violations(replFiles, /<MpSelect\b|<select[ >]/)
+    expect(hits, `Native select / MpSelect — use <ErpFilterSelect>:\n${hits.join('\n')}`).toEqual([])
+  })
+
+  it('overlays never close on an outside click (rule/modal-drawer-close-explicit-only)', () => {
+    const hits = violations(replFiles, /@click\.self="close"|is-close-on-overlay-click="true"/)
+    expect(hits, `Overlay click closes the drawer/modal:\n${hits.join('\n')}`).toEqual([])
+  })
+
+  it('no hardcoded color literals outside a var() fallback (rule/token-no-hardcoded-color)', () => {
+    const hits = violations(replFiles, /:\s*(#[0-9a-fA-F]{3,8}\b|rgb\(|rgba\(|hsl\()/)
+    expect(hits, `Hardcoded color — use var(--mp-*) tokens:\n${hits.join('\n')}`).toEqual([])
+  })
+
+  it('no hand-set pixel widths on table columns (rule/table-column-kind)', () => {
+    const hits = violations(replFiles, /\{\s*key:\s*'[^']+',\s*label:[^}]*\bwidth:\s*'\d+px'/)
+    expect(hits, `Column width — set a kind instead:\n${hits.join('\n')}`).toEqual([])
+  })
+
+  it('only valid Pixel icon names that were previously wrong (rule/icon-pixel-library)', () => {
+    const hits = violations(replFiles, /name="(sparkle|information-circular|chevron-down|chevron-up)"/)
+    expect(hits, `Invalid MpIcon name:\n${hits.join('\n')}`).toEqual([])
+  })
+})

@@ -22,10 +22,15 @@
  * all visible BEFORE anything is created, so a partial outcome is a decision
  * rather than a surprise afterwards (US-021 EH-01).
  *
- * Custom Teleport overlay, matching ConfirmModal.vue — MpModal has no structural
- * CSS in this Pixel3 build.
+ * Pixel MpModal (rule/modal-use-mpmodal), size xl for the per-vendor tables, and
+ * closable only via × / Cancel (rule/modal-drawer-close-explicit-only). A failed
+ * save keeps the modal — and every edit in it — open with an inline error
+ * (US-017 EH-01, rule/form-errors-inline).
  */
-import { MpIcon, MpInput, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
+import {
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalCloseButton,
+  MpInput, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+} from '@mekari/pixel3'
 import type { WorklistRow } from '~/data/replenishment'
 import {
   planPurchaseRequests, prSkipReasonLabel, recomputeQtyForVendor, type PrLine,
@@ -33,7 +38,12 @@ import {
 import { vendorItemsForSku, vendorNameFor } from '~/data/vendorItems'
 import { formatIDR } from '~/utils/currency'
 
-const props = defineProps<{ isOpen: boolean; rows: WorklistRow[] }>()
+const props = defineProps<{
+  isOpen: boolean
+  rows: WorklistRow[]
+  /** Set by the parent when creating the requests failed — shown inline, edits kept. */
+  submitError?: string
+}>()
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
   (e: 'confirm', payload: {
@@ -177,17 +187,18 @@ function confirm() {
 </script>
 
 <template>
-  <Transition name="rp-po">
-    <div v-if="isOpen" class="rp-po-overlay" @click.self="close">
-      <div class="rp-po-panel" role="dialog" aria-modal="true" :aria-label="t('Request to purchase')">
-        <header class="rp-po-header">
-          <span class="rp-po-title">{{ t('Request to purchase') }}</span>
-          <button class="rp-po-close" type="button" :aria-label="t('Close')" @click="close">
-            <MpIcon name="close" size="md" />
-          </button>
-        </header>
-
-        <div class="rp-po-body">
+  <MpModal
+    id="rp-create-pr"
+    :is-open="isOpen"
+    size="xl"
+    :is-keep-alive="false"
+    :is-close-on-esc="false"
+    :is-close-on-overlay-click="false"
+    @close="close"
+  >
+    <MpModalContent>
+      <MpModalHeader>{{ t('Request to purchase') }}<MpModalCloseButton /></MpModalHeader>
+      <MpModalBody>
           <p class="rp-po-summary">{{ summaryLine }}</p>
           <!-- Says plainly that purchasing owns the next step (US-020 AC-03). -->
           <p class="rp-po-summary rp-po-summary--muted">
@@ -307,68 +318,33 @@ function confirm() {
                 <span class="rp-po-skip-name">{{ s.productName }}</span>
                 <span class="rp-po-skip-sub">{{ s.sku }} · {{ s.warehouseName }}</span>
                 <span class="rp-po-skip-reason">{{ prSkipReasonLabel(s.reason) }}</span>
+                <!-- Needs setup = no vendor / lead time yet: the vendor drawer is where
+                     that is fixed, for THIS product (not just the first skipped one). -->
+                <a
+                  v-if="s.reason === 'needs-setup'"
+                  class="rp-po-skip-link"
+                  @click="emit('assign-vendor', s.sku)"
+                >{{ t('Vendors, lead time and MOQ') }}</a>
               </li>
             </ul>
-            <p class="rp-po-skip-hint">
-              {{ t('These products need demand or lead-time data before they can be requested.') }}
-              <a
-                v-if="plan.skipped[0]"
-                class="rp-po-skip-link"
-                @click="emit('assign-vendor', plan.skipped[0]!.sku)"
-              >{{ t('Open setup') }}</a>
-            </p>
           </section>
-        </div>
 
-        <footer class="rp-po-footer">
-          <span v-if="qtyError" class="rp-po-error">{{ qtyError }}</span>
+          <!-- Errors sit below the form, never in a toast (rule/form-errors-inline). -->
+          <p v-if="qtyError || submitError" class="rp-po-error">{{ qtyError || submitError }}</p>
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="rp-po-footer">
           <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">{{ t('Cancel') }}</button>
           <button class="btn-enterprise btn-enterprise--primary" type="button" @click="confirm">{{ confirmLabel }}</button>
-        </footer>
-      </div>
-    </div>
-  </Transition>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+  </MpModal>
 </template>
 
 <style scoped>
-.rp-po-enter-active, .rp-po-leave-active { transition: opacity 200ms ease; }
-.rp-po-enter-from, .rp-po-leave-to { opacity: 0; }
-.rp-po-enter-active .rp-po-panel, .rp-po-leave-active .rp-po-panel { transition: transform 200ms ease, opacity 200ms ease; }
-.rp-po-enter-from .rp-po-panel, .rp-po-leave-to .rp-po-panel { transform: scale(0.97); opacity: 0; }
-
-.rp-po-overlay {
-  position: fixed; inset: 0; z-index: 1400;
-  background: rgba(8, 13, 14, 0.45);
-  display: flex; align-items: flex-start; justify-content: center;
-  padding: 48px var(--mp-spacing-4);
-  overflow-y: auto;
-}
-.rp-po-panel {
-  width: min(880px, 100%);
-  max-height: calc(100vh - 96px);
-  display: flex; flex-direction: column;
-  background: var(--mp-background-stage, #fff);
-  border-radius: var(--mp-radii-lg, 16px);
-  overflow: hidden;
-}
-.rp-po-header {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
-  padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-5);
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
-}
-.rp-po-title { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.rp-po-close {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  border: none; background: none; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default);
-}
-.rp-po-close:hover { background: var(--mp-background-neutral-hovered); }
-
-.rp-po-body { flex: 1; overflow-y: auto; padding: var(--mp-spacing-5); }
 .rp-po-summary { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.rp-po-summary--warning { margin-top: 2px; color: var(--mp-text-warning); }
+.rp-po-summary--warning { margin-top: 2px; color: var(--mp-colors-text-warning); }
 
 /* Cards are separated by a 1px border, never a drop-shadow (DESIGN.md). */
 .rp-po-card {
@@ -377,7 +353,7 @@ function confirm() {
   border-radius: var(--mp-radii-md);
   overflow: hidden;
 }
-.rp-po-card--skipped { border-color: var(--mp-border-warning, var(--mp-border-default)); }
+.rp-po-card--skipped { border-color: var(--mp-colors-border-warning); }
 .rp-po-card-head {
   display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
@@ -414,19 +390,18 @@ function confirm() {
 }
 .rp-po-cell-note {
   display: block; margin-top: 2px;
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-warning);
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-warning);
 }
 
-.rp-po-skip-list { display: flex; flex-direction: column; }
 .rp-po-skip-item {
-  display: flex; align-items: baseline; gap: var(--mp-spacing-2);
+  display: list-item;
   padding: var(--mp-spacing-2) var(--mp-spacing-4);
   border-bottom: 1px solid var(--mp-border-subtle, var(--mp-border-default));
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
 .rp-po-skip-name { flex: 1; min-width: 0; }
 .rp-po-skip-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
-.rp-po-skip-reason { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-warning); white-space: nowrap; }
+.rp-po-skip-reason { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-warning); white-space: nowrap; }
 .rp-po-skip-hint {
   padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-3);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
@@ -434,12 +409,13 @@ function confirm() {
 .rp-po-skip-link { margin-left: var(--mp-spacing-1); color: var(--mp-text-link); cursor: pointer; }
 
 .rp-po-footer {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-3) var(--mp-spacing-5);
-  border-top: 1px solid var(--mp-border-default);
+  display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2);
 }
-.rp-po-error { flex: 1; font-size: var(--mp-font-sizes-md); color: var(--mp-text-danger); }
+.rp-po-error { margin-top: var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-danger); }
+.rp-po-summary--muted { color: var(--mp-text-secondary); }
+.rp-po-cell-note--prompt { display: block; margin-top: var(--mp-spacing-1); color: var(--mp-colors-text-information); }
+.rp-po-cell-note--prompt .rp-po-change { margin-left: var(--mp-spacing-2); }
+/* A real list, so it keeps its markers (CLAUDE.md › List bullets). */
+.rp-po-skip-list { list-style: disc outside; margin: 0; padding-left: var(--mp-spacing-6); }
 </style>
-.rp-po-summary--muted { color: var(--mp-text-subdued, #6b7280); }
-.rp-po-cell-note--prompt { display: block; margin-top: 4px; color: var(--mp-text-informational, #1f6feb); }
-.rp-po-cell-note--prompt .rp-po-change { margin-left: 8px; }
+

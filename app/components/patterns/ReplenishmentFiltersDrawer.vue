@@ -46,14 +46,16 @@ export function countReplenishmentFilters(v: ReplenishmentFiltersValue): number 
 /**
  * Replenishment worklist — "All filters" drawer. Same custom Teleport overlay
  * pattern as StockAdjustmentsFiltersDrawer.vue (MpDrawer has no structural CSS in
- * this Pixel3 build). Edits a local draft and only commits on Apply, so closing
- * outside discards in-progress edits.
+ * this Pixel3 build). Edits a local draft and only commits on Apply; × and Cancel
+ * discard it. The overlay ignores clicks (rule/modal-drawer-close-explicit-only).
  *
  * Warehouse is deliberately NOT here: it is the page's scope selector, not a
  * filter, and offering it in two places invites a blended selection. Tracked-only
  * and needs-setup are likewise absent — they are the tab axis.
  */
-import { MpIcon, MpInput, MpCheckbox, MpFormControl, MpFormLabel, MpInputGroup, MpInputRightAddon } from '@mekari/pixel3'
+import { MpIcon, MpButton, MpInput, MpCheckbox, MpFormControl, MpFormLabel, MpInputGroup, MpInputRightAddon } from '@mekari/pixel3'
+
+const { t } = useLocale()
 
 const props = defineProps<{
   isOpen: boolean
@@ -83,24 +85,27 @@ function toggleSignal(id: string) { draft.signals = toggle(draft.signals, id) }
 </script>
 
 <template>
+  <!-- Canonical drawer shell (BillsFiltersDrawer.vue): Teleported, and the overlay
+       is a backdrop only — closing is × or Cancel (rule/modal-drawer-close-explicit-only). -->
+  <Teleport to="body">
   <Transition name="rp-filters">
-    <div v-if="isOpen" class="rp-filters-overlay" @click.self="close">
-      <div class="rp-filters-panel" role="dialog" aria-label="All filters">
+    <div v-if="isOpen" class="rp-filters-overlay">
+      <div class="rp-filters-panel" role="dialog" :aria-label="t('All filters')">
         <header class="rp-filters-header">
-          <span class="rp-filters-title">All filters</span>
-          <button class="rp-filters-close" type="button" aria-label="Close" @click="close">
+          <span class="rp-filters-title">{{ t('All filters') }}</span>
+          <MpButton class="rp-filters-close" is-rounded :aria-label="t('Close')" @click="close">
             <MpIcon name="close" size="md" />
-          </button>
+          </MpButton>
         </header>
 
         <div class="rp-filters-body">
           <MpFormControl id="rp-filters-keyword-fc">
-            <MpFormLabel>Keywords</MpFormLabel>
-            <MpInput id="rp-filters-keyword" v-model="draft.keyword" placeholder="Search..." is-full-width />
+            <MpFormLabel>{{ t('Keywords') }}</MpFormLabel>
+            <MpInput id="rp-filters-keyword" v-model="draft.keyword" is-full-width />
           </MpFormControl>
 
           <MpFormControl id="rp-filters-vendor-fc">
-            <MpFormLabel>Vendor</MpFormLabel>
+            <MpFormLabel>{{ t('Vendor') }}</MpFormLabel>
             <div class="rp-filters-checkbox-list">
               <label v-for="opt in vendorOptions" :key="opt.id" class="rp-filters-checkbox-item">
                 <MpCheckbox
@@ -113,7 +118,7 @@ function toggleSignal(id: string) { draft.signals = toggle(draft.signals, id) }
           </MpFormControl>
 
           <MpFormControl id="rp-filters-category-fc">
-            <MpFormLabel>Category</MpFormLabel>
+            <MpFormLabel>{{ t('Category') }}</MpFormLabel>
             <div class="rp-filters-checkbox-list">
               <label v-for="opt in categoryOptions" :key="opt.id" class="rp-filters-checkbox-item">
                 <MpCheckbox
@@ -126,40 +131,45 @@ function toggleSignal(id: string) { draft.signals = toggle(draft.signals, id) }
           </MpFormControl>
 
           <MpFormControl id="rp-filters-cover-fc">
-            <MpFormLabel>Days of cover</MpFormLabel>
+            <MpFormLabel>{{ t('Days of cover') }}</MpFormLabel>
             <div class="rp-filters-range">
               <MpInputGroup id="rp-filters-cover-from-g">
-                <MpInput id="rp-filters-cover-from" v-model="draft.coverFrom" type="number" placeholder="From" />
-                <MpInputRightAddon>days</MpInputRightAddon>
+                <MpInput id="rp-filters-cover-from" v-model="draft.coverFrom" type="number" :aria-label="t('From')" />
+                <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
               </MpInputGroup>
               <MpInputGroup id="rp-filters-cover-to-g">
-                <MpInput id="rp-filters-cover-to" v-model="draft.coverTo" type="number" placeholder="To" />
-                <MpInputRightAddon>days</MpInputRightAddon>
+                <MpInput id="rp-filters-cover-to" v-model="draft.coverTo" type="number" :aria-label="t('To')" />
+                <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
               </MpInputGroup>
             </div>
           </MpFormControl>
 
           <MpFormControl id="rp-filters-signals-fc">
-            <MpFormLabel>Signals</MpFormLabel>
+            <MpFormLabel>{{ t('Signals') }}</MpFormLabel>
             <div class="rp-filters-checkbox-list">
               <label v-for="opt in REPLENISHMENT_SIGNALS" :key="opt.id" class="rp-filters-checkbox-item">
                 <MpCheckbox
                   :id="`rp-filters-signal-${opt.id}`"
                   :is-checked="draft.signals.includes(opt.id)"
                   @change="toggleSignal(opt.id)"
-                >{{ opt.name }}</MpCheckbox>
+                >{{ t(opt.name) }}</MpCheckbox>
               </label>
             </div>
           </MpFormControl>
         </div>
 
+        <!-- rule/filter-drawer-footer: Reset pinned left, ghost Cancel + primary Apply right. -->
         <footer class="rp-filters-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="clearAll">Reset filter</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="apply">Apply</button>
+          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="clearAll">{{ t('Reset filter') }}</button>
+          <div class="rp-filters-footer-right">
+            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">{{ t('Cancel') }}</button>
+            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="apply">{{ t('Apply') }}</button>
+          </div>
         </footer>
       </div>
     </div>
   </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -172,7 +182,7 @@ function toggleSignal(id: string) { draft.signals = toggle(draft.signals, id) }
 
 .rp-filters-overlay {
   position: fixed; inset: 0; z-index: 1300;
-  background: rgba(8, 13, 14, 0.45);
+  background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45));
   display: flex; justify-content: flex-end;
 }
 .rp-filters-panel {
@@ -181,44 +191,41 @@ function toggleSignal(id: string) { draft.signals = toggle(draft.signals, id) }
   height: calc(100% - 24px);
   display: flex; flex-direction: column;
   background: var(--mp-background-stage, #fff);
-  border-radius: 24px;
+  border-radius: 12px;
   overflow: hidden;
 }
 .rp-filters-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .rp-filters-title {
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
 .rp-filters-close {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  border: none; background: none; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default);
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important; min-width: 0 !important;
+  border: none !important; background: none !important; border-radius: var(--mp-radii-md);
+  cursor: pointer; color: var(--mp-colors-icon-default);
 }
-.rp-filters-close:hover { background: var(--mp-background-neutral-hovered); }
+.rp-filters-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 .rp-filters-body {
   flex: 1; overflow-y: auto;
   display: flex; flex-direction: column; gap: var(--mp-spacing-4);
   padding: var(--mp-spacing-4);
 }
-.rp-filters-checkbox-list {
-  display: flex; flex-direction: column; gap: var(--mp-spacing-2);
-  max-height: 200px; overflow-y: auto;
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
-  padding: var(--mp-spacing-2) var(--mp-spacing-3);
-}
+/* Plain checklist, no surrounding box — same as BillsFiltersDrawer's .bfd-checklist. */
+.rp-filters-checkbox-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .rp-filters-checkbox-item { display: flex; align-items: center; }
 .rp-filters-range { display: flex; gap: var(--mp-spacing-2); }
 
 .rp-filters-footer {
-  flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
+  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-top: 1px solid var(--mp-border-default);
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
 }
+.rp-filters-footer-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 </style>

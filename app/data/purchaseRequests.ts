@@ -139,7 +139,10 @@ export function awaitingPurchaseRequestCount(): number {
 
 export function addPurchaseRequest(data: Omit<PurchaseRequest, 'id' | 'number'> & { number?: number }): PurchaseRequest {
   const number = data.number ?? (Math.max(90000, ...purchaseRequests.map(p => p.number)) + 1)
-  const pr: PurchaseRequest = { ...data, id: `PR${String(purchaseRequests.length + 1).padStart(3, '0')}`, number }
+  // Next id = highest existing + 1, never `length + 1`: after a delete the length
+  // shrinks and `length + 1` re-issues an id that still exists.
+  const maxId = Math.max(0, ...purchaseRequests.map(p => Number(p.id.replace(/^PR/, '')) || 0))
+  const pr: PurchaseRequest = { ...data, id: `PR${String(maxId + 1).padStart(3, '0')}`, number }
   purchaseRequests.unshift(pr)
   persist()
   return pr

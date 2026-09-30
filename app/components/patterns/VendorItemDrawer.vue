@@ -27,7 +27,8 @@ export interface VendorItemDraft {
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { toast, MpIcon, MpInput, MpSelect, css } from '@mekari/pixel3'
+import { toast, MpIcon, MpButton, MpInput, css } from '@mekari/pixel3'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
   vendorItemsForSku, upsertVendorItem, setPreferredVendor, deactivateVendorItem,
 } from '~/data/vendorItems'
@@ -40,10 +41,11 @@ import { unitOptionsForSku, factorFor, baseUnitFor } from '~/data/productUnits'
 import { formatIDR } from '~/utils/currency'
 
 /**
- * `readonly` — vendor terms (lead time, MOQ, pack size, cost, preferred) are owned
- * by PURCHASING and edited only in the Vendors module. The replenishment worklist is
- * a STOCKIST surface, so it opens this drawer read-only: everything shows as text,
- * with no inputs, no add/remove, and no Save.
+ * `readonly` — vendor TERMS (lead time, MOQ, pack size, cost) are owned by
+ * PURCHASING and edited only in the Vendors module, so they show as text with no
+ * add/remove. The PREFERRED vendor stays selectable (PRD §2.1 / US-001: one active
+ * preferred vendor per item, chosen only from vendors that list this SKU), and
+ * "Save preferred vendor" commits just that choice.
  */
 const props = defineProps<{ isOpen: boolean; sku: string | null; readonly?: boolean }>()
 const emit = defineEmits<{
@@ -294,14 +296,15 @@ function savePreferred() {
 </script>
 
 <template>
+  <Teleport to="body">
   <Transition name="rp-vi">
-    <div v-if="isOpen && sku" class="rp-vi-overlay" @click.self="close">
+    <div v-if="isOpen && sku" class="rp-vi-overlay">
       <div class="rp-vi-panel" role="dialog" :aria-label="t('Vendors')">
         <header class="rp-vi-header">
           <span class="rp-vi-title">{{ t('Vendors') }}</span>
-          <button class="rp-vi-close" type="button" :aria-label="t('Close')" @click="close">
+          <MpButton class="rp-vi-close" is-rounded :aria-label="t('Close')" @click="close">
             <MpIcon name="close" size="md" />
-          </button>
+          </MpButton>
         </header>
 
         <div class="rp-vi-body">
@@ -337,7 +340,7 @@ function savePreferred() {
               <button
                 v-if="!recommendedIsDefault"
                 type="button"
-                class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+                class="btn-enterprise btn-enterprise--secondary"
                 @click="applyRecommendation"
               >{{ t('Set as preferred') }}</button>
             </div>
@@ -365,15 +368,17 @@ function savePreferred() {
             <tbody>
               <tr v-for="(row, i) in rows" :key="row.id">
                 <td class="rp-vi-td">
-                  <MpSelect
+                  <!-- rule/select-erpfilterselect: an MpPopover menu, not the OS dropdown. -->
+                  <ErpFilterSelect
                     v-if="row.isNew"
                     :id="`rp-vi-vendor-${i}`"
                     :model-value="row.vendorId"
-                    :class="css({ width: '100%' })"
+                    :placeholder="t('Vendor')"
+                    :options="vendors.map(v => ({ value: v.id, label: v.name }))"
+                    width="100%"
+                    :is-clearable="false"
                     @update:model-value="(v: string) => onVendorChange(i, v)"
-                  >
-                    <option v-for="v in vendors" :key="v.id" :value="v.id">{{ v.name }}</option>
-                  </MpSelect>
+                  />
                   <template v-else>
                     <span class="rp-vi-vendor">{{ vendors.find(v => v.id === row.vendorId)?.name ?? row.vendorId }}</span>
                     <span
@@ -398,15 +403,16 @@ function savePreferred() {
                      product has registered. Picking one re-derives the conversion,
                      so the "= N base" reading below always tells the truth. -->
                 <td class="rp-vi-td">
-                  <MpSelect
+                  <ErpFilterSelect
                     v-if="!readonly"
                     :id="`rp-vi-unit-${i}`"
                     :model-value="row.purchaseUnit"
-                    :class="css({ width: '112px' })"
+                    :placeholder="t('MOQ unit')"
+                    :options="unitOptions.map(o => o.name)"
+                    width="112px"
+                    :is-clearable="false"
                     @update:model-value="(v: string) => onUnitChange(i, v)"
-                  >
-                    <option v-for="o in unitOptions" :key="o.name" :value="o.name">{{ o.name }}</option>
-                  </MpSelect>
+                  />
                   <span v-else class="rp-vi-lead-ro">{{ row.purchaseUnit }}</span>
                   <span v-if="moqInStockUnits(row)" class="rp-vi-cell-sub">{{ moqInStockUnits(row) }}</span>
                   <span v-else class="rp-vi-cell-sub">{{ t('base unit') }}</span>
@@ -473,6 +479,7 @@ function savePreferred() {
       </div>
     </div>
   </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -484,7 +491,7 @@ function savePreferred() {
 
 .rp-vi-overlay {
   position: fixed; inset: 0; z-index: 1360;
-  background: rgba(8, 13, 14, 0.45);
+  background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45));
   display: flex; justify-content: flex-end;
 }
 .rp-vi-panel {
@@ -493,23 +500,23 @@ function savePreferred() {
   height: calc(100% - 24px);
   display: flex; flex-direction: column;
   background: var(--mp-background-stage, #fff);
-  border-radius: 24px;
+  border-radius: 12px;
   overflow: hidden;
 }
 .rp-vi-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .rp-vi-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .rp-vi-close {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  border: none; background: none; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default);
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important; min-width: 0 !important;
+  border: none !important; background: none !important; border-radius: var(--mp-radii-md);
+  cursor: pointer; color: var(--mp-colors-icon-default);
 }
-.rp-vi-close:hover { background: var(--mp-background-neutral-hovered); }
+.rp-vi-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 .rp-vi-body { flex: 1; overflow-y: auto; padding: var(--mp-spacing-4); }
 .rp-vi-identity { margin-bottom: var(--mp-spacing-4); }
@@ -520,21 +527,21 @@ function savePreferred() {
 .rp-vi-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .rp-vi-empty {
   padding: var(--mp-spacing-4);
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral-subtle);
+  border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-md);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
 }
 
 /* ── Airene recommendation ── */
 .rp-vi-ai {
   margin-bottom: var(--mp-spacing-4);
-  border: 1px solid var(--mp-border-info, #b9d6ff);
+  border: 1px solid var(--mp-colors-border-information);
   border-radius: var(--mp-radii-md);
-  background: var(--mp-background-info-subtle, #f0f6ff);
+  background: var(--mp-colors-background-information);
   padding: var(--mp-spacing-3);
 }
 .rp-vi-ai-head { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
-.rp-vi-ai-icon { color: var(--mp-icon-info, #2d6cdf); flex-shrink: 0; }
+.rp-vi-ai-icon { color: var(--mp-colors-icon-information); flex-shrink: 0; }
 .rp-vi-ai-text { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
 .rp-vi-ai-why {
   border: none; background: none; cursor: pointer; padding: 0;
@@ -546,14 +553,15 @@ function savePreferred() {
   margin: var(--mp-spacing-2) 0 0; padding-left: var(--mp-spacing-5);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
 }
-.rp-vi-ai-reasons li { margin-top: 2px; }
-.rp-vi-ai-weights { color: var(--mp-text-tertiary, var(--mp-text-secondary)); }
+.rp-vi-ai-reasons { list-style: disc outside; }
+.rp-vi-ai-reasons li { display: list-item; margin-top: 2px; }
+.rp-vi-ai-weights { color: var(--mp-text-subtle); }
 .rp-vi-ai-chip {
   display: inline-flex; align-items: center; gap: 2px; margin-left: var(--mp-spacing-2);
   padding: 0 var(--mp-spacing-1\.5, 6px); height: 20px;
   border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-info-subtle, #f0f6ff);
-  color: var(--mp-text-info, #2d6cdf);
+  background: var(--mp-colors-background-information);
+  color: var(--mp-colors-text-information);
   font-size: var(--mp-font-sizes-xs, 12px); font-weight: var(--mp-font-weights-medium, 500);
   white-space: nowrap; vertical-align: middle;
 }
@@ -563,7 +571,7 @@ function savePreferred() {
 .rp-vi-th {
   text-align: left; padding: var(--mp-spacing-2) var(--mp-spacing-2\.5);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-secondary); border-bottom: 1px solid var(--mp-border-default);
+  color: var(--mp-text-secondary); border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .rp-vi-th--num { text-align: right; }
@@ -571,7 +579,7 @@ function savePreferred() {
 .rp-vi-td {
   padding: var(--mp-spacing-2\.5) var(--mp-spacing-2\.5);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-subtle, var(--mp-border-default));
+  border-bottom: 1px solid var(--mp-border-subtle, var(--mp-border-default, #e3e7e9));
   vertical-align: top;
 }
 .rp-vi-td--num { text-align: right; }
@@ -582,15 +590,15 @@ function savePreferred() {
   display: block; margin-top: 2px;
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); white-space: nowrap;
 }
-.rp-vi-cell-sub--warning { color: var(--mp-text-warning); }
+.rp-vi-cell-sub--warning { color: var(--mp-colors-text-warning); }
 .rp-vi-lead-ro { font-variant-numeric: tabular-nums; color: var(--mp-text-default); white-space: nowrap; }
-.rp-vi-radio { width: 16px; height: 16px; cursor: pointer; accent-color: var(--mp-background-brand, #04846c); }
-.rp-vi-default-ro { display: inline-flex; color: var(--mp-icon-brand, #04846c); }
+.rp-vi-radio { width: 16px; height: 16px; cursor: pointer; accent-color: var(--mp-colors-background-brand-bold); }
+.rp-vi-default-ro { display: inline-flex; color: var(--mp-colors-icon-brand); }
 .rp-vi-hint--managed {
   margin-top: var(--mp-spacing-3);
   padding: var(--mp-spacing-2\.5) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary);
+  border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-md);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-secondary);
 }
 .rp-vi-remove {
   display: inline-flex; align-items: center; justify-content: center;
@@ -598,7 +606,7 @@ function savePreferred() {
   border: none; background: none; border-radius: var(--mp-radii-md);
   cursor: pointer; color: var(--mp-text-secondary);
 }
-.rp-vi-remove:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-danger); }
+.rp-vi-remove:hover { background: var(--mp-background-neutral-hovered, #eef0f3); color: var(--mp-text-danger); }
 
 .rp-vi-add {
   margin-top: var(--mp-spacing-3);
@@ -613,7 +621,7 @@ function savePreferred() {
 .rp-vi-footer {
   flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-top: 1px solid var(--mp-border-default);
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .rp-vi-error { flex: 1; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
 </style>

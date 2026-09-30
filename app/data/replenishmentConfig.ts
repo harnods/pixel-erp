@@ -27,7 +27,6 @@ export type ReplBoundaryMode = 'inclusive' | 'exclusive'
  * Without one of these the order would only refill to the trigger and re-fire
  * immediately — which is why every reference ERP takes a second input here.
  */
-export type ReplOrderSizing = 'coverage-days' | 'max-level'
 
 export interface ReplenishmentConfig {
   /**
@@ -42,8 +41,6 @@ export interface ReplenishmentConfig {
    * (US-002 AC-03). The SKU is still flagged "volatile demand" rather than hidden.
    */
   demandOutlierCapMultiple: number
-  /** Coverage days vs a units Max level (D9 / US-011 AC-03). */
-  orderSizing: ReplOrderSizing
   /**
    * Days of demand each order should cover BEYOND lead + safety (D9).
    * Sizes the quantity; it plays no part in deciding whether a SKU is due.
@@ -90,7 +87,6 @@ export const REPL_DEFAULTS: ReplenishmentConfig = {
   lookbackDays: 60,
   lookbackDaysByCategory: {},
   demandOutlierCapMultiple: 4,
-  orderSizing: 'coverage-days',
   coverageDaysGlobal: 30,
   // Beans move fast and are cheap to hold, so they carry a longer horizon than a
   // machine nobody wants sitting in a warehouse for a month.

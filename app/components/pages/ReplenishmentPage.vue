@@ -11,11 +11,12 @@
  */
 import { ref, reactive, computed, onMounted, onUnmounted, watch, inject, type Ref } from 'vue'
 import {
-  toast, MpBadge, MpSelect, MpIcon, MpTooltip,
+  toast, MpBadge, MpIcon, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
-import ClampText from '~/components/patterns/ClampText.vue'
+import ProductCell from '~/components/patterns/ProductCell.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import SuggestionBreakdownDrawer from '~/components/patterns/SuggestionBreakdownDrawer.vue'
@@ -108,7 +109,40 @@ const worklist = computed(() => {
   return replenishmentWorklist(isAllWarehouses.value ? 'all' : warehouseId.value)
 })
 
-const baseRows = computed<WorklistRow[]>(() => worklist.value.rows)
+/**
+ * Rows with their sort keys flattened to the top level BEFORE useTableState sees
+ * them — it sorts the whole filtered set on plain keys, so a key that only existed
+ * on the displayed page (the old post-pagination projection) compared '' vs '' and
+ * sorting did nothing, and could only ever reorder within one page.
+ */
+type SortableRow = WorklistRow & {
+  fsnClass: string
+  onHandQty: number
+  reservedQty: number
+  availableQty: number
+  onOrderQty: number
+  coverValue: number
+  velocityValue: number
+  vendorName: string
+  suggestedQty: number
+}
+
+const baseRows = computed<SortableRow[]>(() =>
+  worklist.value.rows.map((row) => ({
+    ...row,
+    fsnClass: row.fsn.committed,
+    onHandQty: row.atp.onHand,
+    reservedQty: row.atp.reserved,
+    availableQty: row.atp.available,
+    onOrderQty: row.atp.onOrder,
+    // Null cover must sort last in both directions rather than read as 0.
+    coverValue: row.cover.coverDays ?? Number.POSITIVE_INFINITY,
+    velocityValue: row.velocity.avgDailySales,
+    vendorName: row.vendor?.name ?? '',
+    // The number the cell shows (the stock-unit need), not the PO-rounded figure.
+    suggestedQty: row.suggestion.rawQty,
+  })),
+)
 
 // ─── Filters ─────────────────────────────────────────────────────────────────
 const fsnFilter = ref('')
@@ -120,6 +154,11 @@ const vendorOptions = computed(() => vendors.map((v) => ({ id: v.id, name: v.nam
 const categoryOptions = computed(() =>
   [...new Set(CATALOG.map((c) => c.category))].sort().map((c) => ({ id: c, name: c })),
 )
+
+const warehouseSelectOptions = computed(() => [
+  ...(canSelectAll.value ? [{ value: ALL_WAREHOUSES, label: t('All warehouses') }] : []),
+  ...whOptions.value.map((wh) => ({ value: wh.id, label: wh.name })),
+])
 
 const FSN_OPTIONS = [
   { id: 'fast', name: 'Fast' },
@@ -159,7 +198,7 @@ function matchesDrawer(row: WorklistRow): boolean {
 const {
   search, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
-} = useTableState<WorklistRow>(baseRows, {
+} = useTableState<SortableRow>(baseRows, {
   // The FSN quick filter is read straight from its own ref rather than through
   // useTableState's generic `status` slot — it is a class, not a status, and the
   // closure stays reactive either way.
@@ -187,32 +226,34 @@ function clearFilters() {
 }
 
 // ─── Columns ─────────────────────────────────────────────────────────────────
+// Widths come from each column's `kind` (rule/table-column-kind). Quantity and
+// day-count columns have no semantic kind, so they take the `default` range.
 const ALL_COLUMNS: TableColumn[] = [
-  { key: 'productName',   label: 'Product',        width: '280px', sortable: true, sortType: 'text' },
-  { key: 'sku',           label: 'SKU',            width: '104px', sortable: true, sortType: 'text' },
-  { key: 'fsnClass',      label: 'FSN',            width: '116px', sortable: true, sortType: 'text' },
+  { key: 'productName',   label: 'Product',         kind: 'name',   sortable: true, sortType: 'text' },
+  { key: 'sku',           label: 'SKU',                             sortable: true, sortType: 'text' },
+  { key: 'fsnClass',      label: 'FSN',             kind: 'status', sortable: true, sortType: 'text' },
   // General signals (US-013 AC-01 §4): how reliable / early the numbers behind the
   // recommendation are — the demand read (Provisional / Volatile demand) AND the
   // lead-time basis (Estimated lead time / Waiting for real lead time). Distinct
   // from FSN's movement class, so it gets its own column.
-  { key: 'signals',       label: 'Signals',        width: '210px' },
-  { key: 'warehouseName', label: 'Warehouse',      width: '170px', sortable: true, sortType: 'text' },
-  // The stock group, in StockTables.vue's vocabulary and widths so it reads as
-  // the same table the user already knows. `available` is what days-of-cover
-  // divides; `available + onOrder` is what the reorder trigger compares — both
-  // derivable from these four, and spelled out in the trust drawer.
-  { key: 'onHandQty',     label: 'On hand qty',    width: '120px', sortable: true, sortType: 'number', align: 'right' },
-  { key: 'reservedQty',   label: 'Reserved qty',   width: '124px', sortable: true, sortType: 'number', align: 'right' },
-  { key: 'availableQty',  label: 'Available qty',  width: '128px', sortable: true, sortType: 'number', align: 'right' },
-  { key: 'onOrderQty',    label: 'In transit qty', width: '124px', sortable: true, sortType: 'number', align: 'right' },
-  { key: 'unit',          label: 'Unit',           width: '88px' },
-  { key: 'coverValue',    label: 'Days of cover',  width: '148px', sortable: true, sortType: 'number', align: 'right' },
-  { key: 'suggestedQty',  label: 'Suggested qty',  width: '164px', sortable: true, sortType: 'number', align: 'right' },
-  { key: 'vendorName',    label: 'Vendor',         width: '190px', sortable: true, sortType: 'text' },
-  { key: 'reorderPoint',  label: 'Reorder point',         width: '148px', sortable: true, sortType: 'number', align: 'right' },
-  { key: 'leadTimeDays',  label: 'Lead time',             width: '124px', sortable: true, sortType: 'number', align: 'right' },
-  { key: 'velocityValue', label: 'Demand velocity',       width: '164px', sortable: true, sortType: 'number', align: 'right' },
-  { key: 'safetyDays',    label: 'Safety days',           width: '128px', sortable: true, sortType: 'number', align: 'right' },
+  { key: 'signals',       label: 'Signals',         kind: 'tags' },
+  { key: 'warehouseName', label: 'Warehouse',       kind: 'name',   sortable: true, sortType: 'text' },
+  // The stock group, in StockTables.vue's vocabulary so it reads as the same table
+  // the user already knows. `available` is what days-of-cover divides;
+  // `available + onOrder` is what the reorder trigger compares — both derivable
+  // from these four, and spelled out in the trust drawer.
+  { key: 'onHandQty',     label: 'On hand qty',     sortable: true, sortType: 'number', align: 'right' },
+  { key: 'reservedQty',   label: 'Reserved qty',    sortable: true, sortType: 'number', align: 'right' },
+  { key: 'availableQty',  label: 'Available qty',   sortable: true, sortType: 'number', align: 'right' },
+  { key: 'onOrderQty',    label: 'In transit qty',  sortable: true, sortType: 'number', align: 'right' },
+  { key: 'unit',          label: 'Unit',            kind: 'unit' },
+  { key: 'coverValue',    label: 'Days of cover',   sortable: true, sortType: 'number', align: 'right' },
+  { key: 'suggestedQty',  label: 'Suggested qty',   sortable: true, sortType: 'number', align: 'right' },
+  { key: 'vendorName',    label: 'Vendor',          kind: 'name',   sortable: true, sortType: 'text' },
+  { key: 'reorderPoint',  label: 'Reorder point',   sortable: true, sortType: 'number', align: 'right' },
+  { key: 'leadTimeDays',  label: 'Lead time',       sortable: true, sortType: 'number', align: 'right' },
+  { key: 'velocityValue', label: 'Demand velocity', sortable: true, sortType: 'number', align: 'right' },
+  { key: 'safetyDays',    label: 'Safety days',     sortable: true, sortType: 'number', align: 'right' },
 ]
 
 // Hidden by default — the eight visible columns already answer "what and how much".
@@ -225,23 +266,6 @@ const columnItems = computed(() =>
   ALL_COLUMNS.map((c, i) => ({ key: c.key, label: t(c.label), disabled: i === 0 })),
 )
 function hideColumn(key: string) { columnVisibility[key] = false }
-
-/** Rows flattened for sorting — useTableState sorts on plain top-level keys. */
-const sortableRows = computed(() =>
-  paginated.value.map((row) => ({
-    ...row,
-    fsnClass: row.fsn.committed,
-    onHandQty: row.atp.onHand,
-    reservedQty: row.atp.reserved,
-    availableQty: row.atp.available,
-    onOrderQty: row.atp.onOrder,
-    // Null cover must sort last in both directions rather than read as 0.
-    coverValue: row.cover.coverDays ?? Number.POSITIVE_INFINITY,
-    velocityValue: row.velocity.avgDailySales,
-    vendorName: row.vendor?.name ?? '',
-    suggestedQty: row.suggestion.purchaseQty,
-  })),
-)
 
 // ─── Formatting ──────────────────────────────────────────────────────────────
 const num = (v: number, digits = 0) =>
@@ -268,9 +292,6 @@ const FSN_BADGE: Record<string, { type: string; label: string }> = {
 function adjustmentNote(row: WorklistRow): string {
   const vi = row.vendorItem
   if (!vi || row.suggestion.purchaseQty <= 0) return ''
-  if (row.suggestion.cappedByMaxLevel) {
-    return `${t('Order up to max level')} · ${row.suggestion.purchaseQty} ${vi.purchaseUnit} ${t('at PO')}`
-  }
   const at = `${row.suggestion.purchaseQty} ${vi.purchaseUnit} ${t('at PO')}`
   if (row.suggestion.raisedByMoq && row.suggestion.raisedByPack) {
     return `${t('MOQ')} ${vi.moq} + ${t('pack of')} ${vi.packSize} → ${at}`
@@ -287,6 +308,9 @@ const settingsRow = ref<WorklistRow | null>(null)
 const settingsOpen = ref(false)
 const poRows = ref<WorklistRow[]>([])
 const poOpen = ref(false)
+/** Inline error inside the PR modal when creating the requests fails. */
+const prError = ref('')
+watch(poOpen, (open) => { if (open) prError.value = '' })
 const muteRow = ref<WorklistRow | null>(null)
 const muteOpen = ref(false)
 const vendorSku = ref<string | null>(null)
@@ -312,23 +336,19 @@ function openVendors(sku: string) {
 }
 
 function openPoForRows(rows: WorklistRow[], deselect?: () => void) {
-  if (!rows.length) {
-    toast.notify({ variant: 'error', title: t('You must select at least one product'), maxWidth: 'max-content' })
-    return
-  }
+  // Both guards are unreachable from the UI (the bulk bar only offers the action
+  // for a non-empty, single-warehouse selection) — they stay as silent no-ops, not
+  // error toasts (rule/toast-success-only).
+  if (!rows.length) return
   // A PO has one ship-to, so a selection spanning warehouses cannot be expressed.
-  if (new Set(rows.map((r) => r.warehouseId)).size > 1) {
-    toast.notify({ variant: 'error', title: t('Select products from a single warehouse'), maxWidth: 'max-content' })
-    return
-  }
+  if (new Set(rows.map((r) => r.warehouseId)).size > 1) return
   poRows.value = rows
   clearSelection = deselect ?? null
   poOpen.value = true
 }
 
 function selectedWorklistRows(sel: Set<number>): WorklistRow[] {
-  // `sortableRows` is a same-order projection of `paginated`, so a selected index
-  // maps straight back to the real row object.
+  // A selected index is a position in the displayed page.
   return [...sel].map((i) => paginated.value[i]).filter(Boolean) as WorklistRow[]
 }
 
@@ -350,18 +370,27 @@ function confirmPr(payload: {
   overrides: Record<string, number>
   vendorChoices: Record<string, string | null>
 }) {
-  const result = createPurchaseRequests(poRows.value, payload.overrides, payload.vendorChoices)
+  // Nothing is closed or cleared until the requests exist: on failure the modal
+  // stays open with every edit intact and an inline error (US-017 EH-01,
+  // rule/form-errors-inline — never an error toast over a closed form).
+  let result: ReturnType<typeof createPurchaseRequests>
+  try {
+    result = createPurchaseRequests(poRows.value, payload.overrides, payload.vendorChoices)
+  } catch {
+    prError.value = t('The purchase request could not be saved. Try again.')
+    return
+  }
+  const created = result.created.length
+  if (!created) {
+    prError.value = t('The purchase request could not be saved. Try again.')
+    return
+  }
+
   poOpen.value = false
   clearSelection?.()
   clearSelection = null
   invalidateReplenishmentCaches()
   recalcTick.value++
-
-  const created = result.created.length
-  if (!created) {
-    toast.notify({ variant: 'error', title: t('No purchase request could be created.'), maxWidth: 'max-content' })
-    return
-  }
   // Names the next owner, because the requester does not place the order —
   // purchasing decides which requests become POs (US-020 AC-03).
   const unsourced = result.created.filter((c) => !c.vendorId).length
@@ -393,11 +422,28 @@ function confirmMute() {
   toast.notify({ variant: 'success', title: t('Tracking turned off.'), maxWidth: 'max-content' })
 }
 
-function bulkMute(sel: Set<number>, deselectAll: () => void) {
+/**
+ * Bulk "Turn off tracking" confirms first, with the count, exactly like the
+ * single-row action — it removes rows from the worklist (reachable-states ›
+ * destructive; US-010 VR-02 "confirm dialog with count").
+ */
+const bulkMuteRows = ref<WorklistRow[]>([])
+const bulkMuteOpen = ref(false)
+let bulkMuteDeselect: (() => void) | null = null
+
+function askBulkMute(sel: Set<number>, deselectAll: () => void) {
   const rows = selectedWorklistRows(sel)
   if (!rows.length) return
+  bulkMuteRows.value = rows
+  bulkMuteDeselect = deselectAll
+  bulkMuteOpen.value = true
+}
+
+function confirmBulkMute() {
+  const rows = bulkMuteRows.value
   for (const row of rows) setTracked(row.sku, row.warehouseId, false)
-  deselectAll()
+  bulkMuteDeselect?.()
+  bulkMuteDeselect = null
   recalcTick.value++
   toast.notify({
     variant: 'success',
@@ -417,7 +463,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
 <template>
   <ErpTablePage
     :columns="columns"
-    :rows="(sortableRows as unknown as Record<string, unknown>[])"
+    :rows="(paginated as unknown as Record<string, unknown>[])"
     :total="total"
     :current-page="currentPage"
     :per-page="perPage"
@@ -447,9 +493,9 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
           </div>
           <div class="stat-card stat-card--bordered">
             <div class="stat-title">{{ t('Stocks out before resupply') }}</div>
-            <div class="stat-period">{{ t('Cover shorter than lead time') }}</div>
+            <div class="stat-period">{{ t('Cover below lead time + safety days') }}</div>
             <div class="stat-amount stat-amount--danger">{{ worklist.totals.belowLeadTime }}</div>
-            <span class="stat-asof">{{ t('across all stocked products') }}</span>
+            <span class="stat-asof">{{ t('on the worklist') }}</span>
           </div>
           <div class="stat-card stat-card--bordered">
             <div class="stat-title">{{ t('Needs setup') }}</div>
@@ -466,9 +512,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
           <span>{{ t('As of') }} {{ asOfLabel }}</span>
           <span v-if="lastRunLabel" class="rp-freshness-sep">·</span>
           <span v-if="lastRunLabel">{{ t('Last recalculated') }} {{ lastRunLabel }}</span>
-          <a class="rp-freshness-link" @click="recalculate">
-            {{ recalculating ? t('Recalculating…') : t('Recalculate') }}
-          </a>
+          <span v-if="recalculating">· {{ t('Recalculating…') }}</span>
         </div>
       </div>
     </template>
@@ -484,28 +528,25 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
              keeps its placeholder, because "no FSN filter" is a real state.
              "All warehouses" still lists rows per SKU-warehouse and never blends
              them into a total (US-025 AC-02). -->
-        <MpSelect
+        <ErpFilterSelect
           id="rp-warehouse-select"
           :model-value="warehouseId"
-          :class="css({ width: '220px' })"
+          :placeholder="t('Warehouse')"
+          :options="warehouseSelectOptions"
+          width="220px"
+          :is-clearable="false"
           @update:model-value="(v: string) => setWarehouse(v)"
-        >
-          <option v-if="canSelectAll" :value="ALL_WAREHOUSES">{{ t('All warehouses') }}</option>
-          <option v-for="wh in whOptions" :key="wh.id" :value="wh.id">{{ wh.name }}</option>
-        </MpSelect>
+        />
 
-        <!-- Short option labels, so a plain MpSelect is enough — the MpPopover
-             idiom exists for labels that have to truncate. -->
-        <MpSelect
+        <!-- rule/select-erpfilterselect: an MpPopover menu, clearable — never MpSelect. -->
+        <ErpFilterSelect
           id="rp-fsn-select"
           :model-value="fsnFilter"
           :placeholder="t('FSN class')"
-          is-clearable
-          :class="css({ width: '170px' })"
+          :options="FSN_OPTIONS.map((o) => ({ value: o.id, label: t(o.name) }))"
+          width="170px"
           @update:model-value="(v: string) => { fsnFilter = v }"
-        >
-          <option v-for="o in FSN_OPTIONS" :key="o.id" :value="o.id">{{ t(o.name) }}</option>
-        </MpSelect>
+        />
 
         <button class="filter-all-btn" type="button" @click="filtersOpen = true">
           <MpIcon name="filter" size="sm" />
@@ -516,8 +557,14 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
       <div class="filter-right">
         <div class="filter-btn-group">
           <MpTooltip :label="t('Ask Airene')" placement="bottom">
-            <button class="filter-icon-btn" type="button" :aria-label="t('Ask Airene')" @click="aireneToggle?.()">
-              <MpIcon name="sparkle" size="md" />
+            <!-- Same filled purple Airene glyph as every other index page (house
+                 pattern, e.g. WarehouseTransfersPage) — consistency requested over
+                 rule/icon-pixel-library, which has no filled Airene MpIcon. -->
+            <button class="filter-icon-btn filter-icon-btn--airene" type="button" :aria-label="t('Ask Airene')" @click="aireneToggle?.()">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                              <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
+                              <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
+                            </svg>
             </button>
           </MpTooltip>
           <ColumnSettingsMenu
@@ -556,7 +603,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
       <!-- A PO has one ship-to. Requesting across warehouses would fan out into many
            POs, so it is only offered for a single-warehouse selection. -->
       <span v-if="selectionSpansWarehouses(selectedRows as Set<number>)" class="rp-bulk-info">
-        <MpIcon name="information-circular" size="sm" />
+        <MpIcon name="info" size="sm" />
         {{ t('Select replenishment from the same warehouse to create a purchase request.') }}
       </span>
       <button
@@ -565,36 +612,28 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
         @click="bulkCreatePr(selectedRows as Set<number>, deselectAll)"
       >{{ t('Request to purchase') }}</button>
       <button
-        class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm"
-        @click="bulkMute(selectedRows as Set<number>, deselectAll)"
+        class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+        @click="askBulkMute(selectedRows as Set<number>, deselectAll)"
       >{{ t('Turn off tracking') }}</button>
     </template>
 
     <!-- ── Product ── -->
     <template #cell-productName="{ row }">
-      <div class="rp-product">
-        <img
-          v-if="(row as any).img"
-          class="rp-thumb"
-          :src="(row as any).img"
-          :alt="(row as any).productName"
-          loading="lazy"
-        />
-        <span v-else class="rp-thumb rp-thumb--empty" />
-        <span class="rp-product-text">
-          <a class="cell-link rp-product-name" @click.stop="viewProduct((row as any).sku)">
-            {{ (row as any).productName }}
-          </a>
-          <ClampText v-if="(row as any).productDesc" class="rp-product-sub" :text="(row as any).productDesc" />
-        </span>
-      </div>
+      <!-- rule/table-product-cell: 40px photo + name + 2-line clamped description. -->
+      <ProductCell
+        :name="(row as any).productName"
+        :desc="(row as any).productDesc"
+        :image="(row as any).img"
+        linkable
+        @name-click="viewProduct((row as any).sku)"
+      />
     </template>
 
     <!-- ── FSN ── -->
     <template #cell-fsnClass="{ row }">
       <div class="rp-badges">
         <MpBadge
-          for="additionalInformation"
+          for="tableStatus"
           :type="FSN_BADGE[(row as any).fsn.committed]?.type ?? 'announcement'"
         >{{ t(FSN_BADGE[(row as any).fsn.committed]?.label ?? 'Unclassified') }}</MpBadge>
       </div>
@@ -608,16 +647,16 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
           || (row as any).flags.leadTimeEstimated || (row as any).leadTimeTier === 'none'"
         class="rp-badges"
       >
-        <MpBadge v-if="(row as any).flags.provisional" for="additionalInformation" type="information">
+        <MpBadge v-if="(row as any).flags.provisional" for="tableStatus" type="information">
           {{ t('Provisional') }}
         </MpBadge>
-        <MpBadge v-if="(row as any).flags.volatile" for="additionalInformation" type="information">
+        <MpBadge v-if="(row as any).flags.volatile" for="tableStatus" type="information">
           {{ t('Volatile demand') }}
         </MpBadge>
-        <MpBadge v-if="(row as any).flags.leadTimeEstimated" for="additionalInformation" type="information">
+        <MpBadge v-if="(row as any).flags.leadTimeEstimated" for="tableStatus" type="information">
           {{ t('Estimated lead time') }}
         </MpBadge>
-        <MpBadge v-if="(row as any).leadTimeTier === 'none'" for="additionalInformation" type="warning">
+        <MpBadge v-if="(row as any).leadTimeTier === 'none'" for="tableStatus" type="warning">
           {{ t('Waiting for real lead time') }}
         </MpBadge>
       </div>
@@ -662,7 +701,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
             class="rp-num-value"
             :class="{ 'rp-num-value--critical': (row as any).cover.belowLeadTime }"
             :title="(row as any).cover.belowLeadTime
-              ? `${t('Stocks out before resupply')} — ${t('lead time')} ${(row as any).leadTimeDays} ${t('days')}`
+              ? `${t('Stocks out before resupply')} — ${t('lead time + safety days')}: ${(row as any).leadTimeDays + (row as any).safetyDays} ${t('days')}`
               : undefined"
           >{{ num((row as any).cover.coverDays, 1) }}</span>
         </template>
@@ -686,7 +725,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
       <template v-if="(row as any).vendor">
         <div class="rp-vendor">
           <span class="cell-text">{{ (row as any).vendor.name }}</span>
-          <span v-if="(row as any).alternates.length" class="rp-num-sub">
+          <span v-if="(row as any).alternates.length" class="rp-vendor-sub">
             +{{ (row as any).alternates.length }}
             {{ (row as any).alternates.length === 1 ? t('more vendor') : t('more vendors') }}
           </span>
@@ -720,9 +759,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
       >
         <MpPopoverTrigger>
           <button class="row-kebab" :aria-label="t('More actions')">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
-            </svg>
+            <MpIcon name="menu-kebab" size="md" />
           </button>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '210px', width: 'max-content', whiteSpace: 'nowrap' })">
@@ -760,6 +797,14 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
             ? t('Turn on the replenishment worklist in Configure warehouse to see which products to reorder.')
             : t('Every tracked product is above its reorder point.') }}
         </p>
+        <!-- rule/empty-state-structure: the "not set up" state names the fix, so it
+             links to it — Configure warehouse is opened per warehouse from the list. -->
+        <button
+          v-if="!anyWarehouseEnabled"
+          class="btn-enterprise btn-enterprise--secondary empty-full-cta"
+          type="button"
+          @click="router.push('/warehouses')"
+        >{{ t('Go to Warehouses') }}</button>
       </div>
     </template>
   </ErpTablePage>
@@ -784,6 +829,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
   <CreatePurchaseRequestModal
     v-model:is-open="poOpen"
     :rows="poRows"
+    :submit-error="prError"
     @confirm="confirmPr"
     @assign-vendor="(sku) => { poOpen = false; openVendors(sku) }"
   />
@@ -811,6 +857,15 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
     :is-danger="false"
     @confirm="confirmMute"
   />
+
+  <ConfirmModal
+    v-model:is-open="bulkMuteOpen"
+    :title="`${t('Turn off tracking for')} ${bulkMuteRows.length} ${bulkMuteRows.length === 1 ? t('product') : t('products')}?`"
+    :description="t('They stop appearing in the replenishment worklist. Their reorder points and safety days are kept, so turning tracking back on restores them. Existing purchase orders are not affected.')"
+    :confirm-label="t('Turn off tracking')"
+    :is-danger="false"
+    @confirm="confirmBulkMute"
+  />
 </template>
 
 <style scoped>
@@ -821,20 +876,20 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
   flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1);
   padding-right: var(--mp-spacing-6); align-self: stretch;
 }
-.stat-card--bordered { border-right: 1px solid var(--mp-border-default); }
+.stat-card--bordered { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .stat-title {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   line-height: var(--mp-line-heights-md); white-space: nowrap;
 }
 .stat-period {
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
-  line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap;
+  line-height: var(--mp-line-heights-sm, 16px); white-space: normal;
 }
 .stat-amount {
   font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default); line-height: var(--mp-line-heights-2xl, 32px); white-space: nowrap;
 }
-.stat-amount--warning { color: var(--mp-text-warning); }
+.stat-amount--warning { color: var(--mp-colors-text-warning); }
 .stat-amount--danger { color: var(--mp-text-danger); }
 .stat-asof { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 
@@ -843,7 +898,6 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
 }
 .rp-freshness-sep { color: var(--mp-text-subtle); }
-.rp-freshness-link { color: var(--mp-text-link); cursor: pointer; }
 
 /* ── Filter bar (mirrored from CycleCountRecommendationPage) ── */
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-2); }
@@ -853,22 +907,22 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
   border: none; background: none; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary));
+  cursor: pointer; color: var(--mp-colors-icon-default);
 }
-.filter-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
+.filter-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .filter-all-btn {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full);
-  background: var(--mp-background-neutral); color: var(--mp-text-default);
+  border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full);
+  background: var(--mp-background-neutral, #ffffff); color: var(--mp-text-default);
   font-size: var(--mp-font-sizes-md); cursor: pointer;
 }
-.filter-all-btn:hover { background: var(--mp-background-neutral-hovered); }
+.filter-all-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full);
-  background: var(--mp-background-neutral); color: var(--mp-text-secondary); min-width: 220px;
+  border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full);
+  background: var(--mp-background-neutral, #ffffff); color: var(--mp-text-secondary); min-width: 220px;
 }
 .filter-search-input {
   flex: 1; border: none; background: transparent; outline: none;
@@ -880,10 +934,10 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
   display: inline-flex; align-items: center; justify-content: center;
   flex-shrink: 0; width: 18px; height: 18px; padding: 0;
   border: none; background: none; cursor: pointer;
-  color: var(--mp-icon-default, var(--mp-text-secondary));
+  color: var(--mp-colors-icon-default);
   border-radius: var(--mp-radii-full, 999px);
 }
-.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* ── Row actions ── */
 .row-kebab {
@@ -892,20 +946,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
   border: none; background: none; border-radius: var(--mp-radii-md);
   cursor: pointer; color: var(--mp-text-secondary);
 }
-.row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }
-.row-kebab:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
-
-/* ── Product cell ── */
-.rp-product { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); min-width: 0; padding-right: var(--mp-spacing-2); }
-.rp-thumb {
-  flex-shrink: 0; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
-  border-radius: var(--mp-radii-sm); object-fit: cover;
-  background: var(--mp-background-neutral-subtle); border: 1px solid var(--mp-border-default);
-}
-.rp-thumb--empty { display: inline-block; }
-.rp-product-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-.rp-product-name { color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rp-product-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); margin-top: 2px; }
+.row-kebab:hover { background: var(--mp-background-neutral-hovered, #eef0f3); color: var(--mp-text-default); }
 
 /* ── Numeric two-line cells ── */
 .rp-num { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
@@ -916,17 +957,18 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
 .rp-num-sub--critical { color: var(--mp-text-danger); }
 
 .rp-vendor { display: flex; flex-direction: column; min-width: 0; }
+.rp-vendor-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
+.filter-icon-btn--airene { color: var(--mp-airene-default); }
 .rp-badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
-.rp-signal-none { color: var(--mp-text-tertiary, var(--mp-text-secondary)); }
+.rp-signal-none { color: var(--mp-text-subtle); }
 
 /* Bulk bar guidance when a selection spans warehouses — no cross-warehouse PR. */
 .rp-bulk-info {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5, 6px);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
 }
-.rp-bulk-info :deep(svg) { color: var(--mp-icon-secondary, var(--mp-text-secondary)); flex-shrink: 0; }
+.rp-bulk-info :deep(svg) { color: var(--mp-colors-icon-subtle); flex-shrink: 0; }
 
-:deep(.erp-tr:hover .erp-td) { background: var(--mp-background-neutral); }
 
 /* ── Empty state ── */
 .empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }
@@ -939,4 +981,5 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
   margin-top: var(--mp-spacing-0\.5); font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-secondary); max-width: 400px; text-align: center;
 }
+.empty-full-cta { margin-top: var(--mp-spacing-4); }
 </style>

@@ -177,7 +177,13 @@ function documentSamples(cfg: ReplenishmentConfig): LeadTimeSample[] {
   // show WHY a partial delivery did not move the average.
   const firstSeenForPo = new Map<string, string>()
 
-  for (const r of receipts) {
+  // Walk receipts oldest-first so "first per PO" is decided by date, not by array
+  // order: a later receipt listed earlier must not claim the sample and then let
+  // the genuinely first one be counted as a second sample for the same PO.
+  const chronological = [...receipts].sort((a, b) =>
+    (a.receivedDate ?? '').localeCompare(b.receivedDate ?? '') || a.id.localeCompare(b.id))
+
+  for (const r of chronological) {
     const receiptDate = r.receivedDate
     if (!receiptDate) continue
     if (r.status !== 'completed' && r.status !== 'partial reception') continue
@@ -201,8 +207,7 @@ function documentSamples(cfg: ReplenishmentConfig): LeadTimeSample[] {
     const po = matchPurchaseOrder(r, receiptDate)
     if (!po) continue
 
-    const previous = firstSeenForPo.get(po.id)
-    const isFirst = previous === undefined || receiptDate < previous
+    const isFirst = !firstSeenForPo.has(po.id)
     if (isFirst) firstSeenForPo.set(po.id, receiptDate)
 
     const leadDays = daysBetween(po.date, receiptDate)

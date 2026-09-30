@@ -17,6 +17,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   effectiveSettings, saveSkuOverride, saveSkuWarehouseOverride, setTracked,
   setTrackedBulk, clearReorderPointOverride, resetReplenishmentSettings, overrideCount,
+  clearSkuWarehouseOverride,
 } from '~/data/replenishmentSettings'
 import { buildRow, replenishmentWorklist } from '~/data/replenishment'
 import { REPL_DEFAULTS } from '~/data/replenishmentConfig'
@@ -87,11 +88,16 @@ describe('US-014 — a muted SKU still fires a stockout alert', () => {
   })
 
   it('does not flag a muted SKU that is comfortably stocked', () => {
-    // A huge manual reorder point of 0 means nothing is at risk; use an override
-    // that puts the SKU well above its trigger instead.
-    saveSkuWarehouseOverride(SKU, WH, { reorderPoint: 0 })
-    setTracked(SKU, WH, false)
-    expect(buildRow(SKU, WH).flags.mutedButActive).toBe(false)
+    // A manual reorder point of 0 on a pair with free stock means nothing is at
+    // risk. Picked dynamically: under PRD US-003 reserved = open SO + outbound
+    // transfers, so some seed pairs are genuinely oversold (available < 0) and
+    // SHOULD alert even at a 0 reorder point.
+    const pair = replenishmentWorklist('all').rows.find((r) => r.atp.available > 0)
+    expect(pair, 'seed needs one due pair with free stock').toBeTruthy()
+    saveSkuWarehouseOverride(pair!.sku, pair!.warehouseId, { reorderPoint: 0 })
+    setTracked(pair!.sku, pair!.warehouseId, false)
+    expect(buildRow(pair!.sku, pair!.warehouseId).flags.mutedButActive).toBe(false)
+    clearSkuWarehouseOverride(pair!.sku, pair!.warehouseId)
   })
 
   it('muting never suppresses the alert for any pair in the catalogue', () => {

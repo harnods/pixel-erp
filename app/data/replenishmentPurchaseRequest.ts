@@ -154,9 +154,7 @@ export function requestedQtyFor(row: WorklistRow): number {
 export function recomputeQtyForVendor(row: WorklistRow, vendorId: string | null): number {
   const vi = vendorId ? vendorItemFor(row.sku, vendorId) : null
   const leadDays = vi?.leadTimeDays ?? row.leadTimeDays
-  const target = row.maxLevel !== null
-    ? row.maxLevel
-    : (leadDays + row.safetyDays + row.coverageDays) * row.velocity.avgDailySales
+  const target = (leadDays + row.safetyDays + row.coverageDays) * row.velocity.avgDailySales
   return Math.max(0, Math.ceil(target - (row.atp.available + row.atp.onOrder)))
 }
 
@@ -201,7 +199,13 @@ export function planPurchaseRequests(
       : requestedQtyFor(row)
     const override = overrides[row.key]
     const finalQty = override ?? recommendedQty
-    if (!finalQty || finalQty <= 0) { skipped.push({ ...base, reason: 'zero-qty' }); continue }
+    // Nothing recommended and nothing typed → nothing to request. A line the USER
+    // set to 0 stays in its group instead, so its input remains editable in the
+    // modal (moving it to Skipped removed the only control that could fix it).
+    if (override === undefined && (!recommendedQty || recommendedQty <= 0)) {
+      skipped.push({ ...base, reason: 'zero-qty' })
+      continue
+    }
 
     // An unsourced line is a valid request, not a skip — purchasing sources it.
     const vendorId = vi ? vi.vendorId : null
@@ -345,7 +349,21 @@ export function createPurchaseRequests(
   const plan = planPurchaseRequests(rows, overrides, vendorChoices)
   const created: PrResult['created'] = []
 
-  for (const group of plan.groups) {
+  const skipped = [...plan.skipped]
+  for (const planned of plan.groups) {
+    // Defence in depth: a 0-qty line is never written to a request (the modal
+    // blocks confirming one, but the data layer must not rely on that).
+    const lines = planned.lines.filter((l) => l.finalQty > 0)
+    for (const l of planned.lines) {
+      if (l.finalQty <= 0) {
+        skipped.push({
+          sku: l.sku, productName: l.productName, warehouseId: l.warehouseId,
+          warehouseName: planned.warehouseName, reason: 'zero-qty',
+        })
+      }
+    }
+    if (!lines.length) continue
+    const group = { ...planned, lines }
     const pr = createPurchaseRequestFromGroup(group, createdBy)
     created.push({
       id: pr.id,
@@ -358,5 +376,5 @@ export function createPurchaseRequests(
     })
   }
 
-  return { created, skipped: plan.skipped }
+  return { created, skipped }
 }

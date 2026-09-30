@@ -28,8 +28,8 @@
  * agree and a refresh never changes a number.
  */
 import { outgoingOrders } from './outgoing'
-import { warehouseTransfers, transferLineItems } from './warehouseTransfers'
-import { stockAdjustments, adjustmentLineItems } from './stockAdjustments'
+import { materialConsumeReturnRecords } from './materialConsumeReturn'
+import { catalogProduct } from './billOfMaterials'
 import { orderSkuLines, productBySku, warehouseOrderPool, warehouseProducts } from './inventory'
 import { warehouses } from './warehouses'
 import { shiftDays } from './master'
@@ -41,8 +41,13 @@ export const REPL_HISTORY_DAYS = 120
 
 export type DemandDaySource = 'document' | 'modelled'
 
-/** Which kind of movement issued the stock — demand counts all of them. */
-export type DemandDocKind = 'outbound' | 'transfer' | 'adjustment'
+/**
+ * Which kind of movement issued the stock. PRD US-002 counts ONLY issues that
+ * consume stock: sales deliveries (the outbound dispatch that fulfils a sale) and
+ * work-order material consumption. Warehouse transfers, stock counts/adjustments
+ * and returns are excluded (§2.2 #2, DEP-01).
+ */
+export type DemandDocKind = 'outbound' | 'work-order'
 
 export interface DemandDoc {
   /** Source record id. */
@@ -51,7 +56,7 @@ export interface DemandDoc {
   number: string
   /**
    * Sales reference, e.g. "Sales Order #10123". Outbound dispatches only — a
-   * transfer or a write-off has no customer behind it, and inventing one would
+   * work-order consumption has no customer behind it, and inventing one would
    * make the trust drawer cite a document that does not exist.
    */
   salesNo?: string
@@ -213,38 +218,21 @@ function documentIndex(asOf: string): Map<string, Map<string, DemandDoc[]>> {
     }
   }
 
-  // ── Everything else that leaves a warehouse ────────────────────────────────
-  // Demand is what a location ISSUED, not what a particular document type says.
-  // A transfer out and a write-off both remove stock that has to be replaced, so
-  // counting only outbound orders understates how fast a warehouse drains — and
-  // understated demand means a reorder point set too low, which is the failure
-  // this feature exists to prevent.
-
-  // A transfer is demand at its ORIGIN: those units left and the origin has to
-  // replace them. It is not counted at the destination, where it is supply.
-  for (const t of warehouseTransfers) {
-    if (t.status !== 'completed' && t.status !== 'in transit') continue
-    if (!inWindow(t.date)) continue
-    for (const line of transferLineItems(t)) {
-      if (line.qty <= 0) continue
-      record(line.sku, t.originId, t.date, {
-        id: t.id, number: t.number, kind: 'transfer', date: t.date, qty: line.qty,
-      })
-    }
-  }
-
-  // Only adjustments that REDUCED stock. A positive correction is a find, not a
-  // sale, and counting it would make demand negative for that day.
-  for (const a of stockAdjustments) {
-    if (a.status !== 'completed' && a.status !== 'closed') continue
-    if (!inWindow(a.date)) continue
-    for (const line of adjustmentLineItems(a)) {
-      const out = -line.difference
-      if (out <= 0) continue
-      record(line.sku, a.warehouseId, a.date, {
-        id: a.id, number: a.number, kind: 'adjustment', date: a.date, qty: out,
-      })
-    }
+  // ── Work-order material consumption (PRD US-002 §2.2 #2) ───────────────────
+  // Raw materials consumed by production are real demand on that warehouse.
+  // Only Consume records count; a Return is the reverse movement, not demand.
+  //
+  // Deliberately NOT counted (PRD excludes them): warehouse transfers (stock
+  // moving between locations, not being used up), stock counts/adjustments
+  // (corrections, not sales) and sales returns.
+  for (const r of materialConsumeReturnRecords) {
+    if (r.type !== 'Consume' || r.qty <= 0) continue
+    if (!inWindow(r.date)) continue
+    const sku = catalogProduct(r.productId)?.sku
+    if (!sku || !r.warehouseId) continue
+    record(sku, r.warehouseId, r.date, {
+      id: r.id, number: r.number, kind: 'work-order', date: r.date, qty: r.qty,
+    })
   }
 
   docIndexCache.set(asOf, index)

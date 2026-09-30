@@ -10,7 +10,8 @@
  * bad input shows an inline error instead.
  */
 import { ref, reactive, computed } from 'vue'
-import { toast, css, MpIcon, MpInput, MpInputGroup, MpInputRightAddon, MpSelect, MpToggle } from '@mekari/pixel3'
+import { toast, css, MpIcon, MpInput, MpInputGroup, MpInputRightAddon, MpToggle, MpBadge } from '@mekari/pixel3'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
   getReplenishmentConfig, saveReplenishmentConfig,
   REPL_DEFAULTS, type ReplenishmentConfig,
@@ -37,6 +38,9 @@ const committed = ref<ReplenishmentConfig>(getReplenishmentConfig())
 const draft = reactive<ReplenishmentConfig>(cloneConfig(getReplenishmentConfig()))
 const isEditing = ref(false)
 const error = ref('')
+/** Per-field errors, keyed by field id — rendered AT the field (rule/form-errors-inline). */
+const fieldErrors = reactive<Record<string, string>>({})
+function clearFieldErrors() { for (const k of Object.keys(fieldErrors)) delete fieldErrors[k] }
 
 // Which categories get their OWN per-category defaults (a row in every grid below).
 // A category is "listed" when it carries a value in any per-category map, or was
@@ -108,10 +112,6 @@ function floorSetNotSet() { draft.fallbackLeadTimeDays = null }
 function floorSetNumber() {
   draft.fallbackLeadTimeDays = committed.value.fallbackLeadTimeDays ?? REPL_DEFAULTS.fallbackLeadTimeDays ?? 14
 }
-/** Placeholder a blank category row shows — the floor it would inherit, or "Not set". */
-const leadFloorPlaceholder = computed(() =>
-  draft.fallbackLeadTimeDays === null ? t('Not set') : String(draft.fallbackLeadTimeDays),
-)
 /** Read-only label for one category's lead-time default (value, inherited floor, or Not set). */
 function leadReadLabel(cat: string): string {
   const v = committed.value.leadTimeByCategory[cat]
@@ -131,6 +131,7 @@ const safetyOverrides = computed(() => {
 })
 
 function startEdit() {
+  clearFieldErrors()
   Object.assign(draft, cloneConfig(committed.value))
   removedCategories.clear()
   error.value = ''
@@ -138,6 +139,7 @@ function startEdit() {
 }
 
 function cancel() {
+  clearFieldErrors()
   Object.assign(draft, cloneConfig(committed.value))
   removedCategories.clear()
   extraCategories.length = 0
@@ -146,36 +148,50 @@ function cancel() {
 }
 
 function save() {
-  // Validate on click, never by disabling the button.
-  if (!fsnBandsOk.value) {
-    error.value = t('The Fast threshold must be higher than the Slow threshold.')
-    return
-  }
-  for (const [label, value] of [
-    [t('Safety days default'), draft.safetyDaysGlobal],
-    [t('Order coverage'), draft.coverageDaysGlobal],
-    [t('Ignore gaps over'), draft.leadTimeOutlierCapDays],
-    [t('Cold-start threshold'), draft.coldStartMinDays],
-    [t('Classification window'), draft.fsnWindowDays],
-  ] as const) {
-    if (Number(value) < 0 || Number.isNaN(Number(value))) {
-      error.value = `${label} ${t('must be 0 or more')}`
-      return
-    }
-  }
+  // Validate on click, never by disabling the button (rule/btn-no-disabled-validation).
+  // Every rule of US-008 VR-01..04 is checked and each failure is shown AT its field;
+  // the action bar only carries a one-line pointer to them.
+  clearFieldErrors()
+  const isWhole = (v: unknown) => String(v) !== '' && Number.isInteger(Number(v))
+  const need = (key: string, ok: boolean, msg: string) => { if (!ok && !fieldErrors[key]) fieldErrors[key] = msg }
+  const MIN0 = t('Enter a whole number of 0 or more.')
+  const MIN1 = t('Enter a whole number of 1 or more.')
 
-  // The lead-time floor is the one field that accepts "Not set" (null). When it IS
-  // a number it must be a real lead time (≥ 1); a 0-day floor is never valid (D22).
+  need('lookback', isWhole(draft.lookbackDays) && Number(draft.lookbackDays) >= 1, MIN1)
+  need('volatility', String(draft.volatileCvThreshold) !== '' && Number(draft.volatileCvThreshold) > 0,
+    t('Enter a number greater than 0.'))
+  need('coldstart', isWhole(draft.coldStartMinDays) && Number(draft.coldStartMinDays) >= 1, MIN1)
+  need('safety', isWhole(draft.safetyDaysGlobal) && Number(draft.safetyDaysGlobal) >= 0, MIN0)
+  need('coverage', isWhole(draft.coverageDaysGlobal) && Number(draft.coverageDaysGlobal) >= 0, MIN0)
+  // Category rows: blank = inherit Other categories; a value must be valid.
+  for (const cat of categories.value) {
+    const sd = draft.safetyDaysByCategory[cat]
+    if (sd != null && String(sd) !== '') need('safety', isWhole(sd) && Number(sd) >= 0, MIN0)
+    const cv = draft.coverageDaysByCategory[cat]
+    if (cv != null && String(cv) !== '') need('coverage', isWhole(cv) && Number(cv) >= 0, MIN0)
+    // A category lead time is a real lead time — never 0 or negative (D22).
+    const lt = draft.leadTimeByCategory[cat]
+    if (lt != null && String(lt) !== '') need('lead', isWhole(lt) && Number(lt) >= 1, MIN1)
+    const cap = draft.leadTimeOutlierCapByCategory[cat]
+    if (cap != null && String(cap) !== '') need('cap', isWhole(cap) && Number(cap) >= 1, MIN1)
+  }
+  // The lead-time floor accepts "Not set" (null); as a number it must be ≥ 1 (D22).
   if (draft.fallbackLeadTimeDays !== null) {
-    const floor = Number(draft.fallbackLeadTimeDays)
-    if (Number.isNaN(floor) || floor < 1) {
-      error.value = `${t('Default lead time')} ${t('must be 1 day or more, or Not set')}`
-      return
-    }
+    need('lead', isWhole(draft.fallbackLeadTimeDays) && Number(draft.fallbackLeadTimeDays) >= 1,
+      t('Enter a whole number of 1 or more, or choose Not set.'))
   }
+  need('cap', isWhole(draft.leadTimeOutlierCapDays) && Number(draft.leadTimeOutlierCapDays) >= 1, MIN1)
+  need('receipts', isWhole(draft.leadTimeMinSamples) && Number(draft.leadTimeMinSamples) >= 1
+    && isWhole(draft.leadTimeSampleCount) && Number(draft.leadTimeSampleCount) >= 1, MIN1)
+  need('receipts', Number(draft.leadTimeMinSamples) <= Number(draft.leadTimeSampleCount),
+    t('The minimum cannot be more than the maximum.'))
+  need('fsnWindow', isWhole(draft.fsnWindowDays) && Number(draft.fsnWindowDays) >= 1, MIN1)
+  const pctOk = (v: unknown) => String(v) !== '' && Number(v) >= 0 && Number(v) <= 100
+  need('fsnBands', pctOk(draft.fsnFastPct) && pctOk(draft.fsnSlowPct), t('Enter a percentage from 0 to 100.'))
+  need('fsnBands', fsnBandsOk.value, t('Fast must be higher than Slow'))
 
-  if (Number(draft.lookbackDays) <= 0 || Number.isNaN(Number(draft.lookbackDays))) {
-    error.value = t('The lookback window must be at least 1 day.')
+  if (Object.keys(fieldErrors).length) {
+    error.value = t('Fix the highlighted fields to save.')
     return
   }
 
@@ -206,7 +222,7 @@ function save() {
     leadTimeByCategory: Object.fromEntries(
       Object.entries(draft.leadTimeByCategory)
         .filter(([, v]) => v !== null && v !== undefined && String(v) !== '')
-        .map(([k, v]) => [k, Number(v)]),
+        .map(([k, v]) => [k, Math.max(1, Number(v))]),
     ),
     leadTimeOutlierCapByCategory: Object.fromEntries(
       Object.entries(draft.leadTimeOutlierCapByCategory)
@@ -222,6 +238,7 @@ function save() {
   extraCategories.length = 0
   isEditing.value = false
   error.value = ''
+  clearFieldErrors()
 
   // Settings only bite on the next recalculation, so run one now rather than
   // leaving the worklist showing numbers from the old policy.
@@ -236,6 +253,7 @@ function save() {
 }
 
 function resetToDefaults() {
+  clearFieldErrors()
   Object.assign(draft, cloneConfig(REPL_DEFAULTS))
   removedCategories.clear()
   extraCategories.length = 0
@@ -253,23 +271,19 @@ const BOUNDARY_OPTIONS = [
     <!-- ── Demand ── -->
     <section class="rs-section">
       <header class="rs-head">
-        <div>
-          <h2 class="rs-title">{{ t('Replenishment settings') }}</h2>
-          <p class="rs-desc">
-            {{ t('Set how demand, lead time and safety stock drive reorder points across every warehouse.') }}
-          </p>
-        </div>
+        <!-- Title straight to content (rule/no-page-description-subtitle). -->
+        <h2 class="rs-title">{{ t('Replenishment settings') }}</h2>
         <div class="rs-head-actions">
           <template v-if="!canEdit">
-            <span class="rs-viewonly">{{ t('View only') }}</span>
+            <MpBadge for="additionalInformation" type="announcement">{{ t('View only') }}</MpBadge>
           </template>
           <button
             v-else-if="!isEditing"
-            class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before"
+            class="btn-enterprise btn-enterprise--secondary"
             type="button"
             @click="startEdit"
           >
-            <MpIcon name="edit" size="md" /> {{ t('Edit') }}
+            {{ t('Edit') }}
           </button>
         </div>
       </header>
@@ -298,10 +312,14 @@ const BOUNDARY_OPTIONS = [
               <span v-if="!categories.length" class="rs-value-sub">{{ t('No categories have their own defaults — everything uses Other categories.') }}</span>
             </div>
             <div class="rs-cat-add">
-              <MpSelect id="rs-add-cat" v-model="catToAdd" :class="css({ width: '240px' })">
-                <option value="">{{ t('Select category') }}</option>
-                <option v-for="c in availableCategories" :key="c" :value="c">{{ c }}</option>
-              </MpSelect>
+              <ErpFilterSelect
+                id="rs-add-cat"
+                :model-value="catToAdd"
+                :placeholder="t('Select category')"
+                :options="availableCategories"
+                width="240px"
+                @update:model-value="(v: string) => { catToAdd = v }"
+              />
               <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="addCategory">{{ t('Add category') }}</button>
             </div>
             <p v-if="!availableCategories.length" class="rs-value-sub">{{ t('Every category from your catalogue is already listed.') }}</p>
@@ -323,6 +341,7 @@ const BOUNDARY_OPTIONS = [
             <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
           </MpInputGroup>
           <span v-else class="rs-value">{{ committed.lookbackDays }} {{ t('days') }}</span>
+          <span v-if="fieldErrors.lookback" class="rs-field-error">{{ fieldErrors.lookback }}</span>
         </div>
       </div>
 
@@ -343,6 +362,7 @@ const BOUNDARY_OPTIONS = [
             :class="css({ width: '96px' })"
           />
           <span v-else class="rs-value">{{ committed.volatileCvThreshold }}</span>
+          <span v-if="fieldErrors.volatility" class="rs-field-error">{{ fieldErrors.volatility }}</span>
         </div>
       </div>
 
@@ -359,6 +379,7 @@ const BOUNDARY_OPTIONS = [
             <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
           </MpInputGroup>
           <span v-else class="rs-value">{{ committed.coldStartMinDays }} {{ t('days') }}</span>
+          <span v-if="fieldErrors.coldstart" class="rs-field-error">{{ fieldErrors.coldstart }}</span>
         </div>
       </div>
 
@@ -390,7 +411,6 @@ const BOUNDARY_OPTIONS = [
                   :id="`rs-cat-input-${cat}`"
                   v-model="draft.safetyDaysByCategory[cat]"
                   type="number"
-                  :placeholder="String(draft.safetyDaysGlobal)"
                   :class="css({ width: '84px' })"
                 />
                 <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
@@ -408,6 +428,7 @@ const BOUNDARY_OPTIONS = [
             {{ categories.map(c => `${c} ${committed.safetyDaysByCategory[c] ?? committed.safetyDaysGlobal}d`).join('   ') }}
             &nbsp;·&nbsp; {{ t('Other categories') }} {{ committed.safetyDaysGlobal }}d
           </span>
+          <span v-if="fieldErrors.safety" class="rs-field-error">{{ fieldErrors.safety }}</span>
         </div>
       </div>
 
@@ -438,7 +459,6 @@ const BOUNDARY_OPTIONS = [
                   :id="`rs-coverage-cat-input-${cat}`"
                   v-model="draft.coverageDaysByCategory[cat]"
                   type="number"
-                  :placeholder="String(draft.coverageDaysGlobal)"
                   :class="css({ width: '84px' })"
                 />
                 <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
@@ -456,6 +476,7 @@ const BOUNDARY_OPTIONS = [
             {{ categories.map(c => `${c} ${committed.coverageDaysByCategory[c] ?? committed.coverageDaysGlobal}d`).join('   ') }}
             &nbsp;·&nbsp; {{ t('Other categories') }} {{ committed.coverageDaysGlobal }}d
           </span>
+          <span v-if="fieldErrors.coverage" class="rs-field-error">{{ fieldErrors.coverage }}</span>
         </div>
       </div>
 
@@ -467,9 +488,16 @@ const BOUNDARY_OPTIONS = [
           </span>
         </div>
         <div class="rs-control">
-          <MpSelect v-if="isEditing" id="rs-boundary" v-model="draft.reorderBoundary" :class="css({ width: '320px' })">
-            <option v-for="o in BOUNDARY_OPTIONS" :key="o.id" :value="o.id">{{ t(o.name) }}</option>
-          </MpSelect>
+          <ErpFilterSelect
+            v-if="isEditing"
+            id="rs-boundary"
+            :model-value="draft.reorderBoundary"
+            :placeholder="t('Reorder-point boundary')"
+            :options="BOUNDARY_OPTIONS.map((o) => ({ value: o.id, label: t(o.name) }))"
+            width="320px"
+            :is-clearable="false"
+            @update:model-value="(v: string) => { draft.reorderBoundary = v as ReplenishmentConfig['reorderBoundary'] }"
+          />
           <span v-else class="rs-value">
             {{ t(BOUNDARY_OPTIONS.find(o => o.id === committed.reorderBoundary)?.name ?? committed.reorderBoundary) }}
           </span>
@@ -503,7 +531,6 @@ const BOUNDARY_OPTIONS = [
                   :id="`rs-lead-cat-input-${cat}`"
                   v-model="draft.leadTimeByCategory[cat]"
                   type="number"
-                  :placeholder="leadFloorPlaceholder"
                   :class="css({ width: '84px' })"
                 />
                 <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
@@ -518,13 +545,13 @@ const BOUNDARY_OPTIONS = [
                   <MpInput id="rs-fallback-lead-input" v-model="draft.fallbackLeadTimeDays" type="number" :class="css({ width: '84px' })" />
                   <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
                 </MpInputGroup>
-                <button class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" type="button" @click="floorSetNotSet">
+                <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="floorSetNotSet">
                   {{ t('Use Not set') }}
                 </button>
               </template>
               <template v-else>
                 <span class="rs-notset-pill">{{ t('Not set') }}</span>
-                <button class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" type="button" @click="floorSetNumber">
+                <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="floorSetNumber">
                   {{ t('Set a number') }}
                 </button>
               </template>
@@ -537,6 +564,7 @@ const BOUNDARY_OPTIONS = [
             {{ categories.map(leadReadLabel).join('   ') }}
             &nbsp;&middot;&nbsp; {{ t('Other categories') }} {{ leadFloorReadLabel }}
           </span>
+          <span v-if="fieldErrors.lead" class="rs-field-error">{{ fieldErrors.lead }}</span>
         </div>
       </div>
 
@@ -572,6 +600,7 @@ const BOUNDARY_OPTIONS = [
             {{ t('The last') }} {{ committed.leadTimeMinSamples }}–{{ committed.leadTimeSampleCount }} {{ t('receipts') }}
             <span class="rs-value-sub">· {{ t('below') }} {{ committed.leadTimeMinSamples }} {{ t('uses the default lead time') }}</span>
           </span>
+          <span v-if="fieldErrors.receipts" class="rs-field-error">{{ fieldErrors.receipts }}</span>
         </div>
       </div>
 
@@ -589,7 +618,6 @@ const BOUNDARY_OPTIONS = [
                   :id="`rs-cap-cat-input-${cat}`"
                   v-model="draft.leadTimeOutlierCapByCategory[cat]"
                   type="number"
-                  :placeholder="String(draft.leadTimeOutlierCapDays)"
                   :class="css({ width: '84px' })"
                 />
                 <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
@@ -607,6 +635,7 @@ const BOUNDARY_OPTIONS = [
             {{ categories.map(c => `${c} ${committed.leadTimeOutlierCapByCategory[c] ?? committed.leadTimeOutlierCapDays}d`).join('   ') }}
             &nbsp;&middot;&nbsp; {{ t('Other categories') }} {{ committed.leadTimeOutlierCapDays }}d
           </span>
+          <span v-if="fieldErrors.cap" class="rs-field-error">{{ fieldErrors.cap }}</span>
         </div>
       </div>
 
@@ -627,6 +656,7 @@ const BOUNDARY_OPTIONS = [
             <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
           </MpInputGroup>
           <span v-else class="rs-value">{{ committed.fsnWindowDays }} {{ t('days') }}</span>
+          <span v-if="fieldErrors.fsnWindow" class="rs-field-error">{{ fieldErrors.fsnWindow }}</span>
         </div>
       </div>
 
@@ -647,13 +677,11 @@ const BOUNDARY_OPTIONS = [
               <MpInput id="rs-slow-input" v-model="draft.fsnSlowPct" type="number" :class="css({ width: '84px' })" />
               <MpInputRightAddon>% {{ t('Slow') }}</MpInputRightAddon>
             </MpInputGroup>
-            <span v-if="!fsnBandsOk" class="rs-total rs-total--bad">
-              {{ t('Fast must be higher than Slow') }}
-            </span>
           </div>
           <span v-else class="rs-value">
             {{ t('Fast') }} ≥ {{ committed.fsnFastPct }}% · {{ t('Slow') }} ≥ {{ committed.fsnSlowPct }}%
           </span>
+          <span v-if="fieldErrors.fsnBands" class="rs-field-error">{{ fieldErrors.fsnBands }}</span>
         </div>
       </div>
 
@@ -687,7 +715,7 @@ const BOUNDARY_OPTIONS = [
     <!-- Removing a category clears its default from EVERY grid — confirm the loss. -->
     <ConfirmModal
       :is-open="removeConfirmOpen"
-      :title="`${t('Remove')} ${removeTarget ?? ''}`"
+      :title="t('Remove category?')"
       :description="t('This clears its safety days, order coverage, lead time and gap-cap defaults. Products in this category will use Other categories. You can add it again later.')"
       :confirm-label="t('Remove category')"
       :cancel-label="t('Keep category')"
@@ -707,16 +735,7 @@ const BOUNDARY_OPTIONS = [
   font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
-.rs-desc { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .rs-head-actions { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-shrink: 0; }
-.rs-viewonly {
-  display: inline-flex; align-items: center;
-  padding: 2px var(--mp-spacing-2);
-  border-radius: var(--mp-radii-full);
-  background: var(--mp-background-neutral-subtle);
-  border: 1px solid var(--mp-border-default);
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
-}
 
 .rs-sub {
   margin-top: var(--mp-spacing-5);
@@ -743,7 +762,7 @@ const BOUNDARY_OPTIONS = [
   display: block;
   margin-top: 2px;
   font-size: var(--mp-font-sizes-sm);
-  color: var(--mp-text-warning, #9a6700);
+  color: var(--mp-colors-text-warning);
 }
 .rs-control { min-width: 0; }
 .rs-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
@@ -759,9 +778,9 @@ const BOUNDARY_OPTIONS = [
 .rs-cat-row--fallback {
   margin-top: 4px;
   padding-top: 10px;
-  border-top: 1px solid var(--mp-border-subdued, #e5e7eb);
+  border-top: 1px solid var(--mp-border-default);
 }
-.rs-cat-row--fallback .rs-cat-name { font-style: normal; color: var(--mp-text-subdued, #6b7280); }
+.rs-cat-row--fallback .rs-cat-name { font-style: normal; color: var(--mp-text-secondary); }
 
 .rs-cat-row { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .rs-cat-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); width: 160px; }
@@ -772,7 +791,7 @@ const BOUNDARY_OPTIONS = [
   border-radius: var(--mp-radii-md, 8px);
   border: 1px dashed var(--mp-border-default);
   background: var(--mp-background-neutral-subtle);
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-subdued, #6b7280);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
 }
 .rs-notset-hint { margin-top: 4px; max-width: 420px; }
 
@@ -787,7 +806,7 @@ const BOUNDARY_OPTIONS = [
 .rs-cat-chip-x {
   display: inline-flex; align-items: center; justify-content: center;
   width: 18px; height: 18px; padding: 0; border: none; border-radius: 999px;
-  background: none; cursor: pointer; color: var(--mp-text-subtle, #6b7280);
+  background: none; cursor: pointer; color: var(--mp-text-subtle);
 }
 .rs-cat-chip-x:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
 .rs-cat-chip-x :deep(svg) { width: 14px; height: 14px; }
@@ -801,4 +820,5 @@ const BOUNDARY_OPTIONS = [
   border-top: 1px solid var(--mp-border-default);
 }
 .rs-error { flex: 1; font-size: var(--mp-font-sizes-md); color: var(--mp-text-danger); }
+.rs-field-error { display: block; margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
 </style>

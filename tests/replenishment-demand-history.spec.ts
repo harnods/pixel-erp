@@ -24,8 +24,8 @@ import {
 } from '~/data/demandHistory'
 import { REPL_ASOF_ISO } from '~/data/replenishmentConfig'
 import { outgoingOrders } from '~/data/outgoing'
-import { warehouseTransfers } from '~/data/warehouseTransfers'
-import { stockAdjustments, adjustmentLineItems } from '~/data/stockAdjustments'
+import { materialConsumeReturnRecords } from '~/data/materialConsumeReturn'
+import { catalogProduct } from '~/data/billOfMaterials'
 import { orderSkuLines, warehouseOrderPool, warehouseProducts } from '~/data/inventory'
 import { warehouses } from '~/data/warehouses'
 
@@ -83,13 +83,12 @@ describe('demandHistory — series shape', () => {
 
 describe('demandHistory — cited documents are real', () => {
   const orderById = new Map(outgoingOrders.map((o) => [o.id, o]))
-  const transferById = new Map(warehouseTransfers.map((t) => [t.id, t]))
-  const adjustmentById = new Map(stockAdjustments.map((a) => [a.id, a]))
+  const consumeById = new Map(materialConsumeReturnRecords.map((r) => [r.id, r]))
 
   it('every citation resolves to a real document in the same warehouse, for that SKU', () => {
-    // Demand is everything that ISSUED stock, so a citation may be a dispatch, a
-    // transfer out, or a write-off. Each is checked against its own source —
-    // whichever kind it claims to be must actually exist and say what it says.
+    // PRD US-002: demand is sales deliveries + work-order material consumption
+    // only. Each citation is checked against its own source — whichever kind it
+    // claims to be must actually exist and say what it says.
     let citations = 0
     const seenKinds = new Set<string>()
 
@@ -110,21 +109,14 @@ describe('demandHistory — cited documents are real', () => {
           expect(line, `${doc.number} has no line for SKU ${sku}`).toBeTruthy()
           // Never claim more units than the document moved.
           expect(doc.qty).toBeLessThanOrEqual(line!.qty)
-        } else if (doc.kind === 'transfer') {
-          const t = transferById.get(doc.id)
-          expect(t, `cited ${doc.number} does not exist`).toBeTruthy()
-          // Counted at the ORIGIN — those units left there.
-          expect(t!.originId).toBe(warehouseId)
-          expect(t!.number).toBe(doc.number)
-          expect(t!.date).toBe(doc.date)
-          // A transfer has no customer behind it, so no sales reference.
-          expect(doc.salesNo).toBeUndefined()
         } else {
-          const a = adjustmentById.get(doc.id)
-          expect(a, `cited ${doc.number} does not exist`).toBeTruthy()
-          expect(a!.warehouseId).toBe(warehouseId)
-          expect(a!.number).toBe(doc.number)
-          expect(a!.date).toBe(doc.date)
+          expect(doc.kind).toBe('work-order')
+          const r = consumeById.get(doc.id)
+          expect(r, `cited ${doc.number} does not exist`).toBeTruthy()
+          expect(r!.type).toBe('Consume')
+          expect(r!.warehouseId).toBe(warehouseId)
+          expect(catalogProduct(r!.productId)?.sku).toBe(sku)
+          expect(r!.date).toBe(doc.date)
           expect(doc.salesNo).toBeUndefined()
         }
       }
@@ -133,21 +125,15 @@ describe('demandHistory — cited documents are real', () => {
     // The whole point of Layer A is that it exists — if this is 0, the ledger is
     // pure fiction and the trust drawer has nothing real to show.
     expect(citations).toBeGreaterThan(0)
-    // And more than one kind reaches it, or "demand is every issue" is aspiration.
-    expect(seenKinds.size).toBeGreaterThan(1)
+    // Only the PRD's two demand sources ever reach it.
+    for (const k of seenKinds) expect(['outbound', 'work-order']).toContain(k)
   })
 
-  it('a positive stock correction is never counted as demand', () => {
-    // Finding stock is not selling it. Counting a positive adjustment would make
-    // demand rise on a day nothing left the warehouse.
+  it('transfers, stock adjustments and returns are never counted as demand (PRD US-002)', () => {
     for (const { sku, warehouseId } of allPairs()) {
       for (const doc of realDocsFor(sku, warehouseId, REPL_HISTORY_DAYS)) {
-        if (doc.kind !== 'adjustment') continue
-        const a = adjustmentById.get(doc.id)!
-        const line = adjustmentLineItems(a).find((l) => l.sku === sku)
-        expect(line).toBeTruthy()
-        expect(line!.difference).toBeLessThan(0)
-        expect(doc.qty).toBe(-line!.difference)
+        expect(['outbound', 'work-order']).toContain(doc.kind)
+        if (doc.kind === 'work-order') expect(consumeById.get(doc.id)?.type).toBe('Consume')
       }
     }
   })

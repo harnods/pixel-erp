@@ -17,18 +17,21 @@
  * re-fire the next day — which is why every reference ERP takes the extra input
  * (decision D9).
  *
- * `maxLevel`, where set, REPLACES the coverage horizon as the order-up-to target
- * (US-011 AC-03): the SKU tops up to that level in units instead. It is no longer
- * a cap on a coverage-days result.
+ * There is no units "max level": the order-up-to target is always the coverage
+ * horizon, and coverage is a category policy (PRD US-005 AC-06).
  */
 import { warehouses } from './warehouses'
-import { productBySku, warehouseProducts } from './inventory'
+import { productBySku, warehouseProducts, orderSkuLines } from './inventory'
 import { getProductWarehouseStock } from './productDetails'
 import { getWarehouseDetail } from './warehouseDetails'
 import { getWarehouseConfig } from './warehouseConfig'
 import { receipts } from './receipts'
 import { lineItemsForReceipt } from './receiptLineItems'
 import { receivedSummaryForReceipt } from './receivingTasks'
+import { outgoingOrders } from './outgoing'
+import { warehouseTransfers, transferLineItems } from './warehouseTransfers'
+import { purchaseOrders } from './purchaseOrders'
+import { getPurchaseOrderDocument } from './purchaseOrderLines'
 import { shiftDays } from './master'
 import {
   REPL_ASOF_ISO, getReplenishmentConfig,
@@ -117,7 +120,10 @@ export function velocityFor(
 
   // Citations and volatility read the window the number is built from, so the
   // trust drawer never cites documents outside the averaged period.
-  const cv = demandCv(sku, warehouseId, lookbackDays, asOf)
+  // Volatility is measured from the first sale onward (same span as the average):
+  // the empty pre-launch days are not demand, and counting them as zeros inflated
+  // the CV of every launch SKU into a false "Volatile demand" flag.
+  const cv = demandCv(sku, warehouseId, Math.min(lookbackDays, series.historyDays), asOf)
   const citations = demandWindow(sku, warehouseId, lookbackDays, asOf).docs
 
   // Flat average with single-day spikes damped first, so one promo cannot set the
@@ -185,6 +191,23 @@ export interface AtpResult {
 const OPEN_RECEIPT_STATUSES = new Set(['pending', 'open', 'in progress', 'partial reception'])
 
 /**
+ * PO statuses that count as on order (PRD US-004 VR-02: Approved / Sent /
+ * Partially received). Draft, rejected and voided never count; a fully received
+ * ("awaiting invoice") or closed PO has nothing outstanding.
+ */
+const OPEN_PO_STATUSES = new Set(['approved', 'open', 'partially-processed'])
+
+/** Sales-side dispatches not yet fully shipped — the open-SO commitment (US-003 VR-01). */
+const OPEN_OUTBOUND_STATUSES = new Set(['pending', 'in progress', 'partially shipped'])
+
+/**
+ * Transfers committed to leave the origin but not yet shipped. An "in transit"
+ * transfer has already left on-hand, so reserving it again would double-count;
+ * a draft is not a commitment yet.
+ */
+const OPEN_TRANSFER_STATUSES = new Set(['approved'])
+
+/**
  * Per-warehouse indexes, built once and cached.
  *
  * Without these the engine is O(pairs × warehouse-stock-regeneration) and
@@ -196,17 +219,41 @@ const OPEN_RECEIPT_STATUSES = new Set(['pending', 'open', 'in progress', 'partia
  * Both read reactive data, so any mutation of stock, receipts or receiving tasks
  * must call `invalidateReplenishmentCaches()`.
  */
-const stockIndexCache = new Map<string, Map<string, { onHand: number; reserved: number; available: number }>>()
+const stockIndexCache = new Map<string, Map<string, { onHand: number }>>()
+const reservedIndexCache = new Map<string, Map<string, number>>()
 const onOrderIndexCache = new Map<string, Map<string, AtpOnOrderDoc[]>>()
 
 function stockIndex(warehouseId: string) {
   const hit = stockIndexCache.get(warehouseId)
   if (hit) return hit
-  const map = new Map<string, { onHand: number; reserved: number; available: number }>()
-  for (const s of getWarehouseDetail(warehouseId)?.stock ?? []) {
-    map.set(s.sku, { onHand: s.onHand, reserved: s.reserved, available: s.available })
-  }
+  const map = new Map<string, { onHand: number }>()
+  for (const s of getWarehouseDetail(warehouseId)?.stock ?? []) map.set(s.sku, { onHand: s.onHand })
   stockIndexCache.set(warehouseId, map)
+  return map
+}
+
+/**
+ * Reserved = open sales-order commitments + open outbound transfers, per SKU per
+ * warehouse (PRD US-003: "on-hand − reserved (open SO and open outbound
+ * transfer)"). Not the WMS batch reservations: those are picking holds, and the
+ * PRD nets COMMITTED demand so the recommendation reflects what is truly free.
+ * A partially shipped order reserves only its unshipped remainder.
+ */
+function reservedIndex(warehouseId: string) {
+  const hit = reservedIndexCache.get(warehouseId)
+  if (hit) return hit
+  const map = new Map<string, number>()
+  const add = (sku: string, qty: number) => { if (qty > 0) map.set(sku, (map.get(sku) ?? 0) + qty) }
+
+  for (const o of outgoingOrders) {
+    if (o.warehouseId !== warehouseId || !OPEN_OUTBOUND_STATUSES.has(o.status)) continue
+    for (const line of orderSkuLines(o)) add(line.sku, line.qty - (o.shippedBySku?.[line.sku] ?? 0))
+  }
+  for (const t of warehouseTransfers) {
+    if (t.originId !== warehouseId || !OPEN_TRANSFER_STATUSES.has(t.status)) continue
+    for (const line of transferLineItems(t)) add(line.sku, line.qty)
+  }
+  reservedIndexCache.set(warehouseId, map)
   return map
 }
 
@@ -235,6 +282,34 @@ function onOrderIndex(warehouseId: string) {
       map.set(line.sku, list)
     }
   }
+
+  // ── Non-WMS path (PRD US-004): an open PO with no WMS inbound still counts ──
+  // "In transit = ordered − received on open POs, regardless of WMS." A PO that a
+  // WMS receipt already references is counted through that receipt above (trust
+  // the posted receipt, never both — EH-01). Only POs with real coffee lines and
+  // a warehouse (created in the app, e.g. converted from a replenishment request)
+  // can be netted; the seed POs carry no SKU lines.
+  const wmsLinkedPoNumbers = new Set(receipts.map((r) => r.purchaseNo))
+  for (const po of purchaseOrders) {
+    if (!OPEN_PO_STATUSES.has(po.status)) continue
+    if (wmsLinkedPoNumbers.has(po.number)) continue
+    const doc = getPurchaseOrderDocument(po.id)
+    if (!doc || doc.warehouseId !== warehouseId) continue
+    for (const line of doc.lineItems) {
+      if (!line.sku || line.qty <= 0) continue
+      const list = map.get(line.sku) ?? []
+      list.push({
+        receiptId: po.id,
+        number: po.number,
+        purchaseNo: po.number,
+        eta: doc.shipDate,
+        outstanding: line.qty,
+        vendorName: po.vendor.name,
+      })
+      map.set(line.sku, list)
+    }
+  }
+
   onOrderIndexCache.set(warehouseId, map)
   return map
 }
@@ -242,6 +317,7 @@ function onOrderIndex(warehouseId: string) {
 /** Drop every engine cache. Call after mutating stock, receipts or receiving tasks. */
 export function invalidateReplenishmentCaches(): void {
   stockIndexCache.clear()
+  reservedIndexCache.clear()
   onOrderIndexCache.clear()
   invalidateDemandHistory()
   invalidateLeadTimeHistory()
@@ -266,10 +342,11 @@ export function onOrderFor(sku: string, warehouseId: string): AtpOnOrderDoc[] {
 }
 
 export function atpFor(sku: string, warehouseId: string): AtpResult {
-  const stock = stockIndex(warehouseId).get(sku)
-  const onHand = stock?.onHand ?? 0
-  const reserved = stock?.reserved ?? 0
-  const available = stock?.available ?? onHand - reserved
+  const onHand = stockIndex(warehouseId).get(sku)?.onHand ?? 0
+  const reserved = reservedIndex(warehouseId).get(sku) ?? 0
+  // May go negative — that is the "oversold" case, and the suggested qty then
+  // has to cover the deficit too (US-003 AC-03).
+  const available = onHand - reserved
   const onOrderDocs = onOrderFor(sku, warehouseId)
   const onOrder = onOrderDocs.reduce((s, d) => s + d.outstanding, 0)
 
@@ -301,7 +378,6 @@ export interface SuggestionResult {
   unitsPerPurchaseUnit: number
   raisedByMoq: boolean
   raisedByPack: boolean
-  cappedByMaxLevel: boolean
   suppressed: boolean
   suppressReason: 'above-reorder-point' | 'no-demand-basis' | 'no-lead-time' | 'not-tracked' | null
   /** Ordered arithmetic steps, for the trust drawer. */
@@ -317,11 +393,6 @@ export interface SuggestionResult {
  * Coverage days are what make this an ORDER-UP-TO quantity rather than a top-up
  * to the trigger. Drop them and the order refills to exactly the reorder point,
  * so the SKU is due again the next day — the bug decision D9 exists to prevent.
- *
- * Pass `maxLevel` to size in units instead (US-011 AC-03): the target becomes
- * that level outright, not the coverage horizon. It REPLACES the horizon — it is
- * not a cap applied afterwards, which would silently produce an order too small
- * to clear the trigger.
  */
 export function suggestedRawQty(
   leadDays: number,
@@ -330,11 +401,8 @@ export function suggestedRawQty(
   avgDailySales: number,
   available: number,
   onOrder: number,
-  maxLevel: number | null = null,
 ): number {
-  const target = maxLevel !== null
-    ? maxLevel
-    : (leadDays + safetyDays + coverageDays) * avgDailySales
+  const target = (leadDays + safetyDays + coverageDays) * avgDailySales
   return Math.max(0, Math.ceil(target - (available + onOrder)))
 }
 
@@ -374,10 +442,13 @@ export function applyMoqAndPack(
 }
 
 /**
- * Whether a SKU is covered and should NOT appear (US-010).
- * `inclusive` treats sitting exactly at the reorder point as covered;
- * `exclusive` only suppresses strictly above it. Named by what happens AT the
- * boundary, defined once, read by both the engine and the badges.
+ * Whether a SKU is covered and should NOT appear (US-007, US-005 AC-06).
+ * Named by what the setting promises, matching its label in Settings:
+ *  - `inclusive` = "Reorder at or below the reorder point" — sitting exactly AT the
+ *    point is due, so only a position strictly above it is covered.
+ *  - `exclusive` = "Reorder only below the reorder point" — sitting AT the point
+ *    is covered; only strictly below is due.
+ * Defined once, read by both the engine and the badges.
  */
 export function isSuppressed(
   available: number,
@@ -386,7 +457,7 @@ export function isSuppressed(
   mode: ReplBoundaryMode,
 ): boolean {
   const position = available + onOrder
-  return mode === 'inclusive' ? position >= reorderPoint : position > reorderPoint
+  return mode === 'inclusive' ? position > reorderPoint : position >= reorderPoint
 }
 
 // ── Reorder point ────────────────────────────────────────────────────────────
@@ -492,12 +563,15 @@ export interface CoverResult {
  * supply arrives in time (US-019 AC-03). Netting the incoming in first would make
  * that comparison circular. Matches US-019 AC-01's worked example.
  *
+ * `resupplyDays` is lead time + safety days — the PRD's "will stock out before
+ * resupply" test (§2.2 #7: cover < lead time + safety days).
+ *
  * Velocity 0 returns null — never Infinity, never a fabricated large number.
  */
-export function daysOfCover(available: number, avgDailySales: number, leadDays: number): CoverResult {
+export function daysOfCover(available: number, avgDailySales: number, resupplyDays: number): CoverResult {
   if (avgDailySales <= 0) return { coverDays: null, belowLeadTime: false }
   const coverDays = available / avgDailySales
-  return { coverDays, belowLeadTime: coverDays < leadDays }
+  return { coverDays, belowLeadTime: coverDays < resupplyDays }
 }
 
 // ── Worklist row ─────────────────────────────────────────────────────────────
@@ -518,9 +592,13 @@ export interface WorklistRow {
 
   reorderPoint: number
   reorderPointSource: ReorderPointResult['source']
+  /**
+   * What the engine WOULD set, even when a manual override is the trigger (D17 —
+   * the computed value is kept as a note beside the override). Null without demand.
+   */
+  calculatedReorderPoint: number | null
   safetyDays: number
   safetyDaysSource: EffectiveReplenishmentSettings['safetyDaysSource']
-  maxLevel: number | null
   leadTimeDays: number
   leadTimeEstimated: boolean
   /** Which rung of the US-001 ladder produced leadTimeDays. */
@@ -593,7 +671,7 @@ export function buildRow(
   const leadTimeMissing = manualLead === null && derivedLead.tier === 'none'
 
   const rop = resolveReorderPoint(settings, velocity.avgDailySales, leadTimeDays)
-  const cover = daysOfCover(atp.available, velocity.avgDailySales, leadTimeDays)
+  const cover = daysOfCover(atp.available, velocity.avgDailySales, leadTimeDays + settings.safetyDays)
 
   // ── Suggestion ──
   const hasDemandBasis = velocity.avgDailySales > 0
@@ -606,21 +684,15 @@ export function buildRow(
   // order-up-to level collapses to the reorder point — a launch spike tops up to
   // the trigger, never to a full coverage horizon.
   const coverageDays = velocity.provisional ? 0 : settings.coverageDays
-  const usingMaxLevel = settings.maxLevel !== null
-  // The order-up-to level: a units ceiling when one is set (US-011 AC-03),
-  // otherwise the demand that lead + safety + coverage days represents.
-  const targetQty = usingMaxLevel
-    ? settings.maxLevel!
-    : (leadTimeDays + settings.safetyDays + coverageDays) * velocity.avgDailySales
+  // The order-up-to level: the demand that lead + safety + coverage days represents.
+  const targetQty = (leadTimeDays + settings.safetyDays + coverageDays) * velocity.avgDailySales
   const gapQty = targetQty - (atp.available + atp.onOrder)
   const rawQty = canRecommend
     ? suggestedRawQty(
         leadTimeDays, settings.safetyDays, coverageDays,
         velocity.avgDailySales, atp.available, atp.onOrder,
-        settings.maxLevel,
       )
     : 0
-  const cappedByMaxLevel = usingMaxLevel
 
   const suppressedByCover = canRecommend
     && rop.source !== 'none'
@@ -646,10 +718,8 @@ export function buildRow(
     { label: 'Safety days', value: `${settings.safetyDays} days` },
     { label: 'Coverage days', value: `${coverageDays} days` },
     {
-      label: usingMaxLevel ? 'Order up to (max level)' : 'Order up to',
-      value: usingMaxLevel
-        ? `${targetQty} ${product?.unit ?? ''}`
-        : `(${leadTimeDays} + ${settings.safetyDays} + ${coverageDays}) × ${velocity.avgDailySales.toFixed(2)} = ${targetQty.toFixed(1)}`,
+      label: 'Order up to',
+      value: `(${leadTimeDays} + ${settings.safetyDays} + ${coverageDays}) × ${velocity.avgDailySales.toFixed(2)} = ${targetQty.toFixed(1)}`,
     },
     { label: 'Available', value: `${atp.available}` },
     { label: 'On order', value: `${atp.onOrder}` },
@@ -669,7 +739,6 @@ export function buildRow(
     unitsPerPurchaseUnit: vendorItem?.unitsPerPurchaseUnit ?? 1,
     raisedByMoq: rounded.raisedByMoq,
     raisedByPack: rounded.raisedByPack,
-    cappedByMaxLevel,
     suppressed: suppressReason !== null,
     suppressReason,
     trace,
@@ -725,9 +794,11 @@ export function buildRow(
 
     reorderPoint: rop.value,
     reorderPointSource: rop.source,
+    calculatedReorderPoint: velocity.avgDailySales > 0
+      ? Math.ceil(velocity.avgDailySales * (leadTimeDays + settings.safetyDays))
+      : null,
     safetyDays: settings.safetyDays,
     safetyDaysSource: settings.safetyDaysSource,
-    maxLevel: settings.maxLevel,
     leadTimeDays,
     leadTimeEstimated,
     leadTimeTier,
@@ -1105,13 +1176,15 @@ export function replenishmentWorklist(
       const row = buildRow(product.sku, wh.id, cfg, asOf)
       pairs++
       if (row.atp.oversold) oversold++
-      if (row.flags.belowLeadTime) belowLeadTime++
-      if (row.maxLevel !== null && row.atp.available >= row.maxLevel) overstock++
+      // Overstocked = already at or above the order-up-to target (US-007).
+      if (row.suggestion.targetQty > 0 && row.atp.available >= row.suggestion.targetQty) overstock++
       if (row.flags.mutedButActive) mutedButActive.push(row)
 
       switch (row.bucket) {
-        case 'reorder': rows.push(row); break
-        case 'no-vendor': rows.push(row); noVendor++; break
+        // The "Stocks out before resupply" card counts worklist rows only, so it
+        // matches what the Signals filter shows on the same list.
+        case 'reorder': rows.push(row); if (row.flags.belowLeadTime) belowLeadTime++; break
+        case 'no-vendor': rows.push(row); noVendor++; if (row.flags.belowLeadTime) belowLeadTime++; break
         case 'needs-setup': needsSetup.push(row); break
         case 'not-tracked': notTracked.push(row); break
         default: break

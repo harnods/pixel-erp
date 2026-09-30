@@ -10,9 +10,8 @@
  *   reorderPoint      SKU-warehouse → SKU → (engine: velocity × (lead + safety));
  *                     no sales ⇒ demand 0 ⇒ reorder point 0, drops out (D18)
  *   safetyDays        SKU-warehouse → SKU → warehouse → category → global
- *   coverageDays      SKU-warehouse → SKU → category → global
+ *   coverageDays      category → global only (US-005 AC-06: no SKU entry point)
  *   lookbackDays      SKU-warehouse → SKU → category → global
- *   maxLevel          SKU-warehouse → SKU → none
  *   tracked           SKU-warehouse → SKU → tracked by default
  *   manualLeadTime    SKU-warehouse → SKU → (engine: derived ladder)
  *
@@ -36,16 +35,8 @@ const STORAGE_KEY = 'erp-db:replenishment-settings'
 export interface ReplenishmentOverride {
   reorderPoint?: number
   safetyDays?: number
-  /** Days of demand this order should cover beyond lead + safety (D9 / US-011). */
-  coverageDays?: number
   /** Demand averaging window for this pair, in days (US-002 VR-01). */
   lookbackDays?: number
-  /**
-   * Order-up-to ceiling in units. When set it REPLACES the coverage-days horizon
-   * as the order target (US-011 AC-03) — it is the level the SKU tops up to, not
-   * merely a cap on the result.
-   */
-  maxLevel?: number
   /** false = muted from the worklist (US-013). Never deletes or hides from search. */
   tracked?: boolean
   /** Days entered by hand when the PO→receipt ladder resolves to nothing (US-003 AC-02). */
@@ -64,11 +55,9 @@ export interface EffectiveReplenishmentSettings {
   safetyDays: number
   safetyDaysSource: Extract<OverrideSource, 'sku-warehouse' | 'sku' | 'warehouse' | 'category' | 'global'>
   coverageDays: number
-  coverageDaysSource: Extract<OverrideSource, 'sku-warehouse' | 'sku' | 'category' | 'global'>
+  coverageDaysSource: Extract<OverrideSource, 'category' | 'global'>
   lookbackDays: number
   lookbackDaysSource: Extract<OverrideSource, 'sku-warehouse' | 'sku' | 'category' | 'global'>
-  maxLevel: number | null
-  maxLevelSource: Extract<OverrideSource, 'sku-warehouse' | 'sku' | 'none'>
   /**
    * Floor for a warehouse with nothing to calculate from (US-024 AC-03).
    * null when neither the category nor the company sets one, which correctly
@@ -141,14 +130,14 @@ export function effectiveSettings(
     : whSafety !== null && whSafety !== undefined ? 'warehouse' as const
     : catSafety !== undefined ? 'category' as const : 'global' as const
 
-  // Coverage and lookback share safety's shape but skip the warehouse tier: neither
-  // is a location-risk decision, so warehouseConfig carries no key for them.
+  // Order coverage is a CATEGORY policy only (PRD US-005 AC-06 / US-008 AC-02):
+  // "there will be no entry point in each SKU or SKU-Warehouse level override".
+  // Any legacy per-SKU value still in storage is ignored.
   const catCoverage = cfg.coverageDaysByCategory[category]
-  const coverageDays = pair.coverageDays ?? skuLevel.coverageDays ?? coverageDaysForCategory(category, cfg)
-  const coverageDaysSource = pair.coverageDays !== undefined
-    ? 'sku-warehouse' as const
-    : skuLevel.coverageDays !== undefined ? 'sku' as const
-    : catCoverage !== undefined ? 'category' as const : 'global' as const
+  const coverageDays = coverageDaysForCategory(category, cfg)
+  const coverageDaysSource = catCoverage !== undefined ? 'category' as const : 'global' as const
+
+  // Lookback skips the warehouse tier: it is not a location-risk decision.
 
   const catLookback = cfg.lookbackDaysByCategory[category]
   const lookbackDays = pair.lookbackDays ?? skuLevel.lookbackDays ?? lookbackDaysForCategory(category, cfg)
@@ -156,11 +145,6 @@ export function effectiveSettings(
     ? 'sku-warehouse' as const
     : skuLevel.lookbackDays !== undefined ? 'sku' as const
     : catLookback !== undefined ? 'category' as const : 'global' as const
-
-  const maxLevel = pair.maxLevel ?? skuLevel.maxLevel ?? null
-  const maxLevelSource = pair.maxLevel !== undefined
-    ? 'sku-warehouse' as const
-    : skuLevel.maxLevel !== undefined ? 'sku' as const : 'none' as const
 
   const manualLeadTimeDays = pair.manualLeadTimeDays ?? skuLevel.manualLeadTimeDays ?? null
   const manualLeadTimeSource = pair.manualLeadTimeDays !== undefined
@@ -181,8 +165,6 @@ export function effectiveSettings(
     coverageDaysSource,
     lookbackDays,
     lookbackDaysSource,
-    maxLevel,
-    maxLevelSource,
     manualLeadTimeDays,
     manualLeadTimeSource,
     tracked,

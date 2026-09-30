@@ -11,7 +11,9 @@
  * purchasing switch the vendor (re-rounding the merged need). The output is always
  * a DRAFT PO (US-020). Mirrors ConvertPrToPoModal.vue / CreatePurchaseRequestModal.
  */
-import { MpIcon, MpInput, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
+import {
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalCloseButton,
+  MpIcon, MpInput, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 import type { PurchaseRequest } from '~/data/types'
 import {
   planPosFromPurchaseRequests, skipReasonLabel, defaultConversionWarehouseForMany,
@@ -137,17 +139,20 @@ function confirm() {
 </script>
 
 <template>
-  <Transition name="rp-po">
-    <div v-if="isOpen" class="rp-po-overlay" @click.self="close">
-      <div class="rp-po-panel" role="dialog" aria-modal="true" :aria-label="t('Create purchase order')">
-        <header class="rp-po-header">
-          <span class="rp-po-title">{{ t('Merge into purchase order') }}</span>
-          <button class="rp-po-close" type="button" :aria-label="t('Close')" @click="close">
-            <MpIcon name="close" size="md" />
-          </button>
-        </header>
-
-        <div class="rp-po-body">
+  <!-- Pixel MpModal (rule/modal-use-mpmodal); closes only via × / Cancel
+       (rule/modal-drawer-close-explicit-only). -->
+  <MpModal
+    id="rp-bulk-convert-pr"
+    :is-open="isOpen"
+    size="xl"
+    :is-keep-alive="false"
+    :is-close-on-esc="false"
+    :is-close-on-overlay-click="false"
+    @close="close"
+  >
+    <MpModalContent>
+      <MpModalHeader>{{ t('Merge into purchase order') }}<MpModalCloseButton /></MpModalHeader>
+      <MpModalBody>
           <p class="rp-po-summary">{{ summaryLine }}</p>
           <p class="rp-po-summary rp-po-summary--muted">
             {{ t('Same-product lines across the selected requests are combined, then the merged quantity is rounded to each vendor\'s MOQ and purchase multiplier. Saved as a draft for approval.') }}
@@ -159,7 +164,7 @@ function confirm() {
               <MpPopoverTrigger>
                 <button type="button" class="rp-po-shipto-value">
                   {{ warehouseName }}
-                  <MpIcon name="chevron-down" size="sm" />
+                  <MpIcon name="chevrons-down" size="sm" />
                 </button>
               </MpPopoverTrigger>
               <MpPopoverContent :class="css({ minWidth: '260px', width: 'max-content' })">
@@ -276,58 +281,23 @@ function confirm() {
               {{ t('These products need a linked vendor with pack details before they can be ordered.') }}
             </p>
           </section>
-        </div>
-
-        <footer class="rp-po-footer">
-          <span v-if="qtyError" class="rp-po-error">{{ qtyError }}</span>
+          <!-- Errors sit below the form, never in a toast (rule/form-errors-inline). -->
+          <p v-if="qtyError" class="rp-po-error">{{ qtyError }}</p>
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="rp-po-footer">
           <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">{{ t('Cancel') }}</button>
           <button class="btn-enterprise btn-enterprise--primary" type="button" @click="confirm">{{ confirmLabel }}</button>
-        </footer>
-      </div>
-    </div>
-  </Transition>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+  </MpModal>
 </template>
 
 <style scoped>
-.rp-po-enter-active, .rp-po-leave-active { transition: opacity 200ms ease; }
-.rp-po-enter-from, .rp-po-leave-to { opacity: 0; }
-.rp-po-enter-active .rp-po-panel, .rp-po-leave-active .rp-po-panel { transition: transform 200ms ease, opacity 200ms ease; }
-.rp-po-enter-from .rp-po-panel, .rp-po-leave-to .rp-po-panel { transform: scale(0.97); opacity: 0; }
-
-.rp-po-overlay {
-  position: fixed; inset: 0; z-index: 1400;
-  background: rgba(8, 13, 14, 0.45);
-  display: flex; align-items: flex-start; justify-content: center;
-  padding: 48px var(--mp-spacing-4);
-  overflow-y: auto;
-}
-.rp-po-panel {
-  width: min(880px, 100%);
-  max-height: calc(100vh - 96px);
-  display: flex; flex-direction: column;
-  background: var(--mp-background-stage, #fff);
-  border-radius: var(--mp-radii-lg, 16px);
-  overflow: hidden;
-}
-.rp-po-header {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
-  padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-5);
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
-}
-.rp-po-title { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.rp-po-close {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  border: none; background: none; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default);
-}
-.rp-po-close:hover { background: var(--mp-background-neutral-hovered); }
-
-.rp-po-body { flex: 1; overflow-y: auto; padding: var(--mp-spacing-5); }
 .rp-po-summary { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.rp-po-summary--muted { margin-top: 2px; color: var(--mp-text-subdued, #6b7280); }
-.rp-po-summary--warning { margin-top: var(--mp-spacing-2); color: var(--mp-text-warning); }
+.rp-po-summary--muted { margin-top: 2px; color: var(--mp-text-secondary); }
+.rp-po-summary--warning { margin-top: var(--mp-spacing-2); color: var(--mp-colors-text-warning); }
 
 .rp-po-shipto { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-3); }
 .rp-po-shipto-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
@@ -381,29 +351,26 @@ function confirm() {
   display: inline-block; margin-top: 2px;
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer;
 }
-.rp-po-cell-note { display: block; margin-top: 2px; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-warning); }
-.rp-po-cell-note--prompt { color: var(--mp-text-informational, #1f6feb); }
+.rp-po-cell-note { display: block; margin-top: 2px; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-warning); }
+.rp-po-cell-note--prompt { color: var(--mp-colors-text-information); }
 .rp-po-cell-note--prompt .rp-po-change { margin-left: 8px; }
 
-.rp-po-skip-list { display: flex; flex-direction: column; }
+/* A real list, so it keeps its markers (CLAUDE.md › List bullets). */
+.rp-po-skip-list { list-style: disc outside; margin: 0; padding-left: var(--mp-spacing-6); }
 .rp-po-skip-item {
-  display: flex; align-items: baseline; gap: var(--mp-spacing-2);
+  display: list-item;
   padding: var(--mp-spacing-2) var(--mp-spacing-4);
   border-bottom: 1px solid var(--mp-border-subtle, var(--mp-border-default));
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
 .rp-po-skip-name { flex: 1; min-width: 0; }
 .rp-po-skip-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
-.rp-po-skip-reason { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-warning); white-space: nowrap; }
+.rp-po-skip-reason { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-warning); white-space: nowrap; }
 .rp-po-skip-hint {
   padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-3);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
 }
 
-.rp-po-footer {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-3) var(--mp-spacing-5);
-  border-top: 1px solid var(--mp-border-default);
-}
-.rp-po-error { flex: 1; font-size: var(--mp-font-sizes-md); color: var(--mp-text-danger); }
+.rp-po-footer { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2); }
+.rp-po-error { margin-top: var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-danger); }
 </style>

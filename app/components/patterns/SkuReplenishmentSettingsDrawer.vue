@@ -8,13 +8,17 @@
  * field empty is meaningful — it falls back down the precedence chain (warehouse →
  * category → company), and the caption under each field says what it would inherit.
  *
- * Custom Teleport overlay, matching the other drawers in this repo.
+ * Canonical Teleport drawer shell; closes only via × or Cancel
+ * (rule/modal-drawer-close-explicit-only). Nothing is written until Save — "Use
+ * calculated" only clears the field, so Cancel still discards it.
  */
-import { MpIcon, MpInput, MpInputGroup, MpInputRightAddon, MpFormControl, MpFormLabel, MpToggle } from '@mekari/pixel3'
-import type { WorklistRow } from '~/data/replenishment'
 import {
-  getSkuWarehouseOverride, saveSkuWarehouseOverride, clearReorderPointOverride,
-} from '~/data/replenishmentSettings'
+  MpIcon, MpButton, MpInput, MpInputGroup, MpInputRightAddon, MpFormControl, MpFormLabel,
+  MpFormErrorMessage, MpToggle,
+} from '@mekari/pixel3'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import type { WorklistRow } from '~/data/replenishment'
+import { getSkuWarehouseOverride, saveSkuWarehouseOverride } from '~/data/replenishmentSettings'
 
 const props = defineProps<{ isOpen: boolean; row: WorklistRow | null }>()
 const emit = defineEmits<{
@@ -24,13 +28,16 @@ const emit = defineEmits<{
 
 const { t } = useLocale()
 
+type Field = 'reorderPoint' | 'safetyDays' | 'manualLeadTime'
+
 const reorderPoint = ref('')
 const safetyDays = ref('')
-const maxLevel = ref('')
-const coverageDays = ref('')
 const manualLeadTime = ref('')
 const tracked = ref(true)
-const error = ref('')
+const errors = reactive<Partial<Record<Field, string>>>({})
+const muteConfirmOpen = ref(false)
+/** Set once the user confirms turning tracking off, so Save then goes through. */
+let muteConfirmed = false
 
 const num = (v: number, digits = 0) =>
   v.toLocaleString('id-ID', { minimumFractionDigits: digits, maximumFractionDigits: digits })
@@ -44,75 +51,94 @@ watch(() => props.isOpen, (open) => {
   const override = getSkuWarehouseOverride(row.sku, row.warehouseId)
   reorderPoint.value = override.reorderPoint !== undefined ? String(override.reorderPoint) : ''
   safetyDays.value = override.safetyDays !== undefined ? String(override.safetyDays) : ''
-  maxLevel.value = override.maxLevel !== undefined ? String(override.maxLevel) : ''
-  coverageDays.value = override.coverageDays !== undefined ? String(override.coverageDays) : ''
   manualLeadTime.value = override.manualLeadTimeDays !== undefined ? String(override.manualLeadTimeDays) : ''
   tracked.value = row.fsn.tracked
-  error.value = ''
+  muteConfirmed = false
+  for (const k of Object.keys(errors)) delete errors[k as Field]
+})
+
+/**
+ * A hand-set floor well under what demand justifies is how a busy location quietly
+ * stops being flagged (US-021 VR-05) — surfaced, not blocked. Same 20% tolerance
+ * as `isManualFloorTooLow` on product detail.
+ */
+const overrideTooLow = computed(() => {
+  const calc = props.row?.calculatedReorderPoint ?? null
+  if (reorderPoint.value === '' || calc === null || calc <= 0) return false
+  const v = Number(reorderPoint.value)
+  return !Number.isNaN(v) && v < calc * 0.8
 })
 
 function close() { emit('update:isOpen', false) }
 
-function useCalculated() {
-  const row = props.row
-  if (!row) return
-  clearReorderPointOverride(row.sku, row.warehouseId)
-  reorderPoint.value = ''
-  emit('saved')
+/** Clears the override in the form only; Save commits it, Cancel discards it. */
+function useCalculated() { reorderPoint.value = '' }
+
+function parse(field: Field, raw: string): number | null | undefined {
+  if (raw === '') return null
+  const v = Number(raw)
+  if (!Number.isInteger(v) || v < 0) {
+    errors[field] = t('Enter a whole number of 0 or more.')
+    return undefined
+  }
+  return v
 }
 
 function save() {
   const row = props.row
   if (!row) return
 
-  // Validate on click and show an inline error — never a disabled button (DESIGN.md).
-  const rop = reorderPoint.value === '' ? null : Number(reorderPoint.value)
-  const safety = safetyDays.value === '' ? null : Number(safetyDays.value)
-  const max = maxLevel.value === '' ? null : Number(maxLevel.value)
-  const coverage = coverageDays.value === '' ? null : Number(coverageDays.value)
-  const lead = manualLeadTime.value === '' ? null : Number(manualLeadTime.value)
+  // Validate on click and show the error at the field — never a disabled button
+  // (rule/btn-no-disabled-validation, rule/form-errors-inline).
+  for (const k of Object.keys(errors)) delete errors[k as Field]
+  const rop = parse('reorderPoint', reorderPoint.value)
+  const safety = parse('safetyDays', safetyDays.value)
+  const lead = parse('manualLeadTime', manualLeadTime.value)
+  if (Object.keys(errors).length) return
 
-  for (const [label, value] of [
-    [t('Reorder point'), rop], [t('Safety days'), safety],
-    [t('Max level'), max],
-  ] as const) {
-    if (value !== null && (Number.isNaN(value) || value < 0)) {
-      error.value = `${label} ${t('must be a whole number of 0 or more')}`
-      return
-    }
-  }
-  if (max !== null && rop !== null && max < rop) {
-    error.value = t('Max level cannot be below the reorder point')
+  // Turning tracking off hides the row from the worklist — confirm it, as the
+  // worklist's own "Turn off tracking" does.
+  if (row.fsn.tracked && !tracked.value && !muteConfirmed) {
+    muteConfirmOpen.value = true
     return
   }
+  commit({ rop: rop ?? null, safety: safety ?? null, lead: lead ?? null })
+}
 
+function commit(v: { rop: number | null; safety: number | null; lead: number | null }) {
+  const row = props.row
+  if (!row) return
   // Passing `undefined` CLEARS a key rather than storing it: the settings module
   // spreads the patch over the existing record and then drops empty values. So an
   // emptied field goes back to inheriting, and tracking-on drops the override
   // instead of pinning the default.
   saveSkuWarehouseOverride(row.sku, row.warehouseId, {
-    reorderPoint: rop ?? undefined,
-    safetyDays: safety ?? undefined,
-    maxLevel: max ?? undefined,
-    coverageDays: coverage ?? undefined,
-    manualLeadTimeDays: lead ?? undefined,
+    reorderPoint: v.rop ?? undefined,
+    safetyDays: v.safety ?? undefined,
+    manualLeadTimeDays: v.lead ?? undefined,
     tracked: tracked.value ? undefined : false,
   })
-
   emit('saved')
   close()
+}
+
+function confirmMute() {
+  muteConfirmed = true
+  save()
+  muteConfirmed = false
 }
 </script>
 
 <template>
+  <Teleport to="body">
   <Transition name="rp-set">
-    <div v-if="isOpen && row" class="rp-set-overlay" @click.self="close">
+    <div v-if="isOpen && row" class="rp-set-overlay">
       <div class="rp-set-panel" role="dialog" :aria-label="t('Replenishment settings')">
         <header class="rp-set-header">
           <span class="rp-set-title">{{ t('Replenishment settings') }}</span>
-          <button class="rp-set-close" type="button" :aria-label="t('Close')" @click="close">
+          <MpButton class="rp-set-close" is-rounded :aria-label="t('Close')" @click="close">
             <MpIcon name="close" size="md" />
-          </button>
+          </MpButton>
         </header>
 
         <div class="rp-set-body">
@@ -128,68 +154,68 @@ function save() {
                 {{ t('When off, this product never appears in the worklist for this warehouse — but a genuine stockout still raises an alert.') }}
               </span>
             </div>
-            <MpToggle id="rp-set-tracked" v-model="tracked" />
+            <MpToggle id="rp-set-tracked" v-model:is-checked="tracked" :aria-label="t('Track for replenishment')" />
           </div>
 
-          <MpFormControl id="rp-set-rop-fc">
+          <MpFormControl id="rp-set-rop-fc" :is-invalid="!!errors.reorderPoint">
             <MpFormLabel>{{ t('Reorder point') }}</MpFormLabel>
             <MpInputGroup id="rp-set-rop-g">
-              <MpInput id="rp-set-rop" v-model="reorderPoint" type="number" :placeholder="t('Calculated')" />
+              <MpInput id="rp-set-rop" v-model="reorderPoint" type="number" />
               <MpInputRightAddon>{{ row.unit }}</MpInputRightAddon>
             </MpInputGroup>
+            <MpFormErrorMessage v-if="errors.reorderPoint">{{ errors.reorderPoint }}</MpFormErrorMessage>
+            <!-- Always the ENGINE's figure, even while an override is the trigger (D17). -->
             <span class="rp-set-hint">
-              <template v-if="row.reorderPointSource === 'none'">
+              <template v-if="row.calculatedReorderPoint === null">
                 {{ t('No demand yet, so nothing is calculated.') }}
               </template>
               <template v-else>
-                {{ t('Calculated') }}: {{ num(row.reorderPoint) }} {{ row.unit }}
+                {{ t('Calculated') }}: {{ num(row.calculatedReorderPoint) }} {{ row.unit }}
                 <a v-if="reorderPoint !== ''" class="rp-set-link" @click="useCalculated">
                   {{ t('Use calculated') }}
                 </a>
               </template>
             </span>
+            <span v-if="overrideTooLow" class="rp-set-hint rp-set-hint--warning">
+              {{ t('This is well below the calculated reorder point, so this warehouse may stock out before it is flagged.') }}
+            </span>
           </MpFormControl>
 
-          <MpFormControl id="rp-set-safety-fc">
+          <MpFormControl id="rp-set-safety-fc" :is-invalid="!!errors.safetyDays">
             <MpFormLabel>{{ t('Safety days') }}</MpFormLabel>
             <MpInputGroup id="rp-set-safety-g">
-              <MpInput id="rp-set-safety" v-model="safetyDays" type="number" :placeholder="String(row.safetyDays)" />
+              <MpInput id="rp-set-safety" v-model="safetyDays" type="number" />
               <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
             </MpInputGroup>
+            <MpFormErrorMessage v-if="errors.safetyDays">{{ errors.safetyDays }}</MpFormErrorMessage>
             <span class="rp-set-hint">
               {{ t('Currently') }} {{ row.safetyDays }} {{ t('days') }} — {{ t('leave empty to keep inheriting it') }}
             </span>
           </MpFormControl>
 
-          <MpFormControl id="rp-set-coverage-fc">
-            <MpFormLabel>{{ t('Order coverage') }}</MpFormLabel>
-            <MpInputGroup id="rp-set-coverage-g">
-              <MpInput id="rp-set-coverage" v-model="coverageDays" type="number" :placeholder="String(row.coverageDays)" />
-              <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
-            </MpInputGroup>
+          <!-- No order-coverage or max-level field: coverage is a CATEGORY policy set in
+               Replenishment settings, with no SKU or SKU-warehouse entry point
+               (PRD US-005 AC-06). Shown here read-only so the number is not a mystery. -->
+          <div class="rp-set-readonly">
+            <span class="rp-set-toggle-label">{{ t('Order coverage') }}</span>
             <span class="rp-set-hint">
-              {{ t('How many days each order should cover. Sizes the quantity; it never changes when this product becomes due.') }}
+              {{ row.coverageDays }} {{ t('days') }} — {{ t('set per product category in Replenishment settings') }}
             </span>
-          </MpFormControl>
+          </div>
 
-          <MpFormControl id="rp-set-max-fc">
-            <MpFormLabel>{{ t('Max level') }}</MpFormLabel>
-            <MpInputGroup id="rp-set-max-g">
-              <MpInput id="rp-set-max" v-model="maxLevel" type="number" :placeholder="t('Use order coverage')" />
-              <MpInputRightAddon>{{ row.unit }}</MpInputRightAddon>
-            </MpInputGroup>
-            <span class="rp-set-hint">
-              {{ t('Order up to this level in units instead of using order coverage. Leave empty to size by days.') }}
-            </span>
-          </MpFormControl>
 
           <!-- Only shown when the ladder found nothing to measure (US-003 AC-02). -->
-          <MpFormControl v-if="row.leadTimeTier === 'none' || row.leadTimeTier === 'manual'" id="rp-set-lead-fc">
+          <MpFormControl
+            v-if="row.leadTimeTier === 'none' || row.leadTimeTier === 'manual'"
+            id="rp-set-lead-fc"
+            :is-invalid="!!errors.manualLeadTime"
+          >
             <MpFormLabel>{{ t('Lead time') }}</MpFormLabel>
             <MpInputGroup id="rp-set-lead-g">
               <MpInput id="rp-set-lead" v-model="manualLeadTime" type="number" />
               <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
             </MpInputGroup>
+            <MpFormErrorMessage v-if="errors.manualLeadTime">{{ errors.manualLeadTime }}</MpFormErrorMessage>
             <span class="rp-set-hint">
               {{ t('No purchase-order history for this vendor and product, so lead time cannot be measured. Set it here, or start raising POs and it will be measured automatically.') }}
             </span>
@@ -197,13 +223,22 @@ function save() {
         </div>
 
         <footer class="rp-set-footer">
-          <span v-if="error" class="rp-set-error">{{ error }}</span>
           <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">{{ t('Cancel') }}</button>
           <button class="btn-enterprise btn-enterprise--primary" type="button" @click="save">{{ t('Save changes') }}</button>
         </footer>
       </div>
     </div>
   </Transition>
+  </Teleport>
+
+  <ConfirmModal
+    v-model:is-open="muteConfirmOpen"
+    :title="t('Turn off tracking for this product?')"
+    :description="t('It stops appearing in the replenishment worklist. Its reorder point and safety days are kept, so turning tracking back on restores them. Existing purchase orders are not affected.')"
+    :confirm-label="t('Turn off tracking')"
+    :is-danger="false"
+    @confirm="confirmMute"
+  />
 </template>
 
 <style scoped>
@@ -215,7 +250,7 @@ function save() {
 
 .rp-set-overlay {
   position: fixed; inset: 0; z-index: 1350;
-  background: rgba(8, 13, 14, 0.45);
+  background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45));
   display: flex; justify-content: flex-end;
 }
 .rp-set-panel {
@@ -224,7 +259,7 @@ function save() {
   height: calc(100% - 24px);
   display: flex; flex-direction: column;
   background: var(--mp-background-stage, #fff);
-  border-radius: 24px;
+  border-radius: 12px;
   overflow: hidden;
 }
 .rp-set-header {
@@ -235,10 +270,10 @@ function save() {
 }
 .rp-set-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .rp-set-close {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  border: none; background: none; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default);
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important; min-width: 0 !important;
+  border: none !important; background: none !important; border-radius: var(--mp-radii-md);
+  cursor: pointer; color: var(--mp-colors-icon-default);
 }
 .rp-set-close:hover { background: var(--mp-background-neutral-hovered); }
 
@@ -273,5 +308,6 @@ function save() {
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
   border-top: 1px solid var(--mp-border-default);
 }
-.rp-set-error { flex: 1; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
+.rp-set-hint--warning { color: var(--mp-colors-text-warning); }
+.rp-set-readonly { display: flex; flex-direction: column; }
 </style>

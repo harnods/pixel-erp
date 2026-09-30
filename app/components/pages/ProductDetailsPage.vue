@@ -1070,7 +1070,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             <div v-if="vendorRows.length" class="pd-vendor-panel">
               <div class="pd-filter-bar pd-filter-bar--end">
                 <button
-                  class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+                  class="btn-enterprise btn-enterprise--secondary"
                   type="button"
                   @click="vendorOpen = true"
                 >View vendors</button>
@@ -1117,7 +1117,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                       <td class="pd-td pd-td--num">
                         <button type="button" class="pd-lead-toggle" @click="toggleLeadTime(vi.vendorId)">
                           <span>{{ vendorLeadLabel(vi.vendorId) }}</span>
-                          <MpIcon :name="leadTimeOpen.has(vi.vendorId) ? 'chevron-up' : 'chevron-down'" size="sm" />
+                          <MpIcon :name="leadTimeOpen.has(vi.vendorId) ? 'chevrons-up' : 'chevrons-down'" size="sm" />
                         </button>
                         <ul v-if="leadTimeOpen.has(vi.vendorId)" class="pd-lead-breakdown">
                           <li v-for="w in vendorLeadByWarehouse(vi.vendorId)" :key="w.warehouseId" class="pd-lead-row">
@@ -1251,7 +1251,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                 />
                 <span class="pd-unit-eq">{{ product.unit }}</span>
                 <button
-                  class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+                  class="btn-enterprise btn-enterprise--secondary"
                   type="button"
                   @click="addConversion"
                 >Add</button>
@@ -1438,19 +1438,19 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             <div v-if="pagedWarehouseStock.length" class="pd-filter-bar pd-filter-bar--end">
               <div v-if="whEditing" class="pd-filter-right">
                 <button
-                  class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+                  class="btn-enterprise btn-enterprise--ghost"
                   type="button"
                   @click="whEditing = false"
                 >Cancel</button>
                 <button
-                  class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
+                  class="btn-enterprise btn-enterprise--primary"
                   type="button"
                   @click="saveMinStock"
                 >Save</button>
               </div>
               <button
                 v-else
-                class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+                class="btn-enterprise btn-enterprise--secondary"
                 type="button"
                 @click="startEditMinStock"
               >Edit</button>
@@ -1483,7 +1483,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                   @click="applyBulk"
                 >Apply to selected</button>
                 <button
-                  class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm"
+                  class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
                   type="button"
                   @click="clearBulk"
                 >Clear</button>
@@ -2079,16 +2079,18 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
   font-variant-numeric: tabular-nums;
 }
 .pd-lead-toggle:hover { color: var(--mp-text-link); }
+/* A real list, so it keeps its markers (CLAUDE.md › List bullets). */
 .pd-lead-breakdown {
-  list-style: none; margin: var(--mp-spacing-2) 0 0; padding: var(--mp-spacing-2);
+  list-style: disc outside; margin: var(--mp-spacing-2) 0 0;
+  padding: var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-6);
   background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-sm);
   text-align: left;
 }
 .pd-lead-row {
-  display: flex; align-items: baseline; justify-content: space-between; gap: var(--mp-spacing-3);
+  display: list-item;
   padding: 2px 0; font-size: var(--mp-font-sizes-sm);
 }
 .pd-lead-wh { color: var(--mp-text-secondary); }
-.pd-lead-days { color: var(--mp-text-default); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pd-lead-days { float: right; margin-left: var(--mp-spacing-3); color: var(--mp-text-default); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pd-lead-est { margin-left: 4px; color: var(--mp-text-subtle); font-size: var(--mp-font-sizes-xs, 11px); }
 </style>
