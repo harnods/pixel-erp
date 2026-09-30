@@ -18,8 +18,7 @@
 import { computed, ref } from 'vue'
 import { MpButton, MpSegmentedControl, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription } from '@mekari/pixel3'
 import { formatIDRWhole } from '~/utils/currency'
-import { infoToast, successToast } from '~/utils/toasts'
-import ExportModal from '~/components/patterns/ExportModal.vue'
+import { infoToast } from '~/utils/toasts'
 import {
   impactByClass, impactByTaxGroup, amortisationYtd, disposalImpactRows, impairmentImpactRows,
   statementFigures, DIFFERENCE_CONVENTION, type ImpactRow,
@@ -33,7 +32,7 @@ type Grouping = 'class' | 'taxGroup'
 const grouping = ref<Grouping>('class')
 const groupingOptions = [
   { id: 'grp-class', value: 'class', label: 'By class' },
-  { id: 'grp-tax', value: 'taxGroup', label: 'By tax group' },
+  { id: 'grp-tax', value: 'taxGroup', label: 'By statutory group' },
 ]
 const depreciationRows = computed<ImpactRow[]>(() =>
   grouping.value === 'class' ? impactByClass() : impactByTaxGroup(),
@@ -71,56 +70,39 @@ function signed(v: number) {
   return v === 0 ? formatIDRWhole(0) : `${v > 0 ? '+' : '−'}${formatIDRWhole(Math.abs(v))}`
 }
 
-// rule/export-modal — export opens the shared modal, never a silent download.
-const exportOpen = ref(false)
-const exportColumns = [
-  { key: 'label', label: t('Line') },
-  { key: 'accounting', label: t('Accounting') },
-  { key: 'tax', label: t('Tax') },
-  { key: 'difference', label: t('Difference') },
-  { key: 'taxGroup', label: t('Statutory group') },
-  { key: 'assets', label: t('Assets') },
-]
 const router = useRouter()
 function exportStatement() { infoToast(t('Not in this prototype')) }
-function onExport() {
-  exportOpen.value = false
-  successToast(t('Export ready — check your downloads'))
-}
 </script>
 
 <template>
   <div class="fb">
     <header class="fb__head">
       <p class="fb__sub">
-        {{ t('Asset profit and loss impact · FY2026 to 30 September 2026 · PT Central Perk Indonesia') }}
+        {{ t('FY2026 to 30 September 2026 · PT Central Perk Indonesia') }}
       </p>
       <div class="fb__headright">
-        <span class="fb__link" @click="router.push('/tax-differences')">{{ t('Differences by asset') }}</span>
+        <span class="fb__link" @click="router.push('/tax-differences')">{{ t('Tax differences') }}</span>
         <span class="fb__link" @click="router.push('/lampiran-9')">{{ t('Lampiran 9') }}</span>
-        <span class="fb__link" @click="router.push('/asset-roll-forward')">{{ t('Roll-forward') }}</span>
+        <span class="fb__link" @click="router.push('/asset-roll-forward')">{{ t('Asset roll forward') }}</span>
         <MpButton variant="secondary" is-rounded @click="exportStatement">
           {{ t('Export') }}
         </MpButton>
       </div>
     </header>
 
-    <!-- What this statement leaves out, said before the numbers rather than after. -->
     <MpBanner v-if="unclassified.length" id="fb__note-banner" variant="warning" class="fb__note">
       <MpBannerIcon id="b-icon" />
       <MpBannerTitle>
         {{ unclassified.length }}
-        {{ t(unclassified.length === 1 ? 'asset is outside this statement' : 'assets are outside this statement') }}
+        {{ t(unclassified.length === 1 ? 'asset excluded' : 'assets excluded') }}
       </MpBannerTitle>
       <MpBannerDescription>
-        {{ unclassified.map((a) => `${a.id} ${a.name}`).join(', ') }}
-        {{ t('has no statutory group, so there is no tax figure to compare against. Its accounting charge of') }}
-        {{ formatIDRWhole(unclassifiedCharge) }}
-        {{ t('is excluded from both columns so the two describe the same population.') }}
+        {{ unclassified.map((a) => `${a.id} ${a.name}`).join(', ') }} ·
+        {{ t('no statutory group') }} ·
+        {{ t('accounting charge of') }} {{ formatIDRWhole(unclassifiedCharge) }} {{ t('excluded from both columns') }}
       </MpBannerDescription>
     </MpBanner>
 
-    <!-- The sign convention, once for the page. -->
     <p class="fb__convention" data-testid="fb-convention">{{ t(DIFFERENCE_CONVENTION) }}</p>
 
     <div class="fb__card">
@@ -162,8 +144,6 @@ function onExport() {
       </table>
     </div>
 
-    <!-- Amortisation. Goodwill and the brand are the reason this is a separate
-         block rather than more rows: their commercial side does not exist. -->
     <div class="fb__card">
       <div class="fb__cardhead">
         <span class="fb__cardtitle">{{ t('Amortisation') }}</span>
@@ -200,12 +180,10 @@ function onExport() {
       </table>
     </div>
 
-    <!-- Events. Each shows the same transaction landing differently on the two
-         bases, which is the whole argument for holding both. -->
     <div class="fb__card" data-tour="cmp-disposal">
       <div class="fb__cardhead">
         <span class="fb__cardtitle">{{ t('Disposal and impairment') }}</span>
-        <span class="fb__hint">{{ t('A disposal\'s gain or loss on each book: the tax figure is proceeds less the fiscal carrying amount') }}</span>
+        <span class="fb__hint">{{ t('Tax gain or loss is measured on the tax book value') }}</span>
       </div>
       <table class="fb__table">
         <thead>
@@ -227,7 +205,7 @@ function onExport() {
             <td class="fb__td fb__td--num">{{ signed(r.difference) }}</td>
           </tr>
           <tr v-if="!disposals.length" class="fb__tr">
-            <td class="fb__td fb__td--absent" colspan="4">{{ t('No disposal this year. When one is recorded its fiscal gain or loss appears here.') }}</td>
+            <td class="fb__td fb__td--absent" colspan="4">{{ t('No disposals this year') }}</td>
           </tr>
           <tr v-for="r in impairments" :key="r.basis ?? r.label" class="fb__tr">
             <td class="fb__td">
@@ -250,12 +228,11 @@ function onExport() {
     </div>
 
     <!-- Right-of-use assets: shown with their difference, kept out of the
-         total. The PRD does not put them in the asset statement's net
-         temporary difference, and their tax deduction is the payment. -->
+         net temporary difference. Their tax deduction is the lease payment. -->
     <div class="fb__card" data-testid="fb-lease">
       <div class="fb__cardhead">
         <span class="fb__cardtitle">{{ t('Leases') }}</span>
-        <span class="fb__hint">{{ t('Shown for completeness, not included in the net temporary difference') }}</span>
+        <span class="fb__hint">{{ t('Excluded from the net temporary difference') }}</span>
       </div>
       <table class="fb__table">
         <tbody>
@@ -277,28 +254,19 @@ function onExport() {
       <div class="fb__footrow">
         <span class="fb__footlabel">
           {{ t('Net temporary difference') }}
-          <span class="fb__footnote">{{ t('depreciation, amortisation, disposal and impairment above; leases excluded') }}</span>
+          <span class="fb__footnote">{{ t('Depreciation, amortisation, disposal and impairment · excludes leases') }}</span>
         </span>
         <span class="fb__footvalue" data-testid="fb-net">{{ signed(H.netTemporaryDifference) }}</span>
       </div>
       <div class="fb__footrow fb__footrow--strong">
         <span class="fb__footlabel">
           {{ t('Deferred tax effect') }}
-          <span class="fb__footnote">{{ t(`at ${Math.round(H.taxRate * 100)}% of the net temporary difference · ${H.deferredTax >= 0 ? 'a deferred tax asset' : 'a deferred tax liability'} · a disclosure, not a journal entry`) }}</span>
+          <span class="fb__footnote">{{ t(`${Math.round(H.taxRate * 100)}% of the net temporary difference · ${H.deferredTax >= 0 ? 'Deferred tax asset' : 'Deferred tax liability'} · disclosure only, not posted`) }}</span>
         </span>
         <span class="fb__footvalue" data-testid="fb-deferred">{{ formatIDRWhole(Math.abs(H.deferredTax)) }}</span>
       </div>
     </div>
 
-    <ExportModal
-      :open="exportOpen"
-      :title="t('Export the profit and loss impact')"
-      :entity-label="t('lines')"
-      :columns="exportColumns"
-      :total="impactByClass.length + amortisationYtd.length + 2"
-      @close="exportOpen = false"
-      @export="onExport"
-    />
   </div>
 </template>
 
@@ -308,7 +276,6 @@ function onExport() {
 .fb__link:hover { text-decoration: underline; }
 
 .fb__head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); min-height: 32px; }
-.fb__title { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
 .fb__sub { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0; max-width: 720px; }
 .fb__note { margin-bottom: var(--mp-spacing-4); }
 

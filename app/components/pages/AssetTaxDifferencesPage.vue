@@ -26,7 +26,7 @@ type View = 'asset' | 'line' | 'class' | 'group'
 const view = ref<View>('asset')
 const viewOptions = [
   { id: 'td-asset', value: 'asset', label: 'By asset' },
-  { id: 'td-line', value: 'line', label: 'By P&L line' },
+  { id: 'td-line', value: 'line', label: 'By profit and loss line' },
   { id: 'td-class', value: 'class', label: 'By class' },
   { id: 'td-group', value: 'group', label: 'By statutory group' },
 ]
@@ -50,41 +50,40 @@ function signed(v: number) {
   <div class="td">
     <header class="td__head">
       <p class="td__sub">
-        {{ t(`Commercial to fiscal difference · FY2026 to ${periodLabel(CURRENT_PERIOD)} · computed from both books`) }}
+        {{ t(`FY2026 to ${periodLabel(CURRENT_PERIOD)}`) }}
       </p>
       <div class="td__links">
-        <span class="td__link" @click="router.push('/tax-book')">{{ t('Profit and loss impact') }}</span>
+        <span class="td__link" @click="router.push('/tax-book')">{{ t('Tax book') }}</span>
         <span class="td__link" @click="router.push('/lampiran-9')">{{ t('Lampiran 9') }}</span>
       </div>
     </header>
 
     <MpBanner v-if="unclassified.length" id="td-unclassified" variant="warning" class="td__note">
       <MpBannerIcon id="td-b-icon" />
-      <MpBannerTitle>{{ unclassified.length }} {{ t(unclassified.length === 1 ? 'asset has no tax book' : 'assets have no tax book') }}</MpBannerTitle>
+      <MpBannerTitle>{{ unclassified.length }} {{ t(unclassified.length === 1 ? 'asset has no statutory group' : 'assets have no statutory group') }}</MpBannerTitle>
       <MpBannerDescription>
-        {{ unclassified.map((a) => `${a.id} ${a.name}`).join(', ') }}.
-        {{ t('Nothing here includes it: there is no fiscal figure to compare against.') }}
-        <span class="td__link" @click="router.push({ path: '/assets', query: { filter: 'unclassified' } })">{{ t('Classify it') }}</span>
+        {{ unclassified.map((a) => `${a.id} ${a.name}`).join(', ') }} ·
+        {{ t('excluded from every view below') }}
+        <span class="td__link" @click="router.push({ path: '/assets', query: { filter: 'unclassified' } })">{{ t(unclassified.length === 1 ? 'Classify asset' : 'Classify assets') }}</span>
       </MpBannerDescription>
     </MpBanner>
 
     <div class="td__bar">
       <MpSegmentedControl id="td-view" name="td-view" v-model="view" :data="viewOptions" />
     </div>
-    <!-- The sign convention, once for the page. -->
     <p class="td__convention" data-testid="td-convention">{{ t(DIFFERENCE_CONVENTION) }}</p>
 
     <!-- ── Per asset, with the reason ── -->
     <div v-if="view === 'asset'" class="td__card" data-tour="diff-table">
       <div class="td__cardhead">
-        <span class="td__cardtitle">{{ t('Per asset and event') }}</span>
-        <span class="td__hint">{{ t('Tangible and intangible, classified. Right-of-use assets are on the lease line, outside the total.') }}</span>
+        <span class="td__cardtitle">{{ t('By asset') }}</span>
+        <span class="td__hint">{{ t('Excludes right-of-use assets') }}</span>
       </div>
       <table class="td__table">
         <thead>
           <tr>
             <th class="td__th">{{ t('Asset') }}</th>
-            <th class="td__th">{{ t('Why the books disagree') }}</th>
+            <th class="td__th">{{ t('Reason') }}</th>
             <th class="td__th td__th--num">{{ t('Difference') }}</th>
           </tr>
         </thead>
@@ -99,7 +98,7 @@ function signed(v: number) {
             <td class="td__td td__td--num">{{ signed(r.difference ?? 0) }}</td>
           </tr>
           <tr v-if="!byAsset.length" class="td__tr">
-            <td class="td__td" colspan="3">{{ t('The books agree on every asset this year.') }}</td>
+            <td class="td__td" colspan="3">{{ t('No differences this year') }}</td>
           </tr>
         </tbody>
         <tfoot>
@@ -107,7 +106,7 @@ function signed(v: number) {
             <td class="td__td" colspan="2">
               {{ t('Net temporary difference') }}
               <span class="td__check" :class="ties ? 'td__check--ok' : 'td__check--bad'">
-                {{ ties ? t('Ties to the statement') : t(`Does not tie: the statement carries ${signed(H.netTemporaryDifference)}`) }}
+                {{ ties ? t('Matches Tax book') : t(`Does not match Tax book (${signed(H.netTemporaryDifference)})`) }}
               </span>
             </td>
             <td class="td__td td__td--num">{{ signed(assetTotal) }}</td>
@@ -120,17 +119,17 @@ function signed(v: number) {
     <div v-else class="td__card">
       <div class="td__cardhead">
         <span class="td__cardtitle">
-          {{ view === 'line' ? t('Profit and loss impact, per line') : view === 'class' ? t('By asset class') : t('By statutory group') }}
+          {{ view === 'line' ? t('By profit and loss line') : view === 'class' ? t('By asset class') : t('By statutory group') }}
         </span>
-        <span class="td__hint">{{ t('Charges to profit. A gain on disposal is negative. Tangible and intangible, classified assets only; leases shown below the total.') }}</span>
+        <span class="td__hint">{{ t('A gain on disposal shows as negative') }}</span>
       </div>
       <table class="td__table">
         <thead>
           <tr>
             <th class="td__th">{{ view === 'line' ? t('Line') : view === 'class' ? t('Class') : t('Statutory group') }}</th>
             <th class="td__th td__th--num">{{ t('Assets') }}</th>
-            <th class="td__th td__th--num">{{ t('Commercial') }}</th>
-            <th class="td__th td__th--num">{{ t('Fiscal') }}</th>
+            <th class="td__th td__th--num">{{ t('Accounting') }}</th>
+            <th class="td__th td__th--num">{{ t('Tax') }}</th>
             <th class="td__th td__th--num">{{ t('Difference') }}</th>
           </tr>
         </thead>
@@ -157,7 +156,7 @@ function signed(v: number) {
           <tr v-if="impact.lease.assets" class="td__tr td__tr--lease" data-testid="td-lease">
             <td class="td__td">
               {{ t(impact.lease.key) }}
-              <span class="td__hint td__hint--block">{{ t('Not included in the net temporary difference') }}</span>
+              <span class="td__hint td__hint--block">{{ t('Excluded from the net temporary difference') }}</span>
             </td>
             <td class="td__td td__td--num">{{ impact.lease.assets }}</td>
             <td class="td__td td__td--num">{{ formatIDRWhole(impact.lease.accounting) }}</td>
@@ -167,20 +166,20 @@ function signed(v: number) {
         </tfoot>
       </table>
       <p v-if="impact.excluded" class="td__foot">
-        {{ t(`Excluded: ${impact.excluded} ${impact.excluded === 1 ? 'asset' : 'assets'} with no tax book, carrying ${formatIDRWhole(impact.excludedAccounting)} of accounting charge.`) }}
+        {{ t(`Excluded: ${impact.excluded} ${impact.excluded === 1 ? 'asset' : 'assets'} with no statutory group · accounting charge of ${formatIDRWhole(impact.excludedAccounting)}`) }}
       </p>
     </div>
 
     <!-- ── Deferred tax (OD-07) ── -->
     <div class="td__summary">
       <div class="td__sumrow">
-        <span>{{ t('Net temporary difference') }} <span class="td__hint">{{ t('depreciation, amortisation, disposal and impairment; leases excluded') }}</span></span>
+        <span>{{ t('Net temporary difference') }} <span class="td__hint">{{ t('Depreciation, amortisation, disposal and impairment · excludes leases') }}</span></span>
         <span class="td__sumval" data-testid="td-net">{{ signed(H.netTemporaryDifference) }}</span>
       </div>
       <div class="td__sumrow td__sumrow--strong">
         <span>
           {{ t('Deferred tax effect') }}
-          <span class="td__hint">{{ t(`at ${Math.round(H.taxRate * 100)}% · ${H.deferredTax >= 0 ? 'a deferred tax asset' : 'a deferred tax liability'} · a disclosure, not a journal`) }}</span>
+          <span class="td__hint">{{ t(`${Math.round(H.taxRate * 100)}% of the net temporary difference · ${H.deferredTax >= 0 ? 'Deferred tax asset' : 'Deferred tax liability'} · disclosure only, not posted`) }}</span>
         </span>
         <span class="td__sumval">{{ formatIDRWhole(Math.abs(H.deferredTax)) }}</span>
       </div>
