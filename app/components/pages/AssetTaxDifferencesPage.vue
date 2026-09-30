@@ -28,7 +28,7 @@ const viewOptions = [
   { id: 'td-asset', value: 'asset', label: 'By asset' },
   { id: 'td-line', value: 'line', label: 'By profit and loss line' },
   { id: 'td-class', value: 'class', label: 'By class' },
-  { id: 'td-group', value: 'group', label: 'By statutory group' },
+  { id: 'td-group', value: 'group', label: 'By tax group' },
 ]
 
 const byAsset = computed(() => differenceByAsset())
@@ -60,7 +60,7 @@ function signed(v: number) {
 
     <MpBanner v-if="unclassified.length" id="td-unclassified" variant="warning" class="td__note">
       <MpBannerIcon id="td-b-icon" />
-      <MpBannerTitle>{{ unclassified.length }} {{ t(unclassified.length === 1 ? 'asset has no statutory group' : 'assets have no statutory group') }}</MpBannerTitle>
+      <MpBannerTitle>{{ unclassified.length }} {{ t(unclassified.length === 1 ? 'asset has no tax group' : 'assets have no tax group') }}</MpBannerTitle>
       <MpBannerDescription>
         {{ unclassified.map((a) => `${a.id} ${a.name}`).join(', ') }} ·
         {{ t('excluded from every view below') }}
@@ -119,14 +119,14 @@ function signed(v: number) {
     <div v-else class="td__card">
       <div class="td__cardhead">
         <span class="td__cardtitle">
-          {{ view === 'line' ? t('By profit and loss line') : view === 'class' ? t('By asset class') : t('By statutory group') }}
+          {{ view === 'line' ? t('By profit and loss line') : view === 'class' ? t('By asset class') : t('By tax group') }}
         </span>
         <span class="td__hint">{{ t('A gain on disposal shows as negative') }}</span>
       </div>
       <table class="td__table">
         <thead>
           <tr>
-            <th class="td__th">{{ view === 'line' ? t('Line') : view === 'class' ? t('Class') : t('Statutory group') }}</th>
+            <th class="td__th">{{ view === 'line' ? t('Line') : view === 'class' ? t('Class') : t('Tax group') }}</th>
             <th class="td__th td__th--num">{{ t('Assets') }}</th>
             <th class="td__th td__th--num">{{ t('Accounting') }}</th>
             <th class="td__th td__th--num">{{ t('Tax') }}</th>
@@ -166,7 +166,7 @@ function signed(v: number) {
         </tfoot>
       </table>
       <p v-if="impact.excluded" class="td__foot">
-        {{ t(`Excluded: ${impact.excluded} ${impact.excluded === 1 ? 'asset' : 'assets'} with no statutory group · accounting charge of ${formatIDRWhole(impact.excludedAccounting)}`) }}
+        {{ t(`Excluded: ${impact.excluded} ${impact.excluded === 1 ? 'asset' : 'assets'} with no tax group · accounting charge of ${formatIDRWhole(impact.excludedAccounting)}`) }}
       </p>
     </div>
 

@@ -127,13 +127,13 @@ function toggleOther() { infoToast(t('Not in this prototype')) }
     <div class="st__card">
       <div class="st__cardhead">
         <span class="st__cardtitle">{{ t('Asset classes') }}</span>
-        <span class="st__hint">{{ t('New assets take the group, life and method of their class') }}</span>
+        <span class="st__hint">{{ t('New assets take the tax group, life and method of their class') }}</span>
       </div>
       <table class="st__table">
         <thead>
           <tr>
             <th class="st__th">{{ t('Class') }}</th>
-            <th class="st__th">{{ t('Statutory group') }}</th>
+            <th class="st__th">{{ t('Tax group') }}</th>
             <th class="st__th">{{ t('Tax life') }}</th>
             <th class="st__th">{{ t('Accounting life') }}</th>
             <th class="st__th">{{ t('Method') }}</th>
@@ -162,7 +162,7 @@ function toggleOther() { infoToast(t('Not in this prototype')) }
               <td class="st__td" colspan="8">
                 <div class="st__edit">
                   <div class="st__editfield">
-                    <label class="st__editlabel" for="st-group">{{ t('Statutory group') }}</label>
+                    <label class="st__editlabel" for="st-group">{{ t('Tax group') }}</label>
                     <ErpFilterSelect id="st-group" v-model="draft.group" :placeholder="t('Select group')" :options="editGroups" width="100%" :is-clearable="false" />
                   </div>
                   <div class="st__editfield">
@@ -180,7 +180,7 @@ function toggleOther() { infoToast(t('Not in this prototype')) }
                 </div>
                 <p v-if="editError" class="st__error">{{ t(editError) }}</p>
                 <p v-else class="st__edithint">
-                  {{ t('Tax life follows the statutory group. Changes apply to new assets only.') }}
+                  {{ t('Tax life follows the tax group. Changes apply to new assets only.') }}
                 </p>
               </td>
             </tr>

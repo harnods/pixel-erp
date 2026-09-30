@@ -85,7 +85,7 @@ const genDone = ref('')
 function generate() {
   genError.value = ''
   genDone.value = ''
-  if (!canChangeValue.value) { genError.value = t(`Only the Owner or Accounting role can generate a run. You are viewing as ${viewAs.value}.`); return }
+  if (!canChangeValue.value) { genError.value = t(`Viewing as ${viewAs.value}. Only Owner or Accounting can generate a run.`); return }
   const r = generateRun(genPeriod.value)
   if (!r.ok) { genError.value = t(r.reason); return }
   const label = periodLabel(r.run.period)

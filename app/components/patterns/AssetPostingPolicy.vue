@@ -92,8 +92,8 @@ const example = computed(() => {
         <div class="app__k">{{ t('Post automatically when a run is generated') }}</div>
         <div class="app__v">
           {{ autoPost
-            ? t('Generated runs post immediately. You can still reverse them from the schedule.')
-            : t('Generated runs stay as drafts until someone posts them.') }}
+            ? t('Runs post when generated')
+            : t('Runs stay as drafts until posted') }}
         </div>
       </div>
       <MpToggle v-model:is-checked="autoPost" :aria-label="t('Post automatically when a run is generated')" />

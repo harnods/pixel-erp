@@ -29,7 +29,7 @@ const router = useRouter()
     </MpBannerDescription>
     <MpBannerLink id="asset-role-gate-link">
       <MpButton variant="textLink" size="sm" data-testid="asset-role-gate-link" @click="router.push('/custody-and-counts')">
-        {{ t('Open Custody & counts') }}
+        {{ t('Go to Custody & counts') }}
       </MpButton>
     </MpBannerLink>
   </MpBanner>

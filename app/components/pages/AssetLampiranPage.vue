@@ -27,8 +27,8 @@ const router = useRouter()
 
 const status = computed(() => lampiranStatus())
 const halves = computed(() => [
-  { key: 'Tangible', title: 'Part 1 · Tangible assets (penyusutan)', groupHead: 'Statutory group', rows: lampiranRows('Tangible') },
-  { key: 'Intangible', title: 'Part 2 · Intangible assets (amortisasi)', groupHead: 'Statutory code · group', rows: lampiranRows('Intangible') },
+  { key: 'Tangible', title: 'Part 1 · Tangible assets (penyusutan)', groupHead: 'Tax group', rows: lampiranRows('Tangible') },
+  { key: 'Intangible', title: 'Part 2 · Intangible assets (amortisasi)', groupHead: 'Intangible code · group', rows: lampiranRows('Intangible') },
 ])
 
 function sum(rows: LampiranRow[], k: 'cost' | 'charge' | 'openingFiscal' | 'closingFiscal') {
@@ -57,7 +57,7 @@ function openUnclassified() {
       </MpBannerTitle>
       <MpBannerDescription>
         {{ status.unclassified.length }}
-        {{ t(status.unclassified.length === 1 ? 'asset held this year has no statutory group' : 'assets held this year have no statutory group') }}
+        {{ t(status.unclassified.length === 1 ? 'asset held this year has no tax group' : 'assets held this year have no tax group') }}
         ({{ status.unclassified.map((a) => a.id).join(', ') }}) ·
         {{ formatIDRWhole(status.unreportedCost) }} {{ t('of cost missing from the filing') }}
         <span class="lp__link" @click="openUnclassified">

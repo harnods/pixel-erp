@@ -16,7 +16,6 @@ import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { fixedAssets, viewAs } from '~/data/assetStore'
 import {
   allowedGroupsFor, classifyAsset, groupLifeMonths, hasLmAuthority, canClassify, intangibleCodeOptions,
-  FISCAL_LIFE_FIXED,
 } from '~/data/assetTaxbook'
 import { formatMonths } from '~/data/assetUiDuration'
 
@@ -57,16 +56,16 @@ function submit() {
   const a = asset.value
   if (!a) return
   const e: Record<string, string> = {}
-  if (!group.value) e.group = 'You must select statutory group'
+  if (!group.value) e.group = 'You must select tax group'
   const years = Number(lifeYears.value.replace(',', '.'))
   if (!years || years <= 0) e.fiscalLife = 'You must fill in tax life'
-  if (a.type === 'Intangible' && !code.value) e.statutoryCode = 'You must select statutory code'
+  if (a.type === 'Intangible' && !code.value) e.statutoryCode = 'You must select intangible code'
   errors.value = e
   if (Object.keys(e).length) return
   const r = classifyAsset(a.id, { group: group.value, statutoryCode: code.value || null, fiscalLifeMonths: Math.round(years * 12) })
   if (!r.ok) {
     const refusedLife = r.field === 'fiscalLife' && lifeLocked.value
-    errors.value = { [r.field ?? 'form']: refusedLife ? `${lifeYears.value} years does not match the group's life. ${r.reason}` : r.reason }
+    errors.value = { [r.field ?? 'form']: refusedLife && statutoryMonths.value ? `${group.value} sets a tax life of ${formatMonths(statutoryMonths.value)}. Only the Owner can change it` : r.reason }
     return
   }
   emit('done', r.message)
@@ -77,10 +76,10 @@ function submit() {
   <Teleport to="body">
     <Transition name="cld">
       <div v-if="isOpen && asset" class="cld-overlay">
-        <div class="cld-panel" role="dialog" :aria-label="t('Statutory classification')">
+        <div class="cld-panel" role="dialog" :aria-label="asset.taxGroup ? t('Change tax group') : t('Set tax group')">
           <header class="cld-head">
             <div>
-              <div class="cld-title">{{ t('Statutory classification') }}</div>
+              <div class="cld-title">{{ asset.taxGroup ? t('Change tax group') : t('Set tax group') }}</div>
               <div class="cld-sub">{{ asset.id }} {{ asset.name }} · {{ asset.class }} · {{ t(asset.type) }}</div>
             </div>
             <MpButton class="cld-close" variant="ghost" is-rounded :aria-label="t('Close')" @click="emit('close')">
@@ -90,11 +89,11 @@ function submit() {
 
           <div class="cld-body" data-tour="cls-body">
             <p v-if="!canClassify" class="cld-note">
-              {{ t(`Viewing as ${viewAs}. Only Owner, Accounting or Tax can change the statutory classification.`) }}
+              {{ t(`Viewing as ${viewAs}. Only Owner, Accounting or Tax can change the tax group.`) }}
             </p>
             <div class="cld-field">
-              <label class="cld-label" for="cld-group">{{ t('Statutory group') }}</label>
-              <ErpFilterSelect id="cld-group" v-model="group" :placeholder="t('Choose a group')" :options="groups" width="100%" :is-clearable="false" />
+              <label class="cld-label" for="cld-group">{{ t('Tax group') }}</label>
+              <ErpFilterSelect id="cld-group" v-model="group" :placeholder="t('Select tax group')" :options="groups" width="100%" :is-clearable="false" />
               <p v-if="errors.group" class="cld-error">{{ t(errors.group) }}</p>
               <p v-else class="cld-hint">
                 <template v-if="asset.type === 'Intangible'">{{ t('Intangibles use Tax group 1 to 4') }}</template>
@@ -103,8 +102,8 @@ function submit() {
               </p>
             </div>
             <div v-if="asset.type === 'Intangible'" class="cld-field">
-              <label class="cld-label" for="cld-code">{{ t('Statutory code') }}</label>
-              <ErpFilterSelect id="cld-code" v-model="code" :placeholder="t('Choose a code')" :options="intangibleCodeOptions" width="100%" :is-clearable="false" />
+              <label class="cld-label" for="cld-code">{{ t('Intangible code') }}</label>
+              <ErpFilterSelect id="cld-code" v-model="code" :placeholder="t('Select intangible code')" :options="intangibleCodeOptions" width="100%" :is-clearable="false" />
               <p v-if="errors.statutoryCode" class="cld-error">{{ t(errors.statutoryCode) }}</p>
             </div>
             <div class="cld-field">
@@ -112,10 +111,10 @@ function submit() {
               <MpInput id="cld-life" v-model="lifeYears" :is-invalid="!!errors.fiscalLife" />
               <p v-if="errors.fiscalLife" class="cld-error">{{ t(errors.fiscalLife) }}</p>
               <p v-else-if="lifeLocked && statutoryMonths" class="cld-hint">
-                {{ t(FISCAL_LIFE_FIXED(group, statutoryMonths)) }}
+                {{ t(`${group} sets ${formatMonths(statutoryMonths)}. Only the Owner can change it`) }}
               </p>
               <p v-else-if="statutoryMonths" class="cld-hint">
-                {{ t(`The group sets ${formatMonths(statutoryMonths)}. You can record a different life. It is kept in the history`) }}
+                {{ t(`${group} sets ${formatMonths(statutoryMonths)}. A different life is recorded in the history`) }}
               </p>
             </div>
             <div class="cld-field">
@@ -129,7 +128,7 @@ function submit() {
             <p v-if="errors.form" class="cld-error cld-foot-error">{{ t(errors.form) }}</p>
             <div class="cld-footright">
               <MpButton variant="ghost" is-rounded @click="emit('close')">{{ t('Cancel') }}</MpButton>
-              <MpButton is-rounded data-tour="dlg-primary" :is-disabled="!canClassify" @click="submit">{{ t('Save classification') }}</MpButton>
+              <MpButton is-rounded data-tour="dlg-primary" :is-disabled="!canClassify" @click="submit">{{ t('Save tax group') }}</MpButton>
             </div>
           </footer>
         </div>

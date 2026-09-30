@@ -46,17 +46,17 @@ const value = computed({
     error.value = ''
     if (!props.assetId) { emit('update:modelValue', v); return }
     if (!v || v.slice(0, 4) === (props.current ?? '').slice(0, 4)) return
-    if (!canChangeValue.value) { error.value = `Viewing as ${viewAs.value}. Only Owner or Accounting can set the statutory code.`; return }
+    if (!canChangeValue.value) { error.value = `Viewing as ${viewAs.value}. Only Owner or Accounting can set the intangible code.`; return }
     const r = setStatutoryCode(props.assetId, v)
     if (!r.ok) { error.value = r.reason; return }
-    successToast(t(`Statutory code set to ${v}`))
+    successToast(t(`Intangible code set to ${v}`))
   },
 })
 </script>
 
 <template>
   <div class="icp">
-    <ErpFilterSelect :id="id" v-model="value" :placeholder="t('Select statutory code')" :options="options" width="100%" :is-clearable="false" />
+    <ErpFilterSelect :id="id" v-model="value" :placeholder="t('Select intangible code')" :options="options" width="100%" :is-clearable="false" />
     <p v-if="error" class="icp__error">{{ t(error) }}</p>
     <p v-else-if="isGoodwill && assetId" class="icp__hint">{{ t('Goodwill always uses code 0607') }}</p>
   </div>

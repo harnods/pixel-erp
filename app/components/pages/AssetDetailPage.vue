@@ -196,7 +196,7 @@ function setTaxGroup(group: string) {
   if (!asset.value) return
   const r = assignTaxGroupTo(asset.value.id, group)
   if (!r.ok) { infoToast(r.reason); return }
-  successToast(t(`Statutory group set to ${group}`))
+  successToast(t(`Tax group set to ${group}`))
 }
 
 // ── Statutory classification (OD-02) ────────────────────────────────────────
@@ -311,7 +311,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
             </MpPopoverList>
             <div class="ad__menuhead">{{ t('Classification') }}</div>
             <MpPopoverList>
-              <MpPopoverListItem @click="classifyOpen = true">{{ t('Edit statutory classification') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="classifyOpen = true">{{ t('Change tax group') }}</MpPopoverListItem>
               <MpPopoverListItem @click="openClassChange">{{ t('Change asset class') }}</MpPopoverListItem>
             </MpPopoverList>
             <MpPopoverList>
@@ -327,12 +327,12 @@ watch(() => [route.query.change, asset.value?.id], () => {
       <div v-if="!effectiveTaxGroup && canSeeFinancials && !isGone" class="ad__blocked" data-tour="det-fiscal">
         <MpIcon name="information" size="sm" />
         <div class="ad__blockedbody">
-          <div class="ad__blockedtitle">{{ t('No statutory group') }}</div>
+          <div class="ad__blockedtitle">{{ t('No tax group') }}</div>
           <div class="ad__blockedtext">
-            {{ t('Excluded from the tax book, tax differences and Lampiran 9 until a statutory group is set.') }}
+            {{ t('Excluded from the tax book, tax differences and Lampiran 9 until a tax group is set.') }}
           </div>
         </div>
-        <MpButton variant="secondary" is-rounded @click="classifyOpen = true">{{ t('Set statutory group') }}</MpButton>
+        <MpButton variant="secondary" is-rounded @click="classifyOpen = true">{{ t('Set tax group') }}</MpButton>
       </div>
 
       <!-- FG-7: a change held for approval is named where the asset is read. -->
@@ -458,7 +458,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
       <!-- OD-47: an intangible's statutory code, from the eleven intangible codes. -->
       <div v-if="tab === 'identity' && asset.type === 'Intangible' && canSeeFinancials" class="ad__card ad__codecard" data-tour="int-code">
         <div class="ad__panehead">
-          <span class="ad__panetitle">{{ t('Statutory intangible code') }}</span>
+          <span class="ad__panetitle">{{ t('Intangible code') }}</span>
           <span class="ad__paneowner">{{ t('Tax') }}</span>
         </div>
         <div class="ad__codebody">
@@ -480,7 +480,7 @@ watch(() => [route.query.change, asset.value?.id], () => {
           </div>
           <div v-if="p.head === 'Tax' && canSeeFinancials && !isGone" class="ad__paneaction">
             <MpButton size="sm" variant="secondary" is-rounded @click="classifyOpen = true">
-              {{ effectiveTaxGroup ? t('Edit statutory classification') : t('Set statutory group') }}
+              {{ effectiveTaxGroup ? t('Change tax group') : t('Set tax group') }}
             </MpButton>
           </div>
           <div v-if="p.head === 'Accounting' && canSeeFinancials && !isGone" class="ad__paneaction">
@@ -577,8 +577,8 @@ watch(() => [route.query.change, asset.value?.id], () => {
           </header>
           <div class="ad__drawerbody">
             <label class="ad__fieldlabel" for="ad-newclass">{{ t('New class') }}</label>
-            <ErpFilterSelect id="ad-newclass" v-model="newClass" :placeholder="t('Choose a class')" :options="classOptions" width="100%" :is-clearable="false" />
-            <p class="ad__drawernote">{{ t('The asset takes the new class\'s statutory group, useful life and method. Posted periods stay unchanged.') }}</p>
+            <ErpFilterSelect id="ad-newclass" v-model="newClass" :placeholder="t('Select class')" :options="classOptions" width="100%" :is-clearable="false" />
+            <p class="ad__drawernote">{{ t('The asset takes the new class\'s tax group, useful life and method. Posted periods stay unchanged.') }}</p>
             <template v-if="classPlan">
               <p v-if="!classPlan.ok" class="ad__fielderror">{{ t(classPlan.reason ?? '') }}</p>
               <div v-else class="ad__classplan">
