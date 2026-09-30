@@ -24,7 +24,7 @@ import ProjectStatCards, { type ProjectStat } from '~/components/patterns/Projec
 import ApproveAddendumModal from '~/components/patterns/ApproveAddendumModal.vue'
 import { formatDate, formatDateLong } from '~/utils/date'
 import {
-  findEngagement, STAGES, stageIndex, lifecycleLabel, methodLabel, methodFormal,
+  findEngagement, STAGES, stageIndex, lifecycleLabel, methodLabel,
   revenue, actualCost, pocPct, billed, collected, wipNet, openEntries, readyToInvoice,
   entryAmount, entryFinal, entryLabel, daysAgo, ageBuckets, budgetOf, budgetReport,
   canClose, closeHint, pendingVos, advanceStage,
@@ -149,7 +149,7 @@ const contractRows = computed(() => {
   const e = engagement.value
   if (!e) return []
   return [
-    { k: t('Revenue recognition'), v: `${methodLabel(e.method)} (${methodFormal(e.method)})` },
+    { k: t('Revenue recognition'), v: methodLabel(e.method) },
     { k: e.method === 'tm' ? t('Fee estimate') : t('Contract value'), v: formatIdr(e.method === 'tm' ? e.feeEstimate : e.contractValue) },
     { k: t('Budgeted cost'), v: e.budget === null ? t('Not set') : formatIdr(e.budget) },
     { k: t('Client'), v: e.client },
@@ -714,8 +714,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
 
             <!-- ── Edit contract: append-only addenda ── -->
             <section class="pa-card">
-              <h2 class="pa-card-title">{{ t('Contract addenda') }}</h2>
-              <p class="pa-card-desc">{{ t('The contract value changes only through an approved addendum.') }}</p>
+              <h2 class="pa-card-title pa-card-title--spaced">{{ t('Contract addenda') }}</h2>
 
               <div class="pa-vo-form">
                 <MpFormControl id="pa-vo-value" is-required>

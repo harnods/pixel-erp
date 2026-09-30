@@ -63,7 +63,7 @@ function confirm() { emit('confirm'); close() }
         <p class="aam-reason"><b>{{ t('Reason') }}:</b> {{ reason }}</p>
         <p class="aam-effect">{{ effect }}</p>
         <p class="aam-approver">
-          {{ t('Submitted by') }} {{ raisedBy }} · {{ t('Approving as') }} Anggun Prakoso · {{ t('Finance Controller') }}
+          {{ t('Submitted by') }} {{ raisedBy }}. {{ t('Approving as') }} Anggun Prakoso · {{ t('Finance Controller') }}
         </p>
 
         <div class="aam-footer">
