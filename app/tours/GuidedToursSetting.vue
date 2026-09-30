@@ -8,7 +8,7 @@
   <div class="gts-card" data-tour="tours-setting">
     <div class="gts-head">
       <span class="gts-title">Guided tours</span>
-      <span class="gts-hint">Prototype walkthroughs, not part of the product</span>
+      <span class="gts-hint">Step-by-step demo walkthroughs of the asset module</span>
     </div>
     <div class="gts-row">
       <MpToggle
@@ -19,11 +19,7 @@
       />
       <div>
         <div class="gts-k">Show guided tours</div>
-        <div class="gts-v">
-          {{ guidedToursOn
-            ? `On. A Guided tours menu in the top bar lists the ${ASSET_TOURS.length} walkthroughs. This switch is the only setting kept after a reload.`
-            : 'Off. The asset screens are free to explore. Turn this on for a Guided tours menu in the top bar. This switch is the only setting kept after a reload.' }}
-        </div>
+        <div class="gts-v">{{ guidedToursOn ? `${ASSET_TOURS.length} tours in the Guided tours menu in the top bar` : 'Adds a Guided tours menu to the top bar' }}</div>
       </div>
     </div>
   </div>

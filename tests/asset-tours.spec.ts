@@ -107,6 +107,33 @@ describe('tour steps point at real routes and real markers', () => {
   it('no em dashes in tour copy', () => {
     expect(readFileSync(join(APP, 'tours', 'assetTours.ts'), 'utf8')).not.toMatch(/\u2014/)
   })
+  const allCopy = ASSET_TOURS.map((t) => [t.blurb, t.closing, ...t.steps.flatMap((s) => [s.title, s.body, s.action ?? '', s.watch ?? '', s.ifMissing ?? ''])].join(' ')).join(' ')
+  it('tour copy uses the screens\' vocabulary, not the retired words', () => {
+    expect(allCopy).not.toMatch(/statutory|fiscal|commercial|derivation|superseded|\bhalf [12]\b|halves|frozen|freeze|\bchoose\b/i)
+    for (const old of ['Set group', 'Save classification', 'Custody gaps', 'Location now', 'Freeze population and start', 'select Generate.', 'select Remeasure.', 'select Save.']) {
+      expect(allCopy, old).not.toContain(old)
+    }
+  })
+  it('every control and label a step quotes is on a product screen', () => {
+    const product = walk(APP).filter((f) => !f.includes(join('app', 'tours'))).map((f) => readFileSync(f, 'utf8')).join('\n')
+    const quoted = [
+      'asset excluded: no tax group', 'Set tax group', 'Save tax group', 'Tax life (years)', 'Generate run', 'Run period',
+      'A fixed day of the following month', 'Review and post', 'Post journal', 'Record an impairment test', 'Record test',
+      'Previous versions', 'Replaced from', 'Record disposal', 'Correct an error', 'Corrected cost (Rp)', 'Reason for correction',
+      'Record correction', 'Missing custody', 'Save custody', 'Reassign all', 'Mark as left', 'Write-off needs approval',
+      'New count session', 'By location', 'Start count', 'Counting at', 'Finish count', 'Save resolution', 'Current location',
+      'Applies when the session closes', 'Close session', 'Location updated', 'Sent for approval', 'Modify lease',
+      'Change in term (months)', 'What changed in the contract', 'Remeasure lease', 'Accounting total', 'Not amortised',
+      'Save test', 'Value in use', 'Not impaired', 'all required tests recorded', 'Classify all assets to produce Lampiran 9',
+      'Capitalise an improvement', 'Improvement cost (Rp)', 'Capitalise improvement', 'Revise useful life or method',
+      'Total useful life (years)', 'Record revision', 'Dispose of part', 'Share to dispose of (%)', 'Record partial disposal',
+      'Tax life is set by the tax group', 'Charge breakdown', 'Matches Tax book',
+    ]
+    for (const q of quoted) {
+      expect(allCopy, `a tour quotes "${q}"`).toContain(q)
+      expect(product, `"${q}" on a product screen`).toContain(q)
+    }
+  })
 })
 
 describe('the guided tours switch', () => {
