@@ -42,7 +42,7 @@ interface Check {
 function runAgain() {
   rerunSelfCheck()
   selected.value = CURRENT_PERIOD
-  successToast(t('Check re-run'))
+  successToast(t('Checks re-run'))
 }
 
 /** OD-43: one retained result per period. Closed periods ran theirs at close. */
@@ -64,7 +64,7 @@ const demoJournals = computed(() => journals.value.filter((j) => j.source === 'm
 function simulate() {
   const j = simulateDirectJournal()
   selected.value = CURRENT_PERIOD
-  infoToast(t(`Demonstration journal ${j.number} posted to 6-5100 from outside the asset module`))
+  infoToast(t(`Demonstration journal ${j.number} posted to 6-5100`))
 }
 function withdraw() {
   const n = withdrawDirectJournals()
@@ -80,10 +80,10 @@ const tieCheckRows = computed(() => result.value.tie)
 
 /** What each check compares. The result and its detail come from the store. */
 const CHECK_TEXT: Record<CheckResult['id'], { name: string; what: string }> = {
-  C1: { name: 'Register to control account', what: 'The asset listing total against the general ledger balance' },
-  C2: { name: 'Schedule integrity', what: 'Every schedule sums to its depreciable base, both books' },
-  C3: { name: 'Tax book coverage', what: 'The tax book population against the register population' },
-  C4: { name: 'Export coverage', what: 'The statutory export population against the tax book' },
+  C1: { name: 'Register to control account', what: 'Asset register total against the general ledger balance' },
+  C2: { name: 'Schedule integrity', what: 'Each schedule adds up to its depreciable amount, on both books' },
+  C3: { name: 'Tax book coverage', what: 'Every asset in the register is in the tax book' },
+  C4: { name: 'Lampiran 9 coverage', what: 'Every asset in the tax book is in Lampiran 9' },
 }
 
 /** The four checks, in the order the design lists them. */
@@ -109,7 +109,7 @@ const overall = computed<CheckState>(() => {
 
 const stateLabel: Record<CheckState, string> = {
   passed: 'Passed',
-  failed: 'Found something',
+  failed: 'Failed',
   incomplete: 'Did not complete',
 }
 const stateIcon: Record<CheckState, string> = {
@@ -123,14 +123,13 @@ const stateIcon: Record<CheckState, string> = {
   <div class="sc">
     <header class="sc__head">
       <p class="sc__sub">
-        {{ periodLabel(selected) }} · {{ t(isCurrent ? 'last run' : 'run at close') }} {{ result.runAt }} ·
-        {{ t('the result is retained against the period') }}
+        {{ periodLabel(selected) }} · {{ t(isCurrent ? 'last run' : 'run at close') }} {{ result.runAt }}
       </p>
       <MpButton v-if="isCurrent" variant="secondary" is-rounded @click="runAgain">
         {{ t('Run again') }}
       </MpButton>
       <MpButton v-else variant="secondary" is-rounded @click="selected = CURRENT_PERIOD">
-        {{ t('Back to the current period') }}
+        {{ t('View current period') }}
       </MpButton>
     </header>
 
@@ -146,8 +145,6 @@ const stateIcon: Record<CheckState, string> = {
       </span>
     </div>
 
-    <!-- The summary states the result either way. Silence is what the feature
-         exists to remove. -->
     <div class="sc__summary" :class="`sc__summary--${overall}`">
       <MpIcon :name="stateIcon[overall]" size="md" />
       <div>
@@ -156,11 +153,10 @@ const stateIcon: Record<CheckState, string> = {
         </div>
         <div class="sc__summarysub">
           <template v-if="overall === 'passed'">
-            {{ t('The register, both books and the statutory output agree.') }}
+            {{ t('The register, both books and Lampiran 9 agree') }}
           </template>
           <template v-else>
-            {{ failed }} {{ t('found something') }}<template v-if="incomplete">, {{ incomplete }} {{ t('could not complete') }}</template>.
-            {{ t('A check that cannot run is never reported as a pass.') }}
+            {{ failed }} {{ t('failed') }}<template v-if="incomplete"> · {{ incomplete }} {{ t('did not complete') }}</template>
           </template>
         </div>
       </div>
@@ -181,7 +177,7 @@ const stateIcon: Record<CheckState, string> = {
     </div>
 
     <div class="sc__card" data-tour="recon-table">
-      <div class="sc__cardhead">{{ t('Sub-ledger to ledger, account by account') }}</div>
+      <div class="sc__cardhead">{{ t('Sub-ledger against general ledger') }}</div>
       <table class="sc__table">
         <thead>
           <tr>
@@ -209,17 +205,17 @@ const stateIcon: Record<CheckState, string> = {
     <!-- FG6-AC3: labelled as a demonstration wherever it appears. -->
     <div v-if="isCurrent" class="sc__card sc__demo">
       <div class="sc__cardhead">
-        {{ t('Demonstration · simulate a direct journal') }}
+        {{ t('Demonstration only') }}
       </div>
       <div class="sc__demobody">
         <p class="sc__demotext">
-          {{ t('In the product nothing outside the asset module can post to an asset control account, so this check cannot fail from ordinary use. This posts a Rp 4.000.000 journal to 6-5100 as if another module had, so the reconciliation can be seen to fail and name the account. It is a demonstration, not a feature.') }}
+          {{ t('Posts a Rp4.000.000 journal to 6-5100 from outside the asset module, so the account check fails.') }}
         </p>
         <div v-if="demoJournals.length" class="sc__demolist">
           <div v-for="j in demoJournals" :key="j.number">{{ j.number }} · {{ j.date }} · {{ t(j.memo) }}</div>
         </div>
         <div class="sc__demobtns">
-          <MpButton size="sm" variant="secondary" is-rounded @click="simulate">{{ t('Post a demonstration journal') }}</MpButton>
+          <MpButton size="sm" variant="secondary" is-rounded @click="simulate">{{ t('Post demonstration journal') }}</MpButton>
           <MpButton v-if="demoJournals.length" size="sm" variant="ghost" is-rounded @click="withdraw">{{ t('Withdraw demonstration journals') }}</MpButton>
         </div>
       </div>
@@ -241,7 +237,6 @@ const stateIcon: Record<CheckState, string> = {
 .sc__demobtns { display: flex; gap: var(--mp-spacing-2); }
 
 .sc__head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); min-height: 32px; }
-.sc__title { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
 .sc__sub { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0; max-width: 720px; }
 
 .sc__summary { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4); border-radius: var(--mp-radii-md); margin-bottom: var(--mp-spacing-4); border: 1px solid; }

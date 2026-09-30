@@ -38,7 +38,7 @@ function signed(v: number) { return v < 0 ? `(${formatIDRWhole(-v)})` : formatID
   <div class="rf">
     <header class="rf__head">
       <p class="rf__sub">
-        {{ t(`Roll-forward of the carrying amount · ${periodLabel(addPeriods(FY_START, -1))} to ${periodLabel(CURRENT_PERIOD)} · per class`) }}
+        {{ t(`Book value by class · ${periodLabel(addPeriods(FY_START, -1))} to ${periodLabel(CURRENT_PERIOD)}`) }}
       </p>
       <MpSegmentedControl id="rf-book" name="rf-book" v-model="book" :data="bookOptions" />
     </header>
@@ -47,7 +47,7 @@ function signed(v: number) { return v < 0 ? `(${formatIDRWhole(-v)})` : formatID
       <div class="rf__cardhead">
         <span class="rf__cardtitle">{{ book === 'accounting' ? t('Accounting book') : t('Tax book') }}</span>
         <span class="rf__status" :class="ties ? 'rf__status--ok' : 'rf__status--bad'">
-          {{ ties ? t('Every class ties: opening plus movements equals closing') : t('A class does not tie. The unexplained column shows where.') }}
+          {{ ties ? t('All classes reconcile') : t('A class does not reconcile. Check the Unexplained column.') }}
         </span>
       </div>
       <table class="rf__table">
@@ -101,10 +101,10 @@ function signed(v: number) { return v < 0 ? `(${formatIDRWhole(-v)})` : formatID
         </tfoot>
       </table>
       <p v-if="book === 'tax' && rf.excluded.length" class="rf__foot">
-        {{ t(`Not on the tax book, so not in this view: ${rf.excluded.join(', ')}.`) }}
-        <span class="rf__link" @click="router.push({ path: '/assets', query: { filter: 'unclassified' } })">{{ t('Classify') }}</span>
+        {{ t(`Not in the tax book: ${rf.excluded.join(', ')}`) }}
+        <span class="rf__link" @click="router.push({ path: '/assets', query: { filter: 'unclassified' } })">{{ t(rf.excluded.length === 1 ? 'Classify asset' : 'Classify assets') }}</span>
       </p>
-      <p v-else-if="hasTransfers" class="rf__foot">{{ t('Transfers are the carrying amount a split moved between classes. They net to zero across the register.') }}</p>
+      <p v-else-if="hasTransfers" class="rf__foot">{{ t('Transfers: book value moved between classes by an asset split') }}</p>
     </div>
   </div>
 </template>
