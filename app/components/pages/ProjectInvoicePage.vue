@@ -99,7 +99,7 @@ const grandTotal = computed(() => subtotal.value + taxTotal.value)
 
 const sourceNote = computed(() => {
   if (kind === 'tm') return t('Prefilled with reviewed cost lines not yet invoiced')
-  if (kind === 'output') return t('Prefilled from the verified milestone. Its revenue is already recognized')
+  if (kind === 'output') return t('Prefilled from the verified milestone. Its revenue is already recognised')
   if (kind === 'billing') return t('Prefilled from the billing schedule')
   return ''
 })
@@ -116,7 +116,7 @@ const contextStats = computed<ProjectStat[]>(() => {
   const thisDoc = lines.filter(l => l.project === e.id).reduce((a, l) => a + invoiceLineAmount(l), 0)
   return [
     { key: 'cv', label: e.method === 'tm' ? t('Fee estimate') : t('Contract value'), value: formatIdr(e.method === 'tm' ? e.feeEstimate : e.contractValue) },
-    { key: 'rec', label: t('Revenue recognized'), value: formatIdr(revenue(e)) },
+    { key: 'rec', label: t('Revenue recognised'), value: formatIdr(revenue(e)) },
     { key: 'billed', label: t('Billed to date'), value: formatIdr(billed(e)) },
     { key: 'doc', label: t('This invoice'), value: formatIdr(thisDoc) },
   ]
@@ -221,7 +221,7 @@ async function save() {
               />
             </MpFormControl>
             <MpFormControl id="pi-ref">
-              <MpFormLabel>{{ t('Reference no.') }}</MpFormLabel>
+              <MpFormLabel>{{ t('Reference number') }}</MpFormLabel>
               <MpInput id="pi-ref-input" v-model="reference" is-full-width />
             </MpFormControl>
           </div>

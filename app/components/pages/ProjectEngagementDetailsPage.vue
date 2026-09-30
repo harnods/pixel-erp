@@ -192,7 +192,7 @@ function submitAddendum() {
 
 const confirmingVo = computed<Addendum | null>(() => engagement.value?.vos.find(v => v.id === voConfirmId.value) ?? null)
 
-/** Plain-language statement of what approving does to revenue already recognized. */
+/** Plain-language statement of what approving does to revenue already recognised. */
 const voEffect = computed(() => {
   const e = engagement.value
   const vo = confirmingVo.value
@@ -200,7 +200,7 @@ const voEffect = computed(() => {
   if (e.method === 'output') {
     return vo.distinct
       ? `${t('Existing milestones keep their amounts. The added scope gets its own milestone of')} ${formatIdr(vo.newValue - vo.oldValue)}.`
-      : t('Verified milestones stay locked. Verification is blocked until the unverified milestone weights are confirmed against the new value.')
+      : t('Verified milestones stay locked. Confirm the remaining milestone weights against the new value before verifying more.')
   }
   if (e.method === 'input') {
     return vo.distinct
@@ -324,7 +324,7 @@ const hourStats = computed<ProjectStat[]>(() => {
   if (!e) return []
   const h = totalHours.value
   return [
-    { key: 'h', label: t('Hours logged'), value: `${h} h`, sub: `${hourLines.value.length} ${t('of')} ${costLinesLabel(e.entries.length)} ${t('have hours')}` },
+    { key: 'h', label: t('Hours logged'), value: `${h} h`, sub: `${hourLines.value.length} ${t('of')} ${costLinesLabel(e.entries.length)} ${hourLines.value.length === 1 ? t('has hours') : t('have hours')}` },
     { key: 'cph', label: t('Cost per hour'), value: h ? formatIdr(Math.round(hourCost.value / h)) : '—', sub: t('Cost incurred ÷ hours') },
     e.method === 'tm'
       ? { key: 'chg', label: t('Billable per hour'), value: h ? formatIdr(Math.round((hourCost.value * (1 + e.markupPct / 100)) / h)) : '—', sub: `${t('Includes')} ${e.markupPct}% ${t('margin')}`, tone: 'positive' as const }
@@ -603,7 +603,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
           />
         </div>
         <p class="detail-subtitle">
-          {{ engagement.client }} · {{ methodLabel(engagement.method) }} · {{ t('PM') }} {{ engagement.pm }}
+          {{ engagement.client }} · {{ methodLabel(engagement.method) }} · {{ t('Managed by') }} {{ engagement.pm }}
         </p>
       </div>
 
@@ -898,7 +898,6 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
 
               <section class="pa-card">
                 <h2 class="pa-card-title">{{ t('Review queue') }}</h2>
-                <p class="pa-card-desc">{{ t('Choose how to charge each line before invoicing it.') }}</p>
                 <div class="pa-chips">
                   <button
                     v-for="c in bulkChips" :key="c.key" type="button"
@@ -1008,7 +1007,6 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
             <template v-else>
               <section class="pa-card">
                 <h2 class="pa-card-title">{{ t('Output by Milestone') }}</h2>
-                <p class="pa-card-desc">{{ t("Verifying a milestone recognises its share of the contract value.") }}</p>
                 <p class="pa-summary" :class="weightsOk ? 'pa-summary--ok' : 'pa-summary--bad'">
                   {{ weightsOk
                     ? t('Milestone weights sum to 100%.')
@@ -1193,7 +1191,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
         </MpTabPanels>
       </MpTabs>
 
-      <!-- ── Budget variance — shown on every tab except Setup ── -->
+      <!-- ── Budget variance: shown on every tab except Setup ── -->
       <section v-if="showBudgetVariance" class="pa-card">
         <h2 class="pa-card-title">{{ t('Budget variance') }}</h2>
         <p v-if="engagement.budget === null" class="pa-warn">

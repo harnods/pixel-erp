@@ -13,7 +13,7 @@ import { loadSnapshot, saveSnapshot } from './persist'
  *            (What accountants call cost-plus.) Consulting, audit, retainers.
  *   input  — Input by Cost. Progress = cost spent ÷ cost planned; revenue = that
  *            percentage × contract value. Billing runs on its own schedule, and the
- *            gap is reported as unbilled (asset) or overbilled (liability).
+ *            gap is reported as unbilled revenue or billed in advance.
  *   output — Output by Milestone. Revenue arrives only when a weighted milestone is
  *            physically verified. Verifying earns AND queues its invoice.
  *
@@ -23,7 +23,7 @@ import { loadSnapshot, saveSnapshot } from './persist'
  *      value is an append-only, dated addendum that Finance approves separately from
  *      the PM who raised it. Rejected addenda stay on the list on purpose.
  *   2. Whether added scope is DISTINCT (PSAK 72) — not how the project earns —
- *      decides whether revenue already recognized is trued up. The system cannot
+ *      decides whether revenue already recognised is trued up. The system cannot
  *      infer it; someone has to say which it is. See approveAddendum().
  *
  * Money is a plain number of rupiah; pages format with Intl.NumberFormat('id-ID', …)
@@ -109,7 +109,7 @@ export interface Addendum {
   distinct: boolean
   raisedBy: string
   approvedBy: string | null
-  /** Catch-up recognized in the current period at approval. */
+  /** Catch-up recognised in the current period at approval. */
   adjustment: number
 }
 
@@ -470,7 +470,7 @@ export function pendingVos(e: Engagement): Addendum[] {
   return e.vos.filter(v => v.status === 'Pending')
 }
 
-/** Net position: positive = unbilled (asset), negative = overbilled (liability). */
+/** Billing position: positive = unbilled revenue, negative = billed in advance. */
 export function wipNet(e: Engagement): number {
   return revenue(e) - billed(e)
 }
@@ -687,7 +687,7 @@ export function addAddendum(id: string, newValue: number, reason: string, distin
 
 /**
  * Approve an addendum. The contract value moves here — and PSAK 72's distinct test
- * decides what happens to revenue already recognized:
+ * decides what happens to revenue already recognised:
  *
  *   input  + not distinct → same partially-satisfied obligation, so the whole thing
  *                           is remeasured on the new value: a one-time cumulative
@@ -778,7 +778,7 @@ export function confirmWeights(id: string, weights: { id: string; pct: string }[
   return true
 }
 
-/** Recognizes the milestone's share of contract value and queues it for billing. */
+/** Recognises the milestone's share of contract value and queues it for billing. */
 export function verifyMilestone(id: string, mid: string): number {
   const e = findEngagement(id)
   if (!e || !e.milestones || e.weightsNeedConfirm) return 0

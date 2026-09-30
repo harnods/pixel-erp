@@ -179,12 +179,12 @@ function cancel() {
             </MpFormControl>
 
             <MpFormControl id="px-no">
-              <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
+              <MpFormLabel>{{ t('Transaction number') }}</MpFormLabel>
               <MpInput id="px-no-input" :model-value="t('Auto')" is-full-width is-disabled />
             </MpFormControl>
 
             <MpFormControl id="px-ref">
-              <MpFormLabel>{{ t('Reference no.') }}</MpFormLabel>
+              <MpFormLabel>{{ t('Reference number') }}</MpFormLabel>
               <MpInput id="px-ref-input" v-model="reference" is-full-width />
             </MpFormControl>
           </div>
