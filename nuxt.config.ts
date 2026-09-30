@@ -82,6 +82,9 @@ export default defineNuxtConfig({
       include: [
         '@mekari/pixel3', '@vue/devtools-core', '@vue/devtools-kit', '@supabase/supabase-js',
         'jspdf', 'jspdf-autotable', 'bwip-js',
+        // Imported directly (not via @mekari/pixel3), so Vite would otherwise find them
+        // at runtime on the first start and trigger the reload race described above.
+        '@mekari/pixel3-tour', '@mekari/pixel3-utils',
       ],
     },
     css: {
