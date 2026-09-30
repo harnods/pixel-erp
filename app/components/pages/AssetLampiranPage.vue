@@ -27,8 +27,8 @@ const router = useRouter()
 
 const status = computed(() => lampiranStatus())
 const halves = computed(() => [
-  { key: 'Tangible', title: 'Half 1 · Tangible assets (penyusutan)', groupHead: 'Statutory group', rows: lampiranRows('Tangible') },
-  { key: 'Intangible', title: 'Half 2 · Intangible assets (amortisasi)', groupHead: 'Statutory code · group', rows: lampiranRows('Intangible') },
+  { key: 'Tangible', title: 'Part 1 · Tangible assets (penyusutan)', groupHead: 'Statutory group', rows: lampiranRows('Tangible') },
+  { key: 'Intangible', title: 'Part 2 · Intangible assets (amortisasi)', groupHead: 'Statutory code · group', rows: lampiranRows('Intangible') },
 ])
 
 function sum(rows: LampiranRow[], k: 'cost' | 'charge' | 'openingFiscal' | 'closingFiscal') {
@@ -45,38 +45,37 @@ function openUnclassified() {
   <div class="lp">
     <header class="lp__head" data-tour="lamp-export">
       <p class="lp__sub">
-        {{ t(`Fiscal depreciation and amortisation · FY2026 to ${periodLabel(CURRENT_PERIOD)} · PT Central Perk Indonesia`) }}
+        {{ t(`FY2026 to ${periodLabel(CURRENT_PERIOD)} · PT Central Perk Indonesia`) }}
       </p>
       <MpButton variant="secondary" is-rounded @click="infoToast(t('Not in this prototype'))">{{ t('Export') }}</MpButton>
     </header>
 
-    <!-- The refusal comes before the figures, with the way out. -->
     <MpBanner v-if="!status.ready" id="lp-refuse" variant="danger" class="lp__note">
       <MpBannerIcon id="lp-b-icon" />
       <MpBannerTitle>
-        {{ t('Lampiran 9 cannot be produced yet') }}
+        {{ t('Classify all assets to produce Lampiran 9') }}
       </MpBannerTitle>
       <MpBannerDescription>
         {{ status.unclassified.length }}
         {{ t(status.unclassified.length === 1 ? 'asset held this year has no statutory group' : 'assets held this year have no statutory group') }}
-        ({{ status.unclassified.map((a) => a.id).join(', ') }}), {{ t('so') }} {{ formatIDRWhole(status.unreportedCost) }}
-        {{ t('of cost would be missing from the filing.') }}
+        ({{ status.unclassified.map((a) => a.id).join(', ') }}) ·
+        {{ formatIDRWhole(status.unreportedCost) }} {{ t('of cost missing from the filing') }}
         <span class="lp__link" @click="openUnclassified">
-          {{ t(status.unclassified.length === 1 ? 'Open the unclassified asset in the register' : `Open the ${status.unclassified.length} unclassified assets in the register`) }}
+          {{ t(status.unclassified.length === 1 ? 'View unclassified asset' : 'View unclassified assets') }}
         </span>
       </MpBannerDescription>
     </MpBanner>
     <MpBanner v-else id="lp-ready" variant="success" class="lp__note">
       <MpBannerIcon id="lp-ok-icon" />
-      <MpBannerTitle>{{ t('Every asset held this year is classified') }}</MpBannerTitle>
+      <MpBannerTitle>{{ t('All assets held this year are classified') }}</MpBannerTitle>
       <MpBannerDescription>
-        {{ status.tangible }} {{ t('in half 1 and') }} {{ status.intangible }} {{ t('in half 2. The figures are the tax book\'s and post nothing.') }}
+        {{ t('Part 1') }}: {{ status.tangible }} · {{ t('Part 2') }}: {{ status.intangible }}
       </MpBannerDescription>
     </MpBanner>
 
     <div class="lp__counts" data-tour="lamp-both">
-      <div class="lp__count"><span class="lp__countk">{{ t('Half 1 · tangible') }}</span><span class="lp__countv">{{ status.tangible }}</span></div>
-      <div class="lp__count"><span class="lp__countk">{{ t('Half 2 · intangible') }}</span><span class="lp__countv">{{ status.intangible }}</span></div>
+      <div class="lp__count"><span class="lp__countk">{{ t('Part 1 · tangible') }}</span><span class="lp__countv">{{ status.tangible }}</span></div>
+      <div class="lp__count"><span class="lp__countk">{{ t('Part 2 · intangible') }}</span><span class="lp__countv">{{ status.intangible }}</span></div>
       <div class="lp__count" :class="{ 'lp__count--bad': !status.ready }">
         <span class="lp__countk">{{ t('Unclassified') }}</span><span class="lp__countv">{{ status.unclassified.length }}</span>
       </div>
@@ -96,11 +95,11 @@ function openUnclassified() {
               <th class="lp__th">{{ t('Asset') }}</th>
               <th class="lp__th">{{ t('Acquired') }}</th>
               <th class="lp__th lp__th--num">{{ t('Cost') }}</th>
-              <th class="lp__th lp__th--num">{{ t('Fiscal value, start of year') }}</th>
-              <th class="lp__th">{{ t('Commercial method') }}</th>
-              <th class="lp__th">{{ t('Fiscal method') }}</th>
-              <th class="lp__th lp__th--num">{{ t('Fiscal charge this year') }}</th>
-              <th class="lp__th lp__th--num">{{ t('Fiscal value, end') }}</th>
+              <th class="lp__th lp__th--num">{{ t('Tax book value, start of year') }}</th>
+              <th class="lp__th">{{ t('Accounting method') }}</th>
+              <th class="lp__th">{{ t('Tax method') }}</th>
+              <th class="lp__th lp__th--num">{{ t('Tax charge this year') }}</th>
+              <th class="lp__th lp__th--num">{{ t('Tax book value, end') }}</th>
               <th class="lp__th">{{ t('Note') }}</th>
             </tr>
           </thead>

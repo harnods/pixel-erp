@@ -1274,15 +1274,15 @@ export function checkBookIntegrity(l: AssetLedger, b: BookLedger): IntegrityResu
   const check = (rows: ScheduleRow[], name: string, mustEnd: boolean) => {
     rows.forEach((r, i) => {
       if (!Number.isInteger(r.charge)) issues.push(`${name} ${r.period}: charge is not whole rupiah`)
-      if (r.openingAccumulated + r.charge + (r.adjustment ?? 0) + r.writeDown - (r.transferredOut ?? 0) !== r.closingAccumulated) issues.push(`${name} ${r.period}: row does not add up`)
-      if (r.cost - r.closingAccumulated !== r.netBookValue) issues.push(`${name} ${r.period}: book value does not follow`)
+      if (r.openingAccumulated + r.charge + (r.adjustment ?? 0) + r.writeDown - (r.transferredOut ?? 0) !== r.closingAccumulated) issues.push(`${name} ${r.period}: opening, charge and closing do not add up`)
+      if (r.cost - r.closingAccumulated !== r.netBookValue) issues.push(`${name} ${r.period}: book value is not cost less accumulated`)
       const prev = rows[i - 1]
-      if (prev && prev.closingAccumulated !== r.openingAccumulated) issues.push(`${name} ${r.period}: chain broken`)
+      if (prev && prev.closingAccumulated !== r.openingAccumulated) issues.push(`${name} ${r.period}: opening does not match the previous closing`)
     })
     const last = rows[rows.length - 1]
     if (mustEnd && last) {
       const residual = b.bases.find((x) => x.id === last.basisId)?.residual ?? 0
-      if (last.netBookValue !== residual) issues.push(`${name}: ends at ${last.netBookValue}, not at the residual ${residual}`)
+      if (last.netBookValue !== residual) issues.push(`${name}: ends at ${last.netBookValue}, not at the residual value ${residual}`)
     }
   }
   for (const v of b.versions) {

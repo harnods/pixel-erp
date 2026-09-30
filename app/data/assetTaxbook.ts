@@ -87,9 +87,9 @@ export function allowedGroupsFor(type: AssetType, cls: string): string[] {
 export function groupRefusal(type: AssetType, cls: string, group: string): string | null {
   if (!STATUTORY_GROUPS[group]) return `${group} is not a statutory group`
   if (allowedGroupsFor(type, cls).includes(group)) return null
-  if (type === 'Intangible') return `${group} is a building group. An intangible takes one of Tax group 1 to 4.`
-  if (cls === 'Buildings') return `A building takes Permanent building or Non-permanent building, never ${group}.`
-  return `${group} is for buildings only. A ${cls.toLowerCase()} asset takes one of Tax group 1 to 4.`
+  if (type === 'Intangible') return `${group} is for buildings only. Select Tax group 1 to 4 for an intangible asset`
+  if (cls === 'Buildings') return `${group} is not for buildings. Select Permanent building or Non-permanent building`
+  return `${group} is for buildings only. Select Tax group 1 to 4`
 }
 
 /** The eleven intangible statutory codes, from the one list in assetIntangibles.ts. */
@@ -104,7 +104,7 @@ export const canClassify = computed(() => viewAs.value === 'Owner' || viewAs.val
 export const hasLmAuthority = computed(() => viewAs.value === 'Owner')
 
 export const FISCAL_LIFE_FIXED = (group: string, months: number) =>
-  `The fiscal life is fixed by ${group} at ${formatLife(months)}. Changing it away from the group needs LM authority, which ${viewAs.value} does not hold.`
+  `${group} sets the fiscal life at ${formatLife(months)}. A different life needs LM authority, which ${viewAs.value} does not have.`
 
 export interface ClassificationInput {
   group: string
@@ -125,7 +125,7 @@ export function classifyAsset(id: string, input: ClassificationInput): ClassifyR
   const s = assetRecords.value.find((x) => x.id === id)
   const l = ledgers.value[id]
   if (!s || !l) return { ok: false, reason: `No asset ${id}` }
-  if (!canClassify.value) return { ok: false, reason: `Viewing as ${viewAs.value}. A statutory classification needs the Owner, Accounting or Tax role.` }
+  if (!canClassify.value) return { ok: false, reason: `Only the Owner, Accounting or Tax role can set a statutory group. You are viewing as ${viewAs.value}.` }
   const refusal = groupRefusal(s.type, s.class, input.group)
   if (refusal) return { ok: false, reason: refusal, field: 'group' }
   const statutory = groupLifeMonths(input.group)!
@@ -140,7 +140,7 @@ export function classifyAsset(id: string, input: ClassificationInput): ClassifyR
   const tax = l.books.tax
   const curLife = tax ? tax.bases[tax.bases.length - 1]!.lifeMonths : null
   const groupChanged = l.taxGroup !== input.group || curLife !== life
-  if (!groupChanged && code === s.statutoryCode) return { ok: false, reason: 'Nothing has changed: the group, fiscal life and code are as recorded' }
+  if (!groupChanged && code === s.statutoryCode) return { ok: false, reason: 'No changes to save' }
   let eventId: string | null = null
   if (groupChanged) {
     const e: Omit<TaxClassificationEvent, 'id'> = {
@@ -192,8 +192,8 @@ export function planClassChange(id: string, cls: string): ClassChangePlan {
   const none = (reason: string): ClassChangePlan => ({ ok: false, reason, changes: [], events: [] })
   if (!s || !l) return none(`No asset ${id}`)
   if (!def) return none(`No class ${cls}`)
-  if (l.disposedIn || l.splitIn) return none(`${id} is no longer held. Its class cannot change.`)
-  if (def.type !== s.type) return none(`${cls} holds ${def.type.toLowerCase()} assets and ${id} is ${s.type.toLowerCase()}.`)
+  if (l.disposedIn || l.splitIn) return none(`${id} is disposed of or split, so its class cannot change`)
+  if (def.type !== s.type) return none(`${cls} is for ${def.type.toLowerCase()} assets only. ${id} is ${s.type.toLowerCase()}`)
   if (s.class === cls) return none(`${id} is already in ${cls}`)
   const changes: FieldChange[] = [{ field: 'Class', before: s.class, after: cls }]
   const events: ClassChangePlan['events'] = []
@@ -227,7 +227,7 @@ export const canChangeClass = computed(() => viewAs.value === 'Owner' || viewAs.
 export type ClassChangeResult = { ok: true; eventIds: string[]; previousClass: string } | { ok: false; reason: string }
 
 export function changeAssetClass(id: string, cls: string): ClassChangeResult {
-  if (!canChangeClass.value) return { ok: false, reason: `Viewing as ${viewAs.value}. Changing a class needs the Owner or Accounting role.` }
+  if (!canChangeClass.value) return { ok: false, reason: `Only the Owner or Accounting role can change a class. You are viewing as ${viewAs.value}.` }
   const plan = planClassChange(id, cls)
   if (!plan.ok) return { ok: false, reason: plan.reason! }
   const previousClass = assetRecords.value.find((x) => x.id === id)!.class
@@ -245,7 +245,7 @@ export function changeAssetClass(id: string, cls: string): ClassChangeResult {
 export function updateClassDef(cls: string, patch: Partial<Pick<AssetClassDef, 'defaultTaxGroup' | 'commercialLifeMonths' | 'method'>>): string | null {
   const def = classDef(cls)
   if (!def) return `No class ${cls}`
-  if (!canChangeClass.value) return `Viewing as ${viewAs.value}. The class master needs the Owner or Accounting role.`
+  if (!canChangeClass.value) return `Only the Owner or Accounting role can edit asset classes. You are viewing as ${viewAs.value}.`
   if (patch.defaultTaxGroup) {
     const r = groupRefusal(def.type, def.class, patch.defaultTaxGroup)
     if (r) return r
