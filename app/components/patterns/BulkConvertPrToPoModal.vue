@@ -71,7 +71,8 @@ const totals = computed(() => {
   }
 })
 
-const totalValue = computed(() => plan.value.groups.reduce((sum, g) => sum + g.total, 0))
+/** Before tax, so it equals the sum of the line values shown in the table. */
+const totalValue = computed(() => plan.value.groups.reduce((sum, g) => sum + g.subtotal, 0))
 
 const summary = computed(() => [
   { label: t('Purchase requests'), value: props.prs.length },

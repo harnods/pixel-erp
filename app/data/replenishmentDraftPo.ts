@@ -149,8 +149,10 @@ function summarize(group: Omit<DraftPoGroup, 'subtotal' | 'taxAmount' | 'total' 
 export function createDraftPoFromGroup(
   group: DraftPoGroup,
   createdBy = 'You',
-  purchaseRequestId?: string,
+  /** The request(s) this PO was converted from: one id, or several for a merge. */
+  purchaseRequestId?: string | string[],
 ): PurchaseOrder {
+  const requestIds = purchaseRequestId === undefined ? [] : [purchaseRequestId].flat()
   const id = nextPurchaseOrderId()
   const number = nextPurchaseOrderNumber()
 
@@ -182,7 +184,7 @@ export function createDraftPoFromGroup(
   const origin: PurchaseOrderReplenishmentOrigin = {
     source: 'replenishment',
     // journal → PO → the originating request → the worklist run (US-027 AC-02).
-    ...(purchaseRequestId ? { purchaseRequestId } : {}),
+    ...(requestIds.length ? { purchaseRequestId: requestIds[0], purchaseRequestIds: requestIds } : {}),
     asOf: REPL_ASOF_ISO,
     runNo: currentRunNo(),
     warehouseId: group.warehouseId,
@@ -544,7 +546,9 @@ export function convertPurchaseRequestsToPos(
   const { groups, skipped } = planPosFromPurchaseRequests(prs, warehouseId, vendorChoices, qtyOverrides)
 
   const created = groups.map((group) => {
-    const order = createDraftPoFromGroup(group, createdBy)
+    // US-023: a merged PO still traces back to every request that fed it.
+    const sourceIds = [...new Set(group.lines.flatMap((l) => (l.sources ?? []).map((s) => s.prId)))]
+    const order = createDraftPoFromGroup(group, createdBy, sourceIds.length ? sourceIds : prs.map((p) => p.id))
     return {
       id: order.id,
       number: String(order.number),

@@ -3752,6 +3752,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   // "Vendor" never "Pemasok"; noun-only labels on create actions.
   'Request to purchase': 'Ajukan pembelian',
   'Create purchase request': 'Buat permintaan pembelian',
+  'Draft purchase order created': 'Draf pesanan pembelian berhasil dibuat',
+  '{n} draft purchase orders created': '{n} draf pesanan pembelian berhasil dibuat',
   'The template is pre-filled with this vendor\u2019s current products and terms, so you only change what has moved.': 'Template sudah terisi produk dan ketentuan vendor ini saat ini, jadi Anda hanya mengubah yang berubah.',
   'This is what the file will do to this vendor\u2019s ordering terms.': 'Berikut yang akan dilakukan file ini terhadap ketentuan pemesanan vendor ini.',
   'MOQ is not a multiple of purchase multiplier {n}': 'MOQ bukan kelipatan dari kelipatan pembelian {n}',
@@ -3917,8 +3919,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Vendor is inactive': 'Vendor tidak aktif',
   'Nothing to order': 'Tidak ada yang dipesan',
   'Missing pack conversion': 'Konversi kemasan belum ada',
-  '1 draft purchase order created': '1 draf pesanan pembelian dibuat',
-  'draft purchase orders created': 'draf pesanan pembelian dibuat',
   'No draft purchase order could be created': 'Tidak ada draf pesanan pembelian yang bisa dibuat',
   // Bulk PR → 1 PO merge
   'Select vendor': 'Pilih vendor',

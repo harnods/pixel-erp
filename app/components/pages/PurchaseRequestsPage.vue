@@ -23,7 +23,7 @@ import { purchaseRequests, updatePurchaseRequest } from '~/data'
 import type { PurchaseRequest } from '~/data'
 
 const toggleAirene = inject<() => void>('toggleAirene')
-const { t } = useLocale()
+const { t, tf } = useLocale()
 const route = useRoute()
 const router = useRouter()
 
@@ -177,6 +177,23 @@ function createPurchaseOrder(pr: PurchaseRequest) {
   convertPr.value = pr
   convertOpen.value = true
 }
+/**
+ * After a conversion the user lands on what was created — one draft opens directly,
+ * several open the Awaiting approval list — so the new order is never hard to find.
+ */
+function afterConvert(result: { created: { id: string }[]; skipped: unknown[] }) {
+  const n = result.created.length
+  toast.notify({
+    variant: 'success',
+    title: n === 1 ? t('Draft purchase order created') : tf('{n} draft purchase orders created', { n }),
+    ...(result.skipped.length ? { description: tf('Skipped products: {n}', { n: result.skipped.length }) } : {}),
+    maxWidth: 'max-content',
+  })
+  router.push(n === 1
+    ? { path: '/purchase-orders', query: { po: result.created[0]!.id } }
+    : { path: '/purchase-orders', query: { poTab: 'awaiting' } })
+}
+
 function confirmConvert(payload: {
   warehouseId: string
   vendorChoices: Record<string, string | null>
@@ -190,11 +207,7 @@ function confirmConvert(payload: {
     toast.notify({ variant: 'error', title: t('No draft purchase order could be created') })
     return
   }
-  const poPart = result.created.length === 1
-    ? t('1 draft purchase order created')
-    : `${result.created.length} ${t('draft purchase orders created')}`
-  const skipPart = result.skipped.length ? ` · ${result.skipped.length} ${t('lines skipped')}` : ''
-  toast.notify({ variant: 'success', title: `${poPart}${skipPart}` })
+  afterConvert(result)
 }
 
 // Bulk: merge several PRs into one PO per vendor — same-SKU lines are summed, then
@@ -220,11 +233,7 @@ function confirmBulkConvert(payload: {
     toast.notify({ variant: 'error', title: t('No draft purchase order could be created') })
     return
   }
-  const poPart = result.created.length === 1
-    ? t('1 draft purchase order created')
-    : `${result.created.length} ${t('draft purchase orders created')}`
-  const skipPart = result.skipped.length ? ` · ${result.skipped.length} ${t('lines skipped')}` : ''
-  toast.notify({ variant: 'success', title: `${poPart}${skipPart}` })
+  afterConvert(result)
 }
 function markCompleted(id: string) {
   updatePurchaseRequest(id, { status: 'closed', awaitingApproval: false })

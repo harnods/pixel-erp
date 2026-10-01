@@ -1,3 +1,4 @@
+import { purchaseOrders } from '~/data/purchaseOrders'
 import { purchaseRequests } from './purchaseRequests'
 import type { PurchaseRequest } from './types'
 
@@ -18,6 +19,8 @@ export interface PRLinkedTxn {
   type: string          // "Purchase Order"
   number: string        // "#PO-40118"
   status: string        // mapped via ErpStatusBadge
+  /** Set when the row is a real record that can be opened. */
+  id?: string
 }
 
 export interface PurchaseRequestDetail extends PurchaseRequest {
@@ -53,6 +56,17 @@ function pick<T>(arr: T[], i: number): T { return arr[i % arr.length]! }
  * turned into a purchase order; open/voided requests link to nothing.
  */
 function buildLinked(pr: PurchaseRequest, idx: number): PRLinkedTxn[] {
+  // Real purchase orders converted from this request come first (US-023): the
+  // trace must work request → order, not only order → request.
+  const converted = purchaseOrders.filter((po) => {
+    const o = po.replenishment
+    return !!o && (o.purchaseRequestIds?.includes(pr.id) || o.purchaseRequestId === pr.id)
+  })
+  if (converted.length) {
+    return converted.map((po) => ({
+      date: po.date, type: 'Purchase Order', number: `#${po.number}`, status: po.status, id: po.id,
+    }))
+  }
   if (pr.status !== 'partially processed' && pr.status !== 'closed') return []
   return [{
     date: pr.date,

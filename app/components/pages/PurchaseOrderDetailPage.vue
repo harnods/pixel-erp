@@ -35,11 +35,14 @@ const duplicatePurchaseOrder = inject<(id: string, banner?: { user: string; date
 
 const order = computed(() => getPurchaseOrderDetail(props.orderId))
 
-/** "Purchase Request #90012" for the request this PO was converted from, if any. */
-const originRequestLabel = computed(() => {
-  const id = order.value.replenishment?.purchaseRequestId
-  const pr = id ? purchaseRequests.find((r) => r.id === id) : undefined
-  return pr ? `Purchase Request #${pr.number}` : id ?? ''
+/** The request(s) this PO was converted from — several when requests were merged. */
+const originRequests = computed(() => {
+  const o = order.value.replenishment
+  const ids = o?.purchaseRequestIds ?? (o?.purchaseRequestId ? [o.purchaseRequestId] : [])
+  return ids.map((id) => {
+    const pr = purchaseRequests.find((r) => r.id === id)
+    return { id, label: pr ? `Purchase Request #${pr.number}` : id }
+  })
 })
 const { dimensionsActivated } = useDimensionsActivation()
 const showDimensionsColumn = computed(() => dimensionsActivated.value && applicableDimensions('purchases').length > 0)
@@ -423,10 +426,13 @@ function goBack() { closePurchaseOrder?.() }
           <div class="content-list-col">
             <ContentList label="Transaction no." :value="`Purchase Order #${order.number}`" />
             <!-- US-023 AC-02: a PO converted from a replenishment request links back to it. -->
-            <ContentList v-if="order.replenishment?.purchaseRequestId" label="Purchase request">
-              <a class="cell-link" @click.prevent="navigateTo(`/purchase-requests/${order.replenishment.purchaseRequestId}`)">
-                {{ originRequestLabel }}
-              </a>
+            <ContentList v-if="originRequests.length" label="Purchase request">
+              <a
+                v-for="r in originRequests"
+                :key="r.id"
+                class="cell-link content-list__line"
+                @click.prevent="navigateTo(`/purchase-requests/${r.id}`)"
+              >{{ r.label }}</a>
             </ContentList>
             <ContentList label="Reference no." :value="order.referenceNo" />
             <ContentList label="Warehouse" :value="order.warehouse" />

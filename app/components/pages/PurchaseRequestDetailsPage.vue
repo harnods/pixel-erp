@@ -359,7 +359,7 @@ function goBack() { router.push('/purchase-requests') }
                 <tr v-for="(txn, i) in request.linkedTransactions" :key="i" class="detail-item-row">
                   <td class="detail-td">{{ formatDateNumeric(txn.date) }}</td>
                   <td class="detail-td">
-                    <a class="cell-link cell-text" @click.stop>{{ txn.type }} {{ txn.number }}</a>
+                    <a class="cell-link cell-text" @click.stop="txn.id && navigateTo({ path: '/purchase-orders', query: { po: txn.id } })">{{ txn.type }} {{ txn.number }}</a>
                   </td>
                   <td class="detail-td"><ErpStatusBadge :status="txn.status" /></td>
                   <td class="detail-td"></td>

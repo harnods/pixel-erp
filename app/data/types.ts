@@ -398,6 +398,8 @@ export interface PurchaseOrderReplenishmentOrigin {
   source: 'replenishment'
   /** Set when this PO was converted from a replenishment PR (US-027 AC-02). */
   purchaseRequestId?: string
+  /** Every request this PO was built from — more than one when requests were merged. */
+  purchaseRequestIds?: string[]
   /** The worklist snapshot date this came from (stock clock, not the PO clock). */
   asOf: string
   runNo: number

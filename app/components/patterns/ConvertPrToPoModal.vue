@@ -80,7 +80,8 @@ const totals = computed(() => {
   return { poCount: groups.length, vendorCount: new Set(groups.map((g) => g.vendorId)).size, lineCount }
 })
 
-const totalValue = computed(() => plan.value.groups.reduce((sum, g) => sum + g.total, 0))
+/** Before tax, so it equals the sum of the line values shown in the table. */
+const totalValue = computed(() => plan.value.groups.reduce((sum, g) => sum + g.subtotal, 0))
 
 const summary = computed(() => [
   { label: t('Draft purchase orders'), value: totals.value.poCount },

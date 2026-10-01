@@ -370,6 +370,13 @@ provide('closePurchaseOrderForm', () => {
   if (route.query.fromPr) router.replace({ query: { ...route.query, fromPr: undefined } })
 })
 watch(currentPageKey, () => { poDetailOrderId.value = null; poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null; poFormPrIds.value = [] })
+// ?po=<id> opens one purchase order directly — used when another page links to an
+// order (a request's linked transactions, or right after converting a request).
+// Declared AFTER the reset above so it wins when the page key changes too.
+watch(() => [currentPageKey.value, route.query.po] as const, ([key, id]) => {
+  if (key !== 'Purchase orders' || typeof id !== 'string' || !id) return
+  if (purchaseOrders.some((o) => o.id === id)) poDetailOrderId.value = id
+}, { immediate: true })
 // Open the PO form pre-loaded from purchase requests when arriving with ?fromPr
 // (runs after the reset watch above, so it wins on the same navigation).
 watch(() => [currentPageKey.value, route.query.fromPr] as const, ([key, fromPr]) => {
