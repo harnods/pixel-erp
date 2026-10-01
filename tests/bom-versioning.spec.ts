@@ -76,6 +76,18 @@ describe('regular BOM versioning', () => {
     expect(changes.engineeringChanges.length).toBe(ecosBefore)
   })
 
+  it('a new version is the same BOM — same id and BOM code, no new BOM record (incl. from a superseded version)', async () => {
+    const { boms, guards } = await load()
+    const b = boms.billOfMaterials.find(x => x.number === 'Bill of Materials #10002')!
+    const [id, number, count] = [b.id, b.number, boms.billOfMaterials.length]
+    expect(guards.saveBomNewVersionSafe(b.id, { ...copy(b), description: 'v2 recipe' }, { by: 'Rudi', reason: REASON })).toEqual({ ok: true, version: 2 })
+    expect(guards.saveBomNewVersionSafe(b.id, copy(boms.bomAtVersion(b, 1)!), { by: 'Rudi', reason: REASON })).toEqual({ ok: true, version: 3 })
+    expect(boms.billOfMaterials.length).toBe(count)
+    expect(boms.billOfMaterials.filter(x => x.number === number)).toHaveLength(1)
+    expect([b.id, b.number]).toEqual([id, number])
+    expect(boms.bomVersionList(b).map(v => v.version)).toEqual([3, 2, 1])
+  })
+
   it('a new version can be saved from a superseded one; numbering stays monotonic', async () => {
     const { boms, guards } = await load()
     const b = boms.billOfMaterials[0]!
