@@ -5031,4 +5031,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Version updated to": "Versi diperbarui ke",
   "was updated to": "diperbarui ke",
   "View sub-BOM": "Lihat sub-BOM",
+  "Viewing": "Sedang dilihat",
+  "Save as": "Simpan sebagai",
+  "Open work orders on this BOM": "Perintah kerja terbuka pada BOM ini",
+  "You’ll add the reason when you save. If you leave without saving, no new version is created.": "Alasan diisi saat menyimpan. Jika Anda keluar tanpa menyimpan, versi baru tidak dibuat.",
 }

@@ -16,20 +16,18 @@
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { formatIDR } from '~/utils/currency'
 import {
-  MpFormControl, MpFormLabel, MpFormErrorMessage, MpFormHelpText,
+  MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpAutocomplete, MpInput, MpInputGroup, MpInputLeftAddon, MpInputRightAddon, MpTextarea,
   MpButton, MpIcon, MpCheckbox, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, toast,
 } from '@mekari/pixel3'
 import { CATALOG } from '~/data/catalog'
 import {
-  addBillOfMaterials, billOfMaterials, catalogProduct, bomAtVersion, bomCycle, nextBomVersion, bomWhereUsed,
-  VERSION_REASON_MIN, VERSION_REASON_MAX,
+  addBillOfMaterials, billOfMaterials, catalogProduct, bomAtVersion, bomCycle, nextBomVersion,
   type BillOfMaterials, type BomRawMaterial, type BomProductionCost,
   type BomRoutingStep, type BomOtherOutput, type BomProductionWaste,
 } from '~/data/billOfMaterials'
 import { updateBillOfMaterialsSafe, saveBomNewVersionSafe, bomVersionLocked, bomVersionRefCount } from '~/data/integrityGuards'
-import BomNewVersionImpactModal from '~/components/BomNewVersionImpactModal.vue'
-import { workOrders, workOrderClosed } from '~/data/workOrders'
+import BomNewVersionModal from '~/components/BomNewVersionModal.vue'
 
 const { t } = useLocale()
 const router = useRouter()
@@ -54,16 +52,6 @@ const fromVersion = Number(route.query.from) || undefined
 const editingRefs = computed(() => (editingBomRecord.value ? bomVersionRefCount(editingBomRecord.value.id, editingBomRecord.value.version) : 0))
 const newVersionMode = computed(() => !!editingBomRecord.value && (!!route.query.newVersion || !!fromVersion || bomVersionLocked(editingBomRecord.value.id)))
 const nextVersion = computed(() => (editingBomRecord.value ? nextBomVersion(editingBomRecord.value) : 1))
-const versionReason = ref('')
-const versionReasonError = ref('')
-function validateVersionReason(): boolean {
-  if (!newVersionMode.value) return true
-  const n = versionReason.value.trim().length
-  versionReasonError.value = n < VERSION_REASON_MIN
-    ? t('Reason is required (min 10 characters)')
-    : n > VERSION_REASON_MAX ? t('Reason can be at most 500 characters') : ''
-  return !versionReasonError.value
-}
 /** Inline save errors (rule/form-errors-inline) — a circular reference or a refused save. */
 const saveError = ref('')
 const editingNumber = ref('')
@@ -451,41 +439,29 @@ function saveBom(): { id: string; version: number } | null {
   return { id: created.id, version: created.version }
 }
 
-// ── New version: impact check, then save vN+1 ──
-const isImpactOpen = ref(false)
-const impactContent = ref<ReturnType<typeof buildBomPayload>>()
-function hasImpact(): boolean {
-  const b = editingBomRecord.value
-  if (!b) return false
-  try {
-    return bomWhereUsed(b.id).length > 0 || workOrders.some(w => w.bomId === b.id && !workOrderClosed(w))
-  } catch {
-    return true // where-used down → the modal shows the degraded banner
-  }
-}
-function saveNewVersion() {
-  const payload = impactContent.value ?? buildBomPayload()
-  const res = saveBomNewVersionSafe(editingId, payload, { by: 'Rahadian Bima', reason: versionReason.value })
-  isImpactOpen.value = false
+// ── New version: Save opens the modal (reason + impact), its confirm saves vN+1 ──
+const isNewVersionModalOpen = ref(false)
+const pendingContent = ref<ReturnType<typeof buildBomPayload>>()
+function saveNewVersion(reason: string) {
+  const payload = pendingContent.value ?? buildBomPayload()
+  const res = saveBomNewVersionSafe(editingId, payload, { by: 'Rahadian Bima', reason })
   if (!res.ok) {
-    if (res.reason === 'REASON') validateVersionReason()
-    else saveError.value = t('Failed to save. Please try again')
+    if (res.reason !== 'REASON') { isNewVersionModalOpen.value = false; saveError.value = t('Failed to save. Please try again') }
     return
   }
+  isNewVersionModalOpen.value = false
   toast.notify({ variant: 'success', title: `v${res.version} ${t('saved')}` })
   router.push(`/bill-of-materials/${editingId}`)
 }
 
 function handleSave() {
   saveError.value = ''
-  const ok = validate()
-  if (!validateVersionReason() || !ok) return
+  if (!validate()) return
   if (newVersionMode.value) {
     const payload = buildBomPayload()
     if (cycleError(payload)) return
-    impactContent.value = payload
-    if (hasImpact()) isImpactOpen.value = true
-    else saveNewVersion()
+    pendingContent.value = payload
+    isNewVersionModalOpen.value = true
     return
   }
   const saved = saveBom()
@@ -554,17 +530,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <MpBannerDescription>
                 <template v-if="fromVersion">{{ t('Prefilled from') }} v{{ fromVersion }}. </template>
                 <template v-if="editingRefs">v{{ editingBomRecord.version }} {{ t('is referenced by') }} {{ editingRefs }} {{ t('document(s) and can no longer be edited.') }} </template>
-                {{ t('Work orders already created keep their version; only work orders created after saving use') }} v{{ nextVersion }}. {{ t('If you leave without saving, no new version is created.') }}
+                {{ t('Work orders already created keep their version; only work orders created after saving use') }} v{{ nextVersion }}. {{ t('You’ll add the reason when you save. If you leave without saving, no new version is created.') }}
               </MpBannerDescription>
             </MpBanner>
-            <div class="bf-field bf-field--lg">
-              <MpFormControl id="bf-version-reason" is-required :is-invalid="!!versionReasonError">
-                <MpFormLabel>{{ t('Reason for new version') }}</MpFormLabel>
-                <MpTextarea id="bf-version-reason-input" v-model="versionReason" @update:model-value="versionReasonError = ''" />
-                <MpFormHelpText v-if="!versionReasonError">{{ t('Why is this revision needed? (min 10 characters)') }} · {{ versionReason.trim().length }}/{{ VERSION_REASON_MAX }}</MpFormHelpText>
-                <MpFormErrorMessage>{{ versionReasonError }}</MpFormErrorMessage>
-              </MpFormControl>
-            </div>
           </template>
         </section>
 
@@ -994,10 +962,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
       <MpButton variant="primary" is-rounded @click="handleSave">{{ newVersionMode ? `${t('Save')} v${nextVersion}` : isEditMode ? t('Save changes') : t('Save') }}</MpButton>
     </footer>
 
-    <BomNewVersionImpactModal
+    <BomNewVersionModal
       v-if="newVersionMode && editingBomRecord"
-      :is-open="isImpactOpen" :bom-id="editingBomRecord.id" :next-version="nextVersion" :content="impactContent"
-      @close="isImpactOpen = false" @confirm="saveNewVersion"
+      :is-open="isNewVersionModalOpen" :bom-id="editingBomRecord.id" :next-version="nextVersion" :content="pendingContent"
+      @close="isNewVersionModalOpen = false" @confirm="saveNewVersion"
     />
   </div>
 </template>

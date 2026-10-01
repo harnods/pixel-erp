@@ -5,7 +5,7 @@
  */
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpButton, MpBadge, css, toast,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpButton, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -23,7 +23,7 @@ const columns: TableColumn[] = [
   { key: 'name',             label: t('Name'),               kind: 'name', sortable: true },
   // Regular BOM versioning — exactly one Active version per BOM (never part of the name),
   // plus the "sub-BOM has a new version" indicator (V-05, V-11).
-  { key: 'version',          label: t('Version'),            kind: 'tags', sortable: true },
+  { key: 'version',          label: t('Version'),            sortable: true },
   { key: 'category',         label: t('Category') },
   { key: 'costingReference', label: t('Costing reference'),  kind: 'number' },
   { key: 'finishedGood',     label: t('Finished goods'),     kind: 'name' },
@@ -299,15 +299,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <span class="bom-name">{{ value }}</span>
     </template>
 
-    <!-- ── Version: Active vN + superseded count + "sub-BOM has a new version" ── -->
+    <!-- ── Version: the Active version only ── -->
     <template #cell-version="{ row }">
       <div class="bom-version-cell" data-devchange="bom-index-version">
         <span>v{{ (row as unknown as BillOfMaterials).version }} · {{ t('Active') }}</span>
-        <span v-if="(row as unknown as BillOfMaterials).versionHistory.length" class="bom-version-sub">{{ (row as unknown as BillOfMaterials).versionHistory.length }} {{ t('superseded') }}</span>
-        <MpBadge
-          v-if="reviewCount(row as unknown as BillOfMaterials) !== 0" :id="`bom-review-${row.id}`"
-          for="tableStatus" type="information"
-        >{{ t('Sub-BOM has a new version') }}<template v-if="(reviewCount(row as unknown as BillOfMaterials) ?? 0) > 1"> ({{ reviewCount(row as unknown as BillOfMaterials) }})</template></MpBadge>
       </div>
     </template>
 
@@ -398,7 +393,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 <style scoped>
 .bom-version-cell { display: flex; flex-wrap: wrap; align-items: center; gap: var(--mp-spacing-1) var(--mp-spacing-2); }
-.bom-version-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary); }
 /* ── Filter bar ─────────────────────────────────────────────────────────── */
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }

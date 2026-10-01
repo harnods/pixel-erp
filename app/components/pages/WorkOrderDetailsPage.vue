@@ -21,10 +21,10 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import CompleteWorkOrderModal, { type CompleteWorkOrderRow } from '~/components/patterns/CompleteWorkOrderModal.vue'
 import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
 import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
-import { formatDate, formatDateLong } from '~/utils/date'
+import { formatDate } from '~/utils/date'
 import { workOrders, persistWorkOrders, type WorkOrder, type WorkOrderStatus , bomForWorkOrder, workOrderDrift, workOrderSubDrift, workOrderClosed } from '~/data/workOrders'
 import { workOrderLinks } from '~/data/workOrderLinks'
-import { billOfMaterials, catalogProduct, bomVersionList } from '~/data/billOfMaterials'
+import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 import WorkOrderBomVersionDrawer from '~/components/WorkOrderBomVersionDrawer.vue'
 import BomStructureDrawer from '~/components/BomStructureDrawer.vue'
 import { recordsForWorkOrder, addMaterialConsumeReturnRecord, remainingReservation } from '~/data/materialConsumeReturn'
@@ -43,11 +43,6 @@ const bom = computed(() => wo.value ? bomForWorkOrder(wo.value) : undefined)
 const bomRecord = computed(() => wo.value ? billOfMaterials.find(b => b.id === wo.value!.bomId) : undefined)
 /** A newer Active version exists — neutral information (V-06), hidden once the WO is closed or pre-versioning. */
 const newerBomVersion = computed(() => (wo.value ? workOrderDrift(wo.value) : undefined))
-/** Stamp: "BOM vN — rev. <date>" — the pinned version's creation date. */
-const pinnedRev = computed(() => {
-  const b = bomRecord.value, w = wo.value
-  return b && w ? bomVersionList(b).find(v => v.version === w.bomVersion)?.createdAt : undefined
-})
 // Multi-level: every sub-BOM level was resolved to its Active version and pinned at creation.
 const subPinCount = computed(() => Object.keys(wo.value?.subBomPins ?? {}).length)
 const subDrift = computed(() => (wo.value ? workOrderSubDrift(wo.value) : []))
@@ -486,15 +481,10 @@ function suppressFabClick(e: MouseEvent) {
         </div>
         <div class="wod-info-grid">
           <div class="content-list-col">
-            <ContentList :label="t('BOM name')" :value="wo.bomName" />
-            <ContentList :label="t('BOM no.')">
-              <a v-if="bom" class="wod-bom-link" @click.prevent="goBom">{{ bomNo }}</a>
-              <template v-else>{{ bomNo }}</template>
-            </ContentList>
-            <ContentList :label="t('BOM version')">
+            <ContentList :label="t('BOM name')">
+              <!-- The BOM version this work order was created from, beside the name (the pin never moves). -->
               <span data-devchange="bom-wo-version-pin" class="wod-version">
-                <a v-if="bom" class="wod-bom-link" @click.prevent="goBom">{{ wo.bomName }} · v{{ wo.bomVersion }}</a>
-                <span v-if="pinnedRev && !wo.preVersioning" class="wod-version-rev">{{ t('rev.') }} {{ formatDateLong(pinnedRev) }}</span>
+                <span>{{ wo.bomName }} · v{{ wo.bomVersion }}</span>
                 <MpTag v-if="wo.preVersioning" id="wod-pre-versioning" data-devchange="bom-wo-pre-versioning">{{ t('pre-versioning') }}</MpTag>
                 <MpBadge
                   v-if="newerBomVersion" id="wod-drift" for="tableStatus" type="information" class="wod-version-hint" role="button" tabindex="0"
@@ -502,6 +492,10 @@ function suppressFabClick(e: MouseEvent) {
                   @click="openDrift(wo.bomId, wo.bomVersion)" @keydown.enter="openDrift(wo.bomId, wo.bomVersion)"
                 >v{{ newerBomVersion }} {{ t('available') }}</MpBadge>
               </span>
+            </ContentList>
+            <ContentList :label="t('BOM no.')">
+              <a v-if="bom" class="wod-bom-link" @click.prevent="goBom">{{ bomNo }}</a>
+              <template v-else>{{ bomNo }}</template>
             </ContentList>
             <ContentList v-if="subPinCount" :label="t('Sub-BOM levels')">
               <span class="wod-version" data-devchange="bom-wo-sub-pins">
@@ -1162,7 +1156,6 @@ function suppressFabClick(e: MouseEvent) {
 /* BOM version pin + neutral newer-version indicator (information only — never blocks) */
 .wod-version { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--mp-spacing-2); }
 .wod-version-hint { cursor: pointer; }
-.wod-version-rev { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary); }
 .wod-hierarchy-link { flex-shrink: 0; }
 .wod-attach-list { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .wod-attach { display: inline-flex; align-items: flex-start; gap: var(--mp-spacing-2); cursor: pointer; color: var(--mp-text-link); }

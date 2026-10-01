@@ -1,24 +1,37 @@
 <script setup lang="ts">
 /**
- * Impact check before saving a new BOM version (V-10). Opened by the "Create new
- * version" form's Save when anything uses this BOM: where-used across every level
- * — direct parent BOMs (they get a "sub-BOM has a new version" banner) and
- * indirect ancestors ("via" the BOM between) — with open work orders and the
- * per-unit cost delta rolled up ("Δ n/a" when unpriced). Work orders already
- * created keep their version. If where-used can't be computed, saving is still
- * allowed behind a degraded banner. Nothing is saved until the user confirms.
+ * Save a new BOM version (V-03, V-10) — opened by Save on the "Create new version"
+ * form. The user fills in the reason here (10–500 characters, inline error), and,
+ * when anything uses this BOM, sees the impact before confirming: where-used
+ * across every level — direct parent BOMs (they show a "sub-BOM has a new version"
+ * banner) and indirect ancestors ("via") — with open work orders and the per-unit
+ * cost delta ("Δ n/a" when unpriced). Work orders already created keep their
+ * version. If where-used can't be computed, saving is still allowed behind a
+ * degraded banner. Nothing is saved until the user confirms here.
  */
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpButton, MpButtonGroup, MpBanner, MpBannerIcon, MpBannerDescription, MpBadge,
+  MpFormControl, MpFormLabel, MpTextarea, MpFormHelpText, MpFormErrorMessage,
 } from '@mekari/pixel3'
-import { billOfMaterials, bomUnitCost, bomWhereUsed, type BomContent, type BomWhereUsedRow } from '~/data/billOfMaterials'
+import { billOfMaterials, bomUnitCost, bomWhereUsed, VERSION_REASON_MIN, VERSION_REASON_MAX, type BomContent, type BomWhereUsedRow } from '~/data/billOfMaterials'
 import { workOrders, workOrderClosed } from '~/data/workOrders'
 import { formatIDR } from '~/utils/currency'
 
 const props = defineProps<{ isOpen: boolean; bomId: string; nextVersion: number; content?: BomContent }>()
-const emit = defineEmits<{ close: []; confirm: [] }>()
+const emit = defineEmits<{ close: []; confirm: [reason: string] }>()
 const { t } = useLocale()
+
+const reason = ref('')
+const reasonError = ref('')
+watch(() => props.isOpen, (o) => { if (o) { reason.value = ''; reasonError.value = '' } })
+function confirm() {
+  const n = reason.value.trim().length
+  reasonError.value = n < VERSION_REASON_MIN
+    ? t('Reason is required (min 10 characters)')
+    : n > VERSION_REASON_MAX ? t('Reason can be at most 500 characters') : ''
+  if (!reasonError.value) emit('confirm', reason.value)
+}
 
 const record = computed(() => billOfMaterials.find(b => b.id === props.bomId))
 const impact = computed<{ rows: BomWhereUsedRow[]; openOnSelf: number } | null>(() => {
@@ -34,19 +47,27 @@ const impact = computed<{ rows: BomWhereUsedRow[]; openOnSelf: number } | null>(
   }
 })
 const rows = computed(() => [...(impact.value?.rows ?? [])].sort((a, z) => a.depth - z.depth))
+const hasImpact = computed(() => !impact.value || rows.value.length > 0 || impact.value.openOnSelf > 0)
 const openWos = (bomId: string) => workOrders.filter(w => w.bomId === bomId && !workOrderClosed(w)).length
 const signed = (n?: number) => (n === undefined ? `Δ ${t('n/a')}` : n > 0 ? `Δ +${formatIDR(n)}` : n < 0 ? `Δ −${formatIDR(Math.abs(n))}` : `Δ ${formatIDR(0)}`)
 </script>
 
 <template>
   <MpModal
-    id="bom-version-impact-modal" :is-open="isOpen" size="lg"
+    id="bom-new-version-modal" :is-open="isOpen" :size="hasImpact ? 'lg' : 'md'"
     :is-close-on-esc="false" :is-close-on-overlay-click="false" :is-keep-alive="false"
     @close="emit('close')"
   >
     <MpModalContent data-devchange="bom-version-impact">
-      <MpModalHeader>{{ t('Saving') }} v{{ nextVersion }} {{ t('affects:') }}<MpModalCloseButton /></MpModalHeader>
+      <MpModalHeader>{{ t('Save as') }} v{{ nextVersion }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody class="bvi-body">
+        <MpFormControl id="bvi-reason" is-required :is-invalid="!!reasonError" data-devchange="bom-version-reason">
+          <MpFormLabel>{{ t('Reason for new version') }}</MpFormLabel>
+          <MpTextarea id="bvi-reason-input" v-model="reason" @update:model-value="reasonError = ''" />
+          <MpFormHelpText v-if="!reasonError">{{ t('Why is this revision needed? (min 10 characters)') }} · {{ reason.trim().length }}/{{ VERSION_REASON_MAX }}</MpFormHelpText>
+          <MpFormErrorMessage>{{ reasonError }}</MpFormErrorMessage>
+        </MpFormControl>
+        <p class="bvi-caption">{{ t('Work orders already created keep the version they were created from. Only work orders created after saving use') }} v{{ nextVersion }}.</p>
         <MpBanner v-if="!impact" id="bvi-degraded" variant="warning">
           <MpBannerIcon />
           <MpBannerDescription>{{ t('Impact list unavailable — affected owners will still be notified') }}</MpBannerDescription>
@@ -70,16 +91,15 @@ const signed = (n?: number) => (n === undefined ? `Δ ${t('n/a')}` : n > 0 ? `Δ
             </table>
             <p class="bvi-caption">{{ t('Direct parents show a banner that this sub-BOM has a new version. Parents never get a new version automatically — sub-BOMs resolve to their Active version when a work order is created.') }}</p>
           </section>
-          <section>
-            <h3 class="bvi-group">{{ t('Work orders on this BOM') }} ({{ impact.openOnSelf }})</h3>
-            <p class="bvi-caption">{{ t('Work orders already created keep the version they were created from. Only work orders created after saving use') }} v{{ nextVersion }}.</p>
+          <section v-if="impact.openOnSelf">
+            <h3 class="bvi-group">{{ t('Open work orders on this BOM') }} ({{ impact.openOnSelf }})</h3>
           </section>
         </template>
       </MpModalBody>
       <MpModalFooter>
         <MpButtonGroup class="erp-action-footer">
           <MpButton variant="ghost" is-rounded @click="emit('close')">{{ t('Cancel') }}</MpButton>
-          <MpButton variant="primary" is-rounded @click="emit('confirm')">{{ t('Save & notify owners') }}</MpButton>
+          <MpButton variant="primary" is-rounded @click="confirm">{{ hasImpact && rows.length ? t('Save & notify owners') : `${t('Save')} v${nextVersion}` }}</MpButton>
         </MpButtonGroup>
       </MpModalFooter>
     </MpModalContent>

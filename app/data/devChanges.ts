@@ -28,42 +28,34 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
-    id: 'bom-version-impact',
-    title: "New version: impact before saving",
+    id: 'bom-version-link',
+    title: "Bill of materials: open a version from the Versions section",
     description:
-      "When anything uses this BOM, Save first lists where-used across every level — direct parents and ancestors (“via”) — with open work orders and the per-unit cost delta, then “Save & notify owners”.",
+      "Each version number in the Versions section opens the detail page of that version (Active, or a read-only Superseded one with its banner). Replaces the version badge in the title and the version switcher in BOM info.",
     date: '2026-10-01',
-    files: ['BomNewVersionImpactModal.vue', 'billOfMaterials.ts'],
+    files: ['BillOfMaterialsDetailsPage.vue'],
+  },
+  {
+    id: 'bom-version-impact',
+    title: "New version: save popup (reason + impact)",
+    description:
+      "After Save on the new-version form, a popup asks for the reason (10–500 characters, inline error). When anything uses the BOM it also lists where-used across every level — direct parents and ancestors (“via”) — with open work orders and the per-unit cost delta, then “Save & notify owners”.",
+    date: '2026-10-01',
+    files: ['BomNewVersionModal.vue', 'billOfMaterials.ts'],
   },
   {
     id: 'bom-version-form',
     title: "Bill of materials form: save to create a new version",
     description:
-      "“Create new version” opens this form prefilled from the Active (or a superseded) version. Nothing exists until Save: saving creates v(n+1) as the Active version and supersedes v(n); leaving the form discards the edits. A reason is required. Work orders already created keep their version; only work orders created after saving use the new one. No Draft status.",
+      "“Create new version” opens this form prefilled from the Active (or a superseded) version. Nothing exists until Save; leaving the form discards the edits. Save opens a popup for the reason, then creates v(n+1) as the Active version and supersedes v(n). Work orders already created keep their version.",
     date: '2026-10-01',
     files: ['CreateBillOfMaterialsPage.vue', 'integrityGuards.ts', 'billOfMaterials.ts'],
   },
   {
-    id: 'bom-version-badge',
-    title: "Bill of materials: version badge on the detail title",
-    description:
-      "The BOM detail title shows the version being viewed and its status — v2 · Active or v1 · Superseded.",
-    date: '2026-10-01',
-    files: ['BillOfMaterialsDetailsPage.vue'],
-  },
-  {
-    id: 'bom-version-switcher',
-    title: "Bill of materials: version switcher with reference counts",
-    description:
-      "Pick any version — Active or Superseded — with how many documents reference it (work orders, incl. as a pinned sub-BOM).",
-    date: '2026-10-01',
-    files: ['BillOfMaterialsDetailsPage.vue'],
-  },
-  {
     id: 'bom-version-create',
-    title: "Bill of materials: “Create new version” on a locked version",
+    title: "Bill of materials: Edit or Create new version in Actions",
     description:
-      "Once a work order references the Active version it can never change. The primary action becomes “Create new version” (tooltip: referenced by N documents), which opens the form — the version is only created on Save.",
+      "The header Actions menu shows Edit while no work order uses the BOM, and Create new version once one does (the used version can never change). On a superseded version it reads “Create new version from here”. Create work order stays the primary button.",
     date: '2026-10-01',
     files: ['BillOfMaterialsDetailsPage.vue'],
   },
@@ -72,14 +64,6 @@ export const DEV_CHANGES: DevChange[] = [
     title: "Bill of materials: Superseded view",
     description:
       "Banner “You are viewing v1 (superseded). Active version: v2.” with Go to active. Read-only; the only way forward is “Create new version from here”.",
-    date: '2026-10-01',
-    files: ['BillOfMaterialsDetailsPage.vue'],
-  },
-  {
-    id: 'bom-version-from-here',
-    title: "Bill of materials: Create new version from here",
-    description:
-      "Copies a superseded version into a new draft — the way to bring back an older recipe.",
     date: '2026-10-01',
     files: ['BillOfMaterialsDetailsPage.vue'],
   },
@@ -127,7 +111,7 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'bom-index-version',
     title: "Bill of materials list: Version column",
     description:
-      "Active version, how many superseded versions exist, and a “Sub-BOM has a new version” badge.",
+      "Shows the Active version only (e.g. v2 · Active). The version is never part of the BOM name.",
     date: '2026-10-01',
     files: ['BillOfMaterialsIndexPage.vue'],
   },
@@ -141,9 +125,9 @@ export const DEV_CHANGES: DevChange[] = [
   },
   {
     id: 'bom-wo-version-pin',
-    title: "Work order: pinned BOM version stamp",
+    title: "Work order: BOM version beside the BOM name",
     description:
-      "“BOM name · vN — rev. date” links to the pinned snapshot. Raw materials, costs, routing, material records and consume/return all read that version.",
+      "BOM name shows the version this work order was created from, e.g. “Espresso Machine Dual Boiler 2-Group · v1” — the pin never moves. Replaces the separate BOM version row.",
     date: '2026-10-01',
     files: ['WorkOrderDetailsPage.vue', 'workOrders.ts'],
   },
@@ -181,10 +165,10 @@ export const DEV_CHANGES: DevChange[] = [
   },
   {
     id: 'bom-wo-index-version',
-    title: 'Work orders list: BOM version per row',
+    title: "Work orders list: BOM version per row",
     description:
-      'The BOM name cell shows the version each work order is pinned to, plus “vN available” when a newer version is Active.',
-    date: '2026-09-29',
+      "The BOM name cell shows the version each work order uses (v1, v2…), without the “available” hint.",
+    date: '2026-10-01',
     files: ['WorkOrdersIndexPage.vue'],
   },
   {

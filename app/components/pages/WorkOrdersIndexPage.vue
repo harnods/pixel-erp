@@ -17,18 +17,13 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import WorkOrderFiltersDrawer, { type WorkOrderFiltersValue } from '~/components/patterns/WorkOrderFiltersDrawer.vue'
 import { formatDate } from '~/utils/date'
-import { workOrders, workOrderDrift, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
+import { workOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const { t } = useLocale()
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 /** The BOM's Active version when it's newer than this work order's pin (closed WOs excluded). */
-/** Neutral drift (V-06) — none on closed or pre-versioning work orders. */
-function newerVersion(w: WorkOrder): number | undefined {
-  return workOrderDrift(w)
-}
-
 const columns: TableColumn[] = [
   { key: 'number',          label: 'Number',               kind: 'number', sortable: true  },
   { key: 'bomName',         label: 'BOM name',             kind: 'name', sortable: true  },
@@ -271,10 +266,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── BOM name — wraps to multiple lines (real BOM names can be long) ── -->
     <template #cell-bomName="{ value, row }">
       <span class="wo-bom-name">{{ value }}</span>
-      <!-- Pinned BOM version + neutral indicator when a newer one is Active (never on closed WOs) -->
-      <span class="wo-bom-version" data-devchange="bom-wo-index-version">
-        v{{ (row as unknown as WorkOrder).bomVersion }}<template v-if="newerVersion(row as unknown as WorkOrder)"> · v{{ newerVersion(row as unknown as WorkOrder) }} {{ t('available') }}</template>
-      </span>
+      <!-- The BOM version this work order uses (its pin) -->
+      <span class="wo-bom-version" data-devchange="bom-wo-index-version">v{{ (row as unknown as WorkOrder).bomVersion }}</span>
     </template>
 
     <!-- ── Track routing — Yes / No ── -->

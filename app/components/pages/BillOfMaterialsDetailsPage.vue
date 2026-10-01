@@ -24,12 +24,11 @@ import { ref, reactive, computed } from 'vue'
 import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpIcon, MpButton, MpTooltip, MpBadge, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, css, toast,
+  MpIcon, MpButton, MpBadge, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, css, toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import BomStructureDrawer from '~/components/BomStructureDrawer.vue'
 import { MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpBannerCloseButton } from '@mekari/pixel3'
 import { workOrdersOnBomVersion } from '~/data/workOrders'
@@ -68,15 +67,13 @@ const STATUS_LABEL: Record<RegularBomVersionStatus, string> = { active: 'Active'
 const STATUS_TYPE: Record<RegularBomVersionStatus, 'completed' | 'announcement'> = { active: 'completed', superseded: 'announcement' }
 const refCount = (v: number) => (record.value ? bomVersionRefCount(record.value.id, v) : 0)
 const docLabel = (n: number) => `${n} ${n === 1 ? t('document') : t('documents')}`
-const versionOptions = computed(() => versions.value.map(v => ({
-  value: String(v.version),
-  label: `v${v.version} · ${t(STATUS_LABEL[v.status])} · ${docLabel(refCount(v.version))}`,
-})))
-const versionPick = computed({
-  get: () => String(selectedVersion.value ?? ''),
-  set: (v: string) => { router.replace({ query: { ...route.query, version: v && Number(v) !== record.value?.version ? v : undefined } }) },
-})
-function viewVersion(v: number) { versionPick.value = String(v) }
+/** Open the detail page of one version (the Versions section below) — Active = no query, Superseded = ?version=N. */
+const stageEl = ref<HTMLElement | null>(null)
+function viewVersion(v: number) {
+  if (!record.value) return
+  router.push(`/bill-of-materials/${record.value.id}${v !== record.value.version ? `?version=${v}` : ''}`)
+  stageEl.value?.scrollTo({ top: 0 })
+}
 function goWorkOrder(id: string) { router.push(`/work-orders/${id}`) }
 
 function goList() { router.push('/bill-of-materials') }
@@ -95,7 +92,6 @@ function createNewVersion(from = selectedVersion.value) {
   const fromQ = from !== undefined && from !== record.value.version ? `&from=${from}` : ''
   router.push(`/bill-of-materials/new?edit=${encodeURIComponent(record.value.id)}&newVersion=1${fromQ}`)
 }
-const lockTooltip = computed(() => `v${selectedVersion.value} ${t('is referenced by')} ${docLabel(refCount(selectedVersion.value ?? 0))} ${t('and can no longer be edited')}`)
 
 // ── Multi-level: sub-BOM lines + parent review (V-11) ──────────────────────────
 const pendingReviews = computed(() => (selectedStatus.value === 'active' ? bomPendingReviews(record.value) : []))
@@ -127,13 +123,15 @@ const activeTabIndex = computed({
 })
 
 // ── Header actions menu ────────────────────────────────────────────────────────
+// No work order uses this BOM yet → Edit (in place). Once a work order was created
+// from it → Create new version instead (the used version can never change).
 const actionItems = computed(() => {
-  if (viewingSuperseded.value) return ['Print']
-  return locked.value ? ['Duplicate', 'Print', 'Archive'] : ['Edit', 'Create new version', 'Duplicate', 'Print', 'Archive']
+  if (viewingSuperseded.value) return ['Create new version from here', 'Print']
+  return [locked.value ? 'Create new version' : 'Edit', 'Duplicate', 'Print', 'Archive']
 })
 function onAction(item: string) {
   if (item === 'Edit') goEdit()
-  else if (item === 'Create new version') createNewVersion()
+  else if (item === 'Create new version' || item === 'Create new version from here') createNewVersion()
   else if (item === 'Duplicate') goDuplicate()
   else if (item === 'Archive') isDeleteModalOpen.value = true
 }
@@ -211,12 +209,6 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
         <MpButton variant="link" class="detail-breadcrumb" @click="goList">{{ t('Bill of materials') }}</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ bom.number }}</h1>
-          <ErpStatusBadge
-            data-devchange="bom-version-badge"
-            :status="selectedStatus" badge-for="additionalInformation"
-            :type="STATUS_TYPE[selectedStatus]"
-            :label="`v${selectedVersion} · ${t(STATUS_LABEL[selectedStatus])}`"
-          />
         </div>
       </div>
 
@@ -224,7 +216,7 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
       <div class="detail-bar-actions">
         <MpPopover id="bomd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
-            <MpButton class="detail-btn detail-btn--secondary" variant="secondary" right-icon="chevrons-down">
+            <MpButton class="detail-btn detail-btn--secondary" variant="secondary" right-icon="chevrons-down" data-devchange="bom-version-create">
               {{ t('Actions') }}
             </MpButton>
           </MpPopoverTrigger>
@@ -238,21 +230,13 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
           </MpPopoverContent>
         </MpPopover>
 
-        <!-- Superseded: read-only — the only way forward is a new version copied from it. -->
-        <MpButton v-if="viewingSuperseded" data-devchange="bom-version-from-here" variant="secondary" is-rounded @click="createNewVersion()">{{ t('Create new version from here') }}</MpButton>
-        <!-- Active + locked: Edit becomes "Create new version" (the form saves vN+1). -->
-        <template v-else-if="locked">
-          <MpButton variant="secondary" is-rounded @click="createWorkOrder">{{ t('Create work order') }}</MpButton>
-          <MpTooltip id="bomd-lock-tip" :label="lockTooltip" placement="bottom" use-portal>
-            <MpButton data-devchange="bom-version-create" variant="primary" is-rounded @click="createNewVersion()">{{ t('Create new version') }}</MpButton>
-          </MpTooltip>
-        </template>
-        <MpButton v-else class="detail-btn detail-btn--primary" variant="primary" @click="createWorkOrder">{{ t('Create work order') }}</MpButton>
+        <!-- Superseded is read-only: no primary action (Create new version from here is in Actions). -->
+        <MpButton v-if="!viewingSuperseded" class="detail-btn detail-btn--primary" variant="primary" @click="createWorkOrder">{{ t('Create work order') }}</MpButton>
       </div>
     </header>
 
     <!-- ── Scrollable stage ── -->
-    <div class="detail-stage">
+    <div ref="stageEl" class="detail-stage">
 
       <MpBanner v-if="viewingSuperseded && record" id="bomd-superseded" variant="info" class="bomd-version-banner" data-devchange="bom-version-superseded">
         <MpBannerIcon />
@@ -294,11 +278,6 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
           <div class="content-list-col">
             <ContentList :label="t('BOM name')" :value="bom.name" />
             <ContentList :label="t('BOM no.')" :value="bom.number" />
-            <ContentList :label="t('Version')">
-              <div data-devchange="bom-version-switcher">
-                <ErpFilterSelect id="bomd-version" v-model="versionPick" :placeholder="t('Version')" :options="versionOptions" width="320px" :is-clearable="false" />
-              </div>
-            </ContentList>
             <ContentList :label="t('Description')">
               <template v-if="bom.description">
                 <span>{{ descDisplay }}</span>
@@ -555,8 +534,8 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
             <tbody>
               <tr v-for="v in versions" :key="v.version" class="bom-tr">
                 <td class="bom-td">
-                  <a v-if="v.version !== selectedVersion" class="bom-show-more" @click.prevent="viewVersion(v.version)">v{{ v.version }}</a>
-                  <template v-else>v{{ v.version }}</template>
+                  <a class="bom-show-more" data-devchange="bom-version-link" @click.prevent="viewVersion(v.version)">v{{ v.version }}</a>
+                  <span v-if="v.version === selectedVersion" class="bomd-sub">{{ t('Viewing') }}</span>
                 </td>
                 <td class="bom-td">
                   <ErpStatusBadge :status="v.status" :type="STATUS_TYPE[v.status]" :label="t(STATUS_LABEL[v.status])" />
