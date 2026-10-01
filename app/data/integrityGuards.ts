@@ -152,6 +152,14 @@ export function bomVersionLocked(id: string, version?: number): boolean {
   const v = version ?? b.version
   return workOrders.some(w => (w.bomId === id && (w.bomVersion ?? 1) === v) || w.subBomPins?.[id] === v)
 }
+/**
+ * True once any work order was created from this BOM — any version, or as a pinned
+ * sub-BOM of another work order. From then on the BOM is never edited in place:
+ * the Actions menu offers "Create new version" instead of "Edit".
+ */
+export function bomHasWorkOrders(id: string): boolean {
+  return workOrders.some(w => w.bomId === id || w.subBomPins?.[id] !== undefined)
+}
 /** How many documents reference one version — work orders on it, plus work orders pinning it as a sub-BOM. */
 export function bomVersionRefCount(id: string, version: number): number {
   return workOrders.filter(w => (w.bomId === id && (w.bomVersion ?? 1) === version) || w.subBomPins?.[id] === version).length
@@ -165,8 +173,8 @@ export type BomSaveFailure = { ok: false; reason: 'NOT_FOUND' | 'LOCKED' | 'CIRC
 export type BomSaveResult = { ok: true; version: number } | BomSaveFailure
 
 /**
- * Save an edit to the Active version in place — only while nothing references it.
- * A referenced (locked) Active version is refused with LOCKED (the API's 409): the
+ * Save an edit to the Active version in place — only while no work order was ever
+ * created from the BOM. Otherwise it's refused with LOCKED (the API's 409): the
  * caller saves a new version instead. A save that would make the BOM consume its
  * own output at any level is refused with CIRCULAR.
  */
@@ -179,7 +187,7 @@ export function updateBillOfMaterialsSafe(
   if (!b) return { ok: false, reason: 'NOT_FOUND' }
   const cycle = bomCycle(id, data)
   if (cycle) return { ok: false, reason: 'CIRCULAR', path: cycle }
-  if (bomVersionLocked(id)) return { ok: false, reason: 'LOCKED' }
+  if (bomHasWorkOrders(id)) return { ok: false, reason: 'LOCKED' }
   updateBillOfMaterials(id, data, meta.by)
   return { ok: true, version: b.version }
 }

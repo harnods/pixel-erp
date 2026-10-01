@@ -32,7 +32,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import BomStructureDrawer from '~/components/BomStructureDrawer.vue'
 import { MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpBannerCloseButton } from '@mekari/pixel3'
 import { workOrdersOnBomVersion } from '~/data/workOrders'
-import { bomVersionLocked, bomVersionRefCount } from '~/data/integrityGuards'
+import { bomHasWorkOrders, bomVersionRefCount } from '~/data/integrityGuards'
 import { formatDate, formatDateTime, formatDateLong } from '~/utils/date'
 import {
   billOfMaterials, catalogProduct, persistBillOfMaterials, bomAtVersion, bomVersionList,
@@ -58,8 +58,8 @@ const selectedVersion = computed(() => {
 const selectedRow = computed(() => versions.value.find(v => v.version === selectedVersion.value))
 const selectedStatus = computed<RegularBomVersionStatus>(() => selectedRow.value?.status ?? 'active')
 const viewingSuperseded = computed(() => selectedStatus.value === 'superseded')
-/** Locked = a document references it — it can never change again (V-02). */
-const locked = computed(() => !!record.value && selectedVersion.value !== undefined && bomVersionLocked(record.value.id, selectedVersion.value))
+/** Locked = a work order was created from this BOM (any version) — no more in-place edits. */
+const locked = computed(() => !!record.value && bomHasWorkOrders(record.value.id))
 const activeVersion = computed(() => record.value?.version)
 /** Everything below renders THIS version's content (identity stays the record's). */
 const bom = computed<BillOfMaterials | undefined>(() => bomAtVersion(record.value, selectedVersion.value))
