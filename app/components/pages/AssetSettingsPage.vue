@@ -317,7 +317,7 @@ function toggleOther() { infoToast(t('Not in this prototype')) }
 .st__toggle--click { cursor: pointer; }
 .st__toggle:last-child { border-bottom: 0; }
 .st__box { width: var(--mp-sizes-4); height: var(--mp-sizes-4); border-radius: var(--mp-radii-sm); border: 1px solid var(--mp-border-bold); background: var(--mp-background-neutral); flex: none; margin-top: var(--mp-spacing-1); display: inline-flex; align-items: center; justify-content: center; color: var(--mp-background-neutral); }
-.st__box--on { background: var(--mp-background-success-bold); border-color: var(--mp-background-success-bold); }
+.st__box--on { background: var(--mp-colors-background-success-bold); border-color: var(--mp-colors-background-success-bold); }
 .st__togglek { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .st__togglev { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); }
 .st__toggle--form { align-items: flex-end; border-top: 1px solid var(--mp-border-default); }

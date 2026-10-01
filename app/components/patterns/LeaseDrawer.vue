@@ -308,7 +308,7 @@ function submit() {
 </template>
 
 <style scoped>
-.ld-overlay { position: fixed; inset: 0; background: var(--mp-background-overlay); z-index: 1300; }
+.ld-overlay { position: fixed; inset: 0; background: var(--mp-colors-background-overlay); z-index: 1300; }
 .ld-panel {
   position: absolute; top: 0; right: 0; bottom: 0; width: 560px; max-width: 96vw;
   background: var(--mp-background-neutral); display: flex; flex-direction: column;
@@ -327,7 +327,7 @@ function submit() {
 .ld-field { display: flex; flex-direction: column; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-5); min-width: 0; }
 .ld-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ld-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: 0; line-height: var(--mp-line-heights-sm); }
-.ld-error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-critical); margin: 0; line-height: var(--mp-line-heights-sm); }
+.ld-error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); margin: 0; line-height: var(--mp-line-heights-sm); }
 .ld-preview { border-top: 1px solid var(--mp-border-default); padding-top: var(--mp-spacing-4); display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .ld-preview-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ld-kv { display: flex; justify-content: space-between; gap: var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }

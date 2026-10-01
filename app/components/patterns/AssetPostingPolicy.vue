@@ -112,5 +112,5 @@ const example = computed(() => {
 .app__day { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .app__daylabel { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
 .app__dayinput { width: 72px; }
-.app__error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-critical); margin: 0; padding: var(--mp-spacing-2) var(--mp-spacing-4); }
+.app__error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); margin: 0; padding: var(--mp-spacing-2) var(--mp-spacing-4); }
 </style>

@@ -1300,10 +1300,10 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
 
 /* ── Key/value rows ───────────────────────────────────────────────────────── */
 /* Key/value fields use ContentList (docs/patterns/details-page-format.md). */
-.pa-fields > * + * { border-top: 1px solid var(--mp-border-subtle); }
+.pa-fields > * + * { border-top: 1px solid var(--mp-border-default); }
 .pa-plan-row { display: flex; justify-content: space-between; gap: var(--mp-spacing-4); }
 /* The cost-plus build-up keeps its own row: a caption under the key, figure right. */
-.pa-kv-row { display: flex; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-border-subtle); }
+.pa-kv-row { display: flex; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-border-default); }
 .pa-kv-row--wide { align-items: baseline; }
 .pa-kv-key { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); display: flex; flex-direction: column; }
 .pa-kv-strong { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }

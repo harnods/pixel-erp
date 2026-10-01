@@ -99,7 +99,7 @@ function apply() {
 <style scoped>
 /* 1300 matches BillsFiltersDrawer: the app header is 1100, and a drawer
    below it renders with its own header hidden behind the chrome. */
-.afd-overlay { position: fixed; inset: 0; background: var(--mp-background-overlay); z-index: 1300; }
+.afd-overlay { position: fixed; inset: 0; background: var(--mp-colors-background-overlay); z-index: 1300; }
 .afd-panel {
   position: absolute; top: 0; right: 0; bottom: 0; width: 400px; max-width: 92vw;
   background: var(--mp-background-neutral); display: flex; flex-direction: column;

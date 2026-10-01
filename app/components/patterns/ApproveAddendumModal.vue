@@ -98,7 +98,7 @@ function confirm() { emit('confirm'); close() }
 
 .aam-box { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 6px); padding: var(--mp-spacing-3) var(--mp-spacing-4); }
 .aam-row { display: flex; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-1) 0; }
-.aam-row--total { border-top: 1px solid var(--mp-border-subtle); margin-top: var(--mp-spacing-1); padding-top: var(--mp-spacing-2); }
+.aam-row--total { border-top: 1px solid var(--mp-border-default); margin-top: var(--mp-spacing-1); padding-top: var(--mp-spacing-2); }
 .aam-key { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .aam-num { font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; color: var(--mp-text-default); }
 .aam-num--delta { color: var(--mp-text-link); }

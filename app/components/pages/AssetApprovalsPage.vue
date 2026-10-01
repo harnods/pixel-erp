@@ -150,7 +150,6 @@ const statusLabel: Record<string, string> = { awaiting: 'Awaiting approval', app
 </template>
 
 <style scoped>
-.ap { max-width: 960px; }
 .ap__head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); min-height: 32px; }
 .ap__sub { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0; max-width: 720px; }
 

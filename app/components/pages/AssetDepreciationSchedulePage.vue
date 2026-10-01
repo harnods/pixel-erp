@@ -481,7 +481,7 @@ function stateLabel(p: SchedulePeriod) {
 .ds__genhint, .ds__gendone, .ds__generror { font-size: var(--mp-font-sizes-sm); margin: 0; line-height: var(--mp-line-heights-sm); flex-basis: 100%; }
 .ds__genhint { color: var(--mp-text-secondary); }
 .ds__gendone { color: var(--mp-text-default); }
-.ds__generror { color: var(--mp-text-critical); }
+.ds__generror { color: var(--mp-text-danger); }
 .ds__proj { margin-top: var(--mp-spacing-6); }
 .ds__projhead { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-3); }
 .ds__projtitle { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }

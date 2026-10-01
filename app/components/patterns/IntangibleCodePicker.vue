@@ -65,5 +65,5 @@ const value = computed({
 <style scoped>
 .icp { display: flex; flex-direction: column; gap: var(--mp-spacing-2); min-width: 0; }
 .icp__hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: 0; line-height: var(--mp-line-heights-sm); }
-.icp__error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-critical); margin: 0; line-height: var(--mp-line-heights-sm); }
+.icp__error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); margin: 0; line-height: var(--mp-line-heights-sm); }
 </style>

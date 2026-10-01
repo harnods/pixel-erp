@@ -240,9 +240,9 @@ const stateIcon: Record<CheckState, string> = {
 .sc__sub { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0; max-width: 720px; }
 
 .sc__summary { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4); border-radius: var(--mp-radii-md); margin-bottom: var(--mp-spacing-4); border: 1px solid; }
-.sc__summary--passed { background: var(--mp-background-success-subtle); border-color: var(--mp-border-default); color: var(--mp-colors-text-success); }
+.sc__summary--passed { background: var(--mp-colors-background-success); border-color: var(--mp-border-default); color: var(--mp-colors-text-success); }
 .sc__summary--failed { background: var(--mp-colors-background-danger); border-color: var(--mp-border-default); color: var(--mp-text-danger); }
-.sc__summary--incomplete { background: var(--mp-background-warning-subtle); border-color: var(--mp-border-default); color: var(--mp-colors-text-warning); }
+.sc__summary--incomplete { background: var(--mp-colors-background-warning); border-color: var(--mp-border-default); color: var(--mp-colors-text-warning); }
 .sc__summarytitle { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); }
 .sc__summarysub { font-size: var(--mp-font-sizes-md); margin-top: var(--mp-spacing-1); opacity: 0.92; }
 
@@ -259,9 +259,9 @@ const stateIcon: Record<CheckState, string> = {
 .sc__checkdetail { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); margin-top: var(--mp-spacing-2); }
 
 .sc__badge { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); padding: var(--mp-spacing-1) var(--mp-spacing-2); border-radius: var(--mp-radii-full); }
-.sc__badge--passed { background: var(--mp-background-success-subtle); color: var(--mp-colors-text-success); }
+.sc__badge--passed { background: var(--mp-colors-background-success); color: var(--mp-colors-text-success); }
 .sc__badge--failed { background: var(--mp-colors-background-danger); color: var(--mp-text-danger); }
-.sc__badge--incomplete { background: var(--mp-background-warning-subtle); color: var(--mp-colors-text-warning); }
+.sc__badge--incomplete { background: var(--mp-colors-background-warning); color: var(--mp-colors-text-warning); }
 
 .sc__card { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); overflow: hidden; }
 .sc__cardhead { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }

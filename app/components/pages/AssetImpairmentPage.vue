@@ -264,7 +264,6 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
 </template>
 
 <style scoped>
-.im { max-width: 980px; }
 .im__head { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); min-height: 32px; }
 .im__note { margin-bottom: var(--mp-spacing-4); }
 .im__headactions { display: flex; gap: var(--mp-spacing-2); flex: none; }
@@ -296,7 +295,7 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
 }
 .im__formnote { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm); }
 /* rule/form-errors-inline — the error sits with the form, not in a toast. */
-.im__formerror { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-critical); padding: 0 var(--mp-spacing-4) var(--mp-spacing-2); }
+.im__formerror { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); padding: 0 var(--mp-spacing-4) var(--mp-spacing-2); }
 .im__formactions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 .im__assetlink { color: var(--mp-text-link); cursor: pointer; }
 .im__assetlink:hover { text-decoration: underline; }
@@ -310,15 +309,15 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
 .im__id { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); font-variant-numeric: tabular-nums; }
 .im__asset { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin-top: var(--mp-spacing-1); }
 .im__badge { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); padding: var(--mp-spacing-1) var(--mp-spacing-2); border-radius: var(--mp-radii-full); flex: none; }
-.im__badge--hit { background: var(--mp-background-warning-subtle); color: var(--mp-text-warning); }
-.im__badge--nil { background: var(--mp-background-success-subtle); color: var(--mp-text-success); }
+.im__badge--hit { background: var(--mp-colors-background-warning); color: var(--mp-colors-text-warning); }
+.im__badge--nil { background: var(--mp-colors-background-success); color: var(--mp-colors-text-success); }
 
 .im__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--mp-spacing-4); }
 @media (max-width: 900px) { .im__grid { grid-template-columns: repeat(2, 1fr); } }
 .im__k { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); letter-spacing: 0.04em; text-transform: uppercase; color: var(--mp-text-secondary); }
 .im__v { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); margin-top: var(--mp-spacing-1); }
 .im__v--num { font-variant-numeric: tabular-nums; font-weight: var(--mp-font-weights-semi-bold); }
-.im__v--loss { color: var(--mp-text-critical); }
+.im__v--loss { color: var(--mp-text-danger); }
 .im__note2 { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); line-height: var(--mp-line-heights-sm); }
 
 .im__foot { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-4); padding-top: var(--mp-spacing-3); border-top: 1px solid var(--mp-border-default); }
