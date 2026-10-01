@@ -2892,6 +2892,9 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Return note added, awaiting the buyer": "Nota retur ditambahkan, menunggu dari pembeli",
   "Follow up with the buyer to get the return note (nota retur).": "Tindak lanjuti ke pembeli untuk mendapatkan nota retur.",
   "Cannot be changed because the return note is issued by the buyer": "Tidak bisa diubah karena nota retur diterbitkan oleh pembeli",
+  "Withdraw return note": "Tarik nota retur",
+  "Return note withdrawn": "Nota retur ditarik",
+  "This invoice already has an approved tax document. Edit the invoice to raise a replacement or cancellation.": "Faktur penjualan ini sudah punya dokumen pajak yang disetujui. Ubah faktur penjualan untuk membuat dokumen pengganti atau pembatalan.",
 
   // Tax submission permission
   "You do not have permission to submit tax documents to DJP": "Anda tidak punya izin untuk mengirim dokumen pajak ke DJP",

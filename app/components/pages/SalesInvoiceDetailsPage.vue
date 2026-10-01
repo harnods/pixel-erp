@@ -21,7 +21,7 @@ import {
   getTaxDocumentsForInvoice, formatTaxDocumentNumber, formatTaxDocumentKind,
   updateTaxDocumentStatus, formatPaymentStage,
   taxDocMenuItemDefs, DJP_STATUS_CONFIG,
-  getApprovedTaxDocument, generateReturnNoteDraft, outstandingReturnNote,
+  getApprovedTaxDocument, generateReturnNoteDraft, outstandingReturnNote, removeTaxDocument,
   type TaxDocument, type TaxDocumentPaymentStage,
 } from '~/data/taxDocuments'
 import { buildTaxSnapshot } from '~/data/taxDocumentChanges'
@@ -135,6 +135,26 @@ function printEFaktur(doc: TaxDocument) {
   eFakturPreviewOpen.value = true
 }
 
+/**
+ * BR-008 — an invoice may carry only one STANDING Output Tax Document. While one
+ * is approved, "Create tax document" is locked: correcting it is what Edit's
+ * replacement/cancellation flow is for, and raising a second faktur against the
+ * same delivery would report it to DJP twice.
+ */
+const STANDING_TAXDOC_REASON = 'This invoice already has an approved tax document. Edit the invoice to raise a replacement or cancellation.'
+const hasStandingTaxDoc = computed(() => getApprovedTaxDocument(invoice.value.id) !== null)
+
+/** Withdraw an outstanding return note — see removeTaxDocument for why this is
+ *  the one document we let the user take back. */
+function withdrawReturnNote(doc: TaxDocument) {
+  removeTaxDocument(doc.id)
+  toast.notify({
+    variant: 'success',
+    title: t('Return note withdrawn'),
+    rootProps: { class: 'toast-enterprise' },
+  })
+}
+
 // ── Submission permission (PRD-05 BR-006 / AC-009) ────────────────────────────
 const { canSubmitTaxDocument, setCanSubmitTaxDocument } = useTaxSubmissionPermission()
 
@@ -181,6 +201,7 @@ function taxDocMenuItems(doc: TaxDocument, opts: { excludeViewDetails?: boolean 
           : SUBMIT_LABELS.includes(item.label) ? () => submitTaxDocToDjp(doc)
           : item.label === 'Refresh DJP status' ? () => refreshTaxDocStatus(doc)
           : item.label === 'Print e-faktur' ? () => printEFaktur(doc)
+          : item.label === 'Withdraw return note' ? () => withdrawReturnNote(doc)
           : undefined,
       }
     })
@@ -841,7 +862,19 @@ function onSalesReturnConfirm() {
               <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Set as recurring') }}</MpPopoverListItem>
               <MpPopoverListItem @click="createSalesReturn">{{ t('Create sales return') }}</MpPopoverListItem>
-              <MpPopoverListItem v-if="invoice.hasPpn" @click="openCreateTaxDocument">{{ t('Create tax document') }}</MpPopoverListItem>
+              <!-- BR-008: one STANDING document per invoice. Locked with its reason
+                   rather than hidden, so it is clear why it can't be used — a
+                   correction goes through Edit (replacement/cancellation), not
+                   through raising a second faktur. -->
+              <MpTooltip v-if="invoice.hasPpn && hasStandingTaxDoc" id="detail-create-taxdoc-locked" placement="top" use-portal>
+                <template #label>
+                  <span class="taxdoc-tt-content" :style="{ width: taxDocMenuWidth }">{{ t(STANDING_TAXDOC_REASON) }}</span>
+                </template>
+                <span class="taxdoc-menu-item-wrap">
+                  <MpPopoverListItem is-disabled>{{ t('Create tax document') }}</MpPopoverListItem>
+                </span>
+              </MpTooltip>
+              <MpPopoverListItem v-else-if="invoice.hasPpn" @click="openCreateTaxDocument">{{ t('Create tax document') }}</MpPopoverListItem>
             </MpPopoverList>
             <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
             <MpPopoverList>
@@ -872,7 +905,19 @@ function onSalesReturnConfirm() {
                 <MpPopoverListItem>{{ t('Create join invoice') }}</MpPopoverListItem>
                 <MpPopoverListItem>{{ t('Create progress invoice') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="createSalesReturn">{{ t('Create sales return') }}</MpPopoverListItem>
-                <MpPopoverListItem v-if="invoice.hasPpn" @click="openCreateTaxDocument">{{ t('Create tax document') }}</MpPopoverListItem>
+                <!-- BR-008: one STANDING document per invoice. Locked with its reason
+                   rather than hidden, so it is clear why it can't be used — a
+                   correction goes through Edit (replacement/cancellation), not
+                   through raising a second faktur. -->
+              <MpTooltip v-if="invoice.hasPpn && hasStandingTaxDoc" id="detail-create-taxdoc-locked-2" placement="top" use-portal>
+                <template #label>
+                  <span class="taxdoc-tt-content" :style="{ width: taxDocMenuWidth }">{{ t(STANDING_TAXDOC_REASON) }}</span>
+                </template>
+                <span class="taxdoc-menu-item-wrap">
+                  <MpPopoverListItem is-disabled>{{ t('Create tax document') }}</MpPopoverListItem>
+                </span>
+              </MpTooltip>
+              <MpPopoverListItem v-else-if="invoice.hasPpn" @click="openCreateTaxDocument">{{ t('Create tax document') }}</MpPopoverListItem>
                 <MpPopoverListItem>{{ t('Apply credit memo') }}</MpPopoverListItem>
               </MpPopoverList>
               <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />

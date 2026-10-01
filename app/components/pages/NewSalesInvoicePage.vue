@@ -530,7 +530,9 @@ function onTaxReviewConfirm() {
   const source = approvedTaxDoc.value
   const action = taxReviewAction.value
 
-  if (source && action !== 'none') {
+  // Explicit over `!== 'none'`: TaxAction also covers 'return-note', which an
+  // edit can never resolve to and generateChangeDrafts must never be handed.
+  if (source && (action === 'replacement' || action === 'cancellation')) {
     generateChangeDrafts({
       source, action, changes: taxReviewChanges.value,
       date: todayDMY(),

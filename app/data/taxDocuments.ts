@@ -360,7 +360,11 @@ export function addTaxDocument(input: {
  */
 export function generateChangeDrafts(opts: {
   source: TaxDocument
-  action: Exclude<TaxAction, 'none'>
+  /** Only the two actions an EDIT can resolve to. Deliberately not
+   *  `Exclude<TaxAction, 'none'>`: that now also admits 'return-note', which
+   *  would fall through to the cancellation branch below and silently void a
+   *  faktur that a sales return is supposed to leave standing. */
+  action: 'replacement' | 'cancellation'
   changes: DetectedTaxChange[]
   /** Tax document date for the generated drafts, DD/MM/YYYY. */
   date: string
@@ -510,6 +514,21 @@ export function formatTaxDocumentNumber(doc: TaxDocument): string {
  * Approving a replacement or cancellation also settles the document it
  * supersedes: only at that point has DJP actually accepted the change.
  */
+/**
+ * Remove a tax document from the store.
+ *
+ * Only ever reached for an outstanding Return Note (see taxDocMenuItemDefs):
+ * that record is ours, nothing was submitted to DJP, and withdrawing it is the
+ * only way back if a sales return is called off. Everything else is either
+ * still being drafted or is a historical record that BR-007 keeps on file.
+ */
+export function removeTaxDocument(id: string): void {
+  const i = store.findIndex(d => d.id === id)
+  if (i === -1) return
+  store.splice(i, 1)
+  persist()
+}
+
 export function updateTaxDocumentStatus(id: string, status: TaxDocumentStatus): void {
   const doc = store.find(d => d.id === id)
   if (!doc) return
@@ -594,8 +613,11 @@ export function taxDocMenuItemDefs(status: TaxDocumentStatus): TaxDocMenuItemDef
   else if (status === 'approved' || status === 'replaced' || status === 'cancelled') {
     items.push({ label: 'Print e-faktur' })
   }
-  // 'awaiting-from-buyer' adds nothing: there is no action for us to take on a
-  // return note beyond chasing the buyer, which happens outside the app.
+  // A return note is the one document we can withdraw: nothing was ever sent to
+  // DJP, it is our own record that we are waiting on the buyer. Without this the
+  // invoice is stuck — Delete is locked below, and raising a replacement one is
+  // blocked while this is outstanding (see outstandingReturnNote).
+  else if (status === 'awaiting-from-buyer') items.push({ label: 'Withdraw return note' })
 
   /**
    * Anything out of Draft's hands locks Edit/Delete — with the reason that
