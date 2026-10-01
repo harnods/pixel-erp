@@ -13,7 +13,7 @@
  */
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import {
-  toast, MpBadge, MpIcon,
+  toast, MpBadge, MpIcon, MpButton,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
@@ -270,9 +270,9 @@ function onSaved() {
         placement="bottom-end"
       >
         <MpPopoverTrigger>
-          <button class="row-kebab" :aria-label="t('More actions')">
+          <MpButton variant="ghost" class="row-kebab" :aria-label="t('More actions')">
             <MpIcon name="menu-kebab" size="md" />
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '210px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>

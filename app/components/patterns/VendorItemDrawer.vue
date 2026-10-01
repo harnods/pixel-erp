@@ -27,7 +27,7 @@ export interface VendorItemDraft {
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { toast, MpIcon, MpButton, MpInput, css } from '@mekari/pixel3'
+import { toast, MpIcon, MpButton, MpTextlink, MpInput, css } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
   vendorItemsForSku, upsertVendorItem, setPreferredVendor, deactivateVendorItem,
@@ -315,9 +315,9 @@ function save() {
                 <strong>{{ recommendedRow.vendorName }}</strong>
                 {{ t('as the preferred vendor') }}
               </span>
-              <button type="button" class="rp-vi-ai-why" @click="showReasons = !showReasons">
+              <MpTextlink id="rp-vi-ai-why" as="a" @click.prevent="showReasons = !showReasons">
                 {{ showReasons ? t('Hide') : t('Why?') }}
-              </button>
+              </MpTextlink>
             </div>
             <ul v-if="showReasons" class="rp-vi-ai-reasons">
               <li v-for="reason in recommendedRow.reasons" :key="reason">{{ reason }}</li>
@@ -421,16 +421,16 @@ function save() {
                   />
                 </td>
                 <td v-if="!readonly" class="rp-vi-td rp-vi-td--center">
-                  <button class="rp-vi-remove" type="button" :aria-label="t('Remove')" @click="removeRow(i)">
+                  <MpButton variant="ghost" class="rp-vi-remove" :aria-label="t('Remove')" @click="removeRow(i)">
                     <MpIcon name="minus-circular" size="md" />
-                  </button>
+                  </MpButton>
                 </td>
               </tr>
             </tbody>
           </table>
           </div>
 
-          <button v-if="!readonly" class="rp-vi-add" type="button" @click="addRow">+ {{ t('Vendor') }}</button>
+          <MpButton v-if="!readonly" variant="ghost" left-icon="add" class="rp-vi-add" @click="addRow">{{ t('Vendor') }}</MpButton>
 
           <p class="rp-vi-hint">
             {{ t('Unit options come from this product\'s unit conversions — base unit') }}
@@ -516,11 +516,6 @@ function save() {
 .rp-vi-ai-head { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
 .rp-vi-ai-icon { color: var(--mp-colors-icon-information); flex-shrink: 0; }
 .rp-vi-ai-text { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
-.rp-vi-ai-why {
-  border: none; background: none; cursor: pointer; padding: 0;
-  color: var(--mp-text-link); font-size: var(--mp-font-sizes-sm);
-}
-.rp-vi-ai-why:hover { text-decoration: underline; }
 .rp-vi-ai-reasons {
   margin: var(--mp-spacing-2) 0 0; padding-left: var(--mp-spacing-5);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
@@ -584,11 +579,7 @@ function save() {
 }
 .rp-vi-remove:hover { background: var(--mp-background-neutral-hovered, #eef0f3); color: var(--mp-text-danger); }
 
-.rp-vi-add {
-  margin-top: var(--mp-spacing-3);
-  border: none; background: none; padding: 0;
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer;
-}
+.rp-vi-add { margin-top: var(--mp-spacing-3); }
 .rp-vi-hint {
   margin-top: var(--mp-spacing-4);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);

@@ -13,7 +13,7 @@
  */
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalCloseButton,
-  MpIcon, MpInput, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
+  MpIcon, MpButton, MpInput, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 import type { PurchaseRequest } from '~/data/types'
 import {
   planPosFromPurchaseRequests, skipReasonLabel, defaultConversionWarehouseForMany,
@@ -162,10 +162,9 @@ function confirm() {
             <span class="rp-po-shipto-label">{{ t('Ship to') }}</span>
             <MpPopover id="bcpo-warehouse" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
               <MpPopoverTrigger>
-                <button type="button" class="rp-po-shipto-value">
+                <MpButton variant="secondary" size="sm" right-icon="chevrons-down">
                   {{ warehouseName }}
-                  <MpIcon name="chevrons-down" size="sm" />
-                </button>
+                </MpButton>
               </MpPopoverTrigger>
               <MpPopoverContent :class="css({ minWidth: '260px', width: 'max-content' })">
                 <MpPopoverList>
@@ -301,13 +300,6 @@ function confirm() {
 
 .rp-po-shipto { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-3); }
 .rp-po-shipto-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.rp-po-shipto-value {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-1);
-  padding: var(--mp-spacing-1) var(--mp-spacing-2);
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
-  background: var(--mp-background-stage, #fff); cursor: pointer;
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
-}
 
 .rp-po-card {
   margin-top: var(--mp-spacing-4);

@@ -625,10 +625,9 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
           @update:model-value="(v: string) => { fsnFilter = v }"
         />
 
-        <button class="filter-all-btn" type="button" @click="filtersOpen = true">
-          <MpIcon name="filter" size="sm" />
+        <MpButton variant="secondary" class="filter-all-btn" left-icon="filter" @click="filtersOpen = true">
           {{ t('All filters') }}<template v-if="drawerFilterCount"> ({{ drawerFilterCount }})</template>
-        </button>
+        </MpButton>
       </div>
 
       <div class="filter-right">
@@ -831,9 +830,9 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
         placement="bottom-end"
       >
         <MpPopoverTrigger>
-          <button class="row-kebab" :aria-label="t('More actions')">
+          <MpButton variant="ghost" class="row-kebab" :aria-label="t('More actions')">
             <MpIcon name="menu-kebab" size="md" />
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '210px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>

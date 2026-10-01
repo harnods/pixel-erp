@@ -980,7 +980,7 @@ onUnmounted(() => { footerObserver?.disconnect() })
    back to it after overwriting. Muted so it reads as support, not as an error. */
 .np-readonly-value {
   margin: 0;
-  padding: 9px 0;
+  padding: var(--mp-spacing-2\.5) 0;
   font-size: 14px;
   font-weight: 500;
   color: var(--mp-text-default, #111827);

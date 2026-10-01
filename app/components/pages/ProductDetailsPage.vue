@@ -1007,14 +1007,14 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             <div v-if="pagedTransactions.length" class="pd-table-scroll">
               <table class="pd-table">
                 <colgroup>
-                  <col style="width: 120px" />
-                  <col style="width: 220px" />
-                  <col style="width: 110px" />
-                  <col style="width: 100px" />
-                  <col style="width: 100px" />
-                  <col style="width: 100px" />
-                  <col style="width: 100px" />
-                  <col style="width: 90px" />
+                  <col style="width: 120px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 220px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 110px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 100px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 100px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 100px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 100px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 90px" /><!-- pixel-police-allow: table column width, not spacing -->
                 </colgroup>
                 <thead>
                   <tr>
@@ -1083,14 +1083,14 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
               <div class="pd-table-scroll">
                 <table class="pd-table">
                   <colgroup>
-                    <col style="width: 240px" />
-                    <col style="width: 116px" />
-                    <col style="width: 104px" />
-                    <col style="width: 110px" />
-                    <col style="width: 130px" />
-                    <col style="width: 160px" />
-                    <col style="width: 104px" />
-                    <col style="width: 160px" />
+                    <col style="width: 240px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 116px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 104px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 110px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 130px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 160px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 104px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 160px" /><!-- pixel-police-allow: table column width, not spacing -->
                   </colgroup>
                   <thead>
                     <tr>
@@ -1120,10 +1120,10 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                         <span v-else class="pd-vendor-alt">Alternate</span>
                       </td>
                       <td class="pd-td pd-td--num">
-                        <button type="button" class="pd-lead-toggle" @click="toggleLeadTime(vi.vendorId)">
+                        <MpButton variant="ghost" class="pd-lead-toggle" @click="toggleLeadTime(vi.vendorId)">
                           <span>{{ vendorLeadLabel(vi.vendorId) }}</span>
                           <MpIcon :name="leadTimeOpen.has(vi.vendorId) ? 'chevrons-up' : 'chevrons-down'" size="sm" />
-                        </button>
+                        </MpButton>
                         <ul v-if="leadTimeOpen.has(vi.vendorId)" class="pd-lead-breakdown">
                           <li v-for="w in vendorLeadByWarehouse(vi.vendorId)" :key="w.warehouseId" class="pd-lead-row">
                             <span class="pd-lead-wh">{{ w.warehouseName }}</span>
@@ -1187,11 +1187,11 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
               <div v-if="conversions.length" class="pd-table-scroll">
                 <table class="pd-table">
                   <colgroup>
-                    <col style="width: 220px" />
-                    <col style="width: 160px" />
-                    <col style="width: 240px" />
-                    <col style="width: 200px" />
-                    <col style="width: 90px" />
+                    <col style="width: 220px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 160px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 240px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 200px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 90px" /><!-- pixel-police-allow: table column width, not spacing -->
                   </colgroup>
                   <thead>
                     <tr>
@@ -1299,14 +1299,14 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             <div v-if="pagedBatches.length" class="pd-table-scroll">
               <table class="pd-table">
                 <colgroup>
-                  <col style="width: 140px" />
-                  <col style="width: 130px" />
-                  <col style="width: 220px" />
-                  <col style="width: 110px" />
-                  <col style="width: 110px" />
-                  <col style="width: 110px" />
-                  <col style="width: 90px" />
-                  <col style="width: 56px" />
+                  <col style="width: 140px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 130px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 220px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 110px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 110px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 110px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 90px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 56px" /><!-- pixel-police-allow: table column width, not spacing -->
                 </colgroup>
                 <thead>
                   <tr>
@@ -1392,9 +1392,9 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             <div v-if="pagedSerialStock.length" class="pd-table-scroll">
               <table class="pd-table">
                 <colgroup>
-                  <col style="width: 240px" />
-                  <col style="width: 200px" />
-                  <col style="width: 200px" />
+                  <col style="width: 240px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 200px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 200px" /><!-- pixel-police-allow: table column width, not spacing -->
                 </colgroup>
                 <thead>
                   <tr>
@@ -1509,15 +1509,15 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             <div v-if="pagedWarehouseStock.length" class="pd-table-scroll">
               <table class="pd-table">
                 <colgroup>
-                  <col v-if="whEditing" style="width: 44px" />
-                  <col style="width: 240px" />
-                  <col style="width: 110px" />
-                  <col style="width: 110px" />
-                  <col style="width: 110px" />
-                  <col style="width: 110px" />
-                  <col style="width: 120px" />
-                  <col style="width: 130px" />
-                  <col style="width: 90px" />
+                  <col v-if="whEditing" style="width: 44px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 240px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 110px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 110px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 110px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 110px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 120px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 130px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 90px" /><!-- pixel-police-allow: table column width, not spacing -->
                 </colgroup>
                 <thead>
                   <tr>
@@ -1902,7 +1902,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 .pd-cell-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--mp-spacing-0\.5);
   color: var(--mp-text-subdued, #9ca3af);
   cursor: pointer;
 }
@@ -1959,10 +1959,10 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 .pd-bulk-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--mp-spacing-3);
   flex-wrap: wrap;
   margin-bottom: 8px;
-  padding: 8px 12px;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
   border-radius: 8px;
   background: var(--mp-surface-subdued, #f9fafb);
 }
@@ -2083,7 +2083,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 
 /* Per-warehouse lead-time breakdown (VR-01) — expand under the range. */
 .pd-lead-toggle {
-  display: inline-flex; align-items: center; gap: 4px; margin-left: auto;
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-1); margin-left: auto; height: auto;
   border: none; background: none; padding: 0; cursor: pointer;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   font-variant-numeric: tabular-nums;
@@ -2098,7 +2098,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 }
 .pd-lead-row {
   display: list-item;
-  padding: 2px 0; font-size: var(--mp-font-sizes-sm);
+  padding: var(--mp-spacing-0\.5) 0; font-size: var(--mp-font-sizes-sm);
 }
 .pd-lead-wh { color: var(--mp-text-secondary); }
 .pd-lead-days { float: right; margin-left: var(--mp-spacing-3); color: var(--mp-text-default); font-variant-numeric: tabular-nums; white-space: nowrap; }
