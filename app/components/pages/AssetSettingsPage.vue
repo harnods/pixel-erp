@@ -272,7 +272,7 @@ function toggleOther() { infoToast(t('Not in this prototype')) }
           @click="toggleOther()"
         >
           <span class="st__box" :class="{ 'st__box--on': item.isOn }">
-            <MpIcon v-if="item.isOn" name="check" size="xs" />
+            <MpIcon v-if="item.isOn" name="check" size="sm" />
           </span>
           <div>
             <div class="st__togglek">{{ item.label }}</div>

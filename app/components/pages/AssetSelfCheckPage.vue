@@ -113,9 +113,9 @@ const stateLabel: Record<CheckState, string> = {
   incomplete: 'Did not complete',
 }
 const stateIcon: Record<CheckState, string> = {
-  passed: 'check-circle',
-  failed: 'alert-circle',
-  incomplete: 'help-circle',
+  passed: 'done',
+  failed: 'error',
+  incomplete: 'warning-circular',
 }
 </script>
 
@@ -140,7 +140,7 @@ const stateIcon: Record<CheckState, string> = {
         :class="[`sc__period--${stateOf(h.checks)}`, { 'sc__period--on': h.period === selected }]"
         @click="selected = h.period"
       >
-        <MpIcon :name="stateIcon[stateOf(h.checks)]" size="xs" />
+        <MpIcon :name="stateIcon[stateOf(h.checks)]" size="sm" />
         {{ periodLabel(h.period) }}
       </span>
     </div>
