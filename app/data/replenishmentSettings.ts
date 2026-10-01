@@ -173,6 +173,23 @@ export function effectiveSettings(
 }
 
 /** How many SKU-warehouse pairs carry a custom setting — "N products customised". */
+/**
+ * Safety days a SKU-warehouse pair would use WITHOUT its own value — the figure a
+ * "use default" action restores, and what a saved value is compared against to
+ * decide whether it is an override at all.
+ */
+export function inheritedSafetyDays(
+  sku: string,
+  warehouseId: string,
+  cfg: ReplenishmentConfig = getReplenishmentConfig(),
+): number {
+  const skuLevel = load().bySku[sku] ?? {}
+  const category = productBySku(sku)?.category ?? ''
+  return skuLevel.safetyDays
+    ?? getWarehouseConfig(warehouseId).replenishmentSafetyDays
+    ?? safetyDaysForCategory(category, cfg)
+}
+
 export function overrideCount(): number {
   const store = load()
   return Object.keys(store.bySkuWarehouse).length + Object.keys(store.bySku).length

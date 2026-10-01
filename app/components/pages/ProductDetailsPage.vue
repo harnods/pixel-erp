@@ -8,7 +8,7 @@
  */
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpSelect, MpCheckbox, MpTooltip, MpIcon, MpBadge, MpInput, MpButton, css,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpSelect, MpCheckbox, MpTooltip, MpIcon, MpBadge, MpInput, MpButton, MpButtonGroup, MpTextlink, css,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -29,7 +29,7 @@ import {
   warehouseMinStockRollup,
 } from '~/data/replenishment'
 import { deriveLeadTime, isEstimatedTier } from '~/data/leadTimeHistory'
-import { getSkuWarehouseOverride, saveSkuWarehouseOverride } from '~/data/replenishmentSettings'
+import { getSkuWarehouseOverride, saveSkuWarehouseOverride, inheritedSafetyDays } from '~/data/replenishmentSettings'
 import { replenishmentRevision } from '~/data/replenishmentStore'
 import { cutoverState } from '~/data/wmsCutover'
 import { formatDateTimeLong } from '~/utils/date'
@@ -42,6 +42,7 @@ import {
 import type jsPDF from 'jspdf'
 
 const props = defineProps<{ orderId: string }>()
+const { t, tf } = useLocale()
 const router = useRouter()
 const route = useRoute()
 
@@ -340,8 +341,10 @@ const whReplenishment = computed(() => {
     vendorId: string | null
     lookbackDays: number
     lookbackUnits: number
-    /** What the formula gives, ignoring any override — the placeholder. */
+    /** What the formula gives, ignoring any override. */
     recommended: number | null
+    /** Safety days this warehouse would use with no value of its own. */
+    inheritedSafetyDays: number
   }> = {}
   if (!sku) return out
 
@@ -372,6 +375,7 @@ const whReplenishment = computed(() => {
       // US-024 VR-03 — a hand-set floor well under what demand justifies is how a
       // busy warehouse quietly stops being flagged.
       manualTooLow: rollRow ? isManualFloorTooLow(rollRow) : false,
+      inheritedSafetyDays: inheritedSafetyDays(sku, s.warehouseId),
     }
   }
   return out
@@ -422,28 +426,28 @@ function whMinStockIsCustom(warehouseId: string): boolean {
 function whCalculatedHint(warehouseId: string): string {
   const r = whReplenishment.value[warehouseId]
   if (!r || r.recommended === null) return ''
-  return `calculated ${r.recommended}`
+  return tf('Calculated: {n}', { n: r.recommended })
 }
 
-function whSafetySub(warehouseId: string): string {
-  const r = whReplenishment.value[warehouseId]
-  if (!r) return ''
-  return whSafetyIsCustom(warehouseId) ? `custom · inherits ${r.safetyDays}` : ''
-}
-
+/** One whole label per row: where the reorder point in force comes from. */
 function whMinStockSub(warehouseId: string): string {
   const r = whReplenishment.value[warehouseId]
   if (!r) return ''
-  if (whMinStockIsCustom(warehouseId)) {
-    const calc = whCalculatedHint(warehouseId)
-    return calc ? `custom · ${calc}` : 'custom'
-  }
-  // "no sales here" rather than "not calculated": the old wording described what
-  // the SYSTEM did not do, when the fact worth having is WHY. With no sales there
-  // is no computed reorder point (min stock is always computed — D17); the number
-  // shown is the legacy stored floor the low-stock alerts still enforce.
-  if (r.recommended === null) return 'no sales here'
-  return 'calculated'
+  if (whMinStockIsCustom(warehouseId)) return whCalculatedHint(warehouseId) || t('Set for this warehouse')
+  // With no sales there is no computed reorder point (D17); the number shown is the
+  // stored figure the low-stock alerts still enforce.
+  if (r.recommended === null) return t('No sales yet')
+  return t('Calculated')
+}
+
+/** The draft differs from what the warehouse would inherit / what the formula gives. */
+function whSafetyDiffers(warehouseId: string): boolean {
+  const r = whReplenishment.value[warehouseId]
+  return !!r && whSafetyDraft[warehouseId] !== String(r.inheritedSafetyDays)
+}
+function whRopDiffers(warehouseId: string): boolean {
+  const r = whReplenishment.value[warehouseId]
+  return !!r && r.recommended !== null && whMinDraft[warehouseId] !== String(r.recommended)
 }
 
 /**
@@ -466,45 +470,29 @@ function toggleWhDetails(warehouseId: string): void {
 function whLeadTimeLine(warehouseId: string): string {
   const r = whReplenishment.value[warehouseId]
   if (!r) return ''
-  if (!r.vendorId) {
-    return `No preferred vendor, so this uses the ${product.value?.category ?? 'category'} `
-      + `default of ${r.leadTimeDays} days.`
-  }
-  if (r.leadTimeEstimated) {
-    return `Lead time is an estimate — ${r.vendorName} has no delivered purchase orders yet.`
-  }
-  return `Lead time measured from ${r.vendorName} — avg of last ${r.leadTimeSampleSize} receipts.`
+  if (!r.vendorId) return tf('No preferred vendor, so this uses the category default of {n} days.', { n: r.leadTimeDays })
+  if (r.leadTimeEstimated) return tf('Lead time is an estimate. {vendor} has no delivered purchase orders yet.', { vendor: r.vendorName })
+  return tf('Lead time is measured from {vendor}, the average of the last {n} receipts.', { vendor: r.vendorName, n: r.leadTimeSampleSize })
 }
 
-/** Hover explanation for the safety-days cell — where the value comes from. */
-function whSafetyTitle(warehouseId: string): string {
-  const r = whReplenishment.value[warehouseId]
-  if (!r) return ''
-  const where = {
-    'sku-warehouse': 'Set for this warehouse.',
-    sku: 'Inherited from this product.',
-    warehouse: 'Inherited from this warehouse.',
-    category: 'Inherited from the category default.',
-    global: 'Inherited from the company default.',
-  }[r.safetyDaysSource] ?? 'Inherited.'
-  return `${r.safetyDays} days of extra cover on top of the ${r.leadTimeDays}-day lead time. `
-    + `${where} Leave the box empty to keep inheriting it.`
-}
-
-/** Per-row explanation for the min-stock cell, shown on hover. */
-function whMinStockTitle(warehouseId: string): string {
-  const r = whReplenishment.value[warehouseId]
-  if (!r) return ''
-  if (r.recommended === null) {
-    return 'Not enough sales history here yet, so there is no calculated minimum — min. stock is always '
-      + 'demand × (lead + safety). The stored figure applies until this product has been moving here long '
-      + 'enough, or set a cold-start demand seed for its category in Settings › Replenishment.'
+/** The working behind one warehouse's reorder point, as whole sentences. */
+function whWhyLines(s: { warehouseId: string; warehouseName: string; minStock: number; unit: string }): string[] {
+  const r = whReplenishment.value[s.warehouseId]
+  if (!r) return []
+  const lines: string[] = []
+  if (r.recommended !== null) {
+    lines.push(tf('{velocity} per day × ({lead} lead time days + {safety} safety days) = {n} {unit}', {
+      velocity: r.velocity.toFixed(2), lead: r.leadTimeDays, safety: r.safetyDays, n: r.recommended, unit: s.unit,
+    }))
+    lines.push(tf('{n} {unit} sold here over {days} days.', { n: r.lookbackUnits, unit: s.unit, days: r.lookbackDays }))
+  } else {
+    lines.push(tf('Nothing sold from {warehouse} in the last {days} days, so there is no demand to calculate from. The {n} {unit} shown still applies to low-stock alerts.', {
+      warehouse: s.warehouseName, days: r.lookbackDays, n: s.minStock.toLocaleString('id-ID'), unit: s.unit,
+    }))
   }
-  const lead = r.leadTimeEstimated ? `${r.leadTimeDays} days lead time (estimated)` : `${r.leadTimeDays} days lead time`
-  const sum = `${r.velocity.toFixed(2)}/day × (${lead} + ${r.safetyDays} safety) = ${r.recommended}`
-  return r.source === 'calculated' || r.source === 'none'
-    ? `Calculated: ${sum}`
-    : `Set by you. Calculated would be ${r.recommended} — ${sum}`
+  lines.push(whLeadTimeLine(s.warehouseId))
+  if (whMinStockIsCustom(s.warehouseId)) lines.push(t('This warehouse uses a value you set, not the calculation.'))
+  return lines
 }
 
 // On hand, reserved, available and in transit are all MEASURED by the warehouse,
@@ -513,6 +501,11 @@ function whMinStockTitle(warehouseId: string): string {
 // low-stock alerts and the replenishment worklist, so a half-typed number
 // shouldn't take effect on the way to the right one.
 const whEditing = ref(false)
+/** Invalid cells after a failed save, keyed `safety:<wh>` / `rop:<wh>` (rule/field-invalid-caption). */
+const whErrors = reactive<Record<string, boolean>>({})
+const whFormError = ref('')
+function clearWhErrors() { for (const k of Object.keys(whErrors)) delete whErrors[k]; whFormError.value = '' }
+function cancelEditMinStock() { clearWhErrors(); whEditing.value = false }
 const whMinDraft = reactive<Record<string, string>>({})
 const whSafetyDraft = reactive<Record<string, string>>({})
 
@@ -578,8 +571,10 @@ function applyBulk(): void {
  */
 function clearBulk(): void {
   for (const id of whSelected.value) {
-    whSafetyDraft[id] = ''
-    whMinDraft[id] = ''
+    const r = whReplenishment.value[id]
+    if (!r) continue
+    whSafetyDraft[id] = String(r.inheritedSafetyDays)
+    if (r.recommended !== null) whMinDraft[id] = String(r.recommended)
   }
   whSelected.value = new Set()
 }
@@ -590,14 +585,16 @@ function startEditMinStock() {
   for (const id of Object.keys(whMinDraft)) delete whMinDraft[id]
   for (const id of Object.keys(whSafetyDraft)) delete whSafetyDraft[id]
   const sku = product.value?.sku
+  // The form opens FILLED with the value in force, never blank. Saving a value that
+  // still equals its default stores no override (see saveMinStock), so it keeps
+  // inheriting / tracking demand.
   for (const s of warehouseStock.value) {
+    const r = whReplenishment.value[s.warehouseId]
     const override = sku ? getSkuWarehouseOverride(sku, s.warehouseId) : {}
-    // Only an OVERRIDE prefills. An inherited or calculated value shows as the
-    // placeholder, so leaving the box alone keeps it inherited rather than
-    // silently pinning today's number as a permanent override.
-    whMinDraft[s.warehouseId] = override.reorderPoint !== undefined ? String(override.reorderPoint) : ''
-    whSafetyDraft[s.warehouseId] = override.safetyDays !== undefined ? String(override.safetyDays) : ''
+    whMinDraft[s.warehouseId] = String(override.reorderPoint ?? r?.recommended ?? s.minStock)
+    whSafetyDraft[s.warehouseId] = String(r?.safetyDays ?? '')
   }
+  clearWhErrors()
   whEditing.value = true
 }
 
@@ -605,27 +602,42 @@ function saveMinStock() {
   const sku = product.value?.sku
   if (!sku) return
 
+  // Validate on click and mark the cells — never a disabled button
+  // (rule/btn-no-disabled-validation). Safety days: whole number of 1 or more.
+  // Reorder point: whole number of 0 or more. Neither may be empty.
+  clearWhErrors()
+  const whole = (raw: string) => /^\d+$/.test(raw.trim())
+  for (const s of warehouseStock.value) {
+    const safetyRaw = String(whSafetyDraft[s.warehouseId] ?? '')
+    const ropRaw = String(whMinDraft[s.warehouseId] ?? '')
+    if (!whole(safetyRaw) || Number(safetyRaw) < 1) whErrors[`safety:${s.warehouseId}`] = true
+    if (!whole(ropRaw)) whErrors[`rop:${s.warehouseId}`] = true
+  }
+  if (Object.keys(whErrors).length) {
+    whFormError.value = t('Fix the highlighted fields to save')
+    return
+  }
+
   for (const s of warehouseStock.value) {
     const rec = whReplenishment.value[s.warehouseId]
-    const minRaw = (whMinDraft[s.warehouseId] ?? '').replace(/\D/g, '')
-    const safetyRaw = (whSafetyDraft[s.warehouseId] ?? '').replace(/\D/g, '')
+    const typedSafety = Number(whSafetyDraft[s.warehouseId])
+    const typedRop = Number(whMinDraft[s.warehouseId])
 
-    // Empty means INHERIT, so it clears the override rather than storing a value.
-    // Passing undefined is how replenishmentSettings clears a key.
-    const safetyDays = safetyRaw === '' ? undefined : Number(safetyRaw)
-    const typedMin = minRaw === '' ? null : Number(minRaw)
-    // Accepting the calculated figure leaves it calculated, so it keeps tracking
-    // demand instead of freezing at today's number.
-    const reorderPoint = typedMin === null || typedMin === rec?.recommended ? undefined : typedMin
+    // A value equal to its default is not an override: store nothing, so safety
+    // days keeps inheriting and the reorder point keeps tracking demand.
+    const safetyDays = typedSafety === rec?.inheritedSafetyDays ? undefined : typedSafety
+    const isDefaultRop = rec?.recommended !== null && rec?.recommended !== undefined
+      ? typedRop === rec.recommended
+      : typedRop === s.minStock
+    const reorderPoint = isDefaultRop ? undefined : typedRop
 
     saveSkuWarehouseOverride(sku, s.warehouseId, { safetyDays, reorderPoint })
 
     // Keep the legacy per-warehouse minStock in step. It feeds the low-stock
     // counts on the Products and warehouse screens and in Cowork, which read
-    // `minStock` rather than the engine — without this the same product would
-    // show one floor here and a different one there.
-    if (typedMin !== null && typedMin !== s.minStock) {
-      setWarehouseMinStock(s.warehouseId, sku, typedMin)
+    // `minStock` rather than the engine.
+    if (reorderPoint !== undefined && reorderPoint !== s.minStock) {
+      setWarehouseMinStock(s.warehouseId, sku, reorderPoint)
     }
   }
 
@@ -849,20 +861,21 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
               What replaces it is the same action rollup the product form shows:
               where this product is actually short, and how much to ask for.
             -->
-            <ContentList label="Replenishment">
-              <template v-if="actionRollup && actionRollup.warehouseCount">
-                <span>
-                  Due in {{ actionRollup.dueCount }} of {{ actionRollup.warehouseCount }} warehouses
-                </span>
-                <!-- US-021 AC-04 / D13a: the ACTION rollup — how much to ask for in total,
-                     never a summed min. stock. -->
-                <span v-if="actionRollup.dueCount" class="pd-rollup-total">
-                  Total suggested order qty: {{ actionRollup.totalSuggestedQty.toLocaleString('id-ID') }} {{ product.unit }}
-                </span>
-                <a class="pd-link pd-link--inline" @click="goToWarehouseStock">Min. stock per warehouse</a>
-              </template>
-              <span v-else>—</span>
-            </ContentList>
+            <!-- Whole labelled fields, not sentence fragments (docs/patterns/ContentList.md). -->
+            <template v-if="actionRollup && actionRollup.warehouseCount">
+              <ContentList
+                :label="t('Due for reorder')"
+                :value="tf('{n} of {total} warehouses', { n: actionRollup.dueCount, total: actionRollup.warehouseCount })"
+              />
+              <!-- US-021 AC-04 / D13a: the ACTION rollup — how much to ask for in total. -->
+              <ContentList
+                v-if="actionRollup.dueCount"
+                :label="t('Total suggested qty')"
+                :value="`${actionRollup.totalSuggestedQty.toLocaleString('id-ID')} ${product.unit}`"
+              />
+              <a class="pd-link" @click="goToWarehouseStock">{{ t('View reorder point per warehouse') }}</a>
+            </template>
+            <ContentList v-else :label="t('Due for reorder')" value="—" />
           </div>
         </div>
       </section>
@@ -889,14 +902,12 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
               <ContentList label="Preferred vendor">
                 <template v-if="preferredVendor">
                   <span>{{ vendorNameFor(preferredVendor.vendorId) }}</span>
-                  <span class="pd-vendor-note">
-                    Lead time {{ vendorLeadLabel(preferredVendor.vendorId) }} ·
-                    MOQ {{ moqLabel(preferredVendor.moq, preferredVendor.purchaseUnit, preferredVendor.unitsPerPurchaseUnit) }}
-                  </span>
+                  <span class="pd-vendor-note">{{ tf('Lead time: {lead}', { lead: vendorLeadLabel(preferredVendor.vendorId) }) }}</span>
+                  <span class="pd-vendor-note">{{ tf('MOQ: {moq}', { moq: moqLabel(preferredVendor.moq, preferredVendor.purchaseUnit, preferredVendor.unitsPerPurchaseUnit) }) }}</span>
                 </template>
                 <template v-else>
-                  <span class="pd-vendor-none">Not set</span>
-                  <span class="pd-vendor-note">This product cannot be ordered until a vendor is added.</span>
+                  <span class="pd-vendor-none">{{ t('Not set') }}</span>
+                  <span class="pd-vendor-note">{{ t('This product cannot be ordered until a vendor is added') }}</span>
                 </template>
               </ContentList>
             </div>
@@ -1074,50 +1085,65 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
           <MpTabPanel value="vendors">
             <div v-if="vendorRows.length" class="pd-vendor-panel">
               <div class="pd-filter-bar pd-filter-bar--end">
-                <button
-                  class="btn-enterprise btn-enterprise--secondary"
-                  type="button"
-                  @click="vendorOpen = true"
-                >View vendors</button>
+                <MpButton id="pd-view-vendors" variant="secondary" is-rounded @click="vendorOpen = true">{{ t('View vendors') }}</MpButton>
               </div>
               <div class="pd-table-scroll">
                 <table class="pd-table">
                   <colgroup>
-                    <col style="width: 240px" /><!-- pixel-police-allow: table column width, not spacing -->
-                    <col style="width: 116px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 208px" /><!-- pixel-police-allow: table column width, not spacing -->
                     <col style="width: 104px" /><!-- pixel-police-allow: table column width, not spacing -->
-                    <col style="width: 110px" /><!-- pixel-police-allow: table column width, not spacing -->
-                    <col style="width: 130px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 136px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 88px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 96px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 152px" /><!-- pixel-police-allow: table column width, not spacing -->
                     <col style="width: 160px" /><!-- pixel-police-allow: table column width, not spacing -->
-                    <col style="width: 104px" /><!-- pixel-police-allow: table column width, not spacing -->
                     <col style="width: 160px" /><!-- pixel-police-allow: table column width, not spacing -->
                   </colgroup>
                   <thead>
                     <tr>
-                      <th class="pd-th">Vendor</th>
-                      <th class="pd-th">Preference</th>
-                      <th class="pd-th pd-th--num">Lead time</th>
-                      <th class="pd-th pd-th--num">MOQ</th>
-                      <th class="pd-th">MOQ unit</th>
-                      <th class="pd-th pd-th--num">In base unit</th>
-                      <th class="pd-th pd-th--num">Pack size</th>
-                      <th class="pd-th pd-th--num">Unit cost</th>
+                      <th class="pd-th">{{ t('Vendor') }}</th>
+                      <th class="pd-th">{{ t('Preferred') }}</th>
+                      <th class="pd-th pd-th--num">
+                        <span class="pd-th-info">
+                          {{ t('Lead time') }}
+                          <MpTooltip
+                            id="pd-th-lead-tip"
+                            :label="t('Measured per warehouse from its own purchase-to-receipt history, so it can differ by warehouse.')"
+                            placement="top" use-portal
+                          >
+                            <span class="pd-th-icon"><MpIcon name="info" size="sm" /></span>
+                          </MpTooltip>
+                        </span>
+                      </th>
+                      <th class="pd-th pd-th--num">{{ t('MOQ') }}</th>
+                      <th class="pd-th">{{ t('Unit') }}</th>
+                      <th class="pd-th pd-th--num">{{ t('MOQ in base unit') }}</th>
+                      <th class="pd-th pd-th--num">
+                        <span class="pd-th-info">
+                          {{ t('Purchase multiplier') }}
+                          <MpTooltip
+                            id="pd-th-multiplier-tip"
+                            :label="t('An order is raised to the MOQ, then rounded up to the purchase multiplier.')"
+                            placement="top" use-portal
+                          >
+                            <span class="pd-th-icon"><MpIcon name="info" size="sm" /></span>
+                          </MpTooltip>
+                        </span>
+                      </th>
+                      <th class="pd-th pd-th--num">{{ t('Unit cost') }}</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr v-for="vi in vendorRows" :key="vi.id" class="pd-tr">
                       <td class="pd-td">
                         <span class="pd-vendor-name">{{ vendorNameFor(vi.vendorId) }}</span>
-                        <span class="pd-vendor-note">
-                          Buys by the {{ vi.purchaseUnit }}
-                          <template v-if="vi.unitsPerPurchaseUnit > 1">
-                            = {{ vi.unitsPerPurchaseUnit }} {{ product.unit }}
-                          </template>
+                        <span v-if="vi.unitsPerPurchaseUnit > 1" class="pd-vendor-note">
+                          {{ tf('1 {unit} = {n} {base}', { unit: vi.purchaseUnit, n: vi.unitsPerPurchaseUnit, base: product.unit }) }}
                         </span>
                       </td>
                       <td class="pd-td">
-                        <MpBadge v-if="vi.isPreferred" for="tableStatus" type="completed">Preferred</MpBadge>
-                        <span v-else class="pd-vendor-alt">Alternate</span>
+                        <MpIcon v-if="vi.isPreferred" name="check" size="sm" class="pd-vendor-check" :aria-label="t('Preferred')" />
+                        <span v-else class="pd-vendor-alt">—</span>
                       </td>
                       <td class="pd-td pd-td--num">
                         <MpButton variant="ghost" class="pd-lead-toggle" @click="toggleLeadTime(vi.vendorId)">
@@ -1128,20 +1154,14 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                           <li v-for="w in vendorLeadByWarehouse(vi.vendorId)" :key="w.warehouseId" class="pd-lead-row">
                             <span class="pd-lead-wh">{{ w.warehouseName }}</span>
                             <span class="pd-lead-days">
-                              {{ w.days != null ? `${w.days} days` : '—' }}
-                              <span v-if="w.estimated" class="pd-lead-est">est.</span>
+                              {{ w.days != null ? tf('{n} days', { n: w.days }) : '—' }}
+                              <span v-if="w.estimated" class="pd-lead-est">{{ t('Estimated') }}</span>
                             </span>
                           </li>
                         </ul>
                       </td>
                       <td class="pd-td pd-td--num">{{ vi.moq.toLocaleString('id-ID') }}</td>
-                      <td class="pd-td">
-                        {{ vi.purchaseUnit }}
-                        <span v-if="vi.unitsPerPurchaseUnit > 1" class="pd-vendor-note">
-                          multi-unit
-                        </span>
-                        <span v-else class="pd-vendor-note">base unit</span>
-                      </td>
+                      <td class="pd-td">{{ vi.purchaseUnit }}</td>
                       <td class="pd-td pd-td--num">
                         {{ (vi.moq * vi.unitsPerPurchaseUnit).toLocaleString('id-ID') }} {{ product.unit }}
                       </td>
@@ -1151,26 +1171,14 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                   </tbody>
                 </table>
               </div>
-              <p class="pd-vendor-hint">
-                An order is raised to the vendor's minimum, then rounded up to a whole pack.
-                The preferred vendor is used by default when a draft purchase order is created.
-                Lead time is measured per warehouse from each location's own purchase-to-receipt
-                history, so it can differ by warehouse — see the Stock by warehouses tab for the
-                figure each warehouse uses.
-              </p>
             </div>
             <div v-else class="empty-full">
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-              <p class="empty-full-title">No vendors</p>
+              <p class="empty-full-title">{{ t('No vendors') }}</p>
               <p class="empty-full-desc">
-                No vendor supplies this product yet, so it cannot be ordered or replenished.
-                Link it to a vendor from the Vendors module.
+                {{ t('No vendor supplies this product yet, so it cannot be ordered or replenished. Link it to a vendor from the Vendors module.') }}
               </p>
-              <button
-                class="btn-enterprise btn-enterprise--secondary empty-cta"
-                type="button"
-                @click="router.push('/vendors')"
-              >Go to Vendors</button>
+              <MpButton id="pd-go-vendors" variant="secondary" is-rounded class="empty-cta" @click="router.push('/vendors')">{{ t('Go to Vendors') }}</MpButton>
             </div>
           </MpTabPanel>
 
@@ -1437,109 +1445,57 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
           <!-- Stock by warehouses — shown for every product, alongside the batch /
                serial breakdown rather than instead of it. -->
           <MpTabPanel value="warehouses">
-            <p v-if="pagedWarehouseStock.length" class="pd-table-caption">
-              Min. stock is calculated per warehouse as daily sales × (lead time + safety days).
-              A figure you type is marked&nbsp;<span class="pd-caption-mark">custom</span> and
-              replaces the calculation; an empty field keeps it calculated or inherited.
-            </p>
-            <div v-if="pagedWarehouseStock.length" class="pd-filter-bar pd-filter-bar--end">
-              <div v-if="whEditing" class="pd-filter-right">
-                <MpButton
-                  class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
-                  variant="ghost"
-                  type="button"
-                  @click="whEditing = false"
-                >Cancel</MpButton>
-                <MpButton
-                  class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
-                  variant="primary"
-                  type="button"
-                  @click="saveMinStock"
-                >Save</MpButton>
-              </div>
-              <MpButton
-                v-else
-                class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
-                variant="secondary"
-                type="button"
-                @click="startEditMinStock"
-              >Edit</MpButton>
+            <div v-if="pagedWarehouseStock.length && !whEditing" class="pd-filter-bar pd-filter-bar--end">
+              <MpButton id="pd-wh-edit" variant="secondary" is-rounded @click="startEditMinStock">{{ t('Edit') }}</MpButton>
             </div>
-            <!-- Bulk safety days — the one setting that is usually the same
-                 everywhere, so it should not be typed nine times. -->
+            <!-- Bulk set — the same value for several warehouses should not be typed nine times. -->
             <div v-if="whEditing && pagedWarehouseStock.length" class="pd-bulk-bar">
-              <span class="pd-bulk-count">
-                {{ whSelected.size }}
-                {{ whSelected.size === 1 ? 'warehouse selected' : 'warehouses selected' }}
-              </span>
+              <span class="pd-bulk-count">{{ tf('{n} warehouses selected', { n: whSelected.size }) }}</span>
               <template v-if="whSelected.size">
-                <MpInput
-                  id="pd-wh-bulk-safety"
-                  v-model="whBulkSafety"
-                  type="number"
-                  placeholder="Safety days"
-                  :class="css({ width: '116px' })"
-                />
-                <MpInput
-                  id="pd-wh-bulk-min-stock"
-                  v-model="whBulkMinStock"
-                  type="number"
-                  placeholder="Min. stock"
-                  :class="css({ width: '116px' })"
-                />
-                <button
-                  class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
-                  type="button"
-                  @click="applyBulk"
-                >Apply to selected</button>
-                <button
-                  class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
-                  type="button"
-                  @click="clearBulk"
-                >Clear</button>
-                <span class="pd-bulk-hint">
-                  Fill either box. Clear returns min. stock to calculated, and safety days to its inherited default.
-                </span>
+                <label class="pd-bulk-field" for="pd-wh-bulk-safety">
+                  {{ t('Safety days') }}
+                  <MpInput id="pd-wh-bulk-safety" v-model="whBulkSafety" type="number" :class="css({ width: '96px' })" />
+                </label>
+                <label class="pd-bulk-field" for="pd-wh-bulk-min-stock">
+                  {{ t('Reorder point') }}
+                  <MpInput id="pd-wh-bulk-min-stock" v-model="whBulkMinStock" type="number" :class="css({ width: '96px' })" />
+                </label>
+                <MpButton id="pd-wh-bulk-apply" variant="secondary" size="sm" is-rounded @click="applyBulk">{{ t('Apply to selected') }}</MpButton>
+                <MpButton id="pd-wh-bulk-clear" variant="ghost" size="sm" is-rounded @click="clearBulk">{{ t('Use defaults') }}</MpButton>
               </template>
-              <span v-else class="pd-bulk-hint">
-                Tick warehouses to set their safety days or min. stock together.
-              </span>
+              <span v-else class="pd-bulk-hint">{{ t('Select warehouses to set their safety days or reorder point together') }}</span>
             </div>
 
-            <div v-if="pagedWarehouseStock.length" class="pd-table-scroll">
+            <div v-if="pagedWarehouseStock.length" class="pd-table-scroll" :class="{ 'pd-form-table': whEditing }">
               <table class="pd-table">
                 <colgroup>
                   <col v-if="whEditing" style="width: 44px" /><!-- pixel-police-allow: table column width, not spacing -->
-                  <col style="width: 240px" /><!-- pixel-police-allow: table column width, not spacing -->
-                  <col style="width: 110px" /><!-- pixel-police-allow: table column width, not spacing -->
-                  <col style="width: 110px" /><!-- pixel-police-allow: table column width, not spacing -->
-                  <col style="width: 110px" /><!-- pixel-police-allow: table column width, not spacing -->
-                  <col style="width: 110px" /><!-- pixel-police-allow: table column width, not spacing -->
-                  <col style="width: 120px" /><!-- pixel-police-allow: table column width, not spacing -->
-                  <col style="width: 130px" /><!-- pixel-police-allow: table column width, not spacing -->
-                  <col style="width: 90px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 200px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 104px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 104px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 104px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 104px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 136px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 152px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 72px" /><!-- pixel-police-allow: table column width, not spacing -->
                 </colgroup>
                 <thead>
                   <tr>
                     <th v-if="whEditing" class="pd-th">
-                      <MpCheckbox
-                        id="pd-wh-select-all"
-                        :is-checked="whAllSelected"
-                        @change="toggleWhSelectAll"
-                      />
+                      <MpCheckbox id="pd-wh-select-all" :is-checked="whAllSelected" @change="toggleWhSelectAll" />
                     </th>
-                    <th class="pd-th">Warehouse</th>
-                    <th class="pd-th pd-th--num">On hand qty</th>
-                    <th class="pd-th pd-th--num">Reserved qty</th>
-                    <th class="pd-th pd-th--num">Available qty</th>
-                    <th class="pd-th pd-th--num">In transit qty</th>
+                    <th class="pd-th">{{ t('Warehouse') }}</th>
+                    <th class="pd-th pd-th--num">{{ t('On hand qty') }}</th>
+                    <th class="pd-th pd-th--num">{{ t('Reserved qty') }}</th>
+                    <th class="pd-th pd-th--num">{{ t('Available qty') }}</th>
+                    <th class="pd-th pd-th--num">{{ t('In transit qty') }}</th>
                     <!-- The input comes before the number it produces. -->
                     <th class="pd-th pd-th--num">
                       <span class="pd-th-info">
-                        Safety days
+                        {{ t('Safety days') }}
                         <MpTooltip
                           id="pd-th-safety-tip"
-                          label="Extra cover on top of the vendor's lead time. Leave a warehouse blank to use the category default from Settings › Replenishment, or the company default where the category sets none."
+                          :label="t('Extra cover on top of the vendor lead time. A warehouse without its own value uses the category default from Replenishment settings.')"
                           placement="top" use-portal
                         >
                           <span class="pd-th-icon"><MpIcon name="info" size="sm" /></span>
@@ -1548,17 +1504,17 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                     </th>
                     <th class="pd-th pd-th--num">
                       <span class="pd-th-info">
-                        Min. stock
+                        {{ t('Reorder point') }}
                         <MpTooltip
                           id="pd-th-minstock-tip"
-                          label="Calculated from this warehouse's own sales: daily average × (lead time + safety days). A warehouse with no sales history yet has no calculated minimum — it falls to its stored figure until sales build up, or a cold-start demand seed is set for the category in Settings › Replenishment."
+                          :label="t('Calculated per warehouse as daily sales × (lead time + safety days). A value you set replaces the calculation.')"
                           placement="top" use-portal
                         >
                           <span class="pd-th-icon"><MpIcon name="info" size="sm" /></span>
                         </MpTooltip>
                       </span>
                     </th>
-                    <th class="pd-th">Unit</th>
+                    <th class="pd-th">{{ t('Unit') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1579,114 +1535,83 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                     <td class="pd-td pd-td--num">{{ s.available.toLocaleString('id-ID') }}</td>
                     <td class="pd-td pd-td--num">{{ s.onTheWay.toLocaleString('id-ID') }}</td>
 
-                    <!-- Safety days — the decision. Placeholder shows what this
-                         warehouse inherits, so an untouched box means inherit. -->
-                    <td class="pd-td pd-td--num" :title="whSafetyTitle(s.warehouseId)">
+                    <!-- Safety days — opens filled with the value in force (docs/patterns/FormTable.md). -->
+                    <td
+                      class="pd-td pd-td--num"
+                      :class="{ 'pd-td--input': whEditing, 'pd-td--error': whEditing && whErrors[`safety:${s.warehouseId}`] }"
+                    >
                       <MpInput
                         v-if="whEditing"
                         :id="`pd-wh-safety-${s.warehouseId}`"
                         v-model="whSafetyDraft[s.warehouseId]"
                         type="number"
-                        :placeholder="String(whReplenishment[s.warehouseId]?.safetyDays ?? '')"
-                        :aria-label="`Safety days for ${s.warehouseName}`"
-                        :class="css({ width: '88px' })"
+                        :aria-label="tf('Safety days for {warehouse}', { warehouse: s.warehouseName })"
                       />
                       <template v-else>{{ whReplenishment[s.warehouseId]?.safetyDays ?? '—' }}</template>
-                      <span v-if="whSafetySub(s.warehouseId)" class="pd-cell-sub">
-                        {{ whSafetySub(s.warehouseId) }}
-                        <!-- Clearing the box IS the revert, so name it instead of
-                             leaving the user to guess that empty means inherit. -->
-                        <a
-                          v-if="whEditing"
-                          class="pd-cell-link"
-                          @click="whSafetyDraft[s.warehouseId] = ''"
-                        >Use inherited</a>
-                      </span>
+                      <span v-if="whSafetyIsCustom(s.warehouseId)" class="pd-cell-sub">{{ t('Set for this warehouse') }}</span>
+                      <MpTextlink
+                        v-if="whEditing && whSafetyDiffers(s.warehouseId)"
+                        :id="`pd-wh-safety-default-${s.warehouseId}`"
+                        as="a"
+                        class="pd-cell-link"
+                        @click.prevent="whSafetyDraft[s.warehouseId] = String(whReplenishment[s.warehouseId]?.inheritedSafetyDays ?? '')"
+                      >{{ t('Use default') }}</MpTextlink>
                     </td>
 
-                    <!-- Min. stock — what safety days works out to, per the PRD's
-                         "Reorder Point = MINIMUM STOCK THRESHOLD". Calculated
-                         unless someone overwrote it. -->
-                    <td class="pd-td pd-td--num" :title="whMinStockTitle(s.warehouseId)">
+                    <!-- Reorder point — calculated unless someone set it for this warehouse. -->
+                    <td
+                      class="pd-td pd-td--num"
+                      :class="{ 'pd-td--input': whEditing, 'pd-td--error': whEditing && whErrors[`rop:${s.warehouseId}`] }"
+                    >
                       <MpInput
                         v-if="whEditing"
                         :id="`pd-wh-min-stock-${s.warehouseId}`"
                         v-model="whMinDraft[s.warehouseId]"
                         type="number"
-                        :placeholder="whReplenishment[s.warehouseId]?.recommended !== null ? String(whReplenishment[s.warehouseId]?.recommended ?? '') : String(s.minStock)"
-                        :aria-label="`Min. stock for ${s.warehouseName}`"
-                        :class="css({ width: '88px' })"
+                        :aria-label="tf('Reorder point for {warehouse}', { warehouse: s.warehouseName })"
                       />
-                      <!--
-                        Three provenances, never conflated. Showing "—" for a
-                        warehouse with no sales would be honest about the
-                        CALCULATION but wrong about the FLOOR: the stored
-                        min. stock is what the low-stock alerts on the Products
-                        and warehouse screens actually enforce, so the number in
-                        force is shown and labelled as not demand-derived.
-                      -->
+                      <!-- With no sales there is nothing to calculate, so the stored figure the
+                           low-stock alerts enforce is shown and labelled as such. -->
                       <template v-else-if="whReplenishment[s.warehouseId]?.recommended === null && whReplenishment[s.warehouseId]?.source === 'none'">
                         {{ s.minStock.toLocaleString('id-ID') }}
                       </template>
                       <template v-else>
                         {{ (whReplenishment[s.warehouseId]?.effective ?? s.minStock).toLocaleString('id-ID') }}
                       </template>
-                      <span v-if="whReplenishment[s.warehouseId]?.manualTooLow" class="pd-cell-warn">
-                        below calculated
-                      </span>
-                      <span v-if="whMinStockSub(s.warehouseId)" class="pd-cell-sub">
-                        <!-- The provenance word doubles as the disclosure trigger:
-                             it is already the thing a reader questions. -->
-                        <a class="pd-cell-toggle" @click="toggleWhDetails(s.warehouseId)">
-                          {{ whMinStockSub(s.warehouseId) }}
-                          <MpIcon :name="expandedWh.has(s.warehouseId) ? 'chevrons-up' : 'chevrons-down'" size="sm" />
-                        </a>
-                        <a
-                          v-if="whEditing && whMinStockIsCustom(s.warehouseId) && whCalculatedHint(s.warehouseId)"
-                          class="pd-cell-link"
-                          @click="whMinDraft[s.warehouseId] = ''"
-                        >Use calculated</a>
-                      </span>
+                      <span v-if="whReplenishment[s.warehouseId]?.manualTooLow" class="pd-cell-warn">{{ t('Below calculated') }}</span>
+                      <MpButton
+                        v-if="whMinStockSub(s.warehouseId)"
+                        :id="`pd-wh-why-${s.warehouseId}`"
+                        variant="ghost"
+                        class="pd-cell-toggle"
+                        @click="toggleWhDetails(s.warehouseId)"
+                      >
+                        {{ whMinStockSub(s.warehouseId) }}
+                        <MpIcon :name="expandedWh.has(s.warehouseId) ? 'chevrons-up' : 'chevrons-down'" size="sm" />
+                      </MpButton>
+                      <MpTextlink
+                        v-if="whEditing && whRopDiffers(s.warehouseId)"
+                        :id="`pd-wh-rop-calc-${s.warehouseId}`"
+                        as="a"
+                        class="pd-cell-link"
+                        @click.prevent="whMinDraft[s.warehouseId] = String(whReplenishment[s.warehouseId]?.recommended ?? '')"
+                      >{{ t('Use calculated') }}</MpTextlink>
                     </td>
                     <td class="pd-td">{{ s.unit }}</td>
                   </tr>
 
-                  <!-- Working shown on request — same three facts, same wording as
-                       the product form's "Why this number?". -->
+                  <!-- Working shown on request. -->
                   <tr v-if="expandedWh.has(s.warehouseId)" :key="`${s.warehouseId}-why`" class="pd-tr pd-tr--details">
                     <td class="pd-td pd-td--details" :colspan="whEditing ? 9 : 8">
                       <div class="pd-why">
-                        <p v-if="whReplenishment[s.warehouseId]?.recommended !== null" class="pd-why-row">
-                          {{ whReplenishment[s.warehouseId]?.velocity.toFixed(2) }}/day ×
-                          ({{ whReplenishment[s.warehouseId]?.leadTimeDays }} days lead time +
-                          {{ whReplenishment[s.warehouseId]?.safetyDays }} safety) =
-                          {{ whReplenishment[s.warehouseId]?.recommended }} {{ s.unit }}
-                        </p>
-                        <p v-else class="pd-why-row">
-                          Nothing sold from {{ s.warehouseName }} in the last
-                          {{ whReplenishment[s.warehouseId]?.lookbackDays }} days, so there is no
-                          demand to calculate a minimum from. The {{ s.minStock.toLocaleString('id-ID') }}
-                          {{ s.unit }} shown still applies to low-stock alerts.
-                        </p>
-
-                        <p v-if="whReplenishment[s.warehouseId]?.recommended !== null" class="pd-why-row">
-                          {{ whReplenishment[s.warehouseId]?.lookbackUnits }} {{ s.unit }} sold here over
-                          {{ whReplenishment[s.warehouseId]?.lookbackDays }} days.
-                        </p>
-
-                        <p class="pd-why-row">{{ whLeadTimeLine(s.warehouseId) }}</p>
-
-                        <p v-if="whMinStockIsCustom(s.warehouseId)" class="pd-why-row">
-                          This warehouse uses a figure you set, not the calculation.
-                        </p>
-
-                        <p class="pd-why-row">
-                          <a class="pd-cell-link" @click="router.push('/replenishment-settings#lead-time')">
-                            Lead time defaults
-                          </a>
-                          <a class="pd-cell-link" @click="router.push(`/product-list/${product?.sku}?section=vendors`)">
-                            Vendors
-                          </a>
+                        <p v-for="line in whWhyLines(s)" :key="line" class="pd-why-row">{{ line }}</p>
+                        <p class="pd-why-row pd-why-links">
+                          <MpTextlink :id="`pd-wh-lead-defaults-${s.warehouseId}`" as="a" class="pd-cell-link" @click.prevent="router.push('/replenishment-settings#lead-time')">
+                            {{ t('View lead time defaults') }}
+                          </MpTextlink>
+                          <MpTextlink :id="`pd-wh-vendors-${s.warehouseId}`" as="a" class="pd-cell-link" @click.prevent="router.push(`/product-list/${product?.sku}?section=vendors`)">
+                            {{ t('View vendors') }}
+                          </MpTextlink>
                         </p>
                       </div>
                     </td>
@@ -1694,6 +1619,16 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                   </template>
                 </tbody>
               </table>
+            </div>
+
+            <!-- Edit-mode actions: inline error on the left, ghost Cancel + primary Save changes
+                 (rule/btn-responsive-footer, rule/form-edit-save-changes, rule/form-errors-inline). -->
+            <div v-if="whEditing && pagedWarehouseStock.length" class="pd-wh-footer">
+              <p v-if="whFormError" class="pd-wh-error" role="alert">{{ whFormError }}</p>
+              <MpButtonGroup class="erp-action-footer">
+                <MpButton id="pd-wh-cancel" variant="ghost" is-rounded @click="cancelEditMinStock">{{ t('Cancel') }}</MpButton>
+                <MpButton id="pd-wh-save" variant="primary" is-rounded @click="saveMinStock">{{ t('Save changes') }}</MpButton>
+              </MpButtonGroup>
             </div>
             <div v-else class="empty-full">
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
@@ -1882,36 +1817,23 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 /* ── Tables (ErpTablePage header/row spec, raw table — mirrors WarehouseDetailsPage's tab tables) ── */
 /* Where a number came from, under the number itself — muted so the figure still
    reads first and the provenance is there when questioned. */
-.pd-table-caption {
-  margin: 0 0 8px;
-  max-width: 72ch;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--mp-text-subdued, #6b7280);
-}
-
-/* Echoes the in-table marker so the caption's word is recognisably the same. */
-.pd-caption-mark {
-  color: var(--mp-text-default, #374151);
-  font-weight: 500;
-  white-space: nowrap;
-}
 
 /* The provenance word, made operable. Muted like the text it replaces so the
    table's quiet does not turn into a column of links. */
+/* The provenance label doubles as the disclosure trigger. Sized like the caption it
+   replaces: MpButton pins 14px with a layered !important, so it is scaled instead. */
 .pd-cell-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--mp-spacing-0\.5);
-  color: var(--mp-text-subdued, #9ca3af);
-  cursor: pointer;
+  display: flex; align-items: center; gap: var(--mp-spacing-0\.5);
+  width: fit-content; height: auto; margin-left: auto; padding: 0;
+  font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary);
+  zoom: calc(12 / 14);
 }
-.pd-cell-toggle:hover { color: var(--mp-text-default, #374151); }
+.pd-cell-toggle:hover { color: var(--mp-text-default); }
 
 .pd-tr--details > .pd-td--details { padding: 0; }
 
 /* The detail spans every column, so by default it renders at the far left of a
-   table that is usually scrolled right to reach Min. stock — putting the
+   table that is usually scrolled right to reach Reorder point — putting the
    explanation off-screen exactly when it is opened. Sticking it to the scroll
    viewport's left edge keeps it read-able at any horizontal position. */
 .pd-why {
@@ -1933,39 +1855,28 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 }
 .pd-why-row:last-child { margin-bottom: 0; }
 
-.pd-cell-link {
-  margin-left: 6px;
-  color: var(--mp-text-brand, #029861);
-  cursor: pointer;
-}
-.pd-cell-link:hover { text-decoration: underline; }
+/* MpTextlink pins 14px with a layered !important; scale it to the 12px caption. */
+.pd-cell-link { display: flex; width: fit-content; margin-left: auto; zoom: calc(12 / 14); }
+.pd-why-links { display: flex; gap: var(--mp-spacing-3); }
+.pd-why-links .pd-cell-link { margin-left: 0; }
 
 /* A hand-set floor materially under the calculated one. Amber, not red: it is a
    judgement the buyer is allowed to make, not an error. */
 .pd-cell-warn {
-  display: block;
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--mp-text-warning, #b45309);
+  display: block; font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm);
+  color: var(--mp-colors-text-warning);
 }
 
 .pd-cell-sub {
-  display: block;
-  font-size: 11px;
-  line-height: 1.4;
-  font-weight: 400;
-  color: var(--mp-text-subdued, #9ca3af);
+  display: block; font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm);
+  font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary);
 }
 .pd-bulk-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--mp-spacing-3);
-  flex-wrap: wrap;
-  margin-bottom: 8px;
-  padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border-radius: 8px;
-  background: var(--mp-surface-subdued, #f9fafb);
+  display: flex; align-items: center; gap: var(--mp-spacing-3); flex-wrap: wrap;
+  margin-bottom: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border-radius: var(--mp-radii-md); background: var(--mp-background-neutral-subtle);
 }
+.pd-bulk-field { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 /* Header label plus its info affordance. Inline-flex so the icon rides the text
    baseline instead of forcing the numeric column's right alignment open. */
 .pd-th-info { display: inline-flex; align-items: center; gap: 4px; }
@@ -1976,12 +1887,12 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 }
 .pd-th-icon:hover { color: var(--mp-icon-default, #4b5563); }
 
-.pd-bulk-count { font-size: 13px; font-weight: 500; color: var(--mp-text-default, #111827); }
+.pd-bulk-count { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 /* Pixel's MpInput root is full-width by default, so inside a flex row each one
    claims the whole line and the fields stack. Shrink the wrapper, not just the
    control it contains. */
 .pd-bulk-bar :deep(.mp-input__root) { width: auto; flex: 0 0 auto; }
-.pd-bulk-hint { font-size: 12px; color: var(--mp-text-subdued, #6b7280); }
+.pd-bulk-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 .pd-table-scroll { overflow-x: auto; }
 .pd-table { width: 100%; min-width: max-content; border-collapse: collapse; }
@@ -2002,6 +1913,38 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
   vertical-align: top; white-space: nowrap; background: var(--mp-background-neutral);
 }
 .pd-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
+/* Edit mode is a form table (docs/patterns/FormTable.md): read-only cells go gray,
+   the two editable cells stay white, own their border + focus ring, and the input
+   inside is borderless and fills the 40px baseline (rule/table-form-cell-no-border,
+   rule/table-nonform-bg-gray). */
+.pd-form-table .pd-td { background: var(--mp-background-neutral-subtle); border-right: 1px solid var(--mp-border-default); }
+.pd-form-table .pd-td:last-child { border-right: none; }
+.pd-form-table .pd-td--input { padding: 0; background: var(--mp-background-neutral); position: relative; }
+.pd-form-table .pd-td--input :deep([class*='input']) {
+  width: 100%; height: var(--mp-sizes-10);
+  border-color: transparent; border-radius: 0; box-shadow: none !important; /* pixel-police-allow-shadow: strips the input's own ring, the cell draws it */
+  text-align: right; font-variant-numeric: tabular-nums;
+}
+.pd-form-table .pd-td--input:focus-within::after,
+.pd-form-table .pd-td--error::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: var(--mp-sizes-10);
+  border: 1px solid var(--mp-border-bold); pointer-events: none;
+}
+.pd-form-table .pd-td--error { background: var(--mp-colors-background-danger); }
+.pd-form-table .pd-td--error::after { border-color: var(--mp-colors-border-danger); }
+.pd-form-table .pd-td--error :deep([class*='input']) { background: transparent; }
+.pd-form-table .pd-td--input > .pd-cell-sub,
+.pd-form-table .pd-td--input > .pd-cell-warn,
+.pd-form-table .pd-td--input > .pd-cell-toggle,
+.pd-form-table .pd-td--input > .pd-cell-link { margin-right: var(--mp-spacing-2); }
+.pd-form-table .pd-td--input > .pd-cell-sub,
+.pd-form-table .pd-td--input > .pd-cell-warn { padding-right: var(--mp-spacing-2); margin-right: 0; }
+.pd-wh-footer {
+  display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-4);
+  margin-top: var(--mp-spacing-4);
+}
+.pd-wh-error { margin: 0 auto 0 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-danger); }
+.pd-vendor-check { color: var(--mp-colors-icon-brand); }
 .pd-td--action { text-align: right; padding-top: var(--mp-spacing-1); padding-bottom: var(--mp-spacing-1); }
 .pd-tx-number { color: var(--mp-text-default); }
 .row-kebab { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
@@ -2076,10 +2019,6 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 }
 .pd-vendor-none { color: var(--mp-text-secondary); }
 .pd-vendor-alt { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
-.pd-vendor-hint {
-  margin-top: var(--mp-spacing-3);
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
-}
 
 /* Per-warehouse lead-time breakdown (VR-01) — expand under the range. */
 .pd-lead-toggle {
@@ -2103,5 +2042,4 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 .pd-lead-wh { color: var(--mp-text-secondary); }
 .pd-lead-days { float: right; margin-left: var(--mp-spacing-3); color: var(--mp-text-default); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pd-lead-est { margin-left: 4px; color: var(--mp-text-subtle); font-size: var(--mp-font-sizes-xs, 11px); }
-.pd-rollup-total { display: block; }
 </style>
