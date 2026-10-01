@@ -42,6 +42,10 @@ import ImportSpreadsheetModal from '~/components/patterns/ImportSpreadsheetModal
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { useRecommendationWarehouse } from '~/composables/useRecommendationWarehouse'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
+import {
+  matchCounts, pairsForPeriod, activePeriodId, reconUnfinishedCount, periodLabelById,
+  reconVersion, isPeriodFinalized, canFinalizePeriod,
+} from '~/data/vatReconciliation'
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
 import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
 import { purchaseOrders, purchaseInvoicesAwaitingApproval } from '~/data'
@@ -69,9 +73,64 @@ onUnmounted(() => document.removeEventListener('click', onTitleActionsDocClick))
 // this is the one component that survives every virtual page swap.
 const unsavedChangesModal = useUnsavedChangesModalState()
 
-// Browser tab title: "Mekari ERP | <module>" (acronyms uppercased for display only)
+/**
+ * Pages reached from *inside* a module rather than from the sidebar. Two
+ * consequences, both handled here:
+ *
+ *  1. `pageTitle` mirrors the active menu label, and these have no menu entry of
+ *     their own — the sidebar anchors them to their parent (SECTION_PARENT in
+ *     ErpSidebar), which would otherwise put the parent's name in their H1 and
+ *     browser title. They keep their own.
+ *  2. With no sidebar entry, the breadcrumb is their only way back up.
+ *
+ * Declared up here (rather than beside the rest of the title-bar state) because
+ * useHead below reads `resolvedPageTitle`.
+ */
+const MODULE_PARENT: Record<string, { label: string; to: string; title?: string }> = {
+  // The module's own index: a card on Reports › Tax, so its way back up is that
+  // page. The breadcrumb reads 'Tax' because that's what the page it returns to
+  // is called (sidebar label and H1 alike) — breadcrumbs name the previous page.
+  'Vat reconciliation':          { label: 'Tax', to: '/tax-report', title: 'VAT reconciliation' },
+  // `title` overrides the H1 where the page key isn't the display term. The keys
+  // stay Indonesian because they're the route slugs (/faktur-keluaran); the EN
+  // locale shows the standard VAT terms, which is what `title` carries.
+  'Faktur keluaran':             { label: 'VAT reconciliation', to: '/vat-reconciliation', title: 'Output tax invoice' },
+  'Faktur masukan':              { label: 'VAT reconciliation', to: '/vat-reconciliation', title: 'Input tax invoice' },
+  'Matching rules':              { label: 'VAT reconciliation', to: '/vat-reconciliation', title: 'Setup' },
+  'Unmatched and discrepancies': { label: 'VAT reconciliation', to: '/vat-reconciliation' },
+}
+/**
+ * Whether the masa under the workspace can be signed off, so the title bar can
+ * offer Finalize / Unfinalize without the page having to hoist the button up.
+ */
+const vatFinalizeState = computed(() => {
+  void reconVersion.value
+  const masa = String(route.query.masa ?? activePeriodId)
+  return { finalized: isPeriodFinalized(masa), canFinalize: canFinalizePeriod(masa) }
+})
+
+const titleBreadcrumb = computed(() => MODULE_PARENT[currentPageKey.value] ?? null)
+const resolvedPageTitle = computed(() => {
+  const entry = MODULE_PARENT[currentPageKey.value]
+  return entry ? (entry.title ?? currentPageKey.value) : pageTitle.value
+})
+
+/**
+ * Context beside the H1 — which masa pajak the page is scoped to. These pages
+ * take the period from `?masa=` rather than offering a picker, so this is the
+ * only thing that states it. Read straight off the route; no plumbing from the
+ * page component needed.
+ */
+const titleMeta = computed(() => {
+  if (!MODULE_PARENT[currentPageKey.value]) return ''
+  return periodLabelById(String(route.query.masa ?? '')) ?? ''
+})
+
+// Browser tab title: "Mekari ERP | <module>" (acronyms uppercased for display
+// only). Off-nav module pages use their own title, not the section they're
+// anchored to — otherwise every VAT reconciliation page reads "Tax".
 useHead({
-  title: () => `Mekari ERP | ${displayLabel(pageTitle.value)}`,
+  title: () => `Mekari ERP | ${displayLabel(resolvedPageTitle.value)}`,
 })
 
 const pageRegistry: Record<string, Component> = {
@@ -124,6 +183,20 @@ const pageRegistry: Record<string, Component> = {
   'Purchase quotes':     defineAsyncComponent(() => import('~/components/pages/PurchaseQuotesPage.vue')),
   'Purchase deliveries': defineAsyncComponent(() => import('~/components/pages/PurchaseDeliveriesPage.vue')),
   'Cash management':   defineAsyncComponent(() => import('~/components/pages/CashManagementPage.vue')),
+  // ── VAT reconciliation (Reports › Tax › VAT reconciliation) ──────────────────
+  // The whole module is off-nav: Reports › Tax is the card index, and the card
+  // opens the period index below. Everything else is reached from inside it (a
+  // masa row, the issue tab, the title-bar settings link).
+  'Vat reconciliation': defineAsyncComponent(() => import('~/components/pages/VatReconciliationPeriodsPage.vue')),
+  // Both faktur sides share one component; it derives the side from the page key.
+  'Faktur keluaran':   defineAsyncComponent(() => import('~/components/pages/VatReconciliationWorkspacePage.vue')),
+  'Faktur masukan':    defineAsyncComponent(() => import('~/components/pages/VatReconciliationWorkspacePage.vue')),
+  // The issue queue belongs to a masa, not to the module: it's reached from a
+  // row (?masa=&jenis=), scoped to that period + side. Key is the '&'-free form:
+  // labelToPath('Unmatched & discrepancies') → /unmatched-and-discrepancies →
+  // pathToLabel → 'Unmatched and discrepancies'.
+  'Unmatched and discrepancies': defineAsyncComponent(() => import('~/components/pages/VatReconciliationUnmatchedPage.vue')),
+  'Matching rules':    defineAsyncComponent(() => import('~/components/pages/VatMatchingRulesPage.vue')),
   'Company profile':    defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
   // Settings → Data migration. Key must match the sidebar label character-for-character.
   'Data migration':     defineAsyncComponent(() => import('~/components/pages/DataMigrationPage.vue')),
@@ -147,8 +220,9 @@ const pageRegistry: Record<string, Component> = {
   // Reports → Inventory index (report cards). The Dual Unit Inventory report itself
   // resolves via detailMatch (/inventory-report/dual-unit).
   'Inventory report':   defineAsyncComponent(() => import('~/components/pages/InventoryReportsIndexPage.vue')),
-  // Reports → Purchases / Tax / Cash & bank indexes (same flush report-card grid as
-  // Sales). No report detail pages yet — every card shows the coming-soon toast.
+  // Reports → Purchases / Tax / Cash & bank indexes (same flush report-card grid
+  // as Sales). Tax is the only one with a built card — VAT reconciliation opens
+  // /vat-reconciliation; every other card shows the coming-soon toast.
   'Purchase report':    defineAsyncComponent(() => import('~/components/pages/PurchaseReportsIndexPage.vue')),
   'Tax report':         defineAsyncComponent(() => import('~/components/pages/TaxReportsIndexPage.vue')),
   'Cash and bank report': defineAsyncComponent(() => import('~/components/pages/CashBankReportsIndexPage.vue')),
@@ -288,6 +362,11 @@ const CycleCountRecommendationPage = asyncPage(() => import('~/components/pages/
 const PurchaseOrderDetailPage = asyncPage(() => import('~/components/pages/PurchaseOrderDetailPage.vue'))
 const PurchaseOrderFormPage = asyncPage(() => import('~/components/pages/PurchaseOrderFormPage.vue'))
 const CreateApprovalWorkflowPage = asyncPage(() => import('~/components/pages/CreateApprovalWorkflowPage.vue'))
+// VAT reconciliation issue queue — rendered per tab via tabComponents below.
+const VatReconciliationPeriodsPage = asyncPage(() => import('~/components/pages/VatReconciliationPeriodsPage.vue'))
+const VatReconciliationUnmatchedPage = asyncPage(() => import('~/components/pages/VatReconciliationUnmatchedPage.vue'))
+// Both faktur sides scope themselves from ?tab= (Needs attention / All faktur).
+const VatReconciliationWorkspacePage = asyncPage(() => import('~/components/pages/VatReconciliationWorkspacePage.vue'))
 const InviteUserPage = asyncPage(() => import('~/components/pages/InviteUserPage.vue'))
 // The "New custom role" title-bar button lives here, but the drawer it opens is
 // rendered inside CustomRolesPage — the two talk through this shared intent.
@@ -979,6 +1058,17 @@ const currentComponent = computed<Component>(() => {
   return pageRegistry[currentPageKey.value] ?? PlaceholderPage
 })
 
+// VAT reconciliation setup — the title bar owns Save (every page's primary
+// actions live there) but the form state belongs to the page, which injects this
+// counter and saves itself whenever it changes.
+const vatSetupSave = ref(0)
+provide('vatSetupSave', vatSetupSave)
+
+// VAT reconciliation Finalize / Unfinalize — same arrangement: the title bar
+// owns the button, the page owns the state and the confirmation.
+const vatFinalize = ref(0)
+provide('vatFinalize', vatFinalize)
+
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
 const pageTabs: Record<string, string[]> = {
@@ -1000,6 +1090,15 @@ const pageTabs: Record<string, string[]> = {
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
   'Product list':      ['All products', 'Awaiting approval'],
+  // VAT reconciliation — the tab is the *scope* of the list, not a different
+  // object: everything, or only what isn't finished. Masa pajak, invoice type
+  // and status are filters, not tabs (docs/patterns/index-page-format.md §A.3).
+  'Vat reconciliation': ['All reconciliations', 'Needs attention'],
+  // Faktur workspaces: the tab is the *scope* (what's in play), the in-page
+  // Status select narrows by match state. Splitting them this way keeps both
+  // controls on-system — Pixel has no filter-chip component.
+  'Faktur keluaran': ['Needs attention', 'All faktur'],
+  'Faktur masukan':  ['Needs attention', 'All faktur'],
   // Settings → Users & roles (Jurnal benchmark: User list / Custom role).
   'Users and roles':   ['User list', 'Custom role'],
   // XPM (Mekari Expense) — section tabs read by the page via ?tab=.
@@ -1023,6 +1122,13 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   const wh = activeWarehouseFilter.value
   // WMS Overview tabs (Inbound / Outbound delivery) show no count badge.
   if (currentPageKey.value === 'Overview') return {}
+  // Only the work scope is badged — "All reconciliations" is a calendar, and a
+  // count on it would just restate the row count.
+  if (currentPageKey.value === 'Vat reconciliation') {
+    void reconVersion.value
+    const unfinished = reconUnfinishedCount()
+    return unfinished ? { 'Needs attention': unfinished } : {}
+  }
   if (currentPageKey.value === 'Inbound delivery') {
     const counts = receiptCountsByStage(wh)
     const out: Record<string, number> = {}
@@ -1102,6 +1208,13 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   if (currentPageKey.value === 'Product list') {
     const awaiting = pendingApprovalCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
+  }
+  if (currentPageKey.value === 'Faktur keluaran' || currentPageKey.value === 'Faktur masukan') {
+    const side = currentPageKey.value === 'Faktur masukan' ? 'input' : 'output'
+    void reconVersion.value
+    const c = matchCounts(pairsForPeriod(String(route.query.masa ?? activePeriodId), side))
+    const attention = (c.all ?? 0) - (c.matched ?? 0)
+    return attention ? { 'Needs attention': attention } : {}
   }
   return {}
 })
@@ -1265,6 +1378,20 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Warehouse transfers': {
     'All warehouse transfers': WarehouseTransfersPage,
     'Awaiting approval': WarehouseTransfersPage,
+  },
+  // Both scopes are the same component — it re-filters itself from ?tab=
+  // (identical ref keeps it mounted across tab changes).
+  'Vat reconciliation': {
+    'All reconciliations': VatReconciliationPeriodsPage,
+    'Needs attention': VatReconciliationPeriodsPage,
+  },
+  'Faktur keluaran': {
+    'Needs attention': VatReconciliationWorkspacePage,
+    'All faktur': VatReconciliationWorkspacePage,
+  },
+  'Faktur masukan': {
+    'Needs attention': VatReconciliationWorkspacePage,
+    'All faktur': VatReconciliationWorkspacePage,
   },
   'Expenses': {
     'Bills': BillsIndexPage,
@@ -1675,7 +1802,18 @@ function startResize(e: MouseEvent) {
 
       <template v-else>
       <div v-if="currentPageKey !== 'Home' && currentPageKey !== 'Hr'" class="page-title-bar">
-        <h1 class="page-title-text">{{ t(pageTitle) }}</h1>
+        <!-- Off-nav module pages get a breadcrumb (their only way back) plus the
+             masa they're scoped to. Every other page keeps the bare h1 it had. -->
+        <div v-if="titleBreadcrumb" class="page-title-lead">
+          <button class="page-breadcrumb" type="button" @click="router.push(titleBreadcrumb.to)">
+            {{ t(titleBreadcrumb.label) }}
+          </button>
+          <div class="page-title-row">
+            <h1 class="page-title-text">{{ t(resolvedPageTitle) }}</h1>
+            <span v-if="titleMeta" class="page-title-meta">{{ titleMeta }}</span>
+          </div>
+        </div>
+        <h1 v-else class="page-title-text">{{ t(resolvedPageTitle) }}</h1>
         <div class="page-actions">
           <MpButton class="page-actions-toggle" variant="primary" is-rounded right-icon="chevrons-down" @click.stop="titleActionsOpen = !titleActionsOpen">{{ t('Actions') }}</MpButton>
           <div class="page-actions-inner" :class="{ 'page-actions-inner--open': titleActionsOpen }" @click="titleActionsOpen = false">
@@ -1871,6 +2009,78 @@ function startResize(e: MouseEvent) {
             {{ t('New warehouse') }}
           </button>
         </div>
+        <!-- VAT reconciliation — nothing to create (masa come from the tax
+             calendar), so the primary action is the Coretax pull that populates
+             them. Matching rules is the module's settings destination, which is
+             why it's here rather than a sidebar child. Per-row CSV download
+             lives in the table's own action column. -->
+        <div v-else-if="currentPageKey === 'Vat reconciliation'" class="page-title-actions">
+          <!-- The issue queue is a working list, so it keeps its own actions;
+               the period index gets the module-level ones. -->
+          <template v-if="activeTab === 'Unmatched & discrepancies'">
+            <button
+              class="btn-enterprise btn-enterprise--secondary"
+              @click="infoToast(t('Export started'))"
+            >
+              {{ t('Export CSV') }}
+            </button>
+            <button
+              class="btn-enterprise btn-enterprise--primary"
+              @click="infoToast(t('Report sent to finance team'))"
+            >
+              {{ t('Send to Finance') }}
+            </button>
+          </template>
+          <template v-else>
+            <button
+              class="btn-enterprise btn-enterprise--secondary"
+              @click="router.push('/matching-rules')"
+            >
+              {{ t('Setup') }}
+            </button>
+            <button
+              class="btn-enterprise btn-enterprise--primary"
+              @click="infoToast(t('Coretax synced. 12 new faktur pulled'))"
+            >
+              {{ t('Sync with Klikpajak') }}
+            </button>
+          </template>
+        </div>
+        <!-- VAT reconciliation — both faktur sides share the same action set. -->
+        <div v-else-if="currentPageKey === 'Faktur keluaran' || currentPageKey === 'Faktur masukan'" class="page-title-actions">
+          <button
+            class="btn-enterprise btn-enterprise--secondary"
+            @click="infoToast(t('Export started'))"
+          >
+            {{ t('Export') }}
+          </button>
+          <!-- Finalize is only offered once the whole masa is reconciled; while
+               it isn't, the button says why rather than disappearing (US-021). -->
+          <button
+            v-if="vatFinalizeState.finalized"
+            class="btn-enterprise btn-enterprise--secondary"
+            @click="vatFinalize++"
+          >
+            {{ t('Unfinalize') }}
+          </button>
+          <button
+            v-else
+            class="btn-enterprise btn-enterprise--primary"
+            :disabled="!vatFinalizeState.canFinalize"
+            :title="vatFinalizeState.canFinalize ? '' : t('Every faktur in this period must be reconciled first')"
+            @click="vatFinalize++"
+          >
+            {{ t('Finalize') }}
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Matching rules'" class="page-title-actions">
+          <button
+            class="btn-enterprise btn-enterprise--primary"
+            @click="vatSetupSave++"
+          >
+            {{ t('Save changes') }}
+          </button>
+        </div>
         <div v-else-if="currentPageKey === 'Approval workflows'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/approval-workflows/new')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1989,7 +2199,7 @@ function startResize(e: MouseEvent) {
                 <MpButton variant="ghost" class="import-item import-item--start">{{ t('Import from spreadsheet') }}</MpButton>
                 <MpButton variant="ghost" class="import-item import-item--start import-item--ai" @click="openVendorUploadModal">
                   <span>Upload vendor invoices</span>
-                  <MpIcon name="airene-brand" size="xs" class="import-item__ai-icon" />
+                  <MpIcon name="airene-brand" size="16px" class="import-item__ai-icon" />
                 </MpButton>
               </div>
 
@@ -2042,7 +2252,7 @@ function startResize(e: MouseEvent) {
                 <MpButton variant="ghost" class="import-item import-item--start">{{ t('Import from spreadsheet') }}</MpButton>
                 <MpButton variant="ghost" class="import-item import-item--start import-item--ai" @click="openUploadBills">
                   <span>Upload bills</span>
-                  <MpIcon name="airene-brand" size="xs" class="import-item__ai-icon" />
+                  <MpIcon name="airene-brand" size="16px" class="import-item__ai-icon" />
                 </MpButton>
               </div>
 
@@ -2710,6 +2920,37 @@ function startResize(e: MouseEvent) {
   line-height: var(--mp-line-heights-2xl, 32px);
   letter-spacing: var(--mp-letter-spacings-tight, -0.2px);
   color: var(--mp-text-default);
+}
+
+/* ── Breadcrumb + scope, for pages with no sidebar entry of their own ───── */
+.page-title-lead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-0\.5);
+  min-width: 0;
+}
+.page-breadcrumb {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: var(--mp-font-sizes-sm);
+  line-height: var(--mp-line-heights-sm);
+  color: var(--mp-text-link);
+}
+.page-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
+.page-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--mp-spacing-3);
+  min-width: 0;
+}
+/* The masa is context, not a second title — it sits a step down in weight. */
+.page-title-meta {
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-secondary);
+  white-space: nowrap;
 }
 
 /* ── Import dropdown ────────────────────────────────────────────────────── */

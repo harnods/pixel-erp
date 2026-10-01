@@ -700,7 +700,7 @@ const integrations: Integration[] = [
       <!-- ── Integrations ── -->
       <section v-else-if="section === 'integrations'" class="set-section">        <div class="set-grid">
           <div v-for="ig in integrations" :key="ig.id" class="set-card set-card--integration">
-            <span class="set-int-icon"><MpIcon :name="ig.icon" size="lg" /></span>
+            <span class="set-int-icon"><MpIcon :name="ig.icon" size="32px" /></span>
             <span class="set-int-text">
               <span class="set-card-title">{{ ig.name }}</span>
               <span class="set-card-desc">{{ ig.desc }}</span>

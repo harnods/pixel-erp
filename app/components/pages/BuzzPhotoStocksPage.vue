@@ -129,7 +129,7 @@ function onDropMain(e: DragEvent) { if (!dtHasFiles(e)) return; e.preventDefault
 <template>
   <div class="buzz-page" :class="{ 'is-drop': dragOver }" @dragover="onDragOver" @dragleave="onDragLeaveMain" @drop="onDropMain">
     <div v-if="dragOver" class="buzz-drop">
-      <div class="buzz-drop__inner"><MpIcon name="file-image" size="lg" /><p>Drop images to add them to your assets</p></div>
+      <div class="buzz-drop__inner"><MpIcon name="file-image" size="32px" /><p>Drop images to add them to your assets</p></div>
     </div>
     <!-- ── Filter bar (verbatim ERP block) ── -->
     <div class="filter-bar">

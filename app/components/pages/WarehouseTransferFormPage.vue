@@ -670,7 +670,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <ul v-if="attachedFiles.length" class="wtf-file-list">
               <li v-for="f in attachedFiles" :key="f.name" class="wtf-file-item">
                 <span class="wtf-file-name">{{ f.name }}</span>
-                <MpButton class="wtf-file-remove" variant="ghost" type="button" @click="removeFile(f.name)"><MpIcon name="close" size="xs" /></MpButton>
+                <MpButton class="wtf-file-remove" variant="ghost" type="button" @click="removeFile(f.name)"><MpIcon name="close" size="16px" /></MpButton>
               </li>
             </ul>
           </div>

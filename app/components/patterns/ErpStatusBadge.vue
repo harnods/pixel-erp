@@ -56,6 +56,11 @@ const statusConfig: Record<string, StatusConfig> = {
   high:       { type: 'completed',    label: 'High'       },
   fulfilled:  { type: 'completed',    label: 'Fulfilled'  },
   ready:      { type: 'completed',    label: 'Ready'      },
+  // VAT reconciliation periods (PRD OD-001 §5.2). `not reconciled` sits with the
+  // gray group below; `finalized` is green like `reconciled` because it is the
+  // same result signed off, not a different one.
+  reconciled: { type: 'completed',    label: 'Reconciled' },
+  finalized:  { type: 'completed',    label: 'Finalized'  },
 
   // ── warning — yellow ──────────────────────────────
   open:       { type: 'warning',      label: 'Open'       },
@@ -71,6 +76,7 @@ const statusConfig: Record<string, StatusConfig> = {
   'pending put-away':{ type: 'warning', label: 'Pending put-away' },
   unbilled:   { type: 'warning',      label: 'Unbilled'   },
   'in review':{ type: 'warning',      label: 'In review'  },
+  'partially reconciled': { type: 'warning', label: 'Partially reconciled' },
   'on progress':{ type: 'warning',    label: 'On progress'},
   medium:     { type: 'warning',      label: 'Medium'     },
   recommended:{ type: 'warning',      label: 'Recommended'},
@@ -98,6 +104,7 @@ const statusConfig: Record<string, StatusConfig> = {
   cancelled:  { type: 'announcement', label: 'Cancelled'  },
   canceled:   { type: 'announcement', label: 'Canceled'   },
   'not started':{ type: 'announcement', label: 'Not started' },
+  'not reconciled': { type: 'announcement', label: 'Not reconciled' },
   'not allocated':{ type: 'announcement', label: 'Not allocated' },
   not_started:{ type: 'warning',      label: 'Open'        },
   'to do':    { type: 'announcement', label: 'To do'      },

@@ -73,7 +73,7 @@ const contact = computed(() => getCrmContact(props.orderId))
   </div>
 
   <div v-else class="cd-missing">
-    <MpIcon name="profile" size="lg" />
+    <MpIcon name="profile" size="32px" />
     <p>Contact not found.</p>
     <MpButton variant="ghost" is-rounded @click="router.push('/crm/contacts')">Back to Contacts</MpButton>
   </div>

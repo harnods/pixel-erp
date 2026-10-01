@@ -472,7 +472,7 @@ function confirmArchive() {
   </div>
 
   <div v-else class="cr-missing">
-    <MpIcon name="profile" size="lg" />
+    <MpIcon name="profile" size="32px" />
     <p>{{ t('Company not found') }}</p>
     <MpButton variant="secondary" is-rounded @click="router.push('/crm/customers/companies')">{{ t('Back to Companies') }}</MpButton>
   </div>
