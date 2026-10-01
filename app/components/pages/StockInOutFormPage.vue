@@ -371,7 +371,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
   <div class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">{{ fromStockCounts ? 'All stock counts' : 'All stock adjustments' }}</button>
+        <MpButton variant="ghost" class="detail-breadcrumb" @click="goBack">{{ fromStockCounts ? 'All stock counts' : 'All stock adjustments' }}</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">New stock in/out</h1>
         </div>
@@ -394,7 +394,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <MpFormControl id="scf-transno" class="scf-f-transno">
             <div class="scf-label-row">
               <MpFormLabel>Transaction no.</MpFormLabel>
-              <button type="button" class="scf-label-icon" aria-label="Transaction no. settings" @click="noSettingsOpen = true"><MpIcon name="settings" size="sm" /></button>
+              <MpButton variant="ghost" type="button" class="scf-label-icon" aria-label="Transaction no. settings" left-icon="settings" @click="noSettingsOpen = true" />
             </div>
             <MpInput id="scf-transno-input" model-value="" placeholder="[Auto]" is-full-width is-disabled />
           </MpFormControl>
@@ -433,21 +433,20 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <div class="scf-search">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                 <input v-model="search" class="scf-search-input" type="text" placeholder="Search..." />
-                <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+                <MpButton v-if="search" variant="ghost" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                   </svg>
-                </button>
+                </MpButton>
               </div>
-              <button class="scf-import-btn" type="button" @click="importProducts">Import</button>
+              <MpButton variant="secondary" class="scf-import-btn" type="button" @click="importProducts">Import</MpButton>
             </div>
           </div>
 
           <!-- Select product pill -->
-          <button class="sio-select-prod-btn" type="button" @click="drawerOpen = true">
-            <MpIcon name="add" size="sm" />
+          <MpButton variant="secondary" class="sio-select-prod-btn" type="button" left-icon="add" @click="drawerOpen = true">
             <span>Select product{{ rows.length ? ` (${rows.length})` : '' }}</span>
-          </button>
+          </MpButton>
 
           <!-- Product groups -->
           <div v-if="displayRows.length" class="sio-product-list">
@@ -474,7 +473,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <span v-else class="sio-avg-value">{{ formatIDR(avgCostFor(row.sku)) }}</span>
                     <MpPopover :id="`sio-avg-${row.sku}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                       <MpPopoverTrigger>
-                        <button class="sio-avg-edit" type="button" aria-label="Edit average cost"><MpIcon name="edit" size="sm" /></button>
+                        <MpButton variant="ghost" class="sio-avg-edit" type="button" aria-label="Edit average cost" left-icon="edit" />
                       </MpPopoverTrigger>
                       <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
                         <MpPopoverList>
@@ -485,9 +484,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     </MpPopover>
                   </div>
                 </div>
-                <button class="sio-remove-prod" type="button" aria-label="Remove product" @click="removeRow(row.sku)">
-                  <MpIcon name="minus-circular" size="sm" />
-                </button>
+                <MpButton variant="ghost" class="sio-remove-prod" type="button" aria-label="Remove product" left-icon="minus-circular" @click="removeRow(row.sku)" />
               </div>
 
               <!-- Location sub-table: all products (batch, SN, regular) -->
@@ -569,10 +566,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       </td>
                       <!-- Action column -->
                       <td v-if="isBatchTrackedSku(row.sku)" class="sio-td sio-td--action">
-                        <button class="sio-manage-btn" type="button" @click="openBatchDrawer(row, locRow)">Manage batch</button>
+                        <MpButton variant="link" class="sio-manage-btn" type="button" @click="openBatchDrawer(row, locRow)">Manage batch</MpButton>
                       </td>
                       <td v-else-if="isSerialTrackedSku(row.sku)" class="sio-td sio-td--action">
-                        <button class="sio-manage-btn" type="button" @click="openSerialDrawer(row, locRow)">Manage serial numbers</button>
+                        <MpButton variant="link" class="sio-manage-btn" type="button" @click="openSerialDrawer(row, locRow)">Manage serial numbers</MpButton>
                       </td>
                       <td v-else class="sio-td sio-td--action" />
                       <td
@@ -593,9 +590,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                         />
                       </td>
                       <td class="sio-td sio-td--del">
-                        <button class="sio-del-loc-btn" type="button" aria-label="Remove location" @click="removeLocRow(row, li)">
-                          <MpIcon name="minus-circular" size="sm" />
-                        </button>
+                        <MpButton variant="ghost" class="sio-del-loc-btn" type="button" aria-label="Remove location" left-icon="minus-circular" @click="removeLocRow(row, li)" />
                       </td>
                     </tr>
                     <!-- Add location row -->
@@ -661,7 +656,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <ul v-if="attachedFiles.length" class="scf-file-list">
               <li v-for="f in attachedFiles" :key="f.name" class="scf-file-item">
                 <span class="scf-file-name">{{ f.name }}</span>
-                <button class="scf-file-remove" type="button" @click="removeFile(f.name)"><MpIcon name="close" size="xs" /></button>
+                <MpButton variant="ghost" class="scf-file-remove" type="button" left-icon="close" @click="removeFile(f.name)" />
               </li>
             </ul>
           </div>
@@ -671,8 +666,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
     </div>
 
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">Cancel</button>
-      <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="handleSave">{{ isSaving ? 'Saving…' : 'Save' }}</button>
+      <MpButton variant="ghost" class="btn-enterprise btn-enterprise--ghost" @click="goBack">Cancel</MpButton>
+      <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" :is-disabled="isSaving" @click="handleSave">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
     </footer>
 
     <SelectProductDrawer v-model:open="drawerOpen" :products="pickerProducts" :model-value="selectedSkus" @save="applyPicker" />

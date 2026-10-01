@@ -304,7 +304,7 @@ function confirmArchive() {
                   <div class="filter-search">
                     <MpIcon name="search" size="sm" />
                     <input v-model="contactSearch" class="filter-search-input" type="text" :placeholder="t('Search...')" />
-                    <button v-if="contactSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="contactSearch = ''"><MpIcon name="close" size="sm" /></button>
+                    <MpButton v-if="contactSearch" class="search-clear-btn" variant="ghost" type="button" :aria-label="t('Clear search')" left-icon="close" @click="contactSearch = ''" />
                   </div>
                   <MpButton v-if="canCreateContact" variant="tertiary" is-rounded left-icon="add" @click="newContact">{{ t('New contact') }}</MpButton>
                 </div>
@@ -408,7 +408,7 @@ function confirmArchive() {
                     <div class="filter-search">
                       <MpIcon name="search" size="sm" />
                       <input v-model="dealSearch" class="filter-search-input" type="text" :placeholder="t('Search...')" />
-                      <button v-if="dealSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="dealSearch = ''"><MpIcon name="close" size="sm" /></button>
+                      <MpButton v-if="dealSearch" class="search-clear-btn" variant="ghost" type="button" :aria-label="t('Clear search')" left-icon="close" @click="dealSearch = ''" />
                     </div>
                   </div>
                 </template>

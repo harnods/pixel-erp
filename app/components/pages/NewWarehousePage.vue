@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  MpFormControl, MpFormLabel, MpFormErrorMessage, MpFormHelpText,
+  MpButton, MpFormControl, MpFormLabel, MpFormErrorMessage, MpFormHelpText,
   MpInput, MpTextarea, MpInputTag, toast, type DataInterface,
 } from '@mekari/pixel3'
 import { warehouses, addWarehouse, updateWarehouse } from '~/data/warehouses'
@@ -122,7 +122,7 @@ async function save() {
     <!-- ── Page title bar (neutral-subtle bg, 72px, breadcrumb + title) ── -->
     <div class="nw-titlebar">
       <div class="nw-titlebar-left">
-        <button class="nw-breadcrumb" @click="goBack">{{ t('Warehouses') }}</button>
+        <MpButton variant="ghost" class="nw-breadcrumb" @click="goBack">{{ t('Warehouses') }}</MpButton>
         <h1 class="nw-title">{{ isEdit ? t('Edit warehouse') : t('New warehouse') }}</h1>
       </div>
     </div>
@@ -198,8 +198,8 @@ async function save() {
         <!-- ── Action group ── -->
         <div class="nw-action-group">
           <div class="nw-action-right">
-            <button class="nw-btn-cancel" @click="goBack">{{ t('Cancel') }}</button>
-            <button class="nw-btn-save" :disabled="isSaving" @click="save">{{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}</button>
+            <MpButton variant="ghost" class="nw-btn-cancel" @click="goBack">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="primary" class="nw-btn-save" :is-disabled="isSaving" @click="save">{{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}</MpButton>
           </div>
         </div>
 

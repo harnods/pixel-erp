@@ -19,17 +19,23 @@ import {
 import { formatIDR } from '~/utils/currency'
 import type { DataInterface } from '@mekari/pixel3'
 import {
-  PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS,
+  PAYMENT_TERMS, TAX_OPTIONS,
 } from '~/data'
+// Warehouses come from the single warehouse DB (warehouses.ts) — same source the
+// stock lookup uses, so no name→id bridging.
+import { warehouses } from '~/data/warehouses'
 import {
-  crmCustomers, crmProducts, createDeal, updateDeal, getDeal,
-  addDealAttachment, addCrmCustomer, crmCompanies, contactsOfCompany,
+  crmCustomers, createDeal, updateDeal, getDeal,
+  addDealAttachment, crmContactPeople, getContactPerson, companiesOfContact,
   defaultDealStage, CRM_OWNERS, dealModuleSetup,
-  type CrmProduct, type DealInput, type DealLineItem, type CrmCompany,
+  type DealInput, type DealLineItem, type CrmCompany, type CrmContactPerson,
 } from '~/data/crm'
+import CrmQuickContactModal from '~/components/patterns/CrmQuickContactModal.vue'
+import ProductThumb from '~/components/patterns/ProductThumb.vue'
+// Products come from the shared product DB (catalog.ts) — CRM cannot create products.
+import { CATALOG, type CatalogItem } from '~/data/catalog'
+import { availableForSku, totalAvailableForSku } from '~/data/warehouseDetails'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
-import ProductCell from '~/components/patterns/ProductCell.vue'
-import CrmCompanyFormDrawer from '~/components/patterns/CrmCompanyFormDrawer.vue'
 
 // Standalone page: orderId = 'new' (create) or an existing deal id (edit via
 // /crm/deals/:id/edit).
@@ -69,34 +75,25 @@ function toTagData(values: string[]): DataInterface[] {
   return values.map((v, i) => ({ text: v, id: `${i}-${v}`, value: v, isInvalid: false, isReadOnly: false }))
 }
 
-// ── Header fields ─────────────────────────────────────────────────────────────
-const customerId      = ref('')
-const customerError   = ref(false)
-const customerOptions = computed(() => crmCustomers.map(c => ({ id: c.id, name: c.company })))
+// ── Deal name ──
+const dealName = ref('')
 
-// ── Quick-add customer (reuse the company drawer) ─────────────────────────────
-const quickCompanyOpen = ref(false)
-const quickCompanyName = ref('')
-function openQuickCompany(search?: string) {
-  quickCompanyName.value = (search || '').trim()
-  quickCompanyOpen.value = true
-}
-function onCompanyCreated(company: CrmCompany) {
-  const cu = addCrmCustomer({
-    company: company.name,
-    contact: '',
-    email: company.email || '',
-    phone: company.phone || '',
-    city: company.city || '',
-    segment: '',
-    owner: CRM_OWNERS[0] ?? 'You',
-    lifecycle: 'Opportunity',
-  })
-  customerId.value = cu.id
-  customerError.value = false
-  if (cu.email && !emailTags.value.length) emailTags.value = toTagData([cu.email])
-  quickCompanyOpen.value = false
-}
+// ── Header fields — CONTACT first; the company is derived from the contact's
+// associations (a contact may have 0, 1, or several companies). ──
+const contactId       = ref('')
+const contactError    = ref(false)
+const chosenCompanyId = ref('')   // only used when the contact has >1 company
+const contactOptions  = computed(() => crmContactPeople.filter(c => !c.archived).map(c => ({ id: c.id, name: c.name })))
+const selectedContact = computed(() => getContactPerson(contactId.value))
+const contactCompanies = computed(() => contactId.value ? companiesOfContact(contactId.value) : [])
+const companyOptions  = computed(() => contactCompanies.value.map(c => ({ id: c.id, name: c.name })))
+// The single company a deal is against: the only one, or the picked one when many.
+const effectiveCompany = computed<CrmCompany | undefined>(() => {
+  const cs = contactCompanies.value
+  if (cs.length === 1) return cs[0]
+  if (cs.length > 1) return cs.find(c => c.id === chosenCompanyId.value)
+  return undefined
+})
 
 const emailTags      = ref<DataInterface[]>([])
 const billingAddress = ref('')
@@ -108,7 +105,7 @@ const shipVia        = ref('')
 const paymentTerms   = ref('')
 const trackingNo     = ref('')
 const referenceNo    = ref('')
-const warehouse      = ref('Default warehouse')
+const warehouse      = ref('')  // no auto-fill — user picks a warehouse (or leaves it to see all-warehouse stock)
 const tagsList       = ref<DataInterface[]>([])
 
 // ── Transaction no. settings (auto-numbering) — shared global component ────────
@@ -125,37 +122,33 @@ const priceIncludesTax = ref(false)
 function onEmailChange(data: DataInterface[]) { emailTags.value = data }
 function onTagsChange(data: DataInterface[])  { tagsList.value = data }
 
-// ── Primary contact — chosen from the selected company's contacts (appears once a
-// customer/company is picked, to the right of the Customer field). ──
-const primaryContactId = ref('')
-const selectedCompany = computed(() => {
-  const cu = crmCustomers.find(x => x.id === customerId.value)
-  return cu ? crmCompanies.find(co => co.name === cu.company) : undefined
-})
-const primaryContactOptions = computed(() =>
-  selectedCompany.value ? contactsOfCompany(selectedCompany.value.id).map(c => ({ id: c.id, name: c.name })) : [],
-)
-function seedPrimaryContact() {
-  const co = selectedCompany.value
-  const members = co ? contactsOfCompany(co.id) : []
-  const pic = co?.primaryContactId && members.some(m => m.id === co.primaryContactId) ? co.primaryContactId : (members[0]?.id ?? '')
-  primaryContactId.value = pic
+// Quick-add contact from the picker (the "+ New contact" / "Add '<x>' …" action).
+const quickContactOpen = ref(false)
+const quickContactName = ref('')
+// MpAutocomplete emits (suggestions, currentSearch) positionally — the typed text is the 2nd arg.
+function openAddContact(_suggestions: unknown, currentSearch?: string) { quickContactName.value = (currentSearch || '').trim(); quickContactOpen.value = true }
+function onContactCreated(c: CrmContactPerson) {
+  contactId.value = c.id
+  onContactChange(c.id)
+  quickContactOpen.value = false
 }
 
-// Picking a customer seeds the email chip list + the company's primary contact.
-function onCustomerChange(id: unknown) {
-  customerError.value = false
-  const c = crmCustomers.find(x => x.id === id)
+// Picking a contact seeds the email chips and defaults the company pick (when the
+// contact belongs to several companies).
+function onContactChange(id: unknown) {
+  contactError.value = false
+  const c = getContactPerson(String(id ?? ''))
+  const cs = c ? companiesOfContact(c.id) : []
+  chosenCompanyId.value = cs.length > 1 ? (cs[0]?.id ?? '') : ''
   if (c?.email && !emailTags.value.length) emailTags.value = toTagData([c.email])
-  seedPrimaryContact()
 }
 
-// Auto-fill addresses from the selected company: billing always; shipping (Ship to)
-// only when shipping is required AND the company's shipping differs from billing.
+// Auto-fill addresses from the contact's (effective) company: billing always;
+// shipping (Ship to) only when shipping is required AND shipping differs.
 const suppressAddressFill = ref(false)
 function fillAddressesFromCompany() {
   if (suppressAddressFill.value) return
-  const co = selectedCompany.value
+  const co = effectiveCompany.value
   if (!co) return
   if (co.billingAddress) billingAddress.value = co.billingAddress
   const ship = co.shippingAddress || ''
@@ -164,7 +157,7 @@ function fillAddressesFromCompany() {
     shipTo.value = ship
   }
 }
-watch([customerId, requiresShipping], () => fillAddressesFromCompany())
+watch([contactId, chosenCompanyId, requiresShipping], () => fillAddressesFromCompany())
 
 // ── Line items ────────────────────────────────────────────────────────────────
 interface LineItem {
@@ -189,19 +182,43 @@ function lineAmount(item: LineItem) {
   return Math.round(item.qty * item.unitPrice * (1 - item.discountPct / 100))
 }
 
+// Match on product name OR SKU against the shared product DB (catalog.ts).
 function productMatches(query: string) {
   const q = query.trim().toLowerCase()
-  if (!q) return crmProducts
-  return crmProducts.filter(p => p.name.toLowerCase().includes(q))
+  if (!q) return CATALOG
+  return CATALOG.filter(p => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q))
+}
+// An ERP product can carry multiple categories; show only the first.
+function firstCategory(category: string): string { return category.split(',')[0]!.trim() }
+// Dropdown caption line: "SKU, First category".
+function productMeta(p: CatalogItem): string { return `${p.sku}, ${firstCategory(p.category)}` }
+
+// Warehouse options + id lookup both read the warehouse DB, so stock resolves
+// against the exact warehouse the user picked (no bridging).
+const WAREHOUSE_OPTIONS = warehouses.filter((w) => w.status === 'active').map((w) => w.name)
+const warehouseId = computed(() => warehouses.find((w) => w.name === warehouse.value)?.id ?? '')
+// Selected warehouse → that warehouse's stock; no warehouse → total across all.
+function availableStock(p: CatalogItem): number {
+  return warehouseId.value ? availableForSku(warehouseId.value, p.sku) : totalAvailableForSku(p.sku)
 }
 
 const NEW_ROW_KEY = -1
 const openProductRow = ref<number | null>(null)
 
-function selectProduct(item: LineItem, p: CrmProduct) {
+// Popover product list is lazy-loaded 5 at a time (don't render the whole catalog).
+const PRODUCT_PAGE = 5
+const productLimit = ref(PRODUCT_PAGE)
+watch(openProductRow, () => { productLimit.value = PRODUCT_PAGE })   // reset each time a picker opens
+function visibleProducts(query: string): CatalogItem[] { return productMatches(query).slice(0, productLimit.value) }
+function onProductScroll(e: Event) {
+  const el = e.target as HTMLElement
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 24) productLimit.value += PRODUCT_PAGE
+}
+
+function selectProduct(item: LineItem, p: CatalogItem) {
   item.productId = p.id
   item.product = p.name
-  item.sku = ''
+  item.sku = p.sku
   item.unit = p.unit
   item.unitPrice = p.price
   item.productError = false
@@ -209,13 +226,12 @@ function selectProduct(item: LineItem, p: CrmProduct) {
 }
 
 const newRowSearch = ref('')
-function onProductAdd(_search?: string) { /* open create-product flow here (rule/select-quick-add) */ void _search }
-function selectNewProduct(p: CrmProduct) {
+function selectNewProduct(p: CatalogItem) {
   items.value.push({
     _key: ++_seq,
     productId: p.id,
     product: p.name,
-    sku: '',
+    sku: p.sku,
     description: '',
     qty: 1,
     unit: p.unit,
@@ -254,7 +270,6 @@ function onDrop(ev: DragEvent, toIdx: number) {
 }
 function onDragEnd() { dragSrcIndex.value = null; dragOverIndex.value = null }
 
-const unitOptions = computed(() => Array.from(new Set([...UNIT_OPTIONS, ...items.value.map(i => i.unit)])))
 const taxOptions  = computed(() => Array.from(new Set([...TAX_OPTIONS, ...items.value.map(i => i.taxLabel)])))
 
 // Banner above the table whenever any line cell is flagged — same convention as
@@ -320,7 +335,7 @@ function removeAttachment(idx: number) { attachments.value.splice(idx, 1) }
 // ── Save ──────────────────────────────────────────────────────────────────────
 function validate(): boolean {
   let ok = true
-  if (!customerId.value) { customerError.value = true; ok = false }
+  if (!contactId.value) { contactError.value = true; ok = false }
   // Products are optional on a deal — only validate rows the user actually added.
   noItemsError.value = false
   items.value.forEach(it => {
@@ -343,14 +358,19 @@ onMounted(() => {
   }
   const d = getDeal(props.orderId)
   if (!d) return
+  dealName.value = d.name ?? ''
   suppressAddressFill.value = true
   nextTick(() => { suppressAddressFill.value = false })
-  customerId.value = d.customerId
-  // Restore the primary contact from the deal's picName (match within the company).
-  const co0 = crmCompanies.find(co => co.name === d.company)
-  primaryContactId.value = co0 ? (contactsOfCompany(co0.id).find(m => m.name === d.picName)?.id ?? '') : ''
-  const c = crmCustomers.find(x => x.id === d.customerId)
-  if (c?.email) emailTags.value = toTagData([c.email])
+  // Restore the contact from the deal's picName; prefer one associated with the
+  // deal's company, else any contact with that name.
+  const named = crmContactPeople.filter(c => !c.archived && c.name === d.picName)
+  const match = named.find(c => companiesOfContact(c.id).some(co => co.name === d.company)) ?? named[0]
+  contactId.value = match?.id ?? ''
+  // If that contact has several companies, pre-select the deal's company.
+  if (match && companiesOfContact(match.id).length > 1) {
+    chosenCompanyId.value = companiesOfContact(match.id).find(co => co.name === d.company)?.id ?? ''
+  }
+  if (match?.email) emailTags.value = toTagData([match.email])
   dueDate.value = isoToDMY(d.expectedCloseDate)
   message.value = d.description ?? ''
   memo.value = d.notes ?? ''
@@ -375,7 +395,13 @@ onMounted(() => {
 function onSave() {
   // Validation errors surface INLINE (per-field + the banner below), never as a toast.
   if (!validate()) return
-  const customer = crmCustomers.find(c => c.id === customerId.value)
+  // Deal is against the contact; the company (if any) comes from the contact.
+  const contact = selectedContact.value
+  const company = effectiveCompany.value
+  const companyName = company?.name ?? ''
+  // Best-effort link to the legacy customer master by company name (may be empty
+  // for a contact-only deal).
+  const customerId = company ? (crmCustomers.find(c => c.company === companyName)?.id ?? '') : ''
   const products: DealLineItem[] = items.value.map(it => ({
     productId: it.productId,
     productName: it.product,
@@ -388,9 +414,9 @@ function onSave() {
     discount: it.discountPct,
   }))
   const input: DealInput = {
-    name: customer?.company || 'New deal',
-    customerId: customerId.value,
-    company: customer?.company ?? '',
+    name: dealName.value.trim() || companyName || contact?.name || 'New deal',
+    customerId,
+    company: companyName,
     stage: defaultDealStage(),
     owner: CRM_OWNERS[0] ?? 'You',
     value: total.value,
@@ -403,9 +429,8 @@ function onSave() {
     notes: memo.value || undefined,
     referenceNumber: referenceNo.value || undefined,
   }
-  // Attach the selected primary contact's snapshot to the deal.
-  const picC = selectedCompany.value ? contactsOfCompany(selectedCompany.value.id).find(c => c.id === primaryContactId.value) : undefined
-  if (picC) { input.picName = picC.name; input.email = picC.email || undefined; if (picC.phone) input.phones = [picC.phone] }
+  // Attach the selected contact's snapshot to the deal.
+  if (contact) { input.picName = contact.name; input.email = contact.email || undefined; if (contact.phone) input.phones = [contact.phone] }
   const nowISO = new Date().toISOString()
   if (isEdit.value) {
     updateDeal(props.orderId, input)
@@ -439,33 +464,44 @@ function onSave() {
     <!-- ── Scrollable stage ── -->
     <div class="si-form-stage">
 
-      <!-- ── Header section 1: Customer + Email + Balance due ── -->
+      <!-- ── Header section 0: Deal name ── -->
       <section class="si-header1 si-dashed-divider">
-        <MpFormControl id="f-customer" class="si-field" is-required :is-invalid="customerError">
-          <MpFormLabel>{{ t('Customer') }}</MpFormLabel>
+        <MpFormControl id="f-deal-name" class="si-field" style="flex:0 0 var(--si-field-wide)">
+          <MpFormLabel>{{ t('Deal name') }}</MpFormLabel>
+          <MpInput id="f-deal-name-inp" v-model="dealName" is-full-width :placeholder="t('Enter deal name')" />
+        </MpFormControl>
+      </section>
+
+      <!-- ── Header section 1: Contact (primary) + its Company + Deal value ── -->
+      <section class="si-header1 si-dashed-divider">
+        <MpFormControl id="f-contact" class="si-field" is-required :is-invalid="contactError">
+          <MpFormLabel data-devchange="deal-quick-add-contact">{{ t('Contact') }}</MpFormLabel>
           <MpAutocomplete
-            id="f-customer-inp" v-model="customerId" :data="customerOptions"
+            id="f-contact-inp" v-model="contactId" :data="contactOptions"
             label-prop="name" value-prop="id" is-searchable use-portal is-full-width
-            :placeholder="t('Select customer')" :is-invalid="customerError"
+            :placeholder="t('Select contact')" :is-invalid="contactError"
             is-show-button-action
-            @update:model-value="onCustomerChange"
-            @button-action="openQuickCompany"
+            @update:model-value="onContactChange"
+            @button-action="openAddContact"
           >
-            <template #buttonAction="{ currentSearch }">
-              {{ currentSearch ? `${t('Add')} "${currentSearch}" ${t('as a new customer')}` : t('Add new customer') }}
+            <template #buttonAction="suggestions, currentSearch">
+              {{ currentSearch ? `${t('Add')} "${currentSearch}" ${t('as new contact')}` : `+ ${t('New contact')}` }}
             </template>
           </MpAutocomplete>
-          <MpFormErrorMessage>{{ t('You must select customer') }}</MpFormErrorMessage>
+          <MpFormErrorMessage>{{ t('You must select a contact') }}</MpFormErrorMessage>
         </MpFormControl>
 
-        <!-- Primary contact — appears once a company is chosen; options = that company's contacts. -->
-        <MpFormControl v-if="customerId" id="f-primary-contact" class="si-field">
-          <MpFormLabel>{{ t('Primary contact') }}</MpFormLabel>
+        <!-- Company — derived from the contact. One → read-only; several → pick one;
+             none → hidden (a contact may have no associated company). -->
+        <MpFormControl v-if="contactId && contactCompanies.length" id="f-company" class="si-field">
+          <MpFormLabel data-devchange="deal-contact-first">{{ t('Company') }}</MpFormLabel>
           <MpAutocomplete
-            id="f-primary-contact-inp" v-model="primaryContactId" :data="primaryContactOptions"
-            label-prop="name" value-prop="id" is-searchable is-clearable use-portal is-full-width
-            :placeholder="t('Select primary contact')"
+            v-if="contactCompanies.length > 1"
+            id="f-company-inp" v-model="chosenCompanyId" :data="companyOptions"
+            label-prop="name" value-prop="id" is-searchable use-portal is-full-width
+            :placeholder="t('Select company')"
           />
+          <div v-else class="si-company-readonly">{{ effectiveCompany?.name }}</div>
         </MpFormControl>
 
         <div class="si-header1-total">
@@ -549,8 +585,8 @@ function onSave() {
           </MpFormControl>
 
           <MpFormControl id="f-warehouse" class="si-field">
-            <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
-            <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width />
+            <MpFormLabel data-devchange="deal-product-stock">{{ t('Warehouse') }}</MpFormLabel>
+            <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSE_OPTIONS" :placeholder="t('Select warehouse')" use-portal is-clearable is-full-width />
           </MpFormControl>
         </div>
       </section>
@@ -587,7 +623,7 @@ function onSave() {
                 <th class="si-th">{{ t('Product') }}</th>
                 <th class="si-th">{{ t('Description') }}</th>
                 <th class="si-th">{{ t('Qty') }}</th>
-                <th class="si-th">{{ t('Unit') }}</th>
+                <th class="si-th" data-devchange="deal-unit-readonly">{{ t('Unit') }}</th>
                 <th class="si-th">{{ t('Unit price') }}</th>
                 <th class="si-th">{{ t('Discount') }}</th>
                 <th class="si-th">{{ t('Tax') }}</th>
@@ -625,13 +661,17 @@ function onSave() {
                     <MpPopoverTrigger>
                       <MpInput :id="`f-product-${item._key}`" v-model="item.product" is-full-width @focus="openProductRow = item._key" />
                     </MpPopoverTrigger>
-                    <MpPopoverContent :class="css({ minWidth: '220px', maxHeight: '240px', overflowY: 'auto' })" @blur="openProductRow = null">
+                    <MpPopoverContent :class="css({ minWidth: '220px', maxHeight: '240px', overflowY: 'auto' })" @blur="openProductRow = null" @scroll="onProductScroll">
                       <MpPopoverList>
-                        <MpPopoverListItem v-for="p in productMatches(item.product)" :key="p.id" @click="selectProduct(item, p)">
-                          <ProductCell :name="p.name" :desc="p.category" />
-                        </MpPopoverListItem>
-                        <MpPopoverListItem class="si-quickadd" @click="onProductAdd(item.product)">
-                          {{ item.product ? `${t('Add')} "${item.product}" ${t('as a new product')}` : t('Add new product') }}
+                        <MpPopoverListItem v-for="p in visibleProducts(item.product)" :key="p.id" @click="selectProduct(item, p)">
+                          <div class="si-prod-opt">
+                            <ProductThumb class="si-prod-thumb" :src="p.img" :name="p.name" :hue="p.hue" />
+                            <div class="si-prod-text">
+                              <span class="si-prod-name">{{ p.name }}</span>
+                              <span class="si-prod-meta">{{ productMeta(p) }}</span>
+                              <span class="si-prod-stock" :class="{ 'si-prod-stock--out': availableStock(p) <= 0 }">{{ availableStock(p) }} {{ p.unit }} {{ warehouseId ? t('available') : t('in all warehouses') }}</span>
+                            </div>
+                          </div>
                         </MpPopoverListItem>
                       </MpPopoverList>
                     </MpPopoverContent>
@@ -656,8 +696,9 @@ function onSave() {
                     @update:model-value="(v) => { item.qty = Number(v); item.qtyError = false }" />
                 </td>
 
-                <td class="si-td si-td--input si-td--border">
-                  <MpAutocomplete v-model="item.unit" :data="unitOptions" use-portal is-full-width />
+                <!-- Unit is fixed by the product (not selectable) — read-only, filled like the Amount cell. -->
+                <td class="si-td si-td--border si-td--affix si-td--calc">
+                  <div class="si-affix-cell"><span class="si-unit-ro">{{ item.unit }}</span></div>
                 </td>
 
                 <!-- Prefix box is a plain span, not MpInputLeftAddon — see
@@ -714,13 +755,17 @@ function onSave() {
                         @focus="openProductRow = NEW_ROW_KEY"
                       />
                     </MpPopoverTrigger>
-                    <MpPopoverContent :class="css({ minWidth: '220px', maxHeight: '240px', overflowY: 'auto' })" @blur="openProductRow = null">
+                    <MpPopoverContent :class="css({ minWidth: '220px', maxHeight: '240px', overflowY: 'auto' })" @blur="openProductRow = null" @scroll="onProductScroll">
                       <MpPopoverList>
-                        <MpPopoverListItem v-for="p in productMatches(newRowSearch)" :key="p.id" @click="selectNewProduct(p)">
-                          <ProductCell :name="p.name" :desc="p.category" />
-                        </MpPopoverListItem>
-                        <MpPopoverListItem class="si-quickadd" @click="onProductAdd(newRowSearch)">
-                          {{ newRowSearch ? `${t('Add')} "${newRowSearch}" ${t('as a new product')}` : t('Add new product') }}
+                        <MpPopoverListItem v-for="p in visibleProducts(newRowSearch)" :key="p.id" @click="selectNewProduct(p)">
+                          <div class="si-prod-opt">
+                            <ProductThumb class="si-prod-thumb" :src="p.img" :name="p.name" :hue="p.hue" />
+                            <div class="si-prod-text">
+                              <span class="si-prod-name">{{ p.name }}</span>
+                              <span class="si-prod-meta">{{ productMeta(p) }}</span>
+                              <span class="si-prod-stock" :class="{ 'si-prod-stock--out': availableStock(p) <= 0 }">{{ availableStock(p) }} {{ p.unit }} {{ warehouseId ? t('available') : t('in all warehouses') }}</span>
+                            </div>
+                          </div>
                         </MpPopoverListItem>
                       </MpPopoverList>
                     </MpPopoverContent>
@@ -735,33 +780,8 @@ function onSave() {
         </div>
       </section>
 
-      <!-- ── Notes + Attachment + Totals ── -->
+      <!-- ── Totals ── -->
       <section class="si-bottom-section">
-        <!-- Left stack: Message / Memo / Attachment, a constant 20px apart -->
-        <div class="si-notes-col">
-          <MpFormControl id="f-memo" class="si-note-field">
-            <div class="si-lbl-row"><MpFormLabel>{{ t('Memo') }}</MpFormLabel><span class="si-counter">{{ memo.length }}/250</span></div>
-            <MpTextarea id="f-memo-inp" v-model="memo" :maxlength="250" is-full-width />
-            <span class="si-field-caption">{{ t('Only visible to you and your team') }}</span>
-          </MpFormControl>
-
-          <div class="si-attachment-section">
-            <span class="si-attachment-label">{{ t('Attachment') }}</span>
-            <MpUpload
-              id="f-attachment" :button-text="t('Choose file')" :placeholder="t('or drag and drop here')"
-              is-multiple is-full-width @change="onFilesChange"
-            />
-            <p class="si-field-caption">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP format, with a maximum size of 10 MB per file and 5 files per transaction') }}</p>
-            <div v-if="attachments.length" class="si-attachment-list">
-              <MpUploadList
-                v-for="(a, idx) in attachments" :key="a.name + idx"
-                :title="a.name" :subtitle="`${a.sizeKB} KB`" :icon-name="iconForFile(a.name)"
-                status="success" is-show-remove-button @remove="removeAttachment(idx)"
-              />
-            </div>
-          </div>
-        </div>
-
         <div class="si-totals-col">
           <div class="si-totals-row si-totals-row--h3">
             <span>{{ t('Subtotal') }}</span>
@@ -847,6 +867,31 @@ function onSave() {
         </div>
       </section>
 
+      <!-- ── Memo + Attachment ── -->
+      <section class="si-memo-attachment-section">
+        <MpFormControl id="f-memo" class="si-note-field">
+          <div class="si-lbl-row"><MpFormLabel>{{ t('Memo') }}</MpFormLabel><span class="si-counter">{{ memo.length }}/250</span></div>
+          <MpTextarea id="f-memo-inp" v-model="memo" :maxlength="250" is-full-width />
+          <span class="si-field-caption">{{ t('Only visible to you and your team') }}</span>
+        </MpFormControl>
+
+        <div class="si-attachment-section">
+          <span class="si-attachment-label">{{ t('Attachment') }}</span>
+          <MpUpload
+            id="f-attachment" :button-text="t('Choose file')" :placeholder="t('or drag and drop here')"
+            is-multiple is-full-width @change="onFilesChange"
+          />
+          <p class="si-field-caption">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP format, with a maximum size of 10 MB per file and 5 files per transaction') }}</p>
+          <div v-if="attachments.length" class="si-attachment-list">
+            <MpUploadList
+              v-for="(a, idx) in attachments" :key="a.name + idx"
+              :title="a.name" :subtitle="`${a.sizeKB} KB`" :icon-name="iconForFile(a.name)"
+              status="success" is-show-remove-button @remove="removeAttachment(idx)"
+            />
+          </div>
+        </div>
+      </section>
+
       <!-- ── Footer ── ghost Cancel · primary Save ── -->
       <MpButtonGroup class="erp-action-footer si-form-footer">
         <MpButton variant="ghost" is-rounded @click="onCancel">{{ t('Cancel') }}</MpButton>
@@ -864,12 +909,12 @@ function onSave() {
       @save="onNoFormatSave"
     />
 
-    <CrmCompanyFormDrawer
-      :is-open="quickCompanyOpen"
-      :initial-name="quickCompanyName"
-      show-contact-select
-      @update:is-open="quickCompanyOpen = $event"
-      @created="onCompanyCreated"
+    <!-- Quick-add contact from the Contact picker. -->
+    <CrmQuickContactModal
+      :open="quickContactOpen"
+      :initial-name="quickContactName"
+      @close="quickContactOpen = false"
+      @created="onContactCreated"
     />
   </div>
 </template>
@@ -964,6 +1009,8 @@ function onSave() {
 .si-header2-col--wide { flex: 0 0 var(--si-field-wide); min-width: 0; }
 
 .si-field { min-width: 0; }
+/* Read-only company value shown beside the contact when it has a single company. */
+.si-company-readonly { min-height: var(--mp-sizes-9\.5, 38px); display: flex; align-items: center; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); }
 /* MpInputTag and MpDatePicker need explicit full-width hooks */
 .si-field :deep(.input-tag__root) { width: 100%; }
 .si-datepicker { width: 100%; }
@@ -984,6 +1031,15 @@ function onSave() {
    Column widths are the Figma's exact values and sum to the 1340px stage width;
    Description is the one flexible column so the table still fills a wider stage. */
 .si-items-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
+/* Product option: photo + a text block (name, then "SKU, Category", then the
+   available stock for the selected warehouse — each on its own line). */
+.si-prod-opt { display: flex; align-items: center; gap: var(--mp-spacing-3); width: 100%; }
+.si-prod-thumb { width: 40px; height: 40px; flex-shrink: 0; border-radius: var(--mp-radii-md, 8px); object-fit: cover; }
+.si-prod-text { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5, 2px); min-width: 0; }
+.si-prod-name { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-default); }
+.si-prod-meta { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
+.si-prod-stock { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
+.si-prod-stock--out { color: var(--mp-text-danger, #a8352d); }
 .si-items-header-row { display: flex; justify-content: flex-end; }
 .si-items-error-banner { margin-bottom: var(--mp-spacing-2); }
 .si-items-scroll { overflow-x: auto; }
@@ -1026,6 +1082,7 @@ function onSave() {
   vertical-align: middle;
 }
 .si-td--border { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
+.si-unit-ro { flex: 1; display: flex; align-items: center; padding: 0 var(--mp-spacing-2); color: var(--mp-text-secondary, #64748b); }
 .si-tr--dragging { opacity: 0.4; }
 .si-tr--dragging .si-td--drag { cursor: grabbing; }
 .si-tr--dragover > .si-td { border-top: 2px solid var(--mp-border-focused, #2563eb); }
@@ -1048,7 +1105,6 @@ function onSave() {
 }
 .si-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
 .si-select--product :deep(.mp-input__control)::placeholder { color: var(--mp-text-placeholder); }
-.si-quickadd :deep(*), .si-quickadd { color: var(--mp-colors-text-link, #165082); }
 
 /* Line-item validation — cell tint + inset red underline + tooltip, the same
    convention as NewExpensePage's .ex-td--error. */
@@ -1085,11 +1141,12 @@ function onSave() {
 }
 .si-del-btn:hover { background: var(--mp-background-neutral, #ffffff) !important; color: var(--mp-text-danger, #dc2626); }
 
-/* ── Notes + Attachment + Totals ── */
-.si-bottom-section { display: flex; align-items: flex-start; gap: var(--mp-spacing-6); }
-/* Message / Memo / Attachment sit a constant 20px apart. Literal 20px, not
-   --mp-spacing-5: that token resolves to 20.8px here (rem-based). */
-.si-notes-col { display: flex; flex-direction: column; gap: 20px; width: 432px; flex-shrink: 0; }
+/* ── Totals ── */
+.si-bottom-section { display: grid; grid-template-columns: 1fr 428px; }
+.si-bottom-section .si-totals-col { grid-column: 2; }
+
+/* ── Memo + Attachment ── */
+.si-memo-attachment-section { display: flex; flex-direction: column; gap: 20px; max-width: 432px; }
 .si-note-field { display: flex; flex-direction: column; }
 .si-field-caption { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1, 4px); }
 /* char-counter on the label row (rule/input-char-counter) */
@@ -1106,7 +1163,7 @@ function onSave() {
 }
 .si-attachment-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-1); }
 
-.si-totals-col { margin-left: auto; width: 428px; flex-shrink: 0; display: flex; flex-direction: column; }
+.si-totals-col { width: 428px; flex-shrink: 0; display: flex; flex-direction: column; }
 .si-totals-row {
   display: flex; justify-content: space-between; align-items: center;
   gap: var(--mp-spacing-3);

@@ -15,7 +15,7 @@
  */
 import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { MpTextlink, MpIcon, MpDatePicker, toast } from '@mekari/pixel3'
+import { MpTextlink, MpIcon, MpDatePicker, MpButton, toast } from '@mekari/pixel3'
 import ErpStepper from '~/components/patterns/ErpStepper.vue'
 import {
   coaAccounts, computeOpeningBalance, cutoverState,
@@ -229,13 +229,13 @@ function publish() {
 
     <!-- ── Sticky footer ── -->
     <footer class="ob-footer">
-      <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="goBack">
+      <MpButton type="button" class="btn-enterprise btn-enterprise--ghost" variant="ghost" @click="goBack">
         {{ t('Back') }}
-      </button>
+      </MpButton>
       <div class="ob-footer-actions">
-        <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancel">{{ t('Cancel') }}</button>
-        <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="saveDraft">{{ t('Save as draft') }}</button>
-        <button type="button" class="btn-enterprise btn-enterprise--primary" @click="publish">{{ t('Publish opening balance') }}</button>
+        <MpButton type="button" class="btn-enterprise btn-enterprise--ghost" variant="ghost" @click="cancel">{{ t('Cancel') }}</MpButton>
+        <MpButton type="button" class="btn-enterprise btn-enterprise--secondary" variant="secondary" @click="saveDraft">{{ t('Save as draft') }}</MpButton>
+        <MpButton type="button" class="btn-enterprise btn-enterprise--primary" variant="primary" @click="publish">{{ t('Publish opening balance') }}</MpButton>
       </div>
     </footer>
   </div>

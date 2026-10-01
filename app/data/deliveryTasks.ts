@@ -284,6 +284,58 @@ export function setWmsShipping(
 
 /** Courier + tracking for an order's current shipment — from the ready-to-ship
  *  delivery if set there, else the pending registry. Undefined when nothing on file. */
+// ── Per-PACKAGE shipping details (courier + tracking no.) ─────────────────────
+// One outbound can go out as several parcels, and each parcel is its own shipment
+// with its own AWB — so the courier/tracking that ends up on a shipping label lives
+// per PACKAGE (the packing task that produced it), not per order.
+//
+// The order-level registry above is still the parent default: a package with no
+// entry of its own inherits whatever the outbound carries (wmsShippingForPackage),
+// so filling the order in once covers every parcel under it until someone splits
+// them. Picking prints from the parent only — there is no parcel yet at that point.
+const wmsPackageShipping = reactive<Record<string, WmsShipping>>(
+  loadSnapshot<Record<string, WmsShipping>>("wms-package-shipping-v1") ?? {},
+);
+function persistWmsPackageShipping(): void {
+  saveSnapshot("wms-package-shipping-v1", wmsPackageShipping);
+}
+
+/** Record courier + tracking no. for ONE package (packing task id). */
+export function setWmsPackageShipping(
+  packageId: string,
+  details: { courier: string; trackingNo?: string },
+): void {
+  if (!packageId) return;
+  wmsPackageShipping[packageId] = {
+    courier: details.courier.trim(),
+    trackingNo: (details.trackingNo ?? "").trim(),
+  };
+  persistWmsPackageShipping();
+  // A delivery already created from this package ships under the same details —
+  // otherwise the parcel's label and its shipment would disagree.
+  const del = deliveryTasks.find(
+    (t) => t.status === "ready to ship" && packingTaskIdsForDelivery(t).includes(packageId),
+  );
+  if (del) {
+    del.courier = wmsPackageShipping[packageId]!.courier;
+    del.trackingNo = wmsPackageShipping[packageId]!.trackingNo || undefined;
+    persistDelivery();
+  }
+}
+
+/** This package's own details, falling back to the parent outbound's (the carry-down
+ *  rule) — undefined only when neither has a courier on file yet. */
+export function wmsShippingForPackage(packageId: string, orderId: string): WmsShipping | undefined {
+  const own = wmsPackageShipping[packageId];
+  if (own?.courier) return own;
+  return wmsShippingForOrder(orderId);
+}
+
+/** Has this package been given details of its own (rather than inheriting)? */
+export function hasOwnPackageShipping(packageId: string): boolean {
+  return !!wmsPackageShipping[packageId]?.courier;
+}
+
 export function wmsShippingForOrder(orderId: string): WmsShipping | undefined {
   const t = readyDeliveryForOrder(orderId);
   if (t?.courier) return { courier: t.courier, trackingNo: t.trackingNo ?? "" };
@@ -324,9 +376,13 @@ export function addDeliveryTask(opts: {
   // Seed courier + tracking from anything captured before the delivery existed
   // (e.g. the shipping-details modal at packing, or the manual New delivery form),
   // unless the caller already provides a courier (marketplace channel-fixed values).
-  const pending = opts.courier ? undefined : wmsShipping[opts.salesOrderId];
-  const courier = opts.courier ?? pending?.courier;
-  const trackingNo = opts.trackingNo ?? pending?.trackingNo;
+  // This package's own details win over the order's default — they were entered
+  // against THIS parcel (shipping-details modal at packing), and its label already
+  // carries them, so the delivery must ship under the same courier/AWB.
+  const own = opts.courier ? undefined : wmsPackageShipping[opts.packingTaskId];
+  const pending = opts.courier || own?.courier ? undefined : wmsShipping[opts.salesOrderId];
+  const courier = opts.courier ?? own?.courier ?? pending?.courier;
+  const trackingNo = opts.trackingNo ?? (own?.courier ? own.trackingNo : undefined) ?? pending?.trackingNo;
   // A pending tracking no. belongs to THIS shipment only — consume it so the next
   // partial delivery doesn't inherit a stale AWB (courier stays as the default).
   if (pending?.trackingNo) {

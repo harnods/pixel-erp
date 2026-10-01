@@ -154,6 +154,11 @@ const pageRegistry: Record<string, Component> = {
   // Reports → Inventory index (report cards). The Dual Unit Inventory report itself
   // resolves via detailMatch (/inventory-report/dual-unit).
   'Inventory report':   defineAsyncComponent(() => import('~/components/pages/InventoryReportsIndexPage.vue')),
+  // Reports → Purchases / Tax / Cash & bank indexes (same flush report-card grid as
+  // Sales). No report detail pages yet — every card shows the coming-soon toast.
+  'Purchase report':    defineAsyncComponent(() => import('~/components/pages/PurchaseReportsIndexPage.vue')),
+  'Tax report':         defineAsyncComponent(() => import('~/components/pages/TaxReportsIndexPage.vue')),
+  'Cash and bank report': defineAsyncComponent(() => import('~/components/pages/CashBankReportsIndexPage.vue')),
   'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
   'Design erp':         defineAsyncComponent(() => import('~/components/pages/DesignErpDashboardPage.vue')),
 
@@ -378,24 +383,24 @@ watch(() => [currentPageKey.value, route.query.fromPr] as const, ([key, fromPr])
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
 const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue'))
 const CrmDealDetailPage = asyncPage(() => import('~/components/pages/CrmDealDetailPage.vue'))
-const CrmServicesPage = asyncPage(() => import('~/components/pages/CrmServicesPage.vue'))
-const CrmServiceDetailPage = asyncPage(() => import('~/components/pages/CrmServiceDetailPage.vue'))
-const NewCrmServicePage = asyncPage(() => import('~/components/pages/NewCrmServicePage.vue'))
 const NewCrmDealPage = asyncPage(() => import('~/components/pages/NewCrmDealPage.vue'))
 const CrmOrdersPage = asyncPage(() => import('~/components/pages/CrmOrdersPage.vue'))
 const CrmTasksPage = asyncPage(() => import('~/components/pages/CrmTasksPage.vue'))
 const CrmCustomersPage = asyncPage(() => import('~/components/pages/CrmCustomersPage.vue'))
 const CrmProductsPage = asyncPage(() => import('~/components/pages/CrmProductsPage.vue'))
 const CrmSettingsPage = asyncPage(() => import('~/components/pages/CrmSettingsPage.vue'))
-const CrmInviteUserPage = asyncPage(() => import('~/components/pages/CrmInviteUserPage.vue'))
 const CrmReportsPage = asyncPage(() => import('~/components/pages/CrmReportsPage.vue'))
 const CrmReportBuilderPage = asyncPage(() => import('~/components/pages/CrmReportBuilderPage.vue'))
 const CrmReportViewerPage = asyncPage(() => import('~/components/pages/CrmReportViewerPage.vue'))
 const CrmActivityLogPage = asyncPage(() => import('~/components/pages/CrmActivityLogPage.vue'))
 const CrmModulesPage = asyncPage(() => import('~/components/pages/CrmModulesPage.vue'))
-const CrmSettingsPropertiesPage = asyncPage(() => import('~/components/pages/CrmSettingsPropertiesPage.vue'))
+const CrmErpIntegrationsPage = asyncPage(() => import('~/components/pages/CrmErpIntegrationsPage.vue'))
+const CrmErpIntegrationDetailPage = asyncPage(() => import('~/components/pages/CrmErpIntegrationDetailPage.vue'))
+const CrmErpIntegrationEditorPage = asyncPage(() => import('~/components/pages/CrmErpIntegrationEditorPage.vue'))
+const CrmNewSalesOrderPage = asyncPage(() => import('~/components/pages/CrmNewSalesOrderPage.vue'))
 const CrmGenericModulePage = asyncPage(() => import('~/components/pages/CrmGenericModulePage.vue'))
 const CrmGenericRecordDetailPage = asyncPage(() => import('~/components/pages/CrmGenericRecordDetailPage.vue'))
+const NewCrmGenericRecordPage = asyncPage(() => import('~/components/pages/NewCrmGenericRecordPage.vue'))
 const CrmModuleBuilderPage = asyncPage(() => import('~/components/pages/CrmModuleBuilderPage.vue'))
 const CrmContactsListPage = asyncPage(() => import('~/components/pages/CrmContactsListPage.vue'))
 const CrmCompaniesListPage = asyncPage(() => import('~/components/pages/CrmCompaniesListPage.vue'))
@@ -496,18 +501,16 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     // /crm/deals/new → full detail create form; /crm/deals/:id/edit → edit form (both a PAGE).
     if (sub === 'deals' && id === 'new') return { component: NewCrmDealPage, id: 'new' }
     if (sub === 'deals' && id && segs[3] === 'edit') return { component: NewCrmDealPage, id }
-    // /crm/services → Service deals workspace (custom module); /crm/services/new →
-    // create form; /crm/services/:id/edit → edit form; /crm/services/:id → detail.
-    if (sub === 'services' && id === 'new') return { component: NewCrmServicePage, id: 'new' }
-    if (sub === 'services' && id && segs[3] === 'edit') return { component: NewCrmServicePage, id }
-    if (sub === 'services') return id ? { component: CrmServiceDetailPage, id } : { component: CrmServicesPage, id: '' }
-    // /crm/<moduleId>[/recordId] → any OTHER published custom module (created via
+    if (sub === 'deals' && id && (segs[3] === 'create-order' || segs[3] === 'create-quote')) return { component: CrmNewSalesOrderPage, id }
+    // /crm/<moduleId>[/recordId] → any published custom module (created via
     // "+ New module") gets the generic records workspace/detail, driven entirely
     // by its own pipeline/properties (no per-module page needed). Guarded by a
     // real, non-system module lookup so it can't hijack reserved CRM subpaths.
     {
       const customMod = sub && sub !== 'deals' ? getCrmModule(sub) : undefined
       if (customMod && !customMod.system) {
+        if (id === 'new') return { component: NewCrmGenericRecordPage, id: 'new' }
+        if (id && segs[3] === 'edit') return { component: NewCrmGenericRecordPage, id }
         return id ? { component: CrmGenericRecordDetailPage, id } : { component: CrmGenericModulePage, id: '' }
       }
     }
@@ -524,7 +527,6 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (sub === 'reports' && id) return { component: CrmReportViewerPage, id }
     if (sub === 'reports') return { component: CrmReportsPage, id: id ?? '' }
     if (sub === 'activity') return { component: CrmActivityLogPage, id: id ?? '' }
-    if (sub === 'settings' && id === 'users' && segs[3] === 'invite') return { component: CrmInviteUserPage, id: 'invite' }
     // Deals settings = the module builder for the 'deals' system module, as its own level-2 menu.
     if (sub === 'settings' && id === 'deals') return { component: CrmModuleBuilderPage, id: 'deals' }
     // "New module" is also handled by the builder — orderId 'new' — so every
@@ -532,7 +534,11 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     // before the module is actually created (see CrmModuleBuilderPage.vue).
     if (sub === 'settings' && id === 'modules' && segs[3]) return { component: CrmModuleBuilderPage, id: segs[3] }
     if (sub === 'settings' && id === 'modules') return { component: CrmModulesPage, id: '' }
-    if (sub === 'settings' && id === 'properties') return { component: CrmSettingsPropertiesPage, id: '' }
+    // /crm/settings/properties is deprecated — fall through to generic settings
+    // ERP Integration Settings (PRD: ERP Transaction Conversion Settings V1).
+    if (sub === 'settings' && id === 'erp-integrations' && segs[4] === 'edit') return { component: CrmErpIntegrationEditorPage, id: segs[3] }
+    if (sub === 'settings' && id === 'erp-integrations' && segs[3]) return { component: CrmErpIntegrationDetailPage, id: segs[3] }
+    if (sub === 'settings' && id === 'erp-integrations') return { component: CrmErpIntegrationsPage, id: '' }
     if (sub === 'settings') return { component: CrmSettingsPage, id: id ?? 'company' }
     return { component: CRM_PAGES[sub] ?? CrmDealsPage, id: sub }
   }
@@ -2306,7 +2312,7 @@ function startResize(e: MouseEvent) {
         </button>
       </div>
 
-      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Sales report' || currentPageKey === 'Buzz branding' || currentPageKey === 'Inventory report' || currentPageKey === 'Financial report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
+      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Sales report' || currentPageKey === 'Buzz branding' || currentPageKey === 'Inventory report' || currentPageKey === 'Financial report' || currentPageKey === 'Purchase report' || currentPageKey === 'Tax report' || currentPageKey === 'Cash and bank report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
         <!-- Several warehouses in scope: where the work is, not which products. -->
         <MpBanner v-if="cycleCountBannerMulti" variant="info" class="cycle-count-banner">
           <MpBannerIcon name="info" />

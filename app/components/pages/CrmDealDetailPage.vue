@@ -5,12 +5,16 @@
  * (segmented bar) → tabs (Deal details · Activity · Notes · Files · Sales orders).
  *
  * Stage flow:
- *  • "Mark as won" (primary) → marks the deal Won → asks "Create sales order?" →
- *    full-screen CrmCreateTransactionDrawer (embedded ERP sales-order form, prefilled).
- *  • Split chevron → inline stage picker (no modal). Picking Proposal → asks
- *    "Create sales quote?" → the same drawer (embedded ERP sales-quote form).
- *  • "Mark as lost" → CrmDealStageModal (captures a Lost reason).
- * A Lost deal shows the terminal stepper node as red "Lost".
+ *  • "Mark as won" (primary) → marks the deal Won. Stage changes NEVER trigger a
+ *    conversion (PRD "ERP Transaction Conversion Settings V1" — manual-only).
+ *  • Split chevron → inline stage picker (no modal). "Mark as lost" →
+ *    CrmDealStageModal (captures a Lost reason). A Lost deal shows the terminal
+ *    stepper node as red "Lost" and cannot be converted.
+ *
+ * ERP conversion: a MANUAL "Create Sales Order/Quote" action (primary when Won,
+ * else in the kebab) navigates to the CRM-embedded sales order form
+ * (/crm/deals/:id/create-order) pre-filled with the deal's data. After saving,
+ * the deal is marked converted and linked to the ERP transaction.
  */
 import { ref, computed } from 'vue'
 import {
@@ -23,7 +27,6 @@ import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import CrmDealStageModal from '~/components/patterns/CrmDealStageModal.vue'
-import CrmCreateTransactionDrawer from '~/components/patterns/CrmCreateTransactionDrawer.vue'
 import ActivityLogTable from '~/components/patterns/ActivityLogTable.vue'
 import CrmNotesPanel from '~/components/patterns/CrmNotesPanel.vue'
 import FilePreviewModal from '~/components/patterns/FilePreviewModal.vue'
@@ -32,13 +35,15 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import { formatMoney } from '~/utils/currency'
 import { successToast, infoToast } from '~/utils/toasts'
 import {
-  getDeal, ONGOING_STAGES, moveDealStage, archiveDeal, restoreDeal, deleteDeal,
-  dealConversionTarget, dealTotals, dealExpectedValue, dealDaysInStage, dealStageAgingDays, formatAging,
+  getDeal, moduleStores, ONGOING_STAGES, DEAL_STAGES, moveDealStage, archiveDeal, restoreDeal, deleteDeal,
+  dealTotals, dealExpectedValue, dealDaysInStage, dealStageAgingDays, formatAging,
   dealActivityLog, addDealAttachment, removeDealAttachment, setDealProductsFull,
-  getDealSalesOrder, linkDealSalesOrder,
+  getDealSalesOrder,
   lineSubtotal, crmCustomers, dealNo, dealStageLabel,
   type DealStage, type DealLineItem, type DealAttachment, type DealProductsPayload,
 } from '~/data/crm'
+import { dealConvEligibility, dealTargetLabel, dealErpTxn, dealTarget } from '~/data/crmConversion'
+import { dealToSalesPrefill, pendingSalesPrefill, pendingConversionDealId } from '~/data/salesFormPrefill'
 
 const currentUser = 'Rizal Candra'
 
@@ -59,6 +64,9 @@ const money = (n: number) => formatMoney(n, deal.value?.currency ?? 'IDR')
 const totals = computed(() => (deal.value ? dealTotals(deal.value) : null))
 void lineSubtotal
 
+const ordersTabTarget = computed(() => moduleStores('deals').detailLayout.tabs.find(t => t.key === 'orders')?.erpTarget ?? null)
+const ordersTabLabel = computed(() => ordersTabTarget.value === 'sales-order' ? 'Sales orders' : ordersTabTarget.value === 'sales-quote' ? 'Sales quotes' : null)
+
 // ── Linked records ──
 const customer = computed(() => (deal.value ? crmCustomers.find((c) => c.id === deal.value!.customerId) : undefined))
 const linkedOrder = computed(() => (deal.value ? getDealSalesOrder(deal.value) : undefined))
@@ -70,7 +78,11 @@ const isArchived = computed(() => !!deal.value?.archived)
 const isWon = computed(() => deal.value?.stage === 'Won')
 const isLost = computed(() => deal.value?.stage === 'Lost')
 const isOngoing = computed(() => !isWon.value && !isLost.value)
-const convTarget = computed(() => deal.value?.convertedTarget ?? dealConversionTarget.value)
+const convTarget = computed(() => deal.value?.convertedTarget ?? dealTargetLabel())
+// Manual conversion is available whenever the module config is Ready and the record
+// is eligible (PRD: never triggered by stage/status — only by this explicit action).
+const convEligible = computed(() => (deal.value ? dealConvEligibility(deal.value).ok : false))
+const erpTxn = computed(() => (deal.value ? dealErpTxn(deal.value) : undefined))
 const dealNumber = computed(() => (deal.value ? dealNo(deal.value.id) : ''))
 
 // ── Pipeline stepper (segmented bar) ──
@@ -94,6 +106,13 @@ function agingLabel(i: number) {
 // old → new · conversion / lost / archive), same table as ActivityLogModal ──
 const dealActivity = computed(() => (deal.value ? dealActivityLog(deal.value) : []))
 
+// ── "Move to" dropdown — all stages except the current one ──
+const availableStages = computed<DealStage[]>(() => {
+  const cur = deal.value?.stage
+  return ([...DEAL_STAGES] as DealStage[]).filter((s) => s !== cur)
+})
+const moveToMenuOpen = ref(false)
+
 // ── Stage moves ──
 function moveTo(stage: DealStage): boolean {
   const d = deal.value; if (!d) return false
@@ -102,11 +121,13 @@ function moveTo(stage: DealStage): boolean {
   successToast(`${t('Stage changed to')} ${stage}`)
   return true
 }
-// "Mark as won" → mark Won, then offer to create a sales order.
-function markWon() { if (moveTo('Won')) createSoAskOpen.value = true }
-// Stage picker (chevron popover) → move directly; Proposal offers a sales quote.
 function onPickStage(stage: DealStage) {
-  if (moveTo(stage) && stage === 'Proposal') createSqAskOpen.value = true
+  if (stage === 'Lost') { openMarkLost(); return }
+  const d = deal.value; if (!d) return
+  if ((d.stage === 'Won' || d.stage === 'Lost') && stage !== 'Lost') {
+    pendingStage.value = stage; reopenConfirmOpen.value = true; return
+  }
+  moveTo(stage)
 }
 
 // Lost (needs a reason) / reopen — via CrmDealStageModal
@@ -134,25 +155,20 @@ function confirmReopen() {
   reopenConfirmOpen.value = false; pendingStage.value = null
 }
 
-// ── Create sales order / quote (full-screen drawer, embedded ERP form) ──
-const createSoAskOpen = ref(false)
-const createSqAskOpen = ref(false)
-const txDrawerOpen = ref(false)
-const txDrawerKind = ref<'sales-order' | 'sales-quote'>('sales-order')
-function openSoDrawer() { txDrawerKind.value = 'sales-order'; txDrawerOpen.value = true }
-function openSqDrawer() { txDrawerKind.value = 'sales-quote'; txDrawerOpen.value = true }
-// Won primary: open the linked order if converted, else start the create flow.
-function onCreateSalesOrder() {
-  if (isConverted.value && deal.value?.salesOrderId) { goOrder(deal.value.salesOrderId); return }
-  openSoDrawer()
+// ── Manual ERP conversion — navigate to CRM-embedded sales order form ──
+function openConvertReview() {
+  const d = deal.value; if (!d) return
+  const e = dealConvEligibility(d)
+  if (!e.ok) { infoToast(e.reason ?? t('This deal cannot be converted.')); return }
+  pendingSalesPrefill.value = dealToSalesPrefill(d)
+  pendingConversionDealId.value = d.id
+  const target = dealTarget()
+  router.push(target === 'sales-quote' ? `/crm/deals/${d.id}/create-quote` : `/crm/deals/${d.id}/create-order`)
 }
-function onTxCreated(payload?: { id?: string }) {
-  txDrawerOpen.value = false
-  // A created sales order links back to the deal so the Sales orders tab shows it.
-  if (txDrawerKind.value === 'sales-order' && payload?.id && deal.value) {
-    linkDealSalesOrder(deal.value.id, { id: payload.id })
-  }
-}
+// Open the created ERP transaction (converted deals).
+function openErpTxn() { if (erpTxn.value) router.push(erpTxn.value.route) }
+// Failed → retry replays the conversion.
+function retryConversion() { openConvertReview() }
 
 // ── Archive / restore / delete ──
 const archiveConfirmOpen = ref(false)
@@ -268,7 +284,6 @@ function confirmDeleteFile() {
 }
 function fmtUploaded(iso?: string) { return iso ? formatDateTime(iso) : '—' }
 
-function goOrder(id: string) { router.push(`/crm/orders/${id}`) }
 function goSalesOrder(id: string) { router.push(`/sales-orders/${id}`) }
 function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
 </script>
@@ -287,54 +302,35 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
       </div>
 
       <div class="detail-titlerow-right">
-        <!-- Ongoing: "Mark as won" split button + inline stage picker -->
-        <div v-if="!isArchived && isOngoing" class="detail-split-btn">
-          <button class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="markWon">{{ t('Mark as won') }}</button>
-          <MpPopover id="deal-stage-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-            <MpPopoverTrigger>
-              <button class="btn-enterprise btn-enterprise--primary detail-split-btn__chevron" :aria-label="t('Change stage')">
-                <MpIcon name="chevrons-down" size="sm" />
-              </button>
-            </MpPopoverTrigger>
-            <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-              <p class="deal-stage-menu-label">{{ t('Move to stage') }}</p>
-              <MpPopoverList>
-                <MpPopoverListItem v-for="s in ONGOING_STAGES.filter((x) => x !== deal!.stage)" :key="s" @click="onPickStage(s)">{{ s }}</MpPopoverListItem>
-              </MpPopoverList>
-              <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-              <MpPopoverList>
-                <MpPopoverListItem @click="openMarkLost">{{ t('Mark as lost') }}</MpPopoverListItem>
-              </MpPopoverList>
-            </MpPopoverContent>
-          </MpPopover>
-        </div>
-        <!-- Won (not yet converted): create the sales order. A converted Won deal has
-             no primary — its sales order lives in the Sales orders tab. -->
-        <button v-else-if="!isArchived && isWon && !isConverted" class="btn-enterprise btn-enterprise--primary" @click="openSoDrawer">{{ t('Create sales order') }}</button>
-        <!-- Lost: reopen -->
-        <button v-else-if="!isArchived && isLost" class="btn-enterprise btn-enterprise--primary" @click="openReopen">{{ t('Reopen deal') }}</button>
-        <!-- Archived: restore -->
-        <button v-else-if="isArchived" class="btn-enterprise btn-enterprise--secondary" @click="onRestore">{{ t('Restore') }}</button>
+        <!-- Archived: restore only -->
+        <MpButton v-if="isArchived" class="btn-enterprise btn-enterprise--secondary" @click="onRestore">{{ t('Restore') }}</MpButton>
 
-        <!-- Kebab -->
+        <!-- Non-archived: "Move to" dropdown button -->
+        <MpPopover v-if="!isArchived" id="deal-stage-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+          <MpPopoverTrigger>
+            <MpButton variant="primary" right-icon="chevrons-down" is-rounded>{{ t('Move to') }}</MpButton>
+          </MpPopoverTrigger>
+          <MpPopoverContent class="deal-stage-dropdown">
+            <MpPopoverList>
+              <MpPopoverListItem v-for="s in availableStages" :key="s" @click="onPickStage(s)">{{ t(dealStageLabel(s)) }}</MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
+
+        <!-- Kebab actions -->
         <MpPopover id="deal-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
-            <MpButton class="detail-icon-btn" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
+            <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
           </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
+          <MpPopoverContent class="deal-actions-dropdown">
             <template v-if="isArchived">
               <MpPopoverList>
                 <MpPopoverListItem @click="deleteConfirmOpen = true">{{ t('Delete') }}</MpPopoverListItem>
               </MpPopoverList>
             </template>
             <template v-else>
-              <!-- A Won deal can be moved back to an earlier stage, or marked Lost. -->
-              <MpPopoverList v-if="isWon">
-                <MpPopoverListItem @click="openReopen">{{ t('Move to stage…') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="openMarkLost">{{ t('Mark as lost') }}</MpPopoverListItem>
-              </MpPopoverList>
-              <div v-if="isWon" :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
               <MpPopoverList>
+                <MpPopoverListItem v-if="!isLost" @click="openConvertReview">{{ t('Create') }} {{ t(convTarget) }}</MpPopoverListItem>
                 <MpPopoverListItem @click="router.push(`/crm/deals/${deal.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="archiveConfirmOpen = true">{{ t('Archive') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="deleteConfirmOpen = true">{{ t('Delete') }}</MpPopoverListItem>
@@ -356,10 +352,12 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
       <div v-else-if="isFailed" class="detail-banner detail-banner--warn">
         <MpIcon name="information" size="md" class="detail-banner-icon" />
         <span class="detail-banner-text">{{ deal.conversionError }}</span>
+        <MpTextlink v-if="convEligible" @click="retryConversion">{{ t('Retry conversion') }}</MpTextlink>
       </div>
       <div v-else-if="isConverted" class="detail-banner">
         <MpIcon name="information" size="md" class="detail-banner-icon" />
-        <span class="detail-banner-text">{{ t('This deal is linked to') }} {{ convTarget }} <template v-if="linkedOrder">#{{ linkedOrder.number }}</template>. {{ t('Editing the deal does not update the ERP transaction.') }}</span>
+        <span class="detail-banner-text">{{ t('This deal is linked to') }} {{ t(convTarget) }}<template v-if="erpTxn"> #{{ erpTxn.number }}</template>. {{ t('Editing the deal does not update the ERP transaction.') }}</span>
+        <MpTextlink v-if="erpTxn" @click="openErpTxn">{{ t('Open in ERP') }}</MpTextlink>
       </div>
       <div v-else-if="isLost" class="detail-banner detail-banner--warn">
         <MpIcon name="information" size="md" class="detail-banner-icon" />
@@ -395,62 +393,103 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
           <MpTab id="deal-tab-details" value="details">{{ t('Deal details') }}</MpTab>
           <MpTab id="deal-tab-notes" value="notes">{{ t('Notes') }}</MpTab>
           <MpTab id="deal-tab-files" value="files">{{ t('Files') }}</MpTab>
-          <MpTab id="deal-tab-orders" value="orders">{{ t('ERP transactions') }}</MpTab>
+          <MpTab v-if="ordersTabLabel" id="deal-tab-orders" value="orders">{{ t(ordersTabLabel) }}</MpTab>
           <MpTab id="deal-tab-activity" value="activity">{{ t('Activity') }}</MpTab>
         </MpTabList>
         <MpTabPanels>
 
-          <!-- ── Deal details ── -->
+          <!-- ── Deal details — sections mirror the module Layout config ── -->
           <MpTabPanel value="details">
-            <section class="detail-summary">
-              <!-- Primary row: Customer · Contact person · emphasised Deal value -->
-              <div class="content-list-grid">
+            <!-- §1 Overview (3 cols) — matches Layout: col1=Deal name/Company/Billing,
+                 col2=Contact/Email/Phone, col3=Value/Owner/Currency -->
+            <section class="detail-summary" data-devchange="crm-deal-detail-layout-sync">
+              <h3 class="detail-section-title">{{ t('Overview') }}</h3>
+              <div class="content-list-grid content-list-grid--3">
                 <div class="content-list-col">
-                  <ContentList :label="t('Customer')">
+                  <ContentList :label="t('Deal name')" :value="deal.name" />
+                  <ContentList :label="t('Company')" data-devchange="deal-contact-first">
                     <a v-if="customer" class="cell-link" @click="goCustomer(customer.id)">{{ deal.company }}</a>
-                    <span v-else>{{ deal.company }}</span>
+                    <span v-else>{{ deal.company || '—' }}</span>
                   </ContentList>
+                  <ContentList :label="t('Billing address')" :value="deal.billingAddress || '—'" />
                 </div>
-                <div class="content-list-col deal-contact-col">
+                <div class="content-list-col">
                   <ContentList :label="t('Contact person')">
                     <div v-if="deal.contacts?.length" class="deal-contacts">
                       <div v-for="(cp, i) in deal.contacts" :key="i" class="deal-contact">
                         <span class="deal-contact-name">{{ cp.name }}</span>
-                        <a v-if="cp.email" class="deal-contact-line cell-link" :href="`mailto:${cp.email}`">{{ cp.email }}</a>
-                        <span v-if="cp.phone" class="deal-contact-line">{{ cp.phone }}</span>
                       </div>
                     </div>
+                    <template v-else-if="deal.picName">{{ deal.picName }}</template>
+                    <template v-else>—</template>
+                  </ContentList>
+                  <ContentList :label="t('Contact person email')">
+                    <template v-if="deal.contacts?.length">
+                      <a v-for="(cp, i) in deal.contacts.filter(c => c.email)" :key="i" class="cell-link" :href="`mailto:${cp.email}`">{{ cp.email }}</a>
+                      <span v-if="!deal.contacts.some(c => c.email)">—</span>
+                    </template>
+                    <template v-else-if="deal.email"><a class="cell-link" :href="`mailto:${deal.email}`">{{ deal.email }}</a></template>
+                    <template v-else>—</template>
+                  </ContentList>
+                  <ContentList :label="t('Contact person phone')">
+                    <template v-if="deal.contacts?.length">
+                      <span v-for="(cp, i) in deal.contacts.filter(c => c.phone)" :key="i">{{ cp.phone }}</span>
+                      <span v-if="!deal.contacts.some(c => c.phone)">—</span>
+                    </template>
+                    <template v-else-if="deal.phones?.length">{{ deal.phones[0] }}</template>
                     <template v-else>—</template>
                   </ContentList>
                 </div>
-                <div class="detail-primary-total">
-                  <span class="detail-total-label">{{ t('Deal value') }}</span>
-                  <span class="detail-total-amount">{{ money(dealExpectedValue(deal)) }}</span>
+                <div class="content-list-col">
+                  <ContentList :label="t('Value')">
+                    <span class="detail-value-amount">{{ money(dealExpectedValue(deal)) }}</span>
+                  </ContentList>
+                  <ContentList :label="t('Owner')" :value="deal.owner || '—'" />
+                  <ContentList :label="t('Currency')" :value="deal.currency || '—'" />
                 </div>
               </div>
+            </section>
 
-              <div class="detail-divider" />
-
-              <!-- Detail grid: col 1 = 318px, col 2+ fill equally (max 5 cols) -->
-              <div class="content-list-grid">
-                <div class="content-list-col">
-                  <ContentList :label="t('Billing address')" :value="deal.billingAddress || '—'" />
-                  <ContentList :label="t('Ship to')" :value="deal.shipTo || '—'" />
-                </div>
+            <!-- §2 Transaction (4 cols) -->
+            <section class="detail-details-block">
+              <h3 class="detail-section-title">{{ t('Transaction') }}</h3>
+              <div class="content-list-grid content-list-grid--4">
                 <div class="content-list-col">
                   <ContentList :label="t('Transaction date')" :value="fmtDate(deal.transactionDate || deal.createdAt)" />
-                  <ContentList :label="t('Close date')" :value="fmtDate(deal.expectedCloseDate)" />
+                  <ContentList :label="t('Reference no.')" :value="deal.referenceNumber || '—'" />
+                </div>
+                <div class="content-list-col">
+                  <ContentList :label="t('Due date')" :value="fmtDate(deal.expectedCloseDate)" />
                   <ContentList :label="t('Payment terms')" :value="deal.paymentTerms || '—'" />
                 </div>
                 <div class="content-list-col">
-                  <ContentList :label="t('Ship date')" :value="fmtDate(deal.shipDate)" />
-                  <ContentList :label="t('Ship via')" :value="deal.shipVia || '—'" />
-                  <ContentList :label="t('Tracking no.')" :value="deal.trackingNo || '—'" />
+                  <ContentList :label="t('Expected close date')" :value="fmtDate(deal.expectedCloseDate)" />
+                  <ContentList :label="t('Exchange rate')" :value="deal.exchangeRate !== 1 ? String(deal.exchangeRate) : '—'" />
                 </div>
                 <div class="content-list-col">
                   <ContentList :label="t('Transaction no.')" :value="dealNumber" />
-                  <ContentList :label="t('Reference no.')" :value="deal.referenceNumber || '—'" />
+                </div>
+              </div>
+            </section>
+
+            <!-- §3 Shipping & delivery (4 cols) -->
+            <section class="detail-details-block">
+              <h3 class="detail-section-title">{{ t('Shipping & delivery') }}</h3>
+              <div class="content-list-grid content-list-grid--4">
+                <div class="content-list-col">
                   <ContentList :label="t('Warehouse')" :value="deal.warehouse || '—'" />
+                  <ContentList :label="t('Ship via')" :value="deal.shipVia || '—'" />
+                </div>
+                <div class="content-list-col">
+                  <ContentList :label="t('Shipping address')" :value="deal.shipTo || '—'" />
+                  <ContentList :label="t('Tracking no.')" :value="deal.trackingNo || '—'" />
+                </div>
+                <div class="content-list-col">
+                  <ContentList :label="t('Ship date')" :value="fmtDate(deal.shipDate)" />
+                  <ContentList :label="t('Shipping fee')" :value="deal.shippingFee ? money(deal.shippingFee) : '—'" />
+                </div>
+                <div class="content-list-col">
+                  <ContentList :label="t('Delivery date')" :value="'—'" />
                 </div>
               </div>
             </section>
@@ -464,7 +503,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                   <div class="filter-search">
                     <MpIcon name="search" size="sm" />
                     <input v-model="productSearch" class="filter-search-input" type="text" :placeholder="t('Search products…')" />
-                    <button v-if="productSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="productSearch = ''"><MpIcon name="close" size="sm" /></button>
+                    <MpButton v-if="productSearch" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="productSearch = ''" />
                   </div>
                   <MpButton variant="tertiary" is-rounded left-icon="add" @click="productDrawerOpen = true">{{ t('Add product') }}</MpButton>
                 </div>
@@ -506,20 +545,9 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
               </div>
             </section>
 
-            <!-- ── Notes + totals ── -->
-            <section class="detail-notes detail-details-block">
-              <div class="detail-notes-left">
-                <ContentList v-if="deal.description" :label="t('Message')">
-                  <p class="detail-note-text">{{ deal.description }}</p>
-                </ContentList>
-                <ContentList v-if="deal.notes" :label="t('Memo')">
-                  <p class="detail-note-text">{{ deal.notes }}</p>
-                </ContentList>
-              </div>
-
-              <!-- Totals only apply once the deal has products; otherwise the Deal
-                   value emphasis (above) carries the estimated value. -->
-              <div v-if="deal.products?.length" class="detail-totals">
+            <!-- ── Totals ── -->
+            <section v-if="deal.products?.length" class="detail-totals-section detail-details-block">
+              <div class="detail-totals">
                 <div class="detail-total-row">
                   <span class="detail-total-row-label detail-total-row-label--strong">{{ t('Subtotal') }}</span>
                   <span class="detail-total-row-amt detail-total-row-amt--strong">{{ money(totals!.subtotal) }}</span>
@@ -547,6 +575,16 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                 </div>
               </div>
             </section>
+
+            <!-- ── Memo ── -->
+            <section v-if="deal.description || deal.notes" class="detail-memo-section detail-details-block">
+              <ContentList v-if="deal.description" :label="t('Message')">
+                <p class="detail-note-text">{{ deal.description }}</p>
+              </ContentList>
+              <ContentList v-if="deal.notes" :label="t('Memo')">
+                <p class="detail-note-text">{{ deal.notes }}</p>
+              </ContentList>
+            </section>
           </MpTabPanel>
 
           <!-- ── Notes — write + threaded notes/comments (self + teammates) ── -->
@@ -566,7 +604,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                 <div class="filter-search">
                   <MpIcon name="search" size="sm" />
                   <input v-model="fileSearch" class="filter-search-input" type="text" :placeholder="t('Search files…')" />
-                  <button v-if="fileSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="fileSearch = ''"><MpIcon name="close" size="sm" /></button>
+                  <MpButton v-if="fileSearch" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="fileSearch = ''" />
                 </div>
                 <MpButton variant="tertiary" is-rounded @click="pickFiles">{{ t('Upload file') }}</MpButton>
                 <input ref="fileInput" type="file" multiple class="deal-files-input" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.xls,.xlsx,.csv,.doc,.docx" @change="onFileInput" />
@@ -620,9 +658,9 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
             <p v-else class="detail-tab-empty">{{ t('No files attached to this deal yet. Upload one above.') }}</p>
           </MpTabPanel>
 
-          <!-- ── ERP transactions — the linked ERP sales order, same table as the ERP index ── -->
-          <MpTabPanel value="orders">
-            <h3 class="detail-tab-heading">{{ t('ERP transactions') }}</h3>
+          <!-- ── Sales orders/quotes — the linked ERP transaction, same table as the ERP index ── -->
+          <MpTabPanel v-if="ordersTabLabel" value="orders">
+            <h3 class="detail-tab-heading">{{ t(ordersTabLabel) }}</h3>
             <table v-if="linkedOrder" class="detail-linked">
               <colgroup>
                 <col class="detail-linked-col--date" />
@@ -692,32 +730,6 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
       @confirm="confirmReopen"
     />
 
-    <!-- ── Create sales order / quote — ask, then full-screen drawer ── -->
-    <ConfirmModal
-      v-model:is-open="createSoAskOpen"
-      :title="t('Create sales order?')"
-      :description="t('Start a sales order from this deal. It opens the sales order form, pre-filled from the deal and still editable.')"
-      :cancel-label="t('Later')"
-      :confirm-label="t('Create sales order')"
-      :is-danger="false"
-      @confirm="openSoDrawer"
-    />
-    <ConfirmModal
-      v-model:is-open="createSqAskOpen"
-      :title="t('Create sales quote?')"
-      :description="t('Start a sales quote from this deal. It opens the sales quote form, pre-filled from the deal and still editable.')"
-      :cancel-label="t('Later')"
-      :confirm-label="t('Create sales quote')"
-      :is-danger="false"
-      @confirm="openSqDrawer"
-    />
-    <CrmCreateTransactionDrawer
-      :open="txDrawerOpen"
-      :kind="txDrawerKind"
-      :deal="deal"
-      @close="txDrawerOpen = false"
-      @created="onTxCreated"
-    />
 
     <!-- ── Add / edit products (full-screen line-items + totals editor) ── -->
     <CrmEditProductsDrawer
@@ -811,10 +823,8 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
   border-radius: 0 var(--mp-radii-full, 999px) var(--mp-radii-full, 999px) 0;
   border-left: 1px solid rgba(255, 255, 255, 0.3);
 }
-.deal-stage-menu-label {
-  margin: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1);
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
-}
+.deal-stage-dropdown { min-width: 200px; width: max-content; white-space: nowrap; }
+.deal-actions-dropdown { min-width: 180px; width: max-content; white-space: nowrap; }
 
 /* ── Stage ── */
 .detail-stage {
@@ -860,33 +870,23 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
 .deal-bar-seg--filled { background: var(--mp-border-selected, #029861); }
 .deal-bar-seg--lost { background: var(--mp-background-danger, #c9372c); }
 
-/* ── Header summary ── */
-.detail-summary { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
-.detail-primary-total {
-  grid-column: 3 / -1; justify-self: end; align-self: start;
-  padding-top: var(--mp-spacing-2);
-  display: flex; align-items: baseline; gap: var(--mp-spacing-2);
+/* ── Section headings inside Deal details tab ── */
+.detail-section-title {
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default); margin: 0 0 var(--mp-spacing-4) 0;
 }
-.detail-total-label, .detail-total-amount {
-  font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
-}
+.detail-summary { display: flex; flex-direction: column; }
+.detail-value-amount { font-size: var(--mp-font-sizes-lg, 18px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 
-/* dashed rule between header 1 and header 2 */
-.detail-divider {
-  height: var(--mp-border-width-sm, 1px);
-  background: repeating-linear-gradient(to right, var(--mp-border-default, #e3e7e9) 0, var(--mp-border-default, #e3e7e9) 4px, transparent 4px, transparent 8px);
-}
-
-/* Detail grid: col 1 = 318px, col 2+ fill equally */
+/* Detail grids — 3-col (Overview) and 4-col (Transaction / Shipping) */
 .content-list-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 318px) repeat(4, minmax(0, 1fr));
-  column-gap: var(--mp-spacing-6); row-gap: 0;
+  display: grid; column-gap: var(--mp-spacing-6); row-gap: 0;
 }
+.content-list-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.content-list-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .content-list-col { display: flex; flex-direction: column; min-width: 0; }
 
 /* Contact person — multiple contacts side by side inside one ContentList */
-.deal-contact-col { grid-column: span 1; }
 .deal-contacts { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-6); }
 .deal-contact { display: flex; flex-direction: column; min-width: 0; }
 .deal-contact-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
@@ -971,8 +971,9 @@ a.deal-contact-line:hover { text-decoration: underline; text-underline-offset: 2
 .cell-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── Notes + totals ── */
-.detail-notes { display: grid; grid-template-columns: 1fr 380px; gap: var(--mp-spacing-6); align-items: start; }
-.detail-notes-left { display: flex; flex-direction: column; }
+.detail-totals-section { display: grid; grid-template-columns: 1fr 380px; }
+.detail-totals-section .detail-totals { grid-column: 2; }
+.detail-memo-section { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
 .detail-note-text { margin: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default); white-space: pre-line; }
 .detail-attach-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .detail-attach { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); cursor: pointer; width: fit-content; }
@@ -982,7 +983,7 @@ a.deal-contact-line:hover { text-decoration: underline; text-underline-offset: 2
 .detail-attach:hover .detail-attach-name { text-decoration: underline; text-underline-offset: 2px; }
 .detail-attach-size { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
-.detail-totals { display: flex; flex-direction: column; gap: var(--mp-spacing-4); padding-top: var(--mp-spacing-2); }
+.detail-totals { display: flex; flex-direction: column; gap: var(--mp-spacing-4); padding-top: var(--mp-spacing-2); width: 380px; flex-shrink: 0; }
 .detail-total-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
 .detail-total-row-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .detail-total-row-amt { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }

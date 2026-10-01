@@ -209,10 +209,10 @@ function goExpenses() {
                   </MpButton>
                 </div>
                 <div class="detail-jump-list">
-                  <button v-for="o in jumpResults" :key="o.id" class="detail-jump-item" @click="jumpTo(o.id)">
+                  <MpButton v-for="o in jumpResults" :key="o.id" variant="ghost" class="detail-jump-item" @click="jumpTo(o.id)">
                     <span class="detail-jump-item-number">{{ t('Expense') }} #{{ String(o.number).padStart(5, '0') }}</span>
                     <span class="detail-jump-item-customer">{{ o.beneficiary.name }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found.') }}</p>
                 </div>
               </div>
@@ -233,7 +233,7 @@ function goExpenses() {
             <MpIcon name="comment" size="md" />
           </MpButton>
         </MpTooltip>
-        <button class="btn-enterprise btn-enterprise--primary" @click="approve">{{ t('Approve') }}</button>
+        <MpButton class="btn-enterprise btn-enterprise--primary" @click="approve">{{ t('Approve') }}</MpButton>
       </div>
     </header>
 
@@ -459,19 +459,19 @@ function goExpenses() {
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer">
-      <button class="btn-enterprise btn-enterprise--secondary" @click="openPdfPreview">{{ t('Print PDF') }}</button>
+      <MpButton class="btn-enterprise btn-enterprise--secondary" @click="openPdfPreview">{{ t('Print PDF') }}</MpButton>
 
-      <button v-if="bill.status === 'unpaid' && !isAwaitingApproval" class="btn-enterprise btn-enterprise--secondary">
+      <MpButton v-if="bill.status === 'unpaid' && !isAwaitingApproval" class="btn-enterprise btn-enterprise--secondary">
         <MpIcon name="pay-brand" size="md" />
         {{ t('Pay with Mekari Pay') }}
-      </button>
+      </MpButton>
 
       <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="btn-enterprise" :class="isAwaitingApproval ? 'btn-enterprise--secondary' : 'btn-enterprise--primary'">
+          <MpButton class="btn-enterprise" :class="isAwaitingApproval ? 'btn-enterprise--secondary' : 'btn-enterprise--primary'">
             {{ t('Actions') }}
             <MpIcon name="chevrons-down" size="sm" />
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>

@@ -252,7 +252,7 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
     <!-- ── Title bar ── -->
     <header v-if="!fullscreen" class="cmr-titlebar">
       <div class="cmr-titlebar-left">
-        <button class="cmr-breadcrumb" type="button" @click="router.push('/sales-report')">Sales</button>
+        <MpButton class="cmr-breadcrumb" variant="link" type="button" @click="router.push('/sales-report')">Sales</MpButton>
         <h1 class="cmr-title">Credit Memo <span class="cmr-title-cur">(IDR)</span></h1>
       </div>
     </header>
@@ -272,7 +272,7 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
         </div>
         <div class="cmr-controls-right">
           <MpTooltip id="cmr-refresh" label="Refresh report" placement="bottom" use-portal>
-            <button class="cmr-icon-btn" type="button" aria-label="Refresh report" @click="applyReport"><MpIcon name="refresh" size="md" /></button>
+            <MpButton class="cmr-icon-btn" variant="ghost" type="button" aria-label="Refresh report" left-icon="refresh" @click="applyReport" />
           </MpTooltip>
           <MpButton variant="secondary" is-rounded @click="exportExcel">Export to Excel</MpButton>
         </div>
@@ -289,16 +289,16 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
 
       <!-- Active-filter badges (customer + transaction type only) -->
       <div v-if="!fullscreen && activeFilterCount" class="cmr-badges">
-        <span v-if="filters.keyword" class="cmr-fbadge cmr-fbadge--dismiss">“{{ filters.keyword }}”<button type="button" aria-label="Remove" @click="filters.keyword = ''"><MpIcon name="close" size="sm" /></button></span>
-        <span v-for="c in filters.customers" :key="`c-${c}`" class="cmr-fbadge cmr-fbadge--dismiss">{{ c }}<button type="button" aria-label="Remove" @click="removeCustomer(c)"><MpIcon name="close" size="sm" /></button></span>
-        <span v-for="tt in filters.txnTypes" :key="`t-${tt}`" class="cmr-fbadge cmr-fbadge--dismiss">{{ TXN_LABELS[tt] }}<button type="button" aria-label="Remove" @click="removeTxnType(tt)"><MpIcon name="close" size="sm" /></button></span>
-        <button v-if="activeFilterCount" class="cmr-reset" type="button" @click="resetFilters">Reset Filter</button>
+        <span v-if="filters.keyword" class="cmr-fbadge cmr-fbadge--dismiss">“{{ filters.keyword }}”<MpButton variant="ghost" type="button" aria-label="Remove" left-icon="close" @click="filters.keyword = ''" /></span>
+        <span v-for="c in filters.customers" :key="`c-${c}`" class="cmr-fbadge cmr-fbadge--dismiss">{{ c }}<MpButton variant="ghost" type="button" aria-label="Remove" left-icon="close" @click="removeCustomer(c)" /></span>
+        <span v-for="tt in filters.txnTypes" :key="`t-${tt}`" class="cmr-fbadge cmr-fbadge--dismiss">{{ TXN_LABELS[tt] }}<MpButton variant="ghost" type="button" aria-label="Remove" left-icon="close" @click="removeTxnType(tt)" /></span>
+        <MpButton v-if="activeFilterCount" class="cmr-reset" variant="link" type="button" @click="resetFilters">Reset Filter</MpButton>
       </div>
 
       <!-- ── View tabs ── -->
       <div v-if="!fullscreen" class="cmr-viewbar">
         <div class="cmr-views">
-          <button class="cmr-viewtab" :class="{ 'is-active': activeViewId === 'default' }" type="button" @click="selectView('default')">Default view</button>
+          <MpButton class="cmr-viewtab" variant="ghost" :class="{ 'is-active': activeViewId === 'default' }" type="button" @click="selectView('default')">Default view</MpButton>
 
           <template v-for="v in creditMemoViews" :key="v.id">
             <!-- Renaming this view inline -->
@@ -307,10 +307,10 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
             </span>
             <!-- Saved view tab + [...] menu (Edit name / Delete) -->
             <span v-else class="cmr-viewtab-wrap">
-              <button class="cmr-viewtab" :class="{ 'is-active': activeViewId === v.id }" type="button" @click="selectView(v.id)">{{ v.name }}</button>
+              <MpButton class="cmr-viewtab" variant="ghost" :class="{ 'is-active': activeViewId === v.id }" type="button" @click="selectView(v.id)">{{ v.name }}</MpButton>
               <MpPopover :id="`cmr-view-${v.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
                 <MpPopoverTrigger>
-                  <button class="cmr-view-kebab" type="button" aria-label="View options"><MpIcon name="menu-kebab" size="sm" /></button>
+                  <MpButton class="cmr-view-kebab" variant="ghost" type="button" aria-label="View options" left-icon="menu-kebab" />
                 </MpPopoverTrigger>
                 <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
                   <MpPopoverList>
@@ -326,12 +326,12 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
           <span v-if="addingView" class="cmr-viewtab cmr-viewtab--editing">
             <input ref="newViewInput" v-model="newViewName" class="cmr-viewtab-input" placeholder="View name" @keydown.enter.prevent="commitAddView" @keydown.esc="cancelAddView" @blur="commitAddView" />
           </span>
-          <button v-else class="cmr-addview" type="button" @click="startAddView"><MpIcon name="add" size="sm" /> Add view</button>
+          <MpButton v-else class="cmr-addview" variant="ghost" type="button" left-icon="add" @click="startAddView">Add view</MpButton>
         </div>
         <div class="cmr-viewbar-right">
-          <button v-if="reportState === 'ready' && groups.length" class="cmr-collapse-all" type="button" @click="toggleAll">{{ allCollapsed ? 'Expand all' : 'Collapse all' }}</button>
+          <MpButton v-if="reportState === 'ready' && groups.length" class="cmr-collapse-all" variant="link" type="button" @click="toggleAll">{{ allCollapsed ? 'Expand all' : 'Collapse all' }}</MpButton>
           <MpTooltip id="cmr-fs-enter" label="Full screen" placement="bottom" use-portal>
-            <button class="cmr-fs-btn" type="button" aria-label="Full screen" @click="fullscreen = true"><MpIcon name="full-screen" size="md" /></button>
+            <MpButton class="cmr-fs-btn" variant="ghost" type="button" aria-label="Full screen" left-icon="full-screen" @click="fullscreen = true" />
           </MpTooltip>
         </div>
       </div>
@@ -341,7 +341,7 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
         <div v-if="fullscreen" class="cmr-fs-topbar">
           <span class="cmr-fs-title">Credit Memo <span class="cmr-title-cur">(IDR)</span></span>
           <MpTooltip id="cmr-fs-exit" label="Exit full screen" placement="bottom-end" use-portal>
-            <button class="cmr-fs-btn" type="button" aria-label="Exit full screen" @click="fullscreen = false"><MpIcon name="minimize" size="md" /></button>
+            <MpButton class="cmr-fs-btn" variant="ghost" type="button" aria-label="Exit full screen" left-icon="minimize" @click="fullscreen = false" />
           </MpTooltip>
         </div>
 
@@ -471,7 +471,7 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
             <img src="/illustrations/empty-folder.png" alt="" class="cmr-empty-img" width="240" height="200" />
             <template v-if="emptyReason === 'filter'">
               <p class="cmr-empty-title">No data matches this filter.</p>
-              <button class="cmr-empty-cta" type="button" @click="resetFilters">Reset Filter</button>
+              <MpButton class="cmr-empty-cta" variant="secondary" type="button" @click="resetFilters">Reset Filter</MpButton>
             </template>
             <template v-else-if="emptyReason === 'all-zero'">
               <p class="cmr-empty-title">All credit memos in this period are fully used.</p>

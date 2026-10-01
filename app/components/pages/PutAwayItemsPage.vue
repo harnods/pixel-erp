@@ -4,7 +4,7 @@ import { formatDateTimeLong } from '~/utils/date'
 import {
   MpSpinner, MpIcon, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  css, toast,
+  css, toast, MpButton,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
@@ -691,8 +691,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   <div v-if="task && task.needsCancelAck" class="pi-not-found">
     <p>{{ t('The purchase order behind this put-away\'s receiving task was canceled.') }}</p>
     <p>{{ t('Nothing has been stored yet — acknowledging will cancel this put-away. Its linked receiving task stays completed (the received goods are a permanent record).') }}</p>
-    <button class="pi-btn pi-btn--primary" type="button" @click="acknowledgeAndCancel">{{ t('Acknowledge') }}</button>
-    <button class="detail-breadcrumb" @click="goBack">{{ t('Back to task') }}</button>
+    <MpButton class="pi-btn pi-btn--primary" variant="primary" @click="acknowledgeAndCancel">{{ t('Acknowledge') }}</MpButton>
+    <MpButton class="detail-breadcrumb" variant="ghost" @click="goBack">{{ t('Back to task') }}</MpButton>
   </div>
 
   <div v-else-if="task" class="detail-page">
@@ -701,9 +701,9 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goPutAway">{{ t('Put-away') }}</button>
+          <MpButton class="detail-breadcrumb" variant="ghost" @click="goPutAway">{{ t('Put-away') }}</MpButton>
           <span class="detail-breadcrumb-sep">/</span>
-          <button class="detail-breadcrumb" @click="goBack">{{ task.taskNo }}</button>
+          <MpButton class="detail-breadcrumb" variant="ghost" @click="goBack">{{ task.taskNo }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('Put away items') }}</h1>
@@ -744,11 +744,11 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
             <input v-model="search" class="pi-search" type="text" :placeholder="t('Search...')" />
-            <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
+            <MpButton v-if="search" class="search-clear-btn" variant="ghost" :aria-label="t('Clear search')" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
         </div>
 
@@ -759,11 +759,11 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
               <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             <span>{{ activeBin }}</span>
-            <button class="pi-active-bin-clear" type="button" :aria-label="t('Clear active bin')" @click="activeBin = null">
+            <MpButton class="pi-active-bin-clear" variant="ghost" :aria-label="t('Clear active bin')" @click="activeBin = null">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
         </ScanBar>
 
@@ -905,16 +905,16 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                        can be, via "Split storage location" below). -->
                   <td v-if="isBatchTrackedSku(row.skuCode) && row.groupIndex === 0" :rowspan="row.groupSize" class="pi-td pi-td--action">
                     <MpTooltip :id="`pi-tt-batch-${row.skuCode}`" :label="t('Manage batch')" placement="top" use-portal>
-                      <button class="pi-view-btn" type="button" :aria-label="t('Manage batch')" @click="openBatchDrawer(row.skuCode)">
+                      <MpButton class="pi-view-btn" variant="secondary" :aria-label="t('Manage batch')" @click="openBatchDrawer(row.skuCode)">
                         <MpIcon name="competencies" size="md" />
-                      </button>
+                      </MpButton>
                     </MpTooltip>
                   </td>
                   <td v-else-if="isSerialTrackedSku(row.skuCode) && row.groupIndex === 0" :rowspan="row.groupSize" class="pi-td pi-td--action">
                     <MpTooltip :id="`pi-tt-serial-${row.skuCode}`" :label="t('Manage serial numbers')" placement="top" use-portal>
-                      <button class="pi-view-btn" type="button" :aria-label="t('Manage serial numbers')" @click="openSerialDrawer(row.skuCode)">
+                      <MpButton class="pi-view-btn" variant="secondary" :aria-label="t('Manage serial numbers')" @click="openSerialDrawer(row.skuCode)">
                         <MpIcon name="competencies" size="md" />
-                      </button>
+                      </MpButton>
                     </MpTooltip>
                   </td>
                   <!-- Plain SKU only — a tracked SKU never has a groupIndex > 0
@@ -925,11 +925,11 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                       :id="`pi-row-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end"
                     >
                       <MpPopoverTrigger>
-                        <button class="pi-row-kebab" :aria-label="t('More actions')">
+                        <MpButton class="pi-row-kebab" variant="secondary" :aria-label="t('More actions')">
                           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                             <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
                           </svg>
-                        </button>
+                        </MpButton>
                       </MpPopoverTrigger>
                       <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
                         <MpPopoverList>
@@ -959,15 +959,15 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <button class="pi-btn pi-btn--ghost" @click="goBack">{{ t('Cancel') }}</button>
-      <button class="pi-btn pi-btn--secondary" @click="saveDraft">{{ t('Save as draft') }}</button>
-      <button class="pi-btn pi-btn--primary" @click="postPutAway">{{ t('Finish put-away') }}</button>
+      <MpButton class="pi-btn pi-btn--ghost" variant="ghost" @click="goBack">{{ t('Cancel') }}</MpButton>
+      <MpButton class="pi-btn pi-btn--secondary" variant="secondary" @click="saveDraft">{{ t('Save as draft') }}</MpButton>
+      <MpButton class="pi-btn pi-btn--primary" variant="primary" @click="postPutAway">{{ t('Finish put-away') }}</MpButton>
     </footer>
   </div>
 
   <div v-else class="pi-not-found">
     <p>{{ t('Put-away task not found.') }}</p>
-    <button class="detail-breadcrumb" @click="goPutAway">{{ t('Back to Put-away') }}</button>
+    <MpButton class="detail-breadcrumb" variant="ghost" @click="goPutAway">{{ t('Back to Put-away') }}</MpButton>
   </div>
 
   <ManageBatchDrawer
@@ -1219,10 +1219,10 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .pi-active-bin {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-2\.5);
-  background: #e6f7ef; border: 1px solid #029861;
+  background: var(--mp-colors-success-weaker); border: 1px solid var(--mp-colors-success-default);
   border-radius: var(--mp-radii-full); white-space: nowrap;
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  color: #027a4e; flex-shrink: 0;
+  color: var(--mp-colors-success-bolder); flex-shrink: 0;
 }
 .pi-active-bin-clear {
   background: none; border: none; padding: 0; cursor: pointer;

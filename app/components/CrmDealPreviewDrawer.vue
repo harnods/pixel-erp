@@ -18,7 +18,7 @@ import { formatMoney } from '~/utils/currency'
 import { formatDate, formatDateTime } from '~/utils/date'
 import { CATALOG } from '~/data/catalog'
 import {
-  crmCustomers, dealExpectedValue, lineSubtotal, skuFor, DEAL_STAGES,
+  crmCustomers, dealExpectedValue, dealTotals, lineSubtotal, skuFor, DEAL_STAGES,
   dealComments, addDealComment, dealNo, dealStageBadgeType, dealStageLabel,
   type Deal, type DealStage,
 } from '~/data/crm'
@@ -56,6 +56,7 @@ function addNote() {
 }
 
 const d = computed(() => props.deal)
+const totals = computed(() => (d.value ? dealTotals(d.value) : null))
 const money = (n: number) => formatMoney(n, d.value?.currency ?? 'IDR')
 const customer = computed(() => (d.value ? crmCustomers.find((c) => c.id === d.value!.customerId) : undefined))
 const productCount = computed(() => d.value?.products?.length ?? 0)
@@ -85,35 +86,30 @@ function stampTime(id: string): string {
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="cdp">
-      <div v-if="open && d" class="cdp-overlay">
-        <div class="cdp-panel" role="dialog" aria-label="Deal preview">
-          <header class="cdp-header">
-            <div class="cdp-header-main">
-              <span class="cdp-number">{{ dealNo(d.id) }}</span>
-              <h2 class="cdp-title">{{ d.name }}</h2>
-            </div>
-            <MpButton class="cdp-close" aria-label="Close" @click="emit('close')"><MpIcon name="close" size="md" /></MpButton>
-          </header>
+  <ErpDrawer :is-open="open && !!d" title="Deal preview" width="560px" @close="emit('close')">
+    <template #title>
+      <div class="cdp-header-main">
+        <span class="cdp-number">{{ d ? dealNo(d.id) : '' }}</span>
+        <h2 class="cdp-title">{{ d?.name }}</h2>
+      </div>
+    </template>
 
-          <div class="cdp-body">
+    <template #body>
             <!-- Overview -->
             <section class="cdp-section">
               <h3 class="cdp-section-title">Overview</h3>
               <div class="cdp-grid">
-                <ContentList label="Expected deal value" :value="money(dealExpectedValue(d))" />
+                <ContentList label="Value" :value="money(dealExpectedValue(d))" />
                 <ContentList label="Owner">
                   <span class="cdp-owner">
                     <span class="cdp-avatar" :style="ownerAvatarStyle(d.owner)">{{ ownerInitials(d.owner) }}</span>
                     {{ d.owner }}
                   </span>
                 </ContentList>
-                <ContentList label="Customer" :value="d.company" />
+                <ContentList label="Company" :value="d.company" />
                 <ContentList label="Stage"><ErpStatusBadge v-bind="stageBadge(d.stage)" /></ContentList>
-                <ContentList label="Created" :value="`${formatDate(d.createdAt)}, ${stampTime(d.id)}`" />
-                <ContentList label="Close date" :value="d.expectedCloseDate ? formatDate(d.expectedCloseDate) : '—'" />
-                <ContentList label="Reference number" :value="d.referenceNumber || '—'" />
+                <ContentList label="Priority" :value="d.priority ? d.priority.charAt(0).toUpperCase() + d.priority.slice(1) : '—'" />
+                <ContentList label="Expected close date" :value="d.expectedCloseDate ? formatDate(d.expectedCloseDate) : '—'" />
                 <ContentList v-if="d.stage === 'Lost'" label="Lost reason" :value="d.lostReason || '—'" />
               </div>
             </section>
@@ -157,7 +153,15 @@ function stampTime(id: string): string {
                   <span class="cdp-num">{{ money(lineSubtotal(li)) }}</span>
                 </div>
               </div>
-              <p v-else class="cdp-empty">No products on this deal.</p>
+              <div v-if="totals && productCount" class="cdp-totals" data-devchange="deal-preview-totals">
+                <div class="cdp-totals-row"><span>Subtotal</span><span class="cdp-num">{{ money(totals.subtotal) }}</span></div>
+                <div v-if="totals.discountPerLine" class="cdp-totals-row cdp-totals-dim"><span>Discount per line</span><span class="cdp-num">−{{ money(totals.discountPerLine) }}</span></div>
+                <div v-if="totals.globalDiscount" class="cdp-totals-row cdp-totals-dim"><span>Global discount</span><span class="cdp-num">−{{ money(totals.globalDiscount) }}</span></div>
+                <div v-if="totals.taxAmount" class="cdp-totals-row"><span>{{ totals.taxLabel }}</span><span class="cdp-num">{{ money(totals.taxAmount) }}</span></div>
+                <div v-if="totals.shippingFee" class="cdp-totals-row"><span>{{ t('Shipping fee') }}</span><span class="cdp-num">{{ money(totals.shippingFee) }}</span></div>
+                <div class="cdp-totals-row cdp-totals-total"><span>{{ t('Total') }}</span><span class="cdp-num">{{ money(totals.total) }}</span></div>
+              </div>
+              <p v-else-if="!productCount" class="cdp-empty">No products on this deal.</p>
             </section>
 
             <!-- Notes / comments -->
@@ -165,7 +169,7 @@ function stampTime(id: string): string {
               <h3 class="cdp-section-title">Notes <span v-if="comments.length" class="cdp-count">{{ comments.length }}</span></h3>
               <div class="cdp-note-add">
                 <textarea v-model="noteText" class="cdp-note-input" rows="2" aria-label="Add a note" @keydown.meta.enter="addNote" @keydown.ctrl.enter="addNote" />
-                <button class="btn-enterprise btn-enterprise--secondary cdp-note-btn" type="button" @click="addNote">Add note</button>
+                <MpButton class="btn-enterprise btn-enterprise--secondary cdp-note-btn" variant="secondary" type="button" @click="addNote">Add note</MpButton>
               </div>
               <ul v-if="comments.length" class="cdp-notes">
                 <li v-for="c in comments" :key="c.id" class="cdp-note">
@@ -181,61 +185,43 @@ function stampTime(id: string): string {
               </ul>
               <p v-else class="cdp-empty">No notes yet.</p>
             </section>
-          </div>
+    </template>
 
-          <footer class="cdp-footer">
-            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="emit('view-details', d.id)">View details</button>
-            <MpPopover
-              id="cdp-actions"
-              is-manual
-              :is-open="actionsOpen"
-              use-portal
-              :is-keep-alive="false"
-              placement="top-end"
-              @close="actionsOpen = false"
-            >
-              <MpPopoverTrigger>
-                <MpButton variant="secondary" left-icon="menu-kebab" aria-label="More actions" is-rounded @click="toggleActions" />
-              </MpPopoverTrigger>
-              <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
-                <MpPopoverList v-if="moveView === 'menu'">
-                  <MpPopoverListItem @click="moveView = 'stages'">Move to…</MpPopoverListItem>
-                  <MpPopoverListItem @click="act('edit')">Edit</MpPopoverListItem>
-                  <MpPopoverListItem @click="act('archive')">Archive</MpPopoverListItem>
-                  <MpPopoverListItem :class="css({ color: 'var(--mp-text-danger)' })" @click="act('delete')">Delete</MpPopoverListItem>
-                </MpPopoverList>
-                <MpPopoverList v-else>
-                  <MpPopoverListItem :class="css({ color: 'var(--mp-text-secondary)' })" @click="moveView = 'menu'">← Back</MpPopoverListItem>
-                  <MpPopoverListItem v-for="s in moveStages" :key="s" @click="pickStage(s)">{{ t(dealStageLabel(s)) }}</MpPopoverListItem>
-                </MpPopoverList>
-              </MpPopoverContent>
-            </MpPopover>
-          </footer>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+    <template #footer>
+      <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="d && emit('view-details', d.id)">View details</MpButton>
+      <MpPopover
+        id="cdp-actions"
+        is-manual
+        :is-open="actionsOpen"
+        use-portal
+        :is-keep-alive="false"
+        placement="top-end"
+        @close="actionsOpen = false"
+      >
+        <MpPopoverTrigger>
+          <MpButton variant="secondary" left-icon="menu-kebab" aria-label="More actions" is-rounded @click="toggleActions" />
+        </MpPopoverTrigger>
+        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
+          <MpPopoverList v-if="moveView === 'menu'">
+            <MpPopoverListItem @click="moveView = 'stages'">Move to…</MpPopoverListItem>
+            <MpPopoverListItem @click="act('edit')">Edit</MpPopoverListItem>
+            <MpPopoverListItem @click="act('archive')">Archive</MpPopoverListItem>
+            <MpPopoverListItem :class="css({ color: 'var(--mp-text-danger)' })" @click="act('delete')">Delete</MpPopoverListItem>
+          </MpPopoverList>
+          <MpPopoverList v-else>
+            <MpPopoverListItem :class="css({ color: 'var(--mp-text-secondary)' })" @click="moveView = 'menu'">← Back</MpPopoverListItem>
+            <MpPopoverListItem v-for="s in moveStages" :key="s" @click="pickStage(s)">{{ t(dealStageLabel(s)) }}</MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>
-.cdp-enter-active, .cdp-leave-active { transition: background-color 250ms ease; }
-.cdp-enter-from, .cdp-leave-to { background-color: transparent; }
-.cdp-enter-active .cdp-panel { transition: transform 350ms ease-out; }
-.cdp-leave-active .cdp-panel { transition: transform 250ms ease-in; }
-.cdp-enter-from .cdp-panel, .cdp-leave-to .cdp-panel { transform: translateX(calc(100% + 12px)); }
-
-.cdp-overlay { position: fixed; inset: 0; z-index: 1300; background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45)); display: flex; justify-content: flex-end; }
-.cdp-panel { margin: var(--mp-spacing-3); width: min(560px, calc(100% - 24px)); height: calc(100% - 24px); display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); border-radius: 12px; overflow: hidden; }
-
-.cdp-header { flex-shrink: 0; display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4) var(--mp-spacing-4) var(--mp-spacing-4) var(--mp-spacing-5); background: var(--mp-background-neutral-subtle, #f8f9f9); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .cdp-header-main { display: flex; flex-direction: column; gap: 0; min-width: 0; }
 .cdp-number { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); font-variant-numeric: tabular-nums; line-height: var(--mp-line-heights-md, 20px); }
 .cdp-title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-lg, 24px); }
-.cdp-close { display: inline-flex !important; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important; min-width: 0 !important; border: none !important; background: none !important; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
-.cdp-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
-
-.cdp-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: var(--mp-spacing-5); padding: var(--mp-spacing-5); }
-
 .cdp-section { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .cdp-section-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .cdp-count { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle, #f8f9f9); border-radius: var(--mp-radii-full, 999px); padding: 0 var(--mp-spacing-2); }
@@ -263,6 +249,11 @@ function stampTime(id: string): string {
 .cdp-psku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); font-variant-numeric: tabular-nums; }
 .cdp-empty { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-subtle); }
 
+.cdp-totals { display: flex; flex-direction: column; gap: var(--mp-spacing-1); margin-top: var(--mp-spacing-2); padding-top: var(--mp-spacing-2); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+.cdp-totals-row { display: flex; justify-content: space-between; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.cdp-totals-dim { color: var(--mp-text-subtle); }
+.cdp-totals-total { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); padding-top: var(--mp-spacing-1); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+
 /* Notes / comments */
 .cdp-note-add { display: flex; flex-direction: column; align-items: flex-end; gap: var(--mp-spacing-2); }
 .cdp-note-input { width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16)); border-radius: var(--mp-radii-md, 6px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; resize: vertical; min-height: 60px; line-height: var(--mp-line-heights-md); font-family: inherit; }
@@ -277,5 +268,4 @@ function stampTime(id: string): string {
 .cdp-note-time { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .cdp-note-text { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); white-space: pre-wrap; word-break: break-word; }
 
-.cdp-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-5); border-top: 1px solid var(--mp-border-default, #e3e7e9); background: var(--mp-background-neutral-subtle, #f8f9f9); }
 </style>

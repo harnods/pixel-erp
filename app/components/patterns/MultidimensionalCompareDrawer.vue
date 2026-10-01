@@ -14,7 +14,7 @@
  * Same overlay shell as the other report drawers (MpDrawer has no structural CSS
  * in this Pixel3 build). Edits a local draft, commits only on Apply.
  */
-import { MpIcon, MpRadio, MpFormControl, MpFormLabel, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpSelect, css } from '@mekari/pixel3'
+import { MpIcon, MpButton, MpRadio, MpFormControl, MpFormLabel, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpSelect, css } from '@mekari/pixel3'
 import { COMPARE_PERIOD_OPTIONS, type MdCompareSettings, type MdComparePeriod, type MdCompareGroupBy } from '~/data/multidimensionalReport'
 
 const props = defineProps<{
@@ -56,9 +56,9 @@ function apply() {
       <div class="cmp-panel" role="dialog" :aria-label="t('Comparison')">
         <header class="cmp-head">
           <span class="cmp-title">{{ t('Comparison') }}</span>
-          <button class="cmp-close" type="button" :aria-label="t('Close')" @click="close">
+          <MpButton class="cmp-close" variant="ghost" type="button" :aria-label="t('Close')" @click="close">
             <MpIcon name="close" size="md" />
-          </button>
+          </MpButton>
         </header>
 
         <div class="cmp-body">
@@ -134,8 +134,8 @@ function apply() {
         </div>
 
         <footer class="cmp-foot">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="apply">{{ t('Apply') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="close">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="apply">{{ t('Apply') }}</MpButton>
         </footer>
       </div>
     </div>

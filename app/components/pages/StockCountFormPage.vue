@@ -648,7 +648,7 @@ onMounted(() => {
   <div class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">{{ fromStockCounts ? t('All stock counts') : isWms ? t('Cycle counts') : t('All stock adjustments') }}</button>
+        <MpButton class="detail-breadcrumb" variant="textLink" @click="goBack">{{ fromStockCounts ? t('All stock counts') : isWms ? t('Cycle counts') : t('All stock adjustments') }}</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('New stock count') }}</h1>
         </div>
@@ -671,7 +671,7 @@ onMounted(() => {
           <MpFormControl id="scf-transno" class="scf-f-transno">
             <div class="scf-label-row">
               <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
-              <button type="button" class="scf-label-icon" :aria-label="t('Transaction no. settings')" @click="noSettingsOpen = true"><MpIcon name="settings" size="sm" /></button>
+              <MpButton type="button" class="scf-label-icon" variant="ghost" :aria-label="t('Transaction no. settings')" left-icon="settings" @click="noSettingsOpen = true" />
             </div>
             <MpInput id="scf-transno-input" model-value="" :placeholder="t('[Auto]')" is-full-width is-disabled />
           </MpFormControl>
@@ -704,10 +704,10 @@ onMounted(() => {
         <div class="scf-table-toolbar">
           <MpPopover v-if="!isWms" id="scf-progress" is-close-on-select>
             <MpPopoverTrigger>
-              <button class="scf-progress-btn" :class="{ 'scf-progress-btn--placeholder': progress === '' }" type="button">
+              <MpButton class="scf-progress-btn" variant="secondary" :class="{ 'scf-progress-btn--placeholder': progress === '' }" type="button">
                 {{ progressLabel }}
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
               <MpPopoverList>
@@ -720,13 +720,13 @@ onMounted(() => {
             <div class="scf-search">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               <input v-model="search" class="scf-search-input" type="text" :placeholder="t('Search...')" />
-              <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
+              <MpButton v-if="search" class="search-clear-btn" variant="ghost" type="button" :aria-label="t('Clear search')" @click="search = ''">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                 </svg>
-              </button>
+              </MpButton>
             </div>
-            <button class="scf-import-btn" type="button" @click="importProducts">{{ t('Import') }}</button>
+            <MpButton class="scf-import-btn" variant="secondary" type="button" @click="importProducts">{{ t('Import') }}</MpButton>
           </div>
         </div>
 
@@ -736,10 +736,9 @@ onMounted(() => {
             {{ t('This warehouse uses storage locations. Select a location before making adjustments.') }}
           </div>
           <div class="scf-loc-actions">
-            <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="locationDrawerOpen = true">
-              <MpIcon name="add" size="sm" />
+            <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" variant="secondary" type="button" left-icon="add" @click="locationDrawerOpen = true">
               {{ t('Select location') }}
-            </button>
+            </MpButton>
           </div>
 
           <MpAccordion is-allow-multiple is-allow-toggle class="scf-loc-accordions">
@@ -753,9 +752,7 @@ onMounted(() => {
               <MpAccordionHeader>
                 <MpAccordionIcon />
                 <span class="scf-acc-label">{{ loc.fullPath }}</span>
-                <button class="scf-acc-remove" type="button" :aria-label="t('Remove location')" @click.stop="removeLoc(loc.locId)">
-                  <MpIcon name="minus-circular" size="sm" />
-                </button>
+                <MpButton class="scf-acc-remove" variant="ghost" type="button" :aria-label="t('Remove location')" left-icon="minus-circular" @click.stop="removeLoc(loc.locId)" />
               </MpAccordionHeader>
               <MpAccordionPanel>
               <div class="scf-acc-body">
@@ -796,7 +793,7 @@ onMounted(() => {
                         <td class="scf-td scf-td--prod">
                           <MpPopover :id="`scf-loc-swap-${loc.locId}-${row.sku}`" is-close-on-select use-portal placement="bottom-start" @update:is-open="(v: boolean) => { if (v) swapSearch = '' }">
                             <MpPopoverTrigger as-child>
-                              <button type="button" class="scf-prod scf-prod--swap">
+                              <MpButton type="button" class="scf-prod scf-prod--swap" variant="ghost">
                                 <img v-if="imgFor(row.sku)" class="scf-thumb" :src="imgFor(row.sku)" :alt="nameFor(row.sku)" loading="lazy" />
                                 <span v-else class="scf-thumb scf-thumb--empty" />
                                 <span class="scf-prod-info">
@@ -804,7 +801,7 @@ onMounted(() => {
                                   <span v-if="descFor(row.sku)" class="scf-prod-desc">{{ descFor(row.sku) }}</span>
                                 </span>
                                 <MpIcon name="chevrons-down" size="sm" class="scf-prod-chevron" />
-                              </button>
+                              </MpButton>
                             </MpPopoverTrigger>
                             <MpPopoverContent :class="css({ width: '280px', maxHeight: '320px', overflowY: 'auto', padding: '0' })">
                               <div class="scf-swap-search">
@@ -826,7 +823,7 @@ onMounted(() => {
                         <td v-if="isBatchTrackedSku(row.sku)" class="scf-td scf-td--counted-batch scf-td--active">
                           <div class="scf-qty-stack">
                             <span v-if="locBatchHasCounts(row)" class="scf-batch-total">{{ locBatchTotalFor(row).toLocaleString('id-ID') }}</span>
-                            <button class="scf-manage-btn" type="button" @click="openLocBatchDrawer(row)">{{ t('Manage batch') }}</button>
+                            <MpButton class="scf-manage-btn" variant="textLink" type="button" @click="openLocBatchDrawer(row)">{{ t('Manage batch') }}</MpButton>
                           </div>
                         </td>
                         <td v-else-if="isSerialTrackedSku(row.sku)" class="scf-td scf-td--counted-batch scf-td--active">
@@ -840,7 +837,7 @@ onMounted(() => {
                               placeholder="0"
                               @input="onLocCountedInput(row, $event)"
                             />
-                            <button class="scf-manage-btn" type="button" @click="openLocSerialDrawer(row)">{{ t('Manage serial number') }}</button>
+                            <MpButton class="scf-manage-btn" variant="textLink" type="button" @click="openLocSerialDrawer(row)">{{ t('Manage serial number') }}</MpButton>
                           </div>
                         </td>
                         <!-- regular SKU -->
@@ -863,7 +860,7 @@ onMounted(() => {
                             />
                             <MpPopover :id="`scf-loc-avg-${loc.locId}-${row.sku}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                               <MpPopoverTrigger>
-                                <button class="scf-avg-edit" type="button" :aria-label="t('Edit average cost')"><MpIcon name="edit" size="sm" /></button>
+                                <MpButton class="scf-avg-edit" variant="ghost" type="button" :aria-label="t('Edit average cost')" left-icon="edit" />
                               </MpPopoverTrigger>
                               <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
                                 <MpPopoverList>
@@ -881,16 +878,16 @@ onMounted(() => {
                           />
                         </td>
                         <td class="scf-td scf-td--del">
-                          <button class="scf-del-btn" type="button" @click="removeLocRow(loc, row.sku)"><MpIcon name="minus-circular" size="sm" /></button>
+                          <MpButton class="scf-del-btn" variant="ghost" type="button" @click="removeLocRow(loc, row.sku)" left-icon="minus-circular" />
                         </td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
                 <p class="scf-showing">{{ t('Showing') }} {{ locDisplayRows(loc).length }} {{ t('of') }} {{ loc.rows.length }} {{ t('products') }}</p>
-                <button class="scf-add-btn" type="button" @click="loc.productDrawerOpen = true">
-                  <MpIcon name="add" size="sm" /> {{ t('Select product') }}
-                </button>
+                <MpButton class="scf-add-btn" variant="ghost" type="button" left-icon="add" @click="loc.productDrawerOpen = true">
+                  {{ t('Select product') }}
+                </MpButton>
 
                 <!-- Product drawer per location -->
                 <SelectProductDrawer
@@ -938,7 +935,7 @@ onMounted(() => {
                   <td class="scf-td scf-td--prod">
                     <MpPopover :id="`scf-swap-${row.sku}`" is-close-on-select use-portal placement="bottom-start" @update:is-open="(v: boolean) => { if (v) swapSearch = '' }">
                       <MpPopoverTrigger as-child>
-                        <button type="button" class="scf-prod scf-prod--swap">
+                        <MpButton type="button" class="scf-prod scf-prod--swap" variant="ghost">
                           <img v-if="imgFor(row.sku)" class="scf-thumb" :src="imgFor(row.sku)" :alt="nameFor(row.sku)" loading="lazy" />
                           <span v-else class="scf-thumb scf-thumb--empty" />
                           <span class="scf-prod-info">
@@ -946,7 +943,7 @@ onMounted(() => {
                             <span v-if="descFor(row.sku)" class="scf-prod-desc">{{ descFor(row.sku) }}</span>
                           </span>
                           <MpIcon name="chevrons-down" size="sm" class="scf-prod-chevron" />
-                        </button>
+                        </MpButton>
                       </MpPopoverTrigger>
                       <MpPopoverContent :class="css({ width: '280px', maxHeight: '320px', overflowY: 'auto', padding: '0' })">
                         <div class="scf-swap-search">
@@ -968,7 +965,7 @@ onMounted(() => {
                   <td v-if="isBatchTrackedSku(row.sku)" class="scf-td scf-td--counted-batch scf-td--active">
                     <div class="scf-qty-stack">
                       <span v-if="batchHasCounts(row)" class="scf-batch-total">{{ batchTotalFor(row).toLocaleString('id-ID') }}</span>
-                      <button class="scf-manage-btn" type="button" @click="openBatchDrawer(row)">{{ t('Manage batch') }}</button>
+                      <MpButton class="scf-manage-btn" variant="textLink" type="button" @click="openBatchDrawer(row)">{{ t('Manage batch') }}</MpButton>
                     </div>
                   </td>
                   <td v-else-if="isSerialTrackedSku(row.sku)" class="scf-td scf-td--counted-batch scf-td--active">
@@ -982,7 +979,7 @@ onMounted(() => {
                         placeholder="0"
                         @input="onCountedInput(row, $event)"
                       />
-                      <button class="scf-manage-btn" type="button" @click="openSerialDrawer(row)">{{ t('Manage serial number') }}</button>
+                      <MpButton class="scf-manage-btn" variant="textLink" type="button" @click="openSerialDrawer(row)">{{ t('Manage serial number') }}</MpButton>
                     </div>
                   </td>
                   <!-- regular SKU (existing behavior unchanged) -->
@@ -1005,7 +1002,7 @@ onMounted(() => {
                       />
                       <MpPopover :id="`scf-avg-${row.sku}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                         <MpPopoverTrigger>
-                          <button class="scf-avg-edit" type="button" :aria-label="t('Edit average cost')"><MpIcon name="edit" size="sm" /></button>
+                          <MpButton class="scf-avg-edit" variant="ghost" type="button" :aria-label="t('Edit average cost')" left-icon="edit" />
                         </MpPopoverTrigger>
                         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
                           <MpPopoverList>
@@ -1023,16 +1020,16 @@ onMounted(() => {
                     />
                   </td>
                   <td class="scf-td scf-td--del">
-                    <button class="scf-del-btn" type="button" :aria-label="t('Remove product')" @click="removeRow(row.sku)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <MpButton class="scf-del-btn" variant="ghost" type="button" :aria-label="t('Remove product')" @click="removeRow(row.sku)" left-icon="minus-circular" />
                   </td>
                 </tr>
               </tbody>
             </table>
           </div>
           <p class="scf-showing">{{ t('Showing') }} {{ displayRows.length }} {{ t('of') }} {{ rows.length }} {{ t('products') }}</p>
-          <button class="scf-add-btn" type="button" @click="drawerOpen = true">
-            <MpIcon name="add" size="sm" /> Select product
-          </button>
+          <MpButton class="scf-add-btn" variant="ghost" type="button" left-icon="add" @click="drawerOpen = true">
+            Select product
+          </MpButton>
           <p v-if="formError" class="scf-form-error">{{ formError }}</p>
         </div>
 
@@ -1058,7 +1055,7 @@ onMounted(() => {
             <ul v-if="attachedFiles.length" class="scf-file-list">
               <li v-for="f in attachedFiles" :key="f.name" class="scf-file-item">
                 <span class="scf-file-name">{{ f.name }}</span>
-                <button class="scf-file-remove" type="button" @click="removeFile(f.name)"><MpIcon name="close" size="xs" /></button>
+                <MpButton class="scf-file-remove" variant="ghost" type="button" @click="removeFile(f.name)" left-icon="close" />
               </li>
             </ul>
           </div>
@@ -1068,8 +1065,8 @@ onMounted(() => {
     </div>
 
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</button>
-      <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="handleSave">{{ isSaving ? t('Saving…') : t('Save') }}</button>
+      <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" @click="goBack">{{ t('Cancel') }}</MpButton>
+      <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" :is-disabled="isSaving" @click="handleSave">{{ isSaving ? t('Saving…') : t('Save') }}</MpButton>
     </footer>
 
     <SelectProductDrawer v-model:open="drawerOpen" :products="pickerProducts" :model-value="selectedSkus" @save="applyPicker" />
@@ -1080,15 +1077,15 @@ onMounted(() => {
         <div class="loc-spd-panel" role="dialog" :aria-label="t('Select locations')">
           <div class="loc-spd-header">
             <span class="loc-spd-title">{{ t('Select locations') }}</span>
-            <button class="loc-spd-close" type="button" @click="locationDrawerOpen = false"><MpIcon name="close" size="sm" /></button>
+            <MpButton class="loc-spd-close" variant="ghost" type="button" @click="locationDrawerOpen = false" left-icon="close" />
           </div>
           <div class="loc-spd-search-wrap">
             <input v-model="locDrawerSearch" class="loc-spd-search-input" type="text" :placeholder="t('Search...')" />
-            <button v-if="locDrawerSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="locDrawerSearch = ''">
+            <MpButton v-if="locDrawerSearch" class="search-clear-btn search-clear-btn--overlay" variant="ghost" type="button" :aria-label="t('Clear search')" @click="locDrawerSearch = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
           <div class="loc-spd-list">
             <template v-for="node in locDrawerItems" :key="node.id">
@@ -1120,10 +1117,10 @@ onMounted(() => {
             <div v-if="!locDrawerItems.length" class="loc-drawer-empty">{{ t('No storage locations found') }}</div>
           </div>
           <div class="loc-spd-footer">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="locationDrawerOpen = false">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="confirmLocSelection">
+            <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="locationDrawerOpen = false">{{ t('Cancel') }}</MpButton>
+            <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="confirmLocSelection">
               {{ t('Select') }} ({{ locDrawerSel.size }})
-            </button>
+            </MpButton>
           </div>
         </div>
       </div>

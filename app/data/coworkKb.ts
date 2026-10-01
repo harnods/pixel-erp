@@ -152,7 +152,7 @@ function buildSeed(): KbNode[] {
   const handbook: KbFolder = { id: 'kb-f-handbook', type: 'folder', parentId: null, name: 'Company Handbook', description: 'Policies, SOPs and internal references', icon: 'book', color: '#7C3AED', createdAt: t0, updatedAt: t0 }
   const hrFolder: KbFolder = { id: 'kb-f-hr', type: 'folder', parentId: handbook.id, name: 'HR', icon: 'profile', color: '#B54708', createdAt: t0, updatedAt: t0 }
   const finance: KbFolder = { id: 'kb-f-finance', type: 'folder', parentId: null, name: 'Finance', description: 'Finance SOPs and references', icon: 'billing', color: '#B54708', createdAt: t0, updatedAt: t0 }
-  const sales: KbFolder = { id: 'kb-f-sales', type: 'folder', parentId: null, name: 'Sales & CRM', description: 'Playbooks and templates', icon: 'stats', color: '#165082', createdAt: t0, updatedAt: t0 }
+  const sales: KbFolder = { id: 'kb-f-sales', type: 'folder', parentId: null, name: 'Sales & CRM', description: 'Playbooks and templates', icon: 'chart-line', color: '#165082', createdAt: t0, updatedAt: t0 }
   nodes.push(handbook, hrFolder, finance, sales)
 
   nodes.push(seedDoc({

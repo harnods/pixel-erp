@@ -67,7 +67,7 @@ describe('ReplenishmentPage — the worklist renders', () => {
     const wrapper = await mountLoaded(ReplenishmentPage)
     const firstRow = wrapper.findAll('.erp-tr')[0]!
     // rule/table-product-cell — the shared ProductCell renders the name.
-    const name = firstRow.find('.pc-name')
+    const name = firstRow.find('a.cell-link')
     expect(name.exists()).toBe(true)
     expect(name.text().length).toBeGreaterThan(3)
   })
