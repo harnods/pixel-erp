@@ -10,12 +10,14 @@
  *
  * Canonical Teleport drawer shell; closes only via × or Cancel
  * (rule/modal-drawer-close-explicit-only). Nothing is written until Save — "Use
- * calculated" only clears the field, so Cancel still discards it.
+ * calculated" only clears the field, so Cancel still discards it. Closing with
+ * edits asks first, so a stray × never loses them (reachable-states.md).
  */
 import {
-  MpIcon, MpButton, MpInput, MpInputGroup, MpInputRightAddon, MpFormControl, MpFormLabel,
-  MpFormErrorMessage, MpToggle,
+  MpIcon, MpTooltip, MpButton, MpButtonGroup, MpTextlink, MpInput, MpInputGroup, MpInputRightAddon,
+  MpFormControl, MpFormLabel, MpFormErrorMessage, MpToggle,
 } from '@mekari/pixel3'
+import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import type { WorklistRow } from '~/data/replenishment'
 import { getSkuWarehouseOverride, saveSkuWarehouseOverride } from '~/data/replenishmentSettings'
@@ -26,7 +28,7 @@ const emit = defineEmits<{
   (e: 'saved'): void
 }>()
 
-const { t } = useLocale()
+const { t, tf } = useLocale()
 
 type Field = 'reorderPoint' | 'safetyDays' | 'manualLeadTime'
 
@@ -36,25 +38,38 @@ const manualLeadTime = ref('')
 const tracked = ref(true)
 const errors = reactive<Partial<Record<Field, string>>>({})
 const muteConfirmOpen = ref(false)
+const discardConfirmOpen = ref(false)
+/** Inline, never a toast (rule/form-errors-inline); every edit stays in the form. */
+const saveError = ref('')
+/** The form as it was loaded — what "unsaved" is measured against. */
+const initial = ref('')
+const snapshot = () => JSON.stringify([reorderPoint.value, safetyDays.value, manualLeadTime.value, tracked.value])
+const isDirty = computed(() => initial.value !== '' && snapshot() !== initial.value)
 /** Set once the user confirms turning tracking off, so Save then goes through. */
 let muteConfirmed = false
+let hadSafetyOverride = false
 
 const num = (v: number, digits = 0) =>
   v.toLocaleString('id-ID', { minimumFractionDigits: digits, maximumFractionDigits: digits })
 
-/** Load the raw OVERRIDES, not the resolved values — an empty box must mean
- *  "inherit", so pre-filling it with the inherited number would silently turn a
- *  fallback into a hard-coded override on the next save. */
+/** The form opens FILLED: the reorder point shows the calculated figure and safety
+ *  days the value in force, so nothing is blank. Saving a value that still equals
+ *  its default stores no override (see `commit`), so it keeps inheriting. */
 watch(() => props.isOpen, (open) => {
   const row = props.row
   if (!open || !row) return
   const override = getSkuWarehouseOverride(row.sku, row.warehouseId)
-  reorderPoint.value = override.reorderPoint !== undefined ? String(override.reorderPoint) : ''
-  safetyDays.value = override.safetyDays !== undefined ? String(override.safetyDays) : ''
+  const calc = row.calculatedReorderPoint
+  reorderPoint.value = override.reorderPoint !== undefined ? String(override.reorderPoint) : calc !== null ? String(calc) : ''
+  safetyDays.value = String(row.safetyDays)
+  hadSafetyOverride = override.safetyDays !== undefined
   manualLeadTime.value = override.manualLeadTimeDays !== undefined ? String(override.manualLeadTimeDays) : ''
   tracked.value = row.fsn.tracked
   muteConfirmed = false
+  saveError.value = ''
+  discardConfirmOpen.value = false
   for (const k of Object.keys(errors)) delete errors[k as Field]
+  initial.value = snapshot()
 })
 
 /**
@@ -69,16 +84,33 @@ const overrideTooLow = computed(() => {
   return !Number.isNaN(v) && v < calc * 0.8
 })
 
-function close() { emit('update:isOpen', false) }
+function leave() { discardConfirmOpen.value = false; emit('update:isOpen', false) }
 
-/** Clears the override in the form only; Save commits it, Cancel discards it. */
-function useCalculated() { reorderPoint.value = '' }
+/** × and Cancel both land here: with edits, ask before discarding them. */
+function close() {
+  if (isDirty.value) { discardConfirmOpen.value = true; return }
+  leave()
+}
 
-function parse(field: Field, raw: string): number | null | undefined {
-  if (raw === '') return null
-  const v = Number(raw)
-  if (!Number.isInteger(v) || v < 0) {
-    errors[field] = t('Enter a whole number of 0 or more.')
+/** Back to the calculated figure in the form only; Save commits it, Cancel discards it. */
+const differsFromCalculated = computed(() => {
+  const calc = props.row?.calculatedReorderPoint ?? null
+  return calc !== null && reorderPoint.value !== String(calc)
+})
+function useCalculated() {
+  const calc = props.row?.calculatedReorderPoint
+  if (calc !== null && calc !== undefined) reorderPoint.value = String(calc)
+}
+
+/**
+ * A lead time or safety-days value of 0 is not usable, so those start at 1; the
+ * reorder point may be 0. `required` fields cannot be left empty.
+ */
+function parse(field: Field, raw: string, min = 0, required = false): number | null | undefined {
+  if (raw === '' && !required) return null
+  const v = raw === '' ? Number.NaN : Number(raw)
+  if (!Number.isInteger(v) || v < min) {
+    errors[field] = min === 1 ? t('Enter a whole number of 1 or more.') : t('Enter a whole number of 0 or more.')
     return undefined
   }
   return v
@@ -90,10 +122,13 @@ function save() {
 
   // Validate on click and show the error at the field — never a disabled button
   // (rule/btn-no-disabled-validation, rule/form-errors-inline).
+  saveError.value = ''
   for (const k of Object.keys(errors)) delete errors[k as Field]
-  const rop = parse('reorderPoint', reorderPoint.value)
-  const safety = parse('safetyDays', safetyDays.value)
-  const lead = parse('manualLeadTime', manualLeadTime.value)
+  // With a calculated figure the field is pre-filled and cannot be emptied; with no
+  // demand yet there is nothing to pre-fill, so it may stay blank.
+  const rop = parse('reorderPoint', reorderPoint.value, 0, row.calculatedReorderPoint !== null)
+  const safety = parse('safetyDays', safetyDays.value, 1, true)
+  const lead = parse('manualLeadTime', manualLeadTime.value, 1)
   if (Object.keys(errors).length) return
 
   // Turning tracking off hides the row from the worklist — confirm it, as the
@@ -102,7 +137,10 @@ function save() {
     muteConfirmOpen.value = true
     return
   }
-  commit({ rop: rop ?? null, safety: safety ?? null, lead: lead ?? null })
+  // A value still equal to its default is not an override: store nothing so it keeps inheriting.
+  const ropOverride = rop !== null && rop !== undefined && rop !== row.calculatedReorderPoint ? rop : null
+  const safetyOverride = safety !== null && safety !== undefined && (hadSafetyOverride || safety !== row.safetyDays) ? safety : null
+  commit({ rop: ropOverride, safety: safetyOverride, lead: lead ?? null })
 }
 
 function commit(v: { rop: number | null; safety: number | null; lead: number | null }) {
@@ -112,14 +150,19 @@ function commit(v: { rop: number | null; safety: number | null; lead: number | n
   // spreads the patch over the existing record and then drops empty values. So an
   // emptied field goes back to inheriting, and tracking-on drops the override
   // instead of pinning the default.
-  saveSkuWarehouseOverride(row.sku, row.warehouseId, {
-    reorderPoint: v.rop ?? undefined,
-    safetyDays: v.safety ?? undefined,
-    manualLeadTimeDays: v.lead ?? undefined,
-    tracked: tracked.value ? undefined : false,
-  })
+  try {
+    saveSkuWarehouseOverride(row.sku, row.warehouseId, {
+      reorderPoint: v.rop ?? undefined,
+      safetyDays: v.safety ?? undefined,
+      manualLeadTimeDays: v.lead ?? undefined,
+      tracked: tracked.value ? undefined : false,
+    })
+  } catch {
+    saveError.value = t('The settings could not be saved. Try again.')
+    return
+  }
   emit('saved')
-  close()
+  leave()
 }
 
 function confirmMute() {
@@ -133,76 +176,79 @@ function confirmMute() {
   <Teleport to="body">
   <Transition name="rp-set">
     <div v-if="isOpen && row" class="rp-set-overlay">
-      <div class="rp-set-panel" role="dialog" :aria-label="t('Replenishment settings')">
+      <div class="rp-set-panel" role="dialog" :aria-label="t('Product replenishment settings')">
         <header class="rp-set-header">
-          <span class="rp-set-title">{{ t('Replenishment settings') }}</span>
+          <span class="rp-set-title">{{ t('Product replenishment settings') }}</span>
           <MpButton class="rp-set-close" is-rounded :aria-label="t('Close')" @click="close">
             <MpIcon name="close" size="md" />
           </MpButton>
         </header>
 
         <div class="rp-set-body">
+          <!-- Identity: key/value pairs are ContentList (docs/patterns/ContentList.md). -->
           <div class="rp-set-identity">
-            <p class="rp-set-product">{{ row.productName }}</p>
-            <p class="rp-set-sub">{{ row.sku }} · {{ row.warehouseName }}</p>
+            <ContentList :label="t('Product')" :value="row.productName" />
+            <ContentList :label="t('SKU')" :value="row.sku" />
+            <ContentList :label="t('Warehouse')" :value="row.warehouseName" />
+            <!-- Coverage is a category policy: shown read-only, with where to change it on hover
+                 (PRD US-005 AC-06 — no SKU or SKU-warehouse entry point). -->
+            <ContentList :value="tf('{n} days', { n: row.coverageDays })">
+              <template #label>
+                <span class="rp-set-label">
+                  {{ t('Order coverage') }}
+                  <MpTooltip :label="t('Set per product category in Replenishment settings.')" placement="top">
+                    <MpIcon name="info" size="sm" class="rp-set-info" :aria-label="t('Order coverage')" />
+                  </MpTooltip>
+                </span>
+              </template>
+            </ContentList>
           </div>
 
-          <div class="rp-set-toggle-row">
+          <MpFormControl id="rp-set-tracked-fc" class="rp-set-toggle-row">
             <div class="rp-set-toggle-text">
-              <span class="rp-set-toggle-label">{{ t('Track for replenishment') }}</span>
+              <MpFormLabel>{{ t('Track for replenishment') }}</MpFormLabel>
               <span class="rp-set-hint">
-                {{ t('When off, this product never appears in the worklist for this warehouse — but a genuine stockout still raises an alert.') }}
+                {{ t('When off, this product never appears in the worklist for this warehouse, but a genuine stockout still raises an alert.') }}
               </span>
             </div>
             <MpToggle id="rp-set-tracked" v-model:is-checked="tracked" :aria-label="t('Track for replenishment')" />
-          </div>
-
-          <MpFormControl id="rp-set-rop-fc" :is-invalid="!!errors.reorderPoint">
-            <MpFormLabel>{{ t('Reorder point') }}</MpFormLabel>
-            <MpInputGroup id="rp-set-rop-g">
-              <MpInput id="rp-set-rop" v-model="reorderPoint" type="number" />
-              <MpInputRightAddon>{{ row.unit }}</MpInputRightAddon>
-            </MpInputGroup>
-            <MpFormErrorMessage v-if="errors.reorderPoint">{{ errors.reorderPoint }}</MpFormErrorMessage>
-            <!-- Always the ENGINE's figure, even while an override is the trigger (D17). -->
-            <span class="rp-set-hint">
-              <template v-if="row.calculatedReorderPoint === null">
-                {{ t('No demand yet, so nothing is calculated.') }}
-              </template>
-              <template v-else>
-                {{ t('Calculated') }}: {{ num(row.calculatedReorderPoint) }} {{ row.unit }}
-                <a v-if="reorderPoint !== ''" class="rp-set-link" @click="useCalculated">
-                  {{ t('Use calculated') }}
-                </a>
-              </template>
-            </span>
-            <span v-if="overrideTooLow" class="rp-set-hint rp-set-hint--warning">
-              {{ t('This is well below the calculated reorder point, so this warehouse may stock out before it is flagged.') }}
-            </span>
           </MpFormControl>
 
-          <MpFormControl id="rp-set-safety-fc" :is-invalid="!!errors.safetyDays">
-            <MpFormLabel>{{ t('Safety days') }}</MpFormLabel>
-            <MpInputGroup id="rp-set-safety-g">
-              <MpInput id="rp-set-safety" v-model="safetyDays" type="number" />
-              <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
-            </MpInputGroup>
-            <MpFormErrorMessage v-if="errors.safetyDays">{{ errors.safetyDays }}</MpFormErrorMessage>
-            <span class="rp-set-hint">
-              {{ t('Currently') }} {{ row.safetyDays }} {{ t('days') }} — {{ t('leave empty to keep inheriting it') }}
-            </span>
-          </MpFormControl>
+          <!-- Reorder point and safety days sit side by side. -->
+          <div class="rp-set-pair">
+            <MpFormControl id="rp-set-rop-fc" :is-invalid="!!errors.reorderPoint">
+              <MpFormLabel>{{ t('Reorder point') }}</MpFormLabel>
+              <MpInputGroup id="rp-set-rop-g">
+                <MpInput id="rp-set-rop" v-model="reorderPoint" type="number" />
+                <MpInputRightAddon has-background>{{ row.unit }}</MpInputRightAddon>
+              </MpInputGroup>
+              <MpFormErrorMessage v-if="errors.reorderPoint">{{ errors.reorderPoint }}</MpFormErrorMessage>
+              <!-- Always the ENGINE's figure, even while an override is the trigger (D17). -->
+              <span class="rp-set-hint">
+                <template v-if="row.calculatedReorderPoint === null">
+                  {{ t('No demand yet, so nothing is calculated.') }}
+                </template>
+                <template v-else>
+                  {{ tf('Calculated reorder point: {n} {unit}.', { n: num(row.calculatedReorderPoint), unit: row.unit }) }}
+                  <MpTextlink v-if="differsFromCalculated" id="rp-set-use-calculated" as="a" class="rp-set-link" @click.prevent="useCalculated">
+                    {{ t('Use calculated') }}
+                  </MpTextlink>
+                </template>
+              </span>
+              <span v-if="overrideTooLow" class="rp-set-hint rp-set-hint--warning">
+                {{ t('This is well below the calculated reorder point, so this warehouse may stock out before it is flagged.') }}
+              </span>
+            </MpFormControl>
 
-          <!-- No order-coverage or max-level field: coverage is a CATEGORY policy set in
-               Replenishment settings, with no SKU or SKU-warehouse entry point
-               (PRD US-005 AC-06). Shown here read-only so the number is not a mystery. -->
-          <div class="rp-set-readonly">
-            <span class="rp-set-toggle-label">{{ t('Order coverage') }}</span>
-            <span class="rp-set-hint">
-              {{ row.coverageDays }} {{ t('days') }} — {{ t('set per product category in Replenishment settings') }}
-            </span>
+            <MpFormControl id="rp-set-safety-fc" :is-invalid="!!errors.safetyDays">
+              <MpFormLabel>{{ t('Safety days') }}</MpFormLabel>
+              <MpInputGroup id="rp-set-safety-g">
+                <MpInput id="rp-set-safety" v-model="safetyDays" type="number" />
+                <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
+              </MpInputGroup>
+              <MpFormErrorMessage v-if="errors.safetyDays">{{ errors.safetyDays }}</MpFormErrorMessage>
+            </MpFormControl>
           </div>
-
 
           <!-- Only shown when the ladder found nothing to measure (US-003 AC-02). -->
           <MpFormControl
@@ -213,18 +259,23 @@ function confirmMute() {
             <MpFormLabel>{{ t('Lead time') }}</MpFormLabel>
             <MpInputGroup id="rp-set-lead-g">
               <MpInput id="rp-set-lead" v-model="manualLeadTime" type="number" />
-              <MpInputRightAddon>{{ t('days') }}</MpInputRightAddon>
+              <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
             </MpInputGroup>
             <MpFormErrorMessage v-if="errors.manualLeadTime">{{ errors.manualLeadTime }}</MpFormErrorMessage>
             <span class="rp-set-hint">
               {{ t('No purchase-order history for this vendor and product, so lead time cannot be measured. Set it here, or start raising POs and it will be measured automatically.') }}
             </span>
           </MpFormControl>
+
+          <!-- A failed save keeps every edit and says so here, never in a toast. -->
+          <p v-if="saveError" class="rp-set-error" role="alert">{{ saveError }}</p>
         </div>
 
         <footer class="rp-set-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="save">{{ t('Save changes') }}</button>
+          <MpButtonGroup class="erp-action-footer">
+            <MpButton id="rp-set-cancel" variant="ghost" is-rounded @click="close">{{ t('Cancel') }}</MpButton>
+            <MpButton id="rp-set-save" variant="primary" is-rounded @click="save">{{ t('Save changes') }}</MpButton>
+          </MpButtonGroup>
         </footer>
       </div>
     </div>
@@ -238,6 +289,17 @@ function confirmMute() {
     :confirm-label="t('Turn off tracking')"
     :is-danger="false"
     @confirm="confirmMute"
+  />
+
+  <!-- Unsaved changes: × or Cancel with edits never silently loses them. -->
+  <ConfirmModal
+    :is-open="discardConfirmOpen"
+    :title="t('Discard unsaved changes?')"
+    :description="t('Your changes to this product\'s replenishment settings have not been saved.')"
+    :confirm-label="t('Discard changes')"
+    :cancel-label="t('Keep editing')"
+    @update:is-open="(v: boolean) => { discardConfirmOpen = v }"
+    @confirm="leave"
   />
 </template>
 
@@ -255,7 +317,7 @@ function confirmMute() {
 }
 .rp-set-panel {
   margin: var(--mp-spacing-3);
-  width: min(420px, calc(100% - 24px));
+  width: min(720px, calc(100% - 24px));
   height: calc(100% - 24px);
   display: flex; flex-direction: column;
   background: var(--mp-background-stage, #fff);
@@ -282,11 +344,9 @@ function confirmMute() {
   display: flex; flex-direction: column; gap: var(--mp-spacing-5);
   padding: var(--mp-spacing-4);
 }
-.rp-set-identity { display: flex; flex-direction: column; }
-.rp-set-product {
-  font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
-}
+/* Four fields on one row; the product name gets the most room. */
+.rp-set-identity { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 0.7fr) minmax(0, 1.4fr) minmax(0, 1fr); column-gap: var(--mp-spacing-4); }
+.rp-set-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--mp-spacing-4); align-items: start; }
 .rp-set-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 .rp-set-toggle-row {
@@ -295,19 +355,23 @@ function confirmMute() {
   border-bottom: 1px solid var(--mp-border-default);
 }
 .rp-set-toggle-text { display: flex; flex-direction: column; min-width: 0; }
-.rp-set-toggle-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
 .rp-set-hint {
   display: block; margin-top: var(--mp-spacing-1);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
 }
-.rp-set-link { margin-left: var(--mp-spacing-1); color: var(--mp-text-link); cursor: pointer; }
+.rp-set-label { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
+.rp-set-info { color: var(--mp-colors-icon-default); cursor: help; }
+/* 12px each side so the suffix is not cramped against its text (matches the settings page). */
+.rp-set-body :deep(.mp-input-addon__root) { padding: 0 var(--mp-spacing-3); }
+/* MpTextlink pins its font-size with a layered !important that no page CSS can beat, so
+   scale it instead: 14px x 12/14 = the 12px of the caption it sits in. */
+.rp-set-link { margin-left: var(--mp-spacing-1); zoom: calc(12 / 14); }
+.rp-set-error { font-size: var(--mp-font-sizes-md); color: var(--mp-text-danger); }
 
 .rp-set-footer {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  flex-shrink: 0; padding: var(--mp-spacing-3) var(--mp-spacing-4);
   border-top: 1px solid var(--mp-border-default);
 }
 .rp-set-hint--warning { color: var(--mp-colors-text-warning); }
-.rp-set-readonly { display: flex; flex-direction: column; }
 </style>
