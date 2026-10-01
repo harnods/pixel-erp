@@ -85,16 +85,13 @@ describe('regular BOM versioning', () => {
     expect(b.versionHistory.map(v => v.version)).toEqual([1, 2])
   })
 
-  it('a BOM no work order was created from is edited in place; once any WO exists (any version) it is LOCKED', async () => {
+  it('an unreferenced Active version is edited in place', async () => {
     const { boms, guards } = await load()
-    const fresh = boms.addBillOfMaterials(copy(boms.billOfMaterials[3]!))
-    expect(guards.bomHasWorkOrders(fresh.id)).toBe(false)
-    expect(guards.updateBillOfMaterialsSafe(fresh.id, { ...copy(fresh), description: 'Edited in place' })).toEqual({ ok: true, version: 1 })
-    expect(fresh.description).toBe('Edited in place')
-    // #10001: its work orders use v1, but the BOM has work orders → v2 isn't edited in place either.
-    const b = boms.billOfMaterials.find(x => x.number === 'Bill of Materials #10001')!
-    expect(guards.bomHasWorkOrders(b.id)).toBe(true)
-    expect(guards.updateBillOfMaterialsSafe(b.id, { ...copy(b), description: 'x' })).toEqual({ ok: false, reason: 'LOCKED' })
+    const b = boms.billOfMaterials[0]! // v2 Active, no work order on v2
+    expect(guards.bomVersionLocked(b.id)).toBe(false)
+    expect(guards.updateBillOfMaterialsSafe(b.id, { ...copy(b), description: 'Edited in place' })).toEqual({ ok: true, version: 2 })
+    expect(b.description).toBe('Edited in place')
+    expect(b.versionHistory.length).toBe(1)
   })
 
   it('a new BOM is born as v1 Active and can be produced right away', async () => {

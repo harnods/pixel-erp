@@ -26,7 +26,7 @@ import {
   type BillOfMaterials, type BomRawMaterial, type BomProductionCost,
   type BomRoutingStep, type BomOtherOutput, type BomProductionWaste,
 } from '~/data/billOfMaterials'
-import { updateBillOfMaterialsSafe, saveBomNewVersionSafe, bomHasWorkOrders, bomVersionRefCount } from '~/data/integrityGuards'
+import { updateBillOfMaterialsSafe, saveBomNewVersionSafe, bomVersionLocked, bomVersionRefCount } from '~/data/integrityGuards'
 import BomNewVersionModal from '~/components/BomNewVersionModal.vue'
 
 const { t } = useLocale()
@@ -50,7 +50,7 @@ const isEditMode = computed(() => !!editingId)
 const editingBomRecord = computed(() => (editingId ? billOfMaterials.find(b => b.id === editingId) : undefined))
 const fromVersion = Number(route.query.from) || undefined
 const editingRefs = computed(() => (editingBomRecord.value ? bomVersionRefCount(editingBomRecord.value.id, editingBomRecord.value.version) : 0))
-const newVersionMode = computed(() => !!editingBomRecord.value && (!!route.query.newVersion || !!fromVersion || bomHasWorkOrders(editingBomRecord.value.id)))
+const newVersionMode = computed(() => !!editingBomRecord.value && (!!route.query.newVersion || !!fromVersion || bomVersionLocked(editingBomRecord.value.id)))
 const nextVersion = computed(() => (editingBomRecord.value ? nextBomVersion(editingBomRecord.value) : 1))
 /** Inline save errors (rule/form-errors-inline) — a circular reference or a refused save. */
 const saveError = ref('')
