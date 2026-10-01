@@ -194,12 +194,12 @@ function validate(): boolean {
   clearFieldErrors()
   const isWhole = (v: unknown) => String(v) !== '' && Number.isInteger(Number(v))
   const need = (key: string, ok: boolean, msg: string) => { if (!ok && !fieldErrors[key]) fieldErrors[key] = msg }
-  const MIN0 = t('Enter a whole number of 0 or more.')
-  const MIN1 = t('Enter a whole number of 1 or more.')
+  const MIN0 = t('Enter a whole number of 0 or more')
+  const MIN1 = t('Enter a whole number of 1 or more')
 
   need('lookback', isWhole(draft.lookbackDays) && Number(draft.lookbackDays) >= 1, MIN1)
   need('volatility', String(draft.volatileCvThreshold) !== '' && Number(draft.volatileCvThreshold) > 0,
-    t('Enter a number greater than 0.'))
+    t('Enter a number greater than 0'))
   need('coldstart', isWhole(draft.coldStartMinDays) && Number(draft.coldStartMinDays) >= 1, MIN1)
   need('safety', isWhole(draft.safetyDaysGlobal) && Number(draft.safetyDaysGlobal) >= 0, MIN0)
   need('coverage', isWhole(draft.coverageDaysGlobal) && Number(draft.coverageDaysGlobal) >= 0, MIN0)
@@ -217,16 +217,16 @@ function validate(): boolean {
   }
   if (draft.fallbackLeadTimeDays !== null) {
     need('lead', isWhole(draft.fallbackLeadTimeDays) && Number(draft.fallbackLeadTimeDays) >= 1,
-      t('Enter a whole number of 1 or more, or choose Not set.'))
+      t('Enter a whole number of 1 or more, or choose Not set'))
   }
   need('cap', isWhole(draft.leadTimeOutlierCapDays) && Number(draft.leadTimeOutlierCapDays) >= 1, MIN1)
   need('receipts', isWhole(draft.leadTimeMinSamples) && Number(draft.leadTimeMinSamples) >= 1
     && isWhole(draft.leadTimeSampleCount) && Number(draft.leadTimeSampleCount) >= 1, MIN1)
   need('receipts', Number(draft.leadTimeMinSamples) <= Number(draft.leadTimeSampleCount),
-    t('The minimum cannot be more than the maximum.'))
+    t('The minimum cannot be more than the maximum'))
   need('fsnWindow', isWhole(draft.fsnWindowDays) && Number(draft.fsnWindowDays) >= 1, MIN1)
   const pctOk = (v: unknown) => String(v) !== '' && Number(v) >= 0 && Number(v) <= 100
-  need('fsnBands', pctOk(draft.fsnFastPct) && pctOk(draft.fsnSlowPct), t('Enter a percentage from 0 to 100.'))
+  need('fsnBands', pctOk(draft.fsnFastPct) && pctOk(draft.fsnSlowPct), t('Enter a percentage from 0 to 100'))
   need('fsnBands', fsnBandsOk.value, t('Fast must be higher than Slow'))
 
   return Object.keys(fieldErrors).length === 0
@@ -243,7 +243,7 @@ function numericMap(map: Record<string, unknown>, floor: number): Record<string,
 function save() {
   formError.value = ''
   if (!validate()) {
-    formError.value = t('Fix the highlighted fields to save.')
+    formError.value = t('Fix the highlighted fields to save')
     return
   }
 
@@ -279,7 +279,7 @@ function save() {
     } catch {
       // Save error: inline, and every edit stays in the form.
       saving.value = false
-      formError.value = t('Settings could not be saved. Try again.')
+      formError.value = t('Settings could not be saved. Try again')
       return
     }
     committed.value = next
@@ -291,7 +291,7 @@ function save() {
     toast.notify({
       variant: 'success',
       title: t('Replenishment settings saved'),
-      description: t('The worklist has been recalculated.'),
+      description: t('The worklist has been recalculated'),
       maxWidth: 'max-content',
     })
   }, 300)
@@ -373,7 +373,7 @@ function goToWorklist() { router.push('/replenishment') }
                 @change="onCategoryTagsChange"
               />
               <span v-else class="rs-value">
-                {{ categories.length ? categories.join(', ') : t('None — every category uses Other categories') }}
+                {{ categories.length ? categories.join(', ') : t('None. Every category uses Other categories') }}
               </span>
             </div>
           </MpFormControl>
@@ -482,7 +482,7 @@ function goToWorklist() { router.push('/replenishment') }
           <MpFormControl id="rs-coverage-fc" class="rs-row" :is-invalid="!!fieldErrors.coverage">
             <div class="rs-label">
               <MpFormLabel>{{ t('Order coverage') }}</MpFormLabel>
-              <span class="rs-caption">{{ t('How many days of demand each order should cover. Sizes the quantity — it never decides whether a product is due. Leave a category blank and it uses Other categories.') }}</span>
+              <span class="rs-caption">{{ t('How many days of demand each order should cover. Sizes the quantity. It never decides whether a product is due. Leave a category blank and it uses Other categories.') }}</span>
             </div>
             <div class="rs-control">
               <div class="rs-cat-grid">
@@ -590,7 +590,7 @@ function goToWorklist() { router.push('/replenishment') }
           <MpFormControl id="rs-receipts-fc" class="rs-row" :is-invalid="!!fieldErrors.receipts">
             <div class="rs-label">
               <MpFormLabel>{{ t('Receipts to average') }}</MpFormLabel>
-              <span class="rs-caption">{{ t('A measured lead time averages a vendor product\'s most recent delivered orders — at most the maximum, and at least the minimum before it\'s trusted. Fewer than the minimum falls back to the default lead time above.') }}</span>
+              <span class="rs-caption">{{ t('A measured lead time averages a vendor product\'s most recent delivered orders: at most the maximum, and at least the minimum before it\'s trusted. Fewer than the minimum falls back to the default lead time above.') }}</span>
             </div>
             <div class="rs-control">
               <div v-if="isEditing" class="rs-cat-grid">

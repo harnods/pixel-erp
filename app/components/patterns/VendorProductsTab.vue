@@ -167,8 +167,8 @@ const columns = computed<TableColumn[]>(() => {
     // Each term carries its own unit in-cell, so there is no separate unit column:
     // one shared "Purchase unit" heading would be a lie the moment the minimum and
     // the step are quoted in different units, which is the case this now supports.
-    { key: 'moq', label: t('Minimum order qty'), align: 'right', sortable: true, sortType: 'number' },
-    // "Purchase multiple" was trade jargon. This header is the whole sentence, so
+    { key: 'moq', label: t('MOQ'), align: 'right', sortable: true, sortType: 'number' },
+    // "Purchase multiplier" was trade jargon. This header is the whole sentence, so
     // the meaning survives without the tooltip being opened. It wraps to two lines
     // at normal widths, which is the price of it explaining itself.
     { key: 'purchaseMultiple', label: t('Purchase multiplier'), align: 'right', sortable: true, sortType: 'number' },
@@ -234,11 +234,11 @@ function commitEdit(row: VendorProductRow, field: EditField): void {
   // Rule 20 — nullable, but when present must be greater than zero. Inline error,
   // never a toast, and the typed value is kept so it can be corrected in place.
   if (!Number.isFinite(raw) || raw <= 0 || !Number.isInteger(raw)) {
-    rowError[row.sku] = { message: t('Quantity must be a whole number above 0. Please check your entry'), conflict: false }
+    rowError[row.sku] = { message: t('Quantity must be a whole number above 0. Check your entry'), conflict: false }
     return
   }
   if (isConflicted(row.sku)) {
-    rowError[row.sku] = { message: t('Someone else changed this row while you were editing. Please reload to see the current value'), conflict: true }
+    rowError[row.sku] = { message: t('Someone else changed this row while you were editing. Reload to see the current value'), conflict: true }
     return
   }
 
@@ -253,7 +253,7 @@ function commitEdit(row: VendorProductRow, field: EditField): void {
     // TS-008 — the audit write and the terms write land together. A terms change
     // with no attributed author cannot be disputed, which defeats the point.
     recordTermsChange(supplyKey.value, row.sku, [{
-      label: field === 'moq' ? t('Min. order qty') : t('Purchase multiple'),
+      label: field === 'moq' ? t('MOQ') : t('Purchase multiplier'),
       from: String(before),
       to: String(raw),
     }])
@@ -300,16 +300,16 @@ function saveTerms(payload: { moq: number; moqUnit: string; purchaseMultiple: nu
 
   const changes: { label: string; from: string; to: string }[] = []
   if (row.moq !== payload.moq) {
-    changes.push({ label: t('Minimum order qty'), from: String(row.moq), to: String(payload.moq) })
+    changes.push({ label: t('MOQ'), from: String(row.moq), to: String(payload.moq) })
   }
   if (row.moqUnit !== payload.moqUnit) {
-    changes.push({ label: t('Minimum order qty unit'), from: row.moqUnit, to: payload.moqUnit })
+    changes.push({ label: t('MOQ unit'), from: row.moqUnit, to: payload.moqUnit })
   }
   if (row.purchaseMultiple !== payload.purchaseMultiple) {
     changes.push({ label: t('Purchase multiplier'), from: String(row.purchaseMultiple), to: String(payload.purchaseMultiple) })
   }
   if (row.multipleUnit !== payload.multipleUnit) {
-    changes.push({ label: t('Order multiple unit'), from: row.multipleUnit, to: payload.multipleUnit })
+    changes.push({ label: t('Purchase multiplier unit'), from: row.multipleUnit, to: payload.multipleUnit })
   }
 
   if (changes.length) {
@@ -381,7 +381,7 @@ const canEditTerms = computed(() => !!props.vendorMasterId)
       <div class="vp-head-text">
         <h2 class="vp-title">{{ t('Products supplied') }}</h2>
         <p class="vp-sub">
-          {{ t('This list builds itself. A product appears here after you approve a supplier invoice for it. You only fill in the two order rules.') }}
+          {{ t('This list builds itself. A product appears here after you approve a purchase invoice for it. You only fill in the two order rules.') }}
         </p>
       </div>
       <!-- The create action sits at the top right of the surface it creates into,
@@ -472,7 +472,7 @@ const canEditTerms = computed(() => !!props.vendorMasterId)
       <template #header-lastPrice>
         <MpTooltip
           id="vp-tt-price"
-          :label="t('The gross price on the most recent approved supplier invoice, before discount and tax, in the unit it was invoiced in. It is a purchasing reference and is never used for inventory valuation.')"
+          :label="t('The gross price on the most recent approved purchase invoice, before discount and tax, in the unit it was invoiced in. It is a purchasing reference and is never used for inventory valuation.')"
           placement="bottom"
           use-portal
         >
@@ -675,7 +675,7 @@ const canEditTerms = computed(() => !!props.vendorMasterId)
           <img :src="emptyIllustration" alt="" class="vp-empty-img" width="288" height="240" />
           <p class="vp-empty-title">{{ t('No products') }}</p>
           <p class="vp-empty-desc">
-            {{ t('Products appear here automatically once a supplier invoice from this vendor is approved. You can also add one now to set its ordering terms in advance.') }}
+            {{ t('Products appear here automatically once a purchase invoice from this vendor is approved. You can also add one now to set its ordering terms in advance.') }}
           </p>
           <button
             v-if="canEditTerms"
@@ -721,7 +721,7 @@ const canEditTerms = computed(() => !!props.vendorMasterId)
     <ConfirmModal
       :is-open="!!removeRow"
       :title="t('Remove product?')"
-      :description="t('The product stays in your catalogue. It will reappear here if a supplier invoice from this vendor is approved for it again.')"
+      :description="t('The product stays in your catalogue. It will reappear here if a purchase invoice from this vendor is approved for it again.')"
       :confirm-label="t('Remove')"
       :cancel-label="t('Cancel')"
       @update:is-open="(v: boolean) => { if (!v) removeRow = null }"

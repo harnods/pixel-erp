@@ -31,7 +31,7 @@ import { ALL_WAREHOUSES } from '~/composables/useReplenishmentWarehouse'
 defineProps<{ mode?: 'needs-setup' }>()
 
 const router = useRouter()
-const { t } = useLocale()
+const { t, tf } = useLocale()
 
 const loading = ref(true)
 onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
@@ -123,7 +123,7 @@ function turnOnTracking(row: WorklistRow) {
   setTracked(row.sku, row.warehouseId, true)
   invalidateReplenishmentCaches()
   tick.value++
-  toast.notify({ variant: 'success', title: t('Tracking turned on.'), maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Tracking turned on'), maxWidth: 'max-content' })
 }
 
 function selectedRows(sel: Set<number>): WorklistRow[] {
@@ -143,7 +143,7 @@ function bulkTrackOn(sel: Set<number>, deselectAll: () => void) {
   tick.value++
   toast.notify({
     variant: 'success',
-    title: `${t('Tracking turned on for')} ${selected.length} ${selected.length === 1 ? t('product') : t('products')}.`,
+    title: selected.length === 1 ? t('Tracking turned on') : tf('Tracking turned on for {n} products', { n: selected.length }),
     maxWidth: 'max-content',
   })
 }
@@ -244,7 +244,7 @@ function onSaved() {
           </MpBadge>
         </div>
         <span v-if="(row as any).bucket !== 'not-tracked' && (row as any).leadTimeTier === 'none'" class="rp-missing-reason">
-          {{ t('No lead time yet — add a preferred vendor, make a purchase, or set a default lead time.') }}
+          {{ t('No lead time yet. Add a preferred vendor, make a purchase, or set a default lead time.') }}
         </span>
         <!-- US-010 AC-03: a muted SKU that is moving Fast again is suggested back. -->
         <span v-if="(row as any).bucket === 'not-tracked' && (row as any).fsn.committed === 'fast'" class="rp-missing-reason">

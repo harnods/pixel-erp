@@ -76,7 +76,7 @@ function submit(): void {
   // Rule 20 — a stored term must be a whole number above zero. The button is never
   // disabled; a bad value is reported inline and the input keeps what was typed.
   if (!Number.isInteger(m) || m <= 0 || !Number.isInteger(step) || step <= 0) {
-    error.value = t('Quantity must be a whole number above 0. Please check your entry')
+    error.value = t('Quantity must be a whole number above 0. Check your entry')
     return
   }
   emit('save', {
@@ -103,13 +103,13 @@ function submit(): void {
       <MpModalBody>
         <p class="evt-product">{{ productName }}</p>
         <p class="evt-intro">
-          {{ t('These are the two rules this vendor sets for how much you can order. Price is not edited here: it comes from the supplier invoice.') }}
+          {{ t('These are the two rules this vendor sets for how much you can order. Price is not edited here: it comes from the purchase invoice.') }}
         </p>
 
         <div class="evt-fields">
           <div class="evt-row">
             <MpFormControl id="evt-moq" class="evt-num" :is-invalid="!!error">
-              <MpFormLabel>{{ t('Minimum order qty') }}</MpFormLabel>
+              <MpFormLabel>{{ t('MOQ') }}</MpFormLabel>
               <MpInput id="evt-moq-input" v-model="moq" type="number" is-full-width />
             </MpFormControl>
             <MpFormControl id="evt-moq-unit" class="evt-unit">

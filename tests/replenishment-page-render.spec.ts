@@ -201,6 +201,6 @@ describe('SettingsReplenishmentPage — renders and validates', () => {
     // MpFormControl is-invalid + MpFormErrorMessage (rule/field-invalid-caption).
     expect(wrapper.text()).toContain('Fast must be higher than Slow')
     expect(wrapper.find('input#rs-fast-fc').attributes('aria-invalid')).toBe('true')
-    expect(wrapper.text()).toContain('Fix the highlighted fields to save.')
+    expect(wrapper.text()).toContain('Fix the highlighted fields to save')
   })
 })

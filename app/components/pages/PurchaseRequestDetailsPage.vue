@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
-  MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink, toast, css,
+  MpTooltip, MpBadge, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, toast, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
@@ -15,7 +16,7 @@ import { leadTimeTierLabel } from '~/data/leadTimeHistory'
 
 const props = defineProps<{ orderId: string }>()
 
-const { t } = useLocale()
+const { t, tf } = useLocale()
 
 // Title-bar icon actions (Task + Comment) — a purchase request has an approval flow.
 const hasApproval = true
@@ -35,9 +36,13 @@ const replenishmentBySku = computed(() => {
   if (!origin) return map
   for (const l of origin.lines) {
     const vi = l.suggestedVendorId ? vendorItemFor(l.sku, l.suggestedVendorId) : null
-    const parts = [`${t('Lead time')} ${l.leadTimeDays} ${t('days')} (${l.leadTimeTier === 'computed' ? t('measured from receipts') : leadTimeTierLabel(l.leadTimeTier as never)})`]
-    if (vi) parts.push(`${t('MOQ')} ${vi.moq} ${vi.purchaseUnit}`, `${t('Purchase multiplier')} ${vi.packSize}`)
-    map.set(l.sku, { recommended: l.recommendedQty, deviation: l.deviation, note: parts.join(' · ') })
+    const basis = l.leadTimeTier === 'computed' ? t('measured from receipts') : t(leadTimeTierLabel(l.leadTimeTier as never))
+    const parts = [tf('Lead time: {n} days, {basis}.', { n: l.leadTimeDays, basis })]
+    if (vi) {
+      parts.push(tf('MOQ: {n} {unit}.', { n: vi.moq, unit: vi.purchaseUnit }))
+      parts.push(tf('Purchase multiplier: {n}.', { n: vi.packSize }))
+    }
+    map.set(l.sku, { recommended: l.recommendedQty, deviation: l.deviation, note: parts.join(' ') })
   }
   return map
 })
@@ -221,11 +226,8 @@ function goBack() { router.push('/purchase-requests') }
           <div class="content-list-col">
             <ContentList :label="t('Request no.')" :value="`${t('Purchase Request')} #${request.number}`" />
             <!-- US-023 AC-02: trace back to the worklist run that raised it. -->
-            <ContentList
-              v-if="request.replenishment"
-              :label="t('Source')"
-              :value="`${t('Replenishment run')} #${request.replenishment.runNo} · ${t('as of')} ${formatDateLong(request.replenishment.asOf)}`"
-            />
+            <ContentList v-if="request.replenishment" :label="t('Replenishment run')" :value="`#${request.replenishment.runNo}`" />
+            <ContentList v-if="request.replenishment" :label="t('As of')" :value="formatDateLong(request.replenishment.asOf)" />
           </div>
           <!-- col 5: tags -->
           <div class="content-list-col">
@@ -256,11 +258,20 @@ function goBack() { router.push('/purchase-requests') }
               <td class="detail-td">
                 <div class="cell-with-action">
                   <span class="detail-item-primary">
-                    <a class="cell-link detail-item-name" @click.stop>{{ it.product }}</a>
-                    <span class="detail-item-sku">{{ t('SKU') }}: {{ it.sku }}</span>
-                    <span v-if="replenishmentBySku.get(it.sku)" class="detail-item-sku">
-                      {{ replenishmentBySku.get(it.sku)!.note }}
+                    <span class="detail-item-nameline">
+                      <a class="cell-link detail-item-name" @click.stop>{{ it.product }}</a>
+                      <!-- US-019 AC-01: the suggested vendor's terms, on hover so rows stay compact. -->
+                      <MpTooltip
+                        v-if="replenishmentBySku.get(it.sku)"
+                        :id="`detail-tt-terms-${it.sku}`"
+                        :label="replenishmentBySku.get(it.sku)!.note"
+                        placement="top"
+                        use-portal
+                      >
+                        <MpIcon name="info" size="sm" class="detail-terms-icon" :aria-label="t('Vendor terms')" />
+                      </MpTooltip>
                     </span>
+                    <span class="detail-item-sku">{{ t('SKU') }}: {{ it.sku }}</span>
                   </span>
                 </div>
               </td>
@@ -271,13 +282,12 @@ function goBack() { router.push('/purchase-requests') }
               <td class="detail-td detail-td--num">
                 {{ it.requestedQty }}
                 <!-- US-017 AC-02: the requester's change from the suggestion is recorded. -->
-                <span
+                <MpBadge
                   v-if="replenishmentBySku.get(it.sku)?.deviation"
-                  class="detail-item-sku detail-item-deviation"
-                >
-                  {{ replenishmentBySku.get(it.sku)!.deviation > 0 ? '+' : '' }}{{ replenishmentBySku.get(it.sku)!.deviation }}
-                  {{ t('vs suggested') }}
-                </span>
+                  for="tableStatus"
+                  type="information"
+                  class="detail-item-deviation"
+                >{{ tf('{n} vs suggested', { n: (replenishmentBySku.get(it.sku)!.deviation > 0 ? '+' : '') + replenishmentBySku.get(it.sku)!.deviation }) }}</MpBadge>
               </td>
               <td class="detail-td detail-td--num">{{ it.availableQty }}</td>
               <td class="detail-td">{{ it.unit }}</td>
@@ -742,5 +752,7 @@ function goBack() { router.push('/purchase-requests') }
   gap: var(--mp-spacing-3);
   padding-top: var(--mp-spacing-4);
 }
-.detail-item-deviation { display: block; }
+.detail-item-deviation { display: flex; width: fit-content; margin: var(--mp-spacing-0\.5) 0 0 auto; }
+.detail-item-nameline { display: flex; align-items: center; gap: var(--mp-spacing-1); }
+.detail-terms-icon { flex-shrink: 0; color: var(--mp-colors-icon-default); cursor: help; }
 </style>

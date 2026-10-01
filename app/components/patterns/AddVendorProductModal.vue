@@ -96,7 +96,7 @@ function submit(): void {
   const pm = purchaseMultiple.value.trim()
   const invalid = (v: string) => v !== '' && (!Number.isInteger(Number(v)) || Number(v) <= 0)
   if (invalid(m) || invalid(pm)) {
-    termsError.value = t('Quantity must be a whole number above 0. Please check your entry')
+    termsError.value = t('Quantity must be a whole number above 0. Check your entry')
     return
   }
 
@@ -158,17 +158,17 @@ function submit(): void {
               use-portal
               is-full-width
             />
-            <MpFormHelpText>{{ t('Minimum and multiple are counted in this unit') }}</MpFormHelpText>
+            <MpFormHelpText>{{ t('MOQ and purchase multiplier are counted in this unit') }}</MpFormHelpText>
           </MpFormControl>
 
           <div class="avp-row">
             <MpFormControl id="avp-moq" :is-invalid="!!termsError">
-              <MpFormLabel>{{ t('Min. order qty') }}</MpFormLabel>
+              <MpFormLabel>{{ t('MOQ') }}</MpFormLabel>
               <MpInput id="avp-moq-input" v-model="moq" type="number" is-full-width />
             </MpFormControl>
 
             <MpFormControl id="avp-multiple" :is-invalid="!!termsError">
-              <MpFormLabel>{{ t('Purchase multiple') }}</MpFormLabel>
+              <MpFormLabel>{{ t('Purchase multiplier') }}</MpFormLabel>
               <MpInput id="avp-multiple-input" v-model="purchaseMultiple" type="number" is-full-width />
             </MpFormControl>
           </div>
@@ -181,7 +181,7 @@ function submit(): void {
           <p v-if="termsError" class="avp-error">{{ termsError }}</p>
 
           <p class="avp-note">
-            {{ t('Last price stays empty until a supplier invoice from this vendor is approved for this product.') }}
+            {{ t('Last price stays empty until a purchase invoice from this vendor is approved for this product.') }}
           </p>
         </div>
       </MpModalBody>

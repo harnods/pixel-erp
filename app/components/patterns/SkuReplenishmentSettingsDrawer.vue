@@ -110,7 +110,7 @@ function parse(field: Field, raw: string, min = 0, required = false): number | n
   if (raw === '' && !required) return null
   const v = raw === '' ? Number.NaN : Number(raw)
   if (!Number.isInteger(v) || v < min) {
-    errors[field] = min === 1 ? t('Enter a whole number of 1 or more.') : t('Enter a whole number of 0 or more.')
+    errors[field] = min === 1 ? t('Enter a whole number of 1 or more') : t('Enter a whole number of 0 or more')
     return undefined
   }
   return v
@@ -158,7 +158,7 @@ function commit(v: { rop: number | null; safety: number | null; lead: number | n
       tracked: tracked.value ? undefined : false,
     })
   } catch {
-    saveError.value = t('The settings could not be saved. Try again.')
+    saveError.value = t('The settings could not be saved. Try again')
     return
   }
   emit('saved')
@@ -208,7 +208,7 @@ function confirmMute() {
             <div class="rp-set-toggle-text">
               <MpFormLabel>{{ t('Track for replenishment') }}</MpFormLabel>
               <span class="rp-set-hint">
-                {{ t('When off, this product never appears in the worklist for this warehouse, but a genuine stockout still raises an alert.') }}
+                {{ t('When off, this product never appears in the worklist for this warehouse, but a genuine stockout still raises an alert') }}
               </span>
             </div>
             <MpToggle id="rp-set-tracked" v-model:is-checked="tracked" :aria-label="t('Track for replenishment')" />
@@ -226,17 +226,17 @@ function confirmMute() {
               <!-- Always the ENGINE's figure, even while an override is the trigger (D17). -->
               <span class="rp-set-hint">
                 <template v-if="row.calculatedReorderPoint === null">
-                  {{ t('No demand yet, so nothing is calculated.') }}
+                  {{ t('No demand yet, so nothing is calculated') }}
                 </template>
                 <template v-else>
-                  {{ tf('Calculated reorder point: {n} {unit}.', { n: num(row.calculatedReorderPoint), unit: row.unit }) }}
+                  {{ tf('Calculated reorder point: {n} {unit}', { n: num(row.calculatedReorderPoint), unit: row.unit }) }}
                   <MpTextlink v-if="differsFromCalculated" id="rp-set-use-calculated" as="a" class="rp-set-link" @click.prevent="useCalculated">
                     {{ t('Use calculated') }}
                   </MpTextlink>
                 </template>
               </span>
               <span v-if="overrideTooLow" class="rp-set-hint rp-set-hint--warning">
-                {{ t('This is well below the calculated reorder point, so this warehouse may stock out before it is flagged.') }}
+                {{ t('This is well below the calculated reorder point, so this warehouse may stock out before it is flagged') }}
               </span>
             </MpFormControl>
 
@@ -263,7 +263,7 @@ function confirmMute() {
             </MpInputGroup>
             <MpFormErrorMessage v-if="errors.manualLeadTime">{{ errors.manualLeadTime }}</MpFormErrorMessage>
             <span class="rp-set-hint">
-              {{ t('No purchase-order history for this vendor and product, so lead time cannot be measured. Set it here, or start raising POs and it will be measured automatically.') }}
+              {{ t('No purchase-order history for this vendor and product, so lead time cannot be measured. Set it here, or start raising POs and it will be measured automatically') }}
             </span>
           </MpFormControl>
 

@@ -95,7 +95,7 @@ const previewRows = computed<PreviewRow[]>(() => {
       error: unknownSku
         ? t('Product code not found in your catalogue')
         : faulty
-          ? t('Min. order qty must be a whole number above 0')
+          ? t('MOQ must be a whole number above 0')
           : '',
     }
   })
@@ -110,8 +110,8 @@ const columns = computed<TableColumn[]>(() => [
   { key: 'rowNumber', label: t('Row'), width: '72px' },
   { key: 'product', label: t('Product'), kind: 'name' },
   { key: 'sku', label: t('Product code'), kind: 'number' },
-  { key: 'moq', label: t('Min. order qty'), align: 'right' },
-  { key: 'purchaseMultiple', label: t('Purchase multiple'), align: 'right' },
+  { key: 'moq', label: t('MOQ'), align: 'right' },
+  { key: 'purchaseMultiple', label: t('Purchase multiplier'), align: 'right' },
   { key: 'error', label: t('Status'), kind: 'address' },
 ])
 
@@ -169,7 +169,7 @@ function commitImport(): void {
     if (existing && existing.moq !== r.moq) {
       recordTermsChange(
         vendorMasterId.value, r.sku,
-        [{ label: t('Min. order qty'), from: String(existing.moq), to: String(r.moq) }],
+        [{ label: t('MOQ'), from: String(existing.moq), to: String(r.moq) }],
         'Haidar', 'Spreadsheet import',
       )
     }
@@ -198,7 +198,7 @@ function commitImport(): void {
         <!-- ─────────── Upload ─────────── -->
         <template v-if="stage === 'upload'">
           <p class="ivt-intro">
-            {{ t('Import minimum order quantity and purchase multiple for this vendor from a spreadsheet. Prices are not imported: they are read from approved supplier invoices.') }}
+            {{ t('Import MOQ and purchase multiplier for this vendor from a spreadsheet. Prices are not imported: they are read from approved purchase invoices.') }}
           </p>
 
           <div class="ivt-stepper">
@@ -219,7 +219,7 @@ function commitImport(): void {
                   <ul v-if="formatOpen" class="ivt-accordion-list">
                     <!-- The row limit is stated BEFORE upload, not after a failure. -->
                     <li>{{ t('Maximum') }} {{ ROW_LIMIT.toLocaleString('id-ID') }} {{ t('rows per file') }}</li>
-                    <li>{{ t('Minimum order quantity and purchase multiple must be whole numbers above 0') }}</li>
+                    <li>{{ t('MOQ and purchase multiplier must be whole numbers above 0') }}</li>
                     <li>{{ t('Leave a cell empty to clear a term that is no longer agreed') }}</li>
                     <li>{{ t('Do not use thousand separators (e.g. 1000, not 1.000)') }}</li>
                     <li>{{ t('Do not change or reorder the template columns') }}</li>

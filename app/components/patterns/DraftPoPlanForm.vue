@@ -74,8 +74,8 @@ function pendingNote(sku: string): string {
   const p = props.pendingRecommend[sku]
   if (!p) return ''
   return p.vendorName
-    ? tf('Suggested qty for {vendor} is {to}. Your qty is {from}.', { vendor: p.vendorName, to: p.to, from: p.from })
-    : tf('Suggested qty without a vendor is {to}. Your qty is {from}.', { to: p.to, from: p.from })
+    ? tf('Suggested qty for {vendor} is {to}. Your qty is {from}', { vendor: p.vendorName, to: p.to, from: p.from })
+    : tf('Suggested qty without a vendor is {to}. Your qty is {from}', { to: p.to, from: p.from })
 }
 </script>
 
@@ -147,7 +147,7 @@ function pendingNote(sku: string): string {
                   <div class="dpf-vendor-trigger" role="button" tabindex="0">
                     <span class="dpf-vendor-text">
                       <span class="dpf-vendor-name">{{ vendorName }}</span>
-                      <span class="dpf-sub">{{ tf('Needed in {n} days', { n: leadTimeDays }) }}</span>
+                      <span class="dpf-sub">{{ tf('Lead time: {n} days', { n: leadTimeDays }) }}</span>
                     </span>
                     <MpIcon name="chevrons-down" size="sm" class="dpf-vendor-chevron" />
                   </div>

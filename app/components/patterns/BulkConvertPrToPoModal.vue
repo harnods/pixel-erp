@@ -88,7 +88,7 @@ const skuOrder = computed(() => [...new Set(props.prs.flatMap((pr) => pr.lines.m
 function vendorOptions(sku: string) {
   return vendorItemsForSku(sku).map((alt) => ({
     vendorId: alt.vendorId,
-    label: tf('{vendor} · MOQ {moq} · multiple of {pack} · {n} days', {
+    label: tf('{vendor} · MOQ {moq} · purchase multiplier {pack} · {n} days', {
       vendor: vendorNameFor(alt.vendorId), moq: alt.moq, pack: alt.packSize, n: alt.leadTimeDays,
     }),
   }))
@@ -127,7 +127,7 @@ function setQty(sku: string, raw: string) {
 
 function roundNote(line: { vendorItem: { moq: number; packSize: number }; raisedByMoq?: boolean; raisedByPack?: boolean }): string {
   if (line.raisedByMoq) return tf('Raised to MOQ {n}', { n: line.vendorItem.moq })
-  if (line.raisedByPack) return tf('Rounded up to a multiple of {n}', { n: line.vendorItem.packSize })
+  if (line.raisedByPack) return tf('Rounded up to purchase multiplier {n}', { n: line.vendorItem.packSize })
   return ''
 }
 
@@ -149,12 +149,12 @@ const confirmLabel = computed(() => {
 function close() { emit('update:isOpen', false) }
 
 function confirm() {
-  if (!warehouseId.value) { qtyError.value = t('Choose a ship-to warehouse.'); return }
+  if (!warehouseId.value) { qtyError.value = t('Choose a ship-to warehouse'); return }
   if (totals.value.poCount === 0) { qtyError.value = t('Nothing can be ordered from this request.'); return }
   const zeroLines = Object.values(qtyOverrides).filter((v) => v <= 0).length
   if (zeroLines > 0) {
     showQtyErrors.value = true
-    qtyError.value = tf('Products with qty 0: {n}. Enter a qty greater than 0.', { n: zeroLines })
+    qtyError.value = tf('Products with qty 0: {n}. Enter a qty greater than 0', { n: zeroLines })
     return
   }
   emit('confirm', { warehouseId: warehouseId.value, vendorChoices: { ...vendorChoices }, qtyOverrides: { ...qtyOverrides } })

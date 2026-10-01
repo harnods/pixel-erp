@@ -53,7 +53,7 @@ const emit = defineEmits<{
   (e: 'saved'): void
 }>()
 
-const { t } = useLocale()
+const { t, tf } = useLocale()
 
 const rows = ref<VendorItemDraft[]>([])
 const removed = ref<string[]>([])
@@ -197,7 +197,7 @@ function moqNote(row: VendorItemDraft): string {
   const moq = Number(row.moq)
   const pack = Number(row.packSize)
   if (!moq || !pack || Number.isNaN(moq) || Number.isNaN(pack)) return ''
-  if (pack > 1 && moq % pack !== 0) return `${t('Not a whole number of packs of')} ${pack}`
+  if (pack > 1 && moq % pack !== 0) return tf('MOQ is not a multiple of purchase multiplier {n}', { n: pack })
   return ''
 }
 
@@ -231,7 +231,7 @@ function save() {
     for (const [label, raw, min] of [
       [t('Lead time'), row.leadTimeDays, 0],
       [t('MOQ'), row.moq, 1],
-      [t('Pack size'), row.packSize, 1],
+      [t('Purchase multiplier'), row.packSize, 1],
       [t('Unit cost'), row.unitCost, 0],
     ] as const) {
       const n = Number(raw)
@@ -266,7 +266,7 @@ function save() {
 
   emit('saved')
   close()
-  toast.notify({ variant: 'success', title: t('Vendor terms saved.'), maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Vendor terms saved'), maxWidth: 'max-content' })
 }
 
 /**
@@ -337,7 +337,7 @@ function save() {
                 <th class="rp-vi-th rp-vi-th--num">{{ t('Lead time') }}</th>
                 <th class="rp-vi-th rp-vi-th--num">{{ t('MOQ') }}</th>
                 <th class="rp-vi-th">{{ t('MOQ unit') }}</th>
-                <th class="rp-vi-th rp-vi-th--num">{{ t('Pack size') }}</th>
+                <th class="rp-vi-th rp-vi-th--num">{{ t('Purchase multiplier') }}</th>
                 <th class="rp-vi-th rp-vi-th--num">{{ t('Unit cost') }}</th>
                 <th class="rp-vi-th rp-vi-th--center">{{ t('Preferred') }}</th>
                 <th v-if="!readonly" class="rp-vi-th" />
@@ -433,7 +433,7 @@ function save() {
           <MpButton v-if="!readonly" variant="ghost" left-icon="add" class="rp-vi-add" @click="addRow">{{ t('Vendor') }}</MpButton>
 
           <p class="rp-vi-hint">
-            {{ t('Unit options come from this product\'s unit conversions — base unit') }}
+            {{ t('Unit options come from this product\'s unit conversions. Base unit:') }}
             <strong>{{ baseUnit }}</strong>{{ unitOptions.length > 1 ? ', ' : '' }}
             <template v-if="unitOptions.length > 1">
               {{ unitOptions.filter(o => !o.isBase).map(o => `${o.name} = ${o.factor} ${baseUnit}`).join(', ') }}

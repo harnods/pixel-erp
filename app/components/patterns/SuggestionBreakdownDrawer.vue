@@ -57,9 +57,9 @@ const sourceLabel = (key: string) => t(SOURCE_LABEL[key] ?? key)
 const velocityNote = computed(() => {
   const row = props.row
   if (!row) return ''
-  if (row.velocity.source !== 'computed') return t('No sales yet — excluded until its first sale')
+  if (row.velocity.source !== 'computed') return t('No sales yet. Excluded until its first sale')
   return row.velocity.provisional
-    ? tf('Provisional — averaged over {n} days since first sale', { n: row.velocity.lookbackDays })
+    ? tf('Provisional. Averaged over {n} days since first sale', { n: row.velocity.lookbackDays })
     : tf('Averaged over the last {n} days of sales', { n: row.velocity.lookbackDays })
 })
 
@@ -167,15 +167,15 @@ function exportPurchase() {
                 <!-- This is the NEED. MOQ and the purchase multiplier are applied later,
                      when purchasing turns the request into a purchase order. -->
                 <span v-if="row.suggestion.rawQty > 0 && row.vendorItem" class="rp-bd-note">
-                  {{ t('Rounded to MOQ and pack size when purchasing creates the purchase order') }}
+                  {{ t('Rounded to MOQ and purchase multiplier when purchasing creates the purchase order') }}
                 </span>
                 <!-- US-004 AC-03: due, but open POs already bring it up to the target. -->
                 <span v-if="row.suggestion.coveredBy.length" class="rp-bd-note">
-                  {{ tf('Covered by {docs} — nothing more to order', { docs: row.suggestion.coveredBy.join(', ') }) }}
+                  {{ tf('Covered by {docs}. Nothing more to order', { docs: row.suggestion.coveredBy.join(', ') }) }}
                 </span>
                 <span v-if="row.suggestion.suppressed" class="rp-bd-note">
                   <template v-if="row.suggestion.suppressReason === 'above-reorder-point'">
-                    {{ t('Nothing to order — stock is above the reorder point') }}
+                    {{ t('Nothing to order. Stock is above the reorder point') }}
                   </template>
                   <template v-else-if="row.suggestion.suppressReason === 'no-demand-basis'">
                     {{ t('No quantity can be suggested without a demand basis') }}
@@ -216,19 +216,19 @@ function exportPurchase() {
                 <!-- Receipts that could not be measured, and why (US-001 AC-03). -->
                 <span v-if="row.leadTimeExcludedNoPo" class="rp-bd-note">
                   {{ row.leadTimeExcludedNoPo === 1
-                    ? t('1 receipt excluded — bought directly with no purchase order')
-                    : tf('{n} receipts excluded — bought directly with no purchase order', { n: row.leadTimeExcludedNoPo }) }}
+                    ? t('1 receipt excluded. Bought directly with no purchase order')
+                    : tf('{n} receipts excluded. Bought directly with no purchase order', { n: row.leadTimeExcludedNoPo }) }}
                 </span>
               </ContentList>
 
               <ContentList horizontal :label="t('Vendor')">
                 {{ row.vendor?.name ?? '—' }}
-                <span v-if="!row.vendor" class="rp-bd-note">{{ t('No vendor — using the default lead time') }}</span>
+                <span v-if="!row.vendor" class="rp-bd-note">{{ t('No vendor. Using the default lead time') }}</span>
                 <span v-if="row.vendorItem" class="rp-bd-note">
-                  {{ tf('MOQ {moq} {unit} · pack of {pack}', { moq: row.vendorItem.moq, unit: row.vendorItem.purchaseUnit, pack: row.vendorItem.packSize }) }}
+                  {{ tf('MOQ {moq} {unit} · purchase multiplier {pack}', { moq: row.vendorItem.moq, unit: row.vendorItem.purchaseUnit, pack: row.vendorItem.packSize }) }}
                 </span>
                 <span v-if="row.inactivePreferredVendor" class="rp-bd-note rp-bd-warning">
-                  {{ t('Preferred vendor is inactive — lead time falls back to the next listed vendor') }}
+                  {{ t('Preferred vendor is inactive. Lead time falls back to the next listed vendor') }}
                 </span>
                 <MpTextlink id="rp-bd-vendors" as="a" class="rp-bd-link" @click.prevent="emit('edit-vendors', row)">
                   {{ t('View vendors, lead time and MOQ') }}
@@ -246,7 +246,7 @@ function exportPurchase() {
               <!-- Sizes the ORDER, never the trigger (decision D9). -->
               <ContentList horizontal :label="t('Coverage days')">
                 {{ tf('{n} days', { n: row.coverageDays }) }}
-                <span class="rp-bd-note">{{ t('How much each order covers — not part of the trigger') }}</span>
+                <span class="rp-bd-note">{{ t('How much each order covers. Not part of the trigger') }}</span>
               </ContentList>
 
               <ContentList horizontal :label="t('Reorder point')">

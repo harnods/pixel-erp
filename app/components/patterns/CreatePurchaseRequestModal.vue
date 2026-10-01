@@ -164,8 +164,8 @@ function pendingNote(rowKey: string): string {
   if (!pending) return ''
   const { from, to, vendorName } = pending
   return vendorName
-    ? tf('Suggested qty for {vendor} is {to}. Your qty is {from}.', { vendor: vendorName, to, from })
-    : tf('Suggested qty without a vendor is {to}. Your qty is {from}.', { to, from })
+    ? tf('Suggested qty for {vendor} is {to}. Your qty is {from}', { vendor: vendorName, to, from })
+    : tf('Suggested qty without a vendor is {to}. Your qty is {from}', { to, from })
 }
 
 function applyRecommendation(rowKey: string) {
@@ -199,10 +199,10 @@ function termsNote(line: PrLine): string {
   const vi = line.vendorItem
   if (!vi) return ''
   if (line.finalQty < vi.moq) {
-    return tf('Vendor MOQ is {n}. Purchasing rounds up the qty on the purchase order.', { n: vi.moq })
+    return tf('Vendor MOQ is {n}. Purchasing rounds up the qty on the purchase order', { n: vi.moq })
   }
   if (vi.packSize > 1 && line.finalQty % vi.packSize !== 0) {
-    return tf('Vendor sells in packs of {n}. Purchasing rounds up the qty on the purchase order.', { n: vi.packSize })
+    return tf('Purchase multiplier is {n}. Purchasing rounds up the qty on the purchase order', { n: vi.packSize })
   }
   return ''
 }
@@ -225,13 +225,13 @@ function close() { emit('update:isOpen', false) }
 function confirm() {
   // Never a disabled button (rule/btn-no-disabled-validation) — validate on click.
   if (plan.value.totals.requestCount === 0) {
-    qtyError.value = t('Enter a qty for at least one product.')
+    qtyError.value = t('Enter a qty for at least one product')
     return
   }
   const zeroLines = Object.entries(overrides).filter(([, v]) => v <= 0).length
   if (zeroLines > 0) {
     showQtyErrors.value = true
-    qtyError.value = tf('Products with qty 0: {n}. Enter a qty greater than 0.', { n: zeroLines })
+    qtyError.value = tf('Products with qty 0: {n}. Enter a qty greater than 0', { n: zeroLines })
     return
   }
   emit('confirm', { overrides: { ...overrides }, vendorChoices: { ...vendorChoices } })
@@ -317,7 +317,7 @@ function confirm() {
                         <div class="rp-po-vendor-trigger" role="button" tabindex="0">
                           <span class="rp-po-vendor-text">
                             <span class="rp-po-vendor-name">{{ line.vendorId ? vendorName : t('Purchasing to source') }}</span>
-                            <span class="rp-po-product-sub">{{ tf('Needed in {n} days', { n: leadTimeDays }) }}</span>
+                            <span class="rp-po-product-sub">{{ tf('Lead time: {n} days', { n: leadTimeDays }) }}</span>
                           </span>
                           <MpIcon name="chevrons-down" size="sm" class="rp-po-vendor-chevron" />
                         </div>
@@ -356,11 +356,11 @@ function confirm() {
                     <span v-if="termsNote(line)" class="rp-po-note">{{ termsNote(line) }}</span>
                     <!-- US-019 AC-05: a vendor new to this product sizes with the category lead time. -->
                     <span v-if="line.newVendorLink" class="rp-po-note">
-                      {{ tf('New vendor for this product. Lead time is estimated at {n} days.', { n: line.context.leadTimeDays }) }}
+                      {{ tf('New vendor for this product. Lead time is estimated at {n} days', { n: line.context.leadTimeDays }) }}
                     </span>
                     <!-- US-019 EH-01: the preferred vendor was deactivated. -->
                     <span v-if="rowFor(rowKeyFor(line.sku, line.warehouseId))?.inactivePreferredVendor" class="rp-po-note">
-                      {{ t('Preferred vendor is inactive — purchasing will confirm the vendor.') }}
+                      {{ t('Preferred vendor is inactive. Purchasing will confirm the vendor') }}
                     </span>
                   </td>
 

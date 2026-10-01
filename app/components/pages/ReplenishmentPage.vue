@@ -86,7 +86,7 @@ function recalculate() {
     recalculating.value = false
     toast.notify({
       variant: 'success',
-      title: t('Replenishment recalculated.'),
+      title: t('Replenishment recalculated'),
       description: `${result.due} ${t('products to order.')}`,
       maxWidth: 'max-content',
     })
@@ -347,8 +347,8 @@ function exportWorklist() {
   toast.notify({
     variant: 'success',
     title: files.length > 1
-      ? `${t('Worklist exported in')} ${files.length} ${t('files')}.`
-      : t('Worklist exported.'),
+      ? tf('Worklist exported in {n} files', { n: files.length })
+      : t('Worklist exported'),
     maxWidth: 'max-content',
   })
 }
@@ -442,12 +442,12 @@ function confirmPr(payload: {
   try {
     result = createPurchaseRequests(poRows.value, payload.overrides, payload.vendorChoices)
   } catch {
-    prError.value = t('The purchase request could not be saved. Try again.')
+    prError.value = t('The purchase request could not be saved. Try again')
     return
   }
   const created = result.created.length
   if (!created) {
-    prError.value = t('The purchase request could not be saved. Try again.')
+    prError.value = t('The purchase request could not be saved. Try again')
     return
   }
 
@@ -461,13 +461,13 @@ function confirmPr(payload: {
   const unsourced = result.created.filter((c) => !c.vendorId).length
   const parts: string[] = []
   if (result.skipped.length) {
-    parts.push(tf('Skipped products: {n}.', { n: result.skipped.length }))
+    parts.push(tf('Skipped products: {n}', { n: result.skipped.length }))
   }
-  if (unsourced) parts.push(t('Purchasing will source the products without a vendor.'))
+  if (unsourced) parts.push(t('Purchasing will source the products without a vendor'))
   toast.notify({
     variant: 'success',
     title: created === 1 ? t('Purchase request created') : tf('{n} purchase requests created', { n: created }),
-    description: parts.length ? parts.join(' ') : t('Purchasing will review and decide which become orders.'),
+    description: parts.length ? parts.join('. ') : t('Purchasing will review and decide which become orders'),
     maxWidth: 'max-content',
   })
   // Land on the requests, where they are waiting for purchasing.
@@ -484,7 +484,7 @@ function confirmMute() {
   if (!row) return
   setTracked(row.sku, row.warehouseId, false)
   recalcTick.value++
-  toast.notify({ variant: 'success', title: t('Tracking turned off.'), maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Tracking turned off'), maxWidth: 'max-content' })
 }
 
 /**
@@ -512,7 +512,7 @@ function confirmBulkMute() {
   recalcTick.value++
   toast.notify({
     variant: 'success',
-    title: `${t('Tracking turned off for')} ${rows.length} ${rows.length === 1 ? t('product') : t('products')}.`,
+    title: rows.length === 1 ? t('Tracking turned off') : tf('Tracking turned off for {n} products', { n: rows.length }),
     maxWidth: 'max-content',
   })
 }

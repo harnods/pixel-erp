@@ -649,7 +649,7 @@ onUnmounted(() => { footerObserver?.disconnect() })
                       {{ t('Replenishment') }}
                       <MpTooltip
                         id="np-replenishment-tip"
-                        :label="t('Each warehouse has its own minimum stock and decides on its own whether to reorder. There is no company-wide minimum — stock in one warehouse cannot cover a shortage in another.')"
+                        :label="t('Each warehouse has its own minimum stock and decides on its own whether to reorder. There is no company-wide minimum. Stock in one warehouse cannot cover a shortage in another.')"
                         placement="top" use-portal
                       >
                         <span class="np-info-icon"><MpIcon name="info" size="sm" /></span>

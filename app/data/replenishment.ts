@@ -157,7 +157,7 @@ export function velocityFor(
     dampedDays: win.dampedDays,
     modelledDays: win.modelledDays,
     reason: perDay <= 0
-      ? 'No sales yet — excluded until its first sale'
+      ? 'No sales yet. Excluded until its first sale'
       : provisional
         ? `Provisional — ${win.units} sold over ${availableDays} days since first sale`
         : `Averaged ${win.units} sold over ${availableDays} days of sales`,
