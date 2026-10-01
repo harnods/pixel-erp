@@ -190,6 +190,7 @@ actions `[...]` column stays flush right. Fixed types set min = max.
 | `tags` | **160px** | **240px** | Tag chips (`ErpTagList`) |
 | `unit` | **128px** | **128px** (fixed) | Unit of measurement (pcs, kg, …) |
 | `address` | **200px** | **240px** | Address, or any content that can wrap to multiple lines |
+| `wide` | **216px** | **240px** | A default-type column whose **header label** is longer than the default 160px floor (e.g. `Demand velocity per day`). Same cap as `default`; the higher floor stops the header clipping when the table is too wide to grow its columns. Use it instead of a one-off pixel `width`. |
 | `default` (unset) | **160px** | **240px** | Anything not covered above |
 
 **Non-semantic columns** keep an explicit `width` instead of a `kind`:

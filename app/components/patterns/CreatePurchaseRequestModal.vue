@@ -26,10 +26,18 @@
  * closable only via × / Cancel (rule/modal-drawer-close-explicit-only). A failed
  * save keeps the modal — and every edit in it — open with an inline error
  * (US-017 EH-01, rule/form-errors-inline).
+ *
+ * Each request is a FORM TABLE (docs/patterns/FormTable.md): white header, gray
+ * read-only cells, one white borderless qty input per line
+ * (rule/table-form-header-white, rule/table-nonform-bg-gray,
+ * rule/table-form-cell-no-border), boxed in --mp-border-bold
+ * (rule/table-outer-border-bold). Footer is the shared MpButtonGroup
+ * (rule/btn-responsive-footer).
  */
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalCloseButton,
-  MpInput, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+  MpButton, MpButtonGroup, MpTextlink, MpInput,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import type { WorklistRow } from '~/data/replenishment'
 import {
@@ -54,12 +62,14 @@ const emit = defineEmits<{
   (e: 'assign-vendor', sku: string): void
 }>()
 
-const { t } = useLocale()
+const { t, tf } = useLocale()
 
 /** Local, discarded on close — edits never leak out unless the user confirms. */
 const overrides = reactive<Record<string, number>>({})
 const vendorChoices = reactive<Record<string, string | null>>({})
 const qtyError = ref('')
+/** Set by a failed confirm: marks every qty cell still at 0 (rule/field-invalid-caption). */
+const showQtyErrors = ref(false)
 
 /**
  * Pending "apply new recommendation?" prompts, keyed by row (US-022 AC-03).
@@ -67,7 +77,7 @@ const qtyError = ref('')
  * is theirs — so the new recommendation waits here to be accepted or dismissed
  * instead of overwriting their figure.
  */
-const pendingRecommend = reactive<Record<string, { from: number; to: number; vendorName: string }>>({})
+const pendingRecommend = reactive<Record<string, { from: number; to: number; vendorName: string | null }>>({})
 
 watch(() => props.isOpen, (open) => {
   if (!open) return
@@ -75,6 +85,7 @@ watch(() => props.isOpen, (open) => {
   for (const k of Object.keys(vendorChoices)) delete vendorChoices[k]
   for (const k of Object.keys(pendingRecommend)) delete pendingRecommend[k]
   qtyError.value = ''
+  showQtyErrors.value = false
 })
 
 /** Re-planned live, so changing a vendor visibly re-groups the line. */
@@ -123,8 +134,18 @@ function chooseVendor(rowKey: string, vendorId: string | null) {
   pendingRecommend[rowKey] = {
     from: typed,
     to: next,
-    vendorName: vendorId ? vendorNameFor(vendorId) : t('no vendor'),
+    vendorName: vendorId ? vendorNameFor(vendorId) : null,
   }
+}
+
+/** One whole sentence per case — a request with no vendor reads differently. */
+function pendingNote(rowKey: string): string {
+  const pending = pendingRecommend[rowKey]
+  if (!pending) return ''
+  const { from, to, vendorName } = pending
+  return vendorName
+    ? tf('Suggested qty for {vendor} is {to}. Your qty is {from}.', { vendor: vendorName, to, from })
+    : tf('Suggested qty without a vendor is {to}. Your qty is {from}.', { to, from })
 }
 
 function applyRecommendation(rowKey: string) {
@@ -158,39 +179,50 @@ function termsNote(line: PrLine): string {
   const vi = line.vendorItem
   if (!vi) return ''
   if (line.finalQty < vi.moq) {
-    return `${t('Vendor MOQ')} ${vi.moq} — ${t('rounded up when purchasing raises the PO')}`
+    return tf('Vendor MOQ is {n}. Purchasing rounds up the qty on the purchase order.', { n: vi.moq })
   }
   if (vi.packSize > 1 && line.finalQty % vi.packSize !== 0) {
-    return `${t('Packs of')} ${vi.packSize} — ${t('rounded up at PO')}`
+    return tf('Vendor sells in packs of {n}. Purchasing rounds up the qty on the purchase order.', { n: vi.packSize })
   }
   return ''
 }
 
 const confirmLabel = computed(() => {
   const n = plan.value.totals.requestCount
-  return n === 1 ? t('Create purchase request') : `${t('Create')} ${n} ${t('purchase requests')}`
+  return n > 1 ? tf('Create {n} purchase requests', { n }) : t('Create purchase request')
 })
 
+/** Label-first counts, so no string needs a singular/plural variant (rule/copy-id-translations). */
 const summaryLine = computed(() => {
   const { requestCount, vendorCount, lineCount } = plan.value.totals
   if (requestCount === 0) return t('Nothing can be requested from this selection.')
-  const reqPart = requestCount === 1 ? t('1 purchase request') : `${requestCount} ${t('purchase requests')}`
-  const vendorPart = vendorCount === 1 ? t('1 vendor') : `${vendorCount} ${t('vendors')}`
-  const linePart = lineCount === 1 ? t('1 line') : `${lineCount} ${t('lines')}`
-  return `${reqPart} · ${vendorPart} · ${linePart}`
+  return [
+    tf('Purchase requests: {n}', { n: requestCount }),
+    tf('Vendors: {n}', { n: vendorCount }),
+    tf('Products: {n}', { n: lineCount }),
+  ].join(' · ')
 })
+
+/**
+ * A vendor newly linked to a product has no price yet. "Rp0" would read as a free
+ * order, so an unknown value shows as a dash.
+ */
+function valueLabel(value: number, known: number): string {
+  return known > 0 ? formatIDR(value) : '—'
+}
 
 function close() { emit('update:isOpen', false) }
 
 function confirm() {
-  // No disabled buttons for validation (DESIGN.md) — validate on click.
+  // Never a disabled button (rule/btn-no-disabled-validation) — validate on click.
   if (plan.value.totals.requestCount === 0) {
-    qtyError.value = t('Enter a quantity for at least one product.')
+    qtyError.value = t('Enter a qty for at least one product.')
     return
   }
   const zeroLines = Object.entries(overrides).filter(([, v]) => v <= 0).length
   if (zeroLines > 0) {
-    qtyError.value = `${t('Enter a quantity for')} ${zeroLines} ${zeroLines === 1 ? t('product') : t('products')}`
+    showQtyErrors.value = true
+    qtyError.value = tf('Products with qty 0: {n}. Enter a qty greater than 0.', { n: zeroLines })
     return
   }
   emit('confirm', { overrides: { ...overrides }, vendorChoices: { ...vendorChoices } })
@@ -210,48 +242,54 @@ function confirm() {
     <MpModalContent>
       <MpModalHeader>{{ t('Request to purchase') }}<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
-          <p class="rp-po-summary">{{ summaryLine }}</p>
-          <!-- Says plainly that purchasing owns the next step (US-020 AC-03). -->
-          <p class="rp-po-summary rp-po-summary--muted">
-            {{ t('Purchasing reviews these requests and decides which become purchase orders.') }}
-          </p>
-          <p v-if="plan.skipped.length" class="rp-po-summary rp-po-summary--warning">
-            {{ plan.skipped.length }}
-            {{ plan.skipped.length === 1 ? t('line skipped') : t('lines skipped') }}
-            — {{ t('see below') }}
-          </p>
+        <p class="rp-po-summary">{{ summaryLine }}</p>
+        <!-- Says plainly that purchasing owns the next step (US-020 AC-03). -->
+        <p class="rp-po-summary rp-po-summary--muted">
+          {{ t('Purchasing reviews these requests and decides which become purchase orders.') }}
+        </p>
+        <p v-if="plan.skipped.length" class="rp-po-summary rp-po-summary--warning">
+          {{ tf('Skipped products: {n}. See the list below.', { n: plan.skipped.length }) }}
+        </p>
 
-          <!-- One card per suggested vendor + warehouse. An unsourced card is a
-               valid request, not an error — purchasing sources it. -->
-          <section v-for="group in plan.groups" :key="group.key" class="rp-po-card">
-            <header class="rp-po-card-head">
-              <div>
-                <p class="rp-po-vendor">
-                  {{ group.vendorId ? group.vendorName : t('Purchasing to source') }}
-                </p>
-                <p class="rp-po-card-sub">
-                  {{ group.warehouseName }} · {{ t('Needed in') }} {{ group.leadTimeDays }} {{ t('days') }}
-                  <template v-if="group.vendorId"> · {{ t('suggested vendor') }}</template>
-                </p>
-              </div>
-              <div class="rp-po-card-total">
-                <span class="rp-po-card-total-label">{{ t('Est. value') }}</span>
-                <span class="rp-po-card-total-value">{{ formatIDR(group.estimatedValue) }}</span>
-              </div>
-            </header>
+        <!-- One card per suggested vendor + warehouse. An unsourced card is a
+             valid request, not an error — purchasing sources it. -->
+        <section v-for="group in plan.groups" :key="group.key" class="rp-po-card">
+          <header class="rp-po-card-head">
+            <div class="rp-po-card-title">
+              <h3 class="rp-po-vendor">
+                {{ group.vendorId ? group.vendorName : t('Purchasing to source') }}
+              </h3>
+              <p class="rp-po-card-sub">
+                {{ group.warehouseName }} · {{ tf('Needed in {n} days', { n: group.leadTimeDays }) }}
+                <template v-if="group.vendorId"> · {{ t('Suggested vendor') }}</template>
+              </p>
+            </div>
+            <div class="rp-po-card-total">
+              <span class="rp-po-card-total-label">{{ t('Estimated value') }}</span>
+              <span class="rp-po-card-total-value">{{ valueLabel(group.estimatedValue, group.estimatedValue) }}</span>
+            </div>
+          </header>
 
+          <div class="rp-po-table-scroll">
             <table class="rp-po-table">
+              <colgroup>
+                <col>
+                <col class="rp-po-col-qty">
+                <col class="rp-po-col-qty">
+                <col class="rp-po-col-unit">
+                <col class="rp-po-col-value">
+              </colgroup>
               <thead>
                 <tr>
                   <th class="rp-po-th">{{ t('Product') }}</th>
-                  <th class="rp-po-th rp-po-th--num">{{ t('Recommended') }}</th>
+                  <th class="rp-po-th rp-po-th--num">{{ t('Suggested qty') }}</th>
                   <th class="rp-po-th rp-po-th--num">{{ t('Request qty') }}</th>
                   <th class="rp-po-th">{{ t('Unit') }}</th>
-                  <th class="rp-po-th rp-po-th--num">{{ t('Est. value') }}</th>
+                  <th class="rp-po-th rp-po-th--num">{{ t('Estimated value') }}</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="line in group.lines" :key="`${line.sku}-${line.warehouseId}`">
+                <tr v-for="line in group.lines" :key="`${line.sku}-${line.warehouseId}`" class="rp-po-tr">
                   <td class="rp-po-td">
                     <span class="rp-po-product">{{ line.productName }}</span>
                     <span class="rp-po-product-sub">{{ line.sku }}</span>
@@ -264,7 +302,11 @@ function confirm() {
                       placement="bottom-start"
                     >
                       <MpPopoverTrigger>
-                        <a class="rp-po-change">{{ t('Change vendor') }}</a>
+                        <MpTextlink
+                          :id="`rp-pr-change-vendor-${line.sku}-${line.warehouseId}`"
+                          as="a"
+                          class="rp-po-link"
+                        >{{ t('Change vendor') }}</MpTextlink>
                       </MpPopoverTrigger>
                       <MpPopoverContent :class="css({ minWidth: '280px', width: 'max-content' })">
                         <MpPopoverList>
@@ -274,7 +316,7 @@ function confirm() {
                             :is-active="alt.vendorId === line.vendorId"
                             @click="chooseVendor(rowKeyFor(line.sku, line.warehouseId), alt.vendorId)"
                           >
-                            {{ vendorNameFor(alt.vendorId) }} · {{ alt.leadTimeDays }} {{ t('days') }}
+                            {{ vendorNameFor(alt.vendorId) }} · {{ tf('{n} days', { n: alt.leadTimeDays }) }}
                           </MpPopoverListItem>
                           <!-- Not linked to this product yet — picking one links it on save. -->
                           <MpPopoverListItem
@@ -283,7 +325,7 @@ function confirm() {
                             :is-active="v.id === line.vendorId"
                             @click="chooseVendor(rowKeyFor(line.sku, line.warehouseId), v.id)"
                           >
-                            {{ v.name }} · {{ t('new for this product') }}
+                            {{ v.name }} · {{ t('New for this product') }}
                           </MpPopoverListItem>
                           <!-- A request needs no vendor at all (US-022 AC-06). -->
                           <MpPopoverListItem
@@ -295,75 +337,92 @@ function confirm() {
                         </MpPopoverList>
                       </MpPopoverContent>
                     </MpPopover>
-                  </td>
-                  <td class="rp-po-td rp-po-td--num rp-po-td--muted">{{ line.recommendedQty }}</td>
-                  <td class="rp-po-td rp-po-td--num">
-                    <MpInput
-                      :id="`rp-pr-qty-${line.sku}-${line.warehouseId}`"
-                      :model-value="String(line.finalQty)"
-                      type="number"
-                      :class="css({ width: '96px' })"
-                      @update:model-value="(v: string) => setQty(rowKeyFor(line.sku, line.warehouseId), v)"
-                    />
-                    <span v-if="termsNote(line)" class="rp-po-cell-note">{{ termsNote(line) }}</span>
+
+                    <!-- Notes live with the vendor they describe, so the qty cell stays a
+                         bare 40px input (FormTable.md › row baseline). -->
+                    <span v-if="termsNote(line)" class="rp-po-note">{{ termsNote(line) }}</span>
                     <!-- US-019 AC-05: a vendor new to this product sizes with the category lead time. -->
-                    <span v-if="line.newVendorLink" class="rp-po-cell-note">
-                      {{ t('New vendor for this product — estimated lead time') }} ({{ line.context.leadTimeDays }} {{ t('days') }})
+                    <span v-if="line.newVendorLink" class="rp-po-note">
+                      {{ tf('New vendor for this product. Lead time is estimated at {n} days.', { n: line.context.leadTimeDays }) }}
                     </span>
                     <!-- US-019 EH-01: the preferred vendor was deactivated. -->
-                    <span v-if="rowFor(rowKeyFor(line.sku, line.warehouseId))?.inactivePreferredVendor" class="rp-po-cell-note">
+                    <span v-if="rowFor(rowKeyFor(line.sku, line.warehouseId))?.inactivePreferredVendor" class="rp-po-note">
                       {{ t('Preferred vendor is inactive — purchasing will confirm the vendor.') }}
                     </span>
                     <!-- Offered, never applied behind the user's back (AC-03). -->
                     <span
                       v-if="pendingRecommend[rowKeyFor(line.sku, line.warehouseId)]"
-                      class="rp-po-cell-note rp-po-cell-note--prompt"
+                      class="rp-po-note rp-po-note--prompt"
                     >
-                      {{ t('Recommended') }}
-                      {{ pendingRecommend[rowKeyFor(line.sku, line.warehouseId)]!.from }}
-                      →
-                      {{ pendingRecommend[rowKeyFor(line.sku, line.warehouseId)]!.to }}
-                      ({{ pendingRecommend[rowKeyFor(line.sku, line.warehouseId)]!.vendorName }})
-                      <a class="rp-po-change" @click="applyRecommendation(rowKeyFor(line.sku, line.warehouseId))">{{ t('Apply') }}</a>
-                      <a class="rp-po-change" @click="dismissRecommendation(rowKeyFor(line.sku, line.warehouseId))">{{ t('Keep mine') }}</a>
+                      {{ pendingNote(rowKeyFor(line.sku, line.warehouseId)) }}
+                      <span class="rp-po-note-actions">
+                        <MpTextlink
+                          :id="`rp-pr-apply-${line.sku}-${line.warehouseId}`"
+                          as="a"
+                          class="rp-po-link"
+                          @click.prevent="applyRecommendation(rowKeyFor(line.sku, line.warehouseId))"
+                        >{{ t('Use suggested qty') }}</MpTextlink>
+                        <MpTextlink
+                          :id="`rp-pr-keep-${line.sku}-${line.warehouseId}`"
+                          as="a"
+                          class="rp-po-link"
+                          @click.prevent="dismissRecommendation(rowKeyFor(line.sku, line.warehouseId))"
+                        >{{ t('Keep my qty') }}</MpTextlink>
+                      </span>
                     </span>
                   </td>
+                  <td class="rp-po-td rp-po-td--num">{{ line.recommendedQty }}</td>
+                  <td
+                    class="rp-po-td rp-po-td--input"
+                    :class="{ 'rp-po-td--error': showQtyErrors && line.finalQty <= 0 }"
+                  >
+                    <MpInput
+                      :id="`rp-pr-qty-${line.sku}-${line.warehouseId}`"
+                      :model-value="String(line.finalQty)"
+                      type="number"
+                      :aria-label="t('Request qty')"
+                      @update:model-value="(v: string) => setQty(rowKeyFor(line.sku, line.warehouseId), v)"
+                    />
+                  </td>
                   <td class="rp-po-td">{{ line.unit }}</td>
-                  <td class="rp-po-td rp-po-td--num">{{ formatIDR(line.finalQty * line.unitCost) }}</td>
+                  <td class="rp-po-td rp-po-td--num">{{ valueLabel(line.finalQty * line.unitCost, line.unitCost) }}</td>
                 </tr>
               </tbody>
             </table>
-          </section>
+          </div>
+        </section>
 
-          <!-- Skipped lines are listed, never silently dropped. -->
-          <section v-if="plan.skipped.length" class="rp-po-card rp-po-card--skipped">
-            <header class="rp-po-card-head">
-              <p class="rp-po-vendor">{{ t('Skipped') }} ({{ plan.skipped.length }})</p>
-            </header>
-            <ul class="rp-po-skip-list">
-              <li v-for="s in plan.skipped" :key="`${s.sku}-${s.warehouseId}`" class="rp-po-skip-item">
-                <span class="rp-po-skip-name">{{ s.productName }}</span>
-                <span class="rp-po-skip-sub">{{ s.sku }} · {{ s.warehouseName }}</span>
-                <span class="rp-po-skip-reason">{{ prSkipReasonLabel(s.reason) }}</span>
-                <!-- Needs setup = no vendor / lead time yet: the vendor drawer is where
-                     that is fixed, for THIS product (not just the first skipped one). -->
-                <a
-                  v-if="s.reason === 'needs-setup'"
-                  class="rp-po-skip-link"
-                  @click="emit('assign-vendor', s.sku)"
-                >{{ t('Vendors, lead time and MOQ') }}</a>
-              </li>
-            </ul>
-          </section>
+        <!-- Skipped lines are listed, never silently dropped. -->
+        <section v-if="plan.skipped.length" class="rp-po-card">
+          <header class="rp-po-card-head">
+            <h3 class="rp-po-vendor">{{ tf('Skipped products: {n}', { n: plan.skipped.length }) }}</h3>
+          </header>
+          <ul class="rp-po-skip-list">
+            <li v-for="s in plan.skipped" :key="`${s.sku}-${s.warehouseId}`" class="rp-po-skip-item">
+              <span class="rp-po-product">{{ s.productName }}</span>
+              <span class="rp-po-product-sub">{{ s.sku }} · {{ s.warehouseName }}</span>
+              <span class="rp-po-note">{{ prSkipReasonLabel(s.reason) }}</span>
+              <!-- Needs setup = no vendor / lead time yet: the vendor drawer is where
+                   that is fixed, for THIS product (not just the first skipped one). -->
+              <MpTextlink
+                v-if="s.reason === 'needs-setup'"
+                :id="`rp-pr-skip-vendors-${s.sku}-${s.warehouseId}`"
+                as="a"
+                class="rp-po-link"
+                @click.prevent="emit('assign-vendor', s.sku)"
+              >{{ t('View vendors, lead time and MOQ') }}</MpTextlink>
+            </li>
+          </ul>
+        </section>
 
-          <!-- Errors sit below the form, never in a toast (rule/form-errors-inline). -->
-          <p v-if="qtyError || submitError" class="rp-po-error">{{ qtyError || submitError }}</p>
+        <!-- Errors sit below the form, never in a toast (rule/form-errors-inline). -->
+        <p v-if="qtyError || submitError" class="rp-po-error" role="alert">{{ qtyError || submitError }}</p>
       </MpModalBody>
       <MpModalFooter>
-        <div class="rp-po-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="confirm">{{ confirmLabel }}</button>
-        </div>
+        <MpButtonGroup class="erp-action-footer">
+          <MpButton id="rp-pr-cancel" variant="ghost" is-rounded @click="close">{{ t('Cancel') }}</MpButton>
+          <MpButton id="rp-pr-confirm" variant="primary" is-rounded @click="confirm">{{ confirmLabel }}</MpButton>
+        </MpButtonGroup>
       </MpModalFooter>
     </MpModalContent>
   </MpModal>
@@ -371,78 +430,116 @@ function confirm() {
 
 <style scoped>
 .rp-po-summary { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.rp-po-summary--warning { margin-top: 2px; color: var(--mp-colors-text-warning); }
+.rp-po-summary--muted { color: var(--mp-text-secondary); }
+.rp-po-summary--warning { margin-top: var(--mp-spacing-0\.5); color: var(--mp-colors-text-warning); }
 
-/* Cards are separated by a 1px border, never a drop-shadow (DESIGN.md). */
+/* A boxed table inside a modal: bold outer edge, default inner rules
+   (rule/table-outer-border-bold). Never a drop-shadow. */
 .rp-po-card {
   margin-top: var(--mp-spacing-4);
-  border: 1px solid var(--mp-border-default);
+  border: 1px solid var(--mp-border-bold);
   border-radius: var(--mp-radii-md);
   overflow: hidden;
 }
-.rp-po-card--skipped { border-color: var(--mp-colors-border-warning); }
 .rp-po-card-head {
   display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
   background: var(--mp-background-neutral-subtle);
   border-bottom: 1px solid var(--mp-border-default);
 }
-.rp-po-vendor { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.rp-po-card-title { min-width: 0; }
+.rp-po-vendor {
+  margin: 0;
+  font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-lg); color: var(--mp-text-default);
+}
 .rp-po-card-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .rp-po-card-total { text-align: right; white-space: nowrap; }
 .rp-po-card-total-label { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.rp-po-card-total-value { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-
-.rp-po-table { width: 100%; border-collapse: collapse; }
-.rp-po-th {
-  text-align: left; padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-secondary); border-bottom: 1px solid var(--mp-border-default);
-  white-space: nowrap;
+.rp-po-card-total-value {
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default); font-variant-numeric: tabular-nums;
 }
-.rp-po-th--num { text-align: right; }
+
+/* Form table — docs/patterns/FormTable.md. */
+.rp-po-table-scroll { overflow-x: auto; }
+.rp-po-table { width: 100%; min-width: 640px; table-layout: fixed; border-collapse: collapse; }
+.rp-po-col-qty { width: 136px; }
+.rp-po-col-unit { width: 96px; }
+.rp-po-col-value { width: 168px; }
+
+/* White header, uppercase, 28px, no vertical dividers
+   (rule/table-form-header-white, rule/table-header-uppercase, rule/table-header-height). */
+.rp-po-th {
+  height: var(--mp-sizes-7);
+  padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
+  background: var(--mp-background-neutral);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  text-transform: uppercase; text-align: left; white-space: nowrap;
+  color: var(--mp-text-secondary);
+  border-bottom: 1px solid var(--mp-border-default);
+}
+.rp-po-th:first-child, .rp-po-td:first-child { padding-left: var(--mp-spacing-4); }
+.rp-po-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
+
+/* Read-only cells are gray so the one editable column stands out
+   (rule/table-nonform-bg-gray). */
 .rp-po-td {
-  padding: var(--mp-spacing-2\.5) var(--mp-spacing-3);
+  padding: var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-2);
+  background: var(--mp-background-neutral-subtle);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-subtle, var(--mp-border-default));
+  border-bottom: 1px solid var(--mp-border-default);
+  border-right: 1px solid var(--mp-border-default);
   vertical-align: top;
 }
-.rp-po-td--num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.rp-po-td--muted { color: var(--mp-text-subtle); }
+.rp-po-td:last-child { border-right: none; }
+.rp-po-tr:last-child .rp-po-td { border-bottom: none; }
+.rp-po-td--num {
+  padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-4);
+  text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
+/* The cell owns the border and the focus ring; the input inside is borderless and
+   fills the 40px baseline (rule/table-form-cell-no-border). */
+.rp-po-td--input { padding: 0; background: var(--mp-background-neutral); position: relative; }
+.rp-po-td--input :deep([class*='input']) {
+  width: 100%; height: var(--mp-sizes-10);
+  border-color: transparent; border-radius: 0; box-shadow: none !important; /* pixel-police-allow-shadow: strips the input's own ring, the cell draws it */
+  text-align: right; font-variant-numeric: tabular-nums;
+}
+/* Pinned to the top 40px: a line with notes is taller than its input. */
+.rp-po-td--input:focus-within::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: var(--mp-sizes-10);
+  border: 1px solid var(--mp-border-bold); pointer-events: none;
+}
+.rp-po-td--input.rp-po-td--error { background: var(--mp-colors-background-danger); }
+.rp-po-td--error::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: var(--mp-sizes-10);
+  border: 1px solid var(--mp-colors-border-danger); pointer-events: none;
+}
+.rp-po-td--error :deep([class*='input']) { background: transparent; }
+
 .rp-po-product { display: block; }
 .rp-po-product-sub { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
-.rp-po-change {
-  display: inline-block; margin-top: 2px;
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer;
-}
-.rp-po-cell-note {
-  display: block; margin-top: 2px;
+/* MpTextlink keeps its own size and a 2px inline padding (layered !important), so
+   pull it back to sit flush with the text above it. */
+.rp-po-link { margin-left: calc(-1 * var(--mp-spacing-0\.5)); }
+.rp-po-note {
+  display: block; margin-top: var(--mp-spacing-0\.5);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-warning);
 }
+.rp-po-note--prompt { margin-top: var(--mp-spacing-1); color: var(--mp-colors-text-information); }
+.rp-po-note-actions { display: flex; gap: var(--mp-spacing-3); }
 
+/* A real list, so it keeps its markers (CLAUDE.md › List bullets). */
+.rp-po-skip-list {
+  list-style: disc outside; margin: 0;
+  padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-8);
+}
 .rp-po-skip-item {
-  display: list-item;
-  padding: var(--mp-spacing-2) var(--mp-spacing-4);
-  border-bottom: 1px solid var(--mp-border-subtle, var(--mp-border-default));
+  display: list-item; padding: var(--mp-spacing-1) 0;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
-.rp-po-skip-name { flex: 1; min-width: 0; }
-.rp-po-skip-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
-.rp-po-skip-reason { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-warning); white-space: nowrap; }
-.rp-po-skip-hint {
-  padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-3);
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
-}
-.rp-po-skip-link { margin-left: var(--mp-spacing-1); color: var(--mp-text-link); cursor: pointer; }
 
-.rp-po-footer {
-  display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2);
-}
 .rp-po-error { margin-top: var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-danger); }
-.rp-po-summary--muted { color: var(--mp-text-secondary); }
-.rp-po-cell-note--prompt { display: block; margin-top: var(--mp-spacing-1); color: var(--mp-colors-text-information); }
-.rp-po-cell-note--prompt .rp-po-change { margin-left: var(--mp-spacing-2); }
-/* A real list, so it keeps its markers (CLAUDE.md › List bullets). */
-.rp-po-skip-list { list-style: disc outside; margin: 0; padding-left: var(--mp-spacing-6); }
 </style>
-

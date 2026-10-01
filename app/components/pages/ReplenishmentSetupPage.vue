@@ -84,8 +84,10 @@ const columns: TableColumn[] = [
   { key: 'productName',   label: 'Product',   kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'sku',           label: 'SKU',                       sortable: true, sortType: 'text' },
   { key: 'warehouseName', label: 'Warehouse', kind: 'name',   sortable: true, sortType: 'text' },
-  { key: 'availableQty',  label: 'Available',                 sortable: true, sortType: 'number', align: 'right' },
-  { key: 'fsnClass',      label: 'FSN',       kind: 'status', sortable: true, sortType: 'text' },
+  { key: 'availableQty',  label: 'Available qty',             sortable: true, sortType: 'number', align: 'right' },
+  // Quantity and unit are separate columns, as on the To order table.
+  { key: 'unit',          label: 'Unit',      kind: 'unit' },
+  { key: 'fsnClass',      label: 'Movement',  kind: 'status', sortable: true, sortType: 'text' },
   { key: 'reason',        label: 'Reason',    kind: 'address', sortable: true, sortType: 'text' },
 ]
 
@@ -223,7 +225,7 @@ function onSaved() {
     </template>
 
     <template #cell-availableQty="{ row }">
-      {{ num((row as any).atp.available) }} {{ (row as any).unit }}
+      {{ num((row as any).atp.available) }}
     </template>
 
     <!-- Why the product is here, and what to do about it. -->
@@ -276,7 +278,7 @@ function onSaved() {
           <MpPopoverList>
             <MpPopoverListItem @click="viewProduct((row as any).sku)">{{ t('View details') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openVendors((row as any).sku)">
-              {{ t('Vendors, lead time and MOQ') }}
+              {{ t('View vendors, lead time and MOQ') }}
             </MpPopoverListItem>
             <MpPopoverListItem @click="openSettings(row as unknown as WorklistRow)">
               {{ t('Replenishment settings') }}
@@ -358,8 +360,10 @@ function onSaved() {
 .rp-num { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .rp-num-value { color: var(--mp-text-default); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .rp-num-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); text-align: right; }
-.rp-badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
-.rp-missing { display: flex; flex-direction: column; gap: 4px; }
+.rp-badges { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-1); align-items: center; }
+/* Table cells are nowrap by default; the reason is prose, so it wraps inside its
+   column instead of running under the pinned actions column and out of the table. */
+.rp-missing { display: flex; flex-direction: column; gap: var(--mp-spacing-1); white-space: normal; min-width: 0; }
 .rp-missing-reason { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
 
 .empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }

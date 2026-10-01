@@ -41,11 +41,11 @@ import { unitOptionsForSku, factorFor, baseUnitFor } from '~/data/productUnits'
 import { formatIDR } from '~/utils/currency'
 
 /**
- * `readonly` — vendor TERMS (lead time, MOQ, pack size, cost) are owned by
- * PURCHASING and edited only in the Vendors module, so they show as text with no
- * add/remove. The PREFERRED vendor stays selectable (PRD §2.1 / US-001: one active
- * preferred vendor per item, chosen only from vendors that list this SKU), and
- * "Save preferred vendor" commits just that choice.
+ * `readonly` — the drawer is a pure VIEW: vendor terms (lead time, MOQ, pack
+ * size, cost) and the preferred vendor all show as text, with no inputs, no
+ * add/remove and no save. Everything about a vendor–product link, including which
+ * vendor is preferred, is edited by purchasing in the Vendors module. Every
+ * current caller (worklist, Needs setup, product detail) opens it read-only.
  */
 const props = defineProps<{ isOpen: boolean; sku: string | null; readonly?: boolean }>()
 const emit = defineEmits<{
@@ -116,17 +116,6 @@ const recommendation = computed(() => {
   })))
 })
 const recommendedRow = computed(() => recommendation.value?.scores.find((s) => s.isRecommended) ?? null)
-const recommendedIsDefault = computed(() => {
-  const id = recommendation.value?.recommendedVendorId
-  return !!id && rows.value.some((r) => r.vendorId === id && r.isPreferred)
-})
-function applyRecommendation() {
-  const id = recommendation.value?.recommendedVendorId
-  if (!id) return
-  const i = rows.value.findIndex((r) => r.vendorId === id)
-  if (i >= 0) makeDefault(i)
-}
-
 function load() {
   if (!props.sku) return
   rows.value = vendorItemsForSku(props.sku).map((v) => ({
@@ -285,14 +274,6 @@ function save() {
  * theirs, not a purchasing term. This persists ONLY the preferred flag, never the
  * (read-only) terms.
  */
-function savePreferred() {
-  if (!props.sku) return
-  const preferred = rows.value.find((r) => r.isPreferred)
-  if (preferred) setPreferredVendor(props.sku, preferred.vendorId)
-  emit('saved')
-  close()
-  toast.notify({ variant: 'success', title: t('Preferred vendor saved.'), maxWidth: 'max-content' })
-}
 </script>
 
 <template>
@@ -337,12 +318,6 @@ function savePreferred() {
               <button type="button" class="rp-vi-ai-why" @click="showReasons = !showReasons">
                 {{ showReasons ? t('Hide') : t('Why?') }}
               </button>
-              <button
-                v-if="!recommendedIsDefault"
-                type="button"
-                class="btn-enterprise btn-enterprise--secondary"
-                @click="applyRecommendation"
-              >{{ t('Set as preferred') }}</button>
             </div>
             <ul v-if="showReasons" class="rp-vi-ai-reasons">
               <li v-for="reason in recommendedRow.reasons" :key="reason">{{ reason }}</li>
@@ -352,16 +327,19 @@ function savePreferred() {
             </ul>
           </div>
 
-          <table v-if="rows.length" class="rp-vi-table">
+          <!-- A mini-table inside a drawer is a contained object: outer border in
+               border-bold, default-weight inner dividers (rule/table-outer-border-bold). -->
+          <div v-if="rows.length" class="rp-vi-table-wrap">
+          <table class="rp-vi-table">
             <thead>
               <tr>
-                <th class="rp-vi-th">{{ t('Vendor') }}</th>
+                <th class="rp-vi-th rp-vi-th--vendor">{{ t('Vendor') }}</th>
                 <th class="rp-vi-th rp-vi-th--num">{{ t('Lead time') }}</th>
                 <th class="rp-vi-th rp-vi-th--num">{{ t('MOQ') }}</th>
                 <th class="rp-vi-th">{{ t('MOQ unit') }}</th>
                 <th class="rp-vi-th rp-vi-th--num">{{ t('Pack size') }}</th>
                 <th class="rp-vi-th rp-vi-th--num">{{ t('Unit cost') }}</th>
-                <th class="rp-vi-th rp-vi-th--center">{{ t('Default') }}</th>
+                <th class="rp-vi-th rp-vi-th--center">{{ t('Preferred') }}</th>
                 <th v-if="!readonly" class="rp-vi-th" />
               </tr>
             </thead>
@@ -426,17 +404,19 @@ function savePreferred() {
                   <span v-else class="rp-vi-lead-ro">{{ formatIDR(Number(row.unitCost) || 0) }}</span>
                   <span class="rp-vi-cell-sub">{{ formatIDR(Number(row.unitCost) || 0) }} / {{ row.purchaseUnit }}</span>
                 </td>
-                <!-- The preferred vendor IS selectable here even when terms are
-                     read-only: choosing which vendor to default a request to is a
-                     stockist decision, not a vendor-term edit. -->
-                <td class="rp-vi-td rp-vi-td--center">
+                <!-- Read-only: the preferred vendor is shown, not chosen, here. -->
+                <td v-if="readonly" class="rp-vi-td rp-vi-td--center">
+                  <MpIcon v-if="row.isPreferred" name="check" size="sm" class="rp-vi-default-ro" :aria-label="t('Preferred')" />
+                  <span v-else class="rp-vi-cell-sub" aria-hidden="true">—</span>
+                </td>
+                <td v-else class="rp-vi-td rp-vi-td--center">
                   <input
                     :id="`rp-vi-default-${i}`"
                     class="rp-vi-radio"
                     type="radio"
                     :name="`rp-vi-default-${sku}`"
                     :checked="row.isPreferred"
-                    :aria-label="t('Default')"
+                    :aria-label="t('Preferred')"
                     @change="makeDefault(i)"
                   />
                 </td>
@@ -448,16 +428,10 @@ function savePreferred() {
               </tr>
             </tbody>
           </table>
+          </div>
 
           <button v-if="!readonly" class="rp-vi-add" type="button" @click="addRow">+ {{ t('Vendor') }}</button>
 
-          <p v-if="readonly" class="rp-vi-hint rp-vi-hint--managed">
-            {{ t('Vendor terms are managed by purchasing in the Vendors module. You can still set the preferred vendor here.') }}
-          </p>
-
-          <p class="rp-vi-hint">
-            {{ t('MOQ and pack size are quoted in the MOQ unit. The suggested quantity is raised to MOQ, then rounded up to a whole pack.') }}
-          </p>
           <p class="rp-vi-hint">
             {{ t('Unit options come from this product\'s unit conversions — base unit') }}
             <strong>{{ baseUnit }}</strong>{{ unitOptions.length > 1 ? ', ' : '' }}
@@ -473,8 +447,7 @@ function savePreferred() {
           <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">
             {{ readonly ? t('Close') : t('Cancel') }}
           </button>
-          <button v-if="readonly" class="btn-enterprise btn-enterprise--primary" type="button" @click="savePreferred">{{ t('Save preferred vendor') }}</button>
-          <button v-else class="btn-enterprise btn-enterprise--primary" type="button" @click="save">{{ t('Save changes') }}</button>
+          <button v-if="!readonly" class="btn-enterprise btn-enterprise--primary" type="button" @click="save">{{ t('Save changes') }}</button>
         </footer>
       </div>
     </div>
@@ -496,7 +469,7 @@ function savePreferred() {
 }
 .rp-vi-panel {
   margin: var(--mp-spacing-3);
-  width: min(760px, calc(100% - 24px));
+  width: min(840px, calc(100% - 24px));
   height: calc(100% - 24px);
   display: flex; flex-direction: column;
   background: var(--mp-background-stage, #fff);
@@ -548,7 +521,6 @@ function savePreferred() {
   color: var(--mp-text-link); font-size: var(--mp-font-sizes-sm);
 }
 .rp-vi-ai-why:hover { text-decoration: underline; }
-.rp-vi-ai-head .btn-enterprise { margin-left: auto; }
 .rp-vi-ai-reasons {
   margin: var(--mp-spacing-2) 0 0; padding-left: var(--mp-spacing-5);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
@@ -557,7 +529,7 @@ function savePreferred() {
 .rp-vi-ai-reasons li { display: list-item; margin-top: 2px; }
 .rp-vi-ai-weights { color: var(--mp-text-subtle); }
 .rp-vi-ai-chip {
-  display: inline-flex; align-items: center; gap: 2px; margin-left: var(--mp-spacing-2);
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-0\.5, 2px); margin-top: var(--mp-spacing-1);
   padding: 0 var(--mp-spacing-1\.5, 6px); height: 20px;
   border-radius: var(--mp-radii-full, 999px);
   background: var(--mp-colors-background-information);
@@ -567,11 +539,21 @@ function savePreferred() {
 }
 .rp-vi-ai-chip :deep(svg) { width: 12px; height: 12px; }
 
+.rp-vi-table-wrap {
+  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md);
+  overflow-x: auto;
+}
 .rp-vi-table { width: 100%; border-collapse: collapse; }
+.rp-vi-table tbody tr:last-child .rp-vi-td { border-bottom: none; }
+.rp-vi-th:first-child, .rp-vi-td:first-child { padding-left: var(--mp-spacing-4); }
+.rp-vi-th:last-child, .rp-vi-td:last-child { padding-right: var(--mp-spacing-4); }
+/* The vendor name stays on one line; the AI pick chip sits under it, left-aligned. */
+.rp-vi-th--vendor { min-width: var(--mp-sizes-52, 208px); }
 .rp-vi-th {
   text-align: left; padding: var(--mp-spacing-2) var(--mp-spacing-2\.5);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  background: var(--mp-background-neutral-subtle);
   white-space: nowrap;
 }
 .rp-vi-th--num { text-align: right; }
@@ -584,7 +566,7 @@ function savePreferred() {
 }
 .rp-vi-td--num { text-align: right; }
 .rp-vi-td--center { text-align: center; }
-.rp-vi-vendor { display: block; }
+.rp-vi-vendor { display: block; white-space: nowrap; }
 .rp-vi-vendor-sub { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
 .rp-vi-cell-sub {
   display: block; margin-top: 2px;
@@ -594,12 +576,6 @@ function savePreferred() {
 .rp-vi-lead-ro { font-variant-numeric: tabular-nums; color: var(--mp-text-default); white-space: nowrap; }
 .rp-vi-radio { width: 16px; height: 16px; cursor: pointer; accent-color: var(--mp-colors-background-brand-bold); }
 .rp-vi-default-ro { display: inline-flex; color: var(--mp-colors-icon-brand); }
-.rp-vi-hint--managed {
-  margin-top: var(--mp-spacing-3);
-  padding: var(--mp-spacing-2\.5) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-secondary);
-}
 .rp-vi-remove {
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);

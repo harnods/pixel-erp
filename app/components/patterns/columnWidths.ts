@@ -22,6 +22,7 @@ export type ColumnKind =
   | 'tags'     // tag chips
   | 'unit'     // unit of measurement (pcs, kg …)
   | 'address'  // address or any content that can wrap to multiple lines
+  | 'wide'     // a default-type column whose HEADER label is longer than the default min (e.g. "Demand velocity per day")
   | 'default'  // anything not defined above
 
 export interface ColWidthRange {
@@ -45,6 +46,7 @@ export const COLUMN_WIDTH: Record<ColumnKind, ColWidthRange> = {
   tags:    { minWidth: '160px', maxWidth: '240px' },
   unit:    { minWidth: '128px', maxWidth: '128px' }, // fixed
   address: { minWidth: '200px', maxWidth: '240px' },
+  wide:    { minWidth: '216px', maxWidth: '240px' }, // same cap as default, higher floor so a long header never clips
   default: { minWidth: '160px', maxWidth: '240px' },
 }
 

@@ -1,18 +1,22 @@
 <script setup lang="ts">
 /**
- * "Why this number" — the trust surface behind a suggested quantity (PRD US-008
- * AC-02).
+ * "Suggested qty calculation" — the trust surface behind a suggested quantity
+ * (PRD US-005 AC-05: every input behind the number is visible).
  *
  * A right-side drawer rather than an expandable row or a detail page: the user is
- * triaging a list of thirty rows in one pass, so they must not lose their place
- * (ErpTablePage's accordion makes the WHOLE row the toggle, which would collide
- * with the row's checkbox and its three cell links), and there is no stored record
- * for a URL to own — the numbers are derived.
+ * triaging a list of rows in one pass, so they must not lose their place, and
+ * there is no stored record for a URL to own — the numbers are derived.
  *
  * Everything shown is a projection of the row the engine already built, never a
  * second calculation, so the drawer cannot disagree with the table.
+ *
+ * Layout follows docs/patterns/Drawer.md + ContentList.md: the canonical Teleport
+ * shell, H3 sections, key/value rows as horizontal ContentList
+ * (rule/content-list-horizontal), a bold-bordered calculation box
+ * (rule/table-outer-border-bold) and an MpButtonGroup footer.
  */
-import { MpIcon, MpButton } from '@mekari/pixel3'
+import { MpIcon, MpButton, MpButtonGroup, MpTextlink } from '@mekari/pixel3'
+import ContentList from '~/components/patterns/ContentList.vue'
 import type { WorklistRow } from '~/data/replenishment'
 import { leadTimeTierLabel, leadTimeSamplesFor } from '~/data/leadTimeHistory'
 import { formatIDR } from '~/utils/currency'
@@ -27,12 +31,15 @@ const emit = defineEmits<{
   (e: 'edit-vendors', row: WorklistRow): void
 }>()
 
-const { t } = useLocale()
+const { t, tf } = useLocale()
 
 function close() { emit('update:isOpen', false) }
 
 const num = (v: number, digits = 0) =>
   v.toLocaleString('id-ID', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+
+/** `64 Bag` — a quantity with its unit, as one translated-safe string. */
+const qty = (v: number, unit: string) => `${num(v)} ${unit}`
 
 /** Where a resolved value came from, in words the user can act on. */
 const SOURCE_LABEL: Record<string, string> = {
@@ -45,14 +52,24 @@ const SOURCE_LABEL: Record<string, string> = {
   none: '—',
   default: 'Default',
 }
+const sourceLabel = (key: string) => t(SOURCE_LABEL[key] ?? key)
 
 const velocityNote = computed(() => {
   const row = props.row
   if (!row) return ''
-  if (row.velocity.source !== 'computed') return 'No sales yet — excluded until its first sale'
+  if (row.velocity.source !== 'computed') return t('No sales yet — excluded until its first sale')
   return row.velocity.provisional
-    ? `Provisional — averaged over ${row.velocity.lookbackDays} days since first sale`
-    : `Averaged over the last ${row.velocity.lookbackDays} days of sales`
+    ? tf('Provisional — averaged over {n} days since first sale', { n: row.velocity.lookbackDays })
+    : tf('Averaged over the last {n} days of sales', { n: row.velocity.lookbackDays })
+})
+
+/** How the lead time was resolved, as a whole sentence (never joined fragments). */
+const leadTimeSource = computed(() => {
+  const row = props.row
+  if (!row) return ''
+  return row.leadTimeTier === 'computed'
+    ? tf('Average of the last {n} receipts', { n: row.leadTimeSampleSize })
+    : t(leadTimeTierLabel(row.leadTimeTier, row.leadTimeSampleSize))
 })
 
 /**
@@ -82,7 +99,15 @@ const purchaseDocs = computed(() => {
 const modelledDays = computed(() => props.row?.velocity.modelledDays ?? 0)
 const longestWindow = computed(() => props.row?.velocity.lookbackDays ?? 0)
 
-/** CSV-escape one cell. */
+const documentsSummary = computed(() => {
+  const s = salesDocs.value.length
+  const p = purchaseDocs.value.length
+  if (!s && !p) return t('No contributing documents in this window')
+  const parts = [s === 1 ? t('1 sales document') : tf('{n} sales documents', { n: s })]
+  if (p) parts.push(p === 1 ? t('1 purchase receipt') : tf('{n} purchase receipts', { n: p }))
+  return parts.join(' · ')
+})
+
 /** The full contributing SALES detail — the entry point the drawer doesn't list. */
 function exportSales() {
   const row = props.row
@@ -112,252 +137,219 @@ function exportPurchase() {
 
 <template>
   <Teleport to="body">
-  <Transition name="rp-bd">
-    <div v-if="isOpen && row" class="rp-bd-overlay">
-      <div class="rp-bd-panel" role="dialog" :aria-label="t('Why this suggestion')">
-        <header class="rp-bd-header">
-          <span class="rp-bd-title">{{ t('Why this suggestion') }}</span>
-          <MpButton class="rp-bd-close" is-rounded :aria-label="t('Close')" @click="close">
-            <MpIcon name="close" size="md" />
-          </MpButton>
-        </header>
+    <Transition name="rp-bd">
+      <div v-if="isOpen && row" class="rp-bd-overlay">
+        <div class="rp-bd-panel" role="dialog" :aria-label="t('Suggested qty calculation')">
+          <header class="rp-bd-header">
+            <span class="rp-bd-title">{{ t('Suggested qty calculation') }}</span>
+            <MpButton class="rp-bd-close" is-rounded :aria-label="t('Close')" @click="close">
+              <MpIcon name="close" size="md" />
+            </MpButton>
+          </header>
 
-        <div class="rp-bd-body">
-          <!-- Identity -->
-          <div class="rp-bd-identity">
-            <img v-if="row.img" class="rp-bd-thumb" :src="row.img" :alt="row.productName" loading="lazy" />
-            <span v-else class="rp-bd-thumb rp-bd-thumb--empty" />
-            <div class="rp-bd-identity-text">
-              <p class="rp-bd-product">{{ row.productName }}</p>
-              <p class="rp-bd-sub">{{ row.sku }} · {{ row.warehouseName }}</p>
-            </div>
-          </div>
-          <p class="rp-bd-asof">{{ t('As of') }} {{ formatDate(row.asOf) }}</p>
-
-          <!-- Headline -->
-          <section class="rp-bd-section">
-            <div class="rp-bd-headline">
-              <span class="rp-bd-headline-label">{{ t('Suggested qty') }}</span>
-              <span class="rp-bd-headline-value">
-                {{ num(row.suggestion.rawQty) }} {{ row.unit }}
-              </span>
-            </div>
-            <!-- This is the NEED. MOQ and the purchase multiplier are applied later,
-                 when the purchase request becomes a purchase order — not here. -->
-            <p v-if="row.suggestion.rawQty > 0 && row.vendorItem" class="rp-bd-headline-note">
-              {{ t('Rounded to MOQ and pack size when you raise the purchase order.') }}
-            </p>
-            <!-- US-004 AC-03: due, but open POs already bring it up to the target. -->
-            <p v-if="row.suggestion.coveredBy.length" class="rp-bd-headline-note">
-              {{ t('Covered by') }} {{ row.suggestion.coveredBy.join(', ') }} — {{ t('nothing more to order.') }}
-            </p>
-            <p v-if="row.suggestion.suppressed" class="rp-bd-headline-note rp-bd-headline-note--muted">
-              <template v-if="row.suggestion.suppressReason === 'above-reorder-point'">
-                {{ t('Nothing to order — stock is at or above the reorder point.') }}
-              </template>
-              <template v-else-if="row.suggestion.suppressReason === 'no-demand-basis'">
-                {{ t('No quantity can be suggested without a demand basis.') }}
-              </template>
-              <template v-else>{{ t('This product is not tracked for replenishment.') }}</template>
-            </p>
-
-            <!-- Days of cover — an INFORMATION read on how long current available
-                 stock lasts at the current pace, not a policy input. Sits with the
-                 suggested qty it contextualises, never in the Inputs list. -->
-            <div class="rp-bd-substat">
-              <span class="rp-bd-substat-label">{{ t('Days of cover') }}</span>
-              <span
-                class="rp-bd-substat-value"
-                :class="{ 'rp-bd-substat-value--critical': row.cover.belowLeadTime }"
-              >
-                <template v-if="row.cover.coverDays === null">—</template>
-                <template v-else>{{ num(row.cover.coverDays, 1) }} {{ t('days') }}</template>
-              </span>
-              <span class="rp-bd-substat-note" :class="{ 'rp-bd-substat-note--critical': row.cover.belowLeadTime }">
-                <template v-if="row.cover.coverDays === null">{{ t('No recent sales') }}</template>
-                <template v-else-if="row.cover.belowLeadTime">{{ t('Stocks out before resupply') }}</template>
-                <template v-else>{{ t('from available stock at the current pace') }}</template>
-              </span>
-            </div>
-          </section>
-
-          <!-- Inputs -->
-          <section class="rp-bd-section">
-            <span class="rp-bd-section-title">{{ t('Inputs') }}</span>
-            <dl class="rp-bd-dl">
-              <div class="rp-bd-dt">{{ t('Demand velocity') }}</div>
-              <div class="rp-bd-dd">
-                {{ num(row.velocity.avgDailySales, 2) }} {{ row.unit }}/{{ t('day') }}
-                <span class="rp-bd-dd-note">{{ velocityNote }}</span>
+          <div class="rp-bd-body">
+            <!-- Identity -->
+            <div class="rp-bd-identity">
+              <img v-if="row.img" class="rp-bd-thumb" :src="row.img" :alt="row.productName" loading="lazy" />
+              <span v-else class="rp-bd-thumb" />
+              <div class="rp-bd-identity-text">
+                <p class="rp-bd-product">{{ row.productName }}</p>
+                <p class="rp-bd-caption">{{ row.sku }} · {{ row.warehouseName }} · {{ t('As of') }} {{ formatDate(row.asOf) }}</p>
               </div>
+            </div>
 
-              <div class="rp-bd-dt">{{ t('Lead time') }}</div>
-              <div class="rp-bd-dd">
-                {{ row.leadTimeDays }} {{ t('days') }}
-                <span class="rp-bd-dd-note">
-                  {{ leadTimeTierLabel(row.leadTimeTier, row.leadTimeSampleSize) }}
-                  · {{ row.vendor?.name ?? t('No vendor — using the company default') }}
-                  <template v-if="row.vendorItem">
-                    · {{ t('MOQ') }} {{ row.vendorItem.moq }} {{ row.vendorItem.purchaseUnit }}
-                    · {{ t('pack of') }} {{ row.vendorItem.packSize }}
+            <!-- ── Suggestion ── -->
+            <section class="rp-bd-section">
+              <h3 class="rp-bd-section-title">{{ t('Suggestion') }}</h3>
+
+              <ContentList horizontal :label="t('Suggested qty')">
+                <span class="rp-bd-strong">{{ qty(row.suggestion.rawQty, row.unit) }}</span>
+                <!-- This is the NEED. MOQ and the purchase multiplier are applied later,
+                     when purchasing turns the request into a purchase order. -->
+                <span v-if="row.suggestion.rawQty > 0 && row.vendorItem" class="rp-bd-note">
+                  {{ t('Rounded to MOQ and pack size when purchasing creates the purchase order') }}
+                </span>
+                <!-- US-004 AC-03: due, but open POs already bring it up to the target. -->
+                <span v-if="row.suggestion.coveredBy.length" class="rp-bd-note">
+                  {{ tf('Covered by {docs} — nothing more to order', { docs: row.suggestion.coveredBy.join(', ') }) }}
+                </span>
+                <span v-if="row.suggestion.suppressed" class="rp-bd-note">
+                  <template v-if="row.suggestion.suppressReason === 'above-reorder-point'">
+                    {{ t('Nothing to order — stock is above the reorder point') }}
                   </template>
-                  <template v-if="row.alternates.length">
-                    · {{ row.alternates.length }} {{ t('other vendors') }}
+                  <template v-else-if="row.suggestion.suppressReason === 'no-demand-basis'">
+                    {{ t('No quantity can be suggested without a demand basis') }}
                   </template>
+                  <template v-else>{{ t('This product is not tracked for replenishment') }}</template>
                 </span>
-                <!-- Receipts that could not be measured, and why (US-001 AC-02). -->
-                <span v-if="row.leadTimeExcludedNoPo" class="rp-bd-dd-note">
-                  {{ row.leadTimeExcludedNoPo }}
-                  {{ row.leadTimeExcludedNoPo === 1 ? t('receipt excluded') : t('receipts excluded') }}
-                  — {{ t('bought directly with no purchase order') }}
-                </span>
-                <span v-if="row.inactivePreferredVendor" class="rp-bd-dd-note rp-bd-caption--warning">
-                  {{ t('Preferred vendor is inactive — lead time falls back to the next listed vendor. Update the preferred vendor if needed.') }}
-                </span>
-                <a class="rp-bd-link" @click="emit('edit-vendors', row)">{{ t('Vendors, lead time and MOQ') }}</a>
-              </div>
+              </ContentList>
 
-              <div class="rp-bd-dt">{{ t('Safety days') }}</div>
-              <div class="rp-bd-dd">
-                {{ row.safetyDays }} {{ t('days') }}
-                <span class="rp-bd-dd-note">{{ SOURCE_LABEL[row.safetyDaysSource] }}</span>
-                <a class="rp-bd-link" @click="emit('edit-settings', row)">{{ t('Replenishment settings') }}</a>
-              </div>
+              <!-- Days of cover — how long available stock lasts at the current pace. -->
+              <ContentList horizontal :label="t('Days of cover')">
+                <template v-if="row.cover.coverDays === null">
+                  —
+                  <span class="rp-bd-note">{{ t('No recent sales') }}</span>
+                </template>
+                <template v-else>
+                  <span :class="{ 'rp-bd-critical': row.cover.belowLeadTime }">
+                    {{ tf('{n} days', { n: num(row.cover.coverDays, 1) }) }}
+                  </span>
+                  <span class="rp-bd-note" :class="{ 'rp-bd-critical': row.cover.belowLeadTime }">
+                    {{ row.cover.belowLeadTime ? t('Stocks out before resupply') : t('From available stock at the current pace') }}
+                  </span>
+                </template>
+              </ContentList>
+            </section>
+
+            <!-- ── Inputs ── -->
+            <section class="rp-bd-section">
+              <h3 class="rp-bd-section-title">{{ t('Inputs') }}</h3>
+
+              <ContentList horizontal :label="t('Demand velocity')">
+                {{ tf('{n} {unit} per day', { n: num(row.velocity.avgDailySales, 2), unit: row.unit }) }}
+                <span class="rp-bd-note">{{ velocityNote }}</span>
+              </ContentList>
+
+              <ContentList horizontal :label="t('Lead time')">
+                {{ tf('{n} days', { n: row.leadTimeDays }) }}
+                <span class="rp-bd-note">{{ leadTimeSource }}</span>
+                <!-- Receipts that could not be measured, and why (US-001 AC-03). -->
+                <span v-if="row.leadTimeExcludedNoPo" class="rp-bd-note">
+                  {{ row.leadTimeExcludedNoPo === 1
+                    ? t('1 receipt excluded — bought directly with no purchase order')
+                    : tf('{n} receipts excluded — bought directly with no purchase order', { n: row.leadTimeExcludedNoPo }) }}
+                </span>
+              </ContentList>
+
+              <ContentList horizontal :label="t('Vendor')">
+                {{ row.vendor?.name ?? '—' }}
+                <span v-if="!row.vendor" class="rp-bd-note">{{ t('No vendor — using the default lead time') }}</span>
+                <span v-if="row.vendorItem" class="rp-bd-note">
+                  {{ tf('MOQ {moq} {unit} · pack of {pack}', { moq: row.vendorItem.moq, unit: row.vendorItem.purchaseUnit, pack: row.vendorItem.packSize }) }}
+                </span>
+                <span v-if="row.inactivePreferredVendor" class="rp-bd-note rp-bd-warning">
+                  {{ t('Preferred vendor is inactive — lead time falls back to the next listed vendor') }}
+                </span>
+                <MpTextlink id="rp-bd-vendors" as="a" class="rp-bd-link" @click.prevent="emit('edit-vendors', row)">
+                  {{ t('View vendors, lead time and MOQ') }}
+                </MpTextlink>
+              </ContentList>
+
+              <ContentList horizontal :label="t('Safety days')">
+                {{ tf('{n} days', { n: row.safetyDays }) }}
+                <span class="rp-bd-note">{{ sourceLabel(row.safetyDaysSource) }}</span>
+                <MpTextlink id="rp-bd-settings" as="a" class="rp-bd-link" @click.prevent="emit('edit-settings', row)">
+                  {{ t('Replenishment settings') }}
+                </MpTextlink>
+              </ContentList>
 
               <!-- Sizes the ORDER, never the trigger (decision D9). -->
-              <div class="rp-bd-dt">{{ t('Coverage days') }}</div>
-              <div class="rp-bd-dd">
-                {{ row.coverageDays }} {{ t('days') }}
-                <span class="rp-bd-dd-note">
-                  {{ t('how much each order covers — not part of the trigger') }}
-                </span>
-              </div>
+              <ContentList horizontal :label="t('Coverage days')">
+                {{ tf('{n} days', { n: row.coverageDays }) }}
+                <span class="rp-bd-note">{{ t('How much each order covers — not part of the trigger') }}</span>
+              </ContentList>
 
-              <div class="rp-bd-dt">{{ t('Reorder point') }}</div>
-              <div class="rp-bd-dd">
+              <ContentList horizontal :label="t('Reorder point')">
                 <template v-if="row.reorderPointSource === 'none'">—</template>
-                <template v-else>{{ num(row.reorderPoint) }} {{ row.unit }}</template>
-                <span class="rp-bd-dd-note">{{ SOURCE_LABEL[row.reorderPointSource] }}</span>
-              </div>
+                <template v-else>{{ qty(row.reorderPoint, row.unit) }}</template>
+                <span class="rp-bd-note">{{ sourceLabel(row.reorderPointSource) }}</span>
+              </ContentList>
 
-              <!-- The order-up-to level the suggestion refills to. Always present when
-                   there is demand: a max level if one is set, otherwise the coverage-days
-                   target — so every recommended SKU shows how high it orders up to. -->
-              <div class="rp-bd-dt">{{ t('Order up to') }}</div>
-              <div class="rp-bd-dd">
+              <!-- The order-up-to level the suggestion refills to. -->
+              <ContentList horizontal :label="t('Order up to')">
                 <template v-if="row.velocity.avgDailySales > 0">
-                  {{ num(row.suggestion.targetQty) }} {{ row.unit }}
-                  <span class="rp-bd-dd-note">
-                    {{ t('velocity × (lead + safety + coverage days)') }}
-                  </span>
+                  {{ qty(row.suggestion.targetQty, row.unit) }}
+                  <span class="rp-bd-note">{{ t('Demand velocity × (lead time + safety days + coverage days)') }}</span>
                 </template>
                 <template v-else>
                   —
-                  <span class="rp-bd-dd-note">{{ t('No demand yet to size an order') }}</span>
+                  <span class="rp-bd-note">{{ t('No demand yet to size an order') }}</span>
                 </template>
-              </div>
+              </ContentList>
 
-              <div class="rp-bd-dt">{{ t('Available') }}</div>
-              <div class="rp-bd-dd">
-                {{ num(row.atp.available) }} {{ row.unit }}
-                <span class="rp-bd-dd-note">
-                  {{ t('On hand') }} {{ num(row.atp.onHand) }} − {{ t('Reserved') }} {{ num(row.atp.reserved) }}
+              <ContentList horizontal :label="t('Available qty')">
+                {{ qty(row.atp.available, row.unit) }}
+                <span class="rp-bd-note">
+                  {{ tf('On hand {onHand} − reserved {reserved}', { onHand: num(row.atp.onHand), reserved: num(row.atp.reserved) }) }}
                 </span>
-              </div>
+              </ContentList>
 
-              <div class="rp-bd-dt">{{ t('In transit') }}</div>
-              <div class="rp-bd-dd">
-                {{ num(row.atp.onOrder) }} {{ row.unit }}
-                <span v-if="row.atp.onOrderDocs.length" class="rp-bd-dd-note">
-                  {{ row.atp.onOrderDocs.map(d => `${d.number} (${d.outstanding})`).join(' · ') }}
+              <ContentList horizontal :label="t('In transit qty')">
+                {{ qty(row.atp.onOrder, row.unit) }}
+                <span class="rp-bd-note">
+                  {{ row.atp.onOrderDocs.length
+                    ? row.atp.onOrderDocs.map(d => `${d.number} (${d.outstanding})`).join(' · ')
+                    : t('No open purchase orders or receipts') }}
                 </span>
-                <span v-else class="rp-bd-dd-note">{{ t('No open receipts') }}</span>
+              </ContentList>
+            </section>
+
+            <!-- ── Calculation, with the numbers substituted so it can be checked by eye ── -->
+            <section class="rp-bd-section">
+              <h3 class="rp-bd-section-title">{{ t('Calculation') }}</h3>
+              <p class="rp-bd-caption">
+                {{ t('Suggested qty = demand velocity × (lead time + safety days + coverage days) − (available + in transit), rounded up') }}
+              </p>
+              <!-- A contained key/value box: bold outer border, default inner rules
+                   (rule/table-outer-border-bold). -->
+              <div class="rp-bd-steps">
+                <div v-for="step in row.suggestion.trace" :key="step.label" class="rp-bd-step">
+                  <span class="rp-bd-step-label">{{ t(step.label) }}</span>
+                  <span class="rp-bd-step-value">{{ step.value }}</span>
+                </div>
               </div>
-            </dl>
-          </section>
+            </section>
 
-          <!-- Formula, with the numbers substituted so it can be checked by eye -->
-          <section class="rp-bd-section">
-            <span class="rp-bd-section-title">{{ t('How this is calculated') }}</span>
-            <div class="rp-bd-formula">
-              <div v-for="step in row.suggestion.trace" :key="step.label" class="rp-bd-formula-row">
-                <span class="rp-bd-formula-label">{{ step.label }}</span>
-                <span class="rp-bd-formula-value">{{ step.value }}</span>
-              </div>
-            </div>
-            <p class="rp-bd-caption">
-              {{ t('Suggested qty = velocity × (lead time + safety days + coverage days) − (available + in transit), rounded up.') }}
-            </p>
-          </section>
+            <!-- ── Contributing documents — counts only; the full detail is an export away ── -->
+            <section class="rp-bd-section">
+              <h3 class="rp-bd-section-title">{{ t('Contributing documents') }}</h3>
+              <p class="rp-bd-caption">
+                {{ documentsSummary }}
+                <template v-if="modelledDays > 0">
+                  · {{ tf('{n} of {total} days are modelled demo history', { n: modelledDays, total: longestWindow }) }}
+                </template>
+              </p>
+              <!-- Text-only buttons: no leading icon on Export (rule/btn-icon-add-only). -->
+              <MpButtonGroup v-if="salesDocs.length || purchaseDocs.length" class="rp-bd-export">
+                <MpButton v-if="salesDocs.length" variant="secondary" is-rounded @click="exportSales">
+                  {{ t('Export sales (CSV)') }}
+                </MpButton>
+                <MpButton v-if="purchaseDocs.length" variant="secondary" is-rounded @click="exportPurchase">
+                  {{ t('Export purchases (CSV)') }}
+                </MpButton>
+              </MpButtonGroup>
+            </section>
 
-          <!-- Contributing documents — counts only; the full transaction detail is a
-               spreadsheet away, never a list in the drawer. -->
-          <section class="rp-bd-section">
-            <span class="rp-bd-section-title">{{ t('Contributing documents') }}</span>
-            <p class="rp-bd-caption">
-              {{ salesDocs.length }} {{ salesDocs.length === 1 ? t('sales document') : t('sales documents') }}
-              <template v-if="purchaseDocs.length">
-                · {{ purchaseDocs.length }} {{ purchaseDocs.length === 1 ? t('purchase receipt') : t('purchase receipts') }}
-              </template>
-              {{ t('behind these numbers') }}
-              <template v-if="modelledDays > 0">
-                · {{ modelledDays }} {{ t('of') }} {{ longestWindow }} {{ t('days are modelled demo history') }}
-              </template>
-            </p>
-            <div v-if="salesDocs.length || purchaseDocs.length" class="rp-bd-export">
-              <button
-                v-if="salesDocs.length"
-                class="btn-enterprise btn-enterprise--secondary"
-                type="button"
-                @click="exportSales"
-              >
-                {{ t('Export sales (CSV)') }}
-              </button>
-              <button
-                v-if="purchaseDocs.length"
-                class="btn-enterprise btn-enterprise--secondary"
-                type="button"
-                @click="exportPurchase"
-              >
-                {{ t('Export purchases (CSV)') }}
-              </button>
-            </div>
-            <p v-else class="rp-bd-caption">{{ t('No contributing documents in this window.') }}</p>
-          </section>
-
-          <!-- Estimated cost of the NEED. A rough figure at the vendor's unit cost;
-               the exact amount is set on the purchase order, after MOQ rounding. -->
-          <section v-if="row.vendorItem && row.suggestion.rawQty > 0" class="rp-bd-section">
-            <span class="rp-bd-section-title">{{ t('Estimated cost') }}</span>
-            <dl class="rp-bd-dl">
-              <div class="rp-bd-dt">{{ t('Unit cost') }}</div>
-              <div class="rp-bd-dd">
+            <!-- ── Estimated cost of the NEED — a rough figure; the exact amount is set
+                 on the purchase order, after MOQ rounding ── -->
+            <section v-if="row.vendorItem && row.suggestion.rawQty > 0" class="rp-bd-section">
+              <h3 class="rp-bd-section-title">{{ t('Estimated cost') }}</h3>
+              <ContentList horizontal :label="t('Unit cost')">
                 {{ formatIDR(row.vendorItem.unitCost) }} / {{ row.vendorItem.purchaseUnit }}
-              </div>
-              <div class="rp-bd-dt">{{ t('Estimated total') }}</div>
-              <div class="rp-bd-dd">
+              </ContentList>
+              <ContentList horizontal :label="t('Estimated total')">
                 {{ formatIDR(needCost) }}
-                <span class="rp-bd-dd-note">{{ t('Estimate for the suggested need · exact total set at the purchase order') }}</span>
-              </div>
-            </dl>
-          </section>
-        </div>
+                <span class="rp-bd-note">{{ t('Estimate for the suggested qty. The exact total is set on the purchase order') }}</span>
+              </ContentList>
+            </section>
+          </div>
 
-        <footer class="rp-bd-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">{{ t('Close') }}</button>
-          <button
-            class="btn-enterprise btn-enterprise--primary"
-            type="button"
-            @click="emit('create-purchase-request', row)"
-          >{{ t('Request to purchase') }}</button>
-        </footer>
+          <footer class="rp-bd-footer">
+            <MpButtonGroup class="erp-action-footer">
+              <MpButton variant="ghost" is-rounded @click="close">{{ t('Close') }}</MpButton>
+              <MpButton variant="primary" is-rounded @click="emit('create-purchase-request', row)">
+                {{ t('Request to purchase') }}
+              </MpButton>
+            </MpButtonGroup>
+          </footer>
+        </div>
       </div>
-    </div>
-  </Transition>
+    </Transition>
   </Teleport>
 </template>
 
 <style scoped>
+/* Canonical drawer shell (docs/patterns/Drawer.md › BillsFiltersDrawer.vue). */
 .rp-bd-enter-active, .rp-bd-leave-active { transition: background-color 250ms ease; }
 .rp-bd-enter-from, .rp-bd-leave-to { background-color: transparent; }
 .rp-bd-enter-active .rp-bd-panel { transition: transform 350ms ease-out; }
@@ -371,18 +363,18 @@ function exportPurchase() {
 }
 .rp-bd-panel {
   margin: var(--mp-spacing-3);
-  width: min(520px, calc(100% - 24px));
+  width: min(560px, calc(100% - 24px));
   height: calc(100% - 24px);
   display: flex; flex-direction: column;
-  background: var(--mp-background-stage, #fff);
+  background: var(--mp-background-stage, #ffffff);
   border-radius: 12px;
   overflow: hidden;
 }
 .rp-bd-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .rp-bd-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .rp-bd-close {
@@ -391,132 +383,70 @@ function exportPurchase() {
   border: none !important; background: none !important; border-radius: var(--mp-radii-md);
   cursor: pointer; color: var(--mp-colors-icon-default);
 }
-.rp-bd-close:hover { background: var(--mp-background-neutral-hovered); }
+.rp-bd-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 .rp-bd-body { flex: 1; overflow-y: auto; padding: var(--mp-spacing-4); }
 
+/* ── Identity ── */
 .rp-bd-identity { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); }
 .rp-bd-thumb {
-  flex-shrink: 0; width: 40px; height: 40px;
+  flex-shrink: 0; width: var(--mp-sizes-10, 40px); height: var(--mp-sizes-10, 40px);
   border-radius: var(--mp-radii-sm); object-fit: cover;
-  background: var(--mp-background-neutral-subtle);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
 }
-.rp-bd-thumb--empty { display: inline-block; }
 .rp-bd-identity-text { min-width: 0; }
 .rp-bd-product {
-  font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold);
+  margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default); line-height: var(--mp-line-heights-lg, 24px);
 }
-.rp-bd-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.rp-bd-asof {
-  margin-top: var(--mp-spacing-1);
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle);
-}
 
+/* ── Sections: H3 (rule/type-scale — lg/16, semibold), divider between ── */
 .rp-bd-section {
-  margin-top: var(--mp-spacing-5);
-  padding-top: var(--mp-spacing-5);
-  border-top: 1px solid var(--mp-border-default);
+  margin-top: var(--mp-spacing-4);
+  padding-top: var(--mp-spacing-4);
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
 }
-.rp-bd-section-head { display: flex; align-items: baseline; justify-content: space-between; }
 .rp-bd-section-title {
-  display: block;
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
+  margin: 0 0 var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-text-default);
 }
-.rp-bd-link {
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-link);
-  cursor: pointer; text-decoration: none;
-}
-.rp-bd-link--inline { margin-left: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); }
+.rp-bd-caption { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
-.rp-bd-headline { display: flex; align-items: baseline; justify-content: space-between; gap: var(--mp-spacing-3); }
-.rp-bd-headline-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.rp-bd-headline-value {
-  font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default); white-space: nowrap;
-}
-.rp-bd-headline-note { margin-top: 2px; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
-.rp-bd-headline-note--muted { color: var(--mp-text-secondary); }
-
-/* Days of cover — an information stat sitting under the suggested qty. */
-.rp-bd-substat {
-  margin-top: var(--mp-spacing-3);
-  padding-top: var(--mp-spacing-3);
-  border-top: 1px solid var(--mp-border-subtle, var(--mp-border-default));
-  display: grid; grid-template-columns: auto 1fr; align-items: baseline;
-  column-gap: var(--mp-spacing-3); row-gap: 2px;
-}
-.rp-bd-substat-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.rp-bd-substat-value {
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default); text-align: right;
-}
-.rp-bd-substat-value--critical { color: var(--mp-text-danger); }
-.rp-bd-substat-note {
-  grid-column: 1 / -1;
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle);
-}
-.rp-bd-substat-note--critical { color: var(--mp-text-danger); }
-
-.rp-bd-export { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-3); }
-
-.rp-bd-dl {
-  margin-top: var(--mp-spacing-3);
-  display: grid; grid-template-columns: 150px 1fr;
-  row-gap: var(--mp-spacing-3); column-gap: var(--mp-spacing-3);
-}
-.rp-bd-dt { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.rp-bd-dd { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); min-width: 0; }
-.rp-bd-dd-note {
-  display: block; margin-top: 2px;
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle);
+/* ── Value helpers inside ContentList ── */
+.rp-bd-strong { font-weight: var(--mp-font-weights-semi-bold); }
+.rp-bd-note {
+  display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
   overflow-wrap: anywhere;
 }
-.rp-bd-dd-note--critical { color: var(--mp-text-danger); }
+.rp-bd-critical { color: var(--mp-text-danger); }
+.rp-bd-warning { color: var(--mp-colors-text-warning); }
+.rp-bd-link { display: inline-block; font-size: var(--mp-font-sizes-sm); }
 
-/* A bordered box, never a drop-shadow (DESIGN.md → Surfaces & cards). */
-.rp-bd-formula {
+/* ── Calculation steps — a contained key/value box ── */
+.rp-bd-steps {
   margin-top: var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral-subtle);
-  padding: var(--mp-spacing-3);
-  display: flex; flex-direction: column; gap: var(--mp-spacing-1\.5);
+  border: 1px solid var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-md);
+  overflow: hidden;
 }
-.rp-bd-formula-row { display: flex; justify-content: space-between; gap: var(--mp-spacing-3); }
-.rp-bd-formula-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.rp-bd-formula-value {
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default);
+.rp-bd-step {
+  display: flex; justify-content: space-between; gap: var(--mp-spacing-4);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+}
+.rp-bd-step:last-child { border-bottom: none; font-weight: var(--mp-font-weights-semi-bold); }
+.rp-bd-step-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); flex-shrink: 0; }
+.rp-bd-step-value {
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   text-align: right; font-variant-numeric: tabular-nums;
 }
-.rp-bd-caption {
-  margin-top: var(--mp-spacing-2);
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
-}
-.rp-bd-caption--warning { color: var(--mp-colors-text-warning); }
 
-.rp-bd-table { margin-top: var(--mp-spacing-3); width: 100%; border-collapse: collapse; }
-.rp-bd-th {
-  text-align: left; padding: var(--mp-spacing-2) var(--mp-spacing-2\.5);
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-secondary); border-bottom: 1px solid var(--mp-border-default);
-  white-space: nowrap;
-}
-.rp-bd-th--num { text-align: right; }
-.rp-bd-td {
-  padding: var(--mp-spacing-2) var(--mp-spacing-2\.5);
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-subtle, var(--mp-border-default));
-}
-.rp-bd-td--num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.rp-bd-td--sub { color: var(--mp-text-subtle); }
+.rp-bd-export { margin-top: var(--mp-spacing-3); flex-wrap: wrap; }
 
 .rp-bd-footer {
-  flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
+  flex-shrink: 0;
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-top: 1px solid var(--mp-border-default);
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
 }
-.rp-bd-link { display: block; margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
 </style>

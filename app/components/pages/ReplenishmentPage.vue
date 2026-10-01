@@ -42,7 +42,7 @@ import { ALL_WAREHOUSES } from '~/composables/useReplenishmentWarehouse'
 import { formatDate } from '~/utils/date'
 
 const router = useRouter()
-const { t } = useLocale()
+const { t, tf } = useLocale()
 
 // ─── First-load skeleton (matches the other index pages) ─────────────────────
 const loading = ref(true)
@@ -263,28 +263,31 @@ function clearFilters() {
 const ALL_COLUMNS: TableColumn[] = [
   { key: 'productName',   label: 'Product',         kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'sku',           label: 'SKU',                             sortable: true, sortType: 'text' },
-  { key: 'fsnClass',      label: 'FSN',             kind: 'status', sortable: true, sortType: 'text' },
+  // "Movement", not the bare abbreviation "FSN": the header must be readable without
+  // knowing the acronym; it is spelled out once in Settings › Movement classification (FSN).
+  { key: 'fsnClass',      label: 'Movement',        kind: 'status', sortable: true, sortType: 'text' },
   // General signals (US-013 AC-01 §4): how reliable / early the numbers behind the
   // recommendation are — the demand read (Provisional / Volatile demand) AND the
-  // lead-time basis (Estimated lead time / Waiting for real lead time). Distinct
-  // from FSN's movement class, so it gets its own column.
+  // lead-time basis (Estimated lead time / Waiting for real lead time).
   { key: 'signals',       label: 'Signals',         kind: 'tags' },
   { key: 'warehouseName', label: 'Warehouse',       kind: 'name',   sortable: true, sortType: 'text' },
-  // The stock group, in StockTables.vue's vocabulary so it reads as the same table
-  // the user already knows. `available` is what days-of-cover divides;
-  // `available + onOrder` is what the reorder trigger compares — both derivable
-  // from these four, and spelled out in the trust drawer.
+  // The quantity group reads left to right as the calculation does: what is there
+  // (on hand → reserved → available → in transit), what to order (suggested qty)
+  // and the trigger it was measured against (reorder point) — then the ONE Unit
+  // column that serves all of them. Quantity cells show bare numbers, never "64 Bag".
   { key: 'onHandQty',     label: 'On hand qty',     sortable: true, sortType: 'number', align: 'right' },
   { key: 'reservedQty',   label: 'Reserved qty',    sortable: true, sortType: 'number', align: 'right' },
   { key: 'availableQty',  label: 'Available qty',   sortable: true, sortType: 'number', align: 'right' },
   { key: 'onOrderQty',    label: 'In transit qty',  sortable: true, sortType: 'number', align: 'right' },
-  { key: 'unit',          label: 'Unit',            kind: 'unit' },
-  { key: 'coverValue',    label: 'Days of cover',   sortable: true, sortType: 'number', align: 'right' },
   { key: 'suggestedQty',  label: 'Suggested qty',   sortable: true, sortType: 'number', align: 'right' },
-  { key: 'vendorName',    label: 'Vendor',          kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'reorderPoint',  label: 'Reorder point',   sortable: true, sortType: 'number', align: 'right' },
-  { key: 'leadTimeDays',  label: 'Lead time',       sortable: true, sortType: 'number', align: 'right' },
-  { key: 'velocityValue', label: 'Demand velocity', sortable: true, sortType: 'number', align: 'right' },
+  { key: 'unit',          label: 'Unit',            kind: 'unit' },
+  { key: 'vendorName',    label: 'Vendor',          kind: 'name',   sortable: true, sortType: 'text' },
+  { key: 'coverValue',    label: 'Days of cover',   sortable: true, sortType: 'number', align: 'right' },
+  // The unit is in the header, so these cells are bare numbers like the qty columns.
+  { key: 'leadTimeDays',  label: 'Lead time days',  sortable: true, sortType: 'number', align: 'right' },
+  // `wide`: the header is longer than the default 160px floor and would clip.
+  { key: 'velocityValue', label: 'Demand velocity per day', kind: 'wide', sortable: true, sortType: 'number', align: 'right' },
   { key: 'safetyDays',    label: 'Safety days',     sortable: true, sortType: 'number', align: 'right' },
 ]
 
@@ -317,22 +320,23 @@ function hideColumn(key: string) { if (!LOCKED_COLUMNS.has(key)) columnVisibilit
 const EXPORT_MAX_ROWS = 1000
 function exportWorklist() {
   const header: CsvRow = [
-    'Product', 'SKU', 'Warehouse', 'FSN', 'Signals', 'On hand qty', 'Reserved qty',
-    'Available qty', 'In transit qty', 'Unit', 'Days of cover', 'Suggested qty', 'Vendor',
-    'Reorder point', 'Lead time (days)', 'Demand velocity (per day)', 'Safety days',
+    'Product', 'SKU', 'Movement', 'Signals', 'Warehouse', 'On hand qty', 'Reserved qty',
+    'Available qty', 'In transit qty', 'Suggested qty', 'Reorder point', 'Unit', 'Vendor',
+    'Days of cover', 'Lead time days', 'Demand velocity per day', 'Safety days',
   ]
   const rows: CsvRow[] = sorted.value.map((r) => [
-    r.productName, r.sku, r.warehouseName, r.fsn.committed,
+    r.productName, r.sku, r.fsn.committed,
     [
       r.flags.provisional ? 'Provisional' : '', r.flags.volatile ? 'Volatile demand' : '',
       r.flags.leadTimeEstimated ? 'Estimated lead time' : '',
       r.leadTimeTier === 'none' ? 'Waiting for real lead time' : '',
     ].filter(Boolean).join('; '),
-    r.atp.onHand, r.atp.reserved, r.atp.available, r.atp.onOrder, r.unit,
+    r.warehouseName,
+    r.atp.onHand, r.atp.reserved, r.atp.available, r.atp.onOrder,
+    r.suggestion.rawQty, r.reorderPointSource === 'none' ? '' : r.reorderPoint, r.unit,
+    r.vendor?.name ?? '',
     r.cover.coverDays === null ? '' : r.cover.coverDays.toFixed(1),
-    r.suggestion.rawQty, r.vendor?.name ?? '',
-    r.reorderPointSource === 'none' ? '' : r.reorderPoint, r.leadTimeDays,
-    r.velocity.avgDailySales.toFixed(2), r.safetyDays,
+    r.leadTimeDays, r.velocity.avgDailySales.toFixed(2), r.safetyDays,
   ])
   const files = splitCsv(header, rows, EXPORT_MAX_ROWS)
   files.forEach((lines, i) => {
@@ -360,27 +364,6 @@ const FSN_BADGE: Record<string, { type: string; label: string }> = {
   slow: { type: 'warning', label: 'Slow' },
   'non-moving': { type: 'announcement', label: 'Non-moving' },
   unclassified: { type: 'announcement', label: 'Unclassified' },
-}
-
-/**
- * What this vendor's terms WOULD make of the need, shown as secondary detail.
- *
- * The primary number is the need itself, in stock units, because that is what a
- * Purchase Request carries (decision D12) — rounding happens later, at PO time,
- * against whichever vendor purchasing actually binds. Showing the rounded figure
- * as the headline would put a different number here than on the request the user
- * is about to raise, for the same row.
- */
-function adjustmentNote(row: WorklistRow): string {
-  const vi = row.vendorItem
-  if (!vi || row.suggestion.purchaseQty <= 0) return ''
-  const at = `${row.suggestion.purchaseQty} ${vi.purchaseUnit} ${t('at PO')}`
-  if (row.suggestion.raisedByMoq && row.suggestion.raisedByPack) {
-    return `${t('MOQ')} ${vi.moq} + ${t('pack of')} ${vi.packSize} → ${at}`
-  }
-  if (row.suggestion.raisedByMoq) return `${t('MOQ')} ${vi.moq} → ${at}`
-  if (row.suggestion.raisedByPack) return `${t('Pack of')} ${vi.packSize} → ${at}`
-  return at
 }
 
 // ─── Row actions ─────────────────────────────────────────────────────────────
@@ -478,12 +461,12 @@ function confirmPr(payload: {
   const unsourced = result.created.filter((c) => !c.vendorId).length
   const parts: string[] = []
   if (result.skipped.length) {
-    parts.push(`${result.skipped.length} ${result.skipped.length === 1 ? t('line skipped') : t('lines skipped')}.`)
+    parts.push(tf('Skipped products: {n}.', { n: result.skipped.length }))
   }
-  if (unsourced) parts.push(t('Purchasing will source the unassigned lines.'))
+  if (unsourced) parts.push(t('Purchasing will source the products without a vendor.'))
   toast.notify({
     variant: 'success',
-    title: created === 1 ? t('Purchase request created.') : `${created} ${t('purchase requests created.')}`,
+    title: created === 1 ? t('Purchase request created') : tf('{n} purchase requests created', { n: created }),
     description: parts.length ? parts.join(' ') : t('Purchasing will review and decide which become orders.'),
     maxWidth: 'max-content',
   })
@@ -636,7 +619,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
         <ErpFilterSelect
           id="rp-fsn-select"
           :model-value="fsnFilter"
-          :placeholder="t('FSN class')"
+          :placeholder="t('Movement')"
           :options="FSN_OPTIONS.map((o) => ({ value: o.id, label: t(o.name) }))"
           width="170px"
           @update:model-value="(v: string) => { fsnFilter = v }"
@@ -793,14 +776,11 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
     <template #cell-suggestedQty="{ row }">
       <div class="rp-num">
         <a class="cell-link rp-num-value" @click.stop="openBreakdown(row as unknown as WorklistRow)">
-          {{ num((row as any).suggestion.rawQty) }} {{ (row as any).unit }}
+          {{ num((row as any).suggestion.rawQty) }}
         </a>
         <!-- US-004 AC-03: due, but an open PO already covers the gap. -->
         <span v-if="(row as any).suggestion.coveredBy.length" class="rp-num-sub">
           {{ t('Covered by') }} {{ (row as any).suggestion.coveredBy.join(', ') }}
-        </span>
-        <span v-else-if="adjustmentNote(row as unknown as WorklistRow)" class="rp-num-sub">
-          {{ adjustmentNote(row as unknown as WorklistRow) }}
         </span>
       </div>
     </template>
@@ -810,10 +790,14 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
       <template v-if="(row as any).vendor">
         <div class="rp-vendor">
           <span class="cell-text">{{ (row as any).vendor.name }}</span>
-          <span v-if="(row as any).alternates.length" class="rp-vendor-sub">
+          <a
+            v-if="(row as any).alternates.length"
+            class="cell-link rp-vendor-sub rp-vendor-more"
+            @click.stop="openVendors((row as any).sku)"
+          >
             +{{ (row as any).alternates.length }}
             {{ (row as any).alternates.length === 1 ? t('more vendor') : t('more vendors') }}
-          </span>
+          </a>
           <!-- US-001 EH-01: lead time fell back to the next listed vendor. -->
           <span v-if="(row as any).inactivePreferredVendor" class="rp-vendor-sub rp-vendor-sub--warning">
             {{ t('Preferred vendor is inactive') }}
@@ -825,16 +809,16 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
 
     <!-- ── Optional numeric columns ── -->
     <template #cell-reorderPoint="{ row }">
-      {{ (row as any).reorderPointSource === 'none' ? '—' : `${num((row as any).reorderPoint)} ${(row as any).unit}` }}
+      {{ (row as any).reorderPointSource === 'none' ? '—' : num((row as any).reorderPoint) }}
     </template>
     <template #cell-leadTimeDays="{ row }">
-      {{ (row as any).leadTimeDays }} {{ t('days') }}
+      {{ (row as any).leadTimeDays }}
     </template>
     <template #cell-velocityValue="{ row }">
-      {{ num((row as any).velocity.avgDailySales, 2) }} {{ (row as any).unit }}/{{ t('day') }}
+      {{ num((row as any).velocity.avgDailySales, 2) }}
     </template>
     <template #cell-safetyDays="{ row }">
-      {{ (row as any).safetyDays }} {{ t('days') }}
+      {{ (row as any).safetyDays }}
     </template>
 
     <!-- ── Row actions ── -->
@@ -855,10 +839,10 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
           <MpPopoverList>
             <MpPopoverListItem @click="viewProduct((row as any).sku)">{{ t('View details') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openBreakdown(row as unknown as WorklistRow)">
-              {{ t('Why this number') }}
+              {{ t('View suggested qty calculation') }}
             </MpPopoverListItem>
             <MpPopoverListItem @click="openVendors((row as any).sku)">
-              {{ t('Vendors, lead time and MOQ') }}
+              {{ t('View vendors, lead time and MOQ') }}
             </MpPopoverListItem>
             <MpPopoverListItem @click="openPoForRows([row as unknown as WorklistRow])">
               {{ t('Request to purchase') }}
@@ -1039,6 +1023,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
 
 .rp-vendor { display: flex; flex-direction: column; min-width: 0; }
 .rp-vendor-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
+.rp-vendor-more { color: var(--mp-text-link); cursor: pointer; }
 .rp-vendor-sub--warning { color: var(--mp-colors-text-warning); }
 .filter-airene-btn :deep(svg) { color: var(--mp-airene-default); }
 .rp-badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
@@ -1049,7 +1034,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
   display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5, 6px);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
 }
-.rp-bulk-info :deep(svg) { color: var(--mp-colors-icon-subtle); flex-shrink: 0; }
+.rp-bulk-info :deep(svg) { color: var(--mp-colors-icon-default); flex-shrink: 0; }
 
 
 /* ── Empty state ── */
