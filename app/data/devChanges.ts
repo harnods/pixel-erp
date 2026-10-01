@@ -28,60 +28,156 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
-    id: 'bom-version-upgrade',
-    title: 'Bill of materials: editing a used BOM creates a new version',
+    id: 'bom-version-impact',
+    title: "New version: impact before saving",
     description:
-      'When work orders already use the Active version, saving the edit upgrades the BOM to v(n+1) and deactivates v(n) — a notice says so and a change note is required. Work orders created with v(n) keep it; new work orders use v(n+1). No engineering change for a regular BOM (that is the project BOM’s rule). Replaces the old refusal “Failed to save. This BOM is used by an active work order”.',
-    date: '2026-09-29',
+      "When anything uses this BOM, Save first lists where-used across every level — direct parents and ancestors (“via”) — with open work orders and the per-unit cost delta, then “Save & notify owners”.",
+    date: '2026-10-01',
+    files: ['BomNewVersionImpactModal.vue', 'billOfMaterials.ts'],
+  },
+  {
+    id: 'bom-version-form',
+    title: "Bill of materials form: save to create a new version",
+    description:
+      "“Create new version” opens this form prefilled from the Active (or a superseded) version. Nothing exists until Save: saving creates v(n+1) as the Active version and supersedes v(n); leaving the form discards the edits. A reason is required. Work orders already created keep their version; only work orders created after saving use the new one. No Draft status.",
+    date: '2026-10-01',
     files: ['CreateBillOfMaterialsPage.vue', 'integrityGuards.ts', 'billOfMaterials.ts'],
   },
   {
     id: 'bom-version-badge',
-    title: 'Bill of materials: version badge on the detail title',
+    title: "Bill of materials: version badge on the detail title",
     description:
-      'The BOM detail title shows the version being viewed and its status — v2 · Active, or v1 · Superseded when an older version is picked.',
-    date: '2026-09-29',
+      "The BOM detail title shows the version being viewed and its status — v2 · Active or v1 · Superseded.",
+    date: '2026-10-01',
     files: ['BillOfMaterialsDetailsPage.vue'],
   },
   {
     id: 'bom-version-switcher',
-    title: 'Bill of materials: version switcher',
+    title: "Bill of materials: version switcher with reference counts",
     description:
-      'Pick any version (Active or Superseded, with its work-order count) to see its full recipe. A superseded version is read-only and names the Active one.',
-    date: '2026-09-29',
+      "Pick any version — Active or Superseded — with how many documents reference it (work orders, incl. as a pinned sub-BOM).",
+    date: '2026-10-01',
     files: ['BillOfMaterialsDetailsPage.vue'],
   },
   {
-    id: 'bom-version-history',
-    title: 'Bill of materials: Versions section',
+    id: 'bom-version-create',
+    title: "Bill of materials: “Create new version” on a locked version",
     description:
-      'Every version with its status, who created it and when, what changed, when it was deactivated, and the work orders built from it.',
-    date: '2026-09-29',
+      "Once a work order references the Active version it can never change. The primary action becomes “Create new version” (tooltip: referenced by N documents), which opens the form — the version is only created on Save.",
+    date: '2026-10-01',
+    files: ['BillOfMaterialsDetailsPage.vue'],
+  },
+  {
+    id: 'bom-version-superseded',
+    title: "Bill of materials: Superseded view",
+    description:
+      "Banner “You are viewing v1 (superseded). Active version: v2.” with Go to active. Read-only; the only way forward is “Create new version from here”.",
+    date: '2026-10-01',
+    files: ['BillOfMaterialsDetailsPage.vue'],
+  },
+  {
+    id: 'bom-version-from-here',
+    title: "Bill of materials: Create new version from here",
+    description:
+      "Copies a superseded version into a new draft — the way to bring back an older recipe.",
+    date: '2026-10-01',
+    files: ['BillOfMaterialsDetailsPage.vue'],
+  },
+  {
+    id: 'bom-version-changelog',
+    title: "Bill of materials: Changelog tab",
+    description:
+      "Append-only version events — time (WIB), action (created, edited, new version saved, sub-BOM new version acknowledged), version, actor and reason.",
+    date: '2026-10-01',
     files: ['BillOfMaterialsDetailsPage.vue', 'billOfMaterials.ts'],
   },
   {
-    id: 'bom-index-version',
-    title: 'Bill of materials list: Active version column',
+    id: 'bom-version-history',
+    title: "Bill of materials: Versions section",
     description:
-      'Each BOM shows its Active version and how many superseded versions it has. The version is never part of the BOM name.',
-    date: '2026-09-29',
+      "Every version with its status (Active / Superseded), who created it and when, the reason, and the work orders built from it (plus references as a pinned sub-BOM).",
+    date: '2026-10-01',
+    files: ['BillOfMaterialsDetailsPage.vue', 'billOfMaterials.ts'],
+  },
+  {
+    id: 'bom-parent-review',
+    title: "Multi-level: “Version updated to vN” on the sub-assembly line",
+    description:
+      "The raw-material line of a sub-assembly whose BOM got a new version shows a simple “Version updated to v2” badge. The banner above links to the sub-assembly’s BOM.",
+    date: '2026-10-01',
+    files: ['BillOfMaterialsDetailsPage.vue', 'billOfMaterials.ts'],
+  },
+  {
+    id: 'bom-parent-review-banner',
+    title: "Multi-level: simple sub-BOM new-version banner",
+    description:
+      "On the parent BOM detail: “Sub-BOM <name> was updated to v2.” per sub-assembly, with View sub-BOM opening its BOM detail. Closing the banner acknowledges it (logged in the changelog).",
+    date: '2026-10-01',
+    files: ['BillOfMaterialsDetailsPage.vue', 'billOfMaterials.ts'],
+  },
+  {
+    id: 'bom-structure',
+    title: "Multi-level: BOM structure tree",
+    description:
+      "Tree table — Product (with BOM number + version for sub-BOMs, caret to collapse, tree lines) · Available qty · Qty needed · Stock availability · Create work order. From a work order it shows the pinned version per level and a neutral “vN available”.",
+    date: '2026-10-01',
+    files: ['BomStructureTree.vue', 'BomStructureDrawer.vue', 'billOfMaterials.ts'],
+  },
+  {
+    id: 'bom-index-version',
+    title: "Bill of materials list: Version column",
+    description:
+      "Active version, how many superseded versions exist, and a “Sub-BOM has a new version” badge.",
+    date: '2026-10-01',
+    files: ['BillOfMaterialsIndexPage.vue'],
+  },
+  {
+    id: 'bom-index-version-filter',
+    title: "Bill of materials list: Version status filter",
+    description:
+      "Filter to BOMs with older versions, or whose sub-BOM has a new version.",
+    date: '2026-10-01',
     files: ['BillOfMaterialsIndexPage.vue'],
   },
   {
     id: 'bom-wo-version-pin',
-    title: 'Work order: pinned BOM version',
+    title: "Work order: pinned BOM version stamp",
     description:
-      'A work order is pinned to the BOM version it was created from. Its raw materials, costs, routing, material records and consume/return all read that version — upgrading the BOM never changes a running work order.',
-    date: '2026-09-29',
-    files: ['WorkOrderDetailsPage.vue', 'NewMaterialRecordPage.vue', 'materialConsumeReturn.ts', 'workOrders.ts'],
+      "“BOM name · vN — rev. date” links to the pinned snapshot. Raw materials, costs, routing, material records and consume/return all read that version.",
+    date: '2026-10-01',
+    files: ['WorkOrderDetailsPage.vue', 'workOrders.ts'],
   },
   {
     id: 'bom-wo-newer-version',
-    title: 'Work order: neutral “vN available” indicator',
+    title: "Work order: neutral “vN available” badge",
     description:
-      'When the BOM has a newer Active version, the work order shows a neutral “vN available” that opens what changed. Information only — it never blocks and never moves the pin. Hidden on completed and canceled work orders.',
-    date: '2026-09-29',
+      "Info-colored, never a warning: opens the cumulative diff with Δ cost/unit. Hidden on completed, canceled and pre-versioning work orders.",
+    date: '2026-10-01',
     files: ['WorkOrderDetailsPage.vue', 'WorkOrderBomVersionDrawer.vue'],
+  },
+  {
+    id: 'wo-drift-diff',
+    title: "Work order: what changed (cumulative)",
+    description:
+      "Composition diff between the pinned version and the Active one, with the estimated cost delta per unit.",
+    date: '2026-10-01',
+    files: ['WorkOrderBomVersionDrawer.vue', 'BomVersionDiff.vue'],
+  },
+  {
+    id: 'bom-wo-sub-pins',
+    title: "Work order: multi-level pins",
+    description:
+      "At creation every sub-BOM level resolves to its Active version and is pinned on the work order. A later sub activation shows as “<sub> vN available” — the pin never moves.",
+    date: '2026-10-01',
+    files: ['WorkOrderDetailsPage.vue', 'workOrders.ts', 'BomStructureDrawer.vue'],
+  },
+  {
+    id: 'bom-wo-pre-versioning',
+    title: "Work order: pre-versioning tag",
+    description:
+      "Work orders created before versioning have no reliable pin — they show a gray “pre-versioning” tag and never a drift badge.",
+    date: '2026-10-01',
+    files: ['WorkOrderDetailsPage.vue', 'workOrders.ts'],
   },
   {
     id: 'bom-wo-index-version',

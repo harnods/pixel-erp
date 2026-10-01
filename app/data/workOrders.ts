@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
 import { TODAY } from './master'
-import { billOfMaterials, bomAtVersion, type BillOfMaterials } from './billOfMaterials'
+import { billOfMaterials, bomAtVersion, resolveSubBomPins, type BillOfMaterials } from './billOfMaterials'
 import { loadSnapshot, saveSnapshot } from './persist'
 
 /**
@@ -23,6 +23,14 @@ export interface WorkOrder {
    * work orders created afterwards use the new one.
    */
   bomVersion: number
+  /**
+   * Multi-level pin (resolve-at-WO): every sub-BOM under the pinned version,
+   * resolved to its Active version when this work order was created — keyed by
+   * sub-BOM id. Like `bomVersion`, it never moves.
+   */
+  subBomPins?: Record<string, number>
+  /** Created before BOM versioning existed — no reliable pin, so no drift indicator. */
+  preVersioning?: boolean
   /** Standard = made-to-stock · Order = made-to-order (tied to a sales order) */
   category: 'Standard' | 'Order'
   /** Assembly = build the output · Disassembly = break the output into components */
@@ -137,17 +145,22 @@ function buildSeed(): WorkOrder[] {
     bomId: seedBomId(bomIndex),
     bomName: seedBomName(bomIndex),
     bomVersion: 1,
+    // Seed work orders predate every sub-BOM upgrade — each level was v1 then.
+    subBomPins: resolveSubBomPins({ ...bomAtVersion(billOfMaterials.find(b => b.id === seedBomId(bomIndex)), 1)!, id: seedBomId(bomIndex) }, () => 1),
+    // One completed order is from before versioning — shown as "pre-versioning".
+    ...(i === 16 ? { preVersioning: true } : {}),
   }))
 }
 
 // Persisted as a full snapshot (seed + user-created) — mirrors outgoing.ts.
-const workOrderSnapshot = loadSnapshot<WorkOrder>('workOrders')
+// Key bumped for the multi-level pins (subBomPins) + pre-versioning demo row.
+const workOrderSnapshot = loadSnapshot<WorkOrder>('workOrders-v2')
 // Work orders saved before versioning existed were built from v1.
-export const workOrders = reactive<WorkOrder[]>((workOrderSnapshot ?? buildSeed()).map(w => ({ ...w, bomVersion: w.bomVersion ?? 1 })))
+export const workOrders = reactive<WorkOrder[]>((workOrderSnapshot ?? buildSeed()).map(w => ({ ...w, bomVersion: w.bomVersion ?? 1, ...(w.bomVersion === undefined ? { preVersioning: true } : {}) })))
 
 /** Persist the work-order snapshot (call after any mutation). */
 export function persistWorkOrders(): void {
-  saveSnapshot('workOrders', workOrders)
+  saveSnapshot('workOrders-v2', workOrders)
 }
 
 let woAddSeq = workOrders.length
@@ -162,12 +175,17 @@ function nextWorkOrderNumber(): string {
 }
 
 /** Create a new work order from the New work order form — must reference an existing BOM.
- *  It is pinned to the BOM's Active version at this moment. */
-export function addWorkOrder(data: Omit<WorkOrder, 'id' | 'number' | 'bomVersion'>): WorkOrder {
+ *  It is pinned to the BOM's Active version at this moment, and every sub-BOM level
+ *  resolves to its own Active version and is pinned too (resolve-at-WO). A version
+ *  saved later never reaches this work order — only work orders created after it. */
+export function addWorkOrder(data: Omit<WorkOrder, 'id' | 'number' | 'bomVersion' | 'subBomPins' | 'preVersioning'>): WorkOrder {
+  const bom = billOfMaterials.find(b => b.id === data.bomId)
   const n = woAddSeq++
+  const { preVersioning: _legacy, subBomPins: _pins, ...rest } = data as WorkOrder
   const wo: WorkOrder = {
-    ...data,
-    bomVersion: billOfMaterials.find(b => b.id === data.bomId)?.version ?? 1,
+    ...rest,
+    bomVersion: bom?.version ?? 1,
+    subBomPins: bom ? resolveSubBomPins(bom) : {},
     id: `wo-new-${n}`,
     number: nextWorkOrderNumber(),
   }
@@ -184,4 +202,26 @@ export function bomForWorkOrder(wo: Pick<WorkOrder, 'bomId' | 'bomVersion'>): Bi
 /** Work orders pinned to one version of a BOM (any status — a reference locks the version for good). */
 export function workOrdersOnBomVersion(bomId: string, version: number): WorkOrder[] {
   return workOrders.filter(w => w.bomId === bomId && w.bomVersion === version)
+}
+
+/** Closed work orders never show drift — their as-built is final. */
+export function workOrderClosed(wo: Pick<WorkOrder, 'status'>): boolean {
+  return wo.status === 'completed' || wo.status === 'canceled'
+}
+/**
+ * Drift (V-06): the BOM's Active version is newer than this work order's pin.
+ * Neutral and informational — never blocking. None on closed or pre-versioning WOs.
+ */
+export function workOrderDrift(wo: WorkOrder): number | undefined {
+  if (wo.preVersioning || workOrderClosed(wo)) return undefined
+  const b = billOfMaterials.find(x => x.id === wo.bomId)
+  return b && b.version > wo.bomVersion ? b.version : undefined
+}
+/** Sub-BOM levels whose Active version moved past this work order's pin. */
+export function workOrderSubDrift(wo: WorkOrder): { bom: BillOfMaterials; pinned: number; active: number }[] {
+  if (wo.preVersioning || workOrderClosed(wo)) return []
+  return Object.entries(wo.subBomPins ?? {}).flatMap(([id, pinned]) => {
+    const b = billOfMaterials.find(x => x.id === id)
+    return b && b.version > pinned ? [{ bom: b, pinned, active: b.version }] : []
+  })
 }

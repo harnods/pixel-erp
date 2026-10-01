@@ -16,18 +16,20 @@
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { formatIDR } from '~/utils/currency'
 import {
-  MpFormControl, MpFormLabel, MpFormErrorMessage,
+  MpFormControl, MpFormLabel, MpFormErrorMessage, MpFormHelpText,
   MpAutocomplete, MpInput, MpInputGroup, MpInputLeftAddon, MpInputRightAddon, MpTextarea,
   MpButton, MpIcon, MpCheckbox, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, toast,
 } from '@mekari/pixel3'
 import { CATALOG } from '~/data/catalog'
 import {
-  addBillOfMaterials, billOfMaterials, catalogProduct,
+  addBillOfMaterials, billOfMaterials, catalogProduct, bomAtVersion, bomCycle, nextBomVersion, bomWhereUsed,
+  VERSION_REASON_MIN, VERSION_REASON_MAX,
   type BillOfMaterials, type BomRawMaterial, type BomProductionCost,
   type BomRoutingStep, type BomOtherOutput, type BomProductionWaste,
 } from '~/data/billOfMaterials'
-import { updateBillOfMaterialsSafe, bomVersionLocked } from '~/data/integrityGuards'
-import { workOrdersOnBomVersion } from '~/data/workOrders'
+import { updateBillOfMaterialsSafe, saveBomNewVersionSafe, bomVersionLocked, bomVersionRefCount } from '~/data/integrityGuards'
+import BomNewVersionImpactModal from '~/components/BomNewVersionImpactModal.vue'
+import { workOrders, workOrderClosed } from '~/data/workOrders'
 
 const { t } = useLocale()
 const router = useRouter()
@@ -39,16 +41,31 @@ const editingId = (route.query.edit as string) || ''
 const duplicateFromId = (route.query.duplicate as string) || ''
 const isEditMode = computed(() => !!editingId)
 
-// ── Versioning (regular BOM) ────────────────────────────────────────────────────
-// Once a work order was created from the Active version, that version is locked:
-// saving upgrades the BOM to v(n+1) and deactivates v(n). Work orders already on
-// v(n) keep it; new work orders use v(n+1). No engineering change here — that is
-// the project BOM's rule. A change note is required so every version is explainable.
+// ── Versioning (regular BOM — Active → Superseded, no Draft) ───────────────────
+// "Create new version" opens this form prefilled from the Active version (or a
+// superseded one via ?from=N). Nothing exists until Save: saving creates vN+1 as
+// the Active version and supersedes the previous one; leaving the form discards
+// the edits and no version is created. Work orders already created keep the
+// version they were pinned to — only work orders created after saving use vN+1.
+// Editing a version a work order references always goes through this mode.
+// An Active version nothing references yet is edited in place (plain Edit).
 const editingBomRecord = computed(() => (editingId ? billOfMaterials.find(b => b.id === editingId) : undefined))
-const upgradesVersion = computed(() => !!editingId && bomVersionLocked(editingId))
-const lockedWoCount = computed(() => (editingBomRecord.value ? workOrdersOnBomVersion(editingBomRecord.value.id, editingBomRecord.value.version).length : 0))
-const versionNote = ref('')
-const versionNoteError = ref(false)
+const fromVersion = Number(route.query.from) || undefined
+const editingRefs = computed(() => (editingBomRecord.value ? bomVersionRefCount(editingBomRecord.value.id, editingBomRecord.value.version) : 0))
+const newVersionMode = computed(() => !!editingBomRecord.value && (!!route.query.newVersion || !!fromVersion || bomVersionLocked(editingBomRecord.value.id)))
+const nextVersion = computed(() => (editingBomRecord.value ? nextBomVersion(editingBomRecord.value) : 1))
+const versionReason = ref('')
+const versionReasonError = ref('')
+function validateVersionReason(): boolean {
+  if (!newVersionMode.value) return true
+  const n = versionReason.value.trim().length
+  versionReasonError.value = n < VERSION_REASON_MIN
+    ? t('Reason is required (min 10 characters)')
+    : n > VERSION_REASON_MAX ? t('Reason can be at most 500 characters') : ''
+  return !versionReasonError.value
+}
+/** Inline save errors (rule/form-errors-inline) — a circular reference or a refused save. */
+const saveError = ref('')
 const editingNumber = ref('')
 const editingArchived = ref(false)
 
@@ -282,12 +299,7 @@ function validate() {
   if (!category.value) { categoryError.value = true; ok = false }
   if (!costingReference.value) { costingError.value = true; ok = false }
   if (!mainRow.value.productId) { mainProductError.value = true; ok = false }
-  if (!validateVersionNote()) ok = false
   return ok
-}
-function validateVersionNote() {
-  if (upgradesVersion.value && !versionNote.value.trim()) { versionNoteError.value = true; return false }
-  return true
 }
 
 const optionLabel = (options: { id: string; name: string }[], id: string) => options.find(o => o.id === id)?.name ?? id
@@ -352,7 +364,7 @@ function prefillFrom(bom: BillOfMaterials) {
 
 if (editingId) {
   const src = billOfMaterials.find(b => b.id === editingId)
-  if (src) { prefillFrom(src); editingNumber.value = src.number; editingArchived.value = src.archived }
+  if (src) { prefillFrom(bomAtVersion(src, fromVersion) ?? src); editingNumber.value = src.number; editingArchived.value = src.archived }
 } else if (duplicateFromId) {
   const src = billOfMaterials.find(b => b.id === duplicateFromId)
   if (src) prefillFrom(src)
@@ -416,34 +428,76 @@ function buildBomPayload() {
   }
 }
 
-// Returns the BOM id to navigate to (plus the version it saved as), or null when
-// the save was refused — caller then aborts.
-function saveBom(): { id: string; upgradedTo?: number } | null {
+// Returns the BOM id + the version it saved, or null when the save was refused —
+// the reason is shown inline above the form (never a toast).
+function cycleError(payload: ReturnType<typeof buildBomPayload>): boolean {
+  const cycle = bomCycle(editingId || undefined, payload)
+  if (!cycle) return false
+  saveError.value = `${t('Circular reference')}: ${[payload.finishedGoodId, ...cycle].map(id => catalogProduct(id)?.name ?? id).join(' › ')}. ${t('A bill of materials can’t use its own output at any level.')}`
+  return true
+}
+function saveBom(): { id: string; version: number } | null {
+  const payload = buildBomPayload()
+  if (cycleError(payload)) return null
   if (isEditMode.value) {
-    const res = updateBillOfMaterialsSafe(editingId, buildBomPayload(), { note: versionNote.value })
+    const res = updateBillOfMaterialsSafe(editingId, payload)
     if (!res.ok) {
-      toast.notify({ variant: 'error', title: t('Failed to save. Please try again'), maxWidth: 'max-content' })
+      saveError.value = t('Failed to save. Please try again')
       return null
     }
-    return { id: editingId, upgradedTo: res.upgraded ? res.version : undefined }
+    return { id: editingId, version: res.version }
   }
-  return { id: addBillOfMaterials(buildBomPayload()).id }
+  const created = addBillOfMaterials(payload)
+  return { id: created.id, version: created.version }
 }
-function savedToast(saved: { upgradedTo?: number }, fallback: string) {
-  toast.notify({ variant: 'success', title: saved.upgradedTo ? `${t('Saved as version')} v${saved.upgradedTo}` : fallback })
+
+// ── New version: impact check, then save vN+1 ──
+const isImpactOpen = ref(false)
+const impactContent = ref<ReturnType<typeof buildBomPayload>>()
+function hasImpact(): boolean {
+  const b = editingBomRecord.value
+  if (!b) return false
+  try {
+    return bomWhereUsed(b.id).length > 0 || workOrders.some(w => w.bomId === b.id && !workOrderClosed(w))
+  } catch {
+    return true // where-used down → the modal shows the degraded banner
+  }
 }
+function saveNewVersion() {
+  const payload = impactContent.value ?? buildBomPayload()
+  const res = saveBomNewVersionSafe(editingId, payload, { by: 'Rahadian Bima', reason: versionReason.value })
+  isImpactOpen.value = false
+  if (!res.ok) {
+    if (res.reason === 'REASON') validateVersionReason()
+    else saveError.value = t('Failed to save. Please try again')
+    return
+  }
+  toast.notify({ variant: 'success', title: `v${res.version} ${t('saved')}` })
+  router.push(`/bill-of-materials/${editingId}`)
+}
+
 function handleSave() {
-  if (!validate()) return
+  saveError.value = ''
+  const ok = validate()
+  if (!validateVersionReason() || !ok) return
+  if (newVersionMode.value) {
+    const payload = buildBomPayload()
+    if (cycleError(payload)) return
+    impactContent.value = payload
+    if (hasImpact()) isImpactOpen.value = true
+    else saveNewVersion()
+    return
+  }
   const saved = saveBom()
   if (!saved) return
-  savedToast(saved, isEditMode.value ? t('Bill of materials changes saved') : t('Bill of materials saved'))
+  toast.notify({ variant: 'success', title: isEditMode.value ? t('Bill of materials changes saved') : t('Bill of materials saved') })
   router.push(`/bill-of-materials/${saved.id}`)
 }
 function handleSaveDraft() {
-  if (!validateVersionNote()) return
+  saveError.value = ''
   const saved = saveBom()
   if (!saved) return
-  savedToast(saved, isEditMode.value ? t('Bill of materials changes saved') : t('Bill of materials saved as draft'))
+  toast.notify({ variant: 'success', title: t('Bill of materials saved as draft') })
   router.push(`/bill-of-materials/${saved.id}`)
 }
 
@@ -477,7 +531,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <MpButton variant="textLink" class="detail-breadcrumb" @click="goList">{{ t('Bill of materials') }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">{{ isEditMode ? t('Edit bill of materials') : t('New bill of materials') }}</h1>
+          <h1 class="detail-title">{{ !isEditMode ? t('New bill of materials') : newVersionMode ? `${t('New version')} v${nextVersion}` : t('Edit bill of materials') }}</h1>
         </div>
       </div>
     </header>
@@ -487,22 +541,31 @@ onUnmounted(() => { stageObserver?.disconnect() })
       <div class="bf-body">
 
         <!-- ══ BOM info ══════════════════════════════════════════════════════ -->
-        <!-- Versioning notice — only when this save upgrades the BOM -->
-        <section v-if="upgradesVersion && editingBomRecord" class="bf-section" data-devchange="bom-version-upgrade">
-          <MpBanner id="bf-version-banner" variant="info">
+        <!-- Versioning notice — what this save does to which version -->
+        <section v-if="saveError || newVersionMode" class="bf-section bf-version" data-devchange="bom-version-form">
+          <MpBanner v-if="saveError" id="bf-save-error" variant="danger">
             <MpBannerIcon />
-            <MpBannerTitle>{{ t('Saving creates version') }} v{{ editingBomRecord.version + 1 }}</MpBannerTitle>
-            <MpBannerDescription>
-              v{{ editingBomRecord.version }} {{ t('is used by') }} {{ lockedWoCount }} {{ t('work order(s), so it can’t change. It will be deactivated: existing work orders keep building') }} v{{ editingBomRecord.version }}, {{ t('and new work orders use') }} v{{ editingBomRecord.version + 1 }}.
-            </MpBannerDescription>
+            <MpBannerDescription>{{ saveError }}</MpBannerDescription>
           </MpBanner>
-          <div class="bf-field bf-field--lg">
-            <MpFormControl id="bf-version-note" is-required :is-invalid="versionNoteError">
-              <MpFormLabel>{{ t('What changed in this version') }}</MpFormLabel>
-              <MpTextarea id="bf-version-note-input" v-model="versionNote" @update:model-value="versionNoteError = false" />
-              <MpFormErrorMessage>{{ t('Describe what changed so the new version can be explained later.') }}</MpFormErrorMessage>
-            </MpFormControl>
-          </div>
+          <template v-if="newVersionMode && editingBomRecord">
+            <MpBanner id="bf-version-new" variant="info">
+              <MpBannerIcon />
+              <MpBannerTitle>{{ t('Saving creates') }} v{{ nextVersion }} {{ t('and supersedes') }} v{{ editingBomRecord.version }}</MpBannerTitle>
+              <MpBannerDescription>
+                <template v-if="fromVersion">{{ t('Prefilled from') }} v{{ fromVersion }}. </template>
+                <template v-if="editingRefs">v{{ editingBomRecord.version }} {{ t('is referenced by') }} {{ editingRefs }} {{ t('document(s) and can no longer be edited.') }} </template>
+                {{ t('Work orders already created keep their version; only work orders created after saving use') }} v{{ nextVersion }}. {{ t('If you leave without saving, no new version is created.') }}
+              </MpBannerDescription>
+            </MpBanner>
+            <div class="bf-field bf-field--lg">
+              <MpFormControl id="bf-version-reason" is-required :is-invalid="!!versionReasonError">
+                <MpFormLabel>{{ t('Reason for new version') }}</MpFormLabel>
+                <MpTextarea id="bf-version-reason-input" v-model="versionReason" @update:model-value="versionReasonError = ''" />
+                <MpFormHelpText v-if="!versionReasonError">{{ t('Why is this revision needed? (min 10 characters)') }} · {{ versionReason.trim().length }}/{{ VERSION_REASON_MAX }}</MpFormHelpText>
+                <MpFormErrorMessage>{{ versionReasonError }}</MpFormErrorMessage>
+              </MpFormControl>
+            </div>
+          </template>
         </section>
 
         <section class="bf-section">
@@ -927,13 +990,20 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <MpButton variant="ghost" is-rounded @click="goList">{{ t('Cancel') }}</MpButton>
-      <MpButton variant="secondary" is-rounded @click="handleSaveDraft">{{ t('Save as draft') }}</MpButton>
-      <MpButton variant="primary" is-rounded @click="handleSave">{{ t('Save') }}</MpButton>
+      <MpButton v-if="!isEditMode" variant="secondary" is-rounded @click="handleSaveDraft">{{ t('Save as draft') }}</MpButton>
+      <MpButton variant="primary" is-rounded @click="handleSave">{{ newVersionMode ? `${t('Save')} v${nextVersion}` : isEditMode ? t('Save changes') : t('Save') }}</MpButton>
     </footer>
+
+    <BomNewVersionImpactModal
+      v-if="newVersionMode && editingBomRecord"
+      :is-open="isImpactOpen" :bom-id="editingBomRecord.id" :next-version="nextVersion" :content="impactContent"
+      @close="isImpactOpen = false" @confirm="saveNewVersion"
+    />
   </div>
 </template>
 
 <style scoped>
+.bf-version { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
 /* ── Page shell (shared create-page pattern) ─────────────────────────────── */
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar {

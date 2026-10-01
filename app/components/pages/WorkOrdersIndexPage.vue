@@ -17,18 +17,16 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import WorkOrderFiltersDrawer, { type WorkOrderFiltersValue } from '~/components/patterns/WorkOrderFiltersDrawer.vue'
 import { formatDate } from '~/utils/date'
-import { workOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
-import { billOfMaterials } from '~/data/billOfMaterials'
+import { workOrders, workOrderDrift, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const { t } = useLocale()
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 /** The BOM's Active version when it's newer than this work order's pin (closed WOs excluded). */
+/** Neutral drift (V-06) — none on closed or pre-versioning work orders. */
 function newerVersion(w: WorkOrder): number | undefined {
-  if (w.status === 'completed' || w.status === 'canceled') return undefined
-  const v = billOfMaterials.find(b => b.id === w.bomId)?.version
-  return v && v > w.bomVersion ? v : undefined
+  return workOrderDrift(w)
 }
 
 const columns: TableColumn[] = [

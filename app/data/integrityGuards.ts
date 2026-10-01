@@ -20,7 +20,7 @@ import { warehouses, archiveWarehouses } from './warehouses'
 import { receivingTasks } from './receivingTasks'
 import { pickingTasks } from './pickingTasks'
 import { warehouseTransfers } from './warehouseTransfers'
-import { billOfMaterials, updateBillOfMaterials, upgradeBillOfMaterialsVersion, type BillOfMaterialsInput } from './billOfMaterials'
+import { billOfMaterials, updateBillOfMaterials, saveBomNewVersion, bomCycle, VERSION_REASON_MIN, VERSION_REASON_MAX, type BillOfMaterialsInput } from './billOfMaterials'
 import { workOrders } from './workOrders'
 
 export type GuardResult = { ok: true } | { ok: false; reason: string }
@@ -139,36 +139,65 @@ export function activeWorkOrdersForBom(bomId: string): number {
 }
 
 /**
- * A regular BOM is always editable. What an edit DOES depends on references:
- * once any work order was created from the Active version, that version is
- * locked, so saving upgrades the BOM to a new version and deactivates the old
- * one (existing work orders keep it; new ones use the new version). While no
- * work order references it, the Active version is edited in place.
+ * Reference lock (V-02): the first reference by a work order freezes a version
+ * forever — even if that work order is later canceled. A locked version is never
+ * edited; "Edit" becomes "Create new version" (the form saves vN+1). An Active
+ * version nothing references yet is edited in place. Parent BOMs don't lock their
+ * sub-BOMs (multi-level = resolve-at-WO; recursive locking is rejected).
  * (Project BOMs differ: an edit to a referenced one raises an ECO — see projectActions.)
  */
-export function bomVersionLocked(id: string): boolean {
+export function bomVersionLocked(id: string, version?: number): boolean {
   const b = billOfMaterials.find(x => x.id === id)
-  return !!b && workOrders.some(w => w.bomId === id && (w.bomVersion ?? 1) === b.version)
+  if (!b) return false
+  const v = version ?? b.version
+  return workOrders.some(w => (w.bomId === id && (w.bomVersion ?? 1) === v) || w.subBomPins?.[id] === v)
+}
+/** How many documents reference one version — work orders on it, plus work orders pinning it as a sub-BOM. */
+export function bomVersionRefCount(id: string, version: number): number {
+  return workOrders.filter(w => (w.bomId === id && (w.bomVersion ?? 1) === version) || w.subBomPins?.[id] === version).length
 }
 /** @deprecated kept for callers of the pre-versioning guard — every BOM is now editable. */
 export function canEditBom(id: string): boolean {
   return billOfMaterials.some(b => b.id === id)
 }
 
-export type BomSaveResult = { ok: true; upgraded: boolean; version: number } | { ok: false; reason: string }
+export type BomSaveFailure = { ok: false; reason: 'NOT_FOUND' | 'LOCKED' | 'CIRCULAR' | 'REASON'; path?: string[] }
+export type BomSaveResult = { ok: true; version: number } | BomSaveFailure
 
-/** Save a BOM edit — in place while unreferenced, otherwise as a new Active version. */
+/**
+ * Save an edit to the Active version in place — only while nothing references it.
+ * A referenced (locked) Active version is refused with LOCKED (the API's 409): the
+ * caller saves a new version instead. A save that would make the BOM consume its
+ * own output at any level is refused with CIRCULAR.
+ */
 export function updateBillOfMaterialsSafe(
   id: string,
   data: BillOfMaterialsInput,
-  meta: { by?: string; note?: string } = {},
+  meta: { by?: string } = {},
 ): BomSaveResult {
   const b = billOfMaterials.find(x => x.id === id)
   if (!b) return { ok: false, reason: 'NOT_FOUND' }
-  if (bomVersionLocked(id)) {
-    const up = upgradeBillOfMaterialsVersion(id, data, { by: meta.by ?? 'Rahadian Bima', note: meta.note })
-    return { ok: true, upgraded: true, version: up.version }
-  }
-  updateBillOfMaterials(id, data)
-  return { ok: true, upgraded: false, version: b.version }
+  const cycle = bomCycle(id, data)
+  if (cycle) return { ok: false, reason: 'CIRCULAR', path: cycle }
+  if (bomVersionLocked(id)) return { ok: false, reason: 'LOCKED' }
+  updateBillOfMaterials(id, data, meta.by)
+  return { ok: true, version: b.version }
+}
+
+/**
+ * Save the "Create new version" form as vN+1 (Active at once; the previous one is
+ * Superseded). Nothing exists before this call — leaving the form creates nothing.
+ */
+export function saveBomNewVersionSafe(
+  id: string,
+  data: BillOfMaterialsInput,
+  meta: { by: string; reason: string },
+): BomSaveResult {
+  const b = billOfMaterials.find(x => x.id === id)
+  if (!b) return { ok: false, reason: 'NOT_FOUND' }
+  const n = meta.reason.trim().length
+  if (n < VERSION_REASON_MIN || n > VERSION_REASON_MAX) return { ok: false, reason: 'REASON' }
+  const cycle = bomCycle(id, data)
+  if (cycle) return { ok: false, reason: 'CIRCULAR', path: cycle }
+  return { ok: true, version: saveBomNewVersion(id, data, meta).version }
 }

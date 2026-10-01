@@ -12,49 +12,66 @@
  * A BOM is the *template* a work order is produced from, so — unlike the work
  * order detail — it carries no workflow status, and its tables show planned figures only.
  *
- * Versioning (regular BOM): the page shows one version at a time — the Active one
- * by default, or a Superseded one picked from the version switcher (?version=N),
- * which renders read-only and names the Active version. Editing a version a work
- * order already uses upgrades the BOM (new Active version, old one deactivated);
- * work orders keep the version they were created from. No ECO for a regular BOM.
+ * Versioning (regular BOM, Active → Superseded — no Draft): the page shows one
+ * version at a time — the Active one by default, or a Superseded one picked from
+ * the version switcher (?version=N), read-only with a banner naming the Active one.
+ * A version a work order references is locked forever: "Create new version" opens
+ * the form, and only saving it creates vN+1 (work orders already created keep their
+ * version). Multi-level: when a sub-BOM used here gets a new version, a banner says
+ * so and the line carries a badge until acknowledged (V-11).
  */
 import { ref, reactive, computed } from 'vue'
 import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpIcon, MpButton, css, toast,
+  MpIcon, MpButton, MpTooltip, MpBadge, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, css, toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
-import { MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription } from '@mekari/pixel3'
+import BomStructureDrawer from '~/components/BomStructureDrawer.vue'
+import { MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpBannerCloseButton } from '@mekari/pixel3'
 import { workOrdersOnBomVersion } from '~/data/workOrders'
-import { formatDate } from '~/utils/date'
-import { billOfMaterials, catalogProduct, persistBillOfMaterials, bomAtVersion, bomVersionList, type BillOfMaterials, type BomProductionCost } from '~/data/billOfMaterials'
+import { bomVersionLocked, bomVersionRefCount } from '~/data/integrityGuards'
+import { formatDate, formatDateTime, formatDateLong } from '~/utils/date'
+import {
+  billOfMaterials, catalogProduct, persistBillOfMaterials, bomAtVersion, bomVersionList,
+  bomPendingReviews, markSubBomReviewed,
+  type BillOfMaterials, type BomProductionCost, type RegularBomVersionStatus, type BomChangelogAction,
+} from '~/data/billOfMaterials'
 
 // The shared detail renderer passes the route id as `order-id`.
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
 const router = useRouter()
+const ACTOR = 'Rahadian Bima'
 
 const route = useRoute()
 /** The stored record — identity + the Active version. */
 const record = computed<BillOfMaterials | undefined>(() => billOfMaterials.find(b => b.id === props.orderId))
-// Which version is shown: ?version=N (Superseded, read-only) or the Active one.
 const versions = computed(() => (record.value ? bomVersionList(record.value) : []))
+// Which version is shown: ?version=N (Superseded, read-only) or the Active one.
 const selectedVersion = computed(() => {
   const q = Number(route.query.version)
   return record.value && versions.value.some(v => v.version === q) ? q : record.value?.version
 })
-const viewingSuperseded = computed(() => !!record.value && selectedVersion.value !== record.value.version)
+const selectedRow = computed(() => versions.value.find(v => v.version === selectedVersion.value))
+const selectedStatus = computed<RegularBomVersionStatus>(() => selectedRow.value?.status ?? 'active')
+const viewingSuperseded = computed(() => selectedStatus.value === 'superseded')
+/** Locked = a document references it — it can never change again (V-02). */
+const locked = computed(() => !!record.value && selectedVersion.value !== undefined && bomVersionLocked(record.value.id, selectedVersion.value))
+const activeVersion = computed(() => record.value?.version)
 /** Everything below renders THIS version's content (identity stays the record's). */
 const bom = computed<BillOfMaterials | undefined>(() => bomAtVersion(record.value, selectedVersion.value))
+const STATUS_LABEL: Record<RegularBomVersionStatus, string> = { active: 'Active', superseded: 'Superseded' }
+const STATUS_TYPE: Record<RegularBomVersionStatus, 'completed' | 'announcement'> = { active: 'completed', superseded: 'announcement' }
+const refCount = (v: number) => (record.value ? bomVersionRefCount(record.value.id, v) : 0)
+const docLabel = (n: number) => `${n} ${n === 1 ? t('document') : t('documents')}`
 const versionOptions = computed(() => versions.value.map(v => ({
   value: String(v.version),
-  label: `v${v.version} · ${v.status === 'active' ? t('Active') : t('Superseded')} · ${woCount(v.version)} ${t('work order(s)')}`,
+  label: `v${v.version} · ${t(STATUS_LABEL[v.status])} · ${docLabel(refCount(v.version))}`,
 })))
-const woCount = (v: number) => (record.value ? workOrdersOnBomVersion(record.value.id, v).length : 0)
 const versionPick = computed({
   get: () => String(selectedVersion.value ?? ''),
   set: (v: string) => { router.replace({ query: { ...route.query, version: v && Number(v) !== record.value?.version ? v : undefined } }) },
@@ -64,13 +81,59 @@ function goWorkOrder(id: string) { router.push(`/work-orders/${id}`) }
 
 function goList() { router.push('/bill-of-materials') }
 function createWorkOrder() { router.push(`/work-orders/new?source=bom&bomId=${encodeURIComponent(props.orderId)}`) }
+/** Edit the Active version in place — only while nothing references it. */
 function goEdit() { router.push(`/bill-of-materials/new?edit=${encodeURIComponent(props.orderId)}`) }
 function goDuplicate() { router.push(`/bill-of-materials/new?duplicate=${encodeURIComponent(props.orderId)}`) }
 
+// ── Versioning actions ─────────────────────────────────────────────────────────
+/**
+ * "Create new version (from here)": open the form prefilled from the shown version.
+ * Nothing is created until the form is saved — leaving it discards the edits.
+ */
+function createNewVersion(from = selectedVersion.value) {
+  if (!record.value) return
+  const fromQ = from !== undefined && from !== record.value.version ? `&from=${from}` : ''
+  router.push(`/bill-of-materials/new?edit=${encodeURIComponent(record.value.id)}&newVersion=1${fromQ}`)
+}
+const lockTooltip = computed(() => `v${selectedVersion.value} ${t('is referenced by')} ${docLabel(refCount(selectedVersion.value ?? 0))} ${t('and can no longer be edited')}`)
+
+// ── Multi-level: sub-BOM lines + parent review (V-11) ──────────────────────────
+const pendingReviews = computed(() => (selectedStatus.value === 'active' ? bomPendingReviews(record.value) : []))
+const reviewFor = (productId: string) => pendingReviews.value.find(r => r.sub.finishedGoodId === productId)
+/** Open the sub-assembly's own BOM detail (its Active version). */
+function goSubBom(id: string) { router.push(`/bill-of-materials/${id}`) }
+/** Closing the banner acknowledges every sub-BOM new version (logged in the changelog). */
+function dismissSubBomBanner() {
+  if (!record.value) return
+  for (const r of pendingReviews.value) markSubBomReviewed(record.value.id, r.sub.id, ACTOR)
+}
+const isStructureOpen = ref(false)
+function openSubBom(id: string, version: number) {
+  isStructureOpen.value = false
+  const s = billOfMaterials.find(b => b.id === id)
+  router.push(`/bill-of-materials/${id}${s && version !== s.version ? `?version=${version}` : ''}`)
+}
+
+// ── Changelog (V-07) ───────────────────────────────────────────────────────────
+const ACTION_LABEL: Record<BomChangelogAction, string> = {
+  created: 'Created', edited: 'Edited', new_version: 'New version saved', reviewed: 'Sub-BOM new version acknowledged',
+}
+const changelog = computed(() => [...(record.value?.changelog ?? [])].reverse())
+const subName = (id?: string) => billOfMaterials.find(b => b.id === id)?.name ?? '—'
+const TAB_NAMES = ['details', 'changelog']
+const activeTabIndex = computed({
+  get: () => Math.max(0, TAB_NAMES.indexOf(String(route.query.section ?? 'details'))),
+  set: (i: number) => { router.replace({ query: { ...route.query, section: i ? TAB_NAMES[i] : undefined } }) },
+})
+
 // ── Header actions menu ────────────────────────────────────────────────────────
-const actionItems = ['Edit', 'Duplicate', 'Print', 'Archive']
+const actionItems = computed(() => {
+  if (viewingSuperseded.value) return ['Print']
+  return locked.value ? ['Duplicate', 'Print', 'Archive'] : ['Edit', 'Create new version', 'Duplicate', 'Print', 'Archive']
+})
 function onAction(item: string) {
   if (item === 'Edit') goEdit()
+  else if (item === 'Create new version') createNewVersion()
   else if (item === 'Duplicate') goDuplicate()
   else if (item === 'Archive') isDeleteModalOpen.value = true
 }
@@ -150,9 +213,9 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
           <h1 class="detail-title">{{ bom.number }}</h1>
           <ErpStatusBadge
             data-devchange="bom-version-badge"
-            :status="viewingSuperseded ? 'superseded' : 'active'" badge-for="additionalInformation"
-            :type="viewingSuperseded ? 'announcement' : 'completed'"
-            :label="`v${selectedVersion} · ${viewingSuperseded ? t('Superseded') : t('Active')}`"
+            :status="selectedStatus" badge-for="additionalInformation"
+            :type="STATUS_TYPE[selectedStatus]"
+            :label="`v${selectedVersion} · ${t(STATUS_LABEL[selectedStatus])}`"
           />
         </div>
       </div>
@@ -175,27 +238,55 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
           </MpPopoverContent>
         </MpPopover>
 
-        <MpButton class="detail-btn detail-btn--primary" variant="primary" @click="createWorkOrder">{{ t('Create work order') }}</MpButton>
+        <!-- Superseded: read-only — the only way forward is a new version copied from it. -->
+        <MpButton v-if="viewingSuperseded" data-devchange="bom-version-from-here" variant="secondary" is-rounded @click="createNewVersion()">{{ t('Create new version from here') }}</MpButton>
+        <!-- Active + locked: Edit becomes "Create new version" (the form saves vN+1). -->
+        <template v-else-if="locked">
+          <MpButton variant="secondary" is-rounded @click="createWorkOrder">{{ t('Create work order') }}</MpButton>
+          <MpTooltip id="bomd-lock-tip" :label="lockTooltip" placement="bottom" use-portal>
+            <MpButton data-devchange="bom-version-create" variant="primary" is-rounded @click="createNewVersion()">{{ t('Create new version') }}</MpButton>
+          </MpTooltip>
+        </template>
+        <MpButton v-else class="detail-btn detail-btn--primary" variant="primary" @click="createWorkOrder">{{ t('Create work order') }}</MpButton>
       </div>
     </header>
 
     <!-- ── Scrollable stage ── -->
     <div class="detail-stage">
 
-      <MpBanner v-if="viewingSuperseded && record" id="bomd-superseded" variant="info" class="bomd-version-banner">
+      <MpBanner v-if="viewingSuperseded && record" id="bomd-superseded" variant="info" class="bomd-version-banner" data-devchange="bom-version-superseded">
         <MpBannerIcon />
-        <MpBannerTitle>{{ t('Read-only') }} — v{{ selectedVersion }} {{ t('was deactivated on') }} {{ formatDate(versions.find(v => v.version === selectedVersion)?.supersededAt) }}</MpBannerTitle>
+        <MpBannerTitle>{{ t('You are viewing') }} v{{ selectedVersion }} ({{ t('superseded') }}). {{ t('Active version') }}: v{{ activeVersion }}.</MpBannerTitle>
         <MpBannerDescription>
-          v{{ record.version }} {{ t('is the Active version — new work orders use it. The') }} {{ woCount(selectedVersion!) }} {{ t('work order(s) created from') }} v{{ selectedVersion }} {{ t('keep building it.') }}
-          <a class="bom-show-more" @click.prevent="viewVersion(record.version)">{{ t('View') }} v{{ record.version }}</a>
+          {{ t('Deactivated on') }} {{ formatDateLong(selectedRow?.supersededAt) }} · {{ docLabel(refCount(selectedVersion!)) }} {{ t('keep building it. Read-only — it can be printed or copied into a new version.') }}
         </MpBannerDescription>
+        <MpBannerLink><a class="bom-link" @click.prevent="viewVersion(record.version)">{{ t('Go to active') }}</a></MpBannerLink>
       </MpBanner>
+      <!-- Multi-level: a sub-BOM used here got a new version (stays until acknowledged). -->
+      <MpBanner v-else-if="pendingReviews.length" id="bomd-sub-new-version" variant="info" class="bomd-version-banner" data-devchange="bom-parent-review-banner">
+        <MpBannerIcon />
+        <MpBannerDescription>
+          <span v-for="r in pendingReviews" :key="r.sub.id" class="bomd-banner-line">
+            {{ t('Sub-BOM') }} {{ r.sub.name }} {{ t('was updated to') }} v{{ r.toVersion }}.
+            <a class="bom-link" @click.prevent="goSubBom(r.sub.id)">{{ t('View sub-BOM') }}</a>
+          </span>
+        </MpBannerDescription>
+        <MpBannerCloseButton :aria-label="t('Dismiss')" @click="dismissSubBomBanner" />
+      </MpBanner>
+
+      <MpTabs id="bomd-tabs" v-model="activeTabIndex" is-manual variant-color="green" class="detail-tabs">
+        <MpTabList>
+          <MpTab id="bomd-tab-details" value="details">{{ t('Details') }}</MpTab>
+          <MpTab id="bomd-tab-changelog" value="changelog" data-devchange="bom-version-changelog">{{ t('Changelog') }}</MpTab>
+        </MpTabList>
+        <MpTabPanels>
+          <MpTabPanel value="details">
 
       <!-- ── Bill of materials info ── -->
       <section class="bom-section">
         <div class="bom-section-head-static">
           <h2 class="bom-section-title">{{ t('Bill of materials info') }}</h2>
-          <MpButton variant="ghost" size="sm" left-icon="hierarchy" class="bomd-hierarchy-link">
+          <MpButton variant="ghost" size="sm" left-icon="hierarchy" class="bomd-hierarchy-link" @click="isStructureOpen = true">
             {{ t('View BOM hierarchy') }}
           </MpButton>
         </div>
@@ -256,7 +347,13 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
               </thead>
               <tbody>
                 <tr v-for="r in rawMaterials" :key="r.productId" class="bom-tr">
-                  <td class="bom-td">{{ productName(r.productId) }}</td>
+                  <td class="bom-td">
+                    {{ productName(r.productId) }}
+                    <MpBadge
+                      v-if="reviewFor(r.productId)" :id="`bomd-review-${r.productId}`" data-devchange="bom-parent-review"
+                      for="tableStatus" type="information" class="bomd-review-badge"
+                    >{{ t('Version updated to') }} v{{ reviewFor(r.productId)!.toVersion }}</MpBadge>
+                  </td>
                   <td class="bom-td">{{ productSku(r.productId) }}</td>
                   <td class="bom-td bom-td--num">{{ num(r.needed) }}</td>
                   <td class="bom-td">{{ r.unit }}</td>
@@ -446,13 +543,12 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
       <!-- ── Versions ── -->
       <section class="bom-section bom-section--last" data-devchange="bom-version-history">
         <h2 class="bom-section-title">{{ t('Versions') }}</h2>
-        <p class="bomd-caption">{{ t('One version is Active at a time. Editing a version that work orders use creates a new one and deactivates the old; each work order keeps the version it was created from.') }}</p>
         <div class="bom-table-scroll">
           <table class="bom-table">
             <thead>
               <tr>
                 <th class="bom-th">{{ t('Version') }}</th><th class="bom-th">{{ t('Status') }}</th>
-                <th class="bom-th">{{ t('Created') }}</th><th class="bom-th">{{ t('What changed') }}</th>
+                <th class="bom-th">{{ t('Created') }}</th><th class="bom-th">{{ t('Reason') }}</th>
                 <th class="bom-th">{{ t('Work orders') }}</th>
               </tr>
             </thead>
@@ -463,22 +559,56 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
                   <template v-else>v{{ v.version }}</template>
                 </td>
                 <td class="bom-td">
-                  <ErpStatusBadge :status="v.status" :type="v.status === 'active' ? 'completed' : 'announcement'" :label="v.status === 'active' ? t('Active') : t('Superseded')" />
+                  <ErpStatusBadge :status="v.status" :type="STATUS_TYPE[v.status]" :label="t(STATUS_LABEL[v.status])" />
                   <span v-if="v.supersededAt" class="bomd-sub">{{ t('Deactivated') }} {{ formatDate(v.supersededAt) }}</span>
                 </td>
                 <td class="bom-td">{{ formatDate(v.createdAt) }}<span class="bomd-sub">{{ v.createdBy }}</span></td>
-                <td class="bom-td">{{ v.note || (v.version === 1 ? t('First version') : '—') }}</td>
+                <td class="bom-td bom-td--wrap">{{ v.note || '—' }}</td>
                 <td class="bom-td">
-                  <template v-if="record && woCount(v.version)">
-                    <a v-for="(w, i) in workOrdersOnBomVersion(record.id, v.version)" :key="w.id" class="bom-show-more" @click.prevent="goWorkOrder(w.id)">{{ w.number }}{{ i < woCount(v.version) - 1 ? ', ' : '' }}</a>
+                  <template v-if="record && workOrdersOnBomVersion(record.id, v.version).length">
+                    <a v-for="(w, i) in workOrdersOnBomVersion(record.id, v.version)" :key="w.id" class="bom-show-more bomd-inline" @click.prevent="goWorkOrder(w.id)">{{ w.number }}{{ i < workOrdersOnBomVersion(record.id, v.version).length - 1 ? ', ' : '' }}</a>
                   </template>
                   <template v-else>—</template>
+                  <span v-if="refCount(v.version) > workOrdersOnBomVersion(record!.id, v.version).length" class="bomd-sub">
+                    + {{ refCount(v.version) - workOrdersOnBomVersion(record!.id, v.version).length }} {{ t('as a sub-BOM') }}
+                  </span>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
       </section>
+
+          </MpTabPanel>
+
+          <!-- ── Changelog (append-only: create · edit · new version · sub-BOM acknowledged) ── -->
+          <MpTabPanel value="changelog">
+            <div class="bom-table-scroll">
+              <table class="bom-table">
+                <thead>
+                  <tr>
+                    <th class="bom-th">{{ t('Time (WIB)') }}</th><th class="bom-th">{{ t('Action') }}</th>
+                    <th class="bom-th">{{ t('Version') }}</th><th class="bom-th">{{ t('Actor') }}</th><th class="bom-th">{{ t('Reason') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(e, i) in changelog" :key="i" class="bom-tr">
+                    <td class="bom-td">{{ formatDateTime(e.at) }}</td>
+                    <td class="bom-td">{{ t(ACTION_LABEL[e.action]) }}</td>
+                    <td class="bom-td">v{{ e.version }}</td>
+                    <td class="bom-td">{{ e.actor }}</td>
+                    <td class="bom-td bom-td--wrap">
+                      <template v-if="e.action === 'reviewed'">{{ subName(e.subBomId) }} v{{ e.subVersion }}</template>
+                      <template v-else>{{ e.reason || '—' }}</template>
+                    </td>
+                  </tr>
+                  <tr v-if="!changelog.length" class="bom-tr"><td class="bom-td" colspan="5">{{ t('No version events yet.') }}</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </MpTabPanel>
+        </MpTabPanels>
+      </MpTabs>
 
     </div>
   </div>
@@ -502,6 +632,10 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
     :confirm-label="t('Archive')"
     @confirm="confirmDelete"
   />
+  <BomStructureDrawer
+    :is-open="isStructureOpen" :bom-id="record?.id" :version="selectedVersion"
+    @close="isStructureOpen = false" @open-bom="openSubBom"
+  />
 </template>
 
 <style scoped>
@@ -509,6 +643,17 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
 .bomd-version-banner { margin-bottom: var(--mp-spacing-6); }
 .bomd-caption { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary); }
 .bomd-sub { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary); }
+.bomd-inline { display: inline; }
+.bomd-banner-line { display: block; }
+.bomd-banner-line .bom-link { margin-left: var(--mp-spacing-1); }
+.bomd-review-badge { display: block; width: fit-content; margin-top: var(--mp-spacing-1); }
+.bom-link { color: var(--mp-text-link); cursor: pointer; }
+.bom-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.detail-tabs { margin-top: 0; }
+.detail-tabs :deep(.mp-tab--isSelected_true),
+.detail-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
+.detail-tabs :deep(.mp-tab--isSelected_true .mp-tab-selected-border) { background-color: var(--mp-border-selected, #029861) !important; }
+.detail-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
 /* ── Page shell (shared detail-page pattern) ─────────────────────────────── */
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar {
