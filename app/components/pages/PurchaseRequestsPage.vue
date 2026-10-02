@@ -32,7 +32,7 @@ function viewDetails(id: string) { router.push(`/purchase-requests/${id}`) }
 // ─── Column definitions (DATE + NUMBER mirror the Expenses index) ──────────────
 const columns: TableColumn[] = [
   { key: 'date',             label: t('Date'),             kind: 'date',                                   sortType: 'date'   },
-  { key: 'number',           label: t('Number'),           kind: 'number', sortable: true,                 sortType: 'number' },
+  { key: 'number',           label: t('Number'),           width: '208px', /* purchases-only: fits "Purchase <doc> #xxxxx" */ sortable: true,                 sortType: 'number' },
   { key: 'attachment',       label: '',                    width: '52px',  noHeader: true, align: 'center' },
   { key: 'procurementStaff', label: t('Procurement staff'), kind: 'name', sortable: true,                sortType: 'text'   },
   { key: 'requiredDate',     label: t('Required date'),    kind: 'date',                                   sortType: 'date'   },
@@ -296,9 +296,7 @@ const exportColumns = computed(() => [
             type="text"
             :placeholder="t('Search...')"
           />
-          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
-            <MpIcon name="close" size="sm" />
-          </button>
+          <MpButton v-if="search" class="search-clear-btn" variant="ghost" type="button" :aria-label="t('Clear search')" left-icon="close" @click="search = ''" />
         </div>
       </div>
     </template>

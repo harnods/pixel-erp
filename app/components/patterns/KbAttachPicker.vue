@@ -106,23 +106,23 @@ function cancel() { emit('update:isOpen', false) }
         <div class="kap-panel" role="dialog" aria-modal="true" aria-label="Attach knowledge">
           <header class="kap-head">
             <h2 class="kap-title">Attach knowledge</h2>
-            <button class="kap-close" type="button" aria-label="Close" @click="cancel"><MpIcon name="close" size="md" /></button>
+            <MpButton class="kap-close" variant="ghost" type="button" aria-label="Close" @click="cancel"><MpIcon name="close" size="md" /></MpButton>
           </header>
 
           <div class="kap-searchbar">
             <div class="kap-search">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               <input v-model="search" class="kap-search-input" type="text" placeholder="Search knowledge..." />
-              <button v-if="search" class="kap-search-clear" type="button" aria-label="Clear search" @click="search = ''"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg></button>
+              <MpButton v-if="search" class="kap-search-clear" variant="ghost" type="button" aria-label="Clear search" @click="search = ''"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg></MpButton>
             </div>
           </div>
 
           <div class="kap-tree">
             <p v-if="!rows.length" class="kap-empty">{{ search ? 'No matches found.' : 'Your Knowledge Base is empty. Add documents first.' }}</p>
             <div v-for="row in rows" :key="row.node.id" class="kap-row" :style="{ paddingLeft: `${8 + row.depth * 20}px` }">
-              <button v-if="isFolder(row.node)" class="kap-chev" type="button" :class="{ 'is-hidden': !childrenOf(row.node.id).length }" @click="toggleExpand(row.node.id)">
+              <MpButton v-if="isFolder(row.node)" class="kap-chev" variant="ghost" type="button" :class="{ 'is-hidden': !childrenOf(row.node.id).length }" @click="toggleExpand(row.node.id)">
                 <MpIcon :name="expanded.has(row.node.id) ? 'caret-down' : 'caret-right'" size="sm" />
-              </button>
+              </MpButton>
               <span v-else class="kap-chev is-hidden" />
               <label class="kap-label" @click="isFolder(row.node) && toggleExpand(row.node.id)">
                 <MpCheckbox

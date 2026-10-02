@@ -281,19 +281,9 @@ function close() { emit('close') }
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="crd">
-      <!-- Form drawer: overlay clicks are intentionally ignored. -->
-      <div v-if="isOpen" class="crd-overlay">
-        <div class="crd-panel" role="dialog" :aria-label="isEdit ? t('Edit custom role') : t('Add custom role')">
-          <header class="crd-header">
-            <span class="crd-title">{{ isEdit ? t('Edit custom role') : t('Add custom role') }}</span>
-            <MpButton class="crd-close" :aria-label="t('Close')" @click="close">
-              <MpIcon name="close" size="md" />
-            </MpButton>
-          </header>
-
-          <div class="crd-body">
+  <ErpDrawer :is-open="isOpen" :title="isEdit ? t('Edit custom role') : t('Add custom role')" width="1200px" @close="close">
+    <template #body>
+      <div class="crd-body">
             <div class="crd-col crd-col--main">
               <!-- ── Role info ── -->
               <section class="crd-section">
@@ -354,9 +344,9 @@ function close() { emit('close') }
                   <div class="crd-search">
                     <MpIcon name="search" size="sm" />
                     <input v-model="search" class="crd-search-input" type="text" :placeholder="t('Search feature name')">
-                    <button v-if="search" class="crd-search-clear" type="button" :aria-label="t('Clear search')" @click="search = ''">
+                    <MpButton v-if="search" class="crd-search-clear" variant="ghost" type="button" :aria-label="t('Clear search')" @click="search = ''">
                       <MpIcon name="close" size="sm" />
-                    </button>
+                    </MpButton>
                   </div>
                 </div>
 
@@ -377,15 +367,16 @@ function close() { emit('close') }
                         <tr class="crd-row crd-row--category">
                           <td class="crd-td crd-td--feature">
                             <div class="crd-td-inner">
-                              <button
+                              <MpButton
                                 type="button"
                                 class="crd-chevron"
+                                variant="ghost"
                                 :class="{ 'crd-chevron--open': isCategoryExpanded(cat.value) }"
                                 :aria-label="isCategoryExpanded(cat.value) ? t('Collapse') : t('Expand')"
                                 @click="toggleCategoryExpand(cat.value)"
                               >
                                 <MpIcon name="caret-down" size="sm" />
-                              </button>
+                              </MpButton>
                               <span class="crd-td-label crd-td-label--category">{{ t(cat.label) }}</span>
                             </div>
                           </td>
@@ -412,16 +403,17 @@ function close() { emit('close') }
                           >
                             <td class="crd-td crd-td--feature crd-td--l1">
                               <div class="crd-td-inner">
-                                <button
+                                <MpButton
                                   v-if="feature.subfeatures.length"
                                   type="button"
                                   class="crd-chevron"
+                                  variant="ghost"
                                   :class="{ 'crd-chevron--open': isExpanded(feature) }"
                                   :aria-label="isExpanded(feature) ? t('Collapse') : t('Expand')"
                                   @click="toggleExpand(feature)"
                                 >
                                   <MpIcon name="caret-down" size="sm" />
-                                </button>
+                                </MpButton>
                                 <span v-else class="crd-chevron-spacer" aria-hidden="true" />
                                 <span class="crd-td-label">{{ t(feature.label) }}</span>
                               </div>
@@ -480,16 +472,17 @@ function close() { emit('close') }
                             <tr v-if="isCategoryExpanded(cat.value) && isExpanded(feature)" class="crd-row crd-row--l2">
                               <td class="crd-td crd-td--feature crd-td--l2">
                                 <div class="crd-td-inner">
-                                  <button
+                                  <MpButton
                                     v-if="sub.children?.length"
                                     type="button"
                                     class="crd-chevron"
+                                    variant="ghost"
                                     :class="{ 'crd-chevron--open': isSubExpanded(feature, sub) }"
                                     :aria-label="isSubExpanded(feature, sub) ? t('Collapse') : t('Expand')"
                                     @click="toggleSubExpand(feature, sub)"
                                   >
                                     <MpIcon name="caret-down" size="sm" />
-                                  </button>
+                                  </MpButton>
                                   <span v-else class="crd-chevron-spacer" aria-hidden="true" />
                                   <span class="crd-td-label">{{ t(sub.label) }}</span>
                                 </div>
@@ -561,64 +554,22 @@ function close() { emit('close') }
             </div>
           </div>
 
-          <footer class="crd-footer erp-action-footer">
-            <MpButton variant="ghost" is-rounded @click="close">{{ t('Cancel') }}</MpButton>
-            <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="save">
-              {{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}
-            </MpButton>
-          </footer>
-        </div>
+    </template>
+
+    <template #footer>
+      <div class="crd-footer-inner erp-action-footer">
+        <MpButton variant="ghost" is-rounded @click="close">{{ t('Cancel') }}</MpButton>
+        <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="save">
+          {{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}
+        </MpButton>
       </div>
-    </Transition>
-  </Teleport>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>
-/* ── Shell (copy of the BillsFiltersDrawer transition/overlay/panel) ── */
-.crd-enter-active, .crd-leave-active { transition: background-color 250ms ease; }
-.crd-enter-from, .crd-leave-to { background-color: transparent; }
-.crd-enter-active .crd-panel { transition: transform 350ms ease-out; }
-.crd-leave-active .crd-panel { transition: transform 250ms ease-in; }
-.crd-enter-from .crd-panel, .crd-leave-to .crd-panel { transform: translateX(calc(100% + 12px)); }
-
-.crd-overlay {
-  position: fixed; inset: 0; z-index: 1300;
-  background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45));
-  display: flex; justify-content: flex-end;
-}
-.crd-panel {
-  margin: var(--mp-spacing-3);
-  /* Two columns: the permission table (flexible) + a fixed 260px summary rail —
-     matches Figma's 1200px-wide drawer (884px main col + 260px summary col). */
-  width: min(1200px, calc(100% - 24px));
-  height: calc(100% - 24px);
-  display: flex; flex-direction: column;
-  background: var(--mp-background-stage, #fff);
-  border-radius: var(--mp-radii-xl, 12px);
-  overflow: hidden;
-}
-.crd-header {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
-  padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle, #f8f9f9);
-  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
-}
-.crd-title {
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
-}
-.crd-close {
-  display: inline-flex !important; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important; min-width: 0 !important;
-  border: none !important; background: none !important; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default);
-}
-.crd-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
-
 .crd-body {
-  flex: 1; overflow-y: auto;
   display: flex; align-items: flex-start; gap: var(--mp-spacing-4);
-  padding: var(--mp-spacing-4);
 }
 .crd-col--main {
   flex: 1; min-width: 0;
@@ -800,14 +751,10 @@ function close() { emit('close') }
   padding: var(--mp-spacing-6) var(--mp-spacing-3);
 }
 
-/* ── Footer — ghost Cancel + one primary. Alignment and the ≤640px stacked,
+/* ── Footer inner — ghost Cancel + one primary. Alignment and the ≤640px stacked,
    full-width, primary-on-top behaviour come from the global .erp-action-footer
-   (rule/btn-responsive-footer); this only adds the drawer's own chrome. ── */
-.crd-footer {
-  flex-shrink: 0;
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-top: 1px solid var(--mp-border-default, #e3e7e9);
-}
+   (rule/btn-responsive-footer). ── */
+.crd-footer-inner { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 
 @media (max-width: 960px) {
   .crd-body { flex-direction: column; }

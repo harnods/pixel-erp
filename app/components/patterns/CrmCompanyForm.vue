@@ -293,7 +293,7 @@ defineExpose({ submit, isEdit })
           <div v-if="banks.length > 1" class="cf-bank-head">
             <span class="cf-bank-title">{{ i === 0 ? t('Primary bank account') : `${t('Bank account')} ${i + 1}` }}</span>
             <MpTooltip :id="`cf-bank-rm-${i}`" :label="t('Remove')" placement="top" use-portal>
-              <button type="button" class="cf-selected-remove" :aria-label="t('Remove')" @click="removeBank(i)"><MpIcon name="minus-circular" size="md" /></button>
+              <MpButton class="cf-selected-remove" :aria-label="t('Remove')" @click="removeBank(i)"><MpIcon name="minus-circular" size="md" /></MpButton>
             </MpTooltip>
           </div>
           <div class="cf-grid">
@@ -339,7 +339,7 @@ defineExpose({ submit, isEdit })
               <MpToggle :is-checked="primaryContactId === c.id" :aria-label="`${t('Primary contact')} — ${c.name}`" @change="setPrimary(c.id)" />
             </label>
             <MpTooltip :id="`cf-ct-rm-${c.id}`" :label="t('Remove')" placement="top" use-portal>
-              <button type="button" class="cf-selected-remove" :aria-label="`${t('Remove')} ${c.name}`" @click="removeContact(c.id)"><MpIcon name="minus-circular" size="md" /></button>
+              <MpButton class="cf-selected-remove" :aria-label="`${t('Remove')} ${c.name}`" @click="removeContact(c.id)"><MpIcon name="minus-circular" size="md" /></MpButton>
             </MpTooltip>
           </li>
         </ul>
@@ -406,7 +406,7 @@ defineExpose({ submit, isEdit })
 .cf-selected-body { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
 .cf-selected-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .cf-selected-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.cf-selected-remove { display: inline-flex; border: none; background: none; padding: 0; cursor: pointer; color: var(--mp-icon-subtle, var(--mp-text-secondary)); }
+.cf-selected-remove { display: inline-flex !important; border: none !important; background: none !important; padding: 0 !important; min-width: 0 !important; cursor: pointer; color: var(--mp-icon-subtle, var(--mp-text-secondary)); }
 .cf-selected-remove:hover { color: var(--mp-text-danger); }
 .cf-pic-tag { margin-left: var(--mp-spacing-2); padding: 1px var(--mp-spacing-2); border-radius: var(--mp-radii-sm, 6px); background: var(--mp-background-info-subtle, #e8f1fb); color: var(--mp-text-link, #165082); font-size: 12px; font-weight: var(--mp-font-weights-semi-bold); }
 .cf-pic-toggle { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); flex-shrink: 0; cursor: pointer; }

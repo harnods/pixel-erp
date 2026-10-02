@@ -14,7 +14,7 @@
  * row filtering).
  */
 import { ref, computed, watch } from 'vue'
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, css } from '@mekari/pixel3'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpButton, css } from '@mekari/pixel3'
 import {
   resolveDateFilterRange, dateFilterLabel, toIso, fromIso,
   type DateFilterValue, type DateFilterMode,
@@ -175,7 +175,7 @@ function onDayClick(cell: Cell) {
 <template>
   <MpPopover :id="id" use-portal :is-keep-alive="false" :is-open="isOpen" @update:is-open="isOpen = $event">
     <MpPopoverTrigger>
-      <button class="adf-trigger" :class="{ 'adf-trigger--placeholder': !modelValue }" type="button">
+      <MpButton class="adf-trigger" :class="{ 'adf-trigger--placeholder': !modelValue }">
         <span class="adf-trigger-label">{{ modelValue ? label : placeholder }}</span>
         <svg
           v-if="modelValue && clearable" class="adf-clear" width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -186,47 +186,47 @@ function onDayClick(cell: Cell) {
         <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
-      </button>
+      </MpButton>
     </MpPopoverTrigger>
     <MpPopoverContent :class="css({ padding: '0', width: 'max-content' })">
       <div class="adf-panel">
         <!-- ── Left: time range ── -->
         <div class="adf-sidebar">
           <p class="adf-sidebar-label">Time range</p>
-          <button
-            v-for="p in PRESETS" :key="p.mode" type="button"
+          <MpButton
+            v-for="p in PRESETS" :key="p.mode"
             class="adf-sidebar-item" @click="applyPreset(p.mode)"
-          >{{ p.label }}</button>
+          >{{ p.label }}</MpButton>
           <div class="adf-divider" />
-          <button
-            v-for="g in GRANULARITIES" :key="g.mode" type="button"
+          <MpButton
+            v-for="g in GRANULARITIES" :key="g.mode"
             class="adf-sidebar-item" :class="{ 'adf-sidebar-item--active': activeMode === g.mode }"
             @click="selectGranularity(g.mode)"
-          >{{ g.label }}</button>
+          >{{ g.label }}</MpButton>
         </div>
 
         <!-- ── Right: calendar ── -->
         <div class="adf-calendar">
           <div class="adf-cal-header">
-            <button class="adf-nav-btn" type="button" aria-label="Previous month" @click="prevMonth">
+            <MpButton class="adf-nav-btn" aria-label="Previous month" @click="prevMonth">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M15 6L9 12L15 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-            </button>
+            </MpButton>
             <span class="adf-cal-title">{{ monthTitle }}</span>
-            <button class="adf-nav-btn" type="button" aria-label="Next month" @click="nextMonth">
+            <MpButton class="adf-nav-btn" aria-label="Next month" @click="nextMonth">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
 
           <div class="adf-weekdays">
             <span v-for="d in WEEKDAYS" :key="d">{{ d }}</span>
           </div>
           <div class="adf-days">
-            <button
-              v-for="cell in calendarCells" :key="cell.iso" type="button"
+            <MpButton
+              v-for="cell in calendarCells" :key="cell.iso"
               class="adf-day"
               :class="{
                 'adf-day--muted': !cell.inMonth,
@@ -234,7 +234,7 @@ function onDayClick(cell: Cell) {
                 'adf-day--selected': cellInRange(cell.iso),
               }"
               @click="onDayClick(cell)"
-            >{{ cell.dayNum }}</button>
+            >{{ cell.dayNum }}</MpButton>
           </div>
 
           <p v-if="hint" class="adf-hint">{{ hint }}</p>
@@ -250,11 +250,11 @@ function onDayClick(cell: Cell) {
    38px tall (--mp-sizes-9.5), border = --mp-colors-border-form. Short --mp-*
    aliases are EMPTY in this Pixel build → use the full --mp-colors-* tokens. */
 .adf-trigger {
-  display: inline-flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2);
-  min-width: 160px; height: var(--mp-sizes-9\.5, 38px);
-  padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-3);
-  border: 1px solid var(--mp-colors-border-form, #1d1f2429); border-radius: var(--mp-radii-md);
-  background: var(--mp-colors-background-neutral, #fff); color: var(--mp-colors-text-default, #080d0e);
+  display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2);
+  min-width: 160px !important; height: var(--mp-sizes-9\.5, 38px);
+  padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-3) !important;
+  border: 1px solid var(--mp-colors-border-form, #1d1f2429) !important; border-radius: var(--mp-radii-md) !important;
+  background: var(--mp-colors-background-neutral, #fff) !important; color: var(--mp-colors-text-default, #080d0e);
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); cursor: pointer;
 }
 .adf-trigger:hover { border-color: var(--mp-colors-border-bold, #8c9596); }
@@ -278,9 +278,9 @@ function onDayClick(cell: Cell) {
   letter-spacing: 0.08em; text-transform: uppercase; color: var(--mp-text-secondary);
 }
 .adf-sidebar-item {
-  display: block; width: 100%; text-align: left;
-  padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-md);
-  border: none; background: none; cursor: pointer;
+  display: block !important; width: 100%; text-align: left;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3) !important; border-radius: var(--mp-radii-md) !important;
+  min-width: 0 !important; border: none !important; background: none !important; cursor: pointer;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
 }
 .adf-sidebar-item:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
@@ -295,9 +295,9 @@ function onDayClick(cell: Cell) {
 }
 .adf-cal-header { display: flex; align-items: center; justify-content: center; gap: var(--mp-spacing-2); }
 .adf-nav-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-default);
+  display: inline-flex !important; align-items: center; justify-content: center;
+  min-width: 0 !important; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
+  padding: 0 !important; border: none !important; background: none !important; border-radius: var(--mp-radii-md) !important; cursor: pointer; color: var(--mp-text-default);
 }
 .adf-nav-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .adf-cal-title {
@@ -310,8 +310,8 @@ function onDayClick(cell: Cell) {
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
 }
 .adf-day {
-  display: flex; align-items: center; justify-content: center; height: 36px;
-  border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer;
+  display: flex !important; align-items: center; justify-content: center; height: 36px;
+  min-width: 0 !important; padding: 0 !important; border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important; cursor: pointer;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
 .adf-day:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }

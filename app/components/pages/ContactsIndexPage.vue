@@ -163,11 +163,11 @@ function confirmDelete() {
       <div class="filter-right">
         <div class="filter-btn-group">
           <MpTooltip id="contacts-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
-            <button class="filter-icon-btn filter-icon-btn--airene" type="button" :aria-label="t('Ask Airene')" @click="toggleAirene?.()"><MpIcon name="airene-brand" size="md" /></button>
+            <MpButton class="filter-icon-btn filter-icon-btn--airene" type="button" :aria-label="t('Ask Airene')" @click="toggleAirene?.()"><MpIcon name="airene-brand" size="md" /></MpButton>
           </MpTooltip>
           <ColumnSettingsMenu id="contacts-columns" :items="columnItems" :visibility="columnVisibility" />
           <MpTooltip id="contacts-export" :label="t('Export')" placement="bottom" use-portal>
-            <button class="filter-icon-btn" type="button" :aria-label="t('Export')"><MpIcon name="download" size="md" /></button>
+            <MpButton class="filter-icon-btn" type="button" :aria-label="t('Export')"><MpIcon name="download" size="md" /></MpButton>
           </MpTooltip>
         </div>
         <div class="filter-search">
@@ -211,11 +211,11 @@ function confirmDelete() {
     <template #actions="{ row }">
       <MpPopover :id="`contact-actions-${(row as unknown as Contact).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="row-kebab" :aria-label="t('More actions')">
+          <MpButton class="row-kebab" :aria-label="t('More actions')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
             </svg>
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '150px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>

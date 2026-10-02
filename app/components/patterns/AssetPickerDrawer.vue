@@ -6,6 +6,7 @@
  * from IndexedDB. Returns the selected asset ids.
  */
 import { MpIcon, MpButton } from '@mekari/pixel3'
+import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
 import { buzzAssets, buzzBrand, type BuzzAsset, type BuzzAssetType } from '~/data/buzz'
 import { getImage } from '~/utils/buzzImageStore'
 
@@ -41,58 +42,37 @@ function done() { emit('update:modelValue', [...sel.value]); emit('update:isOpen
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="apd">
-      <div v-if="isOpen" class="apd-overlay">
-        <div class="apd-panel" role="dialog" aria-modal="true" aria-label="Your assets">
-          <header class="apd-head">
-            <h2 class="apd-title">Your assets</h2>
-            <button class="apd-close" type="button" aria-label="Close" @click="cancel"><MpIcon name="close" size="md" /></button>
-          </header>
-          <div class="apd-searchbar">
-            <div class="apd-search">
-              <MpIcon name="search" size="sm" />
-              <input v-model="search" class="apd-search-input" type="text" placeholder="Search assets…" />
-            </div>
-          </div>
-          <div class="apd-body">
-            <p v-if="!rows.length" class="apd-empty">No assets yet. Upload photos in Assets · Photo stocks first.</p>
-            <div v-else class="apd-grid">
-              <button v-for="a in rows" :key="a.id" type="button" class="apd-item" :class="{ 'apd-item--on': sel.has(a.id) }" @click="toggle(a.id)">
-                <span class="apd-thumb">
-                  <img v-if="images.get(a.id)" :src="images.get(a.id)" :alt="a.title" class="apd-thumb__img" />
-                  <span v-if="sel.has(a.id)" class="apd-check"><MpIcon name="check" size="sm" /></span>
-                </span>
-                <span class="apd-name">{{ a.title }}</span>
-                <span class="apd-sub">{{ buzzBrand(a.brand)?.name || a.usage }}</span>
-              </button>
-            </div>
-          </div>
-          <footer class="apd-foot">
-            <span class="apd-count">{{ sel.size }} selected</span>
-            <div class="apd-actions">
-              <MpButton variant="ghost" is-rounded @click="cancel">Cancel</MpButton>
-              <MpButton variant="primary" is-rounded @click="done">Use selected</MpButton>
-            </div>
-          </footer>
+  <ErpDrawer :is-open="isOpen" title="Your assets" width="520px" @close="cancel">
+    <template #body>
+      <div class="apd-searchbar">
+        <div class="apd-search">
+          <MpIcon name="search" size="sm" />
+          <input v-model="search" class="apd-search-input" type="text" placeholder="Search assets…" />
         </div>
       </div>
-    </Transition>
-  </Teleport>
+      <p v-if="!rows.length" class="apd-empty">No assets yet. Upload photos in Assets · Photo stocks first.</p>
+      <div v-else class="apd-grid">
+        <MpButton v-for="a in rows" :key="a.id" type="button" class="apd-item" variant="ghost" :class="{ 'apd-item--on': sel.has(a.id) }" @click="toggle(a.id)">
+          <span class="apd-thumb">
+            <img v-if="images.get(a.id)" :src="images.get(a.id)" :alt="a.title" class="apd-thumb__img" />
+            <span v-if="sel.has(a.id)" class="apd-check"><MpIcon name="check" size="sm" /></span>
+          </span>
+          <span class="apd-name">{{ a.title }}</span>
+          <span class="apd-sub">{{ buzzBrand(a.brand)?.name || a.usage }}</span>
+        </MpButton>
+      </div>
+    </template>
+    <template #footer>
+      <span class="apd-count">{{ sel.size }} selected</span>
+      <div class="apd-actions">
+        <MpButton variant="ghost" is-rounded @click="cancel">Cancel</MpButton>
+        <MpButton variant="primary" is-rounded @click="done">Use selected</MpButton>
+      </div>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>
-.apd-enter-active, .apd-leave-active { transition: background-color 250ms ease; }
-.apd-enter-from, .apd-leave-to { background-color: transparent; }
-.apd-enter-active .apd-panel { transition: transform 350ms ease-out; }
-.apd-leave-active .apd-panel { transition: transform 250ms ease-in; }
-.apd-enter-from .apd-panel, .apd-leave-to .apd-panel { transform: translateX(calc(100% + 12px)); }
-.apd-overlay { position: fixed; inset: 0; z-index: 1500; background: rgba(8, 13, 14, 0.45); display: flex; justify-content: flex-end; }
-.apd-panel { margin: var(--mp-spacing-3, 12px); width: min(520px, calc(100% - 24px)); height: calc(100% - 24px); display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); border-radius: 24px; overflow: hidden; }
-.apd-head { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default); }
-.apd-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.apd-close { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
-.apd-close:hover { background: var(--mp-background-neutral-hovered); }
 .apd-searchbar { flex-shrink: 0; padding: var(--mp-spacing-4) var(--mp-spacing-4) 0; }
 .apd-search { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px); color: var(--mp-icon-default); }
 .apd-search-input { flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
@@ -103,8 +83,8 @@ function done() { emit('update:modelValue', [...sel.value]); emit('update:isOpen
 .apd-thumb { position: relative; display: block; width: 100%; aspect-ratio: 1; border-radius: var(--mp-radii-md, 8px); border: 1px solid var(--mp-border-default, #e3e7e9); overflow: hidden; background: var(--mp-background-neutral-subtle); }
 .apd-thumb__img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .apd-item--on .apd-thumb { border-color: var(--mp-border-selected, #029861); box-shadow: 0 0 0 2px var(--mp-border-selected, #029861); }
-.apd-check { position: absolute; top: 6px; right: 6px; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 999px; background: var(--mp-background-brand-bold, #029861); color: #fff; }
-.apd-check :deep(svg) { color: #fff; }
+.apd-check { position: absolute; top: 6px; right: 6px; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 999px; background: var(--mp-background-brand-bold, #029861); color: var(--mp-colors-white); }
+.apd-check :deep(svg) { color: var(--mp-colors-white); }
 .apd-name { font-size: 12px; color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .apd-sub { font-size: 11px; color: var(--mp-text-secondary); }
 .apd-foot { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }

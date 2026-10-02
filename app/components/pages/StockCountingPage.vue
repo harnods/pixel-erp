@@ -7,6 +7,7 @@ import {
   MpCheckbox,
   MpIcon,
   MpTooltip,
+  MpButton,
   toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -717,9 +718,9 @@ onUnmounted(() => {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goList">{{ t('Cycle counts') }}</button>
+          <MpButton class="detail-breadcrumb" variant="textLink" @click="goList">{{ t('Cycle counts') }}</MpButton>
           <span class="detail-breadcrumb-sep">/</span>
-          <button class="detail-breadcrumb" @click="goBack">{{ adjustment.number }}</button>
+          <MpButton class="detail-breadcrumb" variant="textLink" @click="goBack">{{ adjustment.number }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('Stock counting') }}</h1>
@@ -747,11 +748,11 @@ onUnmounted(() => {
             <path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
           <input v-model="search" class="sc-search" type="text" :placeholder="t('Search product or SKU')" />
-          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
+          <MpButton v-if="search" class="search-clear-btn" variant="ghost" type="button" :aria-label="t('Clear search')" @click="search = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
             </svg>
-          </button>
+          </MpButton>
         </div>
       </div>
 
@@ -763,13 +764,13 @@ onUnmounted(() => {
             <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
           <span>{{ activeBin }}</span>
-          <button class="sc-active-bin-clear" type="button" :aria-label="t('Clear active bin')" @click="activeBin = null">
+          <MpButton class="sc-active-bin-clear" variant="ghost" type="button" :aria-label="t('Clear active bin')" @click="activeBin = null">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
             </svg>
-          </button>
+          </MpButton>
         </div>
-        <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetCount">{{ t('Reset count') }}</button>
+        <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" variant="secondary" type="button" @click="resetCount">{{ t('Reset count') }}</MpButton>
       </ScanBar>
       <p class="sc-scan-caption">{{ t('Scan the storage location first before scanning the SKU.') }}</p>
       </div>
@@ -872,16 +873,12 @@ onUnmounted(() => {
                         <!-- Manage action column — icon button, batch/serial-tracked only -->
                         <td v-if="isBatchTrackedSku(item.sku)" class="sc-td sc-td--action">
                           <MpTooltip :id="`sc-tt-batch-${item.key}`" :label="t('Manage batch')" placement="top" use-portal>
-                            <button class="sc-view-btn" type="button" :aria-label="t('Manage batch')" @click="openBatchDrawer(item.key)">
-                              <MpIcon name="competencies" size="md" />
-                            </button>
+                            <MpButton class="sc-view-btn" variant="ghost" type="button" :aria-label="t('Manage batch')" left-icon="competencies" @click="openBatchDrawer(item.key)" />
                           </MpTooltip>
                         </td>
                         <td v-else-if="isSerialTrackedSku(item.sku)" class="sc-td sc-td--action">
                           <MpTooltip :id="`sc-tt-serial-${item.key}`" :label="t('Manage serial numbers')" placement="top" use-portal>
-                            <button class="sc-view-btn" type="button" :aria-label="t('Manage serial numbers')" @click="openSerialDrawer(item.key)">
-                              <MpIcon name="competencies" size="md" />
-                            </button>
+                            <MpButton class="sc-view-btn" variant="ghost" type="button" :aria-label="t('Manage serial numbers')" left-icon="competencies" @click="openSerialDrawer(item.key)" />
                           </MpTooltip>
                         </td>
                         <td v-else class="sc-td sc-td--action" />
@@ -939,28 +936,24 @@ onUnmounted(() => {
                         <!-- Manage action column — icon button, batch/serial-tracked only -->
                         <td v-if="isBatchTrackedSku(added.sku)" class="sc-td sc-td--action">
                           <MpTooltip :id="`sc-tt-batch-${added.id}`" :label="t('Manage batch')" placement="top" use-portal>
-                            <button class="sc-view-btn" type="button" :aria-label="t('Manage batch')" @click="openBatchDrawer(added.id)">
-                              <MpIcon name="competencies" size="md" />
-                            </button>
+                            <MpButton class="sc-view-btn" variant="ghost" type="button" :aria-label="t('Manage batch')" left-icon="competencies" @click="openBatchDrawer(added.id)" />
                           </MpTooltip>
                         </td>
                         <td v-else-if="isSerialTrackedSku(added.sku)" class="sc-td sc-td--action">
                           <MpTooltip :id="`sc-tt-serial-${added.id}`" :label="t('Manage serial numbers')" placement="top" use-portal>
-                            <button class="sc-view-btn" type="button" :aria-label="t('Manage serial numbers')" @click="openSerialDrawer(added.id)">
-                              <MpIcon name="competencies" size="md" />
-                            </button>
+                            <MpButton class="sc-view-btn" variant="ghost" type="button" :aria-label="t('Manage serial numbers')" left-icon="competencies" @click="openSerialDrawer(added.id)" />
                           </MpTooltip>
                         </td>
                         <td v-else class="sc-td sc-td--action" />
 
                         <td class="sc-td sc-td--del">
                           <template v-if="isOpenForEditing">
-                          <button class="sc-del-row-btn" type="button" :aria-label="t('Remove product')" @click="removeAddedRow(group.location, added.id)">
+                          <MpButton class="sc-del-row-btn" variant="ghost" type="button" :aria-label="t('Remove product')" @click="removeAddedRow(group.location, added.id)">
                             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                               <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/>
                               <path d="M5 8H11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                             </svg>
-                          </button>
+                          </MpButton>
                           </template>
                         </td>
                       </tr>
@@ -968,12 +961,12 @@ onUnmounted(() => {
                       <!-- Add product trigger row -->
                       <tr class="sc-row-add-trigger">
                         <td colspan="6" class="sc-td-add-trigger">
-                          <button class="sc-add-sku-btn" type="button" @click="openPicker(group.location)">
+                          <MpButton class="sc-add-sku-btn" variant="ghost" type="button" @click="openPicker(group.location)">
                             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
                               <path d="M7 2V12M2 7H12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                             </svg>
                             {{ t('Add product') }}
-                          </button>
+                          </MpButton>
                         </td>
                       </tr>
                     </tbody>
@@ -986,21 +979,21 @@ onUnmounted(() => {
 
       <!-- Add location button -->
       <div class="sc-add-loc-row">
-        <button class="sc-add-loc-btn" type="button" @click="openLocDrawer">
+        <MpButton class="sc-add-loc-btn" variant="ghost" type="button" @click="openLocDrawer">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
             <path d="M7 2V12M2 7H12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
           {{ t('Add location') }}
-        </button>
+        </MpButton>
       </div>
 
     </div>
 
     <!-- ── Footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <button class="sc-btn sc-btn--ghost" @click="goBack">{{ t('Cancel') }}</button>
-      <button class="sc-btn sc-btn--secondary" @click="saveDraft">{{ t('Save draft') }}</button>
-      <button class="sc-btn sc-btn--primary" @click="clickFinish">{{ t('Finish counting') }}</button>
+      <MpButton class="sc-btn sc-btn--ghost" variant="ghost" @click="goBack">{{ t('Cancel') }}</MpButton>
+      <MpButton class="sc-btn sc-btn--secondary" variant="secondary" @click="saveDraft">{{ t('Save draft') }}</MpButton>
+      <MpButton class="sc-btn sc-btn--primary" variant="primary" @click="clickFinish">{{ t('Finish counting') }}</MpButton>
     </footer>
 
   </div>
@@ -1008,7 +1001,7 @@ onUnmounted(() => {
   <!-- Not found -->
   <div v-else class="sc-not-found">
     <p>{{ t('Stock count not found.') }}</p>
-    <button class="detail-breadcrumb" @click="goList">{{ t('Back to Cycle counts') }}</button>
+    <MpButton class="detail-breadcrumb" variant="textLink" @click="goList">{{ t('Back to Cycle counts') }}</MpButton>
   </div>
 
   <!-- ── Finish counting confirmation ── -->
@@ -1028,8 +1021,8 @@ onUnmounted(() => {
       </MpModalBody>
       <MpModalFooter>
         <div class="sc-modal-footer">
-          <button class="sc-btn sc-btn--ghost" @click="showConfirm = false">{{ t('Cancel') }}</button>
-          <button class="sc-btn sc-btn--primary" @click="commitFinish">{{ t('Finish counting') }}</button>
+          <MpButton class="sc-btn sc-btn--ghost" variant="ghost" @click="showConfirm = false">{{ t('Cancel') }}</MpButton>
+          <MpButton class="sc-btn sc-btn--primary" variant="primary" @click="commitFinish">{{ t('Finish counting') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -1051,17 +1044,15 @@ onUnmounted(() => {
       <div class="loc-drw-panel" role="dialog" :aria-label="t('Add location')">
         <div class="loc-drw-header">
           <span class="loc-drw-title">{{ t('Add location') }}</span>
-          <button class="loc-drw-close" type="button" @click="locDrawerOpen = false">
-            <MpIcon name="close" size="sm" />
-          </button>
+          <MpButton class="loc-drw-close" variant="ghost" type="button" left-icon="close" @click="locDrawerOpen = false" />
         </div>
         <div class="loc-drw-search-wrap">
           <input v-model="locDrawerSearch" class="loc-drw-search-input" type="text" :placeholder="t('Search location')" />
-          <button v-if="locDrawerSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="locDrawerSearch = ''">
+          <MpButton v-if="locDrawerSearch" class="search-clear-btn search-clear-btn--overlay" variant="ghost" type="button" :aria-label="t('Clear search')" @click="locDrawerSearch = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
             </svg>
-          </button>
+          </MpButton>
         </div>
         <div class="loc-drw-list">
           <template v-for="node in locDrawerItems" :key="node.id">
@@ -1113,10 +1104,10 @@ onUnmounted(() => {
           <div v-if="!locDrawerItems.length" class="loc-drw-empty">{{ t('No storage locations found') }}</div>
         </div>
         <div class="loc-drw-footer">
-          <button class="sc-btn sc-btn--ghost" type="button" @click="locDrawerOpen = false">{{ t('Cancel') }}</button>
-          <button class="sc-btn sc-btn--primary" type="button" :disabled="!locDrawerSel.size" @click="confirmLocSelection">
+          <MpButton class="sc-btn sc-btn--ghost" variant="ghost" type="button" @click="locDrawerOpen = false">{{ t('Cancel') }}</MpButton>
+          <MpButton class="sc-btn sc-btn--primary" variant="primary" type="button" :is-disabled="!locDrawerSel.size" @click="confirmLocSelection">
             {{ t('Add') }}{{ locDrawerSel.size ? ` (${locDrawerSel.size})` : '' }}
-          </button>
+          </MpButton>
         </div>
       </div>
     </div>
@@ -1324,10 +1315,10 @@ onUnmounted(() => {
 .sc-active-bin {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-2\.5);
-  background: #e6f7ef; border: 1px solid #029861;
+  background: var(--mp-colors-success-weaker); border: 1px solid var(--mp-colors-success-default);
   border-radius: var(--mp-radii-full); white-space: nowrap;
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  color: #027a4e; flex-shrink: 0;
+  color: var(--mp-colors-success-bolder); flex-shrink: 0;
 }
 .sc-active-bin-clear {
   background: none; border: none; padding: 0; cursor: pointer;

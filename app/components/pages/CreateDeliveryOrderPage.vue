@@ -475,7 +475,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goRequests">{{ t('Outbound delivery') }}</button>
+          <MpButton variant="textLink" class="detail-breadcrumb" @click="goRequests">{{ t('Outbound delivery') }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ isEdit ? t('Edit delivery order') : t('New delivery order') }}</h1>
@@ -537,9 +537,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <MpFormControl id="cr-transno">
               <div class="cr-label-row">
                 <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
-                <button type="button" class="cr-label-icon" :aria-label="t('Transaction no. settings')" @click="noSettingsOpen = true">
-                  <MpIcon name="settings" size="sm" />
-                </button>
+                <MpButton type="button" class="cr-label-icon" variant="ghost" left-icon="settings" :aria-label="t('Transaction no. settings')" @click="noSettingsOpen = true" />
               </div>
               <MpInput
                 id="cr-transno-input"
@@ -792,9 +790,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td v-else :colspan="hasAnyProduct ? 4 : 1" class="cr-td" />
 
                   <td class="cr-td cr-td--del">
-                    <button v-if="row.productId" class="cr-del-btn" type="button" @click="removeRow(row.id)">
-                      <MpIcon name="minus-circular" size="sm" />
-                    </button>
+                    <MpButton v-if="row.productId" class="cr-del-btn" type="button" variant="ghost" left-icon="minus-circular" @click="removeRow(row.id)" />
                   </td>
                 </tr>
               </tbody>
@@ -823,7 +819,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <MpButton variant="ghost" is-rounded @click="goRequests">{{ t('Cancel') }}</MpButton>
-      <button v-if="!isEdit" class="cr-btn-secondary" :disabled="isSaving || isSavingAndAdding" @click="handleSaveAndAdd">{{ isSavingAndAdding ? t('Saving…') : t('Save & add another') }}</button>
+      <MpButton v-if="!isEdit" class="cr-btn-secondary" variant="secondary" is-rounded :is-disabled="isSaving || isSavingAndAdding" @click="handleSaveAndAdd">{{ isSavingAndAdding ? t('Saving…') : t('Save & add another') }}</MpButton>
       <MpButton variant="primary" is-rounded :is-disabled="isSaving || isSavingAndAdding" @click="handleSave">{{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}</MpButton>
     </footer>
 
@@ -969,8 +965,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
 .cr-td--input { padding: 0; vertical-align: middle; }
 .cr-td--qty-cell { vertical-align: middle; }
-.cr-td--qty-insufficient { background: #FCEEED; border-bottom-color: #E2483D; }
-.cr-td--prod-error { background: #FCEEED; border-bottom-color: #E2483D; }
+.cr-td--qty-insufficient { background: var(--mp-colors-danger-weaker); border-bottom-color: var(--mp-colors-danger-default); }
+.cr-td--prod-error { background: var(--mp-colors-danger-weaker); border-bottom-color: var(--mp-colors-danger-default); }
 .cr-td--input :deep([class*='input']),
 .cr-td--input :deep([class*='autocomplete']) { border-radius: 0; border-color: transparent; }
 .cr-td--qty-insufficient :deep([class*='input']) { background: transparent; }

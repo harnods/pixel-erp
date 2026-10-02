@@ -11,7 +11,10 @@
 import { computed, reactive, ref } from 'vue'
 import { MpButton, MpInput, MpTextarea, MpFormControl, MpFormLabel, MpFormErrorMessage, MpIcon, MpCheckbox, MpRadio } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { successToast } from '~/utils/toasts'
+import { formatDate } from '~/utils/date'
+import { formatIDR } from '~/utils/currency'
 import {
   getCrmReport, addCrmReport, updateCrmReport, reportSourceModules, reportableFieldsFor,
   moduleHasProductList, OPERATORS_BY_TYPE, runCrmReport, measureKey, REPORT_NAME_MAX, DESCRIPTION_MAX,
@@ -105,7 +108,10 @@ function moveColumn(id: string, dir: -1 | 1) {
 // ─── Filters ────────────────────────────────────────────────────────────────
 function fieldType(id: string) { return allFields.value.find((f) => f.id === id)?.type ?? 'text' }
 function operatorsFor(id: string) { return OPERATORS_BY_TYPE[fieldType(id)] ?? [] }
+const filterError = ref('')
 function addCriterion() {
+  if (!primaryModuleId.value) { filterError.value = t('Select a source module first.'); return }
+  filterError.value = ''
   const first = allFields.value[0]
   if (!first) return
   criteria.push({ id: `c-${Date.now()}-${criteria.length}`, fieldId: first.id, operator: operatorsFor(first.id)[0]?.value ?? 'equals' })
@@ -149,6 +155,14 @@ const previewResult = computed(() => {
   return runCrmReport({ ...draftDefinition.value, id: 'preview', ownerId: CRM_CURRENT_USER, status: 'active', createdAt: '', updatedAt: '', updatedBy: '' }, { limit: 50 })
 })
 
+function previewCellText(col: string, value: unknown): string {
+  if (value == null || value === '') return '—'
+  const type = fieldType(col)
+  if (type === 'date') return formatDate(String(value))
+  if (type === 'currency') return formatIDR(Number(value))
+  return String(value)
+}
+
 // ─── Validation ─────────────────────────────────────────────────────────────
 const canPreview = computed(() => !!primaryModuleId.value && (columns.length > 0 || measures.length > 0))
 const nameError = ref('')
@@ -159,8 +173,15 @@ function validateName(): boolean {
   return !nameError.value
 }
 
+// ─── Unsaved-changes guard ──────────────────────────────────────────────────
+const discardConfirmOpen = ref(false)
+function discardAndLeave() {
+  if (dirty.value) { discardConfirmOpen.value = true; return }
+  router.push('/crm/reports')
+}
+function confirmDiscard() { discardConfirmOpen.value = false; router.push('/crm/reports') }
+
 // ─── Save ───────────────────────────────────────────────────────────────────
-function discardAndLeave() { router.push('/crm/reports') }
 function save() {
   if (!validateName()) { stage.value = 'save'; return }
   if (!canPreview.value) { saveError.value = t('Select a source and at least one column before saving.'); stage.value = 'columns'; return }
@@ -187,15 +208,15 @@ function moduleLabel(id: string) { return moduleOptions.value.find((m) => m.valu
         <h1 class="crm-title">{{ isEdit ? t('Edit report') : t('Create report') }}</h1>
       </div>
       <div class="crm-titlebar__right">
-        <button class="btn-enterprise btn-enterprise--ghost" @click="discardAndLeave">{{ t('Cancel') }}</button>
+        <MpButton class="btn-enterprise btn-enterprise--ghost" @click="discardAndLeave">{{ t('Cancel') }}</MpButton>
         <MpButton variant="primary" is-rounded @click="save">{{ t('Save') }}</MpButton>
       </div>
     </header>
 
     <nav class="cc-viewtabs">
-      <button v-for="s in STAGES" :key="s.key" class="page-tab" :class="{ 'page-tab--active': stage === s.key }" type="button" @click="goStage(s.key)">
+      <MpButton v-for="s in STAGES" :key="s.key" class="page-tab" :class="{ 'page-tab--active': stage === s.key }" type="button" @click="goStage(s.key)">
         {{ t(s.label) }}
-      </button>
+      </MpButton>
     </nav>
 
     <div class="cc-stage">
@@ -203,7 +224,8 @@ function moduleLabel(id: string) { return moduleOptions.value.find((m) => m.valu
       <section v-show="stage === 'source'" class="rb-section">
         <h2 class="rb-section-title">{{ t('Choose a primary source') }}</h2>
         <p class="rb-section-desc">{{ t('Your report starts from one authorized module.') }}</p>
-        <ErpFilterSelect id="rb-module" :model-value="primaryModuleId" :placeholder="t('Primary module')" :options="moduleOptions" width="320px" @update:model-value="selectModule" />
+        <ErpFilterSelect id="rb-module" :model-value="primaryModuleId" :placeholder="t('Primary module')" :options="moduleOptions" width="320px" :is-disabled="isEdit" @update:model-value="selectModule" />
+        <p v-if="isEdit" class="rb-hint" data-devchange="crm-reports-builder-source-lock">{{ t('The primary source cannot be changed after a report is saved. Use Create report for a different source.') }}</p>
 
         <div v-if="showGrainToggle" class="rb-grain">
           <h3 class="rb-subtitle">{{ t('Result grain') }}</h3>
@@ -230,7 +252,7 @@ function moduleLabel(id: string) { return moduleOptions.value.find((m) => m.valu
             <ul class="rb-field-list">
               <li v-for="f in availableFields" :key="f.id" class="rb-field-item">
                 <span>{{ f.label }}</span>
-                <button class="rb-icon-btn" type="button" :aria-label="t('Add column')" @click="addColumn(f.id)"><MpIcon name="add" size="sm" /></button>
+                <MpButton class="rb-icon-btn" type="button" left-icon="add" :aria-label="t('Add column')" @click="addColumn(f.id)" />
               </li>
               <li v-if="!availableFields.length" class="rb-field-empty">{{ t('No more fields to add.') }}</li>
             </ul>
@@ -241,9 +263,9 @@ function moduleLabel(id: string) { return moduleOptions.value.find((m) => m.valu
               <li v-for="(id, i) in columns" :key="id" class="rb-field-item">
                 <span>{{ fieldLabelOf(id) }}</span>
                 <span class="rb-field-actions">
-                  <button class="rb-icon-btn" type="button" :aria-label="t('Move up')" :disabled="i === 0" @click="moveColumn(id, -1)"><MpIcon name="caret-up" size="sm" /></button>
-                  <button class="rb-icon-btn" type="button" :aria-label="t('Move down')" :disabled="i === columns.length - 1" @click="moveColumn(id, 1)"><MpIcon name="caret-down" size="sm" /></button>
-                  <button class="rb-icon-btn" type="button" :aria-label="t('Remove column')" @click="removeColumn(id)"><MpIcon name="close" size="sm" /></button>
+                  <MpButton class="rb-icon-btn" type="button" left-icon="caret-up" :aria-label="t('Move up')" :is-disabled="i === 0" @click="moveColumn(id, -1)" />
+                  <MpButton class="rb-icon-btn" type="button" left-icon="caret-down" :aria-label="t('Move down')" :is-disabled="i === columns.length - 1" @click="moveColumn(id, 1)" />
+                  <MpButton class="rb-icon-btn" type="button" left-icon="close" :aria-label="t('Remove column')" @click="removeColumn(id)" />
                 </span>
               </li>
               <li v-if="!columns.length" class="rb-field-empty">{{ t('Add at least one column, or configure a summary-only report in Group & summarize.') }}</li>
@@ -266,12 +288,13 @@ function moduleLabel(id: string) { return moduleOptions.value.find((m) => m.valu
           <ErpFilterSelect :id="`rb-crit-op-${c.id}`" v-model="c.operator" :placeholder="t('Operator')" :options="operatorsFor(c.fieldId)" width="160px" :is-clearable="false" @update:model-value="markDirty" />
           <input v-if="needsValue(c)" v-model="c.value" class="rb-value-input" type="text" :placeholder="t('Value')" @input="markDirty">
           <input v-if="needsSecondValue(c)" v-model="c.value2" class="rb-value-input" type="text" :placeholder="t('And')" @input="markDirty">
-          <button class="rb-icon-btn" type="button" :aria-label="t('Remove filter')" @click="removeCriterion(c.id)"><MpIcon name="close" size="sm" /></button>
+          <MpButton class="rb-icon-btn" type="button" left-icon="close" :aria-label="t('Remove filter')" @click="removeCriterion(c.id)" />
         </div>
-        <button class="btn-enterprise btn-enterprise--secondary rb-add-btn" type="button" :disabled="!primaryModuleId" @click="addCriterion">
-          <MpIcon name="add" size="sm" /> {{ t('Add filter') }}
-        </button>
-        <p v-if="!criteria.length" class="rb-hint">{{ t('No filters — every authorized record is included.') }}</p>
+        <MpButton class="btn-enterprise btn-enterprise--secondary rb-add-btn" type="button" left-icon="add" @click="addCriterion">
+          {{ t('Add filter') }}
+        </MpButton>
+        <p v-if="filterError" class="rb-error">{{ filterError }}</p>
+        <p v-else-if="!criteria.length" class="rb-hint">{{ t('No filters — every authorized record is included.') }}</p>
       </section>
 
       <!-- ── Group & summarize ── -->
@@ -288,11 +311,11 @@ function moduleLabel(id: string) { return moduleOptions.value.find((m) => m.valu
         <div v-for="(m, i) in measures" :key="i" class="rb-measure-row">
           <ErpFilterSelect :id="`rb-measure-fn-${i}`" v-model="m.fn" :placeholder="t('Function')" :options="Object.entries(AGG_LABELS).map(([value,label]) => ({value, label: t(label)}))" width="160px" :is-clearable="false" @update:model-value="markDirty" />
           <ErpFilterSelect v-if="m.fn !== 'count'" :id="`rb-measure-field-${i}`" v-model="m.fieldId" :placeholder="t('Field')" :options="numericFields.map(f => ({ value: f.id, label: f.label }))" width="200px" @update:model-value="markDirty" />
-          <button class="rb-icon-btn" type="button" :aria-label="t('Remove summary')" @click="removeMeasure(i)"><MpIcon name="close" size="sm" /></button>
+          <MpButton class="rb-icon-btn" type="button" left-icon="close" :aria-label="t('Remove summary')" @click="removeMeasure(i)" />
         </div>
-        <button class="btn-enterprise btn-enterprise--secondary rb-add-btn" type="button" @click="addMeasure">
-          <MpIcon name="add" size="sm" /> {{ t('Add summary') }}
-        </button>
+        <MpButton class="btn-enterprise btn-enterprise--secondary rb-add-btn" type="button" left-icon="add" @click="addMeasure">
+          {{ t('Add summary') }}
+        </MpButton>
 
         <h2 class="rb-section-title rb-section-title--spaced">{{ t('Sort') }}</h2>
         <div class="rb-group-row">
@@ -316,7 +339,7 @@ function moduleLabel(id: string) { return moduleOptions.value.find((m) => m.valu
               </thead>
               <tbody>
                 <tr v-for="row in previewResult.rows" :key="row.key">
-                  <td v-for="col in previewResult.columns" :key="col">{{ row.cells[col] ?? '—' }}</td>
+                  <td v-for="col in previewResult.columns" :key="col">{{ previewCellText(col, row.cells[col]) }}</td>
                 </tr>
                 <tr v-if="!previewResult.rows.length"><td :colspan="previewResult.columns.length || 1" class="rb-empty-cell">{{ t('No records match this definition yet.') }}</td></tr>
               </tbody>
@@ -346,11 +369,11 @@ function moduleLabel(id: string) { return moduleOptions.value.find((m) => m.valu
         <div v-if="visibility === 'selected'" class="rb-share-pickers">
           <ErpFilterSelect id="rb-share-user" :model-value="''" :placeholder="t('Add a user')" :options="REPORT_OWNER_OPTIONS.filter(o => !sharedUserIds.includes(o)).map(o => ({value:o,label:o}))" width="220px" @update:model-value="(v: string) => { if (v) { sharedUserIds.push(v); markDirty() } }" />
           <div class="rb-chip-list">
-            <span v-for="u in sharedUserIds" :key="u" class="rb-chip">{{ u }} <button type="button" :aria-label="t('Remove')" @click="sharedUserIds.splice(sharedUserIds.indexOf(u), 1); markDirty()"><MpIcon name="close" size="sm" /></button></span>
+            <span v-for="u in sharedUserIds" :key="u" class="rb-chip">{{ u }} <MpButton type="button" left-icon="close" :aria-label="t('Remove')" @click="sharedUserIds.splice(sharedUserIds.indexOf(u), 1); markDirty()" /></span>
           </div>
           <ErpFilterSelect id="rb-share-team" :model-value="''" :placeholder="t('Add a team')" :options="crmTeamOptions().filter(o => !sharedTeamIds.includes(o.value))" width="220px" @update:model-value="(v: string) => { if (v) { sharedTeamIds.push(v); markDirty() } }" />
           <div class="rb-chip-list">
-            <span v-for="tid in sharedTeamIds" :key="tid" class="rb-chip">{{ crmTeamOptions().find(o => o.value === tid)?.label ?? tid }} <button type="button" :aria-label="t('Remove')" @click="sharedTeamIds.splice(sharedTeamIds.indexOf(tid), 1); markDirty()"><MpIcon name="close" size="sm" /></button></span>
+            <span v-for="tid in sharedTeamIds" :key="tid" class="rb-chip">{{ crmTeamOptions().find(o => o.value === tid)?.label ?? tid }} <MpButton type="button" left-icon="close" :aria-label="t('Remove')" @click="sharedTeamIds.splice(sharedTeamIds.indexOf(tid), 1); markDirty()" /></span>
           </div>
           <p class="rb-hint">{{ t('Sharing grants discovery and Run only — not edit, export, or underlying data access.') }}</p>
         </div>
@@ -368,11 +391,21 @@ function moduleLabel(id: string) { return moduleOptions.value.find((m) => m.valu
 
       <!-- ── Stage footer nav ── -->
       <div class="rb-footer">
-        <button class="btn-enterprise btn-enterprise--ghost" type="button" :disabled="stage === 'source'" @click="prevStage">{{ t('Back') }}</button>
-        <button v-if="stage !== 'save'" class="btn-enterprise btn-enterprise--primary" type="button" @click="nextStage">{{ t('Next') }}</button>
+        <MpButton class="btn-enterprise btn-enterprise--ghost" type="button" :is-disabled="stage === 'source'" @click="prevStage">{{ t('Back') }}</MpButton>
+        <MpButton v-if="stage !== 'save'" class="btn-enterprise btn-enterprise--primary" type="button" @click="nextStage">{{ t('Next') }}</MpButton>
         <MpButton v-else variant="primary" is-rounded @click="save">{{ t('Save') }}</MpButton>
       </div>
     </div>
+
+    <ConfirmModal
+      :is-open="discardConfirmOpen"
+      :title="t('Discard changes?')"
+      :description="t('You have unsaved changes. If you leave now, they will be lost.')"
+      :confirm-label="t('Discard')"
+      :is-danger="true"
+      @update:is-open="(v) => { if (!v) discardConfirmOpen = false }"
+      @confirm="confirmDiscard"
+    />
   </div>
 </template>
 

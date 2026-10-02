@@ -4,6 +4,8 @@
  * Gemini model is named (chat composer model picker, agent detail Model field).
  * A unique gradient id per instance avoids <defs> id collisions on a page.
  */
+import { css } from '@mekari/pixel3'
+
 withDefaults(defineProps<{ size?: number }>(), { size: 16 })
 let _seq = 0
 const gradId = `gemini-mark-${(_seq += 1)}-${Math.floor(performance.now())}`
@@ -12,6 +14,9 @@ const gradId = `gemini-mark-${(_seq += 1)}-${Math.floor(performance.now())}`
 <template>
   <svg :width="size" :height="size" viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <defs>
+      <!-- Google brand colors for the Gemini gradient — NOT Mekari design tokens.
+           These hex values (#1BA1E3, #5489D6, #9B72CB, #D96570, #F49C46) are
+           Google's official Gemini brand identity and must be kept as-is. -->
       <linearGradient :id="gradId" x1="2" y1="3" x2="22" y2="21" gradientUnits="userSpaceOnUse">
         <stop offset="0" stop-color="#1BA1E3" />
         <stop offset="0.3" stop-color="#5489D6" />

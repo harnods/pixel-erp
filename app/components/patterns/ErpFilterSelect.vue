@@ -9,7 +9,7 @@
  */
 import { computed, ref, nextTick } from 'vue'
 import {
-  MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+  MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpButton, css,
 } from '@mekari/pixel3'
 
 /** A menu option. `description` is optional — when present the menu renders it
@@ -26,7 +26,8 @@ const props = withDefaults(defineProps<{
   width?: string
   /** filter selects show an (×) to reset; set false for required form selects */
   isClearable?: boolean
-}>(), { width: '176px', isClearable: true })
+  disabled?: boolean
+}>(), { width: '176px', isClearable: true, disabled: false })
 
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
@@ -44,7 +45,7 @@ const filtered = computed<Opt[]>(() => {
   return q ? normalized.value.filter((o) => o.label.toLowerCase().includes(q)) : normalized.value
 })
 
-function focusOpen() { if (!open.value) { open.value = true; query.value = ''; nextTick(() => inputEl.value?.focus()) } }
+function focusOpen() { if (props.disabled || open.value) return; open.value = true; query.value = ''; nextTick(() => inputEl.value?.focus()) }
 function onInput(e: Event) { query.value = (e.target as HTMLInputElement).value; if (!open.value) open.value = true }
 function onBlur() { window.setTimeout(() => { open.value = false; query.value = '' }, 120) }
 function close() { open.value = false; query.value = '' }
@@ -55,7 +56,7 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
 </script>
 
 <template>
-  <div class="efs" :class="{ 'efs--filled': !!modelValue && isClearable && !open }" :style="{ '--efs-w': width }">
+  <div class="efs" :class="{ 'efs--filled': !!modelValue && isClearable && !open && !disabled, 'efs--disabled': disabled }" :style="{ '--efs-w': width }">
     <MpPopover :id="id" is-manual :is-open="open" placement="bottom-start" use-portal is-adaptive-width :is-keep-alive="false" @close="close">
       <MpPopoverTrigger>
         <div class="efs-trigger" @click="focusOpen">
@@ -65,6 +66,9 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
             type="text"
             :value="open ? query : selectedLabel"
             :placeholder="modelValue ? selectedLabel : placeholder"
+            :disabled="disabled"
+            :readonly="disabled"
+            :tabindex="disabled ? -1 : undefined"
             @focus="focusOpen"
             @input="onInput"
             @keydown.enter.prevent="enter"
@@ -93,9 +97,9 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
       </MpPopoverContent>
     </MpPopover>
 
-    <button v-if="modelValue && isClearable && !open" type="button" class="efs-clear" aria-label="Clear" @click.stop="pick('')">
+    <MpButton v-if="modelValue && isClearable && !open && !disabled" type="button" class="efs-clear" variant="ghost" aria-label="Clear" @click.stop="pick('')">
       <MpIcon name="close" size="sm" />
-    </button>
+    </MpButton>
   </div>
 </template>
 
@@ -117,7 +121,7 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
   border: 1px solid var(--mp-colors-border-form, #1d1f2429);
   border-radius: var(--mp-radii-md); cursor: text;
 }
-.efs-trigger:focus-within { border-color: #8c9596; box-shadow: 0 0 0 1px #8c9596; }
+.efs-trigger:focus-within { border-color: var(--mp-colors-border-bold); box-shadow: 0 0 0 1px var(--mp-colors-border-bold); } /* pixel-police-allow-shadow */
 .efs-input {
   flex: 1; min-width: 0; border: none; outline: none; background: transparent; padding: 0;
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); cursor: text;
@@ -133,6 +137,14 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
 }
 .efs--filled:hover .efs-clear { display: inline-flex; }
 .efs-clear:hover { color: var(--mp-text-default); }
+
+.efs--disabled .efs-trigger {
+  background: var(--mp-colors-background-disabled, #f5f5f5);
+  border-color: var(--mp-colors-border-form, #1d1f2429);
+  cursor: default; pointer-events: none;
+}
+.efs--disabled .efs-input { color: var(--mp-text-secondary); cursor: default; }
+.efs--disabled .efs-chevron { color: var(--mp-text-disabled, #9ca3af); }
 
 .efs-empty { padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 </style>

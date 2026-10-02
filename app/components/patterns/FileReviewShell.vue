@@ -19,6 +19,7 @@ import {
   MpIcon, MpTextlink, MpSpinner, css,
   MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
+  MpButton,
 } from '@mekari/pixel3'
 import type { ReviewFile } from '~/data'
 import { getReviewBlob } from '~/utils/reviewBlobStore'
@@ -162,11 +163,11 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
           <!-- Chevron → jump-to-file switcher (search + queue) -->
           <MpPopover id="frs-file-nav" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" :aria-label="t('Switch file')">
+              <MpButton class="detail-jump-chevron" :aria-label="t('Switch file')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
@@ -174,7 +175,7 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search file…')" />
                 </div>
                 <div class="detail-jump-list">
-                  <button
+                  <MpButton
                     v-for="rf in jumpResults" :key="rf.id"
                     class="detail-jump-item"
                     :class="{ 'detail-jump-item--active': rf.id === fileId }"
@@ -182,7 +183,7 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
                   >
                     <span class="detail-jump-item-number">{{ rf.position }}. {{ rf.file }}</span>
                     <span class="detail-jump-item-customer">{{ rf.beneficiary.name || t('Unclassified') }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No files found.') }}</p>
                 </div>
               </div>
@@ -205,16 +206,16 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
             </div>
           </div>
           <div class="detail-loc-toggle" role="group" :aria-label="t('Zoom')">
-            <button
-              type="button" class="detail-loc-toggle-btn"
+            <MpButton
+              class="detail-loc-toggle-btn"
               :class="{ 'detail-loc-toggle-btn--active': zoomMode === 'fit' }"
               @click="zoomMode = 'fit'"
-            >{{ t('Fit') }}</button>
-            <button
-              type="button" class="detail-loc-toggle-btn"
+            >{{ t('Fit') }}</MpButton>
+            <MpButton
+              class="detail-loc-toggle-btn"
               :class="{ 'detail-loc-toggle-btn--active': zoomMode === '100' }"
               @click="zoomMode = '100'"
-            >100%</button>
+            >100%</MpButton>
           </div>
         </div>
         <MpBanner
@@ -292,10 +293,11 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
 
 /* chevron next to the title → jump-to-file switcher */
 .detail-jump-chevron {
-  display: inline-flex; align-items: center; justify-content: center;
+  display: inline-flex !important; align-items: center; justify-content: center;
   width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px);
-  background: none; border: none; padding: 0;
+  background: none !important; border: none !important; padding: 0 !important;
   border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default);
+  min-width: 0 !important;
 }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 
@@ -314,9 +316,10 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
    run the user works through in order, so every file stays listed and scrolls. */
 .detail-jump-list { display: flex; flex-direction: column; max-height: 280px; overflow-y: auto; }
 .detail-jump-item {
-  display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5);
-  width: 100%; text-align: left; background: none; border: none; cursor: pointer;
-  padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-md);
+  display: flex !important; flex-direction: column; gap: var(--mp-spacing-0\.5);
+  width: 100%; text-align: left; background: none !important; border: none !important; cursor: pointer;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3) !important; border-radius: var(--mp-radii-md);
+  min-width: 0 !important;
 }
 .detail-jump-item:hover { background: var(--mp-background-neutral-subtle); }
 .detail-jump-item--active { background: var(--mp-background-neutral-subtle); }
@@ -354,7 +357,7 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
 /* Fit / 100% zoom toggle — same segmented-pill pattern as WMS picking's
    Combined / By orders toggle (PickingTaskDetailsPage.vue, CreatePickingPage.vue). */
 .detail-loc-toggle { display: flex; align-items: center; gap: 2px; flex-shrink: 0; background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-full); padding: 2px; }
-.detail-loc-toggle-btn { height: 28px; padding: 0 var(--mp-spacing-3); border: none; border-radius: var(--mp-radii-full); background: none; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); cursor: pointer; white-space: nowrap; }
+.detail-loc-toggle-btn { display: inline-flex !important; height: 28px; padding: 0 var(--mp-spacing-3) !important; border: none !important; border-radius: var(--mp-radii-full); background: none !important; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); cursor: pointer; white-space: nowrap; min-width: 0 !important; }
 .detail-loc-toggle-btn:hover { color: var(--mp-text-default); }
 .detail-loc-toggle-btn--active { background: var(--mp-background-stage, #fff); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); box-shadow: inset 0 0 0 1px var(--mp-border-default); }
 .frs-unreadable-banner { flex-shrink: 0; }

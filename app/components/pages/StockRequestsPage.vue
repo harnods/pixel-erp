@@ -91,7 +91,7 @@ const skuColumns: TableColumn[] = [
   { key: 'product',     label: t('SKU name'),            kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'openWorkOrders', label: t('Open transactions'),                sortable: true, sortType: 'number', align: 'right' },
   { key: 'earliestRequired', label: t('Earliest required'), kind: 'date', sortable: true, sortType: 'date' },
-  { key: 'required',    label: t('Required'),                            sortable: true, sortType: 'number', align: 'right' },
+  { key: 'required',    label: t('Required qty'),                            sortable: true, sortType: 'number', align: 'right' },
   { key: 'reserved',    label: t('Reserved'),                            sortable: true, sortType: 'number', align: 'right' },
   { key: 'remaining',   label: t('Remaining'),                           sortable: true, sortType: 'number', align: 'right' },
   { key: 'consumed',    label: t('Consumed'),                            sortable: true, sortType: 'number', align: 'right' },

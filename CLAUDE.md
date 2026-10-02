@@ -1,7 +1,113 @@
 # CLAUDE.md — working conventions for this repo
 
-Guidance for Claude (and any AI assistant) contributing to the Mekari ERP/WMS
-prototype. See `README.md` for the full project overview.
+Guidance for Claude (and any AI assistant) contributing to this repository.
+See `README.md` for the full project overview.
+
+## SOP — mandatory workflow for every task
+
+Every task — no matter how small — follows these steps in order. No shortcuts.
+
+### 1. Map all dependencies and relations — ask if unsure
+
+Before writing a single line of code, understand the **full scope** of what the
+request touches. Read the relevant files and grep for every identifier, label,
+type, and data structure involved. Build a mental map of all places that will be
+affected — components, data files, pages, types, CSS, translations, validation
+logic, computed properties, utilities. **Nothing may be missed.** Every feature in
+this codebase is interconnected; changing one spot without updating the rest
+creates broken states, stale references, and wasted round-trips.
+
+**If you are unsure about the context, don't know the full scope, or don't
+understand how a feature connects to the rest — STOP and ask the user before
+executing.** Do not guess or assume. A wrong assumption wastes more time than a
+question.
+
+### 2. Read design guidelines and rules
+
+Before any execution, read the relevant design documentation:
+- **Invoke the `pixel-erp-design` skill** — this is the mandatory entry point for
+  any UI work. It routes to the exact rules and pattern docs for the surface.
+- **Read `docs/design/RULES.md`** — the canonical rule registry. When a mockup or
+  your instinct conflicts with a rule, **the rule wins**.
+- **Read `docs/design/reachable-states.md`** — every surface must cover all states
+  (empty, filtered-empty, loading, error, permission, destructive).
+- Check `docs/patterns/*` for the specific component/pattern being touched.
+
+This step is not optional. Do not start coding until you have read the relevant
+guidelines.
+
+### 3. Apply changes to ALL related places — ask if unsure about components
+
+Make the change in every file identified in step 1 — in a single turn. **If you
+are unsure which component to use, or don't know the right pattern for a UI
+element — ask the user.** Do not pick a component that "seems right". Common
+related places to check:
+- `app/data/crm.ts` — types, seed data, properties, module definitions
+- `app/data/crmConversion.ts` — validation, readiness, mapping logic
+- `app/data/translations.ts` — UI copy
+- `app/data/devChanges.ts` — coachmark entries (see step 8)
+- Page components (`Crm*Page.vue`) — rendering, tabs, computed values
+- Pattern components (`Crm*Builder.vue`, `CrmMappingRow.vue`) — shared UI
+- `docs/design/RULES.md` — if a design decision is involved
+
+**Every feature must be functional — not just UI.** All data must be persisted
+to the DB (`app/data/persist.ts` — `saveSnapshot`/`loadSnapshot`/`saveCreated`)
+so it survives page refresh. No dead-end UI — if a form saves, the saved data
+must appear and be usable everywhere it's relevant:
+- Within the same module: index page, detail page, related lists, dropdowns, counts.
+- **Across other modules**: data has dependencies and relationships beyond its
+  own module. A deal links to customers, products, sales orders, quotes,
+  contacts, pipelines, properties, ERP transactions, etc. When data is created
+  or changed, trace every dependency chain and make sure all consuming modules
+  reflect it — dashboards, reports, filters, conversion configs, computed
+  totals, navigation counts, badges, and any other module that reads this data.
+  If module A references module B's data, the connection must work both ways.
+
+### 4. When unsure about icons, ask
+
+Never guess which icon to use. Ask the user.
+
+### 5. Build
+
+Run `npm run build` to verify zero compilation errors.
+
+### 6. Run tests — all must pass
+
+Run `npm run test -- --run`. Every change must pass the full test suite before
+proceeding. The test suite includes:
+- **Pixel police** (`tests/pixel-police.spec.ts`) — design compliance: no
+  off-theme colors, no raw HTML controls, no hardcoded color literals, no
+  drop-shadow, correct toast usage. If your change introduces a violation, fix it.
+- **Component usage tests** — verify correct use of Pixel components, copy
+  library strings, and enterprise overrides.
+- **Feature/logic tests** — business logic, data flows, state transitions.
+
+If any test fails **because of your change**, fix the code (not the test) until
+green. If a test was already failing before your change (pre-existing), note it
+but do not ignore new failures.
+
+For new features or significant changes, **write a test** that covers the new
+behaviour — add it to `tests/` following existing naming conventions
+(`<feature-slug>.spec.ts`).
+
+### 7. Restart preview on port 4322
+
+Kill the old process and start the new build with `.env` loaded:
+`lsof -ti:4322 | xargs kill -9; set -a; . ./.env; set +a; PORT=4322 node .output/server/index.mjs`
+
+### 8. Add coachmark for the change
+
+Tag every changed/new UI element with `data-devchange="<id>"` in the template,
+and add a corresponding entry in `app/data/devChanges.ts` with a clear title,
+description, and today's date. This is how engineers and PMs see what changed.
+
+### 9. Verify in browser
+
+Open the affected page(s) on port 4322 in the browser. Screenshot to prove the
+change works. Check related pages too — if you changed a data model or validation,
+verify the index page, detail page, and any other surface that consumes it.
+
+---
 
 ## ⛔ Before ANY UI work — read this first
 

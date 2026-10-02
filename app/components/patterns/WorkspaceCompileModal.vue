@@ -8,7 +8,7 @@
 import { ref, computed, watch } from 'vue'
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalCloseButton,
-  MpButton, MpButtonGroup, MpIcon, MpCheckbox,
+  MpButton, MpButtonGroup, MpIcon, MpCheckbox, MpRadio,
 } from '@mekari/pixel3'
 import {
   compileWorkspaceMarkdown, saveCompiledArtifact, readableThreads, COMPILE_SECTIONS,
@@ -129,9 +129,9 @@ const renderedMd = computed(() => renderMd(streamed.value))
         <!-- Step 1 — Scope -->
         <div v-if="phase === 'form' && step === 1" class="wc-body">
           <div class="wc-radios">
-            <label class="wc-radio"><input v-model="scope" type="radio" value="all"><span><b>All threads I can read</b> — every thread in the workspace you have access to</span></label>
-            <label class="wc-radio"><input v-model="scope" type="radio" value="selected"><span><b>Selected threads</b> — pick which threads to include</span></label>
-            <label class="wc-radio"><input v-model="scope" type="radio" value="tagged"><span><b>Tagged items only</b> — just the tagged decisions / actions / risks (fastest)</span></label>
+            <label class="wc-radio"><MpRadio id="wc-scope-all" name="wc-scope" value="all" :is-checked="scope === 'all'" @change="scope = 'all'" /><span><b>All threads I can read</b> — every thread in the workspace you have access to</span></label>
+            <label class="wc-radio"><MpRadio id="wc-scope-selected" name="wc-scope" value="selected" :is-checked="scope === 'selected'" @change="scope = 'selected'" /><span><b>Selected threads</b> — pick which threads to include</span></label>
+            <label class="wc-radio"><MpRadio id="wc-scope-tagged" name="wc-scope" value="tagged" :is-checked="scope === 'tagged'" @change="scope = 'tagged'" /><span><b>Tagged items only</b> — just the tagged decisions / actions / risks (fastest)</span></label>
           </div>
           <div v-if="scope === 'selected'" class="wc-threads">
             <label v-for="t in readable" :key="t.id" class="wc-thread">
@@ -148,7 +148,7 @@ const renderedMd = computed(() => renderMd(streamed.value))
           <div class="wc-field">
             <span class="wc-field__label">Format</span>
             <div class="wc-formats">
-              <button v-for="f in FORMATS" :key="f.id" type="button" class="wc-chip" :class="{ 'is-on': format === f.id }" @click="format = f.id">{{ f.label }}</button>
+              <MpButton v-for="f in FORMATS" :key="f.id" variant="ghost" class="wc-chip" :class="{ 'is-on': format === f.id }" @click="format = f.id">{{ f.label }}</MpButton>
             </div>
           </div>
           <div class="wc-field">
@@ -215,7 +215,6 @@ const renderedMd = computed(() => renderMd(streamed.value))
 .wc-body { display: flex; flex-direction: column; gap: var(--mp-spacing-4, 16px); min-height: 200px; }
 .wc-radios { display: flex; flex-direction: column; gap: var(--mp-spacing-3, 12px); }
 .wc-radio { display: flex; align-items: flex-start; gap: var(--mp-spacing-2, 8px); font-size: var(--mp-font-sizes-sm, 13px); color: var(--mp-colors-text-secondary, #536062); cursor: pointer; }
-.wc-radio input { margin-top: 3px; }
 .wc-threads, .wc-sections { display: flex; flex-direction: column; gap: var(--mp-spacing-1, 4px); padding: var(--mp-spacing-2, 8px) 0 0; max-height: 200px; overflow-y: auto; }
 .wc-thread { display: flex; align-items: center; gap: var(--mp-spacing-3, 12px); padding: var(--mp-spacing-2, 8px); border-radius: var(--mp-radii-md, 6px); cursor: pointer; }
 .wc-thread:hover { background: var(--mp-colors-background-neutral-subtle, #f7f8f8); }

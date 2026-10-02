@@ -43,55 +43,56 @@
       <template v-if="view === 'main'">
         <!-- Primary actions -->
         <nav class="user-menu__group">
-          <button
+          <MpButton
             v-for="item in primaryItems"
             :key="item.label"
-            type="button"
+            variant="ghost"
             class="user-menu__row"
           >
             <MpIcon :name="item.icon" size="md" color="icon.brand" />
             <span class="user-menu__label">{{ t(item.label) }}</span>
-          </button>
+          </MpButton>
         </nav>
 
         <div class="user-menu__divider" />
 
         <!-- Account controls -->
         <nav class="user-menu__group">
-          <button type="button" class="user-menu__row">
+          <MpButton variant="ghost" class="user-menu__row">
             <span class="user-menu__label">{{ t('Switch company') }}</span>
             <MpIcon name="chevrons-right" size="md" color="icon.default" />
-          </button>
-          <button type="button" class="user-menu__row" @click="view = 'wms'">
+          </MpButton>
+          <MpButton variant="ghost" class="user-menu__row" @click="view = 'wms'">
             <span class="user-menu__label">{{ t('Switch to WMS') }}</span>
             <MpIcon name="chevrons-right" size="md" color="icon.default" />
-          </button>
-          <button type="button" class="user-menu__row" @click="view = 'scenario'">
+          </MpButton>
+          <MpButton variant="ghost" class="user-menu__row" @click="view = 'scenario'">
             <span class="user-menu__label">{{ t('Scenario') }}</span>
             <span class="user-menu__value">{{ t(migrationScenario) }}</span>
             <MpIcon name="chevrons-right" size="md" color="icon.default" />
-          </button>
-          <button type="button" class="user-menu__row" @click="view = 'language'">
+          </MpButton>
+          <MpButton variant="ghost" class="user-menu__row" @click="view = 'language'">
             <span class="user-menu__label">{{ t('Language') }}</span>
             <span class="user-menu__value">{{ currentLanguage }}</span>
             <MpIcon name="chevrons-right" size="md" color="icon.default" />
-          </button>
-          <button type="button" class="user-menu__row" @click="signOutAndReload(onClosePopover)">
+          </MpButton>
+          <MpButton variant="ghost" class="user-menu__row" @click="signOutAndReload(onClosePopover)">
             <span class="user-menu__label">{{ t('Sign out') }}</span>
-          </button>
+          </MpButton>
         </nav>
 
         <div class="user-menu__divider" />
 
         <!-- Prototype / demo controls -->
         <nav class="user-menu__group">
-          <button type="button" class="user-menu__row" @click="resetData(onClosePopover)">
+          <MpButton variant="ghost" class="user-menu__row" @click="resetData(onClosePopover)">
             <span class="user-menu__label">{{ t('Reset demo data') }}</span>
-          </button>
-          <button type="button" class="user-menu__row" @click="toggleReview(onClosePopover)">
-            <span class="user-menu__label">{{ t('Review mode') }}</span>
-            <span v-if="isReviewMode" class="user-menu__value">{{ t('On') }}</span>
-          </button>
+          </MpButton>
+          <!-- Changes overlay disabled — coachmarks were distracting during dev.
+          <MpButton type="button" class="user-menu__row" variant="ghost" @click="toggleChanges(onClosePopover)"> pixel-police-allow
+            <span class="user-menu__label">{{ t('Changes') }}</span>
+            <span v-if="isChangesOn" class="user-menu__value">{{ t('On') }}</span>
+          </MpButton> -->
         </nav>
 
         <p class="user-menu__company-id">{{ t('Company ID: 680128') }}</p>
@@ -112,22 +113,22 @@
       <!-- ── Change language ───────────────────────────────── -->
       <template v-else-if="view === 'language'">
         <div class="user-menu__subhead">
-          <button
-            type="button"
+          <MpButton
+            variant="ghost"
             class="user-menu__back"
             aria-label="Back"
             @click="view = 'main'"
           >
             <MpIcon name="chevrons-left" size="md" color="icon.default" />
-          </button>
+          </MpButton>
           <span class="user-menu__subtitle">{{ t('Change language') }}</span>
         </div>
 
         <nav class="user-menu__group">
-          <button
+          <MpButton
             v-for="lang in languages"
             :key="lang"
-            type="button"
+            variant="ghost"
             class="user-menu__row"
             @click="selectLanguage(lang)"
           >
@@ -138,29 +139,29 @@
               size="md"
               color="icon.brand"
             />
-          </button>
+          </MpButton>
         </nav>
       </template>
 
       <!-- ── Switch to WMS: select scenario ────────────────── -->
       <template v-else-if="view === 'wms'">
         <div class="user-menu__subhead">
-          <button
-            type="button"
+          <MpButton
+            variant="ghost"
             class="user-menu__back"
             aria-label="Back"
             @click="view = 'main'"
           >
             <MpIcon name="chevrons-left" size="md" color="icon.default" />
-          </button>
+          </MpButton>
           <span class="user-menu__subtitle">{{ t('Select scenario') }}</span>
         </div>
 
         <nav class="user-menu__group">
-          <button
+          <MpButton
             v-for="s in scenarios"
             :key="s"
-            type="button"
+            variant="ghost"
             class="user-menu__row"
             @click="selectScenario(s, onClosePopover)"
           >
@@ -171,7 +172,7 @@
               size="md"
               color="icon.brand"
             />
-          </button>
+          </MpButton>
         </nav>
 
         <!-- An operator with line-manager access gets the manager-only task actions
@@ -193,22 +194,22 @@
       <!-- ── Scenario: pick the demo storyline ─────────────── -->
       <template v-else-if="view === 'scenario'">
         <div class="user-menu__subhead">
-          <button
-            type="button"
+          <MpButton
+            variant="ghost"
             class="user-menu__back"
             aria-label="Back"
             @click="view = 'main'"
           >
             <MpIcon name="chevrons-left" size="md" color="icon.default" />
-          </button>
+          </MpButton>
           <span class="user-menu__subtitle">{{ t('Select scenario') }}</span>
         </div>
 
         <nav class="user-menu__group">
-          <button
+          <MpButton
             v-for="s in migrationScenarios"
             :key="s"
-            type="button"
+            variant="ghost"
             class="user-menu__row"
             @click="selectMigrationScenario(s, onClosePopover)"
           >
@@ -219,7 +220,7 @@
               size="md"
               color="icon.brand"
             />
-          </button>
+          </MpButton>
         </nav>
       </template>
     </MpPopoverContent>
@@ -236,10 +237,11 @@ import {
   MpText,
   MpIcon,
   MpCheckbox,
+  MpButton,
 } from "@mekari/pixel3";
 import { picForWarehouse } from "~/data/warehouses";
 import { resetDb } from "~/data/persist";
-import { useReviewMode, clearDynamicAnnotations } from "@ds/proto-review";
+import { clearDynamicAnnotations } from "@ds/proto-review";
 
 // Public asset (place your attached megaphone here). Bound dynamically so a missing
 // file degrades to a 404 at runtime instead of breaking the Vite build.
@@ -344,11 +346,11 @@ async function signOutAndReload(closePopover: () => void) {
   if (import.meta.client) window.location.reload();
 }
 
-// Flips the proto-review overlay on/off for the rest of this browser session
-// (persists across page navigation) without needing the ?review query param.
-const { isReviewMode, toggleReviewMode } = useReviewMode();
-function toggleReview(closePopover: () => void) {
-  toggleReviewMode();
+// Flips the engineer-facing "Changes" overlay (DevChangesOverlay) on/off for the
+// rest of this browser session. Replaces the old proto-review "Review mode" toggle.
+const { isActive: isChangesOn, toggle: toggleChangesOverlay } = useDevChanges();
+function toggleChanges(closePopover: () => void) {
+  toggleChangesOverlay();
   closePopover();
 }
 </script>

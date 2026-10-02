@@ -42,7 +42,7 @@ import {
   archiveDeal, restoreDeal, deleteDeal, bulkChangeOwner, bulkChangeStage, convertDeal,
   dealConversionTarget, dealExpectedValue, isDealOpen, getDeal, dealDraftSeed, dealNo,
   CRM_OWNERS, crmCustomers, dealStageBadgeType, dealStageLabel, getCrmModule,
-  dealPipelineDisplay, dealPipelineViews, dealPipelines,
+  dealPipelineDisplay, dealPipelines,
   type Deal, type DealStage, type DealDraftSeed,
 } from '~/data/crm'
 import { pinsForModule, metricPinValue, unpinReportMetric } from '~/data/crmReports'
@@ -59,7 +59,7 @@ function stageKind(c: DealStage): 'open' | 'won' | 'lost' {
   return c === 'Won' ? 'won' : c === 'Lost' ? 'lost' : 'open'
 }
 // Card field / display toggles from the module builder's right-hand panel.
-const cardFieldOn = (key: string) => activeViewDisplay.value.cardFields.some((f) => f.key === key && f.on)
+const cardFieldOn = (key: string) => dealPipelineDisplay.cardFields.some((f) => f.key === key && f.on)
 function asDeal(row: unknown): Deal { return row as Deal }
 function goDetail(id: string) { router.push(`/crm/deals/${id}`) }
 function goOrder(id: string) { router.push(`/crm/orders/${id}`) }
@@ -74,13 +74,14 @@ function updatedTime(id: string): string {
   const mm = (n * 7) % 60
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
 }
-/** Days a deal has been open (aging), from creation to today. */
-function agingDays(d: Deal): number {
-  const [y, m, dd] = d.createdAt.split('-').map(Number)
+/** Days remaining until expected close date. Negative = overdue. */
+function closeInDays(d: Deal): number | null {
+  if (!d.expectedCloseDate) return null
+  const [y, m, dd] = d.expectedCloseDate.split('-').map(Number)
   const [ty, tm, td] = TODAY.split('-').map(Number)
-  return Math.max(0, Math.round((Date.UTC(ty!, tm! - 1, td!) - Date.UTC(y!, m! - 1, dd!)) / 86_400_000))
+  return Math.round((Date.UTC(y!, m! - 1, dd!) - Date.UTC(ty!, tm! - 1, td!)) / 86_400_000)
 }
-function agingTone(n: number): '' | 'warn' | 'danger' { return n > 30 ? 'danger' : n > 14 ? 'warn' : '' }
+function closeInTone(n: number): '' | 'warn' | 'danger' { return n < 0 ? 'danger' : n <= 7 ? 'warn' : '' }
 
 /** Owner avatar — initials on a deterministic pastel background, with the initials
  *  in a darker shade of the same hue. */
@@ -112,28 +113,8 @@ const SAVED_VIEWS = ['All records', 'My records', 'Recently created', 'Recently 
 type SavedView = typeof SAVED_VIEWS[number]
 const savedView = ref<SavedView>('All records')
 
-// ── Saved pipeline views (configured in the module builder) — one Kanban tab
-//    per view; the active view hides its stages from the board. Deals stages map
-//    to the pipeline stages by position (both ordered identically). ──
-const pipelineViewTabs = computed(() => dealPipelineViews)
-const activePipelineViewId = ref('default')
-watch(pipelineViewTabs, (tabs) => {
-  if (!tabs.some((v) => v.id === activePipelineViewId.value)) activePipelineViewId.value = tabs[0]?.id ?? 'default'
-}, { immediate: true })
-const activePipelineViewIndex = computed(() => Math.max(0, pipelineViewTabs.value.findIndex((v) => v.id === activePipelineViewId.value)))
-// The active view's board display (total/card fields/aging/color) drives the
-// board; falls back to the module's shared display for the default/legacy case.
-const activeViewDisplay = computed(() => {
-  const v = pipelineViewTabs.value.find((x) => x.id === activePipelineViewId.value)
-  return v?.display ?? dealPipelineDisplay
-})
-const hiddenDealStages = computed<Set<DealStage>>(() => {
-  const v = pipelineViewTabs.value.find((x) => x.id === activePipelineViewId.value)
-  const stages = dealPipelines.find((p) => p.id === 'default')?.stages ?? dealPipelines[0]?.stages ?? []
-  const hidden = new Set<DealStage>()
-  if (v) stages.forEach((s, i) => { if (v.hiddenStageIds.includes(s.id) && DEAL_STAGES[i]) hidden.add(DEAL_STAGES[i]!) })
-  return hidden
-})
+// ── Pipeline display — the module's shared display drives the board. ──
+const hiddenDealStages = computed<Set<DealStage>>(() => new Set<DealStage>())
 
 // ── View toggle (list default per PRD) ──
 const view = ref<'table' | 'board'>('table')
@@ -173,7 +154,7 @@ const appliedFilters = reactive<CrmDealsFiltersValue>(emptyCrmDealsFilters())
 const keywordColumns = [
   { key: 'name',            label: t('Deal name') },
   { key: 'id',              label: t('Deal number') },
-  { key: 'company',         label: t('Customer') },
+  { key: 'company',         label: t('Company') },
   { key: 'owner',           label: t('Owner') },
   { key: 'referenceNumber', label: t('Reference number') },
 ]
@@ -192,6 +173,14 @@ function matchesTagComparator(rowValue: string, comparator: string, picked: stri
   if (picked.length === 0) return true
   if (comparator === 'isNoneOf') return !picked.includes(rowValue)
   return picked.includes(rowValue)   // isAnyOf / isAllOf collapse to membership for a single-value field
+}
+// AdvancedDateRangePicker emits a [start, end] Date pair (or null = not applied).
+function dayStart(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
+function matchesDateRange(iso: string, range: Date[] | null): boolean {
+  if (!range) return true
+  if (!iso) return false
+  const t = dayStart(new Date(iso)).getTime()
+  return t >= dayStart(range[0]!).getTime() && t <= dayStart(range[1]!).getTime()
 }
 
 // ── Table state (search + Stage filter + saved view + metric + drawer + sort) ──
@@ -220,8 +209,9 @@ const {
     const matchesValue = matchesAmountFilter(dealExpectedValue(row), f.valueComparator, f.value, f.valueMin, f.valueMax)
     const matchesOwner = matchesTagComparator(row.owner, f.ownerComparator, f.owners)
     const matchesCustomer = matchesTagComparator(row.company, f.customerComparator, f.customers)
+    const matchesCloseDate = matchesDateRange(row.expectedCloseDate, f.closeDate)
 
-    return matchesStage && matchesSearch && matchesKeyword && matchesValue && matchesOwner && matchesCustomer
+    return matchesStage && matchesSearch && matchesKeyword && matchesValue && matchesOwner && matchesCustomer && matchesCloseDate
   },
 })
 watch(appliedFilters, () => setPage(1))
@@ -233,6 +223,7 @@ const drawerFilterCount = computed(() => {
   if (f.value !== '' || f.valueMin !== '' || f.valueMax !== '') n++
   if (f.owners.length > 0) n++
   if (f.customers.length > 0) n++
+  if (f.closeDate) n++
   return n
 })
 
@@ -456,10 +447,10 @@ function onImportUpload(files: File[]) {
 const exportOpen = ref(false)
 const selectedCount = ref(0)
 const exportColumns = [
-  { key: 'name', label: t('Deal name') }, { key: 'stage', label: t('Stage') }, { key: 'company', label: t('Customer') },
+  { key: 'name', label: t('Deal name') }, { key: 'stage', label: t('Stage') }, { key: 'company', label: t('Company') },
   { key: 'picName', label: t('Contact person') },
-  { key: 'owner', label: t('Owner') }, { key: 'value', label: t('Expected deal value') }, { key: 'currency', label: t('Currency') },
-  { key: 'expectedCloseDate', label: t('Close date') }, { key: 'conversion', label: t('Conversion status') },
+  { key: 'owner', label: t('Owner') }, { key: 'value', label: t('Value') }, { key: 'currency', label: t('Currency') },
+  { key: 'expectedCloseDate', label: t('Expected close date') }, { key: 'conversion', label: t('Conversion status') },
   { key: 'salesOrderId', label: t('Linked ERP transaction') }, { key: 'lastActivity', label: t('Last updated') },
 ]
 function onExport() { exportOpen.value = false; successToast(t('Export ready — check your downloads')) }
@@ -475,12 +466,12 @@ function stageBadge(stage: DealStage): { type: 'completed' | 'announcement' | 'i
 const baseColumns: TableColumn[] = [
   { key: 'id',            label: t('Number'),         kind: 'default', sortable: true, sortType: 'text'   },
   { key: 'name',          label: t('Deal name'),      kind: 'name',    sortable: true, sortType: 'text'   },
-  { key: 'company',       label: t('Customer'),       kind: 'name',    sortable: true, sortType: 'text'   },
+  { key: 'company',       label: t('Company'),        kind: 'name',    sortable: true, sortType: 'text'   },
   { key: 'contactPerson', label: t('Contact person'), kind: 'name',    sortable: true, sortType: 'text'   },
   { key: 'stage',         label: t('Stage'),          kind: 'status',  sortable: true, sortType: 'text'   },
   { key: 'owner',         label: t('Owner'),          kind: 'name',    sortable: true, sortType: 'text'   },
-  { key: 'expectedCloseDate', label: t('Close date'), kind: 'date',    sortable: true, sortType: 'text'   },
-  { key: 'value',         label: t('Deal value'),     kind: 'amount',  align: 'right', sortable: true, sortType: 'number' },
+  { key: 'expectedCloseDate', label: t('Expected close date'), kind: 'date', sortable: true, sortType: 'text' },
+  { key: 'value',         label: t('Value'),          kind: 'amount',  align: 'right', sortable: true, sortType: 'number' },
 ]
 const optionalColumns: TableColumn[] = [
   { key: 'lastActivity',      label: t('Last updated'), kind: 'default', sortable: true, sortType: 'text' },
@@ -515,43 +506,41 @@ const toggleAirene = inject<() => void>('toggleAirene')
       <!-- ── Fixed metrics (PRD: 5 cards, click-through) ── -->
       <div class="cc-stats">
         <div class="stats-section">
-          <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'ongoing' }" @click="applyMetric('ongoing')">
+          <MpButton type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'ongoing' }" @click="applyMetric('ongoing')">
             <div class="stat-title">{{ t('Total ongoing deals') }}</div>
             <div class="stat-amount">{{ m.totalOngoing }}</div>
             <div class="stat-sub">{{ t('In the pipeline') }}</div>
-          </button>
-          <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'ongoing' }" @click="applyMetric('ongoing')">
+          </MpButton>
+          <MpButton type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'ongoing' }" @click="applyMetric('ongoing')">
             <div class="stat-title">{{ t('Total deal value') }}</div>
             <div class="stat-amount">{{ formatMoney(m.totalOngoingValue, 'IDR') }}</div>
             <div class="stat-sub">{{ t('Ongoing, base currency') }}</div>
-          </button>
-          <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'closing' }" @click="applyMetric('closing')">
+          </MpButton>
+          <MpButton type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'closing' }" @click="applyMetric('closing')">
             <div class="stat-title">{{ t('Closing this month') }}</div>
             <div class="stat-amount">{{ m.closingThisMonthCount }}</div>
             <div class="stat-sub">{{ formatMoney(m.closingThisMonthValue, 'IDR') }}</div>
-          </button>
-          <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'overdue' }" @click="applyMetric('overdue')">
+          </MpButton>
+          <MpButton type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'overdue' }" @click="applyMetric('overdue')">
             <div class="stat-title">{{ t('Overdue') }}</div>
             <div class="stat-amount" :class="{ 'stat-amount--danger': m.overdueCount > 0 }">{{ m.overdueCount }}</div>
             <div class="stat-sub">{{ t('Past due date') }}</div>
-          </button>
-          <button type="button" class="stat-card" :class="{ 'stat-card--active': metricFilter === 'converted' }" @click="applyMetric('converted')">
+          </MpButton>
+          <MpButton type="button" class="stat-card" :class="{ 'stat-card--active': metricFilter === 'converted' }" @click="applyMetric('converted')">
             <div class="stat-title">{{ convTargetShort }} {{ t('created') }}</div>
             <div class="stat-amount">{{ m.txnCreatedPast30Count }}</div>
             <div class="stat-sub">{{ t('Past 30 days') }}</div>
-          </button>
+          </MpButton>
         </div>
         <!-- ── Optional report-backed pins — a distinct extension area after the
              protected fixed cards above (never replaces/reorders them). ── -->
         <div v-if="pinnedDealMetrics.length" class="cc-pinned-metrics">
           <div v-for="pin in pinnedDealMetrics" :key="pin.id" class="pinned-metric-card">
-            <button type="button" class="pinned-metric-body" @click="router.push(`/crm/reports/${pin.reportId}`)">
+            <MpButton type="button" class="pinned-metric-body" @click="router.push(`/crm/reports/${pin.reportId}`)">
               <div class="stat-title">{{ pin.label }}</div>
               <div class="stat-amount">{{ metricPinValue(pin) ?? '—' }}</div>
-            </button>
-            <button type="button" class="pinned-metric-unpin" :aria-label="t('Unpin')" @click="unpinReportMetric(pin.id)">
-              <MpIcon name="close" size="sm" />
-            </button>
+            </MpButton>
+            <MpButton type="button" class="pinned-metric-unpin" left-icon="close" :aria-label="t('Unpin')" @click="unpinReportMetric(pin.id)" />
           </div>
         </div>
       </div>
@@ -595,23 +584,10 @@ const toggleAirene = inject<() => void>('toggleAirene')
           <div class="filter-search">
             <MpIcon name="search" size="sm" />
             <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search deals…')" />
-            <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''"><MpIcon name="close" size="sm" /></button>
+            <MpButton v-if="search" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="search = ''" />
           </div>
         </div>
       </div>
-
-      <!-- ── Saved view tabs (board only) — one tab per pipeline view configured
-           in the module builder; the active view hides its stages. ── -->
-      <MpTabs
-        v-if="view === 'board' && pipelineViewTabs.length > 1"
-        id="deal-view-tabs" class="deal-view-tabs" variant-color="green" is-manual
-        :model-value="activePipelineViewIndex"
-        @change="(i: number) => (activePipelineViewId = pipelineViewTabs[i]?.id ?? 'default')"
-      >
-        <MpTabList>
-          <MpTab v-for="v in pipelineViewTabs" :key="v.id">{{ v.name }}</MpTab>
-        </MpTabList>
-      </MpTabs>
 
       <!-- ── Board view ── -->
       <div v-if="view === 'board'" class="kanban">
@@ -620,7 +596,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
             v-for="col in boardColumns"
             :key="col.stage"
             class="kcol"
-            :class="{ 'kcol--over': dragOverStage === col.stage, [`kcol--${stageKind(col.stage)}`]: activeViewDisplay.colorColumns }"
+            :class="{ 'kcol--over': dragOverStage === col.stage, [`kcol--${stageKind(col.stage)}`]: dealPipelineDisplay.colorColumns }"
             @dragover.prevent="dragOverStage = col.stage"
             @dragleave="dragOverStage === col.stage && (dragOverStage = null)"
             @drop="onDrop(col.stage)"
@@ -648,19 +624,19 @@ const toggleAirene = inject<() => void>('toggleAirene')
                   <p v-if="cardFieldOn('contactPerson') && d.picName" class="deal__sub">{{ d.picName }}</p>
                 </div>
                 <div v-if="cardFieldOn('dealValue')" class="deal__value">{{ formatMoney(dealExpectedValue(d), d.currency) }}</div>
-                <p v-if="cardFieldOn('date') && d.expectedCloseDate" class="deal__sub">{{ d.expectedCloseDate }}</p>
-                <p v-if="cardFieldOn('note') && d.description" class="deal__sub deal__note">{{ d.description }}</p>
-                <div v-if="cardFieldOn('owner') || (activeViewDisplay.showAging && isDealOpen(d))" class="deal__foot">
-                  <span v-if="cardFieldOn('owner')" class="deal__owner">
-                    <span class="deal__avatar" :style="ownerAvatarStyle(d.owner)">{{ ownerInitials(d.owner) }}</span>
-                    {{ d.owner }}
-                  </span>
-                  <span v-if="dealPipelineDisplay.showAging && isDealOpen(d)" class="deal__aging" :class="`deal__aging--${agingTone(agingDays(d))}`" :title="`${t('Open for')} ${agingDays(d)} ${t('days')}`">{{ agingDays(d) }}d</span>
+                <p v-if="cardFieldOn('closeDate') && d.expectedCloseDate" class="deal__sub">{{ d.expectedCloseDate }}</p>
+                <p v-if="cardFieldOn('memo') && d.notes" class="deal__sub deal__note">{{ d.notes }}</p>
+                <span v-if="cardFieldOn('owner')" class="deal__owner">
+                  <span class="deal__avatar" :style="ownerAvatarStyle(d.owner)">{{ ownerInitials(d.owner) }}</span>
+                  {{ d.owner }}
+                </span>
+                <div v-if="dealPipelineDisplay.showAging && closeInDays(d) !== null" class="deal__foot deal__foot--end" data-devchange="crm-close-in-live">
+                  <span class="deal__aging" :class="`deal__aging--${closeInTone(closeInDays(d)!)}`" :title="`${t('Expected close date')}: ${d.expectedCloseDate}`">{{ closeInDays(d)! }}d</span>
                 </div>
               </article>
               <p v-if="!col.cards.length" class="kcol__empty">{{ t('No deals') }}</p>
             </div>
-            <footer v-if="activeViewDisplay.stageTotal" class="kcol__foot">
+            <footer v-if="dealPipelineDisplay.stageTotal" class="kcol__foot">
               <span class="kcol__total-k">{{ t('Total:') }}</span>
               <span class="kcol__total-v">{{ formatMoney(col.total, 'IDR') }}</span>
             </footer>
@@ -737,18 +713,18 @@ const toggleAirene = inject<() => void>('toggleAirene')
             <MpPopoverContent class="erp-dropdown-menu">
               <!-- Change stage swaps this SAME popover's content — no modal (rule/dnd… see CLAUDE.md). -->
               <div v-if="stagePicker.mode === 'row' && stagePicker.ids[0] === asDeal(row).id" class="stage-picker">
-                <button type="button" class="stage-picker-back" @click="closeStagePicker()"><MpIcon name="chevrons-left" size="sm" />{{ t('Change stage') }}</button>
-                <button
+                <MpButton type="button" class="stage-picker-back" left-icon="chevrons-left" @click="closeStagePicker()">{{ t('Change stage') }}</MpButton>
+                <MpButton
                   v-for="s in stageOptionsFor(stagePicker.ids)" :key="s" type="button" class="stage-picker-item"
                   @click="pickStage(s); if (!stagePicker.mode) onClosePopover()"
-                >{{ t(dealStageLabel(s)) }}</button>
+                >{{ t(dealStageLabel(s)) }}</MpButton>
                 <div v-if="stagePicker.awaitingLostReason" class="stage-picker-lost">
                   <span class="stage-picker-lost-label">{{ t('Lost reason') }}</span>
                   <textarea v-model="stagePicker.lostReason" class="stage-picker-textarea" rows="2" @input="stagePicker.error = ''" />
                   <span v-if="stagePicker.error" class="stage-picker-err">{{ stagePicker.error }}</span>
                   <div class="stage-picker-lost-actions">
-                    <button type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="cancelLostReason()">{{ t('Cancel') }}</button>
-                    <button type="button" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="confirmLostReason(); if (!stagePicker.mode) onClosePopover()">{{ t('Confirm') }}</button>
+                    <MpButton type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="cancelLostReason()">{{ t('Cancel') }}</MpButton>
+                    <MpButton type="button" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="confirmLostReason(); if (!stagePicker.mode) onClosePopover()">{{ t('Confirm') }}</MpButton>
                   </div>
                 </div>
               </div>
@@ -785,18 +761,18 @@ const toggleAirene = inject<() => void>('toggleAirene')
             </MpPopoverTrigger>
             <MpPopoverContent class="erp-dropdown-menu">
               <div v-if="stagePicker.mode === 'bulk'" class="stage-picker">
-                <button type="button" class="stage-picker-back" @click="closeStagePicker()"><MpIcon name="chevrons-left" size="sm" />{{ t('Change stage') }}</button>
-                <button
+                <MpButton type="button" class="stage-picker-back" left-icon="chevrons-left" @click="closeStagePicker()">{{ t('Change stage') }}</MpButton>
+                <MpButton
                   v-for="s in stageOptionsFor(stagePicker.ids)" :key="s" type="button" class="stage-picker-item"
                   @click="pickStage(s); if (!stagePicker.mode) onClosePopover()"
-                >{{ t(dealStageLabel(s)) }}</button>
+                >{{ t(dealStageLabel(s)) }}</MpButton>
                 <div v-if="stagePicker.awaitingLostReason" class="stage-picker-lost">
                   <span class="stage-picker-lost-label">{{ t('Lost reason') }}</span>
                   <textarea v-model="stagePicker.lostReason" class="stage-picker-textarea" rows="2" @input="stagePicker.error = ''" />
                   <span v-if="stagePicker.error" class="stage-picker-err">{{ stagePicker.error }}</span>
                   <div class="stage-picker-lost-actions">
-                    <button type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="cancelLostReason()">{{ t('Cancel') }}</button>
-                    <button type="button" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="confirmLostReason(); if (!stagePicker.mode) onClosePopover()">{{ t('Confirm') }}</button>
+                    <MpButton type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="cancelLostReason()">{{ t('Cancel') }}</MpButton>
+                    <MpButton type="button" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="confirmLostReason(); if (!stagePicker.mode) onClosePopover()">{{ t('Confirm') }}</MpButton>
                   </div>
                 </div>
               </div>
@@ -932,7 +908,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
    pinned bar carries an opaque strip above it. Rest-state spacing unchanged. */
 .cc-stats { padding-top: var(--mp-spacing-5); margin-bottom: var(--mp-spacing-5); }
 .stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
-.stat-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding: 0 var(--mp-spacing-6) 0 0; align-self: stretch; background: none; border: none; text-align: left; cursor: pointer; border-radius: var(--mp-radii-md); }
+.stat-card.mp-button { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: var(--mp-spacing-1); padding: 0 var(--mp-spacing-6) 0 0; align-self: stretch; background: none; border: none; text-align: left; cursor: pointer; border-radius: var(--mp-radii-md); }
 .stat-card--bordered { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .stat-card:hover .stat-title { color: var(--mp-text-link); }
 .stat-card--active .stat-title { color: var(--mp-text-link); font-weight: var(--mp-font-weights-semi-bold); }
@@ -1057,6 +1033,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
 .kcol--open { background: var(--mp-colors-background-information-subtle, #eaf1fb); border-color: var(--mp-colors-border-information, #2f6fd0); }
 .deal__value { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 .deal__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
+.deal__foot--end { justify-content: flex-end; }
 .deal__owner { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .deal__avatar { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 22px; height: 22px; border-radius: var(--mp-radii-full, 999px); font-size: 10px; font-weight: var(--mp-font-weights-semi-bold); line-height: 1; letter-spacing: 0.2px; }
 .deal__aging { flex-shrink: 0; font-size: var(--mp-font-sizes-sm); font-variant-numeric: tabular-nums; color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle, #f0f1f3); border-radius: var(--mp-radii-full, 999px); padding: 1px var(--mp-spacing-2); }

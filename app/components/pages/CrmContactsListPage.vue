@@ -287,10 +287,9 @@ function onExport() { exportOpen.value = false; successToast(t('Export ready —
               :options="statusOptions" :is-clearable="false" width="160px"
               @update:model-value="(v: string) => (statusFilter = v)"
             />
-            <button class="btn-enterprise btn-enterprise--secondary filter-all-btn" type="button" @click="openFilters">
-              <MpIcon name="filter" size="sm" />
+            <MpButton class="btn-enterprise btn-enterprise--secondary filter-all-btn" type="button" left-icon="filter" @click="openFilters">
               {{ t('All filters') }}{{ activeFilterCount ? ` (${activeFilterCount})` : '' }}
-            </button>
+            </MpButton>
           </div>
           <div class="filter-right">
             <MpButtonGroup class="filter-btn-group">
@@ -302,7 +301,7 @@ function onExport() { exportOpen.value = false; successToast(t('Export ready —
             <div class="filter-search">
               <MpIcon name="search" size="sm" />
               <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
-              <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''"><MpIcon name="close" size="sm" /></button>
+              <MpButton v-if="search" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="search = ''" />
             </div>
           </div>
         </template>

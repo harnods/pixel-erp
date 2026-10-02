@@ -161,7 +161,7 @@ function visibleDetails(row: CrmActivityEntry): CrmActivityDetail[] {
             <div class="filter-search">
               <MpIcon name="search" size="sm" />
               <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search activity')" />
-              <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''"><MpIcon name="close" size="sm" /></button>
+              <MpButton v-if="search" class="search-clear-btn" variant="ghost" type="button" :aria-label="t('Clear search')" left-icon="close" @click="search = ''" />
             </div>
           </div>
         </template>
@@ -189,16 +189,17 @@ function visibleDetails(row: CrmActivityEntry): CrmActivityDetail[] {
                 <template v-else>{{ d.text }}</template>
               </span>
             </div>
-            <button
+            <MpButton
               v-if="(row as unknown as CrmActivityEntry).details.length > 3"
               type="button"
+              variant="link"
               class="al-more"
               @click="toggleExpand((row as unknown as CrmActivityEntry).id)"
             >
               {{ expanded.has((row as unknown as CrmActivityEntry).id)
                 ? t('View less')
                 : `+${(row as unknown as CrmActivityEntry).details.length - 3} ${t('more')}` }}
-            </button>
+            </MpButton>
           </div>
           <span v-else class="al-muted">—</span>
         </template>
@@ -234,10 +235,10 @@ function visibleDetails(row: CrmActivityEntry): CrmActivityDetail[] {
               </div>
             </div>
             <footer class="alf-footer">
-              <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="resetFilters">{{ t('Reset filter') }}</button>
+              <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="resetFilters">{{ t('Reset filter') }}</MpButton>
               <div class="alf-footer-right">
-                <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="filtersOpen = false">{{ t('Cancel') }}</button>
-                <button class="btn-enterprise btn-enterprise--primary" type="button" @click="applyFilters">{{ t('Apply') }}</button>
+                <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="filtersOpen = false">{{ t('Cancel') }}</MpButton>
+                <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="applyFilters">{{ t('Apply') }}</MpButton>
               </div>
             </footer>
           </div>

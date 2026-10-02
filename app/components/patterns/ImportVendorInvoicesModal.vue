@@ -5,7 +5,7 @@
  * to the upload center (progress shows in the header activity popover) and land
  * in the Inbox. OCR runs later, on the Inbox rows — this modal only uploads.
  */
-import { MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter } from '@mekari/pixel3'
+import { MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpButton } from '@mekari/pixel3'
 import ErpDropzone from '~/components/patterns/ErpDropzone.vue'
 
 const props = withDefaults(defineProps<{
@@ -64,8 +64,8 @@ function doUpload() {
       </MpModalBody>
       <MpModalFooter v-if="files.length">
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="handleClose">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="doUpload">{{ t('Upload') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="handleClose">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" @click="doUpload">{{ t('Upload') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>

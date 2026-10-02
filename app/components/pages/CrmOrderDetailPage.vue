@@ -7,7 +7,7 @@
  */
 import { computed } from 'vue'
 import { infoToast } from '~/utils/toasts'
-import { toast } from '@mekari/pixel3'
+import { toast, MpButton } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { formatDateLong } from '~/utils/date'
 import { formatIDR } from '~/utils/currency'
@@ -49,15 +49,15 @@ const dueDate = computed(() => {
   <div v-if="order" class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" type="button" @click="goBack">Orders</button>
+        <MpButton class="detail-breadcrumb" type="button" @click="goBack">Orders</MpButton>
         <div class="detail-titlerow">
           <h1 class="detail-title">Order #{{ order.id }}</h1>
           <ErpStatusBadge :status="order.status" :label="STATUS[order.status].label" :type="STATUS[order.status].type" size="md" badge-for="additionalInformation" />
         </div>
       </div>
       <div class="detail-bar-right">
-        <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="soon('Edit order')">Edit</button>
-        <button class="btn-enterprise btn-enterprise--primary" type="button" @click="soon('Record payment')">Record payment</button>
+        <MpButton class="btn-enterprise btn-enterprise--secondary" type="button" @click="soon('Edit order')">Edit</MpButton>
+        <MpButton class="btn-enterprise btn-enterprise--primary" type="button" @click="soon('Record payment')">Record payment</MpButton>
       </div>
     </header>
 
@@ -102,7 +102,7 @@ const dueDate = computed(() => {
   </div>
 
   <div v-else class="detail-page">
-    <header class="detail-bar"><div class="detail-bar-left"><button class="detail-breadcrumb" type="button" @click="goBack">Orders</button><h1 class="detail-title">Order not found</h1></div></header>
+    <header class="detail-bar"><div class="detail-bar-left"><MpButton class="detail-breadcrumb" type="button" @click="goBack">Orders</MpButton><h1 class="detail-title">Order not found</h1></div></header>
   </div>
 </template>
 
