@@ -1340,7 +1340,7 @@ export function raiseStockRequestForWorkOrder(
     // C-3 — the one-step auto-reserve is a reservation like any other, and the
     // only one with no human behind it, so it says so in its Source.
     logRequestEvent(request, 'Reserved material', [
-      { label: 'Components', value: `${settled.reservedProducts}` },
+      { label: 'Components', value: settled.reservedNames.join(', ') },
       { label: 'Qty reserved', value: `${settled.reservedQty}` },
     ], { user: input.requestor, source: 'automatic' })
   }
@@ -1370,7 +1370,7 @@ export function appendStockRequestLines(
   const settled = settleLines(added, options.autoReserve)
   if (settled.reservedQty > 0) {
     logRequestEvent(request, 'Reserved material', [
-      { label: 'Components', value: `${settled.reservedProducts}` },
+      { label: 'Components', value: settled.reservedNames.join(', ') },
       { label: 'Qty reserved', value: `${settled.reservedQty}` },
     ], { user: requestor, source: 'automatic' })
   }
@@ -1396,13 +1396,15 @@ function buildLines(lines: WorkOrderMaterialLine[], requestor: string): StockReq
 export interface SettleResult {
   /** lines that reserved anything */
   reservedProducts: number
+  /** their component names — what the activity log names, rather than a count */
+  reservedNames: string[]
   reservedQty: number
   /** of those, lines reserved SHORT — still Partially reserved for the stockist */
   partialProducts: number
   /** lines that reserved nothing — no stock at the destination, still Requested */
   shortProducts: number
 }
-const NOTHING_SETTLED: SettleResult = { reservedProducts: 0, reservedQty: 0, partialProducts: 0, shortProducts: 0 }
+const NOTHING_SETTLED: SettleResult = { reservedProducts: 0, reservedNames: [], reservedQty: 0, partialProducts: 0, shortProducts: 0 }
 
 /**
  * C-3 — auto-reserve is ALL-OR-NOTHING per line: a line reserves only when the
@@ -1415,7 +1417,7 @@ const NOTHING_SETTLED: SettleResult = { reservedProducts: 0, reservedQty: 0, par
  * — there a human is choosing to take what is there, so it reserves partially.
  */
 function settleLines(lines: StockRequestLine[], autoReserve: boolean): SettleResult {
-  const r = { ...NOTHING_SETTLED }
+  const r: SettleResult = { ...NOTHING_SETTLED, reservedNames: [] }
   if (!autoReserve) return r
   for (const line of lines) {
     const outstanding = line.qty - lineCovered(line)
@@ -1424,6 +1426,7 @@ function settleLines(lines: StockRequestLine[], autoReserve: boolean): SettleRes
     line.reserved += take
     line.destAvailable -= take
     r.reservedProducts++
+    if (!r.reservedNames.includes(line.product)) r.reservedNames.push(line.product)
     r.reservedQty += take
     if (lineCovered(line) < line.qty) r.partialProducts++
   }
@@ -1647,7 +1650,7 @@ export function applyDemandChanges(
   result.reserved = settleLines(drawdownOrder(toSettle), options.autoReserve)
   if (result.reserved.reservedQty > 0) {
     logRequestEvent(req, 'Reserved material', [
-      { label: 'Components', value: `${result.reserved.reservedProducts}` },
+      { label: 'Components', value: result.reserved.reservedNames.join(', ') },
       { label: 'Qty reserved', value: `${result.reserved.reservedQty}` },
     ], { user: requestor, source: 'automatic' })
   }

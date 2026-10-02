@@ -30,13 +30,15 @@ import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import { warehouses } from '~/data/warehouses'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import AdjustWorkOrderModal from '~/components/patterns/AdjustWorkOrderModal.vue'
+import RequestAdditionalStockModal from '~/components/patterns/RequestAdditionalStockModal.vue'
 import CancelWorkOrderModal from '~/components/patterns/CancelWorkOrderModal.vue'
 import ReserveMaterialsModal from '~/components/patterns/ReserveMaterialsModal.vue'
 import UnreserveMaterialsModal from '~/components/patterns/UnreserveMaterialsModal.vue'
 import { productionSettings, reservationOnWorkOrder } from '~/data/productionSettings'
 import { logActivityFor, entriesFor, lastActivity } from '~/data/activityLog'
+import { pushNotification } from '~/data/notifications'
 import {
-  raiseStockRequestForWorkOrder, requestForWorkOrder, workOrderReadiness, startGate,
+  raiseStockRequestForWorkOrder, appendStockRequestLines, requestForWorkOrder, workOrderReadiness, startGate,
   releaseOnCompletion, releaseForCanceledWorkOrder, applyDemandChanges, reservedProductIds,
   type DemandChange,
   changedTrackingLines, reservedTracking,
@@ -118,17 +120,21 @@ const actionItems = computed(() => {
   if (s === 'canceled') return ['Print']
   // Adjust changes the work order's demand ON ITS STOCK REQUEST. Reservation is
   // always on (L-12), so a running work order always has one to change.
+  // D-7 — asking for extra material is demand, not reservation, so it stays
+  // available under Two-step as well (S-2 hides reservation entry points only).
   if (isRunning.value)
-    return ['Adjust', 'Replace attachment', 'Print', 'Cancel work order', 'Delete']
-  return ['Edit', 'Replace attachment', 'Print', 'Delete']
+    return ['Adjust', 'Request additional stock', 'Replace attachment', 'Print', 'Cancel work order', 'Delete']
+  return ['Edit', 'Request additional stock', 'Replace attachment', 'Print', 'Delete']
 })
 const DESTRUCTIVE_ACTIONS = new Set(['Delete', 'Cancel work order'])
 
 const adjustOpen = ref(false)
+const additionalOpen = ref(false)
 const cancelOpen = ref(false)
 
 function onActionSelect(item: string) {
   if (item === 'Adjust') { adjustOpen.value = true; return }
+  if (item === 'Request additional stock') { additionalOpen.value = true; return }
   if (item === 'Cancel work order') { cancelOpen.value = true; return }
   if (item === 'Delete') {
     // UC-09 — a running work order cannot be deleted; say so and name the way out
@@ -242,6 +248,74 @@ function onAdjust(payload: { changes: DemandChange[]; reason: string }) {
     title: parts.join(' · ') || t('Work order adjusted'),
     maxWidth: 'max-content',
   })
+}
+
+/**
+ * D-7 — Request additional stock. The lines land on the work order's EXISTING
+ * request tagged `additional`, because a transaction never holds more than one
+ * request (C-4); the stockist may decline them (W-7), unlike the components the
+ * work order itself committed to.
+ */
+function onRequestAdditional(payload: {
+  lines: { productId: string; qty: number; requiredDate: string }[]
+  reason: string
+}) {
+  const w = wo.value
+  if (!w) return
+  const material = payload.lines.flatMap((l) => {
+    // Copy identity and destination from the component's existing line, so the
+    // extra demand lands at the same warehouse as the demand it tops up.
+    const source = reservationLines.value.find(line => line.productId === l.productId)
+    if (!source) return []
+    return [{
+      productId: source.productId,
+      product: source.product,
+      sku: source.sku,
+      unit: source.unit,
+      qty: l.qty,
+      requiredDate: l.requiredDate,
+      destinationWarehouse: source.destinationWarehouse,
+      destinationWarehouseId: source.destinationWarehouseId,
+      ...(source.tracking ? { tracking: source.tracking } : {}),
+    }]
+  })
+  const r = appendStockRequestLines(w.id, material, STAFF[0]!, 'additional', {
+    autoReserve: reservationOnWorkOrder(),
+  })
+  additionalOpen.value = false
+  if (!r) return
+
+  logActivityFor(
+    [
+      { type: 'work-order' as const, id: w.id },
+      { type: 'stock-request' as const, id: r.request.id },
+    ],
+    {
+      user: STAFF[0]!,
+      activity: 'Requested additional stock',
+      details: [
+        { label: 'Reason', value: payload.reason },
+        ...material.map(m => ({ label: m.product, value: `+${m.qty} ${m.unit}` })),
+      ],
+    },
+  )
+
+  // The warehouse is told, the same way it is told about a qty change (UC-06).
+  pushNotification({
+    title: `${t('Additional stock requested on')} ${r.request.number}`,
+    preview: `${w.number} — ${material.map(m => `${m.product} +${m.qty} ${m.unit}`).join(', ')}`,
+    description: t('Production asked for extra material on top of this work order. Added lines can be declined.'),
+    fields: [
+      { label: t('Work order'), value: w.number },
+      { label: t('Stock request'), value: r.request.number },
+      { label: t('Reason'), value: payload.reason },
+    ],
+    actions: [{ label: t('View stock request'), primary: true }],
+  })
+
+  const parts = [`${material.length} ${material.length === 1 ? t('component requested') : t('components requested')}`]
+  if (r.reservedQty > 0) parts.push(`${r.reservedQty} ${t('unit reserved automatically')}`)
+  toast.notify({ variant: 'success', title: parts.join(' · '), maxWidth: 'max-content' })
 }
 
 // ── Attachments (representative) ────────────────────────────────────────────────
@@ -1302,6 +1376,15 @@ function suppressFabClick(e: MouseEvent) {
       :lines="reservationLines"
       @close="adjustOpen = false"
       @adjust="onAdjust"
+    />
+
+    <RequestAdditionalStockModal
+      id="wod-additional"
+      :is-open="additionalOpen"
+      :work-order-number="wo?.number ?? ''"
+      :lines="reservationLines"
+      @close="additionalOpen = false"
+      @request="onRequestAdditional"
     />
 
     <CancelWorkOrderModal
