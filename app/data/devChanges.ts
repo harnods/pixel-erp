@@ -28,6 +28,38 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'vendors-drawer-preferred',
+    title: 'Vendors drawer: choose the preferred vendor again',
+    description:
+      'Each vendor row has a radio to mark it as preferred, and the footer has Cancel and Save changes. Only the preferred vendor is saved; lead time, MOQ, purchase multiplier and cost stay read-only. The product line above the table is now labelled fields (Product, SKU, Base unit, Unit conversions).',
+    date: '2026-10-02',
+    files: ['VendorItemDrawer.vue'],
+  },
+  {
+    id: 'replenishment-velocity-unit',
+    title: 'Replenishment: demand velocity shows its unit',
+    description:
+      'The "Demand velocity per day" column now shows the unit beside the figure (for example "1,84 Bag"). The Vendors drawer is also wider (960px) so its seven-column table no longer scrolls sideways.',
+    date: '2026-10-02',
+    files: ['ReplenishmentPage.vue', 'VendorItemDrawer.vue'],
+  },
+  {
+    id: 'replenishment-covered-by',
+    title: 'Replenishment: "Covered by" line no longer overflows',
+    description:
+      'A long list of covering documents used to spill out of the Suggested qty cell and overlap the next column. It now reads "Covered by N orders", stays inside the column, and shows the full list on hover.',
+    date: '2026-10-02',
+    files: ['ReplenishmentPage.vue'],
+  },
+  {
+    id: 'vendors-airene-recommendation',
+    title: 'Vendors drawer: Airene recommendation copy and text style',
+    description:
+      'The recommendation reads as translated sentences ("Fastest lead time: 16 days", "Lowest MOQ: 48 units"), the link is "View reasons" / "Hide reasons", and all text uses one style. The "Based on…" note is a line under the list instead of a grey bullet.',
+    date: '2026-10-02',
+    files: ['VendorItemDrawer.vue', 'vendorRecommendation.ts'],
+  },
+  {
     id: 'configure-warehouse-replenishment',
     title: 'Configure warehouse: dead in-transit toggle removed',
     description:

@@ -79,6 +79,11 @@ watch(warehouseId, (id) => {
 }, { immediate: true })
 onUnmounted(() => { activeWarehouseFilter.value = [] })
 
+/** A count that fits the column; the document names are in the tooltip. */
+function coveredLabel(docs: string[]): string {
+  return docs.length === 1 ? t('Covered by 1 order') : tf('Covered by {n} orders', { n: docs.length })
+}
+
 const anyWarehouseEnabled = computed(() => whOptions.value.length > 0)
 /** Where "Replenishment not set up" sends the user: the switch is in Configure warehouse. */
 const setupTarget = computed(() => {
@@ -798,9 +803,16 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
           {{ num((row as any).suggestion.rawQty) }}
         </a>
         <!-- US-004 AC-03: due, but an open PO already covers the gap. -->
-        <span v-if="(row as any).suggestion.coveredBy.length" class="rp-num-sub">
-          {{ t('Covered by') }} {{ (row as any).suggestion.coveredBy.join(', ') }}
-        </span>
+        <!-- One short line that fits the column; the full document list is on hover. -->
+        <MpTooltip
+          v-if="(row as any).suggestion.coveredBy.length"
+          :id="`rp-covered-${(row as any).key}`"
+          :label="(row as any).suggestion.coveredBy.join(', ')"
+          placement="top"
+          use-portal
+        >
+          <span class="rp-num-sub rp-num-sub--fit" data-devchange="replenishment-covered-by">{{ coveredLabel((row as any).suggestion.coveredBy) }}</span>
+        </MpTooltip>
       </div>
     </template>
 
@@ -833,8 +845,9 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
     <template #cell-leadTimeDays="{ row }">
       {{ (row as any).leadTimeDays }}
     </template>
+    <!-- A rate, so it carries its unit: "1,84 Bag" under the "per day" header. -->
     <template #cell-velocityValue="{ row }">
-      {{ num((row as any).velocity.avgDailySales, 2) }}
+      <span data-devchange="replenishment-velocity-unit">{{ num((row as any).velocity.avgDailySales, 2) }} {{ (row as any).unit }}</span>
     </template>
     <template #cell-safetyDays="{ row }">
       {{ (row as any).safetyDays }}
@@ -1047,11 +1060,12 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
 .row-kebab:hover { background: var(--mp-background-neutral-hovered, #eef0f3); color: var(--mp-text-default); }
 
 /* ── Numeric two-line cells ── */
-.rp-num { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.rp-num { display: flex; flex-direction: column; align-items: flex-end; gap: var(--mp-spacing-0\.5); min-width: 0; max-width: 100%; }
 .rp-num-value { color: var(--mp-text-default); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .rp-num-value--critical { color: var(--mp-text-danger); font-weight: var(--mp-font-weights-semi-bold); }
 .rp-num-value--muted { color: var(--mp-text-subtle); }
 .rp-num-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); text-align: right; }
+.rp-num-sub--fit { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: help; }
 .rp-num-sub--critical { color: var(--mp-text-danger); }
 
 .rp-vendor { display: flex; flex-direction: column; min-width: 0; }

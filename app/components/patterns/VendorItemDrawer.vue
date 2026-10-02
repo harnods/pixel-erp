@@ -27,12 +27,13 @@ export interface VendorItemDraft {
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { toast, MpIcon, MpButton, MpTextlink, MpInput, css } from '@mekari/pixel3'
+import { toast, MpIcon, MpButton, MpButtonGroup, MpTextlink, MpInput, MpRadio, css } from '@mekari/pixel3'
+import ContentList from '~/components/patterns/ContentList.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
-  vendorItemsForSku, upsertVendorItem, setPreferredVendor, deactivateVendorItem,
+  vendorItemsForSku, upsertVendorItem, setPreferredVendor, deactivateVendorItem, vendorNameFor,
 } from '~/data/vendorItems'
-import { recommendPreferredVendor } from '~/data/vendorRecommendation'
+import { recommendPreferredVendor, type VendorReasonKind } from '~/data/vendorRecommendation'
 import { vendors } from '~/data/vendors'
 import { productBySku } from '~/data/inventory'
 import { deriveLeadTime } from '~/data/leadTimeHistory'
@@ -41,11 +42,11 @@ import { unitOptionsForSku, factorFor, baseUnitFor } from '~/data/productUnits'
 import { formatIDR } from '~/utils/currency'
 
 /**
- * `readonly` — the drawer is a pure VIEW: vendor terms (lead time, MOQ, pack
- * size, cost) and the preferred vendor all show as text, with no inputs, no
- * add/remove and no save. Everything about a vendor–product link, including which
- * vendor is preferred, is edited by purchasing in the Vendors module. Every
- * current caller (worklist, Needs setup, product detail) opens it read-only.
+ * `readonly` — vendor TERMS (lead time, MOQ, purchase multiplier, cost) show as
+ * text, with no inputs and no add/remove: those are edited by purchasing in the
+ * Vendors module. The one thing that stays editable is WHICH vendor is preferred —
+ * a radio per row, saved with "Save changes", which persists only that flag. Every
+ * current caller (worklist, Needs setup, product detail) opens it this way.
  */
 const props = defineProps<{ isOpen: boolean; sku: string | null; readonly?: boolean }>()
 const emit = defineEmits<{
@@ -105,6 +106,20 @@ function leadLabel(vendorId: string): string {
 }
 
 const showReasons = ref(false)
+/** The headline split around the vendor name, so the name alone can be bold. */
+const aiHead = computed(() => tf('Airene recommends {vendor} as the preferred vendor', { vendor: '\u0000' }).split('\u0000'))
+
+function reasonText(kind: VendorReasonKind): string {
+  const r = recommendedRow.value
+  if (!r) return ''
+  switch (kind) {
+    case 'lead': return tf('Fastest lead time: {n} days', { n: r.leadTimeDays })
+    case 'price': return tf('Lowest price: {price} per unit', { price: formatIDR(Math.round(r.costPerBase)) })
+    case 'moq': return tf('Lowest MOQ: {n} units', { n: r.moqInBase.toLocaleString('id-ID') })
+    case 'history': return tf('Most delivered orders: {n}', { n: r.purchases })
+    default: return t('Best overall balance of lead time, price and MOQ')
+  }
+}
 const recommendation = computed(() => {
   if (!props.sku || rows.value.length < 2) return null
   return recommendPreferredVendor(props.sku, rows.value.map((r) => ({
@@ -133,6 +148,7 @@ function load() {
   removed.value = []
   error.value = ''
   showReasons.value = false
+  initialPreferred.value = rows.value.find((r) => r.isPreferred)?.vendorId ?? null
 }
 watch(() => props.isOpen, (open) => { if (open) load() })
 
@@ -272,8 +288,29 @@ function save() {
 /**
  * Read-only mode still lets a stockist pick the preferred vendor — that choice is
  * theirs, not a purchasing term. This persists ONLY the preferred flag, never the
- * (read-only) terms.
+ * (read-only) terms. Saving with nothing changed just closes.
  */
+const initialPreferred = ref<string | null>(null)
+function savePreferred() {
+  if (!props.sku) return
+  const preferred = rows.value.find((r) => r.isPreferred)
+  if (!preferred) {
+    error.value = t('You must select a preferred vendor')
+    return
+  }
+  if (preferred.vendorId !== initialPreferred.value) {
+    setPreferredVendor(props.sku, preferred.vendorId)
+    emit('saved')
+    toast.notify({ variant: 'success', title: t('Preferred vendor saved'), maxWidth: 'max-content' })
+  }
+  close()
+}
+
+/** "Pack = 6 Bag, Carton = 12 Bag" — the larger units this product is bought in. */
+const conversionsLabel = computed(() => unitOptions.value
+  .filter((o) => !o.isBase)
+  .map((o) => tf('1 {unit} = {n} {base}', { unit: o.name, n: o.factor, base: baseUnit.value }))
+  .join(', '))
 </script>
 
 <template>
@@ -289,12 +326,12 @@ function save() {
         </header>
 
         <div class="rp-vi-body">
+          <!-- Identity: labelled fields, not a "stocked in" fragment (docs/patterns/ContentList.md). -->
           <div class="rp-vi-identity">
-            <p class="rp-vi-product">{{ product?.name ?? sku }}</p>
-            <p class="rp-vi-sub">
-              {{ sku }}
-              <template v-if="product"> · {{ t('stocked in') }} {{ product.unit }}</template>
-            </p>
+            <ContentList :label="t('Product')" :value="product?.name ?? sku ?? ''" />
+            <ContentList :label="t('SKU')" :value="sku ?? ''" />
+            <ContentList :label="t('Base unit')" :value="baseUnit" />
+            <ContentList :label="t('Unit conversions')" :value="conversionsLabel" />
           </div>
 
           <p v-if="!rows.length" class="rp-vi-empty">
@@ -307,24 +344,21 @@ function save() {
           </p>
 
           <!-- Airene preferred-vendor recommendation — only with something to choose between. -->
-          <div v-if="recommendation && recommendedRow" class="rp-vi-ai">
+          <div v-if="recommendation && recommendedRow" class="rp-vi-ai" data-devchange="vendors-airene-recommendation">
             <div class="rp-vi-ai-head">
               <MpIcon name="airene-brand" size="sm" class="rp-vi-ai-icon" />
-              <span class="rp-vi-ai-text">
-                {{ t('Airene recommends') }}
-                <strong>{{ recommendedRow.vendorName }}</strong>
-                {{ t('as the preferred vendor') }}
-              </span>
+              <!-- One translated sentence; only the vendor name is emphasised. -->
+              <span class="rp-vi-ai-text">{{ aiHead[0] }}<strong>{{ recommendedRow.vendorName }}</strong>{{ aiHead[1] }}</span>
               <MpTextlink id="rp-vi-ai-why" as="a" @click.prevent="showReasons = !showReasons">
-                {{ showReasons ? t('Hide') : t('Why?') }}
+                {{ showReasons ? t('Hide reasons') : t('View reasons') }}
               </MpTextlink>
             </div>
-            <ul v-if="showReasons" class="rp-vi-ai-reasons">
-              <li v-for="reason in recommendedRow.reasons" :key="reason">{{ reason }}</li>
-              <li class="rp-vi-ai-weights">
-                {{ t('Weighed lead time, price, minimum order and purchase history.') }}
-              </li>
-            </ul>
+            <template v-if="showReasons">
+              <ul class="rp-vi-ai-reasons">
+                <li v-for="kind in recommendedRow.reasonKinds" :key="kind">{{ reasonText(kind) }}</li>
+              </ul>
+              <p class="rp-vi-ai-note">{{ t('Based on lead time, price, MOQ and purchase history.') }}</p>
+            </template>
           </div>
 
           <!-- A mini-table inside a drawer is a contained object: outer border in
@@ -404,19 +438,13 @@ function save() {
                   <span v-else class="rp-vi-lead-ro">{{ formatIDR(Number(row.unitCost) || 0) }}</span>
                   <span class="rp-vi-cell-sub">{{ formatIDR(Number(row.unitCost) || 0) }} / {{ row.purchaseUnit }}</span>
                 </td>
-                <!-- Read-only: the preferred vendor is shown, not chosen, here. -->
-                <td v-if="readonly" class="rp-vi-td rp-vi-td--center">
-                  <MpIcon v-if="row.isPreferred" name="check" size="sm" class="rp-vi-default-ro" :aria-label="t('Preferred')" />
-                  <span v-else class="rp-vi-cell-sub" aria-hidden="true">—</span>
-                </td>
-                <td v-else class="rp-vi-td rp-vi-td--center">
-                  <input
+                <!-- The preferred vendor is chosen here in every mode: one radio per row. -->
+                <td class="rp-vi-td rp-vi-td--center">
+                  <MpRadio
                     :id="`rp-vi-default-${i}`"
-                    class="rp-vi-radio"
-                    type="radio"
                     :name="`rp-vi-default-${sku}`"
-                    :checked="row.isPreferred"
-                    :aria-label="t('Preferred')"
+                    :is-checked="row.isPreferred"
+                    :aria-label="tf('Set {vendor} as preferred', { vendor: vendorNameFor(row.vendorId) })"
                     @change="makeDefault(i)"
                   />
                 </td>
@@ -432,7 +460,7 @@ function save() {
 
           <MpButton v-if="!readonly" variant="ghost" left-icon="add" class="rp-vi-add" @click="addRow">{{ t('Vendor') }}</MpButton>
 
-          <p class="rp-vi-hint">
+          <p v-if="!readonly" class="rp-vi-hint">
             {{ t('Unit options come from this product\'s unit conversions. Base unit:') }}
             <strong>{{ baseUnit }}</strong>{{ unitOptions.length > 1 ? ', ' : '' }}
             <template v-if="unitOptions.length > 1">
@@ -442,12 +470,13 @@ function save() {
           </p>
         </div>
 
-        <footer class="rp-vi-footer">
-          <span v-if="error && !readonly" class="rp-vi-error">{{ error }}</span>
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">
-            {{ readonly ? t('Close') : t('Cancel') }}
-          </button>
-          <button v-if="!readonly" class="btn-enterprise btn-enterprise--primary" type="button" @click="save">{{ t('Save changes') }}</button>
+        <footer class="rp-vi-footer" data-devchange="vendors-drawer-preferred">
+          <!-- Inline, never a toast (rule/form-errors-inline). -->
+          <span v-if="error" class="rp-vi-error" role="alert">{{ error }}</span>
+          <MpButtonGroup class="erp-action-footer">
+            <MpButton id="rp-vi-cancel" variant="ghost" is-rounded @click="close">{{ t('Cancel') }}</MpButton>
+            <MpButton id="rp-vi-save" variant="primary" is-rounded @click="readonly ? savePreferred() : save()">{{ t('Save changes') }}</MpButton>
+          </MpButtonGroup>
         </footer>
       </div>
     </div>
@@ -469,7 +498,8 @@ function save() {
 }
 .rp-vi-panel {
   margin: var(--mp-spacing-3);
-  width: min(840px, calc(100% - 24px));
+  /* Wide enough for all seven columns: the table needs about 875px. */
+  width: min(960px, calc(100% - 24px));
   height: calc(100% - 24px);
   display: flex; flex-direction: column;
   background: var(--mp-background-stage, #fff);
@@ -492,12 +522,11 @@ function save() {
 .rp-vi-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 .rp-vi-body { flex: 1; overflow-y: auto; padding: var(--mp-spacing-4); }
-.rp-vi-identity { margin-bottom: var(--mp-spacing-4); }
-.rp-vi-product {
-  font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
+/* Four fields on one row; the product name gets the most room. */
+.rp-vi-identity {
+  display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 0.6fr) minmax(0, 0.7fr) minmax(0, 1.6fr);
+  column-gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-3);
 }
-.rp-vi-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .rp-vi-empty {
   padding: var(--mp-spacing-4);
   border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-md);
@@ -515,14 +544,12 @@ function save() {
 }
 .rp-vi-ai-head { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
 .rp-vi-ai-icon { color: var(--mp-colors-icon-information); flex-shrink: 0; }
-.rp-vi-ai-text { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
-.rp-vi-ai-reasons {
-  margin: var(--mp-spacing-2) 0 0; padding-left: var(--mp-spacing-5);
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
-}
-.rp-vi-ai-reasons { list-style: disc outside; }
-.rp-vi-ai-reasons li { display: list-item; margin-top: 2px; }
-.rp-vi-ai-weights { color: var(--mp-text-subtle); }
+/* One text style throughout: 14px body in the default colour (rule/type-14-default). */
+.rp-vi-ai-text, .rp-vi-ai-reasons, .rp-vi-ai-note { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+/* A real list, so it keeps its markers (CLAUDE.md › List bullets). */
+.rp-vi-ai-reasons { list-style: disc outside; margin: var(--mp-spacing-2) 0 0; padding-left: var(--mp-spacing-5); }
+.rp-vi-ai-reasons li { display: list-item; margin-top: var(--mp-spacing-0\.5); }
+.rp-vi-ai-note { margin: var(--mp-spacing-2) 0 0; }
 .rp-vi-ai-chip {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-0\.5, 2px); margin-top: var(--mp-spacing-1);
   padding: 0 var(--mp-spacing-1\.5, 6px); height: 20px;
@@ -561,6 +588,10 @@ function save() {
 }
 .rp-vi-td--num { text-align: right; }
 .rp-vi-td--center { text-align: center; }
+/* MpRadio reserves room for a label even when it has none, which pushes the control
+   left of centre. Drop the empty label so the radio sits under its "Preferred" header. */
+.rp-vi-td--center :deep(.mp-radio__root) { display: inline-flex; justify-content: center; gap: 0; }
+.rp-vi-td--center :deep(.mp-radio__label) { display: none; }
 .rp-vi-vendor { display: block; white-space: nowrap; }
 .rp-vi-vendor-sub { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
 .rp-vi-cell-sub {
@@ -569,8 +600,6 @@ function save() {
 }
 .rp-vi-cell-sub--warning { color: var(--mp-colors-text-warning); }
 .rp-vi-lead-ro { font-variant-numeric: tabular-nums; color: var(--mp-text-default); white-space: nowrap; }
-.rp-vi-radio { width: 16px; height: 16px; cursor: pointer; accent-color: var(--mp-colors-background-brand-bold); }
-.rp-vi-default-ro { display: inline-flex; color: var(--mp-colors-icon-brand); }
 .rp-vi-remove {
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
@@ -586,9 +615,9 @@ function save() {
 }
 
 .rp-vi-footer {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2);
+  flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-4);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
   border-top: 1px solid var(--mp-border-default, #e3e7e9);
 }
-.rp-vi-error { flex: 1; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
+.rp-vi-error { margin-right: auto; font-size: var(--mp-font-sizes-md); color: var(--mp-text-danger); }
 </style>

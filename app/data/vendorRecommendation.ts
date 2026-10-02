@@ -36,6 +36,9 @@ export interface VendorCandidate {
   unitsPerPurchaseUnit: number
 }
 
+/** Why a vendor was recommended: best on one signal, or best on the blend. */
+export type VendorReasonKind = 'lead' | 'price' | 'moq' | 'history' | 'balance'
+
 export interface VendorScore {
   vendorId: string
   vendorName: string
@@ -56,6 +59,8 @@ export interface VendorScore {
   isRecommended: boolean
   /** Human-readable reasons — populated for the recommended vendor. */
   reasons: string[]
+  /** The same reasons as kinds, so the UI can word and translate them. */
+  reasonKinds: VendorReasonKind[]
 }
 
 export interface VendorRecommendation {
@@ -124,21 +129,22 @@ export function recommendPreferredVendor(sku: string, candidates: VendorCandidat
   const scores: VendorScore[] = scored
     .map((s) => {
       const reasons: string[] = []
+      const reasonKinds: VendorReasonKind[] = []
       if (s.vendorId === best.vendorId) {
         if (isLowest(s.leadTimeDays, rows.map((r) => r.leadTimeDays))) {
-          reasons.push(`Fastest lead time — ${s.leadTimeDays} days`)
+          reasons.push(`Fastest lead time: ${s.leadTimeDays} days`); reasonKinds.push('lead')
         }
         if (isLowest(s.costPerBase, rows.map((r) => r.costPerBase))) {
-          reasons.push(`Lowest price — ${formatIDR(Math.round(s.costPerBase))} per unit`)
+          reasons.push(`Lowest price: ${formatIDR(Math.round(s.costPerBase))} per unit`); reasonKinds.push('price')
         }
         if (isLowest(s.moqInBase, rows.map((r) => r.moqInBase))) {
-          reasons.push(`Smallest minimum order — ${s.moqInBase.toLocaleString('id-ID')} units`)
+          reasons.push(`Lowest MOQ: ${s.moqInBase.toLocaleString('id-ID')} units`); reasonKinds.push('moq')
         }
         if (anyHistory && isHighest(s.purchases, rows.map((r) => r.purchases))) {
-          reasons.push(`Most purchase history — ${s.purchases} delivered order${s.purchases === 1 ? '' : 's'}`)
+          reasons.push(`Most delivered orders: ${s.purchases}`); reasonKinds.push('history')
         }
         // Won on the blend rather than any single signal — say so honestly.
-        if (!reasons.length) reasons.push('Best overall balance of speed, price and order terms')
+        if (!reasons.length) { reasons.push('Best overall balance of lead time, price and MOQ'); reasonKinds.push('balance') }
       }
       return {
         vendorId: s.vendorId,
@@ -154,6 +160,7 @@ export function recommendPreferredVendor(sku: string, candidates: VendorCandidat
         score: s.score,
         isRecommended: s.vendorId === best.vendorId,
         reasons,
+        reasonKinds,
       }
     })
     .sort((a, b) => b.score - a.score)
