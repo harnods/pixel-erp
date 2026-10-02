@@ -16,6 +16,7 @@ import {
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import { infoToast } from '~/utils/toasts'
+import { warehouses } from '~/data/warehouses'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
@@ -79,6 +80,13 @@ watch(warehouseId, (id) => {
 onUnmounted(() => { activeWarehouseFilter.value = [] })
 
 const anyWarehouseEnabled = computed(() => whOptions.value.length > 0)
+/** Where "Replenishment not set up" sends the user: the switch is in Configure warehouse. */
+const setupTarget = computed(() => {
+  const candidates = warehouses.filter((w) => w.status === 'active' && !w.isDefault)
+  return candidates.length === 1
+    ? { path: `/warehouses/${candidates[0]!.id}/configure`, label: t('Configure warehouse') }
+    : { path: '/warehouses', label: t('View warehouses') }
+})
 
 // ─── Recalculation ───────────────────────────────────────────────────────────
 // The Recalculate button lives in the shell's title bar, so it signals through a
@@ -881,14 +889,28 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
             ? t('Turn on the replenishment worklist in Configure warehouse to see which products to reorder.')
             : t('Every tracked product is above its reorder point.') }}
         </p>
-        <!-- rule/empty-state-structure: the "not set up" state names the fix, so it
-             links to it — Configure warehouse is opened per warehouse from the list. -->
-        <button
+        <!-- rule/empty-state-structure: every empty state carries a secondary button.
+             "Not set up" goes to where the switch lives: straight to Configure warehouse
+             when there is one warehouse, else to the list to choose one. "Nothing due"
+             offers the settings that decide what counts as due. -->
+        <MpButton
           v-if="!anyWarehouseEnabled"
-          class="btn-enterprise btn-enterprise--secondary empty-full-cta"
-          type="button"
-          @click="router.push('/warehouses')"
-        >{{ t('Go to Warehouses') }}</button>
+          id="rp-empty-setup"
+          variant="secondary"
+          is-rounded
+          class="empty-full-cta"
+          data-devchange="replenishment-empty-states"
+          @click="router.push(setupTarget.path)"
+        >{{ setupTarget.label }}</MpButton>
+        <MpButton
+          v-else
+          id="rp-empty-settings"
+          variant="secondary"
+          is-rounded
+          class="empty-full-cta"
+          data-devchange="replenishment-empty-states"
+          @click="router.push('/replenishment-settings')"
+        >{{ t('View replenishment settings') }}</MpButton>
       </div>
     </template>
   </ErpTablePage>

@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'replenishment-empty-states',
+    title: 'Replenishment: empty states have a way forward',
+    description:
+      'Every empty state on the worklist now carries a standard secondary button: "Replenishment not set up" opens Configure warehouse (or the warehouse list when there are several), "No products to order" opens Replenishment settings, and Needs setup links back to the products to order. The shared table also keeps its no-results message inside the visible width on wide tables, and its title is grammatical ("No products match your filters").',
+    date: '2026-10-02',
+    files: ['ReplenishmentPage.vue', 'ReplenishmentSetupPage.vue', 'ErpTablePage.vue'],
+  },
+  {
     id: 'replenishment-filter-reset-toast',
     title: 'Replenishment: "saved filter was reset" is now a toast',
     description:

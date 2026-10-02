@@ -357,6 +357,15 @@ function checkOverflow() {
   const w = tableWrapperEl.value
   if (!w) return
   isOverflowing.value = w.scrollWidth > w.clientWidth + 1
+  // The empty block is pinned to the VISIBLE width (see .erp-empty-pin): in a table
+  // wider than the screen it would otherwise centre in the full scroll width and sit
+  // off-screen, leaving a blank table with no explanation (rule/table-empty-state).
+  w.style.setProperty('--erp-wrapper-w', `${w.clientWidth}px`)
+}
+
+/** "product" -> "products", "company" -> "companies" for the filtered-empty title. */
+function pluralLabel(label: string): string {
+  return /[^aeiou]y$/i.test(label) ? `${label.slice(0, -1)}ies` : `${label}s`
 }
 
 // A row is "tall" when its height exceeds the single-line baseline (40px) by more
@@ -766,9 +775,10 @@ const bulkCountLabel = computed(() => {
                    box (e.g. a detail-page tab) would otherwise fall through to the
                    never-had-data slot and tell the user to create their first record
                    when they have simply mistyped. `isFullEmpty` already counts both. -->
+              <div class="erp-empty-pin">
               <div v-if="hasActiveFilter || hasActiveSearch" class="empty-inline">
                 <img src="/illustrations/empty-folder.png" alt="" class="empty-inline-illustration" width="288" height="240" />
-                <p class="empty-inline-title">{{ props.search ? `"${props.search}" not found` : `No ${props.filterEmptyLabel ?? 'results'} match your filters` }}</p>
+                <p class="empty-inline-title">{{ props.search ? `"${props.search}" not found` : `No ${props.filterEmptyLabel ? pluralLabel(props.filterEmptyLabel) : 'results'} match your filters` }}</p>
                 <p class="empty-inline-desc">{{ props.search ? 'Recheck the keywords you have typed and try searching again.' : 'Recheck the filters you have applied and try filtering again.' }}</p>
                 <!-- Offer the reset that matches what is actually narrowing the list. -->
                 <a v-if="hasActiveFilter" class="empty-inline-clear" @click="emit('clearFilters')">Clear all filters</a>
@@ -781,6 +791,7 @@ const bulkCountLabel = computed(() => {
                   <p class="empty-hint">There's nothing here yet.</p>
                 </div>
               </slot>
+              </div>
             </td>
           </tr>
 
@@ -1312,6 +1323,15 @@ const bulkCountLabel = computed(() => {
   padding: var(--mp-spacing-6) var(--mp-spacing-4) !important;
   height: auto;
   white-space: normal;
+}
+
+/* Sticks to the left edge of the scroll viewport and is exactly as wide as it, so
+   the block stays centred on screen however wide the table is. */
+.erp-empty-pin {
+  position: sticky;
+  left: var(--mp-spacing-4);
+  width: calc(var(--erp-wrapper-w, 100%) - 2 * var(--mp-spacing-4));
+  max-width: 100%;
 }
 
 .empty-default {

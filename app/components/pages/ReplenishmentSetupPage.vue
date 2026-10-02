@@ -299,11 +299,14 @@ function onSaved() {
         <p class="empty-full-desc">
           {{ t('Every product has a lead time and is tracked for replenishment.') }}
         </p>
-        <button
-          class="btn-enterprise btn-enterprise--secondary empty-full-cta"
-          type="button"
+        <MpButton
+          id="rps-empty-to-order"
+          variant="secondary"
+          is-rounded
+          class="empty-full-cta"
+          data-devchange="replenishment-empty-states"
           @click="router.push('/replenishment')"
-        >{{ t('Open replenishment') }}</button>
+        >{{ t('View products to order') }}</MpButton>
       </div>
     </template>
   </ErpTablePage>

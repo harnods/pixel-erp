@@ -3706,7 +3706,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'suggested in total': 'disarankan secara total',
   'Which warehouses?': 'Gudang mana?',
   'Nothing to reorder right now.': 'Tidak ada yang perlu dipesan saat ini.',
-  'Open replenishment': 'Buka pengisian ulang',
   'Min. stock per warehouse': 'Stok minimum per gudang',
   'warehouses': 'gudang',
   'Appears once this product is stocked in a warehouse.': 'Muncul setelah produk ini ada stoknya di gudang.',
@@ -3752,6 +3751,10 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   // "Vendor" never "Pemasok"; noun-only labels on create actions.
   'Request to purchase': 'Ajukan pembelian',
   'Create purchase request': 'Buat permintaan pembelian',
+  'Open replenishment': 'Buka pengisian ulang',
+  'View replenishment settings': 'Lihat pengaturan pengisian ulang',
+  'View warehouses': 'Lihat gudang',
+  'View products to order': 'Lihat produk perlu dipesan',
   'Failed to create draft purchase order': 'Gagal membuat draf pesanan pembelian',
   'Saved filter reset. Warehouse no longer available': 'Filter tersimpan direset. Gudang tidak lagi tersedia',
   'Replenishment was last recalculated on {date}. Click the Recalculate button to update demand and suggested qty.':
@@ -4084,7 +4087,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'lead time + safety days': 'waktu tunggu + hari pengaman',
   'day': 'hari',
   'Turn on the replenishment worklist in Configure warehouse to see which products to reorder.': 'Aktifkan daftar pengisian ulang di Konfigurasi gudang untuk melihat produk yang perlu dipesan ulang.',
-  'Go to Warehouses': 'Buka Gudang',
   'It stops appearing in the replenishment worklist. Its reorder point and safety days are kept, so turning tracking back on restores them. Existing purchase orders are not affected.': 'Produk tidak lagi muncul di daftar pengisian ulang. Titik pemesanan ulang dan hari pengamannya tetap disimpan, jadi pelacakan dapat diaktifkan kembali kapan saja. Pesanan pembelian yang sudah ada tidak terpengaruh.',
   'Turn off tracking for': 'Nonaktifkan pelacakan untuk',
   'They stop appearing in the replenishment worklist. Their reorder points and safety days are kept, so turning tracking back on restores them. Existing purchase orders are not affected.': 'Produk tidak lagi muncul di daftar pengisian ulang. Titik pemesanan ulang dan hari pengamannya tetap disimpan, jadi pelacakan dapat diaktifkan kembali kapan saja. Pesanan pembelian yang sudah ada tidak terpengaruh.',
