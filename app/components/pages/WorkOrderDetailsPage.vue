@@ -899,6 +899,7 @@ function suppressFabClick(e: MouseEvent) {
             <MpPopoverList>
               <MpPopoverListItem
                 v-for="item in actionItems" :key="item"
+                :data-devchange="item === 'Edit' ? 'wod-edit-materials' : item === 'Request additional stock' ? 'wod-request-additional' : undefined"
                 :class="DESTRUCTIVE_ACTIONS.has(item) ? css({ color: 'var(--mp-text-critical)' }) : ''"
                 @click="onActionSelect(item)"
               >{{ t(item) }}</MpPopoverListItem>

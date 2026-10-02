@@ -28,6 +28,54 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'ps-limited-stock',
+    title: 'Production settings: "Start with limited stock" (S-4)',
+    description:
+      'The work order start gate is its own setting again, separate from the partial toggles. Off, every component must be fully reserved whatever the partial mode says; on, partial consume needs one component reserved and partial completion needs every component to hold something.',
+    date: '2026-10-02',
+    files: ['ProductionSettingsPage.vue', 'productionSettings.ts', 'stockRequests.ts'],
+  },
+  {
+    id: 'ps-reservation-method',
+    title: 'Production settings: the reservation toggle is gone (L-12)',
+    description:
+      'Reservation is structural and cannot be switched off — the method (One step / Two steps) is the only choice. A tenant who had the old toggle OFF migrates to Two steps, so nothing auto-allocates on upgrade.',
+    date: '2026-10-02',
+    files: ['ProductionSettingsPage.vue', 'productionSettings.ts'],
+  },
+  {
+    id: 'wod-edit-materials',
+    title: 'Work order: Edit materials (UC-06, not started)',
+    description:
+      'The Edit action now opens a materials modal. Changes update the existing request line in place and the editor becomes its requestor; a component cannot be removed, and a cut below the reserved qty is blocked inline with "unreserve first" instead of releasing silently. The warehouse is notified of any qty change.',
+    date: '2026-10-02',
+    files: ['EditWorkOrderMaterialsModal.vue', 'WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wod-request-additional',
+    title: 'Work order: Request additional stock (D-7)',
+    description:
+      'Production can ask the warehouse for extra material on top of the work order, with its own request date and a mandatory reason. Lines append to the work order\'s existing stock request tagged Additional stock, which the stockist can decline. It sits in Actions, not the Reservation menu, so it stays available under Two steps.',
+    date: '2026-10-02',
+    files: ['RequestAdditionalStockModal.vue', 'WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'sr-requested-tab',
+    title: 'Stock requests: Requested tab follows reservation, not work order status (W-4)',
+    description:
+      'A row leaves the Requested tab when its reserved plus consumed qty reaches what is required — not when its work order leaves an active status. Free stock at the destination does not settle a row: it is not an allocation until somebody reserves it.',
+    date: '2026-10-02',
+    files: ['stockRequests.ts', 'StockRequestsPage.vue'],
+  },
+  {
+    id: 'sr-product-actions',
+    title: 'Stock requests: reserve and reject from a product row (W-1, W-7)',
+    description:
+      'The by-product row menu gains Reserve stock, which reserves that component across every open transaction that needs it, and Reject added lines. The overdue note now shows in the product view too.',
+    date: '2026-10-02',
+    files: ['StockRequestsPage.vue', 'stockRequests.ts'],
+  },
+  {
     id: 'crm-generic-actions-column',
     title: 'Custom module: actions column with kebab menu',
     description:

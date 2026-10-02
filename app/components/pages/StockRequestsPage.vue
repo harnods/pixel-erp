@@ -378,6 +378,7 @@ const exportColumns = computed(() => {
 
 <template>
   <ErpTablePage
+    data-devchange="sr-requested-tab"
     :columns="view === 'product' ? visibleSkuColumns : visibleWoColumns"
     :rows="(view === 'product' ? skuPaginated : paginated) as unknown as Record<string, unknown>[]"
     :total="view === 'product' ? skuTotal : total"
@@ -618,7 +619,7 @@ const exportColumns = computed(() => {
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <!-- SKU row — raise one document for this component, or open its work orders -->
           <template v-if="view === 'product'">
-            <MpPopoverList>
+            <MpPopoverList data-devchange="sr-product-actions">
               <MpPopoverListItem v-if="sku(row).remaining > 0" @click="reserveComponent(sku(row))">{{ t('Reserve stock') }}</MpPopoverListItem>
               <MpPopoverListItem @click="createPurchaseRequest(byComponent([sku(row).productId]))">{{ t('Create purchase request') }}</MpPopoverListItem>
               <MpPopoverListItem @click="createWarehouseTransfer(byComponent([sku(row).productId]))">{{ t('Create warehouse transfer') }}</MpPopoverListItem>

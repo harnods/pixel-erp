@@ -118,7 +118,7 @@ const methodOptions = computed(() =>
       <!-- S-4 — the start gate is a material-control decision, so it gets its own
            setting rather than riding on the partial toggles (which govern what may
            happen AFTER start). What it permits still depends on the partial mode. -->
-      <div class="ps-row">
+      <div class="ps-row" data-devchange="ps-limited-stock">
         <span class="ps-label">
           {{ t('Start with limited stock') }}
           <span class="ps-label-desc">{{ t('Begin a work order before every component is reserved in full') }}</span>
@@ -144,7 +144,7 @@ const methodOptions = computed(() =>
       <h2 class="ps-heading">{{ t('Component request & reservation') }}</h2>
 
       <!-- L-12 — reservation itself is not a choice; who reserves is. -->
-      <div class="ps-row">
+      <div class="ps-row" data-devchange="ps-reservation-method">
         <span class="ps-label">{{ t('Reservation method') }}</span>
         <ErpFilterSelect
           id="ps-method" v-model="reservationMethod"
