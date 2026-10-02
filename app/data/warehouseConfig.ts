@@ -61,10 +61,8 @@ export interface WarehouseConfig {
   // Replenishment — Inventory › Replenishment, per-warehouse.
   /** ON = this warehouse appears in the replenishment worklist and gets reorder points calculated. */
   replenishmentEnabled: boolean
-  /** Overrides the global safety days for this warehouse. null = use the global value. */
+  /** Overrides safety days for this warehouse. null = use the product category's default. */
   replenishmentSafetyDays: number | null
-  /** Count in-transit warehouse transfers toward this warehouse's on-order qty. */
-  replenishmentIncludeInTransit: boolean
 }
 
 const DEFAULTS: WarehouseConfig = {
@@ -90,7 +88,6 @@ const DEFAULTS: WarehouseConfig = {
   // as broken rather than as unconfigured.
   replenishmentEnabled: true,
   replenishmentSafetyDays: null,
-  replenishmentIncludeInTransit: true,
 }
 
 function loadAll(): Record<string, WarehouseConfig> {

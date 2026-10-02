@@ -57,8 +57,7 @@ const hasChanges = computed(() =>
   draft.cycleCountMinGuardDays       !== committed.cycleCountMinGuardDays       ||
   draft.cycleCountWatchList.join(',') !== committed.cycleCountWatchList.join(',') ||
   draft.replenishmentEnabled          !== committed.replenishmentEnabled          ||
-  draft.replenishmentSafetyDays       !== committed.replenishmentSafetyDays       ||
-  draft.replenishmentIncludeInTransit !== committed.replenishmentIncludeInTransit
+  draft.replenishmentSafetyDays       !== committed.replenishmentSafetyDays
 )
 // The location priority order only decides where a NEW order reserves from —
 // orders already reserved (at their own creation time) keep their original bin,
@@ -480,7 +479,7 @@ const toggleConfirmItems = computed((): string[] => {
             </div>
 
             <template v-if="draft.replenishmentEnabled">
-              <div class="cw-sub-row">
+              <div class="cw-sub-row" data-devchange="configure-warehouse-replenishment">
                 <span class="cw-sub-label">{{ t('Safety days') }}</span>
                 <template v-if="isEditing">
                   <input
@@ -489,25 +488,18 @@ const toggleConfirmItems = computed((): string[] => {
                     min="0"
                     max="365"
                     :value="draft.replenishmentSafetyDays ?? ''"
-                    :placeholder="t('Company default')"
+                    :placeholder="t('Category default')"
                     @input="draft.replenishmentSafetyDays = ($event.target as HTMLInputElement).value === '' ? null : Math.max(0, parseInt(($event.target as HTMLInputElement).value) || 0)"
                   />
                   <span class="cw-sub-unit">{{ t('days') }}</span>
                 </template>
                 <span v-else class="cw-sub-value">
                   {{ draft.replenishmentSafetyDays === null
-                    ? t('Company default')
+                    ? t('Category default')
                     : `${draft.replenishmentSafetyDays} ${t('days')}` }}
                 </span>
               </div>
 
-              <div class="cw-toggle-row">
-                <div class="cw-toggle-info">
-                  <span class="cw-toggle-title">{{ t('Count in-transit transfers as incoming supply') }}</span>
-                  <span class="cw-toggle-desc">{{ t('Include stock already on its way from another warehouse when working out what is still needed.') }}</span>
-                </div>
-                <MpToggle v-model:is-checked="draft.replenishmentIncludeInTransit" :is-disabled="!isEditing" :aria-label="t('Count in-transit transfers as incoming supply')" />
-              </div>
             </template>
 
             <h3 class="cw-subsection-title cw-subsection-title--spaced">{{ t('Cycle counts') }}</h3>

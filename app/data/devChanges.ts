@@ -28,6 +28,30 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'configure-warehouse-replenishment',
+    title: 'Configure warehouse: dead in-transit toggle removed',
+    description:
+      'The "Count in-transit transfers as incoming supply" toggle is gone: nothing read it since in-transit follows the PRD sources (open purchase orders and receipts). A blank Safety days now reads "Category default", which is the value it actually falls back to (rule/settings-no-unbuilt-controls).',
+    date: '2026-10-02',
+    files: ['ConfigureWarehousePage.vue', 'warehouseConfig.ts'],
+  },
+  {
+    id: 'new-product-replenishment-field',
+    title: 'Product form: "Due for reorder" field',
+    description:
+      'The replenishment rollup on the product form is renamed "Due for reorder", says "reorder point" instead of "min. stock", reads as whole translated sentences, and uses standard text links and valid colour tokens.',
+    date: '2026-10-02',
+    files: ['NewProductPage.vue'],
+  },
+  {
+    id: 'products-view-replenishment',
+    title: 'Products: "Reorder plan" is now "View replenishment"',
+    description:
+      'The link from the low-stock card and the row menu to the worklist uses the same name as the page it opens.',
+    date: '2026-10-02',
+    files: ['ProductsPage.vue'],
+  },
+  {
     id: 'replenishment-empty-states',
     title: 'Replenishment: empty states have a way forward',
     description:

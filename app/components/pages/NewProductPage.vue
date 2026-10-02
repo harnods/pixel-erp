@@ -7,7 +7,7 @@
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpInput, MpTextarea, MpRadio, MpCheckbox, MpAutocomplete, MpButton, toast,
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpTextlink, css,
 } from '@mekari/pixel3'
 import BarcodeSettingsButton from '~/components/patterns/BarcodeSettingsButton.vue'
 import { PRODUCTS, type Product } from '~/data/inventory'
@@ -16,7 +16,7 @@ import { GOODS_CLASSIFICATION_CODES, SERVICE_CLASSIFICATION_CODES } from '~/data
 import { productActionRollup } from '~/data/replenishment'
 import { getProductTaxInfo, setProductTaxInfo } from '~/data/productsIndex'
 
-const { t } = useLocale()
+const { t, tf } = useLocale()
 
 // order-id from the catch-all route: 'new' → create, a SKU → edit.
 const props = defineProps<{ orderId?: string }>()
@@ -132,6 +132,15 @@ const rollup = computed(() => {
   const s = sku.value.trim()
   return s ? productActionRollup(s) : null
 })
+
+/** Whether the per-warehouse breakdown under "Due for reorder" is expanded. */
+const dueDetailsOpen = ref(false)
+
+/** The reorder point is set per warehouse, on the product's Stock by warehouses tab. */
+function openWarehouseStock() {
+  const s = sku.value.trim()
+  if (s) router.push(`/product-list/${s}?section=warehouses`)
+}
 
 /** What a warehouse inherits when this product sets no default of its own. */
 
@@ -643,13 +652,13 @@ onUnmounted(() => { footerObserver?.disconnect() })
                 <!-- The product level rolls up the ACTION, never a summed
                      threshold (D13a). Each warehouse's due/not-due is still
                      decided on its own reorder point; this only counts them. -->
-                <MpFormControl id="np-replenishment-status" class="np-field-270">
+                <MpFormControl id="np-replenishment-status" class="np-field-270" data-devchange="new-product-replenishment-field">
                   <MpFormLabel>
                     <span class="np-label-with-info">
-                      {{ t('Replenishment') }}
+                      {{ t('Due for reorder') }}
                       <MpTooltip
                         id="np-replenishment-tip"
-                        :label="t('Each warehouse has its own minimum stock and decides on its own whether to reorder. There is no company-wide minimum. Stock in one warehouse cannot cover a shortage in another.')"
+                        :label="t('Each warehouse has its own reorder point and decides on its own whether to reorder. There is no company-wide reorder point. Stock in one warehouse cannot cover a shortage in another.')"
                         placement="top" use-portal
                       >
                         <span class="np-info-icon"><MpIcon name="info" size="sm" /></span>
@@ -659,39 +668,39 @@ onUnmounted(() => { footerObserver?.disconnect() })
 
                   <p class="np-readonly-value">
                     <template v-if="rollup && rollup.warehouseCount">
-                      {{ t('Due in') }} {{ rollup.dueCount }} {{ t('of') }}
-                      {{ rollup.warehouseCount }} {{ t('warehouses') }}
+                      {{ tf('{n} of {total} warehouses', { n: rollup.dueCount, total: rollup.warehouseCount }) }}
                     </template>
                     <template v-else>—</template>
                   </p>
 
                   <span v-if="rollup && rollup.dueCount" class="np-field-hint">
-                    {{ rollup.totalSuggestedQty.toLocaleString('id-ID') }}
-                    {{ rollup.unit || unit }} {{ t('suggested in total') }}
-                    <a class="np-field-link" @click="dueDetailsOpen = !dueDetailsOpen">
-                      {{ dueDetailsOpen ? t('Hide') : t('Which warehouses?') }}
-                      <MpIcon :name="dueDetailsOpen ? 'chevrons-up' : 'chevrons-down'" size="sm" />
-                    </a>
+                    {{ tf('Total suggested qty: {n} {unit}', { n: rollup.totalSuggestedQty.toLocaleString('id-ID'), unit: rollup.unit || unit }) }}
+                    <MpTextlink
+                      id="np-due-toggle"
+                      as="a"
+                      class="np-field-link"
+                      :right-icon="dueDetailsOpen ? 'chevrons-up' : 'chevrons-down'"
+                      @click.prevent="dueDetailsOpen = !dueDetailsOpen"
+                    >{{ dueDetailsOpen ? t('Hide warehouses') : t('View warehouses') }}</MpTextlink>
                   </span>
                   <span v-else-if="rollup && rollup.warehouseCount" class="np-field-hint">
-                    {{ t('Nothing to reorder right now.') }}
+                    {{ t('Nothing to reorder right now') }}
                   </span>
                   <span v-else class="np-field-hint">
-                    {{ t('Appears once this product is stocked in a warehouse.') }}
+                    {{ t('Appears once this product is stocked in a warehouse') }}
                   </span>
 
                   <div v-if="dueDetailsOpen && rollup?.dueCount" class="np-field-details">
                     <p v-for="w in rollup.dueWarehouses" :key="w.warehouseId" class="np-field-details-row">
-                      {{ w.warehouseName }}: {{ w.qty.toLocaleString('id-ID') }} {{ rollup.unit || unit }}
+                      {{ tf('{warehouse}: {n} {unit}', { warehouse: w.warehouseName, n: w.qty.toLocaleString('id-ID'), unit: rollup.unit || unit }) }}
                     </p>
-                    <p class="np-field-details-row">
-                      <a class="np-field-link" @click="router.push('/replenishment')">
-                        {{ t('Open replenishment') }}
-                      </a>
-                      <span v-if="isEdit" class="np-field-sep">·</span>
-                      <a v-if="isEdit" class="np-field-link" @click="openWarehouseStock">
-                        {{ t('Min. stock per warehouse') }}
-                      </a>
+                    <p class="np-field-details-row np-field-details-links">
+                      <MpTextlink id="np-view-replenishment" as="a" class="np-field-link" @click.prevent="router.push('/replenishment')">
+                        {{ t('View replenishment') }}
+                      </MpTextlink>
+                      <MpTextlink v-if="isEdit" id="np-view-rop" as="a" class="np-field-link" @click.prevent="openWarehouseStock">
+                        {{ t('View reorder point per warehouse') }}
+                      </MpTextlink>
                     </p>
                   </div>
                 </MpFormControl>
@@ -976,56 +985,45 @@ onUnmounted(() => { footerObserver?.disconnect() })
 .np-layout { display: flex; gap: 122px; align-items: flex-start; width: 100%; }
 .np-photo-col { flex-shrink: 0; width: 270px; display: flex; flex-direction: column; }
 
-/* Field-level explanation: where a recommended number came from, and how to get
-   back to it after overwriting. Muted so it reads as support, not as an error. */
+/* Field-level explanation. Muted so it reads as support, not as an error. */
 .np-readonly-value {
   margin: 0;
   padding: var(--mp-spacing-2\.5) 0;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--mp-text-default, #111827);
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-medium, 500);
+  color: var(--mp-text-default);
 }
 .np-field-hint {
   display: block;
-  margin-top: 6px;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--mp-text-subdued, #6b7280);
+  margin-top: var(--mp-spacing-1\.5);
+  font-size: var(--mp-font-sizes-sm);
+  line-height: var(--mp-line-heights-sm);
+  color: var(--mp-text-secondary);
 }
-.np-field-link {
-  margin-left: 6px;
-  color: var(--mp-text-brand, #029861);
-  cursor: pointer;
-}
-.np-field-link:hover { text-decoration: underline; }
-.np-field-sep { margin-left: 6px; color: var(--mp-text-subdued, #6b7280); }
+/* MpTextlink pins 14px with a layered !important; scale it to the 12px caption. */
+.np-field-link { margin-left: var(--mp-spacing-1); zoom: calc(12 / 14); }
 
 /* Label + its info affordance, so the icon sits on the text baseline rather
    than hanging off the end of the control. */
-.np-label-with-info { display: inline-flex; align-items: center; gap: 4px; }
-.np-info-icon {
-  display: inline-flex;
-  color: var(--mp-icon-subdued, #9ca3af);
-  cursor: help;
-}
-.np-info-icon:hover { color: var(--mp-icon-default, #4b5563); }
+.np-label-with-info { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
+.np-info-icon { display: inline-flex; color: var(--mp-colors-icon-default); cursor: help; }
 
 /* The expanded reasoning. Indented behind a rule so it reads as support for the
    field above rather than as a new field of its own. */
 .np-field-details {
-  margin-top: 8px;
-  padding-left: 10px;
-  border-left: 2px solid var(--mp-border-subdued, #e5e7eb);
+  margin-top: var(--mp-spacing-2);
+  padding-left: var(--mp-spacing-2\.5);
+  border-left: 2px solid var(--mp-border-default);
 }
 .np-field-details-row {
-  margin: 0 0 4px;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--mp-text-subdued, #6b7280);
+  margin: 0 0 var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-sm);
+  line-height: var(--mp-line-heights-sm);
+  color: var(--mp-text-secondary);
 }
 .np-field-details-row:last-child { margin-bottom: 0; }
-/* The toggle's chevron should ride with its text, not float above it. */
-.np-field-link { display: inline-flex; align-items: center; gap: 2px; }
+.np-field-details-links { display: flex; gap: var(--mp-spacing-3); }
+.np-field-details-links .np-field-link { margin-left: 0; }
 
 .np-field-270 { width: 270px; flex-shrink: 0; }
 
