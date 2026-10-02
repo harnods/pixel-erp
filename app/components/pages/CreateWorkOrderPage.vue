@@ -23,7 +23,7 @@ import { formatDate } from '~/utils/date'
 import { billOfMaterials, catalogProduct, type BillOfMaterials } from '~/data/billOfMaterials'
 import { addWorkOrder, type WorkOrderStatus, type WorkOrderMaterialReservation } from '~/data/workOrders'
 import { raiseStockRequestForWorkOrder } from '~/data/stockRequests'
-import { reservationEnabled, reservationOnWorkOrder } from '~/data/productionSettings'
+import { reservationOnWorkOrder } from '~/data/productionSettings'
 import { STAFF } from '~/data/master'
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
@@ -414,12 +414,12 @@ function saveWorkOrder() {
 }
 /**
  * C-4 — saving a work order pushes a stock request carrying its component lines,
- * so it is on the warehouse's dashboard immediately. C-3 — under One-step, every
- * line reserves straight away by available qty; the toast says which case
- * applied. With "Product components must be reserved" off, no request is raised.
+ * so it is on the warehouse's dashboard immediately. Reservation is always on
+ * (L-12), so this runs for every work order. C-3 — under One-step a line reserves
+ * only when destination stock covers it in FULL; partly covered lines stay
+ * Requested for the stockist. The toast says which case applied.
  */
 function raiseStockRequest(wo: { id: string; number: string }) {
-  if (!reservationEnabled()) return
   const planStart = parseDateRange(planDates.value).start
   // The row's Required date is the picker's DISPLAY value (DD/MM/YYYY); every date
   // stored on a request is ISO, so normalise before handing it over.
@@ -463,10 +463,9 @@ function raiseStockRequest(wo: { id: string; number: string }) {
 
   if (!result.created) return
   if (result.reservedProducts > 0) {
-    // C-3 — three cases now: reserved in full, reserved SHORT (what the warehouse
-    // had), and nothing at all. Both of the last two stay with the stockist.
+    // C-3 — auto-reserve is all-or-nothing per line, so there are exactly two
+    // cases: reserved in full, or left with the stockist as a request.
     const parts = [`${result.reservedProducts} ${t('component(s) reserved automatically')}`]
-    if (result.partialProducts > 0) parts.push(`${result.partialProducts} ${t('reserved short')}`)
     if (result.shortProducts > 0) parts.push(`${result.shortProducts} ${t('sent to the stockist as a request')}`)
     toast.notify({
       variant: 'success',

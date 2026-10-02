@@ -33,7 +33,7 @@ import AdjustWorkOrderModal from '~/components/patterns/AdjustWorkOrderModal.vue
 import CancelWorkOrderModal from '~/components/patterns/CancelWorkOrderModal.vue'
 import ReserveMaterialsModal from '~/components/patterns/ReserveMaterialsModal.vue'
 import UnreserveMaterialsModal from '~/components/patterns/UnreserveMaterialsModal.vue'
-import { productionSettings, reservationOnWorkOrder, reservationEnabled } from '~/data/productionSettings'
+import { productionSettings, reservationOnWorkOrder } from '~/data/productionSettings'
 import { logActivityFor, entriesFor, lastActivity } from '~/data/activityLog'
 import {
   raiseStockRequestForWorkOrder, requestForWorkOrder, workOrderReadiness, startGate,
@@ -116,13 +116,10 @@ const actionItems = computed(() => {
   const s = wo.value?.status
   if (s === 'completed') return ['Print', 'Delete']
   if (s === 'canceled') return ['Print']
-  // Adjust changes the work order's demand ON ITS STOCK REQUEST — with reservation
-  // switched off there is no request to change, so the action is not offered.
-  if (isRunning.value) {
-    return reservationEnabled()
-      ? ['Adjust', 'Replace attachment', 'Print', 'Cancel work order', 'Delete']
-      : ['Replace attachment', 'Print', 'Cancel work order', 'Delete']
-  }
+  // Adjust changes the work order's demand ON ITS STOCK REQUEST. Reservation is
+  // always on (L-12), so a running work order always has one to change.
+  if (isRunning.value)
+    return ['Adjust', 'Replace attachment', 'Print', 'Cancel work order', 'Delete']
   return ['Edit', 'Replace attachment', 'Print', 'Delete']
 })
 const DESTRUCTIVE_ACTIONS = new Set(['Delete', 'Cancel work order'])
@@ -302,7 +299,7 @@ const EXECUTION_WAREHOUSE = 'Production Jakarta'
  */
 const rawMaterials = computed(() => (bom.value?.rawMaterials ?? []).map(r => {
   const p = catalogProduct(r.productId)
-  const req = reservationEnabled() && wo.value ? requestForWorkOrder(wo.value.id) : undefined
+  const req = wo.value ? requestForWorkOrder(wo.value.id) : undefined
   const live = req?.lines.filter(l => l.productId === r.productId && !l.rejected) ?? []
   const needed = live.length ? live.reduce((sum, l) => sum + l.qty, 0) : r.needed
   return { productId: r.productId, product: p?.name ?? '—', sku: p?.sku ?? '—', purchaseCost: r.purchaseCost, warehouse: EXECUTION_WAREHOUSE, needed, bomNeeded: r.needed, unit: r.unit }
@@ -318,8 +315,6 @@ const rawEst = (r: { purchaseCost: number; needed: number }) => r.purchaseCost *
 function syncStockRequest() {
   const w = wo.value
   if (!w || rawMaterials.value.length === 0) return
-  // "Product components must be reserved" off → work orders raise no request.
-  if (!reservationEnabled()) return
   // Seeded work orders predate the save-time hook (C-4) — back-fill their request
   // on first open, using the same builder so nothing can diverge. Already-reserved
   // state is untouched: raising is idempotent and never auto-reserves here.
@@ -359,13 +354,8 @@ function reservedTrackingLabel(productId: string): string {
   return batches.map(b => `${b.batchNo} (${b.qty})`).join(', ')
 }
 const reservationLines = computed(() => stockRequest.value?.lines ?? [])
-const materialReadiness = computed(() =>
-  reservationEnabled() && wo.value ? workOrderReadiness(wo.value.id) : undefined)
+const materialReadiness = computed(() => wo.value ? workOrderReadiness(wo.value.id) : undefined)
 
-// With "Product components must be reserved" off the work order carries no
-// reservation at all — readiness badge, Reserved qty column, the Reservation menu
-// and the start gate all go, rather than showing figures nothing maintains.
-const reservationOn = computed(() => reservationEnabled())
 // S-2 — under Two-step, EVERY reservation entry point is hidden (not disabled)
 // and an info badge points to Stock requests instead.
 const canReserveHere = computed(() => reservationOnWorkOrder())
@@ -473,13 +463,14 @@ function reservedFor(productId: string): number {
 }
 
 // ── D-8 / UC-04 — the start gate ───────────────────────────────────────────────
-// Full reservation by default; the partial toggles relax it — "Allow partial
-// consume" needs only ONE component reserved, "Allow partial completion" needs
-// EVERY component reserved (each may be partial). Off entirely with reservation off.
+// Full reservation unless S-4 "start with limited stock" is on; what S-4 then
+// permits depends on the partial mode — "Allow partial consume" needs only ONE
+// component reserved, "Allow partial completion" needs EVERY component reserved
+// (each may be partial), neither leaves full reservation required.
 const gate = computed(() => wo.value
   ? startGate(wo.value.id, {
-      reservationOn: reservationEnabled(),
       partialMode: productionSettings.partialMode,
+      startWithLimitedStock: productionSettings.allowStartWithLimitedStock,
     })
   : { allowed: true as const })
 const startBlocked = computed(() => !gate.value.allowed)
@@ -939,7 +930,7 @@ function suppressFabClick(e: MouseEvent) {
           </div>
 
           <!-- W-7 / OPEN-14 — rejected demand stays flagged, not rolled back. -->
-          <div v-if="reservationOn && rejectedLines.length" class="wod-tracking-note">
+          <div v-if="rejectedLines.length" class="wod-tracking-note">
             <MpIcon name="warning" size="sm" />
             <span>
               {{ t('The warehouse rejected') }}
@@ -952,7 +943,7 @@ function suppressFabClick(e: MouseEvent) {
           </div>
 
           <!-- S-2 — Two-step: no reservation happens here, so say where it does. -->
-          <p v-if="reservationOn && !canReserveHere" class="wod-reserve-note">
+          <p v-if="!canReserveHere" class="wod-reserve-note">
             <MpIcon name="information" size="sm" />
             {{ t('Reservation via Stock requests only (PPIC / stockist)') }}
           </p>
@@ -964,7 +955,7 @@ function suppressFabClick(e: MouseEvent) {
                   <th class="wod-th wod-th--num">{{ t('Purchase cost') }}</th>
                   <th class="wod-th">{{ t('Warehouse') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Needed qty') }}</th>
-                  <th v-if="reservationOn" class="wod-th wod-th--num">{{ t('Reserved qty') }}</th>
+                  <th class="wod-th wod-th--num">{{ t('Reserved qty') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Consumed qty') }}</th>
                   <th class="wod-th">{{ t('Unit') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Estimated cost') }}</th>
@@ -978,7 +969,7 @@ function suppressFabClick(e: MouseEvent) {
                   <td class="wod-td wod-td--num">{{ formatIDR(r.purchaseCost) }}</td>
                   <td class="wod-td">{{ r.warehouse }}</td>
                   <td class="wod-td wod-td--num">{{ num(r.needed) }}</td>
-                  <td v-if="reservationOn" class="wod-td wod-td--num">{{ num(reservedFor(r.productId)) }}/{{ num(r.needed) }}</td>
+                  <td class="wod-td wod-td--num">{{ num(reservedFor(r.productId)) }}/{{ num(r.needed) }}</td>
                   <td class="wod-td wod-td--num">{{ num(consumedFor(r.productId)) }}/{{ num(r.needed) }}</td>
                   <td class="wod-td">{{ r.unit }}</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(rawEst(r)) }}</td>

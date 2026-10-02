@@ -3741,8 +3741,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Production readiness': 'Pengaturan kesiapan produksi',
   'Allow partial production': 'Izinkan produksi sebagian',
   'Component request & reservation': 'Permintaan & reservasi komponen',
-  'Product components must be reserved': 'Komponen produk harus direservasi',
-  'Triggers reservation when a work order is created': 'Trigger reservasi pada saat pembuatan perintah kerja',
   'Reservation method': 'Metode reservasi',
   'One step': 'One step',
   'Two steps': 'Two steps',
@@ -3814,6 +3812,10 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Issue and consume material in stages, before the full planned quantity is available.': 'Keluarkan dan pakai material secara bertahap, sebelum seluruh kuantitas rencana tersedia.',
   'Partial consume and partial completion cannot both be on — turning one on turns the other off.': 'Konsumsi bertahap dan penyelesaian bertahap tidak bisa aktif bersamaan — mengaktifkan salah satu akan menonaktifkan yang lain.',
   'A work order can start only once every component is reserved in full.': 'Perintah kerja baru bisa dimulai setelah semua komponen direservasi penuh.',
+  'Start with limited stock': 'Mulai dengan stok terbatas',
+  'Begin a work order before every component is reserved in full': 'Mulai perintah kerja sebelum semua komponen direservasi penuh',
+  'Full reservation is still required to start: this setting only takes effect with partial consume or partial completion.': 'Reservasi penuh tetap dibutuhkan untuk memulai: pengaturan ini hanya berlaku bersama pemakaian sebagian atau penyelesaian sebagian.',
+  'Every work order raises a stock request — reservation cannot be switched off. The method decides who reserves.': 'Setiap perintah kerja membuat permintaan stok — reservasi tidak bisa dinonaktifkan. Metode menentukan siapa yang mereservasi.',
   'A work order can start once at least one component holds a reservation.': 'Perintah kerja bisa dimulai setelah minimal satu komponen punya reservasi.',
   'A work order can start once every component holds a reservation, even a partial one.': 'Perintah kerja bisa dimulai setelah semua komponen punya reservasi, meski sebagian.',
   'Work orders show an info badge instead of reservation actions: "Reservation via Stock requests only (PPIC / stockist)".': 'Perintah kerja menampilkan info, bukan aksi reservasi: "Reservasi hanya lewat Permintaan stok (PPIC / stockist)".',
@@ -3900,8 +3902,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
 
   // Reservation toggle back + C-3 by available qty
   'Components are reserved automatically from available stock once the work order is created': 'Komponen direservasi otomatis dari stok tersedia setelah perintah kerja dibuat',
-  'Reservation is off, so a work order can start without any component reserved.': 'Reservasi nonaktif, jadi perintah kerja bisa dimulai tanpa komponen yang direservasi.',
-  'Work orders raise no stock request and start without reserved components. Requests already raised stay on Stock requests.': 'Perintah kerja tidak membuat permintaan stok dan bisa dimulai tanpa komponen yang direservasi. Permintaan yang sudah dibuat tetap ada di Permintaan stok.',
   'No stock to reserve — the destination warehouse has none of the selected components': 'Tidak ada stok untuk direservasi — gudang tujuan tidak punya komponen yang dipilih',
   'No stock to reserve — the destination warehouse has none of what this request needs': 'Tidak ada stok untuk direservasi — gudang tujuan tidak punya yang dibutuhkan permintaan ini',
   'unit reserved automatically': 'unit direservasi otomatis',

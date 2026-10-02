@@ -740,42 +740,42 @@ export function isFullyReserved(workOrderId: string): boolean {
 export type StartBlockReason = 'none-reserved' | 'some-unreserved' | 'not-fully-reserved'
 
 /**
- * The start gate — PRD v0.5 UC-04 / D-8, decided by the partial mode (S-3) alone:
+ * The start gate — PRD v0.5 UC-04 / D-8, decided by S-4 and the partial mode (S-3):
  *
- * | partialMode  | Start permitted when                        |
- * | ------------ | ------------------------------------------- |
- * | `consume`    | AT LEAST ONE component is reserved > 0       |
- * | `completion` | EVERY component is reserved > 0              |
- * | `none`       | every component is fully reserved            |
+ * | S-4 | partialMode  | Start permitted when                    |
+ * | --- | ------------ | --------------------------------------- |
+ * | off | any          | EVERY component is fully reserved        |
+ * | on  | `consume`    | AT LEAST ONE component is reserved > 0   |
+ * | on  | `completion` | EVERY component is reserved > 0          |
+ * | on  | `none`       | every component fully reserved (S-4 moot) |
  *
- * The PRD puts a separate S-4 "start with limited stock" switch in front of this
- * table. It is deliberately not built: turning on a partial mode already says the
- * job may run short, so S-4 could only ever repeat that — or, left off, silently
- * cancel it.
+ * The two partial modes are mutually exclusive, so exactly one row applies.
  *
- * The two rules protect different things. Partial consume lets work proceed with
+ * The rules protect different things. Partial consume lets work proceed with
  * whatever has arrived, so one secured component is enough to begin. Partial
  * completion posts output in tranches, and even one finished unit needs a complete
  * set of components — fabric without buttons produces nothing — so every line must
- * hold something.
+ * hold something. S-4 is the separate question of whether a job may begin short at
+ * all: a material-control decision, not a production-recording one.
  *
  * This counts RESERVATION, never availability: stock sitting free in the warehouse
  * does not open the gate, because nobody has allocated it to this job yet.
  *
- * With reservation switched OFF ("Product components must be reserved") there is
- * nothing to gate: no request is raised and nothing is allocated, so the work order
- * starts freely. A work order with no request at all passes for the same reason.
+ * Reservation is always on (L-12), so the only free pass is a work order with no
+ * request at all — a Subcon work order that raises none (C-4), or seed data.
  */
 export function startGate(
   workOrderId: string,
-  options: { reservationOn: boolean; partialMode: PartialMode },
+  options: { partialMode: PartialMode; startWithLimitedStock: boolean },
 ): { allowed: boolean; reason?: StartBlockReason } {
-  if (!options.reservationOn) return { allowed: true }
   const req = requestForWorkOrder(workOrderId)
   if (!req || req.lines.length === 0) return { allowed: true }
 
   const lines = req.lines
   if (lines.every(l => lineCovered(l) >= l.qty)) return { allowed: true }
+
+  // S-4 off — full reservation, whatever the partial mode says about life after start.
+  if (!options.startWithLimitedStock) return { allowed: false, reason: 'not-fully-reserved' }
 
   switch (options.partialMode) {
     case 'consume':
@@ -1263,13 +1263,23 @@ export interface SettleResult {
 }
 const NOTHING_SETTLED: SettleResult = { reservedProducts: 0, reservedQty: 0, partialProducts: 0, shortProducts: 0 }
 
-/** C-3 — auto-reserve each line by available qty; whatever stock can't cover stays open. */
+/**
+ * C-3 — auto-reserve is ALL-OR-NOTHING per line: a line reserves only when the
+ * destination warehouse fully covers what is still outstanding on it. A line stock
+ * covers only in part stays Requested, in full, for the stockist to settle.
+ *
+ * Why not reserve the covered part: a half-allocation reads as progress on the
+ * dashboard while the job still cannot start, and it locks stock another work
+ * order could have used in full. The manual Reserve modal (UC-02) is the opposite
+ * — there a human is choosing to take what is there, so it reserves partially.
+ */
 function settleLines(lines: StockRequestLine[], autoReserve: boolean): SettleResult {
   const r = { ...NOTHING_SETTLED }
   if (!autoReserve) return r
   for (const line of lines) {
-    const take = reservableQty(line)
-    if (take <= 0) { if (line.qty - lineCovered(line) > 0) r.shortProducts++; continue }
+    const outstanding = line.qty - lineCovered(line)
+    const take = reservableQty(line) >= outstanding ? outstanding : 0
+    if (take <= 0) { if (outstanding > 0) r.shortProducts++; continue }
     line.reserved += take
     line.destAvailable -= take
     r.reservedProducts++
