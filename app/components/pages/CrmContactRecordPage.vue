@@ -209,7 +209,7 @@ function confirmArchive() {
     // Block archiving a contact that is a company's PIC or sole active member (PRD §351).
     const blocker = contactBlockingCompany(contact.value.id)
     if (blocker) {
-      toast.notify({ variant: 'warning', title: `${t('Set another PIC on')} ${blocker.name} ${t('before archiving.')}`, maxWidth: 'max-content' })
+      infoToast(`${t('Set another PIC on')} ${blocker.name} ${t('before archiving.')}`)
       return
     }
     archiveCrmContactPerson(contact.value.id)

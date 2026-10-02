@@ -192,7 +192,7 @@ const keywordColumnLabel = computed(() =>
   border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16));
   border-radius: var(--mp-radii-md, 6px);
 }
-.cdf-keyword:focus-within { border-color: var(--mp-border-brand, #4b61dc); }
+.cdf-keyword:focus-within { border-color: var(--mp-border-brand); }
 .cdf-keyword-input {
   flex: 1 0 0; min-width: 0; height: 20px;
   border: none; outline: none; background: transparent; padding: 0;

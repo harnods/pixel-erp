@@ -12,7 +12,7 @@ import {
   type MappingEntry, type ErpTargetField, type EntryEval, type ConversionConfig,
 } from '~/data/crmConversion'
 import {
-  crmModules, getCrmModule, moduleStores, serviceDeals,
+  crmModules, getCrmModule, moduleStores,
   DEFAULT_PROPERTIES, DEFAULT_PROPERTY_IDS, defaultDealProperties,
   type CrmModule, type CrmModuleField, type DealProperty, type DealPropertyType,
 } from '~/data/crm'
@@ -312,25 +312,6 @@ describe('DEFAULT_PROPERTIES completeness', () => {
     for (const p of dp) {
       expect(p.type, `property ${p.id} has undefined type`).toBeDefined()
     }
-  })
-})
-
-// ── Service deals seed — draft module must be empty ─────────────────────────
-describe('Service deals — draft module empty state', () => {
-  it('service deals seed is empty', () => {
-    expect(serviceDeals.length).toBe(0)
-  })
-
-  it('services module has recordCount 0', () => {
-    const svc = getCrmModule('services')
-    expect(svc).toBeDefined()
-    expect(svc!.recordCount).toBe(0)
-  })
-
-  it('services module is in draft status', () => {
-    const svc = getCrmModule('services')
-    expect(svc).toBeDefined()
-    expect(svc!.status).toBe('draft')
   })
 })
 

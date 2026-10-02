@@ -841,7 +841,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
 .detail-banner {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-information, #eef0fc);
+  background: var(--mp-background-information);
   border-radius: var(--mp-radii-md); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
 .detail-banner-icon { color: var(--mp-icon-information, #1d6fdc); flex-shrink: 0; }
