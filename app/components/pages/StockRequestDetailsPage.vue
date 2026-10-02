@@ -33,11 +33,13 @@ import {
   isOverdue, canReject, canRejectLine, reserveRequestProducts, unreserveRequestProducts, rejectRequestLine,
   stockRequestLineStatus,
   reservedTracking, trackingChanged, lineTracking, setReservedBatches, setReservedSerials,
+  workOrderFor,
   type StockRequest, type StockRequestLine, type UnreserveDisposition,
 } from '~/data/stockRequests'
 import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
 import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
 import { TODAY_ISO } from '~/data/master'
+import { pushNotification } from '~/data/notifications'
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
@@ -126,6 +128,10 @@ function onUnreserve(payload: { productIds: string[]; disposition: UnreserveDisp
   const where = payload.disposition === 'return-to-warehouse'
     ? t('returned to warehouse')
     : t('charged to production cost')
+  // R-9 — a release on somebody else's work order notifies its owner, naming the
+  // components, qty and reason. Reservation removed by another person must not be
+  // discovered at start time.
+  notifyWorkOrderOwner(payload.productIds, released, where, payload.reason)
   toast.notify({ variant: 'success', title: `${released} ${t('unit unreserved')} — ${where}`, maxWidth: 'max-content' })
 }
 
@@ -170,7 +176,48 @@ function rejectAllTagged() {
   })
 }
 
+/**
+ * R-9 — the stockist releasing a reservation is acting on somebody else's job, so
+ * its owner is told rather than left to discover it when the job won't start.
+ */
+function notifyWorkOrderOwner(productIds: string[], qty: number, disposition: string, reason: string) {
+  const r = req.value
+  if (!r || qty <= 0) return
+  const names = productIds
+    .map(id => lines.value.find(l => l.productId === id)?.product ?? id)
+    .join(', ')
+  pushNotification({
+    title: `${t('Reservation released on')} ${r.workOrderNumber}`,
+    preview: `${names} — ${qty} ${t('unit released from reservation')} (${disposition})`,
+    heading: `${t('Reservation released on')} ${r.workOrderNumber}`,
+    description: t('A stockist released material reserved for this work order. Check material readiness before starting it.'),
+    fields: [
+      { label: t('Components'), value: names },
+      { label: t('Qty released'), value: `${qty}` },
+      { label: t('Disposition'), value: disposition },
+      { label: t('Stock request'), value: r.number },
+      ...(reason ? [{ label: t('Reason'), value: reason }] : []),
+    ],
+    actions: [{ label: t('View work order'), primary: true }, { label: t('View stock request') }],
+  })
+}
+
 const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
+
+/**
+ * UC-03 / D-6 — unreserve exists in exactly two places: here and on the work order
+ * page, and on BOTH only while the work order has not started. Once it is running,
+ * the only way out of a reservation is inside the Adjust modal, where the Adjust
+ * reason stands in for the approval this path would otherwise need.
+ *
+ * PPIC may release another job's reservation to serve a more urgent one (Roles),
+ * which is why this is offered to the stockist at all — but the started-job rule
+ * is the same for both roles: material already committed to a running job is not
+ * something a second person should be able to pull out from under it.
+ */
+const workOrder = computed(() => req.value ? workOrderFor(req.value) : undefined)
+const workOrderNotStarted = computed(() => (workOrder.value?.status ?? 'not started') === 'not started')
+const canUnreserve = computed(() => hasReservation.value && workOrderNotStarted.value)
 
 /**
  * Activity log (rule/detail-activity-log-always, US-8). Reserve, unreserve and
@@ -267,7 +314,7 @@ function saveSerials(serials: string[]) {
               <MpPopoverListItem @click="createPurchaseRequest">{{ t('Create purchase request') }}</MpPopoverListItem>
               <MpPopoverListItem @click="createWarehouseTransfer()">{{ t('Create warehouse transfer') }}</MpPopoverListItem>
               <MpPopoverListItem @click="goWorkOrder">{{ t('Open work order') }}</MpPopoverListItem>
-              <MpPopoverListItem v-if="hasReservation" @click="unreserveOpen = true">{{ t('Unreserve') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="canUnreserve" @click="unreserveOpen = true">{{ t('Unreserve') }}</MpPopoverListItem>
             </MpPopoverList>
             <template v-if="canReject(req)">
               <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />

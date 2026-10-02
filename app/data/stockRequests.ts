@@ -449,14 +449,26 @@ export function isActionable(req: StockRequest): boolean {
   return !wo || ACTIVE_WO_STATUSES.has(wo.status)
 }
 
-/** The **Requested** tab: work orders still in an active status. */
+/**
+ * The **Requested** tab (W-4) — rows that are NOT fully reserved yet.
+ *
+ * A row leaves this tab only when its reserved plus consumed qty reaches its
+ * required qty. Available stock at the destination does not settle it: available
+ * stock is not an allocation until somebody reserves it.
+ *
+ * The work order's own status is a separate question — a Done or canceled work
+ * order offers no actions (see {@link isActionable}) but is not what decides the
+ * tab. An earlier build filtered on status alone, which both hid short lines on a
+ * completed job and kept fully reserved rows sitting in a tab named for work left
+ * to do.
+ */
 export function isRequestedTab(req: StockRequest): boolean {
-  return isOnDashboard(req) && isActionable(req)
+  return isOnDashboard(req) && isActionable(req) && needsAction(req)
 }
 
-/** Requests still needing warehouse action — drives any count badge. */
+/** Requests still needing warehouse action — drives the sidebar count badge. */
 export const stockRequestOpenCount = (): number =>
-  stockRequests.filter(needsAction).length
+  stockRequests.filter(r => isRequestedTab(r)).length
 
 // ── SKU aggregation (W-1, W-2, W-8) ────────────────────────────────────────────
 
@@ -505,6 +517,12 @@ export interface SkuDemandGroup {
   /** free stock now, after any backdated recalculation (W-6) */
   available: number
   status: StockRequestStatus
+  /**
+   * W-7 — any line behind this row past its required date and not fully covered.
+   * The product view shows it exactly as the transaction view does: a product row
+   * IS the demand, and demand nobody warned about is demand nobody chases.
+   */
+  overdue: boolean
   backdate?: { delta: number; transaction: string }
   /** true when nothing is outstanding — drives the Requested / All tabs (W-4) */
   sufficient: boolean
@@ -564,6 +582,7 @@ export function skuDemandGroups(
     // consumed line would read as under-reserved and reappear as open demand.
     const remaining = Math.max(0, required - reserved - consumed)
     const dates = entries.map(e => e.requiredDate).sort()
+    const overdue = bucket.some(({ line }) => isLineOverdue(line, TODAY_ISO))
     return {
       key: `${first.productId}::${first.destinationWarehouseId}`,
       productId: first.productId,
@@ -576,6 +595,7 @@ export function skuDemandGroups(
       openWorkOrders: new Set(entries.map(e => e.workOrderId)).size,
       earliestRequired: dates[0]!,
       latestRequired: dates[dates.length - 1]!,
+      overdue,
       required,
       reserved,
       consumed,

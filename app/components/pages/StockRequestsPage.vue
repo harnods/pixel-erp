@@ -34,7 +34,7 @@ import { TODAY, TODAY_ISO } from '~/data/master'
 import {
   stockRequests, stockRequestStatus, stockRequestStatusOptions, skuDemandGroups,
   requestRequiredQty, isRequestedTab, isOnDashboard, isActionable, workOrderFor, isOverdue,
-  reserveStock, rejectRequestLine, canReject, canRejectLine,
+  reserveStock, reserveProductEverywhere, rejectRequestLine, canReject, canRejectLine,
   type StockRequest, type StockRequestLine, type SkuDemandGroup,
 } from '~/data/stockRequests'
 
@@ -271,10 +271,6 @@ function toggleExpand(key: string) { expanded[key] = !expanded[key] }
 // ─── Row actions (W-1 row menu, W-7 reject) ────────────────────────────────────
 // "View details" opens the stock request; the work order is one click further in.
 function viewDetails(requestId: string) { router.push(`/stock-requests/${requestId}`) }
-function reserveById(requestId: string) {
-  const req = stockRequests.find(r => r.id === requestId)
-  if (req) reserve(req)
-}
 function reserve(req: StockRequest) {
   const qty = reserveStock(req.id, { source: 'stock-request' })
   if (qty === undefined) {
@@ -293,6 +289,49 @@ function createPurchaseRequest(query: Record<string, string>) {
   router.push({ path: '/purchase-requests/new', query })
 }
 const byRequest = (requestId: string) => ({ fromStockRequest: requestId })
+
+/**
+ * W-1 — reserve one COMPONENT across every open transaction that needs it, which
+ * is the action the by-product view is for: the stockist is settling a component's
+ * demand, not one job's. Each line takes what its destination can give.
+ */
+function reserveComponent(group: SkuDemandGroup) {
+  const r = reserveProductEverywhere(group.productId)
+  if (r.qty === 0) {
+    toast.notify({
+      variant: 'error',
+      title: t('No stock to reserve — the destination warehouse has none of this component'),
+      maxWidth: 'max-content',
+    })
+    return
+  }
+  const parts = [`${r.qty} ${t('unit reserved for')} ${r.transactions} ${r.transactions === 1 ? t('transaction') : t('transactions')}`]
+  if (r.skipped > 0) parts.push(`${r.skipped} ${t('line still short')}`)
+  toast.notify({ variant: 'success', title: parts.join(' · '), maxWidth: 'max-content' })
+}
+
+/**
+ * W-7 from a product row — decline the tagged lines this component has across the
+ * open transactions. Original component lines are never rejectable, so a row with
+ * no tagged line offers nothing.
+ */
+const rejectableEntries = (group: SkuDemandGroup) =>
+  group.entries.filter(e => e.tag && !e.rejected)
+
+function rejectComponent(group: SkuDemandGroup) {
+  let count = 0
+  for (const entry of rejectableEntries(group)) {
+    const req = stockRequests.find(r => r.id === entry.requestId)
+    const line = req?.lines.find(l => l.productId === group.productId && l.tag === entry.tag && !l.rejected)
+    if (req && line && rejectRequestLine(req.id, line)) count++
+  }
+  if (count === 0) return
+  toast.notify({
+    variant: 'success',
+    title: `${count} ${count === 1 ? t('line rejected') : t('lines rejected')} — ${group.product}`,
+    maxWidth: 'max-content',
+  })
+}
 const byComponent = (productIds: string[]) => ({ fromComponent: productIds.join(',') })
 /**
  * W-7 — rejection is per LINE: only Additional stock and Adjustment lines can be
@@ -555,7 +594,10 @@ const exportColumns = computed(() => {
          product view (story 2). -->
     <template #cell-status="{ row }">
       <ErpStatusBadge :status="(row as Record<string, unknown>).status as string" />
-      <p v-if="view === 'transaction' && wo(row).overdue" class="sr-note">{{ t('Overdue — reminder sent') }}</p>
+      <!-- W-7 — overdue reads the same in both views; a product row is demand too. -->
+      <p v-if="view === 'transaction' ? wo(row).overdue : sku(row).overdue" class="sr-note">
+        {{ t('Overdue — reminder sent') }}
+      </p>
     </template>
 
     <!-- Full empty state — no CTA: requests are raised by work orders (see header) -->
@@ -575,14 +617,23 @@ const exportColumns = computed(() => {
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <!-- SKU row — raise one document for this component, or open its work orders -->
-          <MpPopoverList v-if="view === 'product'">
-            <MpPopoverListItem @click="createPurchaseRequest(byComponent([sku(row).productId]))">{{ t('Create purchase request') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="createWarehouseTransfer(byComponent([sku(row).productId]))">{{ t('Create warehouse transfer') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="toggleExpand(sku(row).key)">{{ expanded[sku(row).key] ? t('Hide transactions') : t('Show transactions') }}</MpPopoverListItem>
-          </MpPopoverList>
+          <template v-if="view === 'product'">
+            <MpPopoverList>
+              <MpPopoverListItem v-if="sku(row).remaining > 0" @click="reserveComponent(sku(row))">{{ t('Reserve stock') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="createPurchaseRequest(byComponent([sku(row).productId]))">{{ t('Create purchase request') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="createWarehouseTransfer(byComponent([sku(row).productId]))">{{ t('Create warehouse transfer') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="toggleExpand(sku(row).key)">{{ expanded[sku(row).key] ? t('Hide transactions') : t('Show transactions') }}</MpPopoverListItem>
+            </MpPopoverList>
+            <template v-if="rejectableEntries(sku(row)).length">
+              <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
+              <MpPopoverList>
+                <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="rejectComponent(sku(row))">{{ t('Reject added lines') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </template>
+          </template>
 
           <!-- Work order row -->
-          <template v-else>
+          <template v-if="view === 'transaction'">
             <MpPopoverList>
               <MpPopoverListItem @click="viewDetails(wo(row).id)">{{ t('View details') }}</MpPopoverListItem>
               <template v-if="!wo(row).rejected && wo(row).status !== 'reserved' && wo(row).status !== 'issued / picked'">

@@ -1,3 +1,5 @@
+import { reactive } from 'vue'
+
 export interface NotificationField {
   label: string
   value: string
@@ -32,7 +34,7 @@ export interface Notification {
   }
 }
 
-export const notifications: Notification[] = [
+export const notifications: Notification[] = reactive([
   // ── Today ──────────────────────────────────────────────────────────────
   {
     id: 'n-01',
@@ -460,4 +462,40 @@ export const notifications: Notification[] = [
       ],
     },
   },
-]
+])
+
+/**
+ * Raise an in-app notification during the session (L-11 — in-app + email; only the
+ * in-app half exists in the prototype, and email is out of its reach).
+ *
+ * Prepended as unread under "Today", which is how the inbox groups and how a
+ * person reads a list they have just been pinged about. Not persisted: a
+ * notification is a nudge, and the durable record of what happened is the
+ * activity log, which is persisted (see activityLog.ts).
+ */
+export function pushNotification(input: {
+  title: string
+  preview: string
+  heading?: string
+  description?: string
+  fields?: NotificationField[]
+  actions?: NotificationAction[]
+}): void {
+  notifications.unshift({
+    id: `n-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    title: input.title,
+    preview: input.preview,
+    group: 'Today',
+    timeLabel: 'Just now',
+    timestamp: new Date().toLocaleString('en-GB', {
+      day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    }).replace(',', ''),
+    unread: true,
+    detail: {
+      heading: input.heading ?? input.title,
+      description: input.description ?? input.preview,
+      fields: input.fields ?? [],
+      actions: input.actions ?? [],
+    },
+  })
+}
