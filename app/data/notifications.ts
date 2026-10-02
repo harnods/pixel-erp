@@ -1,4 +1,5 @@
 import { reactive } from 'vue'
+import { loadSnapshot, saveSnapshot } from './persist'
 
 export interface NotificationField {
   label: string
@@ -465,13 +466,21 @@ export const notifications: Notification[] = reactive([
 ])
 
 /**
- * Raise an in-app notification during the session (L-11 — in-app + email; only the
- * in-app half exists in the prototype, and email is out of its reach).
+ * Notifications raised by the running app, kept apart from the seeded ones so a
+ * refresh doesn't duplicate the seeds — they are merged in front of them below.
+ */
+const RAISED_KEY = 'notifications.raised'
+const raised = loadSnapshot<Notification>(RAISED_KEY) ?? []
+if (raised.length) notifications.unshift(...raised)
+
+/**
+ * Raise an in-app notification (L-11 — in-app + email; only the in-app half
+ * exists in the prototype, and email is out of its reach).
  *
  * Prepended as unread under "Today", which is how the inbox groups and how a
- * person reads a list they have just been pinged about. Not persisted: a
- * notification is a nudge, and the durable record of what happened is the
- * activity log, which is persisted (see activityLog.ts).
+ * person reads a list they have just been pinged about. Persisted, because the
+ * point of notifying somebody else is that they see it when they next look —
+ * which, in a prototype people demo from, is usually after a page load.
  */
 export function pushNotification(input: {
   title: string
@@ -481,7 +490,7 @@ export function pushNotification(input: {
   fields?: NotificationField[]
   actions?: NotificationAction[]
 }): void {
-  notifications.unshift({
+  const entry: Notification = {
     id: `n-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     title: input.title,
     preview: input.preview,
@@ -497,5 +506,8 @@ export function pushNotification(input: {
       fields: input.fields ?? [],
       actions: input.actions ?? [],
     },
-  })
+  }
+  notifications.unshift(entry)
+  raised.unshift(entry)
+  saveSnapshot(RAISED_KEY, raised)
 }

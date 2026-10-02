@@ -1595,10 +1595,16 @@ export function applyDemandChanges(
         // reserves 6 and stays Partially reserved for the other 2.
         toSettle.push(added)
       } else {
+        // Edit (Not started) — the existing line absorbs the increase in place;
+        // there is no mid-run delta to keep apart and no second required date to
+        // carry. Under One-step the grown line goes back through auto-reserve, so
+        // demand the warehouse can already cover doesn't sit Requested while the
+        // stock is free (C-3, all-or-nothing on what is still outstanding).
         const target = drawdownOrder(lines)[0]!
         target.qty += delta
         target.requiredDate = change.requiredDate
         target.requestor = requestor
+        toSettle.push(target)
       }
       result.increased.push({ productId: change.productId, product, delta })
       continue

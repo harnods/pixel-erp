@@ -31,6 +31,7 @@ import { warehouses } from '~/data/warehouses'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import AdjustWorkOrderModal from '~/components/patterns/AdjustWorkOrderModal.vue'
 import RequestAdditionalStockModal from '~/components/patterns/RequestAdditionalStockModal.vue'
+import EditWorkOrderMaterialsModal from '~/components/patterns/EditWorkOrderMaterialsModal.vue'
 import CancelWorkOrderModal from '~/components/patterns/CancelWorkOrderModal.vue'
 import ReserveMaterialsModal from '~/components/patterns/ReserveMaterialsModal.vue'
 import UnreserveMaterialsModal from '~/components/patterns/UnreserveMaterialsModal.vue'
@@ -39,7 +40,7 @@ import { logActivityFor, entriesFor, lastActivity } from '~/data/activityLog'
 import { pushNotification } from '~/data/notifications'
 import {
   raiseStockRequestForWorkOrder, appendStockRequestLines, requestForWorkOrder, workOrderReadiness, startGate,
-  releaseOnCompletion, releaseForCanceledWorkOrder, applyDemandChanges, reservedProductIds,
+  releaseOnCompletion, releaseForCanceledWorkOrder, applyDemandChanges, blockedByReservation, reservedProductIds,
   type DemandChange,
   changedTrackingLines, reservedTracking,
   reservedForWorkOrder, reserveWorkOrderProducts, unreserveWorkOrderProducts,
@@ -130,11 +131,13 @@ const DESTRUCTIVE_ACTIONS = new Set(['Delete', 'Cancel work order'])
 
 const adjustOpen = ref(false)
 const additionalOpen = ref(false)
+const editOpen = ref(false)
 const cancelOpen = ref(false)
 
 function onActionSelect(item: string) {
   if (item === 'Adjust') { adjustOpen.value = true; return }
   if (item === 'Request additional stock') { additionalOpen.value = true; return }
+  if (item === 'Edit') { editOpen.value = true; return }
   if (item === 'Cancel work order') { cancelOpen.value = true; return }
   if (item === 'Delete') {
     // UC-09 — a running work order cannot be deleted; say so and name the way out
@@ -248,6 +251,58 @@ function onAdjust(payload: { changes: DemandChange[]; reason: string }) {
     title: parts.join(' · ') || t('Work order adjusted'),
     maxWidth: 'max-content',
   })
+}
+
+/**
+ * UC-06 — apply an Edit (Not started). Lines are updated IN PLACE, the editor
+ * becomes each changed line's requestor, and the warehouse is notified of the
+ * change. A cut below the reserved qty never reaches here: the modal blocks it
+ * inline and tells the user to unreserve first (blockedByReservation), because
+ * before start unreserve is a deliberate action they can take (UC-03) — unlike
+ * Adjust, where the cut itself releases under the Adjust reason.
+ */
+function onEditMaterials(payload: { changes: DemandChange[] }) {
+  const w = wo.value
+  if (!w) return
+  const blocked = blockedByReservation(w.id, payload.changes)
+  if (blocked.length > 0) return // the modal states this inline; belt and braces
+  const r = applyDemandChanges(w.id, payload.changes, STAFF[0]!, 'edit', {
+    autoReserve: reservationOnWorkOrder(),
+    ctx: { user: STAFF[0]!, source: 'work-order' },
+  })
+  editOpen.value = false
+  if (!r.increased.length && !r.decreased.length) return
+
+  const details = [
+    ...r.increased.map(i => ({ label: `Increased — ${i.product}`, value: `+${i.delta}` })),
+    ...r.decreased.map(d => ({ label: `Decreased — ${d.product}`, value: `-${d.delta}` })),
+  ]
+  logActivityFor(
+    [
+      { type: 'work-order' as const, id: w.id },
+      ...(stockRequest.value ? [{ type: 'stock-request' as const, id: stockRequest.value.id }] : []),
+    ],
+    { user: STAFF[0]!, activity: 'Work order materials edited', details },
+  )
+
+  // UC-06 — "warehouse notified in-app + email on any qty change". The warehouse
+  // is the party that has to act differently because of this edit.
+  pushNotification({
+    title: `${t('Work order materials changed on')} ${w.number}`,
+    preview: [...r.increased.map(i => `${i.product} +${i.delta}`), ...r.decreased.map(d => `${d.product} -${d.delta}`)].join(', '),
+    description: t('Production changed what this work order needs. Check the stock request before picking.'),
+    fields: [
+      { label: t('Work order'), value: w.number },
+      ...(stockRequest.value ? [{ label: t('Stock request'), value: stockRequest.value.number }] : []),
+    ],
+    actions: [{ label: t('View stock request'), primary: true }],
+  })
+
+  const parts: string[] = []
+  if (r.increased.length) parts.push(`${r.increased.length} ${t('component increased')}`)
+  if (r.decreased.length) parts.push(`${r.decreased.length} ${t('component decreased')}`)
+  if (r.reserved.reservedQty > 0) parts.push(`${r.reserved.reservedQty} ${t('unit reserved automatically')}`)
+  toast.notify({ variant: 'success', title: parts.join(' · ') || t('Materials updated'), maxWidth: 'max-content' })
 }
 
 /**
@@ -1376,6 +1431,15 @@ function suppressFabClick(e: MouseEvent) {
       :lines="reservationLines"
       @close="adjustOpen = false"
       @adjust="onAdjust"
+    />
+
+    <EditWorkOrderMaterialsModal
+      id="wod-edit"
+      :is-open="editOpen"
+      :work-order-number="wo?.number ?? ''"
+      :lines="reservationLines"
+      @close="editOpen = false"
+      @save="onEditMaterials"
     />
 
     <RequestAdditionalStockModal

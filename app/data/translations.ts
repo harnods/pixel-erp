@@ -3815,6 +3815,18 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Start with limited stock': 'Mulai dengan stok terbatas',
   // Request additional stock (D-7)
   'Request additional stock': 'Minta stok tambahan',
+  // Edit work order materials (UC-06, Not started)
+  'Edit materials': 'Edit material',
+  'The work order has not started, so a change updates its existing request line and the warehouse is told. A component cannot be removed.': 'Perintah kerja belum dimulai, jadi perubahan memperbarui baris permintaan yang ada dan gudang diberi tahu. Komponen tidak bisa dihapus.',
+  'before cutting below what is already reserved — reservation is released deliberately, never by a quantity edit.': 'sebelum menurunkan di bawah jumlah yang sudah direservasi — reservasi dilepas secara sengaja, bukan lewat perubahan jumlah.',
+  'Change a quantity or a request date before saving.': 'Ubah jumlah atau tanggal permintaan sebelum menyimpan.',
+  'quantity cannot go below 1 — a component cannot be removed from a work order.': 'jumlah tidak bisa kurang dari 1 — komponen tidak bisa dihapus dari perintah kerja.',
+  'unreserve first — quantity cannot go below the': 'lepas reservasi dulu — jumlah tidak bisa kurang dari',
+  'already reserved.': 'yang sudah direservasi.',
+  'Materials updated': 'Material diperbarui',
+  'Work order materials edited': 'Material perintah kerja diubah',
+  'Work order materials changed on': 'Material perintah kerja berubah pada',
+  'Production changed what this work order needs. Check the stock request before picking.': 'Produksi mengubah kebutuhan perintah kerja ini. Cek permintaan stok sebelum menyiapkan barang.',
   'Additional stock requested on': 'Stok tambahan diminta pada',
   'Production asked for extra material on top of this work order. Added lines can be declined.': 'Produksi meminta material tambahan di luar perintah kerja ini. Baris tambahan bisa ditolak.',
   'component requested': 'komponen diminta',
