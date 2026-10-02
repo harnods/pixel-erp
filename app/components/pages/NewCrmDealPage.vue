@@ -1085,7 +1085,7 @@ function onSave() {
 .si-unit-ro { flex: 1; display: flex; align-items: center; padding: 0 var(--mp-spacing-2); color: var(--mp-text-secondary, #64748b); }
 .si-tr--dragging { opacity: 0.4; }
 .si-tr--dragging .si-td--drag { cursor: grabbing; }
-.si-tr--dragover > .si-td { border-top: 2px solid var(--mp-border-focused, #2563eb); }
+.si-tr--dragover > .si-td { border-top: 2px solid var(--mp-border-focused); }
 .si-td--drag { padding: 0; text-align: center; color: var(--mp-text-placeholder); cursor: grab; }
 .si-td--del  { padding: 0; text-align: center; }
 .si-td--input { padding: 0; }
@@ -1103,7 +1103,7 @@ function onSave() {
   border: none; border-radius: 0;
   box-shadow: var(--mp-shadows-none, none); /* pixel-police-allow-shadow: removing the default shadow */
 }
-.si-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.si-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused); }
 .si-select--product :deep(.mp-input__control)::placeholder { color: var(--mp-text-placeholder); }
 
 /* Line-item validation — cell tint + inset red underline + tooltip, the same
