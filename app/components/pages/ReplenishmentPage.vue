@@ -11,10 +11,11 @@
  */
 import { ref, reactive, computed, onMounted, onUnmounted, watch, inject, type Ref } from 'vue'
 import {
-  toast, MpBadge, MpIcon, MpTooltip, MpBanner, MpBannerDescription, MpButton, MpButtonGroup,
+  toast, MpBadge, MpIcon, MpTooltip, MpBanner, MpBannerIcon, MpBannerDescription, MpButton, MpButtonGroup,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import { infoToast } from '~/utils/toasts'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
@@ -57,6 +58,17 @@ onMounted(() => {
 // from "active filters" (there is nothing to clear).
 const { options: whOptions, canSelectAll, warehouseId, isAllWarehouses, setWarehouse, resetFrom } =
   useReplenishmentWarehouse()
+
+// US-014 EH-01: a remembered warehouse that is gone resets the scope. Neutral status,
+// so it is an info toast (rule/toast-success-only), said once: the corrected scope is
+// stored straight after, so the next visit does not repeat it.
+onMounted(() => {
+  if (resetFrom.value === null) return
+  // Under the 60-character toast cap; the warehouse name is left out because a long
+  // one would push it over.
+  infoToast(t('Saved filter reset. Warehouse no longer available'))
+  setWarehouse(warehouseId.value)
+})
 
 // Mirror the scope into the shared singleton so the tab badges in [...slug].vue
 // count exactly the rows this table is showing. Cleared on unmount.
@@ -104,6 +116,11 @@ const isStale = computed(() => {
   void recalcTick.value
   return isRunStale(REPL_ASOF_ISO)
 })
+/** One whole sentence per case — a worklist that was never recalculated reads differently. */
+const staleMessage = computed(() => lastRunLabel.value
+  ? tf('Replenishment was last recalculated on {date}. Click the Recalculate button to update demand and suggested qty.', { date: lastRunLabel.value })
+  : t('Replenishment has not been recalculated yet. Click the Recalculate button to update demand and suggested qty.'))
+
 const lastRunLabel = computed(() => {
   void recalcTick.value
   const run = lastRun()
@@ -549,6 +566,12 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
     <!-- ── Stats + freshness ── -->
     <template #stats>
       <div class="rp-stats-wrap">
+        <!-- US-013 EH-01: stale numbers never block the worklist — they are called out,
+             above the figures they qualify. Icon + description, no title. -->
+        <MpBanner v-if="isStale" id="rp-stale-banner" variant="warning" align-items="center" data-devchange="replenishment-stale-banner">
+          <MpBannerIcon id="rp-stale-banner-icon" />
+          <MpBannerDescription>{{ staleMessage }}</MpBannerDescription>
+        </MpBanner>
         <div class="stats-section">
           <div class="stat-card stat-card--bordered">
             <div class="stat-title">{{ t('To order') }}</div>
@@ -573,18 +596,6 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
             <div class="stat-amount">{{ cardStats.noVendor }}</div>
           </div>
         </div>
-        <!-- US-014 EH-01: a remembered warehouse that is gone resets the scope, visibly. -->
-        <MpBanner v-if="resetFrom" variant="info">
-          <MpBannerDescription>
-            {{ t('A saved filter was reset') }} ({{ resetFrom }} {{ t('is no longer available') }}). {{ t('Pick a warehouse to save a new one.') }}
-          </MpBannerDescription>
-        </MpBanner>
-        <!-- US-013 EH-01: stale numbers never block the worklist — they are called out. -->
-        <MpBanner v-if="isStale" variant="warning">
-          <MpBannerDescription>
-            {{ t('Data as of') }} {{ lastRunLabel || asOfLabel }} — {{ t('refresh pending. Recalculate to update demand and suggested quantities.') }}
-          </MpBannerDescription>
-        </MpBanner>
         <div class="rp-freshness">
           <span>{{ t('As of') }} {{ asOfLabel }}</span>
           <span v-if="lastRunLabel" class="rp-freshness-sep">·</span>
@@ -607,6 +618,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
              them into a total (US-025 AC-02). -->
         <ErpFilterSelect
           id="rp-warehouse-select"
+          data-devchange="replenishment-filter-reset-toast"
           :model-value="warehouseId"
           :placeholder="t('Warehouse')"
           :options="warehouseSelectOptions"

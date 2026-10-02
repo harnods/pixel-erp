@@ -66,13 +66,15 @@ export function useReplenishmentWarehouse() {
   /**
    * US-014 EH-01: the remembered warehouse is no longer available (removed,
    * deactivated, or replenishment turned off for it), so the scope was reset. The
-   * page shows "A saved filter was reset" with this name until the user picks again.
+   * page says so once in a toast, then stores the corrected scope. `null` = nothing
+   * was reset; otherwise the warehouse's name, or '' when it is gone entirely.
    */
   const resetFrom = computed<string | null>(() => {
     const saved = selectedId.value
     if (saved === ALL_WAREHOUSES || !saved) return null
     if (options.value.some((w) => w.id === saved)) return null
-    return warehouses.find((w) => w.id === saved)?.name ?? saved
+    // '' when the warehouse is gone entirely: an internal id is never shown to the user.
+    return warehouses.find((w) => w.id === saved)?.name ?? ''
   })
 
   /** True when the current scope spans more than one warehouse. */

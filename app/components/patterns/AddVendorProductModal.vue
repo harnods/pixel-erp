@@ -25,6 +25,7 @@ import { ref, computed, watch } from 'vue'
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalCloseButton,
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpFormHelpText, MpInput, MpAutocomplete,
+  MpButton, MpButtonGroup,
 } from '@mekari/pixel3'
 import { CATALOG } from '~/data/catalog'
 import { upsertVendorItem } from '~/data/vendorItems'
@@ -186,10 +187,10 @@ function submit(): void {
         </div>
       </MpModalBody>
       <MpModalFooter>
-        <div class="avp-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="submit">{{ t('Add product') }}</button>
-        </div>
+        <MpButtonGroup class="erp-action-footer" data-devchange="vendor-terms-mpbutton">
+          <MpButton id="avp-cancel" variant="ghost" is-rounded @click="close">{{ t('Cancel') }}</MpButton>
+          <MpButton id="avp-submit" variant="primary" is-rounded @click="submit">{{ t('Add product') }}</MpButton>
+        </MpButtonGroup>
       </MpModalFooter>
     </MpModalContent>
   </MpModal>
@@ -222,7 +223,6 @@ function submit(): void {
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-secondary);
 }
-.avp-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); }
 
 @media (max-width: 560px) {
   .avp-row { grid-template-columns: 1fr; }

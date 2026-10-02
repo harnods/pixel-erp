@@ -67,7 +67,7 @@ const props = defineProps<{
 }>()
 
 const router = useRouter()
-const { t } = useLocale()
+const { t, tf } = useLocale()
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 
@@ -168,9 +168,7 @@ const columns = computed<TableColumn[]>(() => {
     // one shared "Purchase unit" heading would be a lie the moment the minimum and
     // the step are quoted in different units, which is the case this now supports.
     { key: 'moq', label: t('MOQ'), align: 'right', sortable: true, sortType: 'number' },
-    // "Purchase multiplier" was trade jargon. This header is the whole sentence, so
-    // the meaning survives without the tooltip being opened. It wraps to two lines
-    // at normal widths, which is the price of it explaining itself.
+    // Named the same as everywhere else this term appears (worklist, product page).
     { key: 'purchaseMultiple', label: t('Purchase multiplier'), align: 'right', sortable: true, sortType: 'number' },
   ]
   // US-19 — no price permission means these columns do not exist for this user.
@@ -387,14 +385,16 @@ const canEditTerms = computed(() => !!props.vendorMasterId)
       <!-- The create action sits at the top right of the surface it creates into,
            the same place every index page puts it. Import and export are table
            tools, so they live with the table's own controls instead. -->
-      <button
+      <MpButton
         v-if="canEditTerms"
-        class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before vp-add-btn"
-        type="button"
+        id="vp-add-product"
+        variant="primary"
+        left-icon="add"
+        is-rounded
+        class="vp-add-btn"
+        data-devchange="vendor-terms-mpbutton"
         @click="addOpen = true"
-      >
-        <MpIcon name="add" size="sm" /> {{ t('Product') }}
-      </button>
+      >{{ t('Product') }}</MpButton>
     </div>
 
     <!-- The price-permission state still needs saying in the body: there is no
@@ -427,12 +427,13 @@ const canEditTerms = computed(() => !!props.vendorMasterId)
         <div class="vp-toolbar">
           <!-- Import sits next to Export: they are the same job in two directions,
                and pairing them keeps the file-transfer tools together. -->
-          <button
+          <MpButton
             v-if="canEditTerms"
-            class="btn-enterprise btn-enterprise--secondary"
-            type="button"
+            id="vp-import-terms"
+            variant="secondary"
+            is-rounded
             @click="router.push(`/vendors/${contactId}/import-terms`)"
-          >{{ t('Import terms') }}</button>
+          >{{ t('Import terms') }}</MpButton>
           <MpTooltip id="vp-tt-export" :label="t('Export')" placement="bottom" use-portal>
             <MpButton variant="ghost" is-rounded :aria-label="t('Export')" @click="exportOpen = true">
               <MpIcon name="download" size="md" />
@@ -510,12 +511,13 @@ const canEditTerms = computed(() => !!props.vendorMasterId)
               @keyup.esc="cancelEdit"
               @blur="commitEdit(row as VendorProductRow, 'moq')"
             />
-            <button
+            <MpButton
               v-else-if="canEditTerms"
+              :id="`vp-editable-${(row as VendorProductRow).sku}-moq`"
+              variant="ghost"
               class="vp-editable"
-              type="button"
               @click="startEdit(row as VendorProductRow, 'moq')"
-            >{{ (row as VendorProductRow).moq.toLocaleString('id-ID') }}</button>
+            >{{ (row as VendorProductRow).moq.toLocaleString('id-ID') }}</MpButton>
             <span v-else>{{ (row as VendorProductRow).moq.toLocaleString('id-ID') }}</span>
             <span class="vp-term-unit">{{ (row as VendorProductRow).moqUnit }}</span>
           </div>
@@ -523,7 +525,7 @@ const canEditTerms = computed(() => !!props.vendorMasterId)
           <!-- Terms nobody has revisited drift away from what the vendor actually
                agreed. Flagging the age is what makes the field keep its trust. -->
           <span v-if="termsStale(row as VendorProductRow)" class="vp-stale">
-            {{ t('Last reviewed') }} {{ Math.round((row as VendorProductRow).termsUpdatedAgo / 30) }} {{ t('months ago') }}
+            {{ tf('Last reviewed {n} months ago', { n: Math.round((row as VendorProductRow).termsUpdatedAgo / 30) }) }}
           </span>
         </div>
       </template>
@@ -544,12 +546,13 @@ const canEditTerms = computed(() => !!props.vendorMasterId)
               @keyup.esc="cancelEdit"
               @blur="commitEdit(row as VendorProductRow, 'purchaseMultiple')"
             />
-            <button
+            <MpButton
               v-else-if="canEditTerms"
+              :id="`vp-editable-${(row as VendorProductRow).sku}-purchaseMultiple`"
+              variant="ghost"
               class="vp-editable"
-              type="button"
               @click="startEdit(row as VendorProductRow, 'purchaseMultiple')"
-            >{{ (row as VendorProductRow).purchaseMultiple.toLocaleString('id-ID') }}</button>
+            >{{ (row as VendorProductRow).purchaseMultiple.toLocaleString('id-ID') }}</MpButton>
             <span v-else>{{ (row as VendorProductRow).purchaseMultiple.toLocaleString('id-ID') }}</span>
             <span class="vp-term-unit">{{ (row as VendorProductRow).multipleUnit }}</span>
           </div>
@@ -816,7 +819,8 @@ const canEditTerms = computed(() => !!props.vendorMasterId)
 /* An editable value reads as a value, not a button — the affordance is the hover
    underline plus the dotted rule, so the resting table stays calm. */
 .vp-editable {
-  border: 0;
+  height: auto; min-width: 0;
+  border: 0; border-radius: 0;
   background: none;
   padding: 0;
   font: inherit;

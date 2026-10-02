@@ -3752,6 +3752,13 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   // "Vendor" never "Pemasok"; noun-only labels on create actions.
   'Request to purchase': 'Ajukan pembelian',
   'Create purchase request': 'Buat permintaan pembelian',
+  'Failed to create draft purchase order': 'Gagal membuat draf pesanan pembelian',
+  'Saved filter reset. Warehouse no longer available': 'Filter tersimpan direset. Gudang tidak lagi tersedia',
+  'Replenishment was last recalculated on {date}. Click the Recalculate button to update demand and suggested qty.':
+    'Pengisian ulang terakhir dihitung ulang pada {date}. Klik tombol Hitung ulang untuk memperbarui permintaan dan qty disarankan.',
+  'Replenishment has not been recalculated yet. Click the Recalculate button to update demand and suggested qty.':
+    'Pengisian ulang belum pernah dihitung ulang. Klik tombol Hitung ulang untuk memperbarui permintaan dan qty disarankan.',
+  'Last reviewed {n} months ago': 'Terakhir ditinjau {n} bulan lalu',
   '1 {unit} = {n} {base}': '1 {unit} = {n} {base}',
   'An order is raised to the MOQ, then rounded up to the purchase multiplier.': 'Pesanan dinaikkan ke MOQ, lalu dibulatkan ke atas sesuai kelipatan pembelian.',
   'Apply to selected': 'Terapkan ke yang dipilih',
@@ -3956,7 +3963,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Vendor is inactive': 'Vendor tidak aktif',
   'Nothing to order': 'Tidak ada yang dipesan',
   'Missing pack conversion': 'Konversi kemasan belum ada',
-  'No draft purchase order could be created': 'Tidak ada draf pesanan pembelian yang bisa dibuat',
   // Bulk PR → 1 PO merge
   'Select vendor': 'Pilih vendor',
   'measured per warehouse': 'diukur per gudang',
@@ -4001,8 +4007,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Last price': 'Harga terakhir',
   'Last price date': 'Tanggal harga terakhir',
   'No purchase yet': 'Belum ada pembelian',
-  'Last reviewed': 'Terakhir ditinjau',
-  'months ago': 'bulan lalu',
   'Search product code or name': 'Cari kode atau nama produk',
   'Change history': 'Riwayat perubahan',
   'Import terms': 'Impor ketentuan',
@@ -4096,11 +4100,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Airene\'s recommended preferred vendor': 'Vendor utama yang direkomendasikan Airene',
   'Unclassified': 'Belum terklasifikasi',
   'Missing lead time, or tracking turned off': 'Belum ada waktu tunggu, atau pelacakan nonaktif',
-  'A saved filter was reset': 'Filter tersimpan telah direset',
-  'is no longer available': 'tidak lagi tersedia',
-  'Pick a warehouse to save a new one.': 'Pilih gudang untuk menyimpan filter baru.',
-  'Data as of': 'Data per',
-  'refresh pending. Recalculate to update demand and suggested quantities.': 'menunggu pembaruan. Hitung ulang untuk memperbarui permintaan dan qty disarankan.',
   'Search product, vendor or warehouse': 'Cari produk, vendor, atau gudang',
   'Search product or warehouse': 'Cari produk atau gudang',
   'Covered by': 'Tercukupi oleh',

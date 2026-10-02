@@ -18,6 +18,7 @@ import { ref, computed, watch } from 'vue'
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalCloseButton,
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpFormHelpText, MpInput, MpAutocomplete,
+  MpButton, MpButtonGroup,
 } from '@mekari/pixel3'
 import { unitOptionsForSku } from '~/data/productUnits'
 
@@ -158,10 +159,10 @@ function submit(): void {
         </div>
       </MpModalBody>
       <MpModalFooter>
-        <div class="evt-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="submit">{{ t('Save changes') }}</button>
-        </div>
+        <MpButtonGroup class="erp-action-footer" data-devchange="vendor-terms-mpbutton">
+          <MpButton id="evt-cancel" variant="ghost" is-rounded @click="close">{{ t('Cancel') }}</MpButton>
+          <MpButton id="evt-submit" variant="primary" is-rounded @click="submit">{{ t('Save changes') }}</MpButton>
+        </MpButtonGroup>
       </MpModalFooter>
     </MpModalContent>
   </MpModal>
@@ -202,7 +203,6 @@ function submit(): void {
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-critical, #c0392b);
 }
-.evt-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); }
 
 @media (max-width: 560px) {
   .evt-row { flex-direction: column; align-items: stretch; }

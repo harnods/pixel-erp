@@ -21,7 +21,7 @@
  */
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { MpIcon, MpBanner, MpBannerIcon, MpBannerDescription } from '@mekari/pixel3'
+import { MpIcon, MpBanner, MpBannerIcon, MpBannerDescription, MpButton, MpButtonGroup, MpTextlink } from '@mekari/pixel3'
 import ErpDropzone from '~/components/patterns/ErpDropzone.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ScenarioFab, { type Scenario } from '~/components/patterns/ScenarioFab.vue'
@@ -187,7 +187,7 @@ function commitImport(): void {
   <div class="ivt-page">
     <div class="ivt-titlebar">
       <div class="ivt-titlebar-left">
-        <button class="btn-enterprise btn-enterprise--plain ivt-breadcrumb" type="button" @click="goBack">{{ contact?.displayName ?? t('Vendor') }}</button>
+        <MpTextlink id="ivt-breadcrumb" as="a" class="ivt-breadcrumb" @click.prevent="goBack">{{ contact?.displayName ?? t('Vendor') }}</MpTextlink>
         <h1 class="ivt-title">{{ t('Import ordering terms') }}</h1>
       </div>
     </div>
@@ -207,15 +207,13 @@ function commitImport(): void {
               <div class="ivt-step-body">
                 <h2 class="ivt-step-title">{{ t('Download the template') }}</h2>
                 <p class="ivt-step-desc">{{ t('The template is pre-filled with this vendor’s current products and terms, so you only change what has moved.') }}</p>
-                <button class="btn-enterprise btn-enterprise--secondary" type="button">
-                  {{ t('Download template file') }}
-                </button>
+                <MpButton id="ivt-download-template" variant="secondary" is-rounded>{{ t('Download template file') }}</MpButton>
 
                 <div class="ivt-accordion">
-                  <button class="btn-enterprise btn-enterprise--plain ivt-accordion-head" type="button" @click="formatOpen = !formatOpen">
+                  <MpButton id="ivt-format-toggle" variant="ghost" class="ivt-accordion-head" @click="formatOpen = !formatOpen">
                     <span>{{ t('Format requirements') }}</span>
                     <MpIcon :name="formatOpen ? 'arrows-up' : 'arrows-down'" size="sm" />
-                  </button>
+                  </MpButton>
                   <ul v-if="formatOpen" class="ivt-accordion-list">
                     <!-- The row limit is stated BEFORE upload, not after a failure. -->
                     <li>{{ t('Maximum') }} {{ ROW_LIMIT.toLocaleString('id-ID') }} {{ t('rows per file') }}</li>
@@ -250,8 +248,10 @@ function commitImport(): void {
           </div>
 
           <footer class="ivt-footer">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="goBack">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="reviewFile">{{ t('Review import') }}</button>
+            <MpButtonGroup class="erp-action-footer" data-devchange="vendor-terms-mpbutton">
+              <MpButton id="ivt-cancel" variant="ghost" is-rounded @click="goBack">{{ t('Cancel') }}</MpButton>
+              <MpButton id="ivt-review" variant="primary" is-rounded @click="reviewFile">{{ t('Review import') }}</MpButton>
+            </MpButtonGroup>
           </footer>
         </template>
 
@@ -305,10 +305,12 @@ function commitImport(): void {
           </ErpTablePage>
 
           <footer class="ivt-footer">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="stage = 'upload'">{{ t('Back') }}</button>
-            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="commitImport">
-              {{ t('Import') }} {{ validRows.length }} {{ t('rows') }}
-            </button>
+            <MpButtonGroup class="erp-action-footer">
+              <MpButton id="ivt-back" variant="ghost" is-rounded @click="stage = 'upload'">{{ t('Back') }}</MpButton>
+              <MpButton id="ivt-import" variant="primary" is-rounded @click="commitImport">
+                {{ t('Import') }} {{ validRows.length }} {{ t('rows') }}
+              </MpButton>
+            </MpButtonGroup>
           </footer>
         </template>
 
@@ -320,14 +322,8 @@ function commitImport(): void {
               {{ validRows.length }} {{ t('rows imported') }}<template v-if="rejectedRows.length">, {{ rejectedRows.length }} {{ t('skipped') }}</template>.
             </p>
             <div class="ivt-result-actions">
-              <button
-                v-if="rejectedRows.length"
-                class="btn-enterprise btn-enterprise--secondary"
-                type="button"
-              >{{ t('Download error report') }}</button>
-              <button class="btn-enterprise btn-enterprise--primary" type="button" @click="goBack">
-                {{ t('Back to products') }}
-              </button>
+              <MpButton v-if="rejectedRows.length" id="ivt-error-report" variant="secondary" is-rounded>{{ t('Download error report') }}</MpButton>
+              <MpButton id="ivt-done" variant="primary" is-rounded @click="goBack">{{ t('Back to products') }}</MpButton>
             </div>
           </div>
         </template>
@@ -342,15 +338,8 @@ function commitImport(): void {
 <style scoped>
 .ivt-page { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .ivt-titlebar { padding: var(--mp-spacing-4) var(--mp-spacing-6) var(--mp-spacing-3); }
-.ivt-breadcrumb {
-  border: 0;
-  background: none;
-  padding: 0;
-  font-size: var(--mp-font-sizes-sm);
-  color: var(--mp-text-link);
-  cursor: pointer;
-}
-.ivt-breadcrumb:hover { text-decoration: underline; }
+/* MpTextlink pins 14px with a layered !important; scale it to the 12px breadcrumb. */
+.ivt-breadcrumb { display: flex; width: fit-content; zoom: calc(12 / 14); }
 .ivt-title {
   margin: 0;
   font-size: var(--mp-font-sizes-xl);
@@ -406,6 +395,7 @@ function commitImport(): void {
 /* ── Format requirements accordion ── */
 .ivt-accordion { margin-top: var(--mp-spacing-4); }
 .ivt-accordion-head {
+  height: auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -449,9 +439,6 @@ function commitImport(): void {
 
 /* ── Footer ── */
 .ivt-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--mp-spacing-2);
   margin-top: var(--mp-spacing-8);
   padding-top: var(--mp-spacing-5);
   border-top: 1px solid var(--mp-border-default, #e3e7e9);
@@ -470,6 +457,5 @@ function commitImport(): void {
 
 @media (max-width: 640px) {
   .ivt-stage { padding: var(--mp-spacing-4); }
-  .ivt-footer { flex-direction: column-reverse; }
 }
 </style>

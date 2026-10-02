@@ -204,7 +204,7 @@ function confirmConvert(payload: {
   const result = convertPurchaseRequestToPos(pr, payload.warehouseId, payload.vendorChoices, payload.qtyOverrides)
   convertOpen.value = false
   if (result.created.length === 0) {
-    toast.notify({ variant: 'error', title: t('No draft purchase order could be created') })
+    toast.notify({ variant: 'error', title: t('Failed to create draft purchase order'), maxWidth: 'max-content' })
     return
   }
   afterConvert(result)
@@ -230,7 +230,7 @@ function confirmBulkConvert(payload: {
   const result = convertPurchaseRequestsToPos(prs, payload.warehouseId, payload.vendorChoices, payload.qtyOverrides)
   bulkConvertOpen.value = false
   if (result.created.length === 0) {
-    toast.notify({ variant: 'error', title: t('No draft purchase order could be created') })
+    toast.notify({ variant: 'error', title: t('Failed to create draft purchase order'), maxWidth: 'max-content' })
     return
   }
   afterConvert(result)

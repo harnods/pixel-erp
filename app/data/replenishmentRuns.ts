@@ -84,7 +84,7 @@ export const REPL_STALE_AFTER_HOURS = 24
 /**
  * Whether the worklist's numbers are stale (PRD US-013 VR-02 / EH-01, US-002 EH-01
  * "stale velocity"): no recalculation has run within 24 hours of the data's as-of
- * day. The worklist still loads — it shows a "data as of …, refresh pending"
+ * day. The worklist still loads — it shows a "last recalculated on …" warning
  * banner instead of blocking.
  */
 export function isRunStale(asOf: string, run: ReplenishmentRun | null = lastRun()): boolean {

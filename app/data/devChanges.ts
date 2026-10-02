@@ -28,6 +28,30 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'replenishment-filter-reset-toast',
+    title: 'Replenishment: "saved filter was reset" is now a toast',
+    description:
+      'When the remembered warehouse filter is no longer available, the page says so once in an info toast instead of a banner, then stores the corrected filter so it is not repeated. The copy stays under the 60-character toast cap.',
+    date: '2026-10-02',
+    files: ['ReplenishmentPage.vue', 'useReplenishmentWarehouse.ts'],
+  },
+  {
+    id: 'replenishment-stale-banner',
+    title: 'Replenishment: stale-data warning moved above the stats',
+    description:
+      'The "last recalculated" warning now sits above the summary figures it qualifies, uses the Pixel warning banner with an icon and no title, and reads as one translated sentence that names the Recalculate button.',
+    date: '2026-10-02',
+    files: ['ReplenishmentPage.vue'],
+  },
+  {
+    id: 'vendor-terms-mpbutton',
+    title: 'Vendor ordering terms: standard Pixel buttons',
+    description:
+      'The Products tab on a vendor, its Add product and Edit ordering terms modals, and the Import ordering terms page now use MpButton in an MpButtonGroup footer instead of legacy btn-enterprise buttons (rule/btn-mpbutton-standard, rule/btn-responsive-footer). "Last reviewed N months ago" is one translated sentence.',
+    date: '2026-10-02',
+    files: ['VendorProductsTab.vue', 'EditVendorTermsModal.vue', 'AddVendorProductModal.vue', 'ImportVendorTermsPage.vue'],
+  },
+  {
     id: 'crm-generic-actions-column',
     title: 'Custom module: actions column with kebab menu',
     description:
