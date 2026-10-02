@@ -379,7 +379,7 @@ function buildSeed(): StockRequest[] {
       workOrderId: wo?.id ?? `wo-${s.woIndex + 1}`,
       workOrderNumber: wo?.number ?? `WO-2026-${String(s.woIndex + 1).padStart(4, '0')}`,
       requestDate,
-      number: `SR-2026-${String(i + 1).padStart(4, '0')}`,
+      number: `SR-${TODAY_ISO.slice(0, 4)}-${String(i + 1).padStart(4, '0')}`,
       lines,
     }
   })
@@ -398,15 +398,21 @@ const SNAPSHOT_KEY = 'stockRequests.v2'
 const snapshot = loadSnapshot<StockRequest>(SNAPSHOT_KEY)
 export const stockRequests = reactive<StockRequest[]>(snapshot ?? buildSeed())
 
-const SR_NO_RE = /^SR-2026-(\d+)$/
-/** Next request number, continuing from the highest already issued. */
+/**
+ * W-9 / OPEN-15 — SR-YYYY-NNNN, per tenant, **reset yearly**, not gapless. The
+ * year comes from the app's current date rather than being hard-coded, so the
+ * series rolls over on its own; the counter continues from the highest number
+ * already issued IN THAT YEAR, which is what "reset yearly" means.
+ */
+const SR_NO_RE = /^SR-(\d{4})-(\d+)$/
 function nextRequestNumber(): string {
+  const year = TODAY_ISO.slice(0, 4)
   let max = 0
   for (const r of stockRequests) {
     const m = r.number?.match(SR_NO_RE)
-    if (m) max = Math.max(max, parseInt(m[1]!, 10))
+    if (m && m[1] === year) max = Math.max(max, parseInt(m[2]!, 10))
   }
-  return `SR-2026-${String(max + 1).padStart(4, '0')}`
+  return `SR-${year}-${String(max + 1).padStart(4, '0')}`
 }
 
 /** Persist the stock-request snapshot (call after any mutation). */
