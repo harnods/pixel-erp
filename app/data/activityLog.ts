@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
 import type { ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
+import { useLocale } from '~/composables/useLocale'
 
 /**
  * Activity log — the audit trail behind "Last updated by …" on a detail page.
@@ -18,6 +19,12 @@ import type { ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
  * why" leaves no trace in the resulting numbers. Pages merge these entries with the
  * derived ones (see `entriesFor`), so a record with no logged history still reads
  * the way it always did.
+ *
+ * **Language.** Entries are STORED in English and translated on read (see
+ * `entriesFor`). A log is a record of what happened, not of which language the
+ * actor had selected at the time; storing the rendered string would freeze a
+ * German-- or Indonesian-rendered entry into a trail somebody else reads in
+ * English.
  *
  * **Retention.** v0.5 keeps stock transitions — reserve, release, issue, return —
  * with the stock history, never pruned with the UI changelog: they are financial
@@ -86,9 +93,18 @@ export function entriesFor(
   subjectId: string,
   fallback: ActivityEntry[] = [],
 ): ActivityEntry[] {
+  const { t } = useLocale()
   const logged: ActivityEntry[] = activityLog
     .filter(e => e.subjectType === subjectType && e.subjectId === subjectId)
-    .map(e => ({ date: e.date, user: e.user, activity: e.activity, details: e.details }))
+    .map(e => ({
+      date: e.date,
+      user: e.user,
+      activity: t(e.activity),
+      // Labels and the fixed value vocabulary (triggers, sources, dispositions)
+      // translate; a free-text reason or a product name has no key and falls
+      // through unchanged.
+      details: e.details.map(d => ({ label: t(d.label), value: t(d.value) })),
+    }))
   return [...logged, ...fallback].sort((a, b) => b.date.localeCompare(a.date))
 }
 

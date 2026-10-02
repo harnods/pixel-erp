@@ -102,7 +102,8 @@ const unreserveOpen = ref(false)
 
 function onReserve(productIds: string[]) {
   if (!req.value) return
-  const r = reserveRequestProducts(req.value.id, productIds)
+  // PPIC acting on the dashboard side — the default source, logged as such.
+  const r = reserveRequestProducts(req.value.id, productIds, { source: 'stock-request' })
   reserveOpen.value = false
   if (r.reservedProducts === 0) {
     toast.notify({ variant: 'error', title: t('No stock to reserve — the destination warehouse has none of the selected components'), maxWidth: 'max-content' })
@@ -117,7 +118,9 @@ function onReserve(productIds: string[]) {
 
 function onUnreserve(payload: { productIds: string[]; disposition: UnreserveDisposition; reason: string }) {
   if (!req.value) return
-  const released = unreserveRequestProducts(req.value.id, payload.productIds, payload.disposition)
+  const released = unreserveRequestProducts(req.value.id, payload.productIds, payload.disposition, {
+    source: 'stock-request', reason: payload.reason,
+  })
   unreserveOpen.value = false
   if (released === 0) return
   const where = payload.disposition === 'return-to-warehouse'

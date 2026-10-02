@@ -152,15 +152,9 @@ function onActionSelect(item: string) {
 function deleteWorkOrder() {
   const w = wo.value
   if (!w) return
-  const released = releaseForCanceledWorkOrder(w.id)
+  const released = releaseForCanceledWorkOrder(w.id, { user: STAFF[0]!, source: 'work-order' })
   w.status = 'canceled'
   persistWorkOrders()
-  if (released.qty > 0) {
-    logReservation(t('Released reservation'), released.products.map(p => p.productId), [
-      { label: t('Qty released'), value: `${released.qty}` },
-      { label: t('Trigger'), value: t('Work order deletion') },
-    ])
-  }
   toast.notify({
     variant: 'success',
     title: released.qty > 0
@@ -183,7 +177,7 @@ const cancelRestoredQty = computed(() => reservationLines.value.reduce((s, l) =>
 function onCancelWorkOrder(reason: string) {
   const w = wo.value
   if (!w) return
-  const released = releaseForCanceledWorkOrder(w.id)
+  const released = releaseForCanceledWorkOrder(w.id, { user: STAFF[0]!, source: 'work-order', reason })
   const restored = cancelRestoredQty.value
   w.status = 'canceled'
   w.endDate = new Date().toISOString().slice(0, 10)
@@ -197,12 +191,10 @@ function onCancelWorkOrder(reason: string) {
     ],
     {
       user: STAFF[0]!,
-      activity: t('Work order canceled'),
+      activity: 'Work order canceled',
       details: [
-        { label: t('Reason'), value: reason },
-        { label: t('Qty released'), value: `${released.qty}` },
-        { label: t('Qty restored'), value: `${restored}` },
-        { label: t('Trigger'), value: t('Work order cancellation') },
+        { label: 'Reason', value: reason },
+        { label: 'Qty restored', value: `${restored}` },
       ],
     },
   )
@@ -223,22 +215,21 @@ function onAdjust(payload: { changes: DemandChange[]; reason: string }) {
   // had to release, reserve again on this same save by available qty.
   const r = applyDemandChanges(w.id, payload.changes, STAFF[0]!, 'adjust', {
     autoReserve: reservationOnWorkOrder(),
+    ctx: { user: STAFF[0]!, source: 'work-order', reason: payload.reason },
   })
   adjustOpen.value = false
 
   const details = [
-    { label: t('Reason'), value: payload.reason },
-    ...r.increased.map(i => ({ label: `${t('Increased')} — ${i.product}`, value: `+${i.delta}` })),
-    ...r.decreased.map(d => ({ label: `${t('Decreased')} — ${d.product}`, value: `-${d.delta}` })),
-    ...(r.released.qty > 0 ? [{ label: t('Qty released'), value: `${r.released.qty}` }] : []),
-    ...(r.reserved.reservedQty > 0 ? [{ label: t('Qty reserved'), value: `${r.reserved.reservedQty}` }] : []),
+    { label: 'Reason', value: payload.reason },
+    ...r.increased.map(i => ({ label: `Increased — ${i.product}`, value: `+${i.delta}` })),
+    ...r.decreased.map(d => ({ label: `Decreased — ${d.product}`, value: `-${d.delta}` })),
   ]
   logActivityFor(
     [
       { type: 'work-order' as const, id: w.id },
       ...(stockRequest.value ? [{ type: 'stock-request' as const, id: stockRequest.value.id }] : []),
     ],
-    { user: STAFF[0]!, activity: t('Work order adjusted'), details },
+    { user: STAFF[0]!, activity: 'Work order adjusted', details },
   )
 
   const parts: string[] = []
@@ -392,7 +383,7 @@ const lastUpdatedEntry = computed(() => wo.value ? lastActivity('work-order', wo
 
 function onReserve(productIds: string[]) {
   if (!wo.value) return
-  const r = reserveWorkOrderProducts(wo.value.id, productIds)
+  const r = reserveWorkOrderProducts(wo.value.id, productIds, { user: STAFF[0]!, source: 'work-order' })
   reserveOpen.value = false
   if (r.reservedProducts === 0) {
     toast.notify({ variant: 'error', title: t('No stock to reserve — the destination warehouse has none of the selected components'), maxWidth: 'max-content' })
@@ -404,57 +395,19 @@ function onReserve(productIds: string[]) {
   if (r.skippedProducts > 0) parts.push(`${r.skippedProducts} ${t('had no stock')}`)
   const title = parts.join(' · ')
   toast.notify({ variant: 'success', title, maxWidth: 'max-content' })
-  // UC-02 — every reservation is logged with actor, product and qty, and with the
-  // surface it was made from: "from work order page" with actor (Production), as
-  // against a reservation made by PPIC on Stock requests.
-  logReservation(t('Reserved material'), productIds, [
-    { label: t('Qty reserved'), value: `${r.reservedQty}` },
-    { label: t('Source'), value: t('Work order page (Production)') },
-  ])
-}
-
-/**
- * Write one reservation event against BOTH the work order and its stock request:
- * the two surfaces show the same allocation, so a trail visible on only one of
- * them sends whoever is looking at the other to the wrong conclusion.
- */
-function logReservation(activity: string, productIds: string[], extra: { label: string; value: string }[]) {
-  const w = wo.value
-  if (!w) return
-  const req = requestForWorkOrder(w.id)
-  const names = productIds
-    .map(id => reservationLines.value.find(l => l.productId === id)?.product ?? id)
-    .join(', ')
-  logActivityFor(
-    [
-      { type: 'work-order' as const, id: w.id },
-      ...(req ? [{ type: 'stock-request' as const, id: req.id }] : []),
-    ],
-    {
-      user: STAFF[0]!,
-      activity,
-      details: [{ label: t('Components'), value: names }, ...extra],
-    },
-  )
 }
 
 function onUnreserve(payload: { productIds: string[]; disposition: UnreserveDisposition; reason: string }) {
   if (!wo.value) return
-  const released = unreserveWorkOrderProducts(wo.value.id, payload.productIds, payload.disposition)
+  const released = unreserveWorkOrderProducts(wo.value.id, payload.productIds, payload.disposition, {
+    user: STAFF[0]!, source: 'work-order', reason: payload.reason,
+  })
   unreserveOpen.value = false
   if (released === 0) return
   const where = payload.disposition === 'return-to-warehouse'
     ? t('returned to warehouse')
     : t('charged to production cost')
   toast.notify({ variant: 'success', title: `${released} ${t('unit unreserved')} — ${where}`, maxWidth: 'max-content' })
-  // UC-15 R-1(c) — the manual release trigger. Logged with the same shape as the
-  // two automatic ones so the three reconcile against the stock ledger.
-  logReservation(t('Released reservation'), payload.productIds, [
-    { label: t('Qty released'), value: `${released}` },
-    { label: t('Trigger'), value: t('Manual unreserve') },
-    { label: t('Disposition'), value: where },
-    ...(payload.reason ? [{ label: t('Reason'), value: payload.reason }] : []),
-  ])
 }
 
 // Reserved qty per component — shown in the Raw materials table.
@@ -558,17 +511,7 @@ function completeWorkOrder() {
   // through here — its remaining reserve stays reserved, as the job still means
   // to use it.) Material lost or damaged must be recorded as consumption BEFORE
   // completing, or it is released here as if it were still on the shelf.
-  const released = releaseOnCompletion(wo.value.id)
-  if (released.qty > 0) {
-    logReservation(
-      t('Released reservation'),
-      released.products.map(p => p.productId),
-      [
-        { label: t('Qty released'), value: `${released.qty}` },
-        { label: t('Trigger'), value: t('Work order completion') },
-      ],
-    )
-  }
+  const released = releaseOnCompletion(wo.value.id, { user: STAFF[0]!, source: 'work-order' })
 
   toast.notify({
     variant: 'success',

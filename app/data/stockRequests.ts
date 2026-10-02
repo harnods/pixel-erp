@@ -4,6 +4,7 @@ import { workOrders, type WorkOrder, type WorkOrderStatus } from './workOrders'
 import { billOfMaterials, catalogProduct } from './billOfMaterials'
 import { getWarehouseDetail, isBatchTracked, isSerialized } from './warehouseDetails'
 import { loadSnapshot, saveSnapshot } from './persist'
+import { logActivityFor } from './activityLog'
 import type { PartialMode } from './productionSettings'
 
 /**
@@ -618,10 +619,11 @@ export function reservableQty(line: StockRequestLine): number {
  * purchase (C-3, by available qty). Returns the reserved qty, or undefined when
  * there was nothing to reserve.
  */
-export function reserveStock(id: string): number | undefined {
+export function reserveStock(id: string, ctx: ActivityContext = {}): number | undefined {
   const req = stockRequests.find(r => r.id === id)
   if (!req) return undefined
   let reserved = 0
+  const touched: string[] = []
   for (const line of req.lines) {
     if (line.rejected) continue
     const take = reservableQty(line)
@@ -629,9 +631,14 @@ export function reserveStock(id: string): number | undefined {
     line.reserved += take
     line.destAvailable -= take
     reserved += take
+    if (!touched.includes(line.productId)) touched.push(line.productId)
   }
   if (reserved === 0) return undefined
   persistStockRequests()
+  logRequestEvent(req, 'Reserved material', [
+    { label: 'Components', value: productNames(req, touched) },
+    { label: 'Qty reserved', value: `${reserved}` },
+  ], ctx)
   return reserved
 }
 
@@ -643,11 +650,22 @@ export function reserveStock(id: string): number | undefined {
  * which is why only a tagged line can be rejected — and why the guard lives here
  * rather than only in the UI that offers the button.
  */
-export function rejectRequestLine(requestId: string, line: StockRequestLine): boolean {
+export function rejectRequestLine(
+  requestId: string,
+  line: StockRequestLine,
+  ctx: ActivityContext = {},
+): boolean {
   const req = stockRequests.find(r => r.id === requestId)
   if (!req || !canRejectLine(line)) return false
   line.rejected = true
   persistStockRequests()
+  // W-7 — a rejection is a decision about somebody else's demand, so it is logged
+  // against the work order too; production resolves it by readjusting.
+  logRequestEvent(req, 'Line rejected', [
+    { label: 'Component', value: line.product },
+    { label: 'Qty declined', value: `${line.qty}` },
+    { label: 'Line', value: line.tag === 'adjustment' ? 'Adjustment' : 'Additional stock' },
+  ], ctx)
   return true
 }
 
@@ -833,8 +851,9 @@ export function lineReadiness(line: StockRequestLine): LineReadiness {
 export function reserveWorkOrderProducts(
   workOrderId: string,
   productIds: string[],
+  ctx: ActivityContext = { source: 'work-order' },
 ): { reservedProducts: number; reservedQty: number; skippedProducts: number; partialProducts: number } {
-  return reserveRequestProducts(requestForWorkOrder(workOrderId)?.id ?? '', productIds)
+  return reserveRequestProducts(requestForWorkOrder(workOrderId)?.id ?? '', productIds, ctx)
 }
 
 /**
@@ -846,6 +865,7 @@ export function reserveWorkOrderProducts(
 export function reserveRequestProducts(
   requestId: string,
   productIds: string[],
+  ctx: ActivityContext = {},
 ): { reservedProducts: number; reservedQty: number; skippedProducts: number; partialProducts: number } {
   const req = stockRequests.find(r => r.id === requestId)
   const result = { reservedProducts: 0, reservedQty: 0, skippedProducts: 0, partialProducts: 0 }
@@ -875,7 +895,13 @@ export function reserveRequestProducts(
     result.reservedQty += productQty
     if (productShort) result.partialProducts++
   }
-  if (result.reservedQty > 0) persistStockRequests()
+  if (result.reservedQty > 0) {
+    persistStockRequests()
+    logRequestEvent(req, 'Reserved material', [
+      { label: 'Components', value: productNames(req, productIds) },
+      { label: 'Qty reserved', value: `${result.reservedQty}` },
+    ], ctx)
+  }
   return result
 }
 
@@ -972,6 +998,64 @@ export function setReservedSerials(requestId: string, productId: string, serials
 }
 
 /** D-6 — where the released stock goes. Mandatory on unreserve. */
+/**
+ * ── Audit trail (UC-02, UC-03, UC-15 R-1/R-7, US-8) ───────────────────────────
+ *
+ * Reservation events are logged HERE, in the data layer, rather than by whichever
+ * page triggered them. Every one of these transitions is reachable from two
+ * surfaces — the work order page (Production) and the Stock requests dashboard
+ * (PPIC/stockist) — and under Two-step the dashboard is the ONLY surface. Logging
+ * from the pages meant the Two-step path, which is where the PRD puts all
+ * reservation, wrote no trail at all.
+ *
+ * Every entry is written against BOTH the work order and its request: the two show
+ * the same allocation, so a trail visible on only one sends whoever is reading the
+ * other to the wrong conclusion.
+ */
+
+/** Where a reservation event came from — logged as its Source (UC-02). */
+export type ActivitySource = 'work-order' | 'stock-request' | 'automatic'
+
+const SOURCE_LABEL: Record<ActivitySource, string> = {
+  'work-order': 'Work order page (Production)',
+  'stock-request': 'Stock request (PPIC / stockist)',
+  automatic: 'Automatic (one-step reservation)',
+}
+
+/** Who acted, from which surface, and why. Defaults to PPIC on the dashboard. */
+export interface ActivityContext {
+  user?: string
+  source?: ActivitySource
+  /** Free-text reason, where the action collects one (unreserve, adjust). */
+  reason?: string
+}
+
+function logRequestEvent(
+  req: StockRequest,
+  activity: string,
+  details: { label: string; value: string }[],
+  ctx: ActivityContext = {},
+): void {
+  logActivityFor(
+    [
+      { type: 'stock-request' as const, id: req.id },
+      ...(req.workOrderId ? [{ type: 'work-order' as const, id: req.workOrderId }] : []),
+    ],
+    {
+      user: ctx.user ?? STAFF[0]!,
+      activity,
+      details: [...details, { label: 'Source', value: SOURCE_LABEL[ctx.source ?? 'stock-request'] }],
+    },
+  )
+}
+
+/** Component names for a log entry, in the order the caller selected them. */
+function productNames(req: StockRequest, productIds: string[]): string {
+  return productIds
+    .map(id => req.lines.find(l => l.productId === id)?.product ?? id)
+    .join(', ')
+}
+
 export type UnreserveDisposition = 'return-to-warehouse' | 'production-defect'
 
 /**
@@ -980,6 +1064,12 @@ export type UnreserveDisposition = 'return-to-warehouse' | 'production-defect'
  * happened is a release nobody can reconcile against the stock ledger.
  */
 export type ReleaseTrigger = 'unreserve' | 'completion' | 'cancellation'
+
+const RELEASE_TRIGGER_LABEL: Record<ReleaseTrigger, string> = {
+  unreserve: 'Manual unreserve',
+  completion: 'Work order completion',
+  cancellation: 'Work order cancellation',
+}
 
 /** What one release did, per component — enough to word the toast and the log. */
 export interface ReleaseResult {
@@ -1007,6 +1097,8 @@ export function releaseReservation(
   requestId: string,
   productIds: string[],
   disposition: UnreserveDisposition = 'return-to-warehouse',
+  trigger: ReleaseTrigger = 'unreserve',
+  ctx: ActivityContext = {},
 ): ReleaseResult {
   const result: ReleaseResult = { qty: 0, products: [] }
   const req = stockRequests.find(r => r.id === requestId)
@@ -1025,7 +1117,20 @@ export function releaseReservation(
     result.qty += productQty
     result.products.push({ productId, product: name, qty: productQty })
   }
-  if (result.qty > 0) persistStockRequests()
+  if (result.qty > 0) {
+    persistStockRequests()
+    // R-7 — one entry shape for all three triggers, so they reconcile against the
+    // stock ledger. The trigger is a field, not a turn of phrase in the activity.
+    logRequestEvent(req, 'Released reservation', [
+      { label: 'Components', value: result.products.map(p => p.product).join(', ') },
+      { label: 'Qty released', value: `${result.qty}` },
+      { label: 'Trigger', value: RELEASE_TRIGGER_LABEL[trigger] },
+      ...(trigger === 'unreserve'
+        ? [{ label: 'Disposition', value: disposition === 'return-to-warehouse' ? 'Returned to warehouse' : 'Charged to production cost' }]
+        : []),
+      ...(ctx.reason ? [{ label: 'Reason', value: ctx.reason }] : []),
+    ], ctx)
+  }
   return result
 }
 
@@ -1039,10 +1144,10 @@ export function reservedProductIds(req: StockRequest): string[] {
  * reservation goes back to available; no disposition is asked for, because the
  * cancellation reason already carries the context (R-2).
  */
-export function releaseForCanceledWorkOrder(workOrderId: string): ReleaseResult {
+export function releaseForCanceledWorkOrder(workOrderId: string, ctx: ActivityContext = {}): ReleaseResult {
   const req = requestForWorkOrder(workOrderId)
   if (!req) return { qty: 0, products: [] }
-  return releaseReservation(req.id, reservedProductIds(req))
+  return releaseReservation(req.id, reservedProductIds(req), 'return-to-warehouse', 'cancellation', ctx)
 }
 
 /**
@@ -1053,10 +1158,10 @@ export function releaseForCanceledWorkOrder(workOrderId: string): ReleaseResult 
  * Only on FULL completion. On a partial completion the remaining reserve stays
  * reserved, because the job still intends to use it.
  */
-export function releaseOnCompletion(workOrderId: string): ReleaseResult {
+export function releaseOnCompletion(workOrderId: string, ctx: ActivityContext = {}): ReleaseResult {
   const req = requestForWorkOrder(workOrderId)
   if (!req) return { qty: 0, products: [] }
-  return releaseReservation(req.id, reservedProductIds(req))
+  return releaseReservation(req.id, reservedProductIds(req), 'return-to-warehouse', 'completion', ctx)
 }
 
 /**
@@ -1067,8 +1172,9 @@ export function unreserveWorkOrderProducts(
   workOrderId: string,
   productIds: string[],
   disposition: UnreserveDisposition,
+  ctx: ActivityContext = { source: 'work-order' },
 ): number {
-  return unreserveRequestProducts(requestForWorkOrder(workOrderId)?.id ?? '', productIds, disposition)
+  return unreserveRequestProducts(requestForWorkOrder(workOrderId)?.id ?? '', productIds, disposition, ctx)
 }
 
 /** Release the full reserved qty of selected components of ONE request, by id. */
@@ -1076,8 +1182,9 @@ export function unreserveRequestProducts(
   requestId: string,
   productIds: string[],
   disposition: UnreserveDisposition,
+  ctx: ActivityContext = {},
 ): number {
-  return releaseReservation(requestId, productIds, disposition).qty
+  return releaseReservation(requestId, productIds, disposition, 'unreserve', ctx).qty
 }
 
 /**
@@ -1209,6 +1316,14 @@ export function raiseStockRequestForWorkOrder(
 
   const settled = settleLines(request.lines, options.autoReserve)
   persistStockRequests()
+  if (settled.reservedQty > 0) {
+    // C-3 — the one-step auto-reserve is a reservation like any other, and the
+    // only one with no human behind it, so it says so in its Source.
+    logRequestEvent(request, 'Reserved material', [
+      { label: 'Components', value: `${settled.reservedProducts}` },
+      { label: 'Qty reserved', value: `${settled.reservedQty}` },
+    ], { user: input.requestor, source: 'automatic' })
+  }
   return { request, created: true, ...settled }
 }
 
@@ -1233,6 +1348,12 @@ export function appendStockRequestLines(
   const added = buildLines(lines, requestor).map(l => ({ ...l, tag }))
   request.lines.push(...added)
   const settled = settleLines(added, options.autoReserve)
+  if (settled.reservedQty > 0) {
+    logRequestEvent(request, 'Reserved material', [
+      { label: 'Components', value: `${settled.reservedProducts}` },
+      { label: 'Qty reserved', value: `${settled.reservedQty}` },
+    ], { user: requestor, source: 'automatic' })
+  }
   persistStockRequests()
   return { request, ...settled }
 }
@@ -1411,7 +1532,7 @@ export function applyDemandChanges(
   changes: DemandChange[],
   requestor: string,
   phase: 'edit' | 'adjust',
-  options: { autoReserve: boolean } = { autoReserve: false },
+  options: { autoReserve: boolean; ctx?: ActivityContext } = { autoReserve: false },
 ): DemandChangeResult {
   const result: DemandChangeResult = {
     increased: [], decreased: [], released: { qty: 0, products: [] }, reserved: { ...NOTHING_SETTLED },
@@ -1467,7 +1588,8 @@ export function applyDemandChanges(
     const covered = lines.reduce((s, l) => s + l.reserved + l.consumed, 0)
     const releasing = change.qty < covered && reserved > 0
     if (releasing) {
-      const released = releaseReservation(req.id, [change.productId])
+      const released = releaseReservation(req.id, [change.productId], 'return-to-warehouse', 'unreserve',
+        options.ctx ?? { source: phase === 'adjust' ? 'work-order' : 'work-order' })
       result.released.qty += released.qty
       result.released.products.push(...released.products)
     }
@@ -1499,9 +1621,16 @@ export function applyDemandChanges(
     result.decreased.push({ productId: change.productId, product, delta: -delta })
   }
 
-  // C-3 — under One-step, both kinds of line reserve by available qty now. Settled
-  // original-first, so scarce stock goes to committed demand before a top-up.
+  // C-3 — under One-step both kinds of line go through auto-reserve, all-or-
+  // nothing each. Settled original-first, so scarce stock goes to committed demand
+  // before a top-up.
   result.reserved = settleLines(drawdownOrder(toSettle), options.autoReserve)
+  if (result.reserved.reservedQty > 0) {
+    logRequestEvent(req, 'Reserved material', [
+      { label: 'Components', value: `${result.reserved.reservedProducts}` },
+      { label: 'Qty reserved', value: `${result.reserved.reservedQty}` },
+    ], { user: requestor, source: 'automatic' })
+  }
 
   if (result.increased.length || result.decreased.length) persistStockRequests()
   return result
