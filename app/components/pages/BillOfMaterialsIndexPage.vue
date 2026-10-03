@@ -23,7 +23,7 @@ const columns: TableColumn[] = [
   { key: 'name',             label: t('Name'),               kind: 'name', sortable: true },
   // Regular BOM versioning — exactly one Active version per BOM (never part of the name),
   // plus the "sub-BOM has a new version" indicator (V-05, V-11).
-  { key: 'version',          label: t('Version'),            sortable: true },
+  { key: 'version',          label: t('Active version'),     sortable: true },
   { key: 'category',         label: t('Category') },
   { key: 'costingReference', label: t('Costing reference'),  kind: 'number' },
   { key: 'finishedGood',     label: t('Finished goods'),     kind: 'name' },
@@ -302,7 +302,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Version: the Active version only ── -->
     <template #cell-version="{ row }">
       <div class="bom-version-cell" data-devchange="bom-index-version">
-        <span>v{{ (row as unknown as BillOfMaterials).version }} · {{ t('Active') }}</span>
+        <span>v{{ (row as unknown as BillOfMaterials).version }}</span>
       </div>
     </template>
 

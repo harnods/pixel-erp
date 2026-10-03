@@ -22,11 +22,10 @@ import CompleteWorkOrderModal, { type CompleteWorkOrderRow } from '~/components/
 import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
 import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
 import { formatDate } from '~/utils/date'
-import { workOrders, persistWorkOrders, type WorkOrder, type WorkOrderStatus , bomForWorkOrder, workOrderDrift, workOrderSubDrift, workOrderClosed } from '~/data/workOrders'
+import { workOrders, persistWorkOrders, type WorkOrder, type WorkOrderStatus , bomForWorkOrder, workOrderDrift } from '~/data/workOrders'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 import WorkOrderBomVersionDrawer from '~/components/WorkOrderBomVersionDrawer.vue'
-import BomStructureDrawer from '~/components/BomStructureDrawer.vue'
 import { recordsForWorkOrder, addMaterialConsumeReturnRecord, remainingReservation } from '~/data/materialConsumeReturn'
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import { warehouses } from '~/data/warehouses'
@@ -43,18 +42,9 @@ const bom = computed(() => wo.value ? bomForWorkOrder(wo.value) : undefined)
 const bomRecord = computed(() => wo.value ? billOfMaterials.find(b => b.id === wo.value!.bomId) : undefined)
 /** A newer Active version exists — neutral information (V-06), hidden once the WO is closed or pre-versioning. */
 const newerBomVersion = computed(() => (wo.value ? workOrderDrift(wo.value) : undefined))
-// Multi-level: every sub-BOM level was resolved to its Active version and pinned at creation.
-const subPinCount = computed(() => Object.keys(wo.value?.subBomPins ?? {}).length)
-const subDrift = computed(() => (wo.value ? workOrderSubDrift(wo.value) : []))
 const bomDiffOpen = ref(false)
 const diffTarget = ref<{ bomId?: string; from?: number }>({})
 function openDrift(bomId?: string, from?: number) { diffTarget.value = { bomId, from }; bomDiffOpen.value = true }
-const structureOpen = ref(false)
-function openStructureDrift(id: string, from: number) { structureOpen.value = false; openDrift(id, from) }
-function openStructureBom(id: string, version: number) {
-  const b = billOfMaterials.find(x => x.id === id)
-  router.push(`/bill-of-materials/${id}${b && b.version !== version ? `?version=${version}` : ''}`)
-}
 
 function goList() { router.push('/work-orders') }
 function goNewRecord() { router.push(`/work-orders/${props.orderId}/material-record/new`) }
@@ -496,16 +486,6 @@ function suppressFabClick(e: MouseEvent) {
             <ContentList :label="t('BOM no.')">
               <a v-if="bom" class="wod-bom-link" @click.prevent="goBom">{{ bomNo }}</a>
               <template v-else>{{ bomNo }}</template>
-            </ContentList>
-            <ContentList v-if="subPinCount" :label="t('Sub-BOM levels')">
-              <span class="wod-version" data-devchange="bom-wo-sub-pins">
-                <a class="wod-bom-link" @click.prevent="structureOpen = true">{{ subPinCount }} {{ t('sub-BOM(s) pinned') }}</a>
-                <MpBadge
-                  v-for="d in subDrift" :id="`wod-sub-drift-${d.bom.id}`" :key="d.bom.id" for="tableStatus" type="information"
-                  class="wod-version-hint" role="button" tabindex="0"
-                  @click="openDrift(d.bom.id, d.pinned)" @keydown.enter="openDrift(d.bom.id, d.pinned)"
-                >{{ d.bom.name }} v{{ d.active }} {{ t('available') }}</MpBadge>
-              </span>
             </ContentList>
             <ContentList :label="t('Work order no.')" :value="`${t('Work order')} #${wo.number.split('-').pop()}`" />
           </div>
@@ -985,13 +965,6 @@ function suppressFabClick(e: MouseEvent) {
     </header>
   </div>
   <WorkOrderBomVersionDrawer :is-open="bomDiffOpen" :bom-id="diffTarget.bomId" :from-version="diffTarget.from" :wo-number="wo?.number" @close="bomDiffOpen = false" />
-  <BomStructureDrawer
-    :is-open="structureOpen" :bom-id="wo?.bomId" :version="wo?.bomVersion" :pins="wo?.subBomPins ?? {}"
-    :root-qty="wo?.plannedQty ?? 1" :show-actions="false"
-    :show-drift="!!wo && !wo.preVersioning && !workOrderClosed(wo)"
-    :subtitle="`${wo?.number ?? ''} ${t('pinned every sub-BOM level when it was created — the pins never move.')}`"
-    @close="structureOpen = false" @open-drift="openStructureDrift" @open-bom="openStructureBom"
-  />
 </template>
 
 <style scoped>

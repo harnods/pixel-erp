@@ -18,12 +18,17 @@ import { billOfMaterials, bomUnitCost, bomWhereUsed, VERSION_REASON_MIN, VERSION
 import { workOrders, workOrderClosed } from '~/data/workOrders'
 import { formatIDR } from '~/utils/currency'
 
-const props = defineProps<{ isOpen: boolean; bomId: string; nextVersion: number; content?: BomContent }>()
+const props = defineProps<{
+  isOpen: boolean; bomId: string; nextVersion: number; content?: BomContent
+  /** the version being edited, how many work orders use it, and whether it's a superseded one */
+  currentVersion?: number; refs?: number; fromSuperseded?: boolean
+}>()
 const emit = defineEmits<{ close: []; confirm: [reason: string] }>()
 const { t } = useLocale()
 
 const reason = ref('')
 const reasonError = ref('')
+// fresh reason every time the modal opens
 watch(() => props.isOpen, (o) => { if (o) { reason.value = ''; reasonError.value = '' } })
 function confirm() {
   const n = reason.value.trim().length
@@ -61,6 +66,14 @@ const signed = (n?: number) => (n === undefined ? `Δ ${t('n/a')}` : n > 0 ? `Δ
     <MpModalContent data-devchange="bom-version-impact">
       <MpModalHeader>{{ t('Save as') }} v{{ nextVersion }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody class="bvi-body">
+        <MpBanner id="bvi-why" variant="info">
+          <MpBannerIcon />
+          <MpBannerDescription>
+            <template v-if="fromSuperseded">v{{ currentVersion }} {{ t('is a superseded version, so your changes are saved as a new version') }} v{{ nextVersion }}.</template>
+            <template v-else>v{{ currentVersion }} {{ t('is already used by') }} {{ refs }} {{ t('work order(s), so your changes are saved as a new version') }} v{{ nextVersion }}.</template>
+            {{ t('Same bill of materials and code.') }}
+          </MpBannerDescription>
+        </MpBanner>
         <MpFormControl id="bvi-reason" is-required :is-invalid="!!reasonError" data-devchange="bom-version-reason">
           <MpFormLabel>{{ t('Reason for new version') }}</MpFormLabel>
           <MpTextarea id="bvi-reason-input" v-model="reason" @update:model-value="reasonError = ''" />

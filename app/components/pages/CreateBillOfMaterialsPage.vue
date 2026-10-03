@@ -18,7 +18,7 @@ import { formatIDR } from '~/utils/currency'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpAutocomplete, MpInput, MpInputGroup, MpInputLeftAddon, MpInputRightAddon, MpTextarea,
-  MpButton, MpIcon, MpCheckbox, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, toast,
+  MpButton, MpIcon, MpCheckbox, MpBanner, MpBannerIcon, MpBannerDescription, toast,
 } from '@mekari/pixel3'
 import { CATALOG } from '~/data/catalog'
 import {
@@ -40,17 +40,17 @@ const duplicateFromId = (route.query.duplicate as string) || ''
 const isEditMode = computed(() => !!editingId)
 
 // ── Versioning (regular BOM — Active → Superseded, no Draft) ───────────────────
-// "Create new version" opens this form prefilled from the Active version (or a
-// superseded one via ?from=N). Nothing exists until Save: saving creates vN+1 as
-// the Active version and supersedes the previous one; leaving the form discards
-// the edits and no version is created. Work orders already created keep the
-// version they were pinned to — only work orders created after saving use vN+1.
-// Editing a version a work order references always goes through this mode.
-// An Active version nothing references yet is edited in place (plain Edit).
+// The detail page always offers "Edit" (prefilled from the Active version, or a
+// superseded one via ?from=N). On Save the system checks the version: if a work
+// order already uses it (or it's a superseded version), a modal asks for the
+// upgrade reason and the save becomes vN+1 — same BOM, same code; work orders
+// already created keep their version. Otherwise the BOM is saved in place.
+// Leaving the form saves nothing.
 const editingBomRecord = computed(() => (editingId ? billOfMaterials.find(b => b.id === editingId) : undefined))
 const fromVersion = Number(route.query.from) || undefined
-const editingRefs = computed(() => (editingBomRecord.value ? bomVersionRefCount(editingBomRecord.value.id, editingBomRecord.value.version) : 0))
-const newVersionMode = computed(() => !!editingBomRecord.value && (!!route.query.newVersion || !!fromVersion || bomVersionLocked(editingBomRecord.value.id)))
+const editingRefs = computed(() => (editingBomRecord.value ? bomVersionRefCount(editingBomRecord.value.id, fromVersion ?? editingBomRecord.value.version) : 0))
+/** Save becomes a new version — decided at save time, not shown up front. */
+const newVersionMode = computed(() => !!editingBomRecord.value && (!!fromVersion || bomVersionLocked(editingBomRecord.value.id)))
 const nextVersion = computed(() => (editingBomRecord.value ? nextBomVersion(editingBomRecord.value) : 1))
 /** Inline save errors (rule/form-errors-inline) — a circular reference or a refused save. */
 const saveError = ref('')
@@ -355,7 +355,7 @@ if (editingId) {
   if (src) { prefillFrom(bomAtVersion(src, fromVersion) ?? src); editingNumber.value = src.number; editingArchived.value = src.archived }
 } else if (duplicateFromId) {
   const src = billOfMaterials.find(b => b.id === duplicateFromId)
-  if (src) prefillFrom(src)
+  if (src) prefillFrom(bomAtVersion(src, fromVersion) ?? src)
 }
 
 // Build the persisted BOM record from the form's line-item rows — every product
@@ -507,7 +507,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <MpButton variant="textLink" class="detail-breadcrumb" @click="goList">{{ t('Bill of materials') }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">{{ !isEditMode ? t('New bill of materials') : newVersionMode ? `${t('New version')} v${nextVersion}` : t('Edit bill of materials') }}</h1>
+          <h1 class="detail-title">{{ isEditMode ? t('Edit bill of materials') : t('New bill of materials') }}</h1>
         </div>
       </div>
     </header>
@@ -517,23 +517,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
       <div class="bf-body">
 
         <!-- ══ BOM info ══════════════════════════════════════════════════════ -->
-        <!-- Versioning notice — what this save does to which version -->
-        <section v-if="saveError || newVersionMode" class="bf-section bf-version" data-devchange="bom-version-form">
-          <MpBanner v-if="saveError" id="bf-save-error" variant="danger">
+        <!-- Inline save error (circular reference / refused save) -->
+        <section v-if="saveError" class="bf-section bf-version">
+          <MpBanner id="bf-save-error" variant="danger">
             <MpBannerIcon />
             <MpBannerDescription>{{ saveError }}</MpBannerDescription>
           </MpBanner>
-          <template v-if="newVersionMode && editingBomRecord">
-            <MpBanner id="bf-version-new" variant="info">
-              <MpBannerIcon />
-              <MpBannerTitle>{{ t('Saving creates') }} v{{ nextVersion }} {{ t('and supersedes') }} v{{ editingBomRecord.version }}</MpBannerTitle>
-              <MpBannerDescription>
-                <template v-if="fromVersion">{{ t('Prefilled from') }} v{{ fromVersion }}. </template>
-                <template v-if="editingRefs">v{{ editingBomRecord.version }} {{ t('is referenced by') }} {{ editingRefs }} {{ t('document(s) and can no longer be edited.') }} </template>
-                {{ t('Work orders already created keep their version; only work orders created after saving use') }} v{{ nextVersion }}. {{ t('You’ll add the reason when you save. If you leave without saving, no new version is created.') }}
-              </MpBannerDescription>
-            </MpBanner>
-          </template>
         </section>
 
         <section class="bf-section">
@@ -959,12 +948,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <MpButton variant="ghost" is-rounded @click="goList">{{ t('Cancel') }}</MpButton>
       <MpButton v-if="!isEditMode" variant="secondary" is-rounded @click="handleSaveDraft">{{ t('Save as draft') }}</MpButton>
-      <MpButton variant="primary" is-rounded @click="handleSave">{{ newVersionMode ? `${t('Save')} v${nextVersion}` : isEditMode ? t('Save changes') : t('Save') }}</MpButton>
+      <MpButton variant="primary" is-rounded @click="handleSave">{{ isEditMode ? t('Save changes') : t('Save') }}</MpButton>
     </footer>
 
     <BomNewVersionModal
       v-if="newVersionMode && editingBomRecord"
       :is-open="isNewVersionModalOpen" :bom-id="editingBomRecord.id" :next-version="nextVersion" :content="pendingContent"
+      :current-version="fromVersion ?? editingBomRecord.version" :refs="editingRefs" :from-superseded="!!fromVersion"
       @close="isNewVersionModalOpen = false" @confirm="saveNewVersion"
     />
   </div>

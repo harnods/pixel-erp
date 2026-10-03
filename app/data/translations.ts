@@ -5035,4 +5035,11 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Save as": "Simpan sebagai",
   "Open work orders on this BOM": "Perintah kerja terbuka pada BOM ini",
   "You’ll add the reason when you save. If you leave without saving, no new version is created.": "Alasan diisi saat menyimpan. Jika Anda keluar tanpa menyimpan, versi baru tidak dibuat.",
+  "Sub WO": "Sub WO",
+  "Uses this BOM as a sub-assembly of": "Memakai BOM ini sebagai sub-assembly dari",
+  "is a superseded version, so your changes are saved as a new version": "adalah versi yang sudah digantikan, jadi perubahan Anda disimpan sebagai versi baru",
+  "is already used by": "sudah dipakai oleh",
+  "work order(s), so your changes are saved as a new version": "perintah kerja, jadi perubahan Anda disimpan sebagai versi baru",
+  "Same bill of materials and code.": "Bill of materials dan kodenya tetap sama.",
+  "Work Orders are created for this version.": "Perintah kerja dibuat untuk versi ini.",
 }
