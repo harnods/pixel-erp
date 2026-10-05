@@ -38,6 +38,7 @@ import { approvalTrailFor, pendingFor } from '~/data/assetApprovals'
 import AssetLifeSchedule from '~/components/patterns/AssetLifeSchedule.vue'
 import IntangibleCodePicker from '~/components/patterns/IntangibleCodePicker.vue'
 import { lifeSchedule } from '~/data/assetPreview'
+import { periodLabel } from '~/data/assetEngine'
 import { leaseOfAsset } from '~/data/assetLeases'
 import ClassifyDrawer from '~/components/patterns/ClassifyDrawer.vue'
 import NoDeleteDialog from '~/components/patterns/NoDeleteDialog.vue'
@@ -234,6 +235,28 @@ watch(() => [route.query.change, asset.value?.id], () => {
   if (typeof c === 'string' && VALUE_ACTIONS.some((a) => a.key === c) && asset.value) {
     openChange(c as ValueAction)
     router.replace({ path: route.path })
+  }
+}, { immediate: true })
+
+// A link straight to a charge's breakdown (?breakdown=tax-2026-09) or to the
+// schedule versions (?versions=accounting), so a figure can be shared and
+// opened as the reader saw it.
+watch(() => [route.query.breakdown, route.query.versions, asset.value?.id], (_now, before) => {
+  if (!asset.value || !canSeeFinancials.value) return
+  // Leaving the link closes what it opened.
+  if (before?.[0] && !route.query.breakdown) derivationOpen.value = false
+  if (before?.[1] && !route.query.versions) versionsOpen.value = false
+  const b = route.query.breakdown
+  const m = typeof b === 'string' ? b.match(/^(accounting|tax)-(\d{4}-\d{2})$/) : null
+  if (m) {
+    tab.value = 'depreciation'
+    explain(m[1] as 'accounting' | 'tax', periodLabel(m[2]!))
+  }
+  const v = route.query.versions
+  if (v === 'accounting' || (v === 'tax' && hasTaxBook.value)) {
+    tab.value = 'depreciation'
+    versionBook.value = v
+    versionsOpen.value = true
   }
 }, { immediate: true })
 </script>
