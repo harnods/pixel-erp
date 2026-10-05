@@ -14,8 +14,8 @@ import { MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpButton, M
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import BudgetReportFiltersDrawer from '~/components/patterns/BudgetReportFiltersDrawer.vue'
 import BudgetReportDrillDrawer from '~/components/patterns/BudgetReportDrillDrawer.vue'
-import { budget, lineById, lineTitle, BUDGET_YEAR, BUDGET_CURRENT_MONTH, type ReportFilter } from '~/data/budgetStore'
-import { MONTH_NAMES, deptName, projectName, accountLabel } from '~/data/budgetMaster'
+import { budget, lineById, lineTitle, tieOutFailed, BUDGET_YEAR, BUDGET_CURRENT_MONTH, type ReportFilter, type NoLineSpend } from '~/data/budgetStore'
+import { MONTH_NAMES, deptName, projectName, accountLabel, budgetAccount } from '~/data/budgetMaster'
 import {
   buildReport, drillLine, drillPostings, filterOptions, filterCount, parseReportQuery, toReportQuery,
   viewerDept, canRunTieOut, runTieOutAs, periodLabel, PERIOD_KINDS, GROUP_OPTIONS, EMPTY_FILTER,
@@ -79,6 +79,13 @@ function refresh() { refreshTick.value++ }
 
 // ── Tie-out ─────────────────────────────────────────────────────────────────
 const lastTieOut = computed(() => budget.tieOuts[0] ?? null)
+const lastFailed = computed(() => !!lastTieOut.value && tieOutFailed(lastTieOut.value))
+const noLineSpend = computed(() => lastTieOut.value?.noLine ?? [])
+function addLineFor(n: NoLineSpend) {
+  const q = new URLSearchParams({ kind: 'Mid-year insert', account: n.account, dept: n.dept, amount: String(n.amount), reason: `Spend with no budget line: ${n.docs.join(', ')}` })
+  if (n.project) q.set('project', n.project)
+  router.push(`/budget-changes/new?${q.toString().replace(/\+/g, '%20')}`)
+}
 const tieError = ref('')
 function failureLabel(lineId: string): string {
   const l = lineById(lineId)
@@ -89,7 +96,7 @@ function runTieOutNow() {
   const res = runTieOutAs(role.value)
   if (!res.ok) { tieError.value = t(res.reason); return }
   refresh()
-  if (!res.run.failures.length) successToast(t('Tie-out passed'))
+  if (!tieOutFailed(res.run)) successToast(t('Tie-out passed'))
 }
 watch(role, () => { tieError.value = '' })
 
@@ -178,9 +185,9 @@ const notCountedDocs = computed(() => report.value.notCounted.postings.map((g) =
         <span class="brp-asof">
           {{ caption }} · {{ t('As of') }} {{ fmtDateTime(asOf) }}<template v-if="scopeDept"> · {{ t('Lines for') }} {{ deptName(scopeDept) }}</template>
         </span>
-        <span v-if="lastTieOut" class="brp-tie" :class="lastTieOut.failures.length ? 'brp-tie--failed' : 'brp-tie--passed'">
-          <MpIcon :name="lastTieOut.failures.length ? 'error' : 'done'" size="sm" />
-          <template v-if="lastTieOut.failures.length">{{ t('Last tie-out failed') }}</template>
+        <span v-if="lastTieOut" class="brp-tie" :class="lastFailed ? 'brp-tie--failed' : 'brp-tie--passed'">
+          <MpIcon :name="lastFailed ? 'error' : 'done'" size="sm" />
+          <template v-if="lastFailed">{{ t('Last tie-out failed') }}</template>
           <template v-else>{{ t('Last tie-out passed') }}</template>
           · {{ fmtDateTime(lastTieOut.at) }} · {{ lastTieOut.lines }} {{ t('lines') }} · {{ t('Difference') }} {{ money(lastTieOut.difference) }}
         </span>
@@ -193,14 +200,32 @@ const notCountedDocs = computed(() => report.value.notCounted.postings.map((g) =
       </div>
     </div>
 
-    <MpBanner v-if="lastTieOut && lastTieOut.failures.length" id="brp-tie-banner" variant="danger" class="brp-banner">
+    <MpBanner v-if="lastTieOut && lastFailed" id="brp-tie-banner" variant="danger" class="brp-banner">
       <MpBannerIcon id="brp-tie-banner-icon" />
       <MpBannerTitle>
-        {{ t('Tie-out found') }} {{ lastTieOut.failures.length }} {{ t(lastTieOut.failures.length === 1 ? 'line that differs from the general ledger' : 'lines that differ from the general ledger') }}
+        <template v-if="lastTieOut.failures.length">{{ t('Tie-out found') }} {{ lastTieOut.failures.length }} {{ t(lastTieOut.failures.length === 1 ? 'line that differs from the general ledger' : 'lines that differ from the general ledger') }}</template>
+        <template v-else>{{ t('The budget ledger differs from the general ledger by') }} {{ money(lastTieOut.total?.difference ?? lastTieOut.difference) }}</template>
       </MpBannerTitle>
       <MpBannerDescription>
+        <span v-if="lastTieOut.total" class="brp-banner-line">
+          {{ t('General ledger') }} {{ money(lastTieOut.total.gl) }} · {{ t('budget lines') }} {{ money(lastTieOut.total.ledger) }} · {{ t('no budget line') }} {{ money(lastTieOut.total.noLine) }}
+        </span>
         <span v-for="f in lastTieOut.failures" :key="f.lineId" class="brp-banner-line">
           {{ failureLabel(f.lineId) }}: {{ t('budget ledger') }} {{ money(f.ledger) }}, {{ t('general ledger') }} {{ money(f.gl) }}
+        </span>
+      </MpBannerDescription>
+    </MpBanner>
+
+    <MpBanner v-if="noLineSpend.length" id="brp-noline-banner" variant="warning" class="brp-banner" data-tour="report-noline">
+      <MpBannerIcon id="brp-noline-banner-icon" />
+      <MpBannerTitle>
+        {{ noLineSpend.length }} {{ t(noLineSpend.length === 1 ? 'spend with no budget line' : 'spends with no budget line') }}, {{ money(noLineSpend.reduce((s, n) => s + n.amount, 0)) }}
+      </MpBannerTitle>
+      <MpBannerDescription>
+        <span v-for="n in noLineSpend" :key="`${n.account}|${n.dept}|${n.project}`" class="brp-banner-line brp-nl-item">
+          <span v-if="n.isNew" class="brp-new">{{ t('New') }}</span>
+          {{ deptName(n.dept) }} × {{ projectName(n.project) }} × {{ budgetAccount(n.account)?.name ?? n.account }}: {{ money(n.amount) }} · {{ n.docs.join(', ') }}
+          <a v-if="canRunTieOut(role)" class="cell-link" @click="addLineFor(n)">{{ t('Add a line') }}</a>
         </span>
       </MpBannerDescription>
     </MpBanner>
@@ -332,6 +357,9 @@ const notCountedDocs = computed(() => report.value.notCounted.postings.map((g) =
 .brp-tie--passed :deep(svg) { color: var(--mp-colors-text-success); }
 .brp-tie--failed { color: var(--mp-text-danger); }
 .brp-error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
+/* tie-out banners */
+.brp-nl-item { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
+.brp-new { font-size: var(--mp-font-sizes-xs); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-warning); border: 1px solid currentColor; border-radius: var(--mp-radii-sm); padding: 0 var(--mp-spacing-1); }
 .brp-banner-line { display: block; }
 
 /* Filter bar — same layout as the house index filter bar */

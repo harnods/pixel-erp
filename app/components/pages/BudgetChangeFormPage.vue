@@ -88,7 +88,11 @@ function load() {
   }
   const k = q('kind')
   baseKind.value = isChangeKind(k) ? k : 'Transfer'
-  if (baseKind.value === 'Mid-year insert') rows.value = [blankRow('new')]
+  if (baseKind.value === 'Mid-year insert') {
+    // "Request a new line" from a request or the tie-out list passes the mix.
+    rows.value = [{ ...blankRow('new'), account: q('account'), dept: q('dept'), project: q('project') || NO_PROJECT, amount: Number(q('amount')) || 0 }]
+    if (q('reason')) reason.value = q('reason')
+  }
   if (baseKind.value === 'Funding request') pickRequest(q('pr'))
   if (baseKind.value === 'Saving fill') donorLineId.value = lineById(q('from')) ? q('from') : ''
   if (baseKind.value === 'Saving draw') drawSlice.value = savingSlices().some((s) => s.key === q('slice')) ? q('slice') : ''

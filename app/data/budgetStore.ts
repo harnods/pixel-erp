@@ -219,7 +219,18 @@ export interface SettingChange {
 
 export interface BudgetNotice { id: number; to: string; text: string; link: string; at: string; read: boolean }
 
-export interface TieOutRun { at: string; lines: number; difference: number; failures: { lineId: string; ledger: number; gl: number }[] }
+export interface NoLineSpend { account: string; dept: string; project: string | null; amount: number; docs: string[]; isNew: boolean }
+export interface TieOutRun {
+  at: string
+  lines: number
+  /** General ledger minus budget ledger, on the total for controlled accounts. Any non-zero fails the run. */
+  difference: number
+  failures: { lineId: string; ledger: number; gl: number }[]
+  /** Total check: budget-line actual + no-line spend against counted general-ledger postings. */
+  total?: { ledger: number; noLine: number; gl: number; difference: number }
+  /** Spend on a mix with no budget line: a warning, never a failure. */
+  noLine?: NoLineSpend[]
+}
 
 export interface BudgetState {
   seq: number
@@ -761,17 +772,53 @@ export function noLineActual(scope: Scope = {}): number {
 export function notCounted(scope: Scope = {}): GLPosting[] { return budget.gl.filter((g) => !g.counted && inScope(g.month, scope)) }
 
 /** Nightly tie-out: ledger actual per line against counted general-ledger postings (LR-4). */
+/**
+ * Nightly tie-out (LR-4).
+ *  1. Pass or fail on the total: budget-line actual plus no-line spend must equal
+ *     counted general-ledger postings on controlled accounts. Per-line gaps name
+ *     where it broke.
+ *  2. Spend on a mix with no budget line is a warning list, never a failure;
+ *     mixes not seen in the previous run are flagged new.
+ *  3. Reclass journals stay apart as not counted.
+ */
 export function runTieOut(at?: string): TieOutRun {
   const failures: TieOutRun['failures'] = []
+  let ledgerTotal = 0
   for (const l of budget.lines) {
     const ledger = budget.entries.filter((e) => e.lineId === l.id && e.type === 'actual').reduce((s, e) => s + e.amount, 0)
     const gl = budget.gl.filter((g) => g.lineId === l.id && g.counted).reduce((s, g) => s + g.amount, 0)
+    ledgerTotal += ledger
     if (ledger !== gl) failures.push({ lineId: l.id, ledger, gl })
   }
-  const run: TieOutRun = { at: at ?? nowISO(), lines: budget.lines.length, difference: failures.reduce((s, f) => s + (f.gl - f.ledger), 0), failures }
+  const controlled = (code: string) => !!budgetAccount(code)?.controlled
+  const glTotal = budget.gl.filter((g) => g.counted && controlled(g.account)).reduce((s, g) => s + g.amount, 0)
+  const groups = new Map<string, NoLineSpend>()
+  for (const g of budget.gl) {
+    if (!g.counted || g.lineId || !controlled(g.account)) continue
+    const k = `${g.account}|${g.dept}|${g.project ?? ''}`
+    const cur = groups.get(k) ?? { account: g.account, dept: g.dept, project: g.project, amount: 0, docs: [], isNew: true }
+    cur.amount += g.amount
+    if (!cur.docs.includes(g.docNo)) cur.docs.push(g.docNo)
+    groups.set(k, cur)
+  }
+  const prevKeys = new Set((budget.tieOuts[0]?.noLine ?? []).map((n) => `${n.account}|${n.dept}|${n.project ?? ''}`))
+  const noLine = [...groups.values()].map((n) => ({ ...n, isNew: !prevKeys.has(`${n.account}|${n.dept}|${n.project ?? ''}`) }))
+  const noLineTotal = noLine.reduce((s, n) => s + n.amount, 0)
+  const difference = glTotal - (ledgerTotal + noLineTotal)
+  const run: TieOutRun = {
+    at: at ?? nowISO(), lines: budget.lines.length, difference, failures,
+    total: { ledger: ledgerTotal, noLine: noLineTotal, gl: glTotal, difference }, noLine,
+  }
   budget.tieOuts.unshift(run)
-  if (failures.length) notify(BUDGET_CONTROLLER_NAME, `Tie-out found ${failures.length} line(s) that differ from the general ledger.`, '/budget-report')
+  if (failures.length || difference !== 0) notify(BUDGET_CONTROLLER_NAME, `Tie-out failed: the budget ledger differs from the general ledger by ${rupiah(difference)}.`, '/budget-report')
+  const fresh = noLine.filter((n) => n.isNew)
+  if (fresh.length) notify(BUDGET_CONTROLLER_NAME, `${fresh.length} new spend with no budget line, ${rupiah(fresh.reduce((s, n) => s + n.amount, 0))}. Add a line or move the cost.`, '/budget-report')
   return run
+}
+
+/** A run fails on any per-line gap or a non-zero total difference. */
+export function tieOutFailed(run: TieOutRun): boolean {
+  return run.failures.length > 0 || (run.total ? run.total.difference !== 0 : run.difference !== 0)
 }
 
 // ── Change documents: transfers, funding requests, revisions, savings (FG-4, FG-5) ──

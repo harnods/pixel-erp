@@ -132,7 +132,11 @@ describe('advanced budgeting ledger (PRD FG-1 to FG-7)', () => {
   })
 
   it('LR-4: tie-out passes on the sample; the reclass is not counted; no-line spend shows apart', () => {
-    expect(runTieOut().failures).toEqual([])
+    const run = runTieOut()
+    expect(run.failures).toEqual([])
+    expect(run.total).toEqual({ ledger: run.total!.gl - 4 * jt, noLine: 4 * jt, gl: run.total!.gl, difference: 0 })
+    expect(run.noLine!.map((n) => [n.dept, n.project, n.account, n.amount, n.docs])).toEqual([['OP', 'PA', '6-60111', 4 * jt, ['PI-2026-0790']]])
+    expect(run.noLine![0]!.isNew).toBe(false)
     expect(notCounted().map((g) => g.docNo)).toContain('JE-2026-0318')
     expect(noLineActual()).toBe(4 * jt)
   })
@@ -164,6 +168,21 @@ describe('advanced budgeting ledger (PRD FG-1 to FG-7)', () => {
       const rec = purchaseRequests.find((r) => r.id === pr.purchaseRequestId)!
       expect(`#${rec.number}`).toBe(pr.number)
     }
+  })
+
+  it('LR-4: the tie-out fails on the total when a posting is missing from the budget ledger', async () => {
+    const { tieOutFailed } = await import('../app/data/budgetStore')
+    budget.gl.push({ id: 99999, lineId: null, account: '6-60120', dept: 'NW', project: 'PA', month: 9, amount: 2 * jt, source: 'Manual journal', docNo: 'JE-LOST', counted: true })
+    // A no-line posting is a warning, not a failure ...
+    let run = runTieOut()
+    expect(tieOutFailed(run)).toBe(false)
+    expect(run.noLine!.find((n) => n.docs.includes('JE-LOST'))!.isNew).toBe(true)
+    // ... but a posting the budget ledger never saw on a line fails the total.
+    budget.gl.push({ id: 99998, lineId: ACC_PA(), account: '6-60120', dept: 'NW', project: 'PA', month: 9, amount: 3 * jt, source: 'Manual journal', docNo: 'JE-MISSED', counted: true })
+    run = runTieOut()
+    expect(tieOutFailed(run)).toBe(true)
+    expect(run.total!.difference).toBe(3 * jt)
+    expect(run.failures.map((f) => f.lineId)).toEqual([ACC_PA()])
   })
 
   it('FG5-AC4: a manual journal to the saving account is refused', async () => {
