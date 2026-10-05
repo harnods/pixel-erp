@@ -210,6 +210,10 @@ const pageRegistry: Record<string, Component> = {
   'Project accounting': defineAsyncComponent(() => import('~/components/pages/ProjectAccountingPage.vue')),
   'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
   'Design erp':         defineAsyncComponent(() => import('~/components/pages/DesignErpDashboardPage.vue')),
+  // Dashboard › Business performance (prod business-overview widget grid); Custom dashboard / Mekari Insight stay out of scope.
+  'Business performance': defineAsyncComponent(() => import('~/components/pages/BusinessPerformancePage.vue')),
+  'Custom dashboard':     defineAsyncComponent(() => import('~/components/pages/DashboardNotInPrototypePage.vue')),
+  'Mekari insight':       defineAsyncComponent(() => import('~/components/pages/DashboardNotInPrototypePage.vue')),
 
   // ── XPM (Mekari Expense) scenario pages ──────────────────────────────────────
   // Registered globally like every other scenario's pages; the XPM sidebar is the
