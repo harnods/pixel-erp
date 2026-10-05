@@ -102,6 +102,7 @@ export * from './employees'
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 export * from './approvalWorkflows'
+export * from './companySettings'
 
 // ── Data migration (WMS → Jurnal cutover) ───────────────────────────────────
 export * from './wmsCutover'
