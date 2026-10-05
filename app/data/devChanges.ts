@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'sr-detail-group-transfer-btn',
+    title: 'Stock request detail: the per-warehouse transfer button goes',
+    description:
+      'Each destination warehouse group carried its own "Create warehouse transfer" button, which Actions already offers. The group header now only states its shortfall ("3 components · 3 to transfer"), and the shortfall banner points at Actions, where both ways out — a warehouse transfer and a purchase request — actually live.',
+    date: '2026-10-06',
+    files: ['StockRequestDetailsPage.vue', 'translations.ts'],
+  },
+  {
     id: 'sr-detail-shortfall-banner',
     title: 'Stock request detail: one library banner, not two hand-rolled ones',
     description:
