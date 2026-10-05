@@ -516,6 +516,9 @@ const DualUnitInventoryReportPage = asyncPage(() => import('~/components/pages/D
 const CreditMemoReportPage = asyncPage(() => import('~/components/pages/CreditMemoReportPage.vue'))
 const MultidimensionalReportPage = asyncPage(() => import('~/components/pages/MultidimensionalReportPage.vue'))
 const GeneralLedgerReportPage = asyncPage(() => import('~/components/pages/GeneralLedgerReportPage.vue'))
+const InventoryValuationReportPage = asyncPage(() => import('~/components/pages/InventoryValuationReportPage.vue'))
+const FixedAssetSummaryReportPage = asyncPage(() => import('~/components/pages/FixedAssetSummaryReportPage.vue'))
+const CashBankReportPage = asyncPage(() => import('~/components/pages/CashBankReportPage.vue'))
 const BudgetVarianceReportPage = asyncPage(() => import('~/components/pages/BudgetVarianceReportPage.vue'))
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
 const EmployeeDetailsPage = asyncPage(() => import('~/components/pages/EmployeeDetailsPage.vue'))
@@ -684,6 +687,18 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // Inventory reports index rather than rendering the wrong report.
   if (segs.length >= 2 && segs[0] === 'inventory-report' && segs[1] === 'dual-unit') {
     return { component: DualUnitInventoryReportPage, id: segs[1]! }
+  }
+  // /inventory-report/inventory-valuation → Inventory valuation (Reports → Inventory).
+  if (segs.length >= 2 && segs[0] === 'inventory-report' && segs[1] === 'inventory-valuation') {
+    return { component: InventoryValuationReportPage, id: segs[1]! }
+  }
+  // /fixed-assets-report/fixed-asset-summary → Fixed asset summary (Reports → Fixed assets).
+  if (segs.length >= 2 && segs[0] === 'fixed-assets-report' && segs[1] === 'fixed-asset-summary') {
+    return { component: FixedAssetSummaryReportPage, id: segs[1]! }
+  }
+  // /cash-and-bank-report/cash-and-bank → Bank statement report (Reports → Cash & bank).
+  if (segs.length >= 2 && segs[0] === 'cash-and-bank-report' && segs[1] === 'cash-and-bank') {
+    return { component: CashBankReportPage, id: segs[1]! }
   }
   // /chart-of-accounts/new · /:id · /:id/edit → account form / detail (full page).
   if (segs.length >= 2 && segs[0] === 'chart-of-accounts') {
