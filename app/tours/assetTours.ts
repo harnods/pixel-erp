@@ -14,8 +14,15 @@ import type { ViewAsRole } from '~/data/assetStore'
 export type TourPlacement = 'top' | 'bottom' | 'left' | 'right' | 'top-start' | 'bottom-start' | 'bottom-end' | 'left-start' | 'right-start'
 
 export interface TourStep {
-  /** The route to be on for this step. Pushed only when the current one differs. */
-  route?: string
+  /** The route to be on for this step. Pushed only when the current one differs. A function is resolved on entry. */
+  route?: string | (() => string)
+  /**
+   * Auto-play: the tour does the step's work itself on entry (once per run),
+   * after View as is applied and before the route is pushed.
+   */
+  run?: () => void
+  /** Find the target another way than a data-tour marker (a row by its text). */
+  find?: () => HTMLElement | null
   /** The data-tour marker to highlight. */
   target: string
   /** View as for this step, when it differs from the one before. */

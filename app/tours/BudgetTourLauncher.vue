@@ -4,31 +4,30 @@
     This is a demo layer for walkthroughs, not a product requirement; engineers
     building the product should ignore it. The only coupling to product screens
     is the data-tour="..." attributes they carry.
-    Shares the one Guided tours switch with Asset settings.
+    Always shown on the budget and purchase screens; one press starts BUD-1.
   -->
   <MpButton
-    v-if="guidedToursOn"
     class="btl-trigger"
     variant="ghost"
     is-rounded
     data-tour="budget-tour-launcher"
     @click="start"
   >
-    Guided tour
+    Play guided tour
   </MpButton>
 </template>
 
 <script setup lang="ts">
-import { watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { MpButton } from '@mekari/pixel3'
 import { BUDGET_TOUR } from './budgetTours'
-import { guidedToursOn } from './tourSettings'
-import { startTour, stopTour } from './tourRunner'
+import { startTour, stopTour, activeTour } from './tourRunner'
 
 const router = useRouter()
-function start() { startTour(BUDGET_TOUR, router) }
-watch(guidedToursOn, (on) => { if (!on) stopTour() })
+function start() {
+  if (activeTour.value) stopTour()
+  startTour(BUDGET_TOUR, router)
+}
 </script>
 
 <style scoped>

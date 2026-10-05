@@ -34,6 +34,8 @@ interface Running {
   router: Router
   /** Bumped on every move so a late wait from an earlier step gives up. */
   token: number
+  /** Auto-play steps already run, so Back and Next never repeat the work. */
+  ran: Set<number>
 }
 
 export const activeTour = ref<{ id: string; index: number } | null>(null)
@@ -207,8 +209,13 @@ async function enterStep(r: Running) {
 
   const step = tour.steps[index]!
   applyRole(tour, roleAt(tour, index))
-  if (step.route && !sameRoute(r.router, step.route)) {
-    await r.router.push(step.route)
+  if (step.run && !r.ran.has(index)) {
+    r.ran.add(index)
+    try { step.run() } catch (e) { console.error('tour step failed', e) }
+  }
+  const route = typeof step.route === 'function' ? step.route() : step.route
+  if (route && !sameRoute(r.router, route)) {
+    await r.router.push(route)
   }
   await nextTick()
   const caption = `${tour.code} · Step ${index + 1} of ${m}`
@@ -227,7 +234,7 @@ async function enterStep(r: Running) {
   const started = Date.now()
   const attempt = () => {
     if (!running || running.token !== token) return
-    const el = findTarget(step.target)
+    const el = step.find ? step.find() : findTarget(step.target)
     if (el) {
       // A short target is brought to the top so the panel has room under it;
       // a tall one (a schedule, a drawer body) only needs to be on screen.
@@ -276,6 +283,7 @@ function go(delta: number) {
   if (r.index < 0 && delta > 0) {
     // The confirmation panel: this is the one reset a tour performs.
     ;(r.tour.onReset ?? resetAssetStore)()
+    r.ran.clear()
     applyRole(r.tour, r.tour.role)
   }
   r.index = Math.max(-1, Math.min(r.tour.steps.length, r.index + delta))
@@ -286,7 +294,7 @@ function go(delta: number) {
 
 export function startTour(t: AssetTour, router: Router) {
   stopTour()
-  running = { tour: t, index: -1, router, token: 0 }
+  running = { tour: t, index: -1, router, token: 0, ran: new Set() }
   void enterStep(running)
 }
 

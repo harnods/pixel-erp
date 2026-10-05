@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import BudgetGuidedTourSetting from '~/tours/BudgetGuidedTourSetting.vue'
 /**
  * Budget settings (FG-3.6): how the check responds, the approval limits, the
  * invoice tolerance, which accounts the budget controls and the dimensions.
@@ -332,7 +331,6 @@ const dimensionColumns: TableColumn[] = [
       </div>
     </div>
 
-    <BudgetGuidedTourSetting />
   </div>
 </template>
 
