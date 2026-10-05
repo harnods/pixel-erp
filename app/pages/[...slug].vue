@@ -520,6 +520,9 @@ const InventoryValuationReportPage = asyncPage(() => import('~/components/pages/
 const FixedAssetSummaryReportPage = asyncPage(() => import('~/components/pages/FixedAssetSummaryReportPage.vue'))
 const CashBankReportPage = asyncPage(() => import('~/components/pages/CashBankReportPage.vue'))
 const BudgetVarianceReportPage = asyncPage(() => import('~/components/pages/BudgetVarianceReportPage.vue'))
+const PurchasesListReportPage = asyncPage(() => import('~/components/pages/PurchasesListReportPage.vue'))
+const PurchasesByVendorReportPage = asyncPage(() => import('~/components/pages/PurchasesByVendorReportPage.vue'))
+const PurchasesByProductReportPage = asyncPage(() => import('~/components/pages/PurchasesByProductReportPage.vue'))
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
 const EmployeeDetailsPage = asyncPage(() => import('~/components/pages/EmployeeDetailsPage.vue'))
 const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
@@ -681,6 +684,14 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'multidimensional') return { component: MultidimensionalReportPage, id: segs[1] }
     if (segs[1] === 'general-ledger') return { component: GeneralLedgerReportPage, id: segs[1] }
     if (segs[1] === 'budget-variance') return { component: BudgetVarianceReportPage, id: segs[1] }
+  }
+  // /purchase-report/:slug → the built Purchases reports (Reports → Purchases →
+  // View report). Only these slugs match; anything else falls through to the
+  // Purchases reports index.
+  if (segs.length >= 2 && segs[0] === 'purchase-report') {
+    if (segs[1] === 'purchases-list') return { component: PurchasesListReportPage, id: segs[1] }
+    if (segs[1] === 'purchases-by-vendor') return { component: PurchasesByVendorReportPage, id: segs[1] }
+    if (segs[1] === 'purchases-by-product') return { component: PurchasesByProductReportPage, id: segs[1] }
   }
   // /inventory-report/dual-unit → Dual Unit Inventory Report (Reports → Inventory →
   // View report). Only the built slug matches; anything else falls through to the
