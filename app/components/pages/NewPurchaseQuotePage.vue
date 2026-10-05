@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/purchase-quotes/views/PurchaseQuoteCreateView.vue + PurchaseQuoteEditView.vue + components/form/* -->
 <script setup lang="ts">
 /**
  * "New purchase quote" form — Purchases ▸ Purchase quotes ▸ New purchase quote.
@@ -22,8 +23,15 @@ import {
   PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS,
 } from '~/data'
 import type { PurchaseQuote } from '~/data/types'
+import { addPurchaseQuote } from '~/data/purchaseQuotes'
+import { getPurchaseQuoteDetail } from '~/data/purchaseQuoteDetails'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+
+// /purchase-quotes/new → create; /purchase-quotes/:id/edit → edit (prod PurchaseQuoteEditView).
+const props = defineProps<{ orderId?: string }>()
+const isEdit = computed(() => !!props.orderId && props.orderId !== 'new')
+const editSource = props.orderId && props.orderId !== 'new' ? getPurchaseQuoteDetail(props.orderId) : null
 
 const router = useRouter()
 const { t } = useLocale()
@@ -44,22 +52,23 @@ function toTagData(values: string[]): DataInterface[] {
 }
 
 // ── Header fields ─────────────────────────────────────────────────────────────
-const vendorId      = ref('')
+const vendorId      = ref(editSource?.vendor.id ?? '')
 const vendorError   = ref(false)
 const vendorOptions = vendors.map(v => ({ id: v.id, name: v.name }))
 
-const emailTags      = ref<DataInterface[]>([])
-const billingAddress = ref('')
-const shipTo         = ref('')
-const txDate         = ref(isoToDMY(todayISO()))
-const expirationDate = ref('')
-const shipDate       = ref('')
-const shipVia        = ref('')
-const paymentTerms   = ref('')
-const trackingNo     = ref('')
-const referenceNo    = ref('')
-const warehouse      = ref('')
-const tagsList       = ref<DataInterface[]>([])
+const emailTags      = ref<DataInterface[]>(toTagData(editSource?.email ?? []))
+const billingAddress = ref(editSource?.billingAddress ?? '')
+const shipTo         = ref(editSource?.shipTo ?? '')
+const txDate         = ref(isoToDMY(editSource?.date ?? todayISO()))
+const expirationDate = ref(isoToDMY(editSource?.expirationDate ?? ''))
+const shipDate       = ref(isoToDMY(editSource?.shipDate ?? ''))
+const shipVia        = ref(editSource?.shipVia ?? '')
+const paymentTerms   = ref(editSource?.paymentTerms ?? '')
+const referenceNo    = ref(editSource?.referenceNo ?? '')
+const warehouse      = ref(editSource?.warehouse ?? '')
+const tagsList       = ref<DataInterface[]>(toTagData(editSource?.tags ?? []))
+const txDateError    = ref(false)
+watch(txDate, (v) => { if (v) txDateError.value = false })
 
 // ── Transaction no. settings (auto-numbering) — shared global component ────────
 const noSettingsOpen = ref(false)
@@ -67,9 +76,9 @@ const nextTxNo = computed(() => `Purchase Quote #${nextQuoteNumber()}`)
 const txNoFormats = [{ label: t('Auto'), value: 'auto' }]
 function onNoFormatSave(_config: NumberFormatConfig) { noSettingsOpen.value = false }
 
-// Both default on so the form opens in the state the design documents.
-const requiresShipping = ref(true)
-const shipToDifferent  = ref(true)
+// prod: "Ship to different address" only appears once "Requires shipping" is on.
+const requiresShipping = ref(editSource ? editSource.isShipped : true)
+const shipToDifferent  = ref(editSource ? editSource.isShipped : true)
 const priceIncludesTax = ref(false)
 
 function onEmailChange(data: DataInterface[]) { emailTags.value = data }
@@ -226,6 +235,7 @@ function removeAttachment(idx: number) { attachments.value.splice(idx, 1) }
 function validate(): boolean {
   let ok = true
   if (!vendorId.value) { vendorError.value = true; ok = false }
+  if (!txDate.value) { txDateError.value = true; ok = false }
   noItemsError.value = !items.value.length
   if (!items.value.length) ok = false
 
@@ -249,10 +259,22 @@ function nextQuoteId(): string {
 
 function onCancel() { router.push('/purchase-quotes') }
 
-function onSave() {
+function onSave(andNew = false) {
   // Validation errors surface INLINE (per-field + the banner below), never as a toast.
   if (!validate()) return
   const vendor = vendors.find(v => v.id === vendorId.value)!
+  if (isEdit.value && editSource) {
+    const q = purchaseQuotes.find(x => x.id === editSource.id)
+    if (q) {
+      q.vendor = { id: vendor.id, name: vendor.name }
+      q.date = dmyToIso(txDate.value)
+      q.expirationDate = dmyToIso(expirationDate.value || txDate.value)
+      q.tags = tagsList.value.map(t2 => String(t2.value))
+    }
+    toast.notify({ variant: 'success', title: t('Purchase quote updated'), rootProps: { class: 'toast-enterprise' } })
+    router.push(`/purchase-quotes/${editSource.id}`)
+    return
+  }
   // A purchase quote is lightweight — we don't persist line items into the record;
   // the in-form items only drive the quote total.
   const quote: PurchaseQuote = {
@@ -265,8 +287,9 @@ function onSave() {
     total: total.value,
     tags: tagsList.value.map(t2 => String(t2.value)),
   }
-  purchaseQuotes.push(quote)
+  addPurchaseQuote(quote)
   toast.notify({ variant: 'success', title: t('Purchase quote created'), rootProps: { class: 'toast-enterprise' } })
+  if (andNew) { router.replace('/purchase-quotes').then(() => router.push('/purchase-quotes/new')); return }
   router.push(`/purchase-quotes/${quote.id}`)
 }
 </script>
@@ -278,7 +301,7 @@ function onSave() {
     <header class="si-form-bar">
       <div class="si-form-bar-left">
         <MpTextlink id="si-crumb" as="a" class="si-crumb" @click.prevent="onCancel">{{ t('Purchase quotes') }}</MpTextlink>
-        <h1 class="si-form-h1">{{ t('New purchase quote') }}</h1>
+        <h1 class="si-form-h1">{{ isEdit ? t('Edit purchase quote') : t('New purchase quote') }}</h1>
       </div>
     </header>
 
@@ -292,19 +315,19 @@ function onSave() {
           <MpAutocomplete
             id="f-vendor-inp" v-model="vendorId" :data="vendorOptions"
             label-prop="name" value-prop="id" is-searchable use-portal is-full-width
-            :placeholder="t('Select vendor')" :is-invalid="vendorError"
+            :placeholder="t('Vendor')" :is-invalid="vendorError"
             @update:model-value="onVendorChange"
           />
-          <MpFormErrorMessage>{{ t('You must select vendor') }}</MpFormErrorMessage>
+          <MpFormErrorMessage>{{ t('Vendor is required') }}</MpFormErrorMessage>
         </MpFormControl>
 
         <MpFormControl id="f-email" class="si-field">
           <MpFormLabel>{{ t('Email') }}</MpFormLabel>
-          <MpInputTag id="f-email-inp" :data="emailTags" :placeholder="t('+Add email')" @change="onEmailChange" />
+          <MpInputTag id="f-email-inp" :data="emailTags" :placeholder="t('Enter email')" @change="onEmailChange" />
         </MpFormControl>
 
         <div class="si-header1-total">
-          <h3 class="si-header1-total-value">{{ t('Quote total') }} {{ fmt(quoteTotal) }}</h3>
+          <h3 class="si-header1-total-value">{{ t('Total') }} {{ fmt(quoteTotal) }}</h3>
         </div>
       </section>
 
@@ -314,53 +337,49 @@ function onSave() {
         <div class="si-header2-col si-header2-col--wide">
           <MpFormControl id="f-billing" class="si-field">
             <MpFormLabel>{{ t('Billing address') }}</MpFormLabel>
-            <MpTextarea id="f-billing-inp" v-model="billingAddress" is-full-width />
+            <MpTextarea id="f-billing-inp" v-model="billingAddress" :placeholder="t('Billing address')" is-full-width />
           </MpFormControl>
 
           <div class="si-checkbox-stack">
             <MpCheckbox id="f-requires-shipping" v-model:is-checked="requiresShipping">{{ t('Requires shipping') }}</MpCheckbox>
-            <MpCheckbox id="f-ship-diff" v-model:is-checked="shipToDifferent">{{ t('Ship to different address') }}</MpCheckbox>
+            <MpCheckbox v-if="requiresShipping" id="f-ship-diff" v-model:is-checked="shipToDifferent">{{ t('Ship to different address') }}</MpCheckbox>
           </div>
 
-          <MpFormControl v-if="shipToDifferent" id="f-ship-to" class="si-field">
+          <MpFormControl v-if="requiresShipping && shipToDifferent" id="f-ship-to" class="si-field">
             <MpFormLabel>{{ t('Ship to') }}</MpFormLabel>
-            <MpTextarea id="f-ship-to-inp" v-model="shipTo" is-full-width />
+            <MpTextarea id="f-ship-to-inp" v-model="shipTo" :placeholder="t('Ship to')" is-full-width />
           </MpFormControl>
         </div>
 
         <!-- Col 2: dates + terms -->
         <div class="si-header2-col">
-          <MpFormControl id="f-tx-date" class="si-field">
+          <MpFormControl id="f-tx-date" class="si-field" is-required :is-invalid="txDateError">
             <MpFormLabel>{{ t('Transaction date') }}</MpFormLabel>
-            <MpDatePicker id="f-tx-date-inp" v-model="txDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
+            <MpDatePicker id="f-tx-date-inp" v-model="txDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal :placeholder="t('Transaction date')" />
+            <MpFormErrorMessage>{{ t('Transaction date is required') }}</MpFormErrorMessage>
           </MpFormControl>
 
           <MpFormControl id="f-expiration-date" class="si-field">
             <MpFormLabel>{{ t('Expiration date') }}</MpFormLabel>
-            <MpDatePicker id="f-expiration-date-inp" v-model="expirationDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
+            <MpDatePicker id="f-expiration-date-inp" v-model="expirationDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal :placeholder="t('Expiration date')" />
           </MpFormControl>
 
           <MpFormControl id="f-payment" class="si-field">
             <MpFormLabel>{{ t('Payment terms') }}</MpFormLabel>
-            <MpAutocomplete id="f-payment-inp" v-model="paymentTerms" :data="PAYMENT_TERMS" use-portal is-clearable is-full-width />
+            <MpAutocomplete id="f-payment-inp" v-model="paymentTerms" :data="PAYMENT_TERMS" use-portal is-clearable is-full-width :placeholder="t('Payment terms')" />
           </MpFormControl>
         </div>
 
         <!-- Col 3: shipping — only when "Requires shipping" is on -->
         <div v-if="requiresShipping" class="si-header2-col">
           <MpFormControl id="f-ship-date" class="si-field">
-            <MpFormLabel>{{ t('Ship date') }}</MpFormLabel>
-            <MpDatePicker id="f-ship-date-inp" v-model="shipDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
+            <MpFormLabel>{{ t('Estimated delivery date') }}</MpFormLabel>
+            <MpDatePicker id="f-ship-date-inp" v-model="shipDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal :placeholder="t('Estimated delivery date')" />
           </MpFormControl>
 
           <MpFormControl id="f-ship-via" class="si-field">
             <MpFormLabel>{{ t('Ship via') }}</MpFormLabel>
-            <MpInput id="f-ship-via-inp" v-model="shipVia" is-full-width />
-          </MpFormControl>
-
-          <MpFormControl id="f-tracking" class="si-field">
-            <MpFormLabel>{{ t('Tracking no.') }}</MpFormLabel>
-            <MpInput id="f-tracking-inp" v-model="trackingNo" is-full-width />
+            <MpInput id="f-ship-via-inp" v-model="shipVia" :placeholder="t('Ship via')" is-full-width />
           </MpFormControl>
         </div>
 
@@ -380,7 +399,7 @@ function onSave() {
 
           <MpFormControl id="f-ref" class="si-field">
             <MpFormLabel>{{ t('Reference no.') }}</MpFormLabel>
-            <MpInput id="f-ref-inp" v-model="referenceNo" is-full-width />
+            <MpInput id="f-ref-inp" v-model="referenceNo" :placeholder="t('Reference no.')" is-full-width />
           </MpFormControl>
 
           <MpFormControl id="f-warehouse" class="si-field">
@@ -392,8 +411,8 @@ function onSave() {
         <!-- Col 5: tags — last column, same 24px gap as every other pair -->
         <div class="si-header2-col">
           <MpFormControl id="f-tags" class="si-field">
-            <MpFormLabel>{{ t('Tag') }}</MpFormLabel>
-            <MpInputTag id="f-tags-inp" :data="tagsList" :placeholder="t('Select tags')" @change="onTagsChange" />
+            <MpFormLabel>{{ t('Tags') }}</MpFormLabel>
+            <MpInputTag id="f-tags-inp" :data="tagsList" :placeholder="t('Tags')" @change="onTagsChange" />
           </MpFormControl>
         </div>
       </section>
@@ -406,8 +425,8 @@ function onSave() {
 
         <MpBanner v-if="hasLineItemErrors || noItemsError" id="si-lineitems-error-banner" variant="danger" align-items="center" class="si-items-error-banner">
           <MpBannerIcon id="si-lineitems-error-banner-icon" />
-          <MpBannerTitle>{{ noItemsError && !hasLineItemErrors ? t('Add at least one product') : t('Failed to save') }}</MpBannerTitle>
-          <MpBannerDescription>{{ noItemsError && !hasLineItemErrors ? t('A sales invoice needs at least one line item before you can save.') : t('The transaction contains incomplete or invalid data. Review the highlighted fields.') }}</MpBannerDescription>
+          <MpBannerTitle>{{ t('Failed to save') }}</MpBannerTitle>
+          <MpBannerDescription>{{ noItemsError && !hasLineItemErrors ? t('At least one line item is required') : t('The transaction contains incomplete or invalid data. Review the highlighted fields.') }}</MpBannerDescription>
         </MpBanner>
 
         <div class="si-items-scroll">
@@ -431,7 +450,7 @@ function onSave() {
                 <th class="si-th">{{ t('Description') }}</th>
                 <th class="si-th">{{ t('Qty') }}</th>
                 <th class="si-th">{{ t('Unit') }}</th>
-                <th class="si-th">{{ t('Unit price') }}</th>
+                <th class="si-th">{{ t('Unit cost') }}</th>
                 <th class="si-th">{{ t('Discount') }}</th>
                 <th class="si-th">{{ t('Tax') }}</th>
                 <th class="si-th">{{ t('Amount') }}</th>
@@ -587,7 +606,7 @@ function onSave() {
           <MpFormControl id="f-message" class="si-note-field">
             <div class="si-lbl-row"><MpFormLabel>{{ t('Message') }}</MpFormLabel><span class="si-counter">{{ message.length }}/250</span></div>
             <MpTextarea id="f-message-inp" v-model="message" :maxlength="250" is-full-width />
-            <span class="si-field-caption">{{ t('Visible to customer') }}</span>
+            <span class="si-field-caption">{{ t('Visible to vendor') }}</span>
           </MpFormControl>
 
           <MpFormControl id="f-memo" class="si-note-field">
@@ -602,7 +621,7 @@ function onSave() {
               id="f-attachment" :button-text="t('Choose file')" :placeholder="t('or drag and drop here')"
               is-multiple is-full-width @change="onFilesChange"
             />
-            <p class="si-field-caption">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP format, with a maximum size of 10 MB per file and 5 files per transaction') }}</p>
+            <p class="si-field-caption">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB and 5 files per transaction') }}</p>
             <div v-if="attachments.length" class="si-attachment-list">
               <MpUploadList
                 v-for="(a, idx) in attachments" :key="a.name + idx"
@@ -626,7 +645,7 @@ function onSave() {
             </MpButton>
             <div class="si-discount-rows">
               <div class="si-totals-row">
-                <span>{{ t('Discount per line') }}</span>
+                <span>{{ t('Discount per lines') }}</span>
                 <span class="si-deduction">({{ fmt(discountTotal) }})</span>
               </div>
               <div class="si-totals-row">
@@ -679,27 +698,23 @@ function onSave() {
         </div>
       </section>
 
-      <!-- ── Footer ── ghost Cancel · secondary "More" dropdown · primary "Save" (rightmost) -->
+      <!-- ── Footer ── ghost Cancel · primary Save · kebab (Save & New) -->
       <MpButtonGroup class="erp-action-footer si-form-footer">
         <MpButton variant="ghost" is-rounded @click="onCancel">{{ t('Cancel') }}</MpButton>
 
-        <MpPopover id="si-form-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+        <MpButton variant="primary" is-rounded @click="onSave()">{{ isEdit ? t('Save changes') : t('Save') }}</MpButton>
+
+        <!-- prod create footer: kebab → "Save & New" (edit mode has only Save changes) -->
+        <MpPopover v-if="!isEdit" id="si-form-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <MpButton variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('More') }}</MpButton>
+            <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More options')" is-rounded />
           </MpPopoverTrigger>
           <MpPopoverContent class="erp-dropdown-menu">
             <MpPopoverList>
-              <MpPopoverListItem @click="onSave">{{ t('Save & close') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="onSave">{{ t('Save & share via WhatsApp') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="onSave">{{ t('Save & share via email') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="onSave">{{ t('Save as draft') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Print draft PDF') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="onSave(true)">{{ t('Save & New') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
-
-        <MpButton variant="primary" is-rounded @click="onSave">{{ t('Save') }}</MpButton>
       </MpButtonGroup>
 
     </div><!-- /si-form-stage -->

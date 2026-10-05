@@ -1,8 +1,11 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/purchase-quotes/views/PurchaseQuoteListView.vue + views/panels/PurchaseQuoteListPanel.vue -->
 <script setup lang="ts">
 import {
   MpButton, MpButtonGroup, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css, toast,
 } from '@mekari/pixel3'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import { infoToast } from '~/utils/toasts'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { formatIDR } from '~/utils/currency'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
@@ -28,7 +31,7 @@ const columns: TableColumn[] = [
   { key: 'date',           label: t('Date'),            kind: 'date',                                sortType: 'date'   },
   { key: 'number',         label: t('Number'),          kind: 'number', sortable: true,                sortType: 'number' },
   { key: 'vendorName',     label: t('Vendor'),          kind: 'name', sortable: true,                sortType: 'text'   },
-  { key: 'expirationDate', label: t('Valid until'),      kind: 'date',                                sortType: 'date'   },
+  { key: 'expirationDate', label: t('Expiration date'),  kind: 'date',                                sortType: 'date'   },
   { key: 'status',         label: t('Status'),          kind: 'status',                                sortType: 'text'   },
   { key: 'total',          label: t('Total'),           kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
   { key: 'tags',           label: t('Tags'),            kind: 'tags'                                 },
@@ -40,8 +43,13 @@ type Row = PurchaseQuote & { vendorName: string }
 // Prototype preview toggle (FAB, bottom-right): data vs empty-state view
 const previewMode = ref<'data' | 'empty'>('data')
 
+// prod tabs: All purchase quotes / Awaiting approval (?tab=). No quote sits in the
+// approval queue in the mock data, so that tab shows prod's approval blank slate.
+const route = useRoute()
+const isAwaiting = computed(() => route.query.tab === 'Awaiting approval')
+
 const rows = computed<Row[]>(() =>
-  previewMode.value === 'empty'
+  previewMode.value === 'empty' || isAwaiting.value
     ? []
     : purchaseQuotes.map(pq => ({ ...pq, vendorName: pq.vendor.name })),
 )
@@ -185,6 +193,20 @@ function openShare(r: Row) {
   shareAttachment.value = `${r.number}.pdf`
   shareOpen.value = true
 }
+function notInPrototype() { infoToast('Not in this prototype') }
+function markDeclined(r: Row) {
+  const q = purchaseQuotes.find(x => x.id === r.id)
+  if (q) q.status = 'declined'
+  toast.notify({ variant: 'success', title: `${t('Purchase Quote')} #${r.number} ${t('marked as declined')}`, rootProps: { class: 'toast-enterprise' } })
+}
+// prod: bulk Delete beside the Actions menu → confirm → "1 purchase quote deleted | {count} purchase quotes deleted"
+const bulkDeleteOpen = ref(false)
+const bulkDeleteCount = ref(0)
+function openBulkDelete(n: number) { bulkDeleteCount.value = n; bulkDeleteOpen.value = true }
+function confirmBulkDelete() {
+  const n = bulkDeleteCount.value
+  toast.notify({ variant: 'success', title: n === 1 ? t('1 purchase quote deleted') : `${n} ${t('purchase quotes deleted')}`, rootProps: { class: 'toast-enterprise' } })
+}
 const exportColumns = computed(() => [
   ...columns
     .filter(c => c.label && !c.noHeader)
@@ -219,17 +241,20 @@ const exportColumns = computed(() => [
   >
 
     <!-- ── Bulk actions ── -->
-    <template #bulk-actions>
+    <template #bulk-actions="{ count }">
       <MpPopover id="pq-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
         <MpPopoverTrigger>
           <MpButton size="sm" variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('Actions') }}</MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
-            <MpPopoverListItem>{{ t('Convert to purchase order') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="notInPrototype">{{ t('Print PDF') }}</MpPopoverListItem>
             <MpPopoverListItem @click="rows.length && openShare(rows[0])">{{ t('Share via email') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openCopyLinks(rows.slice(0, 5) as Row[])">{{ t('Copy link') }}</MpPopoverListItem>
+          </MpPopoverList>
+          <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
+          <MpPopoverList>
+            <MpPopoverListItem @click="openBulkDelete(count as number)">{{ t('Delete') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -314,9 +339,15 @@ const exportColumns = computed(() => [
         <!-- dynamic :src → runtime public path (not a build-time import).
              Save the attached illustration to app/public/illustrations/empty-folder.png -->
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-        <p class="empty-full-title">{{ t('No purchase quotes') }}</p>
-        <p class="empty-full-desc">{{ t('Purchase quotes will appear here.') }}</p>
-        <MpButton variant="secondary" left-icon="add" is-rounded @click="navigateTo('/purchase-quotes/new')">{{ t('New purchase quote') }}</MpButton>
+        <template v-if="isAwaiting">
+          <p class="empty-full-title">{{ t('No transactions awaiting approval') }}</p>
+          <p class="empty-full-desc">{{ t('Transactions pending approval will display here') }}</p>
+        </template>
+        <template v-else>
+          <p class="empty-full-title">{{ t('No purchase quotes') }}</p>
+          <p class="empty-full-desc">{{ t('Purchase quotes will appear here.') }}</p>
+          <MpButton variant="secondary" left-icon="add" is-rounded @click="navigateTo('/purchase-quotes/new')">{{ t('New purchase quote') }}</MpButton>
+        </template>
       </div>
     </template>
 
@@ -330,16 +361,15 @@ const exportColumns = computed(() => [
         <!-- min-width 160px, width hugs content, labels never wrap -->
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem>{{ t('View details') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Create purchase order') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Create purchase invoice') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Mark as declined') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="navigateTo(`/purchase-quotes/${(row as Row).id}`)">{{ t('View details') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="(row as Row).status === 'open'" @click="navigateTo('/purchase-orders')">{{ t('Create purchase order') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="(row as Row).status === 'open'" @click="markDeclined(row as Row)">{{ t('Mark as declined') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="navigateTo('/purchase-quotes/new')">{{ t('Duplicate') }}</MpPopoverListItem>
           </MpPopoverList>
           <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
           <MpPopoverList>
-            <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openShare(row as Row)">{{ t('Share via email') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openCopyLinks([row as Row])">{{ t('Copy link') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -364,6 +394,14 @@ const exportColumns = computed(() => [
   <ExportModal :open="exportOpen" :title="t('Export purchase quotes')" entity-label="purchase quotes" :columns="exportColumns" :custom-fields="[t('Sample custom field 1'), t('Sample custom field 2')]" :total="total" @close="exportOpen = false" @export="exportOpen = false" />
   <CopyLinkDrawer :open="copyOpen" :items="copyItems" @close="copyOpen = false" @download-csv="copyOpen = false" />
   <ShareViaEmailModal :open="shareOpen" :title="shareTitle" :subject="shareSubject" :attachment-name="shareAttachment" :attachment-size-k-b="128" sender-email="rizal.candra@centralperk.co.id" @close="shareOpen = false" @send="shareOpen = false" />
+
+  <ConfirmModal
+    v-model:is-open="bulkDeleteOpen"
+    :title="t('Delete purchase quote?')"
+    :description="t('Deleted purchase quote cannot be restored.')"
+    :confirm-label="t('Delete')"
+    @confirm="confirmBulkDelete"
+  />
 
   <ScenarioFab v-model="previewMode" />
 </template>

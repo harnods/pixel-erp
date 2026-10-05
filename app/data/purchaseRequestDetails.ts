@@ -25,6 +25,12 @@ export interface PurchaseRequestDetail extends PurchaseRequest {
   warehouse: string
   deliverTo: string
   note: string
+  /** prod detail fields (Requestor / Related budget year / procurement-staff email). */
+  requestor: string
+  budgetYear: string
+  procurementStaffEmail: string
+  /** prod line column "Processed qty" — per line, same order as `lines`. */
+  processedQty: number[]
   attachments: PRAttachment[]
   lastUpdatedBy: string
   lastUpdatedAt: string
@@ -69,6 +75,11 @@ function buildDetail(base: PurchaseRequest, idx: number): PurchaseRequestDetail 
     warehouse: pick(WAREHOUSES, idx),
     deliverTo: pick(DELIVER_TO, idx),
     note: pick(NOTES, idx),
+    requestor: pick(DEPARTMENTS, idx + 2),
+    budgetYear: base.date.slice(0, 4),
+    procurementStaffEmail: `${base.procurementStaff.toLowerCase().replace(/[^a-z]+/g, '.').replace(/^\.|\.$/g, '')}@centralperk.co.id`,
+    processedQty: base.lines.map(l => base.status === 'closed' ? l.requestedQty
+      : base.status === 'partially processed' ? Math.floor(l.requestedQty / 2) : 0),
     attachments: base.attachment ? [{ name: `PR-${base.number}.pdf`, sizeKB: 48 }] : [],
     lastUpdatedBy: base.procurementStaff,
     lastUpdatedAt: `${base.date}T09:30:00+07:00`,

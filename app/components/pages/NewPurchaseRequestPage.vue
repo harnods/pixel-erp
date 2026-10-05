@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/purchase-requests/views/PurchaseRequestCreateView.vue + PurchaseRequestEditView.vue + components/form/* -->
 <script setup lang="ts">
 /**
  * "New purchase request" form — Purchasing ▸ Purchase requests ▸ New purchase request.
@@ -8,16 +9,23 @@
  */
 import {
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
-  MpButton, MpButtonGroup, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput,
-  MpDatePicker, MpAutocomplete, MpTooltip,
+  MpButton, MpButtonGroup, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea,
+  MpDatePicker, MpAutocomplete, MpTooltip, MpInputTag, MpUpload, MpUploadList,
   MpIcon, MpTextlink, toast, css,
 } from '@mekari/pixel3'
+import type { DataInterface } from '@mekari/pixel3'
 import {
   products, purchaseRequests,
   WAREHOUSES, UNIT_OPTIONS,
+  addPurchaseRequest, updatePurchaseRequest, getPurchaseRequest,
 } from '~/data'
-import type { PurchaseRequest, PurchaseRequestLine, UrgencyLevel } from '~/data/types'
+import type { PurchaseRequestLine, UrgencyLevel } from '~/data/types'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+
+// /purchase-requests/new → create; /purchase-requests/:id/edit → edit (prod PurchaseRequestEditView).
+const props = defineProps<{ orderId?: string }>()
+const editSource = props.orderId && props.orderId !== 'new' ? getPurchaseRequest(props.orderId) ?? null : null
+const isEdit = !!editSource
 
 const router = useRouter()
 const { t } = useLocale()
@@ -35,14 +43,30 @@ function dmyToIso(dmy: string) {
 }
 
 // ── Header fields ─────────────────────────────────────────────────────────────
-const procurementStaff = ref('')
+const procurementStaff = ref(editSource?.procurementStaff ?? '')
 const staffError       = ref(false)
-const requestDate      = ref(isoToDMY(todayISO()))
-const requiredDate     = ref('')
-const urgency          = ref('Medium')
+const requestDate      = ref(isoToDMY(editSource?.date ?? todayISO()))
+const dateError        = ref(false)
+const budgetYear       = ref(String(new Date().getFullYear()))
+const requestor        = ref('')
+const requiredDate     = ref(isoToDMY(editSource?.requiredDate ?? ''))
+const urgency          = ref(editSource ? editSource.urgency.charAt(0).toUpperCase() + editSource.urgency.slice(1) : 'Medium')
+const urgencyError     = ref(false)
 const warehouse        = ref('')
+const tagsList         = ref<DataInterface[]>((editSource?.tags ?? []).map((v, i) => ({ text: v, id: `${i}-${v}`, value: v, isInvalid: false, isReadOnly: false })))
+function onTagsChange(data: DataInterface[]) { tagsList.value = data }
+const message = ref('')
+const memo    = ref('')
+const attachments = ref<{ name: string; sizeKB: number }[]>([])
+function onFilesChange(e: Event) {
+  const files = (e.target as HTMLInputElement | null)?.files
+  if (!files) return
+  for (const f of Array.from(files)) attachments.value.push({ name: f.name, sizeKB: Math.round(f.size / 1024 * 10) / 10 })
+}
+function removeAttachment(idx: number) { attachments.value.splice(idx, 1) }
 
 const URGENCY_OPTIONS = ['Low', 'Medium', 'High']
+const BUDGET_YEARS = ['2025', '2026', '2027']
 
 // ── Line items ────────────────────────────────────────────────────────────────
 interface LineItem {
@@ -58,7 +82,10 @@ interface LineItem {
   qtyError: boolean
 }
 let _seq = 0
-const items = ref<LineItem[]>([])
+const items = ref<LineItem[]>((editSource?.lines ?? []).map(l => ({
+  _key: ++_seq, product: l.product, sku: l.sku, description: l.description, qty: l.requestedQty,
+  unit: l.unit, unitCost: l.unitCost, availableQty: l.availableQty, productError: false, qtyError: false,
+})))
 
 function removeItem(key: number) { items.value = items.value.filter(it => it._key !== key) }
 
@@ -110,6 +137,8 @@ const noItemsError = ref(false)
 function validate(): boolean {
   let ok = true
   if (!procurementStaff.value.trim()) { staffError.value = true; ok = false }
+  if (!requestDate.value) { dateError.value = true; ok = false }
+  if (!urgency.value) { urgencyError.value = true; ok = false }
   noItemsError.value = !items.value.length
   if (!items.value.length) ok = false
 
@@ -122,13 +151,6 @@ function validate(): boolean {
 
 function nextRequestNumber(): number {
   return purchaseRequests.reduce((max, r) => Math.max(max, r.number), 90009) + 1
-}
-function nextRequestId(): string {
-  const n = purchaseRequests.reduce((max, r) => {
-    const num = parseInt(r.id.replace(/\D/g, ''), 10)
-    return Number.isNaN(num) ? max : Math.max(max, num)
-  }, 0) + 1
-  return `PR${String(n).padStart(3, '0')}`
 }
 
 function onCancel() { router.push('/purchase-requests') }
@@ -146,21 +168,24 @@ function onSave() {
     unitCost: it.unitCost,
     taxLabel: 'PPN 11%',
   }))
-  const id = nextRequestId()
-  const request: PurchaseRequest = {
-    id,
-    number: nextRequestNumber(),
+  const header = {
     date: dmyToIso(requestDate.value),
     procurementStaff: procurementStaff.value.trim(),
     requiredDate: dmyToIso(requiredDate.value || requestDate.value),
-    status: 'open',
     totalProducts: lines.length,
     urgency: urgency.value.toLowerCase() as UrgencyLevel,
+    tags: tagsList.value.map(tg => String(tg.value)),
     lines,
   }
-  purchaseRequests.push(request)
-  toast.notify({ variant: 'success', title: t('Purchase request created'), rootProps: { class: 'toast-enterprise' } })
-  router.push(`/purchase-requests/${id}`)
+  if (editSource) {
+    updatePurchaseRequest(editSource.id, header)
+    toast.notify({ variant: 'success', title: t('Purchase request saved'), rootProps: { class: 'toast-enterprise' } })
+    router.push(`/purchase-requests/${editSource.id}`)
+    return
+  }
+  const created = addPurchaseRequest({ ...header, number: nextRequestNumber(), status: 'open' })
+  toast.notify({ variant: 'success', title: t('Purchase request saved'), rootProps: { class: 'toast-enterprise' } })
+  router.push(`/purchase-requests/${created.id}`)
 }
 </script>
 
@@ -171,51 +196,85 @@ function onSave() {
     <header class="si-form-bar">
       <div class="si-form-bar-left">
         <MpTextlink id="si-crumb" as="a" class="si-crumb" @click.prevent="onCancel">{{ t('Purchase requests') }}</MpTextlink>
-        <h1 class="si-form-h1">{{ t('New purchase request') }}</h1>
+        <h1 class="si-form-h1">{{ isEdit ? t('Edit purchase request') : t('New purchase request') }}</h1>
       </div>
     </header>
 
     <!-- ── Scrollable stage ── -->
     <div class="si-form-stage">
 
-      <!-- ── Header — fixed-width fields that wrap, never stretch ── -->
+      <!-- ── Header row 1 (prod): Procurement staff | Transaction date | Related budget year | Transaction no. | Tags ── -->
       <section class="si-header2 si-dashed-divider">
-        <!-- Col 1: procurement staff -->
         <div class="si-header2-col">
           <MpFormControl id="f-staff" class="si-field" is-required :is-invalid="staffError">
             <MpFormLabel>{{ t('Procurement staff') }}</MpFormLabel>
             <MpInput
               id="f-staff-inp" v-model="procurementStaff" is-full-width
-              :placeholder="t('Enter procurement staff')" :is-invalid="staffError"
+              :placeholder="t('Select procurement staff')" :is-invalid="staffError"
               @update:model-value="staffError = false"
             />
-            <MpFormErrorMessage>{{ t('You must enter procurement staff') }}</MpFormErrorMessage>
+            <MpFormErrorMessage>{{ t('Procurement staff is required') }}</MpFormErrorMessage>
           </MpFormControl>
         </div>
 
-        <!-- Col 2: dates -->
         <div class="si-header2-col">
-          <MpFormControl id="f-request-date" class="si-field">
-            <MpFormLabel>{{ t('Request date') }}</MpFormLabel>
-            <MpDatePicker id="f-request-date-inp" v-model="requestDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
+          <MpFormControl id="f-request-date" class="si-field" is-required :is-invalid="dateError">
+            <MpFormLabel>{{ t('Transaction date') }}</MpFormLabel>
+            <MpDatePicker id="f-request-date-inp" v-model="requestDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal placeholder="DD/MM/YYYY" @update:model-value="dateError = false" />
+            <MpFormErrorMessage>{{ t('Transaction date is required') }}</MpFormErrorMessage>
           </MpFormControl>
+        </div>
 
+        <div class="si-header2-col">
+          <MpFormControl id="f-budget-year" class="si-field">
+            <MpFormLabel>{{ t('Related budget year') }}</MpFormLabel>
+            <MpAutocomplete id="f-budget-year-inp" v-model="budgetYear" :data="BUDGET_YEARS" use-portal is-full-width />
+          </MpFormControl>
+        </div>
+
+        <div class="si-header2-col">
+          <MpFormControl id="f-tx-no" class="si-field">
+            <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
+            <MpInput id="f-tx-no-inp" :placeholder="isEdit && editSource ? String(editSource.number) : t('Auto')" is-disabled is-full-width />
+          </MpFormControl>
+        </div>
+
+        <div class="si-header2-col">
+          <MpFormControl id="f-tags" class="si-field">
+            <MpFormLabel>{{ t('Tags') }}</MpFormLabel>
+            <MpInputTag id="f-tags-inp" :data="tagsList" :placeholder="t('Select tags')" @change="onTagsChange" />
+          </MpFormControl>
+        </div>
+      </section>
+
+      <!-- ── Header row 2 (prod): Requestor | Required date | Urgency level; Warehouse is local-only (kept) ── -->
+      <section class="si-header2 si-dashed-divider">
+        <div class="si-header2-col">
+          <MpFormControl id="f-requestor" class="si-field">
+            <MpFormLabel>{{ t('Requestor') }}</MpFormLabel>
+            <MpInput id="f-requestor-inp" v-model="requestor" :placeholder="t('Requestor')" is-full-width />
+          </MpFormControl>
+        </div>
+
+        <div class="si-header2-col">
           <MpFormControl id="f-required-date" class="si-field">
             <MpFormLabel>{{ t('Required date') }}</MpFormLabel>
-            <MpDatePicker id="f-required-date-inp" v-model="requiredDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
+            <MpDatePicker id="f-required-date-inp" v-model="requiredDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal :placeholder="t('Select required date')" />
           </MpFormControl>
         </div>
 
-        <!-- Col 3: urgency + warehouse -->
         <div class="si-header2-col">
-          <MpFormControl id="f-urgency" class="si-field">
-            <MpFormLabel>{{ t('Urgency') }}</MpFormLabel>
-            <MpAutocomplete id="f-urgency-inp" v-model="urgency" :data="URGENCY_OPTIONS" use-portal is-full-width />
+          <MpFormControl id="f-urgency" class="si-field" is-required :is-invalid="urgencyError">
+            <MpFormLabel>{{ t('Urgency level') }}</MpFormLabel>
+            <MpAutocomplete id="f-urgency-inp" v-model="urgency" :data="URGENCY_OPTIONS" use-portal is-full-width :placeholder="t('Urgency level')" @update:model-value="urgencyError = false" />
+            <MpFormErrorMessage>{{ t('Urgency level is required') }}</MpFormErrorMessage>
           </MpFormControl>
+        </div>
 
+        <div class="si-header2-col">
           <MpFormControl id="f-warehouse" class="si-field">
             <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
-            <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width />
+            <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width :placeholder="t('Select warehouse')" />
           </MpFormControl>
         </div>
       </section>
@@ -224,8 +283,8 @@ function onSave() {
       <section class="si-items-section">
         <MpBanner v-if="hasLineItemErrors || noItemsError" id="si-lineitems-error-banner" variant="danger" align-items="center" class="si-items-error-banner">
           <MpBannerIcon id="si-lineitems-error-banner-icon" />
-          <MpBannerTitle>{{ noItemsError && !hasLineItemErrors ? t('Add at least one product') : t('Failed to save') }}</MpBannerTitle>
-          <MpBannerDescription>{{ noItemsError && !hasLineItemErrors ? t('A purchase request needs at least one line item before you can save.') : t('The request contains incomplete or invalid data. Review the highlighted fields.') }}</MpBannerDescription>
+          <MpBannerTitle>{{ t('Failed to save') }}</MpBannerTitle>
+          <MpBannerDescription>{{ noItemsError && !hasLineItemErrors ? t('At least one product is required') : t('The transaction contains incomplete or invalid data. Review the highlighted fields.') }}</MpBannerDescription>
         </MpBanner>
 
         <div class="si-items-scroll">
@@ -241,7 +300,7 @@ function onSave() {
               <tr>
                 <th class="si-th">{{ t('Product') }}</th>
                 <th class="si-th">{{ t('Description') }}</th>
-                <th class="si-th">{{ t('Qty') }}</th>
+                <th class="si-th">{{ t('Requested qty') }}</th>
                 <th class="si-th">{{ t('Unit') }}</th>
                 <th class="si-th si-th--del" />
               </tr>
@@ -288,7 +347,7 @@ function onSave() {
                 <td class="si-td si-td--input si-td--border" :class="{ 'si-td--error': item.qtyError }">
                   <MpTooltip
                     v-if="item.qtyError" :id="`si-qty-tt-${item._key}`"
-                    :label="t('Qty must be more than 0')" placement="top" use-portal
+                    :label="t('Requested quantity must be greater than 0')" placement="top" use-portal
                     class="si-error-tooltip-wrap"
                   >
                     <MpInput type="number" :model-value="item.qty" is-full-width
@@ -345,6 +404,36 @@ function onSave() {
         </div>
       </section>
 
+      <!-- ── Message / Memo / Attachment (prod TransactionBottomLeft) ── -->
+      <section class="si-bottom-section">
+        <div class="si-notes-col">
+          <MpFormControl id="f-message" class="si-note-field">
+            <MpFormLabel>{{ t('Message') }}</MpFormLabel>
+            <MpTextarea id="f-message-inp" v-model="message" is-full-width />
+            <span class="si-field-caption">{{ t('This will be shared with your vendor') }}</span>
+          </MpFormControl>
+
+          <MpFormControl id="f-memo" class="si-note-field">
+            <MpFormLabel>{{ t('Memo') }}</MpFormLabel>
+            <MpTextarea id="f-memo-inp" v-model="memo" is-full-width />
+            <span class="si-field-caption">{{ t('Only visible to you and your team') }}</span>
+          </MpFormControl>
+
+          <div class="si-attachment-section">
+            <span class="si-attachment-label">{{ t('Attachment') }}</span>
+            <MpUpload id="f-attachment" :button-text="t('Choose file')" :placeholder="t('or drag and drop here')" is-multiple is-full-width @change="onFilesChange" />
+            <p class="si-field-caption">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB and 5 files per transaction') }}</p>
+            <div v-if="attachments.length" class="si-attachment-list">
+              <MpUploadList
+                v-for="(a, idx) in attachments" :key="a.name + idx"
+                :title="a.name" :subtitle="`${a.sizeKB} KB`" icon-name="doc"
+                status="success" is-show-remove-button @remove="removeAttachment(idx)"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- ── Footer ── ghost Cancel · primary "Save" (rightmost) -->
       <MpButtonGroup class="erp-action-footer si-form-footer">
         <MpButton variant="ghost" is-rounded @click="onCancel">{{ t('Cancel') }}</MpButton>
@@ -356,6 +445,14 @@ function onSave() {
 </template>
 
 <style scoped>
+/* Bottom notes (same metrics as NewPurchaseQuotePage) */
+.si-bottom-section { display: flex; align-items: flex-start; gap: var(--mp-spacing-6); }
+.si-notes-col { display: flex; flex-direction: column; gap: var(--mp-spacing-5); width: 432px; flex-shrink: 0; }
+.si-note-field { display: flex; flex-direction: column; }
+.si-field-caption { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); }
+.si-attachment-section { display: flex; flex-direction: column; gap: var(--mp-spacing-1); width: var(--si-field-wide); }
+.si-attachment-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.si-attachment-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-1); }
 .si-form-page {
   --si-field-wide: 318px;
   --si-field: 228px;
