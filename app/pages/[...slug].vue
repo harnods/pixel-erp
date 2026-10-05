@@ -211,7 +211,17 @@ const pageRegistry: Record<string, Component> = {
   'Buzz campaigns':     defineAsyncComponent(() => import('~/components/pages/BuzzCampaignsPage.vue')),
   'Buzz branding':      defineAsyncComponent(() => import('~/components/pages/BuzzBrandingPage.vue')),
   'Buzz photo stocks':  defineAsyncComponent(() => import('~/components/pages/BuzzPhotoStocksPage.vue')),
+
+  // ── Other lists + WMS data migration (prod-parity copies) ──
+  'Recurring transactions': defineAsyncComponent(() => import('~/components/pages/RecurringTransactionsPage.vue')),
+  'Activity log':       defineAsyncComponent(() => import('~/components/pages/ActivityLogPage.vue')),
+  'Export and import':  defineAsyncComponent(() => import('~/components/pages/ExportImportPage.vue')),
+  'File manager':       defineAsyncComponent(() => import('~/components/pages/FileManagerPage.vue')),
+  'Cost recalculation': defineAsyncComponent(() => import('~/components/pages/CostRecalculationPage.vue')),
+  'Wms data migration': defineAsyncComponent(() => import('~/components/pages/WmsDataMigrationPage.vue')),
 }
+const RecurringScheduleDetailPage = asyncPage(() => import('~/components/pages/RecurringScheduleDetailPage.vue'))
+const ImportFileDetailPage = asyncPage(() => import('~/components/pages/ImportFileDetailPage.vue'))
 
 const ProjectEngagementDetailsPage = asyncPage(() => import('~/components/pages/ProjectEngagementDetailsPage.vue'))
 const NewEngagementPage = asyncPage(() => import('~/components/pages/NewEngagementPage.vue'))
@@ -623,6 +633,9 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'inventory-report' && segs[1] === 'dual-unit') {
     return { component: DualUnitInventoryReportPage, id: segs[1]! }
   }
+  // /recurring-transactions/:id and /export-and-import/:id → Other lists detail pages.
+  if (segs.length >= 2 && segs[0] === 'recurring-transactions') return { component: RecurringScheduleDetailPage, id: segs[1]! }
+  if (segs.length >= 2 && segs[0] === 'export-and-import') return { component: ImportFileDetailPage, id: segs[1]! }
   // /data-migration/wms-cutover/:step → the WMS→Jurnal cutover setup screens.
   // Full-bleed form pages (own title bar + stage); the bare index falls through
   // to the registry's 'Data migration' landing.
@@ -1030,6 +1043,7 @@ const currentComponent = computed<Component>(() => {
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
 const pageTabs: Record<string, string[]> = {
+  'Export and import': ['Import', 'Export'],
   // WMS analytics — Inbound/Outbound as page tabs (outside the stage). Reached in ERP
   // via Dashboard › WMS analytics (/wms-analytics → key 'Wms analytics'); in WMS
   // Standalone it IS the Dashboard page (key 'Dashboard').
@@ -1294,6 +1308,7 @@ const wmsOverviewTabComponents: Record<string, Component> = {
   'Outbound delivery': () => h(WmsOverviewPage, { direction: 'outbound' }),
 }
 const tabComponents: Record<string, Record<string, Component>> = {
+  'Export and import': { 'Import': pageRegistry['Export and import']!, 'Export': pageRegistry['Export and import']! },
   'Wms analytics': wmsOverviewTabComponents,
   'Dashboard':     wmsOverviewTabComponents,
   // Sales modules — one index page serves both tabs; it self-filters on ?tab=.
@@ -1423,6 +1438,11 @@ function msgAgent(msg: { role: string; agentId?: string }) {
 // lives in CouriersPage.vue — signal it to open, same mechanism as toggleAirene.
 const courierAddSignal = ref(0)
 provide('courierAddSignal', courierAddSignal)
+// Other lists title-bar actions signal their page the same way.
+const recurringCreateSignal = ref(0)
+provide('recurringCreateSignal', recurringCreateSignal)
+const fileManagerAddSignal = ref(0)
+provide('fileManagerAddSignal', fileManagerAddSignal)
 
 // ── Contacts: "+ Contact" in the title bar; the index page owns the navigation
 // (it knows which role list is active), so signal it the same way.
@@ -2198,6 +2218,12 @@ function startResize(e: MouseEvent) {
         </div>
         <div v-else-if="isContactsIndex" class="page-title-actions">
           <MpButton variant="primary" is-rounded left-icon="add" @click="contactAddSignal++">{{ t(contactAddLabel) }}</MpButton>
+        </div>
+        <div v-else-if="currentPageKey === 'Recurring transactions'" class="page-title-actions">
+          <MpButton variant="primary" is-rounded left-icon="add" @click="recurringCreateSignal++">{{ t('Create New') }}</MpButton>
+        </div>
+        <div v-else-if="currentPageKey === 'File manager'" class="page-title-actions">
+          <MpButton variant="primary" is-rounded left-icon="add" @click="fileManagerAddSignal++">{{ t('Add Attachment') }}</MpButton>
         </div>
         <div v-else-if="currentPageKey === 'Couriers'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="courierAddSignal++">

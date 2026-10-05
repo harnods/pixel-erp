@@ -107,6 +107,8 @@ export * from './companySettings'
 
 // ── Data migration (WMS → Jurnal cutover) ───────────────────────────────────
 export * from './wmsCutover'
+export * from './wmsDataMigration'
+export * from './otherLists'
 
 // ── Cross-module integrity guards ───────────────────────────────────────────
 export * from './integrityGuards'
