@@ -52,7 +52,7 @@ const columns: TableColumn[] = [
   { key: 'action', label: t('Action'), kind: 'status' },
   { key: 'type', label: t('Type') },
   { key: 'number', label: t('Number'), kind: 'number' },
-  { key: 'user', label: t('User'), kind: 'name' },
+  { key: 'user', label: t('User') },
   { key: 'changes', label: t('Details'), kind: 'address' },
 ]
 

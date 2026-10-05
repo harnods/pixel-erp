@@ -153,6 +153,7 @@ function notInPrototype() { infoToast(t('Not in this prototype')) }
               <div v-if="(value as string[])?.length" class="tags-cell">
                 <span v-for="tag in (value as string[])" :key="tag" class="erp-tag">{{ tag }}</span>
               </div>
+              <span v-else>-</span>
             </template>
             <template #empty>
               <div class="empty-full">

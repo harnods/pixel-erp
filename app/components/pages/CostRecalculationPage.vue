@@ -75,7 +75,7 @@ const columns: TableColumn[] = [
   { key: 'recalculateDate', label: t('Calculation date'), kind: 'date' },
   { key: 'by', label: t('Updated by'), kind: 'name' },
   { key: 'trigger', label: t('Triggering transaction'), kind: 'number' },
-  { key: 'triggerDate', label: t('Triggering transaction date'), kind: 'date' },
+  { key: 'triggerDate', label: t('Triggering transaction date') },
   { key: 'status', label: t('Status'), kind: 'status' },
 ]
 </script>

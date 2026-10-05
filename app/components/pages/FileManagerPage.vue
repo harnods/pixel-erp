@@ -33,7 +33,7 @@ const { search, currentPage, paginated, total, perPage, setPage, setPerPage, sor
 )
 
 const columns: TableColumn[] = [
-  { key: 'fileName', label: t('Name'), kind: 'address', sortable: true, sortType: 'text' },
+  { key: 'fileName', label: t('Name'), kind: 'name', sortable: true, sortType: 'text' },
   { key: 'transaction', label: t('Transaction'), kind: 'number', sortable: true, sortType: 'text' },
   { key: 'transactionType', label: t('Transaction Type'), sortable: true, sortType: 'text' },
   { key: 'createdAt', label: t('Created Time'), kind: 'date', sortable: true, sortType: 'date' },

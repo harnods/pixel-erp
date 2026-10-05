@@ -38,7 +38,7 @@ const { currentPage, paginated, total, perPage, setPage, setPerPage, sortKey, so
 })
 const columns: TableColumn[] = [
   { key: 'date', label: t('Date'), kind: 'date', sortable: true, sortType: 'date' },
-  { key: 'transactionNo', label: t('Transaction Number'), kind: 'number' },
+  { key: 'transactionNo', label: t('Transaction Number'), kind: 'name' },
   { key: 'contact', label: t('Contact Person'), kind: 'name' },
   { key: 'status', label: t('Status'), kind: 'status' },
   { key: 'total', label: t('Total'), kind: 'amount', align: 'right' },
@@ -101,6 +101,7 @@ function confirmDelete() {
             <div v-if="(value as string[])?.length" class="tags-cell">
               <span v-for="tag in (value as string[])" :key="tag" class="erp-tag">{{ tag }}</span>
             </div>
+            <span v-else>-</span>
           </template>
           <template #empty>
             <div class="empty-full">

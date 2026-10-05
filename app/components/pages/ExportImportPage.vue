@@ -209,7 +209,7 @@ function applyDrawer() {
       <template #cell-fileName="{ row }">
         <span class="cell-link ei-filename" @click.stop="openDetail(row as unknown as ImportFile)">{{ (row as unknown as ImportFile).fileName }}</span>
       </template>
-      <template #cell-feature="{ value }">{{ t(value as string) }}</template>
+      <template #cell-feature="{ value }"><span class="ei-wrap">{{ t(value as string) }}</span></template>
       <template #cell-successAmount="{ row }">{{ successCount(row as unknown as ImportFile) }}</template>
 
       <template #actions="{ row }">
@@ -325,7 +325,7 @@ function applyDrawer() {
 
 .ei-status { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .ei-warn { display: inline-flex; color: var(--mp-colors-text-warning); }
-.ei-filename { white-space: normal; overflow-wrap: anywhere; }
+.ei-filename, .ei-wrap { display: block; white-space: normal; overflow-wrap: anywhere; }
 
 .empty-full { display: flex; flex-direction: column; align-items: center; }
 .empty-illustration { width: 288px; height: 240px; object-fit: contain; }
