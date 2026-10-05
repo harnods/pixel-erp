@@ -19,8 +19,8 @@ const state = (j: (typeof list.value)[number]) => j.reversesId ? 'Reversal' : j.
 <template>
   <div class="prj">
     <div v-if="!list.length" class="prj__card prj__empty">{{ t('No journal posted for this run yet.') }}</div>
-    <div v-for="j in list" :key="j.id" class="prj__card" :data-journal="j.number">
-      <div class="prj__head" @click="open = open === j.id ? null : j.id">
+    <div v-for="j in list" :key="j.id" class="prj__card" :data-journal="j.number" data-tour="payroll-journal">
+      <div class="prj__head" data-tour="payroll-journal-head" @click="open = open === j.id ? null : j.id">
         <div class="prj__headleft">
           <div class="prj__titlerow">
             <span class="prj__number">{{ j.number }}</span>

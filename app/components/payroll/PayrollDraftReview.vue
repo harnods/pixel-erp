@@ -227,7 +227,7 @@ const hcHasEvents = computed(() => payroll.events.length > 0)
     </section>
 
     <!-- 4. The lines Post writes -->
-    <section class="pdr__card" data-section="lines">
+    <section class="pdr__card" data-section="lines" data-tour="payroll-draft-lines">
       <header class="pdr__cardhead">
         <div class="pdr__cardtitle">{{ t('Journal preview') }}</div>
         <div class="pdr__cardsub">{{ run && currentVersionOf(run)?.draft?.memo }}</div>

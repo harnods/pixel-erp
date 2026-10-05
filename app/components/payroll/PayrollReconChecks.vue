@@ -28,7 +28,7 @@ const offCount = computed(() => checks.value.filter((c) => c.status === 'Off').l
 </script>
 
 <template>
-  <div class="prc">
+  <div class="prc" data-tour="payroll-recon-checks">
     <div class="prc-head">
       <span class="prc-title">{{ t('Independent checks') }}</span>
       <span class="prc-hint" :class="{ 'prc-bad': offCount }">{{ offCount ? `${offCount} ${t(offCount === 1 ? 'check is off. Sign-off waits for a confirmed note.' : 'checks are off. Sign-off waits for confirmed notes.')}` : t('No check blocks sign-off') }}</span>

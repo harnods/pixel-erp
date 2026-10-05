@@ -159,6 +159,7 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
     <!-- ── Runs ── -->
     <ErpTablePage
       v-if="view === 'runs'"
+      data-tour="payroll-inbox-runs"
       :columns="runColumns"
       :rows="(pagedRuns as unknown as Record<string, unknown>[])"
       :total="filteredRuns.length"

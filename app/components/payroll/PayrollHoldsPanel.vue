@@ -192,7 +192,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
 </script>
 
 <template>
-  <div v-if="run && holds.length" class="ph">
+  <div v-if="run && holds.length" class="ph" data-tour="payroll-holds">
     <div class="ph__head">
       <div>
         <div class="ph__title">{{ t('Holds') }} ({{ holds.length }})</div>
