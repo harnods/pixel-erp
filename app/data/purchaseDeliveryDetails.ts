@@ -44,6 +44,8 @@ export interface PurchaseDeliveryDetail extends PurchaseDelivery {
   lastUpdatedAt: string
   linkedTransactions: PDLinkedTxn[]
   banner: { message: string; linkLabel: string } | null
+  /** prod-parity (TX PurchaseDeliveryDetailFields "Received date"); additive. */
+  receivedDate: string
 }
 
 const BILLING_ADDRESSES = [
@@ -163,6 +165,7 @@ function buildDetail(base: PurchaseDelivery, idx: number): PurchaseDeliveryDetai
     lastUpdatedBy: pick(UPDATERS, idx),
     lastUpdatedAt: `${base.date}T11:00:00+07:00`,
     linkedTransactions: buildLinked(base, idx),
+    receivedDate: addDays(base.date, 1),
     banner: delivered
       ? null
       : { message: 'This delivery is currently in transit.', linkLabel: 'Track shipment' },
