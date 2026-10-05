@@ -39,14 +39,14 @@ const selected = computed(() =>
 function add(key: string) {
   if (draft.value.includes(key)) return
   if (draft.value.length >= MAX_ACTIONS) {
-    toast.notify({ variant: 'error', title: `You can show up to ${MAX_ACTIONS} actions`, maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: `You can only choose up to ${MAX_ACTIONS} favorite actions`, maxWidth: 'max-content' })
     return
   }
   draft.value.push(key)
 }
 function remove(key: string) {
   if (draft.value.length <= MIN_ACTIONS) {
-    toast.notify({ variant: 'error', title: 'Keep at least one action', maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: 'Choose at least 1 favorite action before saving', maxWidth: 'max-content' })
     return
   }
   draft.value = draft.value.filter((k) => k !== key)
@@ -110,7 +110,7 @@ async function save() {
                 <span class="ha-name">{{ a.label }}</span>
                 <span class="ha-act ha-act--add"><MpIcon name="add" size="sm" /></span>
               </button>
-              <p v-if="!available.length" class="ha-empty">No actions found.</p>
+              <p v-if="!available.length" class="ha-empty">{{ search.trim() ? `${search.trim()} not found` : 'All actions added' }}</p>
             </div>
           </section>
 

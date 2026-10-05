@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-non-core-feature-frontend/src/modules/home (views/HomeView.vue, locales/i18n.json) -->
 <script setup lang="ts">
 /**
  * ERP Home — v2. Same unified layout/format as the HR (Talenta) home
@@ -8,7 +9,7 @@
  * Widget content lives in HomeWidgetV2.vue (rendered by key) so the placed grid
  * and the edit-mode "Add widgets" gallery show identical cards.
  */
-import { h, ref, computed, onMounted } from 'vue'
+import { h, ref, computed, onMounted, inject } from 'vue'
 import { infoToast } from '~/utils/toasts'
 import { MpIcon, MpButton, toast } from '@mekari/pixel3'
 import HomeActionsDrawer from '~/components/HomeActionsDrawer.vue'
@@ -42,6 +43,8 @@ function runAction(a: HomeActionDef) {
   else router.push(a.path)
 }
 const manageActionsOpen = ref(false)
+// Live chat in Useful links opens the Airene panel (provided by [...slug].vue), same as Home v1.
+const toggleAirene = inject<() => void>('toggleAirene', () => {})
 // Purple AI glow behind the hero search, toggled by SearchBox's AI Mode.
 const heroAi = ref(false)
 
@@ -257,6 +260,27 @@ onMounted(() => {
         </TransitionGroup>
       </div>
 
+      <!-- Useful links (prod Learn Mekari ERP › Useful links) -->
+      <section v-if="!editing" class="useful">
+        <h3 class="useful__title">Useful links</h3>
+        <div class="useful__grid">
+          <button class="useful-link" type="button" @click="toggleAirene()">
+            <MpIcon name="chat" size="md" class="useful-link__icon" />
+            <span class="useful-link__text">
+              <span class="useful-link__name">Live chat</span>
+              <span class="useful-link__desc">Chat with our customer support for any questions or inquiries.</span>
+            </span>
+          </button>
+          <button class="useful-link" type="button" @click="soon('Help center')">
+            <MpIcon name="book" size="md" class="useful-link__icon" />
+            <span class="useful-link__text">
+              <span class="useful-link__name">Help center</span>
+              <span class="useful-link__desc">Complete guidelines for features inside Mekari ERP.</span>
+            </span>
+          </button>
+        </div>
+      </section>
+
       <!-- Add widgets gallery (edit mode): each addable widget shown as its real
            card with a (+) top-right; dashed frame = not yet added. -->
       <div v-if="editing" class="gallery">
@@ -368,6 +392,14 @@ onMounted(() => {
 .stat__ai:hover { text-decoration: underline; }
 
 /* Grid */
+.useful { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
+.useful__title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.useful__grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-6); }
+.useful-link { display: flex; align-items: flex-start; gap: var(--mp-spacing-4); padding: 0; border: none; background: none; cursor: pointer; text-align: left; }
+.useful-link__icon { flex-shrink: 0; color: var(--mp-text-default); }
+.useful-link__text { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.useful-link__name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.useful-link__desc { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-6); align-items: start; }
 .col { position: relative; display: flex; flex-direction: column; gap: var(--mp-spacing-6); min-width: 0; }
 

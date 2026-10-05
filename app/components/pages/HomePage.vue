@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-non-core-feature-frontend/src/modules/home (views/HomeView.vue, locales/i18n.json) -->
 <script setup lang="ts">
 import { computed, inject, ref, onMounted } from 'vue'
 import {
@@ -11,6 +12,10 @@ import HomeActionsDrawer from '~/components/HomeActionsDrawer.vue'
 import { selectedActions, type HomeActionDef } from '~/data/homeActions'
 import { infoToast } from '~/utils/toasts'
 import { isOpeningBalanceComplete } from '~/data/wmsCutover'
+import { salesInvoices } from '~/data/salesInvoices'
+import { purchaseInvoices } from '~/data/purchaseInvoices'
+import { purchaseRequests } from '~/data/purchaseRequests'
+import { cashAccounts } from '~/data/cashAccounts'
 
 // What's-new card art — cropped from the Figma design (the mock-UI preview band).
 import whatsnewReconciliation from '~/assets/images/home/whatsnew-reconciliation.png?url'
@@ -107,10 +112,21 @@ const approvals: Approval[] = [
   { icon: 'warehouse', title: 'Stock In/Out #10133',      by: 'Agus Firmansyah', amount: 'Arabica Gayo Grade 1', amountSub: '+ 100 Kg', go: () => router.push('/stock-adjustments') },
   { icon: 'transfer',  title: 'Warehouse Transfer #10655', by: 'Rizki Pratama',   amount: 'Jakarta Pusat → Bandung Selatan', go: () => router.push('/warehouse-transfers') },
 ]
-const actionsRequiredCount = 10
+// Actions required (prod "Tasks to review"): counted alerts read off the mock DB,
+// only rows with a non-zero count, in prod's order.
+interface ReviewTask { key: string; title: string; count: number; icon: string; to: string }
+const taskTab = ref<0 | 1>(0)
+const reviewTasks = computed<ReviewTask[]>(() => [
+  { key: 'pr-open', title: t('Purchase Request Open'), count: purchaseRequests.filter(r => r.status === 'open').length, icon: 'cart', to: '/purchase-requests' },
+  { key: 'si-overdue', title: t('Sales Invoice Overdue'), count: salesInvoices.filter(i => i.status === 'overdue').length, icon: 'sales', to: '/sales-invoices' },
+  { key: 'pi-overdue', title: t('Purchase Invoice Overdue'), count: purchaseInvoices.filter(i => i.status === 'overdue').length, icon: 'cart', to: '/purchase-invoices' },
+  { key: 'bank-rec', title: t('Bank Reconciliation'), count: cashAccounts.filter(a => !a.isArchived).reduce((s, a) => s + a.unreconciledCount, 0), icon: 'bank', to: '/cash-management' },
+].filter(r => r.count > 0))
+const actionsRequiredCount = computed(() => reviewTasks.value.length)
+function notInPrototype() { infoToast(t('Not in this prototype')) }
 
 function approve(a: Approval) {
-  toast.notify({ variant: 'success', title: `${a.title} ${t('approved')}`, maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Approved successfully'), maxWidth: 'max-content' })
 }
 
 // ── What's new ────────────────────────────────────────────────────────────────
@@ -153,23 +169,38 @@ const setupSteps = computed<SetupStep[]>(() => [
   },
   {
     label: t('Add or import products'), time: t('APPROX. 4 MINUTES'), done: false,
-    heading: t('Add or import your products'),
-    sub: t('Build your product catalogue so you can start selling and tracking stock.'),
+    heading: t('Bring your product catalog into Mekari ERP'),
+    sub: t('Add products one by one or import them in bulk to start creating sales and purchase transactions faster.'),
     cta: t('Import products'),
     illus: productsIllus,
   },
   {
     label: t('Add or import contacts'), time: t('APPROX. 4 MINUTES'), done: false,
-    heading: t('Add or import your contacts'),
-    sub: t('Bring in customers and vendors to speed up your transactions.'),
+    heading: t('Add your customers and vendors'),
+    sub: t('Import your contact list so you can start issuing invoices and recording purchases right away.'),
     cta: t('Import contacts'),
     illus: contactsIllus,
   },
   {
     label: t('Add or import sales transactions'), time: t('APPROX. 5 MINUTES'), done: false,
-    heading: t('Add or import your sales transactions'),
-    sub: t('Record outstanding invoices and orders so your books stay accurate.'),
+    heading: t('Bring in your existing sales transactions'),
+    sub: t('Import past sales orders and invoices to keep your transaction history and reports complete.'),
     cta: t('Import transactions'),
+    illus: transactionsIllus,
+  },
+  {
+    label: t('Add or import purchase transactions'), time: t('APPROX. 5 MINUTES'), done: false,
+    heading: t('Bring in your existing purchase transactions'),
+    sub: t('Import past purchase orders and invoices to keep your vendor records and reports complete.'),
+    cta: t('Import transactions'),
+    illus: transactionsIllus,
+  },
+  {
+    label: t('Add or import expenses'), time: t('APPROX. 5 MINUTES'), done: false,
+    heading: t('Record your business expenses'),
+    sub: t('Add or import your expense transactions to track spending and keep your books accurate.'),
+    cta: t('Import transactions'),
+    to: '/expenses',
     illus: transactionsIllus,
   },
   {
@@ -212,9 +243,9 @@ function skipStep() {
 // ── Learn Mekari ERP ────────────────────────────────────────────────────────
 interface LearnCard { tag: string; tone: 'blue' | 'neutral' | 'yellow'; title: string; desc: string; cta: string }
 const learn: LearnCard[] = [
-  { tag: t('Online training'),  tone: 'blue',    title: t('Reporting & bookkeeping'),    desc: t('Learn how to prepare and run the accounting process in Mekari ERP from start to finish.'), cta: t('Sign up') },
-  { tag: t('Offline training'), tone: 'neutral', title: t('Mekari ERP offline training'), desc: t('Learn how to get started with Mekari ERP face to face with our product consultants.'),      cta: t('Sign up') },
-  { tag: t('Tutorial video'),   tone: 'yellow',  title: t('Demo: Mekari ERP'),            desc: t('Watch a guided tutorial on how to get started with Mekari ERP.'),                            cta: t('Watch video') },
+  { tag: t('Online training'),  tone: 'blue',    title: t('Reporting & bookkeeping'),    desc: t('Learn how to manage financial reports, bookkeeping, and transaction recording automatically.'), cta: t('Sign up') },
+  { tag: t('Offline training'), tone: 'neutral', title: t('Mekari ERP offline training'), desc: t('Join a face-to-face training session directly with Mekari ERP implementation specialists.'),      cta: t('Sign up') },
+  { tag: t('Tutorial video'),   tone: 'yellow',  title: t('Getting started with Mekari ERP'), desc: t('Step-by-step video guide to start configuring your ERP modules.'),                            cta: t('Watch video') },
 ]
 </script>
 
@@ -298,15 +329,15 @@ const learn: LearnCard[] = [
         <!-- Awaiting approval -->
         <div class="card approvals">
           <div class="approvals__tabs">
-            <button class="apptab apptab--active" type="button">
-              {{ t('Awaiting approval') }} <span class="apptab__count apptab__count--active">{{ approvals.length }}</span>
+            <button class="apptab" :class="{ 'apptab--active': taskTab === 0 }" type="button" @click="taskTab = 0">
+              {{ t('Awaiting approval') }} <span class="apptab__count" :class="{ 'apptab__count--active': taskTab === 0 }">{{ approvals.length }}</span>
             </button>
-            <button class="apptab" type="button" @click="soon(t('Actions required'))">
-              {{ t('Actions required') }} <span class="apptab__count">{{ actionsRequiredCount }}</span>
+            <button class="apptab" :class="{ 'apptab--active': taskTab === 1 }" type="button" @click="taskTab = 1">
+              {{ t('Actions required') }} <span class="apptab__count" :class="{ 'apptab__count--active': taskTab === 1 }">{{ actionsRequiredCount }}</span>
             </button>
           </div>
 
-          <div class="approvals__list">
+          <div v-if="taskTab === 0" class="approvals__list">
             <div v-for="a in approvals" :key="a.title" class="appr" @click="a.go()">
               <div class="appr__thumb">
                 <MpIcon :name="a.icon" size="md" />
@@ -321,13 +352,39 @@ const learn: LearnCard[] = [
                 <p v-if="a.amountSub" class="appr__amount-sub">{{ a.amountSub }}</p>
               </div>
               <MpButton variant="secondary" is-rounded @click.stop="approve(a)">{{ t('Approve') }}</MpButton>
-              <button class="appr__kebab" type="button" @click.stop>
-                <MpIcon name="menu-kebab" size="md" />
-              </button>
+              <MpPopover :id="`home-appr-more-${a.title}`" is-close-on-select use-portal placement="bottom-end">
+                <MpPopoverTrigger>
+                  <button class="appr__kebab" type="button" :aria-label="t('More actions')" @click.stop>
+                    <MpIcon name="menu-kebab" size="md" />
+                  </button>
+                </MpPopoverTrigger>
+                <MpPopoverContent>
+                  <MpPopoverList>
+                    <MpPopoverListItem @click="notInPrototype">{{ t('Approval Log') }}</MpPopoverListItem>
+                    <MpPopoverListItem @click="notInPrototype">{{ t('Comment') }}</MpPopoverListItem>
+                  </MpPopoverList>
+                </MpPopoverContent>
+              </MpPopover>
             </div>
+            <p v-if="!approvals.length" class="appr__empty">{{ t('You have no approvals waiting right now') }}</p>
           </div>
 
-          <button class="approvals__all" type="button" @click="router.push('/warehouse-transfers')">
+          <!-- Actions required (prod Tasks to review): counted alerts from the mock DB -->
+          <div v-else class="approvals__list">
+            <div v-for="r in reviewTasks" :key="r.key" class="appr" @click="router.push(r.to)">
+              <div class="appr__thumb">
+                <MpIcon :name="r.icon" size="md" />
+              </div>
+              <div class="appr__main">
+                <p class="appr__title">{{ r.title }}</p>
+              </div>
+              <span class="apptab__count apptab__count--active">{{ r.count }}</span>
+              <MpButton variant="secondary" is-rounded @click.stop="router.push(r.to)">{{ t('Review') }}</MpButton>
+            </div>
+            <p v-if="!reviewTasks.length" class="appr__empty">{{ t('You have no tasks to review right now') }}</p>
+          </div>
+
+          <button v-if="taskTab === 0" class="approvals__all" type="button" @click="router.push('/warehouse-transfers')">
             {{ t('View all awaiting approvals') }}
           </button>
         </div>
@@ -415,6 +472,7 @@ const learn: LearnCard[] = [
       <!-- ── Learn Mekari ERP ───────────────────────────────────────────── -->
       <section class="sec">
         <h3 class="sec__title">{{ t('Learn Mekari ERP') }}</h3>
+        <p class="sec__sub">{{ t('Learn how to optimize Mekari ERP usage for your business operations.') }}</p>
         <div class="learn">
           <article v-for="l in learn" :key="l.title" class="card learn-card">
             <span class="learn-tag" :class="`learn-tag--${l.tone}`">{{ l.tag }}</span>
@@ -442,7 +500,7 @@ const learn: LearnCard[] = [
             <MpIcon name="book" size="md" class="useful-link__icon" />
             <span class="useful-link__text">
               <span class="useful-link__title">{{ t('Help center') }}</span>
-              <span class="useful-link__desc">{{ t('Guidelines for all features in Mekari ERP.') }}</span>
+              <span class="useful-link__desc">{{ t('Complete guidelines for features inside Mekari ERP.') }}</span>
             </span>
           </button>
         </div>
@@ -605,6 +663,8 @@ const learn: LearnCard[] = [
 }
 
 .sec { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
+.sec__sub { margin: calc(-1 * var(--mp-spacing-2)) 0 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.appr__empty { margin: 0; padding: var(--mp-spacing-6); text-align: center; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .sec__title {
   margin: 0;
   font-size: var(--mp-font-sizes-xl);
