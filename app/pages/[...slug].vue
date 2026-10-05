@@ -157,6 +157,8 @@ const pageRegistry: Record<string, Component> = {
   'Sales settings':     defineAsyncComponent(() => import('~/components/pages/SettingsSalesFormPage.vue')),
   'Purchase settings':  defineAsyncComponent(() => import('~/components/pages/SettingsPurchasePage.vue')),
   'Default accounts':   defineAsyncComponent(() => import('~/components/pages/SettingsDefaultAccountsPage.vue')),
+  // Settings → Templates (prod /company/setting#email_template_*, #pdf_signature, ondemand_pdf, #whatsapp_*).
+  'Templates':          defineAsyncComponent(() => import('~/components/pages/SettingsTemplatesPage.vue')),
   'Approval workflows':  defineAsyncComponent(() => import('~/components/pages/ApprovalWorkflowsPage.vue')),
   // Settings → Users & roles. '/users-and-roles' → pathToLabel → 'Users and roles'.
   // The page itself is served by its tabs (User list / Custom role) — this entry
