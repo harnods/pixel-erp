@@ -1,7 +1,7 @@
 <!-- prod-parity: jurnal-frontend-app/src/pages/sales/ProFormaInvoices/Show.vue (+ components/Show/*) and pages/sales/pro_forma_orders/show.vue -->
 <script setup lang="ts">
 import {
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon, css,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon, MpTextlink, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
@@ -66,7 +66,7 @@ function lineFrom(amount: number, pct: number | null) {
   <div class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goList">{{ entity }}</button>
+        <MpTextlink id="pgd-crumb" as="a" class="detail-breadcrumb" @click.prevent="goList">{{ entity }}</MpTextlink>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ doc ? `${entity} #${doc.number}` : t('Transaction not found') }}</h1>
           <ErpStatusBadge v-if="doc" :status="doc.status" size="md" badge-for="additionalInformation" />

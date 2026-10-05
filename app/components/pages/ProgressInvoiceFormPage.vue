@@ -2,7 +2,7 @@
 <script setup lang="ts">
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea, MpDatePicker, MpCheckbox, MpInputTag,
-  MpButton, MpButtonGroup, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, type DataInterface,
+  MpButton, MpButtonGroup, MpTextlink, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, type DataInterface,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { formatIDR } from '~/utils/currency'
@@ -110,6 +110,7 @@ function onInput(i: number, v: string) {
   if (lineErrors.value[i]) lineErrors.value[i] = ''
 }
 function applyGlobal() {
+  globalOn.value = true
   const v = toNum(globalValue.value)
   errors.global = ''
   if (v === null) { errors.global = form.method === 'percentage' ? t('Enter a valid percentage.') : t('Enter a valid amount.'); return }
@@ -189,7 +190,7 @@ function cancel() { router.push(listPath.value) }
   <div class="pgf-page">
     <header class="pgf-bar">
       <div class="pgf-bar-left">
-        <button class="pgf-crumb" @click="cancel">{{ entity }}</button>
+        <MpTextlink id="pgf-crumb" as="a" class="pgf-crumb" @click.prevent="cancel">{{ entity }}</MpTextlink>
         <h1 class="pgf-h1">{{ title }}</h1>
       </div>
     </header>
@@ -212,7 +213,7 @@ function cancel() { router.push(listPath.value) }
 
       <!-- ── Header 2 ── -->
       <section class="pgf-header2">
-        <div class="pgf-col">
+        <div class="pgf-col pgf-col--wide">
           <MpFormControl id="pgf-billing" class="pgf-field">
             <MpFormLabel>{{ t('Billing address') }}</MpFormLabel>
             <MpTextarea id="pgf-billing-inp" v-model="form.billingAddress" is-full-width />
@@ -267,7 +268,7 @@ function cancel() { router.push(listPath.value) }
               <span class="pgf-hint">{{ lockedMethod && kind === 'proforma' ? t('The invoicing method is fixed by another proforma invoice on this sales order.') : methodDescription }}</span>
             </MpFormControl>
             <div class="pgf-global">
-              <MpCheckbox id="pgf-global-toggle" :is-checked="globalOn" @change="globalOn = !globalOn">{{ t('Set all at once') }}</MpCheckbox>
+              <MpCheckbox id="pgf-global-toggle" v-model:is-checked="globalOn">{{ t('Set all at once') }}</MpCheckbox>
               <div class="pgf-global-row">
                 <MpFormControl id="pgf-global-value" class="pgf-global-field" :is-disabled="!globalOn" :is-invalid="!!errors.global">
                   <div class="pgf-affix">
@@ -277,7 +278,7 @@ function cancel() { router.push(listPath.value) }
                   </div>
                   <MpFormErrorMessage>{{ errors.global }}</MpFormErrorMessage>
                 </MpFormControl>
-                <MpButton id="pgf-global-apply" variant="secondary" is-rounded :is-disabled="!globalOn" @click="applyGlobal">{{ t('Apply') }}</MpButton>
+                <MpButton id="pgf-global-apply" variant="secondary" is-rounded @click="applyGlobal">{{ t('Apply') }}</MpButton>
               </div>
             </div>
           </div>
@@ -318,7 +319,8 @@ function cancel() { router.push(listPath.value) }
                   <span class="pgf-product"><span>{{ l.product }}</span><span class="pgf-sub">{{ t('SKU') }}: {{ l.sku }}</span></span>
                 </td>
                 <td class="pgf-td pgf-muted">{{ l.description }}</td>
-                <td class="pgf-td pgf-td--billed">
+                <td class="pgf-td">
+                  <div class="pgf-billed">
                   <MpFormControl :id="`pgf-line-${i}`" :is-invalid="!!lineErrors[i]">
                     <div class="pgf-affix">
                       <span v-if="form.method === 'fixed_amount'" class="pgf-affix-text">Rp</span>
@@ -329,6 +331,7 @@ function cancel() { router.push(listPath.value) }
                   </MpFormControl>
                   <span class="pgf-sub">{{ t('From') }} {{ formatIDR(l.masterAmount) }}</span>
                   <span class="pgf-sub">{{ t('Billable balance due:') }} {{ formatIDR(remainingOf(i)) }}</span>
+                  </div>
                 </td>
                 <td class="pgf-td pgf-td--num">{{ l.qty }}</td>
                 <td class="pgf-td">{{ l.unit }}</td>
@@ -374,7 +377,7 @@ function cancel() { router.push(listPath.value) }
 
 <style scoped>
 /* Shell + header grid copied from NewSalesInvoicePage.vue (si-form-*). */
-.pgf-page { --pgf-field: 318px; height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.pgf-page { --pgf-field: 318px; --pgf-field-sm: 228px; height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .pgf-bar {
   flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box;
   background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6);
@@ -399,8 +402,10 @@ function cancel() { router.push(listPath.value) }
 .pgf-header1-total { margin-left: auto; align-self: flex-end; padding-bottom: var(--mp-spacing-2); }
 .pgf-header1-total-value { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); white-space: nowrap; }
 .pgf-header2 { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 16px 24px; }
-.pgf-col { flex: 0 0 var(--pgf-field); min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
+.pgf-col { flex: 0 0 var(--pgf-field-sm); min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
+.pgf-col--wide { flex-basis: var(--pgf-field); }
 .pgf-field { min-width: 0; }
+.pgf-field :deep(.efs), .pgf-method :deep(.efs) { display: block; width: 100%; }
 .pgf-field :deep(.input-tag__root) { width: 100%; }
 .pgf-datepicker, .pgf-datepicker :deep(.mp-datepicker__root) { width: 100%; }
 
@@ -416,7 +421,7 @@ function cancel() { router.push(listPath.value) }
 .pgf-affix-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); white-space: nowrap; }
 
 .pgf-items-scroll { overflow-x: auto; }
-.pgf-table { width: 100%; min-width: 1200px; border-collapse: collapse; }
+.pgf-table { width: 100%; min-width: 1100px; border-collapse: collapse; }
 .pgf-th {
   height: var(--mp-sizes-7, 28px); text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase;
@@ -429,7 +434,7 @@ function cancel() { router.push(listPath.value) }
   border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
 .pgf-td--num { text-align: right; white-space: nowrap; }
-.pgf-td--billed { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.pgf-billed { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .pgf-product { display: flex; flex-direction: column; }
 .pgf-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .pgf-muted { color: var(--mp-text-secondary); }
