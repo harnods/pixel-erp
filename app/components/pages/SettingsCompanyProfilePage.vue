@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-non-core-feature-frontend/src/modules/settings/company-profile/views/CompanyProfileSettingsView.vue -->
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
 import {
@@ -10,6 +11,8 @@ import {
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import centralPerkLogo from '~/assets/images/central-perk-logo.svg?url'
+import { loadCreated, saveCreated } from '~/data/persist'
+import { infoToast } from '~/utils/toasts'
 
 /**
  * `embedded` = rendered inside the CRM Settings shell (not the ERP Settings page).
@@ -35,7 +38,7 @@ const settingToDisplay: Record<string, string> = {
 
 // Which section is currently being edited (only one at a time). Company info is
 // synced from the Mekari account, so it is never editable.
-type EditSection = null | 'tax' | 'payment' | 'advanced'
+type EditSection = null | 'details' | 'tax' | 'payment' | 'advanced'
 const editing = ref<EditSection>(null)
 
 // ─── Klikpajak link status — demo toggle ───────────────────────────────────────
@@ -81,6 +84,38 @@ function setKlikpajakStatus(status: KlikpajakStatus) {
   Object.assign(tax, taxDataFor(status))
   cancelEdit()
 }
+// ─── Company details (prod CompanyDetailsSection) — the ERP-owned half of
+// Company info: logo, shipping address, fax, website. Edits in place and
+// survives a reload (single-record persist under the shared prefix).
+interface CompanyDetails { hasLogo: boolean; shippingAddress: string; fax: string; website: string }
+const DETAILS_KEY = 'company-profile-details'
+const DETAILS_DEFAULT: CompanyDetails = {
+  hasLogo: true,
+  shippingAddress: 'MidPlaza 2 Lantai 4, Jl. Jenderal Sudirman No.Kav. 10-11, Kec. Tanah Abang, Jakarta Pusat, DKI Jakarta 10220',
+  fax: '+622****9999',
+  website: 'https://centralperk.co.id',
+}
+const details = reactive<CompanyDetails>({ ...DETAILS_DEFAULT, ...(loadCreated<CompanyDetails>(DETAILS_KEY)[0] ?? {}) })
+const draftDetails = reactive<CompanyDetails>({ ...details })
+const DETAIL_FIELDS = [
+  { key: 'shippingAddress', label: t('Shipping address') },
+  { key: 'fax', label: t('Fax') },
+  { key: 'website', label: t('Website') },
+] as const
+function saveDetails() {
+  Object.assign(details, draftDetails)
+  saveCreated(DETAILS_KEY, [{ ...details }])
+  editing.value = null
+  toast.notify({ variant: 'success', title: t('Company details changes saved'), maxWidth: 'max-content' })
+}
+function uploadLogo() { infoToast(t('Not in this prototype')) }
+function removeLogo() {
+  draftDetails.hasLogo = false
+  details.hasLogo = false
+  saveCreated(DETAILS_KEY, [{ ...details }])
+  toast.notify({ variant: 'success', title: t('Company logo removed'), maxWidth: 'max-content' })
+}
+
 const payment = reactive({
   bankName: 'Bank BCA',
   branch: 'BCA KCU Sudirman',
@@ -103,7 +138,7 @@ const advanced = reactive({
 
 const AMOUNT_DISPLAY_OPTIONS = [
   { value: 'full-decimals', label: t('Full number (with decimals)'), example: 'Rp2.000.000,00' },
-  { value: 'full', label: t('Full number'), example: 'Rp2.000.000' },
+  { value: 'full', label: t('Full number (no decimals)'), example: 'Rp2.000.000' },
   { value: 'abbreviated', label: t('Abbreviated'), example: 'Rp2 jt' },
 ]
 const CURRENCY_OPTIONS = [{ value: 'idr', label: t('Indonesian Rupiah (Rp)') }]
@@ -129,6 +164,11 @@ const errTax = reactive<Record<string, string>>({})
 const errPayment = reactive<Record<string, string>>({})
 
 function startEdit(section: Exclude<EditSection, null>) {
+  if (editing.value && editing.value !== section) {
+    toast.notify({ variant: 'error', title: `${t('Save or cancel your changes in')} ${SECTION_NAMES[editing.value]} ${t('first.')}`, maxWidth: 'max-content' })
+    return
+  }
+  if (section === 'details') Object.assign(draftDetails, details)
   if (section === 'tax') Object.assign(draftTax, tax)
   if (section === 'payment') Object.assign(draftPayment, payment)
   if (section === 'advanced') Object.assign(draftAdvanced, advanced)
@@ -184,7 +224,7 @@ async function confirmValidateNpwp() {
   validatingNpwp.value = false
 
   if (npwpCheckOutcome.value === 'invalid') {
-    taxIdentityError.value = t('NPWP dan NITKU tidak ditemukan')
+    taxIdentityError.value = t('NPWP and NITKU combination not found in the DJP database')
     return
   }
   if (npwpCheckOutcome.value === 'already_registered') {
@@ -192,7 +232,7 @@ async function confirmValidateNpwp() {
     return
   }
   draftTax.npwpValidated = true
-  toast.notify({ variant: 'success', title: t('NPWP and NITKU validated'), maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Company NPWP & NITKU validated successfully.'), maxWidth: 'max-content' })
 }
 
 // ─── Coretax info — per-field (signee / PIC) validation with a passphrase check ──
@@ -257,6 +297,10 @@ function confirmValidateCoretax() {
   toast.notify({ variant: 'success', title: t('Coretax info validated'), maxWidth: 'max-content' })
 }
 
+const SECTION_NAMES: Record<Exclude<EditSection, null>, string> = {
+  details: t('Company details'), tax: t('Tax info'), payment: t('Payment info'), advanced: t('Advanced settings'),
+}
+
 // UXW copy library — inline error messages.
 const req = (label: string) => `${t('You must fill in')} ${label}`
 
@@ -270,21 +314,21 @@ function saveTax() {
   if (!validateTax()) return
   Object.assign(tax, draftTax)
   editing.value = null
-  toast.notify({ variant: 'success', title: t('Company profile changes saved'), maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Tax info changes saved'), maxWidth: 'max-content' })
 }
 // ─── Payment form ─────────────────────────────────────────────────────────────
 function validatePayment(): boolean {
   clearErrors()
-  if (!draftPayment.bankName.trim()) errPayment.bankName = req(t('bank name'))
-  if (!draftPayment.accountNo.trim()) errPayment.accountNo = req(t('account number'))
-  if (!draftPayment.accountName.trim()) errPayment.accountName = req(t('account name'))
+  if (!draftPayment.bankName.trim()) errPayment.bankName = req(t('Bank name'))
+  if (!draftPayment.accountNo.trim()) errPayment.accountNo = req(t('Account no.'))
+  if (!draftPayment.accountName.trim()) errPayment.accountName = req(t('Account name'))
   return Object.keys(errPayment).length === 0
 }
 function savePayment() {
   if (!validatePayment()) return
   Object.assign(payment, draftPayment)
   editing.value = null
-  toast.notify({ variant: 'success', title: t('Company profile changes saved'), maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Payment info changes saved'), maxWidth: 'max-content' })
 }
 
 // ─── Advanced form + multi-currency modal ──────────────────────────────────────
@@ -304,7 +348,7 @@ function activateMultiCurrency() {
   draftAdvanced.multiCurrency = true
   draftAdvanced.baseCurrency = mcBaseCurrency.value
   mcModalOpen.value = false
-  toast.notify({ variant: 'success', title: t('Multi-currency activation scheduled'), maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Multi-currency activation requested'), maxWidth: 'max-content' })
 }
 function cancelMultiCurrency() {
   draftAdvanced.multiCurrency = false
@@ -318,7 +362,7 @@ function saveAdvanced() {
   // Amount display drives money formatting app-wide (formatIDR / formatMoney).
   setAmountDisplay(displayToSetting[draftAdvanced.amountDisplay] ?? 'with-decimals')
   editing.value = null
-  toast.notify({ variant: 'success', title: t('Company profile changes saved'), maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Advanced settings changes saved'), maxWidth: 'max-content' })
 }
 
 const ADVANCED_TOGGLES = [
@@ -339,20 +383,18 @@ const ADVANCED_TOGGLES = [
       <div class="cp-section-header">
         <div class="cp-section-meta">
           <h2 class="cp-section-title">{{ t('Company info') }}</h2>
+          <p class="cp-section-desc">{{ t('Synced from your Mekari account and used for invoices.') }}</p>
         </div>
         <button
           v-if="!props.embedded"
-          class="btn-enterprise btn-enterprise--secondary"
+          class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after"
           :title="t('Edit in your Mekari account (opens in a new tab)')"
           @click="openCompanyInfoSource"
         >
           {{ t('Edit') }}
+          <MpIcon name="newtab" size="sm" />
         </button>
       </div>
-
-      <ContentList :label="t('Company logo')" class="cp-cl--logo">
-        <img :src="centralPerkLogo" alt="Central Perk" class="cp-logo-img" />
-      </ContentList>
 
       <div class="cp-grid">
         <ContentList :label="t('Company name')" value="PT Central Perk Indonesia" />
@@ -370,16 +412,61 @@ const ADVANCED_TOGGLES = [
         <ContentList :label="t('Company ID')" value="676424" />
       </div>
 
-      <div class="cp-grid">
-        <ContentList :label="t('Shipping address')">
-          <span class="content-list__line">MidPlaza 2 Lantai 4</span>
-          <span class="content-list__line">Jl. Jenderal Sudirman No.Kav. 10-11, Kec. Tanah Abang,</span>
-          <span class="content-list__line">Jakarta Pusat, DKI Jakarta 10220</span>
+    </section>
+
+    <div class="cp-divider" />
+
+    <!-- ── Company details (prod CompanyDetailsSection — logo, shipping, fax, website) ── -->
+    <section class="cp-section">
+      <div class="cp-section-header">
+        <div class="cp-section-meta">
+          <h2 class="cp-section-title">{{ editing === 'details' ? t('Edit company details') : t('Company details') }}</h2>
+          <p class="cp-section-desc">{{ t('Logo and contact details shown on invoices and documents.') }}</p>
+        </div>
+        <button
+          v-if="editing !== 'details' && !props.embedded"
+          class="btn-enterprise btn-enterprise--secondary"
+          @click="startEdit('details')"
+        >
+          {{ t('Edit') }}
+        </button>
+      </div>
+
+      <template v-if="editing !== 'details'">
+        <ContentList :label="t('Company logo')" class="cp-cl--logo">
+          <img v-if="details.hasLogo" :src="centralPerkLogo" alt="Central Perk" class="cp-logo-img" />
+          <span v-else class="cp-value-subtle">—</span>
         </ContentList>
-        <ContentList :label="t('Fax')" value="+62215559999" />
-        <ContentList :label="t('Website')">
-          <a href="https://centralperk.co.id" class="cp-link" target="_blank" rel="noopener">https://centralperk.co.id</a>
-        </ContentList>
+        <div class="cp-grid">
+          <ContentList :label="t('Shipping address')" :value="details.shippingAddress || '—'" />
+          <ContentList :label="t('Fax')" :value="details.fax || '—'" />
+          <ContentList :label="t('Website')">
+            <a v-if="details.website" :href="details.website" class="cp-link" target="_blank" rel="noopener">{{ details.website }}</a>
+            <span v-else>—</span>
+          </ContentList>
+        </div>
+      </template>
+
+      <div v-else class="cp-form">
+        <div class="cp-field-group">
+          <span class="cp-form-label">{{ t('Company logo') }}</span>
+          <div class="cp-logo-edit">
+            <img v-if="details.hasLogo" :src="centralPerkLogo" alt="Central Perk" class="cp-logo-img" />
+            <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="uploadLogo">
+              {{ details.hasLogo ? t('Change logo') : t('Upload logo') }}
+            </button>
+            <button v-if="details.hasLogo" type="button" class="btn-enterprise btn-enterprise--ghost" @click="removeLogo">{{ t('Remove') }}</button>
+          </div>
+          <span class="cp-help">{{ t('jpg, jpeg, png, bmp up to 25 MB. The logo is resized to fit 250×250 px.') }}</span>
+        </div>
+        <MpFormControl v-for="field in DETAIL_FIELDS" :id="`cp-details-${field.key}`" :key="field.key">
+          <MpFormLabel>{{ field.label }}</MpFormLabel>
+          <MpInput :id="`cp-details-${field.key}-input`" v-model="draftDetails[field.key]" is-full-width />
+        </MpFormControl>
+        <div class="cp-action-bar">
+          <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelEdit">{{ t('Cancel') }}</button>
+          <button type="button" class="btn-enterprise btn-enterprise--primary" @click="saveDetails">{{ t('Save changes') }}</button>
+        </div>
       </div>
     </section>
 
@@ -390,6 +477,7 @@ const ADVANCED_TOGGLES = [
       <div class="cp-section-header">
         <div class="cp-section-meta">
           <h2 class="cp-section-title">{{ editing === 'tax' ? t('Edit tax info') : t('Tax info') }}</h2>
+          <p class="cp-section-desc">{{ t('This information appears on invoices and tax documents.') }}</p>
         </div>
         <button
           v-if="editing !== 'tax' && !props.embedded"
@@ -510,7 +598,7 @@ const ADVANCED_TOGGLES = [
             <div class="cp-subhead cp-subhead--spaced">
               <span class="cp-subhead-title">{{ t('Coretax info') }}</span>
             </div>
-            <p class="cp-subhead-desc">{{ t('Authorized person details for tax filing, pulled from your tax identity.') }}</p>
+            <p class="cp-subhead-desc">{{ t('Enter Coretax information to validate your e-faktur.') }}</p>
             <div class="cp-validate-row">
               <MpFormControl id="cp-signee-npwp" class="cp-vf">
                 <div class="cp-label-row">
@@ -584,6 +672,7 @@ const ADVANCED_TOGGLES = [
       <div class="cp-section-header">
         <div class="cp-section-meta">
           <h2 class="cp-section-title">{{ editing === 'payment' ? t('Edit payment info') : t('Payment info') }}</h2>
+          <p class="cp-section-desc">{{ t('Bank details appear on sales invoices.') }}</p>
         </div>
         <button
           v-if="editing !== 'payment' && !props.embedded"
@@ -651,6 +740,7 @@ const ADVANCED_TOGGLES = [
       <div class="cp-section-header">
         <div class="cp-section-meta">
           <h2 class="cp-section-title">{{ editing === 'advanced' ? t('Edit advanced settings') : t('Advanced settings') }}</h2>
+          <p class="cp-section-desc">{{ t('System-wide settings for transactions, approvals, and currencies.') }}</p>
         </div>
         <button
           v-if="editing !== 'advanced'"
@@ -725,7 +815,7 @@ const ADVANCED_TOGGLES = [
     <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cp-multicurrency-modal" :is-open="mcModalOpen" is-centered :is-keep-alive="false" @close="cancelMultiCurrency">
       <MpModalContent>
         <MpModalHeader>
-          {{ t('Activate Multi-currency?') }}
+          {{ t('Activate Multi-Currency Feature') }}
           <MpModalCloseButton />
         </MpModalHeader>
         <MpModalBody>
@@ -741,17 +831,17 @@ const ADVANCED_TOGGLES = [
               @update:model-value="(v: string) => (mcBaseCurrency = v)"
             />
           </MpFormControl>
-          <h3 class="cp-mc-terms-title">{{ t('Activation terms') }}</h3>
+          <h3 class="cp-mc-terms-title">{{ t('Activation Terms') }}</h3>
           <ol class="cp-mc-terms">
-            <li>{{ t('Activation will begin at') }} <strong>{{ t('00:00 WIB the following day') }}</strong>. {{ t('You cannot create transactions during the activation process.') }}</li>
-            <li>{{ t('The base currency cannot be changed after activation.') }}</li>
-            <li>{{ t('This feature is not compatible with Jurnal Consolidation yet.') }}</li>
+            <li>{{ t('Activation will start at') }} <strong>{{ t('00:00 AM the next day.') }}</strong> {{ t('During the process, you will not be able to create any transactions.') }}</li>
+            <li>{{ t("Base currency can't be changed after this feature is activated.") }}</li>
+            <li>{{ t("This feature can't be used along with Jurnal Consolidation.") }}</li>
             <li>
-              {{ t('This feature cannot be deactivated if you have:') }}
+              {{ t("This feature can't be deactivated if you have:") }}
               <ul class="cp-mc-sublist">
                 <li>{{ t('Added another currency.') }}</li>
-                <li>{{ t('Added an account (COA) with another currency.') }}</li>
-                <li>{{ t('Created transactions after activation, including those using only the base currency.') }}</li>
+                <li>{{ t('Added an account (CoA) with another currency.') }}</li>
+                <li>{{ t('Created any transactions after activating this feature, including transactions that use base currency.') }}</li>
               </ul>
             </li>
           </ol>
@@ -795,7 +885,7 @@ const ADVANCED_TOGGLES = [
         </MpModalHeader>
         <MpModalBody>
           <div class="cp-field cp-mc-currency">
-            <span class="cp-label">{{ coretaxField === 'signee' ? t('NPWP Signee') : t('NPWP PIC') }}</span>
+            <span class="cp-label">{{ coretaxField === 'signee' ? t('NPWP signee') : t('NPWP PIC') }}</span>
             <span class="cp-value">{{ coretaxField === 'signee' ? draftTax.signeeNpwp : draftTax.picNpwp }}</span>
           </div>
           <MpFormControl id="cp-coretax-passphrase" is-required :is-invalid="!!coretaxPassphraseError">
@@ -905,6 +995,8 @@ const ADVANCED_TOGGLES = [
   color: var(--mp-text-default);
 }
 
+.cp-section-desc { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.cp-logo-edit { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .cp-divider { grid-column: 1 / -1; height: 1px; background: var(--mp-border-default, #e3e7e9); }
 
 /* ─── Sub-headings (Tax identity / Coretax info) ───────────────────────────── */
