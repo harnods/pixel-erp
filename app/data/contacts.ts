@@ -68,6 +68,8 @@ export interface Contact {
   currency: string
   memo: string
   updatedBy: string
+  /** Archived contacts are hidden from the lists unless "Show archived …" is on. */
+  archived?: boolean
   /** ISO timestamp of the last edit. */
   updatedAt: string
 }
@@ -79,7 +81,7 @@ export function nitkuFull(c: Pick<Contact, 'npwp' | 'nitkuSuffix'>): string {
 
 /** Options for the fixed-value selects on the New contact form. */
 export const TITLE_OPTIONS = ['Mr', 'Mrs', 'Ms']
-export const IDENTITY_TYPE_OPTIONS = ['KTP', 'SIM', 'Passport', 'KITAS']
+export const IDENTITY_TYPE_OPTIONS = ['KTP', 'Passport', 'SIM', 'KITAS']
 export const CONTACT_GROUP_OPTIONS = [
   'VIP Customers',
   'Food & Beverages',
@@ -95,6 +97,9 @@ export const BANK_OPTIONS = [
 export const AR_ACCOUNT_OPTIONS = ['1-10100 Account Receivable', '1-10200 Other Receivable']
 export const AP_ACCOUNT_OPTIONS = ['2-20100 Trade Payable', '2-20200 Other Payable']
 export const PAYMENT_TERMS_OPTIONS = ['Net 7', 'Net 14', 'Net 30', 'Net 60', 'Cash on delivery']
+export const COUNTRY_OPTIONS = [
+  'Indonesia', 'Singapore', 'Malaysia', 'Thailand', 'Philippines', 'Vietnam', 'Australia', 'United States',
+]
 export const CURRENCY_OPTIONS = ['Indonesian Rupiah (Rp)', 'US Dollar ($)', 'Singapore Dollar (S$)']
 
 /** Empty-ish record used to seed the create form and to fill sparse seed rows. */
@@ -175,16 +180,48 @@ const SEED: Contact[] = [
   account('CT012', 'Pochi Coffee Roasters',    'PT Pochi Roastery Indonesia', 'roastery@pochicoffee.com',       '031-5550025', 'Surabaya',   ['Distributor'],                       150_000_000, '2026-01-06T09:35:00+07:00'),
 ]
 
+// Vendor contacts — the same suppliers as the vendor master (`vendors.ts`), so a
+// vendor's Transactions tab and Outstanding column read the real purchase invoices.
+const VENDOR_SEED: Contact[] = [
+  account('CT013', 'Klasik Beans Cooperative',   'Klasik Beans Cooperative',   'sales@klasikbeans.coop',       '022-5560001', 'Bandung',   ['Green bean importers'], 0, '2026-01-21T10:00:00+07:00'),
+  account('CT014', 'Sagaleh Coffee Supply',      'Sagaleh Coffee Supply',      'order@sagaleh.co.id',          '0751-556002', 'Padang',    ['Green bean importers'], 0, '2026-01-20T10:00:00+07:00'),
+  account('CT015', 'Gayo Highland Exporters',    'Gayo Highland Exporters',    'export@gayohighland.com',      '0643-556003', 'Takengon',  ['Green bean importers'], 0, '2026-01-17T10:00:00+07:00'),
+  account('CT016', 'Toraja Sapan Estate',        'Toraja Sapan Estate',        'estate@torajasapan.co.id',     '0423-556004', 'Toraja',    ['Green bean importers'], 0, '2026-01-13T10:00:00+07:00'),
+  account('CT017', 'Lampung Robusta Traders',    'Lampung Robusta Traders',    'trade@lampungrobusta.com',     '0721-556005', 'Lampung',   ['Green bean importers'], 0, '2026-01-10T10:00:00+07:00'),
+  account('CT018', 'PT Kemasan Prima Nusantara', 'PT Kemasan Prima Nusantara', 'sales@kemasanprima.co.id',     '021-5560006', 'Tangerang', ['Packaging suppliers'],  0, '2026-01-07T10:00:00+07:00'),
+  account('CT019', 'Roast Machinery Indonesia',  'Roast Machinery Indonesia',  'info@roastmachinery.id',       '021-5560007', 'Jakarta',   [], 0, '2026-01-05T10:00:00+07:00'),
+  account('CT020', 'CV Logistik Antar Pulau',    'CV Logistik Antar Pulau',    'ops@logistikantarpulau.co.id', '031-5560008', 'Surabaya',  [], 0, '2026-01-04T10:00:00+07:00'),
+  account('CT021', 'PLN (Persero)',              'PT PLN (Persero)',           'corporate@pln.co.id',          '123',         'Jakarta',   [], 0, '2026-01-03T10:00:00+07:00'),
+  account('CT022', 'Telkom Indonesia',           'PT Telkom Indonesia Tbk',    'corporate@telkom.co.id',       '147',         'Jakarta',   [], 0, '2026-01-03T09:00:00+07:00'),
+  account('CT023', 'PT Properti Sentosa',        'PT Properti Sentosa',        'lease@propertisentosa.co.id',  '021-5560011', 'Jakarta',   [], 0, '2026-01-02T10:00:00+07:00'),
+  account('CT024', 'Cloud & Software Partners',  'Cloud & Software Partners',  'billing@cloudsw.id',           '021-5560012', 'Jakarta',   [], 0, '2026-01-02T09:00:00+07:00'),
+].map((c) => ({ ...c, types: ['vendor'] as ContactType[], creditLimit: null }))
+SEED.push(...VENDOR_SEED)
+// An archived customer — only listed with "Show archived customers" on.
+SEED.push({ ...account('CT025', 'Warung Kopi Modern', 'CV Warung Kopi Modern', 'admin@warungkopimodern.id', '021-5550016', 'Depok', [], 0, '2025-12-12T10:00:00+07:00'), creditLimit: null, archived: true })
+
 // Vendors and "other" contacts share the same store — the role checkboxes on the
 // form decide which index a record shows up in.
 SEED[6]!.types = ['customer', 'vendor']
 SEED[8]!.types = ['other']
 
 const STORE_KEY = 'contacts-v1'
+// Seed ids added after the first release — merged into an older saved snapshot
+// once (tracked by key), so returning sessions also get the vendor contacts.
+const SEED_V2_KEY = 'contacts-v1-seed2'
 
-export const contacts = reactive<Contact[]>(
-  loadSnapshot<Contact>(STORE_KEY) ?? SEED.map((c) => ({ ...c, banks: c.banks.map((b) => ({ ...b })) })),
-)
+function cloneSeed(c: Contact): Contact { return { ...c, banks: c.banks.map((b) => ({ ...b })) } }
+function initialContacts(): Contact[] {
+  const saved = loadSnapshot<Contact>(STORE_KEY)
+  if (!saved) return SEED.map(cloneSeed)
+  if (import.meta.client && !localStorage.getItem(SEED_V2_KEY)) {
+    localStorage.setItem(SEED_V2_KEY, '1')
+    const have = new Set(saved.map((c) => c.id))
+    for (const c of SEED) if (!have.has(c.id) && Number(c.id.slice(2)) >= 13) saved.push(cloneSeed(c))
+  }
+  return saved
+}
+export const contacts = reactive<Contact[]>(initialContacts())
 
 export function persistContacts(): void {
   saveSnapshot(STORE_KEY, contacts)

@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-non-core-feature-frontend/src/modules/contacts/views/ContactDetailView.vue -->
 <script setup lang="ts">
 /**
  * Contact details — the master-data detail page for one contact.
@@ -13,7 +14,7 @@
 import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpBadge, MpIcon, MpButton,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpBadge, MpIcon, MpButton, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   toast, css,
 } from '@mekari/pixel3'
@@ -21,9 +22,11 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import { columnWidth, type ColumnKind } from '~/components/patterns/columnWidths'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { getContact, deleteContact, nitkuFull, type ContactType } from '~/data/contacts'
-import { salesInvoices } from '~/data/salesInvoices'
+import ErpPagination from '~/components/patterns/ErpPagination.vue'
+import { getContact, deleteContact, updateContact, nitkuFull, type ContactType } from '~/data/contacts'
+import { contactTransactions, contactSummary } from '~/data/contactTransactions'
 import { formatIDR } from '~/utils/currency'
+import { infoToast } from '~/utils/toasts'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -64,7 +67,7 @@ function goEdit() { router.push(`/${listSlug.value}/${props.orderId}/edit`) }
 const fullNameDisplay = computed(() => {
   const c = contact.value
   if (!c?.fullName) return ''
-  return c.title ? `${c.fullName} (${c.title})` : c.fullName
+  return c.title ? `${c.title} ${c.fullName}` : c.fullName
 })
 const creditLimitDisplay = computed(() =>
   contact.value?.creditLimit == null ? '' : formatIDR(contact.value.creditLimit))
@@ -79,34 +82,63 @@ const lastUpdatedDisplay = computed(() => {
   return `${t('Last updated by')} ${c.updatedBy} ${t('on')} ${date}, ${time} (GMT+7)`
 })
 
-// ── Transactions tab — sales invoices raised against this contact ─────────────
-// Records join on customer name, so a contact with no matching sales record
-// (e.g. a brand-new one) shows the empty line rather than a fabricated list.
-const transactions = computed(() => {
-  const c = contact.value
-  if (!c) return []
-  const names = [c.displayName, c.companyName].filter(Boolean).map((n) => n.toLowerCase())
-  return salesInvoices
-    .filter((inv) => names.includes(inv.customer.name.toLowerCase()))
-    .slice(0, 20)
-})
+// ── Transactions tab — invoices raised against this contact (AR + AP) ───────
+// Derived from the sales/purchase invoice mocks (data/contactTransactions.ts),
+// so a contact with no matching record shows the empty line, not a fake list.
+const transactions = computed(() => (contact.value ? contactTransactions(contact.value) : []))
+const txPerPage = ref(20)
+const txPage = ref(1)
+const txRows = computed(() => transactions.value.slice((txPage.value - 1) * txPerPage.value, txPage.value * txPerPage.value))
+const summary = computed(() => (contact.value ? contactSummary(contact.value) : null))
+const isCustomer = computed(() => !!contact.value?.types.includes('customer'))
+const isVendor = computed(() => !!contact.value?.types.includes('vendor'))
+const STATUS_LABEL: Record<string, string> = { paid: 'Paid', open: 'Open', overdue: 'Overdue' }
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 /** Related-records column width — from the shared standard, never hardcoded.
  *  Columns grow to their max (the trailing spacer <col> soaks up the rest). */
+/** Narrow variant for the 8-column Transactions table — min widths, scrolls if needed. */
+function colMin(kind: ColumnKind) {
+  const { minWidth } = columnWidth(kind)
+  return { width: minWidth, minWidth }
+}
 function colStyle(kind: ColumnKind) {
   const { minWidth, maxWidth } = columnWidth(kind)
   return { width: maxWidth, minWidth, maxWidth }
 }
 
 // ── Title-bar actions ─────────────────────────────────────────────────────────
-const CREATE_TRANSACTION_ITEMS = [
-  { label: 'Sales quote',      to: '/sales-quotes'    },
-  { label: 'Sales order',      to: '/sales-orders'    },
-  { label: 'Sales invoice',    to: '/sales-invoices'  },
-  { label: 'Purchase invoice', to: '/purchase-invoices' },
+// Prod CREATE_TRANSACTION_MENU, filtered by the contact's types the way
+// quickbook's ContactHelper.*_create_transaction_type does.
+const CREATE_TRANSACTION_MENU = [
+  { key: 'sales_invoice',    label: 'Sales Invoice',    to: '/sales-invoices/new', types: ['customer'] },
+  { key: 'credit_memo',      label: 'Credit Memo',      to: '',                    types: ['customer', 'other'] },
+  { key: 'purchase_invoice', label: 'Purchase Invoice', to: '/purchase-invoices',  types: ['vendor'] },
+  { key: 'debit_memo',       label: 'Debit Memo',       to: '',                    types: ['vendor', 'other'] },
+  { key: 'expense',          label: 'Expense',          to: '/expenses/new',       types: ['vendor', 'other'] },
+  { key: 'bank_withdrawal',  label: 'Bank Withdrawal',  to: '/bank-withdrawals/new', types: ['other'] },
+  { key: 'bank_deposit',     label: 'Bank Deposit',     to: '/bank-deposits/new',  types: ['other'] },
 ]
+const createTransactionItems = computed(() =>
+  CREATE_TRANSACTION_MENU.filter((m) => contact.value?.types.some((tp) => m.types.includes(tp))))
+function createTransaction(item: { to: string }) {
+  if (item.to) router.push(item.to)
+  else infoToast(t('Not in this prototype'))
+}
+function archiveContact() {
+  updateContact(props.orderId, { archived: true })
+  toast.notify({ variant: 'success', title: t('Contact archived'), maxWidth: 'max-content' })
+}
+const canDelete = computed(() => transactions.value.length === 0)
+const deleteTitle = computed(() => {
+  const tp = contact.value?.types[0]
+  return tp === 'vendor' ? 'Delete vendor?' : tp === 'other' ? 'Delete other contact?' : 'Delete customer?'
+})
+const deleteMessage = computed(() => {
+  const tp = contact.value?.types[0]
+  return tp === 'vendor' ? 'Deleted vendor cannot be restored.' : tp === 'other' ? 'Deleted other contact cannot be restored.' : 'Deleted customer cannot be restored.'
+})
 const isDeleteModalOpen = ref(false)
 function confirmDelete() {
   deleteContact(props.orderId)
@@ -128,15 +160,18 @@ function confirmDelete() {
           </div>
 
           <div class="cd-bar-right">
-            <MpPopover id="cd-create-tx" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpTooltip v-if="contact.archived" id="cd-create-tx-tt" :label="t('Transactions cannot be created for an archived contact')" use-portal>
+              <MpButton variant="primary" is-rounded right-icon="chevrons-down" @click="infoToast(t('Transactions cannot be created for an archived contact'))">{{ t('Create transaction') }}</MpButton>
+            </MpTooltip>
+            <MpPopover v-else id="cd-create-tx" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
               <MpPopoverTrigger>
                 <MpButton variant="primary" is-rounded right-icon="chevrons-down">{{ t('Create transaction') }}</MpButton>
               </MpPopoverTrigger>
               <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
                 <MpPopoverList>
                   <MpPopoverListItem
-                    v-for="item in CREATE_TRANSACTION_ITEMS" :key="item.label"
-                    @click="router.push(item.to)"
+                    v-for="item in createTransactionItems" :key="item.key"
+                    @click="createTransaction(item)"
                   >{{ t(item.label) }}</MpPopoverListItem>
                 </MpPopoverList>
               </MpPopoverContent>
@@ -144,16 +179,24 @@ function confirmDelete() {
 
             <MpPopover id="cd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
               <MpPopoverTrigger>
-                <button class="cd-kebab" :aria-label="t('More actions')">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
-                  </svg>
+                <button class="btn-enterprise cd-kebab" :aria-label="t('More actions')">
+                  <MpIcon name="menu-kebab" size="md" />
                 </button>
               </MpPopoverTrigger>
               <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                 <MpPopoverList>
+                  <MpPopoverListItem @click="router.push('/sales-report/sales-by-customer')">{{ t('Statement report') }}</MpPopoverListItem>
                   <MpPopoverListItem @click="goEdit">{{ t('Edit') }}</MpPopoverListItem>
+                  <MpTooltip id="cd-merge-tt" :label="t('Coming soon')" placement="left" use-portal>
+                    <MpPopoverListItem is-disabled>{{ t('Merge contact') }}</MpPopoverListItem>
+                  </MpTooltip>
+                  <MpTooltip id="cd-group-tt" :label="t('Coming soon')" placement="left" use-portal>
+                    <MpPopoverListItem is-disabled>{{ t('Add to contact group') }}</MpPopoverListItem>
+                  </MpTooltip>
+                  <MpPopoverListItem :is-disabled="contact.archived" @click="archiveContact">{{ t('Archive') }}</MpPopoverListItem>
                   <MpPopoverListItem
+                    :is-disabled="!canDelete"
+                    :title="canDelete ? undefined : t('This contact can\'t be deleted because it has existing transactions.')"
                     :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
                     @click="isDeleteModalOpen = true"
                   >{{ t('Delete') }}</MpPopoverListItem>
@@ -192,10 +235,10 @@ function confirmDelete() {
                   </ContentList>
                   <ContentList :label="t('Mobile')" :value="contact.mobile || undefined" />
 
-                  <ContentList :label="contact.identityType" :value="contact.identityNumber || undefined" />
+                  <ContentList :label="t('Identity')" :value="contact.identityNumber ? `${contact.identityType} ${contact.identityNumber}` : undefined" />
                   <ContentList :label="t('Contact group')">
                     <template v-if="contact.groups.length">
-                      <a v-for="g in contact.groups" :key="g" class="cd-link content-list__line">{{ g }}</a>
+                      <a v-for="g in contact.groups" :key="g" class="cd-link content-list__line" @click="router.push(`/contact-groups?type=${listSlug === 'other-contacts' ? 'others' : listSlug}`)">{{ g }}</a>
                     </template>
                     <template v-else>—</template>
                   </ContentList>
@@ -219,6 +262,7 @@ function confirmDelete() {
                 <div class="cd-section-head">
                   <h2 class="cd-section-title cd-section-title--inline">{{ t('Tax info') }}</h2>
                   <MpBadge
+                    v-if="contact.domicile === 'domestic' && contact.npwp"
                     for="additionalInformation" size="sm"
                     :type="contact.taxStatus === 'validated' ? 'completed' : 'announcement'"
                   >
@@ -243,9 +287,9 @@ function confirmDelete() {
               </section>
 
               <!-- Bank info — one column per account -->
-              <section class="cd-section">
+              <section v-if="contact.banks.length" class="cd-section">
                 <h2 class="cd-section-title">{{ t('Bank info') }}</h2>
-                <div v-if="contact.banks.length" class="cd-grid">
+                <div class="cd-grid">
                   <div v-for="(bank, i) in contact.banks" :key="bank.id" class="cd-bank">
                     <div class="cd-bank-head">
                       <span class="cd-bank-title">
@@ -261,7 +305,6 @@ function confirmDelete() {
                     <ContentList :label="t('Account name')" :value="bank.accountName || undefined" />
                   </div>
                 </div>
-                <p v-else class="cd-empty">{{ t('No bank account added.') }}</p>
               </section>
 
               <!-- Default settings -->
@@ -278,9 +321,7 @@ function confirmDelete() {
               <!-- Memo -->
               <section class="cd-section cd-section--last">
                 <h2 class="cd-section-title">{{ t('Memo') }}</h2>
-                <div class="cd-grid">
-                  <ContentList :label="t('Memo')" :value="contact.memo || undefined" />
-                </div>
+                <p class="cd-memo">{{ contact.memo || '—' }}</p>
                 <a class="cd-updated">{{ lastUpdatedDisplay }}</a>
               </section>
 
@@ -289,52 +330,131 @@ function confirmDelete() {
 
           <!-- ─────────── Transactions ─────────── -->
           <MpTabPanel value="transactions">
-            <section class="cd-section cd-section--last">
-              <h2 class="cd-section-title">{{ t('Transactions') }}</h2>
-              <table v-if="transactions.length" class="cd-table">
-                <colgroup>
-                  <col :style="colStyle('date')" />
-                  <col :style="colStyle('number')" />
-                  <col :style="colStyle('status')" />
-                  <col :style="colStyle('amount')" />
-                  <col />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th>{{ t('Date') }}</th>
-                    <th>{{ t('Number') }}</th>
-                    <th>{{ t('Status') }}</th>
-                    <th class="cd-td--right">{{ t('Total') }}</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="inv in transactions" :key="inv.id">
-                    <td>{{ formatDate(inv.date) }}</td>
-                    <td>
-                      <a class="cd-link" @click="router.push(`/sales-invoices/${inv.id}`)">
-                        {{ t('Sales Invoice') }} #{{ inv.number }}
-                      </a>
-                    </td>
-                    <td><ErpStatusBadge :status="inv.status" /></td>
-                    <td class="cd-td--right">{{ formatIDR(inv.total) }}</td>
-                    <td />
-                  </tr>
-                </tbody>
-              </table>
-              <p v-else class="cd-empty">{{ t('No transactions yet.') }}</p>
-            </section>
+            <!-- Summary strip — tiles per side; a customer+vendor contact gets both -->
+            <div v-if="summary" class="stats-section cd-stats">
+              <template v-if="isCustomer">
+                <div class="stat-card stat-card--bordered">
+                  <div class="stat-title">{{ t('Invoices owed to you') }}</div>
+                  <div class="stat-period">{{ t('As of today') }}</div>
+                  <div class="stat-amount">{{ formatIDR(summary.owedToYou) }}</div>
+                </div>
+                <div class="stat-card stat-card--bordered">
+                  <div class="stat-title">{{ t('Payment received') }}</div>
+                  <div class="stat-period">{{ t('Last 30 days') }}</div>
+                  <div class="stat-amount">{{ formatIDR(summary.paymentReceived) }}</div>
+                </div>
+                <div class="stat-card stat-card--bordered">
+                  <div class="stat-title">{{ t('Total credit memo') }}</div>
+                  <div class="stat-period">{{ t('As of today') }}</div>
+                  <div class="stat-amount">{{ formatIDR(0) }}</div>
+                </div>
+              </template>
+              <template v-if="isVendor">
+                <div class="stat-card stat-card--bordered">
+                  <div class="stat-title">{{ t('Invoices you need to pay') }}</div>
+                  <div class="stat-period">{{ t('As of today') }}</div>
+                  <div class="stat-amount">{{ formatIDR(summary.youNeedToPay) }}</div>
+                </div>
+                <div class="stat-card stat-card--bordered">
+                  <div class="stat-title">{{ t('Payment made') }}</div>
+                  <div class="stat-period">{{ t('Last 30 days') }}</div>
+                  <div class="stat-amount">{{ formatIDR(summary.paymentMade) }}</div>
+                </div>
+                <div class="stat-card stat-card--bordered">
+                  <div class="stat-title">{{ t('Total debit memo') }}</div>
+                  <div class="stat-period">{{ t('As of today') }}</div>
+                  <div class="stat-amount">{{ formatIDR(0) }}</div>
+                </div>
+              </template>
+              <div class="stat-card">
+                <div class="stat-title">{{ t('Overdue') }}</div>
+                <div class="stat-period">{{ t('As of today') }}</div>
+                <template v-if="isCustomer && isVendor">
+                  <div class="stat-amount stat-amount--danger stat-amount--sm">{{ t('Owed to you') }}: {{ formatIDR(summary.overdueReceivable) }}</div>
+                  <div class="stat-amount stat-amount--danger stat-amount--sm">{{ t('You owe') }}: {{ formatIDR(summary.overduePayable) }}</div>
+                </template>
+                <div v-else class="stat-amount stat-amount--danger">{{ formatIDR(isVendor ? summary.overduePayable : summary.overdueReceivable) }}</div>
+              </div>
+            </div>
+
+            <div class="cd-tx-toolbar">
+              <MpTooltip id="cd-tx-filter-tt" :label="t('Filters are not available yet')" use-portal>
+                <MpButton variant="secondary" is-rounded left-icon="filter" @click="infoToast(t('Filters are not available yet'))">{{ t('Filter') }}</MpButton>
+              </MpTooltip>
+            </div>
+
+            <div class="cd-table-wrap">
+            <table class="cd-table">
+              <colgroup>
+                <col :style="colMin('date')" />
+                <col :style="colMin('number')" />
+                <col :style="colMin('default')" />
+                <col :style="colMin('status')" />
+                <col :style="colMin('date')" />
+                <col :style="colMin('amount')" />
+                <col :style="colMin('amount')" />
+                <col :style="colMin('tags')" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>{{ t('Date') }}</th>
+                  <th>{{ t('Number') }}</th>
+                  <th>{{ t('Description') }}</th>
+                  <th>{{ t('Status') }}</th>
+                  <th>{{ t('Due date') }}</th>
+                  <th class="cd-td--right">{{ t('Amount') }}</th>
+                  <th class="cd-td--right">{{ t('Balance due') }}</th>
+                  <th>{{ t('Tags') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="!transactions.length">
+                  <td colspan="8" class="cd-td--empty">{{ t('No transactions yet.') }}</td>
+                </tr>
+                <tr v-for="row in txRows" :key="row.id">
+                  <td>{{ formatDate(row.date) }}</td>
+                  <td><a class="cd-link" @click="router.push(row.href)">{{ row.number }}</a></td>
+                  <td>{{ row.description || '—' }}</td>
+                  <td><ErpStatusBadge :status="row.status" :label="t(STATUS_LABEL[row.status] ?? row.status)" /></td>
+                  <td>{{ formatDate(row.dueDate) }}</td>
+                  <td class="cd-td--right">{{ formatIDR(row.amount) }}</td>
+                  <td class="cd-td--right">{{ formatIDR(row.balanceDue) }}</td>
+                  <td>{{ row.tags.length ? row.tags.join(', ') : '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+            </div>
+            <ErpPagination
+              v-if="transactions.length > txPerPage"
+              :current-page="txPage" :per-page="txPerPage" :total="transactions.length"
+              @page-change="(p: number) => (txPage = p)" @per-page-change="(n: number) => { txPerPage = n; txPage = 1 }"
+            />
           </MpTabPanel>
 
           <!-- ─────────── Files ─────────── -->
           <MpTabPanel value="files">
-            <section class="cd-section cd-section--last">
-              <h2 class="cd-section-title">{{ t('Files') }}</h2>
-              <p class="cd-empty">
-                <MpIcon name="attachment" size="md" />
-                {{ t('No files attached to this contact.') }}
-              </p>
-            </section>
+            <div class="cd-tx-toolbar">
+              <MpButton variant="secondary" is-rounded left-icon="upload" @click="infoToast(t('Not in this prototype'))">{{ t('Upload file') }}</MpButton>
+            </div>
+            <table class="cd-table">
+              <colgroup>
+                <col :style="colStyle('date')" />
+                <col :style="colStyle('name')" />
+                <col :style="colStyle('number')" />
+                <col />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>{{ t('Date') }}</th>
+                  <th>{{ t('File') }}</th>
+                  <th>{{ t('Related transaction') }}</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="4" class="cd-td--empty">{{ t('No files yet.') }}</td></tr>
+              </tbody>
+            </table>
           </MpTabPanel>
 
         </MpTabPanels>
@@ -343,8 +463,8 @@ function confirmDelete() {
 
     <ConfirmModal
       v-model:is-open="isDeleteModalOpen"
-      :title="t('Delete contact?')"
-      :description="`${contact.displayName} ${t('will be removed from your contact list.')}`"
+      :title="t(deleteTitle)"
+      :description="t(deleteMessage)"
       :confirm-label="t('Delete')"
       @confirm="confirmDelete"
     />
@@ -464,6 +584,7 @@ function confirmDelete() {
 .cd-updated:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 /* ── Related-records table (Transactions tab) ── */
+.cd-table-wrap { overflow-x: auto; }
 .cd-table { width: 100%; border-collapse: collapse; }
 .cd-table th {
   height: var(--mp-sizes-7, 28px);
@@ -481,6 +602,21 @@ function confirmDelete() {
 }
 .cd-table th.cd-td--right,
 .cd-table td.cd-td--right { text-align: right; }
+
+.cd-memo { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: pre-line; }
+.cd-tx-toolbar { display: flex; align-items: center; margin: var(--mp-spacing-6) 0 var(--mp-spacing-4); }
+.cd-tx-toolbar:first-child { margin-top: 0; }
+.cd-table td.cd-td--empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-6) 0; }
+
+/* Summary strip — same stat-card classes as BillsIndexPage */
+.stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
+.stat-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding-right: var(--mp-spacing-6); align-self: stretch; }
+.stat-card--bordered { border-right: 1px solid var(--mp-border-default); }
+.stat-title { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); white-space: nowrap; }
+.stat-period { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap; }
+.stat-amount { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-2xl, 32px); white-space: nowrap; }
+.stat-amount--sm { font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); }
+.stat-amount--danger { color: var(--mp-text-danger); }
 
 .cd-missing {
   display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-4);
