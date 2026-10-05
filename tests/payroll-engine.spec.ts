@@ -194,6 +194,8 @@ describe('payroll engine (PRD FG-1 to FG-7, LR-1 to LR-14)', () => {
     const diff = journalById(String(d.journalId))!
     expect(journalTotals(diff).debit).toBe(journalTotals(diff).credit)
     expect(net(diff.lines, ACC.hutangGaji)).toBe(thpOf(sep, 2) - thpOf(sep, 1))
+    // Reconciliation by pay item still ties after the difference journal (sources carried).
+    expect(reconciliation('2026-09').payItemRows.filter((x) => x.variance !== 0)).toEqual([])
     // A second fix on the same version is refused.
     expect(postDifference(sep.id).ok).toBe(false)
     const rev = reverseJournal(live[0]!.id, { confirmPayments: true })

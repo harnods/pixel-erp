@@ -1837,8 +1837,27 @@ function differenceLines(run: Run, v: RunVersion, includeSettingsMoves: boolean)
   const base = includeSettingsMoves || !ledgerV ? liveLines : buildJournal(run, ledgerV, payroll.settings).draft.lines
   return diffLineSets(base, newB).map((r) => {
     const amt = r.diff
-    return { account: r.account, tags: r.tags, debit: amt > 0 ? amt : 0, credit: amt < 0 ? -amt : 0, why: [`v${run.ledgerVersion} to v${v.no}`], sources: [] as LineSource[] }
+    return { account: r.account, tags: r.tags, debit: amt > 0 ? amt : 0, credit: amt < 0 ? -amt : 0, why: [`v${run.ledgerVersion} to v${v.no}`], sources: sourceDiff(base, newB, r.key) }
   }).filter((l) => l.debit || l.credit)
+}
+/** Pay item sources of a difference line: new build minus base, per item, section and side, so
+ *  reconciliation by pay item still ties after a difference journal posts. */
+function sourceDiff(base: JournalLine[], next: JournalLine[], key: string): LineSource[] {
+  const acc = new Map<string, LineSource>()
+  const add = (lines: JournalLine[], sign: 1 | -1) => {
+    for (const l of lines) {
+      if (`${l.account}#${tagsKey(l.tags)}` !== key) continue
+      for (const s of l.sources) {
+        const k = `${s.item}|${s.section}|${s.side}`
+        const x = acc.get(k) ?? { ...s, cents: 0, staff: [] as string[] }
+        x.cents += sign * s.cents
+        if (sign === 1) x.staff = [...new Set([...x.staff, ...s.staff])]
+        acc.set(k, x)
+      }
+    }
+  }
+  add(base, -1); add(next, 1)
+  return [...acc.values()].filter((s) => s.cents !== 0)
 }
 export function compareVersions(runId: string, a?: number, b?: number) {
   const run = runById(runId)!
