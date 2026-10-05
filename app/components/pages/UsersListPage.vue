@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-frontend-app/src/pages/settings/pages/user-management/composition-user_management.vue -->
 <script setup lang="ts">
 /**
  * Settings › Users & roles → "User list" tab.
@@ -24,9 +25,9 @@ import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import UserViewDrawer from '~/components/patterns/UserViewDrawer.vue'
-import { successToast } from '~/utils/toasts'
+import { successToast, infoToast } from '~/utils/toasts'
 import {
-  accountUsers, userRoleNames, userRoleTypes, userRoleTypeLabels, timeLimitText,
+  accountUsers, userRoleNames, userRoleTypes, userRoleTypeLabels, timeLimitText, userPartnerType,
   deleteAccountUser, setAccountUserStatus, type AccountUser,
 } from '~/data/usersRoles'
 
@@ -40,16 +41,19 @@ function goEdit(user: AccountUser) {
 
 // ─── Columns — Name, Role, List manager, Access time, Status, Type, Join date by
 // default; Last active is optional (hidden), toggleable from Column settings. ──
+// Prod order: User name, Role, Access time limits, Status, Type. List manager /
+// Role type / Join date / Last active are local-only extras.
 const baseColumns: TableColumn[] = [
-  { key: 'name',        label: 'Name',        kind: 'name',    sortType: 'text' },
+  { key: 'name',        label: 'User name',   kind: 'name',    sortType: 'text' },
   { key: 'roles',       label: 'Role',        kind: 'tags' },
-  { key: 'listManager', label: 'List manager', sortType: 'text' },
-  { key: 'timeLimit',   label: 'Access time', kind: 'address', sortType: 'text' },
+  { key: 'timeLimit',   label: 'Access time limits', kind: 'address', sortType: 'text' },
   { key: 'status',      label: 'Status',      kind: 'status',  sortType: 'text' },
-  { key: 'type',        label: 'Type',        kind: 'tags' },
+  { key: 'partnerType', label: 'Type',        sortType: 'text' },
+  { key: 'listManager', label: 'List manager', sortType: 'text' },
   { key: 'joinedAt',    label: 'Join date',   kind: 'date',    sortType: 'date' },
 ]
 const optionalColumns: TableColumn[] = [
+  { key: 'type',        label: 'Role type',   kind: 'tags' },
   { key: 'lastActive',  label: 'Last active', kind: 'date', sortType: 'date' },
 ]
 const allCols: TableColumn[] = [...baseColumns, ...optionalColumns]
@@ -64,6 +68,12 @@ const columns = computed<TableColumn[]>(() => allCols.filter((c) => columnVisibi
 // and the role type keeps its own ref.
 const typeFilter = ref('')
 const TYPE_OPTIONS = [
+  { value: 'member',  label: t('Member') },
+  { value: 'partner', label: t('Partner') },
+]
+// Local-only: filter by role kind (Owner / Existing role / Custom role).
+const roleTypeFilter = ref('')
+const ROLE_TYPE_OPTIONS = [
   { value: 'owner',    label: t('Owner') },
   { value: 'existing', label: t('Existing role') },
   { value: 'custom',   label: t('Custom role') },
@@ -91,8 +101,9 @@ const {
       row.email.toLowerCase().includes(s) ||
       userRoleNames(row).some((r) => r.toLowerCase().includes(s))
     const matchesStatus = !status || row.status === status
-    const matchesType = !typeFilter.value || userRoleTypes(row).includes(typeFilter.value as never)
-    return matchesSearch && matchesStatus && matchesType
+    const matchesType = !typeFilter.value || userPartnerType(row) === typeFilter.value
+    const matchesRoleType = !roleTypeFilter.value || userRoleTypes(row).includes(roleTypeFilter.value as never)
+    return matchesSearch && matchesStatus && matchesType && matchesRoleType
   },
 })
 
@@ -100,6 +111,7 @@ function resetFilters() {
   search.value = ''
   statusFilter.value = ''
   typeFilter.value = ''
+  roleTypeFilter.value = ''
 }
 
 // ─── Loading (first paint) ──────────────────────────────────────────────────
@@ -107,14 +119,26 @@ const loading = ref(true)
 onMounted(() => { setTimeout(() => { loading.value = false }, 600) })
 
 // ─── Row actions ────────────────────────────────────────────────────────────
-function resendInvitation(user: AccountUser) {
-  successToast(`${t('Invitation sent to')} ${user.email}`)
+function resendInvitation(_user: AccountUser) {
+  successToast(t('Invitation resent'))
 }
 
-function reactivate(user: AccountUser) {
+function activate(user: AccountUser) {
   setAccountUserStatus(user.id, 'active')
-  successToast(t('User reactivated'))
+  successToast(t('User activated'))
 }
+
+const deactivateTarget = ref<AccountUser | null>(null)
+function confirmDeactivate() {
+  if (!deactivateTarget.value) return
+  setAccountUserStatus(deactivateTarget.value.id, 'inactive')
+  successToast(t('User deactivated'))
+  deactivateTarget.value = null
+}
+
+// The signed-in user (Rizal Candra) is the Owner, so the Owner row offers
+// "Transfer ownership" (prod: only action on the owner row).
+function transferOwnership() { infoToast(t('Not in this prototype')) }
 
 const viewTarget = ref<AccountUser | null>(null)
 function viewDetails(user: AccountUser) { viewTarget.value = user }
@@ -147,7 +171,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :sort-dir="sortDir"
     :loading="loading"
     :has-active-search="!!search"
-    :has-active-filter="!!statusFilter || !!typeFilter"
+    :has-active-filter="!!statusFilter || !!typeFilter || !!roleTypeFilter"
     filter-empty-label="user"
     @page-change="setPage"
     @per-page-change="setPerPage"
@@ -172,6 +196,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           :options="STATUS_OPTIONS"
           width="160px"
         />
+        <ErpFilterSelect
+          id="usr-role-type-filter"
+          v-model="roleTypeFilter"
+          :placeholder="t('All role types')"
+          :options="ROLE_TYPE_OPTIONS"
+          width="176px"
+        />
       </div>
 
       <div class="filter-right">
@@ -183,7 +214,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
         <div class="filter-search">
           <MpIcon name="search" size="md" />
-          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')">
+          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search user')">
           <MpButton
             v-if="search" variant="ghost" class="filter-search-clear"
             left-icon="close" :aria-label="t('Clear search')" @click="search = ''"
@@ -229,7 +260,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <ErpStatusBadge :status="(row as unknown as AccountUser).status" />
     </template>
 
-    <!-- ── Type — Owner / Existing role / Custom role ── -->
+    <!-- ── Type — Member / Partner (prod) ── -->
+    <template #cell-partnerType="{ row }">
+      <span class="usr-yes">
+        <MpIcon :name="userPartnerType(row as unknown as AccountUser) === 'partner' ? 'people' : 'profile'" size="sm" />
+        {{ userPartnerType(row as unknown as AccountUser) === 'partner' ? t('Partner') : t('Member') }}
+      </span>
+    </template>
+
+    <!-- ── Role type — Owner / Existing role / Custom role (local-only, optional) ── -->
     <template #cell-type="{ row }">
       <ErpTagList :tags="userRoleTypeLabels(row as unknown as AccountUser)" />
     </template>
@@ -244,10 +283,24 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       {{ formatDate((row as unknown as AccountUser).lastActiveAt) }}
     </template>
 
-    <!-- ── Actions kebab — hidden for the Owner row (nothing is permitted) ── -->
+    <!-- ── Actions kebab — the Owner row only offers Transfer ownership ── -->
     <template #actions="{ row }">
       <MpPopover
-        v-if="!(row as unknown as AccountUser).isOwner"
+        v-if="(row as unknown as AccountUser).isOwner"
+        :id="`usr-actions-${(row as unknown as AccountUser).id}`"
+        is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end"
+      >
+        <MpPopoverTrigger>
+          <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
+        </MpPopoverTrigger>
+        <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+          <MpPopoverList>
+            <MpPopoverListItem @click="transferOwnership">{{ t('Transfer ownership') }}</MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
+      <MpPopover
+        v-else
         :id="`usr-actions-${(row as unknown as AccountUser).id}`"
         is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end"
       >
@@ -259,17 +312,21 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <MpPopoverListItem @click="viewDetails(row as unknown as AccountUser)">{{ t('View details') }}</MpPopoverListItem>
             <MpPopoverListItem @click="goEdit(row as unknown as AccountUser)">{{ t('Edit') }}</MpPopoverListItem>
             <MpPopoverListItem
-              v-if="(row as unknown as AccountUser).status === 'invited'"
-              @click="resendInvitation(row as unknown as AccountUser)"
-            >{{ t('Resend invitation') }}</MpPopoverListItem>
-            <MpPopoverListItem
-              v-if="(row as unknown as AccountUser).status === 'inactive'"
-              @click="reactivate(row as unknown as AccountUser)"
-            >{{ t('Reactivate') }}</MpPopoverListItem>
-            <MpPopoverListItem
               :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
               @click="deleteTarget = (row as unknown as AccountUser)"
             >{{ t('Delete') }}</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="(row as unknown as AccountUser).status === 'active'"
+              @click="deactivateTarget = (row as unknown as AccountUser)"
+            >{{ t('Deactivate user') }}</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="(row as unknown as AccountUser).status === 'inactive'"
+              @click="activate(row as unknown as AccountUser)"
+            >{{ t('Activate user') }}</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="(row as unknown as AccountUser).status === 'invited'"
+              @click="resendInvitation(row as unknown as AccountUser)"
+            >{{ t('Resend invitation') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -279,8 +336,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #empty>
       <div class="empty-full">
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240">
-        <p class="empty-full-title">{{ t('No users') }}</p>
-        <p class="empty-full-desc">{{ t('Invited users will appear here.') }}</p>
+        <p class="empty-full-title">{{ t('User list will appear here') }}</p>
+        <p class="empty-full-desc">{{ t('Invite new users from Invite user button.') }}</p>
         <MpButton
           variant="secondary" is-rounded left-icon="add"
           @click="router.push('/users-and-roles/invite')"
@@ -311,11 +368,42 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpModalCloseButton />
       </MpModalHeader>
       <MpModalBody>
-        {{ t('Deleted user cannot be restored. Their transactions stay in the account.') }}
+        {{ deleteTarget?.name }} {{ t('will be deleted from this company account. You can always reinvite it again.') }}
       </MpModalBody>
       <MpModalFooter>
         <MpButton variant="ghost" is-rounded @click="deleteTarget = null">{{ t('Cancel') }}</MpButton>
         <MpButton variant="danger" is-rounded @click="confirmDelete">{{ t('Delete user') }}</MpButton>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
+
+  <!-- ── Deactivate confirmation (prod modal-deactivate-user) ── -->
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="usr-deactivate-modal"
+    :is-open="!!deactivateTarget"
+    size="md"
+    :is-keep-alive="false"
+    @close="deactivateTarget = null"
+  >
+    <MpModalContent>
+      <MpModalHeader>
+        {{ t('Deactivate this user?') }}
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        <p class="usr-modal-text">
+          <strong>{{ deactivateTarget?.name }}</strong>
+          {{ t('will not be able to access this company account temporarily. You can activate this user again if needed.') }}
+        </p>
+        <div class="usr-modal-banner">
+          <MpIcon name="info" size="sm" />
+          <span>{{ t('Deactivating users will not reduce Jurnal subscription billing.') }}</span>
+        </div>
+      </MpModalBody>
+      <MpModalFooter>
+        <MpButton variant="ghost" is-rounded @click="deactivateTarget = null">{{ t('Cancel') }}</MpButton>
+        <MpButton variant="primary" is-rounded @click="confirmDeactivate">{{ t('Deactivate') }}</MpButton>
       </MpModalFooter>
     </MpModalContent>
     <MpModalOverlay />
@@ -364,6 +452,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   white-space: normal; word-break: break-word;
 }
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* ── Deactivate modal ── */
+.usr-modal-text { margin: 0; }
+.usr-modal-banner {
+  display: flex; align-items: flex-start; gap: var(--mp-spacing-2);
+  margin-top: var(--mp-spacing-3); padding: var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
+  background: var(--mp-colors-background-warning); color: var(--mp-text-default);
+}
 
 /* ── Empty state ── */
 .empty-full { display: flex; flex-direction: column; align-items: center; }

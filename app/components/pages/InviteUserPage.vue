@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-frontend-app/src/pages/settings/pages/user-management/invite/user_invite.vue -->
 <script setup lang="ts">
 /**
  * Settings › Users & roles → "Invite user" (also serves "Edit access" for an
@@ -135,12 +136,12 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 function validate(): boolean {
   nameError.value = name.value.trim() ? '' : t('You must fill in user name')
   if (!email.value.trim()) emailError.value = t('You must fill in email')
-  else if (!EMAIL_RE.test(email.value.trim())) emailError.value = t('Enter a valid email address')
+  else if (!EMAIL_RE.test(email.value.trim())) emailError.value = t('Enter email based on format. Example: name@email.com')
   else emailError.value = ''
 
   roleError.value = (selectedSystemRoles.value.length || selectedCustomRoles.value.length)
     ? ''
-    : t('You must select at least one role')
+    : t('You must select at least 1 role')
 
   timeError.value = applyTimeLimit.value && timeLimit.startHour >= timeLimit.endHour
     ? t('End hour must be later than start hour')
@@ -165,10 +166,10 @@ async function save() {
 
   if (isEdit.value) {
     updateAccountUser(props.orderId!, payload)
-    successToast(t('User access changes saved'))
+    successToast(t('Changes saved'))
   } else {
     addAccountUser(payload)
-    successToast(t('Invitation sent'))
+    successToast(t('User invited'))
   }
   isSaving.value = false
   goBack()
@@ -183,7 +184,7 @@ function goBack() { router.push('/users-and-roles') }
     <div class="inv-titlebar">
       <div class="inv-titlebar-left">
         <MpButton variant="textLink" class="inv-breadcrumb" @click="goBack">{{ t('Users & roles') }}</MpButton>
-        <h1 class="inv-title">{{ isEdit ? t('Edit user access') : t('Invite user') }}</h1>
+        <h1 class="inv-title">{{ isEdit ? t('Edit user') : t('Invite user') }}</h1>
       </div>
     </div>
 
@@ -230,7 +231,7 @@ function goBack() { router.push('/users-and-roles') }
                 :is-checked="applyTimeLimit"
                 @change="(on: boolean) => applyTimeLimit = on"
               >
-                {{ t('Apply access time limits') }}
+                {{ t('Access time limits') }}
                 <template #description>{{ t(ACCESS_TIME_LIMIT_NOTE) }}</template>
               </MpCheckbox>
 

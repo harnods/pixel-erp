@@ -697,6 +697,14 @@ export interface AccountUser {
   lastActiveAt: string | null
   /** ISO date the user was invited/created. */
   joinedAt: string
+  /** Prod "Type" column: a company Member, or an outside Partner (e.g. the
+   *  accounting firm). Absent = 'member'. */
+  partnerType?: AccountUserPartnerType
+}
+
+export type AccountUserPartnerType = 'member' | 'partner'
+export function userPartnerType(user: AccountUser): AccountUserPartnerType {
+  return user.partnerType ?? 'member'
 }
 
 export const accountUsers = reactive<AccountUser[]>([
@@ -829,6 +837,7 @@ export const accountUsers = reactive<AccountUser[]>([
     status: 'invited',
     lastActiveAt: null,
     joinedAt: '2026-09-09',
+    partnerType: 'partner',
   },
   {
     id: 'au-11',
