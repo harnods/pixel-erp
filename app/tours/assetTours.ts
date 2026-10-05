@@ -10,7 +10,7 @@
  * through the store so a figure that drifts fails the suite.
  */
 import type { ViewAsRole } from '~/data/assetStore'
-import { sim1SetTaxGroup, sim2GenerateRun, sim2JournalDatePolicy, sim2PostRun, sim3RecordImpairment, sim3Dispose, sim3CorrectCost } from './assetTourWork1'
+import { rowIn, sim1SetTaxGroup, sim2GenerateRun, sim2JournalDatePolicy, sim2PostRun, sim3RecordImpairment, sim3Dispose, sim3CorrectCost } from './assetTourWork1'
 
 export type TourPlacement = 'top' | 'bottom' | 'left' | 'right' | 'top-start' | 'bottom-start' | 'bottom-end' | 'left-start' | 'right-start'
 
@@ -98,6 +98,7 @@ export const ASSET_TOURS: AssetTour[] = [
       },
       {
         route: '/assets/FA-0077',
+        find: rowIn('det-sched', 'September 2026'),
         target: 'det-sched',
         title: 'Read the two schedules side by side.',
         body: 'The tax book is a second schedule on the same asset, calculated from the in-service date over the tax life.',
@@ -122,6 +123,7 @@ export const ASSET_TOURS: AssetTour[] = [
       },
       {
         route: '/assets/FA-0031',
+        find: rowIn('det-sched', 'September 2026'),
         target: 'det-sched',
         title: 'Pick one tax figure to defend.',
         body: 'Any charge in the schedule opens its charge breakdown. The next step opens the September 2026 tax charge.',
@@ -174,6 +176,7 @@ export const ASSET_TOURS: AssetTour[] = [
       },
       {
         route: '/depreciation-schedule?open=2026-09',
+        find: rowIn('run-table', 'September 2026'),
         target: 'run-table',
         title: 'Review the draft before anything is committed.',
         body: 'A draft can be regenerated as often as needed. Only posting commits it. September 2026 is expanded to show each asset\'s line.',
@@ -206,6 +209,7 @@ export const ASSET_TOURS: AssetTour[] = [
       {
         run: sim2PostRun,
         route: '/depreciation-schedule',
+        find: rowIn('run-table', 'September 2026'),
         target: 'run-table',
         title: 'Posted. The reference is on the run.',
         body: 'Each posted period carries its journal number and date, which is what makes a drill-down from the ledger possible.',
@@ -265,6 +269,7 @@ export const ASSET_TOURS: AssetTour[] = [
       },
       {
         route: '/assets/FA-0042',
+        find: rowIn('det-sched', 'October 2026'),
         target: 'det-sched',
         title: 'Read the regenerated schedule.',
         body: 'The impairment is dated at the period end, so September keeps its charge and the new basis starts in October. The tax book does not move.',
@@ -312,6 +317,7 @@ export const ASSET_TOURS: AssetTour[] = [
       {
         run: sim3CorrectCost,
         route: '/assets/FA-0064',
+        find: rowIn('det-sched', 'September 2026'),
         target: 'det-sched',
         title: 'The corrected cost is recorded.',
         body: 'FA-0064 Backup 100kVA Generator was entered at Rp245.000.000. The tour entered 250000000 as Corrected cost (Rp) and "Supplier invoice is 250 million" as Reason for correction, then selected Record correction.',
@@ -320,6 +326,7 @@ export const ASSET_TOURS: AssetTour[] = [
       },
       {
         route: '/assets/FA-0068',
+        find: rowIn('det-sched', 'July 2026'),
         target: 'det-sched',
         title: 'Open a figure with an impairment in its chain.',
         body: 'FA-0068 Forklift Toyota 3T was impaired on 30/06/2026. The next step opens the July 2026 accounting charge.',

@@ -32,6 +32,16 @@ export const SIM3_IMPAIRMENT = { indicator: 'Physical damage', recoverable: '400
 export const SIM3_DISPOSAL = { proceeds: '200000000' }
 export const SIM3_CORRECTION = { correctedCost: '250000000', reason: 'Supplier invoice is 250 million' }
 
+/** The visible row inside a marker that starts with `text` (a step quoting one period). */
+export function rowIn(marker: string, text: string): () => HTMLElement | null {
+  return () => {
+    const roots = Array.from(document.querySelectorAll<HTMLElement>(`[data-tour="${marker}"]`)).filter((el) => el.getClientRects().length > 0)
+    const root = roots[roots.length - 1]
+    if (!root) return null
+    return Array.from(root.querySelectorAll<HTMLElement>('tr')).find((r) => r.innerText.trim().startsWith(text)) ?? null
+  }
+}
+
 // ── SIM-1 ───────────────────────────────────────────────────────────────────
 
 /** Set tax group on FA-0077: Tax group 2, tax life 8 years, Save tax group. */
