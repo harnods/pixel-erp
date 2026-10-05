@@ -90,6 +90,9 @@ const viewOptions = [
  * first column already says what the row is.
  */
 const woColumns: TableColumn[] = [
+  // W-9 — the request's own number is its identity; the work order that raised it
+  // is a field on it, not its name.
+  { key: 'number',              label: t('Stock request no.'),     kind: 'number', sortable: true, sortType: 'text' },
   { key: 'workOrderNumber',     label: t('Work order number'),     kind: 'number', sortable: true, sortType: 'text' },
   // W-7 — the line tags get a column of their own rather than stacking under the
   // number, where they pushed the row to three lines and read as part of it.
@@ -114,7 +117,6 @@ const woColumns: TableColumn[] = [
  * for, and the SKU qualifies it.
  */
 const skuColumns: TableColumn[] = [
-  { key: 'lane',        label: '',                       width: '56px', noHeader: true },
   { key: 'product',     label: t('Product name'),        kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'sku',         label: t('SKU'),                 kind: 'number', sortable: true, sortType: 'text' },
   // W-7 — a tag belongs to a LINE, so it reads on the breakdown rows, in its own
@@ -149,12 +151,11 @@ const columnVisibility = reactive<Record<string, boolean>>({
   ...Object.fromEntries(allSkuCols.map(c => [`sku.${c.key}`, c.key !== 'consumed'])),
 })
 const columnItems = computed(() => (view.value === 'product'
-  // The lane column is layout, not data — never offered in the menu.
-  ? allSkuCols.filter(c => c.key !== 'lane').map((c, i) => ({ key: `sku.${c.key}`, label: c.label, disabled: i === 0 }))
+  ? allSkuCols.map((c, i) => ({ key: `sku.${c.key}`, label: c.label, disabled: i === 0 }))
   : allWoCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))))
 const visibleWoColumns = computed<TableColumn[]>(() => allWoCols.filter(c => columnVisibility[c.key]))
 const visibleSkuColumns = computed<TableColumn[]>(() =>
-  allSkuCols.filter(c => c.key === 'lane' || columnVisibility[`sku.${c.key}`]))
+  allSkuCols.filter(c => columnVisibility[`sku.${c.key}`]))
 function hideColumn(key: string) { columnVisibility[key] = false }
 
 // ─── Prototype scenario (ScenarioFab, bottom-right): populated vs empty ────────
@@ -606,11 +607,11 @@ const exportColumns = computed(() => {
           class="sr-child"
         >
           <td v-for="col in cols" :key="col.key" class="sr-child-td" :class="{ 'sr-child-td--right': col.align === 'right' }">
-            <template v-if="col.key === 'lane'" />
-            <!-- The work order sits under the first data column, which is now
-                 Product name — a breakdown row names its transaction first. -->
-            <span v-else-if="col.key === 'product'" class="sr-child-wo">
-              <span class="cell-link cell-text" @click="viewDetails(entry.requestId)">{{ entry.workOrderNumber }}</span>
+            <!-- A breakdown row IS a request, so it names itself: its own number
+                 (W-9), with the transaction that raised it underneath. -->
+            <span v-if="col.key === 'product'" class="sr-child-sku">
+              <span class="cell-link cell-text" @click="viewDetails(entry.requestId)">{{ entry.requestNumber }}</span>
+              <span class="sr-child-sku-code">{{ entry.workOrderNumber }}</span>
             </span>
             <!-- Requestor: who last CHANGED this line's demand (OPEN-17). -->
             <span v-else-if="col.key === 'sku'" class="cell-text" :title="entry.requestor">{{ entry.requestor }}</span>
@@ -642,7 +643,7 @@ const exportColumns = computed(() => {
             <!-- The component name wraps rather than truncating: a breakdown row
                  may be taller than its parent, and the name is the thing the
                  stockist is reading. -->
-            <span v-if="col.key === 'workOrderNumber'" class="sr-child-sku">
+            <span v-if="col.key === 'number'" class="sr-child-sku">
               <span class="sr-child-sku-name">{{ line.product }}</span>
               <span class="sr-child-sku-code">{{ line.sku }}</span>
             </span>
@@ -661,6 +662,7 @@ const exportColumns = computed(() => {
               {{ formatDate(line.requiredDate) }}
               <span v-if="isLineOverdue(line, TODAY_ISO)" class="sr-note">{{ t('Overdue') }}</span>
             </span>
+            <span v-else-if="col.key === 'workOrderNumber'" class="sr-muted">—</span>
             <span v-else-if="col.key === 'woStartDate'" class="cell-text">—</span>
             <span v-else-if="col.key === 'destinationWarehouse'" class="cell-text" :title="line.destinationWarehouse">{{ line.destinationWarehouse }}</span>
           </td>
@@ -673,18 +675,21 @@ const exportColumns = computed(() => {
     <!-- ══ By transaction ════════════════════════════════════════════════════ -->
 
     <!-- Transaction — the originating work order plus its request tag (W-7) -->
-    <template #cell-workOrderNumber="{ row }">
+    <!-- The request's own number leads the row, and carries the accordion. -->
+    <template #cell-number="{ row }">
       <span class="sr-txn">
         <span class="sr-expand" :class="{ 'sr-expand--open': expanded[wo(row).id] }" role="button"
               :aria-label="expanded[wo(row).id] ? t('Collapse') : t('Expand')" @click.stop="toggleExpand(wo(row).id)">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+          <MpIcon name="chevrons-down" size="sm" />
         </span>
-        <!-- The header says "Work order number", so the cell carries the number
-             alone — repeating "Work order" on every row only ate the column. -->
-        <span class="cell-link cell-text" @click.stop="viewDetails(wo(row).id)">{{ wo(row).workOrderNumber }}</span>
+        <span class="cell-link cell-text" @click.stop="viewDetails(wo(row).id)">{{ wo(row).number }}</span>
       </span>
+    </template>
+
+    <!-- The header says "Work order number", so the cell carries the number
+         alone — repeating "Work order" on every row only ate the column. -->
+    <template #cell-workOrderNumber="{ row }">
+      <span class="cell-text">{{ wo(row).workOrderNumber }}</span>
     </template>
 
     <!-- W-7 — a tag is a property of a LINE, never of the request or the product

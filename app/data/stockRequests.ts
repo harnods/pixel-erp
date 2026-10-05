@@ -535,6 +535,8 @@ export const stockRequestOpenCount = (): number =>
 /** One work order's share of a SKU row — the expandable per-WO breakdown. */
 export interface SkuDemandEntry {
   requestId: string
+  /** The request's own number (W-9) — what a breakdown row is identified by. */
+  requestNumber: string
   workOrderId: string
   workOrderNumber: string
   /** Who last changed THIS line's demand (OPEN-17) — per line, not per request. */
@@ -619,6 +621,7 @@ export function skuDemandGroups(
     const first = bucket[0]!.line
     const entries: SkuDemandEntry[] = bucket.map(({ line, req }) => ({
       requestId: req.id,
+      requestNumber: req.number,
       workOrderId: req.workOrderId,
       workOrderNumber: req.workOrderNumber,
       requestor: line.requestor,
