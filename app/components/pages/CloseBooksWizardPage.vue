@@ -74,7 +74,10 @@ const periodLabel = computed(() => {
 
 function back() { router.push('/close-books') }
 function money(n: number) { return n < 0 ? `(${formatIDR(-n)})` : formatIDR(n) }
-function cell(n: number) { return n ? formatIDR(n) : '' }
+/** Worksheet / trial-balance figures are shown without the currency unit (prod to_currency_wo_unit). */
+const NUM = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+function num(n: number) { return n < 0 ? `(${NUM.format(-n)})` : NUM.format(n) }
+function cell(n: number) { return n ? num(n) : '' }
 
 // ── 1. Financial period ──
 const toDmy = (iso: string) => iso.split('-').reverse().join('/')
@@ -276,7 +279,7 @@ watch([book, view], () => {
           </div>
           <div v-if="openSections.bank" class="cbw-check-body">
             <div v-for="r in registers" :key="r.id" class="cbw-check-row">
-              <span class="cell-link" @click="accountLink(r.id)">{{ r.name }} {{ r.currency === 'IDR' ? formatIDR(r.balance) : `${r.currency} ${r.balance.toLocaleString('id-ID')}` }}</span>
+              <span class="cell-link" @click="accountLink(r.id)">{{ r.name }} {{ formatIDR(r.balance) }}</span>
               <span v-if="r.lastReconcile">{{ formatDate(r.lastReconcile) }}</span>
               <span v-else class="cell-link" @click="router.push('/reconciliations')">{{ t('No Reconciliation') }}</span>
             </div>
@@ -325,6 +328,7 @@ watch([book, view], () => {
           <p class="cbw-lead">{{ t('Worksheet Preparation as of') }} {{ formatDate(book.endDate) }}</p>
           <div class="cbw-table-wrap">
             <table class="cbw-table cbw-table--split">
+              <colgroup><col class="cbw-col-acc"><col v-for="i in 6" :key="i" class="cbw-col-num"></colgroup>
               <thead>
                 <tr>
                   <th class="cbw-th" rowspan="2">{{ t('Accounts') }}</th>
@@ -351,20 +355,20 @@ watch([book, view], () => {
                 </template>
                 <tr class="cbw-total">
                   <td class="cbw-td">{{ t('Total') }}</td>
-                  <td class="cbw-td cbw-td--num">{{ formatIDR(wsTotals.tbDebit) }}</td>
-                  <td class="cbw-td cbw-td--num">{{ formatIDR(wsTotals.tbCredit) }}</td>
-                  <td class="cbw-td cbw-td--num">{{ formatIDR(wsTotals.isDebit) }}</td>
-                  <td class="cbw-td cbw-td--num">{{ formatIDR(wsTotals.isCredit) }}</td>
-                  <td class="cbw-td cbw-td--num">{{ formatIDR(wsTotals.bsDebit) }}</td>
-                  <td class="cbw-td cbw-td--num">{{ formatIDR(wsTotals.bsCredit) }}</td>
+                  <td class="cbw-td cbw-td--num">{{ num(wsTotals.tbDebit) }}</td>
+                  <td class="cbw-td cbw-td--num">{{ num(wsTotals.tbCredit) }}</td>
+                  <td class="cbw-td cbw-td--num">{{ num(wsTotals.isDebit) }}</td>
+                  <td class="cbw-td cbw-td--num">{{ num(wsTotals.isCredit) }}</td>
+                  <td class="cbw-td cbw-td--num">{{ num(wsTotals.bsDebit) }}</td>
+                  <td class="cbw-td cbw-td--num">{{ num(wsTotals.bsCredit) }}</td>
                 </tr>
                 <tr :class="wsTotals.netProfit >= 0 ? 'cbw-profit' : 'cbw-loss'">
                   <td class="cbw-td cbw-strong">{{ wsTotals.netProfit >= 0 ? t('Net Profit/Loss') : t('Net Profit Loss') }}</td>
                   <td class="cbw-td" /><td class="cbw-td" />
-                  <td class="cbw-td cbw-td--num">{{ wsTotals.netProfit >= 0 ? formatIDR(wsTotals.netProfit) : '' }}</td>
-                  <td class="cbw-td cbw-td--num">{{ wsTotals.netProfit < 0 ? formatIDR(-wsTotals.netProfit) : '' }}</td>
-                  <td class="cbw-td cbw-td--num">{{ wsTotals.netProfit < 0 ? formatIDR(-wsTotals.netProfit) : '' }}</td>
-                  <td class="cbw-td cbw-td--num">{{ wsTotals.netProfit >= 0 ? formatIDR(wsTotals.netProfit) : '' }}</td>
+                  <td class="cbw-td cbw-td--num">{{ wsTotals.netProfit >= 0 ? num(wsTotals.netProfit) : '' }}</td>
+                  <td class="cbw-td cbw-td--num">{{ wsTotals.netProfit < 0 ? num(-wsTotals.netProfit) : '' }}</td>
+                  <td class="cbw-td cbw-td--num">{{ wsTotals.netProfit < 0 ? num(-wsTotals.netProfit) : '' }}</td>
+                  <td class="cbw-td cbw-td--num">{{ wsTotals.netProfit >= 0 ? num(wsTotals.netProfit) : '' }}</td>
                 </tr>
                 <template v-if="isCtb">
                   <tr>
@@ -453,6 +457,7 @@ watch([book, view], () => {
                 </div>
                 <div class="cbw-table-wrap">
                   <table class="cbw-table cbw-table--split">
+                    <colgroup><col class="cbw-col-acc"><col v-for="i in 6" :key="i" class="cbw-col-num"></colgroup>
                     <thead>
                       <tr>
                         <th class="cbw-th" rowspan="2">{{ t('Accounts') }}</th>
@@ -477,12 +482,12 @@ watch([book, view], () => {
                       </template>
                       <tr class="cbw-total">
                         <td class="cbw-td">{{ t('Total') }}</td>
-                        <td class="cbw-td cbw-td--num">{{ formatIDR(tbTotals.od) }}</td>
-                        <td class="cbw-td cbw-td--num">{{ formatIDR(tbTotals.oc) }}</td>
-                        <td class="cbw-td cbw-td--num">{{ formatIDR(tbTotals.md) }}</td>
-                        <td class="cbw-td cbw-td--num">{{ formatIDR(tbTotals.mc) }}</td>
-                        <td class="cbw-td cbw-td--num">{{ formatIDR(tbTotals.ed) }}</td>
-                        <td class="cbw-td cbw-td--num">{{ formatIDR(tbTotals.ec) }}</td>
+                        <td class="cbw-td cbw-td--num">{{ num(tbTotals.od) }}</td>
+                        <td class="cbw-td cbw-td--num">{{ num(tbTotals.oc) }}</td>
+                        <td class="cbw-td cbw-td--num">{{ num(tbTotals.md) }}</td>
+                        <td class="cbw-td cbw-td--num">{{ num(tbTotals.mc) }}</td>
+                        <td class="cbw-td cbw-td--num">{{ num(tbTotals.ed) }}</td>
+                        <td class="cbw-td cbw-td--num">{{ num(tbTotals.ec) }}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -673,7 +678,9 @@ watch([book, view], () => {
 .cbw-section { display: flex; flex-direction: column; gap: var(--mp-spacing-5); min-width: 0; }
 .cbw-lead { margin: 0; color: var(--mp-text-default); }
 .cbw-table-wrap { overflow-x: auto; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 6px); }
-.cbw-table { width: 100%; min-width: 1040px; border-collapse: collapse; }
+.cbw-table { width: 100%; min-width: 1200px; border-collapse: collapse; table-layout: fixed; }
+.cbw-col-acc { width: 300px; }
+.cbw-col-num { width: 150px; }
 .cbw-th {
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2); background: var(--mp-background-neutral-subtle);
   border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);

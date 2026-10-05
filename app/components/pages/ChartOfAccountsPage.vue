@@ -24,6 +24,8 @@ import {
   coaRecords, ACCOUNT_CATEGORIES, categoryOf, categoryRank, accountBalance, hasTransactions, isDefaultAccount,
   isHeader, childrenOf, setArchived, deleteAccount, type CoaRecord,
 } from '~/data/chartOfAccounts'
+// Side effect: posts published closing books' closing entries into the shared ledger.
+import '~/data/closeBooks'
 
 const { t } = useLocale()
 const router = useRouter()

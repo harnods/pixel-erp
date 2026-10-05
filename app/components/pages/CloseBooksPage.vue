@@ -140,7 +140,6 @@ function confirmRevert() {
 
     <template #header-periodLabel>
       <span class="cb-th">
-        {{ t('Period') }}
         <MpTooltip :label="periodTooltip" placement="top" use-portal>
           <span class="cb-th-info"><MpIcon name="info" size="sm" color="icon.secondary" /></span>
         </MpTooltip>
@@ -216,10 +215,10 @@ function confirmRevert() {
 .cb-filter { display: flex; align-items: center; justify-content: flex-end; width: 100%; }
 .cb-lock-date { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .cb-lock-date strong { color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); }
-.cb-th { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
+.cb-th { display: inline-flex; align-items: center; margin-left: var(--mp-spacing-1); vertical-align: middle; }
 .cb-th-info { display: inline-flex; text-transform: none; }
 .cb-period { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); white-space: nowrap; }
-.cb-memo { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.cb-memo { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; overflow-wrap: anywhere; }
 .cb-none { margin: 0; text-align: center; color: var(--mp-text-secondary); }
 
 .cb-guide { display: flex; }

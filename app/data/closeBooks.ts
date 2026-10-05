@@ -352,7 +352,7 @@ function closingEntryFor(b: ClosingBook) {
   if (b.taxAmount) lines.push({ code: b.taxPayableAccount, debit: 0, credit: b.taxAmount })
   const after = np - b.taxAmount
   lines.push(after >= 0 ? { code: b.retainedEarningsAccount, debit: 0, credit: after } : { code: b.retainedEarningsAccount, debit: -after, credit: 0 })
-  return { id: `CTB-${b.id}`, date: b.endDate, type: 'Closing Book', no: b.id, description: b.memo || 'Closing entry', lines, closingId: b.id }
+  return { id: `CTB-${b.id}`, date: b.endDate, type: 'Closing Book', no: `CB-${b.endDate.replace(/-/g, '')}`, description: b.memo || 'Closing entry', lines, closingId: b.id }
 }
 
 /** Rebuild the ledger's closing entries from the published closing books (oldest first). */

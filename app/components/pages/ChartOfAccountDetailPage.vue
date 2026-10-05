@@ -21,6 +21,8 @@ import {
   getAccount, categoryOf, accountTitle, accountBalance, accountTransactions, childrenOf, isHeader, hasTransactions,
   isDefaultAccount, setArchived, deleteAccount, type AccountTxRow,
 } from '~/data/chartOfAccounts'
+// Side effect: posts published closing books' closing entries into the shared ledger.
+import '~/data/closeBooks'
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
