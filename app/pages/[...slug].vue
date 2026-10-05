@@ -2198,7 +2198,7 @@ function startResize(e: MouseEvent) {
             v-if="activeTab === 'Custom role'"
             variant="primary" is-rounded left-icon="add"
             @click="openCustomRoleCreate()"
-          >{{ t('New custom role') }}</MpButton>
+          >{{ t('Add custom role') }}</MpButton>
           <MpButton
             v-else
             variant="primary" is-rounded left-icon="add"
