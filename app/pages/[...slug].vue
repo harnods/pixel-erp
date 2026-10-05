@@ -523,6 +523,8 @@ const BudgetVarianceReportPage = asyncPage(() => import('~/components/pages/Budg
 const PurchasesListReportPage = asyncPage(() => import('~/components/pages/PurchasesListReportPage.vue'))
 const PurchasesByVendorReportPage = asyncPage(() => import('~/components/pages/PurchasesByVendorReportPage.vue'))
 const PurchasesByProductReportPage = asyncPage(() => import('~/components/pages/PurchasesByProductReportPage.vue'))
+const CashFlowReportPage = asyncPage(() => import('~/components/pages/CashFlowReportPage.vue'))
+const TrialBalanceReportPage = asyncPage(() => import('~/components/pages/TrialBalanceReportPage.vue'))
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
 const EmployeeDetailsPage = asyncPage(() => import('~/components/pages/EmployeeDetailsPage.vue'))
 const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
@@ -684,6 +686,8 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'multidimensional') return { component: MultidimensionalReportPage, id: segs[1] }
     if (segs[1] === 'general-ledger') return { component: GeneralLedgerReportPage, id: segs[1] }
     if (segs[1] === 'budget-variance') return { component: BudgetVarianceReportPage, id: segs[1] }
+    if (segs[1] === 'cash-flows') return { component: CashFlowReportPage, id: segs[1] }
+    if (segs[1] === 'trial-balance') return { component: TrialBalanceReportPage, id: segs[1] }
   }
   // /purchase-report/:slug → the built Purchases reports (Reports → Purchases →
   // View report). Only these slugs match; anything else falls through to the
