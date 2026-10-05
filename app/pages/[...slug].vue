@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { defineAsyncComponent, defineComponent, type Component, h, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
 import { newAssetDrawerOpen } from '~/data/fixedAssetSession'
+import { currentApplyAllRequested, currentAssetTabCounts, currentDepreciationSchedule } from '~/data/currentAssets'
 import { gateFinancialPage } from '~/utils/assetRoleGate'
 import { infoToast } from '~/utils/toasts'
 import { MpAvatar, MpBadge, MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
@@ -101,6 +102,9 @@ const pageRegistry: Record<string, Component> = {
   // slugs to `/custody-and-counts`, so the key is 'Custody and counts'. Keys
   // below match what pathToLabel() produces, not what the sidebar displays.
   'Assets':            defineAsyncComponent(() => import('~/components/pages/AssetsIndexPage.vue')),
+  // Accounting › Fixed assets (current) — prod's current asset module, beside the new one.
+  'Current assets':    defineAsyncComponent(() => import('~/components/pages/CurrentAssetsPage.vue')),
+  'Current asset depreciation': defineAsyncComponent(() => import('~/components/pages/CurrentAssetDepreciationPage.vue')),
   // LR-6: pages holding accounting or tax figures are gated for General Affairs.
   'Depreciation schedule': gateFinancialPage(() => import('~/components/pages/AssetDepreciationSchedulePage.vue')),
   'Tax book':          gateFinancialPage(() => import('~/components/pages/AssetFiscalBookPage.vue')),
@@ -423,6 +427,10 @@ watch(() => [currentPageKey.value, route.query.fromPr] as const, ([key, fromPr])
 }, { immediate: true })
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
 const AssetDetailPage = asyncPage(() => import('~/components/pages/AssetDetailPage.vue'))
+const CurrentAssetDetailPage = asyncPage(() => import('~/components/pages/CurrentAssetDetailPage.vue'))
+const CurrentAssetFormPage = asyncPage(() => import('~/components/pages/CurrentAssetFormPage.vue'))
+const CurrentAssetDisposalPage = asyncPage(() => import('~/components/pages/CurrentAssetDisposalPage.vue'))
+const CurrentAssetImportPage = asyncPage(() => import('~/components/pages/CurrentAssetImportPage.vue'))
 const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue'))
 const CrmDealDetailPage = asyncPage(() => import('~/components/pages/CrmDealDetailPage.vue'))
 const CrmServicesPage = asyncPage(() => import('~/components/pages/CrmServicesPage.vue'))
@@ -672,6 +680,14 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'expense') return { component: ProjectExpensePage, id: 'new' }
     if (segs[1] === 'invoice') return { component: ProjectInvoicePage, id: 'new' }
     return { component: ProjectEngagementDetailsPage, id: segs[1]! }
+  }
+  // /current-assets/{new|import|:id|:id/edit|:id/disposal} → Fixed assets (current).
+  if (segs.length >= 2 && segs[0] === 'current-assets') {
+    if (segs[1] === 'new') return { component: CurrentAssetFormPage, id: 'new' }
+    if (segs[1] === 'import') return { component: CurrentAssetImportPage, id: 'import' }
+    if (segs[2] === 'edit') return { component: CurrentAssetFormPage, id: segs[1]! }
+    if (segs[2] === 'disposal') return { component: CurrentAssetDisposalPage, id: segs[1]! }
+    return { component: CurrentAssetDetailPage, id: segs[1]! }
   }
   // /assets/:id → the asset record. Full-page: it owns its own title bar and
   // stage padding, so it routes through detailMatch rather than pageRegistry.
@@ -1091,6 +1107,7 @@ const pageTabs: Record<string, string[]> = {
   // Settings → Sales: Form setting / Invoice reminder.
   'Sales settings':    ['Form setting', 'Invoice reminder'],
   'Tags':              ['All tags', 'Categories'],
+  'Current assets':    ['Active assets', 'Draft assets', 'Disposed assets'],
   // XPM (Mekari Expense) — section tabs read by the page via ?tab=.
   'Xpm transactions':  ['All', 'Card', 'Reimbursement', 'Cash advance', 'Bill', 'Travel'],
   'Xpm cards':         ['Virtual cards', 'Physical cards'],
@@ -1188,6 +1205,7 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     if (recommendations) out['Recommendations'] = recommendations
     return out
   }
+  if (currentPageKey.value === 'Current assets') return currentAssetTabCounts()
   if (currentPageKey.value === 'Product list') {
     const awaiting = pendingApprovalCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
@@ -1400,6 +1418,11 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Sales settings': {
     'Form setting': SettingsSalesFormPage,
     'Invoice reminder': SettingsInvoiceReminderPage,
+  },
+  'Current assets': {
+    'Active assets': pageRegistry['Current assets']!,
+    'Draft assets': pageRegistry['Current assets']!,
+    'Disposed assets': pageRegistry['Current assets']!,
   },
   'Tags': {
     'All tags': TagsTabPage,
@@ -1945,6 +1968,19 @@ function startResize(e: MouseEvent) {
         <div v-else-if="currentPageKey === 'Assets'" class="page-title-actions">
           <MpButton is-rounded left-icon="add" @click="newAssetDrawerOpen = true">
             {{ t('New asset') }}
+          </MpButton>
+        </div>
+        <!-- Accounting › Fixed assets (current) › Asset list: Import + New asset. -->
+        <div v-else-if="currentPageKey === 'Current assets'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary" @click="router.push('/current-assets/import')">{{ t('Import') }}</button>
+          <MpButton is-rounded left-icon="add" @click="router.push('/current-assets/new')">
+            {{ t('New asset') }}
+          </MpButton>
+        </div>
+        <!-- Accounting › Fixed assets (current) › Depreciation: Apply all (confirms first). -->
+        <div v-else-if="currentPageKey === 'Current asset depreciation'" class="page-title-actions">
+          <MpButton v-if="currentDepreciationSchedule.length" is-rounded @click="currentApplyAllRequested = true">
+            {{ t('Apply all') }}
           </MpButton>
         </div>
         <div v-else-if="currentPageKey === 'Cash management'" class="page-title-actions">

@@ -431,6 +431,10 @@ const erpNavGroups: NavItem[][] = [
             { label: 'Asset migration' },
             { label: 'Asset settings' },
           ] },
+          { label: 'Fixed assets (current)', children: [
+            { label: 'Asset list', to: 'Current assets' },
+            { label: 'Depreciation', to: 'Current asset depreciation' },
+          ] },
           { label: 'Bank rules' },
           { label: 'Project accounting' },
         ],
