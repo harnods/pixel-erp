@@ -174,6 +174,13 @@ const pageRegistry: Record<string, Component> = {
   'Mekari pay':         defineAsyncComponent(() => import('~/components/pages/MekariPayPaywallPage.vue')),
   'Tax':                defineAsyncComponent(() => import('~/components/pages/TaxPaywallPage.vue')),
   'Dimensions':         defineAsyncComponent(() => import('~/components/pages/DimensionsPage.vue')),
+  // Prod-parity settings lists (copies of the production screens).
+  'Tax rates':          defineAsyncComponent(() => import('~/components/pages/TaxRatesPage.vue')),
+  'Currencies':         defineAsyncComponent(() => import('~/components/pages/CurrenciesPage.vue')),
+  'Custom fields':      defineAsyncComponent(() => import('~/components/pages/CustomFieldsPage.vue')),
+  'Contact groups':     defineAsyncComponent(() => import('~/components/pages/ContactGroupsPage.vue')),
+  // Integrations › Mekari Expense — /mekari-expense → 'Mekari expense'.
+  'Mekari expense':     defineAsyncComponent(() => import('~/components/pages/MekariExpenseIntegrationPage.vue')),
   // Reports → Financials index (report cards). The Multidimensional report itself
   // resolves via detailMatch (/financial-report/multidimensional).
   'Financial report':   defineAsyncComponent(() => import('~/components/pages/FinancialReportsIndexPage.vue')),
@@ -1459,6 +1466,8 @@ function msgAgent(msg: { role: string; agentId?: string }) {
 // ── Couriers: "Add courier" lives here in the title bar, but its modal state
 // lives in CouriersPage.vue — signal it to open, same mechanism as toggleAirene.
 const courierAddSignal = ref(0)
+// Prod-parity settings pages (Tax rates, Currencies, Custom fields, Contact groups).
+const parityActions = useParityActions()
 provide('courierAddSignal', courierAddSignal)
 // Other lists title-bar actions signal their page the same way.
 const recurringCreateSignal = ref(0)
@@ -2292,6 +2301,19 @@ function startResize(e: MouseEvent) {
         </div>
         <div v-else-if="currentPageKey === 'File manager'" class="page-title-actions">
           <MpButton variant="primary" is-rounded left-icon="add" @click="fileManagerAddSignal++">{{ t('Add Attachment') }}</MpButton>
+        </div>
+        <div v-else-if="currentPageKey === 'Tax rates'" class="page-title-actions">
+          <MpButton variant="primary" is-rounded left-icon="add" @click="parityActions.newTax++">{{ t('Create tax') }}</MpButton>
+        </div>
+        <div v-else-if="currentPageKey === 'Currencies'" class="page-title-actions">
+          <MpButton variant="primary" is-rounded left-icon="add" @click="parityActions.newCurrency++">{{ t('Add new currency') }}</MpButton>
+        </div>
+        <div v-else-if="currentPageKey === 'Custom fields'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary" @click="parityActions.reorderCustomFields++">{{ t('Reorder custom fields') }}</button>
+          <MpButton variant="primary" is-rounded left-icon="add" @click="parityActions.newCustomField++">{{ t('Add custom field') }}</MpButton>
+        </div>
+        <div v-else-if="currentPageKey === 'Contact groups'" class="page-title-actions">
+          <MpButton variant="primary" is-rounded left-icon="add" @click="parityActions.newContactGroup++">{{ t('New contact group') }}</MpButton>
         </div>
         <div v-else-if="currentPageKey === 'Couriers'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="courierAddSignal++">
