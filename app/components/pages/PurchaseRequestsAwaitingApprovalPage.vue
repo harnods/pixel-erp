@@ -19,15 +19,41 @@ import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import { formatDate } from '~/utils/date'
 import { purchaseRequests, updatePurchaseRequest } from '~/data'
 import type { PurchaseRequest } from '~/data'
+import { budget, approvePRAs, prWaitingStep, rupiah } from '~/data/budgetStore'
+import { budgetPRForRequest } from '~/data/budgetUiPurchaseRequests'
+import { successToast } from '~/utils/toasts'
 
 const { t } = useLocale()
 const router = useRouter()
 const toggleAirene = inject<() => void>('toggleAirene')
 
 function viewDetails(id: string) { router.push(`/purchase-requests/${id}`) }
+// Requests with a budget record approve through the same path as the detail page
+// (approvePR: the final step holds the money). A refusal shows inline on the row.
+const rowMessage = reactive<Record<string, string>>({})
 function approve(id: string) {
+  void budget.viewAs
+  const bpr = budgetPRForRequest(id)
+  if (bpr && bpr.status === 'Pending') {
+    const res = approvePRAs(bpr.id)
+    if (!res.ok) { rowMessage[id] = res.reason ?? t('This request cannot be approved.'); return }
+    delete rowMessage[id]
+    if (res.final) {
+      updatePurchaseRequest(id, { awaitingApproval: false })
+      successToast(`${t('Purchase request approved')}. ${rupiah(res.held ?? 0)} ${t('held on the budget')}`)
+    } else {
+      successToast(`${t('Purchase request approved')}. ${t('Waiting for')} ${res.next?.approver ?? ''}`)
+    }
+    return
+  }
   updatePurchaseRequest(id, { awaitingApproval: false })
   toast.notify({ variant: 'success', title: t('Purchase request approved') })
+}
+/** Who the budget step waits on, shown under Approve for budget-controlled requests. */
+function waitingOn(id: string): string {
+  void budget.viewAs
+  const step = prWaitingStep(budgetPRForRequest(id))
+  return step ? `${t('Waiting for')} ${step.approver}` : ''
 }
 function duplicate(pr: PurchaseRequest) {
   toast.notify({ variant: 'success', title: `${t('Purchase request duplicated')} #${pr.number}` })
@@ -194,7 +220,11 @@ function clearFilters() { search.value = '' }
     <!-- ── Actions — inline Approve + Create task / Comment icons + kebab ── -->
     <template #actions="{ row }">
       <div class="row-actions">
-        <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click.stop="approve((row as PurchaseRequest).id)">{{ t('Approve') }}</button>
+        <span class="row-approve">
+          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" data-tour="pr-approve" @click.stop="approve((row as PurchaseRequest).id)">{{ t('Approve') }}</button>
+          <span v-if="rowMessage[(row as PurchaseRequest).id]" class="row-approve__msg row-approve__msg--error">{{ rowMessage[(row as PurchaseRequest).id] }}</span>
+          <span v-else-if="waitingOn((row as PurchaseRequest).id)" class="row-approve__msg">{{ waitingOn((row as PurchaseRequest).id) }}</span>
+        </span>
         <div class="row-actions__icons">
           <MpButton class="row-icon-btn" :aria-label="t('Create task')" @click.stop>
             <MpIcon name="task-todo" size="md" />
@@ -261,6 +291,9 @@ function clearFilters() { search.value = '' }
 
 /* Row actions: Approve button + icon button group */
 .row-actions { display: flex; align-items: center; gap: var(--mp-spacing-6); }
+.row-approve { display: inline-flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-0\.5); min-width: 0; }
+.row-approve__msg { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+.row-approve__msg--error { color: var(--mp-text-danger); white-space: normal; }
 .row-actions__icons { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .row-icon-btn {
   display: flex !important; align-items: center; justify-content: center;

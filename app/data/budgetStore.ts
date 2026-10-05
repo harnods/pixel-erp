@@ -1369,3 +1369,94 @@ else seed()
 watch(budget, () => saveSnapshot(SNAPSHOT_KEY, [budget]), { deep: true })
 
 export const budgetLinesThisYear = computed(() => budget.lines.filter((l) => l.year === BUDGET_YEAR))
+
+// ── pr additions ──
+// Purchase request screens (FG-3): who may act on a request, and the approval
+// path every screen uses so the hold and the re-check run the same way (LR-3).
+
+/** The step waiting on a pending request, if any. */
+export function prWaitingStep(pr: BudgetPR | undefined): ChainStep | undefined {
+  return pr && pr.status === 'Pending' ? pr.approvalChain.find((s) => s.status === 'Waiting') : undefined
+}
+
+/** True when the waiting step is the last one: approving it holds the money. */
+export function isFinalPRStep(pr: BudgetPR): boolean {
+  return pr.approvalChain.filter((s) => s.status === 'Waiting').length <= 1
+}
+
+/** LR-8 for requests: the requester never approves, and only the waiting step's approver acts. */
+export function canApprovePR(pr: BudgetPR | undefined, person = actingPerson()): { ok: boolean; reason?: string } {
+  if (!pr) return { ok: false, reason: 'This request has no budget record.' }
+  if (pr.status !== 'Pending') return { ok: false, reason: 'This request is not waiting for approval.' }
+  if (person === pr.requester) return { ok: false, reason: 'You raised this request. Someone else approves it.' }
+  const step = prWaitingStep(pr)
+  if (!step) return { ok: false, reason: 'No step is waiting.' }
+  if (step.approver !== person) return { ok: false, reason: `Waiting for ${step.approver} (${step.role}).` }
+  return { ok: true }
+}
+
+/** What an approved request still holds across its lines. */
+export function prHeld(pr: BudgetPR): number {
+  return pr.lines.reduce((s, _l, i) => s + prRemaining(pr.id, i), 0)
+}
+
+/**
+ * Approve as a person. Refuses the requester and anyone but the waiting step's
+ * approver. The final step may cut amounts (never raise them) and holds the money.
+ */
+export function approvePRAs(id: string, person = actingPerson(), amounts?: number[]):
+  { ok: boolean; final: boolean; reason?: string; held?: number; next?: ChainStep } {
+  const pr = prById(id)
+  const can = canApprovePR(pr, person)
+  if (!can.ok || !pr) return { ok: false, final: false, reason: can.reason }
+  const final = isFinalPRStep(pr)
+  if (final && amounts) {
+    if (amounts.length !== pr.lines.length || amounts.some((a) => !Number.isFinite(a) || a < 0)) return { ok: false, final, reason: 'Enter an approved amount for every line.' }
+    if (amounts.some((a, i) => a > pr.lines[i]!.amount)) return { ok: false, final, reason: 'An approved amount cannot be more than the request.' }
+    if (amounts.every((a) => a === 0)) return { ok: false, final, reason: 'Approve at least one line, or reject the request.' }
+  }
+  const res = approvePR(id, { amounts: final ? amounts : undefined, finalStep: final })
+  if (!res.ok) return { ok: false, final, reason: res.message }
+  if (!final) {
+    const next = prWaitingStep(pr)
+    if (next) notify(next.approver, `${pr.number} waits for your approval.`, prLink(pr))
+    return { ok: true, final, next }
+  }
+  return { ok: true, final, held: prHeld(pr) }
+}
+
+/** Reject as a person; a reason is required. */
+export function rejectPRAs(id: string, note: string, person = actingPerson()): { ok: boolean; reason?: string } {
+  const pr = prById(id)
+  const can = canApprovePR(pr, person)
+  if (!can.ok) return can
+  if (!note.trim()) return { ok: false, reason: 'Add a reason for the rejection.' }
+  rejectPR(id, note.trim())
+  return { ok: true }
+}
+
+/** The requester or the Budget Controller can cancel a request that is not closed. */
+export function canCancelPR(pr: BudgetPR | undefined, person = actingPerson()): { ok: boolean; reason?: string } {
+  if (!pr) return { ok: false, reason: 'This request has no budget record.' }
+  if (pr.status === 'Cancelled' || pr.status === 'Closed') return { ok: false, reason: `This request is already ${pr.status.toLowerCase()}.` }
+  if (person !== pr.requester && person !== BUDGET_CONTROLLER_NAME) return { ok: false, reason: `Only ${pr.requester} or the Budget Controller can cancel this request.` }
+  return { ok: true }
+}
+
+/** Cancel as a person; returns what the request held and has now freed. */
+export function cancelPRAs(id: string, person = actingPerson()): { ok: boolean; freed: number; reason?: string } {
+  const pr = prById(id)
+  const can = canCancelPR(pr, person)
+  if (!can.ok || !pr) return { ok: false, freed: 0, reason: can.reason }
+  const freed = pr.status === 'Approved' ? prHeld(pr) : 0
+  cancelPR(id)
+  return { ok: true, freed }
+}
+
+/** Keep a draft's date (and so its check month) in step with its purchase request. */
+export function updatePRDate(id: string, date: string): void {
+  const pr = prById(id)
+  if (!pr || (pr.status !== 'Draft' && pr.status !== 'Rejected')) return
+  pr.date = date
+  pr.month = Number(date.slice(5, 7)) - 1
+}
