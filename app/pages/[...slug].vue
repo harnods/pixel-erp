@@ -512,6 +512,8 @@ const CreditMemoReportPage = asyncPage(() => import('~/components/pages/CreditMe
 const MultidimensionalReportPage = asyncPage(() => import('~/components/pages/MultidimensionalReportPage.vue'))
 const GeneralLedgerReportPage = asyncPage(() => import('~/components/pages/GeneralLedgerReportPage.vue'))
 const BudgetVarianceReportPage = asyncPage(() => import('~/components/pages/BudgetVarianceReportPage.vue'))
+const CashFlowReportPage = asyncPage(() => import('~/components/pages/CashFlowReportPage.vue'))
+const TrialBalanceReportPage = asyncPage(() => import('~/components/pages/TrialBalanceReportPage.vue'))
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
 const EmployeeDetailsPage = asyncPage(() => import('~/components/pages/EmployeeDetailsPage.vue'))
 const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
@@ -673,6 +675,8 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'multidimensional') return { component: MultidimensionalReportPage, id: segs[1] }
     if (segs[1] === 'general-ledger') return { component: GeneralLedgerReportPage, id: segs[1] }
     if (segs[1] === 'budget-variance') return { component: BudgetVarianceReportPage, id: segs[1] }
+    if (segs[1] === 'cash-flows') return { component: CashFlowReportPage, id: segs[1] }
+    if (segs[1] === 'trial-balance') return { component: TrialBalanceReportPage, id: segs[1] }
   }
   // /inventory-report/dual-unit → Dual Unit Inventory Report (Reports → Inventory →
   // View report). Only the built slug matches; anything else falls through to the

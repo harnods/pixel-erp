@@ -63,6 +63,8 @@ const BUILT: Record<string, string> = {
   multidimensional: '/financial-report/multidimensional',
   'general-ledger': '/financial-report/general-ledger',
   'budget-variance': '/financial-report/budget-variance',
+  'cash-flows': '/financial-report/cash-flows',
+  'trial-balance': '/financial-report/trial-balance',
 }
 function viewReport(r: ReportCard) {
   const to = BUILT[r.slug]
