@@ -1007,8 +1007,9 @@ const pageTabs: Record<string, string[]> = {
   'Sales orders': ['All sales orders', 'Awaiting approval'],
   'Sales quotes': ['All sales quotes', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
-  // Stock requests (PRD UC-11 W-4): Requested = rows not fully covered (default), All = everything.
-  'Stock requests':    ['Requested', 'All'],
+  // Stock requests (PRD UC-11 W-4): Awaiting = demand still to fulfil (default),
+  // Rejected/Canceled = the two terminal states, which are not work any more.
+  'Stock requests':    ['Awaiting', 'Rejected / canceled'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
   'Product list':      ['All products', 'Awaiting approval'],
@@ -1301,10 +1302,10 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'Awaiting approval': StockAdjustmentsPage,
   },
   // One component serves both tabs — it reads ?tab= to switch between
-  // "Requested" (rows not fully covered) and "All" (PRD UC-11 W-4).
+  // "Awaiting" (demand still to fulfil, W-4) and the terminal states.
   'Stock requests': {
-    'Requested': StockRequestsPage,
-    'All': StockRequestsPage,
+    'Awaiting': StockRequestsPage,
+    'Rejected / canceled': StockRequestsPage,
   },
   // One shared component drives all three tabs; the tab is passed as a prop.
   'Production request': {
@@ -2248,7 +2249,10 @@ function startResize(e: MouseEvent) {
       <!-- Status tabs (below the title, outside the stage) — hidden when there's
            nothing to switch between (e.g. WMS's Product list, once Awaiting
            approval is filtered out, is left with only "All products"). -->
-      <div v-if="currentTabs.length > 1" class="page-tabs" role="tablist">
+      <div
+        v-if="currentTabs.length > 1" class="page-tabs" role="tablist"
+        :data-devchange="currentPageKey === 'Stock requests' ? 'sr-tabs' : undefined"
+      >
         <button
           v-for="tab in currentTabs"
           :key="tab"

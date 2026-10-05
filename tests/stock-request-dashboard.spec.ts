@@ -13,7 +13,8 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
-  stockRequests, skuDemandGroups, isRequestedTab, stockRequestOpenCount,
+  stockRequests, skuDemandGroups, isAwaitingTab, isTerminalRequest, stockRequestOpenCount,
+  stockRequestStatusOptions,
   isOverdue, isLineOverdue, canRejectLine, rejectRequestLine,
   type StockRequest, type StockRequestLine,
 } from '~/data/stockRequests'
@@ -159,7 +160,7 @@ describe('W-7 — overdue and rejection', () => {
   })
 })
 
-describe('W-4 — the Requested tab', () => {
+describe('W-4 — the Awaiting tab', () => {
   /** The tab also asks whether the work order is still actionable, so use a real one. */
   const activeWorkOrderId = workOrders.find(w => w.status === 'not started')!.id
 
@@ -184,23 +185,85 @@ describe('W-4 — the Requested tab', () => {
 
   it('keeps a row that is not fully reserved', () => {
     const req = seedForWorkOrder([line('mdf', 20, { reserved: 5 })])
-    expect(isRequestedTab(req)).toBe(true)
+    expect(isAwaitingTab(req)).toBe(true)
   })
 
   it('drops a row once reserved + consumed reaches required', () => {
     const req = seedForWorkOrder([line('mdf', 20, { reserved: 12, consumed: 8 })])
-    expect(isRequestedTab(req)).toBe(false)
+    expect(isAwaitingTab(req)).toBe(false)
   })
 
   it('does NOT let free stock at the destination settle a row', () => {
     // Plenty available, nothing reserved: still the warehouse's to act on.
     const req = seedForWorkOrder([line('mdf', 20, { destAvailable: 500 })])
-    expect(isRequestedTab(req)).toBe(true)
+    expect(isAwaitingTab(req)).toBe(true)
+  })
+
+  it('keeps a request whose extra line was rejected but whose own demand still stands', () => {
+    const req = seedForWorkOrder([
+      line('mdf', 20, { reserved: 5 }),
+      line('kaki', 4, { tag: 'adjustment', rejected: true }),
+    ])
+    expect(isAwaitingTab(req)).toBe(true)
+    expect(isTerminalRequest(req)).toBe(false)
   })
 
   it('counts the same rows for the open-count badge', () => {
     const before = stockRequestOpenCount()
     seedForWorkOrder([line('mdf', 20)])
     expect(stockRequestOpenCount()).toBe(before + 1)
+  })
+})
+
+/**
+ * The Rejected / canceled tab — the two terminal statuses (W-3). They are not
+ * work, so they sit apart from the tab the stockist works down, and they are no
+ * longer offered in the Status filter either.
+ */
+describe('The Rejected / canceled tab', () => {
+  const canceledWorkOrderId = workOrders.find(w => w.status === 'canceled')?.id
+  const activeWorkOrderId = workOrders.find(w => w.status === 'not started')!.id
+
+  beforeEach(() => {
+    for (let i = stockRequests.length - 1; i >= 0; i--) {
+      if (stockRequests[i]!.id === 'sr-terminal-test') stockRequests.splice(i, 1)
+    }
+  })
+
+  function seedFor(workOrderId: string, lines: StockRequestLine[]): StockRequest {
+    const req: StockRequest = {
+      id: 'sr-terminal-test',
+      number: 'SR-2026-7001',
+      workOrderId,
+      workOrderNumber: 'WO-TERMINAL',
+      requestDate: '2026-06-20',
+      lines,
+    }
+    stockRequests.push(req)
+    return req
+  }
+
+  it('holds a request whose every line the stockist declined', () => {
+    const req = seedFor(activeWorkOrderId, [line('mdf', 20, { tag: 'adjustment', rejected: true })])
+    expect(isTerminalRequest(req)).toBe(true)
+    expect(isAwaitingTab(req)).toBe(false)
+  })
+
+  it.runIf(!!canceledWorkOrderId)('holds a canceled work order\'s request', () => {
+    const req = seedFor(canceledWorkOrderId!, [line('mdf', 20, { reserved: 5 })])
+    expect(isTerminalRequest(req)).toBe(true)
+    expect(isAwaitingTab(req)).toBe(false)
+  })
+
+  it('does not hold a request that is simply unfulfilled', () => {
+    const req = seedFor(activeWorkOrderId, [line('mdf', 20)])
+    expect(isTerminalRequest(req)).toBe(false)
+  })
+
+  it('no longer offers the two terminal statuses in the Status filter', () => {
+    const values = stockRequestStatusOptions.map(o => o.value)
+    expect(values).not.toContain('rejected')
+    expect(values).not.toContain('canceled')
+    expect(values).toEqual(['requested', 'partially reserved', 'reserved', 'issued / picked'])
   })
 })

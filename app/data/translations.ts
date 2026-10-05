@@ -3813,6 +3813,18 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Partial consume and partial completion cannot both be on — turning one on turns the other off.': 'Konsumsi bertahap dan penyelesaian bertahap tidak bisa aktif bersamaan — mengaktifkan salah satu akan menonaktifkan yang lain.',
   'A work order can start only once every component is reserved in full.': 'Perintah kerja baru bisa dimulai setelah semua komponen direservasi penuh.',
   'Start with limited stock': 'Mulai dengan stok terbatas',
+  // Stock requests index — tabs, columns, states (uxw-mekari-erp audit, 5 Oct)
+  'Rejected / canceled': 'Ditolak / dibatalkan',
+  'Awaiting': 'Menunggu',
+  'Request type': 'Tipe permintaan',
+  'Reserved qty': 'Qty direservasi',
+  'Remaining qty': 'Qty tersisa',
+  'Consumed qty': 'Qty dikonsumsi',
+  'Available qty': 'Qty tersedia',
+  'No stock request': 'Belum ada permintaan stok',
+  'Stock requests awaiting fulfillment will appear here.': 'Permintaan stok yang menunggu pemenuhan akan muncul di sini.',
+  'Rejected and canceled stock requests will appear here.': 'Permintaan stok yang ditolak dan dibatalkan akan muncul di sini.',
+  'Failed to reserve. No stock at the destination warehouse': 'Gagal mereservasi. Tidak ada stok di gudang tujuan',
   'Product name': 'Nama produk',
   'Work order number': 'Nomor perintah kerja',
   // Request additional stock (D-7)

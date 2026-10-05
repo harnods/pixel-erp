@@ -33,9 +33,9 @@ import { dateFilterMatches, type DateFilterValue } from '~/utils/dateFilter'
 import { TODAY, TODAY_ISO } from '~/data/master'
 import {
   stockRequests, stockRequestStatus, stockRequestStatusOptions, skuDemandGroups,
-  requestRequiredQty, isRequestedTab, isOnDashboard, isActionable, workOrderFor, isOverdue,
+  requestRequiredQty, isAwaitingTab, isTerminalRequest, isOnDashboard, isActionable, workOrderFor, isOverdue,
   reserveStock, reserveProductEverywhere, rejectRequestLine, canReject, canRejectLine,
-  type StockRequest, type StockRequestLine, type SkuDemandGroup,
+  type StockRequest, type StockRequestLine, type StockRequestLineTag, type SkuDemandGroup,
 } from '~/data/stockRequests'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -43,14 +43,20 @@ const { t } = useLocale()
 const route = useRoute()
 const router = useRouter()
 
-// ─── Tabs (W-4) — page-level status tabs from `pageTabs` in [...slug].vue, driven
-// by ?tab=. "Requested" (default) shows rows that aren't fully covered. ─────────
-const showAll = computed(() => route.query.tab === 'All')
+// ─── Tabs (W-4) — page-level tabs from `pageTabs` in [...slug].vue, driven by
+// ?tab=. The split is work vs not-work:
+//
+//   • **Awaiting** (default) — demand the warehouse still has to fulfil: anything
+//     not fully reserved, on a request that is neither rejected nor canceled.
+//   • **Rejected/Canceled** — the two TERMINAL states (W-3). A declined line and a
+//     cancelled job's request are still records worth finding, but they are not
+//     work, so they do not sit in a tab the stockist works down.
+//
+// Because the two tabs now carry the terminal states, those states are not also
+// offered in the Status filter — see `statusFilterOptions`. ───────────────────
+const isTerminalTab = computed(() => route.query.tab === 'Rejected / canceled')
 
-// ─── Group by (W-1) — By product is the default. A dropdown rather than a
-// segmented control: two long labels eat the filter bar, and this is a "pick one
-// of a list" choice, not a 2-state switch. Not clearable — there is always a
-// grouping.
+// ─── Group by (W-1) — By product is the default.
 //
 // The second grouping is by TRANSACTION, not by work order: a stock request is
 // raised by whatever transaction needs the material, and a work order is simply
@@ -78,6 +84,9 @@ const woColumns: TableColumn[] = [
   // The row IS the work order, so its date and status need no "WO" prefix — the
   // first column already says what the row is.
   { key: 'workOrderNumber',     label: t('Work order number'),     kind: 'number', sortable: true, sortType: 'text' },
+  // W-7 — the line tags get a column of their own rather than stacking under the
+  // number, where they pushed the row to three lines and read as part of it.
+  { key: 'lineTags',            label: t('Request type'),          kind: 'tags' },
   { key: 'woStartDate',         label: t('Start date'),            kind: 'date',   sortable: true, sortType: 'date' },
   { key: 'status',              label: t('Status'),                kind: 'status',                 sortType: 'text' },
   { key: 'destinationWarehouse', label: t('Destination warehouse'), kind: 'name',  sortable: true, sortType: 'text' },
@@ -103,11 +112,11 @@ const skuColumns: TableColumn[] = [
   { key: 'openWorkOrders', label: t('Open transactions'),                sortable: true, sortType: 'number', align: 'right' },
   { key: 'earliestRequired', label: t('Earliest required'), kind: 'date', sortable: true, sortType: 'date' },
   { key: 'required',    label: t('Required qty'),                            sortable: true, sortType: 'number', align: 'right' },
-  { key: 'reserved',    label: t('Reserved'),                            sortable: true, sortType: 'number', align: 'right' },
-  { key: 'remaining',   label: t('Remaining'),                           sortable: true, sortType: 'number', align: 'right' },
-  { key: 'consumed',    label: t('Consumed'),                            sortable: true, sortType: 'number', align: 'right' },
+  { key: 'reserved',    label: t('Reserved qty'),                            sortable: true, sortType: 'number', align: 'right' },
+  { key: 'remaining',   label: t('Remaining qty'),                           sortable: true, sortType: 'number', align: 'right' },
+  { key: 'consumed',    label: t('Consumed qty'),                            sortable: true, sortType: 'number', align: 'right' },
   { key: 'destinationWarehouse', label: t('Destination warehouse'), kind: 'name', sortable: true, sortType: 'text' },
-  { key: 'available',   label: t('Available'),                           sortable: true, sortType: 'number', align: 'right' },
+  { key: 'available',   label: t('Available qty'),                           sortable: true, sortType: 'number', align: 'right' },
   { key: 'status',      label: t('Status'),              kind: 'status',                 sortType: 'text' },
 ]
 
@@ -165,7 +174,7 @@ type WoRow = StockRequest & {
 const woRows = computed<WoRow[]>(() =>
   sourceRequests.value
     .filter(isOnDashboard)
-    .filter(r => showAll.value || isRequestedTab(r))
+    .filter(r => isTerminalTab.value ? isTerminalRequest(r) : isAwaitingTab(r))
     .map(r => {
       const w = workOrderFor(r)
       return {
@@ -221,7 +230,7 @@ const skuRows = computed<SkuDemandGroup[]>(() => {
   const kw = appliedFilters.keyword.trim().toLowerCase()
   const inScope = sourceRequests.value
     .filter(isOnDashboard)
-    .filter(r => showAll.value || isRequestedTab(r))
+    .filter(r => isTerminalTab.value ? isTerminalRequest(r) : isAwaitingTab(r))
     .filter(r => dateFilterMatches(r.requestDate, dateFilter.value, TODAY))
   const lineFilter = (line: StockRequestLine) => matchesDateRange(line.requiredDate, appliedFilters.requestDate)
 
@@ -248,7 +257,7 @@ watch(skuTotal, () => {
 
 // ─── Filter state shared by both views ─────────────────────────────────────────
 watch(appliedFilters, () => setPage(1))
-watch([dateFilter, view, showAll], () => { setPage(1); skuPage.value = 1 })
+watch([dateFilter, view, isTerminalTab], () => { setPage(1); skuPage.value = 1 })
 
 const activeFilterCount = computed(() => {
   const f = appliedFilters
@@ -285,7 +294,7 @@ function viewDetails(requestId: string) { router.push(`/stock-requests/${request
 function reserve(req: StockRequest) {
   const qty = reserveStock(req.id, { source: 'stock-request' })
   if (qty === undefined) {
-    toast.notify({ variant: 'error', title: t('No stock to reserve — the destination warehouse has none of what this request needs'), maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: t('Failed to reserve. No stock at the destination warehouse'), maxWidth: 'max-content' })
     return
   }
   toast.notify({ variant: 'success', title: `${qty} ${t('unit reserved for')} ${req.workOrderNumber}`, maxWidth: 'max-content' })
@@ -311,7 +320,7 @@ function reserveComponent(group: SkuDemandGroup) {
   if (r.qty === 0) {
     toast.notify({
       variant: 'error',
-      title: t('No stock to reserve — the destination warehouse has none of this component'),
+      title: t('Failed to reserve. No stock at the destination warehouse'),
       maxWidth: 'max-content',
     })
     return
@@ -364,6 +373,11 @@ function reject(req: StockRequest) {
 // record, and this page feeds it two different row shapes depending on the view.
 function sku(row: unknown): SkuDemandGroup { return row as SkuDemandGroup }
 function wo(row: unknown): WoRow { return row as WoRow }
+
+/** The distinct tags a request's LINES carry (W-7) — its "Request type" column. */
+function lineTags(row: WoRow): StockRequestLineTag[] {
+  return [...new Set(row.lines.map(l => l.tag).filter(Boolean))] as StockRequestLineTag[]
+}
 
 function selectedSkuIds(sel: Set<number>): string[] {
   return [...sel].map(i => skuPaginated.value[i]?.productId).filter(Boolean) as string[]
@@ -573,6 +587,13 @@ const exportColumns = computed(() => {
                  the headers above them say. Each value carries its own small label
                  instead of borrowing the parent's — which is also why "Required by
                  24/06/2026" used to run out of the narrow Status column. -->
+            <!-- A line's own tag, under the request's Request type column. -->
+            <span v-else-if="col.key === 'lineTags'">
+              <span v-if="line.tag" class="sr-tag" :class="`sr-tag--${line.tag}`">
+                {{ line.tag === 'additional' ? t('Additional stock') : t('Adjustment') }}
+              </span>
+              <span v-else>—</span>
+            </span>
             <span v-else-if="col.key === 'woStartDate'" class="sr-child-field">
               <span class="sr-child-label">{{ t('Qty') }}</span>
               <span class="cell-text">{{ line.qty }} {{ line.unit }}</span>
@@ -603,13 +624,20 @@ const exportColumns = computed(() => {
         <!-- The header says "Work order number", so the cell carries the number
              alone — repeating "Work order" on every row only ate the column. -->
         <span class="cell-link cell-text" @click.stop="viewDetails(wo(row).id)">{{ wo(row).workOrderNumber }}</span>
-        <!-- W-7 — tags live on LINES now, so a request shows one chip per tag its
-             lines carry rather than a single tag of its own. -->
+      </span>
+    </template>
+
+    <!-- W-7 — tags live on LINES, so a request shows one chip per tag its lines
+         carry rather than a single tag of its own. Their own column: stacked under
+         the number they read as part of it, and pushed the row to three lines. -->
+    <template #cell-lineTags="{ row }">
+      <span v-if="lineTags(wo(row)).length" class="sr-tag-list" data-devchange="sr-request-type">
         <span
-          v-for="tag in [...new Set(wo(row).lines.map(l => l.tag).filter(Boolean))]" :key="tag"
+          v-for="tag in lineTags(wo(row))" :key="tag"
           class="sr-tag" :class="`sr-tag--${tag}`"
         >{{ tag === 'additional' ? t('Additional stock') : t('Adjustment') }}</span>
       </span>
+      <span v-else>—</span>
     </template>
 
     <template #cell-woStartDate="{ row }">{{ formatDate(wo(row).woStartDate) }}</template>
@@ -630,12 +658,18 @@ const exportColumns = computed(() => {
       </p>
     </template>
 
-    <!-- Full empty state — no CTA: requests are raised by work orders (see header) -->
+    <!-- Full empty state — no CTA: requests are raised by work orders (see header).
+         The description carries the tab's own modifier, so an empty Rejected /
+         canceled tab doesn't read as "no stock requests at all". -->
     <template #empty>
       <div class="empty-full">
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240">
-        <p class="empty-full-title">{{ t('No stock requests') }}</p>
-        <p class="empty-full-desc">{{ t('Stock requests will appear here.') }}</p>
+        <p class="empty-full-title">{{ t('No stock request') }}</p>
+        <p class="empty-full-desc">
+          {{ isTerminalTab
+            ? t('Rejected and canceled stock requests will appear here.')
+            : t('Stock requests awaiting fulfillment will appear here.') }}
+        </p>
       </div>
     </template>
 
@@ -669,7 +703,7 @@ const exportColumns = computed(() => {
               <template v-if="!wo(row).rejected && wo(row).status !== 'reserved' && wo(row).status !== 'issued / picked'">
                 <MpPopoverListItem @click="reserve(wo(row))">{{ t('Reserve stock') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="createWarehouseTransfer(byRequest(wo(row).id))">{{ t('Create warehouse transfer') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="createPurchaseRequest(byRequest(wo(row).id))">{{ t('Request purchase') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="createPurchaseRequest(byRequest(wo(row).id))">{{ t('Create purchase request') }}</MpPopoverListItem>
               </template>
             </MpPopoverList>
             <template v-if="canReject(wo(row))">
@@ -742,6 +776,8 @@ const exportColumns = computed(() => {
 }
 .sr-tag--additional { background: var(--mp-background-warning-subtle, #fff3e0); color: var(--mp-text-warning, #a35200); }
 .sr-tag--adjustment { background: var(--mp-background-information-subtle, #eaf2fd); color: var(--mp-text-link, #165082); }
+/* A request can carry both tags; they wrap inside their own column. */
+.sr-tag-list { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-1); }
 
 /* Per-WO breakdown rows under an expanded component */
 /* Child cells mirror ErpTablePage's .erp-td metrics so they line up under the same
@@ -764,7 +800,22 @@ const exportColumns = computed(() => {
   font-variant-numeric: tabular-nums;
 }
 .sr-child-td--spacer { padding: 0; min-width: 0; }
-.sr-child-td--actions { text-align: center; vertical-align: top; padding: var(--mp-sizes-0\.5, 2px) 3px; }
+/* The actions column is sticky-right on parent rows (ErpTablePage's .erp-td--fixed).
+   A breakdown row renders its own cells, so it has to repeat that here — otherwise
+   the column detaches from its header and from the rows above as soon as the table
+   scrolls sideways. The separator border follows the same "only while actually
+   overflowing" rule the parent uses. */
+.sr-child-td--actions {
+  position: sticky; right: 0; z-index: 1;
+  width: var(--erp-actions-width, 44px);
+  min-width: var(--erp-actions-width, 44px);
+  max-width: var(--erp-actions-width, 44px);
+  text-align: center; vertical-align: top; padding: var(--mp-sizes-0\.5, 2px) 3px;
+}
+.erp-table-wrapper.is-overflowing .sr-child-td--actions {
+  box-shadow: inset 1px 0 0 0 var(--mp-border-default, #e3e7e9); /* pixel-police-allow-shadow */
+}
+.has-ai .sr-child-td--actions { right: var(--mp-sizes-7); }
 /* Indent the first cell so the child reads as nested under its component. */
 .sr-child-td:first-child { padding-left: var(--mp-spacing-8); }
 .sr-child-sku { display: flex; flex-direction: column; min-width: 0; }

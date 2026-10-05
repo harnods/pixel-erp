@@ -208,6 +208,10 @@ export function stockRequestStatus(req: StockRequest): StockRequestStatus {
  * the status badge beside it (a fully reserved request is never overdue).
  */
 export function isOverdue(req: StockRequest, today: string): boolean {
+  // A terminal request is settled: nothing is owed, so nothing can be late. A
+  // canceled job's request kept reading "Overdue — reminder sent" long after the
+  // job it belonged to had gone away.
+  if (isTerminalRequest(req)) return false
   return req.lines.some(l => isLineOverdue(l, today))
 }
 
@@ -230,14 +234,19 @@ export function needsAction(req: StockRequest): boolean {
   return req.lines.some(l => !l.rejected && lineCovered(l) < l.qty)
 }
 
-/** Status options for the quick filter / All-filters drawer — no "All …" entry (W-5). */
+/**
+ * Status options for the quick filter / All-filters drawer — no "All …" entry (W-5).
+ *
+ * The two TERMINAL statuses are deliberately absent: `rejected` and `canceled`
+ * are a TAB now (see {@link isTerminalRequest}), and offering them here too would
+ * let a user ask the Awaiting tab for rejected rows, which by definition holds
+ * none — a filter that can only ever empty the table.
+ */
 export const stockRequestStatusOptions: { value: StockRequestStatus; label: string }[] = [
   { value: 'requested',          label: 'Requested'          },
   { value: 'partially reserved', label: 'Partially reserved' },
   { value: 'reserved',           label: 'Reserved'           },
   { value: 'issued / picked',    label: 'Issued / picked'    },
-  { value: 'rejected',           label: 'Rejected'           },
-  { value: 'canceled',           label: 'Canceled'           },
 ]
 
 /**
@@ -456,7 +465,7 @@ export function isActionable(req: StockRequest): boolean {
 }
 
 /**
- * The **Requested** tab (W-4) — rows that are NOT fully reserved yet.
+ * The **Awaiting** tab (W-4) — demand the warehouse still has to fulfil.
  *
  * A row leaves this tab only when its reserved plus consumed qty reaches its
  * required qty. Available stock at the destination does not settle it: available
@@ -468,13 +477,27 @@ export function isActionable(req: StockRequest): boolean {
  * completed job and kept fully reserved rows sitting in a tab named for work left
  * to do.
  */
-export function isRequestedTab(req: StockRequest): boolean {
+export function isAwaitingTab(req: StockRequest): boolean {
   return isOnDashboard(req) && isActionable(req) && needsAction(req)
+}
+
+/**
+ * The **Rejected/Canceled** tab — the two TERMINAL statuses (W-3).
+ *
+ * `rejected` and `canceled` are the states where nothing further will happen:
+ * the stockist declined the demand, or the raising work order went away. They
+ * stay listed, because a request that vanishes reads like one that was never
+ * raised — but they are not work, so they live apart from the tab the stockist
+ * works down, and they are no longer offered in the Status filter either.
+ */
+export function isTerminalRequest(req: StockRequest): boolean {
+  const status = stockRequestStatus(req)
+  return status === 'rejected' || status === 'canceled'
 }
 
 /** Requests still needing warehouse action — drives the sidebar count badge. */
 export const stockRequestOpenCount = (): number =>
-  stockRequests.filter(r => isRequestedTab(r)).length
+  stockRequests.filter(r => isAwaitingTab(r)).length
 
 // ── SKU aggregation (W-1, W-2, W-8) ────────────────────────────────────────────
 

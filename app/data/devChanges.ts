@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'sr-tabs',
+    title: 'Stock requests: Awaiting / Rejected / canceled tabs',
+    description:
+      'The tabs now split work from not-work. Awaiting holds demand still to fulfil; Rejected / canceled holds the two terminal statuses. Because the terminal states are a tab, they are no longer offered in the Status filter, where they could only ever empty the Awaiting tab.',
+    date: '2026-10-05',
+    files: ['StockRequestsPage.vue', 'stockRequests.ts', '[...slug].vue'],
+  },
+  {
+    id: 'sr-request-type',
+    title: 'Stock requests: Request type column',
+    description:
+      'The Additional stock and Adjustment chips moved out from under the work order number into their own column. Stacked under the number they read as part of it and pushed the row to three lines.',
+    date: '2026-10-05',
+    files: ['StockRequestsPage.vue'],
+  },
+  {
     id: 'ps-limited-stock',
     title: 'Production settings: "Start with limited stock" (S-4)',
     description:

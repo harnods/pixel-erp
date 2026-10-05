@@ -25,7 +25,7 @@ Sources this was built from:
 
 | Surface | Route / component | Notes |
 | --- | --- | --- |
-| Stock requests index | `/stock-requests` | Tabs **Requested** (default) / **All**; views By product / By transaction |
+| Stock requests index | `/stock-requests` | Tabs **Awaiting** (default) / **Rejected / canceled**; views By product / By transaction, as a segmented control |
 | Stock request detail | `/stock-requests/:requestId` | Exactly one detail page, grouped by destination warehouse |
 | Production settings | `/production-settings` | Settings › Production |
 | WO detail | `/work-orders/:id` | Reservation menu, readiness badge, Reserved/Consumed columns |
@@ -154,6 +154,10 @@ S-4.
 - **UC-15** — one `releaseReservation` transition behind all three triggers:
   completion with leftover (automatic, unapproved), cancel/delete, manual
   unreserve. Partial completion leaves the remaining reserve reserved.
+- **Tabs** — **Awaiting** (W-4: not fully reserved, on a request that is neither
+  rejected nor canceled) and **Rejected / canceled** (the two terminal statuses of
+  W-3). Because the terminal states are a tab, they are no longer offered in the
+  Status filter — a filter that could only ever empty the Awaiting tab.
 - **W-1…W-10** — both views; product rows are one per SKU **per destination
   warehouse** so availability is never summed across warehouses; W-2's column set
   behind a column menu; derived statuses incl. Rejected and Canceled; overdue;
