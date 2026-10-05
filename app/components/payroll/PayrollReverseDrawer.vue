@@ -5,7 +5,7 @@
  * before the original; a locked month moves it to the first open period. Matched payments are
  * listed and need a second confirm; no payment, bank line or reconciliation changes.
  */
-import { MpDatePicker, MpFormControl, MpFormLabel, MpFormErrorMessage, MpCheckbox } from '@mekari/pixel3'
+import { MpDatePicker, MpFormControl, MpFormLabel, MpCheckbox } from '@mekari/pixel3'
 import PayrollCompareDrawerShell from '~/components/payroll/PayrollCompareDrawerShell.vue'
 import {
   runById, currentVersionOf, liveJournals, reverseRun, reverseAndRepost, journalTotals, paymentsFor, journalById,
@@ -116,9 +116,7 @@ function repost() {
         </label>
       </div>
 
-      <div v-if="error" class="prv__error" role="alert" data-testid="prv-error">
-        <MpFormErrorMessage>{{ error }}</MpFormErrorMessage>
-      </div>
+      <div v-if="error" class="prv__error" role="alert" data-testid="prv-error">{{ error }}</div>
     </template>
 
     <template #footer>
@@ -158,5 +156,5 @@ function repost() {
 .prv__list { margin: 0; padding-left: var(--mp-spacing-5, 20px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .prv__paysnote { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .prv__check { display: flex; align-items: center; gap: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); cursor: pointer; }
-.prv__error { padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-colors-background-danger); border-radius: var(--mp-radii-md); }
+.prv__error { padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-colors-background-danger); border-radius: var(--mp-radii-md); color: var(--mp-text-danger); font-size: var(--mp-font-sizes-md); }
 </style>

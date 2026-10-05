@@ -75,6 +75,8 @@ const emit = defineEmits<{ close: [] }>()
   display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px);
   padding: var(--mp-spacing-4);
 }
+/* Flex children with their own overflow would shrink to nothing in a scrolling column. */
+.prd-body > * { flex-shrink: 0; }
 .prd-footer {
   flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);

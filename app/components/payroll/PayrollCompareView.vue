@@ -9,7 +9,7 @@
 import { MpSegmentedControl } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
-  runById, compareVersions, versionLabel, rupiah, monthLabel, wib, accountLabel, tagsLabel, type Tags,
+  runById, compareVersions, versionLabel, rupiah, monthLabel, wib, accountLabel, tagsLabel, liveJournals, currentSnapshotId, type Tags,
 } from '~/data/payrollStore'
 
 const props = defineProps<{ runId: string }>()
@@ -23,16 +23,31 @@ const newNo = ref('')
 function resetPair() { oldNo.value = ''; newNo.value = '' }
 watch(() => [props.runId, run.value?.versions.length, run.value?.ledgerVersion], resetPair)
 
-const cmp = computed(() => {
-  if (!run.value || run.value.versions.length < 2) return null
-  try {
-    const a = oldNo.value ? Number(oldNo.value) : undefined
-    const b = newNo.value ? Number(newNo.value) : undefined
-    return { ok: true as const, data: compareVersions(props.runId, a, b) }
-  } catch {
-    return { ok: false as const }
-  }
+const cmp = shallowRef<{ ok: true; data: ReturnType<typeof compareVersions> } | { ok: false } | null>(null)
+/**
+ * compareVersions builds journals, which draws ids from the store sequence. Called inside a
+ * computed it would invalidate itself, so it runs from a watch keyed on what can change it.
+ */
+const fingerprint = computed(() => {
+  const r = run.value
+  if (!r) return ''
+  return JSON.stringify([props.runId, oldNo.value, newNo.value, r.versions.map((v) => `${v.no}${v.state}`), r.ledgerVersion, r.currentVersion,
+    liveJournals(r.id).map((j) => j.id), currentSnapshotId()])
 })
+watch(fingerprint, () => {
+  const r = run.value
+  if (!r || r.versions.length < 2) { cmp.value = null; return }
+  try {
+    const latest = r.versions[r.versions.length - 1]!.no
+    // After a fix the ledger reflects the latest version; show what that fix changed.
+    const prev = r.ledgerVersion === latest ? [...r.versions].reverse().find((v) => v.no < latest && v.state !== 'rejected')?.no : undefined
+    const a = oldNo.value ? Number(oldNo.value) : prev
+    const b = newNo.value ? Number(newNo.value) : undefined
+    cmp.value = { ok: true, data: compareVersions(props.runId, a, b) }
+  } catch {
+    cmp.value = { ok: false }
+  }
+}, { immediate: true })
 const data = computed(() => (cmp.value?.ok ? cmp.value.data : null))
 const selOld = computed({ get: () => oldNo.value || String(data.value?.oldNo ?? ''), set: (v: string) => { oldNo.value = v } })
 const selNew = computed({ get: () => newNo.value || String(data.value?.newNo ?? ''), set: (v: string) => { newNo.value = v } })

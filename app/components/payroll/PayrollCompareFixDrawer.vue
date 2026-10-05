@@ -11,7 +11,7 @@ import { MpRadio, MpCheckbox } from '@mekari/pixel3'
 import PayrollCompareDrawerShell from '~/components/payroll/PayrollCompareDrawerShell.vue'
 import {
   runById, versionOf, currentVersionOf, liveJournals, compareVersions, postDifference, reverseAndRepost,
-  journalTotals, isLocked, firstOpenAfter, monthLabel, dateLabel, periodLabel, rupiah, accountLabel, tagsLabel, draftOf,
+  journalTotals, isLocked, firstOpenAfter, monthLabel, dateLabel, periodLabel, rupiah, accountLabel, tagsLabel, draftOf, currentSnapshotId,
 } from '~/data/payrollStore'
 import { successToast } from '~/utils/toasts'
 
@@ -29,10 +29,14 @@ const run = computed(() => runById(props.runId))
 const cur = computed(() => (run.value ? currentVersionOf(run.value) : undefined))
 const ledgerV = computed(() => (run.value ? versionOf(run.value, run.value.ledgerVersion) : undefined))
 const live = computed(() => (run.value ? liveJournals(run.value.id) : []))
-const data = computed(() => {
-  if (!props.isOpen || !run.value || !cur.value || !ledgerV.value || cur.value.no === ledgerV.value.no) return null
-  try { return compareVersions(props.runId, ledgerV.value.no, cur.value.no) } catch { return null }
-})
+/** compareVersions draws ids from the store sequence, so it runs from a watch, never a computed. */
+const data = shallowRef<ReturnType<typeof compareVersions> | null>(null)
+const fingerprint = computed(() => JSON.stringify([props.isOpen, props.runId, ledgerV.value?.no, cur.value?.no, cur.value?.state, live.value.map((j) => j.id), currentSnapshotId()]))
+watch(fingerprint, () => {
+  data.value = null
+  if (!props.isOpen || !run.value || !cur.value || !ledgerV.value || cur.value.no === ledgerV.value.no) return
+  try { data.value = compareVersions(props.runId, ledgerV.value.no, cur.value.no) } catch { data.value = null }
+}, { immediate: true })
 
 /** Difference lines: the change less what settings alone moved, unless the moves are included. */
 const diffLines = computed(() => {
