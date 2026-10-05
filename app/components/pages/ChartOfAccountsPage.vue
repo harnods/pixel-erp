@@ -17,7 +17,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
-import { formatIDR, formatMoney } from '~/utils/currency'
+import { formatIDR } from '~/utils/currency'
 import { infoToast, successToast } from '~/utils/toasts'
 import { SIM_TODAY_ISO } from '~/data/simClock'
 import {
@@ -106,9 +106,8 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 // Prod: dayjs().format('DD MMMM YYYY').
 const balanceDate = new Date(SIM_TODAY_ISO + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
 
-function money(r: Row) {
-  return r.currency === 'IDR' ? formatIDR(r.balance) : formatMoney(r.balance, r.currency)
-}
+// Prod shows balances in the company base currency (company_base_currency_list_id).
+function money(r: Row) { return formatIDR(r.balance) }
 function lockTooltip(r: Row) {
   return r.isDefault
     ? t('This is a default account from Jurnal. This account cannot be deleted even if it has no transactions.')
@@ -195,7 +194,7 @@ onMounted(() => { setTimeout(() => { loading.value = false }, 400) })
             <div class="filter-search">
               <MpIcon name="search" size="sm" />
               <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search code or account name')" :aria-label="t('Search code or account name')" />
-              <MpButton v-if="search" variant="ghost" class="search-clear-btn" left-icon="close" :aria-label="t('Clear search')" @click="search = ''" />
+              <MpButton v-if="search" variant="ghost" is-rounded class="search-clear-btn" left-icon="close" :aria-label="t('Clear search')" @click="search = ''" />
             </div>
           </div>
         </div>
@@ -324,7 +323,7 @@ onMounted(() => { setTimeout(() => { loading.value = false }, 400) })
 
 .coa-name { display: flex; flex-direction: column; min-width: 0; }
 .coa-name-line { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
-.coa-name-line .cell-link { overflow-wrap: anywhere; }
+.coa-name-line .cell-link { white-space: normal; overflow-wrap: anywhere; min-width: 0; }
 .coa-desc { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 
 .coa-menu-item { display: flex; flex-direction: column; white-space: normal; }

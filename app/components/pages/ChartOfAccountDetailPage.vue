@@ -13,7 +13,7 @@ import {
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
-import { formatIDR, formatMoney } from '~/utils/currency'
+import { formatIDR } from '~/utils/currency'
 import { formatDate } from '~/utils/date'
 import { infoToast, successToast } from '~/utils/toasts'
 import { SIM_TODAY_ISO } from '~/data/simClock'
@@ -29,7 +29,7 @@ const router = useRouter()
 const account = computed(() => getAccount(decodeURIComponent(props.orderId)))
 const header = computed(() => !!account.value && isHeader(account.value.id))
 const balance = computed(() => (account.value ? accountBalance(account.value) : 0))
-const money = (n: number) => (!account.value || account.value.currency === 'IDR' ? formatIDR(n) : formatMoney(n, account.value.currency))
+const money = (n: number) => formatIDR(n) // base currency, as prod
 
 // ── Date filter (DD/MM/YYYY strings, prod format) ──
 const toDmy = (iso: string) => iso.split('-').reverse().join('/')
@@ -56,8 +56,8 @@ const realTx = computed(() => txRows.value.filter(r => !r.isBeginning))
 const { currentPage, paginated, total, perPage, setPage, setPerPage } = useTableState<TxRow>(txRows, { perPage: 25, defaultSort: { key: 'seq', dir: 'asc' } })
 const txColumns: TableColumn[] = [
   { key: 'date', label: t('Date'), kind: 'date' },
-  { key: 'no', label: t('Transaction no.'), kind: 'address' },
-  { key: 'contact', label: t('Contact name'), kind: 'name' },
+  { key: 'no', label: t('Transaction no.') },
+  { key: 'contact', label: t('Contact name') },
   { key: 'debit', label: t('Debit'), kind: 'amount', align: 'right' },
   { key: 'credit', label: t('Credit'), kind: 'amount', align: 'right' },
   { key: 'balance', label: t('Balance'), kind: 'amount', align: 'right' },
@@ -219,7 +219,7 @@ function openChild(r: ChildRow) { router.push(`/chart-of-accounts/${encodeURICom
           <template #cell-contact="{ row }">
             <span
               v-if="(row as TxRow).contact"
-              class="cell-link"
+              class="cell-link cad-contact"
               @click.stop="router.push(`/${(row as TxRow).contact!.kind}/${(row as TxRow).contact!.id}`)"
             >{{ (row as TxRow).contact!.name }}</span>
             <span v-else>-</span>
@@ -291,7 +291,8 @@ function openChild(r: ChildRow) { router.push(`/chart-of-accounts/${encodeURICom
 .cad-date { width: 180px; }
 .cad-date-sep { color: var(--mp-text-secondary); }
 .cad-error { margin: calc(-1 * var(--mp-spacing-4)) 0 0; text-align: right; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
-.cad-tx { display: flex; flex-direction: column; min-width: 0; }
+.cad-tx { display: flex; flex-direction: column; min-width: 0; white-space: normal; }
+.cad-tx .cell-link, .cad-contact { white-space: normal; overflow-wrap: anywhere; }
 .cad-tx-desc { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .cad-strong { font-weight: var(--mp-font-weights-semi-bold); }
 .cad-name-line { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
