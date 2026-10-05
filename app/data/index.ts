@@ -73,6 +73,7 @@ export * from './purchaseDeliveryDetails'
 export * from './purchaseInvoiceDetails'
 export * from './purchaseRequestDetails'
 export * from './salesInvoices'
+export * from './salesReports'
 export * from './salesDeliveries'
 
 // ── Adjustments / transfers / cycle counts ──────────────────────────────────
