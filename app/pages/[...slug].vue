@@ -42,6 +42,7 @@ import { reviewFiles, purchaseInvoiceReviewFiles } from '~/data/reviewFiles'
 import { startUpload, uploadCenterOpen } from '~/data/uploadCenter'
 import ImportVendorInvoicesModal from '~/components/patterns/ImportVendorInvoicesModal.vue'
 import ImportSpreadsheetModal from '~/components/patterns/ImportSpreadsheetModal.vue'
+import BudgetLinesTitleActions from '~/components/patterns/BudgetLinesTitleActions.vue'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { useRecommendationWarehouse } from '~/composables/useRecommendationWarehouse'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
@@ -2152,6 +2153,10 @@ function startResize(e: MouseEvent) {
         </div>
         <!-- Accounting › Fixed assets › Assets. rule/btn-icon-add-only — the
              create button is the one button that carries a leading icon. -->
+        <!-- Accounting › Budgets › Budget lines (FG-1): actions by role and year status. -->
+        <div v-else-if="currentPageKey === 'Budget lines'" class="page-title-actions">
+          <BudgetLinesTitleActions />
+        </div>
         <div v-else-if="currentPageKey === 'Assets'" class="page-title-actions">
           <MpButton is-rounded left-icon="add" @click="newAssetDrawerOpen = true">
             {{ t('New asset') }}

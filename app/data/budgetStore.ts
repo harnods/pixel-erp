@@ -1516,3 +1516,92 @@ export function setAccountClass(code: string, cls: BudgetClass | null, person = 
   saveSnapshot(CLASS_KEY, [{ ...accountClassTags }])
   return { ok: true }
 }
+
+// ── lines additions ─────────────────────────────────────────────────────────
+// FG-1 screen paths: who may change lines, adding a line to a draft year, and
+// role-checked wrappers for import and lock. A hidden action also refuses here.
+
+export const LOCKED_EDIT_MESSAGE = 'Locked. Change it by revision or transfer.'
+
+/** FG-1.6: the Budget Controller creates lines, imports, locks and raises revisions. */
+export function canManageBudgetLines(role: BudgetRole = budget.viewAs): boolean {
+  return role === 'Budget Controller'
+}
+
+function ensureYearState(year: number): BudgetYearState {
+  let ys = yearState(year)
+  if (!ys) { ys = { year, status: 'Draft', approvedTotal: null, lockedBy: null, lockedAt: null }; budget.years.push(ys) }
+  return ys
+}
+
+function monthErrors(months: unknown[]): string[] {
+  const errs: string[] = []
+  if (months.length !== 12) errs.push('Enter an amount for each of the 12 months.')
+  months.forEach((v, i) => {
+    if (typeof v !== 'number' || !Number.isFinite(v)) errs.push(`${monthName(i)} is not a number.`)
+    else if (!Number.isInteger(v)) errs.push(`${monthName(i)} has decimals; use whole rupiah.`)
+    else if (v < 0) errs.push(`${monthName(i)} cannot be negative.`)
+  })
+  return errs
+}
+
+/** Add one line to a draft year (FG1-AC1). A locked year refuses (LR-5). */
+export function addDraftLine(input: { year: number; account: string; dept: string; project: string | null; months: number[] }):
+  { ok: boolean; errors: string[]; line?: BudgetLine } {
+  if (!canManageBudgetLines()) return { ok: false, errors: ['Only the Budget Controller adds budget lines.'] }
+  if (isLocked(input.year)) return { ok: false, errors: [LOCKED_EDIT_MESSAGE] }
+  const errors: string[] = []
+  const acct = budgetAccount(input.account)
+  if (!input.dept) errors.push('Pick a department.')
+  else if (!BUDGET_DEPARTMENTS.some((d) => d.id === input.dept)) errors.push('Pick a department.')
+  if (!acct) errors.push('Pick an account.')
+  else if (acct.savingOnly) errors.push('The saving account cannot take budget on a line.')
+  else if (!acct.class) errors.push(`${acct.code} ${acct.name} has no Opex or Capex class. Finance Admin sets it first.`)
+  errors.push(...monthErrors(input.months))
+  const project = input.project || null
+  if (!errors.length && findLine(input.account, input.dept, project, input.year)) errors.push('A line with this account, department and project already exists.')
+  if (!errors.length && input.months.reduce((s, v) => s + v, 0) <= 0) errors.push('Enter at least one month amount.')
+  if (errors.length) return { ok: false, errors }
+  ensureYearState(input.year)
+  const line: BudgetLine = { id: `bl${nextSeq()}`, year: input.year, account: input.account, dept: input.dept, project, months: [...input.months] }
+  budget.lines.push(line)
+  return { ok: true, errors: [], line }
+}
+
+/** Change month amounts on screen: draft years only. A locked year points to revision or transfer. */
+export function updateLineMonths(lineId: string, months: number[]): { ok: boolean; errors: string[] } {
+  const l = lineById(lineId)
+  if (!l) return { ok: false, errors: ['This budget line no longer exists.'] }
+  if (!canManageBudgetLines()) return { ok: false, errors: ['Only the Budget Controller changes budget lines.'] }
+  if (isLocked(l.year)) return { ok: false, errors: [LOCKED_EDIT_MESSAGE] }
+  const errors = monthErrors(months)
+  if (errors.length) return { ok: false, errors }
+  l.months = [...months]
+  return { ok: true, errors: [] }
+}
+
+/** Import with the role check in front of the engine's all-or-nothing load. */
+export function importLinesAs(rows: ImportRow[], year: number): { ok: boolean; errors: ImportError[] } {
+  if (!canManageBudgetLines()) return { ok: false, errors: [{ row: 0, message: 'Only the Budget Controller imports budget lines.' }] }
+  return importLines(rows, year)
+}
+
+/** Lock with the role check (FG1-AC8) in front of the engine's total match. */
+export function lockYearAs(year: number, approvedTotal: number): { ok: boolean; gap: number; message?: string } {
+  if (!canManageBudgetLines()) return { ok: false, gap: 0, message: 'Only the Budget Controller locks the budget.' }
+  if (isLocked(year)) return { ok: false, gap: 0, message: `${year} is already locked.` }
+  const total = draftTotal(year)
+  if (total === 0) return { ok: false, gap: 0, message: `${year} has no budget lines to lock.` }
+  const res = lockYear(year, approvedTotal)
+  if (!res.ok) return { ...res, message: `The approved total differs from the draft by ${rupiah(Math.abs(res.gap))}. They must match to lock.` }
+  return res
+}
+
+/** The latest version that changed a line, or null while its year is a draft. */
+export function lineVersionNo(lineId: string): number | null {
+  const l = lineById(lineId)
+  if (!l) return null
+  const nos = budget.versions.filter((v) => v.year === l.year && v.changes.some((c) => c.lineId === lineId)).map((v) => v.no)
+  if (nos.length) return Math.max(...nos)
+  return isLocked(l.year) ? 0 : null
+}
