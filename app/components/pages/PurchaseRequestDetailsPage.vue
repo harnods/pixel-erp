@@ -12,6 +12,8 @@ import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { getPurchaseRequestDetail } from '~/data/purchaseRequestDetails'
 import { purchaseRequests, updatePurchaseRequest, deletePurchaseRequests } from '~/data/purchaseRequests'
 import { infoToast } from '~/utils/toasts'
+import BudgetPRCard from '~/components/patterns/BudgetPRCard.vue'
+import { budgetPRForRequest, syncLinkedRequests } from '~/data/budgetUiPurchaseRequests'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -22,6 +24,9 @@ const hasApproval = true
 
 const router = useRouter()
 const request = computed(() => getPurchaseRequestDetail(props.orderId))
+// The budget record behind this request (FG-3), when it has one.
+const budgetPR = computed(() => budgetPRForRequest(props.orderId))
+watchEffect(syncLinkedRequests)
 
 const activityOpen = ref(false)
 // Destructive delete → confirm modal (rule/btn-danger-confirm)
@@ -224,6 +229,9 @@ function goBack() { router.push('/purchase-requests') }
           </div>
         </div>
       </section>
+
+      <!-- ── Budget (FG-3): status, line check, approval chain, funding request ── -->
+      <BudgetPRCard v-if="budgetPR" :key="budgetPR.id" :pr="budgetPR" :purchase-request-id="props.orderId" />
 
       <!-- ── Line items table (read-only) — auto lazy-load, internal scroll ── -->
       <section class="detail-items-section" :class="{ 'detail-items-section--bordered': isProgressive }">
