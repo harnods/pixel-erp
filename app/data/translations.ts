@@ -3815,6 +3815,10 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Start with limited stock': 'Mulai dengan stok terbatas',
   // Stock requests index — tabs, columns, states (uxw-mekari-erp audit, 5 Oct)
   'Rejected / canceled': 'Ditolak / dibatalkan',
+  'Stock request not found': 'Permintaan stok tidak ditemukan',
+  'Switch stock request': 'Ganti permintaan stok',
+  'No stock requests found': 'Permintaan stok tidak ditemukan',
+  'Qty to transfer': 'Qty transfer',
   'No date chosen yet': 'Belum ada tanggal dipilih',
   // Advance date filter panel
   'Time range': 'Rentang waktu',

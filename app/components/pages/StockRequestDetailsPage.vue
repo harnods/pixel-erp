@@ -19,9 +19,10 @@
  */
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpIcon, toast, css,
+  MpIcon, MpBadge, toast, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import DetailJumpTo from '~/components/patterns/DetailJumpTo.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import { entriesFor, lastActivity } from '~/data/activityLog'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -215,6 +216,18 @@ const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
  * is the same for both roles: material already committed to a running job is not
  * something a second person should be able to pull out from under it.
  */
+/**
+ * rule/detail-jump-to — hop straight to another request without going back to the
+ * list. Most recent first, captioned by the transaction that raised it.
+ */
+const jumpItems = computed(() =>
+  [...stockRequests]
+    .sort((a, b) => b.requestDate.localeCompare(a.requestDate))
+    .slice(0, 12)
+    .map(r => ({ id: r.id, primary: r.number, secondary: r.workOrderNumber })),
+)
+function jumpTo(id: string) { router.push(`/stock-requests/${id}`) }
+
 const workOrder = computed(() => req.value ? workOrderFor(req.value) : undefined)
 const workOrderNotStarted = computed(() => (workOrder.value?.status ?? 'not started') === 'not started')
 const canUnreserve = computed(() => hasReservation.value && workOrderNotStarted.value)
@@ -288,12 +301,17 @@ function saveSerials(serials: string[]) {
         <a class="detail-breadcrumb" @click="goList">{{ t('Stock requests') }}</a>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('Stock request') }} {{ req.number }}</h1>
-          <ErpStatusBadge :status="status" badge-for="additionalInformation" size="md" />
-          <!-- W-7 — one chip per tag carried by this request's LINES. -->
-          <span
-            v-for="tag in [...new Set(req.lines.map(l => l.tag).filter(Boolean))]" :key="tag"
-            class="sr-tag" :class="`sr-tag--${tag}`"
-          >{{ tag === 'additional' ? t('Additional stock') : t('Adjustment') }}</span>
+          <ErpStatusBadge :status="status" badge-for="additionalInformation" />
+          <!-- W-7 — a tag belongs to a LINE, so the lines below carry their own and
+               the title says nothing about them (same rule the index follows). -->
+          <DetailJumpTo
+            id="srd-jump"
+            :items="jumpItems"
+            :aria-label="t('Switch stock request')"
+            :placeholder="t('Search...')"
+            :empty-text="t('No stock requests found')"
+            @select="jumpTo"
+          />
         </div>
       </div>
 
@@ -304,9 +322,7 @@ function saveSerials(serials: string[]) {
           <MpPopoverTrigger>
             <button class="btn-enterprise btn-enterprise--secondary">
               {{ t('Actions') }}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
+              <MpIcon name="chevrons-down" size="sm" />
             </button>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content', whiteSpace: 'nowrap' })">
@@ -339,7 +355,9 @@ function saveSerials(serials: string[]) {
           {{ t('Production resolves a rejected line by readjusting the work order.') }}
         </span>
       </div>
-      <div v-if="transferLines.length" class="srd-banner srd-banner--critical">
+      <!-- A shortfall is the warehouse's ordinary business, and the banner names
+           the two ways out of it, so it reads as a warning rather than an error. -->
+      <div v-if="transferLines.length" class="srd-banner srd-banner--warning">
         <MpIcon name="warning" size="md" />
         <span>
           {{ transferLines.length }}
@@ -377,7 +395,7 @@ function saveSerials(serials: string[]) {
             </span>
             <span class="srd-emphasis-sub">{{ t('components fully reserved') }}</span>
             <span v-if="consumedLines > 0" class="srd-emphasis-sub">{{ consumedLines }}/{{ componentCount }} {{ t('consumed by production') }}</span>
-            <span v-if="overdue" class="srd-emphasis-sub srd-short">{{ t('Overdue — reminder sent') }}</span>
+            <span v-if="overdue" class="srd-emphasis-sub srd-short">{{ t('Overdue') }}</span>
           </div>
         </div>
       </section>
@@ -411,11 +429,11 @@ function saveSerials(serials: string[]) {
             <thead>
               <tr>
                 <th class="wod-th">{{ t('Product') }}</th>
-                <th class="wod-th wod-th--num">{{ t('Request') }}</th>
-                <th class="wod-th wod-th--num">{{ t('Available') }}</th>
-                <th class="wod-th wod-th--num">{{ t('Reserved') }}</th>
-                <th class="wod-th wod-th--num">{{ t('Consumed') }}</th>
-                <th class="wod-th wod-th--num">{{ t('To transfer') }}</th>
+                <th class="wod-th wod-th--num">{{ t('Requested qty') }}</th>
+                <th class="wod-th wod-th--num">{{ t('Available qty') }}</th>
+                <th class="wod-th wod-th--num">{{ t('Reserved qty') }}</th>
+                <th class="wod-th wod-th--num">{{ t('Consumed qty') }}</th>
+                <th class="wod-th wod-th--num">{{ t('Qty to transfer') }}</th>
                 <th class="wod-th">{{ t('Required date') }}</th>
                 <!-- W-9 — each line names who last changed ITS demand (OPEN-17). -->
                 <th class="wod-th">{{ t('Requestor') }}</th>
@@ -433,10 +451,12 @@ function saveSerials(serials: string[]) {
                   <div class="srd-product">
                     <span class="srd-product-name">{{ l.product }}</span>
                     <span class="srd-product-sku">{{ l.sku }}</span>
-                    <!-- W-7 — what kind of demand this line is. -->
-                    <span v-if="l.tag" class="sr-tag" :class="`sr-tag--${l.tag}`">
+                    <!-- W-7 — what kind of demand this line is. MpBadge is the one
+                         badge component (rule/badge-single-mpbadge); these used to be
+                         a hand-rolled chip with its own colours. -->
+                    <MpBadge v-if="l.tag" for="tableStatus" :type="l.tag === 'additional' ? 'warning' : 'information'">
                       {{ l.tag === 'additional' ? t('Additional stock') : t('Adjustment') }}
-                    </span>
+                    </MpBadge>
                   </div>
                 </td>
                 <td class="wod-td wod-td--num">{{ l.qty }} {{ l.unit }}</td>
@@ -522,6 +542,17 @@ function saveSerials(serials: string[]) {
       :work-order-number="req.number" :lines="lines"
       @close="unreserveOpen = false" @unreserve="onUnreserve"
     />
+  </div>
+
+  <!-- Not found — a stale or mistyped link is a reachable state, and it used to
+       land on a blank page (docs/design/reachable-states.md). -->
+  <div v-else class="detail-page">
+    <header class="detail-bar">
+      <div class="detail-bar-left">
+        <a class="detail-breadcrumb" @click="goList">{{ t('Stock requests') }}</a>
+        <div class="detail-titlerow-left"><h1 class="detail-title">{{ t('Stock request not found') }}</h1></div>
+      </div>
+    </header>
   </div>
 </template>
 
@@ -652,10 +683,10 @@ function saveSerials(serials: string[]) {
   border-radius: var(--mp-radii-md, 6px);
   font-size: var(--mp-font-sizes-md);
 }
-.srd-banner--critical {
-  background: var(--mp-background-danger-subtle, #fceeed);
-  border: 1px solid var(--mp-border-danger, #f0c8c4);
-  color: var(--mp-text-critical, #a8352d);
+.srd-banner--warning {
+  background: var(--mp-colors-background-warning-subtle, #fff3e0);
+  border: 1px solid var(--mp-colors-border-warning, #f5cd47);
+  color: var(--mp-colors-text-warning, #a35200);
 }
 .srd-banner--muted {
   background: var(--mp-background-neutral-subtle, #f8f9f9);
@@ -664,11 +695,4 @@ function saveSerials(serials: string[]) {
 .srd-banner-btn { margin-left: auto; flex-shrink: 0; }
 
 /* Request tags (W-7) — same chips as the index */
-.sr-tag {
-  display: inline-flex; align-items: center; flex-shrink: 0;
-  padding: 0 var(--mp-spacing-2); border-radius: var(--mp-radii-full, 999px);
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); white-space: nowrap;
-}
-.sr-tag--additional { background: var(--mp-background-warning-subtle, #fff3e0); color: var(--mp-text-warning, #a35200); }
-.sr-tag--adjustment { background: var(--mp-background-information-subtle, #eaf2fd); color: var(--mp-text-link, #165082); }
 </style>

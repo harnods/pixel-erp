@@ -14,7 +14,7 @@
  */
 import {
   MpButton, MpButtonGroup, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpSegmentedControl, MpDatePicker, toast, css,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpBadge, MpTooltip, MpSegmentedControl, MpDatePicker, toast, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -616,7 +616,7 @@ const exportColumns = computed(() => {
             <span v-else-if="col.key === 'sku'" class="cell-text" :title="entry.requestor">{{ entry.requestor }}</span>
             <!-- W-7 — the line's own tag, under the Request type column. -->
             <span v-else-if="col.key === 'lineTags'">
-              <span v-if="entry.tag" class="sr-tag" :class="`sr-tag--${entry.tag}`">{{ entry.tag === 'additional' ? t('Additional stock') : t('Adjustment') }}</span>
+              <MpBadge v-if="entry.tag" for="tableStatus" :type="entry.tag === 'additional' ? 'warning' : 'information'">{{ entry.tag === 'additional' ? t('Additional stock') : t('Adjustment') }}</MpBadge>
               <span v-else class="sr-muted">—</span>
             </span>
             <template v-else-if="col.key === 'earliestRequired'">{{ formatDate(entry.requiredDate) }}</template>
@@ -651,9 +651,9 @@ const exportColumns = computed(() => {
                  destination. No borrowed columns, so no component quantity sitting
                  under a date header. -->
             <span v-else-if="col.key === 'lineTags'">
-              <span v-if="line.tag" class="sr-tag" :class="`sr-tag--${line.tag}`">
+              <MpBadge v-if="line.tag" for="tableStatus" :type="line.tag === 'additional' ? 'warning' : 'information'">
                 {{ line.tag === 'additional' ? t('Additional stock') : t('Adjustment') }}
-              </span>
+              </MpBadge>
               <span v-else>—</span>
             </span>
             <span v-else-if="col.key === 'qty'" class="cell-text">{{ line.qty }} {{ line.unit }}</span>
@@ -837,17 +837,6 @@ const exportColumns = computed(() => {
 }
 .sr-note :deep(svg) { flex-shrink: 0; }
 
-/* Request tags (W-7) */
-.sr-tag {
-  display: inline-flex; align-items: center; flex-shrink: 0;
-  padding: 0 var(--mp-spacing-2); border-radius: var(--mp-radii-full, 999px);
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  white-space: nowrap;
-}
-.sr-tag--additional { background: var(--mp-background-warning-subtle, #fff3e0); color: var(--mp-text-warning, #a35200); }
-.sr-tag--adjustment { background: var(--mp-background-information-subtle, #eaf2fd); color: var(--mp-text-link, #165082); }
-/* A request can carry both tags; they wrap inside their own column. */
-.sr-tag-list { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-1); }
 /* An empty cell still needs a mark, or the column reads as broken rather than blank. */
 .sr-muted { color: var(--mp-text-secondary, #3a4749); }
 
