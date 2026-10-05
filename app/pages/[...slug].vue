@@ -242,9 +242,17 @@ const pageRegistry: Record<string, Component> = {
   'File manager':       defineAsyncComponent(() => import('~/components/pages/FileManagerPage.vue')),
   'Cost recalculation': defineAsyncComponent(() => import('~/components/pages/CostRecalculationPage.vue')),
   'Wms data migration': defineAsyncComponent(() => import('~/components/pages/WmsDataMigrationPage.vue')),
+  // Accounting → Chart of accounts / Close books (prod-parity). Detail/form/wizard resolve via detailMatch.
+  'Chart of accounts':  defineAsyncComponent(() => import('~/components/pages/ChartOfAccountsPage.vue')),
+  'Close books':        defineAsyncComponent(() => import('~/components/pages/CloseBooksPage.vue')),
+  // Accounting settings = prod /company/setting#account_mapping — the same page as Settings › Default accounts.
+  'Accounting settings': defineAsyncComponent(() => import('~/components/pages/SettingsDefaultAccountsPage.vue')),
 }
 const RecurringScheduleDetailPage = asyncPage(() => import('~/components/pages/RecurringScheduleDetailPage.vue'))
 const ImportFileDetailPage = asyncPage(() => import('~/components/pages/ImportFileDetailPage.vue'))
+const ChartOfAccountDetailPage = asyncPage(() => import('~/components/pages/ChartOfAccountDetailPage.vue'))
+const ChartOfAccountFormPage = asyncPage(() => import('~/components/pages/ChartOfAccountFormPage.vue'))
+const CloseBooksWizardPage = asyncPage(() => import('~/components/pages/CloseBooksWizardPage.vue'))
 
 const ProjectEngagementDetailsPage = asyncPage(() => import('~/components/pages/ProjectEngagementDetailsPage.vue'))
 const NewEngagementPage = asyncPage(() => import('~/components/pages/NewEngagementPage.vue'))
@@ -668,6 +676,14 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'inventory-report' && segs[1] === 'dual-unit') {
     return { component: DualUnitInventoryReportPage, id: segs[1]! }
   }
+  // /chart-of-accounts/new · /:id · /:id/edit → account form / detail (full page).
+  if (segs.length >= 2 && segs[0] === 'chart-of-accounts') {
+    if (segs[1] === 'new') return { component: ChartOfAccountFormPage, id: 'new' }
+    if (segs[2] === 'edit') return { component: ChartOfAccountFormPage, id: segs[1]! }
+    return { component: ChartOfAccountDetailPage, id: segs[1]! }
+  }
+  // /close-books/new · /:id[/step] → the closing-book / period-lock wizard and its result pages.
+  if (segs.length >= 2 && segs[0] === 'close-books') return { component: CloseBooksWizardPage, id: segs.slice(1).join('/') }
   // /recurring-transactions/:id and /export-and-import/:id → Other lists detail pages.
   if (segs.length >= 2 && segs[0] === 'recurring-transactions') return { component: RecurringScheduleDetailPage, id: segs[1]! }
   if (segs.length >= 2 && segs[0] === 'export-and-import') return { component: ImportFileDetailPage, id: segs[1]! }
@@ -1511,6 +1527,13 @@ provide('courierAddSignal', courierAddSignal)
 // Other lists title-bar actions signal their page the same way.
 const recurringCreateSignal = ref(0)
 provide('recurringCreateSignal', recurringCreateSignal)
+// Accounting → Chart of accounts / Close books title-bar menus signal their page.
+const coaAction = ref({ kind: '', n: 0 })
+provide('coaAction', coaAction)
+function coaMenu(kind: string) { coaAction.value = { kind, n: coaAction.value.n + 1 } }
+const closeBooksAction = ref({ kind: '', n: 0 })
+provide('closeBooksAction', closeBooksAction)
+function closeBooksStart(kind: 'ctb' | 'lp') { closeBooksAction.value = { kind, n: closeBooksAction.value.n + 1 } }
 const fileManagerAddSignal = ref(0)
 provide('fileManagerAddSignal', fileManagerAddSignal)
 
@@ -2351,6 +2374,39 @@ function startResize(e: MouseEvent) {
         <div v-else-if="isContactsIndex" class="page-title-actions">
           <MpButton variant="primary" is-rounded left-icon="add" @click="contactAddSignal++">{{ t(contactAddLabel) }}</MpButton>
         </div>
+        <div v-else-if="currentPageKey === 'Chart of accounts'" class="page-title-actions">
+          <MpPopover id="coa-title-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <MpButton variant="secondary" is-rounded right-icon="chevrons-down">{{ t('Actions') }}</MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <div class="coa-menu-group">{{ t('Management') }}</div>
+                <MpPopoverListItem @click="coaMenu('setup-account')">{{ t('Setup account') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="coaMenu('opening-balance')">{{ t('Setup opening balance') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push('/close-books')">{{ t('Closing book & Locking period') }}</MpPopoverListItem>
+                <div class="coa-menu-group">{{ t('Import & export') }}</div>
+                <MpPopoverListItem @click="coaMenu('import-je')">{{ t('Import jurnal entry') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="coaMenu('export')">{{ t('Export account') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+          <MpPopover id="coa-title-create" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <MpButton variant="primary" is-rounded right-icon="chevrons-down">{{ t('Create account/transaction') }}</MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem @click="router.push('/chart-of-accounts/new')">{{ t('Create new account') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="coaMenu('journal-entry')">{{ t('Create journal entry') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <div v-else-if="currentPageKey === 'Close books'" class="page-title-actions">
+          <MpButton variant="secondary" is-rounded @click="closeBooksStart('lp')">{{ t('Start locking period') }}</MpButton>
+          <MpButton variant="primary" is-rounded left-icon="add" @click="closeBooksStart('ctb')">{{ t('Start closing book') }}</MpButton>
+        </div>
         <div v-else-if="currentPageKey === 'Recurring transactions'" class="page-title-actions">
           <MpButton variant="primary" is-rounded left-icon="add" @click="recurringCreateSignal++">{{ t('Create New') }}</MpButton>
         </div>
@@ -2871,6 +2927,8 @@ function startResize(e: MouseEvent) {
 </template>
 
 <style scoped>
+/* Chart of accounts › Actions menu group captions (prod MANAGEMENT / IMPORT & EXPORT). */
+.coa-menu-group { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); text-transform: uppercase; letter-spacing: 0.06em; }
 /* ── Page layout (flex row) ───────────────────────────────────────────────── */
 
 .page-layout {
