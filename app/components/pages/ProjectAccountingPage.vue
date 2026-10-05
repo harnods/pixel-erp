@@ -128,7 +128,7 @@ function spendTone(pct: number | null): string {
 <template>
   <div class="pa-page">
     <!-- ── Portfolio stats ── -->
-    <div class="pa-stats">
+    <div class="pa-stats" data-tour="pa-portfolio-stats">
       <div v-for="s in stats" :key="s.key" class="pa-stat">
         <div class="pa-stat-label">{{ s.label }}</div>
         <div class="pa-stat-value" :class="{ 'pa-stat-value--adverse': s.adverse }">{{ s.value }}</div>
@@ -137,6 +137,7 @@ function spendTone(pct: number | null): string {
     </div>
 
     <ErpTablePage
+      data-tour="pa-portfolio"
       :columns="visibleColumns"
       :rows="(paginated as unknown as Record<string, unknown>[])"
       :total="total"

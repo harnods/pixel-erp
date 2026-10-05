@@ -174,7 +174,7 @@ async function save() {
     </header>
 
     <div class="detail-stage">
-      <section v-if="contextStats.length" class="pi-context">
+      <section v-if="contextStats.length" class="pi-context" data-tour="pa-invoice-context">
         <p class="pi-context-title">{{ t('Project') }} · {{ contextProject?.name }}</p>
         <ProjectStatCards :stats="contextStats" />
       </section>
@@ -228,7 +228,7 @@ async function save() {
         </div>
 
         <!-- ── Lines ── -->
-        <div class="pi-table-scroll">
+        <div class="pi-table-scroll" data-tour="pa-invoice-lines">
           <table class="pi-table">
             <thead>
               <tr>
