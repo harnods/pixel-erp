@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-non-core-feature-frontend/src/modules/contacts/views/ContactCreateView.vue (+ ContactEditView.vue, components/form/*) -->
 <script setup lang="ts">
 /**
  * New contact / Edit contact — the Contacts module's create + edit form.
@@ -22,9 +23,11 @@ import {
 import {
   contacts, getContact, addContact, updateContact, newContactDraft,
   TITLE_OPTIONS, IDENTITY_TYPE_OPTIONS, CONTACT_GROUP_OPTIONS, BANK_OPTIONS,
-  AR_ACCOUNT_OPTIONS, AP_ACCOUNT_OPTIONS, PAYMENT_TERMS_OPTIONS,
+  AR_ACCOUNT_OPTIONS, AP_ACCOUNT_OPTIONS, PAYMENT_TERMS_OPTIONS, CURRENCY_OPTIONS, COUNTRY_OPTIONS,
   type ContactType, type ContactBank,
 } from '~/data/contacts'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 
 // 'new' → create; any other id → edit.
 const props = defineProps<{ orderId?: string }>()
@@ -61,7 +64,9 @@ const includeAddressDetails = ref(false)
 const sameAsBilling = ref(false)
 // Structured address parts revealed by "Include address details". Not drawn in
 // the Figma (the checkbox is only shown unchecked) — standard ID address fields.
-const addressDetails = reactive({ city: '', province: '', postalCode: '', country: 'Indonesia' })
+const addressDetails = reactive({ country: 'Indonesia', province: '', city: '', kecamatan: '', kelurahan: '', postalCode: '' })
+const isIndonesia = computed(() => addressDetails.country === 'Indonesia')
+const provinceLabel = computed(() => (isIndonesia.value ? 'Province' : 'State/Province'))
 
 const banks = ref<ContactBank[]>([{ id: 'b1', bankName: '', branch: '', accountNo: '', accountName: '' }])
 
@@ -130,8 +135,15 @@ function onTaxNumberInput() {
   form.taxStatus = 'not-validated'
   taxError.value = ''
 }
+// Prod useTaxIdentityValidation: the tooltip names the missing precondition.
+const validateTooltip = computed(() => {
+  if (!form.companyName.trim()) return t('Enter the Company name before validating.')
+  if (form.npwp.length !== NPWP_LEN || form.nitkuSuffix.length !== NITKU_LEN) return t('Enter NPWP & NITKU details to validate.')
+  return t('Entered info will be validated through the DJP database. Make sure the numbers are correct.')
+})
 async function validateTax() {
-  if (!canValidate.value) return
+  if (!form.companyName.trim()) { taxError.value = t('Enter the Company name before validating.'); return }
+  if (!canValidate.value) { taxError.value = t('Enter NPWP & NITKU details to validate.'); return }
   isValidating.value = true
   taxError.value = ''
   await new Promise((r) => setTimeout(r, 1500))
@@ -139,6 +151,7 @@ async function validateTax() {
 
   if (djpOutcome.value === 'valid') {
     form.taxStatus = 'validated'
+    toast.notify({ variant: 'success', title: t('NPWP & NITKU validated successfully.'), maxWidth: 'max-content' })
     return
   }
   form.taxStatus = 'not-validated'
@@ -161,52 +174,69 @@ function addBank() {
 function removeBank(i: number) { banks.value.splice(i, 1) }
 
 // ── Save ──────────────────────────────────────────────────────────────────────
+// Required-field gate mirrors prod validateContactForm: display name, at least
+// one contact type, AR/AP accounts, and a well-formed email if one was entered.
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const typeError = ref('')
 const displayNameError = ref('')
+const emailError = ref('')
+const arError = ref('')
+const apError = ref('')
 const isSaving = ref(false)
 
-function goBack() {
-  router.push(isEdit.value ? `/${listSlug.value}/${props.orderId}` : `/${listSlug.value}`)
-}
+const returnTo = computed(() => (isEdit.value ? `/${listSlug.value}/${props.orderId}` : `/${listSlug.value}`))
+
+// ── Leave confirmation (prod useLeaveConfirmation) ───────────────────────────
+const isLeaveOpen = ref(false)
+function requestLeave() { isLeaveOpen.value = true }
+function confirmLeave() { router.push(returnTo.value) }
 
 async function save() {
-  typeError.value = form.types.length ? '' : t('You must select at least one contact type')
-  if (!form.displayName.trim()) {
-    displayNameError.value = t('You must fill in display name')
-  } else {
-    const dupe = contacts.some((c) =>
-      c.displayName.trim().toLowerCase() === form.displayName.trim().toLowerCase()
-      && (!isEdit.value || c.id !== props.orderId))
-    displayNameError.value = dupe ? t('Display name already taken') : ''
+  typeError.value = form.types.length ? '' : t('Select at least one contact type.')
+  displayNameError.value = form.displayName.trim() ? '' : t('Display name is required.')
+  const emails = emailText.value.split(',').map((e) => e.trim()).filter(Boolean)
+  emailError.value = emails.every((e) => EMAIL_PATTERN.test(e)) ? '' : t('Enter a valid email address.')
+  arError.value = form.arAccount ? '' : t('Select an accounts receivable account.')
+  apError.value = form.apAccount ? '' : t('Select an accounts payable account.')
+  if (typeError.value || displayNameError.value || emailError.value || arError.value || apError.value) {
+    toast.notify({ variant: 'error', title: t('Please fill in the required fields before saving.'), maxWidth: 'max-content' })
+    return
   }
-  if (typeError.value || displayNameError.value) return
+  const dupe = contacts.some((c) =>
+    c.displayName.trim().toLowerCase() === form.displayName.trim().toLowerCase()
+    && (!isEdit.value || c.id !== props.orderId))
+  if (dupe) {
+    toast.notify({ variant: 'error', title: t('A contact with this display name already exists.'), maxWidth: 'max-content' })
+    return
+  }
 
   isSaving.value = true
   await new Promise((r) => setTimeout(r, 500))
 
+  const detailParts = [addressDetails.kelurahan, addressDetails.kecamatan, addressDetails.city, addressDetails.province, addressDetails.postalCode, addressDetails.country]
   const payload = {
     ...form,
     displayName: form.displayName.trim(),
     fullName: form.fullName.trim(),
     companyName: form.companyName.trim(),
-    emails: emailText.value.split(',').map((e) => e.trim()).filter(Boolean),
+    emails,
     creditLimit: creditLimitText.value ? Number(creditLimitText.value.replace(/\D/g, '')) : null,
     banks: banks.value.filter((b) => b.bankName || b.accountNo || b.accountName),
     billingAddress: includeAddressDetails.value
-      ? [form.billingAddress, addressDetails.city, addressDetails.province, addressDetails.postalCode, addressDetails.country]
-        .filter(Boolean).join(', ')
+      ? [form.billingAddress, ...(isIndonesia.value ? detailParts : detailParts.slice(2))].filter(Boolean).join(', ')
       : form.billingAddress,
+    shippingAddress: sameAsBilling.value ? form.billingAddress : form.shippingAddress,
     updatedBy: 'Rizal Candra',
     updatedAt: new Date().toISOString(),
   }
 
   if (isEdit.value) {
     updateContact(props.orderId!, payload)
-    toast.notify({ variant: 'success', title: t('Contact updated'), maxWidth: 'max-content' })
+    toast.notify({ variant: 'success', title: t('Contact updated successfully.'), maxWidth: 'max-content' })
     router.push(`/${listSlug.value}/${props.orderId}`)
   } else {
     const created = addContact(payload)
-    toast.notify({ variant: 'success', title: t('Contact saved'), maxWidth: 'max-content' })
+    toast.notify({ variant: 'success', title: t('Contact created successfully.'), maxWidth: 'max-content' })
     router.push(`/${listSlug.value}/${created.id}`)
   }
   isSaving.value = false
@@ -219,7 +249,7 @@ async function save() {
     <!-- ── Title bar (breadcrumb above H1, 72px) ── -->
     <header class="nc-titlebar">
       <div class="nc-titlebar-left">
-        <a class="nc-breadcrumb" role="link" tabindex="0" @click="goBack" @keydown.enter="goBack">{{ t(list.label) }}</a>
+        <a class="nc-breadcrumb" role="link" tabindex="0" @click="requestLeave" @keydown.enter="requestLeave">{{ t(list.label) }}</a>
         <h1 class="nc-title">{{ isEdit ? t('Edit contact') : t('New contact') }}</h1>
       </div>
     </header>
@@ -233,7 +263,7 @@ async function save() {
           <MpFormControl id="nc-types" :is-invalid="!!typeError">
             <div class="nc-types-label">
               <span class="nc-types-title">{{ t('Contact type') }}</span>
-              <span class="nc-types-hint">({{ t('Select at least one') }})<span class="nc-required">*</span></span>
+              <span class="nc-types-hint">({{ t('select at least one') }})<span class="nc-required">*</span></span>
             </div>
             <div class="nc-types-row">
               <label v-for="opt in TYPE_OPTIONS" :key="opt.value" class="nc-choice">
@@ -303,9 +333,10 @@ async function save() {
             </div>
 
             <div class="nc-row">
-              <MpFormControl id="nc-email" class="nc-col">
+              <MpFormControl id="nc-email" class="nc-col" :is-invalid="!!emailError">
                 <MpFormLabel>{{ t('Email') }}</MpFormLabel>
-                <MpInput id="nc-email-input" v-model="emailText" is-full-width placeholder="jaka@hungrybirds.com" />
+                <MpInput id="nc-email-input" v-model="emailText" is-full-width placeholder="jaka@hungrybirds.com" @update:model-value="emailError = ''" />
+                <MpFormErrorMessage>{{ emailError }}</MpFormErrorMessage>
               </MpFormControl>
               <MpFormControl id="nc-mobile" class="nc-col">
                 <MpFormLabel>{{ t('Mobile') }}</MpFormLabel>
@@ -420,23 +451,40 @@ async function save() {
 
             <div v-if="includeAddressDetails" class="nc-fields nc-indent">
               <div class="nc-row">
-                <MpFormControl id="nc-city" class="nc-col">
-                  <MpFormLabel>{{ t('City') }}</MpFormLabel>
-                  <MpInput id="nc-city-input" v-model="addressDetails.city" is-full-width />
+                <MpFormControl id="nc-country" class="nc-col">
+                  <MpFormLabel>{{ t('Country') }}</MpFormLabel>
+                  <ErpFilterSelect
+                    id="nc-country-value" v-model="addressDetails.country" :placeholder="t('Select country')"
+                    :options="COUNTRY_OPTIONS" width="100%" :is-clearable="false"
+                  />
                 </MpFormControl>
                 <MpFormControl id="nc-province" class="nc-col">
-                  <MpFormLabel>{{ t('Province') }}</MpFormLabel>
+                  <MpFormLabel>{{ t(provinceLabel) }}</MpFormLabel>
                   <MpInput id="nc-province-input" v-model="addressDetails.province" is-full-width />
                 </MpFormControl>
               </div>
               <div class="nc-row">
-                <MpFormControl id="nc-postal" class="nc-col">
+                <MpFormControl id="nc-city" class="nc-col">
+                  <MpFormLabel>{{ t('City') }}</MpFormLabel>
+                  <MpInput id="nc-city-input" v-model="addressDetails.city" is-full-width />
+                </MpFormControl>
+                <MpFormControl v-if="isIndonesia" id="nc-kecamatan" class="nc-col">
+                  <MpFormLabel>{{ t('Kecamatan') }}</MpFormLabel>
+                  <MpInput id="nc-kecamatan-input" v-model="addressDetails.kecamatan" is-full-width />
+                </MpFormControl>
+                <MpFormControl v-else id="nc-postal" class="nc-col">
                   <MpFormLabel>{{ t('Postal code') }}</MpFormLabel>
                   <MpInput id="nc-postal-input" v-model="addressDetails.postalCode" is-full-width />
                 </MpFormControl>
-                <MpFormControl id="nc-country" class="nc-col">
-                  <MpFormLabel>{{ t('Country') }}</MpFormLabel>
-                  <MpInput id="nc-country-input" v-model="addressDetails.country" is-full-width />
+              </div>
+              <div v-if="isIndonesia" class="nc-row">
+                <MpFormControl id="nc-kelurahan" class="nc-col">
+                  <MpFormLabel>{{ t('Kelurahan') }}</MpFormLabel>
+                  <MpInput id="nc-kelurahan-input" v-model="addressDetails.kelurahan" is-full-width />
+                </MpFormControl>
+                <MpFormControl id="nc-postal-id" class="nc-col">
+                  <MpFormLabel>{{ t('Postal code') }}</MpFormLabel>
+                  <MpInput id="nc-postal-id-input" v-model="addressDetails.postalCode" is-full-width />
                 </MpFormControl>
               </div>
             </div>
@@ -444,8 +492,9 @@ async function save() {
             <MpFormControl id="nc-shipping-address">
               <MpFormLabel>{{ t('Shipping address') }}</MpFormLabel>
               <MpTextarea
+                v-if="!sameAsBilling"
                 id="nc-shipping-address-input" v-model="form.shippingAddress"
-                is-full-width :is-disabled="sameAsBilling"
+                is-full-width
               />
             </MpFormControl>
 
@@ -508,7 +557,7 @@ async function save() {
                   <MpInput
                     id="nc-npwp-input" v-model="form.npwp" is-full-width inputmode="numeric"
                     :maxlength="NPWP_LEN" :is-disabled="isValidating"
-                    placeholder="0012345678011000" @update:model-value="onTaxNumberInput"
+                    placeholder="Example: 1237657480132546" @update:model-value="onTaxNumberInput"
                   />
                   <span v-if="isTaxValid" class="nc-tax-check" :aria-label="t('Validated')" role="img">
                     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -530,7 +579,7 @@ async function save() {
                   <MpInput
                     id="nc-nitku-input" v-model="form.nitkuSuffix" is-full-width inputmode="numeric"
                     :maxlength="NITKU_LEN" :is-disabled="isValidating"
-                    placeholder="000022" @update:model-value="onTaxNumberInput"
+                    placeholder="Example: 000000" @update:model-value="onTaxNumberInput"
                   />
                   <span v-if="isTaxValid" class="nc-tax-check" :aria-label="t('Validated')" role="img">
                     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -551,7 +600,7 @@ async function save() {
                 </MpButton>
                 <MpTooltip
                   v-else id="nc-validate-tt" use-portal placement="top"
-                  :label="t('Entered info will be validated through the DJP database. Make sure the numbers are correct.')"
+                  :label="validateTooltip"
                 >
                   <MpButton variant="secondary" is-rounded @click="validateTax">
                     {{ t('Validate') }}
@@ -568,7 +617,8 @@ async function save() {
             <!-- Foreign: single free-form TIN, no DJP validation -->
             <MpFormControl v-else id="nc-tin" class="nc-col-sm">
               <MpFormLabel>{{ t('Tax Identification Number (TIN)') }}</MpFormLabel>
-              <MpInput id="nc-tin-input" v-model="form.tin" is-full-width placeholder="012345678011000" />
+              <MpInput id="nc-tin-input" v-model="form.tin" is-full-width placeholder="Example: 1100229933884477" :maxlength="30" />
+              <MpFormHelpText>{{ t('TIN according to the country of origin — self-declared, not verified') }}</MpFormHelpText>
             </MpFormControl>
 
           </div>
@@ -600,9 +650,11 @@ async function save() {
           <h2 class="nc-section-title">{{ t('Bank info') }}</h2>
           <div class="nc-fields">
             <div v-for="(bank, i) in banks" :key="bank.id" class="nc-fields nc-bank">
-              <div v-if="banks.length > 1" class="nc-bank-head">
-                <span class="nc-bank-title">{{ i === 0 ? t('Primary bank account') : `${t('Bank account')} ${i + 1}` }}</span>
-                <a class="nc-bank-remove" role="button" tabindex="0" @click="removeBank(i)" @keydown.enter="removeBank(i)">{{ t("Remove") }}</a>
+              <div v-if="i > 0" class="nc-bank-head">
+                <span class="nc-bank-title">{{ t('Additional bank') }} {{ i }}</span>
+                <MpButton variant="ghost" is-rounded :aria-label="`${t('Remove additional bank')} ${i}`" @click="removeBank(i)">
+                  <MpIcon name="minus-circular" size="sm" />
+                </MpButton>
               </div>
               <div class="nc-row">
                 <MpFormControl :id="`nc-bank-name-${i}`" class="nc-col">
@@ -657,7 +709,7 @@ async function save() {
           <p class="nc-section-desc">{{ t('These settings cannot be changed once the contact has transactions.') }}</p>
           <div class="nc-fields">
             <div class="nc-row">
-              <MpFormControl id="nc-ar-account" class="nc-col">
+              <MpFormControl id="nc-ar-account" class="nc-col" :is-invalid="!!arError">
                 <MpFormLabel>{{ t('Accounts receivable account') }}</MpFormLabel>
                 <MpPopover id="nc-ar-select" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
                   <MpPopoverTrigger>
@@ -669,14 +721,15 @@ async function save() {
                     <MpPopoverList>
                       <MpPopoverListItem
                         v-for="o in AR_ACCOUNT_OPTIONS" :key="o"
-                        :is-active="o === form.arAccount" @click="form.arAccount = o"
+                        :is-active="o === form.arAccount" @click="form.arAccount = o; arError = ''"
                       >{{ o }}</MpPopoverListItem>
                     </MpPopoverList>
                   </MpPopoverContent>
                 </MpPopover>
+                <MpFormErrorMessage>{{ arError }}</MpFormErrorMessage>
               </MpFormControl>
 
-              <MpFormControl id="nc-ap-account" class="nc-col">
+              <MpFormControl id="nc-ap-account" class="nc-col" :is-invalid="!!apError">
                 <MpFormLabel>{{ t('Accounts payable account') }}</MpFormLabel>
                 <MpPopover id="nc-ap-select" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
                   <MpPopoverTrigger>
@@ -688,32 +741,53 @@ async function save() {
                     <MpPopoverList>
                       <MpPopoverListItem
                         v-for="o in AP_ACCOUNT_OPTIONS" :key="o"
-                        :is-active="o === form.apAccount" @click="form.apAccount = o"
+                        :is-active="o === form.apAccount" @click="form.apAccount = o; apError = ''"
+                      >{{ o }}</MpPopoverListItem>
+                    </MpPopoverList>
+                  </MpPopoverContent>
+                </MpPopover>
+                <MpFormErrorMessage>{{ apError }}</MpFormErrorMessage>
+              </MpFormControl>
+            </div>
+
+            <div class="nc-row">
+              <MpFormControl id="nc-payment-terms" class="nc-col">
+                <MpFormLabel>{{ t('Default payment terms') }}</MpFormLabel>
+                <MpPopover id="nc-terms-select" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+                  <MpPopoverTrigger>
+                    <MpSelect id="nc-terms" :model-value="form.paymentTerms" :class="css({ width: '100%' })" @mousedown.prevent>
+                      <option :value="form.paymentTerms">{{ form.paymentTerms }}</option>
+                    </MpSelect>
+                  </MpPopoverTrigger>
+                  <MpPopoverContent :class="css({ minWidth: '320px', width: 'max-content' })">
+                    <MpPopoverList>
+                      <MpPopoverListItem
+                        v-for="o in PAYMENT_TERMS_OPTIONS" :key="o"
+                        :is-active="o === form.paymentTerms" @click="form.paymentTerms = o"
+                      >{{ o }}</MpPopoverListItem>
+                    </MpPopoverList>
+                  </MpPopoverContent>
+                </MpPopover>
+              </MpFormControl>
+              <MpFormControl id="nc-currency" class="nc-col">
+                <MpFormLabel>{{ t('Default currency') }}</MpFormLabel>
+                <MpPopover id="nc-currency-select" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+                  <MpPopoverTrigger>
+                    <MpSelect id="nc-currency" :model-value="form.currency" :class="css({ width: '100%' })" @mousedown.prevent>
+                      <option :value="form.currency">{{ form.currency }}</option>
+                    </MpSelect>
+                  </MpPopoverTrigger>
+                  <MpPopoverContent :class="css({ minWidth: '320px', width: 'max-content' })">
+                    <MpPopoverList>
+                      <MpPopoverListItem
+                        v-for="o in CURRENCY_OPTIONS" :key="o"
+                        :is-active="o === form.currency" @click="form.currency = o"
                       >{{ o }}</MpPopoverListItem>
                     </MpPopoverList>
                   </MpPopoverContent>
                 </MpPopover>
               </MpFormControl>
             </div>
-
-            <MpFormControl id="nc-payment-terms" class="nc-col">
-              <MpFormLabel>{{ t('Default payment terms') }}</MpFormLabel>
-              <MpPopover id="nc-terms-select" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
-                <MpPopoverTrigger>
-                  <MpSelect id="nc-terms" :model-value="form.paymentTerms" :class="css({ width: '100%' })" @mousedown.prevent>
-                    <option :value="form.paymentTerms">{{ form.paymentTerms }}</option>
-                  </MpSelect>
-                </MpPopoverTrigger>
-                <MpPopoverContent :class="css({ minWidth: '320px', width: 'max-content' })">
-                  <MpPopoverList>
-                    <MpPopoverListItem
-                      v-for="o in PAYMENT_TERMS_OPTIONS" :key="o"
-                      :is-active="o === form.paymentTerms" @click="form.paymentTerms = o"
-                    >{{ o }}</MpPopoverListItem>
-                  </MpPopoverList>
-                </MpPopoverContent>
-              </MpPopover>
-            </MpFormControl>
           </div>
         </section>
 
@@ -731,15 +805,24 @@ async function save() {
 
         <!-- ── Action group ── -->
         <MpButtonGroup class="erp-action-footer">
-          <MpButton variant="ghost" is-rounded @click="goBack">{{ t('Cancel') }}</MpButton>
+          <MpButton variant="ghost" is-rounded @click="requestLeave">{{ t('Cancel') }}</MpButton>
           <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="save">
-            {{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}
+            {{ t('Save') }}
           </MpButton>
         </MpButtonGroup>
 
       </div>
     </div>
   </div>
+
+  <ConfirmModal
+    v-model:is-open="isLeaveOpen"
+    :title="t('Leave this page?')"
+    :description="isEdit ? t('Your changes will be unable to be restored. You can\'t undo this action.') : t('This contact will be unable to be saved. You can\'t undo this action.')"
+    :cancel-label="isEdit ? t('Keep editing') : t('Keep creating')"
+    :confirm-label="t('Leave')"
+    @confirm="confirmLeave"
+  />
 
   <!-- ── Demo scenario FAB — picks what the mocked DJP lookup returns, so the
        valid / not-found / wrong-combination states can be shown with any
@@ -926,8 +1009,6 @@ async function save() {
 .nc-bank { gap: var(--mp-spacing-5); }
 .nc-bank-head { display: flex; align-items: center; justify-content: space-between; }
 .nc-bank-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.nc-bank-remove { cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
-.nc-bank-remove:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 /* ── Buttons ── (shape/colour come from .btn-enterprise in erp.css; only the
    disabled treatment, which erp.css doesn't define, is added here) */
