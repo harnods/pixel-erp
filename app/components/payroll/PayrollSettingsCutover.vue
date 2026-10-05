@@ -44,6 +44,10 @@ const pickWarnings = computed(() => {
   return out
 })
 function onPropose() {
+  // OD11-US05 AC-01: the first live period cannot move past a posted PAY journal until it is reversed.
+  const from = c.value.confirmedBy ? c.value.firstLive : null
+  const past = from && pick.value > from ? payroll.journals.filter((j) => j.type === 'Payroll' && !j.reversedById && j.taxMonth >= from && j.taxMonth < pick.value) : []
+  if (past.length) { proposeError.value = t(`${past.map((j) => j.number).join(', ')} ${past.length > 1 ? 'are' : 'is'} posted before ${monthLabel(pick.value)}. Reverse ${past.length > 1 ? 'them' : 'it'} first.`); return }
   const r = proposeCutover(pick.value)
   proposeError.value = r.ok ? '' : t(r.message ?? '')
   if (r.ok) successToast(t(`${monthLabel(pick.value)} sent to the Finance Manager for confirmation`))

@@ -69,7 +69,7 @@ function go(key: TabKey) { router.replace({ query: { ...route.query, section: ke
 .pset-tabs { margin-top: 0; }
 .pset-tabs :deep(.mp-tab--isSelected_true),
 .pset-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
-.pset-tabs :deep(.mp-tab--isSelected_true .mp-tab-selected-border) { background-color: var(--mp-border-selected) !important; }
+.pset-tabs :deep(.mp-tab--isSelected_true .mp-tab-selected-border) { background-color: var(--mp-text-selected) !important; }
 .pset-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
 </style>
 

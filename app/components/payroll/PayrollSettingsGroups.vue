@@ -190,7 +190,7 @@ function onPolicy(field: GroupingField, v: string) {
       <div class="pset-card__head">
         <div>
           <div class="pset-card__title">{{ t('Allocation rules') }}</div>
-          <div class="pset-card__sub">{{ t('The first matching rule sets the account and tags for the roles it lists. Rules tag expense lines only.') }}<template v-if="lastRun"> {{ t(`Matches counted on the ${periodLabel(lastRun.start, lastRun.end)} send.`) }}</template></div>
+          <div class="pset-card__sub">{{ t('The first matching rule sets the account and tags for the roles it lists. Rules tag expense lines only.') }}<template v-if="lastRun">{{ ' ' + t(`Matches counted on the ${periodLabel(lastRun.start, lastRun.end)} send.`) }}</template></div>
         </div>
         <div class="pset-card__actions">
           <MpButton v-if="can('settings.edit')" variant="secondary" is-rounded @click="notInPrototype">{{ t('Percentage split') }}</MpButton>

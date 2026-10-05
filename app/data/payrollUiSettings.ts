@@ -272,7 +272,7 @@ export function cutoverTimeline(): TimelineRow[] {
     const route: TimelineRow['route'] = !live ? 'Not set' : month < live ? 'Old sync' : 'Payroll page'
     let warning: string | null = null
     if (route === 'Payroll page' && rs.some((r) => r.journal) && oldSync.passed + oldSync.flagged > 0) warning = 'Booked by both routes'
-    else if (route === 'Payroll page' && month < now && !rs.some((r) => r.journal) && oldSync.passed + oldSync.flagged === 0) warning = 'No payroll from either route'
+    else if (route === 'Payroll page' && month < now && !rs.length && oldSync.passed + oldSync.flagged === 0) warning = 'No payroll from either route'
     return { month, label: monthLabel(month), route, runs: rs, oldSync, warning }
   })
 }

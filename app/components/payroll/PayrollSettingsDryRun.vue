@@ -13,7 +13,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { successToast, infoToast } from '~/utils/toasts'
 import { loadSnapshot, saveSnapshot } from '~/data/persist'
 import {
-  payroll, runs, runById, can, previewDryRun, markDryRunPassed, signOffDryRun, currentSnapshotId,
+  payroll, runs, runById, can, previewDryRun, markDryRunPassed, signOffDryRun, currentSnapshotId, snapshotById,
   accountLabel, tagsLabel, rupiah, wib, periodLabel, dateLabel,
 } from '~/data/payrollStore'
 import { dryRunReport, resultChanges, runOptionLabel, nextPayNumberPreview, sendOf, type DryRunResult } from '~/data/payrollUiSettings'
@@ -21,11 +21,13 @@ import { dryRunReport, resultChanges, runOptionLabel, nextPayNumberPreview, send
 const emit = defineEmits<{ (e: 'go', key: 'pay-items' | 'groups' | 'accounts' | 'cut-over'): void }>()
 const { t } = useLocale()
 
-// Results survive a reload; results for runs that no longer exist (after Reset sample data) drop out.
+// Results survive a reload. Reset sample data rewinds the clock and the settings history, so a
+// result built after the current clock or on a settings version that no longer exists drops out.
 const KEY = 'payroll:settings-dryruns-v1'
-const results = ref<DryRunResult[]>((loadSnapshot<DryRunResult>(KEY) ?? []).filter((r) => !!runById(r.runId)))
+const live = (r: DryRunResult) => !!runById(r.runId) && r.at <= payroll.clock && !!snapshotById(r.snapshotId)
+const results = ref<DryRunResult[]>((loadSnapshot<DryRunResult>(KEY) ?? []).filter(live))
 watch(results, (v) => saveSnapshot(KEY, v), { deep: true })
-watch(() => payroll.runs.length, () => { results.value = results.value.filter((r) => !!runById(r.runId)) })
+watch(() => [payroll.runs.length, payroll.snapshots.length, payroll.clock], () => { results.value = results.value.filter(live) })
 
 const runOptions = computed(() => runs.value.filter((r) => !!sendOf(r)).map((r) => ({ value: r.id, label: runOptionLabel(r) })))
 const defaultRun = computed(() => runs.value.find((r) => r.mode !== 'Live' && sendOf(r)) ?? runs.value.find((r) => r.ledgerVersion != null) ?? runs.value[0])
@@ -71,7 +73,8 @@ function onSignOff() {
   actError.value = r.ok ? '' : t(r.message ?? '')
   if (r.ok) successToast(t('Setup signed off'))
 }
-const changedSinceSignOff = computed(() => !!dr.value?.signedOffAt && payroll.snapshots.some((s) => s.at > dr.value!.signedOffAt!))
+// Cut-over decisions are not setup changes; only mapping, account, group and rule saves count.
+const changedSinceSignOff = computed(() => !!dr.value?.signedOffAt && payroll.snapshots.some((s) => s.at > dr.value!.signedOffAt! && !/^(First live period|Old sync control)/.test(s.note)))
 
 const hrText = computed(() => run.value ? `In Talenta, open the salary detail page for ${periodLabel(run.value.start, run.value.end)} and click Send to Jurnal. Jurnal receives it as a dry run and posts nothing.` : '')
 function copyHrText() {
