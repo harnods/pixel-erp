@@ -119,3 +119,11 @@ export * from './quickShortcuts'
 // ── Seed status coverage — runs LAST (after every base seed has initialised) so
 // the mock DB has ≥1 record in every inbound/outbound status. ─────────────────
 import './seedCoverage'
+
+// ── Settings: inventory, production, payment terms/methods, tags, tagging rules ──
+export * from './inventorySettings'
+export * from './productionSettings'
+export * from './paymentTerms'
+export * from './paymentMethods'
+export * from './tags'
+export * from './taggingRules'

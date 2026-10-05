@@ -159,6 +159,12 @@ const pageRegistry: Record<string, Component> = {
   'Default accounts':   defineAsyncComponent(() => import('~/components/pages/SettingsDefaultAccountsPage.vue')),
   // Settings → Templates (prod /company/setting#email_template_*, #pdf_signature, ondemand_pdf, #whatsapp_*).
   'Templates':          defineAsyncComponent(() => import('~/components/pages/SettingsTemplatesPage.vue')),
+  'Inventory settings':  defineAsyncComponent(() => import('~/components/pages/SettingsInventoryPage.vue')),
+  'Production settings': defineAsyncComponent(() => import('~/components/pages/SettingsProductionPage.vue')),
+  'Payment terms':      defineAsyncComponent(() => import('~/components/pages/PaymentTermsPage.vue')),
+  'Payment methods':    defineAsyncComponent(() => import('~/components/pages/PaymentMethodsPage.vue')),
+  'Tags':               defineAsyncComponent(() => import('~/components/pages/TagsPage.vue')),
+  'Tagging rules':      defineAsyncComponent(() => import('~/components/pages/TaggingRulesPage.vue')),
   'Approval workflows':  defineAsyncComponent(() => import('~/components/pages/ApprovalWorkflowsPage.vue')),
   // Settings → Users & roles. '/users-and-roles' → pathToLabel → 'Users and roles'.
   // The page itself is served by its tabs (User list / Custom role) — this entry
@@ -338,6 +344,12 @@ const UsersListPage = asyncPage(() => import('~/components/pages/UsersListPage.v
 const CustomRolesPage = asyncPage(() => import('~/components/pages/CustomRolesPage.vue'))
 const SettingsSalesFormPage = asyncPage(() => import('~/components/pages/SettingsSalesFormPage.vue'))
 const SettingsInvoiceReminderPage = asyncPage(() => import('~/components/pages/SettingsInvoiceReminderPage.vue'))
+const PaymentTermFormPage = asyncPage(() => import('~/components/pages/PaymentTermFormPage.vue'))
+const TagsTabPage = asyncPage(() => import('~/components/pages/TagsPage.vue'))
+const TagCategoriesTabPage = asyncPage(() => import('~/components/pages/TagCategoriesPage.vue'))
+const TagDetailPage = asyncPage(() => import('~/components/pages/TagDetailPage.vue'))
+const TagCategoryDetailPage = asyncPage(() => import('~/components/pages/TagCategoryDetailPage.vue'))
+const TaggingRuleFormPage = asyncPage(() => import('~/components/pages/TaggingRuleFormPage.vue'))
 
 // ── Purchase Orders overlay state (list/detail/form share the URL /purchase-orders
 // without real sub-routes yet — mirrors the pattern this feature was originally
@@ -1022,6 +1034,11 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'xpm-cards') {
     return { component: XpmCardDetailPage, id: segs[1]! }
   }
+  // Settings → Payment terms / Tags / Tagging rules sub-pages (full-page, own title bar).
+  if (segs.length >= 2 && segs[0] === 'payment-terms' && segs[1] === 'new') return { component: PaymentTermFormPage, id: 'new' }
+  if (segs.length >= 3 && segs[0] === 'tags' && segs[1] === 'categories') return { component: TagCategoryDetailPage, id: segs[2]! }
+  if (segs.length >= 2 && segs[0] === 'tags') return { component: TagDetailPage, id: segs[1]! }
+  if (segs.length >= 2 && segs[0] === 'tagging-rules') return { component: TaggingRuleFormPage, id: segs[1] === 'new' ? 'new' : segs[1]! }
   // /my-claims/create → request claim form; /my-claims/:id → claim detail;
   // /my-claims/:id/edit → edit claim (reuses the form in edit mode).
   if (segs.length >= 2 && segs[0] === 'my-claims') {
@@ -1066,6 +1083,7 @@ const pageTabs: Record<string, string[]> = {
   'Users and roles':   ['User list', 'Custom role'],
   // Settings → Sales: Form setting / Invoice reminder.
   'Sales settings':    ['Form setting', 'Invoice reminder'],
+  'Tags':              ['All tags', 'Categories'],
   // XPM (Mekari Expense) — section tabs read by the page via ?tab=.
   'Xpm transactions':  ['All', 'Card', 'Reimbursement', 'Cash advance', 'Bill', 'Travel'],
   'Xpm cards':         ['Virtual cards', 'Physical cards'],
@@ -1376,6 +1394,10 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'Form setting': SettingsSalesFormPage,
     'Invoice reminder': SettingsInvoiceReminderPage,
   },
+  'Tags': {
+    'All tags': TagsTabPage,
+    'Categories': TagCategoriesTabPage,
+  },
   // XPM (Mekari Expense) — each tab renders the same page; the page filters by ?tab=.
   'Xpm transactions': {
     'All': XpmTransactionsTabPage, 'Card': XpmTransactionsTabPage, 'Reimbursement': XpmTransactionsTabPage,
@@ -1443,6 +1465,14 @@ const recurringCreateSignal = ref(0)
 provide('recurringCreateSignal', recurringCreateSignal)
 const fileManagerAddSignal = ref(0)
 provide('fileManagerAddSignal', fileManagerAddSignal)
+
+// ── Payment methods / Tags: title-bar create buttons open modals owned by the pages.
+const paymentMethodAddSignal = ref(0)
+provide('paymentMethodAddSignal', paymentMethodAddSignal)
+const tagAddSignal = ref(0)
+provide('tagAddSignal', tagAddSignal)
+const tagCategoryAddSignal = ref(0)
+provide('tagCategoryAddSignal', tagCategoryAddSignal)
 
 // ── Contacts: "+ Contact" in the title bar; the index page owns the navigation
 // (it knows which role list is active), so signal it the same way.
@@ -1958,6 +1988,44 @@ function startResize(e: MouseEvent) {
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             {{ t('New approval workflow') }}
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Payment terms'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/payment-terms/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New payment term') }}
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Payment methods'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="paymentMethodAddSignal++">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New payment method') }}
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Tags'" class="page-title-actions">
+          <button v-if="activeTab === 'Categories'" class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="tagCategoryAddSignal++">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New category') }}
+          </button>
+          <button v-else class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="tagAddSignal++">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New tag') }}
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Tagging rules'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/tagging-rules/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New tagging rule') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Dimensions' && dimensionsActivated" class="page-title-actions">
