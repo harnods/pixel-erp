@@ -1,17 +1,18 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/purchase-orders/views/PurchaseOrderCreateView.vue + components/form/* -->
 <script setup lang="ts">
 import {
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
-  MpButton, MpTextlink, MpFormControl, MpFormLabel, MpInput, MpTextarea,
+  MpButton, MpTextlink, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea,
   MpInputGroup, MpInputLeftAddon,
   MpDatePicker, MpInputTag, MpCheckbox, MpUpload, MpUploadList,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpIcon,
-  css,
+  css, toast,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import type { DataInterface } from '@mekari/pixel3'
 import { MpAutocomplete } from '@mekari/pixel3'
-import { getPurchaseOrderDetail, purchaseOrders, PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS, products, getPurchaseRequest, vendors } from '~/data'
+import { getPurchaseOrderDetail, purchaseOrders, PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS, products, getPurchaseRequest, vendors, addPurchaseOrder } from '~/data'
 import type { POAttachment } from '~/data/purchaseOrderDetails'
 import type { PurchaseOrder, PurchaseRequestLine } from '~/data/types'
 import AddPurchaseRequestDrawer from '~/components/patterns/AddPurchaseRequestDrawer.vue'
@@ -75,6 +76,7 @@ const trackingNo   = ref(source.value?.trackingNo ?? '')
 const shipTo       = ref(source.value?.shipTo ?? '')
 const message      = ref(source.value?.message ?? '')
 const memo         = ref(source.value?.memo ?? '')
+const billingAddress = ref(source.value?.billingAddress ?? '')
 const tagsList     = ref<DataInterface[]>(toTagData(source.value?.tags ?? []))
 
 const requiresShipping = ref(!!source.value?.shipVia)
@@ -271,22 +273,61 @@ function createDuplicateOrder(overrides?: Partial<PurchaseOrder>): string | null
     duplicatedFromId: props.duplicateOrderId,
     ...overrides,
   }
-  purchaseOrders.push(newOrder)
+  addPurchaseOrder(newOrder)
+  return newId
+}
+
+// ── Validation (prod usePurchaseOrderValidation: vendor, transaction date, ≥1 line) ──
+const vendorError = ref(false)
+const txDateError = ref(false)
+const linesError  = ref(false)
+watch(vendor, (v) => { if (v) vendorError.value = false })
+watch(txDate, (v) => { if (v) txDateError.value = false })
+watch(() => allLines.value.length, (n) => { if (n) linesError.value = false })
+const hasFormErrors = computed(() => vendorError.value || txDateError.value || linesError.value)
+function validate(): boolean {
+  vendorError.value = !vendor.value
+  txDateError.value = !txDate.value
+  linesError.value = allLines.value.length === 0
+  return !hasFormErrors.value
+}
+
+/** Plain "New purchase order" → create the order (session state) like prod's create. */
+function createNewOrder(overrides?: Partial<PurchaseOrder>): string {
+  const newId: string = nextPoId()
+  const v = vendors.find(x => x.name === vendor.value)
+  addPurchaseOrder({
+    id: newId,
+    number: nextPoNumber(purchaseOrders[0]?.number ?? 'PO-2026-0000'),
+    vendor: { id: v?.id ?? vendor.value, name: vendor.value },
+    date: dmyToIso(txDate.value),
+    dueDate: dmyToIso(dueDate.value || txDate.value),
+    total: grandTotal.value,
+    balance: grandTotal.value,
+    status: 'draft',
+    itemCount: allLines.value.length,
+    hasAttachment: attachments.value.length > 0,
+    tags: tagsList.value.map(t => String(t.value)),
+    ...overrides,
+  })
   return newId
 }
 
 function onSave() {
-  const newId = createDuplicateOrder()
+  if (!validate()) return
+  const newId = createDuplicateOrder() ?? createNewOrder()
+  toast.notify({ variant: 'success', title: 'Purchase order created', rootProps: { class: 'toast-enterprise' } })
   closePurchaseOrderForm?.()
-  if (newId) openPurchaseOrder?.(newId)
+  openPurchaseOrder?.(newId)
 }
 
 function onSaveAndNew() { closePurchaseOrderForm?.() }
 
 function onSendToFulfillment() {
-  const newId = createDuplicateOrder({ sentToFulfillment: true })
+  if (!validate()) return
+  const newId = createDuplicateOrder({ sentToFulfillment: true }) ?? createNewOrder({ sentToFulfillment: true })
   closePurchaseOrderForm?.()
-  if (newId) openPurchaseOrder?.(newId)
+  openPurchaseOrder?.(newId)
 }
 </script>
 
@@ -323,7 +364,7 @@ function onSendToFulfillment() {
 
         <!-- ── Header section 1: Vendor + Email + Total ── -->
         <section class="po-header1 po-dashed-divider">
-          <MpFormControl id="f-vendor" class="po-field po-col-span-3">
+          <MpFormControl id="f-vendor" class="po-field po-col-span-3" :is-invalid="vendorError">
             <MpFormLabel>Vendor <span class="po-required">*</span></MpFormLabel>
             <MpAutocomplete
               id="f-vendor-inp"
@@ -333,41 +374,34 @@ function onSendToFulfillment() {
               value-prop="id"
               is-searchable is-clearable use-portal is-full-width
               is-show-button-action
-              placeholder="Select vendor"
+              placeholder="Vendor"
+              :is-invalid="vendorError"
               @button-action="onVendorAdd"
             >
               <template #buttonAction="{ currentSearch }">
                 {{ currentSearch ? `Add "${currentSearch}" as a new vendor` : 'Add new vendor' }}
               </template>
             </MpAutocomplete>
+            <MpFormErrorMessage v-if="vendorError">Vendor is required</MpFormErrorMessage>
           </MpFormControl>
 
           <MpFormControl id="f-email" class="po-field po-col-span-3">
             <MpFormLabel>Email</MpFormLabel>
-            <MpInputTag id="f-email-inp" :data="emailTags" placeholder="+Add email" @change="onEmailChange" />
+            <MpInputTag id="f-email-inp" :data="emailTags" placeholder="Enter email address" @change="onEmailChange" />
           </MpFormControl>
 
           <div class="po-header1-total">
-            <h3 class="po-header1-total-value">Total {{ fmt(grandTotal) }}</h3>
+            <h3 class="po-header1-total-value">Balance due {{ fmt(grandTotal) }}</h3>
           </div>
         </section>
 
         <!-- ── Header section 2: dynamic 3→4 columns ── -->
-        <section class="po-header2">
+        <section class="po-header2" :class="{ 'po-header2--shipping': requiresShipping }">
+          <!-- Col 1 (prod): Billing address + Requires shipping -->
           <div class="po-header2-col po-col-span-3">
-            <MpFormControl id="f-tx-date" class="po-field">
-              <MpFormLabel>Transaction date</MpFormLabel>
-              <MpDatePicker id="f-tx-date-inp" v-model="txDate" format="DD/MM/YYYY" value-type="format" :use-portal="false" />
-            </MpFormControl>
-
-            <MpFormControl id="f-due-date" class="po-field">
-              <MpFormLabel>Due date</MpFormLabel>
-              <MpDatePicker id="f-due-date-inp" v-model="dueDate" format="DD/MM/YYYY" value-type="format" :use-portal="false" />
-            </MpFormControl>
-
-            <MpFormControl id="f-payment" class="po-field">
-              <MpFormLabel>Payment terms</MpFormLabel>
-              <MpAutocomplete id="f-payment-inp" v-model="paymentTerms" :data="PAYMENT_TERMS" use-portal is-clearable is-full-width placeholder="Select payment terms" />
+            <MpFormControl id="f-billing" class="po-field">
+              <MpFormLabel>Billing address</MpFormLabel>
+              <MpTextarea id="f-billing-inp" v-model="billingAddress" placeholder="Billing address" is-full-width />
             </MpFormControl>
 
             <div class="po-field po-field--checkbox">
@@ -375,26 +409,44 @@ function onSendToFulfillment() {
             </div>
           </div>
 
+          <div class="po-header2-col po-col-span-3">
+            <MpFormControl id="f-tx-date" class="po-field" is-required :is-invalid="txDateError">
+              <MpFormLabel>Transaction date</MpFormLabel>
+              <MpDatePicker id="f-tx-date-inp" v-model="txDate" format="DD/MM/YYYY" value-type="format" :use-portal="false" placeholder="Transaction date" />
+              <MpFormErrorMessage v-if="txDateError">Transaction date is required</MpFormErrorMessage>
+            </MpFormControl>
+
+            <MpFormControl id="f-due-date" class="po-field">
+              <MpFormLabel>Due date</MpFormLabel>
+              <MpDatePicker id="f-due-date-inp" v-model="dueDate" format="DD/MM/YYYY" value-type="format" :use-portal="false" placeholder="Due date" />
+            </MpFormControl>
+
+            <MpFormControl id="f-payment" class="po-field">
+              <MpFormLabel>Payment terms</MpFormLabel>
+              <MpAutocomplete id="f-payment-inp" v-model="paymentTerms" :data="PAYMENT_TERMS" use-portal is-clearable is-full-width placeholder="Payment terms" />
+            </MpFormControl>
+          </div>
+
           <!-- Shipping column — inserted directly after column 1 when checked -->
           <div v-if="requiresShipping" class="po-header2-col po-col-span-3">
             <MpFormControl id="f-ship-date" class="po-field">
               <MpFormLabel>Estimated delivery date</MpFormLabel>
-              <MpDatePicker id="f-ship-date-inp" v-model="shipDate" format="DD/MM/YYYY" value-type="format" :use-portal="false" />
+              <MpDatePicker id="f-ship-date-inp" v-model="shipDate" format="DD/MM/YYYY" value-type="format" :use-portal="false" placeholder="Estimated delivery date" />
             </MpFormControl>
 
             <MpFormControl id="f-ship-via" class="po-field">
               <MpFormLabel>Ship via</MpFormLabel>
-              <MpInput id="f-ship-via-inp" v-model="shipVia" is-full-width />
+              <MpInput id="f-ship-via-inp" v-model="shipVia" placeholder="Ship via" is-full-width />
             </MpFormControl>
 
             <MpFormControl id="f-tracking" class="po-field">
               <MpFormLabel>Tracking no.</MpFormLabel>
-              <MpInput id="f-tracking-inp" v-model="trackingNo" is-full-width />
+              <MpInput id="f-tracking-inp" v-model="trackingNo" placeholder="Enter tracking number" is-full-width />
             </MpFormControl>
 
             <MpFormControl id="f-ship-to" class="po-field">
               <MpFormLabel>Ship to</MpFormLabel>
-              <MpTextarea id="f-ship-to-inp" v-model="shipTo" is-full-width />
+              <MpTextarea id="f-ship-to-inp" v-model="shipTo" placeholder="Ship to" is-full-width />
             </MpFormControl>
           </div>
 
@@ -411,21 +463,23 @@ function onSendToFulfillment() {
               <MpInput id="f-tx-no-inp" placeholder="Auto" is-disabled is-full-width />
             </MpFormControl>
 
-            <MpFormControl id="f-ref" class="po-field">
-              <MpFormLabel>Reference no.</MpFormLabel>
-              <MpInput id="f-ref-inp" v-model="referenceNo" is-full-width />
-            </MpFormControl>
-          </div>
-
-          <div class="po-header2-col po-col-span-3">
+            <!-- prod order: Transaction no. → Warehouse → Reference no. -->
             <MpFormControl id="f-warehouse" class="po-field">
               <MpFormLabel>Warehouse</MpFormLabel>
               <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width placeholder="Select warehouse" />
             </MpFormControl>
 
+            <MpFormControl id="f-ref" class="po-field">
+              <MpFormLabel>Reference no.</MpFormLabel>
+              <MpInput id="f-ref-inp" v-model="referenceNo" placeholder="Reference no." is-full-width />
+            </MpFormControl>
+          </div>
+
+          <div class="po-header2-col po-col-span-3">
+
             <MpFormControl id="f-tags" class="po-field">
               <MpFormLabel>Tags</MpFormLabel>
-              <MpInputTag id="f-tags-inp" :data="tagsList" placeholder="Select tags" @change="onTagsChange" />
+              <MpInputTag id="f-tags-inp" :data="tagsList" placeholder="Tags" @change="onTagsChange" />
               <ErpDimensionTagUpsell id="po-dim-upsell" />
             </MpFormControl>
           </div>
@@ -436,6 +490,12 @@ function onSendToFulfillment() {
           <div class="po-items-header-row">
             <MpCheckbox v-model:is-checked="priceIncludesTax">Price includes tax</MpCheckbox>
           </div>
+
+          <MpBanner v-if="hasFormErrors" id="po-form-error-banner" variant="danger" align-items="center">
+            <MpBannerIcon id="po-form-error-banner-icon" />
+            <MpBannerTitle>Failed to save purchase order</MpBannerTitle>
+            <MpBannerDescription>{{ linesError ? 'At least one line item is required' : 'Please check the highlighted fields and try again.' }}</MpBannerDescription>
+          </MpBanner>
 
           <!-- ══ From purchase requests → accordion form-table (ex-* cell pattern).
                Product / requested / available / unit / amount are locked (from the
@@ -656,7 +716,7 @@ function onSendToFulfillment() {
             <MpFormControl id="f-memo" class="si-note-field">
               <MpFormLabel>Memo</MpFormLabel>
               <MpTextarea id="f-memo-inp" v-model="memo" is-full-width />
-              <span class="si-field-caption">Only visible to you and your team</span>
+              <span class="si-field-caption">Visible to you and your team</span>
             </MpFormControl>
 
             <div class="si-attachment-section">
@@ -689,7 +749,7 @@ function onSendToFulfillment() {
               </MpButton>
               <div class="si-discount-rows">
                 <div class="si-totals-row">
-                  <span>Discount per line</span>
+                  <span>Discounts per line</span>
                   <span class="si-deduction">({{ fmt(discountTotal) }})</span>
                 </div>
                 <div class="si-totals-row">
@@ -905,6 +965,8 @@ function onSendToFulfillment() {
   gap: var(--mp-spacing-4) var(--mp-spacing-5);
   align-items: start;
 }
+/* Shipping column on → 5 columns (prod po-grid-cols-5), each still span 3. */
+.po-header2--shipping { grid-template-columns: repeat(15, 1fr); }
 .po-header2-col {
   display: flex;
   flex-direction: column;

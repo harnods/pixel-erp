@@ -418,6 +418,7 @@ provide('rejectPurchaseOrder', (id: string, reason: string) => {
     o.rejection = { user: 'You', date: `${day} ${month} ${d.getFullYear()}`, reason }
   }
 })
+provide('openNewPurchaseOrderForm', () => openNewPurchaseOrderForm())
 function openNewPurchaseOrderForm() {
   poFormOpen.value = true
   poFormDuplicateId.value = null

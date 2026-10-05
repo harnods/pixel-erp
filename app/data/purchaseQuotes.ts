@@ -1,4 +1,5 @@
 import { vendors } from './vendors'
+import { loadCreated, saveCreated } from './persist'
 import type { PurchaseQuote, PurchaseQuoteStatus } from './types'
 
 /**
@@ -58,3 +59,11 @@ function build(): PurchaseQuote[] {
 }
 
 export const purchaseQuotes: PurchaseQuote[] = build()
+
+// User-created quotes survive a reload; the seed is untouched.
+const PQ_CREATED_KEY = 'purchase-quotes-created'
+for (const q of loadCreated<PurchaseQuote>(PQ_CREATED_KEY)) if (!purchaseQuotes.some(x => x.id === q.id)) purchaseQuotes.push(q)
+export function addPurchaseQuote(quote: PurchaseQuote): void {
+  purchaseQuotes.push(quote)
+  saveCreated(PQ_CREATED_KEY, [...loadCreated<PurchaseQuote>(PQ_CREATED_KEY).filter(x => x.id !== quote.id), quote])
+}
