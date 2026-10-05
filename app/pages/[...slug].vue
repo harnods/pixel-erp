@@ -121,6 +121,9 @@ const pageRegistry: Record<string, Component> = {
   'Asset settings':    defineAsyncComponent(() => import('~/components/pages/AssetSettingsPage.vue')),
   'Sales invoices':    defineAsyncComponent(() => import('~/components/pages/SalesInvoicesPage.vue')),
   'Purchase invoices': defineAsyncComponent(() => import('~/components/pages/PurchaseInvoicesPage.vue')),
+  // Sales › Join invoice / Purchases › Join purchase invoices (prod merged invoices; new/:id/edit via detailMatch)
+  'Join invoice':           defineAsyncComponent(() => import('~/components/pages/JoinInvoicesPage.vue')),
+  'Join purchase invoices': defineAsyncComponent(() => import('~/components/pages/JoinInvoicesPage.vue')),
   'Sales orders':      defineAsyncComponent(() => import('~/components/pages/SalesOrdersPage.vue')),
   'Sales quotes':      defineAsyncComponent(() => import('~/components/pages/SalesQuotesPage.vue')),
   'Sales deliveries':  defineAsyncComponent(() => import('~/components/pages/SalesDeliveriesPage.vue')),
@@ -305,6 +308,8 @@ const CashTransactionFormPage = asyncPage(() => import('~/components/pages/CashT
 const CashTransactionDetailsPage = asyncPage(() => import('~/components/pages/CashTransactionDetailsPage.vue'))
 const JournalEntryFormPage = asyncPage(() => import('~/components/pages/JournalEntryFormPage.vue'))
 const JournalEntryDetailsPage = asyncPage(() => import('~/components/pages/JournalEntryDetailsPage.vue'))
+const JoinInvoiceFormPage = asyncPage(() => import('~/components/pages/JoinInvoiceFormPage.vue'))
+const JoinInvoiceDetailsPage = asyncPage(() => import('~/components/pages/JoinInvoiceDetailsPage.vue'))
 const BankStatementReviewPage = asyncPage(() => import('~/components/pages/BankStatementReviewPage.vue'))
 const ReconciliationsPage = asyncPage(() => import('~/components/pages/ReconciliationsPage.vue'))
 const BankRuleBuilderPage = asyncPage(() => import('~/components/pages/BankRuleBuilderPage.vue'))
@@ -830,6 +835,12 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'new') return { component: InternalTransferFormPage, id: 'new' }
     if (segs[2] === 'edit') return { component: InternalTransferFormPage, id: segs[1]! }
     return { component: InternalTransferDetailsPage, id: segs[1]! }
+  }
+  // /join-invoices/new|:id|:id/edit · /join-purchase-invoices/… → prod merged invoices create/show/edit
+  if (segs.length >= 2 && (segs[0] === 'join-invoices' || segs[0] === 'join-purchase-invoices')) {
+    if (segs[1] === 'new') return { component: JoinInvoiceFormPage, id: 'new' }
+    if (segs[2] === 'edit') return { component: JoinInvoiceFormPage, id: segs[1]! }
+    return { component: JoinInvoiceDetailsPage, id: segs[1]! }
   }
   // /journal-entries/new|:id → Create journal entry / General Journal show (prod journal-entries)
   if (segs.length >= 2 && segs[0] === 'journal-entries') {
@@ -2127,6 +2138,12 @@ function startResize(e: MouseEvent) {
               </div>
             </div>
           </div>
+        </div>
+        <div v-else-if="currentPageKey === 'Join invoice'" class="page-title-actions">
+          <MpButton variant="primary" is-rounded left-icon="add" @click="router.push('/join-invoices/new')">{{ t('New join invoice') }}</MpButton>
+        </div>
+        <div v-else-if="currentPageKey === 'Join purchase invoices'" class="page-title-actions">
+          <MpButton variant="primary" is-rounded left-icon="add" @click="router.push('/join-purchase-invoices/new')">{{ t('New join purchase invoice') }}</MpButton>
         </div>
         <div v-else-if="currentPageKey === 'Bank rules'" class="page-title-actions">
           <MpButton variant="primary" is-rounded left-icon="add" @click="router.push('/bank-rules/new')">{{ t('New bank rules') }}</MpButton>
