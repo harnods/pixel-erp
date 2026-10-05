@@ -161,6 +161,9 @@ async function submit() {
 .ws-section-header > button { grid-column: 9 / -1; justify-self: end; }
 
 .da-accordion { grid-column: 1 / -1; }
+/* The collapse wrapper pins the height measured when the item opened; switching
+   to edit mode makes fields taller, so let an OPEN item size to its content. */
+.da-accordion :deep(.mp-accordion__item > [style*="visibility: visible"]) { height: auto !important; }
 .da-group-label {
   font-size: var(--mp-font-sizes-lg);
   font-weight: var(--mp-font-weights-semi-bold);

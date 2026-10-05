@@ -110,8 +110,8 @@ export function saveSalesFormSettings(v: SalesFormSettings): void { save('sales'
 export type ReminderType = 'invoice' | 'order' | 'both'
 
 export const REMINDER_TYPE_OPTIONS: { value: ReminderType; label: string }[] = [
-  { value: 'invoice', label: 'Sales Invoice' },
-  { value: 'order',   label: 'Sales Order' },
+  { value: 'invoice', label: 'Sales invoice' },
+  { value: 'order',   label: 'Sales order' },
   { value: 'both',    label: 'Both' },
 ]
 
@@ -240,67 +240,67 @@ export const MAPPING_GROUPS: MappingGroup[] = [
   {
     key: 'sales', label: 'Sales',
     left: [
-      { key: 'salesRevenue', label: 'Sales Revenue', tooltip: 'Used to accumulate your sales of product and will be pre-selected when you create product', pool: starts('4-'), lockedReason: USED_IN_TX },
-      { key: 'salesDiscount', label: 'Sales Discount', tooltip: 'Accumulate total discount from your sales transactions', pool: starts('4-') },
-      { key: 'salesReturn', label: 'Sales Return', tooltip: 'Accumulate total amount from your sales return transactions', pool: starts('4-') },
-      { key: 'salesShipping', label: 'Sales Shipping', tooltip: 'Accumulate total shipping income from your sales transactions', pool: starts('4-', '7-') },
+      { key: 'salesRevenue', label: 'Sales revenue', tooltip: 'Used to accumulate your sales of product and will be pre-selected when you create product', pool: starts('4-'), lockedReason: USED_IN_TX },
+      { key: 'salesDiscount', label: 'Sales discount', tooltip: 'Accumulate total discount from your sales transactions', pool: starts('4-') },
+      { key: 'salesReturn', label: 'Sales return', tooltip: 'Accumulate total amount from your sales return transactions', pool: starts('4-') },
+      { key: 'salesShipping', label: 'Sales shipping', tooltip: 'Accumulate total shipping income from your sales transactions', pool: starts('4-', '7-') },
     ],
     right: [
-      { key: 'unearnedRevenue', label: 'Unearned Revenue', tooltip: 'Accumulate amount paid in advance from your sales order transactions', pool: starts('2-202', '2-203', '2-206') },
-      { key: 'unbilledSales', label: 'Unbilled Sales', tooltip: 'Accumulate unbilled sales amount from your sales delivery transaction', pool: starts('4-') },
-      { key: 'unbilledReceivable', label: 'Unbilled Receivable', tooltip: 'Accumulate unbilled receivable amount from your sales delivery transaction', pool: starts('1-101') },
-      { key: 'salesTaxPayable', label: 'Sales Tax Payable', tooltip: 'This account will be pre-selected when you create new tax (for sales)', pool: starts('2-205'), lockedReason: USED_IN_TAX },
+      { key: 'unearnedRevenue', label: 'Unearned revenue', tooltip: 'Accumulate amount paid in advance from your sales order transactions', pool: starts('2-202', '2-203', '2-206') },
+      { key: 'unbilledSales', label: 'Unbilled sales', tooltip: 'Accumulate unbilled sales amount from your sales delivery transaction', pool: starts('4-') },
+      { key: 'unbilledReceivable', label: 'Unbilled receivable', tooltip: 'Accumulate unbilled receivable amount from your sales delivery transaction', pool: starts('1-101') },
+      { key: 'salesTaxPayable', label: 'Sales tax payable', tooltip: 'This account will be pre-selected when you create new tax (for sales)', pool: starts('2-205'), lockedReason: USED_IN_TAX },
     ],
   },
   {
     key: 'purchase', label: 'Purchase',
     left: [
       { key: 'purchaseCogs', label: 'Purchase (COGS)', tooltip: 'Used to accumulate your cost of sales and will be pre-selected when you create product', pool: starts('5-'), lockedReason: USED_IN_TX },
-      { key: 'purchaseShipping', label: 'Purchase Shipping', tooltip: 'Accumulate total shipping cost from your purchase transactions', pool: starts('5-', '6-') },
+      { key: 'purchaseShipping', label: 'Purchase shipping', tooltip: 'Accumulate total shipping cost from your purchase transactions', pool: starts('5-', '6-') },
       { key: 'prepayment', label: 'Prepayment', tooltip: 'Accumulate amount received in advance from your purchase order transactions', pool: starts('1-104') },
     ],
     right: [
-      { key: 'unbilledPayable', label: 'Unbilled Payable', tooltip: 'Accumulate unbilled payables amount from your purchase delivery transaction', pool: starts('2-201') },
-      { key: 'purchaseTaxReceivable', label: 'Purchase Tax Receivable', tooltip: 'This account will be pre-selected when you create new tax (for purchase)', pool: starts('1-105'), lockedReason: USED_IN_TAX },
+      { key: 'unbilledPayable', label: 'Unbilled payable', tooltip: 'Accumulate unbilled payables amount from your purchase delivery transaction', pool: starts('2-201') },
+      { key: 'purchaseTaxReceivable', label: 'Purchase tax receivable', tooltip: 'This account will be pre-selected when you create new tax (for purchase)', pool: starts('1-105'), lockedReason: USED_IN_TAX },
     ],
   },
   {
     key: 'arap', label: 'AR/AP',
     left: [
-      { key: 'accountReceivable', label: 'Account Receivable', tooltip: 'This account will be pre-selected when you create new contact', pool: starts('1-101', '1-103'), lockedReason: USED_IN_TX },
+      { key: 'accountReceivable', label: 'Account receivable', tooltip: 'This account will be pre-selected when you create new contact', pool: starts('1-101', '1-103'), lockedReason: USED_IN_TX },
     ],
     right: [
-      { key: 'accountPayable', label: 'Account Payable', tooltip: 'This account will be pre-selected when you create new contact', pool: starts('2-201', '2-202'), lockedReason: USED_IN_TX },
+      { key: 'accountPayable', label: 'Account payable', tooltip: 'This account will be pre-selected when you create new contact', pool: starts('2-201', '2-202'), lockedReason: USED_IN_TX },
     ],
   },
   {
     key: 'inventory', label: 'Inventory',
     left: [
       { key: 'inventory', label: 'Inventory', tooltip: 'Used to accumulate your inventory balance and will be pre-selected when you create product', pool: starts('1-102'), lockedReason: USED_IN_TX },
-      { key: 'inventoryGeneral', label: 'Inventory General', tooltip: 'This account will be pre-selected when you create stock adjustment with type general', pool: starts('5-', '8-') },
+      { key: 'inventoryGeneral', label: 'Inventory general', tooltip: 'This account will be pre-selected when you create stock adjustment with type general', pool: starts('5-', '8-') },
     ],
     right: [
-      { key: 'inventoryWaste', label: 'Inventory Waste', tooltip: 'This account will be pre-selected when you create stock adjustment with type waste', pool: starts('5-', '8-') },
-      { key: 'inventoryProduction', label: 'Inventory Production', tooltip: 'This account will be pre-selected when you create stock adjustment with type production', pool: starts('5-', '8-') },
+      { key: 'inventoryWaste', label: 'Inventory waste', tooltip: 'This account will be pre-selected when you create stock adjustment with type waste', pool: starts('5-', '8-') },
+      { key: 'inventoryProduction', label: 'Inventory production', tooltip: 'This account will be pre-selected when you create stock adjustment with type production', pool: starts('5-', '8-') },
     ],
   },
   {
     key: 'others', label: 'Others',
     left: [
-      { key: 'openingBalanceEquity', label: 'Opening Balance Equity', tooltip: "This equity account will be used as a temporary account if you're unsure to categorize your balances", pool: starts('3-'), lockedReason: USED_IN_OB },
+      { key: 'openingBalanceEquity', label: 'Opening balance equity', tooltip: "This equity account will be used as a temporary account if you're unsure to categorize your balances", pool: starts('3-'), lockedReason: USED_IN_OB },
     ],
     right: [
-      { key: 'fixedAsset', label: 'Fixed Asset', tooltip: 'This account will be pre-selected when you record a fixed asset, however you can still change it for each asset', pool: starts('1-107') },
+      { key: 'fixedAsset', label: 'Fixed asset', tooltip: 'This account will be pre-selected when you record a fixed asset, however you can still change it for each asset', pool: starts('1-107') },
     ],
   },
   {
-    key: 'multiCurrency', label: 'Multi-Currency',
+    key: 'multiCurrency', label: 'Multi-currency',
     left: [
-      { key: 'bankRevaluation', label: 'Bank Revaluation', tooltip: 'Accumulate balance of revaluation from non-base cash & bank account due to difference in currency rate', pool: starts('7-', '8-') },
-      { key: 'realisedGainLoss', label: 'Realised Gain/Loss', tooltip: 'Accumulate balance of gain/loss from payment of receivable/payables due to difference in currency rate', pool: starts('7-', '8-') },
+      { key: 'bankRevaluation', label: 'Bank revaluation', tooltip: 'Accumulate balance of revaluation from non-base cash & bank account due to difference in currency rate', pool: starts('7-', '8-') },
+      { key: 'realisedGainLoss', label: 'Realised gain/loss', tooltip: 'Accumulate balance of gain/loss from payment of receivable/payables due to difference in currency rate', pool: starts('7-', '8-') },
     ],
     right: [
-      { key: 'unrealisedGainLoss', label: 'Unrealised Gain/Loss', tooltip: 'Accumulate temporary balance of gain/loss from payment of receivable/payables due to difference in currency rate', pool: starts('7-', '8-') },
+      { key: 'unrealisedGainLoss', label: 'Unrealised gain/loss', tooltip: 'Accumulate temporary balance of gain/loss from payment of receivable/payables due to difference in currency rate', pool: starts('7-', '8-') },
     ],
   },
 ]

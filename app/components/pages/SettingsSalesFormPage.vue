@@ -1,5 +1,6 @@
 <!-- prod-parity: jurnal-doctor/services/quickbook/app/views/company/_sale_setting_inputs.html.haml -->
 <script setup lang="ts">
+import { infoToast } from '~/utils/toasts'
 import { MpToggle, MpTextarea, MpTooltip, MpIcon, toast } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
@@ -52,7 +53,7 @@ async function saveEdit() {
   isEditing.value = false
   toast.notify({ variant: 'success', title: t('Sales settings changes saved'), maxWidth: 'max-content' })
 }
-const notInPrototype = () => toast.notify({ variant: 'info', title: t('Not in this prototype'), maxWidth: 'max-content' })
+const notInPrototype = () => infoToast(t('Not in this prototype'))
 </script>
 
 <template>

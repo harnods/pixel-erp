@@ -1,9 +1,8 @@
 <!-- prod-parity: jurnal-doctor/services/quickbook/app/views/company/_billing_tab.html.haml (+ company/billings/_package_name, _billing_information, _payment_details, _billing_history) -->
 <script setup lang="ts">
-import { toast } from '@mekari/pixel3'
+import { infoToast } from '~/utils/toasts'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
-import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import { formatIDR } from '~/utils/currency'
 import { formatDate } from '~/utils/date'
@@ -11,7 +10,7 @@ import { COMPANY_NAME, billingSummary, billingHistory, type BillingHistoryRow } 
 
 const { t } = useLocale()
 
-const notInPrototype = () => toast.notify({ variant: 'info', title: t('Not in this prototype'), maxWidth: 'max-content' })
+const notInPrototype = () => infoToast(t('Not in this prototype'))
 
 const upgradeOpen = ref(false)
 function contactUs() {
@@ -125,14 +124,22 @@ function setPerPage(n: number) { perPage.value = n; currentPage.value = 1 }
       </ErpTablePage>
     </section>
 
-    <ConfirmModal
-      v-model:is-open="upgradeOpen"
-      :title="t('Upgrade package confirmation')"
-      :description="t('Are you sure you want to upgrade your package? Learn more about your subscription and proceed by contacting our support team.')"
-      :confirm-label="t('Contact us')"
-      :is-danger="false"
-      @confirm="contactUs"
-    />
+    <!-- Upgrade confirmation — Teleport shell (same as CouriersPage). -->
+    <Teleport to="body">
+      <Transition name="cem">
+        <div v-if="upgradeOpen" class="cem-overlay">
+          <div class="cem-panel" role="dialog" aria-modal="true" :aria-label="t('Upgrade package confirmation')">
+            <p class="cem-title">{{ t('Upgrade package confirmation') }}</p>
+            <p class="cem-sub">{{ t('Are you sure you want to upgrade your package?') }}</p>
+            <p class="cem-body">{{ t('Learn more about your subscription and proceed by contacting our support team.') }}</p>
+            <div class="cem-footer">
+              <button class="btn-enterprise btn-enterprise--ghost" @click="upgradeOpen = false">{{ t('Cancel') }}</button>
+              <button class="btn-enterprise btn-enterprise--primary" @click="contactUs">{{ t('Contact us') }}</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -188,4 +195,22 @@ function setPerPage(n: number) { perPage.value = n; currentPage.value = 1 }
   color: var(--mp-text-default);
 }
 .bl-subtle { color: var(--mp-text-subtle); }
+
+.cem-enter-active, .cem-leave-active { transition: opacity 200ms ease; }
+.cem-enter-from, .cem-leave-to { opacity: 0; }
+.cem-overlay {
+  position: fixed; inset: 0; z-index: 1400;
+  background: var(--mp-colors-background-overlay);
+  display: flex; align-items: center; justify-content: center;
+}
+.cem-panel {
+  width: min(440px, calc(100% - 32px));
+  background: var(--mp-background-stage);
+  border-radius: var(--mp-radii-lg);
+  padding: var(--mp-spacing-5) var(--mp-spacing-5) var(--mp-spacing-4);
+}
+.cem-title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.cem-sub { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.cem-body { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.cem-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-5); }
 </style>

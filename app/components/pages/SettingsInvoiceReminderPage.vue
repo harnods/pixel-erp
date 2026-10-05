@@ -102,17 +102,17 @@ const listKind = ref<ListKind | null>(null)
 const listSearch = ref('')
 const listPicked = ref<string[]>([])
 const LIST_META: Record<ListKind, { title: string; field: 'excludedCustomerIds' | 'excludedInvoiceIds' | 'excludedOrderIds'; flag: 'offCustomer' | 'offInvoice' | 'offOrder' }> = {
-  customer: { title: 'Add Customer', field: 'excludedCustomerIds', flag: 'offCustomer' },
-  invoice:  { title: 'Add Invoice',  field: 'excludedInvoiceIds',  flag: 'offInvoice' },
-  order:    { title: 'Add Order',    field: 'excludedOrderIds',    flag: 'offOrder' },
+  customer: { title: 'Add customer', field: 'excludedCustomerIds', flag: 'offCustomer' },
+  invoice:  { title: 'Add invoice',  field: 'excludedInvoiceIds',  flag: 'offInvoice' },
+  order:    { title: 'Add order',    field: 'excludedOrderIds',    flag: 'offOrder' },
 }
 const listRows = computed(() => {
   if (!listKind.value) return []
   const rows = listKind.value === 'customer'
     ? customers.map(c => ({ id: c.id, primary: c.name, secondary: '' }))
     : listKind.value === 'invoice'
-      ? salesInvoices.slice(0, 40).map(s => ({ id: s.id, primary: `${t('Sales Invoice')} #${s.number}`, secondary: s.customer.name }))
-      : salesOrders.slice(0, 40).map(s => ({ id: s.id, primary: `${t('Sales Order')} #${s.number}`, secondary: s.customer.name }))
+      ? salesInvoices.slice(0, 40).map(s => ({ id: s.id, primary: `${t('Sales invoice')} #${s.number}`, secondary: s.customer.name }))
+      : salesOrders.slice(0, 40).map(s => ({ id: s.id, primary: `${t('Sales order')} #${s.number}`, secondary: s.customer.name }))
   const q = listSearch.value.trim().toLowerCase()
   return q ? rows.filter(r => `${r.primary} ${r.secondary}`.toLowerCase().includes(q)) : rows
 })
