@@ -54,7 +54,7 @@ const outcome = (x: Task) => {
             <template v-if="x.noLedgerChange"> · {{ t('Tax change, no ledger change') }}</template>
             · {{ t(`opened ${wib(x.openedAt)}`) }}
           </div>
-          <div class="pat__gap" :class="{ 'pat__gap--due': x.depositGap.startsWith('Deposit') && !x.depositGap.includes('matches') }">{{ t(x.depositGap) }}</div>
+          <div v-if="x.status === 'Open'" class="pat__gap" :class="{ 'pat__gap--due': x.depositGap.startsWith('Deposit') && !x.depositGap.includes('matches') }">{{ t(x.depositGap) }}</div>
           <div v-if="x.status !== 'Open'" class="pat__tasksub">{{ t(outcome(x)) }}<template v-if="x.closedBy"> · {{ x.closedBy }}</template></div>
         </div>
         <div class="pat__actions">
