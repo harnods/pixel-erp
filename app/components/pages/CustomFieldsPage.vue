@@ -740,8 +740,8 @@ function saveReorder() {
 .cfd-group { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .cfd-group-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .cfd-group-title--lg { font-size: var(--mp-font-sizes-lg); }
-.cfd-hint { padding-left: var(--mp-spacing-7); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.cfd-indent { padding-left: var(--mp-spacing-7); }
+.cfd-hint { padding-left: calc(var(--mp-spacing-6) + var(--mp-spacing-1)); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.cfd-indent { padding-left: calc(var(--mp-spacing-6) + var(--mp-spacing-1)); }
 .cfd-option { display: flex; align-items: flex-start; gap: var(--mp-spacing-2); }
 .cfd-option-fc { flex: 1; }
 .cfd-req { color: var(--mp-text-danger); margin-left: var(--mp-spacing-0\.5); }

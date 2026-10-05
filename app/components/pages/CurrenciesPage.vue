@@ -302,10 +302,10 @@ function openHelp() { toast.notify({ variant: 'info', title: t('Not in this prot
 .cur-info { color: var(--mp-colors-icon-default); cursor: help; }
 .cur-radios { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
 .cur-radio { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
-.cur-radio-hint { padding-left: var(--mp-spacing-7); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.cur-radio-hint { padding-left: calc(var(--mp-spacing-6) + var(--mp-spacing-1)); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .cur-kv { display: flex; gap: var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .cur-kv .cur-field-label { min-width: 96px; }
-.cur-custom { padding-left: var(--mp-spacing-7); }
+.cur-custom { padding-left: calc(var(--mp-spacing-6) + var(--mp-spacing-1)); }
 .cur-custom-row { display: flex; align-items: center; gap: var(--mp-spacing-2); white-space: nowrap; font-size: var(--mp-font-sizes-md); }
 
 .empty-full { display: flex; flex-direction: column; align-items: center; }

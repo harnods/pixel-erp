@@ -211,7 +211,7 @@ function childRows(x: CompanyTax) {
         <MpBannerTitle id="tr-ppn12-title">{{ t('PPN 12% is effective now') }}</MpBannerTitle>
         <MpBannerDescription id="tr-ppn12-desc">{{ t('Create and apply the new PPN rate to your sales and products soon.') }}</MpBannerDescription>
         <MpBannerLink id="tr-ppn12-link">
-          <MpButton variant="textLink" size="sm" @click="createPpn12">{{ t('Create PPN 12%') }}</MpButton>
+          <span class="cell-link" role="button" @click="createPpn12">{{ t('Create PPN 12%') }}</span>
         </MpBannerLink>
       </MpBanner>
       <MpButton class="tr-banner-close" variant="ghost" left-icon="close" is-rounded :aria-label="t('Close')" @click="bannerDismissed = true" />
@@ -497,7 +497,7 @@ function childRows(x: CompanyTax) {
 .trd-hint { margin: calc(var(--mp-spacing-4) * -1) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .trd-compound-list { display: flex; flex-direction: column; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-2); }
 .trd-compound-item { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.trd-compound-item .trd-hint { margin: 0; padding-left: var(--mp-spacing-7); }
+.trd-compound-item .trd-hint { margin: 0; padding-left: calc(var(--mp-spacing-6) + var(--mp-spacing-1)); }
 
 .trd-children { display: flex; flex-direction: column; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); }
 .trd-children-row {

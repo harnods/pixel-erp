@@ -166,6 +166,8 @@ const pageRegistry: Record<string, Component> = {
   'Currencies':         defineAsyncComponent(() => import('~/components/pages/CurrenciesPage.vue')),
   'Custom fields':      defineAsyncComponent(() => import('~/components/pages/CustomFieldsPage.vue')),
   'Contact groups':     defineAsyncComponent(() => import('~/components/pages/ContactGroupsPage.vue')),
+  // Integrations › Mekari Expense — /mekari-expense → 'Mekari expense'.
+  'Mekari expense':     defineAsyncComponent(() => import('~/components/pages/MekariExpenseIntegrationPage.vue')),
   // Reports → Financials index (report cards). The Multidimensional report itself
   // resolves via detailMatch (/financial-report/multidimensional).
   'Financial report':   defineAsyncComponent(() => import('~/components/pages/FinancialReportsIndexPage.vue')),
