@@ -2674,11 +2674,11 @@ function closeMonth(month: string) {
   as('Finance Manager', () => must(signOffMonth(month, { hrConfirmed: true }), `sign off ${month}`))
 }
 
-export function resetPayroll(): void { seed() }
+export function resetPayroll(): void { seed(); saveSnapshot(SNAPSHOT_KEY, [payroll]) }
 
-// Load: a saved snapshot wins over the sample.
+// Load: a saved snapshot wins over the sample. A fresh sample is saved at once so ids stay stable across reloads.
 const snap = loadSnapshot<PayrollState>(SNAPSHOT_KEY)
 if (snap && snap[0]) Object.assign(payroll, snap[0])
-else seed()
+else resetPayroll()
 
 watch(payroll, () => saveSnapshot(SNAPSHOT_KEY, [payroll]), { deep: true })
