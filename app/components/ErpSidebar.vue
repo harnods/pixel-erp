@@ -532,28 +532,28 @@ const erpNavGroups: NavItem[][] = [
             label: 'Customers',
             panelSubmenu: [[
               { label: 'Customers' },
-              { label: 'Contact groups' },
+              { label: 'Contact groups', path: '/contact-groups?type=customers' },
             ]],
           },
           {
             label: 'Vendors',
             panelSubmenu: [[
               { label: 'Vendors' },
-              { label: 'Contact groups' },
+              { label: 'Contact groups', path: '/contact-groups?type=vendors' },
             ]],
           },
           {
             label: 'Employees',
             panelSubmenu: [[
               { label: 'Employees' },
-              { label: 'Contact groups' },
+              { label: 'Contact groups', path: '/contact-groups?type=employees' },
             ]],
           },
           {
             label: 'Other contacts',
             panelSubmenu: [[
               { label: 'Other contacts' },
-              { label: 'Contact groups' },
+              { label: 'Contact groups', path: '/contact-groups?type=others' },
             ]],
           },
         ],
@@ -873,7 +873,10 @@ function findActive(pageKey: string, allowShortcuts: boolean): {
           for (const pGroup of sub.panelSubmenu ?? []) {
             for (const p of pGroup) {
               if (!allowShortcuts && isPointer(p.iconType)) continue
-              if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) {
+              // A query-scoped path (Contacts › <type> › Contact groups) belongs to
+              // the panel whose path matches the full URL, not the first same-label item.
+              const queryScoped = !!p.path && p.path.includes('?')
+              if (queryScoped ? p.path === route.fullPath : labelToPath(p.to ?? p.label) === labelToPath(pageKey)) {
                 return {
                   nav: item.name,
                   sub: p.label,
