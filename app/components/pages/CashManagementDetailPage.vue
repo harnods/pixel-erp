@@ -1,3 +1,4 @@
+<!-- prod-parity: jurnal-accounting-frontend/src/modules/cash-management/accounts/views/AccountDetailView.vue -->
 <script setup lang="ts">
 /**
  * Cash management account detail — /cash-management/:id
@@ -29,6 +30,7 @@ import GlobalFileDropOverlay from '~/components/patterns/GlobalFileDropOverlay.v
 import { startUpload, uploadCenterOpen } from '~/data/uploadCenter'
 import { cashAccounts, bankStatementDropboxFiles } from '~/data'
 import { internalTransfers } from '~/data/internalTransfers'
+import { cashTransactions, cashTxTotal, applyPostedBalances, baseBookBalance, hasPostedTx } from '~/data/bankTransactions'
 import type { CashAccountCurrency } from '~/data'
 import { formatMoney } from '~/utils/currency'
 import {
@@ -42,6 +44,8 @@ const router = useRouter()
 const route = useRoute()
 const { t } = useLocale()
 
+// Fold posted receive/spend money + internal transfers into book balances.
+applyPostedBalances()
 const account = computed(() => cashAccounts.find(a => a.id === props.orderId))
 
 function goBack() { router.push('/cash-management') }
@@ -87,8 +91,10 @@ function jumpTo(id: string) { jumpSearch.value = ''; router.push(`/cash-manageme
 // Number / Contact are links to the underlying transaction & contact. Those
 // detail pages aren't built yet, so this is a placeholder hook (no navigation).
 function openTransaction(row: AccountTransactionLine) {
-  // Internal transfers link to their detail page; other types aren't built yet.
+  // Internal transfers / Receive money / Spend money link to their show pages.
   if (row.id.startsWith('ittx:')) router.push(`/cash-management/internal-transfer/${row.id.slice(5)}`)
+  else if (row.id.startsWith('bdtx:')) router.push(`/bank-deposits/${row.id.slice(5)}`)
+  else if (row.id.startsWith('bwtx:')) router.push(`/bank-withdrawals/${row.id.slice(5)}`)
 }
 function openContact(_name: string) { /* → contact detail (TODO) */ }
 
@@ -149,7 +155,12 @@ const syncTooltip = computed(() => {
 
 // ── Edit / Archive / Delete — same rules as the index page: accounts with
 //    recorded transactions can't be archived or deleted (disabled + tooltip). ──
-const canModify = computed(() => account.value?.hasTransactions === false)
+// Prod rules (DetailHeader.vue): archive blocked by a non-zero balance; delete
+// blocked for parent accounts and for accounts with transactions.
+const canArchive = computed(() => (account.value?.bookBalance ?? 0) === 0)
+const isParentAccount = computed(() => cashAccounts.some(x => x.parentId === account.value?.id))
+const canDelete = computed(() => !isParentAccount.value && account.value?.hasTransactions === false && !hasPostedTx(account.value.id))
+const deleteBlockedReason = computed(() => isParentAccount.value ? t('Cannot delete an account that has sub-accounts') : t('Cannot delete an account with existing transactions'))
 const archiveModalOpen = ref(false)
 const deleteModalOpen = ref(false)
 
@@ -158,7 +169,7 @@ function confirmArchive() {
   if (a) {
     const found = cashAccounts.find(x => x.id === a.id)
     if (found) found.isArchived = true
-    toast.notify({ variant: 'success', title: `${a.name} ${t('archived')}`, maxWidth: 'max-content' })
+    toast.notify({ variant: 'success', title: t('Account archived'), maxWidth: 'max-content' })
   }
   archiveModalOpen.value = false
   router.push('/cash-management')
@@ -168,7 +179,7 @@ function confirmDelete() {
   if (a) {
     const i = cashAccounts.findIndex(x => x.id === a.id)
     if (i >= 0) cashAccounts.splice(i, 1)
-    toast.notify({ variant: 'success', title: `${a.name} ${t('deleted')}`, maxWidth: 'max-content' })
+    toast.notify({ variant: 'success', title: t('Account deleted'), maxWidth: 'max-content' })
   }
   deleteModalOpen.value = false
   router.push('/cash-management')
@@ -178,7 +189,7 @@ function unarchiveAccount() {
   if (!a) return
   const found = cashAccounts.find(x => x.id === a.id)
   if (found) found.isArchived = false
-  toast.notify({ variant: 'success', title: `${a.name} ${t('unarchived')}`, maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Account unarchived'), maxWidth: 'max-content' })
 }
 
 // ── Statement availability ─────────────────────────────────────────────────
@@ -202,7 +213,7 @@ const statementImportLabel = computed(() => {
 const allStatementLines = computed<BankStatementLine[]>(() => {
   const a = account.value
   if (!a || !hasStatement.value) return []            // no statement → empty state
-  return getBankStatementLines(a.id, a.bookBalance, a.unreconciledCount, ledgerProfile.value)
+  return getBankStatementLines(a.id, baseBookBalance(a.id), a.unreconciledCount, ledgerProfile.value)
 })
 
 // null when there is no statement — the header shows "—" / "No statement imported".
@@ -287,19 +298,28 @@ const transferLines = computed<AccountTransactionLine[]>(() => {
       }
     }
   }
-  return lines // internalTransfers is newest-first (unshift on add)
+  // User-posted Receive money (in) / Spend money (out) on this account. Seeded
+  // ones are already baked into the generated ledger's balances.
+  for (const tx of cashTransactions) {
+    if (tx.seeded || tx.cashAccountId !== a.id) continue
+    const amt = cashTxTotal(tx)
+    const isDep = tx.kind === 'deposit'
+    lines.push({ id: `${isDep ? 'bdtx' : 'bwtx'}:${tx.id}`, date: tx.transactionDate, type: isDep ? t('Receive money') : t('Spend money'), number: tx.number, contact: tx.contact || '—', moneyIn: isDep ? amt : 0, moneyOut: isDep ? 0 : amt, balance: 0, status: 'unreconciled' })
+  }
+  // Newest first (by date, then creation order).
+  return lines.sort((x, y) => (x.date < y.date ? 1 : x.date > y.date ? -1 : 0))
 })
 const allTransactionLines = computed<AccountTransactionLine[]>(() => {
   const a = account.value
   if (!a) return []
   const generated = a.hasTransactions === false
     ? []
-    : getAccountTransactions(a.id, a.bookBalance, a.unreconciledCount, ledgerProfile.value)
+    : getAccountTransactions(a.id, baseBookBalance(a.id), a.unreconciledCount, ledgerProfile.value)
   const injected = transferLines.value
   if (!injected.length) return generated
   // Running balance: injected transfers sit on top (newest), building up from the
   // current top-of-ledger balance.
-  let bal = generated[0]?.balance ?? a.bookBalance
+  let bal = generated[0]?.balance ?? baseBookBalance(a.id)
   const withBal = [...injected].reverse().map((r) => { bal = bal + r.moneyIn - r.moneyOut; return { ...r, balance: bal } })
   withBal.reverse()
   return [...withBal, ...generated]
@@ -434,9 +454,9 @@ const dropboxCount = computed(() => bankStatementDropboxFiles.length)
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem @click="router.push('/cash-management/internal-transfer')">{{ t('Internal transfer') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Receive money') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Spend money') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="router.push('/cash-management/internal-transfer')">{{ t('New internal transfer') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="router.push({ path: '/bank-deposits/new', query: { accountFrom: account.id } })">{{ t('New receive money') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="router.push({ path: '/bank-withdrawals/new', query: { accountFrom: account.id } })">{{ t('New spend money') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -457,22 +477,22 @@ const dropboxCount = computed(() => bankStatementDropboxFiles.length)
               <!-- Connected → manage the Bank connection + pull latest from the feed;
                    otherwise start the Connect to bank (Bank connection) setup flow. -->
               <MpPopoverListItem v-if="account.isConnected" @click="router.push(`/cash-management/${account.id}/connect`)">{{ t('Bank connection') }}</MpPopoverListItem>
-              <MpPopoverListItem v-if="account.isConnected" @click="refreshConnection">{{ t('Sync transactions') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="account.isConnected" @click="refreshConnection">{{ t('Sync bank') }}</MpPopoverListItem>
               <MpPopoverListItem v-else @click="router.push(`/cash-management/${account.id}/connect`)">{{ t('Connect to bank') }}</MpPopoverListItem>
               <div class="cmd-menu-divider" />
               <MpPopoverListItem @click="router.push(`/cash-management/${account.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
               <!-- Archive ↔ Unarchive (disabled + tooltip when it has transactions) -->
               <MpPopoverListItem v-if="account.isArchived" @click="unarchiveAccount">{{ t('Unarchive') }}</MpPopoverListItem>
-              <MpPopoverListItem v-else-if="canModify" @click="archiveModalOpen = true">{{ t('Archive') }}</MpPopoverListItem>
+              <MpPopoverListItem v-else-if="canArchive" @click="archiveModalOpen = true">{{ t('Archive') }}</MpPopoverListItem>
               <MpPopoverListItem v-else class="row-menu-item--disabled" @click.stop>
-                <MpTooltip :id="`cmd-archive-${account.id}`" :label="t('Cannot archive. This account has recorded transactions.')" placement="left" use-portal class="cmd-menu-tip">
+                <MpTooltip :id="`cmd-archive-${account.id}`" :label="t('Cannot archive an account with a non-zero balance')" placement="left" use-portal class="cmd-menu-tip">
                   <span class="row-menu-disabled-label">{{ t('Archive') }}</span>
                 </MpTooltip>
               </MpPopoverListItem>
               <!-- Delete (disabled + tooltip when it has transactions) -->
-              <MpPopoverListItem v-if="canModify" class="cmd-menu-item--danger" @click="deleteModalOpen = true">{{ t('Delete') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="canDelete" class="cmd-menu-item--danger" @click="deleteModalOpen = true">{{ t('Delete') }}</MpPopoverListItem>
               <MpPopoverListItem v-else class="row-menu-item--disabled" @click.stop>
-                <MpTooltip :id="`cmd-delete-${account.id}`" :label="t('Cannot delete. This account has recorded transactions.')" placement="left" use-portal class="cmd-menu-tip">
+                <MpTooltip :id="`cmd-delete-${account.id}`" :label="deleteBlockedReason" placement="left" use-portal class="cmd-menu-tip">
                   <span class="row-menu-disabled-label">{{ t('Delete') }}</span>
                 </MpTooltip>
               </MpPopoverListItem>
@@ -605,8 +625,8 @@ const dropboxCount = computed(() => bankStatementDropboxFiles.length)
               <template #empty>
                 <div class="cmd-empty">
                   <img src="/illustrations/empty-folder.png" alt="" class="cmd-empty__img" width="240" height="200" />
-                  <p class="cmd-empty__title">{{ t('No transactions yet') }}</p>
-                  <p class="cmd-empty__desc">{{ t('Transactions for this account will appear here once you record them.') }}</p>
+                  <p class="cmd-empty__title">{{ t('No account transactions') }}</p>
+                  <p class="cmd-empty__desc">{{ t('Account transactions will appear here.') }}</p>
                 </div>
               </template>
 
@@ -725,8 +745,8 @@ const dropboxCount = computed(() => bankStatementDropboxFiles.length)
               <template #empty>
                 <div class="cmd-empty">
                   <img src="/illustrations/empty-folder.png" alt="" class="cmd-empty__img" width="240" height="200" />
-                  <p class="cmd-empty__title">{{ t('No bank statement imported') }}</p>
-                  <p class="cmd-empty__desc">{{ t('Import a bank statement to see its lines here.') }}</p>
+                  <p class="cmd-empty__title">{{ t('No bank statement imported yet') }}</p>
+                  <p class="cmd-empty__desc">{{ t('Import a bank statement to start reconciling this account.') }}</p>
                 </div>
               </template>
 

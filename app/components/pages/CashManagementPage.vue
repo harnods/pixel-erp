@@ -1,3 +1,4 @@
+<!-- prod-parity: jurnal-accounting-frontend/src/modules/cash-management/accounts/views/AccountListView.vue -->
 <script setup lang="ts">
 /**
  * Cash management — index of every cash, bank and card account.
@@ -14,7 +15,7 @@ import {
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { cashAccounts } from '~/data'
+import { cashAccounts, applyPostedBalances, hasPostedTx } from '~/data'
 import type { CashAccount } from '~/data'
 import { formatMoney } from '~/utils/currency'
 import { formatDateTime } from '~/utils/date'
@@ -76,8 +77,14 @@ function togglePin(id: string) {
 }
 
 // ─── Archive / delete ─────────────────────────────────────────────────────────
-// Accounts with posted transactions can't be archived or deleted.
-function canModify(a: CashAccount) { return a.hasTransactions === false }
+// Prod rules (ManageAccountMenu.vue): archive is blocked by a non-zero balance;
+// delete is blocked for parent accounts and accounts with transactions.
+function canArchive(a: CashAccount) { return a.bookBalance === 0 }
+function isParent(a: CashAccount) { return accounts.value.some(x => x.parentId === a.id) }
+function canDelete(a: CashAccount) { return !isParent(a) && a.hasTransactions === false && !hasPostedTx(a.id) }
+function deleteBlockedReason(a: CashAccount) {
+  return isParent(a) ? t('Cannot delete an account that has sub-accounts') : t('Cannot delete an account with existing transactions')
+}
 
 const archiveTarget = ref<CashAccount | null>(null)
 const deleteTarget = ref<CashAccount | null>(null)
@@ -87,7 +94,9 @@ function confirmArchive() {
   if (target) {
     const found = accounts.value.find(a => a.id === target.id)
     if (found) found.isArchived = true
-    toast.notify({ variant: 'success', title: `${target.name} ${t('archived')}`, maxWidth: 'max-content' })
+    const src = cashAccounts.find(a => a.id === target.id)
+    if (src) src.isArchived = true
+    toast.notify({ variant: 'success', title: t('Account archived'), maxWidth: 'max-content' })
   }
   archiveTarget.value = null
 }
@@ -96,18 +105,30 @@ function confirmDelete() {
   const target = deleteTarget.value
   if (target) {
     accounts.value = accounts.value.filter(a => a.id !== target.id)
-    toast.notify({ variant: 'success', title: `${target.name} ${t('deleted')}`, maxWidth: 'max-content' })
+    const i = cashAccounts.findIndex(a => a.id === target.id)
+    if (i >= 0) cashAccounts.splice(i, 1)
+    toast.notify({ variant: 'success', title: t('Account deleted'), maxWidth: 'max-content' })
   }
   deleteTarget.value = null
 }
 
-function unarchiveAccount(a: CashAccount) {
-  const found = accounts.value.find(x => x.id === a.id)
-  if (found) found.isArchived = false
-  toast.notify({ variant: 'success', title: `${a.name} ${t('unarchived')}`, maxWidth: 'max-content' })
+// Unarchive asks first (prod modals.unarchive).
+const unarchiveTarget = ref<CashAccount | null>(null)
+function confirmUnarchive() {
+  const a = unarchiveTarget.value
+  if (a) {
+    const found = accounts.value.find(x => x.id === a.id)
+    if (found) found.isArchived = false
+    const src = cashAccounts.find(x => x.id === a.id)
+    if (src) src.isArchived = false
+    toast.notify({ variant: 'success', title: t('Account unarchived'), maxWidth: 'max-content' })
+  }
+  unarchiveTarget.value = null
 }
 
 /** Local reactive copy so Archive/Delete update the list in-session. */
+// Fold posted receive/spend money + internal transfers into book balances first.
+applyPostedBalances()
 const accounts = ref<CashAccount[]>(cashAccounts.map(a => ({ ...a })))
 
 /** Accounts grouped by parent id (top-level under `undefined`), archived filtered out. */
@@ -373,12 +394,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="goToDetail((row as CashAccount).id)">{{ t('View details') }}</MpPopoverListItem>
-            <MpPopoverListItem
-              v-if="(row as CashAccount).unreconciledCount > 0"
-              @click="goToDetail((row as CashAccount).id)"
-            >
-              {{ t('Reconcile account') }} ({{ (row as CashAccount).unreconciledCount }})
-            </MpPopoverListItem>
+            <MpPopoverListItem @click="goToDetail((row as CashAccount).id)">{{ t('Reconcile account') }}</MpPopoverListItem>
             <MpPopoverListItem v-if="(row as CashAccount).isConnected" @click="router.push(`/cash-management/${(row as CashAccount).id}/connect`)">{{ t('Bank connection') }}</MpPopoverListItem>
             <MpPopoverListItem v-else @click="router.push(`/cash-management/${(row as CashAccount).id}/connect`)">{{ t('Connect to bank') }}</MpPopoverListItem>
             <MpPopoverListItem @click.stop>{{ t('Add sub-account') }}</MpPopoverListItem>
@@ -388,12 +404,12 @@ function hideColumn(key: string) { columnVisibility[key] = false }
             <MpPopoverListItem @click="router.push(`/cash-management/${(row as CashAccount).id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
             <div class="row-menu-divider" />
             <!-- Archive ↔ Unarchive -->
-            <MpPopoverListItem v-if="(row as CashAccount).isArchived" @click="unarchiveAccount(row as CashAccount)">{{ t('Unarchive') }}</MpPopoverListItem>
-            <MpPopoverListItem v-else-if="canModify(row as CashAccount)" @click="archiveTarget = (row as CashAccount)">{{ t('Archive') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="(row as CashAccount).isArchived" @click="unarchiveTarget = (row as CashAccount)">{{ t('Unarchive') }}</MpPopoverListItem>
+            <MpPopoverListItem v-else-if="canArchive(row as CashAccount)" @click="archiveTarget = (row as CashAccount)">{{ t('Archive') }}</MpPopoverListItem>
             <MpPopoverListItem v-else class="row-menu-item--disabled" @click.stop>
               <MpTooltip
                 :id="`cash-archive-${(row as CashAccount).id}`"
-                :label="t('Cannot archive. This account has recorded transactions.')"
+                :label="t('Cannot archive an account with a non-zero balance')"
                 placement="left"
                 use-portal
                 :class="css({ display: 'block' })"
@@ -402,11 +418,11 @@ function hideColumn(key: string) { columnVisibility[key] = false }
               </MpTooltip>
             </MpPopoverListItem>
             <!-- Delete -->
-            <MpPopoverListItem v-if="canModify(row as CashAccount)" class="row-menu-item--danger" @click="deleteTarget = (row as CashAccount)">{{ t('Delete') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="canDelete(row as CashAccount)" class="row-menu-item--danger" @click="deleteTarget = (row as CashAccount)">{{ t('Delete') }}</MpPopoverListItem>
             <MpPopoverListItem v-else class="row-menu-item--disabled" @click.stop>
               <MpTooltip
                 :id="`cash-delete-${(row as CashAccount).id}`"
-                :label="t('Cannot delete. This account has recorded transactions.')"
+                :label="deleteBlockedReason(row as CashAccount)"
                 placement="left"
                 use-portal
                 :class="css({ display: 'block' })"
@@ -424,7 +440,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
       <div class="empty-full">
         <img src="/illustrations/empty-folder.png" alt="" class="empty-full__illustration" width="288" height="240" />
         <p class="empty-full__title">{{ t('No accounts yet') }}</p>
-        <p class="empty-full__desc">{{ t('Cash, bank and card accounts will appear here once you add them.') }}</p>
+        <p class="empty-full__desc">{{ t('Create your first account to start tracking cash and bank activity.') }}</p>
       </div>
     </template>
   </ErpTablePage>
@@ -449,6 +465,32 @@ function hideColumn(key: string) { columnVisibility[key] = false }
         <div class="modal-footer-btns">
           <button class="btn-enterprise btn-enterprise--ghost" @click="archiveTarget = null">{{ t('Cancel') }}</button>
           <button class="btn-enterprise btn-enterprise--danger" @click="confirmArchive">{{ t('Archive') }}</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
+
+  <!-- ── Unarchive confirmation (prod modals.unarchive) ── -->
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="cash-unarchive-modal"
+    :is-open="unarchiveTarget !== null"
+    size="sm"
+    :is-keep-alive="false"
+    @close="unarchiveTarget = null"
+  >
+    <MpModalContent>
+      <MpModalHeader>
+        {{ t('Unarchive account') }}
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        {{ t('Are you sure you want to unarchive') }} {{ unarchiveTarget?.name }}?
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="modal-footer-btns">
+          <button class="btn-enterprise btn-enterprise--ghost" @click="unarchiveTarget = null">{{ t('Cancel') }}</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="confirmUnarchive">{{ t('Unarchive') }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>

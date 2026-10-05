@@ -90,6 +90,8 @@ export * from './productionRequests'
 export * from './cashAccounts'
 export * from './bankStatementLines'
 export * from './bankStatementReviewFiles'
+export * from './bankTransactions'
+export * from './journalEntries'
 
 // ── Expenses (bills / uploaded files review) ────────────────────────────────
 export * from './bills'

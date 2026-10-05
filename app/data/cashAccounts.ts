@@ -7,6 +7,8 @@
  * statement imported in a foreign currency is converted at import time.
  */
 
+import { loadCreated, saveCreated } from './persist'
+
 export type CashAccountCurrency = 'IDR' | 'SGD' | 'USD' | 'AUD'
 
 /**
@@ -108,10 +110,17 @@ export const cashAccounts: CashAccount[] = [
   { id: 'CA007', code: '1-10006', name: 'Cash Drawer — Kemang',                                          currency: 'IDR', statementBalance: null,                                     bookBalance: 2_500_000,    unreconciledCount: 0, isArchived: true, lastUpdated: '2025-11-15T15:10:00' },
 ]
 
+// User-created accounts survive a reload (persist.ts), merged after the seed.
+const CREATED_KEY = 'cash-accounts-created-v1'
+for (const a of loadCreated<CashAccount>(CREATED_KEY)) if (!cashAccounts.some(x => x.id === a.id)) cashAccounts.push(a)
+
 /** Append a freshly-created account so the index (which seeds from this array on
  *  mount) shows it after navigating back. Returns the created record. */
 export function addCashAccount(input: Omit<CashAccount, 'id'> & { id?: string }): CashAccount {
-  const account: CashAccount = { ...input, id: input.id ?? `CA${String(cashAccounts.length + 1).padStart(3, '0')}` }
+  let n = cashAccounts.length + 1
+  while (cashAccounts.some(x => x.id === `CA${String(n).padStart(3, '0')}`)) n++
+  const account: CashAccount = { ...input, id: input.id ?? `CA${String(n).padStart(3, '0')}` }
   cashAccounts.push(account)
+  saveCreated(CREATED_KEY, [...loadCreated<CashAccount>(CREATED_KEY), account])
   return account
 }
