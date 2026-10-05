@@ -22,6 +22,9 @@ import ErpLineDimensionsCell from '~/components/patterns/ErpLineDimensionsCell.v
 import ErpBulkDimensionsPopover from '~/components/patterns/ErpBulkDimensionsPopover.vue'
 import ErpDimensionsInfoPopover from '~/components/patterns/ErpDimensionsInfoPopover.vue'
 import { applicableDimensions } from '~/data/dimensions'
+import BudgetPOCheckSection from '~/components/patterns/BudgetPOCheckSection.vue'
+import { createPO, previewPOFromRequests, syncPurchaseOrderRecord } from '~/data/budgetStore'
+import { budgetRequestFor } from '~/data/budgetUiPurchaseOrders'
 
 const props = defineProps<{
   duplicateOrderId?: string | null
@@ -97,22 +100,24 @@ interface POLine {
   unit: string; unitCost: number; discountPct: number; taxLabel: string
   /** dimensionId -> selected value name (Settings > Dimensions line tagging). */
   dimensions: Record<string, string>
+  /** Index of the request line this PO line came from (budget hold handoff). */
+  prLineIndex?: number
 }
 interface POGroup { prId: string; prNumber: number; collapsed: boolean; lines: POLine[] }
 
 let _seq = 0
-function lineFromPR(l: PurchaseRequestLine): POLine {
+function lineFromPR(l: PurchaseRequestLine, idx?: number): POLine {
   return {
     _key: ++_seq, product: l.product, sku: l.sku, description: l.description,
     requestedQty: l.requestedQty, availableQty: l.availableQty,
     qty: l.requestedQty, unit: l.unit, unitCost: l.unitCost, discountPct: 0, taxLabel: l.taxLabel,
-    dimensions: {},
+    dimensions: {}, prLineIndex: idx,
   }
 }
 function groupFromPR(id: string): POGroup | null {
   const pr = getPurchaseRequest(id)
   if (!pr) return null
-  return { prId: pr.id, prNumber: pr.number, collapsed: false, lines: pr.lines.map(lineFromPR) }
+  return { prId: pr.id, prNumber: pr.number, collapsed: false, lines: pr.lines.map((l, i) => lineFromPR(l, i)) }
 }
 
 // From-PR mode → accordion groups. Blank/duplicate mode → flat product rows.
@@ -203,6 +208,42 @@ const shippingFee = ref(source.value?.totals.shippingFee ?? 0)
 const grandTotal  = computed(() => subtotal.value - discountTotal.value - globalDiscountAmount.value + taxAmount.value + shippingFee.value)
 
 const fmt = formatIDR
+
+// ── Budget check (PRD FG-3, LR-3): a PO from requests with a budget record uses
+// each request's hold and is checked only on the excess. ──────────────────────
+const budgetLines = computed(() => groups.value.flatMap((g) => {
+  const bpr = budgetRequestFor(g.prId)
+  if (!bpr) return []
+  return g.lines.map((line) => {
+    const idx = line.prLineIndex ?? null
+    const spend = idx !== null ? bpr.lines[idx] : undefined
+    return { prId: bpr.id, prLine: idx, lineId: spend?.lineId ?? null, description: line.description || line.product, amount: lineAmount(line) }
+  })
+}))
+const budgetPreview = computed(() => budgetLines.value.length ? previewPOFromRequests(budgetLines.value, dmyToIso(txDate.value)) : null)
+const budgetBlock = ref<string | null>(null)
+watch(budgetPreview, (p) => { if (budgetBlock.value && p && p.check.result !== 'Block') budgetBlock.value = null })
+/** Runs the check on save; returns false (with the inline banner) when the excess does not fit. */
+function budgetAllows(): boolean {
+  const p = budgetPreview.value
+  if (!p) return true
+  if (p.check.result === 'Block') {
+    budgetBlock.value = p.check.blocker?.message ?? 'Not enough budget for the excess above the request.'
+    return false
+  }
+  budgetBlock.value = null
+  return true
+}
+/** Post the commitment for the new order and link it to the Purchases record. */
+function commitBudget(recordId: string) {
+  if (!budgetLines.value.length) return
+  const rec = purchaseOrders.find(o => o.id === recordId)
+  const prId = budgetLines.value[0]!.prId
+  const lines = budgetLines.value.filter(l => l.lineId).map(l => ({ prLine: l.prLine, lineId: l.lineId!, description: l.description, amount: l.amount }))
+  if (!lines.length) return
+  const res = createPO({ prId, vendor: vendor.value, date: dmyToIso(txDate.value), number: rec?.number, lines })
+  if (res.ok && res.po) { res.po.purchaseOrderId = recordId; syncPurchaseOrderRecord(res.po) }
+}
 
 const attachments = ref<POAttachment[]>((source.value?.attachments ?? []).map(a => ({ ...a })))
 function iconForFile(name: string): 'pdf' | 'excel-document' | 'word-document' | 'doc' {
@@ -315,7 +356,9 @@ function createNewOrder(overrides?: Partial<PurchaseOrder>): string {
 
 function onSave() {
   if (!validate()) return
+  if (!budgetAllows()) return
   const newId = createDuplicateOrder() ?? createNewOrder()
+  commitBudget(newId)
   toast.notify({ variant: 'success', title: 'Purchase order created', rootProps: { class: 'toast-enterprise' } })
   closePurchaseOrderForm?.()
   openPurchaseOrder?.(newId)
@@ -325,7 +368,9 @@ function onSaveAndNew() { closePurchaseOrderForm?.() }
 
 function onSendToFulfillment() {
   if (!validate()) return
+  if (!budgetAllows()) return
   const newId = createDuplicateOrder({ sentToFulfillment: true }) ?? createNewOrder({ sentToFulfillment: true })
+  commitBudget(newId)
   closePurchaseOrderForm?.()
   openPurchaseOrder?.(newId)
 }
@@ -702,6 +747,14 @@ function onSendToFulfillment() {
             </table>
           </div>
         </section>
+
+        <!-- ── Budget: each line's hold from its request, the excess and the check ── -->
+        <BudgetPOCheckSection
+          v-if="budgetPreview"
+          :rows="budgetPreview.rows"
+          :check="budgetPreview.check"
+          :blocked="budgetBlock"
+        />
 
         <!-- ── Notes + Attachment + Totals (identical component set to NewSalesInvoicePage) ── -->
         <section class="si-bottom-section">

@@ -17,6 +17,8 @@ import { getPurchaseOrderDetail, purchaseOrders } from '~/data'
 import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
 import { applicableDimensions } from '~/data/dimensions'
 import { infoToast } from '~/utils/toasts'
+import BudgetPODetailSection from '~/components/patterns/BudgetPODetailSection.vue'
+import { budgetPOForRecord } from '~/data/budgetUiPurchaseOrders'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -43,6 +45,12 @@ const showBalanceDue = computed(() => balanceDue.value > 0 && balanceDue.value <
 const isShipped = computed(() => !!(order.value.shipVia || order.value.shipDate))
 const router = useRouter()
 function notInPrototype() { infoToast('Not in this prototype') }
+// Budget: a PO that holds budget shows its commitment, and invoices through the budget check.
+const budgetPO = computed(() => budgetPOForRecord(props.orderId))
+function onCreatePurchaseInvoice() {
+  if (budgetPO.value) router.push({ path: '/purchase-invoices/new', query: { budgetPo: budgetPO.value.id } })
+  else notInPrototype()
+}
 function onMarkCompleted() {
   const o = purchaseOrders.find(x => x.id === props.orderId)
   if (o) { o.status = 'closed'; o.balance = 0 }
@@ -505,6 +513,9 @@ function goBack() { closePurchaseOrder?.() }
         </div>
       </section>
 
+      <!-- ── Budget: commitment per line, close and reopen ── -->
+      <BudgetPODetailSection v-if="budgetPO" :po-id="budgetPO.id" />
+
       <!-- ── Linked transactions ── -->
       <section v-if="order.linkedTransactions.length" class="detail-linked-section">
         <h3 class="detail-tab-heading">Linked transactions</h3>
@@ -630,7 +641,7 @@ function goBack() { closePurchaseOrder?.() }
                 <MpPopoverListItem @click="notInPrototype">Preview</MpPopoverListItem>
                 <template v-if="!isAwaitingApproval && order.status !== 'closed' && order.status !== 'voided'">
                   <MpPopoverListItem @click="router.push('/purchase-deliveries/new')">Create purchase delivery</MpPopoverListItem>
-                  <MpPopoverListItem @click="notInPrototype">Create purchase invoice</MpPopoverListItem>
+                  <MpPopoverListItem @click="onCreatePurchaseInvoice">Create purchase invoice</MpPopoverListItem>
                   <MpPopoverListItem @click="notInPrototype">Add deposit</MpPopoverListItem>
                   <MpPopoverListItem @click="onMarkCompleted">Mark as completed</MpPopoverListItem>
                 </template>

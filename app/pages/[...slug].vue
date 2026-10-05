@@ -2109,6 +2109,12 @@ function startResize(e: MouseEvent) {
             New sales order
           </button>
         </div>
+        <!-- Accounting › Budgeting › Commitments: year-end close is Release 2. -->
+        <div v-else-if="currentPageKey === 'Commitments'" class="page-title-actions">
+          <button id="commitments-close-year" class="btn-enterprise btn-enterprise--secondary" @click="infoToast(t('Not in this prototype'))">
+            {{ t('Close budget year') }}
+          </button>
+        </div>
         <div v-else-if="currentPageKey === 'Purchase requests'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary" @click="infoToast('Not in this prototype')">
             {{ t('Import') }}
