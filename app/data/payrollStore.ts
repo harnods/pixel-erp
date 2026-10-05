@@ -506,7 +506,7 @@ export function actingPerson(): string { return payrollPerson(payroll.viewAs).pe
 export { PAYROLL_PEOPLE }
 
 export interface Result { ok: boolean; message?: string; [k: string]: unknown }
-const denied = (): Result => ({ ok: false, message: 'Your role cannot do this.', status: 403 })
+const denied = (): Result & { ok: false } => ({ ok: false, message: 'Your role cannot do this.', status: 403 })
 
 // ── Accounts and tags ───────────────────────────────────────────────────────
 
@@ -1835,7 +1835,7 @@ export function compareVersions(runId: string, a?: number, b?: number) {
   const tax = taxChanges(va.payload, vb.payload)
   return { oldNo, newNo, oldLabel: `v${oldNo}${oldNo === run.ledgerVersion ? ' (in the ledger)' : ''}`, newLabel: `v${newNo}`, byPayItem, byAccountTag, settingsMoved, headcount: { added, removed }, taxChanges: tax, noLedgerChange: !byAccountTag.length }
 }
-function fixGuard(run: Run | undefined, no?: number): { run: Run; v: RunVersion } | Result {
+function fixGuard(run: Run | undefined, no?: number): { ok: true; run: Run; v: RunVersion } | (Result & { ok: false }) {
   if (!can('fix')) return denied()
   if (!run) return { ok: false, status: 404 }
   const v = versionOf(run, no ?? run.currentVersion)
@@ -1845,7 +1845,7 @@ function fixGuard(run: Run | undefined, no?: number): { run: Run; v: RunVersion 
   if (run.versions.some((x) => x.state === 'partial')) return { ok: false, message: `v${run.versions.find((x) => x.state === 'partial')!.no} looks partial. Replace the full run or reject it first.` }
   if (isDraftStale(run.id)) { rebuildDraft(run.id); return { ok: false, stale: true, message: 'Settings changed. The draft was rebuilt; review and try again.' } }
   if (v.holds.length) return { ok: false, message: v.holds[0]!.message }
-  return { run, v }
+  return { ok: true, run, v }
 }
 function retireLedgerVersion(run: Run, oldV: RunVersion, v: RunVersion) {
   if (oldV !== v) { oldV.state = 'replaced'; oldV.replacedBy = v.no }
@@ -1860,7 +1860,7 @@ function afterFix(run: Run, oldV: RunVersion, v: RunVersion, journals: Journal[]
 }
 export function reverseAndRepost(runId: string, no?: number): Result {
   const g = fixGuard(runById(runId), no)
-  if (!('run' in g)) return g as Result
+  if (!g.ok) return g
   const { run, v } = g
   const oldV = versionOf(run, run.ledgerVersion)!
   const live = liveJournals(run.id)
@@ -1878,7 +1878,7 @@ export function reverseAndRepost(runId: string, no?: number): Result {
 }
 export function postDifference(runId: string, no?: number, o: { includeSettingsMoves?: boolean } = {}): Result {
   const g = fixGuard(runById(runId), no)
-  if (!('run' in g)) return g as Result
+  if (!g.ok) return g
   const { run, v } = g
   const oldV = versionOf(run, run.ledgerVersion)!
   const lines = differenceLines(run, v, !!o.includeSettingsMoves)
@@ -2459,7 +2459,7 @@ export function pph21Annual(year: number) {
 export function setEbupotTotal(month: string, amount: number): Result {
   if (!can('ebupot.enter')) return denied()
   reconOf(month).ebupotFiled = Math.round(amount)
-  return { ok: true, message: pph21Monthly(month).filedMessage }
+  return { ok: true, message: pph21Monthly(month).filedMessage ?? undefined }
 }
 export function markPph21Reconciled(month: string, note?: string): Result {
   if (!can('pph21.reconcile')) return denied()
