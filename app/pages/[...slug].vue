@@ -152,6 +152,11 @@ const pageRegistry: Record<string, Component> = {
   // Settings → Data migration. Key must match the sidebar label character-for-character.
   'Data migration':     defineAsyncComponent(() => import('~/components/pages/DataMigrationPage.vue')),
   'Warehouse settings': defineAsyncComponent(() => import('~/components/pages/SettingsWarehousePage.vue')),
+  // Settings → Billing / Sales / Purchases / Default accounts (company setting tabs).
+  'Billing':            defineAsyncComponent(() => import('~/components/pages/SettingsBillingPage.vue')),
+  'Sales settings':     defineAsyncComponent(() => import('~/components/pages/SettingsSalesFormPage.vue')),
+  'Purchase settings':  defineAsyncComponent(() => import('~/components/pages/SettingsPurchasePage.vue')),
+  'Default accounts':   defineAsyncComponent(() => import('~/components/pages/SettingsDefaultAccountsPage.vue')),
   'Approval workflows':  defineAsyncComponent(() => import('~/components/pages/ApprovalWorkflowsPage.vue')),
   // Settings → Users & roles. '/users-and-roles' → pathToLabel → 'Users and roles'.
   // The page itself is served by its tabs (User list / Custom role) — this entry
@@ -319,6 +324,8 @@ const InviteUserPage = asyncPage(() => import('~/components/pages/InviteUserPage
 const { openCreate: openCustomRoleCreate } = useCustomRoleDrawer()
 const UsersListPage = asyncPage(() => import('~/components/pages/UsersListPage.vue'))
 const CustomRolesPage = asyncPage(() => import('~/components/pages/CustomRolesPage.vue'))
+const SettingsSalesFormPage = asyncPage(() => import('~/components/pages/SettingsSalesFormPage.vue'))
+const SettingsInvoiceReminderPage = asyncPage(() => import('~/components/pages/SettingsInvoiceReminderPage.vue'))
 
 // ── Purchase Orders overlay state (list/detail/form share the URL /purchase-orders
 // without real sub-routes yet — mirrors the pattern this feature was originally
@@ -1041,6 +1048,8 @@ const pageTabs: Record<string, string[]> = {
   'Product list':      ['All products', 'Awaiting approval'],
   // Settings → Users & roles (Jurnal benchmark: User list / Custom role).
   'Users and roles':   ['User list', 'Custom role'],
+  // Settings → Sales: Form setting / Invoice reminder.
+  'Sales settings':    ['Form setting', 'Invoice reminder'],
   // XPM (Mekari Expense) — section tabs read by the page via ?tab=.
   'Xpm transactions':  ['All', 'Card', 'Reimbursement', 'Cash advance', 'Bill', 'Travel'],
   'Xpm cards':         ['Virtual cards', 'Physical cards'],
@@ -1345,6 +1354,10 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Users and roles': {
     'User list': UsersListPage,
     'Custom role': CustomRolesPage,
+  },
+  'Sales settings': {
+    'Form setting': SettingsSalesFormPage,
+    'Invoice reminder': SettingsInvoiceReminderPage,
   },
   // XPM (Mekari Expense) — each tab renders the same page; the page filters by ?tab=.
   'Xpm transactions': {
