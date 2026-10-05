@@ -1369,3 +1369,117 @@ else seed()
 watch(budget, () => saveSnapshot(SNAPSHOT_KEY, [budget]), { deep: true })
 
 export const budgetLinesThisYear = computed(() => budget.lines.filter((l) => l.year === BUDGET_YEAR))
+
+// ── changes additions ──────────────────────────────────────────────────────
+// FG-4 screens: who may prepare which change, saving and submitting drafts from
+// the form, withdraw by the preparer, and reading notices. New functions only;
+// every rule still runs through validateChange, routeChain and submitChange.
+
+/** The fields the change form edits. */
+export interface ChangeDraftInput {
+  kind: ChangeKind
+  month: number
+  donor: { lineId: string; amount: number } | null
+  receivers: ChangeReceiver[]
+  reason: string
+  reasonCode: string | null
+  linkedPrId: string | null
+  saving: SavingTag | null
+}
+
+/** FG-4.6 / FG-5.6: the Budget Controller prepares changes; a requester raises funding requests. */
+export function canPrepareChange(kind: ChangeKind, role: BudgetRole = budget.viewAs): { ok: boolean; reason?: string } {
+  if (role === 'Budget Controller') return { ok: true }
+  if (kind === 'Funding request' && role === 'Requester') return { ok: true }
+  if (kind === 'Funding request') return { ok: false, reason: 'Only the requester or the Budget Controller raises a funding request.' }
+  if (kind === 'Saving draw' && role === 'CFO') return { ok: false, reason: 'The CFO approves saving draws and cannot raise one.' }
+  return { ok: false, reason: 'Only the Budget Controller prepares budget changes.' }
+}
+
+/** A draft may be edited by its preparer or the Budget Controller, and only while it is a draft. */
+export function canEditChange(c: ChangeDoc, role: BudgetRole = budget.viewAs): { ok: boolean; reason?: string } {
+  if (c.status !== 'Draft') return { ok: false, reason: `${c.number} is ${c.status.toLowerCase()} and can no longer be edited.` }
+  if (role !== 'Budget Controller' && personFor(role).person !== c.preparedBy) return { ok: false, reason: `Only ${c.preparedBy} or the Budget Controller edits this draft.` }
+  return canPrepareChange(c.kind, role)
+}
+
+/** An unsaved change built from the form, for validateChange and routeChain before anything is stored. */
+export function previewChange(input: ChangeDraftInput, base?: ChangeDoc): ChangeDoc {
+  return {
+    id: base?.id ?? 'preview', number: base?.number ?? 'New', kind: input.kind, status: 'Draft', month: input.month,
+    donor: input.donor ? { ...input.donor } : null,
+    receivers: input.receivers.map((r) => ({ lineId: r.lineId, newLine: r.newLine ? { ...r.newLine } : null, amount: r.amount })),
+    reason: input.reason, reasonCode: input.reasonCode, preparedBy: base?.preparedBy ?? actingPerson(),
+    createdAt: base?.createdAt ?? nowISO(), submittedAt: null, chain: [], linkedPrId: input.linkedPrId,
+    saving: input.saving ? { ...input.saving } : null, version: null,
+  }
+}
+
+function applyDraft(c: ChangeDoc, input: ChangeDraftInput) {
+  c.kind = input.kind
+  c.month = input.month
+  c.donor = input.donor ? { ...input.donor } : null
+  c.receivers = input.receivers.map((r) => ({ lineId: r.lineId, newLine: r.newLine ? { ...r.newLine } : null, amount: r.amount }))
+  c.reason = input.reason
+  c.reasonCode = input.reasonCode
+  c.linkedPrId = input.linkedPrId
+  c.saving = input.saving ? { ...input.saving } : null
+}
+
+/** Save as draft: holds nothing (FG-4.3). Creates the change, or updates the draft `id`. */
+export function saveChangeDraft(input: ChangeDraftInput, id?: string): { ok: boolean; change?: ChangeDoc; reason?: string } {
+  const existing = id ? changeById(id) : undefined
+  if (id && !existing) return { ok: false, reason: 'This change no longer exists.' }
+  const can = existing ? canEditChange(existing) : canPrepareChange(input.kind)
+  if (!can.ok) return { ok: false, reason: can.reason }
+  if (existing) {
+    applyDraft(existing, input)
+    return { ok: true, change: existing }
+  }
+  const c = newChange({ kind: input.kind, month: input.month })
+  applyDraft(c, input)
+  if (c.linkedPrId) { const pr = prById(c.linkedPrId); if (pr) pr.fundingRequestId = c.id }
+  return { ok: true, change: c }
+}
+
+/** Submit from the form: validate first so a failed submit stores nothing, then save and submitChange (holds the donor). */
+export function submitChangeDraft(input: ChangeDraftInput, id?: string): { ok: boolean; change?: ChangeDoc; errors: string[] } {
+  const existing = id ? changeById(id) : undefined
+  const can = existing ? canEditChange(existing) : canPrepareChange(input.kind)
+  if (!can.ok) return { ok: false, errors: [can.reason!] }
+  const errors = validateChange(previewChange(input, existing))
+  if (errors.length) return { ok: false, errors }
+  const saved = saveChangeDraft(input, id)
+  if (!saved.ok) return { ok: false, errors: [saved.reason!] }
+  const res = submitChange(saved.change!.id)
+  return { ok: res.ok, change: saved.change, errors: res.errors }
+}
+
+/** Withdraw: the preparer or the Budget Controller; a pending change frees its hold. */
+export function canWithdrawChange(c: ChangeDoc, role: BudgetRole = budget.viewAs): { ok: boolean; reason?: string } {
+  if (c.status !== 'Draft' && c.status !== 'Pending') return { ok: false, reason: `${c.number} is ${c.status.toLowerCase()} and cannot be withdrawn.` }
+  if (role !== 'Budget Controller' && personFor(role).person !== c.preparedBy) return { ok: false, reason: `Only ${c.preparedBy} or the Budget Controller withdraws this change.` }
+  return { ok: true }
+}
+export function withdrawChangeAs(id: string, role: BudgetRole = budget.viewAs): { ok: boolean; reason?: string } {
+  const c = changeById(id)
+  if (!c) return { ok: false, reason: 'This change no longer exists.' }
+  const can = canWithdrawChange(c, role)
+  if (!can.ok) return can
+  withdrawChange(id)
+  if (c.linkedPrId) { const pr = prById(c.linkedPrId); if (pr && pr.fundingRequestId === c.id) pr.fundingRequestId = null }
+  return { ok: true }
+}
+
+/** What a change still holds on its donor line. */
+export function changeHeld(id: string): number {
+  return budget.entries.filter((e) => e.docId === id && e.type === 'transfer-hold').reduce((s, e) => s + e.amount, 0)
+}
+
+export function markNoticeRead(id: number): void {
+  const n = budget.notices.find((x) => x.id === id)
+  if (n) n.read = true
+}
+export function markAllNoticesRead(person: string): void {
+  budget.notices.forEach((n) => { if (n.to === person) n.read = true })
+}
