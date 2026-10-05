@@ -292,6 +292,10 @@ const CoworkKbDocDetailPage = asyncPage(() => import('~/components/pages/CoworkK
 const CashConnectBankPage = asyncPage(() => import('~/components/pages/CashConnectBankPage.vue'))
 const InternalTransferFormPage = asyncPage(() => import('~/components/pages/InternalTransferFormPage.vue'))
 const InternalTransferDetailsPage = asyncPage(() => import('~/components/pages/InternalTransferDetailsPage.vue'))
+const CashTransactionFormPage = asyncPage(() => import('~/components/pages/CashTransactionFormPage.vue'))
+const CashTransactionDetailsPage = asyncPage(() => import('~/components/pages/CashTransactionDetailsPage.vue'))
+const JournalEntryFormPage = asyncPage(() => import('~/components/pages/JournalEntryFormPage.vue'))
+const JournalEntryDetailsPage = asyncPage(() => import('~/components/pages/JournalEntryDetailsPage.vue'))
 const BankStatementReviewPage = asyncPage(() => import('~/components/pages/BankStatementReviewPage.vue'))
 const ReconciliationsPage = asyncPage(() => import('~/components/pages/ReconciliationsPage.vue'))
 const BankRuleBuilderPage = asyncPage(() => import('~/components/pages/BankRuleBuilderPage.vue'))
@@ -762,6 +766,23 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /bank-rules/new · /bank-rules/:id/edit · /bank-rules/:id/duplicate → rule builder. Bare index → registry.
   if (segs.length >= 2 && segs[0] === 'bank-rules') {
     return { component: BankRuleBuilderPage, id: segs[1] === 'new' ? 'new' : segs[1]! }
+  }
+  // /bank-deposits|bank-withdrawals/new|:id|:id/edit → Receive money / Spend money (prod bank-deposits, bank-withdrawals)
+  if (segs.length >= 2 && (segs[0] === 'bank-deposits' || segs[0] === 'bank-withdrawals')) {
+    if (segs[1] === 'new') return { component: CashTransactionFormPage, id: 'new' }
+    if (segs[2] === 'edit') return { component: CashTransactionFormPage, id: segs[1]! }
+    return { component: CashTransactionDetailsPage, id: segs[1]! }
+  }
+  // /bank-transfers/new|:id → prod's bank-transfer routes map onto the existing Internal transfer pages
+  if (segs.length >= 2 && segs[0] === 'bank-transfers') {
+    if (segs[1] === 'new') return { component: InternalTransferFormPage, id: 'new' }
+    if (segs[2] === 'edit') return { component: InternalTransferFormPage, id: segs[1]! }
+    return { component: InternalTransferDetailsPage, id: segs[1]! }
+  }
+  // /journal-entries/new|:id → Create journal entry / General Journal show (prod journal-entries)
+  if (segs.length >= 2 && segs[0] === 'journal-entries') {
+    if (segs[1] === 'new') return { component: JournalEntryFormPage, id: 'new' }
+    return { component: JournalEntryDetailsPage, id: segs[1]! }
   }
   // /cash-management/review/:id → OCR review for an imported bank statement
   if (segs.length >= 3 && segs[0] === 'cash-management' && segs[1] === 'review') {
@@ -2048,9 +2069,9 @@ function startResize(e: MouseEvent) {
 
             <div v-if="importDropdownOpen" class="import-dropdown" @click.stop>
               <div class="import-group">
-                <MpButton variant="ghost" class="import-item import-item--start" @click="importDropdownOpen = false; router.push('/cash-management/internal-transfer')">{{ t('Internal transfer') }}</MpButton>
-                <MpButton variant="ghost" class="import-item import-item--start">{{ t('Receive money') }}</MpButton>
-                <MpButton variant="ghost" class="import-item import-item--start">{{ t('Spend money') }}</MpButton>
+                <MpButton variant="ghost" class="import-item import-item--start" @click="importDropdownOpen = false; router.push('/cash-management/internal-transfer')">{{ t('New internal transfer') }}</MpButton>
+                <MpButton variant="ghost" class="import-item import-item--start" @click="importDropdownOpen = false; router.push('/bank-deposits/new')">{{ t('New receive money') }}</MpButton>
+                <MpButton variant="ghost" class="import-item import-item--start" @click="importDropdownOpen = false; router.push('/bank-withdrawals/new')">{{ t('New spend money') }}</MpButton>
               </div>
             </div>
           </div>

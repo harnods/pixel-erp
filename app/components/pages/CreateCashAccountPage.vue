@@ -1,3 +1,4 @@
+<!-- prod-parity: jurnal-accounting-frontend/src/modules/cash-management/accounts/views/AccountFormView.vue -->
 <script setup lang="ts">
 /**
  * Create a new cash / bank / credit-card account (Figma 4660-96485).
@@ -16,6 +17,7 @@ import SelectAccessDrawer, { type AccessOption } from '~/components/patterns/Sel
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import { cashAccounts, addCashAccount, type CashAccountCurrency } from '~/data'
 import { banks } from '~/data/banks'
+import { companyTaxes } from '~/data/companyTaxes'
 import { accessUsers, accessRoles } from '~/data/accessControl'
 
 // orderId from the catch-all route: undefined/'new' → create, an account id → edit.
@@ -62,19 +64,16 @@ function onCodeFormatSave(_config: NumberFormatConfig) {
 // ─── Dropdown options ──────────────────────────────────────────────────────
 const accountTypeOptions = [
   { label: 'Cash & Bank', value: 'cash-bank' },
-  { label: 'Credit card', value: 'credit-card' },
+  { label: 'Credit Card', value: 'credit-card' },
 ]
 const currencyOptions = [
   { label: 'Indonesian Rupiah (Rp)', value: 'IDR' },
+  { label: 'Singapore Dollar (S$)', value: 'SGD' },
   { label: 'United States Dollar (US$)', value: 'USD' },
   { label: 'Australian Dollar (AUS$)', value: 'AUD' },
 ]
-const taxOptions = [
-  { label: 'PPN 11%', value: 'PPN 11%' },
-  { label: 'PPh 21', value: 'PPh 21' },
-  { label: 'PPh 23', value: 'PPh 23' },
-  { label: 'PPh Final 0.5%', value: 'PPh Final 0.5%' },
-]
+// Default tax — the company's own tax list (Settings › Taxes).
+const taxOptions = companyTaxes.map(tx => ({ label: tx.name, value: tx.name }))
 const bankOptions = banks.map(b => ({ label: b, value: b }))
 // Parent-account candidates: existing, non-archived accounts.
 const parentOptions = computed(() =>
@@ -122,8 +121,8 @@ async function save() {
   accessError.value = ''
 
   if (!name.value.trim()) nameError.value = t('You must fill in account name')
-  if (access.value === 'users' && selectedUsers.value.length === 0) accessError.value = t('Select at least one user')
-  if (access.value === 'roles' && selectedRoles.value.length === 0) accessError.value = t('Select at least one role')
+  if (access.value === 'users' && selectedUsers.value.length === 0) accessError.value = t('Select at least one')
+  if (access.value === 'roles' && selectedRoles.value.length === 0) accessError.value = t('Select at least one')
   if (nameError.value || accessError.value) return
 
   isSaving.value = true
@@ -137,7 +136,7 @@ async function save() {
     a.accountNumber = bankAccountNumber.value.trim() || undefined
     a.parentId = parent?.id
     // account type & currency intentionally not changed (locked)
-    toast.notify({ variant: 'success', title: `${a.name} ${t('updated')}`, maxWidth: 'max-content' })
+    toast.notify({ variant: 'success', title: t('Account updated'), maxWidth: 'max-content' })
     router.push(`/cash-management/${a.id}`)
     return
   }
@@ -155,7 +154,7 @@ async function save() {
     lastUpdated: new Date().toISOString(),
   })
 
-  toast.notify({ variant: 'success', title: `${name.value.trim()} ${t('created')}`, maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Account created'), maxWidth: 'max-content' })
   router.push('/cash-management')
 }
 
