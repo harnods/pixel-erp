@@ -86,6 +86,7 @@ function useSuggestion() {
   const s = m && suggestMapping(m.name, m.section)
   if (!s) return
   Object.assign(ed, { role: s.role ?? '', debit: s.debit ?? '', credit: s.credit ?? '', party: s.party ?? 'none' })
+  edError.value = ''
 }
 const roleOptions = PAY_ROLES.map((r) => ({ value: r, label: r }))
 const accountOptions = computed(() => payroll.accounts.filter((a) => !a.archived && a.type !== 'cash').map((a) => ({ value: a.code, label: `${a.code} ${a.name}` })))

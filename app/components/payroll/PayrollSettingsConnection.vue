@@ -5,9 +5,8 @@
  * other-entity question. Start, end and restart are the Jurnal Owner's only.
  */
 import { computed, ref } from 'vue'
-import { MpButton, MpInput, MpCheckbox } from '@mekari/pixel3'
+import { MpButton, MpButtonGroup, MpInput, MpCheckbox, MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import PayrollSettingsDrawer from '~/components/payroll/PayrollSettingsDrawer.vue'
 import { successToast, infoToast } from '~/utils/toasts'
 import {
   payroll, connection, can, startConnection, endConnection, restartConnection, confirmSource, sourceSummary,
@@ -267,19 +266,30 @@ const connectionLog = computed(() => syncLog.value.filter((l) => l.type === 'Con
       </table>
     </div>
 
-    <PayrollSettingsDrawer :is-open="endOpen" :title="t('End connection')" :sub="t(`Talenta company ${c.companyId}`)" @close="endOpen = false">
-      <p class="pset-hint">{{ t('Ending deletes nothing. Posted journals, mappings and rules stay readable, and new sends are rejected.') }}</p>
-      <div v-if="openDrafts" class="pset-note pset-note--warn">{{ t(`${openDrafts} draft${openDrafts > 1 ? 's are' : ' is'} ready to post. They stay postable after the connection ends.`) }}</div>
-      <div class="pset-field">
-        <label class="pset-label" for="pset-end-reason">{{ t('Reason') }}</label>
-        <MpInput id="pset-end-reason" v-model="endReason" :is-invalid="!!endError" @update:model-value="endError = ''" />
-        <span class="pset-muted">{{ endReason.trim().length }} / 200</span>
-      </div>
-      <p v-if="endError" class="pset-error">{{ endError }}</p>
-      <template #footer>
-        <MpButton variant="ghost" is-rounded @click="endOpen = false">{{ t('Cancel') }}</MpButton>
-        <MpButton variant="danger" is-rounded @click="onEnd">{{ t('End connection') }}</MpButton>
-      </template>
-    </PayrollSettingsDrawer>
+    <!-- End connection: a destructive action confirms in a modal (rule/btn-danger-confirm). -->
+    <MpModal id="pset-end-modal" :is-open="endOpen" size="md" :is-keep-alive="false" :is-close-on-esc="false" :is-close-on-overlay-click="false" @close="endOpen = false">
+      <MpModalContent>
+        <MpModalHeader>{{ t(`End the connection to Talenta company ${c.companyId}?`) }}</MpModalHeader>
+        <MpModalBody>
+          <div class="pset-stack">
+            <p class="pset-hint">{{ t('Ending deletes nothing. Posted journals, mappings and rules stay readable, and new sends are rejected.') }}</p>
+            <div v-if="openDrafts" class="pset-note pset-note--warn">{{ t(`${openDrafts} draft${openDrafts > 1 ? 's are' : ' is'} ready to post. They stay postable after the connection ends.`) }}</div>
+            <div class="pset-field">
+              <label class="pset-label" for="pset-end-reason">{{ t('Reason') }}</label>
+              <MpInput id="pset-end-reason" v-model="endReason" :is-invalid="!!endError" @update:model-value="endError = ''" />
+              <span class="pset-muted">{{ endReason.trim().length }} / 200 · {{ t('at least 10 characters') }}</span>
+            </div>
+            <p v-if="endError" class="pset-error">{{ endError }}</p>
+          </div>
+        </MpModalBody>
+        <MpModalFooter>
+          <MpButtonGroup>
+            <MpButton variant="ghost" is-rounded @click="endOpen = false">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="danger" is-rounded @click="onEnd">{{ t('End connection') }}</MpButton>
+          </MpButtonGroup>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
   </div>
 </template>

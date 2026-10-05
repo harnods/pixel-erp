@@ -11,6 +11,7 @@ import { MpButton, MpIcon, MpInput, MpCheckbox, MpTextarea } from '@mekari/pixel
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PayrollSettingsDrawer from '~/components/payroll/PayrollSettingsDrawer.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { successToast, infoToast } from '~/utils/toasts'
 import {
   payroll, can, mapGroup, createPayrollTag, saveRule, deleteRule, moveRule, sendToFallback, setFieldPolicy,
@@ -380,13 +381,15 @@ function onPolicy(field: GroupingField, v: string) {
     </PayrollSettingsDrawer>
 
     <!-- Delete rule -->
-    <PayrollSettingsDrawer :is-open="!!deleteId" :title="t('Delete rule')" :sub="rules.find((r) => r.id === deleteId)?.name ?? ''" @close="deleteId = null">
-      <p class="pset-hint">{{ t('Posted journals keep the rule in their settings snapshot. Drafts rebuild without it before posting.') }}</p>
-      <template #footer>
-        <MpButton variant="ghost" is-rounded @click="deleteId = null">{{ t('Cancel') }}</MpButton>
-        <MpButton variant="danger" is-rounded @click="onDelete">{{ t('Delete rule') }}</MpButton>
-      </template>
-    </PayrollSettingsDrawer>
+    <ConfirmModal
+      :is-open="!!deleteId"
+      :title="t(`Delete rule ${rules.find((r) => r.id === deleteId)?.name ?? ''}?`)"
+      :description="t('Posted journals keep the rule in their settings snapshot. Drafts rebuild without it before posting.')"
+      :confirm-label="t('Delete rule')"
+      :cancel-label="t('Cancel')"
+      @update:is-open="(v: boolean) => { if (!v) deleteId = null }"
+      @confirm="onDelete"
+    />
 
     <!-- Send a value to fallback -->
     <PayrollSettingsDrawer :is-open="fbOpen" :title="t('Send a value to fallback')" @close="fbOpen = false">
