@@ -46,6 +46,12 @@ const props = withDefaults(defineProps<{
    *  set, the only granularity option is Custom date range. Existing callers that
    *  omit this keep their direction/periodMode presets unchanged. */
   presets?: { key: Mode; label: string }[]
+  /**
+   * Reference "today" for resolving presets. Defaults to the real clock; pages
+   * running on the prototype's fixed timeline pass their own, or every preset
+   * resolves to a window the seeded data has no rows in.
+   */
+  today?: Date
 }>(), {
   direction: 'past',
   periodMode: false,
@@ -77,7 +83,7 @@ const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct
 const MONTHS_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December']
 function fmtDayLabel(d: Date) { return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}` }
 
-const today = dayStart(new Date())
+const today = dayStart(props.today ?? new Date())
 
 // Resolved [start, end] for each quick preset — inclusive N-day windows anchored
 // to today (last N = today-(N-1)…today; next N = today…today+(N-1)). `today` is a

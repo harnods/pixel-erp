@@ -334,7 +334,7 @@ function onDayClick(cell: Cell) {
 .adf-sidebar-item:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3) !important; }
 .adf-sidebar-item--active,
 .adf-sidebar-item--active:hover {
-  background: #E2E8F0 !important;
+  background: var(--mp-colors-background-neutral-pressed, #E2E8F0) !important;
   color: var(--mp-colors-text-link, #165082) !important;
   font-weight: var(--mp-font-weights-semi-bold);
 }

@@ -21,7 +21,7 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
-import AdvanceDateFilter from '~/components/patterns/AdvanceDateFilter.vue'
+import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import StockRequestFiltersDrawer, {
@@ -29,7 +29,6 @@ import StockRequestFiltersDrawer, {
 } from '~/components/patterns/StockRequestFiltersDrawer.vue'
 import { formatDate } from '~/utils/date'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
-import { dateFilterMatches, type DateFilterValue } from '~/utils/dateFilter'
 import { TODAY, TODAY_ISO } from '~/data/master'
 import {
   stockRequests, stockRequestStatus, stockRequestStatusOptions, skuDemandGroups,
@@ -164,7 +163,10 @@ const previewMode = ref<'data' | 'empty'>('data')
 const sourceRequests = computed<StockRequest[]>(() => previewMode.value === 'empty' ? [] : stockRequests)
 
 // ─── Quick filter: Request date (second of the two allowed quick filters) ──────
-const dateFilter = ref<DateFilterValue | null>(null)
+// AdvancedDateRangePicker is the ERP's one date-range control
+// (rule/date-picker-variants), so the value is a resolved [start, end] and the
+// same matchesDateRange() the All-filters drawer uses does the filtering.
+const dateFilter = ref<Date[] | null>(null)
 
 // ─── "All filters" drawer — a second, independent filter layer ANDed with the
 // toolbar's own Status select, Request date and search. ───────────────────────
@@ -175,7 +177,7 @@ function applyDrawerFilters(v: StockRequestFiltersValue) { Object.assign(applied
 function dayStart(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
 // AdvancedDateRangePicker emits a [start, end] Date pair (or null = not applied).
 function matchesDateRange(iso: string, range: Date[] | null): boolean {
-  if (!range) return true
+  if (!range?.length) return true
   const time = dayStart(new Date(iso)).getTime()
   return time >= dayStart(range[0]!).getTime() && time <= dayStart(range[1]!).getTime()
 }
@@ -234,7 +236,7 @@ function matchesWoRow(row: WoRow, s: string, status: string): boolean {
     || row.requestors.toLowerCase().includes(s)
     || row.lines.some(l => l.product.toLowerCase().includes(s) || l.sku.toLowerCase().includes(s))
   const matchesStatus = !status || row.status === status
-  const matchesQuickDate = dateFilterMatches(row.requestDate, dateFilter.value, TODAY)
+  const matchesQuickDate = matchesDateRange(row.requestDate, dateFilter.value)
 
   const f = appliedFilters
   const kw = f.keyword.toLowerCase().trim()
@@ -259,7 +261,7 @@ const skuRows = computed<SkuDemandGroup[]>(() => {
   const inScope = sourceRequests.value
     .filter(isOnDashboard)
     .filter(r => isTerminalTab.value ? isTerminalRequest(r) : isAwaitingTab(r))
-    .filter(r => dateFilterMatches(r.requestDate, dateFilter.value, TODAY))
+    .filter(r => matchesDateRange(r.requestDate, dateFilter.value))
   const lineFilter = (line: StockRequestLine) => matchesDateRange(line.requiredDate, appliedFilters.requestDate)
 
   return skuDemandGroups(inScope, lineFilter)
@@ -297,7 +299,7 @@ const activeFilterCount = computed(() => {
 })
 const isDrawerFilterActive = computed(() => activeFilterCount.value > 0)
 const hasActiveFilter = computed(() =>
-  !!search.value || !!statusFilter.value || !!dateFilter.value || isDrawerFilterActive.value)
+  !!search.value || !!statusFilter.value || !!dateFilter.value?.length || isDrawerFilterActive.value)
 
 function clearFilters() {
   search.value = ''
@@ -481,7 +483,10 @@ const exportColumns = computed(() => {
           v-if="!isTerminalTab" id="sr-status" v-model="statusFilter"
           :placeholder="t('Status')" :options="stockRequestStatusOptions"
         />
-        <AdvanceDateFilter id="sr-date-filter" v-model="dateFilter" :today="TODAY" :placeholder="t('Request date')" />
+        <AdvancedDateRangePicker
+          id="sr-date-filter" v-model="dateFilter" hide-label
+          :today="TODAY" :placeholder="t('Request date')"
+        />
         <MpButton
           v-if="!isTerminalTab"
           variant="secondary" left-icon="filter" is-rounded
