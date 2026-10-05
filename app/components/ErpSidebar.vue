@@ -352,6 +352,7 @@ const settingsPanelSubmenu: PanelSubItem[][] = [
   [
     // Data migration sits on its own with a divider above it.
     { label: 'Data migration' },
+    { label: 'WMS data migration' },
   ],
 ]
 
