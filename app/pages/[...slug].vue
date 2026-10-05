@@ -519,6 +519,8 @@ const GeneralLedgerReportPage = asyncPage(() => import('~/components/pages/Gener
 const InventoryValuationReportPage = asyncPage(() => import('~/components/pages/InventoryValuationReportPage.vue'))
 const FixedAssetSummaryReportPage = asyncPage(() => import('~/components/pages/FixedAssetSummaryReportPage.vue'))
 const CashBankReportPage = asyncPage(() => import('~/components/pages/CashBankReportPage.vue'))
+const BalanceSheetReportPage = asyncPage(() => import('~/components/pages/BalanceSheetReportPage.vue'))
+const ProfitLossReportPage = asyncPage(() => import('~/components/pages/ProfitLossReportPage.vue'))
 const BudgetVarianceReportPage = asyncPage(() => import('~/components/pages/BudgetVarianceReportPage.vue'))
 const PurchasesListReportPage = asyncPage(() => import('~/components/pages/PurchasesListReportPage.vue'))
 const PurchasesByVendorReportPage = asyncPage(() => import('~/components/pages/PurchasesByVendorReportPage.vue'))
@@ -696,6 +698,8 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'purchases-list') return { component: PurchasesListReportPage, id: segs[1] }
     if (segs[1] === 'purchases-by-vendor') return { component: PurchasesByVendorReportPage, id: segs[1] }
     if (segs[1] === 'purchases-by-product') return { component: PurchasesByProductReportPage, id: segs[1] }
+    if (segs[1] === 'balance-sheet') return { component: BalanceSheetReportPage, id: segs[1] }
+    if (segs[1] === 'profit-and-loss') return { component: ProfitLossReportPage, id: segs[1] }
   }
   // /inventory-report/dual-unit → Dual Unit Inventory Report (Reports → Inventory →
   // View report). Only the built slug matches; anything else falls through to the

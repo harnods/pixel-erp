@@ -36,9 +36,14 @@ const money = (n: number) => formatIDR(n) // base currency, as prod
 // ── Date filter (DD/MM/YYYY strings, prod format) ──
 const toDmy = (iso: string) => iso.split('-').reverse().join('/')
 const toIso = (dmy: string) => dmy.split('/').reverse().join('-')
-const startDate = ref(toDmy('2026-01-01'))
-const endDate = ref(toDmy(SIM_TODAY_ISO))
-const applied = ref({ start: '2026-01-01', end: SIM_TODAY_ISO })
+// Report drill-down (Balance sheet / Profit & loss) passes ?start=&end= (ISO), like prod's q[transaction_date_*].
+const route = useRoute()
+const isoQ = (k: string) => { const v = route.query[k]; return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '' }
+const initStart = isoQ('start') || '2026-01-01'
+const initEnd = isoQ('end') || SIM_TODAY_ISO
+const startDate = ref(toDmy(initStart))
+const endDate = ref(toDmy(initEnd))
+const applied = ref({ start: initStart, end: initEnd })
 const dateError = ref('')
 function applyFilter() {
   dateError.value = ''
