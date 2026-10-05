@@ -113,7 +113,7 @@ function setProgramme(key: string, v: string) {
             </td>
             <td class="pbi-r" :class="{ 'pbi-diff': r.difference }">{{ r.difference == null ? '-' : rupiah(r.difference) }}</td>
             <td>
-              <MpInput v-if="!editing && r.difference && can('bpjs.review')" :id="`pbi-note-${r.programme}`" v-model="notes[r.programme]" autocomplete="off" />
+              <MpInput v-if="!editing && r.difference && can('bpjs.review') && cmp.status !== 'Reviewed'" :id="`pbi-note-${r.programme}`" v-model="notes[r.programme]" autocomplete="off" />
               <span v-else class="pbi-sub">{{ r.note ?? '' }}</span>
             </td>
           </tr>

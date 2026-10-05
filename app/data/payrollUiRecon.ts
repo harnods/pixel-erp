@@ -48,6 +48,8 @@ export function recordManualEntry(o: { date: string; account: string; tags: Tags
   if (!(o.amount > 0)) return { ok: false, message: 'Type an amount above Rp0.' }
   if (o.memo.trim().length < 5) return { ok: false, message: 'Write a memo of 5 characters or more.' }
   state.seq += 1
+  // Same sample clock rule as the engine's now(): each recorded action moves it one minute.
+  payroll.clock = new Date(Date.parse(payroll.clock) + 60_000).toISOString()
   const e: ManualEntry = {
     id: `man${state.seq}`, number: `JV-${String(state.seq).padStart(4, '0')}`, month: monthOf(o.date), date: o.date, account: o.account, tags: o.tags,
     debit: o.side === 'debit' ? Math.round(o.amount) : 0, credit: o.side === 'credit' ? Math.round(o.amount) : 0, offset: o.offset, memo: o.memo.trim(), by: actingPerson(), at: payroll.clock,
@@ -141,6 +143,7 @@ export function signOff(month: string, hrConfirmed: boolean): Result {
   const off = v.checks.find((c) => c.status === 'Off')
   if (off) return { ok: false, message: `${off.label} is off with no confirmed note.` }
   if (v.manualAfterSignOff && reconciliation(month).status === 'Signed off') {
+    payroll.clock = new Date(Date.parse(payroll.clock) + 60_000).toISOString()
     state.reSignOffs[month] = { by: actingPerson(), at: payroll.clock }
     return { ok: true, warnings: [] }
   }
