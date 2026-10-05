@@ -52,12 +52,23 @@ const props = withDefaults(defineProps<{
    * resolves to a window the seeded data has no rows in.
    */
   today?: Date
+  /**
+   * Show a clear (✕) on the field once a range is applied, resetting it to null.
+   * Opt-in, and default OFF: several callers bind a non-nullable `ref<Date[]>`
+   * that always holds a range, and handing those a null would break them. A
+   * filter bar, where the user must be able to undo one filter without clearing
+   * the rest, opts in.
+   */
+  isClearable?: boolean
 }>(), {
   direction: 'past',
   periodMode: false,
   labelPrefixMode: false,
+  isClearable: false,
 })
-const emit = defineEmits<{ 'update:modelValue': [Date[]] }>()
+const emit = defineEmits<{ 'update:modelValue': [Date[] | null] }>()
+
+const { t } = useLocale()
 
 type Mode = 'today' | 'last7' | 'last14' | 'last30' | 'next7' | 'next14' | 'next30' | 'day' | 'week' | 'month' | 'year' | 'custom' | 'thisMonth' | 'thisQuarter' | 'thisYear' | 'thisWeek' | 'nextMonth'
 
@@ -122,6 +133,12 @@ const range = computed<[Date, Date]>(() => {
 })
 function commit(start: Date, end: Date) {
   emit('update:modelValue', [dayStart(start), dayStart(end)])
+}
+
+/** Back to unapplied — the field shows its placeholder and the filter drops out. */
+function clear() {
+  emit('update:modelValue', null)
+  open.value = false
 }
 
 const fieldText = computed(() => {
@@ -294,7 +311,15 @@ function onYearClick(y: number) {
       <MpPopoverTrigger>
         <MpButton class="adr-field" :class="{ 'adr-field--full': isFullWidth }" type="button" @click.stop="open = !open">
           <span class="adr-field__value" :class="{ 'adr-field__value--placeholder': !hasValue }">{{ fieldText }}</span>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <!-- Clear replaces the calendar once a range is applied, so one filter
+               can be undone without reaching for "Clear all filters". -->
+          <svg
+            v-if="isClearable && hasValue" class="adr-clear" width="16" height="16" viewBox="0 0 24 24" fill="none"
+            role="button" :aria-label="t('Clear')" @click.stop="clear"
+          >
+            <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/>
             <path d="M3 9.5H21M8 3V6M16 3V6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
@@ -422,10 +447,15 @@ function onYearClick(y: number) {
 
 /* Rendered via MpButton, not a raw HTML control — default look reset so it
    can take on the field's own shape (see IconButton/.demo-fab precedent). */
-.adr-field { display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0 !important; width: 260px; height: var(--mp-sizes-9, 36px); padding: 0 var(--mp-spacing-3) !important; background: var(--mp-background-neutral, #ffffff) !important; border: 1px solid var(--mp-border-default, #e3e7e9) !important; border-radius: var(--mp-radii-md) !important; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); cursor: pointer; }
+/* Metrics follow every other field-style trigger (rule/select-field-metrics):
+   38px tall and the translucent form border, not 36px and the lighter table
+   border — side by side with a select, the two-pixel difference shows. */
+.adr-field { display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0 !important; width: 260px; height: var(--mp-sizes-9\.5, 38px); padding: 0 var(--mp-spacing-3) !important; background: var(--mp-colors-background-neutral, #ffffff) !important; border: 1px solid var(--mp-colors-border-form, #1d1f2429) !important; border-radius: var(--mp-radii-md) !important; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); cursor: pointer; }
 .adr-field--full { width: 100%; }
-.adr-field:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+.adr-field:hover { border-color: var(--mp-colors-border-bold, #8c9596) !important; }
 .adr-field svg { flex-shrink: 0; color: var(--mp-text-subtle); }
+.adr-clear { cursor: pointer; border-radius: var(--mp-radii-sm); }
+.adr-clear:hover { color: var(--mp-colors-text-default, #080d0e); }
 .adr-field__value--placeholder { color: var(--mp-text-placeholder, #8690a2); }
 
 /* ── Popover: sidebar + calendar ── */

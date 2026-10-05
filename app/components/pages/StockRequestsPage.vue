@@ -484,7 +484,7 @@ const exportColumns = computed(() => {
           :placeholder="t('Status')" :options="stockRequestStatusOptions"
         />
         <AdvancedDateRangePicker
-          id="sr-date-filter" v-model="dateFilter" hide-label
+          id="sr-date-filter" v-model="dateFilter" hide-label is-clearable
           :today="TODAY" :placeholder="t('Request date')"
         />
         <MpButton
