@@ -92,7 +92,7 @@ const SHIP_TO = [
 ]
 const WAREHOUSES = ['Default warehouse', 'Cibinong warehouse', 'Pulogadung DC', 'Bandung hub']
 const PAYMENT_TERMS = ['Net 30', 'Net 14', 'Cash on delivery', 'Net 45']
-const PAYMENT_METHODS = ['Bank transfer', 'Virtual account', 'Cash', 'Giro']
+export const PAYMENT_METHODS = ['Bank transfer', 'Virtual account', 'Cash', 'Giro']
 
 function addDays(iso: string, days: number): string {
   const d = new Date(`${iso}T00:00:00`)
