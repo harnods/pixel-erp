@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/purchase-orders/views/PurchaseOrderShowView.vue + components/show/* -->
 <script setup lang="ts">
 import {
   MpButton, MpTextlink, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
@@ -15,6 +16,7 @@ import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { getPurchaseOrderDetail, purchaseOrders } from '~/data'
 import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
 import { applicableDimensions } from '~/data/dimensions'
+import { infoToast } from '~/utils/toasts'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -33,6 +35,19 @@ const rejectPurchaseOrder = inject<(id: string, reason: string) => void>('reject
 const duplicatePurchaseOrder = inject<(id: string, banner?: { user: string; date: string; reason?: string } | null) => void>('duplicatePurchaseOrder')
 
 const order = computed(() => getPurchaseOrderDetail(props.orderId))
+// prod header shows "Balance due X" once something was paid/received, else "Total X".
+const listRecord = computed(() => purchaseOrders.find(o => o.id === props.orderId))
+const balanceDue = computed(() => listRecord.value?.balance ?? order.value.totals.total)
+const showBalanceDue = computed(() => balanceDue.value > 0 && balanceDue.value < order.value.totals.total)
+// prod: the shipping column (Estimated delivery date / Ship via / Tracking no. / Ship to) only when shipped.
+const isShipped = computed(() => !!(order.value.shipVia || order.value.shipDate))
+const router = useRouter()
+function notInPrototype() { infoToast('Not in this prototype') }
+function onMarkCompleted() {
+  const o = purchaseOrders.find(x => x.id === props.orderId)
+  if (o) { o.status = 'closed'; o.balance = 0 }
+  toast.notify({ variant: 'success', title: 'Purchase order marked as completed', rootProps: { class: 'toast-enterprise' } })
+}
 const { dimensionsActivated } = useDimensionsActivation()
 const showDimensionsColumn = computed(() => dimensionsActivated.value && applicableDimensions('purchases').length > 0)
 function dimensionValuesFor(dimensions?: Record<string, string>): { name: string; value: string }[] {
@@ -352,13 +367,22 @@ function goBack() { closePurchaseOrder?.() }
     </header>
 
     <!-- ── Stage wrapper: 12px rounded top corners colored to match active banner ── -->
-    <div class="detail-stage-wrapper" :style="{ background: rejectionBanner ? 'var(--mp-colors-background-warning)' : (showBanner && order.banner ? 'var(--mp-colors-background-information)' : 'var(--mp-background-stage)') }">
+    <div class="detail-stage-wrapper" :style="{ background: (rejectionBanner || isAwaitingApproval) ? 'var(--mp-colors-background-warning)' : (showBanner && order.banner ? 'var(--mp-colors-background-information)' : 'var(--mp-background-stage)') }">
 
     <!-- Rejection warning banner -->
     <MpBanner v-if="rejectionBanner" id="rejection-banner" variant="warning" class="detail-rejection-banner">
       <MpBannerIcon id="rejection-banner-icon" />
       <MpBannerTitle id="rejection-banner-title">Transaction rejected by {{ rejectionBanner.user }} on {{ rejectionBanner.date }}. Make sure you have made correction before saving this transaction.</MpBannerTitle>
       <MpBannerDescription v-if="rejectionBanner.reason" id="rejection-banner-desc">{{ rejectionBanner.reason }}</MpBannerDescription>
+    </MpBanner>
+
+    <!-- Draft approval banner (prod: detail.draftApprovalBannerDescription + View approval rule) -->
+    <MpBanner v-if="isAwaitingApproval && !rejectionBanner" id="draft-approval-banner" variant="warning" class="detail-rejection-banner">
+      <MpBannerIcon id="draft-approval-banner-icon" />
+      <MpBannerDescription id="draft-approval-banner-desc">
+        This transaction requires approval before it can be processed any further.
+        <MpTextlink as="button" variant="primary" @click="notInPrototype">View approval rule</MpTextlink>
+      </MpBannerDescription>
     </MpBanner>
 
     <!-- ── Scrollable stage ── -->
@@ -384,8 +408,8 @@ function goBack() { closePurchaseOrder?.() }
             </ContentList>
           </div>
           <div class="detail-primary-total">
-            <span class="detail-total-label">Total</span>
-            <span class="detail-total-amount">{{ formatIDR(order.totals.total) }}</span>
+            <span class="detail-total-label">{{ showBalanceDue ? 'Balance due' : 'Total' }}</span>
+            <span class="detail-total-amount">{{ formatIDR(showBalanceDue ? balanceDue : order.totals.total) }}</span>
           </div>
         </div>
 
@@ -393,10 +417,9 @@ function goBack() { closePurchaseOrder?.() }
 
         <!-- Detail grid: col 1 = 318px, col 2+ fill equally (max 5 cols) -->
         <div class="content-list-grid">
-          <!-- col 1: addresses -->
+          <!-- col 1: billing address -->
           <div class="content-list-col">
             <ContentList label="Billing address" :value="order.billingAddress" />
-            <ContentList label="Ship to" :value="order.shipTo" />
           </div>
           <!-- col 2: order dates -->
           <div class="content-list-col">
@@ -404,20 +427,21 @@ function goBack() { closePurchaseOrder?.() }
             <ContentList label="Due date" :value="formatDateLong(order.dueDate)" />
             <ContentList label="Payment terms" :value="order.paymentTerms" />
           </div>
-          <!-- col 3: shipping -->
-          <div class="content-list-col">
-            <ContentList label="Ship date" :value="formatDateLong(order.shipDate)" />
+          <!-- col 3: shipping (only when shipped) -->
+          <div v-if="isShipped" class="content-list-col">
+            <ContentList label="Estimated delivery date" :value="formatDateLong(order.shipDate)" />
             <ContentList label="Ship via" :value="order.shipVia" />
             <ContentList label="Tracking no." :value="order.trackingNo" />
+            <ContentList label="Ship to" :value="order.shipTo" />
           </div>
           <!-- col 4: references -->
           <div class="content-list-col">
             <ContentList label="Transaction no." :value="`Purchase Order #${order.number}`" />
             <ContentList label="Reference no." :value="order.referenceNo" />
-            <ContentList label="Warehouse" :value="order.warehouse" />
           </div>
-          <!-- col 5: tags -->
+          <!-- col 5: warehouse + tags -->
           <div class="content-list-col">
+            <ContentList label="Warehouse" :value="order.warehouse" />
             <ContentList label="Tags">
               <ErpTagList v-if="order.tags?.length" :tags="order.tags" />
               <template v-else>—</template>
@@ -436,7 +460,7 @@ function goBack() { closePurchaseOrder?.() }
               <th class="detail-th">Description</th>
               <th class="detail-th detail-th--num">Qty</th>
               <th class="detail-th">Unit</th>
-              <th class="detail-th detail-th--num">Unit price</th>
+              <th class="detail-th detail-th--num">Unit cost</th>
               <th class="detail-th detail-th--num">Discount</th>
               <th class="detail-th">Tax</th>
               <th v-if="showDimensionsColumn" class="detail-th">Dimensions</th>
@@ -542,7 +566,7 @@ function goBack() { closePurchaseOrder?.() }
             <span class="detail-total-row-amt detail-total-row-amt--strong">{{ formatIDR(order.totals.subtotal) }}</span>
           </div>
           <div class="detail-total-row">
-            <span class="detail-total-row-label">Discount per line</span>
+            <span class="detail-total-row-label">Discounts per line</span>
             <span class="detail-total-row-amt">{{ formatDeduction(order.totals.discountPerLine) }}</span>
           </div>
           <div class="detail-total-row">
@@ -580,14 +604,14 @@ function goBack() { closePurchaseOrder?.() }
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem>Print PDF</MpPopoverListItem>
-              <MpPopoverListItem>Print dot matrix</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">Print PDF</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">Print dot matrix</MpPopoverListItem>
             </MpPopoverList>
             <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
             <MpPopoverList>
-              <MpPopoverListItem>Share via WhatsApp</MpPopoverListItem>
-              <MpPopoverListItem>Share via email</MpPopoverListItem>
-              <MpPopoverListItem>Copy link</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">Share via WhatsApp</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">Share via email</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">Copy link</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -603,15 +627,21 @@ function goBack() { closePurchaseOrder?.() }
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <template v-if="!isRejected">
               <MpPopoverList>
-                <MpPopoverListItem>Preview</MpPopoverListItem>
+                <MpPopoverListItem @click="notInPrototype">Preview</MpPopoverListItem>
+                <template v-if="!isAwaitingApproval && order.status !== 'closed' && order.status !== 'voided'">
+                  <MpPopoverListItem @click="router.push('/purchase-deliveries/new')">Create purchase delivery</MpPopoverListItem>
+                  <MpPopoverListItem @click="notInPrototype">Create purchase invoice</MpPopoverListItem>
+                  <MpPopoverListItem @click="notInPrototype">Add deposit</MpPopoverListItem>
+                  <MpPopoverListItem @click="onMarkCompleted">Mark as completed</MpPopoverListItem>
+                </template>
               </MpPopoverList>
               <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
             </template>
             <MpPopoverList>
-              <MpPopoverListItem v-if="!isRejected">Edit</MpPopoverListItem>
-              <MpPopoverListItem v-if="!isAwaitingApproval && !isRejected">Set as recurring</MpPopoverListItem>
+              <MpPopoverListItem v-if="!isRejected" @click="notInPrototype">Edit</MpPopoverListItem>
+              <MpPopoverListItem v-if="!isAwaitingApproval && !isRejected" @click="notInPrototype">Set as recurring</MpPopoverListItem>
               <MpPopoverListItem @click="duplicatePurchaseOrder?.(props.orderId, rejectionBanner)">Duplicate</MpPopoverListItem>
-              <MpPopoverListItem v-if="!isRejected">Void</MpPopoverListItem>
+              <MpPopoverListItem v-if="!isRejected" @click="notInPrototype">Void</MpPopoverListItem>
               <MpPopoverListItem v-if="isAwaitingApproval" @click="onReject">Reject</MpPopoverListItem>
               <MpPopoverListItem @click="deleteOpen = true">Delete</MpPopoverListItem>
             </MpPopoverList>
@@ -671,8 +701,8 @@ function goBack() { closePurchaseOrder?.() }
   <ConfirmModal
     v-model:is-open="deleteOpen"
     title="Delete purchase order?"
-    :description="`Purchase Order #${order.number} will be permanently deleted. This cannot be undone.`"
-    confirm-label="Delete purchase order"
+    description="Deleted purchase order cannot be restored."
+    confirm-label="Delete"
     @confirm="confirmDelete"
   />
 </template>

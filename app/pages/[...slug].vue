@@ -430,6 +430,7 @@ provide('rejectPurchaseOrder', (id: string, reason: string) => {
     o.rejection = { user: 'You', date: `${day} ${month} ${d.getFullYear()}`, reason }
   }
 })
+provide('openNewPurchaseOrderForm', () => openNewPurchaseOrderForm())
 function openNewPurchaseOrderForm() {
   poFormOpen.value = true
   poFormDuplicateId.value = null
@@ -1234,6 +1235,7 @@ const pageTabs: Record<string, string[]> = {
   'Sales deliveries': ['All sales deliveries', 'Awaiting approval'],
   'Sales orders': ['All sales orders', 'Awaiting approval'],
   'Sales quotes': ['All sales quotes', 'Awaiting approval'],
+  'Purchase quotes': ['All purchase quotes', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
@@ -1496,6 +1498,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Purchase deliveries': { 'All purchase deliveries': pageRegistry['Purchase deliveries']!, 'Awaiting approval': pageRegistry['Purchase deliveries']! },
   'Sales orders':     { 'All sales orders':     pageRegistry['Sales orders']!,     'Awaiting approval': pageRegistry['Sales orders']! },
   'Sales quotes':     { 'All sales quotes':     pageRegistry['Sales quotes']!,     'Awaiting approval': pageRegistry['Sales quotes']! },
+  'Purchase quotes':  { 'All purchase quotes':  pageRegistry['Purchase quotes']!,  'Awaiting approval': pageRegistry['Purchase quotes']! },
   'Inbound delivery': {
     'Receipts': ReceiptIndexPage,
     'Receiving': ReceivingIndexPage,
@@ -2088,10 +2091,10 @@ function startResize(e: MouseEvent) {
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Purchase requests'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--secondary">
+          <button class="btn-enterprise btn-enterprise--secondary" @click="infoToast('Not in this prototype')">
             {{ t('Import') }}
           </button>
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/purchase-requests/new')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -2599,6 +2602,7 @@ function startResize(e: MouseEvent) {
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Purchase quotes'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="infoToast('Not in this prototype')"><MpIcon name="upload" size="md" />{{ t('Import') }}</button>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/purchase-quotes/new')">
             <MpIcon name="add" size="md" color="icon.inverse" />
             {{ t('New purchase quote') }}

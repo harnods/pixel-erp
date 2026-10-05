@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/purchase-quotes/views/PurchaseQuoteShowView.vue + components/show/* -->
 <script setup lang="ts">
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
@@ -11,6 +12,7 @@ import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { getPurchaseQuoteDetail } from '~/data/purchaseQuoteDetails'
 import { purchaseQuotes } from '~/data'
+import { infoToast } from '~/utils/toasts'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -25,12 +27,16 @@ const hasApproval = true
 
 const router = useRouter()
 const quote = computed(() => getPurchaseQuoteDetail(props.orderId))
+// prod: the shipping column (Estimated delivery date / Ship via) only when shipped;
+// Linked transactions tab only when there are linked transactions.
+const isShipped = computed(() => quote.value.isShipped)
+function notInPrototype() { infoToast('Not in this prototype') }
 
 const activityOpen = ref(false)
 // Destructive delete → confirm modal (rule/btn-danger-confirm)
 const deleteOpen = ref(false)
 function confirmDelete() {
-  toast.notify({ variant: 'success', title: t('Purchase quote deleted'), rootProps: { class: 'toast-enterprise' } })
+  toast.notify({ variant: 'success', title: `${t('Purchase quote')} ${quote.value.number} ${t('deleted')}`, rootProps: { class: 'toast-enterprise' } })
   router.push('/purchase-quotes')
 }
 const activityEntries = computed(() => [{
@@ -231,7 +237,7 @@ function goBack() { router.push('/purchase-quotes') }
 
         <!-- Detail grid: col 1 = 318px, col 2+ fill equally (max 5 cols) -->
         <div class="content-list-grid">
-          <!-- col 1: addresses -->
+          <!-- col 1: addresses (local-only — prod PQ detail has no address column; kept) -->
           <div class="content-list-col">
             <ContentList :label="t('Billing address')" :value="quote.billingAddress" />
             <ContentList :label="t('Ship to')" :value="quote.shipTo" />
@@ -242,10 +248,15 @@ function goBack() { router.push('/purchase-quotes') }
             <ContentList :label="t('Expiration date')" :value="formatDateLong(quote.expirationDate)" />
             <ContentList :label="t('Payment terms')" :value="quote.paymentTerms" />
           </div>
-          <!-- col 3: references -->
+          <!-- col 3 (prod, shipped only): Estimated delivery date + Ship via -->
+          <div v-if="isShipped" class="content-list-col">
+            <ContentList :label="t('Estimated delivery date')" :value="formatDateLong(quote.shipDate)" />
+            <ContentList :label="t('Ship via')" :value="quote.shipVia" />
+          </div>
+          <!-- col 4: references (prod order: Reference no. → Transaction no.) -->
           <div class="content-list-col">
-            <ContentList :label="t('Transaction no.')" :value="`${t('Purchase Quote')} #${quote.number}`" />
             <ContentList :label="t('Reference no.')" :value="quote.referenceNo" />
+            <ContentList :label="t('Transaction no.')" :value="`${t('Purchase Quote')} #${quote.number}`" />
             <ContentList :label="t('Warehouse')" :value="quote.warehouse" />
             <ContentList :label="t('Buyer')" :value="quote.buyer" />
           </div>
@@ -269,7 +280,7 @@ function goBack() { router.push('/purchase-quotes') }
               <th class="detail-th">{{ t('Description') }}</th>
               <th class="detail-th detail-th--num">{{ t('Qty') }}</th>
               <th class="detail-th">{{ t('Unit') }}</th>
-              <th class="detail-th detail-th--num">{{ t('Unit price') }}</th>
+              <th class="detail-th detail-th--num">{{ t('Unit cost') }}</th>
               <th class="detail-th detail-th--num">{{ t('Discount') }}</th>
               <th class="detail-th">{{ t('Tax') }}</th>
               <th class="detail-th detail-th--num">{{ t('Amount') }}</th>
@@ -336,7 +347,7 @@ function goBack() { router.push('/purchase-quotes') }
             <span class="detail-total-row-amt detail-total-row-amt--strong">{{ formatIDR(quote.totals.subtotal) }}</span>
           </div>
           <div class="detail-total-row">
-            <span class="detail-total-row-label">{{ t('Discount per line') }}</span>
+            <span class="detail-total-row-label">{{ t('Discount per lines') }}</span>
             <span class="detail-total-row-amt">{{ formatDeduction(quote.totals.discountPerLine) }}</span>
           </div>
           <div class="detail-total-row">
@@ -363,7 +374,7 @@ function goBack() { router.push('/purchase-quotes') }
       <a class="detail-updated" @click.prevent="activityOpen = true">{{ t('Last updated by') }} {{ quote.lastUpdatedBy }} {{ t('on') }} {{ formatUpdatedAt(quote.lastUpdatedAt) }}</a>
 
       <!-- ── Tabs ── -->
-      <MpTabs id="detail-tabs" :default-value="0" variant-color="green" class="detail-tabs">
+      <MpTabs v-if="quote.linkedTransactions.length" id="detail-tabs" :default-value="0" variant-color="green" class="detail-tabs">
         <MpTabList>
           <MpTab id="detail-tab-linked" value="linked">{{ t('Linked transactions') }}</MpTab>
         </MpTabList>
@@ -415,14 +426,14 @@ function goBack() { router.push('/purchase-quotes') }
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Print dot matrix') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Print PDF') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Print dot matrix') }}</MpPopoverListItem>
             </MpPopoverList>
             <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
             <MpPopoverList>
-              <MpPopoverListItem>{{ t('Share via WhatsApp') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Share via WhatsApp') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Share via email') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Copy link') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -437,10 +448,17 @@ function goBack() { router.push('/purchase-quotes') }
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Void') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Preview') }}</MpPopoverListItem>
+              <template v-if="quote.status === 'open'">
+                <MpPopoverListItem @click="router.push('/purchase-orders')">{{ t('Create purchase order') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="notInPrototype">{{ t('Create purchase invoice') }}</MpPopoverListItem>
+              </template>
+            </MpPopoverList>
+            <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
+            <MpPopoverList>
+              <MpPopoverListItem @click="router.push(`/purchase-quotes/${quote.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="router.push('/purchase-quotes/new')">{{ t('Duplicate') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Void') }}</MpPopoverListItem>
               <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
@@ -461,8 +479,8 @@ function goBack() { router.push('/purchase-quotes') }
     <ConfirmModal
       v-model:is-open="deleteOpen"
       :title="t('Delete purchase quote?')"
-      :description="`${t('Purchase Quote')} #${quote.number} ${t('will be permanently deleted. This cannot be undone.')}`"
-      :confirm-label="`${t('Delete')} ${t('purchase quote')}`"
+      :description="t('Deleted purchase quote cannot be restored.')"
+      :confirm-label="t('Delete')"
       @confirm="confirmDelete"
     />
   </div>

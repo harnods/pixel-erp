@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/purchase-orders/views/PurchaseOrderListView.vue + views/panels/PurchaseOrderListPanel.vue -->
 <!--
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Mekari ERP — Purchase Orders Index
@@ -32,6 +33,11 @@ import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import CopyLinkDrawer from '~/components/patterns/CopyLinkDrawer.vue'
 import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
+import { lastUpdatedFor } from '~/utils/lastUpdated'
+import SalesOrderFiltersDrawer, { emptySalesOrderFilters, type SalesOrderFiltersValue } from '~/components/patterns/SalesOrderFiltersDrawer.vue'
+import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
 import { infoToast } from '~/utils/toasts'
 import { purchaseOrders } from '~/data'
 import type { PurchaseOrder } from '~/data'
@@ -41,21 +47,25 @@ const toggleAirene           = inject<() => void>('toggleAirene')
 const activeTab              = inject<Ref<string>>('purchaseOrdersTab')
 const openPurchaseOrder      = inject<(id: string) => void>('openPurchaseOrder')
 const duplicatePurchaseOrder = inject<(id: string) => void>('duplicatePurchaseOrder')
+const openNewPurchaseOrderForm = inject<() => void>('openNewPurchaseOrderForm')
+const router = useRouter()
 
 // ─── Column definitions (date/number widths match the Expenses index) ─────────
 const columns: TableColumn[] = [
-  { key: 'date',       label: 'Date',        kind: 'date',   sortType: 'date'                },
-  { key: 'number',     label: 'Number',      kind: 'number', sortable: true, sortType: 'text' },
-  { key: 'attachment', label: '',            width: '40px',  noHeader: true, align: 'center' },
-  { key: 'vendorName', label: 'Vendor',      kind: 'name',   sortable: true                  },
-  { key: 'dueDate',    label: 'Due date',    kind: 'date'                                    },
-  { key: 'status',     label: 'Status',      kind: 'status'                                  },
-  { key: 'balance',    label: 'Balance due', kind: 'amount', align: 'right', sortable: true  },
-  { key: 'total',      label: 'Total',       kind: 'amount', align: 'right', sortable: true  },
-  { key: 'tags',       label: 'Tags',        kind: 'tags'                                    },
+  { key: 'date',        label: t('Date'),         kind: 'date',   sortType: 'date'                },
+  { key: 'number',      label: t('Number'),       kind: 'number', sortable: true, sortType: 'text' },
+  { key: 'attachment',  label: '',                width: '40px',  noHeader: true, align: 'center' },
+  { key: 'vendorName',  label: t('Vendor'),       kind: 'name',   sortable: true                  },
+  { key: 'dueDate',     label: t('Due date'),     kind: 'date'                                    },
+  { key: 'status',      label: t('Status'),       kind: 'status'                                  },
+  { key: 'balance',     label: t('Balance due'),  kind: 'amount', align: 'right', sortable: true  },
+  { key: 'total',       label: t('Total'),        kind: 'amount', align: 'right', sortable: true  },
+  { key: 'tags',        label: t('Tags'),         kind: 'tags'                                    },
+  // prod: "Last updated" exists in column settings, hidden by default
+  { key: 'lastUpdated', label: t('Last updated'), kind: 'date'                                    },
 ]
-// Column show/hide (first column always on).
-const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(columns.map(c => [c.key, true])))
+// Column show/hide (first column always on; Last updated hidden by default, as in prod).
+const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(columns.map(c => [c.key, c.key !== 'lastUpdated'])))
 const columnItems = columns.filter(c => !c.noHeader).map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const visibleColumns = computed<TableColumn[]>(() => columns.filter(c => columnVisibility[c.key]))
 function hideColumn(key: string) { columnVisibility[key] = false }
@@ -96,17 +106,75 @@ const {
     const matchesTab    = allowed.includes(row.status)
     const matchesStatus = !status || row.status === status
     const matchesSearch = !s || row.number.toLowerCase().includes(s) || row.vendorName.toLowerCase().includes(s)
-    return matchesTab && matchesStatus && matchesSearch
+
+    // ── "All filters" drawer (prod FilterDrawer: keywords, transaction date, due date, status, total, tags) ──
+    const f = appliedFilters
+    const kw = f.keyword.toLowerCase().trim()
+    const rowTags = row.tags ?? []
+    const matchesKeyword = !kw || (
+      f.keywordColumn === 'all'
+        ? row.number.toLowerCase().includes(kw) || row.vendorName.toLowerCase().includes(kw)
+        : f.keywordColumn === 'number' ? row.number.toLowerCase().includes(kw)
+        : row.vendorName.toLowerCase().includes(kw)
+    )
+    const matchesDrawer = matchesKeyword
+      && matchesDateRange(row.date, f.transactionDate)
+      && matchesDateRange(row.dueDate, f.dueDate)
+      && (f.status.length === 0 || f.status.includes(row.status))
+      && matchesAmountFilter(row.total, f.totalComparator, f.totalValue, f.totalMin, f.totalMax)
+      && (f.tags.length === 0
+        || (f.tagsComparator === 'isAnyOf' ? f.tags.some(tg => rowTags.includes(tg))
+          : f.tagsComparator === 'isAllOf' ? f.tags.every(tg => rowTags.includes(tg))
+          : f.tags.every(tg => !rowTags.includes(tg))))
+    return matchesTab && matchesStatus && matchesSearch && matchesDrawer
   },
+})
+
+// ─── "All filters" drawer state ───────────────────────────────────────────────
+const filtersOpen = ref(false)
+const appliedFilters = reactive<SalesOrderFiltersValue>(emptySalesOrderFilters())
+const keywordColumns = [
+  { key: 'number',     label: t('Number') },
+  { key: 'vendorName', label: t('Vendor') },
+]
+const tagOptions = computed(() => [...new Set(purchaseOrders.flatMap(po => po.tags ?? []))].sort())
+function applyDrawerFilters(v: SalesOrderFiltersValue) {
+  Object.assign(appliedFilters, v)
+  setPage(1)
+  toast.notify({ variant: 'success', title: t('Filters applied'), rootProps: { class: 'toast-enterprise' } })
+}
+function dayStart(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
+function matchesDateRange(iso: string, range: Date[] | null): boolean {
+  if (!range) return true
+  const ts = dayStart(new Date(iso)).getTime()
+  return ts >= dayStart(range[0]!).getTime() && ts <= dayStart(range[1]!).getTime()
+}
+function matchesAmountFilter(amount: number, comparator: AmountComparator, value: string, min: string, max: string): boolean {
+  if (comparator === 'gt') return value === '' || amount > Number(value)
+  if (comparator === 'lt') return value === '' || amount < Number(value)
+  const lo = min === '' ? -Infinity : Number(min)
+  const hi = max === '' ? Infinity : Number(max)
+  return amount >= lo && amount <= hi
+}
+const activeFilterCount = computed(() => {
+  const f = appliedFilters
+  let n = 0
+  if (f.keyword) n++
+  if (f.transactionDate) n++
+  if (f.dueDate) n++
+  if (f.status.length > 0) n++
+  if (f.totalValue !== '' || f.totalMin !== '' || f.totalMax !== '') n++
+  if (f.tags.length > 0) n++
+  return n
 })
 
 // ─── Status filter (in the toolbar) — options for the "All" view ──────────────
 const statusOptions = [
-  { label: 'Open',                value: 'open'                },
-  { label: 'Partially processed', value: 'partially-processed' },
-  { label: 'Awaiting invoice',    value: 'awaiting invoice'    },
-  { label: 'Closed',              value: 'closed'              },
-  { label: 'Voided',              value: 'voided'              },
+  { label: t('Open'),                value: 'open'                },
+  { label: t('Partially processed'), value: 'partially-processed' },
+  { label: t('Awaiting invoice'),    value: 'awaiting invoice'    },
+  { label: t('Closed'),              value: 'closed'              },
+  { label: t('Voided'),              value: 'voided'              },
 ]
 // Reset any status pick when the tab changes (awaiting/rejected have their own set).
 watch(() => activeTab?.value, () => { statusFilter.value = '' })
@@ -115,8 +183,18 @@ watch(() => activeTab?.value, () => { statusFilter.value = '' })
 function markCompleted(id: string) {
   const o = purchaseOrders.find(x => x.id === id)
   if (o) { o.status = 'closed'; o.balance = 0 }
-  toast.notify({ variant: 'success', title: 'Purchase order marked as completed' })
+  toast.notify({ variant: 'success', title: t('Purchase order marked as completed'), rootProps: { class: 'toast-enterprise' } })
 }
+
+// ─── Bulk delete (prod: ghost "Delete" beside the bulk Actions menu → confirm modal) ──
+const bulkDeleteOpen = ref(false)
+const bulkDeleteCount = ref(0)
+function openBulkDelete(count: number) { bulkDeleteCount.value = count; bulkDeleteOpen.value = true }
+function confirmBulkDelete() {
+  const n = bulkDeleteCount.value
+  toast.notify({ variant: 'success', title: n === 1 ? t('1 purchase order deleted') : `${n} ${t('purchase orders deleted')}`, rootProps: { class: 'toast-enterprise' } })
+}
+function notInPrototype() { infoToast('Not in this prototype') }
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 function formatDate(iso: string) {
@@ -137,7 +215,7 @@ const loading = ref(true)
 onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
 
 const emptyIllustration = '/illustrations/empty-folder.png'
-function clearFilters() { search.value = ''; statusFilter.value = '' }
+function clearFilters() { search.value = ''; statusFilter.value = ''; Object.assign(appliedFilters, emptySalesOrderFilters()) }
 
 // ─── Bulk selection helper ──────────────────────────────────────────────────
 function bulkSelected(selectedRows: Set<number>): Row[] {
@@ -187,7 +265,7 @@ const exportColumns = computed(() => [
     has-checkbox
     :loading="loading"
     :search="search"
-    :has-active-filter="!!search || !!statusFilter"
+    :has-active-filter="!!search || !!statusFilter || activeFilterCount > 0"
     filter-empty-label="purchase order"
     @page-change="setPage"
     @per-page-change="setPerPage"
@@ -197,7 +275,7 @@ const exportColumns = computed(() => [
   >
 
     <!-- ── Bulk actions ── -->
-    <template #bulk-actions="{ selectedRows }">
+    <template #bulk-actions="{ selectedRows, count }">
       <!-- Bulk bar = single secondary-sm "Actions" dropdown (never primary); no Delete (rule/bulk-actions-no-delete) -->
       <MpPopover id="po-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
         <MpPopoverTrigger>
@@ -209,6 +287,10 @@ const exportColumns = computed(() => [
             <MpPopoverListItem @click="bulkSelected(selectedRows as Set<number>).length && openShare(bulkSelected(selectedRows as Set<number>)[0]!)">{{ t('Share via email') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openCopyLinks(bulkSelected(selectedRows as Set<number>).slice(0, 5))">{{ t('Copy link') }}</MpPopoverListItem>
           </MpPopoverList>
+          <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
+          <MpPopoverList>
+            <MpPopoverListItem @click="openBulkDelete(count as number)">{{ t('Delete') }}</MpPopoverListItem>
+          </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
     </template>
@@ -218,7 +300,7 @@ const exportColumns = computed(() => [
       <div class="filter-left">
         <ErpFilterSelect id="po-status" v-model="statusFilter" :placeholder="t('Status')" :options="statusOptions" />
 
-        <MpButton variant="secondary" left-icon="filter" is-rounded class="filter-all-btn">{{ t('All filters') }}</MpButton>
+        <MpButton variant="secondary" left-icon="filter" is-rounded class="filter-all-btn" :class="{ 'filter-all-btn--active': activeFilterCount > 0 }" @click="filtersOpen = true">{{ t('All filters') }}{{ activeFilterCount > 0 ? ` (${activeFilterCount})` : '' }}</MpButton>
       </div>
 
       <div class="filter-right">
@@ -308,12 +390,12 @@ const exportColumns = computed(() => [
         <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="openPurchaseOrder?.((row as Row).id)">{{ t('View details') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="infoToast('Create purchase delivery — coming soon')">{{ t('Create purchase delivery') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="infoToast('Create purchase invoice — coming soon')">{{ t('Create purchase invoice') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="router.push('/purchase-deliveries/new')">{{ t('Create purchase delivery') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="notInPrototype">{{ t('Create purchase invoice') }}</MpPopoverListItem>
             <MpPopoverListItem @click="markCompleted((row as Row).id)">{{ t('Mark as completed') }}</MpPopoverListItem>
             <MpPopoverListItem @click="duplicatePurchaseOrder?.((row as Row).id)">{{ t('Duplicate') }}</MpPopoverListItem>
             <div role="separator" style="height:1px;margin:4px 0;background:var(--mp-border-default);" />
-            <MpPopoverListItem @click="infoToast('Share via WhatsApp — coming soon')">{{ t('Share via WhatsApp') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="notInPrototype">{{ t('Share via WhatsApp') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openShare(row as Row)">{{ t('Share via email') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openCopyLinks([row as Row])">{{ t('Copy link') }}</MpPopoverListItem>
           </MpPopoverList>
@@ -327,10 +409,36 @@ const exportColumns = computed(() => [
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
         <p class="empty-full-title">{{ t('No purchase orders') }}</p>
         <p class="empty-full-desc">{{ t('Purchase orders will appear here.') }}</p>
+        <MpButton variant="secondary" left-icon="add" is-rounded @click="openNewPurchaseOrderForm?.()">{{ t('New purchase order') }}</MpButton>
       </div>
     </template>
 
+    <template #cell-lastUpdated="{ row }">
+      <LastUpdatedCell v-bind="lastUpdatedFor((row as Row).id)" />
+    </template>
+
   </ErpTablePage>
+
+  <SalesOrderFiltersDrawer
+    id="po-allfilters"
+    :is-open="filtersOpen"
+    :model-value="appliedFilters"
+    :columns="keywordColumns"
+    :status-options="statusOptions"
+    :tag-options="tagOptions"
+    @update:is-open="filtersOpen = $event"
+    @apply="applyDrawerFilters"
+  />
+
+  <ConfirmModal
+    v-model:is-open="bulkDeleteOpen"
+    :title="bulkDeleteCount === 1 ? t('Delete purchase order?') : t('Delete purchase orders?')"
+    :description="bulkDeleteCount === 1
+      ? t('Are you sure you want to delete this purchase order? This action cannot be undone.')
+      : `${t('Are you sure you want to delete these')} ${bulkDeleteCount} ${t('purchase orders? This action cannot be undone.')}`"
+    :confirm-label="t('Delete')"
+    @confirm="confirmBulkDelete"
+  />
 
   <!-- ── Export / Copy link / Share via email (shared patterns) ── -->
   <ExportModal :open="exportOpen" :title="t('Export purchase orders')" entity-label="purchase orders" :columns="exportColumns" :custom-fields="[t('Sample custom field 1'), t('Sample custom field 2')]" :total="total" @close="exportOpen = false" @export="exportOpen = false" />
@@ -459,6 +567,10 @@ const exportColumns = computed(() => [
   white-space: nowrap;
 }
 .filter-all-btn:hover { background: var(--mp-background-neutral-hovered, #f0f1f3); }
+.filter-all-btn--active {
+  background: var(--mp-background-neutral-subtle) !important;
+  border-color: var(--mp-colors-border-bold, #8c9596) !important;
+}
 
 .filter-btn-group {
   display: flex;

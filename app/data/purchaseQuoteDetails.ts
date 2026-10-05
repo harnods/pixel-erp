@@ -35,6 +35,10 @@ export interface PurchaseQuoteDetail extends PurchaseQuote {
   paymentTerms: string
   warehouse: string
   buyer: string
+  /** prod "Requires shipping" block — set on every other quote (others are not shipped). */
+  isShipped: boolean
+  shipDate: string
+  shipVia: string
   lineItems: PQLineItem[]
   message: string
   memo: string
@@ -117,6 +121,12 @@ function buildLinked(quote: PurchaseQuote, idx: number): PQLinkedTxn[] {
   }]
 }
 
+function addDaysIso(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00`)
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
 function buildDetail(base: PurchaseQuote, idx: number): PurchaseQuoteDetail {
   const lineItems = buildItems(base, idx)
   const subtotal = lineItems.reduce((s, it) => s + it.amount, 0)
@@ -139,6 +149,9 @@ function buildDetail(base: PurchaseQuote, idx: number): PurchaseQuoteDetail {
     paymentTerms: pick(PAYMENT_TERMS, idx),
     warehouse: pick(WAREHOUSES, idx),
     buyer: pick(BUYERS, idx),
+    isShipped: idx % 2 === 0,
+    shipDate: idx % 2 === 0 ? addDaysIso(base.date, 7) : '',
+    shipVia: idx % 2 === 0 ? pick(['JNE Trucking', 'SiCepat Cargo', 'Vendor delivery'], idx) : '',
     lineItems,
     message: 'This quote is valid until the expiration date above. Prices are subject to stock availability.',
     memo: 'Follow up with the vendor two days before expiration.',

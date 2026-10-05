@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/purchase-requests/views/PurchaseRequestListView.vue + views/panels/PurchaseRequestListPanel.vue -->
 <script setup lang="ts">
 import {
   MpButton, MpButtonGroup, MpPopover, MpPopoverTrigger, MpPopoverContent,
@@ -16,7 +17,9 @@ import CopyLinkDrawer from '~/components/patterns/CopyLinkDrawer.vue'
 import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
 import { formatDate } from '~/utils/date'
 import PurchaseRequestFiltersDrawer, { emptyPurchaseRequestFilters, type PurchaseRequestFiltersValue } from '~/components/patterns/PurchaseRequestFiltersDrawer.vue'
-import { purchaseRequests, updatePurchaseRequest } from '~/data'
+import { purchaseRequests, updatePurchaseRequest, deletePurchaseRequests } from '~/data'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import { infoToast } from '~/utils/toasts'
 import type { PurchaseRequest } from '~/data'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -172,7 +175,21 @@ function createPurchaseOrder(pr: PurchaseRequest) {
 }
 function markCompleted(id: string) {
   updatePurchaseRequest(id, { status: 'closed', awaitingApproval: false })
-  toast.notify({ variant: 'success', title: t('Purchase request marked as completed') })
+  toast.notify({ variant: 'success', title: t('Purchase request marked as completed'), rootProps: { class: 'toast-enterprise' } })
+}
+// prod gates Create purchase order / Mark as completed on open & partially processed requests.
+function isProcessable(pr: PurchaseRequest) { return pr.status === 'open' || pr.status === 'partially processed' }
+
+// ─── Bulk delete (prod: ghost "Delete" beside Print PDF → confirm modal) ────────
+const bulkDeleteOpen = ref(false)
+const bulkDeleteIds = ref<string[]>([])
+function openBulkDelete(selectedRows: Set<number>) {
+  bulkDeleteIds.value = bulkSelectedRequests(selectedRows).map(r => r.id)
+  bulkDeleteOpen.value = true
+}
+function confirmBulkDelete() {
+  const n = deletePurchaseRequests(bulkDeleteIds.value)
+  toast.notify({ variant: 'success', title: n === 1 ? t('1 purchase request deleted') : `${n} ${t('purchase requests deleted')}`, rootProps: { class: 'toast-enterprise' } })
 }
 function duplicate(pr: PurchaseRequest) {
   toast.notify({ variant: 'success', title: `${t('Purchase request duplicated')} #${pr.number}` })
@@ -250,16 +267,20 @@ const exportColumns = computed(() => [
 
     <!-- ── Bulk actions ── -->
     <template #bulk-actions="{ selectedRows }">
-      <!-- Bulk bar = single secondary-sm "Actions" dropdown (never primary); no Delete (rule/bulk-actions-no-delete) -->
+      <!-- Bulk bar = single secondary-sm "Actions" dropdown; Delete sits in its own group behind a confirm (prod bulk Delete) -->
       <MpPopover id="pr-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
         <MpPopoverTrigger>
           <MpButton size="sm" variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('Actions') }}</MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
-            <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="infoToast('Not in this prototype')">{{ t('Print PDF') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openShareBulk(selectedRows as Set<number>)">{{ t('Share via email') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openCopyLinks(bulkSelectedRequests(selectedRows as Set<number>).slice(0, 5))">{{ t('Copy link') }}</MpPopoverListItem>
+          </MpPopoverList>
+          <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
+          <MpPopoverList>
+            <MpPopoverListItem @click="openBulkDelete(selectedRows as Set<number>)">{{ t('Delete') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -374,8 +395,8 @@ const exportColumns = computed(() => [
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails((row as PurchaseRequest).id)">{{ t('View details') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="createPurchaseOrder(row as PurchaseRequest)">{{ t('Create purchase order') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="markCompleted((row as PurchaseRequest).id)">{{ t('Mark as completed') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="isProcessable(row as PurchaseRequest)" @click="createPurchaseOrder(row as PurchaseRequest)">{{ t('Create purchase order') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="isProcessable(row as PurchaseRequest)" @click="markCompleted((row as PurchaseRequest).id)">{{ t('Mark as completed') }}</MpPopoverListItem>
             <MpPopoverListItem @click="duplicate(row as PurchaseRequest)">{{ t('Duplicate') }}</MpPopoverListItem>
           </MpPopoverList>
           <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
@@ -402,6 +423,16 @@ const exportColumns = computed(() => [
     :tag-options="tagOptions"
     @update:is-open="filtersOpen = $event"
     @apply="applyDrawerFilters"
+  />
+
+  <ConfirmModal
+    v-model:is-open="bulkDeleteOpen"
+    :title="bulkDeleteIds.length === 1 ? t('Delete purchase request?') : t('Delete purchase requests?')"
+    :description="bulkDeleteIds.length === 1
+      ? t('Are you sure you want to delete this purchase request? This action cannot be undone.')
+      : `${t('Are you sure you want to delete these')} ${bulkDeleteIds.length} ${t('purchase requests? This action cannot be undone.')}`"
+    :confirm-label="t('Delete')"
+    @confirm="confirmBulkDelete"
   />
 
   <!-- ── Export / Copy link / Share via email (shared patterns) ── -->

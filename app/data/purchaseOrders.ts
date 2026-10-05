@@ -2,6 +2,7 @@ import { reactive } from 'vue'
 import type { PurchaseOrder, PurchaseOrderStatus } from './types'
 import { vendors } from './vendors'
 import { SIM_SPAN_DAYS, simDay, daysUntil } from './simClock'
+import { loadCreated, saveCreated } from './persist'
 
 /**
  * Purchase orders — a deterministic TIME SERIES spanning 1 Jan 2026 → today
@@ -65,3 +66,11 @@ function buildPurchaseOrders(): PurchaseOrder[] {
 }
 
 export const purchaseOrders: PurchaseOrder[] = reactive(buildPurchaseOrders())
+
+// User-created orders (New purchase order / Duplicate) survive a reload; the seed is untouched.
+const PO_CREATED_KEY = 'purchase-orders-created'
+for (const o of loadCreated<PurchaseOrder>(PO_CREATED_KEY)) if (!purchaseOrders.some(x => x.id === o.id)) purchaseOrders.push(o)
+export function addPurchaseOrder(order: PurchaseOrder): void {
+  purchaseOrders.push(order)
+  saveCreated(PO_CREATED_KEY, [...loadCreated<PurchaseOrder>(PO_CREATED_KEY).filter(x => x.id !== order.id), order])
+}
