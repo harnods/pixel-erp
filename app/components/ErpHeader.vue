@@ -34,6 +34,9 @@
 
       <!-- Fixed-asset prototype: simulated roles, on the asset screens only. -->
       <ErpViewAsSwitcher v-if="isAssetScreen" />
+      <!-- Advanced Budgeting prototype: simulated roles on budget and purchase screens. -->
+      <BudgetViewAsSwitcher v-if="isBudgetScreen" />
+      <BudgetTourLauncher v-if="isBudgetScreen" />
       <!-- Demo layer (app/tours), not a product requirement. Shown only when
            Asset settings > Guided tours is on. -->
       <TourLauncher v-if="isAssetScreen" />
@@ -47,6 +50,7 @@
 import { computed } from "vue";
 import { MpFlex } from "@mekari/pixel3";
 import TourLauncher from "~/tours/TourLauncher.vue";
+import BudgetTourLauncher from "~/tours/BudgetTourLauncher.vue";
 import UploadActivityCenter from "~/components/patterns/UploadActivityCenter.vue";
 import erpLogo from "~/assets/images/mekari-erp-logo.svg?url";
 
@@ -85,6 +89,13 @@ const ASSET_SCREENS = new Set([
 const route = useRoute();
 const isAssetScreen = computed(
   () => ASSET_SCREENS.has(currentPageKey.value) || route.path.startsWith('/assets'),
+);
+const BUDGET_SCREENS = new Set([
+  'Budget lines', 'Budget changes', 'Saving bucket', 'Commitments', 'Budget report', 'Budget settings',
+  'Purchase requests', 'Purchase orders', 'Purchase invoices',
+]);
+const isBudgetScreen = computed(
+  () => BUDGET_SCREENS.has(currentPageKey.value) || /^\/(budget-|purchase-requests|purchase-orders|purchase-invoices)/.test(route.path),
 );
 function goToInbox() {
   setActiveMenuLabel("Notifications");

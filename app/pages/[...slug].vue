@@ -102,6 +102,13 @@ const pageRegistry: Record<string, Component> = {
   // slugs to `/custody-and-counts`, so the key is 'Custody and counts'. Keys
   // below match what pathToLabel() produces, not what the sidebar displays.
   'Assets':            defineAsyncComponent(() => import('~/components/pages/AssetsIndexPage.vue')),
+  // Accounting › Budgets (Advanced Budgeting prototype, PRD FG-1 to FG-7)
+  'Budget lines':      defineAsyncComponent(() => import('~/components/pages/BudgetLinesPage.vue')),
+  'Budget changes':    defineAsyncComponent(() => import('~/components/pages/BudgetChangesPage.vue')),
+  'Saving bucket':     defineAsyncComponent(() => import('~/components/pages/BudgetSavingBucketPage.vue')),
+  'Commitments':       defineAsyncComponent(() => import('~/components/pages/BudgetCommitmentsPage.vue')),
+  'Budget report':     defineAsyncComponent(() => import('~/components/pages/BudgetReportPage.vue')),
+  'Budget settings':   defineAsyncComponent(() => import('~/components/pages/BudgetSettingsPage.vue')),
   // Accounting › Fixed assets (current) — prod's current asset module, beside the new one.
   'Current assets':    defineAsyncComponent(() => import('~/components/pages/CurrentAssetsPage.vue')),
   'Current asset depreciation': defineAsyncComponent(() => import('~/components/pages/CurrentAssetDepreciationPage.vue')),
@@ -541,6 +548,9 @@ const CashBankReportPage = asyncPage(() => import('~/components/pages/CashBankRe
 const BalanceSheetReportPage = asyncPage(() => import('~/components/pages/BalanceSheetReportPage.vue'))
 const ProfitLossReportPage = asyncPage(() => import('~/components/pages/ProfitLossReportPage.vue'))
 const BudgetVarianceReportPage = asyncPage(() => import('~/components/pages/BudgetVarianceReportPage.vue'))
+const BudgetLineDetailPage = asyncPage(() => import('~/components/pages/BudgetLineDetailPage.vue'))
+const BudgetChangeFormPage = asyncPage(() => import('~/components/pages/BudgetChangeFormPage.vue'))
+const BudgetChangeDetailPage = asyncPage(() => import('~/components/pages/BudgetChangeDetailPage.vue'))
 const PurchasesListReportPage = asyncPage(() => import('~/components/pages/PurchasesListReportPage.vue'))
 const PurchasesByVendorReportPage = asyncPage(() => import('~/components/pages/PurchasesByVendorReportPage.vue'))
 const PurchasesByProductReportPage = asyncPage(() => import('~/components/pages/PurchasesByProductReportPage.vue'))
@@ -790,6 +800,13 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // stage padding, so it routes through detailMatch rather than pageRegistry.
   if (segs.length >= 2 && segs[0] === 'assets') {
     return { component: AssetDetailPage, id: segs[1]! }
+  }
+  // Accounting › Budgets: line record, change form and change record (full page).
+  if (segs.length >= 2 && segs[0] === 'budget-lines') {
+    return { component: BudgetLineDetailPage, id: segs[1]! }
+  }
+  if (segs.length >= 2 && segs[0] === 'budget-changes') {
+    return { component: segs[1] === 'new' ? BudgetChangeFormPage : BudgetChangeDetailPage, id: segs[1]! }
   }
   // /expenses/new → New expense form (full page, brings its own title bar)
   if (segs.length >= 2 && segs[0] === 'expenses' && segs[1] === 'new') {
