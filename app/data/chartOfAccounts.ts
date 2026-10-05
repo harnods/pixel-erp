@@ -21,12 +21,12 @@ import { SIM_TODAY_ISO } from './simClock'
 
 // ── Categories (prod account_categories, English names) ──────────────────────
 
-export type AccountType = 'asset' | 'liability' | 'equity' | 'income' | 'expense'
+export type CoaAccountType = 'asset' | 'liability' | 'equity' | 'income' | 'expense'
 
 export interface AccountCategoryDef {
   id: number
   name: string
-  type: AccountType
+  type: CoaAccountType
 }
 
 /** Prod order — the index groups accounts in this order. */

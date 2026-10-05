@@ -15,7 +15,7 @@ import { reactive } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
 import {
   coaRecords, categoryOf, closingEntries, netMovement, naturalSign, getAccount,
-  CASH_AND_BANK, ledger, type CoaRecord, type AccountType, type LedgerLine,
+  CASH_AND_BANK, ledger, type CoaRecord, type CoaAccountType, type LedgerLine,
 } from './chartOfAccounts'
 import { COMPANY_NAME } from './companySettings'
 
@@ -170,7 +170,7 @@ function bounds(b: Pick<ClosingBook, 'startDate' | 'endDate'>): { from: string |
   return { from: b.startDate ? addDays(b.startDate, -1) : null, to: b.endDate }
 }
 
-const isPL = (t: AccountType) => t === 'income' || t === 'expense'
+const isPL = (t: CoaAccountType) => t === 'income' || t === 'expense'
 
 function activeAccounts(): CoaRecord[] {
   return [...coaRecords].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
@@ -180,7 +180,7 @@ export interface WorksheetRow {
   id: string
   code: string
   name: string
-  type: AccountType
+  type: CoaAccountType
   /** Debit-positive end balance (BS: cumulative to end date; P&L: since last closing book). */
   net: number
 }
@@ -245,7 +245,7 @@ export function assertBalanced(b: ClosingBook): void {
 // Trial balance (financial statements tab) ────────────────────────────────────
 
 export interface TrialBalanceRow {
-  id: string; code: string; name: string; type: AccountType
+  id: string; code: string; name: string; type: CoaAccountType
   opening: number; movementDebit: number; movementCredit: number; ending: number
 }
 
@@ -292,7 +292,7 @@ export function incomeStatement(b: ClosingBook) {
 
 export function balanceSheet(b: ClosingBook) {
   const rows = worksheetRows(b)
-  const group = (type: AccountType) => {
+  const group = (type: CoaAccountType) => {
     const cats = new Map<number, StatementLine[]>()
     for (const r of rows.filter(x => x.type === type)) {
       const a = getAccount(r.id)!
