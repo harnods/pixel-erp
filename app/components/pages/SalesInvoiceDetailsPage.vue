@@ -1,4 +1,6 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/sales/invoices/views/SalesInvoiceShowView.vue -->
 <script setup lang="ts">
+import { infoToast } from '~/utils/toasts'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink, css, toast,
@@ -50,7 +52,7 @@ const activityOpen = ref(false)
 // Destructive delete → confirm modal (rule/btn-danger-confirm)
 const deleteOpen = ref(false)
 function confirmDelete() {
-  toast.notify({ variant: 'success', title: t('Sales invoice deleted'), rootProps: { class: 'toast-enterprise' } })
+  toast.notify({ variant: 'success', title: `${t('Invoice')} #${invoice.value.number} ${t('has been deleted')}`, rootProps: { class: 'toast-enterprise' } })
   router.push('/sales-invoices')
 }
 const taxDocDrawerOpen = ref(false)
@@ -236,7 +238,11 @@ function attachmentIcon(name: string): string {
 }
 
 function goBack() { router.push('/sales-invoices') }
-function receivePayment() { router.push('/sales-invoices') }
+function receivePayment() { infoToast(t('Not in this prototype')) }
+function notInPrototype() { infoToast(t('Not in this prototype')) }
+/** Payment Received number + deposit account for a payment row (display only). */
+function paymentNumber(i: number) { return `${t('Payment Received')} #${String(invoice.value.number).slice(-3)}${i + 1}` }
+function paymentAccount(method: string) { return method === 'Cash' ? t('Cash') : 'Bank BCA' }
 </script>
 
 <template>
@@ -326,8 +332,8 @@ function receivePayment() { router.push('/sales-invoices') }
             </ContentList>
           </div>
           <div class="detail-primary-total">
-            <span class="detail-total-label">{{ t('Total') }}</span>
-            <span class="detail-total-amount">{{ formatIDR(invoice.totals.total) }}</span>
+            <span class="detail-total-amount">{{ t('Balance due') }} {{ formatIDR(invoice.balance) }}</span>
+            <a class="detail-journal-link" @click.prevent="notInPrototype">{{ t('View journal entry') }}</a>
           </div>
         </div>
 
@@ -345,11 +351,6 @@ function receivePayment() { router.push('/sales-invoices') }
             <ContentList :label="t('Transaction date')" :value="formatDateLong(invoice.date)" />
             <ContentList :label="t('Due date')" :value="formatDateLong(invoice.dueDate)" />
             <ContentList :label="t('Payment terms')" :value="invoice.paymentTerms" />
-          </div>
-          <!-- col 3: settlement -->
-          <div class="content-list-col">
-            <ContentList :label="t('Amount paid')" :value="formatIDR(invoice.amountPaid)" />
-            <ContentList :label="t('Balance due')" :value="formatIDR(invoice.balance)" />
           </div>
           <!-- col 4: references -->
           <div class="content-list-col">
@@ -428,7 +429,7 @@ function receivePayment() { router.push('/sales-invoices') }
           <ContentList :label="t('Memo')">
             <p class="detail-note-text">{{ invoice.memo }}</p>
           </ContentList>
-          <ContentList :label="`${t('Attachment')} (${invoice.attachments.length})`">
+          <ContentList :label="`${t('Attachments')} (${invoice.attachments.length})`">
             <div class="detail-attach-list">
               <a v-for="(a, i) in invoice.attachments" :key="i" class="detail-attach" @click.prevent>
                 <span class="detail-attach-icon"><MpIcon :name="attachmentIcon(a.name)" size="md" /></span>
@@ -447,11 +448,11 @@ function receivePayment() { router.push('/sales-invoices') }
             <span class="detail-total-row-label detail-total-row-label--strong">{{ t('Subtotal') }}</span>
             <span class="detail-total-row-amt detail-total-row-amt--strong">{{ formatIDR(invoice.totals.subtotal) }}</span>
           </div>
-          <div class="detail-total-row">
-            <span class="detail-total-row-label">{{ t('Discount per line') }}</span>
+          <div v-if="invoice.totals.discountPerLine > 0" class="detail-total-row">
+            <span class="detail-total-row-label">{{ t('Discounts per line') }}</span>
             <span class="detail-total-row-amt">{{ formatDeduction(invoice.totals.discountPerLine) }}</span>
           </div>
-          <div class="detail-total-row">
+          <div v-if="invoice.totals.globalDiscount > 0" class="detail-total-row">
             <span class="detail-total-row-label">{{ t('Global discount') }}</span>
             <span class="detail-total-row-amt">{{ formatDeduction(invoice.totals.globalDiscount) }}</span>
           </div>
@@ -464,12 +465,12 @@ function receivePayment() { router.push('/sales-invoices') }
             <span class="detail-total-row-label detail-total-row-label--total">{{ t('Total') }}</span>
             <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(invoice.totals.total) }}</span>
           </div>
-          <div class="detail-total-row">
-            <span class="detail-total-row-label">{{ t('Amount paid') }}</span>
+          <div v-if="invoice.amountPaid > 0" class="detail-total-row">
+            <span class="detail-total-row-label">{{ t('Less: Payment') }}</span>
             <span class="detail-total-row-amt">{{ formatDeduction(invoice.amountPaid) }}</span>
           </div>
-          <div class="detail-total-rule" />
-          <div class="detail-total-row">
+          <div v-if="invoice.amountPaid > 0" class="detail-total-rule" />
+          <div v-if="invoice.amountPaid > 0" class="detail-total-row">
             <span class="detail-total-row-label detail-total-row-label--total">{{ t('Balance due') }}</span>
             <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(invoice.balance) }}</span>
           </div>
@@ -485,11 +486,45 @@ function receivePayment() { router.push('/sales-invoices') }
         :key="invoice.id" id="detail-tabs" :default-value="0" variant-color="green" class="detail-tabs"
       >
         <MpTabList>
+          <MpTab v-if="hasPayments" id="detail-tab-payments" value="payments">{{ t('Payment') }}</MpTab>
           <MpTab v-if="hasLinkedTransactions" id="detail-tab-linked" value="linked">{{ t('Linked transactions') }}</MpTab>
-          <MpTab v-if="hasPayments" id="detail-tab-payments" value="payments">{{ t('Payments') }}</MpTab>
           <MpTab v-if="hasTaxDocuments" id="detail-tab-taxdoc" value="tax-document">{{ t('Tax document') }}</MpTab>
         </MpTabList>
         <MpTabPanels>
+          <MpTabPanel v-if="hasPayments" value="payments">
+            <h3 class="detail-tab-heading">{{ t('Transactions') }}</h3>
+            <table class="detail-linked">
+              <colgroup>
+                <col class="detail-linked-col--date" />
+                <col class="detail-linked-col--number" />
+                <col />
+                <col />
+                <col />
+                <col />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th class="detail-th">{{ t('Date') }}</th>
+                  <th class="detail-th">{{ t('Number') }}</th>
+                  <th class="detail-th">{{ t('Payment method') }}</th>
+                  <th class="detail-th">{{ t('Account') }}</th>
+                  <th class="detail-th">{{ t('Reference no.') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('Amount paid') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(p, i) in invoice.payments" :key="i" class="detail-item-row">
+                  <td class="detail-td">{{ formatDateNumeric(p.date) }}</td>
+                  <td class="detail-td"><a class="cell-link cell-text" @click.stop>{{ paymentNumber(i) }}</a></td>
+                  <td class="detail-td">{{ p.method }}</td>
+                  <td class="detail-td">{{ paymentAccount(p.method) }}</td>
+                  <td class="detail-td detail-td--muted">{{ p.reference }}</td>
+                  <td class="detail-td detail-td--num">{{ formatIDR(p.amount) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </MpTabPanel>
+
           <MpTabPanel v-if="hasLinkedTransactions" value="linked">
             <h3 class="detail-tab-heading">{{ t('Transactions') }}</h3>
             <table class="detail-linked">
@@ -515,34 +550,6 @@ function receivePayment() { router.push('/sales-invoices') }
                   </td>
                   <td class="detail-td"><ErpStatusBadge :status="txn.status" /></td>
                   <td class="detail-td"></td>
-                </tr>
-              </tbody>
-            </table>
-          </MpTabPanel>
-
-          <MpTabPanel v-if="hasPayments" value="payments">
-            <h3 class="detail-tab-heading">{{ t('Payments') }}</h3>
-            <table class="detail-linked">
-              <colgroup>
-                <col class="detail-linked-col--date" />
-                <col class="detail-linked-col--number" />
-                <col class="detail-linked-col--status" />
-                <col />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th class="detail-th">{{ t('Date') }}</th>
-                  <th class="detail-th">{{ t('Payment method') }}</th>
-                  <th class="detail-th">{{ t('Reference') }}</th>
-                  <th class="detail-th detail-th--num">{{ t('Amount') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(p, i) in invoice.payments" :key="i" class="detail-item-row">
-                  <td class="detail-td">{{ formatDateNumeric(p.date) }}</td>
-                  <td class="detail-td">{{ p.method }}</td>
-                  <td class="detail-td detail-td--muted">{{ p.reference }}</td>
-                  <td class="detail-td detail-td--num">{{ formatIDR(p.amount) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -619,7 +626,7 @@ function receivePayment() { router.push('/sales-invoices') }
 
       <!-- ── Footer action bar ── -->
       <div class="detail-footer">
-        <!-- Print & share (secondary dropdown) -->
+        <!-- Print & share (secondary dropdown) — prod SalesInvoiceFooterActions -->
         <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
             <button class="btn-enterprise btn-enterprise--secondary">
@@ -629,14 +636,30 @@ function receivePayment() { router.push('/sales-invoices') }
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Print dot matrix') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Print PDF') }}</MpPopoverListItem>
             </MpPopoverList>
             <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
             <MpPopoverList>
-              <MpPopoverListItem>{{ t('Share via WhatsApp') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Share via WhatsApp') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Share via email') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Copy link') }}</MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
+
+        <!-- Print dot matrix — its own secondary dropdown of templates (prod) -->
+        <MpPopover id="detail-print-dot-matrix" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+          <MpPopoverTrigger>
+            <button class="btn-enterprise btn-enterprise--secondary">
+              {{ t('Print dot matrix') }}
+              <MpIcon name="chevrons-down" size="sm" />
+            </button>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+            <MpPopoverList>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Invoice') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Receipt') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Delivery slip') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -651,23 +674,21 @@ function receivePayment() { router.push('/sales-invoices') }
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Set as recurring') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Create sales return') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Preview') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Set as recurring') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Create sales return') }}</MpPopoverListItem>
               <MpPopoverListItem v-if="invoice.hasPpn" @click="openCreateTaxDocument">{{ t('Create tax document') }}</MpPopoverListItem>
             </MpPopoverList>
             <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
             <MpPopoverList>
-              <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Edit') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Duplicate') }}</MpPopoverListItem>
               <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
 
-        <!-- Open/Overdue: "Add payment" primary split button — main segment records
-             a payment; chevron segment opens the rest (Reject + the create-document
-             actions that only make sense before the invoice is settled). -->
+        <!-- Open/Overdue: "Add payment" primary split button (prod ButtonActionPopover) -->
         <div v-else class="detail-split-btn">
           <button class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="receivePayment">
             {{ t('Add payment') }}
@@ -680,21 +701,21 @@ function receivePayment() { router.push('/sales-invoices') }
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
-                <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
-                <MpPopoverListItem>{{ t('Set as recurring') }}</MpPopoverListItem>
-                <MpPopoverListItem>{{ t('Create join invoice') }}</MpPopoverListItem>
-                <MpPopoverListItem>{{ t('Create progress invoice') }}</MpPopoverListItem>
-                <MpPopoverListItem>{{ t('Create sales return') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="notInPrototype">{{ t('Preview') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="notInPrototype">{{ t('Set as recurring') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push('/join-invoice')">{{ t('Create join invoice') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push('/progress-invoice')">{{ t('Create progress invoice') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="notInPrototype">{{ t('Create sales return') }}</MpPopoverListItem>
                 <MpPopoverListItem v-if="invoice.hasPpn" @click="openCreateTaxDocument">{{ t('Create tax document') }}</MpPopoverListItem>
-                <MpPopoverListItem>{{ t('Apply credit memo') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="notInPrototype">{{ t('Apply credit memo') }}</MpPopoverListItem>
               </MpPopoverList>
               <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
               <MpPopoverList>
-                <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
-                <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
-                <MpPopoverListItem>{{ t('Reject') }}</MpPopoverListItem>
-                <MpPopoverListItem>{{ t('Void') }}</MpPopoverListItem>
-                <MpPopoverListItem>{{ t('Delete') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="notInPrototype">{{ t('Edit') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="notInPrototype">{{ t('Duplicate') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="notInPrototype">{{ t('Reject') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="notInPrototype">{{ t('Void') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
@@ -740,9 +761,9 @@ function receivePayment() { router.push('/sales-invoices') }
 
     <ConfirmModal
       v-model:is-open="deleteOpen"
-      :title="t('Delete sales invoice?')"
-      :description="`${t('Sales Invoice')} #${invoice.number} ${t('will be permanently deleted. This cannot be undone.')}`"
-      :confirm-label="`${t('Delete')} ${t('sales invoice')}`"
+      :title="t('Delete invoice')"
+      :description="t('Are you sure you want to delete this invoice? This action cannot be undone.')"
+      :confirm-label="t('Delete')"
       @confirm="confirmDelete"
     />
   </div>
@@ -756,6 +777,8 @@ function receivePayment() { router.push('/sales-invoices') }
 </template>
 
 <style scoped>
+.detail-journal-link { font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer; text-align: right; }
+.detail-journal-link:hover { text-decoration: underline; }
 .detail-notfound {
   display: flex; flex-direction: column; align-items: center; text-align: center;
   gap: var(--mp-spacing-2); padding: var(--mp-spacing-9) var(--mp-spacing-4);

@@ -1,5 +1,8 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/sales/invoices/views/SalesInvoiceListView.vue -->
 <script setup lang="ts">
 import { type Ref } from 'vue'
+import { infoToast } from '~/utils/toasts'
+import { getSalesInvoiceDetail } from '~/data/salesInvoiceDetails'
 import { formatIDR } from '~/utils/currency'
 import {
   MpIcon, MpButton, MpButtonGroup, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
@@ -97,11 +100,30 @@ const rows = computed<Row[]>(() =>
 const filtersOpen = ref(false)
 const appliedFilters = reactive<SalesInvoiceFiltersValue>(emptySalesInvoiceFilters())
 
+// Prod FilterDrawer search-column scope (salesInvoice.list.filters.searchColumns.*)
 const keywordColumns = [
-  { key: 'number',       label: t('Number')   },
-  { key: 'customerName', label: t('Customer') },
-  { key: 'tags',         label: t('Tags')     },
+  { key: 'number',       label: t('Number')        },
+  { key: 'customerName', label: t('Customer')      },
+  { key: 'warehouse',    label: t('Warehouse')     },
+  { key: 'productName',  label: t('Product name')  },
+  { key: 'sku',          label: t('SKU')           },
+  { key: 'referenceNo',  label: t('Reference no.') },
+  { key: 'memo',         label: t('Memo')          },
+  { key: 'message',      label: t('Message')       },
 ]
+/** Text each keyword column searches, read from the invoice's detail record. */
+function keywordHaystack(row: Row, col: string): string[] {
+  if (col === 'number') return [String(row.number)]
+  if (col === 'customerName') return [row.customerName]
+  const d = getSalesInvoiceDetail(row.id)
+  if (col === 'warehouse') return [d.warehouse]
+  if (col === 'productName') return d.lineItems.map(it => it.product)
+  if (col === 'sku') return d.lineItems.map(it => it.sku)
+  if (col === 'referenceNo') return [d.referenceNo]
+  if (col === 'memo') return [d.memo]
+  if (col === 'message') return [d.message]
+  return []
+}
 const tagOptions = computed(() => [...new Set(salesInvoices.flatMap(inv => inv.tags ?? []))].sort())
 // DJP status is only a real column/filter when at least one invoice on the
 // table has a tax document — otherwise every row would just show "Not
@@ -139,21 +161,16 @@ const {
 } = useTableState(rows, {
   filterFn: (row: Row, s, status) => {
     const matchesSearch = String(row.number).includes(s) || row.customerName.toLowerCase().includes(s)
-    const matchesStatus = !status || row.status === status
+    const matchesStatus = !status || statusMatches(row, status)
 
     // ── Drawer filters (independent of the toolbar's Status select / search) ──
     const f = appliedFilters
     const kw = f.keyword.toLowerCase().trim()
-    const matchesKeyword = !kw || (
-      f.keywordColumn === 'all'
-        ? String(row.number).includes(kw) || row.customerName.toLowerCase().includes(kw) || (row.tags ?? []).some(tg => tg.toLowerCase().includes(kw))
-        : f.keywordColumn === 'number' ? String(row.number).includes(kw)
-        : f.keywordColumn === 'customerName' ? row.customerName.toLowerCase().includes(kw)
-        : (row.tags ?? []).some(tg => tg.toLowerCase().includes(kw))
-    )
+    const kwCols = f.keywordColumn === 'all' ? keywordColumns.map(c => c.key) : [f.keywordColumn]
+    const matchesKeyword = !kw || kwCols.some(c => keywordHaystack(row, c).some(v => (v ?? '').toLowerCase().includes(kw)))
     const matchesTransactionDate = matchesDateRange(row.date, f.transactionDate)
     const matchesDueDate = matchesDateRange(row.dueDate, f.dueDate)
-    const matchesDrawerStatus = f.status.length === 0 || f.status.includes(row.status)
+    const matchesDrawerStatus = f.status.length === 0 || f.status.some(s => statusMatches(row, s))
     const matchesTotal = matchesAmountFilter(row.total, f.totalComparator, f.totalValue, f.totalMin, f.totalMax)
     const rowTags = row.tags ?? []
     const matchesTags = f.tags.length === 0
@@ -194,17 +211,22 @@ function clearFilters() {
 
 // ─── Filter options ───────────────────────────────────────────────────────────
 
+// Prod status filter (salesInvoice.list.statusFilter.*): Open, Overdue, Paid,
+// Partially paid, Unpaid. Partially paid / Unpaid are derived from the balance.
 const statusOptions = [
-  { label: t('All status'), value: ''        },
-  { label: t('Paid'),       value: 'paid'    },
-  { label: t('Open'),       value: 'open'    },
-  { label: t('Overdue'),    value: 'overdue' },
+  { label: t('All status'),     value: ''        },
+  { label: t('Open'),           value: 'open'    },
+  { label: t('Overdue'),        value: 'overdue' },
+  { label: t('Paid'),           value: 'paid'    },
+  { label: t('Partially paid'), value: 'partial' },
+  { label: t('Unpaid'),         value: 'unpaid'  },
 ]
-const drawerStatusOptions = [
-  { label: t('Open'),    value: 'open'    },
-  { label: t('Paid'),    value: 'paid'    },
-  { label: t('Overdue'), value: 'overdue' },
-]
+const drawerStatusOptions = statusOptions.slice(1)
+function statusMatches(row: Row, status: string): boolean {
+  if (status === 'partial') return row.balance > 0 && row.balance < row.total
+  if (status === 'unpaid') return row.status !== 'paid' && row.balance === row.total
+  return row.status === status
+}
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
 
@@ -235,7 +257,8 @@ const allCols = computed<TableColumn[]>(() => [
   { key: 'lastUpdated', label: t('Last updated'), kind: 'date' },
 ])
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.value.map(c => [c.key, !HIDDEN_BY_DEFAULT.has(c.key)])))
-const columnItems = computed(() => allCols.value.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 })))
+const LOCKED_COLUMNS = new Set(['date', 'number', 'customerName'])
+const columnItems = computed(() => allCols.value.map(c => ({ key: c.key, label: c.key === 'attachment' ? t('Attachment') : c.label, disabled: LOCKED_COLUMNS.has(c.key) })))
 const visibleColumns = computed<TableColumn[]>(() => allCols.value.filter(c => columnVisibility[c.key]))
 function hideColumn(key: string) { columnVisibility[key] = false }
 
@@ -305,7 +328,7 @@ function openBulkDeleteModal(selectedRows: Set<number>, deselectAll: () => void)
 function closeBulkDeleteModal() { bulkDeleteModalOpen.value = false }
 function confirmBulkDelete() {
   const count = deleteSalesInvoices(bulkDeleteIds.value)
-  toast.notify({ variant: 'success', title: `${count} ${t(count !== 1 ? 'sales invoices' : 'sales invoice')} ${t('deleted')}` })
+  toast.notify({ variant: 'success', title: count === 1 ? t('1 sales invoice deleted') : `${count} ${t('sales invoices deleted')}` })
   bulkDeleteDeselect?.()
   closeBulkDeleteModal()
 }
@@ -321,7 +344,7 @@ function confirmBulkDelete() {
     :sort-key="sortKey"
     :sort-dir="sortDir"
     has-checkbox
-    bulk-label="sales invoice"
+    bulk-label="transaction"
     :search="search"
     filter-empty-label="sales invoice"
     :has-active-filter="isDrawerFilterActive || !!statusFilter"
@@ -349,12 +372,14 @@ function confirmBulkDelete() {
               v-if="allSelectedSubmittableToDjp(selectedRows as Set<number>)"
               @click="submitBulkToDjp(selectedRows as Set<number>, deselectAll)"
             >{{ t('Submit to DJP') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="infoToast(t('Not in this prototype'))">{{ t('Print PDF') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openShareBulk(selectedRows as Set<number>)">{{ t('Share via email') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openCopyLinks(bulkSelectedInvoices(selectedRows as Set<number>))">{{ t('Copy link') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
+      <!-- Prod: Delete sits beside the Actions dropdown as a ghost button -->
+      <MpButton size="sm" variant="ghost" is-rounded @click="openBulkDeleteModal(selectedRows as Set<number>, deselectAll)">{{ t('Delete') }}</MpButton>
     </template>
 
     <!-- ── Stats section ── -->
@@ -580,12 +605,12 @@ function confirmBulkDelete() {
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
             <MpPopoverListItem @click="navigateTo(`/sales-invoices/${(row as Row).id}`)">{{ t('View details') }}</MpPopoverListItem>
-            <MpPopoverListItem v-if="(row as Row).balance > 0">{{ t('Add payment') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="(row as Row).balance > 0" @click="infoToast(t('Not in this prototype'))">{{ t('Add payment') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="infoToast(t('Not in this prototype'))">{{ t('Duplicate') }}</MpPopoverListItem>
           </MpPopoverList>
           <div :class="css({ height: 'var(--mp-sizes-px, 1px)', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
           <MpPopoverList>
-            <MpPopoverListItem>{{ t('Share via WhatsApp') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="infoToast(t('Not in this prototype'))">{{ t('Share via WhatsApp') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openShare(row as Row)">{{ t('Share via email') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openCopyLinks([row as Row])">{{ t('Copy link') }}</MpPopoverListItem>
           </MpPopoverList>
@@ -601,9 +626,15 @@ function confirmBulkDelete() {
     <template #empty>
       <div class="empty-full">
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-        <p class="empty-full-title">{{ t('No sales invoices yet') }}</p>
-        <p class="empty-full-desc">{{ t('Create your first sales invoice to see it here.') }}</p>
-        <MpButton variant="secondary" left-icon="add" is-rounded @click="navigateTo('/sales-invoices/new')">{{ t('New sales invoice') }}</MpButton>
+        <template v-if="isAwaiting">
+          <p class="empty-full-title">{{ t('No transactions awaiting approval') }}</p>
+          <p class="empty-full-desc">{{ t('Transactions pending approval will display here') }}</p>
+        </template>
+        <template v-else>
+          <p class="empty-full-title">{{ t('No sales invoices') }}</p>
+          <p class="empty-full-desc">{{ t('Sales invoices will appear here.') }}</p>
+          <MpButton variant="secondary" left-icon="add" is-rounded @click="navigateTo('/sales-invoices/new')">{{ t('New sales invoice') }}</MpButton>
+        </template>
       </div>
     </template>
   </ErpTablePage>
@@ -616,6 +647,9 @@ function confirmBulkDelete() {
     :status-options="drawerStatusOptions"
     :tag-options="tagOptions"
     :djp-status-options="djpStatusOptions"
+    :keyword-label="t('Search')"
+    :keyword-placeholder="t('Search')"
+    :reset-label="t('Reset')"
     @update:is-open="filtersOpen = $event"
     @apply="applyDrawerFilters"
   />
@@ -630,16 +664,16 @@ function confirmBulkDelete() {
   >
     <MpModalContent>
       <MpModalHeader>
-        {{ t('Delete') }} {{ bulkDeleteCount }} {{ t(bulkDeleteCount !== 1 ? 'sales invoices' : 'sales invoice') }}?
+        {{ bulkDeleteCount === 1 ? t('Delete sales invoice?') : t('Delete sales invoices?') }}
         <MpModalCloseButton />
       </MpModalHeader>
       <MpModalBody>
-        {{ t('Deleted sales invoices cannot be restored.') }}
+        {{ bulkDeleteCount === 1 ? t('Deleted sales invoice cannot be restored.') : `${t('Deleted')} ${bulkDeleteCount} ${t('sales invoices cannot be restored.')}` }}
       </MpModalBody>
       <MpModalFooter>
         <MpButtonGroup class="erp-action-footer">
           <MpButton variant="ghost" is-rounded @click="closeBulkDeleteModal">{{ t('Cancel') }}</MpButton>
-          <MpButton variant="danger" is-rounded @click="confirmBulkDelete">{{ t('Delete') }} {{ bulkDeleteCount }} {{ t(bulkDeleteCount !== 1 ? 'sales invoices' : 'sales invoice') }}</MpButton>
+          <MpButton variant="danger" is-rounded @click="confirmBulkDelete">{{ t('Delete') }}</MpButton>
         </MpButtonGroup>
       </MpModalFooter>
     </MpModalContent>
