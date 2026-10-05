@@ -111,6 +111,12 @@ const pageRegistry: Record<string, Component> = {
   'Commitments':       defineAsyncComponent(() => import('~/components/pages/BudgetCommitmentsPage.vue')),
   'Budget report':     defineAsyncComponent(() => import('~/components/pages/BudgetReportPage.vue')),
   'Budget settings':   defineAsyncComponent(() => import('~/components/pages/BudgetSettingsPage.vue')),
+  // Accounting › Payroll (Payroll to Ledger prototype, PRD FG-1 to FG-7)
+  'Payroll inbox':          defineAsyncComponent(() => import('~/components/pages/PayrollInboxPage.vue')),
+  'Payroll payables':       defineAsyncComponent(() => import('~/components/pages/PayrollPayablesPage.vue')),
+  'Payroll reconciliation': defineAsyncComponent(() => import('~/components/pages/PayrollReconciliationPage.vue')),
+  'Payroll accrual':        defineAsyncComponent(() => import('~/components/pages/PayrollAccrualPage.vue')),
+  'Payroll settings':       defineAsyncComponent(() => import('~/components/pages/PayrollSettingsPage.vue')),
   // Accounting › Fixed assets (current) — prod's current asset module, beside the new one.
   'Current assets':    defineAsyncComponent(() => import('~/components/pages/CurrentAssetsPage.vue')),
   'Current asset depreciation': defineAsyncComponent(() => import('~/components/pages/CurrentAssetDepreciationPage.vue')),
@@ -553,6 +559,7 @@ const BudgetVarianceReportPage = asyncPage(() => import('~/components/pages/Budg
 const BudgetLineDetailPage = asyncPage(() => import('~/components/pages/BudgetLineDetailPage.vue'))
 const BudgetChangeFormPage = asyncPage(() => import('~/components/pages/BudgetChangeFormPage.vue'))
 const BudgetChangeDetailPage = asyncPage(() => import('~/components/pages/BudgetChangeDetailPage.vue'))
+const PayrollRunDetailPage = asyncPage(() => import('~/components/pages/PayrollRunDetailPage.vue'))
 const PurchasesListReportPage = asyncPage(() => import('~/components/pages/PurchasesListReportPage.vue'))
 const PurchasesByVendorReportPage = asyncPage(() => import('~/components/pages/PurchasesByVendorReportPage.vue'))
 const PurchasesByProductReportPage = asyncPage(() => import('~/components/pages/PurchasesByProductReportPage.vue'))
@@ -809,6 +816,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   }
   if (segs.length >= 2 && segs[0] === 'budget-changes') {
     return { component: segs[1] === 'new' ? BudgetChangeFormPage : BudgetChangeDetailPage, id: segs[1]! }
+  }
+  // Accounting › Payroll: run record with versions, draft and compare (full page).
+  if (segs.length >= 2 && segs[0] === 'payroll-runs') {
+    return { component: PayrollRunDetailPage, id: segs[1]! }
   }
   // /expenses/new → New expense form (full page, brings its own title bar)
   if (segs.length >= 2 && segs[0] === 'expenses' && segs[1] === 'new') {

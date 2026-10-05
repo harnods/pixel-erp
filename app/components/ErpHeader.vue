@@ -37,6 +37,8 @@
       <!-- Advanced Budgeting prototype: simulated roles on budget and purchase screens. -->
       <BudgetViewAsSwitcher v-if="isBudgetScreen" />
       <BudgetTourLauncher v-if="isBudgetScreen" />
+      <!-- Payroll to Ledger prototype: simulated roles on the payroll screens. -->
+      <PayrollViewAsSwitcher v-if="isPayrollScreen" />
       <!-- Demo layer (app/tours), not a product requirement. Shown only when
            Asset settings > Guided tours is on. -->
       <TourLauncher v-if="isAssetScreen" />
@@ -96,6 +98,12 @@ const BUDGET_SCREENS = new Set([
 ]);
 const isBudgetScreen = computed(
   () => BUDGET_SCREENS.has(currentPageKey.value) || /^\/(budget-|purchase-requests|purchase-orders|purchase-invoices)/.test(route.path),
+);
+const PAYROLL_SCREENS = new Set([
+  'Payroll inbox', 'Payroll payables', 'Payroll reconciliation', 'Payroll accrual', 'Payroll settings',
+]);
+const isPayrollScreen = computed(
+  () => PAYROLL_SCREENS.has(currentPageKey.value) || /^\/payroll-/.test(route.path),
 );
 function goToInbox() {
   setActiveMenuLabel("Notifications");
