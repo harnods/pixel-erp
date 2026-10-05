@@ -134,8 +134,8 @@ function onUnreserve(payload: { productIds: string[]; disposition: UnreserveDisp
   toast.notify({ variant: 'success', title: `${released} ${t('unit unreserved')} — ${where}`, maxWidth: 'max-content' })
 }
 
-/** A transfer is raised per destination warehouse — the group carries the scope,
- *  so the form is prefilled with just that warehouse's short lines. */
+/** A transfer is raised per destination warehouse; called with no warehouse from
+ *  Actions, the form opens on the whole request and the user picks the scope. */
 function createWarehouseTransfer(warehouseId?: string) {
   if (!req.value) return
   router.push({
@@ -356,7 +356,7 @@ function saveSerials(serials: string[]) {
           {{ transferLines.length === 1 ? t('component is short at its destination warehouse') : t('components are short at their destination warehouses') }}
         </MpBannerTitle>
         <MpBannerDescription id="srd-shortfall-desc">
-          {{ t('Create a warehouse transfer for each destination below, or create a purchase request.') }}
+          {{ t('Create a warehouse transfer or a purchase request from Actions.') }}
         </MpBannerDescription>
       </MpBanner>
 
@@ -395,7 +395,7 @@ function saveSerials(serials: string[]) {
       </section>
 
       <!-- ── Components, grouped by destination warehouse ──
-           One transfer covers one warehouse, so the action sits on the group. -->
+           One transfer covers one warehouse, so each group states its own shortfall. -->
       <section
         v-for="(g, gi) in warehouseGroups" :key="g.warehouse"
         class="wod-section" :class="{ 'wod-section--last': gi === warehouseGroups.length - 1 }"
@@ -405,17 +405,10 @@ function saveSerials(serials: string[]) {
             <MpIcon name="warehouse" size="md" />
             {{ g.warehouse }}
           </h2>
-          <div class="srd-group-right">
-            <span class="srd-section-sub">
-              {{ g.lines.length }} {{ g.lines.length === 1 ? t('component') : t('components') }}
-              <template v-if="g.toTransfer > 0"> · <span class="srd-short">{{ g.toTransfer }} {{ t('to transfer') }}</span></template>
-            </span>
-            <button
-              v-if="g.toTransfer > 0"
-              class="btn-enterprise btn-enterprise--secondary"
-              @click="createWarehouseTransfer(g.warehouseId)"
-            >{{ t('Create warehouse transfer') }}</button>
-          </div>
+          <span class="srd-section-sub">
+            {{ g.lines.length }} {{ g.lines.length === 1 ? t('component') : t('components') }}
+            <template v-if="g.toTransfer > 0"> · <span class="srd-short">{{ g.toTransfer }} {{ t('to transfer') }}</span></template>
+          </span>
         </div>
 
         <div class="wod-table-scroll">
@@ -636,7 +629,6 @@ function saveSerials(serials: string[]) {
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-critical, #a8352d);
 }
 /* Four summary columns on the product perspective, three on the transaction one. */
-.srd-group-right { display: flex; align-items: center; gap: var(--mp-spacing-4); flex-wrap: wrap; }
 
 .srd-summary { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-6); flex-wrap: wrap; }
 .srd-summary-grid {

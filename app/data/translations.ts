@@ -3761,7 +3761,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'This request was rejected. No further stock actions are available.': 'Permintaan ini ditolak. Tidak ada aksi stok lanjutan.',
   'component is short at its destination warehouse': 'komponen kurang di gudang tujuannya',
   'components are short at their destination warehouses': 'komponen kurang di gudang tujuannya',
-  'Create a warehouse transfer for each destination below, or create a purchase request.': 'Buat transfer gudang untuk setiap tujuan di bawah, atau buat permintaan pembelian.',
+  'Create a warehouse transfer or a purchase request from Actions.': 'Buat transfer gudang atau permintaan pembelian dari Aksi.',
 
   // ── Stock request detail — product perspective ──────────────────────────────
   'Component demand': 'Kebutuhan komponen',
