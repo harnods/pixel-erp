@@ -378,8 +378,8 @@ function confirmBulkDelete() {
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
-      <!-- Prod: Delete sits beside the Actions dropdown as a ghost button -->
-      <MpButton size="sm" variant="ghost" is-rounded @click="openBulkDeleteModal(selectedRows as Set<number>, deselectAll)">{{ t('Delete') }}</MpButton>
+      <!-- Prod: Delete sits beside the Actions dropdown (house rule: sm = secondary) -->
+      <MpButton size="sm" variant="secondary" is-rounded @click="openBulkDeleteModal(selectedRows as Set<number>, deselectAll)">{{ t('Delete') }}</MpButton>
     </template>
 
     <!-- ── Stats section ── -->

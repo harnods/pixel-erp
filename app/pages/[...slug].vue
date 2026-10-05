@@ -1197,6 +1197,7 @@ const pageTabs: Record<string, string[]> = {
   'Purchase invoices': ['All purchase invoices', 'Awaiting Approval', 'Dropbox'],
   'Purchase requests': ['All requests', 'Awaiting approval'],
   'Sales invoices': ['All sales invoices', 'Awaiting approval'],
+  'Sales deliveries': ['All sales deliveries', 'Awaiting approval'],
   'Sales orders': ['All sales orders', 'Awaiting approval'],
   'Sales quotes': ['All sales quotes', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
@@ -1457,6 +1458,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Dashboard':     wmsOverviewTabComponents,
   // Sales modules — one index page serves both tabs; it self-filters on ?tab=.
   'Sales invoices':   { 'All sales invoices':   pageRegistry['Sales invoices']!,   'Awaiting approval': pageRegistry['Sales invoices']! },
+  'Sales deliveries': { 'All sales deliveries': pageRegistry['Sales deliveries']!, 'Awaiting approval': pageRegistry['Sales deliveries']! },
   'Sales orders':     { 'All sales orders':     pageRegistry['Sales orders']!,     'Awaiting approval': pageRegistry['Sales orders']! },
   'Sales quotes':     { 'All sales quotes':     pageRegistry['Sales quotes']!,     'Awaiting approval': pageRegistry['Sales quotes']! },
   'Inbound delivery': {
@@ -2070,7 +2072,25 @@ function startResize(e: MouseEvent) {
         </div>
         <!-- Sales deliveries: no title-bar New/Import — a delivery is created from a
              sales order (fulfillment), never standalone. -->
-        <div v-else-if="currentPageKey === 'Sales deliveries'" class="page-title-actions" />
+        <div v-else-if="currentPageKey === 'Sales deliveries'" class="page-title-actions">
+          <!-- prod SalesDeliveryListView: Import menu only (no standalone create) -->
+          <MpPopover id="sd-import-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
+                {{ t('Import') }}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem @click="infoToast(t('Not in this prototype'))">{{ t('Import from spreadsheet') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="infoToast(t('Not in this prototype'))">{{ t('Import from other applications') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
         <!-- Accounting › Fixed assets › Assets. rule/btn-icon-add-only — the
              create button is the one button that carries a leading icon. -->
         <div v-else-if="currentPageKey === 'Assets'" class="page-title-actions">

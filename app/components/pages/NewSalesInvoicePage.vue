@@ -1,4 +1,6 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/sales/invoices/views/SalesInvoiceCreateView.vue -->
 <script setup lang="ts">
+import { infoToast } from '~/utils/toasts'
 /**
  * "New sales invoice" form — Sales ▸ Sales invoices ▸ New sales invoice
  * (Figma: Sales - Sales Invoices node 9152-107281).
@@ -369,7 +371,7 @@ function onSave() {
     hasPpn: taxAmount.value > 0,
   }
   salesInvoices.push(invoice)
-  toast.notify({ variant: 'success', title: t('Sales invoice created'), rootProps: { class: 'toast-enterprise' } })
+  toast.notify({ variant: 'success', title: t('Invoice has been created'), rootProps: { class: 'toast-enterprise' } })
   router.push(`/sales-invoices/${invoice.id}`)
 }
 </script>
@@ -403,7 +405,7 @@ function onSave() {
 
         <MpFormControl id="f-email" class="si-field">
           <MpFormLabel>{{ t('Email') }}</MpFormLabel>
-          <MpInputTag id="f-email-inp" :data="emailTags" :placeholder="t('+Add email')" @change="onEmailChange" />
+          <MpInputTag id="f-email-inp" :data="emailTags" :placeholder="t('Enter email and press Enter')" @change="onEmailChange" />
         </MpFormControl>
 
         <div class="si-header1-total">
@@ -422,7 +424,7 @@ function onSave() {
 
           <div class="si-checkbox-stack">
             <MpCheckbox id="f-requires-shipping" v-model:is-checked="requiresShipping">{{ t('Requires shipping') }}</MpCheckbox>
-            <MpCheckbox id="f-ship-diff" v-model:is-checked="shipToDifferent">{{ t('Ship to different address') }}</MpCheckbox>
+            <MpCheckbox id="f-ship-diff" v-model:is-checked="shipToDifferent">{{ t('Ship to a different address') }}</MpCheckbox>
           </div>
 
           <MpFormControl v-if="shipToDifferent" id="f-ship-to" class="si-field">
@@ -452,7 +454,7 @@ function onSave() {
         <!-- Col 3: shipping — only when "Requires shipping" is on -->
         <div v-if="requiresShipping" class="si-header2-col">
           <MpFormControl id="f-ship-date" class="si-field">
-            <MpFormLabel>{{ t('Ship date') }}</MpFormLabel>
+            <MpFormLabel>{{ t('Delivery date') }}</MpFormLabel>
             <MpDatePicker id="f-ship-date-inp" v-model="shipDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
           </MpFormControl>
 
@@ -495,7 +497,7 @@ function onSave() {
         <!-- Col 5: tags — last column, same 24px gap as every other pair -->
         <div class="si-header2-col">
           <MpFormControl id="f-tags" class="si-field">
-            <MpFormLabel>{{ t('Tag') }}</MpFormLabel>
+            <MpFormLabel>{{ t('Tags') }}</MpFormLabel>
             <MpInputTag id="f-tags-inp" :data="tagsList" :placeholder="t('Select tags')" @change="onTagsChange" />
             <ErpDimensionTagUpsell id="si-dim-upsell" />
           </MpFormControl>
@@ -746,7 +748,7 @@ function onSave() {
             </MpButton>
             <div class="si-discount-rows">
               <div class="si-totals-row">
-                <span>{{ t('Discount per line') }}</span>
+                <span>{{ t('Discounts per line') }}</span>
                 <span class="si-deduction">({{ fmt(discountTotal) }})</span>
               </div>
               <div class="si-totals-row">
@@ -899,27 +901,38 @@ function onSave() {
         </div>
       </section>
 
-      <!-- ── Footer ── ghost Cancel · secondary "More" dropdown · primary "Save" (rightmost) -->
+      <!-- ── Footer (prod TransactionFooter): ghost Cancel · "Save & close" ·
+           primary "Save & share" dropdown · kebab (Sales settings) ── -->
       <MpButtonGroup class="erp-action-footer si-form-footer">
         <MpButton variant="ghost" is-rounded @click="onCancel">{{ t('Cancel') }}</MpButton>
+        <MpButton variant="secondary" is-rounded @click="onSave">{{ t('Save & close') }}</MpButton>
 
-        <MpPopover id="si-form-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+        <MpPopover id="si-form-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <MpButton variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('More') }}</MpButton>
+            <MpButton variant="primary" right-icon="chevrons-down" is-rounded>{{ t('Save & share') }}</MpButton>
           </MpPopoverTrigger>
           <MpPopoverContent class="erp-dropdown-menu">
             <MpPopoverList>
-              <MpPopoverListItem @click="onSave">{{ t('Save & close') }}</MpPopoverListItem>
               <MpPopoverListItem @click="onSave">{{ t('Save & share via WhatsApp') }}</MpPopoverListItem>
               <MpPopoverListItem @click="onSave">{{ t('Save & share via email') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="onSave">{{ t('Save as draft') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Print draft PDF') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
 
-        <MpButton variant="primary" is-rounded @click="onSave">{{ t('Save') }}</MpButton>
+        <MpPopover id="si-form-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+          <MpPopoverTrigger>
+            <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More options')" is-rounded />
+          </MpPopoverTrigger>
+          <MpPopoverContent class="erp-dropdown-menu">
+            <MpPopoverList>
+              <!-- local-only, kept: draft / preview helpers -->
+              <MpPopoverListItem @click="onSave">{{ t('Save as draft') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="infoToast(t('Not in this prototype'))">{{ t('Preview') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="infoToast(t('Not in this prototype'))">{{ t('Print draft PDF') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="navigateTo('/sales-settings')">{{ t('Sales settings') }}</MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
       </MpButtonGroup>
 
     </div><!-- /si-form-stage -->
