@@ -16,7 +16,7 @@ import {
   budget, actingPerson, noticesFor, markNoticeRead, markAllNoticesRead, changeById, canEditChange, canWithdrawChange, withdrawChangeAs,
 } from '~/data/budgetStore'
 import {
-  changeRows, changeStats, STATUS_FILTER_OPTIONS, WAITING_FOR_ME, CHANGE_KINDS, type ChangeRow,
+  changeRows, changeStats, changeBadgeType, STATUS_FILTER_OPTIONS, WAITING_FOR_ME, CHANGE_KINDS, type ChangeRow,
 } from '~/data/budgetUiChanges'
 import { successToast } from '~/utils/toasts'
 
@@ -172,10 +172,12 @@ function canWithdraw(id: string) { const c = changeById(id); return !!c && canWi
       <span class="cell-link cell-text" @click.stop="goDetail((row as ChangeRow).id)">{{ (row as ChangeRow).number }}</span>
     </template>
     <template #cell-kind="{ row }">{{ t((row as ChangeRow).kind) }}</template>
+    <template #cell-from="{ row }"><span class="bc-wrap">{{ (row as ChangeRow).from }}</span></template>
+    <template #cell-to="{ row }"><span class="bc-wrap">{{ (row as ChangeRow).to }}</span></template>
     <template #cell-amount="{ row }">{{ formatIDRWhole((row as ChangeRow).amount) }}</template>
     <template #cell-status="{ row }">
       <div class="status-cell">
-        <ErpStatusBadge :status="(row as ChangeRow).status.toLowerCase()" :label="t((row as ChangeRow).status)" />
+        <ErpStatusBadge :status="(row as ChangeRow).status.toLowerCase()" :type="changeBadgeType((row as ChangeRow).status)" :label="t((row as ChangeRow).status)" />
         <span v-if="(row as ChangeRow).mine" class="status-sub-label">{{ t('Waiting for you') }}</span>
       </div>
     </template>
@@ -233,6 +235,7 @@ function canWithdraw(id: string) { const c = changeById(id); return !!c && canWi
 .stat-amount { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-2xl, 32px); white-space: nowrap; }
 .stat-link { display: inline-flex; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-link); line-height: var(--mp-line-heights-md); text-decoration: none; cursor: pointer; padding: 0 var(--mp-spacing-0\.5); }
 
+.bc-wrap { display: block; white-space: normal; overflow-wrap: anywhere; }
 .status-cell { display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-0\.5); }
 .status-sub-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-warning); }
 </style>

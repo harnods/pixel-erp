@@ -153,3 +153,11 @@ export function groupDigits(n: number): string {
   const sign = n < 0 ? '-' : ''
   return sign + Math.abs(Math.round(n)).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')
 }
+
+/** Badge colour per change status (Withdrawn is neutral, not informational). */
+export function changeBadgeType(status: string): 'completed' | 'announcement' | 'information' | 'warning' | 'critical' {
+  if (status === 'Approved') return 'completed'
+  if (status === 'Pending') return 'warning'
+  if (status === 'Rejected') return 'critical'
+  return 'announcement'
+}

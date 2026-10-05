@@ -54,6 +54,13 @@ const revisionLineId = ref('')
 const revisionAmount = ref(0)
 const loadError = ref('')
 
+function reset() {
+  editId.value = ''; baseKind.value = 'Transfer'; month.value = BUDGET_CURRENT_MONTH
+  donorLineId.value = ''; donorAmount.value = 0; rows.value = [blankRow()]
+  reason.value = ''; reasonCode.value = ''; prId.value = ''; savingType.value = 'Procurement'; sourceDoc.value = ''
+  drawSlice.value = ''; revisionLineId.value = ''; revisionAmount.value = 0; loadError.value = ''
+}
+
 function load() {
   const edit = q('edit')
   if (edit) {
@@ -102,6 +109,12 @@ function pickRequest(id: string) {
 }
 
 load()
+// The same page serves every kind, so a new query string starts a new form.
+watch(() => route.fullPath, () => {
+  if (!route.path.startsWith('/budget-changes/new')) return
+  reset(); showErrors.value = false; actionError.value = ''
+  load()
+})
 
 // ── Derived kind and the change the form describes ─────────────────────────
 const kind = computed<ChangeKind>(() => {
@@ -401,12 +414,11 @@ function submit() {
               <h2 class="bcf-h">{{ t('To') }}</h2>
               <div class="bcf-table-wrap">
                 <table class="bcf-table">
-                  <colgroup><col /><col class="bcf-col-amt" /><col class="bcf-col-amt" /><col class="bcf-col-amt" /><col class="bcf-col-del" /></colgroup>
+                  <colgroup><col /><col class="bcf-col-amt" /><col class="bcf-col-amt" /><col class="bcf-col-del" /></colgroup>
                   <thead>
                     <tr>
                       <th class="bcf-th">{{ t('Receiving line') }}</th>
                       <th class="bcf-th bcf-th--num">{{ t('Amount') }}</th>
-                      <th class="bcf-th bcf-th--num">{{ t('Available before') }}</th>
                       <th class="bcf-th bcf-th--num">{{ t('Available after') }}</th>
                       <th class="bcf-th" />
                     </tr>
@@ -431,8 +443,10 @@ function submit() {
                         <MpInput v-if="isTransferFamily" :id="`bcf-recv-amt-${r.key}`" :model-value="groupDigits(r.amount)" inputmode="numeric" is-full-width class="bcf-num" @update:model-value="(v: string | number) => (r.amount = parseRupiahInput(v))" />
                         <span v-else class="bcf-static">{{ formatIDRWhole(donorAmount) }}</span>
                       </td>
-                      <td class="bcf-td bcf-td--num"><span class="bcf-static">{{ formatIDRWhole(recvBefore(r)) }}</span></td>
-                      <td class="bcf-td bcf-td--num"><span class="bcf-static">{{ formatIDRWhole(recvBefore(r) + recvAmount(r)) }}</span></td>
+                      <td class="bcf-td bcf-td--num">
+                        <span class="bcf-static">{{ formatIDRWhole(recvBefore(r) + recvAmount(r)) }}</span>
+                        <span class="bcf-before">{{ t('Before') }} {{ formatIDRWhole(recvBefore(r)) }}</span>
+                      </td>
                       <td class="bcf-td bcf-td--del">
                         <MpButton v-if="rows.length > 1" variant="ghost" left-icon="minus-circular" is-rounded :aria-label="t('Remove')" @click="removeRow(r.key)" />
                       </td>
@@ -554,7 +568,7 @@ function submit() {
 .bcf-title { margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xl, 32px); color: var(--mp-text-default); }
 
 .bcf-stage { flex: 1; min-height: 0; overflow-y: auto; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl, 12px) var(--mp-radii-xl, 12px) 0 0; padding: var(--mp-spacing-6); display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
-.bcf-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 360px); gap: var(--mp-spacing-6); align-items: start; }
+.bcf-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 320px); gap: var(--mp-spacing-6); align-items: start; }
 .bcf-main { display: flex; flex-direction: column; gap: var(--mp-spacing-6); min-width: 0; }
 .bcf-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
 .bcf-h { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-text-default); }
@@ -578,8 +592,10 @@ function submit() {
 .bcf-pick__free { flex: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
 .bcf-table-wrap { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-lg, 8px); overflow-x: auto; }
-.bcf-table { width: 100%; min-width: 720px; table-layout: fixed; border-collapse: collapse; }
-.bcf-col-amt { width: 176px; }
+.bcf-table { width: 100%; min-width: 600px; table-layout: fixed; border-collapse: collapse; }
+.bcf-col-amt { width: 168px; }
+.bcf-before { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); }
+.bcf-page :deep(.efs) { display: flex; }
 .bcf-col-del { width: 52px; }
 .bcf-th { height: var(--mp-sizes-8, 32px); text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-3); background: var(--mp-background-neutral-subtle); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); }
 .bcf-th--num { text-align: right; }
@@ -587,7 +603,7 @@ function submit() {
 tr:last-child > .bcf-td { border-bottom: none; }
 .bcf-td--num { text-align: right; }
 .bcf-td--del { text-align: center; padding-left: 0; padding-right: 0; }
-.bcf-static { display: inline-block; line-height: var(--mp-sizes-9\.5, 38px); }
+.bcf-static { display: block; line-height: var(--mp-sizes-9\.5, 38px); }
 .bcf-cell { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .bcf-newline__tag { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); }
 .bcf-newline__pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--mp-spacing-2); }
@@ -596,7 +612,7 @@ tr:last-child > .bcf-td { border-bottom: none; }
 .bcf-recv-add { display: flex; gap: var(--mp-spacing-2); }
 .bcf-recv-sum { display: flex; gap: var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
-.bcf-errors { border: 1px solid var(--mp-border-danger, var(--mp-border-default)); border-radius: var(--mp-radii-lg, 8px); padding: var(--mp-spacing-3) var(--mp-spacing-4); }
+.bcf-errors { border: 1px solid var(--mp-colors-border-danger, var(--mp-border-default)); border-radius: var(--mp-radii-lg, 8px); padding: var(--mp-spacing-3) var(--mp-spacing-4); }
 .bcf-errors__title { margin: 0 0 var(--mp-spacing-1); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-danger); }
 .bcf-errors__list { margin: 0; padding-left: var(--mp-spacing-5); font-size: var(--mp-font-sizes-md); color: var(--mp-text-danger); display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .bcf-error { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-danger); }

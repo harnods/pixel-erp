@@ -16,7 +16,7 @@ import {
   canWithdrawChange, withdrawChangeAs, prById, prLink, prTotal, lineById, yearFigures, BUDGET_YEAR,
 } from '~/data/budgetStore'
 import {
-  lineName, receiverName, monthLabel, approvedAt, sliceLabel, waitingStep,
+  lineName, receiverName, changeBadgeType, monthLabel, approvedAt, sliceLabel, waitingStep,
 } from '~/data/budgetUiChanges'
 
 const props = defineProps<{ orderId: string }>()
@@ -105,7 +105,7 @@ function goLine(id: string | null) { if (id && lineById(id)) router.push(`/budge
         <MpTextlink id="bcd-breadcrumb" as="a" class="bcd-breadcrumb" @click.prevent="router.push('/budget-changes')">{{ t('Budget changes') }}</MpTextlink>
         <div class="bcd-titlerow">
           <h1 class="bcd-title">{{ change ? `${t(change.kind)} ${change.number}` : t('Budget change') }}</h1>
-          <ErpStatusBadge v-if="change" :status="change.status.toLowerCase()" :label="t(change.status)" badge-for="additionalInformation" size="md" />
+          <ErpStatusBadge v-if="change" :status="change.status.toLowerCase()" :type="changeBadgeType(change.status)" :label="t(change.status)" badge-for="additionalInformation" size="md" />
         </div>
       </div>
       <div v-if="change" class="bcd-actions">
