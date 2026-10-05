@@ -7,13 +7,13 @@ import {
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import ColumnSettingsMenu, { type ColumnSettingItem } from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
-import AdvanceDateFilter from '~/components/patterns/AdvanceDateFilter.vue'
+import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
 import WorkOrderPreviewDrawer, { type PreviewCtx } from '~/components/WorkOrderPreviewDrawer.vue'
 import CreateWorkOrderModal from '~/components/CreateWorkOrderModal.vue'
 import RejectProductionRequestModal, { type RejectContext } from '~/components/RejectProductionRequestModal.vue'
 import { formatDate } from '~/utils/date'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
-import { dateFilterMatches, toIso, type DateFilterValue } from '~/utils/dateFilter'
+import { toIso } from '~/utils/dateFilter'
 import {
   productionRequestsByStatus, prRequestsOf, prAggregate, prChildRemaining, prEarliestDue,
   rejectProductionRequest,
@@ -112,10 +112,25 @@ const dateFieldForTab: Record<PrStatus, 'dueDate' | 'completeDate' | 'rejectDate
 const dateFilterPlaceholder: Record<PrStatus, string> = {
   pending: t('Due date'), completed: t('Completed date'), rejected: t('Rejected date'),
 }
-const dateFilter = ref<DateFilterValue | null>(props.tab === 'pending' ? null : { mode: 'last30' })
-
 // Reference "today" is anchored to the mock's timeline so the ranges hit real rows.
 const TODAY = new Date('2026-07-06T00:00:00')
+
+/** AdvancedDateRangePicker works in resolved ranges, so the default is one too. */
+function dayStart(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
+function lastNDays(n: number): Date[] {
+  const end = dayStart(TODAY)
+  const start = dayStart(new Date(end))
+  start.setDate(start.getDate() - (n - 1))
+  return [start, end]
+}
+const dateFilter = ref<Date[] | null>(props.tab === 'pending' ? null : lastNDays(30))
+
+function matchesDateRange(iso: string | undefined, range: Date[] | null): boolean {
+  if (!range?.length) return true
+  if (!iso) return false
+  const t = dayStart(new Date(iso)).getTime()
+  return t >= dayStart(range[0]!).getTime() && t <= dayStart(range[1]!).getTime()
+}
 
 const baseProducts = computed<PrProduct[]>(() =>
   demoState.value === 'data' ? productionRequestsByStatus(props.tab) : [],
@@ -131,7 +146,7 @@ const filteredProducts = computed<PrProduct[]>(() => {
       || p.sources.some(src =>
         src.sourceNo.toLowerCase().includes(s)
         || src.requests.some(r => r.requestNo.toLowerCase().includes(s) || (r.memo?.toLowerCase().includes(s) ?? false)))
-    const matchesDate = prRequestsOf(p).some(r => dateFilterMatches(r[field], dateFilter.value, TODAY))
+    const matchesDate = prRequestsOf(p).some(r => matchesDateRange(r[field], dateFilter.value))
     return matchesSearch && matchesDate
   })
   // Stable ordering: Pending sorts by earliest due date.
@@ -297,12 +312,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <!-- Advanced date filter — Time range presets + Per day/week/month/quarter/
              year/Custom, filtered against the tab's own date column. Pending starts
              unset ("Due date" placeholder); Completed/Rejected default to Last 30 days. -->
-        <AdvanceDateFilter
+        <AdvancedDateRangePicker
           id="pr-date-filter"
           v-model="dateFilter"
+          hide-label
           :today="TODAY"
           :placeholder="dateFilterPlaceholder[tab]"
-          :clearable="tab === 'pending'"
+          :is-clearable="tab === 'pending'"
         />
       </div>
 

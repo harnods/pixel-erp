@@ -23,12 +23,12 @@
  */
 import { ref, computed, watch } from 'vue'
 import { MpButton, MpIcon, MpTooltip, MpFormControl, MpFormErrorMessage } from '@mekari/pixel3'
-import AdvanceDateFilter from '~/components/patterns/AdvanceDateFilter.vue'
+import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
 import MultiSelectDropdown from '~/components/patterns/MultiSelectDropdown.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import { formatDate } from '~/utils/date'
 import { formatIDR } from '~/utils/currency'
-import { resolveDateFilterRange, toIso, type DateFilterValue } from '~/utils/dateFilter'
+import { toIso } from '~/utils/dateFilter'
 import { TODAY, TODAY_ISO } from '~/data/master'
 import { warehouses } from '~/data/warehouses'
 import { DUI_PRODUCTS, dualUnitReportGroups, type DuiReportGroup } from '~/data/dualUnitInventory'
@@ -41,8 +41,14 @@ const TITLE = 'Dual unit inventory report'
 // ── Filters ─────────────────────────────────────────────────────────────────────
 // Date range is mandatory (a stock report has no "all time") — it drives both the
 // rows and the "From … - …" caption. Defaults to the current month of the mock
-// timeline, not the real clock, which is why AdvanceDateFilter gets `:today`.
-const dateFilter = ref<DateFilterValue>({ mode: 'month', date: TODAY_ISO })
+// timeline, not the real clock, which is why the picker gets `:today`. The value
+// is a resolved [start, end]: AdvancedDateRangePicker hands back the range, so
+// the page no longer resolves a mode of its own.
+const monthOf = (d: Date): Date[] => [
+  new Date(d.getFullYear(), d.getMonth(), 1),
+  new Date(d.getFullYear(), d.getMonth() + 1, 0),
+]
+const dateFilter = ref<Date[]>(monthOf(TODAY))
 // MultiSelectDropdown works in plain option strings, so the selection is held as
 // warehouse NAMES and mapped back to ids for the row builder. Unlike the pattern's
 // other consumers, an empty selection here is INVALID, not "all" — the field is
@@ -54,10 +60,10 @@ const warehouseError = computed(() => warehouseNames.value.length === 0)
 const search = ref('')
 
 const range = computed(() => {
-  const r = resolveDateFilterRange(dateFilter.value, TODAY)
-  // AdvanceDateFilter is not clearable here, but an incomplete custom pick resolves
-  // to null — fall back to the current month so the table never blanks mid-pick.
-  return r ?? resolveDateFilterRange({ mode: 'month', date: TODAY_ISO }, TODAY)!
+  // The picker is not clearable here, so a range is always present; the fallback
+  // keeps the table from blanking if a caller ever hands over an empty value.
+  const [start, end] = dateFilter.value?.length ? dateFilter.value : monthOf(TODAY)
+  return { start: start!, end: end! }
 })
 const fromIso = computed(() => toIso(range.value.start))
 const toIsoDate = computed(() => toIso(range.value.end))
@@ -244,11 +250,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <!-- Both filters share one fixed width — the date field sized to its longest
                possible label ("21/06/2026 - 27/06/2026") so it never reflows the bar. -->
           <div class="dui-filter-field">
-            <AdvanceDateFilter
+            <AdvancedDateRangePicker
               id="dui-date"
               v-model="dateFilter"
+              hide-label
+              period-mode
               :today="TODAY"
-              :clearable="false"
               :placeholder="t('Select date')"
             />
           </div>

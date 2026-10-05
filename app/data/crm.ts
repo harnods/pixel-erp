@@ -1685,7 +1685,7 @@ export interface DealPropertyConfig {
   defaultDate?: string
   dateDisplay?: 'date-only' | 'relative'
   datePickerStyle?: 'simple' | 'advance'
-  defaultDateAdvance?: unknown   // DateFilterValue | null (advance picker)
+  defaultDateAdvance?: unknown   // Date[] | null (advance range picker)
   defaultBool?: '' | 'Yes' | 'No'
   booleanYesLabel?: string
   booleanNoLabel?: string

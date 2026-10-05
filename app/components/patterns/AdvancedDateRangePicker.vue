@@ -467,7 +467,7 @@ function onYearClick(y: number) {
    the field says "date", not "remove". */
 .adr-field__icon {
   position: relative; display: inline-flex; align-items: center; justify-content: center;
-  width: 18px; height: 18px; flex-shrink: 0;
+  width: var(--mp-sizes-4\.5, 18px); height: var(--mp-sizes-4\.5, 18px); flex-shrink: 0;
 }
 .adr-clear {
   position: absolute; inset: 0; margin: auto; display: none;

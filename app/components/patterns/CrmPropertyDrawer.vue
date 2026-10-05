@@ -14,9 +14,8 @@ import {
 } from '@mekari/pixel3'
 import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
-import AdvanceDateFilter from '~/components/patterns/AdvanceDateFilter.vue'
+import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
 import { TODAY } from '~/data/master'
-import type { DateFilterValue } from '~/utils/dateFilter'
 import {
   NEW_PROPERTY_TYPES, DEAL_PROPERTY_TYPE_ICON, toVariableName,
   type DealProperty, type DealPropertyType, type DealPropertyConfig, type DealPropertyOption,
@@ -248,11 +247,11 @@ function save() {
               </div>
               <div class="cpd-field">
                 <span class="cpd-label">{{ t('Default value') }}</span>
-                <AdvanceDateFilter
+                <AdvancedDateRangePicker
                   v-if="config.datePickerStyle === 'advance'"
-                  id="cpd-def-date-adv" :model-value="(config.defaultDateAdvance as DateFilterValue | null) ?? null"
-                  :today="TODAY" :placeholder="t('Select date')"
-                  @update:model-value="(v: DateFilterValue | null) => (config.defaultDateAdvance = v)"
+                  id="cpd-def-date-adv" :model-value="(config.defaultDateAdvance as Date[] | null) ?? null"
+                  hide-label is-clearable :today="TODAY" :placeholder="t('Select date')"
+                  @update:model-value="(v: Date[] | null) => (config.defaultDateAdvance = v)"
                 />
                 <MpDatePicker v-else id="cpd-def-date" v-model="config.defaultDate" format="DD/MM/YYYY" value-type="format" use-portal />
                 <span class="cpd-caption">{{ t('Default value is always today\'s date.') }}</span>

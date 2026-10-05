@@ -14,14 +14,13 @@
  */
 import {
   MpButton, MpButtonGroup, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpSegmentedControl, toast, css,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpSegmentedControl, MpDatePicker, toast, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
-import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import StockRequestFiltersDrawer, {
@@ -29,7 +28,7 @@ import StockRequestFiltersDrawer, {
 } from '~/components/patterns/StockRequestFiltersDrawer.vue'
 import { formatDate } from '~/utils/date'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
-import { TODAY, TODAY_ISO } from '~/data/master'
+import { TODAY_ISO } from '~/data/master'
 import {
   stockRequests, stockRequestStatus, stockRequestStatusOptions, skuDemandGroups,
   requestRequiredQty, isAwaitingTab, isTerminalRequest, isOnDashboard, isActionable, workOrderFor, isOverdue,
@@ -163,9 +162,13 @@ const previewMode = ref<'data' | 'empty'>('data')
 const sourceRequests = computed<StockRequest[]>(() => previewMode.value === 'empty' ? [] : stockRequests)
 
 // ─── Quick filter: Request date (second of the two allowed quick filters) ──────
-// AdvancedDateRangePicker is the ERP's one date-range control
-// (rule/date-picker-variants), so the value is a resolved [start, end] and the
-// same matchesDateRange() the All-filters drawer uses does the filtering.
+// A plain Pixel range picker, on the product owner's call: one field, pick start
+// then end, no preset sidebar. NOTE this is a deliberate deviation from
+// rule/date-picker-variants, which assigns "range / presets" to
+// AdvancedDateRangePicker and reserves MpDatePicker for single dates — raised and
+// chosen anyway, so the rule needs amending or this needs revisiting.
+// The value is a resolved [start, end], filtered by the same matchesDateRange()
+// the All-filters drawer uses.
 const dateFilter = ref<Date[] | null>(null)
 
 // ─── "All filters" drawer — a second, independent filter layer ANDed with the
@@ -483,10 +486,12 @@ const exportColumns = computed(() => {
           v-if="!isTerminalTab" id="sr-status" v-model="statusFilter"
           :placeholder="t('Status')" :options="stockRequestStatusOptions"
         />
-        <AdvancedDateRangePicker
-          id="sr-date-filter" v-model="dateFilter" hide-label is-clearable
-          :today="TODAY" :placeholder="t('Request date')"
-        />
+        <div class="sr-daterange">
+          <MpDatePicker
+            id="sr-date-filter" v-model="dateFilter" is-range format="DD/MM/YYYY"
+            :placeholder="t('Request date')" is-clearable use-portal
+          />
+        </div>
         <MpButton
           v-if="!isTerminalTab"
           variant="secondary" left-icon="filter" is-rounded
@@ -901,6 +906,11 @@ const exportColumns = computed(() => {
 }
 .sr-child-state { white-space: nowrap; }
 .sr-covered { color: var(--mp-text-success, #186f4a); }
+
+/* MpDatePicker fills its container, which in a flex filter bar means it claims a
+   whole row. Pinned to the width a "dd/mm/yyyy - dd/mm/yyyy" range needs so the
+   bar keeps its single line. */
+.sr-daterange { flex: 0 0 auto; width: var(--mp-sizes-72, 288px); }
 
 /* ── View switch ──────────────────────────────────────────────────────────
    Sits in ErpTablePage's #stats slot, which is the band above the filter bar.
