@@ -43,6 +43,8 @@
  *   setFieldPolicy(field, 'hold'|'skip')   Finance Manager.
  *   setCostCenterCategory(name, 'Direct'|'In-direct'), acceptFieldValue(field, value)
  *   setTaxPreset(key, code)         PPh 26 may not share an account with PPh 21 or PPh 21 DTP.
+ *   addPayrollAccount({ code, name, type, party, reused? })   add an account to the payroll set (TS-03).
+ *   previewDryRun(runId, no?)       OD-10: holds and would-be draft on current settings; stores and posts nothing.
  *   proposeCutover(month) (Accountant) / confirmCutover() (Finance Manager) / setCutoverMode('Block'|'Flag') (Finance Manager)
  *   setLimits(patch), setPayday(day), setAccrualSettings({ account, cutoffDay }) (Finance Manager), setSuspenseAccount(code)
  *
@@ -518,6 +520,19 @@ const isLiability = (code: string | null) => payrollAccount(code)?.type === 'lia
 const partyOf = (code: string | null): PayableParty | null => payrollAccount(code)?.party ?? null
 /** Accounts whose debit and credit show as separate lines (PPh 21 DTP, FG6-AC9). */
 const grossBoth = (code: string) => code === payroll.settings.taxPresets.dtp
+/** TS-03: add an account to the payroll account set. Codes and names are unique within the set. */
+export function addPayrollAccount(a: { code: string; name: string; type: PayrollAccount['type']; party: PayableParty | null; reused?: boolean }): Result {
+  if (!can('settings.edit')) return denied()
+  const code = a.code.trim(), name = a.name.trim()
+  if (!/^\d-\d{5}$/.test(code)) return { ok: false, message: 'Enter a code like 2-20513.' }
+  if (!name) return { ok: false, message: 'Enter the account name.' }
+  if (payrollAccount(code)) return { ok: false, message: `Code ${code} is already in the payroll account set.` }
+  if (payroll.accounts.some((x) => norm(x.name) === norm(name))) return { ok: false, message: `${name} is already in the payroll account set.` }
+  if (a.party && a.type !== 'liability') return { ok: false, message: 'Only a payable carries a party label.' }
+  payroll.accounts.push({ code, name, type: a.type, party: a.party, reused: !!a.reused })
+  changed(`Payroll account ${code} ${name} added`)
+  return { ok: true, code }
+}
 export function createPayrollTag(dimension: TagDimension, name: string): Result {
   if (!can('settings.edit')) return denied()
   if (!name.trim()) return { ok: false, message: 'Enter a tag name.' }
@@ -1383,6 +1398,23 @@ export function signOffDryRun(runId: string): Result {
   if (run.dryRun.passedBy === actingPerson()) return { ok: false, message: 'A different person signs off.' }
   run.dryRun.signedOffBy = actingPerson(); run.dryRun.signedOffAt = now()
   return { ok: true }
+}
+/**
+ * OD-10: run every check and build the journal a stored send would post on the
+ * current settings. Stores nothing and posts nothing: the run, its versions and
+ * the settings are left exactly as they were. Call from a handler, not a computed.
+ */
+export function previewDryRun(runId: string, no?: number): { ok: boolean; holds: Hold[]; draft: Draft | null; snapshotId: string; at: string; versionNo: number | null } {
+  const run = runById(runId)
+  const v = run && (versionOf(run, no ?? run.currentVersion) ?? latestVersion(run))
+  if (!run || !v) return { ok: false, holds: [], draft: null, snapshotId: currentSnapshotId(), at: payroll.clock, versionNo: null }
+  const seq = payroll.seq
+  const mappingLen = payroll.settings.mapping.length
+  const copy: RunVersion = { ...clone(v), state: 'active', gapRelease: null, taxRelease: null }
+  checkVersion(run, copy)
+  payroll.settings.mapping.splice(mappingLen)
+  payroll.seq = seq
+  return { ok: true, holds: copy.holds, draft: copy.draft, snapshotId: currentSnapshotId(), at: payroll.clock, versionNo: v.no }
 }
 
 // ── Draft build (TS-05) ─────────────────────────────────────────────────────
