@@ -309,20 +309,28 @@ function onYearClick(y: number) {
       @close="open = false"
     >
       <MpPopoverTrigger>
-        <MpButton class="adr-field" :class="{ 'adr-field--full': isFullWidth }" type="button" @click.stop="open = !open">
+        <MpButton
+          class="adr-field"
+          :class="{ 'adr-field--full': isFullWidth, 'adr-field--clearable': isClearable && hasValue }"
+          type="button" @click.stop="open = !open"
+        >
           <span class="adr-field__value" :class="{ 'adr-field__value--placeholder': !hasValue }">{{ fieldText }}</span>
-          <!-- Clear replaces the calendar once a range is applied, so one filter
-               can be undone without reaching for "Clear all filters". -->
-          <svg
-            v-if="isClearable && hasValue" class="adr-clear" width="16" height="16" viewBox="0 0 24 24" fill="none"
-            role="button" :aria-label="t('Clear')" @click.stop="clear"
-          >
-            <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-          <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/>
-            <path d="M3 9.5H21M8 3V6M16 3V6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
+          <!-- One icon slot holding both marks: the calendar says what the field
+               is, and the clear takes its place on hover, so an applied range can
+               be undone without reaching for "Clear all filters" — and without a
+               ✕ sitting on the field at rest. -->
+          <span class="adr-field__icon">
+            <svg class="adr-cal-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M3 9.5H21M8 3V6M16 3V6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <svg
+              v-if="isClearable && hasValue" class="adr-clear" width="16" height="16" viewBox="0 0 24 24" fill="none"
+              role="button" :aria-label="t('Clear')" @click.stop="clear"
+            >
+              <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </span>
         </MpButton>
       </MpPopoverTrigger>
       <MpPopoverContent :class="css({ padding: '0' })" @blur="open = false" @escape="open = false">
@@ -454,7 +462,21 @@ function onYearClick(y: number) {
 .adr-field--full { width: 100%; }
 .adr-field:hover { border-color: var(--mp-colors-border-bold, #8c9596) !important; }
 .adr-field svg { flex-shrink: 0; color: var(--mp-text-subtle); }
-.adr-clear { cursor: pointer; border-radius: var(--mp-radii-sm); }
+/* Both icons share one fixed slot, so swapping them cannot shift the field's
+   text. The clear only appears while the field is hovered or focused — at rest
+   the field says "date", not "remove". */
+.adr-field__icon {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; flex-shrink: 0;
+}
+.adr-clear {
+  position: absolute; inset: 0; margin: auto; display: none;
+  cursor: pointer; border-radius: var(--mp-radii-sm);
+}
+.adr-field--clearable:hover .adr-cal-icon,
+.adr-field--clearable:focus-visible .adr-cal-icon { visibility: hidden; }
+.adr-field--clearable:hover .adr-clear,
+.adr-field--clearable:focus-visible .adr-clear { display: block; }
 .adr-clear:hover { color: var(--mp-colors-text-default, #080d0e); }
 .adr-field__value--placeholder { color: var(--mp-text-placeholder, #8690a2); }
 
