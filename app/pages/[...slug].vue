@@ -148,6 +148,10 @@ const pageRegistry: Record<string, Component> = {
   'Purchase quotes':     defineAsyncComponent(() => import('~/components/pages/PurchaseQuotesPage.vue')),
   'Purchase deliveries': defineAsyncComponent(() => import('~/components/pages/PurchaseDeliveriesPage.vue')),
   'Cash management':   defineAsyncComponent(() => import('~/components/pages/CashManagementPage.vue')),
+  // Accounting › Reconciliations is full-bleed (own rail + title bar) — resolved via detailMatch below;
+  // this entry keeps the key resolvable. Accounting › Bank rules index (prod parity, wave 2).
+  'Reconciliations':   defineAsyncComponent(() => import('~/components/pages/ReconciliationsPage.vue')),
+  'Bank rules':        defineAsyncComponent(() => import('~/components/pages/BankRulesPage.vue')),
   'Company profile':    defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
   // Settings → Data migration. Key must match the sidebar label character-for-character.
   'Data migration':     defineAsyncComponent(() => import('~/components/pages/DataMigrationPage.vue')),
@@ -275,6 +279,8 @@ const CashConnectBankPage = asyncPage(() => import('~/components/pages/CashConne
 const InternalTransferFormPage = asyncPage(() => import('~/components/pages/InternalTransferFormPage.vue'))
 const InternalTransferDetailsPage = asyncPage(() => import('~/components/pages/InternalTransferDetailsPage.vue'))
 const BankStatementReviewPage = asyncPage(() => import('~/components/pages/BankStatementReviewPage.vue'))
+const ReconciliationsPage = asyncPage(() => import('~/components/pages/ReconciliationsPage.vue'))
+const BankRuleBuilderPage = asyncPage(() => import('~/components/pages/BankRuleBuilderPage.vue'))
 const PlaceholderPage = asyncPage(() => import('~/components/pages/PlaceholderPage.vue'))
 const NewContactPage = asyncPage(() => import('~/components/pages/NewContactPage.vue'))
 const ContactDetailsPage = asyncPage(() => import('~/components/pages/ContactDetailsPage.vue'))
@@ -714,6 +720,14 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /expenses/:id → bill/expense detail page
   if (segs.length >= 2 && segs[0] === 'expenses') {
     return { component: BillDetailsPage, id: segs[1]! }
+  }
+  // /reconciliations[/:accountId[/:tab]] → reconciliation workspace (full-bleed: rail + own title bar).
+  if (segs[0] === 'reconciliations') {
+    return { component: ReconciliationsPage, id: segs[1] ?? '' }
+  }
+  // /bank-rules/new · /bank-rules/:id/edit · /bank-rules/:id/duplicate → rule builder. Bare index → registry.
+  if (segs.length >= 2 && segs[0] === 'bank-rules') {
+    return { component: BankRuleBuilderPage, id: segs[1] === 'new' ? 'new' : segs[1]! }
   }
   // /cash-management/review/:id → OCR review for an imported bank statement
   if (segs.length >= 3 && segs[0] === 'cash-management' && segs[1] === 'review') {
@@ -1979,6 +1993,9 @@ function startResize(e: MouseEvent) {
               </div>
             </div>
           </div>
+        </div>
+        <div v-else-if="currentPageKey === 'Bank rules'" class="page-title-actions">
+          <MpButton variant="primary" is-rounded left-icon="add" @click="router.push('/bank-rules/new')">{{ t('New bank rules') }}</MpButton>
         </div>
         <div v-else-if="currentPageKey === 'Warehouses'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary" @click="router.push('/warehouses/import')">
