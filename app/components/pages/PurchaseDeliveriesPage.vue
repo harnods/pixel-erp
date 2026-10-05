@@ -1,8 +1,11 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/purchase-deliveries/views/panels/PurchaseDeliveryListPanel.vue -->
 <script setup lang="ts">
 import {
   MpButton, MpButtonGroup, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css,
+  MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay, toast,
 } from '@mekari/pixel3'
+import { infoToast } from '~/utils/toasts'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { formatIDR } from '~/utils/currency'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
@@ -15,8 +18,7 @@ import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import CopyLinkDrawer from '~/components/patterns/CopyLinkDrawer.vue'
 import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
-import SalesDeliveryFiltersDrawer, { emptySalesDeliveryFilters, type SalesDeliveryFiltersValue } from '~/components/patterns/SalesDeliveryFiltersDrawer.vue'
-import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
+import PurchaseDeliveryFiltersDrawer, { emptyPurchaseDeliveryFilters, type PurchaseDeliveryFiltersValue } from '~/components/patterns/PurchaseDeliveryFiltersDrawer.vue'
 import { purchaseDeliveries } from '~/data'
 import type { PurchaseDelivery } from '~/data'
 
@@ -41,14 +43,25 @@ type Row = PurchaseDelivery & { vendorName: string }
 // Prototype preview toggle (FAB, bottom-right): data vs empty-state view
 const previewMode = ref<'data' | 'empty'>('data')
 
+// Awaiting-approval tab (?tab=) filters to the approval queue; same table
+// (prod: PurchaseDeliveryApprovalListPanel). Deterministic subset: every 9th.
+const route = useRoute()
+const isAwaiting = computed(() => route.query.tab === 'Awaiting approval')
+// Session-only bulk delete: hides rows, never mutates the seed.
+const deletedIds = ref(new Set<string>())
+
 const rows = computed<Row[]>(() =>
   previewMode.value === 'empty'
     ? []
-    : purchaseDeliveries.map(pd => ({ ...pd, vendorName: pd.vendor.name })),
+    : purchaseDeliveries
+        .filter(pd => !deletedIds.value.has(pd.id))
+        .filter(pd => !isAwaiting.value || pd.number % 9 === 0)
+        .map(pd => ({ ...pd, vendorName: pd.vendor.name })),
 )
 
 // ─── Second quick filter (Billing status) — combined inside filterFn ────────────
-// useTableState owns a single `statusFilter` (used here for Fulfillment status);
+// useTableState owns a single `statusFilter` (Fulfillment status — no toolbar
+// select since prod has none; stays empty);
 // Billing status is a local ref read inside filterFn so the `filtered` computed
 // tracks it reactively.
 const billingFilter = ref('')
@@ -57,7 +70,7 @@ const billingFilter = ref('')
 // toolbar's own Fulfillment + Billing selects + search (same pattern as
 // BillsIndexPage). ────────────────────────────────────────────────────────────
 const filtersOpen = ref(false)
-const appliedFilters = reactive<SalesDeliveryFiltersValue>(emptySalesDeliveryFilters())
+const appliedFilters = reactive<PurchaseDeliveryFiltersValue>(emptyPurchaseDeliveryFilters())
 
 const keywordColumns = [
   { key: 'number',     label: t('Number') },
@@ -66,7 +79,10 @@ const keywordColumns = [
 ]
 const tagOptions = computed(() => [...new Set(purchaseDeliveries.flatMap(pd => pd.tags ?? []))].sort())
 
-function applyDrawerFilters(v: SalesDeliveryFiltersValue) { Object.assign(appliedFilters, v) }
+function applyDrawerFilters(v: PurchaseDeliveryFiltersValue) {
+  Object.assign(appliedFilters, v)
+  toast.notify({ variant: 'success', title: t('Filters applied'), rootProps: { class: 'toast-enterprise' } })
+}
 
 function dayStart(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
 // AdvancedDateRangePicker emits a [start, end] Date pair (or null = not applied).
@@ -75,15 +91,6 @@ function matchesDateRange(iso: string, range: Date[] | null): boolean {
   const t = dayStart(new Date(iso)).getTime()
   return t >= dayStart(range[0]!).getTime() && t <= dayStart(range[1]!).getTime()
 }
-// "Is greater than"/"Is less than" read a single value field, "Is between" reads the min/max pair.
-function matchesAmountFilter(amount: number, comparator: AmountComparator, value: string, min: string, max: string): boolean {
-  if (comparator === 'gt') return value === '' || amount > Number(value)
-  if (comparator === 'lt') return value === '' || amount < Number(value)
-  const lo = min === '' ? -Infinity : Number(min)
-  const hi = max === '' ? Infinity : Number(max)
-  return amount >= lo && amount <= hi
-}
-
 // ─── Table state ──────────────────────────────────────────────────────────────
 const {
   search, statusFilter, currentPage, paginated, total, perPage,
@@ -107,17 +114,14 @@ const {
         : rowTags.some(tg => tg.toLowerCase().includes(kw))
     )
     const matchesDeliveryDate = matchesDateRange(row.date, f.deliveryDate)
-    const matchesFulfillment = f.fulfillmentStatus.length === 0 || f.fulfillmentStatus.includes(row.fulfillmentStatus)
     const matchesBilling = f.billingStatus.length === 0 || f.billingStatus.includes(row.billingStatus)
-    const matchesTotal = matchesAmountFilter(row.total, f.totalComparator, f.totalValue, f.totalMin, f.totalMax)
     const matchesTags = f.tags.length === 0
       || (f.tagsComparator === 'isAnyOf' ? f.tags.some(tg => rowTags.includes(tg))
         : f.tagsComparator === 'isAllOf' ? f.tags.every(tg => rowTags.includes(tg))
         : f.tags.every(tg => !rowTags.includes(tg)))
 
     return matchesSearch && matchesToolbar
-      && matchesKeyword && matchesDeliveryDate && matchesFulfillment && matchesBilling
-      && matchesTotal && matchesTags
+      && matchesKeyword && matchesDeliveryDate && matchesBilling && matchesTags
   },
 })
 
@@ -130,9 +134,7 @@ const activeFilterCount = computed(() => {
   let n = 0
   if (f.keyword) n++
   if (f.deliveryDate) n++
-  if (f.fulfillmentStatus.length > 0) n++
   if (f.billingStatus.length > 0) n++
-  if (f.totalValue !== '' || f.totalMin !== '' || f.totalMax !== '') n++
   if (f.tags.length > 0) n++
   return n
 })
@@ -140,16 +142,13 @@ const isDrawerFilterActive = computed(() => activeFilterCount.value > 0)
 
 // ─── Filter options ───────────────────────────────────────────────────────────
 // Quick-filter options — NO "All …" entry; clearing (x) resets to show-all.
-const fulfillmentOptions = [
-  { label: t('In transit'), value: 'in transit' },
-  { label: t('Direct'),     value: 'direct'     },
-  { label: t('Delivered'),  value: 'delivered'  },
-]
-
+// Prod billing status vocabulary is Open / Closed (unbilled = still open for
+// invoicing, invoiced = closed). Data values stay unbilled/invoiced.
 const billingOptions = [
-  { label: t('Unbilled'), value: 'unbilled' },
-  { label: t('Invoiced'), value: 'invoiced' },
+  { label: t('Open'),   value: 'unbilled' },
+  { label: t('Closed'), value: 'invoiced' },
 ]
+const BILLING_LABEL: Record<string, string> = { unbilled: t('Open'), invoiced: t('Closed') }
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 function formatDate(iso: string) {
@@ -168,16 +167,40 @@ onMounted(() => {
 const emptyIllustration = '/illustrations/empty-folder.png'
 
 // Reset all filters (from the inline "Clear all filters" empty-state link)
+// ─── Bulk delete (prod: Delete in the selection bar + confirm modal) ──────────
+const bulkDeleteOpen = ref(false)
+const bulkDeleteIds = ref<string[]>([])
+let bulkDeselect: (() => void) | null = null
+function selectedFrom(sel: Set<number>): Row[] {
+  return [...sel].map(i => (paginated.value as Row[])[i]).filter((r): r is Row => !!r)
+}
+function openBulkDelete(sel: Set<number>, deselectAll: () => void) {
+  bulkDeleteIds.value = selectedFrom(sel).map(r => r.id)
+  bulkDeselect = deselectAll
+  bulkDeleteOpen.value = true
+}
+function confirmBulkDelete() {
+  const n = bulkDeleteIds.value.length
+  deletedIds.value = new Set([...deletedIds.value, ...bulkDeleteIds.value])
+  toast.notify({ variant: 'success', title: n === 1 ? t('1 purchase delivery deleted') : `${n} ${t('purchase deliveries deleted')}`, rootProps: { class: 'toast-enterprise' } })
+  bulkDeselect?.()
+  bulkDeleteOpen.value = false
+}
+function createInvoiceFrom(r: Row) { navigateTo(`/purchase-invoices/new?createdFrom=${r.id}`) }
+
 function clearFilters() {
   search.value = ''
   statusFilter.value = ''
   billingFilter.value = ''
-  Object.assign(appliedFilters, emptySalesDeliveryFilters())
+  Object.assign(appliedFilters, emptyPurchaseDeliveryFilters())
 }
 
 // Column show/hide (first column always on; Last updated appended, hidden by default)
 const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: t('Last updated'), kind: 'date' }]
-const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, c.key !== 'lastUpdated'])))
+// Prod list shows Date / Number / Vendor / Billing status / Tags; the local
+// Fulfillment status + Total columns stay available in column settings, off by default.
+const HIDDEN_BY_DEFAULT = new Set(['lastUpdated', 'fulfillmentStatus', 'total'])
+const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, !HIDDEN_BY_DEFAULT.has(c.key)])))
 const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnVisibility[c.key]))
 function hideColumn(key: string) { columnVisibility[key] = false }
@@ -202,10 +225,16 @@ function openShare(r: Row) {
   shareAttachment.value = `${r.number}.pdf`
   shareOpen.value = true
 }
+// Prod export column list (purchaseDelivery.export.columns.*), same order.
 const exportColumns = computed(() => [
-  ...columns
-    .filter(c => c.label && !c.noHeader)
-    .map(c => ({ key: c.key, label: c.label, ...(c.key === 'number' ? { required: true } : {}) })),
+  { key: 'date', label: t('Date') },
+  { key: 'number', label: t('Number'), required: true },
+  { key: 'vendor', label: t('Vendor') },
+  { key: 'email', label: t('Email') },
+  { key: 'fulfillmentStatus', label: t('Fulfillment status') },
+  { key: 'billingStatus', label: t('Billing status') },
+  { key: 'total', label: t('Total') },
+  { key: 'tags', label: t('Tags') },
   { key: 'warehouse', label: t('Warehouse') },
   { key: 'referenceNo', label: t('Reference no.') },
   { key: 'message', label: t('Message') },
@@ -236,18 +265,21 @@ const exportColumns = computed(() => [
   >
 
     <!-- ── Bulk actions ── -->
-    <template #bulk-actions>
+    <template #bulk-actions="{ selectedRows, deselectAll }">
       <MpPopover id="pd-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
         <MpPopoverTrigger>
           <MpButton size="sm" variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('Actions') }}</MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
-            <MpPopoverListItem>{{ t('Process in fulfillment') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Create purchase invoice') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="rows.length && openShare(rows[0])">{{ t('Share via email') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="openCopyLinks(rows.slice(0, 5) as Row[])">{{ t('Copy link') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="infoToast(t('Not in this prototype'))">{{ t('Process in fulfillment') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="infoToast(t('Not in this prototype'))">{{ t('Print PDF') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="selectedFrom(selectedRows as Set<number>).length && openShare(selectedFrom(selectedRows as Set<number>)[0]!)">{{ t('Share via email') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openCopyLinks(selectedFrom(selectedRows as Set<number>))">{{ t('Copy link') }}</MpPopoverListItem>
+          </MpPopoverList>
+          <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
+          <MpPopoverList>
+            <MpPopoverListItem @click="openBulkDelete(selectedRows as Set<number>, deselectAll)">{{ t('Delete') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -257,8 +289,6 @@ const exportColumns = computed(() => [
     <template #filters>
       <!-- Left: Fulfillment + Billing status selects + All filters -->
       <div class="filter-left">
-        <ErpFilterSelect id="pd-fulfillment-status" v-model="statusFilter" :placeholder="t('Fulfillment status')" :options="fulfillmentOptions" />
-
         <ErpFilterSelect id="pd-billing-status" v-model="billingFilter" :placeholder="t('Billing status')" :options="billingOptions" />
 
         <MpButton variant="secondary" left-icon="filter" is-rounded class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">{{ t('All filters') }}{{ activeFilterCount > 0 ? ` (${activeFilterCount})` : '' }}</MpButton>
@@ -328,7 +358,7 @@ const exportColumns = computed(() => [
 
     <!-- ── Cell: Billing status ── -->
     <template #cell-billingStatus="{ value }">
-      <ErpStatusBadge :status="value as string" />
+      <ErpStatusBadge :status="value as string" :label="BILLING_LABEL[value as string]" />
     </template>
 
     <!-- ── Cell: Total ── -->
@@ -360,14 +390,14 @@ const exportColumns = computed(() => [
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem>{{ t('View details') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Create purchase invoice') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="navigateTo(`/purchase-deliveries/${row.id}`)">{{ t('View details') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="row.billingStatus === 'unbilled'" @click="createInvoiceFrom(row as Row)">{{ t('Create purchase invoice') }}</MpPopoverListItem>
           </MpPopoverList>
           <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
           <MpPopoverList>
-            <MpPopoverListItem>{{ t('Share via WhatsApp') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="infoToast(t('Not in this prototype'))">{{ t('Share via WhatsApp') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openShare(row as Row)">{{ t('Share via email') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openCopyLinks([row as Row])">{{ t('Copy link') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -378,12 +408,11 @@ const exportColumns = computed(() => [
     </template>
   </ErpTablePage>
 
-  <SalesDeliveryFiltersDrawer
+  <PurchaseDeliveryFiltersDrawer
     id="pd-allfilters"
     :is-open="filtersOpen"
     :model-value="appliedFilters"
     :columns="keywordColumns"
-    :fulfillment-options="fulfillmentOptions"
     :billing-options="billingOptions"
     :tag-options="tagOptions"
     @update:is-open="filtersOpen = $event"
@@ -393,6 +422,25 @@ const exportColumns = computed(() => [
   <ExportModal :open="exportOpen" :title="t('Export purchase deliveries')" entity-label="purchase deliveries" :columns="exportColumns" :custom-fields="[t('Sample custom field 1'), t('Sample custom field 2')]" :total="total" @close="exportOpen = false" @export="exportOpen = false" />
   <CopyLinkDrawer :open="copyOpen" :items="copyItems" @close="copyOpen = false" @download-csv="copyOpen = false" />
   <ShareViaEmailModal :open="shareOpen" :title="shareTitle" :subject="shareSubject" :attachment-name="shareAttachment" :attachment-size-k-b="128" sender-email="rizal.candra@centralperk.co.id" @close="shareOpen = false" @send="shareOpen = false" />
+
+  <MpModal id="pd-bulk-delete-modal" :is-open="bulkDeleteOpen" size="md" :is-keep-alive="false" :is-close-on-esc="false" :is-close-on-overlay-click="false" @close="bulkDeleteOpen = false">
+    <MpModalContent>
+      <MpModalHeader>
+        {{ bulkDeleteIds.length === 1 ? t('Delete purchase delivery?') : t('Delete purchase deliveries?') }}
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        {{ bulkDeleteIds.length === 1 ? t('Deleted purchase delivery cannot be restored.') : t('Deleted purchase deliveries cannot be restored.') }}
+      </MpModalBody>
+      <MpModalFooter>
+        <MpButtonGroup class="erp-action-footer">
+          <MpButton variant="ghost" is-rounded @click="bulkDeleteOpen = false">{{ t('Cancel') }}</MpButton>
+          <MpButton variant="danger" is-rounded @click="confirmBulkDelete">{{ t('Delete') }}</MpButton>
+        </MpButtonGroup>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 
   <ScenarioFab v-model="previewMode" />
 </template>

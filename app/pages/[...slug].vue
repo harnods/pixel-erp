@@ -1196,6 +1196,7 @@ const pageTabs: Record<string, string[]> = {
   'Expenses': ['Bills', 'Awaiting Approval', 'Dropbox'],
   'Purchase invoices': ['All purchase invoices', 'Awaiting approval', 'Dropbox'],
   'Purchase requests': ['All requests', 'Awaiting approval'],
+  'Purchase deliveries': ['All purchase deliveries', 'Awaiting approval'],
   'Sales invoices': ['All sales invoices', 'Awaiting approval'],
   'Sales orders': ['All sales orders', 'Awaiting approval'],
   'Sales quotes': ['All sales quotes', 'Awaiting approval'],
@@ -1457,6 +1458,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Dashboard':     wmsOverviewTabComponents,
   // Sales modules — one index page serves both tabs; it self-filters on ?tab=.
   'Sales invoices':   { 'All sales invoices':   pageRegistry['Sales invoices']!,   'Awaiting approval': pageRegistry['Sales invoices']! },
+  'Purchase deliveries': { 'All purchase deliveries': pageRegistry['Purchase deliveries']!, 'Awaiting approval': pageRegistry['Purchase deliveries']! },
   'Sales orders':     { 'All sales orders':     pageRegistry['Sales orders']!,     'Awaiting approval': pageRegistry['Sales orders']! },
   'Sales quotes':     { 'All sales quotes':     pageRegistry['Sales quotes']!,     'Awaiting approval': pageRegistry['Sales quotes']! },
   'Inbound delivery': {
