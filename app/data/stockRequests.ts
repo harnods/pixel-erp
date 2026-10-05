@@ -338,6 +338,27 @@ const SEED: Seed[] = [
     { reservedPct: 1, consumedPct: 0, destAvailable: 9, requiredOffset: -6 },
     { reservedPct: 1, consumedPct: 0, destAvailable: 7, requiredOffset: -6 },
   ] },
+
+  // ── Rejected / canceled tab ────────────────────────────────────────────────
+  // Two canceled work orders (seed indexes 20 and 21). UC-09: cancelling a work
+  // order releases its reservation but LEAVES its request listed, as Canceled —
+  // a request that disappears reads like one that was never raised.
+  { woIndex: 20, dayOffset: -6, staffIndex: 2, lines: [
+    { reservedPct: 0, consumedPct: 0, destAvailable: 4, requiredOffset: -1 },
+    { reservedPct: 0, consumedPct: 0, destAvailable: 2, requiredOffset: -1 },
+  ] },
+  { woIndex: 21, dayOffset: -5, staffIndex: 5, lines: [
+    { reservedPct: 0, consumedPct: 0, destAvailable: 3, requiredOffset: 0 },
+  ] },
+  // Finished by a rejection: the original demand is fully reserved, and the one
+  // Additional stock line on top of it was declined. Nothing is left to do, and
+  // what happened to it was a rejection — so it belongs in the terminal tab
+  // rather than falling out of Awaiting into nowhere.
+  { woIndex: 6, dayOffset: -9, staffIndex: 3, lines: [
+    { reservedPct: 1, consumedPct: 0, destAvailable: 5, requiredOffset: 2 },
+    { reservedPct: 1, consumedPct: 0, destAvailable: 3, requiredOffset: 2 },
+    { reservedPct: 0, consumedPct: 0, destAvailable: 2, requiredOffset: 5, rawIndex: 0, tag: 'additional', staffIndex: 1, rejected: true },
+  ] },
 ]
 
 function buildSeed(): StockRequest[] {
@@ -401,8 +422,12 @@ function buildSeed(): StockRequest[] {
  * requestor at all, and its extra requests would come back as duplicates. The
  * seed is deterministic demo data, so dropping the stale snapshot costs nothing
  * and is honest — reconstructing it would be guesswork presented as history.
+ *
+ * v3 adds the seeds behind the Rejected / canceled tab. A snapshot written before
+ * them is readable, but it would leave that tab permanently empty on every
+ * machine that has one — which is exactly what the tab is being demoed for.
  */
-const SNAPSHOT_KEY = 'stockRequests.v2'
+const SNAPSHOT_KEY = 'stockRequests.v3'
 
 const snapshot = loadSnapshot<StockRequest>(SNAPSHOT_KEY)
 export const stockRequests = reactive<StockRequest[]>(snapshot ?? buildSeed())
@@ -492,7 +517,14 @@ export function isAwaitingTab(req: StockRequest): boolean {
  */
 export function isTerminalRequest(req: StockRequest): boolean {
   const status = stockRequestStatus(req)
-  return status === 'rejected' || status === 'canceled'
+  if (status === 'rejected' || status === 'canceled') return true
+  // A request whose extra demand was declined and whose own demand is settled is
+  // finished BY A REJECTION, but its status reads from its lowest line, which is
+  // the fulfilled original — so it would otherwise fall out of Awaiting (nothing
+  // to do) without landing anywhere. W-7 lets the stockist decline only tagged
+  // lines, so a work order's request can never read `rejected` on its own; this
+  // is the state the tab is actually for.
+  return req.lines.some(l => l.rejected) && !needsAction(req)
 }
 
 /** Requests still needing warehouse action — drives the sidebar count badge. */

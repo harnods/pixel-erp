@@ -35,6 +35,7 @@ import {
   stockRequests, stockRequestStatus, stockRequestStatusOptions, skuDemandGroups,
   requestRequiredQty, isAwaitingTab, isTerminalRequest, isOnDashboard, isActionable, workOrderFor, isOverdue,
   reserveStock, reserveProductEverywhere, rejectRequestLine, canReject, canRejectLine,
+  isLineOverdue, stockRequestLineStatus,
   type StockRequest, type StockRequestLine, type StockRequestLineTag, type SkuDemandGroup,
 } from '~/data/stockRequests'
 
@@ -80,14 +81,23 @@ const viewOptions = [
 
 // ─── Columns — semantic `kind`s only, no pixel widths (rule/table-column-kind) ──
 // By transaction (W-2 covers the product view; this one mirrors the request record).
+/**
+ * By transaction. Every column is chosen so it means the SAME KIND of thing on a
+ * request row and on the component rows underneath it — a request's qty and its
+ * line's qty, a request's earliest required date and its line's required date.
+ * The expanded rows used to borrow whatever column happened to sit there, which
+ * is how component quantities ended up under a "Start date" header.
+ *
+ * The row IS the work order, so its date and status need no "WO" prefix — the
+ * first column already says what the row is.
+ */
 const woColumns: TableColumn[] = [
-  // The row IS the work order, so its date and status need no "WO" prefix — the
-  // first column already says what the row is.
   { key: 'workOrderNumber',     label: t('Work order number'),     kind: 'number', sortable: true, sortType: 'text' },
   // W-7 — the line tags get a column of their own rather than stacking under the
   // number, where they pushed the row to three lines and read as part of it.
   { key: 'lineTags',            label: t('Request type'),          kind: 'tags' },
-  { key: 'woStartDate',         label: t('Start date'),            kind: 'date',   sortable: true, sortType: 'date' },
+  { key: 'qty',                 label: t('Required qty'),                          sortable: true, sortType: 'number', align: 'right' },
+  { key: 'requiredDate',        label: t('Required date'),         kind: 'date',   sortable: true, sortType: 'date' },
   { key: 'status',              label: t('Status'),                kind: 'status',                 sortType: 'text' },
   { key: 'destinationWarehouse', label: t('Destination warehouse'), kind: 'name',  sortable: true, sortType: 'text' },
 ]
@@ -121,13 +131,18 @@ const skuColumns: TableColumn[] = [
 ]
 
 // Column show/hide — first column always on; "Last updated" is opt-in (off by default).
-const allWoCols: TableColumn[] = [...woColumns, { key: 'lastUpdated', label: t('Last updated'), kind: 'date' }]
+const allWoCols: TableColumn[] = [
+  ...woColumns,
+  { key: 'woStartDate', label: t('Start date'),   kind: 'date', sortable: true, sortType: 'date' },
+  { key: 'lastUpdated', label: t('Last updated'), kind: 'date' },
+]
 // W-2's full column set runs to twelve, past what fits comfortably, so the product
 // view gets the same show/hide menu the transaction view already has. Consumed is
 // off by default — it only matters once a job has started drawing material.
 const allSkuCols: TableColumn[] = skuColumns
 const columnVisibility = reactive<Record<string, boolean>>({
-  ...Object.fromEntries(allWoCols.map(c => [c.key, c.key !== 'lastUpdated'])),
+  // Start date and Last updated are opt-in: neither is demand data.
+  ...Object.fromEntries(allWoCols.map(c => [c.key, c.key !== 'lastUpdated' && c.key !== 'woStartDate'])),
   ...Object.fromEntries(allSkuCols.map(c => [`sku.${c.key}`, c.key !== 'consumed'])),
 })
 const columnItems = computed(() => (view.value === 'product'
@@ -166,6 +181,9 @@ function matchesDateRange(iso: string, range: Date[] | null): boolean {
 // only under All, with no actions.
 type WoRow = StockRequest & {
   status: string; qty: number; overdue: boolean
+  /** Earliest required date across the request's lines — the column the overdue
+      note belongs under, because that is the date being missed. */
+  requiredDate: string
   woStartDate: string; destinationWarehouse: string; actionable: boolean
   /** Everyone who has changed a line on this request (OPEN-17) — per line, so a
       request can name several people; searched and displayed as one list. */
@@ -183,6 +201,7 @@ const woRows = computed<WoRow[]>(() =>
         status: (w?.status ?? stockRequestStatus(r)) as string,
         qty: requestRequiredQty(r),
         overdue: isOverdue(r, TODAY_ISO),
+        requiredDate: [...r.lines].map(l => l.requiredDate).sort()[0] ?? r.requestDate,
         woStartDate: w?.planStartDate ?? r.requestDate,
         destinationWarehouse: [...new Set(r.lines.map(l => l.destinationWarehouse))].join(', '),
         actionable: isActionable(r),
@@ -277,6 +296,15 @@ function clearFilters() {
   dateFilter.value = null
   Object.assign(appliedFilters, emptyStockRequestFilters())
 }
+
+// Switching to the terminal tab takes its Status and All-filters controls away,
+// so anything already set through them is cleared with it — a filter nobody can
+// see is a filter nobody can undo.
+watch(isTerminalTab, (terminal) => {
+  if (!terminal) return
+  statusFilter.value = ''
+  Object.assign(appliedFilters, emptyStockRequestFilters())
+})
 
 // ─── First-load skeleton (page/per-page skeletons are ErpTablePage's own job) ──
 const loading = ref(true)
@@ -375,6 +403,9 @@ function sku(row: unknown): SkuDemandGroup { return row as SkuDemandGroup }
 function wo(row: unknown): WoRow { return row as WoRow }
 
 /** The distinct tags a request's LINES carry (W-7) — its "Request type" column. */
+/** W-3 — a line's own derived status, for the badge on its breakdown row. */
+const lineStatus = stockRequestLineStatus
+
 function lineTags(row: WoRow): StockRequestLineTag[] {
   return [...new Set(row.lines.map(l => l.tag).filter(Boolean))] as StockRequestLineTag[]
 }
@@ -435,9 +466,17 @@ const exportColumns = computed(() => {
     <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
-        <ErpFilterSelect id="sr-status" v-model="statusFilter" :placeholder="t('Status')" :options="stockRequestStatusOptions" />
+        <!-- The Rejected / canceled tab IS a status filter, and the All-filters
+             drawer only adds status and keyword on top of it. Both are hidden
+             there rather than disabled: a control that can only narrow a list to
+             itself is one to take away, not to grey out. -->
+        <ErpFilterSelect
+          v-if="!isTerminalTab" id="sr-status" v-model="statusFilter"
+          :placeholder="t('Status')" :options="stockRequestStatusOptions"
+        />
         <AdvanceDateFilter id="sr-date-filter" v-model="dateFilter" :today="TODAY" :placeholder="t('Request date')" />
         <MpButton
+          v-if="!isTerminalTab"
           variant="secondary" left-icon="filter" is-rounded
           class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }"
           @click="filtersOpen = true"
@@ -514,7 +553,12 @@ const exportColumns = computed(() => {
       <span class="cell-text">{{ view === 'product' ? sku(row).destinationWarehouse : wo(row).destinationWarehouse }}</span>
     </template>
 
-    <template #cell-earliestRequired="{ value }">{{ formatDate(value as string) }}</template>
+    <template #cell-earliestRequired="{ row, value }">
+      {{ formatDate(value as string) }}
+      <!-- W-7 — overdue reads the same in both views; a product row is demand too,
+           and the note sits under the date that has passed. -->
+      <p v-if="sku(row).overdue" class="sr-note">{{ t('Overdue — reminder sent') }}</p>
+    </template>
     <template #cell-openWorkOrders="{ row }">{{ sku(row).openWorkOrders }}</template>
     <template #cell-required="{ row }">{{ sku(row).required }} {{ sku(row).unit }}</template>
     <template #cell-reserved="{ row }">{{ sku(row).reserved }} {{ sku(row).unit }}</template>
@@ -583,25 +627,25 @@ const exportColumns = computed(() => {
               <span class="sr-child-sku-name">{{ line.product }}</span>
               <span class="sr-child-sku-code">{{ line.sku }}</span>
             </span>
-            <!-- A breakdown row is a COMPONENT line, so its cells don't mean what
-                 the headers above them say. Each value carries its own small label
-                 instead of borrowing the parent's — which is also why "Required by
-                 24/06/2026" used to run out of the narrow Status column. -->
-            <!-- A line's own tag, under the request's Request type column. -->
+            <!-- Each cell now means on a line what its header means on the request
+                 above it: the line's own tag, qty, required date, readiness and
+                 destination. No borrowed columns, so no component quantity sitting
+                 under a date header. -->
             <span v-else-if="col.key === 'lineTags'">
               <span v-if="line.tag" class="sr-tag" :class="`sr-tag--${line.tag}`">
                 {{ line.tag === 'additional' ? t('Additional stock') : t('Adjustment') }}
               </span>
               <span v-else>—</span>
             </span>
-            <span v-else-if="col.key === 'woStartDate'" class="sr-child-field">
-              <span class="sr-child-label">{{ t('Qty') }}</span>
-              <span class="cell-text">{{ line.qty }} {{ line.unit }}</span>
+            <span v-else-if="col.key === 'qty'" class="cell-text">{{ line.qty }} {{ line.unit }}</span>
+            <span v-else-if="col.key === 'requiredDate'" class="cell-text">
+              {{ formatDate(line.requiredDate) }}
+              <span v-if="isLineOverdue(line, TODAY_ISO)" class="sr-note">{{ t('Overdue — reminder sent') }}</span>
             </span>
-            <span v-else-if="col.key === 'status'" class="sr-child-field">
-              <span class="sr-child-label">{{ t('Required by') }}</span>
-              <span class="cell-text">{{ formatDate(line.requiredDate) }}</span>
+            <span v-else-if="col.key === 'status'">
+              <ErpStatusBadge :status="lineStatus(line)" />
             </span>
+            <span v-else-if="col.key === 'woStartDate'" class="cell-text">—</span>
             <span v-else-if="col.key === 'destinationWarehouse'" class="cell-text" :title="line.destinationWarehouse">{{ line.destinationWarehouse }}</span>
           </td>
           <td v-if="showSpacer" class="sr-child-td sr-child-td--spacer" />
@@ -642,6 +686,14 @@ const exportColumns = computed(() => {
 
     <template #cell-woStartDate="{ row }">{{ formatDate(wo(row).woStartDate) }}</template>
 
+    <template #cell-qty="{ row }">{{ wo(row).qty }}</template>
+
+    <!-- W-7 — the overdue note belongs under the date being missed. -->
+    <template #cell-requiredDate="{ row }">
+      {{ formatDate(wo(row).requiredDate) }}
+      <p v-if="wo(row).overdue" class="sr-note">{{ t('Overdue — reminder sent') }}</p>
+    </template>
+
     <template #cell-lastUpdated="{ row }">
       <LastUpdatedCell v-bind="lastUpdatedFor((row as Record<string, unknown>).id as string)" />
     </template>
@@ -649,13 +701,10 @@ const exportColumns = computed(() => {
     <!-- ══ Shared ════════════════════════════════════════════════════════════ -->
 
     <!-- Status — the WORK ORDER's status in the order view, the SKU rollup in the
-         product view (story 2). -->
+         product view (story 2). The badge alone: overdue is not a status, it is a
+         date that has passed, so it sits under the date it passed (W-7). -->
     <template #cell-status="{ row }">
       <ErpStatusBadge :status="(row as Record<string, unknown>).status as string" />
-      <!-- W-7 — overdue reads the same in both views; a product row is demand too. -->
-      <p v-if="view === 'transaction' ? wo(row).overdue : sku(row).overdue" class="sr-note">
-        {{ t('Overdue — reminder sent') }}
-      </p>
     </template>
 
     <!-- Full empty state — no CTA: requests are raised by work orders (see header).

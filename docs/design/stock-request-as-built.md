@@ -155,9 +155,18 @@ S-4.
   completion with leftover (automatic, unapproved), cancel/delete, manual
   unreserve. Partial completion leaves the remaining reserve reserved.
 - **Tabs** — **Awaiting** (W-4: not fully reserved, on a request that is neither
-  rejected nor canceled) and **Rejected / canceled** (the two terminal statuses of
-  W-3). Because the terminal states are a tab, they are no longer offered in the
-  Status filter — a filter that could only ever empty the Awaiting tab.
+  rejected nor canceled) and **Rejected / canceled** (the terminal states of W-3).
+  The terminal tab hides the Status filter and the All-filters drawer, and clears
+  anything already set through them: the tab IS a status filter, and the drawer
+  only adds status and keyword on top of it.
+
+  **Note for the PRD.** W-7 lets the stockist decline only TAGGED lines, and C-4
+  gives a work order one request carrying every component — so a work order's
+  request can never derive the status `rejected`: its original lines always
+  outrank the declined one. The terminal tab therefore also holds a request that
+  has a rejected line and nothing left awaiting, which is the real "finished by a
+  rejection" state. Without that clause such a request falls out of Awaiting
+  (nothing to do) and lands nowhere.
 - **W-1…W-10** — both views; product rows are one per SKU **per destination
   warehouse** so availability is never summed across warehouses; W-2's column set
   behind a column menu; derived statuses incl. Rejected and Canceled; overdue;
