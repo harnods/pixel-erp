@@ -125,6 +125,8 @@ export interface BudgetPO {
   status: 'Open' | 'Closed'
   lines: POLine[]
   lastActivity: string
+  /** Link to the purchase order record in the Purchases module, when there is one. */
+  purchaseOrderId?: string | null
 }
 
 export interface BillLine extends SpendLine { poLine: number | null }
@@ -1352,6 +1354,7 @@ function seed() {
   budget.versions[budget.versions.length - 1]!.at = '2026-06-16T10:00:00+07:00'
 
   for (const pr of budget.prs) linkPurchaseRequest(pr, pr.date.slice(0, 8) + '28')
+  linkBudgetPurchaseOrders()
   runTieOut('2026-10-05T01:00:00+07:00')
   budget.viewAs = 'Requester'
   seeding = false
@@ -1369,3 +1372,248 @@ else seed()
 watch(budget, () => saveSnapshot(SNAPSHOT_KEY, [budget]), { deep: true })
 
 export const budgetLinesThisYear = computed(() => budget.lines.filter((l) => l.year === BUDGET_YEAR))
+
+
+// ── po additions ──────────────────────────────────────────────────────────────
+// FG-7 close and carry, and the check on the PO and purchase invoice screens.
+// New functions only; the rules above are unchanged.
+import { purchaseOrders as purchaseOrderRecords, addPurchaseOrder } from './purchaseOrders'
+import { loadCreated as loadCreatedRecords, saveCreated as saveCreatedRecords } from './persist'
+import type { PurchaseOrder as PurchaseOrderRecord, PurchaseOrderStatus as PurchaseOrderRecordStatus } from './types'
+
+export const PO_CLOSE_REASONS = ['Short delivery', 'Final invoice', 'Cancelled'] as const
+export type POCloseReason = typeof PO_CLOSE_REASONS[number]
+
+/** Days since the PO's last receipt or invoice, counted to the sample's today. */
+export function poIdleDays(po: BudgetPO): number {
+  return Math.floor((Date.parse(BUDGET_TODAY) - Date.parse(po.lastActivity)) / 86_400_000)
+}
+export function poOpenTotal(po: BudgetPO): number { return po.lines.reduce((s, _l, i) => s + poOpen(po, i), 0) }
+export function poAmountTotal(po: BudgetPO): number { return po.lines.reduce((s, l) => s + l.amount, 0) }
+export function poByNumber(number: string): BudgetPO | undefined { return budget.pos.find((p) => p.number === number) }
+export function budgetPOsForRecord(purchaseOrderId: string): BudgetPO[] { return budget.pos.filter((p) => p.purchaseOrderId === purchaseOrderId) }
+
+/**
+ * Who may act on a commitment (FG-7.6, FG-2.3): the Procurement Officer closes,
+ * reopens and marks requests fully ordered; the Budget Controller closes idle
+ * items; AP Staff tick Final invoice. The store refuses too, not just the screen.
+ */
+export type CommitmentAction = 'close' | 'reopen' | 'fully-ordered' | 'final-invoice'
+export function canActOnCommitment(action: CommitmentAction, po?: BudgetPO): { ok: boolean; reason?: string } {
+  const role = budget.viewAs
+  if (action === 'final-invoice') return role === 'AP Staff' ? { ok: true } : { ok: false, reason: 'Only AP Staff can tick Final invoice.' }
+  if (role === 'Procurement Officer') return { ok: true }
+  if (action === 'close' && role === 'Budget Controller' && po && isIdlePO(po)) return { ok: true }
+  if (action === 'close') return { ok: false, reason: role === 'Budget Controller' ? 'The Budget Controller closes idle purchase orders only.' : 'Only the Procurement Officer can close purchase order lines.' }
+  if (action === 'reopen') return { ok: false, reason: 'Only the Procurement Officer can reopen purchase order lines.' }
+  return { ok: false, reason: 'Only the Procurement Officer can mark a request fully ordered.' }
+}
+
+export function closePOLineAs(poId: string, i: number, reason: string): { ok: boolean; freed: number; reason?: string } {
+  const po = poById(poId)
+  if (!po || !po.lines[i]) return { ok: false, freed: 0, reason: 'Purchase order line not found.' }
+  const can = canActOnCommitment('close', po)
+  if (!can.ok) return { ok: false, freed: 0, reason: can.reason }
+  if (po.lines[i]!.closed) return { ok: false, freed: 0, reason: 'This line is already closed.' }
+  const freed = closePOLine(poId, i, reason)
+  syncPurchaseOrderRecord(po)
+  return { ok: true, freed }
+}
+
+/** Close the whole PO, all lines or none (FG7-AC2): every open line must release, or nothing closes. */
+export function closePOAs(poId: string, reason: string): { ok: boolean; freed: number; reason?: string } {
+  const po = poById(poId)
+  if (!po) return { ok: false, freed: 0, reason: 'Purchase order not found.' }
+  const can = canActOnCommitment('close', po)
+  if (!can.ok) return { ok: false, freed: 0, reason: can.reason }
+  const failing = po.lines.findIndex((l) => !l.closed && !lineById(l.lineId))
+  if (failing >= 0) return { ok: false, freed: 0, reason: `Line ${failing + 1} could not release its commitment. No line was closed.` }
+  if (po.lines.every((l) => l.closed)) return { ok: false, freed: 0, reason: 'Every line is already closed.' }
+  const freed = closePO(poId, reason)
+  syncPurchaseOrderRecord(po)
+  return { ok: true, freed }
+}
+
+/** Reopen re-runs the check; a block returns the gap for the inline message (FG7-AC3). */
+export function reopenPOLineAs(poId: string, i: number): { ok: boolean; gap: number; amount: number; reason?: string } {
+  const po = poById(poId)
+  if (!po || !po.lines[i]) return { ok: false, gap: 0, amount: 0, reason: 'Purchase order line not found.' }
+  const can = canActOnCommitment('reopen', po)
+  if (!can.ok) return { ok: false, gap: 0, amount: 0, reason: can.reason }
+  const l = po.lines[i]!
+  if (!l.closed) return { ok: false, gap: 0, amount: 0, reason: 'This line is open.' }
+  const amount = Math.max(0, l.amount - l.invoiced)
+  const res = reopenPOLine(poId, i)
+  if (!res.ok) {
+    const b = res.check.blocker
+    return { ok: false, gap: b?.yearShort ?? 0, amount, reason: b?.message ?? 'Not enough budget to reopen this line.' }
+  }
+  syncPurchaseOrderRecord(po)
+  return { ok: true, gap: 0, amount }
+}
+
+export function markFullyOrderedAs(prId: string): { ok: boolean; freed: number; reason?: string } {
+  const can = canActOnCommitment('fully-ordered')
+  if (!can.ok) return { ok: false, freed: 0, reason: can.reason }
+  const pr = prById(prId)
+  if (!pr || pr.status !== 'Approved') return { ok: false, freed: 0, reason: 'Only an approved request can be marked fully ordered.' }
+  return { ok: true, freed: markFullyOrdered(prId) }
+}
+
+// ── Commitments page figures ──
+
+export interface CommitmentLineRow {
+  key: string; poId: string; poNumber: string; purchaseOrderId: string | null; vendor: string
+  lineIndex: number; lineId: string; lineTitle: string; description: string
+  amount: number; invoiced: number; open: number; closed: boolean; closeReason: string | null
+  lastActivity: string; idle: boolean; idleDays: number
+}
+export function commitmentLines(): CommitmentLineRow[] {
+  return budget.pos.flatMap((po) => po.lines.map((l, i) => {
+    const bl = lineById(l.lineId)
+    return {
+      key: `${po.id}:${i}`, poId: po.id, poNumber: po.number, purchaseOrderId: po.purchaseOrderId ?? null, vendor: po.vendor,
+      lineIndex: i, lineId: l.lineId, lineTitle: bl ? lineTitle(bl) : '-', description: l.description,
+      amount: l.amount, invoiced: l.invoiced, open: poOpen(po, i), closed: l.closed, closeReason: l.closeReason,
+      lastActivity: po.lastActivity, idle: isIdlePO(po), idleDays: poIdleDays(po),
+    }
+  }))
+}
+
+export interface HeldRequestRow { key: string; prId: string; number: string; purchaseRequestId: string | null; requester: string; date: string; lineIndex: number; lineId: string | null; lineTitle: string; description: string; held: number }
+/** Approved requests still holding money on a line (FG-2.3). */
+export function heldRequests(): HeldRequestRow[] {
+  return budget.prs.filter((pr) => pr.status === 'Approved').flatMap((pr) => pr.lines.map((l, i) => {
+    const bl = lineById(l.lineId)
+    return { key: `${pr.id}:${i}`, prId: pr.id, number: pr.number, purchaseRequestId: pr.purchaseRequestId, requester: pr.requester, date: pr.date, lineIndex: i, lineId: l.lineId, lineTitle: bl ? lineTitle(bl) : '-', description: l.description, held: prRemaining(pr.id, i) }
+  })).filter((r) => r.held > 0)
+}
+
+export interface CommitmentSummary {
+  requestsHeld: number; requestCount: number
+  poOpen: number; poCount: number
+  idleOpen: number; idleCount: number
+  overrunShort: number; overrunCount: number
+}
+export function commitmentSummary(): CommitmentSummary {
+  const held = heldRequests()
+  const openPOs = budget.pos.filter((p) => p.status === 'Open' && poOpenTotal(p) > 0)
+  const idle = budget.pos.filter(isIdlePO)
+  const over = overrunBills()
+  return {
+    requestsHeld: held.reduce((s, r) => s + r.held, 0), requestCount: new Set(held.map((r) => r.prId)).size,
+    poOpen: openPOs.reduce((s, p) => s + poOpenTotal(p), 0), poCount: openPOs.length,
+    idleOpen: idle.reduce((s, p) => s + poOpenTotal(p), 0), idleCount: idle.length,
+    overrunShort: over.reduce((s, b) => s + overrunShort(b), 0), overrunCount: over.length,
+  }
+}
+
+// ── The check on a PO raised from a request (LR-3: excess only) ──
+
+export interface POPreviewRow { prId: string | null; prNumber: string; prLine: number | null; lineId: string | null; lineTitle: string; description: string; amount: number; held: number; excess: number; result: LineCheck['result'] | null; message: string }
+/**
+ * The check a PO from requests runs before it saves: each line uses what its
+ * request still holds and is checked only on the excess, combined per budget line.
+ */
+export function previewPOFromRequests(lines: { prId: string | null; prLine: number | null; lineId: string | null; description: string; amount: number }[], date: string): { rows: POPreviewRow[]; check: CheckResult } {
+  const month = Number(date.slice(5, 7)) - 1
+  const rows: POPreviewRow[] = lines.map((l) => {
+    const pr = prById(l.prId)
+    const held = pr && l.prLine !== null ? prRemaining(pr.id, l.prLine) : 0
+    const bl = lineById(l.lineId)
+    return { prId: l.prId, prNumber: pr?.number ?? '', prLine: l.prLine, lineId: l.lineId, lineTitle: bl ? lineTitle(bl) : 'No budget line', description: l.description, amount: l.amount, held, excess: Math.max(0, l.amount - held), result: null, message: '' }
+  })
+  const check = checkSpend(rows.map((r) => {
+    const bl = lineById(r.lineId)
+    return { lineId: r.lineId, account: bl?.account ?? '', dept: bl?.dept ?? '', project: bl?.project ?? null, amount: r.excess }
+  }), month)
+  for (const r of rows) {
+    const lc = check.lines.find((c) => c.lineId === r.lineId)
+    if (lc) { r.result = lc.result; r.message = lc.message }
+  }
+  return { rows, check }
+}
+
+// ── The check on a purchase invoice (mirrors postBill without posting) ──
+
+export type BillInput = Parameters<typeof postBill>[0]
+export interface BillPreviewRow { lineId: string | null; lineTitle: string; amount: number; open: number; excess: number }
+/**
+ * What posting would do, without posting: a block on a PO excess or a split
+ * project refuses; a no-PO bill over available posts and lands on the
+ * over-budget list with the short amount postBill records.
+ */
+export function previewBill(input: BillInput): { ok: boolean; message?: string; check: CheckResult; rows: BillPreviewRow[]; overBudget: boolean; overBudgetShort: number } {
+  const month = Number(input.date.slice(5, 7)) - 1
+  const empty: CheckResult = { result: 'Pass', lines: [], blocker: null, monthWarning: false }
+  if (new Set(input.lines.map((l) => l.project)).size > 1) {
+    return { ok: false, message: 'One invoice books one project. Split this invoice by project.', check: { ...empty, result: 'Block' }, rows: [], overBudget: false, overBudgetShort: 0 }
+  }
+  const po = poById(input.poId)
+  const rows: BillPreviewRow[] = input.lines.map((l) => {
+    const lineId = po && l.poLine !== null ? po.lines[l.poLine]!.lineId : findLine(l.account, l.dept, l.project)?.id ?? null
+    const bl = lineById(lineId)
+    if (!po || l.poLine === null) return { lineId, lineTitle: bl ? lineTitle(bl) : 'No budget line', amount: l.amount, open: 0, excess: l.amount }
+    const open = poOpen(po, l.poLine)
+    const tol = Math.round(po.lines[l.poLine]!.amount * budget.settings.invoiceTolerancePct / 100)
+    return { lineId, lineTitle: bl ? lineTitle(bl) : 'No budget line', amount: l.amount, open, excess: Math.max(0, l.amount - open - tol) }
+  })
+  const check = checkSpend(rows.map((r, i) => ({ lineId: r.lineId, account: input.lines[i]!.account, dept: input.lines[i]!.dept, project: input.lines[i]!.project, amount: r.excess })), month)
+  if (po && check.result === 'Block') return { ok: false, message: check.blocker?.message, check, rows, overBudget: false, overBudgetShort: 0 }
+  const overBudget = !po && !!check.blocker
+  return { ok: true, check, rows, overBudget, overBudgetShort: overBudget ? check.blocker!.yearShort : 0 }
+}
+
+/** Post a purchase invoice for the acting person; Final invoice is AP Staff's call (FG-7.6). */
+export function postBillAs(input: BillInput): ReturnType<typeof postBill> {
+  if (input.final) {
+    const can = canActOnCommitment('final-invoice')
+    if (!can.ok) return { ok: false, check: { result: 'Block', lines: [], blocker: null, monthWarning: false }, message: can.reason }
+  }
+  const res = postBill(input)
+  if (res.ok && res.bill?.poId) { const po = poById(res.bill.poId); if (po) syncPurchaseOrderRecord(po) }
+  return res
+}
+/** What an over-budget bill is short: the gap on its line, or the whole bill when no line exists. */
+export function overrunShort(b: BudgetBill): number {
+  if (!b.overBudget) return 0
+  return b.overBudget.lineId ? b.overBudget.short : b.lines.reduce((s, l) => s + l.amount, 0)
+}
+export function billByNumber(number: string): BudgetBill | undefined { return budget.bills.find((b) => b.number === number) }
+
+// ── Purchases module records for budget POs ──
+
+const PO_RECORDS_KEY = 'purchase-orders-created'
+function recordStatus(po: BudgetPO): PurchaseOrderRecordStatus {
+  if (po.status === 'Closed') return 'closed'
+  return po.lines.some((l) => l.invoiced > 0) ? 'partially-processed' : 'open'
+}
+function recordBalance(po: BudgetPO): number {
+  return po.status === 'Closed' ? 0 : Math.round(po.lines.reduce((s, l) => s + (l.closed ? 0 : Math.max(0, l.amount - l.invoiced)), 0) * 1.11)
+}
+/** Keep the Purchases record's status and balance in step with the budget PO. */
+export function syncPurchaseOrderRecord(po: BudgetPO): void {
+  const rec = purchaseOrderRecords.find((r) => r.id === po.purchaseOrderId)
+  if (!rec) return
+  rec.status = recordStatus(po)
+  rec.balance = recordBalance(po)
+  saveCreatedRecords(PO_RECORDS_KEY, [...loadCreatedRecords<PurchaseOrderRecord>(PO_RECORDS_KEY).filter((x) => x.id !== rec.id), { ...rec }])
+}
+
+/** Create a Purchases record for each budget PO that has none, so both screens name the same document. */
+export function linkBudgetPurchaseOrders(): void {
+  for (const po of budget.pos) {
+    let rec = purchaseOrderRecords.find((r) => r.id === po.purchaseOrderId) ?? purchaseOrderRecords.find((r) => r.number === po.number)
+    if (!rec) {
+      const id = `po-b-${po.number.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+      const vendorId = `budget-${po.vendor.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+      const total = Math.round(poAmountTotal(po) * 1.11)
+      rec = { id, number: po.number, vendor: { id: vendorId, name: po.vendor }, date: po.date, dueDate: po.date, total, balance: recordBalance(po), status: recordStatus(po), itemCount: po.lines.length, tags: ['Budget'] }
+      addPurchaseOrder(rec)
+    }
+    po.purchaseOrderId = rec.id
+  }
+}
+
+// A snapshot saved before records were linked gets them on load.
+if (budget.pos.some((p) => !p.purchaseOrderId || !purchaseOrderRecords.some((r) => r.id === p.purchaseOrderId))) linkBudgetPurchaseOrders()
