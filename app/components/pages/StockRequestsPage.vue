@@ -48,7 +48,7 @@ const router = useRouter()
 //
 //   • **Awaiting** (default) — demand the warehouse still has to fulfil: anything
 //     not fully reserved, on a request that is neither rejected nor canceled.
-//   • **Rejected/Canceled** — the two TERMINAL states (W-3). A declined line and a
+//   • **Rejected / canceled** — the two TERMINAL states (W-3). A declined line and a
 //     cancelled job's request are still records worth finding, but they are not
 //     work, so they do not sit in a tab the stockist works down.
 //
@@ -364,7 +364,7 @@ function reject(req: StockRequest) {
   for (const line of rejectable) rejectRequestLine(req.id, line)
   toast.notify({
     variant: 'success',
-    title: `${rejectable.length} ${t('line rejected on')} ${req.workOrderNumber}`,
+    title: `${rejectable.length} ${rejectable.length === 1 ? t('line rejected on') : t('lines rejected on')} ${req.workOrderNumber}`,
     maxWidth: 'max-content',
   })
 }

@@ -482,7 +482,7 @@ export function isAwaitingTab(req: StockRequest): boolean {
 }
 
 /**
- * The **Rejected/Canceled** tab — the two TERMINAL statuses (W-3).
+ * The **Rejected / canceled** tab — the two TERMINAL statuses (W-3).
  *
  * `rejected` and `canceled` are the states where nothing further will happen:
  * the stockist declined the demand, or the raising work order went away. They

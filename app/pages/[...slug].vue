@@ -1008,7 +1008,7 @@ const pageTabs: Record<string, string[]> = {
   'Sales quotes': ['All sales quotes', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   // Stock requests (PRD UC-11 W-4): Awaiting = demand still to fulfil (default),
-  // Rejected/Canceled = the two terminal states, which are not work any more.
+  // Rejected / canceled = the two terminal states, which are not work any more.
   'Stock requests':    ['Awaiting', 'Rejected / canceled'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],

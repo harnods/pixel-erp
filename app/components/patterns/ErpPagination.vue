@@ -2,6 +2,8 @@
 import { MpButton, MpIcon, css } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 
+const { t } = useLocale()
+
 const props = withDefaults(defineProps<{
   currentPage: number
   perPage: number
@@ -88,7 +90,7 @@ const navClass = css({
     <!-- Left: Rows per page + Showing -->
     <div :class="leftClass">
       <div :class="perpageClass">
-        <span :class="labelClass">Rows per page</span>
+        <span :class="labelClass">{{ t('Rows per page') }}</span>
         <ErpFilterSelect
           id="pagination-per-page"
           v-model="perPageModel"
@@ -98,12 +100,12 @@ const navClass = css({
           width="80px"
         />
       </div>
-      <span :class="showingClass">Showing {{ rangeStart }}-{{ rangeEnd }} of {{ total }}</span>
+      <span :class="showingClass">{{ t('Showing') }} {{ rangeStart }}&ndash;{{ rangeEnd }} {{ t('of') }} {{ total }}</span>
     </div>
 
     <!-- Right: Page X of Y + nav -->
     <div :class="rightClass">
-      <span :class="labelClass">Page {{ currentPage }} of {{ totalPages }}</span>
+      <span :class="labelClass">{{ t('Page') }} {{ currentPage }} {{ t('of') }} {{ totalPages }}</span>
       <div :class="navClass">
         <MpButton
           variant="ghost"

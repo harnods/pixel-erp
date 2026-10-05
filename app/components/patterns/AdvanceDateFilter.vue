@@ -255,7 +255,10 @@ function onDayClick(cell: Cell) {
      this used to miss — REGULAR weight. MpButton's own semibold made this trigger
      read bolder than the selects beside it in the same filter bar. */
   display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2);
-  width: var(--adf-w, 176px) !important; min-width: var(--adf-w, 176px) !important;
+  /* 176px to match ErpFilterSelect, but free to grow: the Indonesian label
+     ("Tanggal permintaan") does not fit the fixed width, and a filter whose own
+     name is cut off is a filter you have to guess at. */
+  width: auto !important; min-width: var(--adf-w, 176px) !important;
   height: var(--mp-sizes-9\.5, 38px);
   padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-3) !important;
   border: 1px solid var(--mp-colors-border-form, #1d1f2429) !important; border-radius: var(--mp-radii-md) !important;
