@@ -424,7 +424,8 @@ export interface AccountTxRow {
 /** Transactions on one account between two dates, with a beginning-balance row and running balance. */
 export function accountTransactions(a: CoaRecord, start: string, end: string): AccountTxRow[] {
   const sign = naturalSign(a.categoryId)
-  const dayBefore = new Date(new Date(start + 'T00:00:00').getTime() - 86_400_000).toISOString().slice(0, 10)
+  // UTC on both sides — a local-midnight parse shifts the ISO date back a day east of UTC.
+  const dayBefore = new Date(new Date(start + 'T00:00:00Z').getTime() - 86_400_000).toISOString().slice(0, 10)
   let bal = sign * netMovement(a.id, null, dayBefore)
   const rows: AccountTxRow[] = [{ id: 'beginning', date: start, type: 'Beginning Balance', no: '', debit: 0, credit: 0, balance: bal, isBeginning: true }]
   for (const tx of ledger.value) {

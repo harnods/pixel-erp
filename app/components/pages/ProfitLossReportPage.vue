@@ -211,10 +211,13 @@ function pct(amounts: number[], i: number, expenseAsPositive: boolean): { text: 
 const showPct = computed(() => isCompare.value)
 const colCount = computed(() => 1 + periods.value.length * (showPct.value ? 2 : 1))
 
-function openAccount(row: BsPlAccountRow, i = 0) {
-  const p = periods.value[i] ?? periods.value[0]
-  if (!p) return
-  router.push(bsPlAccountLink(row.id, p.start, p.end))
+function openAccount(row: BsPlAccountRow) {
+  // Whole report range (all compared periods), like prod's start/end query.
+  const ps = periods.value
+  if (!ps.length) return
+  const start = ps.reduce((m, p) => (p.start < m ? p.start : m), ps[0]!.start)
+  const end = ps.reduce((m, p) => (p.end > m ? p.end : m), ps[0]!.end)
+  router.push(bsPlAccountLink(row.id, start, end))
 }
 function toggleOrder() { settings.order = settings.order === 'asc' ? 'desc' : 'asc'; runFilter() }
 
@@ -387,9 +390,7 @@ const lastUpdated = computed(() => `${t('Last updated on')} ${bsPlDayLabel(SIM_T
                             </span>
                           </td>
                           <template v-for="(p, i) in periods" :key="`${r.id}-${p.start}`">
-                            <td class="plr-td plr-num">
-                              <span class="plr-amt" role="link" tabindex="0" @click="openAccount(r, i)" @keydown.enter="openAccount(r, i)">{{ money(r.amounts[i]!) }}</span>
-                            </td>
+                            <td class="plr-td plr-num">{{ money(r.amounts[i]!) }}</td>
                             <td v-if="showPct" class="plr-td plr-pct" :class="`plr-${pct(r.amounts, i, b.expenseAsPositive).tone}`">{{ pct(r.amounts, i, b.expenseAsPositive).text }}</td>
                           </template>
                         </tr>
@@ -541,8 +542,8 @@ const lastUpdated = computed(() => `${t('Last updated on')} ${bsPlDayLabel(SIM_T
 .plr-row--net .plr-td { font-weight: var(--mp-font-weights-semi-bold); }
 .plr-row--final .plr-td { background: var(--mp-background-neutral-subtle); }
 .plr-row:hover .plr-td { background: var(--mp-background-neutral-subtle); }
-.plr-acct, .plr-amt { color: var(--mp-text-link); cursor: pointer; }
-.plr-acct:hover, .plr-amt:hover { text-decoration: underline; text-underline-offset: 2px; }
+.plr-acct { color: var(--mp-text-link); cursor: pointer; }
+.plr-acct:hover { text-decoration: underline; text-underline-offset: 2px; }
 .plr-code { display: inline-block; min-width: 88px; margin-right: var(--mp-spacing-3); }
 .plr-up { color: var(--mp-colors-text-success); }
 .plr-down { color: var(--mp-text-danger); }
