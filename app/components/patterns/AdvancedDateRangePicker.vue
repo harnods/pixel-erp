@@ -344,8 +344,8 @@ function onYearClick(y: number) {
                   :class="{
                     'adr-cal-day--outside': d.getMonth() !== viewMonth.getMonth(),
                     'adr-cal-day--today': isSameDay(d, today),
-                    'adr-cal-day--inrange': inRange(d),
-                    'adr-cal-day--edge': isSameDay(d, range[0]) || isSameDay(d, range[1]),
+                    'adr-cal-day--inrange': hasValue && inRange(d),
+                    'adr-cal-day--edge': hasValue && (isSameDay(d, range[0]) || isSameDay(d, range[1])),
                   }"
                   @click.stop="onDayClick(d)"
                 >{{ d.getDate() }}</MpButton>
@@ -368,7 +368,10 @@ function onYearClick(y: number) {
                 <MpButton
                   v-for="(m, mi) in MONTHS_SHORT" :key="mi"
                   class="adr-grid-cell"
-                  :class="{ 'adr-grid-cell--current': viewYear === today.getFullYear() && mi === today.getMonth() }"
+                  :class="{
+                    'adr-grid-cell--current': viewYear === today.getFullYear() && mi === today.getMonth(),
+                    'adr-grid-cell--selected': hasValue && mode === 'month' && viewYear === range[0].getFullYear() && mi === range[0].getMonth(),
+                  }"
                   @click.stop="onMonthClick(mi)"
                 >{{ m }}</MpButton>
               </div>
@@ -390,7 +393,10 @@ function onYearClick(y: number) {
                 <MpButton
                   v-for="y in Array.from({ length: 10 }, (_, i) => decadeStart + i)" :key="y"
                   class="adr-grid-cell"
-                  :class="{ 'adr-grid-cell--current': y === today.getFullYear() }"
+                  :class="{
+                    'adr-grid-cell--current': y === today.getFullYear(),
+                    'adr-grid-cell--selected': hasValue && mode === 'year' && y === range[0].getFullYear(),
+                  }"
                   @click.stop="onYearClick(y)"
                 >{{ y }}</MpButton>
               </div>
@@ -445,7 +451,11 @@ function onYearClick(y: number) {
   color: var(--mp-text-default);
   cursor: pointer;
 }
-.adr-sidebar-item:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+/* Every state below carries !important because the base rule above zeroes the
+   background with one (to beat MpButton's own atoms). Without it each state
+   loses to its own base class and nothing paints — which is why the sidebar
+   showed no selection and the calendar no range. */
+.adr-sidebar-item:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3) !important; }
 /* Quick presets show their resolved range on the right (Today = a single date). */
 .adr-sidebar-item--preset {
   display: flex !important;
@@ -455,11 +465,14 @@ function onYearClick(y: number) {
 }
 .adr-preset-label { white-space: nowrap; }
 .adr-preset-range { color: var(--mp-text-subtle); white-space: nowrap; }
-/* Active/selected = neutral-subtle BG FILL + default text (matches Pixel's native
-   MpPopoverListItem :is-active — rgb(248,249,249), NOT a green text/fill). */
-.adr-sidebar-item--active {
-  background: var(--mp-background-neutral-subtle, #f8f9f9);
-  color: var(--mp-text-default);
+/* Active/selected = the ERP's "you are here" slate + link text, the pair the
+   sidebar's level-2 nav and the segmented control use
+   (rule/segmented-control-pill). Not Pixel's brand fill. */
+.adr-sidebar-item--active,
+.adr-sidebar-item--active:hover {
+  background: var(--mp-colors-background-neutral-pressed, #E2E8F0) !important;
+  color: var(--mp-colors-text-link, #165082) !important;
+  font-weight: var(--mp-font-weights-semi-bold);
 }
 .adr-sidebar-divider { height: 1px; background: var(--mp-border-default, #e3e7e9); margin: var(--mp-spacing-2) 0; }
 
@@ -503,11 +516,22 @@ function onYearClick(y: number) {
   color: var(--mp-text-default);
   cursor: pointer;
 }
-.adr-cal-day:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
-.adr-cal-day--outside { color: var(--mp-text-placeholder); }
-.adr-cal-day--inrange { background: var(--mp-background-selected, #e5e2fb); }
-.adr-cal-day--edge { background: var(--mp-background-selected-strong, #c7c1f5); font-weight: var(--mp-font-weights-semi-bold); }
-.adr-cal-day--today { background: var(--mp-background-warning, #fcefc2); outline: 1.5px solid var(--mp-border-warning, #f2b90c); outline-offset: -1.5px; font-weight: var(--mp-font-weights-semi-bold); }
+.adr-cal-day:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3) !important; }
+.adr-cal-day--outside { color: var(--mp-colors-text-placeholder, #6e7a7c); }
+/* The range reads slate, its two ends the link fill — the same selected pair the
+   rest of the ERP uses. The lavender this named before came from short --mp-*
+   aliases that resolve EMPTY in this Pixel build, so only their hardcoded
+   fallbacks were ever in play. */
+.adr-cal-day--inrange { background: var(--mp-colors-background-neutral-pressed, #E2E8F0) !important; }
+.adr-cal-day--edge {
+  background: var(--mp-colors-text-link, #165082) !important;
+  color: var(--mp-colors-text-inverse, #fff) !important;
+  font-weight: var(--mp-font-weights-semi-bold);
+}
+.adr-cal-day--today {
+  outline: 1.5px solid var(--mp-colors-background-warning-bold, #f2b90c); outline-offset: -1.5px;
+  font-weight: var(--mp-font-weights-semi-bold);
+}
 
 .adr-cal-anchor {
   text-align: center;
@@ -529,6 +553,17 @@ function onYearClick(y: number) {
   color: var(--mp-text-default);
   cursor: pointer;
 }
-.adr-grid-cell:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
-.adr-grid-cell--current { background: var(--mp-background-warning, #fcefc2); font-weight: var(--mp-font-weights-semi-bold); }
+.adr-grid-cell:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3) !important; }
+.adr-grid-cell--current {
+  outline: 1.5px solid var(--mp-colors-background-warning-bold, #f2b90c); outline-offset: -1.5px;
+  font-weight: var(--mp-font-weights-semi-bold);
+}
+/* Per month / Per year had no selected state at all — picking a month left the
+   grid looking untouched. */
+.adr-grid-cell--selected,
+.adr-grid-cell--selected:hover {
+  background: var(--mp-colors-text-link, #165082) !important;
+  color: var(--mp-colors-text-inverse, #fff) !important;
+  font-weight: var(--mp-font-weights-semi-bold);
+}
 </style>
