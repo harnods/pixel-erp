@@ -1,0 +1,401 @@
+/**
+ * Payroll to Ledger (Jurnal x Talenta): sample tenant master data.
+ *
+ * PT Central Perk Indonesia is linked to Talenta company_id 1212. Talenta sends
+ * facts (pay items, groups, totals); Jurnal decides the accounting (PRD LR-1).
+ * This file holds only facts and the account/tag lists. Every figure a screen
+ * shows is computed by payrollStore.ts from the payloads built here.
+ *
+ * No employee names anywhere (LR-7): staff are known by employee_id only.
+ */
+
+export const PAYROLL_COMPANY_ID = 1212
+export const PAYROLL_COMPANY_NAME = 'PT Central Perk Indonesia'
+/** "Today" in the sample (same day as the budget module). */
+export const PAYROLL_TODAY = '2026-10-05'
+
+// ── Roles and people (View as; no real sign-in) ──────────────────────────────
+
+export type PayrollRole = 'Jurnal Owner' | 'Accountant' | 'Finance Manager' | 'Tax Staff' | 'Auditor'
+export interface PayrollPerson { role: PayrollRole; person: string; title: string }
+export const PAYROLL_PEOPLE: PayrollPerson[] = [
+  { role: 'Jurnal Owner', person: 'Ratna Wijaya', title: 'Owner, PT Central Perk Indonesia' },
+  { role: 'Accountant', person: 'Dewi Anggraini', title: 'Accountant' },
+  { role: 'Finance Manager', person: 'Bambang Sutrisno', title: 'Finance Manager' },
+  { role: 'Tax Staff', person: 'Putri Maharani', title: 'Tax Staff' },
+  { role: 'Auditor', person: 'Agus Salim', title: 'External auditor' },
+]
+export function payrollPerson(role: PayrollRole): PayrollPerson {
+  return PAYROLL_PEOPLE.find((p) => p.role === role)!
+}
+
+// ── Accounts ─────────────────────────────────────────────────────────────────
+
+export type PayrollAccountType = 'expense' | 'cogs' | 'liability' | 'asset' | 'cash'
+export type PayableParty = 'Staff' | 'DJP PPh 21' | 'DJP PPh 26' | 'BPJS Kesehatan' | 'BPJS Ketenagakerjaan' | 'Other'
+export const PAYABLE_PARTIES: PayableParty[] = ['Staff', 'DJP PPh 21', 'DJP PPh 26', 'BPJS Kesehatan', 'BPJS Ketenagakerjaan', 'Other']
+/** Statutory parties: two of them may never share one payable account (TN-10). */
+export const STATUTORY_PARTIES: PayableParty[] = ['DJP PPh 21', 'DJP PPh 26', 'BPJS Kesehatan', 'BPJS Ketenagakerjaan']
+
+export interface PayrollAccount {
+  code: string
+  name: string
+  type: PayrollAccountType
+  /** Payables carry exactly one party label. */
+  party: PayableParty | null
+  /** true = the account already exists in the shared chart (chartOfAccounts / DEFAULT_COA) and is reused. */
+  reused: boolean
+  archived?: boolean
+}
+
+/**
+ * Payroll accounts. PRD OQ14 suggests 2-20501..2-20505 for the payables, but the
+ * repo chart already uses 2-20501 for Tax Payable - PPh 21 and 2-20201 for Salaries
+ * Payable, so same-meaning accounts are reused (TS-03: "reuses same-name accounts")
+ * and the rest are added under free codes.
+ */
+export const PAYROLL_ACCOUNTS: PayrollAccount[] = [
+  { code: '5-50101', name: 'Direct Labour', type: 'cogs', party: null, reused: false },
+  { code: '6-60101', name: 'Salaries', type: 'expense', party: null, reused: true },
+  { code: '6-60004', name: 'Sales Salaries', type: 'expense', party: null, reused: false },
+  { code: '6-60106', name: 'Medical Expense', type: 'expense', party: null, reused: false },
+  { code: '6-60199', name: 'Payroll Rounding', type: 'expense', party: null, reused: false },
+  { code: '2-20201', name: 'Salaries Payable', type: 'liability', party: 'Staff', reused: true },
+  { code: '2-20501', name: 'Tax Payable - PPh 21', type: 'liability', party: 'DJP PPh 21', reused: true },
+  { code: '2-20506', name: 'Tax Payable - PPh 26', type: 'liability', party: 'DJP PPh 26', reused: false },
+  { code: '2-20507', name: 'Tax Payable - PPh 21 Final', type: 'liability', party: 'DJP PPh 21', reused: false },
+  { code: '2-20508', name: 'BPJS Kesehatan Payable', type: 'liability', party: 'BPJS Kesehatan', reused: false },
+  { code: '2-20509', name: 'BPJS Ketenagakerjaan Payable', type: 'liability', party: 'BPJS Ketenagakerjaan', reused: false },
+  { code: '2-20510', name: 'PPh 21 DTP', type: 'liability', party: null, reused: false },
+  { code: '2-20511', name: 'Payroll Suspense', type: 'liability', party: 'Other', reused: false },
+  { code: '2-20512', name: 'DPLK Payable', type: 'liability', party: 'Other', reused: false },
+  { code: '2-20304', name: 'Accrued Payroll', type: 'liability', party: null, reused: false },
+  { code: '1-10404', name: 'THR Advance', type: 'asset', party: null, reused: false },
+  { code: '1-10301', name: 'Employee Receivables', type: 'asset', party: null, reused: true },
+  { code: '1-10004', name: 'Bank BCA', type: 'cash', party: null, reused: true },
+  { code: '1-10001', name: 'Cash', type: 'cash', party: null, reused: true },
+  { code: '1-10006', name: 'Bank Mandiri', type: 'cash', party: null, reused: false },
+]
+
+export const ACC = {
+  directLabour: '5-50101',
+  salaries: '6-60101',
+  salesSalaries: '6-60004',
+  medical: '6-60106',
+  rounding: '6-60199',
+  hutangGaji: '2-20201',
+  pph21: '2-20501',
+  pph26: '2-20506',
+  pph21Final: '2-20507',
+  bpjsKes: '2-20508',
+  bpjsTk: '2-20509',
+  dtp: '2-20510',
+  suspense: '2-20511',
+  dplk: '2-20512',
+  accrued: '2-20304',
+  thrAdvance: '1-10404',
+  loanReceivable: '1-10301',
+  bca: '1-10004',
+  cash: '1-10001',
+  mandiri: '1-10006',
+} as const
+
+// ── Groups and tags ──────────────────────────────────────────────────────────
+
+export const ORGANIZATIONS = ['Operations', 'Finance', 'Human Capital', 'Sales'] as const
+export const BRANCHES = ['Jakarta HQ', 'Bandung', 'Surabaya'] as const
+export const COST_CENTERS: { name: string; category: 'Direct' | 'In-direct' }[] = [
+  { name: 'Store Jakarta Kemang', category: 'Direct' },
+  { name: 'Store Bandung Dago', category: 'Direct' },
+  { name: 'Store Surabaya Tunjungan', category: 'Direct' },
+  { name: 'HQ Operations', category: 'In-direct' },
+  { name: 'HQ Finance', category: 'In-direct' },
+  { name: 'HQ Human Capital', category: 'In-direct' },
+  { name: 'HQ Sales', category: 'In-direct' },
+  { name: 'Regional Sales', category: 'In-direct' },
+]
+export const JOB_LEVELS = ['Staff', 'Supervisor', 'Manager', 'Director'] as const
+export const EMPLOYMENT_STATUSES = ['Permanent', 'Contract', 'Probation'] as const
+export const BUSINESS_UNITS = ['Coffee Retail', 'Corporate', 'B2B Beans'] as const
+
+export type TagDimension = 'Organization' | 'Branch'
+export interface PayrollTag { dimension: TagDimension; name: string }
+/** The fallback tag value per dimension. A new group can never be mapped to it from the hold screen. */
+export const FALLBACK_TAG = 'Unassigned'
+export const PAYROLL_TAGS: PayrollTag[] = [
+  ...ORGANIZATIONS.map((name) => ({ dimension: 'Organization' as const, name })),
+  ...BRANCHES.map((name) => ({ dimension: 'Branch' as const, name })),
+  { dimension: 'Organization', name: FALLBACK_TAG },
+  { dimension: 'Branch', name: FALLBACK_TAG },
+]
+
+/** Talenta fields the allocation rules can test (OD-08). cost_center_category is set in Jurnal. */
+export type TalentaField =
+  | 'organization_name' | 'branch_name' | 'cost_center_name' | 'cost_center_category'
+  | 'job_position' | 'job_level' | 'grade' | 'employment_status' | 'custom:BusinessUnit'
+export const TALENTA_FIELDS: { field: TalentaField; label: string }[] = [
+  { field: 'organization_name', label: 'Organization' },
+  { field: 'branch_name', label: 'Branch' },
+  { field: 'cost_center_name', label: 'Cost center' },
+  { field: 'cost_center_category', label: 'Cost center category' },
+  { field: 'job_position', label: 'Job position' },
+  { field: 'job_level', label: 'Job level' },
+  { field: 'grade', label: 'Grade' },
+  { field: 'employment_status', label: 'Employment status' },
+  { field: 'custom:BusinessUnit', label: 'Business unit' },
+]
+/** Grouping fields whose empty value follows a field policy (hold or skip). */
+export type GroupingField = 'organization_name' | 'branch_name' | 'cost_center_name'
+export const GROUPING_FIELDS: GroupingField[] = ['organization_name', 'branch_name', 'cost_center_name']
+
+// ── Talenta payload shape (talenta.salarydetail) ─────────────────────────────
+
+export type PaySection = 'allowance' | 'deduction' | 'benefit'
+export interface TalentaPayItem { name: string; amount: number }
+export interface TalentaEmployee {
+  employee_id: string
+  organization_name: string
+  branch_name: string
+  cost_center_name: string
+  job_position: string
+  job_level: string
+  grade: string
+  employment_status: string
+  custom_fields: { BusinessUnit: string }
+  allowances: TalentaPayItem[]
+  deductions: TalentaPayItem[]
+  benefits: TalentaPayItem[]
+  total_allowances: number
+  total_deductions: number
+  total_benefits: number
+  take_home_pay: number
+  'PPh 21 Benefit': number
+  'PPh 21 Payment': number
+  'PPh 21 Resign Benefit': number
+  'PPh 26 Benefit': number
+  'Total PPh 21 DTP Received': number
+}
+export interface TalentaPayload {
+  event: 'talenta.salarydetail'
+  company_id: number
+  period: { type: 'monthly'; start_date: string; end_date: string }
+  sent_at: string
+  employees: TalentaEmployee[]
+}
+export type TaxField = 'PPh 21 Benefit' | 'PPh 21 Payment' | 'PPh 21 Resign Benefit' | 'PPh 26 Benefit' | 'Total PPh 21 DTP Received'
+export const TAX_FIELDS: TaxField[] = ['PPh 21 Benefit', 'PPh 21 Payment', 'PPh 21 Resign Benefit', 'PPh 26 Benefit', 'Total PPh 21 DTP Received']
+
+export type EmployeeEventType =
+  | 'talenta.employee.transfer.approved' | 'talenta.employee.resignation.created'
+  | 'talenta.employee.detail.created' | 'talenta.employee.detail.deleted'
+
+// ── Roster (Talenta employee records the sends are built from) ───────────────
+
+export interface GroupFields { organization_name: string; branch_name: string; cost_center_name: string }
+export interface RosterEmployee extends GroupFields {
+  employee_id: string
+  job_position: string
+  job_level: string
+  grade: string
+  employment_status: string
+  business_unit: string
+  basic: number
+  expat: boolean
+  joined: string
+  left: string | null
+  deleted: boolean
+  transfers: { effective: string; to: GroupFields }[]
+}
+
+function emp(n: number, g: GroupFields, job_position: string, job_level: string, basic: number, extra: Partial<RosterEmployee> = {}): RosterEmployee {
+  const bu = g.organization_name === 'Operations' && g.cost_center_name.startsWith('Store') ? 'Coffee Retail'
+    : g.organization_name === 'Sales' ? 'B2B Beans' : 'Corporate'
+  const grade = job_level === 'Staff' ? 'G2' : job_level === 'Supervisor' ? 'G3' : job_level === 'Manager' ? 'G5' : 'G7'
+  return {
+    employee_id: `EMP-${String(n).padStart(4, '0')}`, ...g, job_position, job_level, grade,
+    employment_status: n % 9 === 0 ? 'Contract' : n % 17 === 0 ? 'Probation' : 'Permanent',
+    business_unit: bu, basic, expat: false, joined: '2024-01-02', left: null, deleted: false, transfers: [], ...extra,
+  }
+}
+
+/** 40 staff active in 2026, plus EMP-0041 who joins Sales Bandung on 1 Sep 2026. */
+export function sampleRoster(): RosterEmployee[] {
+  const out: RosterEmployee[] = []
+  let n = 0
+  const G = (o: string, b: string, c: string): GroupFields => ({ organization_name: o, branch_name: b, cost_center_name: c })
+  const stores: [string, string, number][] = [['Jakarta HQ', 'Store Jakarta Kemang', 8], ['Bandung', 'Store Bandung Dago', 6], ['Surabaya', 'Store Surabaya Tunjungan', 6]]
+  for (const [branch, cc, staff] of stores) {
+    out.push(emp(++n, G('Operations', branch, cc), 'Store Supervisor', 'Supervisor', 8_250_000 + n * 61_350))
+    for (let i = 0; i < staff; i++) out.push(emp(++n, G('Operations', branch, cc), i % 3 === 2 ? 'Cashier' : 'Barista', 'Staff', 5_300_000 + i * 137_550 + (n % 4) * 45_150))
+  }
+  out.push(emp(++n, G('Operations', 'Jakarta HQ', 'HQ Operations'), 'Operations Manager', 'Manager', 22_500_000))
+  out.push(emp(++n, G('Finance', 'Jakarta HQ', 'HQ Finance'), 'Finance Manager', 'Manager', 24_000_000))
+  for (const b of [9_500_000, 11_250_000, 12_500_000]) out.push(emp(++n, G('Finance', 'Jakarta HQ', 'HQ Finance'), 'Accounting Staff', 'Staff', b))
+  out.push(emp(++n, G('Human Capital', 'Jakarta HQ', 'HQ Human Capital'), 'Human Capital Manager', 'Manager', 21_000_000))
+  for (const b of [8_750_000, 10_250_000]) out.push(emp(++n, G('Human Capital', 'Jakarta HQ', 'HQ Human Capital'), 'Human Capital Staff', 'Staff', b))
+  out.push(emp(++n, G('Human Capital', 'Surabaya', 'HQ Human Capital'), 'Human Capital Staff', 'Staff', 8_400_000))
+  out.push(emp(++n, G('Sales', 'Jakarta HQ', 'HQ Sales'), 'Sales Manager', 'Manager', 23_500_000))
+  for (const b of [10_500_000, 9_750_000]) out.push(emp(++n, G('Sales', 'Jakarta HQ', 'HQ Sales'), 'Account Executive', 'Staff', b))
+  for (const b of [9_250_000, 9_000_000]) out.push(emp(++n, G('Sales', 'Bandung', 'Regional Sales'), 'Account Executive', 'Staff', b))
+  // EMP-0039 leaves on 20 Aug 2026 (the last day of the August run).
+  out.push(emp(++n, G('Sales', 'Surabaya', 'Regional Sales'), 'Account Executive', 'Staff', 9_100_000, { left: '2026-08-20' }))
+  out.push(emp(++n, G('Sales', 'Surabaya', 'Regional Sales'), 'Account Executive', 'Staff', 9_400_000))
+  // The expatriate Finance Director: PPh 26.
+  const dir = emp(++n, G('Finance', 'Jakarta HQ', 'HQ Finance'), 'Finance Director', 'Director', 95_000_000, { expat: true, employment_status: 'Contract' })
+  out.push(dir)
+  // Joins on 1 Sep 2026 (talenta.employee.detail.created).
+  out.push(emp(++n, G('Sales', 'Bandung', 'Regional Sales'), 'Account Executive', 'Staff', 9_000_000, { joined: '2026-09-01', employment_status: 'Probation' }))
+  return out
+}
+
+export function groupsAsOf(e: RosterEmployee, date: string): GroupFields {
+  let g: GroupFields = { organization_name: e.organization_name, branch_name: e.branch_name, cost_center_name: e.cost_center_name }
+  for (const t of [...e.transfers].sort((a, b) => a.effective.localeCompare(b.effective))) if (t.effective <= date) g = { ...t.to }
+  return g
+}
+
+// ── Payroll arithmetic (Talenta's side, for the simulated sends) ─────────────
+
+const r2 = (x: number) => Math.round(x * 100) / 100
+const KES_CAP = 12_000_000
+const JP_CAP = 11_086_300
+
+/** TER category A monthly rates (PP 58/2023), upper bounds in rupiah. */
+const TER_A: [number, number][] = [
+  [5_400_000, 0], [5_650_000, 0.0025], [5_950_000, 0.005], [6_300_000, 0.0075], [6_750_000, 0.01], [7_500_000, 0.0125],
+  [8_550_000, 0.015], [9_650_000, 0.0175], [10_050_000, 0.02], [10_350_000, 0.0225], [10_700_000, 0.025], [11_050_000, 0.03],
+  [11_600_000, 0.035], [12_500_000, 0.04], [13_750_000, 0.05], [15_100_000, 0.06], [16_950_000, 0.07], [19_750_000, 0.08],
+  [24_150_000, 0.09], [26_450_000, 0.1], [28_000_000, 0.11], [30_050_000, 0.12], [32_400_000, 0.13], [35_400_000, 0.14],
+  [39_100_000, 0.15], [43_850_000, 0.16], [47_800_000, 0.17], [51_400_000, 0.18], [56_300_000, 0.19], [62_200_000, 0.2],
+  [68_600_000, 0.21], [77_500_000, 0.22], [89_000_000, 0.23], [103_000_000, 0.24], [125_000_000, 0.25],
+]
+export function terRate(gross: number): number {
+  for (const [cap, rate] of TER_A) if (gross <= cap) return rate
+  return 0.26
+}
+
+function workingDays(start: string, end: string): number {
+  let d = new Date(start + 'T00:00:00Z'), n = 0
+  const e = new Date(end + 'T00:00:00Z')
+  while (d <= e) { const w = d.getUTCDay(); if (w !== 0 && w !== 6) n++; d = new Date(d.getTime() + 86_400_000) }
+  return n
+}
+function monthIndex(date: string): number { return Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7)) }
+
+export interface PayloadOptions {
+  sentAt: string
+  /** A new allowance Talenta starts sending (OD-03 hold). */
+  newAllowance?: { name: string; organization?: string; amount: number }
+  /** Basic Salary raise for one organization (a revision). */
+  raise?: { organization: string; amount: number }
+  /** Only staff of one branch (a partial re-send). */
+  onlyBranch?: string
+  /** A THR-only run (separate run). */
+  thr?: boolean
+  /** Talenta totals that do not match the pay item lines (OD-04), per employee and section. */
+  gaps?: { employeeId: string; section: PaySection; amount: number }[]
+  /** PPh 21 Benefit sent lower than the tax deducted (LR-10 hold). */
+  taxOff?: { employeeId: string; amount: number }[]
+  /** Repeat one employee row exactly (duplicate employee hold). */
+  duplicateEmployee?: string
+  /** Shift PPh 21 between employees with the same total (tax change, no ledger change). */
+  taxShift?: { from: string; to: string; amount: number }
+}
+
+/**
+ * Build one talenta.salarydetail body for a period from the roster. Pure:
+ * the same roster, period and options always give the same body.
+ */
+export function buildSalaryDetail(roster: RosterEmployee[], start: string, end: string, o: PayloadOptions): TalentaPayload {
+  const mi = monthIndex(end)
+  const days = workingDays(start, end)
+  const employees: TalentaEmployee[] = []
+  for (const e of roster) {
+    if (e.deleted || e.joined > end || (e.left !== null && e.left < start)) continue
+    const g = groupsAsOf(e, end)
+    if (o.onlyBranch && g.branch_name !== o.onlyBranch) continue
+    const num = Number(e.employee_id.slice(4))
+    const basic = e.basic + (o.raise && g.organization_name === o.raise.organization ? o.raise.amount : 0)
+    const jabatan = e.job_level === 'Supervisor' ? 1_000_000 : e.job_level === 'Manager' ? 3_500_000 : e.job_level === 'Director' ? 10_000_000 : 0
+    const base = basic + jabatan
+    const allowances: TalentaPayItem[] = []
+    const deductions: TalentaPayItem[] = []
+    const benefits: TalentaPayItem[] = []
+    const kesCo = r2(Math.min(base, KES_CAP) * 0.04)
+    const jkk = r2(base * 0.0024)
+    const jkm = r2(base * 0.003)
+    let taxable: number
+    if (o.thr) {
+      allowances.push({ name: 'THR Keagamaan', amount: base })
+      taxable = base
+    } else {
+      allowances.push({ name: 'Basic Salary', amount: basic })
+      if (jabatan) allowances.push({ name: 'Tunjangan Jabatan', amount: jabatan })
+      if (e.job_level === 'Staff' || e.job_level === 'Supervisor') allowances.push({ name: 'Uang Makan', amount: 25_000 * days })
+      if ((num + mi) % 7 === 0) allowances.push({ name: 'Reimbursement Medical', amount: 350_000 + ((num * 13) % 5) * 75_000 })
+      if (o.newAllowance && (!o.newAllowance.organization || g.organization_name === o.newAllowance.organization)) allowances.push({ name: o.newAllowance.name, amount: o.newAllowance.amount })
+      taxable = allowances.filter((a) => !/reimburs/i.test(a.name)).reduce((s, a) => s + a.amount, 0) + kesCo + jkk + jkm
+    }
+    const tax = Math.floor(taxable * (e.expat ? 0.2 : terRate(taxable)))
+    // PPh 21 DTP: store staff with gross up to Rp10.000.000 (labour-intensive sector).
+    const dtp = !o.thr && !e.expat && g.cost_center_name.startsWith('Store') && taxable <= 10_000_000 ? tax : 0
+    if (dtp > 0) allowances.push({ name: 'PPh 21 Ditanggung Pemerintah', amount: dtp })
+    if (!o.thr) {
+      deductions.push({ name: 'JHT Employee', amount: r2(base * 0.02) })
+      deductions.push({ name: 'JP Employee', amount: r2(Math.min(base, JP_CAP) * 0.01) })
+      deductions.push({ name: 'BPJSK Employee', amount: r2(Math.min(base, KES_CAP) * 0.01) })
+    }
+    if (tax > 0) deductions.push({ name: 'PPH 21 Paid', amount: tax })
+    if (!o.thr) {
+      if (num === 3 || num === 21) deductions.push({ name: 'Loan Instalment', amount: num === 3 ? 500_000 : 750_000 })
+      if (num === 10 || num === 27) deductions.push({ name: 'THR Paid', amount: 400_000 })
+      deductions.push({ name: 'BPJS K paid by company', amount: kesCo })
+      deductions.push({ name: 'JKK paid by company', amount: jkk })
+      deductions.push({ name: 'JKM paid by company', amount: jkm })
+      deductions.push({ name: 'JHT paid by company', amount: r2(base * 0.037) })
+      deductions.push({ name: 'JP paid by company', amount: r2(Math.min(base, JP_CAP) * 0.02) })
+      if (e.job_level === 'Manager' || e.job_level === 'Director') benefits.push({ name: 'DPLK paid by company', amount: Math.round(basic * 0.05) })
+    }
+    const sum = (l: TalentaPayItem[]) => r2(l.reduce((s, i) => s + i.amount, 0))
+    const companyPaid = deductions.filter((d) => /paid by company/i.test(d.name))
+    const total_allowances = sum(allowances)
+    const total_deductions = sum(deductions)
+    const employeeDeductions = r2(total_deductions - sum(companyPaid))
+    const row: TalentaEmployee = {
+      employee_id: e.employee_id, ...g, job_position: e.job_position, job_level: e.job_level, grade: e.grade,
+      employment_status: e.employment_status, custom_fields: { BusinessUnit: e.business_unit },
+      allowances, deductions, benefits,
+      total_allowances, total_deductions, total_benefits: sum(benefits),
+      take_home_pay: r2(total_allowances - employeeDeductions),
+      'PPh 21 Benefit': e.expat ? 0 : tax, 'PPh 21 Payment': 0, 'PPh 21 Resign Benefit': 0,
+      'PPh 26 Benefit': e.expat ? tax : 0, 'Total PPh 21 DTP Received': dtp,
+    }
+    for (const gp of o.gaps ?? []) {
+      if (gp.employeeId !== e.employee_id) continue
+      if (gp.section === 'allowance') { row.total_allowances = r2(row.total_allowances + gp.amount); row.take_home_pay = r2(row.take_home_pay + gp.amount) }
+      if (gp.section === 'deduction') { row.total_deductions = r2(row.total_deductions + gp.amount); row.take_home_pay = r2(row.take_home_pay - gp.amount) }
+      if (gp.section === 'benefit') row.total_benefits = r2(row.total_benefits + gp.amount)
+    }
+    for (const t of o.taxOff ?? []) if (t.employeeId === e.employee_id) row['PPh 21 Benefit'] -= t.amount
+    employees.push(row)
+  }
+  if (o.taxShift) {
+    const a = employees.find((x) => x.employee_id === o.taxShift!.from)
+    const b = employees.find((x) => x.employee_id === o.taxShift!.to)
+    if (a && b) {
+      const shift = (row: TalentaEmployee, d: number) => {
+        row['PPh 21 Benefit'] += d
+        const it = row.deductions.find((x) => x.name === 'PPH 21 Paid')
+        if (it) it.amount += d; else row.deductions.push({ name: 'PPH 21 Paid', amount: d })
+        row.total_deductions = r2(row.total_deductions + d)
+        row.take_home_pay = r2(row.take_home_pay - d)
+      }
+      shift(a, -o.taxShift.amount); shift(b, o.taxShift.amount)
+    }
+  }
+  if (o.duplicateEmployee) {
+    const d = employees.find((x) => x.employee_id === o.duplicateEmployee)
+    if (d) employees.push(JSON.parse(JSON.stringify(d)))
+  }
+  return { event: 'talenta.salarydetail', company_id: PAYROLL_COMPANY_ID, period: { type: 'monthly', start_date: start, end_date: end }, sent_at: o.sentAt, employees }
+}
