@@ -1525,7 +1525,8 @@ export function previewPOFromRequests(lines: { prId: string | null; prLine: numb
   })
   const check = checkSpend(rows.map((r) => {
     const bl = lineById(r.lineId)
-    return { lineId: r.lineId, account: bl?.account ?? '', dept: bl?.dept ?? '', project: bl?.project ?? null, amount: r.excess }
+    const src = prById(r.prId)?.lines[r.prLine ?? -1]
+    return { lineId: r.lineId, account: bl?.account ?? src?.account ?? '', dept: bl?.dept ?? src?.dept ?? '', project: bl?.project ?? src?.project ?? null, amount: r.excess }
   }), month)
   for (const r of rows) {
     const lc = check.lines.find((c) => c.lineId === r.lineId)

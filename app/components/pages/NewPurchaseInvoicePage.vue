@@ -34,6 +34,9 @@ import { infoToast } from '~/utils/toasts'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import BudgetPIPanel from '~/components/patterns/BudgetPIPanel.vue'
+import { poById, previewBill, postBillAs } from '~/data/budgetStore'
+import { buildBudgetBillInput, emptyBudgetPILine, type BudgetPIState } from '~/data/budgetUiPurchaseOrders'
 
 // `orderId` is the shared detail-route prop name ([...slug].vue binds :order-id).
 const props = defineProps<{ orderId?: string }>()
@@ -60,7 +63,7 @@ function toTagData(values: string[]): DataInterface[] {
 // ── Header fields ─────────────────────────────────────────────────────────────
 const vendorId      = ref('')
 const vendorError   = ref(false)
-const vendorOptions = vendors.map(v => ({ id: v.id, name: v.name }))
+const vendorOptions = ref(vendors.map(v => ({ id: v.id, name: v.name })))
 
 const emailTags      = ref<DataInterface[]>([])
 const billingAddress = ref('')
@@ -221,6 +224,20 @@ const depositOn     = ref(false)
 const depositAmount = ref(0)
 const balanceDue = computed(() => total.value - withholdingAmount.value - (depositOn.value ? depositAmount.value : 0))
 
+// ── Budget (PRD FG-3, FG-7): an invoice on a budget PO posts through the budget
+// ledger with an optional Final invoice; with no PO, Release 1 warns and posts. ──
+const budgetPI = ref<BudgetPIState>({ poId: '', final: false, lines: [] })
+watch(() => items.value.length, (n) => {
+  const lines = budgetPI.value.lines.slice(0, n)
+  while (lines.length < n) lines.push({ ...emptyBudgetPILine(), poLine: budgetPI.value.poId ? '0' : '' })
+  budgetPI.value = { ...budgetPI.value, lines }
+}, { immediate: true })
+const budgetError = ref<string | null>(null)
+const vendorName = computed(() => vendorOptions.value.find(v => v.id === vendorId.value)?.name ?? '')
+const budgetItems = computed(() => items.value.map(it => ({ description: it.description || it.product, amount: lineAmount(it) })))
+const budgetInput = computed(() => isEdit.value ? null : buildBudgetBillInput(budgetPI.value, budgetItems.value, vendorName.value, dmyToIso(txDate.value)))
+watch(budgetInput, () => { budgetError.value = null }, { deep: true })
+
 const fmt = formatIDR
 /** Table cells show the bare number — the "Rp" lives in the cell's prefix box. */
 function fmtPlain(n: number) {
@@ -302,7 +319,15 @@ function detailSnapshot() {
 function onSave(share?: 'whatsapp' | 'email') {
   // Validation errors surface INLINE (per-field + the banner below), never as a toast.
   if (!validate()) return
-  const vendor = vendors.find(v => v.id === vendorId.value)!
+  // Budget: a block (PO excess, two projects, Final invoice not allowed) stops the save inline.
+  const bInput = budgetInput.value
+  if (bInput) {
+    const pv = previewBill(bInput)
+    if (!pv.ok) { budgetError.value = pv.message ?? t('Not enough budget for this invoice.'); return }
+    const posted = postBillAs({ ...bInput, number: `PINV-2026-${String(nextPurchaseInvoiceSeq()).padStart(3, '0')}` })
+    if (!posted.ok) { budgetError.value = posted.message ?? t('Not enough budget for this invoice.'); return }
+  }
+  const vendor = vendors.find(v => v.id === vendorId.value) ?? { id: vendorId.value, name: vendorName.value }
   const base = {
     vendor: { id: vendor.id, name: vendor.name },
     date: dmyToIso(txDate.value),
@@ -357,8 +382,25 @@ function prefillFromDetail(id: string) {
     unitPrice: li.unitPrice, discountPct: li.discountPct, taxLabel: li.taxLabel, productError: false, qtyError: false,
   }))
 }
+/** ?budgetPo=<budget PO id>: bill what the PO still has open, line by line. */
+function prefillFromBudgetPO(id: string) {
+  const po = poById(id)
+  if (!po) return
+  let v = vendors.find(x => x.name === po.vendor) ?? vendorOptions.value.find(x => x.name === po.vendor)
+  if (!v) { v = { id: `budget-${po.vendor.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, name: po.vendor }; vendorOptions.value.push(v) }
+  vendorId.value = v.id
+  referenceNo.value = po.number
+  const open = po.lines.map((l, i) => ({ l, i })).filter(({ l }) => !l.closed)
+  items.value = open.map(({ l }) => ({
+    _key: ++_seq, product: l.description, sku: '', description: l.description, qty: 1, unit: 'Lot',
+    unitPrice: Math.max(0, l.amount - l.invoiced), discountPct: 0, taxLabel: 'PPN 11%', productError: false, qtyError: false,
+  }))
+  budgetPI.value = { poId: po.id, final: false, lines: open.map(({ i }) => ({ ...emptyBudgetPILine(), poLine: String(i) })) }
+}
 onMounted(() => {
   if (isEdit.value && props.orderId) { prefillFromDetail(props.orderId); return }
+  const budgetPo = route.query.budgetPo as string | undefined
+  if (budgetPo) { prefillFromBudgetPO(budgetPo); return }
   const fromId = route.query.createdFrom as string | undefined
   const pd = fromId ? purchaseDeliveries.find(d => d.id === fromId) : undefined
   if (pd) {
@@ -689,6 +731,16 @@ onMounted(() => {
           </table>
         </div>
       </section>
+
+      <!-- ── Budget: PO line or budget line per invoice line, and the check ── -->
+      <BudgetPIPanel
+        v-if="!isEdit"
+        v-model="budgetPI"
+        :items="budgetItems"
+        :vendor="vendorName"
+        :date="dmyToIso(txDate)"
+        :error="budgetError"
+      />
 
       <!-- ── Notes + Attachment + Totals ── -->
       <section class="si-bottom-section">

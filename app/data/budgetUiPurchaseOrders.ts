@@ -5,7 +5,7 @@
  */
 import {
   budget, prForPurchaseRequest, poById, lineById, lineTitle, BUDGET_TODAY,
-  type BudgetPR, type BudgetPO,
+  type BudgetPR, type BudgetPO, type BillInput,
 } from './budgetStore'
 import { BUDGET_ACCOUNTS, BUDGET_DEPARTMENTS, BUDGET_PROJECTS } from './budgetMaster'
 
@@ -44,3 +44,31 @@ export function poLineOptions(poId: string): { value: string; label: string }[] 
 export const DEPARTMENT_OPTIONS = BUDGET_DEPARTMENTS.map((d) => ({ value: d.id, label: d.name }))
 export const PROJECT_OPTIONS = [{ value: '', label: '(no project)' }, ...BUDGET_PROJECTS.map((p) => ({ value: p.id, label: p.name }))]
 export const ACCOUNT_OPTIONS = BUDGET_ACCOUNTS.filter((a) => !a.savingOnly).map((a) => ({ value: a.code, label: `${a.code} ${a.name}` }))
+
+// ── Purchase invoice form: the budget side of the invoice ──
+
+export interface BudgetPILine { poLine: string; account: string; dept: string; project: string }
+export interface BudgetPIState { poId: string; final: boolean; lines: BudgetPILine[] }
+export const emptyBudgetPILine = (): BudgetPILine => ({ poLine: '', account: '', dept: '', project: '' })
+
+/**
+ * Map the form to postBill's input. On a PO each line bills a PO line; with no
+ * PO each line names its budget account, department and project. Lines with
+ * neither are not charged to a budget and are left out.
+ */
+export function buildBudgetBillInput(s: BudgetPIState, items: { description: string; amount: number }[], vendor: string, date: string): BillInput | null {
+  const po = poById(s.poId || null)
+  const lines = items.map((it, i) => {
+    const l = s.lines[i]
+    if (po) {
+      const idx = l && l.poLine !== '' ? Number(l.poLine) : null
+      const pl = idx !== null ? po.lines[idx] : undefined
+      const bl = pl ? lineById(pl.lineId) : undefined
+      return bl ? { poLine: idx, account: bl.account, dept: bl.dept, project: bl.project, amount: it.amount, description: it.description } : null
+    }
+    if (!l || !l.account || !l.dept) return null
+    return { poLine: null, account: l.account, dept: l.dept, project: l.project || null, amount: it.amount, description: it.description }
+  }).filter((x): x is NonNullable<typeof x> => !!x)
+  if (!lines.length) return null
+  return { poId: po?.id ?? null, vendor, date, final: !!po && s.final, lines }
+}

@@ -13,6 +13,7 @@ import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import { getPurchaseInvoiceDetail } from '~/data/purchaseInvoiceDetails'
 import { purchaseInvoices } from '~/data/purchaseInvoices'
 import { infoToast } from '~/utils/toasts'
+import BudgetPIDetailSection from '~/components/patterns/BudgetPIDetailSection.vue'
 
 // `orderId` is the shared detail-route prop name — [...slug].vue binds :order-id
 // for every detail page, whatever the module.
@@ -330,6 +331,9 @@ function goBack() { router.push('/purchase-invoices') }
           <span>{{ t('Showing') }} {{ visibleItems.length }} {{ t('of') }} {{ invoice.lineItems.length }} {{ t('products') }}</span>
         </div>
       </section>
+
+      <!-- ── Budget: what this invoice posted to the budget ledger ── -->
+      <BudgetPIDetailSection :number="invoice.number" />
 
       <!-- ── Notes + totals ── -->
       <section class="detail-notes">
