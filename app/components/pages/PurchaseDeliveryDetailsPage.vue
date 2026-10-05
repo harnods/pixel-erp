@@ -245,22 +245,22 @@ const inFulfillment = computed(() => delivery.value.fulfillmentStatus === 'in tr
         <div class="content-list-grid">
           <!-- col 1: ship to (prod shows no billing address on a delivery) -->
           <div class="content-list-col">
-            <ContentList :label="t('Ship to')" :value="delivery.shipTo" />
+            <ContentList :label="t('Ship to')" :value="delivery.shipTo || '—'" />
           </div>
           <!-- col 2: dates + shipping + warehouse (prod PurchaseDeliveryDetailFields) -->
           <div class="content-list-col">
             <ContentList :label="t('Transaction date')" :value="formatDateLong(delivery.date)" />
             <ContentList :label="t('Received date')" :value="formatDateLong(delivery.receivedDate)" />
-            <ContentList :label="t('Ship via')" :value="delivery.shipVia" />
+            <ContentList :label="t('Ship via')" :value="delivery.shipVia || '—'" />
           </div>
           <div class="content-list-col">
-            <ContentList :label="t('Tracking no.')" :value="delivery.trackingNo" />
-            <ContentList :label="t('Warehouse')" :value="delivery.warehouse" />
+            <ContentList :label="t('Tracking no.')" :value="delivery.trackingNo || '—'" />
+            <ContentList :label="t('Warehouse')" :value="delivery.warehouse || '—'" />
           </div>
           <!-- col 4: references -->
           <div class="content-list-col">
             <ContentList :label="t('Transaction no.')" :value="`${t('Purchase Delivery')} #${delivery.number}`" />
-            <ContentList :label="t('Reference no.')" :value="delivery.referenceNo" />
+            <ContentList :label="t('Reference no.')" :value="delivery.referenceNo || '—'" />
           </div>
           <!-- col 5: tags -->
           <div class="content-list-col">

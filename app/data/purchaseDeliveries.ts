@@ -1,5 +1,7 @@
 import type { PurchaseDelivery, FulfillmentStatus, BillingStatus } from './types'
+import { reactive } from 'vue'
 import { vendors } from './vendors'
+import { loadCreated, saveCreated } from './persist'
 
 /**
  * Mock purchase deliveries — the buy-side mirror of salesDeliveries.ts. A coffee
@@ -65,3 +67,41 @@ function build(): PurchaseDelivery[] {
 }
 
 export const purchaseDeliveries: PurchaseDelivery[] = build()
+
+// ── User-created / user-edited purchase deliveries (New/Edit purchase delivery
+// form). Persisted with loadCreated/saveCreated and kept OUT of the seed array
+// (deliveryDocuments hashes into it), so seed-derived screens never shift.
+export interface CreatedPurchaseDeliveryDetail {
+  email: string[]
+  shipTo: string
+  receivedDate: string
+  shipVia: string
+  trackingNo: string
+  referenceNo: string
+  warehouse: string
+  message: string
+  memo: string
+  shippingFee: number
+  lineItems: { product: string; sku: string; description: string; orderedQty: number; qty: number; unit: string }[]
+  lastUpdatedAt: string
+}
+export type CreatedPurchaseDelivery = PurchaseDelivery & { detail?: CreatedPurchaseDeliveryDetail }
+const PD_CREATED_KEY = 'purchaseDeliveries.created'
+export const createdPurchaseDeliveries: CreatedPurchaseDelivery[] = reactive(loadCreated<CreatedPurchaseDelivery>(PD_CREATED_KEY))
+
+export function nextPurchaseDeliveryNumber(): number {
+  return [...purchaseDeliveries, ...createdPurchaseDeliveries].reduce((max, d) => Math.max(max, d.number), 30000) + 1
+}
+export function savePurchaseDelivery(input: Omit<CreatedPurchaseDelivery, 'id' | 'number'> & { id?: string }): CreatedPurchaseDelivery {
+  const existing = input.id ? createdPurchaseDeliveries.find(d => d.id === input.id) : undefined
+  if (existing) {
+    Object.assign(existing, input)
+    saveCreated(PD_CREATED_KEY, createdPurchaseDeliveries)
+    return existing
+  }
+  const number = nextPurchaseDeliveryNumber()
+  const rec: CreatedPurchaseDelivery = { ...input, id: `PDN${number}`, number }
+  createdPurchaseDeliveries.unshift(rec)
+  saveCreated(PD_CREATED_KEY, createdPurchaseDeliveries)
+  return rec
+}

@@ -20,6 +20,7 @@ import CopyLinkDrawer from '~/components/patterns/CopyLinkDrawer.vue'
 import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
 import PurchaseDeliveryFiltersDrawer, { emptyPurchaseDeliveryFilters, type PurchaseDeliveryFiltersValue } from '~/components/patterns/PurchaseDeliveryFiltersDrawer.vue'
 import { purchaseDeliveries } from '~/data'
+import { createdPurchaseDeliveries } from '~/data/purchaseDeliveries'
 import type { PurchaseDelivery } from '~/data'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -53,10 +54,10 @@ const deletedIds = ref(new Set<string>())
 const rows = computed<Row[]>(() =>
   previewMode.value === 'empty'
     ? []
-    : purchaseDeliveries
+    : [...createdPurchaseDeliveries, ...purchaseDeliveries]
         .filter(pd => !deletedIds.value.has(pd.id))
         .filter(pd => !isAwaiting.value || pd.number % 9 === 0)
-        .map(pd => ({ ...pd, vendorName: pd.vendor.name })),
+        .map(({ detail: _d, ...pd }: PurchaseDelivery & { detail?: unknown }) => ({ ...pd, vendorName: pd.vendor.name })),
 )
 
 // ─── Second quick filter (Billing status) — combined inside filterFn ────────────
