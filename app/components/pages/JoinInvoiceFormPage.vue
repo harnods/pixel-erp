@@ -423,19 +423,20 @@ onMounted(() => {
 .ex-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); color: var(--mp-text-secondary); }
 
 .ex-table-section { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default); }
-.ex-table { width: 100%; min-width: 980px; table-layout: fixed; border-collapse: collapse; }
-.jif-col-inv { width: 275px; }
-.jif-col-date { width: 128px; }
-.jif-col-status { width: 128px; }
-.jif-col-amt { width: 180px; }
+.ex-table { width: 100%; min-width: 1080px; table-layout: fixed; border-collapse: collapse; }
+.jif-col-inv { width: 240px; }
+.jif-col-date { width: 120px; }
+.jif-col-status { width: 120px; }
+.jif-col-amt { width: 168px; }
 .jif-col-del { width: 44px; }
-.ex-th { height: var(--mp-sizes-7, 28px); text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2); background: var(--mp-background-neutral-subtle); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); }
+.ex-th { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: var(--mp-sizes-7, 28px); text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2); background: var(--mp-background-neutral-subtle); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); }
 .ex-th--num { text-align: right; }
 .ex-td { height: var(--mp-sizes-10, 40px); border-bottom: 1px solid var(--mp-border-default); vertical-align: top; }
 .ex-td--text { padding: var(--mp-spacing-2-5, 10px) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-2); color: var(--mp-text-default); }
 .ex-td--num { text-align: right; white-space: nowrap; }
 .ex-td--input { padding: 0; }
 .ex-td--input :deep([class*='input']), .ex-td--input :deep([class*='autocomplete']), .ex-td--input :deep(textarea) { border-radius: 0; border-color: transparent; }
+.ex-td--input :deep(textarea) { min-height: var(--mp-sizes-10, 40px); height: var(--mp-sizes-10, 40px); resize: vertical; }
 .ex-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused); }
 .ex-td--border { border-right: 1px solid var(--mp-border-default); border-left: 1px solid var(--mp-border-default); }
 .ex-td--picker { border-bottom: none; }
