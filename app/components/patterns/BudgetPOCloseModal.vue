@@ -22,7 +22,7 @@ const { t } = useLocale()
 
 const reason = ref<string>('Short delivery')
 const error = ref('')
-watch(() => props.target, (v) => { if (v) { reason.value = v.mode === 'po' ? 'Cancelled' : 'Short delivery'; error.value = '' } })
+watch(() => props.target, (v) => { if (v) { reason.value = v.mode === 'po' ? 'Cancelled' : 'Short delivery'; error.value = '' } }, { immediate: true })
 
 const po = computed(() => (props.target ? poById(props.target.poId) : undefined))
 const title = computed(() => {

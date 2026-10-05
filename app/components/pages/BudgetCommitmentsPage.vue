@@ -329,7 +329,7 @@ function releaseTwo() { infoToast(t('Not in this prototype')) }
       </template>
     </ErpTablePage>
 
-    <BudgetPOCloseModal :target="closeTarget" @update:target="closeTarget = $event" @closed="onClosed" />
+    <BudgetPOCloseModal v-if="closeTarget" :target="closeTarget" @update:target="closeTarget = $event" @closed="onClosed" />
   </div>
 </template>
 

@@ -103,7 +103,7 @@ function reopen(i: number) {
       </tbody>
     </table>
 
-    <BudgetPOCloseModal :target="closeTarget" @update:target="closeTarget = $event" @closed="onClosed" />
+    <BudgetPOCloseModal v-if="closeTarget" :target="closeTarget" @update:target="closeTarget = $event" @closed="onClosed" />
   </section>
 </template>
 
