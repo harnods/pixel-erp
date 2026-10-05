@@ -218,7 +218,7 @@ function emp(n: number, g: GroupFields, job_position: string, job_level: string,
   }
 }
 
-/** 40 staff active in 2026, plus EMP-0041 who joins Sales Bandung on 1 Sep 2026. */
+/** 40 staff at the start of the sample; EMP-0038 leaves after August and EMP-0041 joins Sales Bandung on 1 Sep 2026. */
 export function sampleRoster(): RosterEmployee[] {
   const out: RosterEmployee[] = []
   let n = 0
@@ -237,8 +237,8 @@ export function sampleRoster(): RosterEmployee[] {
   out.push(emp(++n, G('Sales', 'Jakarta HQ', 'HQ Sales'), 'Sales Manager', 'Manager', 23_500_000))
   for (const b of [10_500_000, 9_750_000]) out.push(emp(++n, G('Sales', 'Jakarta HQ', 'HQ Sales'), 'Account Executive', 'Staff', b))
   for (const b of [9_250_000, 9_000_000]) out.push(emp(++n, G('Sales', 'Bandung', 'Regional Sales'), 'Account Executive', 'Staff', b))
-  // EMP-0039 leaves on 20 Aug 2026 (the last day of the August run).
-  out.push(emp(++n, G('Sales', 'Surabaya', 'Regional Sales'), 'Account Executive', 'Staff', 9_100_000, { left: '2026-08-20' }))
+  // EMP-0038 resigns effective 20 Aug 2026 (the last day of the August run); the event arrives in August.
+  out.push(emp(++n, G('Sales', 'Surabaya', 'Regional Sales'), 'Account Executive', 'Staff', 9_100_000))
   out.push(emp(++n, G('Sales', 'Surabaya', 'Regional Sales'), 'Account Executive', 'Staff', 9_400_000))
   // The expatriate Finance Director: PPh 26.
   const dir = emp(++n, G('Finance', 'Jakarta HQ', 'HQ Finance'), 'Finance Director', 'Director', 95_000_000, { expat: true, employment_status: 'Contract' })

@@ -383,6 +383,8 @@ export interface PayrollState {
   log: SyncLogEntry[]
   notices: PayrollNotice[]
   oldSync: OldSyncCall[]
+  /** Options of the last simulated send per run key, so a revision or partial re-send starts from the same facts. */
+  simOptions: Record<string, Partial<PayloadOptions>>
   payNo: number
   bnkNo: number
 }
@@ -424,6 +426,8 @@ const norm = (s: string) => s.trim().replace(/\s+/g, ' ').toLowerCase()
 function hash(s: string): string { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(16) }
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T
 const tagsKey = (t: Tags) => `${t.Organization ?? ''}|${t.Branch ?? ''}`
+/** "A", "A and B", "A, B and C". */
+export function listLabel(items: string[]): string { return items.length < 2 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}` }
 export function tagsLabel(t: Tags): string { return [t.Organization, t.Branch].filter(Boolean).join(', ') }
 
 // ── State ───────────────────────────────────────────────────────────────────
@@ -459,7 +463,7 @@ function emptyState(): PayrollState {
     accounts: clone(PAYROLL_ACCOUNTS), tags: clone(PAYROLL_TAGS),
     settings: defaultSettings(), snapshots: [], roster: [], runs: [], journals: [], payments: [], events: [],
     accruals: [], accrualEdits: {}, tasks: [], bpjsInvoices: [], recon: [], lockedMonths: [], knownGaps: [],
-    log: [], notices: [], oldSync: [], payNo: 0, bnkNo: 0,
+    log: [], notices: [], oldSync: [], simOptions: {}, payNo: 0, bnkNo: 0,
   }
 }
 
@@ -613,7 +617,7 @@ export function validateMapping(row: Pick<PayItemMapping, 'role' | 'debit' | 'cr
     blocks.push(`${role === 'Tax' ? 'A tax item' : 'An employer contribution'} must credit a liability account.`)
   const cp = partyOf(credit)
   const ip = row.party ?? partyFromName(row.name)
-  if (cp && ip && STATUTORY_PARTIES.includes(ip) && cp !== ip && (STATUTORY_PARTIES.includes(cp) || cp === 'Staff') && role !== 'Earning')
+  if (cp && ip && STATUTORY_PARTIES.includes(ip) && cp !== ip && role !== 'Earning')
     blocks.push(`${accountName(credit)} is labelled ${cp}. ${row.name} is owed to ${ip}.`)
   if (credit === payroll.settings.hutangGaji && debit === payroll.settings.hutangGaji)
     blocks.push(`${row.name} posts to ${accountName(credit)} on both sides.`)
@@ -934,7 +938,7 @@ export function runStatus(run: Run): RunStatus {
   if (holds.some((h) => h.code === 'confirm-source')) return 'Confirm source'
   if (run.versions.some((v) => v.state === 'waiting-choice')) return 'Waiting for your choice'
   const live = liveJournals(run.id).length > 0
-  if (run.ledgerVersion != null && !live) return 'Reversed'
+  if (run.reversedAt && !live) return holds.length ? 'Held' : 'Reversed'
   if (run.revised) return 'Revised'
   if (run.ledgerVersion != null && live) return holds.length ? 'Held' : 'Posted'
   if (holds.length) return 'Held'
@@ -1075,7 +1079,7 @@ function partialCheck(run: Run, v: RunVersion): Hold | null {
   if (!staffDrop && !thpDrop && !missing.length) return null
   return {
     code: 'partial',
-    message: `Looks partial: ${after} of ${before} staff.${missing.length ? ` ${missing.join(' and ')} missing.` : ''}`,
+    message: `Looks partial: ${after} of ${before} staff.${missing.length ? ` ${listLabel(missing)} missing.` : ''}`,
     details: { before, after, missing, thpBefore: Math.round(thpA), thpAfter: Math.round(thpB), versionNo: v.no },
   }
 }
@@ -1131,7 +1135,7 @@ function markRevisedOrNoChange(run: Run, v: RunVersion) {
   const oldV = versionOf(run, run.ledgerVersion)!
   if (!diff.length) {
     const taxMoved = taxChanges(oldV.payload, v.payload)
-    run.ledgerVersion = v.no; run.revised = false
+    retireLedgerVersion(run, oldV, v)
     addLog({ type: 'Send', status: 'No change', reason: taxMoved.length ? 'Tax change, no ledger change' : 'No ledger change', nextStep: taxMoved.length ? 'Tax Staff amends e-Bupot 21/26.' : 'Nothing to do.', runId: run.id, runKey: run.key, version: v.no })
     if (taxMoved.length) openAmendmentTask(run, oldV, v, true)
     return
@@ -1500,7 +1504,7 @@ function buildJournal(run: Run, v: RunVersion, s: PayrollSettings): BuildResult 
     if (ap && STATUTORY_PARTIES.includes(ap)) set.add(ap)
     credPar.set(m.credit, set)
   }
-  for (const [acct, set] of credPar) if (set.size > 1) holds.push({ code: 'two-parties', message: `${accountName(acct)} holds ${[...set].join(' and ')}. Each party needs its own payable.`, details: { account: acct, parties: [...set] } })
+  for (const [acct, set] of credPar) if (set.size > 1) { const parties = STATUTORY_PARTIES.filter((x) => set.has(x)); holds.push({ code: 'two-parties', message: `${accountName(acct)} holds ${listLabel(parties)}. Each party needs its own payable.`, details: { account: acct, parties } }) }
   // Payables below Rp0 (December PPh 21 true-up excepted).
   for (const l of lines) {
     if (partyOf(l.account) && l.debit > 0 && !(l.account === s.taxPresets.pph21 && run.end.slice(5, 7) === '12'))
@@ -1760,7 +1764,14 @@ export function reverseRun(runId: string, o: { date?: string; confirmPayments?: 
   run.reversedAt = payroll.clock
   for (const d of done) addLog({ type: 'Reversal', status: 'Reversed', reason: d.memo, nextStep: 'Repost the latest version.', runId, runKey: run.key, version: d.versionNo, journalNo: d.number })
   // A reversed run reopens the accrual it reversed (FG-7).
-  for (const a of payroll.accruals) if (a.reversedBy === 'run' && live.some((j) => journalById(a.reversalJournalId)?.date === j.date && a.nextRunStart === run.start)) { const rj = journalById(a.reversalJournalId); if (rj) { a.reversalJournalId = null; a.reversedBy = null; a.log.push(`Reopened: ${run.label} ${periodLabel(run.start, run.end)} reversed`); reversalOf(rj, date) } }
+  for (const a of payroll.accruals) {
+    if (run.kind !== 'Regular' || a.reversedBy !== 'run' || a.nextRunStart !== run.start) continue
+    const rj = journalById(a.reversalJournalId)
+    if (!rj) continue
+    reversalOf(rj, date)
+    a.reversalJournalId = null; a.reversedBy = null
+    a.log.push(`Reopened: payroll ${periodLabel(run.start, run.end)} was reversed`)
+  }
   // Draft of the ledger version is ready to post again.
   const v = currentVersionOf(run)
   if (v) checkVersion(run, v)
@@ -1834,11 +1845,14 @@ function fixGuard(run: Run | undefined, no?: number): { run: Run; v: RunVersion 
   if (run.versions.some((x) => x.state === 'partial')) return { ok: false, message: `v${run.versions.find((x) => x.state === 'partial')!.no} looks partial. Replace the full run or reject it first.` }
   if (isDraftStale(run.id)) { rebuildDraft(run.id); return { ok: false, stale: true, message: 'Settings changed. The draft was rebuilt; review and try again.' } }
   if (v.holds.length) return { ok: false, message: v.holds[0]!.message }
-  if (!can('post') && !can('fix')) return denied()
   return { run, v }
 }
-function afterFix(run: Run, oldV: RunVersion, v: RunVersion, journals: Journal[]) {
+function retireLedgerVersion(run: Run, oldV: RunVersion, v: RunVersion) {
+  if (oldV !== v) { oldV.state = 'replaced'; oldV.replacedBy = v.no }
   run.ledgerVersion = v.no; run.revised = false
+}
+function afterFix(run: Run, oldV: RunVersion, v: RunVersion, journals: Journal[]) {
+  retireLedgerVersion(run, oldV, v)
   for (const j of journals) addLog({ type: j.type === 'Reversal' ? 'Reversal' : 'Post', status: j.type === 'Reversal' ? 'Reversed' : 'Posted', reason: `${j.memo} (${j.number})`, nextStep: 'Check payables for the change.', runId: run.id, runKey: run.key, version: v.no, journalNo: j.number })
   if (taxChanges(oldV.payload, v.payload).length) openAmendmentTask(run, oldV, v, false)
   reverseAccrualForRun(run, journals[journals.length - 1]!)
@@ -1870,7 +1884,7 @@ export function postDifference(runId: string, no?: number, o: { includeSettingsM
   const lines = differenceLines(run, v, !!o.includeSettingsMoves)
   now()
   if (!lines.length) {
-    run.ledgerVersion = v.no; run.revised = false
+    retireLedgerVersion(run, oldV, v)
     addLog({ type: 'Post', status: 'No change', reason: 'No ledger change', nextStep: 'Nothing to post.', runId, runKey: run.key, version: v.no })
     if (taxChanges(oldV.payload, v.payload).length) openAmendmentTask(run, oldV, v, true)
     return { ok: true, journals: [], message: 'No ledger change' }
@@ -2026,7 +2040,16 @@ function nextPeriod(): { start: string; end: string } {
 }
 function sentNow(): string { return new Date(Date.parse(payroll.clock) + 60_000).toISOString() }
 export function simulateSend(kind: SendKind, o: SimOptions = {}): SendResult {
-  const send = (start: string, end: string, extra: Partial<PayloadOptions> = {}) => receiveSalaryDetail(buildSalaryDetail(payroll.roster, start, end, { sentAt: o.sentAt ?? sentNow(), ...o, ...extra }))
+  const SIM_KEYS: (keyof PayloadOptions)[] = ['newAllowance', 'raise', 'onlyBranch', 'thr', 'gaps', 'taxOff', 'duplicateEmployee', 'taxShift']
+  const send = (start: string, end: string, extra: Partial<PayloadOptions> = {}) => {
+    const opts: Partial<PayloadOptions> = {}
+    for (const k of SIM_KEYS) if (o[k] !== undefined) (opts as Record<string, unknown>)[k] = o[k]
+    Object.assign(opts, extra)
+    const res = receiveSalaryDetail(buildSalaryDetail(payroll.roster, start, end, { ...opts, sentAt: o.sentAt ?? sentNow() }))
+    if (res.ok && !opts.onlyBranch && !opts.thr) payroll.simOptions[`${PAYROLL_COMPANY_ID} / monthly / ${start} / ${end}`] = { ...opts }
+    return res
+  }
+  const saved = (r: Run) => ({ ...(payroll.simOptions[r.baseKey] ?? {}) })
   const lastPosted = () => o.runId ? runById(o.runId) : regularRuns().filter((r) => liveJournals(r.id).length).pop()
   switch (kind) {
     case 'regular': { const p = o.start && o.end ? { start: o.start, end: o.end } : nextPeriod(); return send(p.start, p.end) }
@@ -2040,12 +2063,12 @@ export function simulateSend(kind: SendKind, o: SimOptions = {}): SendResult {
     case 'revision': {
       const r = lastPosted()
       if (!r) return { ok: false, status: 'Failed', message: 'No posted run to revise.' }
-      return send(r.start, r.end, { raise: o.raise ?? { organization: 'Human Capital', amount: 500_000 } })
+      return send(r.start, r.end, { ...saved(r), raise: o.raise ?? { organization: 'Human Capital', amount: 500_000 } })
     }
     case 'partial': {
       const r = o.runId ? runById(o.runId) : regularRuns().pop()
       if (!r) return { ok: false, status: 'Failed', message: 'No run to re-send.' }
-      return send(r.start, r.end, { onlyBranch: o.onlyBranch ?? 'Bandung' })
+      return send(r.start, r.end, { ...saved(r), onlyBranch: o.onlyBranch ?? 'Bandung' })
     }
     case 'separate-run': {
       const r = lastPosted()
@@ -2066,7 +2089,7 @@ export function simulateSend(kind: SendKind, o: SimOptions = {}): SendResult {
     }
     case 'resignation': {
       const r = lastPosted()
-      return receiveEmployeeEvent({ type: 'talenta.employee.resignation.created', employee_id: o.employeeId ?? 'EMP-0038', effective: o.effective ?? (r ? addDays(r.end, -5) : today()) })
+      return receiveEmployeeEvent({ type: 'talenta.employee.resignation.created', employee_id: o.employeeId ?? 'EMP-0036', effective: o.effective ?? (r ? addDays(r.end, -5) : today()) })
     }
     case 'created': {
       const n = payroll.roster.length + 1
@@ -2596,9 +2619,9 @@ function seed() {
   monthCycle('2026-06-21', '2026-07-20', '2026-07-22T03:00:00Z', { pay: '2026-07-24', statutory: { kes: '2026-08-07', tk: '2026-08-12', pph: '2026-08-13' } })
   setClock('2026-07-31T10:00:00Z')
   as('Accountant', () => must(postAccrual('2026-07'), 'accrual Jul'))
-  // EMP-0039 resigns effective 20 Aug (reported before August posts).
+  // EMP-0038 resigns effective 20 Aug (reported before August posts).
   setClock('2026-08-05T02:00:00Z')
-  receiveEmployeeEvent({ type: 'talenta.employee.resignation.created', employee_id: 'EMP-0039', effective: '2026-08-20' })
+  receiveEmployeeEvent({ type: 'talenta.employee.resignation.created', employee_id: 'EMP-0038', effective: '2026-08-20' })
   monthCycle('2026-07-21', '2026-08-20', '2026-08-21T03:00:00Z', { pay: '2026-08-25', statutory: { kes: '2026-09-08', tk: '2026-09-14', pph: '2026-09-14' } })
   setClock('2026-08-25T03:00:00Z')
   receiveEmployeeEvent({ type: 'talenta.employee.detail.created', employee_id: 'EMP-0041', effective: '2026-09-01', to: { organization_name: 'Sales', branch_name: 'Bandung', cost_center_name: 'Regional Sales' } })
