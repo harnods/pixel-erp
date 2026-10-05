@@ -2157,6 +2157,12 @@ function startResize(e: MouseEvent) {
             {{ t('New asset') }}
           </MpButton>
         </div>
+        <!-- Accounting › Budgeting › Saving bucket: fills are budget changes (FG-5). -->
+        <div v-else-if="currentPageKey === 'Saving bucket'" class="page-title-actions">
+          <MpButton is-rounded left-icon="add" data-testid="sb-fill" @click="router.push({ path: '/budget-changes/new', query: { kind: 'Saving fill' } })">
+            {{ t('Fill bucket') }}
+          </MpButton>
+        </div>
         <!-- Sales › Progress invoice / Proforma invoice: + New. -->
         <div v-else-if="currentPageKey === 'Progress invoice' || currentPageKey === 'Proforma invoice'" class="page-title-actions">
           <MpButton is-rounded left-icon="add" @click="router.push(currentPageKey === 'Progress invoice' ? '/progress-invoices/new' : '/proforma-invoices/new')">

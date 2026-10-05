@@ -1369,3 +1369,150 @@ else seed()
 watch(budget, () => saveSnapshot(SNAPSHOT_KEY, [budget]), { deep: true })
 
 export const budgetLinesThisYear = computed(() => budget.lines.filter((l) => l.year === BUDGET_YEAR))
+
+
+// ── saving additions ──
+// Saving bucket (FG-5) and control settings (FG-3.6) helpers for the Saving
+// bucket and Budget settings screens. New functions only; the rules above stay.
+
+export interface SavingBucketStats {
+  /** What the slices can still give: filled − drawn − held by pending draws. */
+  balance: number
+  filled: number
+  drawn: number
+  held: number
+  pendingDraws: number
+}
+
+/** Bucket headline figures for the year, read from the slices (LR-4: nothing stored). */
+export function savingBucketStats(): SavingBucketStats {
+  const slices = savingSlices()
+  return {
+    balance: slices.reduce((s, x) => s + x.balance, 0),
+    filled: slices.reduce((s, x) => s + x.filled, 0),
+    drawn: slices.reduce((s, x) => s + x.drawn, 0),
+    held: slices.reduce((s, x) => s + x.held, 0),
+    pendingDraws: budget.changes.filter((c) => c.kind === 'Saving draw' && c.status === 'Pending').length,
+  }
+}
+
+/** Fills and draws past draft, newest first. */
+export function savingHistory(): ChangeDoc[] {
+  return budget.changes
+    .filter((c) => (c.kind === 'Saving fill' || c.kind === 'Saving draw') && c.status !== 'Draft')
+    .sort((a, b) => (b.submittedAt ?? b.createdAt).localeCompare(a.submittedAt ?? a.createdAt))
+}
+
+/** Who decided a change, or who it waits for. */
+export function changeApprover(c: ChangeDoc): { name: string; decided: boolean } {
+  const decided = [...c.chain].reverse().find((s) => s.status === 'Approved' || s.status === 'Rejected')
+  const waiting = c.chain.find((s) => s.status === 'Waiting')
+  if (c.status === 'Pending' && waiting) return { name: waiting.approver, decided: false }
+  return { name: decided?.approver ?? '-', decided: !!decided }
+}
+
+/** Saving draws waiting for approval; `person` narrows to the draws waiting for them. */
+export function pendingSavingDraws(person?: string): ChangeDoc[] {
+  return budget.changes.filter((c) => c.kind === 'Saving draw' && c.status === 'Pending'
+    && (!person || c.chain.find((s) => s.status === 'Waiting')?.approver === person))
+}
+
+/** FG-5.6: the Budget Controller raises draws; the CFO approves them and never raises one (FG5-AC2). */
+export function canRaiseSavingDraw(person = actingPerson()): { ok: boolean; reason?: string } {
+  if (person === CFO_NAME) return { ok: false, reason: 'The CFO approves saving draws and cannot raise one.' }
+  if (person !== BUDGET_CONTROLLER_NAME) return { ok: false, reason: 'Only the Budget Controller raises saving draws.' }
+  return { ok: true }
+}
+
+/** Guarded draw: refuses the CFO and anyone but the Budget Controller, and an empty or unknown slice. */
+export function raiseSavingDraw(input: { sliceKey: string; toLineId: string; amount: number; reason: string }, person = actingPerson()):
+  { ok: boolean; reason?: string; change?: ChangeDoc } {
+  const can = canRaiseSavingDraw(person)
+  if (!can.ok) return can
+  const slice = savingSlices().find((x) => x.key === input.sliceKey)
+  if (!slice) return { ok: false, reason: 'This saving slice does not exist.' }
+  if (slice.balance <= 0) return { ok: false, reason: 'Nothing is left to draw on this slice.' }
+  return { ok: true, change: drawSaving(input) }
+}
+
+/** Find a slice from the `slice` query value. */
+export function savingSliceByKey(key: string | null | undefined): SavingSlice | undefined {
+  return key ? savingSlices().find((s) => s.key === key) : undefined
+}
+
+// Control settings (FG-3.6): the Finance Admin edits, the CFO approves.
+const FINANCE_ADMIN_NAME = 'Maya Lestari'
+
+export function canEditBudgetSettings(person = actingPerson()): boolean { return person === FINANCE_ADMIN_NAME }
+
+/**
+ * Ask for a settings change. Only the Finance Admin asks, a patch must change
+ * something, and numbers stay in range. The change waits for the CFO.
+ */
+export function requestControlChange(patch: Partial<ControlSettings>, person = actingPerson()):
+  { ok: boolean; reason?: string; change?: SettingChange } {
+  if (!canEditBudgetSettings(person)) return { ok: false, reason: 'Only the Finance Admin changes budget control settings.' }
+  const cur = budget.settings as unknown as Record<string, unknown>
+  const diff = Object.fromEntries(Object.entries(patch).filter(([k, v]) => v !== undefined && cur[k] !== v)) as Partial<ControlSettings>
+  if (!Object.keys(diff).length) return { ok: false, reason: 'Nothing changed.' }
+  const num = (k: keyof ControlSettings, min: number, max: number, label: string) => {
+    const v = diff[k]
+    if (v === undefined) return null
+    return typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max ? null : label
+  }
+  const bad = [
+    num('smallMoveLimit', 0, 1e15, 'Enter the one-approver limit in whole rupiah.'),
+    num('smallMoveDays', 1, 366, 'Enter the running-total window as 1 to 366 days.'),
+    num('fundingCapPct', 0, 100, 'Enter the funding cap as 0 to 100 percent.'),
+    num('fundingPerQuarter', 1, 99, 'Enter funding requests per quarter as a whole number from 1.'),
+    num('invoiceTolerancePct', 0, 100, 'Enter the invoice tolerance as 0 to 100 percent.'),
+  ].find(Boolean)
+  if (bad) return { ok: false, reason: bad }
+  return { ok: true, change: requestSettingsChange(diff) }
+}
+
+export function pendingSettingChanges(): SettingChange[] { return budget.settingChanges.filter((s) => s.status === 'Pending') }
+
+/** A year still taking spend: the engine keeps no closed state, so every year on record is open. */
+export function openBudgetYears(): number[] { return budget.years.map((y) => y.year).sort() }
+
+/** The first open year with a budget line on this account, or null. */
+export function accountOpenLineYear(code: string): number | null {
+  const open = openBudgetYears()
+  return budget.lines.filter((l) => l.account === code && open.includes(l.year)).map((l) => l.year).sort()[0] ?? null
+}
+
+/**
+ * Account class tags set on screen. Kept apart from the ledger snapshot and
+ * applied onto the account list so every rule that reads the class sees it.
+ */
+const CLASS_KEY = 'advanced-budgeting-account-classes'
+export const accountClassTags = reactive<Record<string, BudgetClass | null>>({})
+;(function loadClassTags() {
+  const snapTags = loadSnapshot<Record<string, BudgetClass | null>>(CLASS_KEY)?.[0]
+  if (snapTags) Object.assign(accountClassTags, snapTags)
+  for (const [code, cls] of Object.entries(accountClassTags)) {
+    const a = budgetAccount(code)
+    if (a) a.class = cls
+  }
+})()
+
+/** The class an account carries now (reactive). */
+export function accountClassOf(code: string): BudgetClass | null {
+  return code in accountClassTags ? accountClassTags[code] ?? null : budgetAccount(code)?.class ?? null
+}
+
+/** Finance Admin tags an account Opex or Capex; an account on a line in an open year keeps its class (PSAK 16). */
+export function setAccountClass(code: string, cls: BudgetClass | null, person = actingPerson()): { ok: boolean; reason?: string } {
+  if (!canEditBudgetSettings(person)) return { ok: false, reason: 'Only the Finance Admin sets account classes.' }
+  const a = budgetAccount(code)
+  if (!a) return { ok: false, reason: 'Unknown account.' }
+  if (a.savingOnly) return { ok: false, reason: 'The saving account carries no class.' }
+  const year = accountOpenLineYear(code)
+  if (year !== null) return { ok: false, reason: `This account sits on a ${year} budget line.` }
+  if (accountClassOf(code) === cls) return { ok: false, reason: 'Nothing changed.' }
+  accountClassTags[code] = cls
+  a.class = cls
+  saveSnapshot(CLASS_KEY, [{ ...accountClassTags }])
+  return { ok: true }
+}
