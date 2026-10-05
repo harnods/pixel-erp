@@ -124,13 +124,15 @@ const skuColumns: TableColumn[] = [
   { key: 'lineTags',    label: t('Request type'),        kind: 'tags' },
   { key: 'openWorkOrders', label: t('Open transactions'),                sortable: true, sortType: 'number', align: 'right' },
   { key: 'earliestRequired', label: t('Earliest required'), kind: 'date', sortable: true, sortType: 'date' },
+  // Status sits beside the date it depends on — a row is late or not against its
+  // earliest required date, so the two read together.
+  { key: 'status',      label: t('Status'),              kind: 'status',                 sortType: 'text' },
   { key: 'required',    label: t('Required qty'),                            sortable: true, sortType: 'number', align: 'right' },
   { key: 'reserved',    label: t('Reserved qty'),                            sortable: true, sortType: 'number', align: 'right' },
   { key: 'remaining',   label: t('Remaining qty'),                           sortable: true, sortType: 'number', align: 'right' },
   { key: 'consumed',    label: t('Consumed qty'),                            sortable: true, sortType: 'number', align: 'right' },
   { key: 'destinationWarehouse', label: t('Destination warehouse'), kind: 'name', sortable: true, sortType: 'text' },
   { key: 'available',   label: t('Available qty'),                           sortable: true, sortType: 'number', align: 'right' },
-  { key: 'status',      label: t('Status'),              kind: 'status',                 sortType: 'text' },
 ]
 
 // Column show/hide — first column always on; "Last updated" is opt-in (off by default).
