@@ -53,12 +53,15 @@ function as<T>(role: PayrollRole, fn: () => T): T {
 function visible(el: Element | null | undefined): el is HTMLElement {
   return !!el && (el as HTMLElement).getClientRects().length > 0
 }
-/** The visible table row inside `marker` that contains every text in `texts`. */
+function live(marker: string): HTMLElement | null {
+  return Array.from(document.querySelectorAll<HTMLElement>(`[data-tour="${marker}"]`)).filter(visible).pop() ?? null
+}
+/** The first visible table row inside `marker` that contains every text in `texts`. */
 function rowIn(marker: string, ...texts: string[]): HTMLElement | null {
   const scope = Array.from(document.querySelectorAll(`[data-tour="${marker}"]`)).filter(visible).pop()
   if (!scope) return null
   return Array.from(scope.querySelectorAll<HTMLElement>('tr'))
-    .filter((r) => visible(r) && texts.every((t) => r.innerText.includes(t))).pop() ?? null
+    .find((r) => visible(r) && texts.every((t) => r.innerText.includes(t))) ?? null
 }
 /** The Sales Salaries line for Sales, Bandung in the journal preview, with Why this line open. */
 function whySalesBandung(): HTMLElement | null {
@@ -68,6 +71,7 @@ function whySalesBandung(): HTMLElement | null {
     Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]')).find((b) => visible(b) && b.innerText.trim() === 'Draft review')?.click()
     return null
   }
+  // The line itself comes first; the open explanation is the row after it.
   const link = Array.from(row.querySelectorAll<HTMLElement>('span')).find((s) => s.innerText.trim() === 'Why this line')
   if (link) { link.click(); return null }
   const why = row.nextElementSibling
@@ -151,6 +155,8 @@ const steps: PayrollStep[] = [
     run: financeConfirms,
     route: runRoute,
     target: 'payroll-run-confirm',
+    // Once posted, the confirm notice gives way to the posted figures (Back from a later step).
+    find: () => live('payroll-run-confirm') ?? live('payroll-run-stats'),
     role: 'Finance Manager',
     title: 'The Finance Manager confirms, because the settings changed.',
     body: 'Mapping the new pay item changed the payroll settings since August posted. A draft built on changed settings, or with a guardrail override, needs a Finance Manager to confirm before the Accountant can post it. Each journal keeps a copy of the settings that built it.',
@@ -182,6 +188,8 @@ const steps: PayrollStep[] = [
     run: resend,
     route: runRoute,
     target: 'payroll-holds',
+    // Once the choice is made the hold is gone (Back from a later step): show the run's journals.
+    find: () => live('payroll-holds') ?? live('payroll-run-journals'),
     title: 'Talenta sends September again.',
     body: 'HR corrected Human Capital pay after September posted. A different send for a posted period never posts on its own: Jurnal asks whether it revises the posted run or is a separate run, such as THR or a bonus.',
     watch: 'v2 waits for your choice: Revision of the posted run, or Separate run. 100% of the posted run\'s staff are in this send.',
