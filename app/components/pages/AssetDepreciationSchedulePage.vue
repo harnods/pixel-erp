@@ -21,7 +21,7 @@
  * the commercial ledger, not a parallel one, so a tax line here would
  * overstate depreciation expense with nothing appearing out of balance.
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { MpButton, MpIcon, MpTooltip } from '@mekari/pixel3'
 import { formatIDRWhole } from '~/utils/currency'
 import { successToast, infoToast } from '~/utils/toasts'
@@ -36,7 +36,7 @@ import {
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
   generateRun, postPeriod, draftRunFor, lastPostedPeriod, nextOpenPeriod, periodOfMonth, FY_PERIODS, CURRENT_PERIOD,
-  canChangeValue, viewAs, journals,
+  canChangeValue, viewAs, journals, monthOfPeriod,
 } from '~/data/assetStore'
 import { isAfter, periodLabel, periodEndDate, formatLife } from '~/data/assetEngine'
 import { journalDateFor, journalDatePolicyLabel, autoPostRuns } from '~/data/assetPolicy'
@@ -142,6 +142,20 @@ function viewJournal(p: SchedulePeriod) {
 }
 
 function openAsset(id: string) { router.push(`/assets/${id}`) }
+
+// A link straight to one period (?open=2026-09 expands it) or to the journal
+// a period will post (?review=2026-09 opens Review and post for it).
+const route = useRoute()
+function monthFromQuery(q: unknown): number | null {
+  return typeof q === 'string' && /^\d{4}-\d{2}$/.test(q) ? monthOfPeriod(q) : null
+}
+watch(() => [route.query.open, route.query.review], (_now, before) => {
+  const om = monthFromQuery(route.query.open)
+  if (om !== null) openMonth.value = om
+  const rm = monthFromQuery(route.query.review)
+  if (rm !== null && actionable.value?.month === rm) confirming.value = actionable.value
+  else if (before?.[1] && !route.query.review) confirming.value = null
+}, { immediate: true })
 
 function stateLabel(p: SchedulePeriod) {
   if (p.state === 'posted') return 'Posted'

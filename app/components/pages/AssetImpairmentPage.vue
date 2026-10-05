@@ -216,7 +216,7 @@ function openAsset(id: string) { router.push(`/assets/${id}`) }
       </div>
     </div>
 
-    <div v-for="x in tests" :key="x.id" class="im__card" :class="{ 'im__card--nil': x.outcome === 'Not impaired' }">
+    <div v-for="x in tests" :key="x.id" class="im__card" :class="{ 'im__card--nil': x.outcome === 'Not impaired' }" :data-tour="`imp-card-${x.assetId}`">
       <div class="im__top">
         <div>
           <span class="im__id">{{ x.id }} · {{ x.date }}</span>

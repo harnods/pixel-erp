@@ -311,6 +311,10 @@ watch(() => route.query.filter, (f) => {
   if (f === 'unclassified') showUnclassified()
   else if (f === 'incomplete') showIncomplete()
 }, { immediate: true })
+// ?book=tax or ?book=both opens the register on that book.
+watch(() => route.query.book, (b) => {
+  if (b === 'accounting' || b === 'tax' || b === 'both') book.value = b
+}, { immediate: true })
 
 // rule/export-modal — export opens the shared modal, never a silent download.
 const exportOpen = ref(false)
