@@ -159,6 +159,8 @@ const pageRegistry: Record<string, Component> = {
   'Default accounts':   defineAsyncComponent(() => import('~/components/pages/SettingsDefaultAccountsPage.vue')),
   // Settings → Templates (prod /company/setting#email_template_*, #pdf_signature, ondemand_pdf, #whatsapp_*).
   'Templates':          defineAsyncComponent(() => import('~/components/pages/SettingsTemplatesPage.vue')),
+  // Accounting › Consolidation (prod-parity: one page, in-page left nav across the consolidation sub-areas).
+  'Consolidation':      defineAsyncComponent(() => import('~/components/pages/ConsolidationPage.vue')),
   'Inventory settings':  defineAsyncComponent(() => import('~/components/pages/SettingsInventoryPage.vue')),
   'Production settings': defineAsyncComponent(() => import('~/components/pages/SettingsProductionPage.vue')),
   'Payment terms':      defineAsyncComponent(() => import('~/components/pages/PaymentTermsPage.vue')),
