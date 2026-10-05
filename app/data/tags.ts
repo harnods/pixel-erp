@@ -60,7 +60,7 @@ const SEED: Tag[] = [
   ...usedTagNames().map((name, i) => ({ id: String(i + 1), name, categoryId: CATEGORY_OF[name] ?? null, archived: false })),
   { id: '90', name: 'Promo Ramadan 2025', categoryId: null, archived: true },
   { id: '91', name: 'Bandung pop-up store', categoryId: null, archived: false },
-  { id: '92', name: 'Jakarta Coffee Week 2026 sponsorship and booth activation', categoryId: 'tc-5', archived: false },
+  { id: '92', name: 'Jakarta Coffee Week 2026 sponsor booth activation', categoryId: 'tc-5', archived: false },
 ]
 
 export const tags = reactive<Tag[]>(SEED)

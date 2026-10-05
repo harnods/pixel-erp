@@ -214,7 +214,7 @@ function confirmBulkDelete() {
         </template>
 
         <template #cell-name="{ row }">
-          <span class="cell-link" @click.stop="router.push(`/tags/${asTag(row).id}`)">{{ asTag(row).name }}</span>
+          <span class="cell-link cell-truncate" :title="asTag(row).name" @click.stop="router.push(`/tags/${asTag(row).id}`)">{{ asTag(row).name }}</span>
         </template>
 
         <template #actions="{ row }">
@@ -335,4 +335,5 @@ function confirmBulkDelete() {
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); min-width: 0;
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.cell-truncate { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

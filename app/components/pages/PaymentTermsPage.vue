@@ -87,6 +87,7 @@ function goToCreate() { router.push('/payment-terms/new') }
       </div>
     </template>
 
+    <template #cell-name="{ row }"><span class="cell-truncate" :title="(row as unknown as PaymentTerm).name">{{ (row as unknown as PaymentTerm).name }}</span></template>
     <template #cell-days="{ row }">
       {{ lengthLabel((row as unknown as PaymentTerm).days) }}
     </template>
@@ -161,4 +162,5 @@ function goToCreate() { router.push('/payment-terms/new') }
 .empty-full-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .empty-full-desc { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .empty-full-btn { margin-top: var(--mp-spacing-2); }
+.cell-truncate { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

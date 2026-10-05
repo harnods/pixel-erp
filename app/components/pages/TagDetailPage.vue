@@ -92,6 +92,7 @@ function submitEdit(v: { name: string; categoryId: string | null }) {
               </div>
             </div>
           </template>
+          <template #cell-contact="{ row }"><span class="cell-truncate" :title="asTx(row).contact">{{ asTx(row).contact }}</span></template>
           <template #cell-date="{ row }">{{ formatDate(asTx(row).date) }}</template>
           <template #cell-number="{ row }">
             <span class="cell-link" @click.stop="router.push(asTx(row).link)">{{ asTx(row).number }}</span>
@@ -164,4 +165,5 @@ function submitEdit(v: { name: string; categoryId: string | null }) {
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); min-width: 0;
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.cell-truncate { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

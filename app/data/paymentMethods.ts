@@ -31,7 +31,7 @@ const SEED: PaymentMethod[] = [
   { id: 'pm-10', name: 'Credit card', updatedAt: '2026-07-22T14:05:00', updatedBy: 'Evelyn Bellinda', isUsed: false, isCashLink: false },
   { id: 'pm-11', name: 'QRIS', updatedAt: '2026-08-04T10:30:00', updatedBy: 'Evelyn Bellinda', isUsed: false, isCashLink: false },
   { id: 'pm-12', name: 'Cheque', updatedAt: '2026-08-19T16:45:00', updatedBy: 'Cinta Ayu', isUsed: false, isCashLink: false },
-  { id: 'pm-13', name: 'Bank transfer via BCA Virtual Account for wholesale customers', updatedAt: '2026-09-01T08:15:00', updatedBy: 'Jessie Tan', isUsed: false, isCashLink: false },
+  { id: 'pm-13', name: 'Bank transfer via BCA Virtual Account for wholesale buyers', updatedAt: '2026-09-01T08:15:00', updatedBy: 'Jessie Tan', isUsed: false, isCashLink: false },
 ]
 
 export const paymentMethods = reactive<PaymentMethod[]>(SEED)

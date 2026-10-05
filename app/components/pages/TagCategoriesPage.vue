@@ -98,7 +98,7 @@ function confirmDelete() {
     </template>
 
     <template #cell-name="{ row }">
-      <span class="cell-link" @click.stop="goToCategory(asRow(row))">{{ t(asRow(row).name) }}</span>
+      <span class="cell-link cell-truncate" :title="asRow(row).name" @click.stop="goToCategory(asRow(row))">{{ t(asRow(row).name) }}</span>
     </template>
 
     <template #actions="{ row }">
@@ -165,4 +165,5 @@ function confirmDelete() {
 .empty-illustration { width: 288px; height: 240px; object-fit: contain; margin-bottom: var(--mp-spacing-1); }
 .empty-full-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .empty-full-desc { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.cell-truncate { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

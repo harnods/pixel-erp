@@ -182,10 +182,10 @@ function confirmBulkDelete() {
     </template>
 
     <template #cell-name="{ row }">
-      <span class="cell-link" @click.stop="goToTag(asTag(row))">{{ asTag(row).name }}</span>
+      <span class="cell-link cell-truncate" :title="asTag(row).name" @click.stop="goToTag(asTag(row))">{{ asTag(row).name }}</span>
     </template>
     <template #cell-category="{ row }">
-      <span class="cell-link" @click.stop="goToCategory(asTag(row))">{{ tagCategoryName(asTag(row).categoryId) }}</span>
+      <span class="cell-link cell-truncate" :title="tagCategoryName(asTag(row).categoryId)" @click.stop="goToCategory(asTag(row))">{{ tagCategoryName(asTag(row).categoryId) }}</span>
     </template>
     <template #cell-status="{ row }">
       <ErpStatusBadge :status="asTag(row).archived ? 'archived' : 'active'" />
@@ -279,4 +279,5 @@ function confirmBulkDelete() {
 .empty-full-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .empty-full-desc { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .empty-full-btn { margin-top: var(--mp-spacing-2); }
+.cell-truncate { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

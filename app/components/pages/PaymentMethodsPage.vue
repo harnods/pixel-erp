@@ -144,6 +144,7 @@ function confirmDelete() {
       <MpButton size="sm" variant="secondary" is-rounded @click="openBulkDelete(selectedRows as Set<number>, deselectAll as () => void)">{{ t('Delete') }}</MpButton>
     </template>
 
+    <template #cell-name="{ row }"><span class="cell-truncate" :title="(row as unknown as PaymentMethod).name">{{ (row as unknown as PaymentMethod).name }}</span></template>
     <template #cell-updatedAt="{ row }">
       <LastUpdatedCell :at="(row as unknown as PaymentMethod).updatedAt" :by="(row as unknown as PaymentMethod).updatedBy" />
     </template>
@@ -269,4 +270,5 @@ function confirmDelete() {
 .pmm-label-row { display: flex; align-items: center; justify-content: space-between; }
 .pmm-counter { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
 .pmm-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-4) var(--mp-spacing-5); border-top: 1px solid var(--mp-border-default); }
+.cell-truncate { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

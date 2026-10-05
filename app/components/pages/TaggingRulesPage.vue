@@ -91,6 +91,7 @@ function confirmDelete() {
     </template>
 
     <!-- Name is a plain label in prod — only the Edit action navigates. -->
+    <template #cell-name="{ row }"><span class="cell-truncate" :title="asRule(row).name">{{ asRule(row).name }}</span></template>
     <template #cell-transactionTypeId="{ row }">{{ t(taggingTransactionTypeLabel(asRule(row).transactionTypeId)) }}</template>
     <template #cell-tagType="{ row }">{{ t(TAG_TYPE_LABEL[asRule(row).tagType]) }}</template>
 
@@ -153,4 +154,5 @@ function confirmDelete() {
 .empty-illustration { width: 288px; height: 240px; object-fit: contain; margin-bottom: var(--mp-spacing-1); }
 .empty-full-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .empty-full-btn { margin-top: var(--mp-spacing-2); }
+.cell-truncate { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
