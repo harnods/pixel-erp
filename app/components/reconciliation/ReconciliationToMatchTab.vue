@@ -169,7 +169,11 @@ function createRule(l: ReconStatementLine) {
       </div>
       <div class="filter-search">
         <MpIcon name="search" size="sm" />
-        <input v-model="search" class="filter-search-input btn-enterprise" type="text" :placeholder="t('Search...')" :aria-label="t('Search...')" />
+        <input
+          v-model="search"
+          class="filter-search-input"
+          type="text"
+          :placeholder="t('Search...')" :aria-label="t('Search...')" />
       </div>
     </div>
 
@@ -217,7 +221,6 @@ function createRule(l: ReconStatementLine) {
 
               <div class="tm-side">
                 <template v-if="suggestionFor(l).type === 'none'">
-                  <span class="tm-amount-row"><MpBadge variant="subtle" variant-color="gray">{{ t(CHIP.none.label) }}</MpBadge></span>
                   <span class="tm-desc tm-muted">{{ hint(l) }}</span>
                 </template>
                 <template v-else>

@@ -74,7 +74,11 @@ watch(dragIndex, (now, before) => {
     if (r) toast.notify({ variant: 'success', title: `${t('Rule moved to priority')} ${r.priority}.`, maxWidth: 'max-content' })
   }
 })
-function onGrip(i: number, e: PointerEvent) { if (!reorderDisabled.value) start(i, e) }
+// ErpTablePage hands slots its own row objects, so resolve the page index by id.
+function onGrip(id: string, e: PointerEvent) {
+  const i = (paginated.value as RuleRow[]).findIndex(r => r.id === id)
+  if (i >= 0 && !reorderDisabled.value) start(i, e)
+}
 
 // ── Row actions ──
 const deleteTarget = ref<BankRule | null>(null)
@@ -110,7 +114,11 @@ function confirmDelete() {
         <ColumnSettingsMenu id="br-columns" :items="columnItems" :visibility="columnVisibility" />
         <div class="filter-search">
           <MpIcon name="search" size="sm" />
-          <input v-model="search" class="filter-search-input btn-enterprise" type="text" :placeholder="t('Search...')" :aria-label="t('Search...')" />
+          <input
+          v-model="search"
+          class="filter-search-input"
+          type="text"
+          :placeholder="t('Search...')" :aria-label="t('Search...')" />
         </div>
       </div>
     </template>
@@ -121,7 +129,7 @@ function confirmDelete() {
           class="br-grip"
           :class="{ 'br-grip--inert': reorderDisabled }"
           :aria-label="`${t('Reorder rule with priority')} ${(row as unknown as RuleRow).priority}`"
-          @pointerdown="onGrip((paginated as RuleRow[]).indexOf(row as unknown as RuleRow), $event)"
+          @pointerdown="onGrip((row as unknown as RuleRow).id, $event)"
         ><MpIcon name="drag" size="sm" /></span>
         <span>{{ (row as unknown as RuleRow).priority }}</span>
       </span>

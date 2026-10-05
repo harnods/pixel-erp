@@ -129,7 +129,11 @@ function money(n: number) { return formatMoney(n, props.account.currency) }
         </div>
         <div class="filter-search">
           <MpIcon name="search" size="sm" />
-          <input v-model="search" class="filter-search-input btn-enterprise" type="text" :placeholder="t('Search...')" :aria-label="t('Search...')" />
+          <input
+          v-model="search"
+          class="filter-search-input"
+          type="text"
+          :placeholder="t('Search...')" :aria-label="t('Search...')" />
         </div>
       </template>
 

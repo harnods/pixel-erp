@@ -99,7 +99,11 @@ function confirm() {
               </div>
               <div class="filter-search fm-search">
                 <MpIcon name="search" size="sm" />
-                <input v-model="search" class="filter-search-input btn-enterprise" type="text" :placeholder="t('Search number or description')" :aria-label="t('Search number or description')" />
+                <input
+          v-model="search"
+          class="filter-search-input"
+          type="text"
+          :placeholder="t('Search number or description')" :aria-label="t('Search number or description')" />
               </div>
               <ul v-if="filtered.length" class="fm-list">
                 <li v-for="c in filtered" :key="c.id" class="fm-item" @click="add(c.id)">
@@ -175,7 +179,7 @@ function confirm() {
 .fm-panes { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-4); }
 .fm-pane { display: flex; flex-direction: column; gap: var(--mp-spacing-3); min-width: 0; padding: var(--mp-spacing-4); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); }
 .fm-pane__head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
-.fm-search { width: 100%; box-sizing: border-box; }
+.fm-search { --filter-search-w: 100%; }
 .fm-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; max-height: 320px; overflow-y: auto; }
 .fm-item { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) var(--mp-spacing-1); border-bottom: 1px solid var(--mp-border-default); cursor: pointer; }
 .fm-item:last-child { border-bottom: none; }

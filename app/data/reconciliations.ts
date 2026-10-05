@@ -147,8 +147,8 @@ function buildSeed(a: CashAccount): AccountSeed {
         const other = pending.find(o => o.id !== tx.id && o.direction === tx.direction)
         toMatch.push({ id: lineId, accountId: a.id, date: tx.date, description: bankText(tx.direction, tx.contact), amount: tx.amount, direction: tx.direction, suggestion: { type: 'potential', transactionIds: other ? [tx.id, other.id] : [tx.id] } })
       } else {
-        // Bank amount differs from the book → no suggestion; reconcile via Find match.
-        toMatch.push({ id: lineId, accountId: a.id, date: shiftDate(tx.date, 2), description: `${bankText(tx.direction, tx.contact)} REF ${tx.number}`, amount: Math.round(tx.amount * 0.98), direction: tx.direction, suggestion: { type: 'none', transactionIds: [] } })
+        // Bank feed carries only a reference (no payer name) → no suggestion; reconcile via Find match.
+        toMatch.push({ id: lineId, accountId: a.id, date: shiftDate(tx.date, 2), description: `${tx.direction === 'in' ? 'TRF CR' : 'TRF DB'} REF ${tx.number}`, amount: tx.amount, direction: tx.direction, suggestion: { type: 'none', transactionIds: [] } })
       }
     })
     if (pending.length > 0) {

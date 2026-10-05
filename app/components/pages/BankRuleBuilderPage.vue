@@ -21,8 +21,9 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, toast, css,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import { contacts } from '~/data/contacts'
 import {
-  getBankRule, saveBankRule, nextBankRuleId, reconRailAccounts, MAPPING_COA, contacts,
+  getBankRule, saveBankRule, nextBankRuleId, reconRailAccounts, MAPPING_COA,
   DESCRIPTION_OPERATORS, AMOUNT_OPERATORS, OPERATOR_LABELS, RULE_NAME_MAX_LENGTH,
   type BankRule, type BankRuleField, type BankRuleTrigger, type BankRuleMatchType, type BankRuleMemoMode,
 } from '~/data'

@@ -115,7 +115,11 @@ function goCreate(path: string | null) {
       <p class="recon-rail__title">{{ t('Reconciliations') }}</p>
       <div class="filter-search recon-rail__search">
         <MpIcon name="search" size="sm" />
-        <input v-model="railSearch" class="filter-search-input btn-enterprise" type="text" :placeholder="t('Search account')" :aria-label="t('Search account')" />
+        <input
+          v-model="railSearch"
+          class="filter-search-input"
+          type="text"
+          :placeholder="t('Search account')" :aria-label="t('Search account')" />
       </div>
       <p v-if="railFiltered.length === 0" class="recon-rail__empty">{{ t('No accounts found') }}</p>
       <ul v-else class="recon-rail__list">
@@ -191,7 +195,7 @@ function goCreate(path: string | null) {
                 <MpBadge v-if="account.isConnected" variant="subtle" variant-color="green">{{ t('Connected') }}</MpBadge>
               </div>
               <span class="recon-overview__caption">
-                {{ account.currency }}<template v-if="account.accountNumber"> {{ account.accountNumber }}</template>
+                {{ [account.currency, account.accountNumber].filter(Boolean).join(' ') }}
               </span>
             </div>
           </div>
@@ -267,14 +271,17 @@ function goCreate(path: string | null) {
   text-transform: uppercase;
   color: var(--mp-text-default);
 }
-.recon-rail__search { width: 100%; box-sizing: border-box; }
+.recon-rail__search { --filter-search-w: 100%; }
 .recon-rail__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .recon-rail__row {
   display: flex;
   align-items: flex-start;
   gap: var(--mp-spacing-2);
   width: 100%;
+  justify-content: flex-start;
   text-align: left;
+  white-space: normal;
+  font-weight: var(--mp-font-weights-regular);
   padding: var(--mp-spacing-2);
   border: 1px solid transparent;
   border-radius: var(--mp-radii-md);
