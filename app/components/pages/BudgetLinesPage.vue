@@ -95,7 +95,7 @@ const versionCaption = computed(() => {
   return v ? t(`${v.type} · ${shortDate(v.at)}`) : ''
 })
 const scopeCaption = computed(() => (hasActiveFilter.value ? t('Matching the filters') : access.value.dept ? t('Your department') : t('All lines')))
-const asOf = computed(() => t(`Budget ${year.value} · as of ${shortDate(BUDGET_TODAY)}`))
+const asOf = computed(() => t(`Year ${year.value} · as of ${shortDate(BUDGET_TODAY)}`))
 
 // ── Actions ─────────────────────────────────────────────────────────────────
 const formOpen = ref(false)
@@ -181,7 +181,7 @@ watch(() => budget.viewAs, () => { refusal.value = '' })
         </div>
         <div class="stat-card stat-card--bordered">
           <div class="stat-title">{{ t('Available') }}</div>
-          <div class="stat-period">{{ t('Budget less reserved, committed, actual and held') }}</div>
+          <div class="stat-period">{{ asOf }}</div>
           <div class="stat-amount" :class="{ 'stat-amount--danger': totals.available < 0 }">{{ formatIDRWhole(totals.available) }}</div>
         </div>
         <div class="stat-card">
@@ -200,7 +200,7 @@ watch(() => budget.viewAs, () => { refusal.value = '' })
 
     <template #filters>
       <div class="filter-left" data-tour="budget-lines-filters">
-        <ErpFilterSelect id="bl-year" v-model="yearValue" :placeholder="t('Budget year')" :options="yearOptions" width="184px" :is-clearable="false" />
+        <ErpFilterSelect id="bl-year" v-model="yearValue" :placeholder="t('Budget year')" :options="yearOptions" width="208px" :is-clearable="false" />
         <MultiSelectDropdown id="bl-dept" v-model="deptPick" :options="DEPT_OPTIONS.map((o) => o.label)" :placeholder="t('Department')" />
         <MultiSelectDropdown id="bl-project" v-model="projectPick" :options="PROJECT_OPTIONS.map((o) => o.label)" :placeholder="t('Project')" />
         <MpButton class="filter-all-btn" :class="{ 'filter-all-btn--active': filterCount > 0 }" @click="filtersOpen = true">
@@ -323,9 +323,9 @@ watch(() => budget.viewAs, () => { refusal.value = '' })
 .filter-all-btn--active {
   background: var(--mp-background-neutral-subtle) !important;
   border-color: var(--mp-colors-border-bold, #8c9596) !important;
-  color: var(--mp-text-selected, var(--mp-text-information)) !important;
+  color: var(--mp-text-selected, var(--mp-colors-text-link, #165082)) !important;
 }
-.filter-left :deep(.msd-field) { width: 160px; }
+.filter-left :deep(.msd-field) { width: 152px; }
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2); width: var(--filter-search-w, 248px);
   padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral);
@@ -341,7 +341,7 @@ watch(() => budget.viewAs, () => { refusal.value = '' })
   border: none; background: transparent; cursor: pointer; color: var(--mp-text-secondary);
 }
 
-.cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.cell-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .bl-negative { color: var(--mp-text-danger); font-weight: var(--mp-font-weights-semi-bold); }
 .bl-muted { color: var(--mp-text-secondary); }
 

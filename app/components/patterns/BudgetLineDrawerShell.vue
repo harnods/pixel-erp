@@ -71,7 +71,7 @@ const emit = defineEmits<{ close: [] }>()
   display: inline-flex !important; align-items: center; justify-content: center;
   width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important; min-width: 0 !important;
   border: none !important; background: none !important; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default);
+  cursor: pointer; color: var(--mp-colors-icon-default);
 }
 .bld-close:hover { background: var(--mp-background-neutral-hovered); }
 .bld-body {

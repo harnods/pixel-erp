@@ -58,7 +58,14 @@ function save() {
     emit('close')
     return
   }
-  if (!project.value) { errors.value = [t('Pick a project, or (no project) for costs that belong to no project.')]; return }
+  if (!project.value) {
+    errors.value = [
+      ...(!dept.value ? [t('Pick a department.')] : []),
+      t('Pick a project, or (no project) for costs that belong to no project.'),
+      ...(!account.value ? [t('Pick an account.')] : []),
+    ]
+    return
+  }
   const res = addDraftLine({
     year: props.year, account: account.value, dept: dept.value,
     project: project.value === NO_PROJECT ? null : project.value,

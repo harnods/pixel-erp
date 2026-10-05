@@ -27,7 +27,7 @@ const locked = computed(() => !!line.value && isLocked(line.value.year))
 const year = computed(() => line.value?.year ?? BUDGET_YEAR)
 
 const fig = computed(() => (line.value ? yearFigures(line.value.id) : null))
-const asOf = computed(() => t(`Budget ${year.value} · as of ${shortDate(BUDGET_TODAY)}`))
+const asOf = computed(() => t(`Year ${year.value} · as of ${shortDate(BUDGET_TODAY)}`))
 
 interface Stat { label: string; value: number; danger?: boolean; sub?: string }
 const stats = computed<Stat[]>(() => {
@@ -288,7 +288,7 @@ function openDoc(link: string | null) { if (link) router.push(link) }
 .stat-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding-right: var(--mp-spacing-6); align-self: stretch; }
 .stat-card--bordered { border-right: 1px solid var(--mp-border-default); }
 .stat-title { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); white-space: nowrap; }
-.stat-period { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat-period { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); }
 .stat-amount { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-2xl, 32px); white-space: nowrap; }
 .stat-amount--danger { color: var(--mp-text-danger); }
 .stat-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
