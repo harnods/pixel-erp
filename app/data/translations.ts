@@ -3813,6 +3813,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Partial consume and partial completion cannot both be on — turning one on turns the other off.': 'Konsumsi bertahap dan penyelesaian bertahap tidak bisa aktif bersamaan — mengaktifkan salah satu akan menonaktifkan yang lain.',
   'A work order can start only once every component is reserved in full.': 'Perintah kerja baru bisa dimulai setelah semua komponen direservasi penuh.',
   'Start with limited stock': 'Mulai dengan stok terbatas',
+  'Product name': 'Nama produk',
+  'Work order number': 'Nomor perintah kerja',
   // Request additional stock (D-7)
   'Request additional stock': 'Minta stok tambahan',
   // Edit work order materials (UC-06, Not started)

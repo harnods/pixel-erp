@@ -14,7 +14,7 @@
  */
 import {
   MpButton, MpButtonGroup, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, toast, css,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpSegmentedControl, toast, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -59,17 +59,27 @@ const showAll = computed(() => route.query.tab === 'All')
 // without renaming anything. ─────────────────────────────────────────────────
 type GroupBy = 'product' | 'transaction'
 const view = ref<GroupBy>('product')
+/**
+ * W-1 — the two views are a "which view am I on" switch, not a filter: picking one
+ * changes what a row IS (a component vs a transaction), not which rows pass. So it
+ * is a segmented control above the filter bar (rule/segmented-control-pill) rather
+ * than a select inside it, where it read as a third filter.
+ */
+// MpSegmentedControl needs an `id` per item — without one the radios don't bind
+// and the switch silently does nothing.
 const viewOptions = [
-  { label: t('By product'),     value: 'product'     },
-  { label: t('By transaction'), value: 'transaction' },
+  { id: 'sr-view-product',     label: t('By product'),     value: 'product'     },
+  { id: 'sr-view-transaction', label: t('By transaction'), value: 'transaction' },
 ]
 
 // ─── Columns — semantic `kind`s only, no pixel widths (rule/table-column-kind) ──
 // By transaction (W-2 covers the product view; this one mirrors the request record).
 const woColumns: TableColumn[] = [
-  { key: 'workOrderNumber',     label: t('WO number'),             kind: 'number', sortable: true, sortType: 'text' },
-  { key: 'woStartDate',         label: t('WO start date'),         kind: 'date',   sortable: true, sortType: 'date' },
-  { key: 'status',              label: t('WO status'),             kind: 'status',                 sortType: 'text' },
+  // The row IS the work order, so its date and status need no "WO" prefix — the
+  // first column already says what the row is.
+  { key: 'workOrderNumber',     label: t('Work order number'),     kind: 'number', sortable: true, sortType: 'text' },
+  { key: 'woStartDate',         label: t('Start date'),            kind: 'date',   sortable: true, sortType: 'date' },
+  { key: 'status',              label: t('Status'),                kind: 'status',                 sortType: 'text' },
   { key: 'destinationWarehouse', label: t('Destination warehouse'), kind: 'name',  sortable: true, sortType: 'text' },
 ]
 /**
@@ -82,13 +92,14 @@ const woColumns: TableColumn[] = [
  * carrying several availability figures, each destination gets its own row, so
  * every number on a row belongs to one warehouse.
  *
- * "Component" is split into SKU code + SKU name, which is how every other product
- * table in this app reads.
+ * "Component" is split into product name + SKU, which is how every other product
+ * table in this app reads: the name leads, because that is what a stockist scans
+ * for, and the SKU qualifies it.
  */
 const skuColumns: TableColumn[] = [
   { key: 'lane',        label: '',                       width: '56px', noHeader: true },
-  { key: 'sku',         label: t('SKU code'),            kind: 'number', sortable: true, sortType: 'text' },
-  { key: 'product',     label: t('SKU name'),            kind: 'name',   sortable: true, sortType: 'text' },
+  { key: 'product',     label: t('Product name'),        kind: 'name',   sortable: true, sortType: 'text' },
+  { key: 'sku',         label: t('SKU'),                 kind: 'number', sortable: true, sortType: 'text' },
   { key: 'openWorkOrders', label: t('Open transactions'),                sortable: true, sortType: 'number', align: 'right' },
   { key: 'earliestRequired', label: t('Earliest required'), kind: 'date', sortable: true, sortType: 'date' },
   { key: 'required',    label: t('Required qty'),                            sortable: true, sortType: 'number', align: 'right' },
@@ -399,16 +410,17 @@ const exportColumns = computed(() => {
     @hide-column="hideColumn"
     @clear-filters="clearFilters"
   >
+    <!-- ── View switch (W-1) — above the filter bar, because it changes what a row
+         IS rather than which rows pass (rule/segmented-control-pill). ── -->
+    <template #stats>
+      <div class="sr-viewbar">
+        <MpSegmentedControl id="sr-group-by" name="sr-group-by" v-model="view" :data="viewOptions" />
+      </div>
+    </template>
+
     <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
-        <!-- Group by (W-1) — how the table is grouped, not what it filters, so it
-             sits ahead of the divider. Always set, so it is not clearable. -->
-        <ErpFilterSelect
-          id="sr-group-by" v-model="view" :placeholder="t('Group by')"
-          :options="viewOptions" :is-clearable="false"
-        />
-        <span class="filter-divider" aria-hidden="true" />
         <ErpFilterSelect id="sr-status" v-model="statusFilter" :placeholder="t('Status')" :options="stockRequestStatusOptions" />
         <AdvanceDateFilter id="sr-date-filter" v-model="dateFilter" :today="TODAY" :placeholder="t('Request date')" />
         <MpButton
@@ -457,15 +469,15 @@ const exportColumns = computed(() => {
 
     <!-- ══ By product ════════════════════════════════════════════════════════ -->
 
-    <!-- SKU code — carries the accordion toggle for the row -->
-    <template #cell-sku="{ row }">
+    <!-- Product name — the first column, so it carries the accordion toggle -->
+    <template #cell-product="{ row }">
       <span
         class="sr-component" role="button"
         :aria-expanded="!!expanded[sku(row).key]"
         @click.stop="toggleExpand(sku(row).key)"
       >
         <span class="sr-component-main">
-          <span class="sr-component-name">{{ sku(row).sku }}</span>
+          <span class="sr-component-name" :title="sku(row).product">{{ sku(row).product }}</span>
           <span class="sr-expand" :class="{ 'sr-expand--open': expanded[sku(row).key] }" aria-hidden="true">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -473,15 +485,15 @@ const exportColumns = computed(() => {
           </span>
         </span>
       </span>
-    </template>
-
-    <template #cell-product="{ row }">
-      <span class="cell-text" :title="sku(row).product">{{ sku(row).product }}</span>
       <!-- W-6 — stock went minus after a backdated transaction -->
       <span v-if="sku(row).backdate" class="sr-note">
         <MpIcon name="warning" size="sm" />
         {{ t('Stock minus after recalculation') }} — {{ sku(row).backdate!.transaction }}
       </span>
+    </template>
+
+    <template #cell-sku="{ row }">
+      <span class="cell-text">{{ sku(row).sku }}</span>
     </template>
 
     <template #cell-destinationWarehouse="{ row }">
@@ -520,14 +532,16 @@ const exportColumns = computed(() => {
         >
           <td v-for="col in cols" :key="col.key" class="sr-child-td" :class="{ 'sr-child-td--right': col.align === 'right' }">
             <template v-if="col.key === 'lane'" />
-            <span v-else-if="col.key === 'sku'" class="sr-child-wo">
-              <span class="cell-link" @click="viewDetails(entry.requestId)">{{ entry.workOrderNumber }}</span>
+            <!-- The work order sits under the first data column, which is now
+                 Product name — a breakdown row names its transaction first. -->
+            <span v-else-if="col.key === 'product'" class="sr-child-wo">
+              <span class="cell-link cell-text" @click="viewDetails(entry.requestId)">{{ entry.workOrderNumber }}</span>
               <!-- W-7 — the tag is a property of the LINE, so it sits on the
                    breakdown row, not on the aggregated product row above. -->
               <span v-if="entry.tag" class="sr-tag" :class="`sr-tag--${entry.tag}`">{{ entry.tag === 'additional' ? t('Additional stock') : t('Adjustment') }}</span>
             </span>
             <!-- Requestor: who last CHANGED this line's demand (OPEN-17). -->
-            <template v-else-if="col.key === 'product'">{{ entry.requestor }}</template>
+            <span v-else-if="col.key === 'sku'" class="cell-text" :title="entry.requestor">{{ entry.requestor }}</span>
             <template v-else-if="col.key === 'earliestRequired'">{{ formatDate(entry.requiredDate) }}</template>
             <template v-else-if="col.key === 'required'">{{ entry.qty }} {{ sku(row).unit }}</template>
             <template v-else-if="col.key === 'reserved'">{{ entry.covered }} {{ sku(row).unit }}</template>
@@ -548,13 +562,26 @@ const exportColumns = computed(() => {
           class="sr-child"
         >
           <td v-for="col in cols" :key="col.key" class="sr-child-td" :class="{ 'sr-child-td--right': col.align === 'right' }">
+            <!-- The component name wraps rather than truncating: a breakdown row
+                 may be taller than its parent, and the name is the thing the
+                 stockist is reading. -->
             <span v-if="col.key === 'workOrderNumber'" class="sr-child-sku">
-              <span class="sr-child-sku-code">{{ line.sku }}</span>
               <span class="sr-child-sku-name">{{ line.product }}</span>
+              <span class="sr-child-sku-code">{{ line.sku }}</span>
             </span>
-            <template v-else-if="col.key === 'woStartDate'">{{ line.qty }} {{ line.unit }}</template>
-            <template v-else-if="col.key === 'status'">{{ t('Required by') }} {{ formatDate(line.requiredDate) }}</template>
-            <template v-else-if="col.key === 'destinationWarehouse'">{{ line.destinationWarehouse }}</template>
+            <!-- A breakdown row is a COMPONENT line, so its cells don't mean what
+                 the headers above them say. Each value carries its own small label
+                 instead of borrowing the parent's — which is also why "Required by
+                 24/06/2026" used to run out of the narrow Status column. -->
+            <span v-else-if="col.key === 'woStartDate'" class="sr-child-field">
+              <span class="sr-child-label">{{ t('Qty') }}</span>
+              <span class="cell-text">{{ line.qty }} {{ line.unit }}</span>
+            </span>
+            <span v-else-if="col.key === 'status'" class="sr-child-field">
+              <span class="sr-child-label">{{ t('Required by') }}</span>
+              <span class="cell-text">{{ formatDate(line.requiredDate) }}</span>
+            </span>
+            <span v-else-if="col.key === 'destinationWarehouse'" class="cell-text" :title="line.destinationWarehouse">{{ line.destinationWarehouse }}</span>
           </td>
           <td v-if="showSpacer" class="sr-child-td sr-child-td--spacer" />
           <td class="sr-child-td sr-child-td--actions" />
@@ -573,7 +600,9 @@ const exportColumns = computed(() => {
             <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </span>
-        <span class="cell-link cell-text" @click.stop="viewDetails(wo(row).id)">{{ t('Work order') }} {{ wo(row).workOrderNumber }}</span>
+        <!-- The header says "Work order number", so the cell carries the number
+             alone — repeating "Work order" on every row only ate the column. -->
+        <span class="cell-link cell-text" @click.stop="viewDetails(wo(row).id)">{{ wo(row).workOrderNumber }}</span>
         <!-- W-7 — tags live on LINES now, so a request shows one chip per tag its
              lines carry rather than a single tag of its own. -->
         <span
@@ -685,7 +714,8 @@ const exportColumns = computed(() => {
 .sr-expand { display: inline-flex; flex-shrink: 0; color: var(--mp-text-subtle, #656f80); transition: transform 150ms ease; }
 .sr-expand--open { transform: rotate(180deg); }
 .sr-component:hover .sr-expand { color: var(--mp-text-default, #080d0e); }
-.sr-component-name { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Table body text is regular weight, never semibold (docs/table-design.md). */
+.sr-component-name { color: var(--mp-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sr-component-sku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary, #3a4749); }
 
 /* A shortfall, a negative Available, and an outstanding child line all read red */
@@ -738,17 +768,33 @@ const exportColumns = computed(() => {
 /* Indent the first cell so the child reads as nested under its component. */
 .sr-child-td:first-child { padding-left: var(--mp-spacing-8); }
 .sr-child-sku { display: flex; flex-direction: column; min-width: 0; }
-.sr-child-sku-code { color: var(--mp-text-default, #080d0e); }
-.sr-child-sku-name { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary, #3a4749); }
+.sr-child-sku-name {
+  color: var(--mp-text-default, #080d0e);
+  white-space: normal; overflow-wrap: anywhere;
+}
+.sr-child-sku-code { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary, #3a4749); }
 .sr-child-wo { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
+/* A breakdown cell labels its own value, because the header above it describes
+   the parent row, not this one. */
+.sr-child-field { display: flex; flex-direction: column; min-width: 0; }
+.sr-child-label {
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary, #3a4749);
+  white-space: nowrap;
+}
 .sr-child-state { white-space: nowrap; }
 .sr-covered { color: var(--mp-text-success, #186f4a); }
 
+/* ── View switch ──────────────────────────────────────────────────────────
+   Sits in ErpTablePage's #stats slot, which is the band above the filter bar.
+   That slot is built for stat tiles and carries their bottom margin, so the
+   gap is reset to a normal control gap here. */
+.sr-viewbar { display: flex; align-items: center; }
+:deep(.erp-stats-bar) { margin-bottom: var(--mp-spacing-4); }
+
 /* ── Filter bar ───────────────────────────────────────────────────────────
    Only `.filter-search` is global (erp.css); the group layout is per page.
-   Group by is separated from the filters by a divider — it changes HOW the
-   table is grouped, not WHAT it shows — and both groups wrap with a real row
-   gap instead of being squeezed edge-to-edge once the bar runs out of room. */
+   Both groups wrap with a real row gap instead of being squeezed edge-to-edge
+   once the bar runs out of room. */
 /* 8px between controls, matching the Production request filter bar. `flex: 0 0 auto`
    keeps the left group from wrapping while the right still has width to give — the
    search shrinks first, and only once it hits its floor do the groups wrap. */

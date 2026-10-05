@@ -250,12 +250,25 @@ function onDayClick(cell: Cell) {
    38px tall (--mp-sizes-9.5), border = --mp-colors-border-form. Short --mp-*
    aliases are EMPTY in this Pixel build → use the full --mp-colors-* tokens. */
 .adf-trigger {
+  /* Metrics follow ErpFilterSelect's .efs-trigger exactly (rule/select-field-metrics):
+     176px × 38px, the translucent form border, and — the one MpButton leaks that
+     this used to miss — REGULAR weight. MpButton's own semibold made this trigger
+     read bolder than the selects beside it in the same filter bar. */
   display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2);
-  min-width: 160px !important; height: var(--mp-sizes-9\.5, 38px);
+  width: var(--adf-w, 176px) !important; min-width: var(--adf-w, 176px) !important;
+  height: var(--mp-sizes-9\.5, 38px);
   padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-3) !important;
   border: 1px solid var(--mp-colors-border-form, #1d1f2429) !important; border-radius: var(--mp-radii-md) !important;
   background: var(--mp-colors-background-neutral, #fff) !important; color: var(--mp-colors-text-default, #080d0e);
-  font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); cursor: pointer;
+  font-size: var(--mp-font-sizes-md) !important; line-height: var(--mp-line-heights-md);
+  font-weight: var(--mp-font-weights-regular, 400) !important;
+  cursor: pointer;
+}
+/* Same neutral focus ring as every other select (rule/select-active-neutral). */
+.adf-trigger:focus-visible {
+  border-color: var(--mp-colors-border-bold, #8c9596) !important;
+  box-shadow: 0 0 0 1px var(--mp-colors-border-bold, #8c9596) !important; /* pixel-police-allow-shadow */
+  outline: none;
 }
 .adf-trigger:hover { border-color: var(--mp-colors-border-bold, #8c9596); }
 .adf-trigger svg { color: var(--mp-icon-default, var(--mp-text-secondary)); flex-shrink: 0; }
