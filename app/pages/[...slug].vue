@@ -122,6 +122,9 @@ const pageRegistry: Record<string, Component> = {
   'Sales invoices':    defineAsyncComponent(() => import('~/components/pages/SalesInvoicesPage.vue')),
   'Purchase invoices': defineAsyncComponent(() => import('~/components/pages/PurchaseInvoicesPage.vue')),
   'Sales orders':      defineAsyncComponent(() => import('~/components/pages/SalesOrdersPage.vue')),
+  // Sales › Progress invoice (prod proforma_type) / Proforma invoice (prod order_proforma_type).
+  'Progress invoice':  defineAsyncComponent(() => import('~/components/pages/ProgressInvoicesPage.vue')),
+  'Proforma invoice':  defineAsyncComponent(() => import('~/components/pages/ProgressInvoicesPage.vue')),
   'Sales quotes':      defineAsyncComponent(() => import('~/components/pages/SalesQuotesPage.vue')),
   'Sales deliveries':  defineAsyncComponent(() => import('~/components/pages/SalesDeliveriesPage.vue')),
   'Warehouses':        defineAsyncComponent(() => import('~/components/pages/WarehousesPage.vue')),
@@ -453,6 +456,8 @@ watch(() => [currentPageKey.value, route.query.fromPr] as const, ([key, fromPr])
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
 const AssetDetailPage = asyncPage(() => import('~/components/pages/AssetDetailPage.vue'))
 const CurrentAssetDetailPage = asyncPage(() => import('~/components/pages/CurrentAssetDetailPage.vue'))
+const ProgressInvoiceDetailPage = asyncPage(() => import('~/components/pages/ProgressInvoiceDetailPage.vue'))
+const ProgressInvoiceFormPage = asyncPage(() => import('~/components/pages/ProgressInvoiceFormPage.vue'))
 const CurrentAssetFormPage = asyncPage(() => import('~/components/pages/CurrentAssetFormPage.vue'))
 const CurrentAssetDisposalPage = asyncPage(() => import('~/components/pages/CurrentAssetDisposalPage.vue'))
 const CurrentAssetImportPage = asyncPage(() => import('~/components/pages/CurrentAssetImportPage.vue'))
@@ -756,6 +761,11 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'expense') return { component: ProjectExpensePage, id: 'new' }
     if (segs[1] === 'invoice') return { component: ProjectInvoicePage, id: 'new' }
     return { component: ProjectEngagementDetailsPage, id: segs[1]! }
+  }
+  // /progress-invoices/{new|:id} and /proforma-invoices/{new|:id} → Sales › Progress / Proforma invoice.
+  if (segs.length >= 2 && (segs[0] === 'progress-invoices' || segs[0] === 'proforma-invoices')) {
+    if (segs[1] === 'new') return { component: ProgressInvoiceFormPage, id: 'new' }
+    return { component: ProgressInvoiceDetailPage, id: segs[1]! }
   }
   // /current-assets/{new|import|:id|:id/edit|:id/disposal} → Fixed assets (current).
   if (segs.length >= 2 && segs[0] === 'current-assets') {
@@ -2076,6 +2086,12 @@ function startResize(e: MouseEvent) {
         <div v-else-if="currentPageKey === 'Assets'" class="page-title-actions">
           <MpButton is-rounded left-icon="add" @click="newAssetDrawerOpen = true">
             {{ t('New asset') }}
+          </MpButton>
+        </div>
+        <!-- Sales › Progress invoice / Proforma invoice: + New. -->
+        <div v-else-if="currentPageKey === 'Progress invoice' || currentPageKey === 'Proforma invoice'" class="page-title-actions">
+          <MpButton is-rounded left-icon="add" @click="router.push(currentPageKey === 'Progress invoice' ? '/progress-invoices/new' : '/proforma-invoices/new')">
+            {{ currentPageKey === 'Progress invoice' ? t('New progress invoice') : t('New proforma invoice') }}
           </MpButton>
         </div>
         <!-- Accounting › Fixed assets (current) › Asset list: Import + New asset. -->
