@@ -443,6 +443,13 @@ const erpNavGroups: NavItem[][] = [
             { label: 'Budget report' },
             { label: 'Budget settings' },
           ] },
+          { label: 'Payroll', children: [
+            { label: 'Payroll inbox' },
+            { label: 'Payroll payables' },
+            { label: 'Payroll reconciliation' },
+            { label: 'Payroll accrual' },
+            { label: 'Payroll settings' },
+          ] },
           { label: 'Bank rules' },
           { label: 'Project accounting' },
         ],
