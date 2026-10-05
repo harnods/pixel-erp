@@ -351,7 +351,7 @@ const lastUpdated = computed(() => `${t('Last updated on')} ${bsPlDayLabel(SIM_T
                     <span class="plr-th-inner">{{ t('Date') }}
                       <MpTooltip v-if="isCompare && applied!.period !== 'this_financial_year'" id="plr-sort" :label="t('You can sort your report period in ascending or descending.')" placement="top" use-portal>
                         <button class="plr-sort" type="button" :aria-label="t('Sort periods')" @click="toggleOrder">
-                          <MpIcon :name="applied!.order === 'asc' ? 'caret-right' : 'caret-left'" size="sm" />
+                          <MpIcon name="caret-right" size="sm" :class="{ 'plr-sort--desc': applied!.order === 'desc' }" />
                         </button>
                       </MpTooltip>
                     </span>
@@ -528,6 +528,7 @@ const lastUpdated = computed(() => `${t('Last updated on')} ${bsPlDayLabel(SIM_T
 .plr-table { width: 100%; min-width: 720px; border-collapse: collapse; }
 .plr-th { padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; letter-spacing: 0.3px; color: var(--mp-text-secondary); text-align: left; white-space: nowrap; }
 .plr-th-inner { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
+.plr-sort--desc { transform: rotate(180deg); }
 .plr-sort { display: inline-flex; align-items: center; border: none; background: none; padding: 0; cursor: pointer; color: var(--mp-colors-icon-default); }
 .plr-td { height: 40px; padding: var(--mp-spacing-2) var(--mp-spacing-3); border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; vertical-align: middle; }
 .plr--compact .plr-td { height: 28px; padding-top: var(--mp-spacing-1); padding-bottom: var(--mp-spacing-1); }
