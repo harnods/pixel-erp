@@ -16,13 +16,13 @@
  *     product lines (prod adds tax lines, see person_transaction_service_improvement.rb),
  *     Subtotal per customer, grand Total — includes tax, so it equals the list's Total.
  *   - Sales by product: per product Sales qty · Return qty · Unit · Sales value · Return value ·
- *     Average sales value (tax-exclusive line amounts, as prod sums transaction_lines.amount);
- *     detailed version nests the transactions under each product.
+ *     Average sales value; detailed version nests the transactions under each product.
+ *     Deviation from prod (which sums tax-exclusive transaction_lines.amount): Sales value /
+ *     Final price carry each line's share of the invoice discount and PPN, so the report's
+ *     total equals the Sales list Total, as the wave-3 brief requires.
  *
  * Tie-out (asserted in dev, see `assertSalesReportsTie`): for the same period + filters
- *   Σ by-customer = Σ sales-list Total
- *   Σ by-product sales value − Σ invoice discounts + Σ tax = Σ sales-list Total
- *   Σ by-product sales value = Σ by-customer product lines
+ *   Σ by-customer Total = Σ by-product Total sales value = Σ sales-list Total
  */
 import { salesInvoices } from './salesInvoices'
 import { getSalesInvoiceDetail } from './salesInvoiceDetails'
@@ -200,6 +200,8 @@ export interface SalesLine {
   /** this line's share of the invoice-level discount and of the tax (largest remainder, sums exactly) */
   discountShare: number
   taxShare: number
+  /** the line's share of the invoice total: amount − discountShare + taxShare (Σ per invoice = invoice total) */
+  finalPrice: number
 }
 
 interface InvoiceBundle { row: SalesListRow; lines: SalesLine[]; discount: number; tax: number }
@@ -245,7 +247,7 @@ function bundles(): InvoiceBundle[] {
         productId: p?.id ?? li.sku, sku: li.sku, productName: li.product, category: p?.category ?? '',
         description: li.description, qty: li.qty, unit: li.unit, unitPrice: li.unitPrice,
         discountPct: li.discountPct, totalPrice: li.qty * li.unitPrice, amount: li.amount,
-        discountShare: dShare[j]!, taxShare: tShare[j]!,
+        discountShare: dShare[j]!, taxShare: tShare[j]!, finalPrice: li.amount - dShare[j]! + tShare[j]!,
       }
     })
     return { row, lines, discount: t.globalDiscount, tax: t.taxAmount }
@@ -377,7 +379,7 @@ export function salesByProductReport(f: SalesReportFilters): SalesByProductResul
         map.set(l.sku, g)
       }
       g.lines.push(l)
-      g.salesQty += l.qty; g.salesValue += l.amount; g.totalPrice += l.totalPrice
+      g.salesQty += l.qty; g.salesValue += l.finalPrice; g.totalPrice += l.totalPrice
       g.discountShare += l.discountShare; g.taxShare += l.taxShare
     }
   }
@@ -428,11 +430,13 @@ export function assertSalesReportsTie(f: SalesReportFilters): { list: number; by
   const discount = prod.products.reduce((s, g) => s + g.discountShare, 0)
   const tax = prod.products.reduce((s, g) => s + g.taxShare, 0)
   if (prod.products.reduce((s, g) => s + g.salesValue, 0) !== prod.totals.salesValue) fail('by-product total ≠ Σ products')
-  if (prod.totals.salesValue - discount + tax !== list.totals.total) fail(`by-product ${prod.totals.salesValue} − discount ${discount} + tax ${tax} ≠ sales list Total ${list.totals.total}`)
+  if (prod.totals.salesValue !== list.totals.total) fail(`by-product Total sales value ${prod.totals.salesValue} ≠ sales list Total ${list.totals.total}`)
+  if (prod.totals.salesValue !== cust.total) fail(`by-product ${prod.totals.salesValue} ≠ by-customer ${cust.total}`)
   if (tax !== list.totals.tax) fail('by-product tax share ≠ sales list Total Tax')
+  const lineAmounts = prod.products.reduce((s, g) => s + g.lines.reduce((a, l) => a + l.amount, 0), 0)
   const custProductLines = cust.groups.reduce((s, g) => s + g.rows.filter((r) => r.kind === 'product').reduce((a, r) => a + r.amount, 0), 0)
-  if (custProductLines !== prod.totals.salesValue) fail(`by-customer product lines ${custProductLines} ≠ by-product Total sales value ${prod.totals.salesValue}`)
-  if (prod.totals.salesValue - discount !== list.totals.gross) fail('by-product net of discounts ≠ sales list Gross Amount')
+  if (custProductLines !== lineAmounts) fail(`by-customer product lines ${custProductLines} ≠ by-product line amounts ${lineAmounts}`)
+  if (lineAmounts - discount !== list.totals.gross) fail('line amounts net of invoice discounts ≠ sales list Gross Amount')
   return { list: list.totals.total, byCustomer: cust.total, byProduct: prod.totals.salesValue, discount, tax }
 }
 

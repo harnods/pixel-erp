@@ -509,6 +509,9 @@ const WmsOverviewPage = asyncPage(() => import('~/components/pages/WmsOverviewPa
 const WmsReportDetailPage = asyncPage(() => import('~/components/pages/WmsReportDetailPage.vue'))
 const DualUnitInventoryReportPage = asyncPage(() => import('~/components/pages/DualUnitInventoryReportPage.vue'))
 const CreditMemoReportPage = asyncPage(() => import('~/components/pages/CreditMemoReportPage.vue'))
+const SalesListReportPage = asyncPage(() => import('~/components/pages/SalesListReportPage.vue'))
+const SalesByCustomerReportPage = asyncPage(() => import('~/components/pages/SalesByCustomerReportPage.vue'))
+const SalesByProductReportPage = asyncPage(() => import('~/components/pages/SalesByProductReportPage.vue'))
 const MultidimensionalReportPage = asyncPage(() => import('~/components/pages/MultidimensionalReportPage.vue'))
 const GeneralLedgerReportPage = asyncPage(() => import('~/components/pages/GeneralLedgerReportPage.vue'))
 const BudgetVarianceReportPage = asyncPage(() => import('~/components/pages/BudgetVarianceReportPage.vue'))
@@ -665,6 +668,12 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /sales-report/credit-memo → Credit Memo report (Reports → Sales → View report).
   if (segs.length >= 2 && segs[0] === 'sales-report' && segs[1] === 'credit-memo') {
     return { component: CreditMemoReportPage, id: segs[1]! }
+  }
+  // /sales-report/{sales-list|sales-by-customer|sales-by-product} → the Sales reports.
+  if (segs.length >= 2 && segs[0] === 'sales-report') {
+    if (segs[1] === 'sales-list') return { component: SalesListReportPage, id: segs[1] }
+    if (segs[1] === 'sales-by-customer') return { component: SalesByCustomerReportPage, id: segs[1] }
+    if (segs[1] === 'sales-by-product') return { component: SalesByProductReportPage, id: segs[1] }
   }
   // /financial-report/:slug → the built Financials reports (Reports → Financials
   // → View report). Only these slugs match; anything else falls through to the
