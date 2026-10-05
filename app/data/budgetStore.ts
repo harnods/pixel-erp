@@ -17,7 +17,7 @@ import { loadSnapshot, saveSnapshot } from './persist'
 import { purchaseRequests, addPurchaseRequest, deletePurchaseRequests } from './purchaseRequests'
 import type { PurchaseRequestLine } from './types'
 import {
-  BUDGET_ACCOUNTS, BUDGET_DEPARTMENTS, SAVING_ACCOUNT, COMPANY_DEPT,
+  BUDGET_ACCOUNTS, BUDGET_DEPARTMENTS, BUDGET_PROJECTS, SAVING_ACCOUNT, COMPANY_DEPT,
   CFO_NAME, PRESIDENT_DIRECTOR_NAME, BUDGET_CONTROLLER_NAME, budgetAccount, holderOf,
   personFor, deptName, projectName, type BudgetClass, type BudgetRole,
 } from './budgetMaster'
@@ -722,7 +722,8 @@ export function postBill(input: { poId: string | null; vendor: string; date: str
   const bill: BudgetBill = {
     id: `bbl${nextSeq()}`, number: input.number ?? nextNumber('PI', budget.bills, 800),
     poId: input.poId, vendor: input.vendor, date: input.date, month, lines, final: !!input.final,
-    overBudget: !po && check.result !== 'Pass' && check.blocker ? { lineId: check.blocker.lineId, short: check.blocker.yearShort } : null,
+    // A mix with no line has no balance to fall short of: the whole amount is over budget.
+    overBudget: !po && check.result !== 'Pass' && check.blocker ? { lineId: check.blocker.lineId, short: check.blocker.lineId ? check.blocker.yearShort : check.blocker.amount } : null,
   }
   if (!po && check.result === 'Block' && check.blocker?.lineId && !bill.overBudget) bill.overBudget = { lineId: check.blocker.lineId, short: check.blocker.yearShort }
   budget.bills.unshift(bill)
@@ -744,10 +745,13 @@ export function postBill(input: { poId: string | null; vendor: string; date: str
 }
 
 /** Manual journals to a controlled line count; reclasses to fixed assets do not (FG-2.2). */
-export function postJournal(input: { lineId: string; month: number; amount: number; docNo: string; reclass?: boolean }): void {
+export function postJournal(input: { lineId: string; month: number; amount: number; docNo: string; reclass?: boolean }): { ok: boolean; message?: string } {
   const l = lineById(input.lineId)!
+  // LR-7: the saving bucket is budget, not money. Nothing posts to it.
+  if (isSavingLine(l)) return { ok: false, message: 'The saving account cannot take postings.' }
   glPost({ lineId: l.id, account: l.account, dept: l.dept, project: l.project, month: input.month, amount: input.amount, source: input.reclass ? 'Reclass to fixed assets' : 'Manual journal', docNo: input.docNo, counted: !input.reclass })
   if (!input.reclass) post({ key: `JE:${input.docNo}:${l.id}`, lineId: l.id, month: input.month, type: 'actual', amount: input.amount, docKind: 'Journal', docId: input.docNo, docNo: input.docNo, event: 'Manual journal' })
+  return { ok: true }
 }
 
 export function overrunBills(): BudgetBill[] { return budget.bills.filter((b) => !b.poId && b.overBudget) }
@@ -888,11 +892,11 @@ export function routeChain(c: ChangeDoc): ChainStep[] {
     const rDepts = [...new Set(c.receivers.map((r) => receiverLine(r)?.dept ?? dDept))]
     const sameDept = rDepts.every((d) => d === dDept)
     const total = sameDeptMovedRecently(dDept, c.id) + changeTotal(c)
-    const holder = holderOf(dDept)!
+    const holder = holderOf(dDept) ?? '(no budget holder)'
     if (sameDept && total <= budget.settings.smallMoveLimit && c.preparedBy !== holder) {
       steps = [step(holder, `Budget holder, ${deptName(dDept)}`)]
     } else {
-      steps = rDepts.map((d) => step(holderOf(d)!, `Budget holder, ${deptName(d)}`))
+      steps = rDepts.map((d) => step(holderOf(d) ?? '(no budget holder)', `Budget holder, ${deptName(d)}`))
       if (!sameDept) steps.push(step(holder, `Budget holder, ${deptName(dDept)} (donor)`))
       steps.push(step(CFO_NAME, 'CFO'))
     }
@@ -1029,6 +1033,8 @@ export function withdrawChange(id: string): void {
   if (c.status !== 'Pending' && c.status !== 'Draft') return
   if (c.status === 'Pending') releaseHold(c, 'Withdrawn, hold freed')
   c.status = 'Withdrawn'
+  const pr = prById(c.linkedPrId)
+  if (pr && pr.fundingRequestId === c.id) pr.fundingRequestId = null
 }
 
 /** Funding request from the block screen (OD-01): the gap, the line, and a link to the request. */
@@ -1108,7 +1114,7 @@ export function validateImport(rows: ImportRow[], year: number): ImportError[] {
     else if (!acct.class && !acct.savingOnly) errs.push({ row: r.row, message: `${acct.code} has no Opex or Capex class` })
     else if (acct.savingOnly) errs.push({ row: r.row, message: 'The saving account cannot take budget by import' })
     if (!BUDGET_DEPARTMENTS.some((d) => d.id === r.dept)) errs.push({ row: r.row, message: `Unknown department ${r.dept}` })
-    if (r.project && !['PA', 'PB'].includes(r.project)) errs.push({ row: r.row, message: `Unknown project ${r.project}` })
+    if (r.project && !BUDGET_PROJECTS.some((p) => p.id === r.project)) errs.push({ row: r.row, message: `Unknown project ${r.project}` })
     r.months.forEach((v, i) => {
       if (typeof v !== 'number' || !Number.isFinite(v)) errs.push({ row: r.row, message: `${monthName(i)} is not a number` })
       else if (!Number.isInteger(v)) errs.push({ row: r.row, message: `${monthName(i)} has decimals; use whole rupiah` })
@@ -1318,7 +1324,7 @@ function seed() {
   // Cable PO: Rp250jt, Rp200jt received and invoiced, Rp50jt still open.
   budget.viewAs = 'Requester'
   const prCable = createPR({ requester: 'Andi Saputra', date: '2026-08-04', number: '#90118', lines: [{ account: '1-17010', dept: 'NW', project: 'PA', amount: 250 * jt, description: 'Fiber optic cable 10.000 m' }] })
-  submitPR(prCable.id, 'Crew schedule front-loaded this month'); approvePR(prCable.id, { finalStep: true })
+  submitPR(prCable.id, 'Crew schedule front-loaded this month'); approvePR(prCable.id); approvePR(prCable.id)
   budget.viewAs = 'Procurement Officer'
   const poCable = createPO({ prId: prCable.id, vendor: 'PT Kabel Nusantara', date: '2026-08-10', number: 'PO-2026-0412', lines: [{ prLine: 0, lineId: CABLE_PA, description: 'Fiber optic cable 10.000 m', amount: 250 * jt }] }).po!
   markFullyOrdered(prCable.id)
@@ -1328,11 +1334,11 @@ function seed() {
   // Accommodation on Project A: two approved requests (Rp20jt) and an open PO (Rp25jt).
   budget.viewAs = 'Requester'
   const prA = createPR({ requester: 'Andi Saputra', date: '2026-09-22', number: '#90131', lines: [{ account: '6-60120', dept: 'NW', project: 'PA', amount: 12 * jt, description: 'Hotel, splicing crew week 39' }] })
-  submitPR(prA.id, 'Crew schedule front-loaded this month'); approvePR(prA.id, { finalStep: true })
+  submitPR(prA.id, 'Crew schedule front-loaded this month'); approvePR(prA.id); approvePR(prA.id)
   const prB = createPR({ requester: 'Andi Saputra', date: '2026-10-01', number: '#90138', lines: [{ account: '6-60120', dept: 'NW', project: 'PA', amount: 8 * jt, description: 'Hotel, survey team' }] })
-  submitPR(prB.id, 'Crew schedule front-loaded this month'); approvePR(prB.id, { finalStep: true })
+  submitPR(prB.id, 'Crew schedule front-loaded this month'); approvePR(prB.id); approvePR(prB.id)
   const prC = createPR({ requester: 'Andi Saputra', date: '2026-10-02', number: '#90120', lines: [{ account: '6-60120', dept: 'NW', project: 'PA', amount: 25 * jt, description: 'Hotel block booking, October' }] })
-  submitPR(prC.id, 'Crew schedule front-loaded this month'); approvePR(prC.id, { finalStep: true })
+  submitPR(prC.id, 'Crew schedule front-loaded this month'); approvePR(prC.id); approvePR(prC.id)
   budget.viewAs = 'Procurement Officer'
   createPO({ prId: prC.id, vendor: 'Hotel Santika Bekasi', date: '2026-10-03', number: 'PO-2026-0398', lines: [{ prLine: 0, lineId: ACC_PA, description: 'Hotel block booking, October', amount: 25 * jt }] })
   markFullyOrdered(prC.id)

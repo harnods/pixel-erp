@@ -185,7 +185,7 @@ describe('the tour layer is labelled and kept apart', () => {
   const files = walk(join(APP, 'tours'))
   it('has its files', () => {
     expect(files.map((f) => f.split('/').pop()).sort()).toEqual(
-      ['GuidedToursSetting.vue', 'TourLauncher.vue', 'assetTours.ts', 'tourPanel.ts', 'tourRunner.ts', 'tourSettings.ts'],
+      ['BudgetGuidedTourSetting.vue', 'BudgetTourLauncher.vue', 'GuidedToursSetting.vue', 'TourLauncher.vue', 'assetTours.ts', 'budgetTours.ts', 'tourPanel.ts', 'tourRunner.ts', 'tourSettings.ts'],
     )
   })
   for (const f of files) {
@@ -202,7 +202,7 @@ describe('the tour layer is labelled and kept apart', () => {
       .filter((f) => /from ['"]~\/tours\//.test(readFileSync(f, 'utf8')))
       .map((f) => f.slice(APP.length + 1))
       .sort()
-    expect(importers).toEqual(['components/ErpHeader.vue', 'components/pages/AssetSettingsPage.vue'])
+    expect(importers).toEqual(['components/ErpHeader.vue', 'components/pages/AssetSettingsPage.vue', 'components/pages/BudgetSettingsPage.vue'])
   })
 })
 

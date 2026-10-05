@@ -166,6 +166,20 @@ describe('advanced budgeting ledger (PRD FG-1 to FG-7)', () => {
     }
   })
 
+  it('FG5-AC4: a manual journal to the saving account is refused', async () => {
+    const { postJournal } = await import('../app/data/budgetStore')
+    expect(postJournal({ lineId: savingLine()!.id, month: 9, amount: 1 * jt, docNo: 'JE-X' }).ok).toBe(false)
+  })
+
+  it('withdrawing a funding request unlinks it from the request', async () => {
+    const { withdrawChange } = await import('../app/data/budgetStore')
+    const pr = createPR({ requester: 'Andi Saputra', date: '2026-10-05', lines: [{ account: '6-60120', dept: 'NW', project: 'PA', amount: 45 * jt, description: 'Hotel' }] })
+    submitPR(pr.id)
+    const fr = raiseFundingRequest(pr.id)
+    withdrawChange(fr.id)
+    expect(prById(pr.id)!.fundingRequestId).toBeNull()
+  })
+
   it('LR-10: even spread puts the residue in December', () => {
     const m = spreadEvenly(100 * jt)
     expect(m[0]).toBe(8_333_333)

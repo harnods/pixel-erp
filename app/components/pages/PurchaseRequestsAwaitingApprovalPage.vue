@@ -223,7 +223,7 @@ function clearFilters() { search.value = '' }
     <template #actions="{ row }">
       <div class="row-actions">
         <span class="row-approve">
-          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" data-tour="pr-approve" @click.stop="approve((row as PurchaseRequest).id)">{{ t('Approve') }}</button>
+          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" :data-tour="(row as PurchaseRequest).id === rows[0]?.id ? 'pr-approve' : undefined" @click.stop="approve((row as PurchaseRequest).id)">{{ t('Approve') }}</button>
           <span v-if="rowMessage[(row as PurchaseRequest).id]" class="row-approve__msg row-approve__msg--error">{{ rowMessage[(row as PurchaseRequest).id] }}</span>
           <span v-else-if="waitingOn((row as PurchaseRequest).id)" class="row-approve__msg">{{ waitingOn((row as PurchaseRequest).id) }}</span>
         </span>

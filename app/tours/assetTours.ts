@@ -47,6 +47,9 @@ export interface AssetTour {
   blurb: string
   closing: string
   steps: TourStep[]
+  /** A tour outside the asset module brings its own reset and View as (the budget tour). */
+  onReset?: () => void
+  applyRole?: (role: string) => void
 }
 
 const EXPORT_NOTE = 'The tour stops here, on the screen before the export itself.'

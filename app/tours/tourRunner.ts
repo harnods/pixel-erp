@@ -74,6 +74,11 @@ function unmountPanel() {
   mountTour(false)
 }
 
+function applyRole(t: AssetTour, role: ViewAsRole) {
+  if (t.applyRole) t.applyRole(role)
+  else setViewAs(role)
+}
+
 function roleAt(t: AssetTour, index: number): ViewAsRole {
   let role = t.role
   for (let i = 0; i <= index && i < t.steps.length; i++) {
@@ -201,7 +206,7 @@ async function enterStep(r: Running) {
   }
 
   const step = tour.steps[index]!
-  setViewAs(roleAt(tour, index))
+  applyRole(tour, roleAt(tour, index))
   if (step.route && !sameRoute(r.router, step.route)) {
     await r.router.push(step.route)
   }
@@ -270,8 +275,8 @@ function go(delta: number) {
   if (r.index >= r.tour.steps.length && delta > 0) { stopTour(); return }
   if (r.index < 0 && delta > 0) {
     // The confirmation panel: this is the one reset a tour performs.
-    resetAssetStore()
-    setViewAs(r.tour.role)
+    ;(r.tour.onReset ?? resetAssetStore)()
+    applyRole(r.tour, r.tour.role)
   }
   r.index = Math.max(-1, Math.min(r.tour.steps.length, r.index + delta))
   void enterStep(r)
