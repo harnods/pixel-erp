@@ -49,6 +49,7 @@ function saveNote(key: string) {
 
 const openWhy = ref<number | null>(null)
 const why = computed(() => (openWhy.value == null ? null : whyLine(props.runId, openWhy.value)))
+const safeId = (k: string) => k.replace(/[^a-zA-Z0-9-]/g, '-')
 const hcHasEvents = computed(() => payroll.events.length > 0)
 </script>
 
@@ -135,7 +136,7 @@ const hcHasEvents = computed(() => payroll.events.length > 0)
             <td class="pdr__td pdr__notecell">
               <template v-if="c.flag && can('draft.note')">
                 <div class="pdr__noteform">
-                  <MpInput :id="`pdr-note-${c.key}`" :model-value="notes[c.key] ?? c.note ?? ''" :is-invalid="!!noteErr[c.key]" @update:model-value="(v: string | number) => notes[c.key] = String(v)" />
+                  <MpInput :id="`pdr-note-${safeId(c.key)}`" :model-value="notes[c.key] ?? c.note ?? ''" :is-invalid="!!noteErr[c.key]" @update:model-value="(v: string | number) => notes[c.key] = String(v)" />
                   <MpButton variant="secondary" is-rounded @click="saveNote(c.key)">{{ t('Save') }}</MpButton>
                 </div>
                 <p v-if="noteErr[c.key]" class="pdr__error">{{ t(noteErr[c.key]!) }}</p>

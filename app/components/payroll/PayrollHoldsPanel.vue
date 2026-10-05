@@ -185,6 +185,7 @@ function releaseTax() {
   successToast(t('Tax hold released'))
 }
 
+const safeId = (k: string) => k.replace(/[^a-zA-Z0-9-]/g, '-')
 const d = (h: Hold) => h.details as Record<string, any>
 const tagsOf = (x: unknown) => tagsLabel(x as Tags)
 const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.ledgerVersion) : undefined))
@@ -300,17 +301,17 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
                 <td class="ph__td ph__td--num">{{ rupiah(it.amount) }}</td>
                 <td class="ph__td ph__td--num">{{ it.employees }}</td>
                 <template v-if="can('settings.edit')">
-                  <td class="ph__td"><ErpFilterSelect :id="`ph-role-${it.key}`" v-model="itemForm(it).role" :placeholder="t('Role')" :options="roleOptions" width="180px" /></td>
-                  <td class="ph__td"><ErpFilterSelect :id="`ph-dr-${it.key}`" v-model="itemForm(it).debit" :placeholder="t('Account')" :options="accountOptions" width="220px" /></td>
-                  <td class="ph__td"><ErpFilterSelect :id="`ph-cr-${it.key}`" v-model="itemForm(it).credit" :placeholder="t('Account')" :options="accountOptions" width="220px" /></td>
+                  <td class="ph__td"><ErpFilterSelect :id="`ph-role-${safeId(it.key)}`" v-model="itemForm(it).role" :placeholder="t('Role')" :options="roleOptions" width="180px" /></td>
+                  <td class="ph__td"><ErpFilterSelect :id="`ph-dr-${safeId(it.key)}`" v-model="itemForm(it).debit" :placeholder="t('Account')" :options="accountOptions" width="220px" /></td>
+                  <td class="ph__td"><ErpFilterSelect :id="`ph-cr-${safeId(it.key)}`" v-model="itemForm(it).credit" :placeholder="t('Account')" :options="accountOptions" width="220px" /></td>
                 </template>
               </tr>
               <tr v-if="can('settings.edit')">
                 <td class="ph__td ph__td--sub" colspan="6">
                   <div v-if="itemForm(it).needsOverride.length" class="ph__field">
-                    <label class="ph__label" :for="`ph-ovr-${it.key}`">{{ t('Override reason') }}</label>
+                    <label class="ph__label" :for="`ph-ovr-${safeId(it.key)}`">{{ t('Override reason') }}</label>
                     <div class="ph__muted">{{ itemForm(it).needsOverride.join(' ') }}</div>
-                    <MpInput :id="`ph-ovr-${it.key}`" v-model="itemForm(it).reason" />
+                    <MpInput :id="`ph-ovr-${safeId(it.key)}`" v-model="itemForm(it).reason" />
                   </div>
                   <div class="ph__row ph__row--end">
                     <p v-if="itemForm(it).error" class="ph__error">{{ t(itemForm(it).error) }}</p>
@@ -332,7 +333,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
             <span class="ph__muted"> · {{ t(dimOf(g.field)) }} · {{ g.staff }} {{ t('employees') }}</span>
           </div>
           <template v-if="can('run.release')">
-            <ErpFilterSelect :id="`ph-tag-${g.field}-${g.value}`" v-model="groupPick[`${g.field}|${g.value}`]" :placeholder="t('Tag')" :options="tagOptions(g.field, g.value)" width="220px" />
+            <ErpFilterSelect :id="`ph-tag-${safeId(g.field + '-' + g.value)}`" v-model="groupPick[`${g.field}|${g.value}`]" :placeholder="t('Tag')" :options="tagOptions(g.field, g.value)" width="220px" />
             <MpButton variant="secondary" is-rounded @click="saveGroup(g)">{{ t('Map group') }}</MpButton>
           </template>
           <p v-if="groupError[`${g.field}|${g.value}`]" class="ph__error">{{ t(groupError[`${g.field}|${g.value}`]!) }}</p>
@@ -347,7 +348,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
             <span class="ph__muted"> · {{ v.field }} · {{ v.staff }} {{ t('employees') }}</span>
           </div>
           <template v-if="v.field === 'cost_center_name' ? can('settings.edit') : can('run.release')">
-            <ErpFilterSelect v-if="v.field === 'cost_center_name'" :id="`ph-cc-${v.value}`" v-model="ccPick[v.value]" :placeholder="t('Category')" :options="['Direct', 'In-direct']" width="160px" />
+            <ErpFilterSelect v-if="v.field === 'cost_center_name'" :id="`ph-cc-${safeId(v.value)}`" v-model="ccPick[v.value]" :placeholder="t('Category')" :options="['Direct', 'In-direct']" width="160px" />
             <MpButton variant="secondary" is-rounded @click="acceptValue(v)">{{ t('Accept value') }}</MpButton>
           </template>
         </div>
@@ -467,7 +468,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
 .ph__holdtext { min-width: 0; }
 .ph__holdtitle { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ph__msg { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); overflow-wrap: anywhere; }
-.ph__fix { margin: var(--mp-spacing-3) 0 0 var(--mp-spacing-7); display: flex; flex-direction: column; gap: var(--mp-spacing-3); align-items: flex-start; }
+.ph__fix { margin: var(--mp-spacing-3) 0 0 var(--mp-spacing-8); display: flex; flex-direction: column; gap: var(--mp-spacing-3); align-items: flex-start; }
 .ph__facts { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-6); margin: 0; }
 .ph__facts dt { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .ph__facts dd { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }

@@ -25,6 +25,7 @@ const route = useRoute()
 type View = 'runs' | 'log' | 'month'
 const view = ref<View>((['runs', 'log', 'month'] as View[]).includes(route.query.view as View) ? (route.query.view as View) : 'runs')
 watch(view, (v) => router.replace({ query: { ...route.query, view: v === 'runs' ? undefined : v } }))
+watch(() => route.query.view, (q) => { const next = (['log', 'month'] as View[]).includes(q as View) ? (q as View) : 'runs'; if (next !== view.value) view.value = next })
 const viewOptions = computed(() => [
   { id: 'pi-view-runs', value: 'runs', label: t('Runs') },
   { id: 'pi-view-log', value: 'log', label: t('Sync log') },
@@ -221,7 +222,7 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
         <span class="cell-link cell-text" @click.stop="openRun((row as { id: string }).id)">{{ (row as { period: string }).period }}</span>
       </template>
       <template #cell-version="{ row }">
-        {{ (row as { version: string }).version }}<span v-if="(row as { versions: number }).versions > 1" class="pi__muted"> {{ t('of') }} {{ (row as { versions: number }).versions }}</span>
+        {{ (row as { version: string }).version }}<template v-if="(row as { versions: number }).versions > 1">{{ ` ${t('of')} ${(row as { versions: number }).versions}` }}</template>
       </template>
       <template #cell-takeHome="{ value }">{{ rupiah(value as number) }}</template>
       <template #cell-status="{ value }">
