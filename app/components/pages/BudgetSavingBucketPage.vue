@@ -15,10 +15,10 @@ import { formatIDRWhole } from '~/utils/currency'
 import { infoToast, successToast } from '~/utils/toasts'
 import {
   budget, BUDGET_YEAR, savingSlices, savingBucketStats, savingHistory, changeApprover, pendingSavingDraws,
-  canRaiseSavingDraw, canApproveChange, approveChange, rejectChange, changeTotal, lineById, lineTitle,
+  canRaiseSavingDraw, canApproveChange, approveChange, rejectChange, changeTotal, lineById,
   type ChangeDoc, type SavingSlice, type SavingTag,
 } from '~/data/budgetStore'
-import { deptName, projectName } from '~/data/budgetMaster'
+import { deptName, projectName, budgetAccount } from '~/data/budgetMaster'
 import { SAVING_RELEASE_2 } from '~/data/budgetUiSettings'
 
 defineProps<{ orderId?: string }>()
@@ -49,11 +49,12 @@ const sliceColumns: TableColumn[] = [
   { key: 'dept', label: 'Department' },
   { key: 'project', label: 'Project' },
   { key: 'class', label: 'Class', kind: 'unit' },
-  { key: 'type', label: 'Type', kind: 'status' },
+  { key: 'type', label: 'Type', kind: 'unit' },
+  // Balance first: it is the figure a draw is checked against, so it never scrolls off.
+  { key: 'balance', label: 'Balance', kind: 'amount', align: 'right' },
   { key: 'filled', label: 'Filled', kind: 'amount', align: 'right' },
   { key: 'drawn', label: 'Drawn', kind: 'amount', align: 'right' },
   { key: 'held', label: 'Held', kind: 'amount', align: 'right' },
-  { key: 'balance', label: 'Balance', kind: 'amount', align: 'right' },
 ]
 const sliceRows = computed(() => slices.value.map((s) => ({ ...s, deptLabel: deptName(s.dept), projectLabel: projectName(s.project) })))
 
@@ -84,7 +85,8 @@ const queueRows = computed(() => pending.value.map((c) => {
     id: c.id,
     number: c.number,
     slice: c.saving ? sliceLabel(c.saving) : '-',
-    toLine: l ? lineTitle(l) : '-',
+    toLine: l ? `${budgetAccount(l.account)?.name ?? l.account}` : '-',
+    toSub: l ? `${deptName(l.dept)} · ${projectName(l.project)}` : '',
     amount: changeTotal(c),
     preparedBy: c.preparedBy,
     waitingFor: changeApprover(c).name,
@@ -134,17 +136,18 @@ const kindOptions = [{ value: 'Saving fill', label: 'Fills' }, { value: 'Saving 
 const historyColumns: TableColumn[] = [
   { key: 'date', label: 'Date', kind: 'date' },
   { key: 'number', label: 'Number', kind: 'number' },
-  { key: 'kind', label: 'Type', kind: 'unit' },
   { key: 'slice', label: 'Slice', kind: 'name' },
   { key: 'sourceDoc', label: 'Source document', kind: 'name' },
   { key: 'amount', label: 'Amount', kind: 'amount', align: 'right' },
   { key: 'status', label: 'Status', kind: 'status' },
   { key: 'approver', label: 'Approver' },
 ]
-function sourceOf(c: ChangeDoc): string {
-  if (c.kind === 'Saving fill') return c.saving?.sourceDoc || '-'
+/** Fill: the PO or project that saved the money. Draw: the line it goes to. */
+function sourceOf(c: ChangeDoc): { main: string; sub: string } {
+  if (c.kind === 'Saving fill') return { main: c.saving?.sourceDoc || '-', sub: '' }
   const l = lineById(c.receivers[0]?.lineId ?? null)
-  return l ? `To ${lineTitle(l)}` : '-'
+  if (!l) return { main: '-', sub: '' }
+  return { main: `To ${budgetAccount(l.account)?.name ?? l.account}`, sub: `${deptName(l.dept)} · ${projectName(l.project)}` }
 }
 const historyRows = computed(() => history.value
   .filter((c) => !kindFilter.value || c.kind === kindFilter.value)
@@ -155,8 +158,10 @@ const historyRows = computed(() => history.value
       date: fmtDate(c.submittedAt ?? c.createdAt),
       number: c.number,
       kind: c.kind === 'Saving fill' ? 'Fill' : 'Draw',
-      slice: c.saving ? sliceLabel(c.saving) : '-',
-      sourceDoc: sourceOf(c),
+      slice: c.saving ? `${deptName(c.saving.dept)} · ${projectName(c.saving.project)}` : '-',
+      sliceSub: c.saving ? `${c.saving.class} · ${c.saving.type}` : '',
+      sourceDoc: sourceOf(c).main,
+      sourceSub: sourceOf(c).sub,
       amount: changeTotal(c),
       status: c.status,
       approver: ap.decided ? ap.name : (c.status === 'Pending' ? `Waiting for ${ap.name}` : '-'),
@@ -244,8 +249,14 @@ function statusType(s: string) { return s === 'Withdrawn' ? 'announcement' as co
         <template #cell-amount="{ value }">{{ formatIDRWhole(value as number) }}</template>
         <template #cell-slice="{ row }">
           <div class="sb__cellstack">
-            <span>{{ row.slice }}</span>
+            <span class="sb__main">{{ row.slice }}</span>
             <span class="sb__sub">{{ row.reason }}</span>
+          </div>
+        </template>
+        <template #cell-toLine="{ row }">
+          <div class="sb__cellstack">
+            <span class="sb__main">{{ row.toLine }}</span>
+            <span class="sb__sub">{{ row.toSub }}</span>
           </div>
         </template>
         <template #actions="{ row }">
@@ -321,9 +332,24 @@ function statusType(s: string) { return s === 'Withdrawn' ? 'announcement' as co
           </div>
         </template>
         <template #cell-number="{ row }">
-          <span class="sb__link" @click="router.push(`/budget-changes/${row.id}`)">{{ row.number }}</span>
+          <div class="sb__cellstack">
+            <span class="sb__link" @click="router.push(`/budget-changes/${row.id}`)">{{ row.number }}</span>
+            <span class="sb__sub">{{ t(String(row.kind)) }}</span>
+          </div>
         </template>
         <template #cell-amount="{ value }">{{ formatIDRWhole(value as number) }}</template>
+        <template #cell-slice="{ row }">
+          <div class="sb__cellstack">
+            <span class="sb__main">{{ row.slice }}</span>
+            <span class="sb__sub">{{ row.sliceSub }}</span>
+          </div>
+        </template>
+        <template #cell-sourceDoc="{ row }">
+          <div class="sb__cellstack">
+            <span class="sb__main">{{ row.sourceDoc }}</span>
+            <span v-if="row.sourceSub" class="sb__sub">{{ row.sourceSub }}</span>
+          </div>
+        </template>
         <template #cell-status="{ value }">
           <ErpStatusBadge :status="String(value).toLowerCase()" :label="t(String(value))" :type="statusType(String(value))" />
         </template>
@@ -373,6 +399,7 @@ function statusType(s: string) { return s === 'Withdrawn' ? 'announcement' as co
 .sb__empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0; padding: var(--mp-spacing-4); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); }
 .sb__link { color: var(--mp-text-link); cursor: pointer; }
 .sb__cellstack { display: flex; flex-direction: column; min-width: 0; }
+.sb__main { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sb__sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sb__rowbtns { display: flex; gap: var(--mp-spacing-2); justify-content: flex-end; }
 

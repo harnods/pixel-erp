@@ -62,7 +62,9 @@ function saveControl() {
 // ── Approval limits and invoice tolerance ───────────────────────────────────
 type NumKey = 'smallMoveLimit' | 'smallMoveDays' | 'fundingCapPct' | 'fundingPerQuarter' | 'invoiceTolerancePct'
 const nums = reactive<Record<NumKey, string>>({ smallMoveLimit: '', smallMoveDays: '', fundingCapPct: '', fundingPerQuarter: '', invoiceTolerancePct: '' })
-function resetNums(keys: NumKey[]) { keys.forEach((k) => { nums[k] = String(s.value[k]) }) }
+function resetNums(keys: NumKey[]) {
+  keys.forEach((k) => { nums[k] = k === 'smallMoveLimit' ? s.value[k].toLocaleString('id-ID') : String(s.value[k]) })
+}
 resetNums(['smallMoveLimit', 'smallMoveDays', 'fundingCapPct', 'fundingPerQuarter', 'invoiceTolerancePct'])
 
 const APPROVAL_FIELDS: { key: NumKey; label: string; detail: string }[] = [
@@ -354,5 +356,5 @@ const dimensionColumns: TableColumn[] = [
 .bs__note { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: 0; padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 .bs__section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
 .bs__sechead { display: flex; align-items: baseline; gap: var(--mp-spacing-3); flex-wrap: wrap; }
-.bs__cellstack { display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding: var(--mp-spacing-1) 0; }
+.bs__cellstack { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 </style>
