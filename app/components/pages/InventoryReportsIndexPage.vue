@@ -1,14 +1,14 @@
+<!-- prod-parity: quickbook/app/services/reports/report_authorization_service.rb (products_tab) + jurnal-frontend-app/src/pages/reports/index/i18n.json -->
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { MpButton } from '@mekari/pixel3'
-// Inventory → Reports index (Reports module → Inventory submenu). Same card grid as
-// Reports › WMS (WmsReportsIndexPage): cards fill the stage width as an equal-column
-// grid, the last row is padded with fillers so every column is present top and bottom,
-// and the outer right + bottom borders are clipped.
-//
-// Only "Dual Unit Inventory" is built (PRD Dual Unit Inventory, Story 14). The rest are
-// listed so the section reads complete; they carry a caption instead of a disabled
-// button — DESIGN.md forbids disabled buttons for state.
+// Reports → Inventory index (page key 'Inventory report'). Card order follows prod's
+// ERP report list for this tab; titles and descriptions are prod's English copy.
+// Same flush edge-to-edge card grid as every Reports index: cards fill the stage
+// width as an equal-column grid, the last row is padded with empty filler cells so
+// the grid stays a complete rectangle, and the outer right + bottom borders are
+// clipped so the rightmost column never shows a border.
+import { infoToast } from '~/utils/toasts'
 const { t } = useLocale()
 const router = useRouter()
 
@@ -16,47 +16,30 @@ interface ReportCard {
   slug: string
   title: string
   description: string
-  /** false → no "View report" button yet, shows the "Coming soon" caption. */
-  built: boolean
+  /** Route of the built report; cards without one show "Not in this prototype". */
+  to?: string
+  /** Button label when prod's card action is not "View report". */
+  action?: string
 }
 const reports: ReportCard[] = [
-  {
-    slug: 'dual-unit',
-    title: 'Dual Unit Inventory',
-    description: 'Stock mutation and on-hand stock in both base and secondary inventory unit, per batch. For products using a secondary inventory unit.',
-    built: true,
-  },
-  {
-    slug: 'stock-mutation',
-    title: 'Stock mutation',
-    description: 'Every stock movement per product over a period, with the running balance after each transaction.',
-    built: false,
-  },
-  {
-    slug: 'inventory-valuation',
-    title: 'Inventory valuation',
-    description: 'On-hand quantity, average cost, and stock value per product at the end of a period.',
-    built: false,
-  },
-  {
-    slug: 'stock-card',
-    title: 'Stock card',
-    description: 'One product’s full stock history in a single card, from beginning balance to ending balance.',
-    built: false,
-  },
+  { slug: 'inventory-turnover', title: 'Inventory turnover', description: 'Showing the ratio of how often a product is sold and restocked in a warehouse.' },
+  { slug: 'product-conversion', title: 'Product conversion', description: 'Generates a report containing product conversion transactions, used raw materials, and cost of goods sold (COGS) in XLSX or CSV format.', action: 'Export report' },
+  { slug: 'inventory-summary', title: 'Inventory summary', description: 'Shows available stock quantity with its average cost per unit and total value as of a specific date.' },
+  { slug: 'inventory-valuation', title: 'Inventory valuation', description: 'Shows the stock movement of each product based on current stock and its value in a certain period.', to: '/inventory-report/inventory-valuation' },
+  { slug: 'inventory-details', title: 'Inventory details', description: 'Shows a list of products with their movements and ending quantities.' },
+  { slug: 'serial-number-product-quantity', title: 'Serial numbered product quantity', description: 'Showing the available quantity and stock on hand of products with serial numbers based on a specific date or period.' },
+  { slug: 'dual-unit', title: 'Dual Unit Inventory', description: 'Stock mutation and on-hand stock in both base and secondary inventory unit, per batch. For products using a secondary inventory unit.', to: '/inventory-report/dual-unit' },
 ]
 
 // ── Responsive column count ──────────────────────────────────────────────────
-// Reduce columns as the grid narrows; never more columns than cards.
 const MIN_CARD_WIDTH = 260
 const gridEl = ref<HTMLElement | null>(null)
-const cols = ref(reports.length)
+const cols = ref(4)
 function recompute() {
   const w = gridEl.value?.clientWidth ?? 0
   if (!w) return
-  cols.value = Math.max(1, Math.min(reports.length, Math.floor(w / MIN_CARD_WIDTH)))
+  cols.value = Math.max(1, Math.min(4, Math.floor(w / MIN_CARD_WIDTH)))
 }
-// Empty cells needed to complete the final row.
 const fillerCount = computed(() => {
   const rem = reports.length % cols.value
   return rem === 0 ? 0 : cols.value - rem
@@ -73,8 +56,9 @@ onMounted(async () => {
 })
 onUnmounted(() => ro?.disconnect())
 
-function viewReport(slug: string) {
-  router.push(`/inventory-report/${slug}`)
+function viewReport(r: ReportCard) {
+  if (r.to) router.push(r.to)
+  else infoToast(t('Not in this prototype'))
 }
 </script>
 
@@ -86,8 +70,7 @@ function viewReport(slug: string) {
           <h2 class="report-card-title">{{ t(r.title) }}</h2>
           <p class="report-card-desc">{{ t(r.description) }}</p>
         </div>
-        <MpButton v-if="r.built" variant="secondary" is-rounded class="report-view-btn" @click="viewReport(r.slug)">{{ t('View report') }}</MpButton>
-        <span v-else class="report-soon">{{ t('Coming soon') }}</span>
+        <MpButton variant="secondary" is-rounded class="report-view-btn" @click="viewReport(r)">{{ t(r.action ?? 'View report') }}</MpButton>
       </div>
       <!-- Empty filler cells keep the last row's columns present (complete grid). -->
       <div v-for="n in fillerCount" :key="`filler-${n}`" class="report-card report-card--filler" aria-hidden="true" />
@@ -102,8 +85,6 @@ function viewReport(slug: string) {
   display: grid;
   grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
   align-items: stretch;
-  /* Push the outer-right and outer-bottom borders past the clip so the rightmost
-     column and last row never show an outer border. */
   margin: 0 -1px -1px 0;
 }
 .report-card {
@@ -129,7 +110,6 @@ function viewReport(slug: string) {
   white-space: nowrap;
 }
 .report-card-desc {
-  /* Fixed block so every card's action sits on the same baseline across the row. */
   height: var(--mp-sizes-24, 96px);
   margin: 0;
   font-size: var(--mp-font-sizes-md, 14px);
@@ -138,16 +118,7 @@ function viewReport(slug: string) {
   line-height: var(--mp-line-heights-md, 20px);
 }
 
-/* Visual comes from .btn-enterprise--secondary (erp.css); only the placement is local. */
+/* Secondary pill button (Pixel enterprise): white fill, bold border, rounded-full. */
+/* layout only — the button look comes from MpButton (secondary) */
 .report-view-btn { align-self: flex-start; }
-
-/* Not built yet — a caption, not a disabled button (DESIGN.md button rules). */
-.report-soon {
-  align-self: flex-start;
-  padding: var(--mp-spacing-2, 8px) 0;
-  font-size: var(--mp-font-sizes-sm, 12px);
-  font-weight: var(--mp-font-weights-regular, 400);
-  line-height: var(--mp-line-heights-md, 20px);
-  color: var(--mp-text-secondary);
-}
 </style>
