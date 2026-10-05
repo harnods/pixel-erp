@@ -1,6 +1,7 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/sales/deliveries/views/SalesDeliveryCreateView.vue -->
 <script setup lang="ts">
 /**
- * "New sales invoice" form — Sales ▸ Sales invoices ▸ New sales invoice
+ * "Create sales delivery" form (adapted from the sales invoice form) — Sales ▸ Sales invoices ▸ New sales invoice
  * (Figma: Sales - Sales Invoices node 9152-107281).
  *
  * Page shell / header grid / footer follow PurchaseOrderFormPage.vue; the
@@ -265,7 +266,7 @@ function onSave() {
     tags: tagsList.value.map(t2 => String(t2.value)),
   }
   salesDeliveries.push(delivery)
-  toast.notify({ variant: 'success', title: t('Sales delivery created'), rootProps: { class: 'toast-enterprise' } })
+  toast.notify({ variant: 'success', title: t('Sales delivery saved'), rootProps: { class: 'toast-enterprise' } })
   router.push(`/sales-deliveries/${delivery.id}`)
 }
 </script>
@@ -277,7 +278,7 @@ function onSave() {
     <header class="si-form-bar">
       <div class="si-form-bar-left">
         <MpTextlink id="si-crumb" as="a" class="si-crumb" @click.prevent="onCancel">{{ t('Sales deliveries') }}</MpTextlink>
-        <h1 class="si-form-h1">{{ t('New sales delivery') }}</h1>
+        <h1 class="si-form-h1">{{ t('Create sales delivery') }}</h1>
       </div>
     </header>
 
@@ -302,46 +303,22 @@ function onSave() {
           <MpInputTag id="f-email-inp" :data="emailTags" :placeholder="t('+Add email')" @change="onEmailChange" />
         </MpFormControl>
 
-        <div class="si-header1-total">
-          <h3 class="si-header1-total-value">{{ t('Delivery total') }} {{ fmt(orderTotal) }}</h3>
-        </div>
+        <!-- prod: no header total on a delivery (prices live on the sales order) -->
+        <div class="si-header1-total" />
       </section>
 
       <!-- ── Header section 2 — fixed-width fields that wrap, never stretch ── -->
       <section class="si-header2">
-        <!-- Col 1 (318px): addresses + shipping toggles -->
+        <!-- Col 1 (318px): ship-to address (prod SalesDeliveryDetailFields) -->
         <div class="si-header2-col si-header2-col--wide">
-          <MpFormControl id="f-billing" class="si-field">
-            <MpFormLabel>{{ t('Billing address') }}</MpFormLabel>
-            <MpTextarea id="f-billing-inp" v-model="billingAddress" is-full-width />
-          </MpFormControl>
-
-          <div class="si-checkbox-stack">
-            <MpCheckbox id="f-requires-shipping" v-model:is-checked="requiresShipping">{{ t('Requires shipping') }}</MpCheckbox>
-            <MpCheckbox id="f-ship-diff" v-model:is-checked="shipToDifferent">{{ t('Ship to different address') }}</MpCheckbox>
-          </div>
-
-          <MpFormControl v-if="shipToDifferent" id="f-ship-to" class="si-field">
+          <MpFormControl id="f-ship-to" class="si-field">
             <MpFormLabel>{{ t('Ship to') }}</MpFormLabel>
             <MpTextarea id="f-ship-to-inp" v-model="shipTo" is-full-width />
           </MpFormControl>
         </div>
 
-        <!-- Col 2: dates + terms -->
+        <!-- Col 2: shipping -->
         <div class="si-header2-col">
-          <MpFormControl id="f-tx-date" class="si-field">
-            <MpFormLabel>{{ t('Transaction date') }}</MpFormLabel>
-            <MpDatePicker id="f-tx-date-inp" v-model="txDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
-          </MpFormControl>
-
-          <MpFormControl id="f-payment" class="si-field">
-            <MpFormLabel>{{ t('Payment terms') }}</MpFormLabel>
-            <MpAutocomplete id="f-payment-inp" v-model="paymentTerms" :data="PAYMENT_TERMS" use-portal is-clearable is-full-width />
-          </MpFormControl>
-        </div>
-
-        <!-- Col 3: shipping — only when "Requires shipping" is on -->
-        <div v-if="requiresShipping" class="si-header2-col">
           <MpFormControl id="f-ship-date" class="si-field">
             <MpFormLabel>{{ t('Ship date') }}</MpFormLabel>
             <MpDatePicker id="f-ship-date-inp" v-model="shipDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
@@ -358,8 +335,13 @@ function onSave() {
           </MpFormControl>
         </div>
 
-        <!-- Col 4: references -->
+        <!-- Col 3: warehouse + numbering -->
         <div class="si-header2-col">
+          <MpFormControl id="f-warehouse" class="si-field">
+            <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
+            <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width />
+          </MpFormControl>
+
           <MpFormControl id="f-tx-no" class="si-field">
             <MpFormLabel>
               <span class="si-label-row">
@@ -376,17 +358,17 @@ function onSave() {
             <MpFormLabel>{{ t('Reference no.') }}</MpFormLabel>
             <MpInput id="f-ref-inp" v-model="referenceNo" is-full-width />
           </MpFormControl>
-
-          <MpFormControl id="f-warehouse" class="si-field">
-            <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
-            <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width />
-          </MpFormControl>
         </div>
 
-        <!-- Col 5: tags — last column, same 24px gap as every other pair -->
+        <!-- Col 4: source order (read-only) + tags -->
         <div class="si-header2-col">
+          <MpFormControl id="f-so-no" class="si-field">
+            <MpFormLabel>{{ t('Sales order no.') }}</MpFormLabel>
+            <span class="si-readonly-value">-</span>
+          </MpFormControl>
+
           <MpFormControl id="f-tags" class="si-field">
-            <MpFormLabel>{{ t('Tag') }}</MpFormLabel>
+            <MpFormLabel>{{ t('Tags') }}</MpFormLabel>
             <MpInputTag id="f-tags-inp" :data="tagsList" :placeholder="t('Select tags')" @change="onTagsChange" />
           </MpFormControl>
         </div>
@@ -394,14 +376,12 @@ function onSave() {
 
       <!-- ── Line items ── -->
       <section class="si-items-section">
-        <div class="si-items-header-row">
-          <MpCheckbox id="f-price-incl-tax" v-model:is-checked="priceIncludesTax">{{ t('Price includes tax') }}</MpCheckbox>
-        </div>
+
 
         <MpBanner v-if="hasLineItemErrors || noItemsError" id="si-lineitems-error-banner" variant="danger" align-items="center" class="si-items-error-banner">
           <MpBannerIcon id="si-lineitems-error-banner-icon" />
-          <MpBannerTitle>{{ noItemsError && !hasLineItemErrors ? t('Add at least one product') : t('Failed to save') }}</MpBannerTitle>
-          <MpBannerDescription>{{ noItemsError && !hasLineItemErrors ? t('A sales invoice needs at least one line item before you can save.') : t('The transaction contains incomplete or invalid data. Review the highlighted fields.') }}</MpBannerDescription>
+          <MpBannerTitle>{{ noItemsError && !hasLineItemErrors ? t('Add at least one product') : t('Failed to save delivery') }}</MpBannerTitle>
+          <MpBannerDescription>{{ noItemsError && !hasLineItemErrors ? t('A sales delivery needs at least one line item before you can save.') : t('Please review the highlighted fields and try again.') }}</MpBannerDescription>
         </MpBanner>
 
         <div class="si-items-scroll">
@@ -411,11 +391,8 @@ function onSave() {
               <col class="si-col-product" />
               <col class="si-col-desc" />
               <col class="si-col-qty" />
+              <col class="si-col-qty" />
               <col class="si-col-unit" />
-              <col class="si-col-price" />
-              <col class="si-col-discount" />
-              <col class="si-col-tax" />
-              <col class="si-col-amount" />
               <col class="si-col-del" />
             </colgroup>
             <thead>
@@ -423,12 +400,9 @@ function onSave() {
                 <th class="si-th si-th--drag" />
                 <th class="si-th">{{ t('Product') }}</th>
                 <th class="si-th">{{ t('Description') }}</th>
-                <th class="si-th">{{ t('Qty') }}</th>
+                <th class="si-th">{{ t('Qty ordered') }}</th>
+                <th class="si-th">{{ t('Qty delivered') }}</th>
                 <th class="si-th">{{ t('Unit') }}</th>
-                <th class="si-th">{{ t('Unit price') }}</th>
-                <th class="si-th">{{ t('Discount') }}</th>
-                <th class="si-th">{{ t('Tax') }}</th>
-                <th class="si-th">{{ t('Amount') }}</th>
                 <th class="si-th si-th--del" />
               </tr>
             </thead>
@@ -479,6 +453,9 @@ function onSave() {
                   <MpInput v-model="item.description" is-full-width />
                 </td>
 
+                <!-- Qty ordered — read-only, from the source sales order (none here) -->
+                <td class="si-td si-td--border si-td--calc"><span class="si-affix-value">-</span></td>
+
                 <td class="si-td si-td--input si-td--border" :class="{ 'si-td--error': item.qtyError }">
                   <MpTooltip
                     v-if="item.qtyError" :id="`si-qty-tt-${item._key}`"
@@ -495,37 +472,6 @@ function onSave() {
 
                 <td class="si-td si-td--input si-td--border">
                   <MpAutocomplete v-model="item.unit" :data="unitOptions" use-portal is-full-width />
-                </td>
-
-                <!-- Prefix box is a plain span, not MpInputLeftAddon — see
-                     NewExpensePage's .ex-amount-prefix (the ERP reference). -->
-                <td class="si-td si-td--input si-td--border si-td--affix">
-                  <div class="si-affix-cell">
-                    <span class="si-affix">Rp</span>
-                    <MpInput type="number" :model-value="item.unitPrice" is-full-width class="si-affix-input"
-                      @update:model-value="(v) => item.unitPrice = Number(v)" />
-                  </div>
-                </td>
-
-                <td class="si-td si-td--input si-td--border si-td--affix">
-                  <div class="si-affix-cell">
-                    <MpInput type="number" :model-value="item.discountPct" is-full-width class="si-affix-input"
-                      @update:model-value="(v) => item.discountPct = Number(v)" />
-                    <span class="si-affix">%</span>
-                  </div>
-                </td>
-
-                <td class="si-td si-td--input si-td--border">
-                  <MpAutocomplete v-model="item.taxLabel" :data="taxOptions" use-portal is-full-width />
-                </td>
-
-                <!-- Amount is derived (qty × price − discount), so it reads as a
-                     value with the same prefix chrome rather than an input. -->
-                <td class="si-td si-td--border si-td--affix si-td--calc">
-                  <div class="si-affix-cell">
-                    <span class="si-affix">Rp</span>
-                    <span class="si-affix-value">{{ fmtPlain(lineAmount(item)) }}</span>
-                  </div>
                 </td>
 
                 <td class="si-td si-td--del">
@@ -566,7 +512,6 @@ function onSave() {
                   </MpPopover>
                 </td>
                 <td class="si-td si-td--border" /><td class="si-td si-td--border" /><td class="si-td si-td--border" />
-                <td class="si-td si-td--border" /><td class="si-td si-td--border" /><td class="si-td si-td--border" />
                 <td class="si-td si-td--border" /><td class="si-td si-td--del" />
               </tr>
             </tbody>
@@ -591,7 +536,7 @@ function onSave() {
           </MpFormControl>
 
           <div class="si-attachment-section">
-            <span class="si-attachment-label">{{ t('Attachment') }}</span>
+            <span class="si-attachment-label">{{ t('Attachments') }}</span>
             <MpUpload
               id="f-attachment" :button-text="t('Choose file')" :placeholder="t('or drag and drop here')"
               is-multiple is-full-width @change="onFilesChange"
@@ -607,55 +552,8 @@ function onSave() {
           </div>
         </div>
 
+        <!-- Right: shipping fee only — a delivery carries no prices (prod) -->
         <div class="si-totals-col">
-          <div class="si-totals-row si-totals-row--h3">
-            <span>{{ t('Subtotal') }}</span>
-            <span>{{ fmt(subtotal) }}</span>
-          </div>
-
-          <!-- Discount block — the swap affordance sits in the gutter, as designed -->
-          <div class="si-discount-block">
-            <MpButton class="si-discount-swap" :aria-label="t('Switch discount mode')">
-              <MpIcon name="sort-default" size="sm" />
-            </MpButton>
-            <div class="si-discount-rows">
-              <div class="si-totals-row">
-                <span>{{ t('Discount per line') }}</span>
-                <span class="si-deduction">({{ fmt(discountTotal) }})</span>
-              </div>
-              <div class="si-totals-row">
-                <span class="si-inline-field-label">
-                  <span>{{ t('Global discount') }}</span>
-                  <MpInputGroup id="f-global-discount-group" class="si-unit-field">
-                    <MpInputLeftAddon has-background class="si-unit-addon">
-                      <MpPopover id="f-global-discount-unit" is-close-on-select placement="bottom-start" use-portal :is-keep-alive="false">
-                        <MpPopoverTrigger>
-                          <MpButton class="si-unit-trigger">
-                            <span>{{ globalDiscountType }}</span>
-                            <MpIcon name="chevrons-down" size="sm" />
-                          </MpButton>
-                        </MpPopoverTrigger>
-                        <MpPopoverContent :class="css({ minWidth: '64px', width: 'max-content' })">
-                          <MpPopoverList>
-                            <MpPopoverListItem :is-active="globalDiscountType === 'Rp'" @click="globalDiscountType = 'Rp'">Rp</MpPopoverListItem>
-                            <MpPopoverListItem :is-active="globalDiscountType === '%'" @click="globalDiscountType = '%'">%</MpPopoverListItem>
-                          </MpPopoverList>
-                        </MpPopoverContent>
-                      </MpPopover>
-                    </MpInputLeftAddon>
-                    <MpInput type="number" :model-value="globalDiscountValue" is-full-width
-                      @update:model-value="(v) => globalDiscountValue = Number(v)" />
-                  </MpInputGroup>
-                </span>
-                <span class="si-deduction">({{ fmt(globalDiscountAmount) }})</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="si-totals-row">
-            <span>PPN 11%</span>
-            <span>{{ fmt(taxAmount) }}</span>
-          </div>
           <div class="si-totals-row">
             <span>{{ t('Shipping fee') }}</span>
             <MpInputGroup id="f-shipping-fee-group" class="si-unit-field">
@@ -664,36 +562,24 @@ function onSave() {
                 @update:model-value="(v) => shippingFee = Number(v)" />
             </MpInputGroup>
           </div>
-
-          <div class="si-total-rule" />
-          <div class="si-totals-row si-totals-row--h3">
-            <span>{{ t('Total') }}</span>
-            <span>{{ fmt(total) }}</span>
-          </div>
         </div>
       </section>
 
-      <!-- ── Footer ── ghost Cancel · secondary "More" dropdown · primary "Save" (rightmost) -->
+      <!-- ── Footer (prod TransactionFooter for deliveries): ghost Cancel · primary
+           "Save & close" · kebab (Sales settings) ── -->
       <MpButtonGroup class="erp-action-footer si-form-footer">
         <MpButton variant="ghost" is-rounded @click="onCancel">{{ t('Cancel') }}</MpButton>
-
-        <MpPopover id="si-form-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+        <MpButton variant="primary" is-rounded @click="onSave">{{ t('Save & close') }}</MpButton>
+        <MpPopover id="sd-form-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <MpButton variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('More') }}</MpButton>
+            <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More options')" is-rounded />
           </MpPopoverTrigger>
           <MpPopoverContent class="erp-dropdown-menu">
             <MpPopoverList>
-              <MpPopoverListItem @click="onSave">{{ t('Save & close') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="onSave">{{ t('Save & share via WhatsApp') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="onSave">{{ t('Save & share via email') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="onSave">{{ t('Save as draft') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Print draft PDF') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="navigateTo('/sales-settings')">{{ t('Sales settings') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
-
-        <MpButton variant="primary" is-rounded @click="onSave">{{ t('Save') }}</MpButton>
       </MpButtonGroup>
 
     </div><!-- /si-form-stage -->
@@ -710,6 +596,7 @@ function onSave() {
 </template>
 
 <style scoped>
+.si-readonly-value { display: block; padding: var(--mp-spacing-2) 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 /* Fixed field widths, straight off the Figma: the address column is 318px and
    every other header field 228px. They never stretch with the container — same
    principle as NewExpensePage's --ex-field-width. */

@@ -1,4 +1,7 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/sales/deliveries/views/SalesDeliveryListView.vue -->
 <script setup lang="ts">
+import { infoToast } from '~/utils/toasts'
+import { getSalesDeliveryDetail } from '~/data/salesDeliveryDetails'
 import {
   MpButton, MpButtonGroup, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, toast, css,
@@ -29,6 +32,7 @@ const columns: TableColumn[] = [
   { key: 'date',              label: t('Date'),              kind: 'date',                                sortType: 'date'   },
   { key: 'number',            label: t('Number'),            kind: 'number', sortable: true,                sortType: 'number' },
   { key: 'processed',         label: '',                  width: '44px',  align: 'center', noHeader: true },
+  { key: 'attachment',        label: '',                  width: '40px',  align: 'center', noHeader: true },
   { key: 'customerName',      label: t('Customer'),          kind: 'name', sortable: true,                sortType: 'text'   },
   { key: 'fulfillmentStatus', label: t('Fulfillment status'),kind: 'status',                                sortType: 'text'   },
   { key: 'billingStatus',     label: t('Billing status'),    kind: 'status',                                sortType: 'text'   },
@@ -37,15 +41,20 @@ const columns: TableColumn[] = [
 ]
 
 // ─── Row type + flatten ─────────────────────────────────────────────────────────
-type Row = SalesDelivery & { customerName: string }
+type Row = SalesDelivery & { customerName: string; attachment?: boolean }
 
 // Prototype preview toggle (FAB, bottom-right): data vs empty-state view
 const previewMode = ref<'data' | 'empty'>('data')
 
+// Awaiting-approval tab (?tab=) — deliveries carry no approval queue in the mock
+// data, so the tab renders prod's empty approval state.
+const route = useRoute()
+const isAwaiting = computed(() => route.query.tab === 'Awaiting approval')
+
 const rows = computed<Row[]>(() =>
-  previewMode.value === 'empty'
+  previewMode.value === 'empty' || isAwaiting.value
     ? []
-    : salesDeliveries.map(sd => ({ ...sd, customerName: sd.customer.name })),
+    : salesDeliveries.map(sd => ({ ...sd, customerName: sd.customer.name, attachment: getSalesDeliveryDetail(sd.id).attachments.length > 0 })),
 )
 
 // ─── Second quick filter (Billing status) — combined inside filterFn ────────────
@@ -60,11 +69,30 @@ const billingFilter = ref('')
 const filtersOpen = ref(false)
 const appliedFilters = reactive<SalesDeliveryFiltersValue>(emptySalesDeliveryFilters())
 
+// Prod FilterDrawer search-column scope (salesDelivery.list.filters.searchColumns.*)
 const keywordColumns = [
-  { key: 'number',       label: t('Number')   },
-  { key: 'customerName', label: t('Customer') },
-  { key: 'tags',         label: t('Tags')     },
+  { key: 'number',       label: t('Number')        },
+  { key: 'customerName', label: t('Customer')      },
+  { key: 'warehouse',    label: t('Warehouse')     },
+  { key: 'productName',  label: t('Product name')  },
+  { key: 'sku',          label: t('SKU')           },
+  { key: 'referenceNo',  label: t('Reference no.') },
+  { key: 'memo',         label: t('Memo')          },
+  { key: 'message',      label: t('Message')       },
 ]
+/** Text each keyword column searches, read from the delivery's detail record. */
+function keywordHaystack(row: Row, col: string): string[] {
+  if (col === 'number') return [String(row.number)]
+  if (col === 'customerName') return [row.customerName]
+  const d = getSalesDeliveryDetail(row.id)
+  if (col === 'warehouse') return [d.warehouse]
+  if (col === 'productName') return d.lineItems.map(it => it.product)
+  if (col === 'sku') return d.lineItems.map(it => it.sku)
+  if (col === 'referenceNo') return [d.referenceNo]
+  if (col === 'memo') return [d.memo]
+  if (col === 'message') return [d.message]
+  return []
+}
 const tagOptions = computed(() => [...new Set(salesDeliveries.flatMap(sd => sd.tags ?? []))].sort())
 
 function applyDrawerFilters(v: SalesDeliveryFiltersValue) { Object.assign(appliedFilters, v) }
@@ -100,13 +128,8 @@ const {
     const f = appliedFilters
     const kw = f.keyword.toLowerCase().trim()
     const rowTags = row.tags ?? []
-    const matchesKeyword = !kw || (
-      f.keywordColumn === 'all'
-        ? String(row.number).includes(kw) || row.customerName.toLowerCase().includes(kw) || rowTags.some(tg => tg.toLowerCase().includes(kw))
-        : f.keywordColumn === 'number' ? String(row.number).includes(kw)
-        : f.keywordColumn === 'customerName' ? row.customerName.toLowerCase().includes(kw)
-        : rowTags.some(tg => tg.toLowerCase().includes(kw))
-    )
+    const kwCols = f.keywordColumn === 'all' ? keywordColumns.map(c => c.key) : [f.keywordColumn]
+    const matchesKeyword = !kw || kwCols.some(c => keywordHaystack(row, c).some(v => (v ?? '').toLowerCase().includes(kw)))
     const matchesDeliveryDate = matchesDateRange(row.date, f.deliveryDate)
     const matchesFulfillment = f.fulfillmentStatus.length === 0 || f.fulfillmentStatus.includes(row.fulfillmentStatus)
     const matchesBilling = f.billingStatus.length === 0 || f.billingStatus.includes(row.billingStatus)
@@ -179,7 +202,8 @@ function clearFilters() {
 // Column show/hide (first column always on; Last updated appended, hidden by default)
 const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: t('Last updated'), kind: 'date' }]
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, c.key !== 'lastUpdated'])))
-const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const LOCKED_COLUMNS = new Set(['date', 'number', 'customerName'])
+const columnItems = allCols.map(c => ({ key: c.key, label: c.key === 'attachment' ? t('Attachment') : c.label, disabled: LOCKED_COLUMNS.has(c.key) }))
 const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnVisibility[c.key]))
 function hideColumn(key: string) { columnVisibility[key] = false }
 
@@ -216,8 +240,10 @@ const exportColumns = computed(() => [
 // ─── Bulk delete — Delete (with confirmation) from the bulk Actions menu ─────────
 const bulkDeleteOpen = ref(false)
 const bulkSelectedCount = ref(0)
-function openBulkDelete(count: number) {
+let bulkDeselect: (() => void) | null = null
+function openBulkDelete(count: number, deselectAll?: () => void) {
   bulkSelectedCount.value = count
+  bulkDeselect = deselectAll ?? null
   bulkDeleteOpen.value = true
 }
 function confirmBulkDelete() {
@@ -227,6 +253,7 @@ function confirmBulkDelete() {
     title: n === 1 ? t('1 sales delivery deleted') : `${n} ${t('sales deliveries deleted')}`,
     rootProps: { class: 'toast-enterprise' },
   })
+  bulkDeselect?.()
 }
 </script>
 
@@ -243,6 +270,7 @@ function confirmBulkDelete() {
     :has-active-filter="!!search || !!statusFilter || !!billingFilter || isDrawerFilterActive"
     :search="search"
     has-checkbox
+    bulk-label="transaction"
     :context-label="(row) => `${t('Sales Delivery')} #${row.number}`"
     @page-change="setPage"
     @per-page-change="setPerPage"
@@ -253,32 +281,30 @@ function confirmBulkDelete() {
   >
 
     <!-- ── Bulk actions ── -->
-    <template #bulk-actions="{ count }">
+    <template #bulk-actions="{ count, deselectAll }">
       <MpPopover id="sd-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
         <MpPopoverTrigger>
           <MpButton size="sm" variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('Actions') }}</MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
-            <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="rows.length && openShare(rows[0])">{{ t('Share via email') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="infoToast(t('Not in this prototype'))">{{ t('Print PDF') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="rows.length && openShare(rows[0]!)">{{ t('Share via email') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openCopyLinks(rows.slice(0, 5) as Row[])">{{ t('Copy link') }}</MpPopoverListItem>
-          </MpPopoverList>
-          <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-          <MpPopoverList>
-            <MpPopoverListItem @click="openBulkDelete(count as number)">{{ t('Delete') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
+      <!-- Prod: Delete sits beside the Actions dropdown (house rule: sm = secondary) -->
+      <MpButton size="sm" variant="secondary" is-rounded @click="openBulkDelete(count as number, deselectAll)">{{ t('Delete') }}</MpButton>
     </template>
 
     <!-- ── Filter bar ── -->
     <template #filters>
       <!-- Left: Fulfillment + Billing status selects + All filters -->
       <div class="filter-left">
-        <ErpFilterSelect id="sd-fulfillment-status" v-model="statusFilter" :placeholder="t('Fulfillment status')" :options="fulfillmentOptions" />
+        <ErpFilterSelect id="sd-billing-status" v-model="billingFilter" :placeholder="t('Status')" :options="billingOptions" />
 
-        <ErpFilterSelect id="sd-billing-status" v-model="billingFilter" :placeholder="t('Billing status')" :options="billingOptions" />
+        <ErpFilterSelect id="sd-fulfillment-status" v-model="statusFilter" :placeholder="t('Fulfillment status')" :options="fulfillmentOptions" />
 
         <MpButton variant="secondary" left-icon="filter" is-rounded class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">{{ t('All filters') }}{{ activeFilterCount > 0 ? ` (${activeFilterCount})` : '' }}</MpButton>
       </div>
@@ -335,6 +361,12 @@ function confirmBulkDelete() {
       </MpTooltip>
     </template>
 
+    <!-- ── Cell: Attachment icon (prod: toggled by the Attachment column setting) ── -->
+    <template #cell-attachment="{ value }">
+      <MpIcon v-if="value" name="attachment" size="sm" class="fulfillment-icon" />
+      <span v-else />
+    </template>
+
     <!-- ── Cell: Customer — "Open preview" on row hover (customer/vendor always previewable) ── -->
     <template #cell-customerName="{ value }">
       <span class="cell-link cell-text" @click.stop>{{ value }}</span>
@@ -364,9 +396,14 @@ function confirmBulkDelete() {
     <template #empty>
       <div class="empty-full">
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-        <p class="empty-full-title">{{ t('No sales deliveries') }}</p>
-        <p class="empty-full-desc">{{ t('Sales deliveries will appear here.') }}</p>
-        <MpButton variant="secondary" left-icon="add" is-rounded @click="navigateTo('/sales-deliveries/new')">{{ t('New sales delivery') }}</MpButton>
+        <template v-if="isAwaiting">
+          <p class="empty-full-title">{{ t('No transactions awaiting approval') }}</p>
+          <p class="empty-full-desc">{{ t('Transactions pending approval will display here') }}</p>
+        </template>
+        <template v-else>
+          <p class="empty-full-title">{{ t('No sales deliveries') }}</p>
+          <p class="empty-full-desc">{{ t('Sales deliveries will appear here.') }}</p>
+        </template>
       </div>
     </template>
 
@@ -380,7 +417,7 @@ function confirmBulkDelete() {
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="navigateTo(`/sales-deliveries/${(row as Row).id}`)">{{ t('View details') }}</MpPopoverListItem>
-            <MpPopoverListItem v-if="(row as Row).billingStatus === 'unbilled'">{{ t('Create sales invoice') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="(row as Row).billingStatus === 'unbilled'" @click="navigateTo('/sales-invoices/new')">{{ t('Create sales invoice') }}</MpPopoverListItem>
           </MpPopoverList>
           <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
           <MpPopoverList>
@@ -404,6 +441,10 @@ function confirmBulkDelete() {
     :fulfillment-options="fulfillmentOptions"
     :billing-options="billingOptions"
     :tag-options="tagOptions"
+    :keyword-placeholder="t('Search')"
+    :date-label="t('Transaction date')"
+    :date-placeholder="t('Select transaction date')"
+    :reset-label="t('Reset')"
     @update:is-open="filtersOpen = $event"
     @apply="applyDrawerFilters"
   />
@@ -414,10 +455,10 @@ function confirmBulkDelete() {
 
   <ConfirmModal
     v-model:is-open="bulkDeleteOpen"
-    :title="t('Delete sales deliveries?')"
+    :title="bulkSelectedCount === 1 ? t('Delete sales delivery?') : t('Delete sales deliveries?')"
     :description="bulkSelectedCount === 1
-      ? t('1 sales delivery will be permanently deleted. This cannot be undone.')
-      : `${bulkSelectedCount} ${t('sales deliveries will be permanently deleted. This cannot be undone.')}`"
+      ? t('Are you sure you want to delete this sales delivery? This action cannot be undone.')
+      : `${t('Are you sure you want to delete these')} ${bulkSelectedCount} ${t('sales deliveries? This action cannot be undone.')}`"
     :confirm-label="t('Delete')"
     @confirm="confirmBulkDelete"
   />
