@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-non-core-feature-frontend/src/modules/settings/warehouse/views/WarehouseSettingsView.vue -->
 <script setup lang="ts">
 import {
   MpToggle, MpIcon, MpAutocomplete,
@@ -10,6 +11,7 @@ import {
   BATCH_RULE_OPTIONS, SERIAL_RULE_OPTIONS, BARCODE_STYLE_OPTIONS,
   type WarehouseSettings,
 } from '~/data/warehouseSettings'
+import { putAwayTasks } from '~/data/putAwayTasks'
 
 // ─── Persist ─────────────────────────────────────────────────────────────────
 
@@ -27,6 +29,14 @@ const isEditing     = ref(false)
 const isSaving      = ref(false)
 const discardOpen   = ref(false)
 const ruleConfirmOpen = ref(false)
+const deactivateErrorOpen = ref(false)
+
+// Prod blocks turning multi-location storage off once a bin location has been
+// used in a transaction (API 400 → "Failed to deactivate feature" popup). Here a
+// completed put-away that placed stock in a bin stands in for that check.
+const locationUsedInTransaction = computed(() =>
+  putAwayTasks.some(task => task.status === 'completed' && (task.completedItems?.length ?? 0) > 0),
+)
 
 const hasChanges = computed(() =>
   draft.multiLocationStorage !== committed.multiLocationStorage ||
@@ -65,6 +75,10 @@ function exitEdit() {
 }
 
 function requestSave() {
+  if (committed.multiLocationStorage && !draft.multiLocationStorage && locationUsedInTransaction.value) {
+    deactivateErrorOpen.value = true
+    return
+  }
   if (hasRuleChange.value) ruleConfirmOpen.value = true
   else void saveEdit()
 }
@@ -91,8 +105,8 @@ async function saveEdit() {
     <section class="ws-section">
       <div class="ws-section-header">
         <div class="ws-section-meta">
-          <h2 class="ws-section-title">{{ t('Warehouse settings') }}</h2>
-          <p class="ws-section-desc">{{ t('Configure global warehouse rules for storage and outbound fulfillment.') }}</p>
+          <h2 class="ws-section-title">{{ isEditing ? t('Edit warehouse settings') : t('Warehouse settings') }}</h2>
+          <p class="ws-section-desc">{{ isEditing ? t('Manage storage layouts, bin locations, and warehouse organization.') : t('Configure how products are stored and tracked across warehouse locations.') }}</p>
         </div>
         <button
           v-if="!isEditing"
@@ -111,7 +125,7 @@ async function saveEdit() {
         <div class="ws-toggle-row">
           <div class="ws-toggle-info">
             <span class="ws-toggle-title">{{ t('Multi-location storage') }}</span>
-            <span class="ws-toggle-desc">{{ t('Allow a single product to be stored across multiple locations within the same warehouse.') }}</span>
+            <span class="ws-toggle-desc">{{ t('Enable storing a single product across more than one location within the same warehouse.') }}</span>
           </div>
           <MpToggle
             v-model:is-checked="draft.multiLocationStorage"
@@ -209,6 +223,30 @@ async function saveEdit() {
         <MpModalFooter>
           <button class="btn-enterprise btn-enterprise--ghost" @click="discardOpen = false">{{ t('Keep editing') }}</button>
           <button class="btn-enterprise btn-enterprise--danger" @click="exitEdit">{{ t('Discard') }}</button>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── Deactivation blocked (location already used in a transaction) ───── -->
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="ws-deactivate-error-dialog"
+      :is-open="deactivateErrorOpen"
+      size="md"
+      @close="deactivateErrorOpen = false"
+    >
+      <MpModalContent>
+        <MpModalHeader>
+          {{ t('Failed to deactivate feature') }}
+          <MpModalCloseButton />
+        </MpModalHeader>
+        <MpModalBody>
+          <p class="ws-dialog-body">
+            {{ t('Multi-location storage could not be deactivated because a location is already used in a transaction. Please remove the transaction first if you still want to deactivate this feature.') }}
+          </p>
+        </MpModalBody>
+        <MpModalFooter>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="deactivateErrorOpen = false">{{ t('Ok, got it') }}</button>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />
