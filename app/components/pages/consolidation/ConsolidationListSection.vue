@@ -299,8 +299,8 @@ onMounted(() => {
     <div class="cl-field">
       <span class="cl-field-label cl-req">{{ t('Consolidation Period') }}</span>
       <div class="cl-period">
-        <ErpFilterSelect id="cl-period-type" :model-value="form.periodType" :placeholder="t('Per month')" :options="periodTypeOptions" :is-clearable="false" width="45%" @update:model-value="(v: string) => { if (!rerunId) form.periodType = v as PeriodType }" />
-        <ErpFilterSelect id="cl-period-month" :model-value="form.startMonth" :placeholder="t('Select period')" :options="monthOptions" :is-disabled="!!rerunId" width="55%" @update:model-value="(v: string) => { form.startMonth = v; errors.period = '' }" />
+        <ErpFilterSelect id="cl-period-type" :model-value="form.periodType" :placeholder="t('Per month')" :options="periodTypeOptions" :is-clearable="false" width="100%" @update:model-value="(v: string) => { if (!rerunId) form.periodType = v as PeriodType }" />
+        <ErpFilterSelect id="cl-period-month" :model-value="form.startMonth" :placeholder="t('Select period')" :options="monthOptions" :is-disabled="!!rerunId" width="100%" @update:model-value="(v: string) => { form.startMonth = v; errors.period = '' }" />
       </div>
       <span v-if="form.startMonth" class="cl-hint">{{ formatPeriod({ periodStart: periodRange(form.periodType, form.startMonth).start, periodEnd: periodRange(form.periodType, form.startMonth).end }) }}</span>
       <span v-if="errors.period" class="cl-error">{{ errors.period }}</span>
@@ -374,7 +374,7 @@ onMounted(() => {
 .cl-req::after { content: ' *'; color: var(--mp-text-danger); }
 .cl-name-field { position: relative; }
 .cl-count { position: absolute; right: var(--mp-spacing-3); top: 50%; transform: translateY(-50%); font-size: var(--mp-font-sizes-sm); }
-.cl-period { display: flex; gap: var(--mp-spacing-2); }
+.cl-period { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: var(--mp-spacing-2); }
 .cl-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .cl-error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
 .cl-units { display: flex; flex-direction: column; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); }

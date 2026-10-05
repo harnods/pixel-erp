@@ -154,11 +154,11 @@ const drawerTitle = computed(() => mode.value === 'create' ? t('Create eliminati
       </template>
       <template #cell-name="{ row }"><span class="cell-link er-ellipsis" :title="(row as unknown as Row).name" @click="open('view', (row as unknown as Row).id)">{{ (row as unknown as Row).name }}</span></template>
       <template #cell-source="{ row }">
-        <span class="er-stack"><span>{{ (row as unknown as Row).sourceUnit }}</span><span class="er-sub">{{ (row as unknown as Row).sourceAccount }}</span></span>
+        <span class="er-stack"><span class="er-ellipsis" :title="(row as unknown as Row).sourceUnit">{{ (row as unknown as Row).sourceUnit }}</span><span class="er-sub er-ellipsis">{{ (row as unknown as Row).sourceAccount }}</span></span>
       </template>
       <template #cell-dest="{ row }">
         <span class="er-dests">
-          <span v-for="(d, i) in (row as unknown as Row).dests" :key="i" class="er-stack"><span>{{ d.unit }}</span><span class="er-sub">{{ d.account }}</span></span>
+          <span v-for="(d, i) in (row as unknown as Row).dests" :key="i" class="er-stack"><span class="er-ellipsis" :title="d.unit">{{ d.unit }}</span><span class="er-sub er-ellipsis">{{ d.account }}</span></span>
         </span>
       </template>
       <template #cell-status="{ row }">
@@ -291,7 +291,7 @@ const drawerTitle = computed(() => mode.value === 'create' ? t('Create eliminati
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .er-ellipsis { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .er-stack { display: flex; flex-direction: column; min-width: 0; }
-.er-dests { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.er-dests { display: flex; flex-direction: column; gap: var(--mp-spacing-2); min-width: 0; }
 .er-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .er-section { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); letter-spacing: 1px; text-transform: uppercase; color: var(--mp-text-secondary); }
 .er-leg-group { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }

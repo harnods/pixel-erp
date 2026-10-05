@@ -473,9 +473,6 @@ function confirmRun() {
 .rc-total td { font-weight: var(--mp-font-weights-semi-bold); background: var(--mp-background-neutral-subtle); }
 
 .rc-map-bar { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--mp-spacing-3); }
-  position: relative; padding: var(--mp-spacing-2) 0; border: none; background: none; cursor: pointer;
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); font-family: inherit;
-}
 .rc-map-actions { display: flex; align-items: center; gap: var(--mp-spacing-2); padding-bottom: var(--mp-spacing-2); }
 .rc-badge {
   padding: var(--mp-spacing-0\.5, 2px) var(--mp-spacing-2); border-radius: var(--mp-radii-full);
@@ -487,7 +484,7 @@ function confirmRun() {
 .rc-elim { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .rc-elim-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); }
 .rc-elim-name { max-width: var(--mp-sizes-96, 384px); }
-.rc-elim-bar-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.rc-elim-bar-right { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-shrink: 0; white-space: nowrap; }
 
 .rc-footer { display: flex; align-items: center; justify-content: space-between; padding-top: var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 .rc-footer-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }

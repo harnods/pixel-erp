@@ -296,7 +296,7 @@ function confirmGroupDelete() {
       </template>
       <template #cell-lastConsolidation="{ row }">
         <span v-if="(row as unknown as Row).lastConsolidation" class="bu-stack">
-          <span>{{ (row as unknown as Row).lastConsolidation }}</span>
+          <span class="bu-name-main" :title="(row as unknown as Row).lastConsolidation">{{ (row as unknown as Row).lastConsolidation }}</span>
           <span class="bu-sub">{{ (row as unknown as Row).lastPeriod }}</span>
         </span>
         <span v-else>-</span>
@@ -505,10 +505,10 @@ function confirmGroupDelete() {
 .filter-left { flex: 1 1 auto; display: flex; gap: var(--mp-spacing-2); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .bu-name { display: flex; align-items: flex-start; gap: var(--mp-spacing-1); min-width: 0; }
-.bu-caret { flex-shrink: 0; min-width: 0 !important; width: var(--mp-sizes-6, 24px) !important; height: var(--mp-sizes-6, 24px) !important; padding: 0 !important; }
+.bu-caret { flex-shrink: 0; min-width: 0 !important; width: var(--mp-sizes-5, 20px) !important; height: var(--mp-sizes-5, 20px) !important; min-height: 0 !important; padding: 0 !important; }
 .bu-name-text { display: flex; flex-direction: column; min-width: 0; }
 .bu-name-main { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bu-stack { display: flex; flex-direction: column; }
+.bu-stack { display: flex; flex-direction: column; min-width: 0; }
 .bu-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .bu-modal-desc { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); }
 .bu-sources { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }

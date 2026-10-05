@@ -223,15 +223,24 @@ const previewMapped = computed(() => unitAccounts.filter((u) => u.mappedTo === p
           {{ (row as unknown as Row).code }}
         </span>
       </template>
+      <template #cell-name="{ row }">
+        <span class="coa-ellipsis" :title="(row as unknown as Row).name">{{ (row as unknown as Row).name }}</span>
+      </template>
       <template #actions="{ row }">
-        <div class="coa-row-actions">
-          <MpTooltip :label="t('Edit')" placement="top">
-            <MpButton variant="ghost" is-rounded left-icon="edit" :aria-label="t('Edit')" @click="openDrawer((row as unknown as Row).id)" />
-          </MpTooltip>
-          <MpTooltip v-if="!(row as unknown as Row).isSystem" :label="t('Delete')" placement="top">
-            <MpButton variant="ghost" is-rounded left-icon="delete" :aria-label="t('Delete')" @click="askDelete(row as unknown as Row)" />
-          </MpTooltip>
-        </div>
+        <MpPopover :id="`coa-row-${(row as unknown as Row).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+          <MpPopoverTrigger>
+            <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('Action')" is-rounded />
+          </MpPopoverTrigger>
+          <MpPopoverContent class="erp-dropdown-menu">
+            <MpPopoverList>
+              <MpPopoverListItem @click="openDrawer((row as unknown as Row).id)">{{ t('Edit') }}</MpPopoverListItem>
+              <MpTooltip v-if="(row as unknown as Row).isSystem" :label="t('System account can\'t be deleted')" placement="left">
+                <MpPopoverListItem is-disabled>{{ t('Delete') }}</MpPopoverListItem>
+              </MpTooltip>
+              <MpPopoverListItem v-else @click="askDelete(row as unknown as Row)">{{ t('Delete') }}</MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
       </template>
       <template #empty>
         <div class="empty-full">
@@ -383,9 +392,9 @@ const previewMapped = computed(() => unitAccounts.filter((u) => u.mappedTo === p
 .coa-head-actions { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .filter-left { flex: 1 1 auto; display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
-.coa-code { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
-.coa-caret { min-width: 0 !important; width: var(--mp-sizes-6, 24px) !important; height: var(--mp-sizes-6, 24px) !important; padding: 0 !important; }
-.coa-row-actions { display: flex; gap: var(--mp-spacing-1); }
+.coa-code { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); line-height: var(--mp-line-heights-md); }
+.coa-caret { min-width: 0 !important; width: var(--mp-sizes-5, 20px) !important; height: var(--mp-sizes-5, 20px) !important; min-height: 0 !important; padding: 0 !important; margin: calc(var(--mp-spacing-1) * -1) 0; }
+.coa-ellipsis { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .coa-error { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
 .coa-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: 0; }
 .coa-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
