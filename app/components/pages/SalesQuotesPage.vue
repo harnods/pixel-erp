@@ -1,7 +1,8 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/sales/quotes/views/SalesQuoteListView.vue -->
 <script setup lang="ts">
 import {
   MpButton, MpButtonGroup, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, toast, css,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { formatIDR } from '~/utils/currency'
@@ -16,6 +17,7 @@ import ExportModal from '~/components/patterns/ExportModal.vue'
 import CopyLinkDrawer from '~/components/patterns/CopyLinkDrawer.vue'
 import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
 import SalesQuoteFiltersDrawer, { emptySalesQuoteFilters, type SalesQuoteFiltersValue } from '~/components/patterns/SalesQuoteFiltersDrawer.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
 import { salesQuotes, awaitingSalesQuotes } from '~/data'
 import type { SalesQuote } from '~/data'
@@ -25,13 +27,13 @@ const { t } = useLocale()
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'date',           label: t('Date'),            kind: 'date',                                sortType: 'date'   },
+  { key: 'date',           label: t('Date'),            kind: 'date', sortable: true,                sortType: 'date'   },
   { key: 'number',         label: t('Number'),          kind: 'number', sortable: true,                sortType: 'number' },
   { key: 'customerName',   label: t('Customer'),        kind: 'name', sortable: true,                sortType: 'text'   },
-  { key: 'expirationDate', label: t('Valid until'),      kind: 'date',                                sortType: 'date'   },
-  { key: 'status',         label: t('Status'),          kind: 'status',                                sortType: 'text'   },
+  { key: 'expirationDate', label: t('Expiration date'), kind: 'date', sortable: true,                sortType: 'date'   },
+  { key: 'status',         label: t('Status'),          kind: 'status', sortable: true,                sortType: 'text'   },
   { key: 'total',          label: t('Total'),           kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'tags',           label: t('Tags'),            kind: 'tags'                                 },
+  { key: 'tags',           label: t('Tags'),            kind: 'tags', sortable: true,                sortType: 'text'   },
 ]
 
 // ─── Row type + flatten ─────────────────────────────────────────────────────────
@@ -133,11 +135,36 @@ const isDrawerFilterActive = computed(() => activeFilterCount.value > 0)
 
 // ─── Filter options ───────────────────────────────────────────────────────────
 // Quick-filter options — NO "All status" entry; clearing (x) resets to show-all.
+// Prod (salesQuote.list.statusFilter): Open, Closed. Declined is kept local-only
+// (prod has the label but not the filter option).
 const statusOptions = [
   { label: t('Open'),     value: 'open'     },
   { label: t('Closed'),   value: 'closed'   },
   { label: t('Declined'), value: 'declined' },
 ]
+// Prod badge colours: Open → warning, everything else → announcement (gray).
+function badgeType(status: string): 'warning' | 'announcement' { return status === 'open' ? 'warning' : 'announcement' }
+
+const router = useRouter()
+function notInPrototype() {
+  toast.notify({ variant: 'success', title: t('Not in this prototype'), rootProps: { class: 'toast-enterprise' } })
+}
+function markDeclined() {
+  toast.notify({ variant: 'success', title: t('Sales quote declined'), rootProps: { class: 'toast-enterprise' } })
+}
+
+// ─── Bulk delete — ghost "Delete" next to the bulk Actions menu (prod BulkSelectionBar) ──
+const bulkDeleteOpen = ref(false)
+const bulkSelectedCount = ref(0)
+function openBulkDelete(count: number) { bulkSelectedCount.value = count; bulkDeleteOpen.value = true }
+function confirmBulkDelete() {
+  const n = bulkSelectedCount.value
+  toast.notify({
+    variant: 'success',
+    title: n === 1 ? t('1 sales quote deleted') : `${n} ${t('sales quotes deleted')}`,
+    rootProps: { class: 'toast-enterprise' },
+  })
+}
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 function formatDate(iso: string) {
@@ -213,6 +240,7 @@ const exportColumns = computed(() => [
     :has-active-filter="!!search || !!statusFilter || isDrawerFilterActive"
     :search="search"
     has-checkbox
+    bulk-label="transaction"
     :context-label="(row) => `${t('Sales Quote')} #${row.number}`"
     @page-change="setPage"
     @per-page-change="setPerPage"
@@ -223,20 +251,21 @@ const exportColumns = computed(() => [
   >
 
     <!-- ── Bulk actions ── -->
-    <template #bulk-actions>
+    <template #bulk-actions="{ count }">
       <MpPopover id="sq-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
         <MpPopoverTrigger>
           <MpButton size="sm" variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('Actions') }}</MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
-            <MpPopoverListItem>{{ t('Convert to sales order') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="rows.length && openShare(rows[0])">{{ t('Share via email') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="notInPrototype">{{ t('Print PDF') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="rows.length && openShare(rows[0]!)">{{ t('Share via email') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openCopyLinks(rows.slice(0, 5) as Row[])">{{ t('Copy link') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="router.push('/sales-orders/new')">{{ t('Convert to sales order') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
+      <MpButton size="sm" variant="secondary" is-rounded @click="openBulkDelete(count as number)">{{ t('Delete') }}</MpButton>
     </template>
 
     <!-- ── Filter bar ── -->
@@ -299,7 +328,7 @@ const exportColumns = computed(() => [
 
     <!-- ── Cell: Status ── -->
     <template #cell-status="{ value }">
-      <ErpStatusBadge :status="value as string" />
+      <ErpStatusBadge :status="value as string" :type="badgeType(value as string)" />
     </template>
 
     <!-- ── Cell: Total ── -->
@@ -334,16 +363,16 @@ const exportColumns = computed(() => [
         <!-- min-width 160px, width hugs content, labels never wrap -->
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem>{{ t('View details') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Create sales order') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Create sales invoice') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Mark as declined') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="router.push(`/sales-quotes/${(row as Row).id}`)">{{ t('View details') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="router.push('/sales-orders/new')">{{ t('Create sales order') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="router.push('/sales-invoices/new')">{{ t('Create sales invoice') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="(row as Row).status === 'open'" @click="markDeclined">{{ t('Mark as declined') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="router.push('/sales-quotes/new')">{{ t('Duplicate') }}</MpPopoverListItem>
           </MpPopoverList>
           <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
           <MpPopoverList>
-            <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openShare(row as Row)">{{ t('Share via email') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openCopyLinks([row as Row])">{{ t('Copy link') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -361,6 +390,9 @@ const exportColumns = computed(() => [
     :columns="keywordColumns"
     :status-options="statusOptions"
     :tag-options="tagOptions"
+    :date-label="t('Expiration date')"
+    :date-placeholder="t('Select expiration date')"
+    :reset-label="t('Reset')"
     @update:is-open="filtersOpen = $event"
     @apply="applyDrawerFilters"
   />
@@ -368,6 +400,16 @@ const exportColumns = computed(() => [
   <ExportModal :open="exportOpen" :title="t('Export sales quotes')" entity-label="sales quotes" :columns="exportColumns" :custom-fields="[t('Sample custom field 1'), t('Sample custom field 2')]" :total="total" @close="exportOpen = false" @export="exportOpen = false" />
   <CopyLinkDrawer :open="copyOpen" :items="copyItems" @close="copyOpen = false" @download-csv="copyOpen = false" />
   <ShareViaEmailModal :open="shareOpen" :title="shareTitle" :subject="shareSubject" :attachment-name="shareAttachment" :attachment-size-k-b="128" sender-email="rizal.candra@centralperk.co.id" @close="shareOpen = false" @send="shareOpen = false" />
+
+  <ConfirmModal
+    v-model:is-open="bulkDeleteOpen"
+    :title="bulkSelectedCount === 1 ? t('Delete sales quote?') : t('Delete sales quotes?')"
+    :description="bulkSelectedCount === 1
+      ? t('Are you sure you want to delete this sales quote? This action cannot be undone.')
+      : `${t('Are you sure you want to delete these')} ${bulkSelectedCount} ${t('sales quotes? This action cannot be undone.')}`"
+    :confirm-label="t('Delete')"
+    @confirm="confirmBulkDelete"
+  />
 
   <ScenarioFab v-model="previewMode" />
 </template>
