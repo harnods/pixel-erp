@@ -4,6 +4,7 @@ import { newAssetDrawerOpen } from '~/data/fixedAssetSession'
 import { currentApplyAllRequested, currentAssetTabCounts, currentDepreciationSchedule } from '~/data/currentAssets'
 import { gateFinancialPage } from '~/utils/assetRoleGate'
 import { infoToast } from '~/utils/toasts'
+import { budget as budgetChangesState } from '~/data/budgetStore'
 import { MpAvatar, MpBadge, MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 
 // Shown while a page chunk is being fetched. 200ms delay = no flash for cached chunks.
@@ -2641,6 +2642,26 @@ function startResize(e: MouseEvent) {
             <MpIcon name="add" size="md" color="icon.inverse" />
             {{ t('New purchase delivery') }}
           </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Budget changes' && (budgetChangesState.viewAs === 'Budget Controller' || budgetChangesState.viewAs === 'Requester')" class="page-title-actions">
+          <MpPopover id="budget-changes-new-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" data-tour="change-new">
+                <MpIcon name="add" size="md" color="icon.inverse" />
+                {{ t('New change') }}
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent class="erp-dropdown-menu">
+              <MpPopoverList v-if="budgetChangesState.viewAs === 'Budget Controller'">
+                <MpPopoverListItem @click="router.push({ path: '/budget-changes/new', query: { kind: 'Transfer' } })">{{ t('Transfer') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push({ path: '/budget-changes/new', query: { kind: 'Revision' } })">{{ t('Revision') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push({ path: '/budget-changes/new', query: { kind: 'Mid-year insert' } })">{{ t('Mid-year insert') }}</MpPopoverListItem>
+              </MpPopoverList>
+              <MpPopoverList v-else>
+                <MpPopoverListItem @click="router.push({ path: '/budget-changes/new', query: { kind: 'Funding request' } })">{{ t('Funding request') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
         </div>
         <!-- ── XPM (Mekari Expense) title-bar actions ── -->
         <div v-else-if="currentPageKey === 'Budgeting'" class="page-title-actions">
