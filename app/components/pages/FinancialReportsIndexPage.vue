@@ -31,6 +31,7 @@ const reports: ReportCard[] = [
   { slug: 'statement-of-changes-in-equity', title: 'Statement of changes in equity', description: 'Shows owner\'s equity changes or movements in a certain period.' },
   { slug: 'executive-summary', title: 'Executive summary', description: 'Shows the summary of main financial report and its insight in a certain period.' },
   { slug: 'budget-variance', title: 'Profit & loss budgeting', description: 'Shows the comparison between actual transaction amount and arranged budget per account.', to: '/financial-report/budget-variance' },
+  { slug: 'budget-report', title: 'Budget vs actual', description: 'Shows budget, reserved, committed, actual and available for each budget line, tied to the general ledger.', to: '/budget-report' },
   { slug: 'budget-management', title: 'Budget management', description: 'Allows you to set and manage the budget for expenses and income of this company.' },
   { slug: 'multidimensional', title: 'Multidimensional', description: 'Shows your profit & loss for each branch, project, or other dimension in a certain period.', to: '/financial-report/multidimensional' },
 ]
