@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/sales/quotes/views/SalesQuoteShowView.vue -->
 <script setup lang="ts">
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
@@ -30,8 +31,22 @@ const activityOpen = ref(false)
 // Destructive delete → confirm modal (rule/btn-danger-confirm)
 const deleteOpen = ref(false)
 function confirmDelete() {
-  toast.notify({ variant: 'success', title: t('Sales quote deleted'), rootProps: { class: 'toast-enterprise' } })
+  toast.notify({ variant: 'success', title: `${t('Sales Quote')} #${quote.value.number} ${t('has been deleted')}`, rootProps: { class: 'toast-enterprise' } })
   router.push('/sales-quotes')
+}
+// Mark as declined → confirm modal (prod SalesQuoteDeclineModal)
+const declineOpen = ref(false)
+function confirmDecline() {
+  toast.notify({ variant: 'success', title: t('Sales quote declined'), rootProps: { class: 'toast-enterprise' } })
+}
+// Prod badge colours: Open → warning, everything else → announcement (gray).
+const statusType = computed(() => quote.value.status === 'open' ? 'warning' : 'announcement')
+function notInPrototype() {
+  toast.notify({ variant: 'success', title: t('Not in this prototype'), rootProps: { class: 'toast-enterprise' } })
+}
+function copyLink() {
+  void navigator.clipboard?.writeText(`https://mkrierp.id/${quote.value.id}`).catch(() => {})
+  toast.notify({ variant: 'success', title: t('Link copied to clipboard'), rootProps: { class: 'toast-enterprise' } })
 }
 const activityEntries = computed(() => [{
   date: quote.value.lastUpdatedAt,
@@ -144,7 +159,7 @@ function goBack() { router.push('/sales-quotes') }
         <MpTextlink id="detail-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="goBack">{{ t('Sales quotes') }}</MpTextlink>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('Sales Quote') }} #{{ quote.number }}</h1>
-          <ErpStatusBadge :status="quote.status" badge-for="additionalInformation" size="md" />
+          <ErpStatusBadge :status="quote.status" :type="statusType" badge-for="additionalInformation" size="md" />
 
           <!-- Chevron → jump-to-transaction switcher (search + 5 recent) -->
           <MpPopover id="detail-jump" use-portal :is-keep-alive="false" placement="bottom-start">
@@ -176,7 +191,7 @@ function goBack() { router.push('/sales-quotes') }
                     <span class="detail-jump-item-number">{{ t('Sales Quote') }} #{{ o.number }}</span>
                     <span class="detail-jump-item-customer">{{ o.customer.name }}</span>
                   </button>
-                  <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found') }}</p>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No results found') }}</p>
                 </div>
               </div>
             </MpPopoverContent>
@@ -242,7 +257,12 @@ function goBack() { router.push('/sales-quotes') }
             <ContentList :label="t('Expiration date')" :value="formatDateLong(quote.expirationDate)" />
             <ContentList :label="t('Payment terms')" :value="quote.paymentTerms" />
           </div>
-          <!-- col 3: references -->
+          <!-- col 3: shipping (prod: Estimated ship date + Ship via) -->
+          <div class="content-list-col">
+            <ContentList :label="t('Estimated ship date')" :value="formatDateLong(quote.shipDate)" />
+            <ContentList :label="t('Ship via')" :value="quote.shipVia" />
+          </div>
+          <!-- col 4: references -->
           <div class="content-list-col">
             <ContentList :label="t('Transaction no.')" :value="`${t('Sales Quote')} #${quote.number}`" />
             <ContentList :label="t('Reference no.')" :value="quote.referenceNo" />
@@ -316,7 +336,7 @@ function goBack() { router.push('/sales-quotes') }
           <ContentList :label="t('Memo')">
             <p class="detail-note-text">{{ quote.memo }}</p>
           </ContentList>
-          <ContentList :label="`${t('Attachment')} (${quote.attachments.length})`">
+          <ContentList :label="`${quote.attachments.length === 1 ? t('Attachment') : t('Attachments')} (${quote.attachments.length})`">
             <div class="detail-attach-list">
               <a v-for="(a, i) in quote.attachments" :key="i" class="detail-attach" @click.prevent>
                 <span class="detail-attach-icon"><MpIcon :name="attachmentIcon(a.name)" size="md" /></span>
@@ -415,14 +435,13 @@ function goBack() { router.push('/sales-quotes') }
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Print dot matrix') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Print PDF') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Print dot matrix') }}</MpPopoverListItem>
             </MpPopoverList>
             <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
             <MpPopoverList>
-              <MpPopoverListItem>{{ t('Share via WhatsApp') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Share via email') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="copyLink">{{ t('Copy link') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -437,10 +456,18 @@ function goBack() { router.push('/sales-quotes') }
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Void') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Preview') }}</MpPopoverListItem>
+              <template v-if="quote.status === 'open'">
+                <MpPopoverListItem @click="router.push('/sales-orders/new')">{{ t('Create sales order') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push('/sales-invoices/new')">{{ t('Create sales invoice') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="declineOpen = true">{{ t('Mark as declined') }}</MpPopoverListItem>
+              </template>
+            </MpPopoverList>
+            <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
+            <MpPopoverList>
+              <MpPopoverListItem @click="router.push(`/sales-quotes/${quote.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="router.push('/sales-quotes/new')">{{ t('Duplicate') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Void') }}</MpPopoverListItem>
               <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
@@ -461,9 +488,17 @@ function goBack() { router.push('/sales-quotes') }
     <ConfirmModal
       v-model:is-open="deleteOpen"
       :title="t('Delete sales quote?')"
-      :description="`${t('Sales Quote')} #${quote.number} ${t('will be permanently deleted. This cannot be undone.')}`"
-      :confirm-label="`${t('Delete')} ${t('sales quote')}`"
+      :description="t('Deleted sales quote cannot be restored.')"
+      :confirm-label="t('Delete')"
       @confirm="confirmDelete"
+    />
+
+    <ConfirmModal
+      v-model:is-open="declineOpen"
+      :title="t('Mark as declined?')"
+      :description="t('Are you sure you want to mark this quote as declined?')"
+      :confirm-label="t('Decline')"
+      @confirm="confirmDecline"
     />
   </div>
 </template>
