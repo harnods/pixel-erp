@@ -137,7 +137,7 @@ const connectionLog = computed(() => syncLog.value.filter((l) => l.type === 'Con
         </div>
         <div v-if="lastRejected" class="pset-note pset-note--danger">
           <span>{{ t('Last send rejected') }} · {{ wib(lastRejected.at) }} · {{ t(lastRejected.reason) }}<template v-if="c.rejected.length > 1"> · {{ c.rejected.length }} {{ t('rejected sends') }}</template></span>
-          <span class="pset-link" @click="router.push({ path: '/payroll-inbox', query: { section: 'sync-log' } })">{{ t('Open sync log') }}</span>
+          <span class="pset-link" @click="router.push({ path: '/payroll-inbox', query: { view: 'log' } })">{{ t('Open sync log') }}</span>
         </div>
         <div v-if="silentDays > 40" class="pset-note pset-note--warn">{{ t(`No send from Talenta for ${silentDays} days. Ask HR whether payroll ran.`) }}</div>
       </div>
