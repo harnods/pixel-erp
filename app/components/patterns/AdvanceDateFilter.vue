@@ -14,7 +14,7 @@
  * row filtering).
  */
 import { ref, computed, watch } from 'vue'
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpButton, css } from '@mekari/pixel3'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpButton, MpIcon, css } from '@mekari/pixel3'
 import {
   resolveDateFilterRange, dateFilterLabel, toIso, fromIso,
   type DateFilterValue, type DateFilterMode,
@@ -175,7 +175,10 @@ function onDayClick(cell: Cell) {
 <template>
   <MpPopover :id="id" use-portal :is-keep-alive="false" :is-open="isOpen" @update:is-open="isOpen = $event">
     <MpPopoverTrigger>
-      <MpButton class="adf-trigger" :class="{ 'adf-trigger--placeholder': !modelValue }">
+      <MpButton
+        class="adf-trigger"
+        :class="{ 'adf-trigger--placeholder': !modelValue }"
+      >
         <span class="adf-trigger-label">{{ modelValue ? label : placeholder }}</span>
         <svg
           v-if="modelValue && clearable" class="adf-clear" width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -183,9 +186,9 @@ function onDayClick(cell: Cell) {
         >
           <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
         </svg>
-        <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
+        <!-- A calendar, not a chevron: this opens a date picker, and the chevron
+             made it read as a plain select like the ones beside it. -->
+        <MpIcon v-else class="adf-cal" name="calendar" size="sm" aria-hidden="true" />
       </MpButton>
     </MpPopoverTrigger>
     <MpPopoverContent :class="css({ padding: '0', width: 'max-content' })">
@@ -267,13 +270,23 @@ function onDayClick(cell: Cell) {
   font-weight: var(--mp-font-weights-regular, 400) !important;
   cursor: pointer;
 }
-/* Same neutral focus ring as every other select (rule/select-active-neutral). */
-.adf-trigger:focus-visible {
+/* Hover and active states, with !important because MpButton's own atoms would
+   otherwise repaint the border back (rule/select-active-neutral: neutral slate,
+   never a brand colour).
+   The ACTIVE state hangs off :focus rather than an open flag: MpPopover in this
+   Pixel build manages its own open state and never emits it back (see the note on
+   `isOpen` above), and the trigger holds focus for as long as its panel is up —
+   so focus is the only signal available, and it is the right one anyway. */
+.adf-trigger:hover { border-color: var(--mp-colors-border-bold, #8c9596) !important; }
+.adf-trigger:focus,
+.adf-trigger:focus:hover {
   border-color: var(--mp-colors-border-bold, #8c9596) !important;
   box-shadow: 0 0 0 1px var(--mp-colors-border-bold, #8c9596) !important; /* pixel-police-allow-shadow */
   outline: none;
 }
-.adf-trigger:hover { border-color: var(--mp-colors-border-bold, #8c9596); }
+/* A set filter reads as filled, like ErpFilterSelect's own filled state. */
+.adf-trigger:not(.adf-trigger--placeholder) { color: var(--mp-colors-text-default, #080d0e); }
+.adf-cal { color: var(--mp-colors-icon-default, #3a4749); flex-shrink: 0; }
 .adf-trigger svg { color: var(--mp-icon-default, var(--mp-text-secondary)); flex-shrink: 0; }
 .adf-trigger--placeholder { color: var(--mp-text-placeholder); }
 .adf-trigger-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

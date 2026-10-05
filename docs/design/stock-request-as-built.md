@@ -160,13 +160,10 @@ S-4.
   anything already set through them: the tab IS a status filter, and the drawer
   only adds status and keyword on top of it.
 
-  **Note for the PRD.** W-7 lets the stockist decline only TAGGED lines, and C-4
-  gives a work order one request carrying every component — so a work order's
-  request can never derive the status `rejected`: its original lines always
-  outrank the declined one. The terminal tab therefore also holds a request that
-  has a rejected line and nothing left awaiting, which is the real "finished by a
-  rejection" state. Without that clause such a request falls out of Awaiting
-  (nothing to do) and lands nowhere.
+  Membership is derived status alone. `rejected` outranks the fulfilled states in
+  `STATUS_RANK`, so a request whose own demand is settled and whose extra line the
+  stockist declined derives `rejected` by itself; one whose demand is still open
+  derives the lower status and stays in Awaiting, where the work is.
 - **W-1…W-10** — both views; product rows are one per SKU **per destination
   warehouse** so availability is never summed across warehouses; W-2's column set
   behind a column menu; derived statuses incl. Rejected and Canceled; overdue;

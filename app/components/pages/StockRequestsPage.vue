@@ -35,7 +35,7 @@ import {
   stockRequests, stockRequestStatus, stockRequestStatusOptions, skuDemandGroups,
   requestRequiredQty, isAwaitingTab, isTerminalRequest, isOnDashboard, isActionable, workOrderFor, isOverdue,
   reserveStock, reserveProductEverywhere, rejectRequestLine, canReject, canRejectLine,
-  isLineOverdue, stockRequestLineStatus,
+  isLineOverdue,
   type StockRequest, type StockRequestLine, type StockRequestLineTag, type SkuDemandGroup,
 } from '~/data/stockRequests'
 
@@ -197,8 +197,12 @@ const woRows = computed<WoRow[]>(() =>
       const w = workOrderFor(r)
       return {
         ...r,
-        // The dashboard shows the WORK ORDER's status, not the readiness rollup.
-        status: (w?.status ?? stockRequestStatus(r)) as string,
+        // The dashboard shows the WORK ORDER's status, not the readiness rollup —
+        // except on the terminal tab, where what put the row there is the REQUEST's
+        // own status. A row sitting under "Rejected / canceled" while its badge
+        // read "In progress" (the job runs on; its extra demand was declined)
+        // looked like a filter bug.
+        status: (isTerminalTab.value ? stockRequestStatus(r) : (w?.status ?? stockRequestStatus(r))) as string,
         qty: requestRequiredQty(r),
         overdue: isOverdue(r, TODAY_ISO),
         requiredDate: [...r.lines].map(l => l.requiredDate).sort()[0] ?? r.requestDate,
@@ -403,9 +407,6 @@ function sku(row: unknown): SkuDemandGroup { return row as SkuDemandGroup }
 function wo(row: unknown): WoRow { return row as WoRow }
 
 /** The distinct tags a request's LINES carry (W-7) — its "Request type" column. */
-/** W-3 — a line's own derived status, for the badge on its breakdown row. */
-const lineStatus = stockRequestLineStatus
-
 function lineTags(row: WoRow): StockRequestLineTag[] {
   return [...new Set(row.lines.map(l => l.tag).filter(Boolean))] as StockRequestLineTag[]
 }
@@ -557,7 +558,7 @@ const exportColumns = computed(() => {
       {{ formatDate(value as string) }}
       <!-- W-7 — overdue reads the same in both views; a product row is demand too,
            and the note sits under the date that has passed. -->
-      <p v-if="sku(row).overdue" class="sr-note">{{ t('Overdue — reminder sent') }}</p>
+      <p v-if="sku(row).overdue" class="sr-note">{{ t('Overdue') }}</p>
     </template>
     <template #cell-openWorkOrders="{ row }">{{ sku(row).openWorkOrders }}</template>
     <template #cell-required="{ row }">{{ sku(row).required }} {{ sku(row).unit }}</template>
@@ -640,10 +641,7 @@ const exportColumns = computed(() => {
             <span v-else-if="col.key === 'qty'" class="cell-text">{{ line.qty }} {{ line.unit }}</span>
             <span v-else-if="col.key === 'requiredDate'" class="cell-text">
               {{ formatDate(line.requiredDate) }}
-              <span v-if="isLineOverdue(line, TODAY_ISO)" class="sr-note">{{ t('Overdue — reminder sent') }}</span>
-            </span>
-            <span v-else-if="col.key === 'status'">
-              <ErpStatusBadge :status="lineStatus(line)" />
+              <span v-if="isLineOverdue(line, TODAY_ISO)" class="sr-note">{{ t('Overdue') }}</span>
             </span>
             <span v-else-if="col.key === 'woStartDate'" class="cell-text">—</span>
             <span v-else-if="col.key === 'destinationWarehouse'" class="cell-text" :title="line.destinationWarehouse">{{ line.destinationWarehouse }}</span>
@@ -691,7 +689,7 @@ const exportColumns = computed(() => {
     <!-- W-7 — the overdue note belongs under the date being missed. -->
     <template #cell-requiredDate="{ row }">
       {{ formatDate(wo(row).requiredDate) }}
-      <p v-if="wo(row).overdue" class="sr-note">{{ t('Overdue — reminder sent') }}</p>
+      <p v-if="wo(row).overdue" class="sr-note">{{ t('Overdue') }}</p>
     </template>
 
     <template #cell-lastUpdated="{ row }">
@@ -793,8 +791,13 @@ const exportColumns = computed(() => {
 
 /* Component cell — name over SKU, with the accordion chevron */
 .sr-component { display: flex; flex-direction: column; min-width: 0; cursor: pointer; }
-.sr-component-main { display: flex; align-items: center; gap: var(--mp-spacing-1); min-width: 0; }
-.sr-expand { display: inline-flex; flex-shrink: 0; color: var(--mp-text-subtle, #656f80); transition: transform 150ms ease; }
+/* The name takes the room and the chevron holds the right edge, so every row's
+   toggle sits on one line instead of drifting with the length of the name. */
+.sr-component-main { display: flex; align-items: center; gap: var(--mp-spacing-1); min-width: 0; width: 100%; }
+.sr-expand {
+  display: inline-flex; flex-shrink: 0; margin-left: auto;
+  color: var(--mp-text-subtle, #656f80); transition: transform 150ms ease;
+}
 .sr-expand--open { transform: rotate(180deg); }
 .sr-component:hover .sr-expand { color: var(--mp-text-default, #080d0e); }
 /* Table body text is regular weight, never semibold (docs/table-design.md). */

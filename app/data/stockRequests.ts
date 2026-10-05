@@ -514,17 +514,16 @@ export function isAwaitingTab(req: StockRequest): boolean {
  * stay listed, because a request that vanishes reads like one that was never
  * raised — but they are not work, so they live apart from the tab the stockist
  * works down, and they are no longer offered in the Status filter either.
+ *
+ * Status is derived, so this needs no second clause: `rejected` outranks every
+ * fulfilled state in STATUS_RANK, so a request whose own demand is settled and
+ * whose extra line was declined derives `rejected` on its own. One whose demand
+ * is still open derives the lower status and stays in Awaiting, where the work
+ * is.
  */
 export function isTerminalRequest(req: StockRequest): boolean {
   const status = stockRequestStatus(req)
-  if (status === 'rejected' || status === 'canceled') return true
-  // A request whose extra demand was declined and whose own demand is settled is
-  // finished BY A REJECTION, but its status reads from its lowest line, which is
-  // the fulfilled original — so it would otherwise fall out of Awaiting (nothing
-  // to do) without landing anywhere. W-7 lets the stockist decline only tagged
-  // lines, so a work order's request can never read `rejected` on its own; this
-  // is the state the tab is actually for.
-  return req.lines.some(l => l.rejected) && !needsAction(req)
+  return status === 'rejected' || status === 'canceled'
 }
 
 /** Requests still needing warehouse action — drives the sidebar count badge. */
