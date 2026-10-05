@@ -1,6 +1,9 @@
 import type { PurchaseInvoice } from './types'
+import type { PurchaseInvoiceDetail } from './purchaseInvoiceDetails'
 import { vendors } from './vendors'
 import { SIM_SPAN_DAYS, simDay, daysUntil } from './simClock'
+import { reactive } from 'vue'
+import { loadCreated, saveCreated } from './persist'
 
 /**
  * Vendor invoices (AP) — a deterministic TIME SERIES spanning 1 Jan 2026 → today
@@ -57,3 +60,30 @@ export const purchaseInvoices: PurchaseInvoice[] = buildPurchaseInvoices()
  * invoices" tab and receipt review.
  */
 export const purchaseInvoicesAwaitingApproval: PurchaseInvoice[] = purchaseInvoices.slice(0, 8)
+
+// ── User-created purchase invoices (New purchase invoice form) ───────────────
+// Persisted with loadCreated/saveCreated and kept OUT of `purchaseInvoices`
+// (reports tie out against that seed); the index page lists created + seed.
+const PI_CREATED_KEY = 'purchaseInvoices.created'
+/** A form-created invoice also keeps what the user typed (lines, addresses…) so its detail page shows it. */
+export type CreatedPurchaseInvoice = PurchaseInvoice & { detail?: Partial<PurchaseInvoiceDetail> }
+export const createdPurchaseInvoices: CreatedPurchaseInvoice[] = reactive(loadCreated<CreatedPurchaseInvoice>(PI_CREATED_KEY))
+
+export function nextPurchaseInvoiceSeq(): number {
+  return [...purchaseInvoices, ...createdPurchaseInvoices].reduce((max, inv) => {
+    const n = parseInt(inv.number.split('-').pop() ?? '', 10)
+    return Number.isNaN(n) ? max : Math.max(max, n)
+  }, 0) + 1
+}
+
+export function addPurchaseInvoice(input: Omit<CreatedPurchaseInvoice, 'id' | 'number'>): CreatedPurchaseInvoice {
+  const seq = nextPurchaseInvoiceSeq()
+  const inv: CreatedPurchaseInvoice = {
+    ...input,
+    id: `PI${String(seq).padStart(3, '0')}`,
+    number: `PINV-2026-${String(seq).padStart(3, '0')}`,
+  }
+  createdPurchaseInvoices.unshift(inv)
+  saveCreated(PI_CREATED_KEY, createdPurchaseInvoices)
+  return inv
+}

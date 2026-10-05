@@ -1,4 +1,4 @@
-import { purchaseInvoices } from './purchaseInvoices'
+import { purchaseInvoices, createdPurchaseInvoices } from './purchaseInvoices'
 import { products } from './products'
 import type { SalesOrderTotals } from './salesOrders'
 import type { PurchaseInvoice, SalesOrderItem, SILineItem } from './types'
@@ -47,6 +47,25 @@ export interface PurchaseInvoiceDetail extends PurchaseInvoice {
   lastUpdatedAt: string
   linkedTransactions: PILinkedTxn[]
   banner: { message: string; linkLabel: string } | null
+  // ── prod-parity (TX purchase-invoices show page) additive fields ──
+  /** Source purchase order number shown as "Order no." (prod PurchaseInvoiceDetailFields). */
+  orderNo: string
+  /** Shipping block (prod shows it when the invoice is shipped). */
+  isShipped: boolean
+  receivedDate: string
+  shipVia: string
+  trackingNo: string
+  /** Payments recorded against the invoice (prod "Payment" tab). Sum = amount − balance due. */
+  payments: PIPayment[]
+}
+
+export interface PIPayment {
+  date: string          // ISO
+  number: string        // "Purchase Payment #60001"
+  paymentMethod: string
+  account: string
+  referenceNo: string
+  amountPaid: number
 }
 
 const BILLING_ADDRESSES = [
@@ -153,7 +172,22 @@ function buildDetail(base: PurchaseInvoice, idx: number): PurchaseInvoiceDetail 
     totals,
     lastUpdatedBy: 'Rizal Candra',
     lastUpdatedAt: `${base.date}T11:00:00+07:00`,
-    linkedTransactions: buildLinked(base, idx),
+    linkedTransactions: buildLinked(base, idx).filter(l => l.type !== 'Payment Voucher'),
+    orderNo: `Purchase Order #${10090 + idx}`,
+    isShipped: idx % 2 === 0,
+    receivedDate: addDays(base.date, 2),
+    shipVia: pick(['JNE Trucking', 'Vendor fleet', 'SiCepat Cargo', 'Pickup'], idx),
+    trackingNo: `TRK-${String(880000 + idx * 37).padStart(7, '0')}`,
+    payments: base.status === 'paid'
+      ? [{
+          date: addDays(base.dueDate, -2),
+          number: `Purchase Payment #${60000 + idx}`,
+          paymentMethod: 'Bank transfer',
+          account: '(1-10004) Bank BCA',
+          referenceNo: `TRF-${60000 + idx}`,
+          amountPaid: base.amount,
+        }]
+      : [],
     banner: base.status === 'overdue'
       ? { message: 'This invoice is past its due date.', linkLabel: 'Record payment' }
       : null,
@@ -162,6 +196,11 @@ function buildDetail(base: PurchaseInvoice, idx: number): PurchaseInvoiceDetail 
 
 /** Look up a full detail record by PurchaseInvoice id; falls back to the first invoice. */
 export function getPurchaseInvoiceDetail(id: string): PurchaseInvoiceDetail {
+  const created = createdPurchaseInvoices.find(inv => inv.id === id)
+  if (created) {
+    const { detail, ...base } = created
+    return { ...buildDetail(base, parseInt(created.id.replace(/\D/g, ''), 10)), ...(detail ?? {}), orderNo: '', linkedTransactions: [], payments: [] }
+  }
   const i = purchaseInvoices.findIndex(inv => inv.id === id)
   const idx = i >= 0 ? i : 0
   return buildDetail(purchaseInvoices[idx]!, idx)

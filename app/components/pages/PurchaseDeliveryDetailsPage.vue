@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/purchase-deliveries/views/PurchaseDeliveryShowView.vue -->
 <script setup lang="ts">
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
@@ -11,6 +12,7 @@ import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { getPurchaseDeliveryDetail } from '~/data/purchaseDeliveryDetails'
 import { purchaseDeliveries } from '~/data'
+import { infoToast } from '~/utils/toasts'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -103,10 +105,6 @@ const jumpResults = computed(() => {
 function jumpTo(id: string) { router.push('/purchase-deliveries/' + id) }
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
-/** Parenthesised deduction, e.g. (Rp100.000,00); plain Rp0,00 for zero. */
-function formatDeduction(amount: number) {
-  return amount > 0 ? `(${formatIDR(amount)})` : formatIDR(0)
-}
 function formatDateLong(iso: string) {
   return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(iso))
 }
@@ -120,7 +118,6 @@ function formatUpdatedAt(iso: string) {
   return `${date}, ${time}`
 }
 
-function discountText(pct: number) { return pct > 0 ? `${pct}%` : '' }
 
 /** File-type → Pixel document icon for an attachment. */
 function attachmentIcon(name: string): string {
@@ -133,6 +130,14 @@ function attachmentIcon(name: string): string {
 }
 
 function goBack() { router.push('/purchase-deliveries') }
+function notInPrototype() { infoToast(t('Not in this prototype')) }
+// Prod: "Create purchase invoice" is the primary action while the delivery is
+// still open for billing (billing status Open = local 'unbilled').
+const isOpenForBilling = computed(() => delivery.value.billingStatus === 'unbilled')
+function createInvoice() { router.push(`/purchase-invoices/new?createdFrom=${delivery.value.id}`) }
+const BILLING_LABEL: Record<string, string> = { unbilled: t('Open'), invoiced: t('Closed') }
+// In-transit deliveries are still being processed in fulfillment (prod banner).
+const inFulfillment = computed(() => delivery.value.fulfillmentStatus === 'in transit')
 </script>
 
 <template>
@@ -145,7 +150,7 @@ function goBack() { router.push('/purchase-deliveries') }
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('Purchase Delivery') }} #{{ delivery.number }}</h1>
           <ErpStatusBadge :status="delivery.fulfillmentStatus" badge-for="additionalInformation" size="md" />
-          <ErpStatusBadge :status="delivery.billingStatus" badge-for="additionalInformation" size="md" />
+          <ErpStatusBadge :status="delivery.billingStatus" :label="BILLING_LABEL[delivery.billingStatus]" badge-for="additionalInformation" size="md" />
 
           <!-- Chevron → jump-to-transaction switcher (search + 5 recent) -->
           <MpPopover id="detail-jump" use-portal :is-keep-alive="false" placement="bottom-start">
@@ -203,6 +208,13 @@ function goBack() { router.push('/purchase-deliveries') }
     <!-- ── Scrollable stage ── -->
     <div class="detail-stage">
 
+      <!-- Prod banner: delivery still being processed in fulfillment -->
+      <div v-if="inFulfillment" class="detail-banner">
+        <MpIcon class="detail-banner-icon" name="info" size="md" />
+        <span class="detail-banner-text">{{ t('This delivery is being processed in fulfillment. You cannot edit or delete it.') }}</span>
+        <a class="detail-banner-link" @click.prevent="notInPrototype">{{ t('View in fulfillment') }}</a>
+      </div>
+
       <!-- Info banner (conditional) — temporarily hidden in the prototype -->
       <div v-if="showBanner && delivery.banner" class="detail-banner">
         <MpIcon class="detail-banner-icon" name="info" size="md" />
@@ -223,8 +235,7 @@ function goBack() { router.push('/purchase-deliveries') }
             </ContentList>
           </div>
           <div class="detail-primary-total">
-            <span class="detail-total-label">{{ t('Total') }}</span>
-            <span class="detail-total-amount">{{ formatIDR(delivery.totals.total) }}</span>
+            <MpTextlink id="detail-view-journal" as="a" class="detail-journal-link" @click.prevent="notInPrototype">{{ t('View journal entry') }}</MpTextlink>
           </div>
         </div>
 
@@ -232,26 +243,24 @@ function goBack() { router.push('/purchase-deliveries') }
 
         <!-- Detail grid: col 1 = 318px, col 2+ fill equally (max 5 cols) -->
         <div class="content-list-grid">
-          <!-- col 1: addresses -->
+          <!-- col 1: ship to (prod shows no billing address on a delivery) -->
           <div class="content-list-col">
-            <ContentList :label="t('Billing address')" :value="delivery.billingAddress" />
-            <ContentList :label="t('Ship to')" :value="delivery.shipTo" />
+            <ContentList :label="t('Ship to')" :value="delivery.shipTo || '—'" />
           </div>
-          <!-- col 2: delivery date -->
+          <!-- col 2: dates + shipping + warehouse (prod PurchaseDeliveryDetailFields) -->
           <div class="content-list-col">
             <ContentList :label="t('Transaction date')" :value="formatDateLong(delivery.date)" />
+            <ContentList :label="t('Received date')" :value="formatDateLong(delivery.receivedDate)" />
+            <ContentList :label="t('Ship via')" :value="delivery.shipVia || '—'" />
           </div>
-          <!-- col 3: shipping -->
           <div class="content-list-col">
-            <ContentList :label="t('Ship via')" :value="delivery.shipVia" />
-            <ContentList :label="t('Tracking no.')" :value="delivery.trackingNo" />
-            <ContentList :label="t('Driver')" :value="delivery.driver" />
+            <ContentList :label="t('Tracking no.')" :value="delivery.trackingNo || '—'" />
+            <ContentList :label="t('Warehouse')" :value="delivery.warehouse || '—'" />
           </div>
           <!-- col 4: references -->
           <div class="content-list-col">
             <ContentList :label="t('Transaction no.')" :value="`${t('Purchase Delivery')} #${delivery.number}`" />
-            <ContentList :label="t('Reference no.')" :value="delivery.referenceNo" />
-            <ContentList :label="t('Warehouse')" :value="delivery.warehouse" />
+            <ContentList :label="t('Reference no.')" :value="delivery.referenceNo || '—'" />
           </div>
           <!-- col 5: tags -->
           <div class="content-list-col">
@@ -271,12 +280,8 @@ function goBack() { router.push('/purchase-deliveries') }
             <tr>
               <th class="detail-th">{{ t('Product') }}</th>
               <th class="detail-th">{{ t('Description') }}</th>
-              <th class="detail-th detail-th--num">{{ t('Qty') }}</th>
+              <th class="detail-th detail-th--num">{{ t('Received qty') }}</th>
               <th class="detail-th">{{ t('Unit') }}</th>
-              <th class="detail-th detail-th--num">{{ t('Unit price') }}</th>
-              <th class="detail-th detail-th--num">{{ t('Discount') }}</th>
-              <th class="detail-th">{{ t('Tax') }}</th>
-              <th class="detail-th detail-th--num">{{ t('Amount') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -292,10 +297,6 @@ function goBack() { router.push('/purchase-deliveries') }
               <td class="detail-td detail-td--muted">{{ it.description }}</td>
               <td class="detail-td detail-td--num">{{ it.qty }}</td>
               <td class="detail-td">{{ it.unit }}</td>
-              <td class="detail-td detail-td--num">{{ formatIDR(it.unitPrice) }}</td>
-              <td class="detail-td detail-td--num">{{ discountText(it.discountPct) }}</td>
-              <td class="detail-td">{{ it.taxLabel }}</td>
-              <td class="detail-td detail-td--num">{{ formatIDR(it.amount) }}</td>
             </tr>
           </tbody>
         </table>
@@ -333,32 +334,11 @@ function goBack() { router.push('/purchase-deliveries') }
           </ContentList>
         </div>
 
-        <!-- Right: totals summary -->
+        <!-- Right: prod shows only the shipping fee on a delivery (no pricing) -->
         <div class="detail-totals">
-          <div class="detail-total-row">
-            <span class="detail-total-row-label detail-total-row-label--strong">{{ t('Subtotal') }}</span>
-            <span class="detail-total-row-amt detail-total-row-amt--strong">{{ formatIDR(delivery.totals.subtotal) }}</span>
-          </div>
-          <div class="detail-total-row">
-            <span class="detail-total-row-label">{{ t('Discount per line') }}</span>
-            <span class="detail-total-row-amt">{{ formatDeduction(delivery.totals.discountPerLine) }}</span>
-          </div>
-          <div class="detail-total-row">
-            <span class="detail-total-row-label">{{ t('Global discount') }}</span>
-            <span class="detail-total-row-amt">{{ formatDeduction(delivery.totals.globalDiscount) }}</span>
-          </div>
-          <div class="detail-total-row">
-            <span class="detail-total-row-label">{{ delivery.totals.taxLabel }}</span>
-            <span class="detail-total-row-amt">{{ formatIDR(delivery.totals.taxAmount) }}</span>
-          </div>
           <div class="detail-total-row">
             <span class="detail-total-row-label">{{ t('Shipping fee') }}</span>
             <span class="detail-total-row-amt">{{ formatIDR(delivery.totals.shippingFee) }}</span>
-          </div>
-          <div class="detail-total-rule" />
-          <div class="detail-total-row">
-            <span class="detail-total-row-label detail-total-row-label--total">{{ t('Total') }}</span>
-            <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(delivery.totals.total) }}</span>
           </div>
         </div>
       </section>
@@ -409,7 +389,7 @@ function goBack() { router.push('/purchase-deliveries') }
 
       <!-- ── Footer action bar ── -->
       <div class="detail-footer">
-        <!-- Print & share (secondary dropdown) -->
+        <!-- Print & share — prod: Print PDF + Share via email -->
         <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
             <button class="btn-enterprise btn-enterprise--secondary">
@@ -419,20 +399,34 @@ function goBack() { router.push('/purchase-deliveries') }
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Print dot matrix') }}</MpPopoverListItem>
-            </MpPopoverList>
-            <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-            <MpPopoverList>
-              <MpPopoverListItem>{{ t('Share via WhatsApp') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Print PDF') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="notInPrototype">{{ t('Share via email') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
 
-        <!-- Actions (primary dropdown) -->
-        <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+        <!-- Open for billing: "Create purchase invoice" split button (prod
+             ButtonActionPopover); otherwise a plain "Actions" dropdown. -->
+        <div v-if="isOpenForBilling" class="detail-split-btn">
+          <button class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="createInvoice">
+            {{ t('Create purchase invoice') }}
+          </button>
+          <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <button class="btn-enterprise btn-enterprise--primary detail-split-btn__chevron" :aria-label="t('More actions')">
+                <MpIcon name="chevrons-down" size="sm" />
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem v-if="!inFulfillment" @click="router.push(`/purchase-deliveries/${delivery.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="!inFulfillment" @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="inFulfillment" @click="notInPrototype">{{ t('View in fulfillment') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <MpPopover v-else id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
             <button class="btn-enterprise btn-enterprise--primary">
               {{ t('Actions') }}
@@ -441,15 +435,7 @@ function goBack() { router.push('/purchase-deliveries') }
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Create purchase invoice') }}</MpPopoverListItem>
-            </MpPopoverList>
-            <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-            <MpPopoverList>
-              <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Set as recurring') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Void') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="router.push(`/purchase-deliveries/${delivery.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
               <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
@@ -895,4 +881,15 @@ function goBack() { router.push('/purchase-deliveries') }
 }
 /* Footer buttons use the shared btn-enterprise--{secondary,primary} classes
    (erp.css) — no page-local button styling / hardcoded brand colors. */
+/* "View journal entry" link at the right of the primary row (prod header) */
+.detail-journal-link { font-size: var(--mp-font-sizes-md); cursor: pointer; }
+/* Split button — same as SalesInvoiceDetailsPage */
+.detail-split-btn { display: inline-flex; align-items: stretch; }
+.detail-split-btn__main { border-radius: var(--mp-radii-full, 999px) 0 0 var(--mp-radii-full, 999px); }
+.detail-split-btn__chevron {
+  padding-left: var(--mp-spacing-3);
+  padding-right: var(--mp-spacing-3);
+  border-radius: 0 var(--mp-radii-full, 999px) var(--mp-radii-full, 999px) 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.3);
+}
 </style>

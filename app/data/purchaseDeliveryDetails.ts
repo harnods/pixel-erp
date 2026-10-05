@@ -1,4 +1,4 @@
-import { purchaseDeliveries } from './purchaseDeliveries'
+import { purchaseDeliveries, createdPurchaseDeliveries } from './purchaseDeliveries'
 import { products } from './products'
 import type { SalesOrderTotals } from './salesOrders'
 import type { PurchaseDelivery, SalesOrderItem } from './types'
@@ -44,6 +44,8 @@ export interface PurchaseDeliveryDetail extends PurchaseDelivery {
   lastUpdatedAt: string
   linkedTransactions: PDLinkedTxn[]
   banner: { message: string; linkLabel: string } | null
+  /** prod-parity (TX PurchaseDeliveryDetailFields "Received date"); additive. */
+  receivedDate: string
 }
 
 const BILLING_ADDRESSES = [
@@ -163,6 +165,7 @@ function buildDetail(base: PurchaseDelivery, idx: number): PurchaseDeliveryDetai
     lastUpdatedBy: pick(UPDATERS, idx),
     lastUpdatedAt: `${base.date}T11:00:00+07:00`,
     linkedTransactions: buildLinked(base, idx),
+    receivedDate: addDays(base.date, 1),
     banner: delivered
       ? null
       : { message: 'This delivery is currently in transit.', linkLabel: 'Track shipment' },
@@ -171,6 +174,21 @@ function buildDetail(base: PurchaseDelivery, idx: number): PurchaseDeliveryDetai
 
 /** Look up a full delivery detail by PurchaseDelivery id; falls back to the first. */
 export function getPurchaseDeliveryDetail(id: string): PurchaseDeliveryDetail {
+  const created = createdPurchaseDeliveries.find(d => d.id === id)
+  if (created) {
+    const { detail, ...base } = created
+    const built = buildDetail(base, base.number - 30001)
+    if (!detail) return built
+    return {
+      ...built,
+      email: detail.email, shipTo: detail.shipTo, receivedDate: detail.receivedDate, shipVia: detail.shipVia,
+      trackingNo: detail.trackingNo, referenceNo: detail.referenceNo, warehouse: detail.warehouse,
+      message: detail.message, memo: detail.memo, attachments: [], linkedTransactions: [],
+      lastUpdatedBy: 'Rizal Candra', lastUpdatedAt: detail.lastUpdatedAt,
+      totals: { ...built.totals, shippingFee: detail.shippingFee },
+      lineItems: detail.lineItems.map(li => ({ ...li, unitPrice: 0, discountPct: 0, amount: 0, taxLabel: '' })) as PDLineItem[],
+    }
+  }
   const i = purchaseDeliveries.findIndex(d => d.id === id)
   const idx = i >= 0 ? i : 0
   return buildDetail(purchaseDeliveries[idx]!, idx)

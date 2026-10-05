@@ -520,6 +520,7 @@ const NewSalesQuotePage = asyncPage(() => import('~/components/pages/NewSalesQuo
 const NewSalesDeliveryPage = asyncPage(() => import('~/components/pages/NewSalesDeliveryPage.vue'))
 const NewPurchaseQuotePage = asyncPage(() => import('~/components/pages/NewPurchaseQuotePage.vue'))
 const NewPurchaseDeliveryPage = asyncPage(() => import('~/components/pages/NewPurchaseDeliveryPage.vue'))
+const NewPurchaseInvoicePage = asyncPage(() => import('~/components/pages/NewPurchaseInvoicePage.vue'))
 const BillReviewPage = asyncPage(() => import('~/components/pages/BillReviewPage.vue'))
 const InvoiceReviewPage = asyncPage(() => import('~/components/pages/InvoiceReviewPage.vue'))
 const ReceiptReviewPage = asyncPage(() => import('~/components/pages/ReceiptReviewPage.vue'))
@@ -1037,6 +1038,13 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'purchase-requests' && segs[1] !== 'awaiting-approval') {
     return { component: PurchaseRequestDetailsPage, id: segs[1] }
   }
+  // /purchase-invoices/{new,:id/edit} → New/Edit purchase invoice form (prod-parity w4)
+  if (segs.length >= 2 && segs[0] === 'purchase-invoices' && segs[1] === 'new') {
+    return { component: NewPurchaseInvoicePage, id: 'new' }
+  }
+  if (segs.length >= 3 && segs[0] === 'purchase-invoices' && segs[2] === 'edit') {
+    return { component: NewPurchaseInvoicePage, id: segs[1] }
+  }
   // /purchase-invoices/:id → detail (index has tabs; guard the tab slugs)
   if (segs.length >= 2 && segs[0] === 'purchase-invoices'
       && !['awaiting-approval', 'dropbox', 'new'].includes(segs[1]!)) {
@@ -1219,8 +1227,9 @@ const pageTabs: Record<string, string[]> = {
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Expenses': ['Bills', 'Awaiting Approval', 'Dropbox'],
-  'Purchase invoices': ['All purchase invoices', 'Awaiting Approval', 'Dropbox'],
+  'Purchase invoices': ['All purchase invoices', 'Awaiting approval', 'Dropbox'],
   'Purchase requests': ['All requests', 'Awaiting approval'],
+  'Purchase deliveries': ['All purchase deliveries', 'Awaiting approval'],
   'Sales invoices': ['All sales invoices', 'Awaiting approval'],
   'Sales deliveries': ['All sales deliveries', 'Awaiting approval'],
   'Sales orders': ['All sales orders', 'Awaiting approval'],
@@ -1305,7 +1314,7 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   }
   if (currentPageKey.value === 'Purchase invoices') {
     const out: Record<string, number> = {}
-    if (purchaseInvoicesAwaitingApproval.length) out['Awaiting Approval'] = purchaseInvoicesAwaitingApproval.length
+    if (purchaseInvoicesAwaitingApproval.length) out['Awaiting approval'] = purchaseInvoicesAwaitingApproval.length
     if (purchaseInvoiceReviewFiles.length) out['Dropbox'] = purchaseInvoiceReviewFiles.length
     return out
   }
@@ -1484,6 +1493,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
   // Sales modules — one index page serves both tabs; it self-filters on ?tab=.
   'Sales invoices':   { 'All sales invoices':   pageRegistry['Sales invoices']!,   'Awaiting approval': pageRegistry['Sales invoices']! },
   'Sales deliveries': { 'All sales deliveries': pageRegistry['Sales deliveries']!, 'Awaiting approval': pageRegistry['Sales deliveries']! },
+  'Purchase deliveries': { 'All purchase deliveries': pageRegistry['Purchase deliveries']!, 'Awaiting approval': pageRegistry['Purchase deliveries']! },
   'Sales orders':     { 'All sales orders':     pageRegistry['Sales orders']!,     'Awaiting approval': pageRegistry['Sales orders']! },
   'Sales quotes':     { 'All sales quotes':     pageRegistry['Sales quotes']!,     'Awaiting approval': pageRegistry['Sales quotes']! },
   'Inbound delivery': {
@@ -1511,7 +1521,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
   // the `surface` prop swaps both the data and the review route.
   'Purchase invoices': {
     'All purchase invoices': PurchaseInvoicesPage,
-    'Awaiting Approval': PurchaseInvoicesAwaitingApprovalPage,
+    'Awaiting approval': PurchaseInvoicesAwaitingApprovalPage,
     'Dropbox': () => h(BillsReviewFilesPage, { surface: 'purchase-invoices' }),
   },
   // Awaiting approval reuses the Expenses approval-queue table (Approve button +
@@ -2387,7 +2397,7 @@ function startResize(e: MouseEvent) {
             </div>
           </div>
 
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/purchase-invoices/new')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
