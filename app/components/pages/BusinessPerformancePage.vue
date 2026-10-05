@@ -10,7 +10,7 @@
  */
 import { ref, computed } from 'vue'
 import {
-  MpButton, MpIcon, MpTooltip, MpSegmentedControl, MpCheckbox,
+  MpButton, MpIcon, MpInput, MpTooltip, MpSegmentedControl, MpCheckbox,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalCloseButton, MpModalOverlay,
 } from '@mekari/pixel3'
@@ -190,16 +190,17 @@ const money = (v: number) => formatIDR(v)
     <div class="bp__toolbar">
       <template v-if="mode === 'view'">
         <span class="bp__updated">{{ t('Last updated:') }} {{ lastUpdated }} (GMT+7)</span>
-        <MpButton variant="secondary" :is-loading="updating" @click="handleRefresh">{{ updating ? t('Updating') : t('Update') }}</MpButton>
+        <MpButton is-rounded variant="secondary" :is-loading="updating" @click="handleRefresh">{{ updating ? t('Updating') : t('Update') }}</MpButton>
         <MpTooltip :label="t('Edit dashboard')" position="top">
-          <button class="bp__iconbtn" type="button" :aria-label="t('Edit dashboard')" @click="onEditDashboard">
+          <MpButton is-rounded variant="secondary" class="bp__iconbtn" :aria-label="t('Edit dashboard')" @click="onEditDashboard">
             <MpIcon name="edit" size="md" />
-          </button>
+          </MpButton>
         </MpTooltip>
       </template>
-      <MpTooltip v-else :label="t('You have reached the adding limit of 15 widgets.')" position="left" :is-disabled="!disabledAddWidget">
-        <MpButton variant="secondary" @click="addWidget">{{ t('Add account widget') }}</MpButton>
+      <MpTooltip v-else-if="disabledAddWidget" :label="t('You have reached the adding limit of 15 widgets.')" position="left">
+        <MpButton is-rounded variant="secondary" @click="addWidget">{{ t('Add account widget') }}</MpButton>
       </MpTooltip>
+      <MpButton v-else is-rounded variant="secondary" @click="addWidget">{{ t('Add account widget') }}</MpButton>
     </div>
 
     <div class="bp__grid">
@@ -230,15 +231,15 @@ const money = (v: number) => formatIDR(v)
               @update:model-value="(v: string) => setPeriod(w, v)"
             />
             <MpTooltip v-if="w.chart !== 'line' && w.content !== 'account_watchlist'" :label="t('Filter')">
-              <button class="bp__iconbtn bp__iconbtn--ghost" type="button" :aria-label="t('Filter')" @click="notInPrototype">
+              <MpButton is-rounded variant="ghost" class="bp__iconbtn" :aria-label="t('Filter')" @click="notInPrototype">
                 <MpIcon name="filter" size="md" />
-              </button>
+              </MpButton>
             </MpTooltip>
             <MpPopover v-if="w.content === 'account' || w.content === 'account_watchlist'" :id="`bp-more-${w.id}`" is-close-on-select use-portal placement="bottom-end">
               <MpPopoverTrigger>
-                <button class="bp__iconbtn bp__iconbtn--ghost" type="button" :aria-label="t('Other actions')">
+                <MpButton is-rounded variant="ghost" class="bp__iconbtn" :aria-label="t('Other actions')">
                   <MpIcon name="menu-kebab" size="md" />
-                </button>
+                </MpButton>
               </MpPopoverTrigger>
               <MpPopoverContent>
                 <MpPopoverList>
@@ -358,9 +359,9 @@ const money = (v: number) => formatIDR(v)
 
           <!-- Line: Mekari Pay (not registered) -->
           <div v-else-if="w.content === 'jurnalpay'" class="pay">
-            <MpIcon name="wallet" size="lg" class="pay__icon" />
+            <span class="pay__icon"><MpIcon name="wallet" size="md" /></span>
             <p class="pay__title">{{ t('Receive payments faster with Mekari Pay') }}</p>
-            <MpButton variant="secondary" @click="notInPrototype">{{ t('Get more info') }}</MpButton>
+            <MpButton is-rounded variant="secondary" @click="notInPrototype">{{ t('Get more info') }}</MpButton>
           </div>
 
           <!-- Line: account balance -->
@@ -389,10 +390,10 @@ const money = (v: number) => formatIDR(v)
         <div v-if="mode === 'edit'" class="move">
           <span class="move__title">{{ t('Move widget') }}</span>
           <div class="move__pad">
-            <button class="move__btn move__btn--up" type="button" :aria-label="t('Up')" :disabled="!canMove(i, 'up')" @click="moveWidget(i, 'up')"><MpIcon name="arrows-up" size="md" /></button>
-            <button class="move__btn move__btn--left" type="button" :aria-label="t('Left')" :disabled="!canMove(i, 'left')" @click="moveWidget(i, 'left')"><MpIcon name="arrows-left" size="md" /></button>
-            <button class="move__btn move__btn--right" type="button" :aria-label="t('Right')" :disabled="!canMove(i, 'right')" @click="moveWidget(i, 'right')"><MpIcon name="arrows-right" size="md" /></button>
-            <button class="move__btn move__btn--down" type="button" :aria-label="t('Down')" :disabled="!canMove(i, 'down')" @click="moveWidget(i, 'down')"><MpIcon name="arrows-down" size="md" /></button>
+            <MpButton is-rounded variant="secondary" class="move__btn move__btn--up" :aria-label="t('Up')" :class="{ 'move__btn--off': !canMove(i, 'up') }" @click="moveWidget(i, 'up')"><MpIcon name="arrows-up" size="md" /></MpButton>
+            <MpButton is-rounded variant="secondary" class="move__btn move__btn--left" :aria-label="t('Left')" :class="{ 'move__btn--off': !canMove(i, 'left') }" @click="moveWidget(i, 'left')"><MpIcon name="arrows-left" size="md" /></MpButton>
+            <MpButton is-rounded variant="secondary" class="move__btn move__btn--right" :aria-label="t('Right')" :class="{ 'move__btn--off': !canMove(i, 'right') }" @click="moveWidget(i, 'right')"><MpIcon name="arrows-right" size="md" /></MpButton>
+            <MpButton is-rounded variant="secondary" class="move__btn move__btn--down" :aria-label="t('Down')" :class="{ 'move__btn--off': !canMove(i, 'down') }" @click="moveWidget(i, 'down')"><MpIcon name="arrows-down" size="md" /></MpButton>
           </div>
         </div>
       </section>
@@ -400,8 +401,8 @@ const money = (v: number) => formatIDR(v)
 
     <!-- Edit-mode footer -->
     <div v-if="mode === 'edit'" class="bp__footer">
-      <MpButton variant="ghost" @click="cancelEdit">{{ t('Cancel') }}</MpButton>
-      <MpButton variant="primary" @click="onSaveWidget">{{ t('Save changes') }}</MpButton>
+      <MpButton is-rounded variant="ghost" @click="cancelEdit">{{ t('Cancel') }}</MpButton>
+      <MpButton is-rounded variant="primary" @click="onSaveWidget">{{ t('Save changes') }}</MpButton>
     </div>
 
     <!-- Add / change account widget -->
@@ -421,8 +422,8 @@ const money = (v: number) => formatIDR(v)
         </MpModalBody>
         <MpModalFooter>
           <div class="bp-modal__btns">
-            <MpButton variant="ghost" @click="closeWidgetModal">{{ t('Cancel') }}</MpButton>
-            <MpButton variant="primary" @click="saveWidgetModal">{{ widgetModal.isAdd ? t('Add') : t('Change') }}</MpButton>
+            <MpButton is-rounded variant="ghost" @click="closeWidgetModal">{{ t('Cancel') }}</MpButton>
+            <MpButton is-rounded variant="primary" @click="saveWidgetModal">{{ widgetModal.isAdd ? t('Add') : t('Change') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -439,7 +440,7 @@ const money = (v: number) => formatIDR(v)
         <MpModalBody>
           <p class="bp-field__hint">{{ t('You can monitor 5 accounts at a maximum in this widget.') }}</p>
           <label class="bp-field__label" for="bp-watch-search">{{ t('Select account') }}</label>
-          <input id="bp-watch-search" v-model="watchEdit.query" class="bp-search" type="text" autocomplete="off">
+          <MpInput id="bp-watch-search" v-model="watchEdit.query" />
           <div class="bp-watch">
             <MpCheckbox
               v-for="o in watchFiltered" :id="`bp-watch-${o.value}`" :key="o.value"
@@ -452,8 +453,8 @@ const money = (v: number) => formatIDR(v)
         </MpModalBody>
         <MpModalFooter>
           <div class="bp-modal__btns">
-            <MpButton variant="ghost" @click="watchEdit.id = null">{{ t('Cancel') }}</MpButton>
-            <MpButton variant="primary" @click="saveWatchEdit">{{ t('Save changes') }}</MpButton>
+            <MpButton is-rounded variant="ghost" @click="watchEdit.id = null">{{ t('Cancel') }}</MpButton>
+            <MpButton is-rounded variant="primary" @click="saveWatchEdit">{{ t('Save changes') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -470,8 +471,8 @@ const money = (v: number) => formatIDR(v)
         <MpModalBody>{{ t('Deleting the widget will not delete the data inside. You can add the deleted widget again.') }}</MpModalBody>
         <MpModalFooter>
           <div class="bp-modal__btns">
-            <MpButton variant="ghost" @click="deleteId = null">{{ t('Cancel') }}</MpButton>
-            <MpButton variant="danger" @click="confirmDeleteWidget">{{ t('Delete') }}</MpButton>
+            <MpButton is-rounded variant="ghost" @click="deleteId = null">{{ t('Cancel') }}</MpButton>
+            <MpButton is-rounded variant="danger" @click="confirmDeleteWidget">{{ t('Delete') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -485,14 +486,7 @@ const money = (v: number) => formatIDR(v)
 .bp--edit { padding-bottom: var(--mp-spacing-16, 64px); }
 .bp__toolbar { display: flex; justify-content: flex-end; align-items: center; gap: var(--mp-spacing-3); }
 .bp__updated { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.bp__iconbtn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
-  background: var(--mp-background-default); color: var(--mp-colors-icon-default); cursor: pointer;
-}
-.bp__iconbtn--ghost { border-color: transparent; background: transparent; }
-.bp__iconbtn:hover { background: var(--mp-background-neutral-subtle); }
+.bp__iconbtn { min-width: 0; padding: 0 var(--mp-spacing-2); }
 
 .bp__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--mp-spacing-4); }
 .bp-card {
@@ -505,9 +499,9 @@ const money = (v: number) => formatIDR(v)
 .bp-card--edit:hover { border-color: var(--mp-colors-blue-600); }
 .bp-card--edit:hover .bp-card__body, .bp-card--edit:hover .bp-card__tools { opacity: 0.05; }
 .bp-card__head { display: flex; justify-content: space-between; align-items: center; gap: var(--mp-spacing-3); min-height: var(--mp-sizes-9, 36px); }
-.bp-card__title { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.bp-card__title { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .bp-card__grip { color: var(--mp-colors-icon-default); }
-.bp-card__tools { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.bp-card__tools { flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .bp-card__body { flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 0; }
 .bp-empty { margin: 0; text-align: center; color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-md); }
 
@@ -552,7 +546,7 @@ const money = (v: number) => formatIDR(v)
 .box--overdue .box__badge { background: var(--mp-colors-background-danger); color: var(--mp-text-danger); }
 .box--paid .box__badge { background: var(--mp-colors-background-success); color: var(--mp-colors-text-success); }
 .box__sub { margin-top: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.box__amount { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); overflow-wrap: anywhere; }
+.box__amount { font-size: var(--mp-font-sizes-lg); white-space: nowrap; font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); overflow-wrap: anywhere; }
 .box__link { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); }
 
 /* Doughnut */
@@ -578,19 +572,19 @@ const money = (v: number) => formatIDR(v)
 .donut__row-val { text-align: right; }
 
 /* Account line */
-.acct { display: flex; flex-direction: column; gap: var(--mp-spacing-2); align-self: stretch; }
+.acct { flex: 1; display: flex; flex-direction: column; gap: var(--mp-spacing-2); align-self: stretch; }
 .acct__balances { display: flex; gap: var(--mp-spacing-6); }
 .acct__balances > div { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .acct__label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .acct__val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .acct__reconcile { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
-.acct__svg { width: 100%; height: 160px; margin-top: var(--mp-spacing-2); }
+.acct__svg { flex: 1; width: 100%; min-height: 120px; margin-top: var(--mp-spacing-2); }
 .acct__line { fill: none; stroke: var(--mp-colors-blue-500); stroke-width: 2; }
 .acct__axis { display: flex; justify-content: space-between; font-size: var(--mp-font-sizes-xs); color: var(--mp-text-secondary); }
 
 /* Mekari Pay */
 .pay { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-4); text-align: center; }
-.pay__icon { color: var(--mp-colors-blue-500); }
+.pay__icon { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-16, 64px); height: var(--mp-sizes-16, 64px); border-radius: var(--mp-radii-full); background: var(--mp-colors-blue-50); color: var(--mp-colors-blue-600); }
 .pay__title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 
 /* Move widget */
@@ -598,12 +592,7 @@ const money = (v: number) => formatIDR(v)
 .bp-card--edit:hover .move { display: flex; }
 .move__title { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .move__pad { display: grid; grid-template-columns: repeat(3, var(--mp-sizes-9, 36px)); grid-template-rows: repeat(3, var(--mp-sizes-9, 36px)); gap: var(--mp-spacing-2); }
-.move__btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
-  background: var(--mp-background-default); color: var(--mp-colors-icon-default); cursor: pointer;
-}
-.move__btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.move__btn { min-width: 0; width: 100%; height: 100%; padding: 0; }
 .move__btn--up { grid-column: 2; grid-row: 1; }
 .move__btn--left { grid-column: 1; grid-row: 2; }
 .move__btn--right { grid-column: 3; grid-row: 2; }
@@ -619,10 +608,6 @@ const money = (v: number) => formatIDR(v)
 .bp-field__label { display: block; margin-bottom: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .bp-field__error { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
 .bp-field__hint { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.bp-search {
-  width: 100%; height: var(--mp-sizes-9, 36px); padding: 0 var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); font-size: var(--mp-font-sizes-md);
-}
 .bp-watch { display: flex; flex-direction: column; gap: var(--mp-spacing-3); max-height: 280px; overflow-y: auto; margin-top: var(--mp-spacing-3); }
 .bp-modal__btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 </style>
