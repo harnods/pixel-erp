@@ -182,7 +182,8 @@ function saveWorksheet() {
 }
 
 // ── 4. Financial statements (also the published "show" page) ──
-const activeTab = ref('tb')
+/** MpTabs v-model is the tab index (0 Trial Balance · 1 Income Statement · 2 Balance Sheet · 3 Cash Flow). */
+const activeTab = ref(0)
 const tb = computed(() => (book.value ? trialBalance(book.value) : []))
 const tbTotals = computed(() => tb.value.reduce((s, r) => ({
   od: s.od + dr(r.opening), oc: s.oc + cr(r.opening), md: s.md + r.movementDebit, mc: s.mc + r.movementCredit, ed: s.ed + dr(r.ending), ec: s.ec + cr(r.ending),
@@ -436,13 +437,13 @@ watch([book, view], () => {
           <p v-if="view === 'statements'" class="cbw-lead">{{ isCtb ? t('Please confirm to close book at the bottom of the page.') : t('Please confirm to period lock at the bottom of the page.') }}</p>
           <MpTabs id="cbw-tabs" v-model="activeTab" is-manual variant-color="green" class="detail-tabs">
             <MpTabList>
-              <MpTab id="cbw-tab-tb" value="tb">{{ t('Trial Balance') }}</MpTab>
-              <MpTab id="cbw-tab-is" value="is">{{ t('Income Statement') }}</MpTab>
-              <MpTab id="cbw-tab-bs" value="bs">{{ t('Balance Sheet') }}</MpTab>
-              <MpTab id="cbw-tab-cf" value="cf">{{ t('Cash Flow') }}</MpTab>
+              <MpTab id="cbw-tab-tb">{{ t('Trial Balance') }}</MpTab>
+              <MpTab id="cbw-tab-is">{{ t('Income Statement') }}</MpTab>
+              <MpTab id="cbw-tab-bs">{{ t('Balance Sheet') }}</MpTab>
+              <MpTab id="cbw-tab-cf">{{ t('Cash Flow') }}</MpTab>
             </MpTabList>
             <MpTabPanels>
-              <MpTabPanel value="tb">
+              <MpTabPanel>
                 <div class="cbw-report-bar">
                   <div class="cbw-report-title">
                     <span class="cbw-report-company">{{ COMPANY_NAME }}</span>
@@ -494,7 +495,7 @@ watch([book, view], () => {
                 </div>
               </MpTabPanel>
 
-              <MpTabPanel value="is">
+              <MpTabPanel>
                 <div class="cbw-report-bar">
                   <div class="cbw-report-title">
                     <span class="cbw-report-company">{{ COMPANY_NAME }}</span>
@@ -529,7 +530,7 @@ watch([book, view], () => {
                 </div>
               </MpTabPanel>
 
-              <MpTabPanel value="bs">
+              <MpTabPanel>
                 <div class="cbw-report-bar">
                   <div class="cbw-report-title">
                     <span class="cbw-report-company">{{ COMPANY_NAME }}</span>
@@ -568,7 +569,7 @@ watch([book, view], () => {
                 </div>
               </MpTabPanel>
 
-              <MpTabPanel value="cf">
+              <MpTabPanel>
                 <div class="cbw-report-bar">
                   <div class="cbw-report-title">
                     <span class="cbw-report-company">{{ COMPANY_NAME }}</span>
