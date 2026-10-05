@@ -13,7 +13,7 @@ import { getPurchaseRequestDetail } from '~/data/purchaseRequestDetails'
 import { purchaseRequests, updatePurchaseRequest, deletePurchaseRequests } from '~/data/purchaseRequests'
 import { infoToast } from '~/utils/toasts'
 import BudgetPRCard from '~/components/patterns/BudgetPRCard.vue'
-import { budgetPRForRequest } from '~/data/budgetUiPurchaseRequests'
+import { budgetPRForRequest, syncLinkedRequests } from '~/data/budgetUiPurchaseRequests'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -26,6 +26,7 @@ const router = useRouter()
 const request = computed(() => getPurchaseRequestDetail(props.orderId))
 // The budget record behind this request (FG-3), when it has one.
 const budgetPR = computed(() => budgetPRForRequest(props.orderId))
+watchEffect(syncLinkedRequests)
 
 const activityOpen = ref(false)
 // Destructive delete → confirm modal (rule/btn-danger-confirm)

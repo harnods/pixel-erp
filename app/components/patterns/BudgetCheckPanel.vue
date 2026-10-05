@@ -65,11 +65,11 @@ function shortText(r: PanelRow): string {
     <div
       v-for="r in rows" :key="r.key"
       class="bcp__line"
-      :class="{ 'bcp__line--short': r.state === 'short' || r.state === 'no-line' || r.state === 'not-locked' || r.state === 'blocked', 'bcp__line--warn': r.state === 'warn' }"
+      :class="{ 'bcp__line--short': mode === 'after' && (r.state === 'short' || r.state === 'no-line' || r.state === 'not-locked' || r.state === 'blocked'), 'bcp__line--warn': mode === 'after' && r.state === 'warn' }"
     >
       <div class="bcp__head">
         <span class="bcp__title">{{ r.label }}</span>
-        <ErpStatusBadge status="budget" :label="t(STATE_BADGE[r.state]!.label)" :type="STATE_BADGE[r.state]!.type" />
+        <ErpStatusBadge v-if="mode === 'after' || !r.year" status="budget" :label="t(STATE_BADGE[r.state]!.label)" :type="STATE_BADGE[r.state]!.type" />
       </div>
 
       <template v-if="r.year && r.month">

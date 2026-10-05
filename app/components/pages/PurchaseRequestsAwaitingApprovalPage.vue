@@ -20,7 +20,7 @@ import { formatDate } from '~/utils/date'
 import { purchaseRequests, updatePurchaseRequest } from '~/data'
 import type { PurchaseRequest } from '~/data'
 import { budget, approvePRAs, prWaitingStep, rupiah } from '~/data/budgetStore'
-import { budgetPRForRequest } from '~/data/budgetUiPurchaseRequests'
+import { budgetPRForRequest, syncLinkedRequests } from '~/data/budgetUiPurchaseRequests'
 import { successToast } from '~/utils/toasts'
 
 const { t } = useLocale()
@@ -31,6 +31,8 @@ function viewDetails(id: string) { router.push(`/purchase-requests/${id}`) }
 // Requests with a budget record approve through the same path as the detail page
 // (approvePR: the final step holds the money). A refusal shows inline on the row.
 const rowMessage = reactive<Record<string, string>>({})
+// Linked requests follow their budget record (queue membership, void on cancel).
+watchEffect(syncLinkedRequests)
 function approve(id: string) {
   void budget.viewAs
   const bpr = budgetPRForRequest(id)

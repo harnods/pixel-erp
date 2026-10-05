@@ -13,7 +13,7 @@ import {
   budget, findLine, yearFigures, monthFigures, checkSpend, isLocked, prForPurchaseRequest,
   type BudgetPR, type Figures, type CheckResult, type PRStatus,
 } from './budgetStore'
-import { purchaseRequests } from './purchaseRequests'
+import { purchaseRequests, updatePurchaseRequest } from './purchaseRequests'
 
 export const budgetDeptOptions = BUDGET_DEPARTMENTS.map((d) => ({ value: d.id, label: d.name }))
 export const budgetProjectOptions = BUDGET_PROJECTS.filter((p) => p.status === 'Active').map((p) => ({ value: p.id, label: p.name }))
@@ -126,4 +126,23 @@ export function monthOf(date: string): number {
   if (/^\d{4}-\d{2}/.test(date)) return Number(date.slice(5, 7)) - 1
   const parts = date.split('/')
   return parts.length === 3 ? Number(parts[1]) - 1 : 0
+}
+
+/**
+ * The budget record decides the approval state of a linked purchase request:
+ * it sits in the approval queue while Pending, and it is voided only when the
+ * budget request is cancelled. Keeps the queue right after "Reset sample data".
+ */
+export function syncLinkedRequests(): void {
+  for (const pr of budget.prs) {
+    if (!pr.purchaseRequestId) continue
+    const rec = purchaseRequests.find((r) => r.id === pr.purchaseRequestId)
+    if (!rec) continue
+    const awaiting = pr.status === 'Pending'
+    const patch: { awaitingApproval?: boolean; status?: 'open' | 'voided' } = {}
+    if (!!rec.awaitingApproval !== awaiting) patch.awaitingApproval = awaiting
+    if (pr.status === 'Cancelled' && rec.status !== 'voided') patch.status = 'voided'
+    if (pr.status !== 'Cancelled' && rec.status === 'voided') patch.status = 'open'
+    if (Object.keys(patch).length) updatePurchaseRequest(rec.id, patch)
+  }
 }
