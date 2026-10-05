@@ -825,6 +825,9 @@ function notInPrototype() { infoToast(t('Not in this prototype')) }
 }
 .tpl-var:hover { background: var(--mp-background-neutral-hovered); border-color: var(--mp-border-bold); }
 
+.tpl-textarea--tall :deep(textarea) { min-height: calc(var(--mp-sizes-20) * 4); }
+.tpl-wa-box :deep(textarea) { min-height: calc(var(--mp-sizes-20) * 2); }
+
 .tpl-actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); }
 .tpl-error { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); text-align: right; }
 .tpl-caption { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
@@ -949,12 +952,14 @@ function notInPrototype() { infoToast(t('Not in this prototype')) }
 .tpl-doc-sheet__title { font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold); text-align: right; }
 .tpl-doc-sheet__meta { display: flex; justify-content: space-between; gap: var(--mp-spacing-4); }
 .tpl-doc-sheet__to { max-width: 50%; }
-.tpl-doc-sheet__dl { display: grid; grid-template-columns: auto auto; column-gap: var(--mp-spacing-3); row-gap: 2px; margin: 0; }
+.tpl-doc-sheet__dl { flex-shrink: 0; display: grid; grid-template-columns: auto auto; column-gap: var(--mp-spacing-3); row-gap: 2px; margin: 0; }
 .tpl-doc-sheet__dl dt { color: var(--mp-text-secondary); }
 .tpl-doc-sheet__dl dd { margin: 0; }
 .tpl-doc-sheet__table { display: flex; flex-direction: column; border-top: 1px solid var(--mp-border-default); }
 .tpl-doc-sheet__tr { display: flex; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-border-default); }
-.tpl-doc-sheet__tr > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.tpl-doc-sheet__table { font-size: var(--mp-font-sizes-xs); }
+.tpl-doc-sheet__tr > span { flex: 1 1 0; min-width: 0; overflow-wrap: break-word; }
+.tpl-doc-sheet__tr > span:nth-child(2) { flex-grow: 2; }
 .tpl-doc-sheet__tr--head { font-weight: var(--mp-font-weights-semi-bold); }
 .tpl-doc-sheet__amt { text-align: right; }
 .tpl-doc-sheet__totals { display: grid; grid-template-columns: auto auto; justify-content: end; column-gap: var(--mp-spacing-6); row-gap: 2px; text-align: right; }
