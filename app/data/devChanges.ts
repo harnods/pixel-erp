@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'sr-detail-shortfall-banner',
+    title: 'Stock request detail: one library banner, not two hand-rolled ones',
+    description:
+      'The grey rejected-lines banner is gone — a rejected line is already dimmed and badged on its own row, so the strip only repeated it at the top of the page. The shortfall banner that remains is now the library MpBanner in its warning variant instead of a hand-styled div, so it carries the system surface, border and icon. Its copy names the two ways out exactly as the buttons below do: "Create a warehouse transfer for each destination below, or create a purchase request."',
+    date: '2026-10-05',
+    files: ['StockRequestDetailsPage.vue', 'translations.ts'],
+  },
+  {
     id: 'sr-tabs',
     title: 'Stock requests: Awaiting / Rejected / canceled tabs',
     description:

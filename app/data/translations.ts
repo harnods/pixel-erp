@@ -3759,9 +3759,9 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Consumed': 'Dikonsumsi',
   'still short': 'masih kurang',
   'This request was rejected. No further stock actions are available.': 'Permintaan ini ditolak. Tidak ada aksi stok lanjutan.',
-  'component is short at its destination warehouse.': 'komponen kurang di gudang tujuannya.',
-  'components are short at their destination warehouse.': 'komponen kurang di gudang tujuannya.',
-  'Transfer stock in per warehouse below, or raise a purchase request.': 'Transfer stok per gudang di bawah, atau ajukan permintaan pembelian.',
+  'component is short at its destination warehouse': 'komponen kurang di gudang tujuannya',
+  'components are short at their destination warehouses': 'komponen kurang di gudang tujuannya',
+  'Create a warehouse transfer for each destination below, or create a purchase request.': 'Buat transfer gudang untuk setiap tujuan di bawah, atau buat permintaan pembelian.',
 
   // ── Stock request detail — product perspective ──────────────────────────────
   'Component demand': 'Kebutuhan komponen',
@@ -4007,9 +4007,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Reject added lines': 'Tolak baris tambahan',
   'line rejected': 'baris ditolak',
   'line rejected on': 'baris ditolak pada',
-  'line was rejected and is no longer counted as demand.': 'baris ditolak dan tidak lagi dihitung sebagai permintaan.',
-  'lines were rejected and are no longer counted as demand.': 'baris ditolak dan tidak lagi dihitung sebagai permintaan.',
-  'Production resolves a rejected line by readjusting the work order.': 'Produksi menyelesaikan baris yang ditolak dengan menyesuaikan ulang perintah kerja.',
 
   // Dashboard columns & shared labels (W-2)
   'SKU code': 'Kode SKU',

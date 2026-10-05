@@ -19,7 +19,7 @@
  */
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpIcon, MpBadge, toast, css,
+  MpIcon, MpBadge, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, toast, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import DetailJumpTo from '~/components/patterns/DetailJumpTo.vue'
@@ -56,8 +56,6 @@ const status = computed(() => req.value ? stockRequestStatus(req.value) : 'reque
 const lines = computed(() => req.value?.lines ?? [])
 /** Everyone who has changed a line's demand on this request (OPEN-17). */
 const requestors = computed(() => [...new Set(lines.value.map(l => l.requestor))].join(', ') || '—')
-/** W-7 — lines the stockist declined; their demand no longer stands. */
-const rejectedLines = computed(() => lines.value.filter(l => l.rejected))
 const componentCount = computed(() => lines.value.length)
 const reservedLines = computed(() => lines.value.filter(l => lineCovered(l) >= l.qty).length)
 const consumedLines = computed(() => lines.value.filter(l => l.qty > 0 && l.consumed >= l.qty).length)
@@ -347,24 +345,20 @@ function saveSerials(serials: string[]) {
 
     <!-- ── Stage ── -->
     <div class="detail-stage">
-      <div v-if="rejectedLines.length" class="srd-banner srd-banner--muted">
-        <MpIcon name="information" size="md" />
-        <span>
-          {{ rejectedLines.length }}
-          {{ rejectedLines.length === 1 ? t('line was rejected and is no longer counted as demand.') : t('lines were rejected and are no longer counted as demand.') }}
-          {{ t('Production resolves a rejected line by readjusting the work order.') }}
-        </span>
-      </div>
-      <!-- A shortfall is the warehouse's ordinary business, and the banner names
+      <!-- A rejected line is already dimmed and badged on its own row, so it needs
+           no banner of its own; only the shortfall asks the crew to act now.
+           A shortfall is the warehouse's ordinary business, and the banner names
            the two ways out of it, so it reads as a warning rather than an error. -->
-      <div v-if="transferLines.length" class="srd-banner srd-banner--warning">
-        <MpIcon name="warning" size="md" />
-        <span>
+      <MpBanner v-if="transferLines.length" id="srd-shortfall" variant="warning" class="srd-banner" data-devchange="sr-detail-shortfall-banner">
+        <MpBannerIcon id="srd-shortfall-icon" />
+        <MpBannerTitle id="srd-shortfall-title">
           {{ transferLines.length }}
-          {{ transferLines.length === 1 ? t('component is short at its destination warehouse.') : t('components are short at their destination warehouse.') }}
-          {{ t('Transfer stock in per warehouse below, or raise a purchase request.') }}
-        </span>
-      </div>
+          {{ transferLines.length === 1 ? t('component is short at its destination warehouse') : t('components are short at their destination warehouses') }}
+        </MpBannerTitle>
+        <MpBannerDescription id="srd-shortfall-desc">
+          {{ t('Create a warehouse transfer for each destination below, or create a purchase request.') }}
+        </MpBannerDescription>
+      </MpBanner>
 
       <!-- ── Request info ── -->
       <section class="wod-section">
@@ -676,23 +670,9 @@ function saveSerials(serials: string[]) {
 .srd-short { color: var(--mp-text-critical, #a8352d); font-weight: var(--mp-font-weights-semi-bold); }
 .srd-ok { color: var(--mp-text-success, #186f4a); }
 
-/* ── Banners ── */
-.srd-banner {
-  display: flex; align-items: center; gap: var(--mp-spacing-3);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-radius: var(--mp-radii-md, 6px);
-  font-size: var(--mp-font-sizes-md);
-}
-.srd-banner--warning {
-  background: var(--mp-colors-background-warning-subtle, #fff3e0);
-  border: 1px solid var(--mp-colors-border-warning, #f5cd47);
-  color: var(--mp-colors-text-warning, #a35200);
-}
-.srd-banner--muted {
-  background: var(--mp-background-neutral-subtle, #f8f9f9);
-  color: var(--mp-text-secondary, #3a4749);
-}
-.srd-banner-btn { margin-left: auto; flex-shrink: 0; }
+/* ── Shortfall banner ── */
+/* The library MpBanner carries its own surface, border, icon and tone, and the
+   section below it already pads its own top — so the page styles nothing here. */
 
 /* Request tags (W-7) — same chips as the index */
 </style>
