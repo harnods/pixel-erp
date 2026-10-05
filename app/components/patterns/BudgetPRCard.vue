@@ -12,9 +12,11 @@ import {
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import BudgetCheckPanel from '~/components/patterns/BudgetCheckPanel.vue'
+import ApprovalLogModal from '~/components/patterns/ApprovalLogModal.vue'
+import type { ApprovalLog } from '~/data/warehouseTransfers'
 import {
   budget, actingPerson, prTotal, prRemaining, prWaitingStep, isFinalPRStep, canApprovePR, canCancelPR,
-  approvePRAs, rejectPRAs, cancelPRAs, raiseFundingRequest, changeById, rupiah,
+  approvePRAs, rejectPRAs, cancelPRAs, raiseFundingRequest, changeById, rupiah, canSeeBudgetAmounts,
   type BudgetPR,
 } from '~/data/budgetStore'
 import { budgetPanel, mixKey, prStatusKey, newLineRoute, type PanelRow } from '~/data/budgetUiPurchaseRequests'
@@ -58,6 +60,31 @@ function stepType(s: { status: string }): 'completed' | 'warning' | 'critical' |
   if (s.status === 'Waiting' && props.pr.status === 'Pending' && waiting.value === s) return 'warning'
   return 'announcement'
 }
+// One-line chain summary; the full log opens in the shared Approval log modal.
+const chainSummary = computed(() => {
+  const c = props.pr.approvalChain
+  if (!c.length) return ''
+  const done = c.filter((s) => s.status === 'Approved').map((s) => s.approver)
+  const rejected = c.find((s) => s.status === 'Rejected')
+  if (rejected) return `${t('Rejected by')} ${rejected.approver}${rejected.note ? `: ${rejected.note}` : ''}`
+  if (props.pr.status === 'Pending' && waiting.value) {
+    const n = c.indexOf(waiting.value) + 1
+    return `${t('Waiting for')} ${waiting.value.approver} · ${t('step')} ${n} ${t('of')} ${c.length}`
+  }
+  return done.length ? `${t('Approved by')} ${done.join(', ')}` : ''
+})
+const logOpen = ref(false)
+defineExpose({ openLog: () => { logOpen.value = true } })
+const approvalLog = computed<ApprovalLog>(() => ({
+  requestedBy: props.pr.requester,
+  requestedAt: `${props.pr.date}T09:00:00+07:00`,
+  stages: props.pr.approvalChain.map((s) => ({
+    title: s.role, rule: 'anyone' as const, approvers: [s.approver],
+    approvals: s.status === 'Approved' && s.at ? [{ user: s.approver, date: s.at }] : [],
+  })),
+}))
+const showAmounts = computed(() => canSeeBudgetAmounts(budget.viewAs))
+
 function stepDate(iso: string | null): string {
   if (!iso) return ''
   return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(iso))
@@ -135,33 +162,26 @@ function onRequestLine(r: PanelRow) { router.push(newLineRoute(r)) }
         <h3 class="bpc__title">{{ t('Budget') }}</h3>
         <ErpStatusBadge :status="prStatusKey(status)" :label="t(status)" />
       </div>
-      <div class="bpc__sum">
-        <span class="bpc__sumlabel">{{ t('Request total before PPN') }}</span>
-        <span class="bpc__sumvalue">{{ formatIDRWhole(total) }}</span>
-        <template v-if="status === 'Approved' || status === 'Closed'">
-          <span class="bpc__sumlabel">{{ t('Held now') }}</span>
-          <span class="bpc__sumvalue">{{ formatIDRWhole(heldTotal) }}</span>
-        </template>
-      </div>
     </header>
 
     <div class="bpc__body">
       <!-- Block -->
-      <MpBanner v-if="pr.block && (status === 'Draft' || status === 'Pending')" id="pr-detail-block" variant="danger" data-tour="pr-block-banner">
+      <!-- A short line carries its own Request funds; the banner is for other blocks (no line, not locked). -->
+      <MpBanner v-if="pr.block && (status === 'Draft' || status === 'Pending') && !(pr.block.lineId && pr.block.short > 0)" id="pr-detail-block" variant="danger" data-tour="pr-block-banner">
         <MpBannerIcon id="pr-detail-block-icon" />
         <MpBannerDescription>
-          <span class="bpc__bannertext">{{ pr.block.short > 0 ? `${t('Not enough budget. Short')} ${formatIDRWhole(pr.block.short)}.` : t(pr.block.message) }}</span>
+          <span class="bpc__bannertext">{{ pr.block.short > 0 ? (showAmounts ? `${t('Not enough budget. Short')} ${formatIDRWhole(pr.block.short)}.` : t('Not enough budget.')) : t(pr.block.message) }}</span>
           <MpButton is-rounded v-if="status === 'Draft' && isRequester && pr.block.lineId && pr.block.short > 0" variant="secondary" data-tour="pr-request-funds" @click="onRequestFunds">{{ t('Request funds') }}</MpButton>
         </MpBannerDescription>
       </MpBanner>
 
       <!-- Over month reason (approvers see it) -->
-      <p v-if="pr.overMonthReason && status !== 'Draft'" class="bpc__reason">
-        <ErpStatusBadge status="over" :label="t('Over month budget')" type="warning" />
+      <p v-if="pr.overMonthReason && status !== 'Draft' && !pr.overMonthReason.startsWith('Funded by')" class="bpc__reason">
+        <span class="bpc__label">{{ t('Reason for going over the month') }}</span>
         <span>{{ pr.overMonthReason }}</span>
       </p>
 
-      <BudgetCheckPanel :rows="panel.rows" :month="pr.month" :mode="isHeldMode ? 'held' : 'after'" :held="held" :can-request-line="isRequester" @request-line="onRequestLine" />
+      <BudgetCheckPanel :rows="panel.rows" :month="pr.month" :mode="isHeldMode ? 'held' : 'after'" :held="held" :can-request-line="isRequester" :can-request-funds="status === 'Draft' && isRequester && !!pr.block" :submitted="status !== 'Draft'" @request-line="onRequestLine" @request-funds="onRequestFunds" />
 
       <p v-if="orderedOn.length" class="bpc__note">{{ t('Ordered on') }} {{ orderedOn.join(', ') }}. {{ t('The purchase order now holds the money.') }}</p>
 
@@ -173,20 +193,11 @@ function onRequestLine(r: PanelRow) { router.push(newLineRoute(r)) }
         <span class="bpc__muted">{{ formatIDRWhole(funding.donor?.amount ?? funding.receivers[0]?.amount ?? 0) }}</span>
       </div>
 
-      <!-- Approval chain -->
+      <!-- Approval: one line; the full log opens in the Approval log modal -->
       <div v-if="pr.approvalChain.length" class="bpc__chain">
         <span class="bpc__label">{{ t('Approval') }}</span>
-        <ol class="bpc__steps">
-          <li v-for="(s, i) in pr.approvalChain" :key="i" class="bpc__step">
-            <span class="bpc__stepno">{{ i + 1 }}</span>
-            <span class="bpc__stepwho">
-              <span class="bpc__stepname">{{ s.approver }}</span>
-              <span class="bpc__muted">{{ t(s.role) }}<template v-if="s.at"> · {{ stepDate(s.at) }}</template></span>
-              <span v-if="s.note && s.status === 'Rejected'" class="bpc__stepnote">{{ s.note }}</span>
-            </span>
-            <ErpStatusBadge status="step" :label="stepLabel(s)" :type="stepType(s)" />
-          </li>
-        </ol>
+        <span class="bpc__chaintext">{{ chainSummary }}</span>
+        <a class="bpc__link" @click="logOpen = true">{{ t('View approval log') }}</a>
       </div>
       <p v-else-if="status === 'Draft'" class="bpc__muted">{{ t('Not submitted yet.') }}</p>
 
@@ -216,7 +227,7 @@ function onRequestLine(r: PanelRow) { router.push(newLineRoute(r)) }
 
       <p v-if="cancelConfirm" class="bpc__error">{{ status === 'Approved' ? `${t('Cancelling frees')} ${formatIDRWhole(heldTotal)} ${t('back to the budget. Click Cancel request again to confirm.')}` : t('Click Cancel request again to confirm.') }}</p>
 
-      <p v-if="status === 'Pending' && !can.ok" class="bpc__muted">{{ can.reason }}</p>
+      <p v-if="status === 'Pending' && !can.ok && !(can.reason ?? '').startsWith('Waiting for')" class="bpc__muted">{{ can.reason }}</p>
 
       <footer v-if="(status === 'Pending' && can.ok) || canCancel.ok" class="bpc__actions">
         <MpButton is-rounded v-if="canCancel.ok" variant="ghost" @click="onCancel">{{ t('Cancel request') }}</MpButton>
@@ -227,6 +238,7 @@ function onRequestLine(r: PanelRow) { router.push(newLineRoute(r)) }
         </template>
       </footer>
     </div>
+    <ApprovalLogModal :is-open="logOpen" :subject="pr.number" :log="approvalLog" @close="logOpen = false" />
   </section>
 </template>
 
@@ -234,21 +246,24 @@ function onRequestLine(r: PanelRow) { router.push(newLineRoute(r)) }
 .bpc { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-colors-background-neutral, #fff); flex-shrink: 0; }
 .bpc__head {
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
-  padding: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default);
 }
 .bpc__titlewrap { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .bpc__title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .bpc__sum { display: flex; align-items: baseline; gap: var(--mp-spacing-2); flex-wrap: wrap; }
 .bpc__sumlabel { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .bpc__sumvalue { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin-right: var(--mp-spacing-4); }
-.bpc__body { padding: var(--mp-spacing-4); display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
+.bpc__body { padding: var(--mp-spacing-3) var(--mp-spacing-4); display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
 .bpc__bannertext { font-weight: var(--mp-font-weights-semi-bold); margin-right: var(--mp-spacing-4); }
 .bpc__reason { margin: 0; display: flex; align-items: center; gap: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .bpc__note { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .bpc__label { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; }
 .bpc__muted { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .bpc__funding { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.bpc__chain { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.bpc__chain { display: flex; align-items: center; flex-wrap: wrap; gap: var(--mp-spacing-3); }
+.bpc__chaintext { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.bpc__link { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-link, #165082); cursor: pointer; }
+.bpc__link:hover { text-decoration: underline; text-underline-offset: 2px; }
 .bpc__steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .bpc__step {
   display: flex; align-items: center; gap: var(--mp-spacing-3);

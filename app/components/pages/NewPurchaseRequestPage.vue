@@ -24,7 +24,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import BudgetCheckPanel from '~/components/patterns/BudgetCheckPanel.vue'
 import {
-  budget, actingPerson, createPR, updatePRLines, updatePRDate, submitPR, raiseFundingRequest,
+  budget, actingPerson, canSeeBudgetAmounts, createPR, updatePRLines, updatePRDate, submitPR, raiseFundingRequest,
   type BudgetPR, type SpendLine,
 } from '~/data/budgetStore'
 import { personFor } from '~/data/budgetMaster'
@@ -305,7 +305,7 @@ function onSubmit() {
   if (!res.ok) {
     const b = res.check.blocker!
     blockMsg.value = {
-      text: b.lineId && b.yearShort > 0 ? `${t('Not enough budget. Short')} ${formatIDRWhole(b.yearShort)}.` : t(b.message),
+      text: b.lineId && b.yearShort > 0 ? (canSeeBudgetAmounts(budget.viewAs) ? `${t('Not enough budget. Short')} ${formatIDRWhole(b.yearShort)}.` : t('Not enough budget.')) : t(b.message),
       short: b.yearShort, lineId: b.lineId,
     }
     updatePurchaseRequest(recordId.value!, { awaitingApproval: false })
@@ -603,9 +603,9 @@ function onBlockedSaveDraft() {
           <MpButton is-rounded variant="ghost" @click="onClaimsCheck">{{ t('Check claims and cash advances') }}</MpButton>
         </div>
         <p v-if="!panel.rows.length" class="si-budget-empty">{{ t('Pick a department, project and budget account on each line to see the budget.') }}</p>
-        <BudgetCheckPanel v-else :rows="panel.rows" :month="checkMonth" @request-line="onRequestLine" />
+        <BudgetCheckPanel v-else :rows="panel.rows" :month="checkMonth" :can-request-funds="!!blockMsg && !!budgetPrId" @request-line="onRequestLine" @request-funds="onRequestFunds" />
 
-        <MpBanner v-if="blockMsg" id="pr-block-banner" variant="danger" class="si-budget-banner" data-tour="pr-block-banner">
+        <MpBanner v-if="blockMsg && !(blockMsg.lineId && blockMsg.short > 0)" id="pr-block-banner" variant="danger" class="si-budget-banner" data-tour="pr-block-banner">
           <MpBannerIcon id="pr-block-banner-icon" />
           <MpBannerDescription>
             <span class="si-banner-text">{{ blockMsg.text }}</span>

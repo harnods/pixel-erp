@@ -1,150 +1,98 @@
 <script setup lang="ts">
 /**
- * BudgetCheckPanel — the budget figures for each budget line a purchase request
- * charges (PRD FG-3, UX3). One block per line: Budget, Reserved, Committed,
- * Actual, Pending and Available for the year and the request month, then this
- * request and what is left after it. Turns red when the line is short.
+ * BudgetCheckPanel — one compact line per budget line a transaction charges
+ * (PRD FG-3, UX3): a status and, for roles allowed to see budget amounts, what
+ * is left after this transaction. The full breakdown lives on the budget line.
  */
-import { MpButton } from '@mekari/pixel3'
-import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import { MpButton, MpIcon } from '@mekari/pixel3'
 import type { PanelRow } from '~/data/budgetUiPurchaseRequests'
 import { MONTH_NAMES } from '~/data/budgetMaster'
-import { BUDGET_YEAR } from '~/data/budgetStore'
+import { budget, canSeeBudgetAmounts } from '~/data/budgetStore'
 import { formatIDRWhole } from '~/utils/currency'
 
 const props = withDefaults(defineProps<{
   rows: PanelRow[]
   month: number
-  /** 'after': show "After this request" (form, draft, pending). 'held': show what the request holds now. */
+  /** 'after': remaining after this transaction (form, draft, pending). 'held': what it holds now. */
   mode?: 'after' | 'held'
-  /** Held amount per row key, for mode 'held'. */
   held?: Record<string, number>
-  /** Show "Request a new line" on a mix with no budget line. */
   canRequestLine?: boolean
-}>(), { mode: 'after', held: () => ({}), canRequestLine: true })
+  /** Show Request funds on a short line. */
+  canRequestFunds?: boolean
+  /** Already submitted: a month warning no longer asks for a reason. */
+  submitted?: boolean
+}>(), { mode: 'after', held: () => ({}), canRequestLine: true, canRequestFunds: false, submitted: false })
 
-const emit = defineEmits<{ (e: 'request-line', row: PanelRow): void }>()
+const emit = defineEmits<{ (e: 'request-line', row: PanelRow): void; (e: 'request-funds', row: PanelRow): void }>()
 
 const { t } = useLocale()
-const monthLabel = computed(() => MONTH_NAMES[props.month] ?? '')
+const router = useRouter()
+const showAmounts = computed(() => canSeeBudgetAmounts(budget.viewAs))
+const monthName = computed(() => MONTH_NAMES[props.month] ?? '')
 
-const STATE_BADGE: Record<string, { label: string; type: 'completed' | 'warning' | 'critical' | 'announcement' }> = {
-  'ok': { label: 'Within budget', type: 'completed' },
-  'warn': { label: 'Over month budget', type: 'warning' },
-  'short': { label: 'Not enough budget', type: 'critical' },
-  'not-controlled': { label: 'Not budget controlled', type: 'announcement' },
-  'no-line': { label: 'No budget line', type: 'critical' },
-  'not-locked': { label: 'Budget not locked', type: 'critical' },
-  'blocked': { label: 'Cannot be charged', type: 'critical' },
-}
+type Tone = 'ok' | 'warn' | 'bad' | 'muted'
+interface View { tone: Tone; icon: string; status: string; detail: string }
 
-function figureRows(r: PanelRow) {
-  if (!r.year || !r.month) return []
-  const y = r.year, m = r.month
-  return [
-    { key: 'budget', label: t('Budget'), y: y.budget, m: m.budget },
-    { key: 'reserved', label: t('Reserved'), y: y.reserved, m: m.reserved },
-    { key: 'committed', label: t('Committed'), y: y.committed, m: m.committed },
-    { key: 'actual', label: t('Actual'), y: y.actual, m: m.actual },
-    ...(y.held ? [{ key: 'held', label: t('Held for transfers'), y: y.held, m: m.held }] : []),
-    { key: 'pending', label: t('Pending'), y: y.pending, m: m.pending },
-    { key: 'available', label: t('Available'), y: y.available, m: m.available },
-  ]
-}
-function shortText(r: PanelRow): string {
-  if (r.state === 'short' && r.yearShort > 0) return `${t('Short')} ${formatIDRWhole(r.yearShort)} ${t('for the year')}.`
-  if (r.state === 'short' || r.state === 'warn') {
-    if (r.monthShort > 0) return `${t('Over the')} ${t(monthLabel.value)} ${t('budget by')} ${formatIDRWhole(r.monthShort)}.`
+function view(r: PanelRow): View {
+  const amt = showAmounts.value
+  if (props.mode === 'held' && r.lineId) {
+    const h = props.held[r.key] ?? 0
+    return { tone: 'ok', icon: 'done', status: t('Held on budget'), detail: amt ? formatIDRWhole(h) : '' }
   }
-  return ''
+  switch (r.state) {
+    case 'ok':
+      return { tone: 'ok', icon: 'done', status: t('Within budget'), detail: amt ? `${formatIDRWhole(r.afterYear ?? 0)} ${t('remaining')}` : '' }
+    case 'warn':
+      return { tone: 'warn', icon: 'warning-circular', status: `${t('Over the')} ${t(monthName.value)} ${t('budget')}`, detail: amt ? `${formatIDRWhole(r.afterYear ?? 0)} ${t('remaining for the year')}` : props.submitted ? '' : t('A reason is needed to submit') }
+    case 'short':
+      return { tone: 'bad', icon: 'error', status: t('Not enough budget'), detail: amt ? `${t('Short')} ${formatIDRWhole(r.yearShort)}` : '' }
+    case 'no-line':
+      return { tone: 'bad', icon: 'error', status: t('No budget line'), detail: '' }
+    case 'not-controlled':
+      return { tone: 'muted', icon: 'info', status: t('Not budget controlled'), detail: '' }
+    case 'not-locked':
+      return { tone: 'bad', icon: 'error', status: t('Budget not locked yet'), detail: '' }
+    default:
+      return { tone: 'bad', icon: 'error', status: t('Cannot be charged'), detail: t(r.message) }
+  }
 }
 </script>
 
 <template>
-  <div class="bcp">
-    <div
-      v-for="r in rows" :key="r.key"
-      class="bcp__line"
-      :class="{ 'bcp__line--short': mode === 'after' && (r.state === 'short' || r.state === 'no-line' || r.state === 'not-locked' || r.state === 'blocked'), 'bcp__line--warn': mode === 'after' && r.state === 'warn' }"
-    >
-      <div class="bcp__head">
-        <span class="bcp__title">{{ r.label }}</span>
-        <ErpStatusBadge v-if="mode === 'after' || !r.year" status="budget" :label="t(STATE_BADGE[r.state]!.label)" :type="STATE_BADGE[r.state]!.type" />
-      </div>
-
-      <template v-if="r.year && r.month">
-        <table class="bcp__table">
-          <thead>
-            <tr>
-              <th class="bcp__th" />
-              <th class="bcp__th bcp__th--num">{{ t('Year') }} {{ BUDGET_YEAR }}</th>
-              <th class="bcp__th bcp__th--num">{{ t(monthLabel) }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="f in figureRows(r)" :key="f.key" :class="{ 'bcp__tr--total': f.key === 'available' }">
-              <td class="bcp__td">{{ f.label }}</td>
-              <td class="bcp__td bcp__td--num">{{ formatIDRWhole(f.y) }}</td>
-              <td class="bcp__td bcp__td--num">{{ formatIDRWhole(f.m) }}</td>
-            </tr>
-            <template v-if="mode === 'after'">
-              <tr>
-                <td class="bcp__td">{{ t('This request') }}</td>
-                <td class="bcp__td bcp__td--num">{{ formatIDRWhole(r.amount) }}</td>
-                <td class="bcp__td bcp__td--num">{{ formatIDRWhole(r.amount) }}</td>
-              </tr>
-              <tr class="bcp__tr--after">
-                <td class="bcp__td">{{ t('After this request') }}</td>
-                <td class="bcp__td bcp__td--num" :class="{ 'bcp__neg': (r.afterYear ?? 0) < 0 }">{{ formatIDRWhole(r.afterYear ?? 0) }}</td>
-                <td class="bcp__td bcp__td--num" :class="{ 'bcp__neg': (r.afterMonth ?? 0) < 0 }">{{ formatIDRWhole(r.afterMonth ?? 0) }}</td>
-              </tr>
-            </template>
-            <tr v-else class="bcp__tr--after">
-              <td class="bcp__td">{{ t('Held by this request') }}</td>
-              <td class="bcp__td bcp__td--num">{{ formatIDRWhole(held[r.key] ?? 0) }}</td>
-              <td class="bcp__td bcp__td--num" />
-            </tr>
-          </tbody>
-        </table>
-        <p v-if="mode === 'after' && shortText(r)" class="bcp__msg" :class="{ 'bcp__msg--warn': r.state === 'warn' }">{{ shortText(r) }}</p>
-      </template>
-
-      <p v-else-if="r.state === 'not-controlled'" class="bcp__note">{{ t('This account runs no budget check.') }}</p>
-      <div v-else-if="r.state === 'no-line'" class="bcp__noline">
-        <p class="bcp__msg">{{ t('No budget line for this department, project and account.') }}</p>
-        <MpButton is-rounded v-if="canRequestLine" variant="secondary" @click="emit('request-line', r)">{{ t('Request a new line') }}</MpButton>
-      </div>
-      <p v-else class="bcp__msg">{{ t(r.message) }}</p>
-    </div>
-  </div>
+  <ul class="bcp">
+    <li v-for="r in rows" :key="r.key" class="bcp__row" :class="`bcp__row--${view(r).tone}`">
+      <MpIcon :name="view(r).icon" size="sm" class="bcp__icon" />
+      <span class="bcp__status">{{ view(r).status }}</span>
+      <span v-if="view(r).detail" class="bcp__detail">· {{ view(r).detail }}</span>
+      <span class="bcp__line">{{ r.label }}</span>
+      <span class="bcp__actions">
+        <MpButton v-if="r.state === 'short' && mode === 'after' && canRequestFunds" is-rounded variant="secondary" data-tour="pr-request-funds" @click="emit('request-funds', r)">{{ t('Request funds') }}</MpButton>
+        <MpButton v-if="r.state === 'no-line' && canRequestLine" is-rounded variant="secondary" @click="emit('request-line', r)">{{ t('Request a new line') }}</MpButton>
+        <a v-if="r.lineId && showAmounts" class="bcp__link" @click="router.push(`/budget-lines/${r.lineId}`)">{{ t('View budget line') }}</a>
+      </span>
+    </li>
+  </ul>
 </template>
 
 <style scoped>
-.bcp { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: var(--mp-spacing-4); }
-.bcp__line {
-  border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-md);
+.bcp { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.bcp__row {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--mp-spacing-2);
+  min-height: var(--mp-sizes-10, 40px); padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
   background: var(--mp-colors-background-neutral, #fff);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  display: flex; flex-direction: column; gap: var(--mp-spacing-2);
 }
-.bcp__line--short { border-color: var(--mp-colors-border-danger, #e2483d); background: var(--mp-colors-background-danger, #fdecee); }
-.bcp__line--warn { border-color: var(--mp-colors-border-warning, #e46910); }
-.bcp__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-3); }
-.bcp__title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.bcp__table { width: 100%; border-collapse: collapse; }
-.bcp__th {
-  text-align: left; padding: var(--mp-spacing-1) 0;
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary);
-  border-bottom: 1px solid var(--mp-border-default);
-}
-.bcp__th--num, .bcp__td--num { text-align: right; white-space: nowrap; padding-left: var(--mp-spacing-3); }
-.bcp__td { padding: var(--mp-spacing-1) 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.bcp__tr--total .bcp__td { font-weight: var(--mp-font-weights-semi-bold); border-top: 1px solid var(--mp-border-default); }
-.bcp__tr--after .bcp__td { font-weight: var(--mp-font-weights-semi-bold); border-top: 1px dashed var(--mp-border-default); }
-.bcp__neg { color: var(--mp-text-danger, #e2483d); }
-.bcp__msg { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-danger, #e2483d); }
-.bcp__msg--warn { color: var(--mp-colors-text-warning, #e46910); }
-.bcp__note { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.bcp__noline { display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-2); }
+.bcp__row--bad { border-color: var(--mp-colors-border-danger, #e2483d); background: var(--mp-colors-background-danger, #fdecee); }
+.bcp__row--warn { border-color: var(--mp-colors-border-warning, #e46910); background: var(--mp-colors-background-warning, #fff4e5); }
+.bcp__icon { flex-shrink: 0; }
+.bcp__row--ok .bcp__icon { color: var(--mp-colors-icon-success, #1a8a50); }
+.bcp__row--bad .bcp__icon { color: var(--mp-colors-icon-danger, #e2483d); }
+.bcp__row--warn .bcp__icon { color: var(--mp-colors-icon-warning, #e46910); }
+.bcp__status { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.bcp__row--bad .bcp__status { color: var(--mp-text-danger, #e2483d); }
+.bcp__detail { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.bcp__line { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.bcp__actions { margin-left: auto; display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.bcp__link { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-link, #165082); cursor: pointer; }
+.bcp__link:hover { text-decoration: underline; text-underline-offset: 2px; }
 </style>

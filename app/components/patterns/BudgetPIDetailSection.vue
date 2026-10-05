@@ -7,7 +7,7 @@
 import { MpBanner, MpBannerIcon, MpBannerDescription } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { formatIDRWhole } from '~/utils/currency'
-import { billByNumber, poById, lineById, lineTitle, overrunShort } from '~/data/budgetStore'
+import { budget, canSeeBudgetAmounts, billByNumber, poById, lineById, lineTitle, overrunShort } from '~/data/budgetStore'
 
 const props = defineProps<{ number: string }>()
 const { t } = useLocale()
@@ -33,7 +33,7 @@ const rows = computed(() => (bill.value?.lines ?? []).map((l, i) => {
     </div>
     <MpBanner v-if="bill.overBudget" id="bpid-overrun-banner" variant="warning" align-items="center">
       <MpBannerIcon id="bpid-overrun-banner-icon" />
-      <MpBannerDescription>{{ t('Over budget by') }} {{ fmt(overrunShort(bill)) }}. {{ t('This bill is on the over-budget list.') }}</MpBannerDescription>
+      <MpBannerDescription>{{ canSeeBudgetAmounts(budget.viewAs) ? `${t('Over budget by')} ${fmt(overrunShort(bill))}.` : t('Over budget.') }} {{ t('This bill is on the over-budget list.') }}</MpBannerDescription>
     </MpBanner>
     <table class="bpid-table">
       <thead>

@@ -529,7 +529,8 @@ export function submitPR(id: string, overMonthReason?: string): { ok: boolean; c
   }
   if (check.monthWarning && !overMonthReason && !pr.overMonthReason) return { ok: false, check, needsReason: true }
   pr.block = null
-  if (overMonthReason) pr.overMonthReason = overMonthReason
+  // Keep a reason only when the month check actually warned.
+  pr.overMonthReason = check.monthWarning ? (overMonthReason ?? pr.overMonthReason) : null
   pr.status = 'Pending'
   pr.approvalChain = [
     { approver: personFor('Line Manager').person, role: 'Line Manager', status: 'Waiting', at: null, note: null },
@@ -2111,4 +2112,19 @@ export function updatePRDate(id: string, date: string): void {
   if (!pr || (pr.status !== 'Draft' && pr.status !== 'Rejected')) return
   pr.date = date
   pr.month = Number(date.slice(5, 7)) - 1
+}
+
+
+// ── Budget amounts on transactions (RBAC) ───────────────────────────────────
+
+/**
+ * "See budget amounts on transactions" is a permission assigned to roles
+ * (role-based access control). Without it, transaction screens show the
+ * budget status only, never rupiah. These are the default roles.
+ */
+export const BUDGET_AMOUNT_ROLES_DEFAULT: BudgetRole[] = [
+  'Budget Controller', 'CFO', 'Budget holder (Networking)', 'Budget holder (Operations)', 'Finance Admin', 'President Director',
+]
+export function canSeeBudgetAmounts(role: BudgetRole = budget.viewAs): boolean {
+  return BUDGET_AMOUNT_ROLES_DEFAULT.includes(role)
 }

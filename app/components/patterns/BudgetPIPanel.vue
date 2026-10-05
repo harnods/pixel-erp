@@ -11,7 +11,7 @@ import { MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpCheckbox 
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { formatIDRWhole } from '~/utils/currency'
-import { poById, previewBill, type BillInput } from '~/data/budgetStore'
+import { budget, canSeeBudgetAmounts, poById, previewBill, type BillInput } from '~/data/budgetStore'
 import {
   billablePOOptions, poLineOptions, buildBudgetBillInput, ACCOUNT_OPTIONS, DEPARTMENT_OPTIONS, PROJECT_OPTIONS,
   type BudgetPILine, type BudgetPIState,
@@ -80,7 +80,7 @@ function rowResult(i: number) {
     </MpBanner>
     <MpBanner v-else-if="preview?.overBudget" id="bpi-overrun-banner" variant="warning" align-items="center">
       <MpBannerIcon id="bpi-overrun-banner-icon" />
-      <MpBannerDescription>{{ t('Over budget by') }} {{ fmt(preview.overBudgetShort) }}. {{ t('This bill will post and appear on the over-budget list.') }}</MpBannerDescription>
+      <MpBannerDescription>{{ canSeeBudgetAmounts(budget.viewAs) ? `${t('Over budget by')} ${fmt(preview.overBudgetShort)}.` : t('Over budget.') }} {{ t('This bill will post and appear on the over-budget list.') }}</MpBannerDescription>
     </MpBanner>
 
     <table v-if="items.length" class="bpi-table">
