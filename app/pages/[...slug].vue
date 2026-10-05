@@ -1621,10 +1621,14 @@ provide('contactAddSignal', contactAddSignal)
 const isContactsIndex = computed(() =>
   ['Customers', 'Vendors', 'Other contacts'].includes(currentPageKey.value))
 // Type-specific create label for the contacts index page-title button.
-const contactAddLabel = computed(() =>
-  currentPageKey.value === 'Vendors' ? 'New vendor'
-  : currentPageKey.value === 'Other contacts' ? 'New contact'
-  : 'New customer')
+const contactAddLabel = computed(() => 'New contact')
+// Contacts title-bar Import menu (prod ContactListView importMenuItems).
+const contactImportItems = computed(() => [
+  'Import from spreadsheet',
+  ...(currentPageKey.value === 'Customers' ? ['Import credit memo'] : []),
+  ...(currentPageKey.value === 'Vendors' ? ['Import debit memo'] : []),
+  'Download import template',
+])
 
 // ── Import dropdown ───────────────────────────────────────────────────────
 const importDropdownOpen = ref(false)
@@ -2441,6 +2445,16 @@ function startResize(e: MouseEvent) {
           </div>
         </div>
         <div v-else-if="isContactsIndex" class="page-title-actions">
+          <MpPopover id="contacts-import" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <MpButton variant="secondary" is-rounded right-icon="chevrons-down">{{ t('Import') }}</MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem v-for="item in contactImportItems" :key="item" @click="infoToast(t('Not in this prototype'))">{{ t(item) }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
           <MpButton variant="primary" is-rounded left-icon="add" @click="contactAddSignal++">{{ t(contactAddLabel) }}</MpButton>
         </div>
         <div v-else-if="currentPageKey === 'Chart of accounts'" class="page-title-actions">
