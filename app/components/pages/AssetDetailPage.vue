@@ -177,6 +177,16 @@ function explain(basis: 'accounting' | 'tax', period: string) {
   derivationOpen.value = true
 }
 
+// ── Arriving by link ────────────────────────────────────────────────────────
+// ?tab=history opens a tab. Breakdowns (?breakdown=) and versions (?versions=)
+// are handled by the shared-link watcher further down.
+const linkRoute = useRoute()
+watch(() => linkRoute.query.tab, (q) => {
+  if (typeof q !== 'string') return
+  const t = tabs.value.find((x) => x.key === q)
+  if (t) tab.value = t.key
+}, { immediate: true })
+
 // ── Jump to another asset ───────────────────────────────────────────────────
 const jumpSearch = ref('')
 const jumpResults = computed(() => {

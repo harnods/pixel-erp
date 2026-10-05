@@ -310,6 +310,7 @@ const route = useRoute()
 watch(() => route.query.filter, (f) => {
   if (f === 'unclassified') showUnclassified()
   else if (f === 'incomplete') showIncomplete()
+  else if (f === 'intangible') { clearFilters(); typeFilter.value = 'Intangible' }
 }, { immediate: true })
 // ?book=tax or ?book=both opens the register on that book.
 watch(() => route.query.book, (b) => {
