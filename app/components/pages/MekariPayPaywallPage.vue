@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-non-core-feature-frontend/src/modules/mekari-pay/views/paywall/MekariPayPaywall.vue -->
 <!--
   Mekari Pay — paywall / first-run page (shown from Integrations › Mekari Pay).
   Page FORMAT copied 1:1 from flex-web's InsuranceFirstRun (hero → two-step
@@ -8,6 +9,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { MpText, MpButton, MpIcon, css } from '@mekari/pixel3'
+import { infoToast } from '~/utils/toasts'
 
 const { t } = useLocale()
 
@@ -115,7 +117,7 @@ const footer = css({
           <p :class="heroBody">{{ COPY.heroBody }}</p>
         </div>
         <div>
-          <button class="btn-enterprise btn-enterprise--primary">{{ COPY.cta }}</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="infoToast(t('Not in this prototype'))">{{ COPY.cta }}</button>
         </div>
       </div>
 
@@ -149,7 +151,7 @@ const footer = css({
     <div :class="footer">
       <MpIcon name="help" size="sm" color="icon.secondary" />
       <MpText size="body" color="text.default">{{ COPY.helpPrefix }}</MpText>
-      <MpButton variant="textLink" size="sm">{{ COPY.helpLink }}</MpButton>
+      <MpButton variant="textLink" size="sm" @click="infoToast(t('Not in this prototype'))">{{ COPY.helpLink }}</MpButton>
       <MpText size="body" color="text.default">{{ COPY.helpSuffix }}</MpText>
     </div>
   </div>
