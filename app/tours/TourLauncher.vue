@@ -1,13 +1,13 @@
 <template>
   <!--
-    Guided tours: the launcher in the top bar, beside View as.
+    Guided tours: the one launcher in the top bar, beside View as.
     This is a demo layer for walkthroughs, not a product requirement; engineers
     building the product should ignore it. The only coupling to product screens
     is the data-tour="..." attributes they carry.
-    Shown only when Asset settings > Guided tours is on.
+    Always shown on every ERP screen, in the same place, for every module. It
+    lists every module's tours (tourRegistry.ts), the current module's group first.
   -->
   <MpPopover
-    v-if="guidedToursOn"
     id="guided-tours-launcher"
     placement="bottom-end"
     use-portal
@@ -21,41 +21,43 @@
       </MpButton>
     </MpPopoverTrigger>
     <MpPopoverContent class="erp-dropdown-menu gtl-menu">
-      <div class="gtl-heading">Step-by-step walkthroughs of the fixed asset module. Starting one resets the sample data.</div>
-      <MpPopoverList>
-        <MpPopoverListItem
-          v-for="t in ASSET_TOURS"
-          :key="t.id"
-          :is-active="activeTour?.id === t.id"
-          @click="start(t, onClosePopover)"
-        >
-          <span class="gtl-item">
-            <span class="gtl-name">{{ t.code }} · {{ t.name }}</span>
-            <span class="gtl-sub">{{ t.steps.length }} steps · {{ t.persona }}</span>
-          </span>
-        </MpPopoverListItem>
-      </MpPopoverList>
+      <div class="gtl-heading">Press Next and each tour does the step for you, then shows the result. Starting one resets that module's sample data.</div>
+      <template v-for="g in groups" :key="g.key">
+        <div class="gtl-group">{{ g.label }}</div>
+        <MpPopoverList>
+          <MpPopoverListItem
+            v-for="t in g.tours"
+            :key="t.id"
+            :is-active="activeTour?.id === t.id"
+            @click="start(t, onClosePopover)"
+          >
+            <span class="gtl-item">
+              <span class="gtl-name">{{ t.code }} · {{ t.name }}</span>
+              <span class="gtl-sub">{{ t.steps.length }} steps · {{ t.persona }}</span>
+            </span>
+          </MpPopoverListItem>
+        </MpPopoverList>
+      </template>
     </MpPopoverContent>
   </MpPopover>
 </template>
 
 <script setup lang="ts">
-import { watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem } from '@mekari/pixel3'
-import { ASSET_TOURS, type AssetTour } from './assetTours'
-import { guidedToursOn } from './tourSettings'
-import { activeTour, startTour, stopTour } from './tourRunner'
+import type { AssetTour } from './assetTours'
+import { orderedGroups } from './tourRegistry'
+import { activeTour, startTour } from './tourRunner'
 
 const router = useRouter()
+const route = useRoute()
+const groups = computed(() => orderedGroups(route.path))
 
 function start(t: AssetTour, closePopover: () => void) {
   closePopover()
   startTour(t, router)
 }
-
-// Turning guided mode off ends a running tour.
-watch(guidedToursOn, (on) => { if (!on) stopTour() })
 </script>
 
 <style scoped>
@@ -69,7 +71,16 @@ watch(guidedToursOn, (on) => { if (!on) stopTour() })
   fill: var(--mp-colors-icon-inverse, #fff);
 }
 :global(.mp-popover.gtl-menu) {
-  min-width: 320px;
+  min-width: 340px;
+  max-height: calc(100vh - var(--mp-spacing-20, 80px));
+  overflow-y: auto;
+}
+.gtl-group {
+  padding: var(--mp-spacing-3) var(--mp-spacing-4) var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-sm);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-colors-text-secondary);
+  border-top: 1px solid var(--mp-colors-border-default, #d0d6dd);
 }
 .gtl-heading {
   padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-1);
@@ -86,9 +97,8 @@ watch(guidedToursOn, (on) => { if (!on) stopTour() })
 /*
  * The tour panel (tourPanel.ts). Global on purpose: MpTour renders into its own app under
  * #pixel-tour-portal, outside every scoped tree. The overlay is hidden so the
- * screen stays usable (each step asks for an action on it). The panel sits
- * above drawers (1300) and below popovers (1600), so a dropdown a step asks
- * for opens over it rather than under it.
+ * screen stays usable. The panel sits above drawers (1300) and below popovers
+ * (1600), so a dropdown a step opens shows over it rather than under it.
  */
 #asset-tour-overlay { display: none; }
 #asset-tour { z-index: 1500; }

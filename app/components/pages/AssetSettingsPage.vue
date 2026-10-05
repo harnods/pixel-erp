@@ -26,7 +26,6 @@ import {
 import { METHOD_LABEL } from '~/data/assetEngine'
 import { formatMonths } from '~/data/assetUiDuration'
 import AssetPostingPolicy from '~/components/patterns/AssetPostingPolicy.vue'
-import GuidedToursSetting from '~/tours/GuidedToursSetting.vue'
 
 // OD-09, OD-10: the posting settings are live controls; the rest of the
 // depreciation policy group stays as stated.
@@ -283,7 +282,6 @@ function toggleOther() { infoToast(t('Not in this prototype')) }
     </div>
 
     <!-- Demo layer (app/tours), not a product requirement. -->
-    <GuidedToursSetting />
   </div>
 </template>
 

@@ -3,11 +3,12 @@
  *
  * The tours are a walkthrough layer, not a product requirement. What this
  * spec holds them to: every step lands on a route that exists and a
- * data-tour marker a product screen really carries; the switch is off by
- * default and is the one thing kept in localStorage; every tour file says it
- * is a demo layer; and the SIM-7 figures are the ones the engine computes.
+ * data-tour marker a product screen really carries; every module reaches its
+ * tours through the one Guided tours menu; the tour layer keeps nothing in
+ * localStorage; every tour file says it is a demo layer; and the SIM-7
+ * figures are the ones the engine computes.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { ASSET_TOURS } from '~/tours/assetTours'
@@ -136,48 +137,21 @@ describe('tour steps point at real routes and real markers', () => {
   })
 })
 
-describe('the guided tours switch', () => {
-  const store = new Map<string, string>()
-  beforeEach(() => {
-    vi.resetModules()
-    vi.stubGlobal('localStorage', {
-      getItem: (k: string) => store.get(k) ?? null,
-      setItem: (k: string, v: string) => void store.set(k, v),
-      removeItem: (k: string) => void store.delete(k),
-    })
+describe('one entry point for every module', () => {
+  it('every module group is in the one registry, current module first', async () => {
+    const { TOUR_GROUPS, orderedGroups } = await import('~/tours/tourRegistry')
+    expect(TOUR_GROUPS.map((g) => g.key)).toEqual(['assets', 'budget', 'payroll', 'project'])
+    expect(orderedGroups('/budget-lines')[0]!.key).toBe('budget')
+    expect(orderedGroups('/assets')[0]!.key).toBe('assets')
   })
-
-  it('is off by default', async () => {
-    store.clear()
-    const s = await import('~/tours/tourSettings')
-    expect(s.guidedToursOn.value).toBe(false)
+  it('the header mounts one launcher, with no module condition and no setting', () => {
+    const head = readFileSync(join(APP, 'components', 'ErpHeader.vue'), 'utf8')
+    expect(head.match(/<TourLauncher\b/g)).toHaveLength(1)
+    expect(head).not.toMatch(/<TourLauncher v-if="is(Asset|Budget|Payroll)Screen"/)
+    expect(head).not.toMatch(/BudgetTourLauncher|GuidedToursSetting/)
   })
-
-  it('persists on through a reload, and off again', async () => {
-    store.clear()
-    const a = await import('~/tours/tourSettings')
-    a.setGuidedTours(true)
-    expect(store.get(a.GUIDED_TOURS_KEY)).toBe('on')
-    vi.resetModules()
-    const b = await import('~/tours/tourSettings')
-    expect(b.guidedToursOn.value).toBe(true)
-    b.setGuidedTours(false)
-    expect(store.has(b.GUIDED_TOURS_KEY)).toBe(false)
-    vi.resetModules()
-    const c = await import('~/tours/tourSettings')
-    expect(c.guidedToursOn.value).toBe(false)
-  })
-
-  it('uses the persistence key tours.json names', async () => {
-    const s = await import('~/tours/tourSettings')
-    expect(s.GUIDED_TOURS_KEY).toBe('assetmod.tours.v2')
-  })
-
-  it('is the only localStorage use in the tour layer', () => {
-    for (const f of walk(join(APP, 'tours'))) {
-      if (f.endsWith('tourSettings.ts')) continue
-      expect(readFileSync(f, 'utf8'), f).not.toMatch(/localStorage|sessionStorage/)
-    }
+  it('keeps nothing in localStorage', () => {
+    for (const f of walk(join(APP, 'tours'))) expect(readFileSync(f, 'utf8'), f).not.toMatch(/localStorage|sessionStorage/)
   })
 })
 
@@ -185,7 +159,7 @@ describe('the tour layer is labelled and kept apart', () => {
   const files = walk(join(APP, 'tours'))
   it('has its files', () => {
     expect(files.map((f) => f.split('/').pop()).sort()).toEqual(
-      ['BudgetTourLauncher.vue', 'GuidedToursSetting.vue', 'TourLauncher.vue', 'assetTours.ts', 'budgetTours.ts', 'tourPanel.ts', 'tourRunner.ts', 'tourSettings.ts'],
+      ['TourLauncher.vue', 'assetTourWork1.ts', 'assetTourWork2.ts', 'assetTours.ts', 'budgetTours.ts', 'payrollTours.ts', 'projectTours.ts', 'tourPanel.ts', 'tourRegistry.ts', 'tourRunner.ts'],
     )
   })
   for (const f of files) {
@@ -196,13 +170,13 @@ describe('the tour layer is labelled and kept apart', () => {
       expect(head).toMatch(/data-tour="\.\.\." attributes/)
     })
   }
-  it('product screens import only the launcher and the setting', () => {
+  it('product screens import only the launcher', () => {
     const importers = walk(APP)
       .filter((f) => !f.includes(join('app', 'tours')))
       .filter((f) => /from ['"]~\/tours\//.test(readFileSync(f, 'utf8')))
       .map((f) => f.slice(APP.length + 1))
       .sort()
-    expect(importers).toEqual(['components/ErpHeader.vue', 'components/pages/AssetSettingsPage.vue'])
+    expect(importers).toEqual(['components/ErpHeader.vue'])
   })
 })
 

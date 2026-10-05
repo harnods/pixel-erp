@@ -36,12 +36,11 @@
       <ErpViewAsSwitcher v-if="isAssetScreen" />
       <!-- Advanced Budgeting prototype: simulated roles on budget and purchase screens. -->
       <BudgetViewAsSwitcher v-if="isBudgetScreen" />
-      <BudgetTourLauncher v-if="isBudgetScreen" />
       <!-- Payroll to Ledger prototype: simulated roles on the payroll screens. -->
       <PayrollViewAsSwitcher v-if="isPayrollScreen" />
-      <!-- Demo layer (app/tours), not a product requirement. Shown only when
-           Asset settings > Guided tours is on. -->
-      <TourLauncher v-if="isAssetScreen" />
+      <!-- Demo layer (app/tours), not a product requirement. One Guided tours
+           menu for every module, always in this spot (ERP screens, not WMS). -->
+      <TourLauncher v-if="!isWms" />
       <!-- User snapshot menu (avatar + name → account popover) -->
       <ErpUserMenu />
     </MpFlex>
@@ -52,7 +51,6 @@
 import { computed } from "vue";
 import { MpFlex } from "@mekari/pixel3";
 import TourLauncher from "~/tours/TourLauncher.vue";
-import BudgetTourLauncher from "~/tours/BudgetTourLauncher.vue";
 import UploadActivityCenter from "~/components/patterns/UploadActivityCenter.vue";
 import erpLogo from "~/assets/images/mekari-erp-logo.svg?url";
 
