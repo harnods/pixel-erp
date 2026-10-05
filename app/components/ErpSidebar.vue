@@ -452,6 +452,9 @@ const erpNavGroups: NavItem[][] = [
           { label: 'Sales deliveries' },
           { label: 'Sales orders' },
           { label: 'Sales quotes' },
+          { label: 'Join invoice' },
+          { label: 'Progress invoice' },
+          { label: 'Proforma invoice' },
         ],
         [
           { label: 'Customers', iconType: 'shortcut' },
@@ -470,6 +473,7 @@ const erpNavGroups: NavItem[][] = [
           { label: 'Purchase orders' },
           { label: 'Purchase quotes' },
           { label: 'Purchase requests' },
+          { label: 'Join purchase invoices' },
         ],
         [
           { label: 'Vendors', iconType: 'shortcut' },
