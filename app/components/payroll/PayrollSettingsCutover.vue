@@ -179,7 +179,7 @@ const outcomeType = (o: string) => (o === 'Blocked' ? 'critical' : o === 'Flagge
     </div>
 
     <!-- Old-sync calls -->
-    <div class="pset-card">
+    <div class="pset-card" data-tour="payroll-old-sync">
       <div class="pset-card__head">
         <div>
           <div class="pset-card__title">{{ t('Old-sync Expense calls') }}</div>

@@ -141,6 +141,7 @@ const bpjsMonth = ref(monthFilter.value || months.value[0] || today().slice(0, 7
     <!-- ── Payables ── -->
     <ErpTablePage
       v-if="view === 'payables'"
+      data-tour="payroll-payables"
       :columns="columns"
       :rows="tableRows"
       :total="filtered.length"

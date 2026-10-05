@@ -153,7 +153,7 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
 
     <div class="prr__body">
       <!-- Headline figures: house stats band. -->
-      <div class="stats-section">
+      <div class="stats-section" data-tour="payroll-run-stats">
         <div class="stat-card stat-card--bordered">
           <div class="stat-title">{{ t('Take-home pay') }}</div>
           <div class="stat-period">{{ t('Talenta, v') }}{{ v.no }} · {{ fig.staff }} {{ t('staff') }}</div>
@@ -183,7 +183,7 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
         <div class="prr__noticetitle">{{ fmRequired && !fmConfirmed ? t('Finance Manager confirm needed') : t('Not posted') }}</div>
         <div>{{ postError || t('This draft has a guardrail override or settings changed since the last posted run. A Finance Manager confirms before posting.') }}</div>
       </div>
-      <div v-if="fmRequired && fmConfirmed" class="prr__ok">{{ t('Confirmed for posting by') }} {{ draft?.fmConfirmedBy }}</div>
+      <div v-if="fmRequired && fmConfirmed" class="prr__ok" data-tour="payroll-run-confirm">{{ t('Confirmed for posting by') }} {{ draft?.fmConfirmedBy }}</div>
       <div v-if="staleChanges.length" class="prr__card prr__stale">
         <div class="prr__cardhead">
           <div class="prr__cardtitle">{{ t('Lines moved by the rebuild') }}</div>

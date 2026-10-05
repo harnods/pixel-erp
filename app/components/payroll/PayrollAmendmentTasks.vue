@@ -36,7 +36,7 @@ const outcome = (x: Task) => {
 </script>
 
 <template>
-  <section v-if="tasks.length" class="pat" data-testid="payroll-amendments">
+  <section v-if="tasks.length" class="pat" data-testid="payroll-amendments" data-tour="payroll-amendments">
     <div class="pat__head">
       <div class="pat__title">{{ t('PPh 21 amendment') }}</div>
       <div class="pat__sub">{{ t('One task per tax period. A later version updates the open task.') }}</div>

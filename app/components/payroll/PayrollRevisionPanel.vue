@@ -149,7 +149,7 @@ const visible = computed(() => !!run.value && (run.value.versions.length > 1 || 
     <PayrollWarningList :run-id="runId" />
 
     <!-- Ledger journals -->
-    <section v-if="journals.length" class="prp__card" data-testid="prp-journals">
+    <section v-if="journals.length" class="prp__card" data-testid="prp-journals" data-tour="payroll-run-journals">
       <div class="prp__cardhead">
         <div>
           <div class="prp__cardtitle">{{ t('Payroll journals') }}</div>
