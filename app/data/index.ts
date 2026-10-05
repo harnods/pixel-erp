@@ -47,6 +47,7 @@ export * from './putAwayTasks'
 export * from './putAwayTaskDetails'
 export * from './purchaseReceivings'
 export * from './purchaseInvoices'
+export * from './purchaseReports'
 export * from './inboundSync'
 
 // ── Outbound (order → picking → packing → delivery → shipment) ──────────────
