@@ -119,6 +119,9 @@ const skuColumns: TableColumn[] = [
   { key: 'lane',        label: '',                       width: '56px', noHeader: true },
   { key: 'product',     label: t('Product name'),        kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'sku',         label: t('SKU'),                 kind: 'number', sortable: true, sortType: 'text' },
+  // W-7 — a tag belongs to a LINE, so it reads on the breakdown rows, in its own
+  // column rather than tucked beside the work order number.
+  { key: 'lineTags',    label: t('Request type'),        kind: 'tags' },
   { key: 'openWorkOrders', label: t('Open transactions'),                sortable: true, sortType: 'number', align: 'right' },
   { key: 'earliestRequired', label: t('Earliest required'), kind: 'date', sortable: true, sortType: 'date' },
   { key: 'required',    label: t('Required qty'),                            sortable: true, sortType: 'number', align: 'right' },
@@ -436,6 +439,7 @@ const exportColumns = computed(() => {
 <template>
   <ErpTablePage
     data-devchange="sr-requested-tab"
+    align-top
     :columns="view === 'product' ? visibleSkuColumns : visibleWoColumns"
     :rows="(view === 'product' ? skuPaginated : paginated) as unknown as Record<string, unknown>[]"
     :total="view === 'product' ? skuTotal : total"
@@ -595,12 +599,14 @@ const exportColumns = computed(() => {
                  Product name — a breakdown row names its transaction first. -->
             <span v-else-if="col.key === 'product'" class="sr-child-wo">
               <span class="cell-link cell-text" @click="viewDetails(entry.requestId)">{{ entry.workOrderNumber }}</span>
-              <!-- W-7 — the tag is a property of the LINE, so it sits on the
-                   breakdown row, not on the aggregated product row above. -->
-              <span v-if="entry.tag" class="sr-tag" :class="`sr-tag--${entry.tag}`">{{ entry.tag === 'additional' ? t('Additional stock') : t('Adjustment') }}</span>
             </span>
             <!-- Requestor: who last CHANGED this line's demand (OPEN-17). -->
             <span v-else-if="col.key === 'sku'" class="cell-text" :title="entry.requestor">{{ entry.requestor }}</span>
+            <!-- W-7 — the line's own tag, under the Request type column. -->
+            <span v-else-if="col.key === 'lineTags'">
+              <span v-if="entry.tag" class="sr-tag" :class="`sr-tag--${entry.tag}`">{{ entry.tag === 'additional' ? t('Additional stock') : t('Adjustment') }}</span>
+              <span v-else class="sr-muted">—</span>
+            </span>
             <template v-else-if="col.key === 'earliestRequired'">{{ formatDate(entry.requiredDate) }}</template>
             <template v-else-if="col.key === 'required'">{{ entry.qty }} {{ sku(row).unit }}</template>
             <template v-else-if="col.key === 'reserved'">{{ entry.covered }} {{ sku(row).unit }}</template>
@@ -669,17 +675,12 @@ const exportColumns = computed(() => {
       </span>
     </template>
 
-    <!-- W-7 — tags live on LINES, so a request shows one chip per tag its lines
-         carry rather than a single tag of its own. Their own column: stacked under
-         the number they read as part of it, and pushed the row to three lines. -->
-    <template #cell-lineTags="{ row }">
-      <span v-if="lineTags(wo(row)).length" class="sr-tag-list" data-devchange="sr-request-type">
-        <span
-          v-for="tag in lineTags(wo(row))" :key="tag"
-          class="sr-tag" :class="`sr-tag--${tag}`"
-        >{{ tag === 'additional' ? t('Additional stock') : t('Adjustment') }}</span>
-      </span>
-      <span v-else>—</span>
+    <!-- W-7 — a tag is a property of a LINE, never of the request or the product
+         above it. The parent row leaves this column empty and each breakdown row
+         shows its own; chips on the parent only ever summarised what the rows
+         underneath already say, two lines taller. -->
+    <template #cell-lineTags>
+      <span class="sr-muted" data-devchange="sr-request-type">—</span>
     </template>
 
     <template #cell-woStartDate="{ row }">{{ formatDate(wo(row).woStartDate) }}</template>
@@ -698,11 +699,16 @@ const exportColumns = computed(() => {
 
     <!-- ══ Shared ════════════════════════════════════════════════════════════ -->
 
-    <!-- Status — the WORK ORDER's status in the order view, the SKU rollup in the
-         product view (story 2). The badge alone: overdue is not a status, it is a
-         date that has passed, so it sits under the date it passed (W-7). -->
+    <!-- Status — the WORK ORDER's status, in the transaction view only. A product
+         row aggregates several transactions whose statuses differ, so one rolled-up
+         badge there claimed more than the row knows; the breakdown rows carry the
+         status instead. The badge alone: overdue is not a status, it is a date that
+         has passed, so it sits under the date it passed (W-7). -->
     <template #cell-status="{ row }">
-      <ErpStatusBadge :status="(row as Record<string, unknown>).status as string" />
+      <ErpStatusBadge v-if="view === 'transaction'" :status="wo(row).status" />
+      <!-- The em dash is deliberate: an empty cell would fall through to
+           ErpTablePage's raw-value fallback and print the unformatted status. -->
+      <span v-else class="sr-muted">—</span>
     </template>
 
     <!-- Full empty state — no CTA: requests are raised by work orders (see header).
@@ -830,6 +836,8 @@ const exportColumns = computed(() => {
 .sr-tag--adjustment { background: var(--mp-background-information-subtle, #eaf2fd); color: var(--mp-text-link, #165082); }
 /* A request can carry both tags; they wrap inside their own column. */
 .sr-tag-list { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-1); }
+/* An empty cell still needs a mark, or the column reads as broken rather than blank. */
+.sr-muted { color: var(--mp-text-secondary, #3a4749); }
 
 /* Per-WO breakdown rows under an expanded component */
 /* Child cells mirror ErpTablePage's .erp-td metrics so they line up under the same
@@ -841,7 +849,7 @@ const exportColumns = computed(() => {
   padding: var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-secondary, #3a4749);
-  vertical-align: middle;
+  vertical-align: top;
   white-space: nowrap;
   background: var(--mp-background-neutral-subtle, #f8f9f9);
   border-bottom: 1px solid var(--mp-border-subtle, #e5e7e7);

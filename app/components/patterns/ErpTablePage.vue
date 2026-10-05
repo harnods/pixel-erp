@@ -117,6 +117,13 @@ const props = withDefaults(defineProps<{
    *  line. Off by default (see DimensionsIndexPage.vue for the one table that
    *  opts in). */
   actionsAlignTop?: boolean
+  /**
+   * Top-align every cell, instead of only the rows JS measures as multi-line.
+   * For tables whose rows routinely carry a second line (a note under a date, a
+   * wrapped name) — mixing centred and top-aligned rows in one table reads as a
+   * layout bug rather than as a difference in content.
+   */
+  alignTop?: boolean
   /** Remove the row hover background. Use for a purely read-only table that has NO
    *  row [...] actions and no clickable row — nothing to hover-target, so the grey
    *  highlight is noise (e.g. the Activity logs page). See rule/table-no-hover-no-actions. */
@@ -140,6 +147,7 @@ const props = withDefaults(defineProps<{
   lastColumnFlexible: false,
   stickyActions: true,
   actionsAlignTop: false,
+  alignTop: false,
 })
 
 const emit = defineEmits<{
@@ -492,7 +500,7 @@ const bulkCountLabel = computed(() => {
       :class="{ 'has-ai': hasAiChat, 'is-overflowing': isOverflowing, 'actions-align-top': actionsAlignTop }"
       :style="actionsWidth ? { '--erp-actions-width': actionsWidth } : undefined"
     >
-      <table ref="tableEl" class="erp-table" :class="{ 'erp-table--empty': isFullEmpty }">
+      <table ref="tableEl" class="erp-table" :class="{ 'erp-table--empty': isFullEmpty, 'erp-table--align-top': alignTop }">
 
         <!-- ── Colgroup — pins column widths even when header row swaps to bulk bar.
              Skipped on the full empty state so the table fits the container (no scroll). -->
@@ -1164,8 +1172,10 @@ const bulkCountLabel = computed(() => {
 
 /* Rows with a description, avatar, or multi-line cell switch ALL cells to top-aligned.
    Padding stays 10px — only alignment changes.
-   `.erp-tr--align-top` is toggled by JS that measures row height. */
-.erp-tr--align-top .erp-td {
+   `.erp-tr--align-top` is toggled by JS that measures row height; `alignTop` opts
+   the WHOLE table in, for tables whose rows routinely run to two lines. */
+.erp-tr--align-top .erp-td,
+.erp-table--align-top .erp-td {
   vertical-align: top;
 }
 /* The actions cell always top-aligns regardless of row height (see
