@@ -699,6 +699,8 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'budget-variance') return { component: BudgetVarianceReportPage, id: segs[1] }
     if (segs[1] === 'cash-flows') return { component: CashFlowReportPage, id: segs[1] }
     if (segs[1] === 'trial-balance') return { component: TrialBalanceReportPage, id: segs[1] }
+    if (segs[1] === 'balance-sheet') return { component: BalanceSheetReportPage, id: segs[1] }
+    if (segs[1] === 'profit-and-loss') return { component: ProfitLossReportPage, id: segs[1] }
   }
   // /purchase-report/:slug → the built Purchases reports (Reports → Purchases →
   // View report). Only these slugs match; anything else falls through to the
@@ -707,8 +709,6 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'purchases-list') return { component: PurchasesListReportPage, id: segs[1] }
     if (segs[1] === 'purchases-by-vendor') return { component: PurchasesByVendorReportPage, id: segs[1] }
     if (segs[1] === 'purchases-by-product') return { component: PurchasesByProductReportPage, id: segs[1] }
-    if (segs[1] === 'balance-sheet') return { component: BalanceSheetReportPage, id: segs[1] }
-    if (segs[1] === 'profit-and-loss') return { component: ProfitLossReportPage, id: segs[1] }
   }
   // /inventory-report/dual-unit → Dual Unit Inventory Report (Reports → Inventory →
   // View report). Only the built slug matches; anything else falls through to the
