@@ -633,7 +633,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
     </header>
 
     <div class="detail-stage">
-      <ProjectStatCards :stats="stats" />
+      <ProjectStatCards :stats="stats" data-tour="pa-stats" />
 
       <MpTabs id="pa-engagement-tabs" v-model="activeIndex" is-manual variant-color="green" class="pa-tabs">
         <MpTabList>
@@ -665,7 +665,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
             </div>
 
             <!-- Distinct added scope owes the contract its own milestone. -->
-            <section v-if="engagement.scopePending" class="pa-card pa-card--notice">
+            <section v-if="engagement.scopePending" class="pa-card pa-card--notice" data-tour="pa-scope-pending">
               <h2 class="pa-card-title">{{ t('Add a milestone for the added scope') }}</h2>
               <p class="pa-card-desc">
                 {{ t('The approved addendum added') }} {{ formatIdr(engagement.scopePending.added) }} {{ t('of separate scope. Existing milestones keep their amounts.') }}
@@ -688,7 +688,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
             </section>
 
             <!-- Contract milestones -->
-            <section v-if="engagement.milestones?.length" class="pa-card">
+            <section v-if="engagement.milestones?.length" class="pa-card" data-tour="pa-contract-milestones">
               <h2 class="pa-card-title">{{ t('Contract milestones') }}</h2>
               <table class="pa-table">
                 <thead>
@@ -713,7 +713,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
             </section>
 
             <!-- ── Edit contract: append-only addenda ── -->
-            <section class="pa-card">
+            <section class="pa-card" data-tour="pa-addenda">
               <h2 class="pa-card-title pa-card-title--spaced">{{ t('Contract addenda') }}</h2>
 
               <div class="pa-vo-form">
@@ -801,7 +801,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
 
           <!-- ═══ Costs ══════════════════════════════════════════════════════ -->
           <MpTabPanel value="execution">
-            <section class="pa-card">
+            <section class="pa-card" data-tour="pa-cost-lines">
               <div class="pa-card-head">
                 <h2 class="pa-card-title">{{ t('Cost lines') }}</h2>
                 <div class="pa-card-actions">
@@ -877,7 +877,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
           <MpTabPanel value="recognition">
             <!-- ── Cost-plus ── -->
             <template v-if="engagement.method === 'tm'">
-              <section class="pa-card">
+              <section class="pa-card" data-tour="pa-tm-summary">
                 <h2 class="pa-card-title pa-card-title--spaced">{{ t('Input by Simplified Cost') }}</h2>
                 <div class="pa-progress">
                   <div class="pa-progress-fill" data-tone="ok" :style="{ width: `${tmEarnedPct.toFixed(0)}%` }" />
@@ -896,7 +896,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                 </p>
               </section>
 
-              <section class="pa-card">
+              <section class="pa-card" data-tour="pa-review-queue">
                 <h2 class="pa-card-title">{{ t('Review queue') }}</h2>
                 <div class="pa-chips">
                   <button
@@ -967,7 +967,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
 
             <!-- ── Cost-to-cost ── -->
             <template v-else-if="engagement.method === 'input'">
-              <section class="pa-card">
+              <section class="pa-card" data-tour="pa-input-progress">
                 <h2 class="pa-card-title pa-card-title--spaced">{{ t('Input by Cost') }}</h2>
                 <div class="pa-progress">
                   <div class="pa-progress-fill" data-tone="ok" :style="{ width: `${pocPct(engagement).toFixed(0)}%` }" />
@@ -1005,7 +1005,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
 
             <!-- ── Output by milestone ── -->
             <template v-else>
-              <section class="pa-card">
+              <section class="pa-card" data-tour="pa-output-milestones">
                 <h2 class="pa-card-title">{{ t('Output by Milestone') }}</h2>
                 <p class="pa-summary" :class="weightsOk ? 'pa-summary--ok' : 'pa-summary--bad'">
                   {{ weightsOk
@@ -1049,7 +1049,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                 </table>
               </section>
 
-              <section v-if="engagement.weightsNeedConfirm" class="pa-card pa-card--danger">
+              <section v-if="engagement.weightsNeedConfirm" class="pa-card pa-card--danger" data-tour="pa-weights-confirm">
                 <h2 class="pa-card-title">{{ t('Milestone weights need confirming') }}</h2>
                 <p class="pa-card-desc">
                   {{ t('An addendum changed the contract value. Weights must total 100% before more milestones can be verified.') }}
@@ -1077,7 +1077,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
           <!-- ═══ Invoices & payments ════════════════════════════════════════ -->
           <MpTabPanel value="billing">
             <template v-if="engagement.method === 'tm'">
-              <section class="pa-card">
+              <section class="pa-card" data-tour="pa-ready-invoice">
                 <h2 class="pa-card-title pa-card-title--spaced">{{ t('Ready to invoice') }}</h2>
                 <p class="pa-lead">
                   {{ readyLines.length
@@ -1103,7 +1103,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
               </section>
             </template>
 
-            <section v-else class="pa-card">
+            <section v-else class="pa-card" data-tour="pa-billing-schedule">
               <h2 class="pa-card-title">{{ t('Milestone billing schedule') }}</h2>
               <table class="pa-table">
                 <thead>
@@ -1131,7 +1131,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
               </table>
             </section>
 
-            <section class="pa-card">
+            <section class="pa-card" data-tour="pa-invoices">
               <h2 class="pa-card-title">{{ t('Invoices') }}</h2>
               <table class="pa-table">
                 <thead>
@@ -1171,7 +1171,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
 
           <!-- ═══ Project health ═════════════════════════════════════════════ -->
           <MpTabPanel value="closed">
-            <section class="pa-card">
+            <section class="pa-card" data-tour="pa-margin">
               <p class="pa-figure-label">{{ t('Margin to date') }}</p>
               <p class="pa-figure" :data-tone="margin < 0 ? 'adverse' : 'default'">{{ formatIdrSigned(margin) }}</p>
               <p class="pa-card-desc">{{ marginSub }}</p>
@@ -1180,7 +1180,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
               </p>
             </section>
 
-            <section v-if="engagement.stage !== 'closed'" class="pa-card pa-card--bar">
+            <section v-if="engagement.stage !== 'closed'" class="pa-card pa-card--bar" data-tour="pa-close-gate">
               <div>
                 <h2 class="pa-card-title">{{ closable ? t('Ready to close') : t('Not ready to close') }}</h2>
                 <p class="pa-card-desc">{{ closeHint(engagement) }}</p>
@@ -1192,7 +1192,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
       </MpTabs>
 
       <!-- ── Budget variance: shown on every tab except Setup ── -->
-      <section v-if="showBudgetVariance" class="pa-card">
+      <section v-if="showBudgetVariance" class="pa-card" data-tour="pa-budget-variance">
         <h2 class="pa-card-title">{{ t('Budget variance') }}</h2>
         <p v-if="engagement.budget === null" class="pa-warn">
           {{ t('Set a budgeted cost to calculate cost variance.') }}
