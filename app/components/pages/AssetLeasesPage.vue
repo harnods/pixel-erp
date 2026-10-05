@@ -14,7 +14,7 @@
  * liability by unwinding at the discount rate, the asset's charge by the
  * engine. Nothing is typed in as a balance.
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { MpBadge, MpButton } from '@mekari/pixel3'
 import { formatIDRWhole } from '~/utils/currency'
 import { monthsLabel } from '~/data/assetUiDuration'
@@ -30,6 +30,9 @@ const { t } = useLocale()
 const router = useRouter()
 
 const selectedId = ref<string | null>(null)
+// Arriving on one lease by link (?lease=LS-004) opens its detail.
+const route = useRoute()
+watch(() => route.query.lease, (q) => { if (typeof q === 'string' && findLease(q)) selectedId.value = q }, { immediate: true })
 const selected = computed(() => (selectedId.value ? findLease(selectedId.value) : undefined))
 const detail = computed(() => (selected.value ? leaseSummary(selected.value) : null))
 const schedule = computed(() => (selected.value ? combinedSchedule(selected.value) : []))

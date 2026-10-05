@@ -93,12 +93,11 @@ describe('tour steps point at real routes and real markers', () => {
       expect(copy, t.code).not.toMatch(/tours\.json|prototype|\bengine\b|\bdesign\b|\baudit\b|\bbuild\b|computes today/i)
     }
   })
-  it('a step whose target goes away once done says so, rather than waiting', () => {
+  it('SIM-4 approves the write-off itself, so no step waits on a button that goes away', () => {
     const sim4 = ASSET_TOURS.find((t) => t.code === 'SIM-4')!
-    const approve = sim4.steps.find((s) => s.target === 'appr-approve')!
-    expect(approve.ifMissing).toMatch(/already approved/)
-    const before = sim4.steps[sim4.steps.indexOf(approve) - 1]!
-    expect(before.action).toMatch(/Approve comes on the next step/)
+    expect(sim4.steps.some((s) => s.target === 'appr-approve')).toBe(false)
+    const queue = sim4.steps.findIndex((s) => s.target === 'appr-032')
+    expect(sim4.steps[queue + 1]!.run).toBeTypeOf('function')
   })
   it('the waiting panel always offers a way on', () => {
     const runner = readFileSync(join(APP, 'tours', 'tourRunner.ts'), 'utf8')

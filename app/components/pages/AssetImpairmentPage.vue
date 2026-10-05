@@ -26,6 +26,7 @@ import { impairmentTests, recordImpairmentTest, type ImpairmentTest } from '~/da
 
 const { t } = useLocale()
 const router = useRouter()
+const route = useRoute()
 
 const tests = impairmentTests
 
@@ -37,7 +38,8 @@ const tests = impairmentTests
  * them, so an all-done year still reads as done rather than as nothing due.
  */
 const isYearEnd = CURRENT_PERIOD.endsWith('-12')
-const obligationsShown = ref(isYearEnd || annualOutstanding.value.length > 0)
+// A link with ?annual=1 raises the list even when every test is done.
+const obligationsShown = ref(isYearEnd || annualOutstanding.value.length > 0 || route.query.annual === '1')
 
 // ── Recording a test ────────────────────────────────────────────────────────
 // The form asks for the recoverable amount and where it came from, and nothing

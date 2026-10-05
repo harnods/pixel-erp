@@ -235,6 +235,8 @@ const STATUS_TONE: Record<string, string> = {
 
 // ── Custody (OD-22) ─────────────────────────────────────────────────────────
 const openCustodian = ref<string | null>(null)
+// Arriving by link (?custodian=...) opens that person's holdings.
+watch(() => route.query.custodian, (q) => { if (typeof q === 'string' && CUSTODIANS.some((c) => c.name === q)) openCustodian.value = q }, { immediate: true })
 const reassignTo = ref('')
 const reassignReason = ref('')
 const reassignError = ref('')
@@ -409,7 +411,7 @@ function onCustodySaved(m: string) {
         </div>
 
         <!-- ── Count results ── -->
-        <div class="cc__card" :class="{ 'cc__span': active.status !== 'counting' }">
+        <div class="cc__card" :class="{ 'cc__span': active.status !== 'counting' }" data-tour="count-results">
           <div class="cc__cardhead">
             <span class="cc__cardtitle">{{ t('Count results') }}</span>
             <span class="cc__hint">{{ countedCount }} {{ t('of') }} {{ active.population.length }} {{ t('counted') }}</span>

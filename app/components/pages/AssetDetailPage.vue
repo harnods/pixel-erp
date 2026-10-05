@@ -38,6 +38,7 @@ import { approvalTrailFor, pendingFor } from '~/data/assetApprovals'
 import AssetLifeSchedule from '~/components/patterns/AssetLifeSchedule.vue'
 import IntangibleCodePicker from '~/components/patterns/IntangibleCodePicker.vue'
 import { lifeSchedule } from '~/data/assetPreview'
+import { periodLabel, type Period } from '~/data/assetEngine'
 import { leaseOfAsset } from '~/data/assetLeases'
 import ClassifyDrawer from '~/components/patterns/ClassifyDrawer.vue'
 import NoDeleteDialog from '~/components/patterns/NoDeleteDialog.vue'
@@ -175,6 +176,22 @@ function explain(basis: 'accounting' | 'tax', period: string) {
   derivationPeriod.value = period
   derivationOpen.value = true
 }
+
+// ── Arriving by link ────────────────────────────────────────────────────────
+// ?tab=history opens a tab, ?versions=tax the previous versions on a book,
+// ?charge=tax-2026-09 one charge's breakdown. Leaving the key closes it again.
+const linkRoute = useRoute()
+watch(() => linkRoute.query.tab, (q) => {
+  tab.value = tabs.value.find((x) => x.key === q)?.key ?? tabs.value[0]!.key
+}, { immediate: true })
+watch(() => linkRoute.query.versions, (q) => {
+  if (q === 'accounting' || q === 'tax') { versionBook.value = q; versionsOpen.value = true } else versionsOpen.value = false
+}, { immediate: true })
+watch(() => linkRoute.query.charge, (q) => {
+  const m = typeof q === 'string' ? q.match(/^(accounting|tax)-(\d{4}-\d{2})$/) : null
+  if (m) explain(m[1] as 'accounting' | 'tax', periodLabel(m[2] as Period))
+  else derivationOpen.value = false
+}, { immediate: true })
 
 // ── Jump to another asset ───────────────────────────────────────────────────
 const jumpSearch = ref('')

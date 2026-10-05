@@ -310,6 +310,7 @@ const route = useRoute()
 watch(() => route.query.filter, (f) => {
   if (f === 'unclassified') showUnclassified()
   else if (f === 'incomplete') showIncomplete()
+  else if (f === 'intangible') { clearFilters(); typeFilter.value = 'Intangible' }
 }, { immediate: true })
 
 // rule/export-modal — export opens the shared modal, never a silent download.
