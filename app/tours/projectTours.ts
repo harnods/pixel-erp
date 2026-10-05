@@ -41,6 +41,12 @@ function auditLines(match: (description: string) => boolean): string[] {
 const isOpeningBalance = (d: string) => d.includes('opening balance testing')
 const isSchedulePrep = (d: string) => d.includes('schedule preparation')
 
+/** The live element for a marker, skipping copies that are not laid out. */
+function live(marker: string): HTMLElement | null {
+  return Array.from(document.querySelectorAll<HTMLElement>(`[data-tour="${marker}"]`))
+    .filter((el) => el.getClientRects().length > 0).pop() ?? null
+}
+
 function lastVo(id: string): string {
   const e = findEngagement(id)
   return e?.vos[e.vos.length - 1]?.id ?? ''
@@ -226,9 +232,11 @@ const pa2: TourStep[] = [
 
 // ── PA-3: an addendum, and whether the added scope is distinct ─────────────
 
-function raiseTerraceAddendum() { addAddendum(TERRACE, 54_000_000, 'Terrace enlarged from 25 m² to 35 m²', false); tourCtx.voId = lastVo(TERRACE) }
+const TERRACE_REASON = 'Terrace enlarged from 25 m² to 35 m²'
+const OFFICE_REASON = 'Two-storey office block beside the warehouse'
+function raiseTerraceAddendum() { addAddendum(TERRACE, 54_000_000, TERRACE_REASON, false); tourCtx.voId = lastVo(TERRACE) }
 function approveTerraceAddendum() { if (tourCtx.voId) approveAddendum(TERRACE, tourCtx.voId) }
-function raiseWarehouseAddendum() { addAddendum(WAREHOUSE, 3_000_000_000, 'Two-storey office block beside the warehouse', true); tourCtx.voId = lastVo(WAREHOUSE) }
+function raiseWarehouseAddendum() { addAddendum(WAREHOUSE, 3_000_000_000, OFFICE_REASON, true); tourCtx.voId = lastVo(WAREHOUSE) }
 function approveWarehouseAddendum() { if (tourCtx.voId) approveAddendum(WAREHOUSE, tourCtx.voId) }
 function addOfficeMilestone() { addScopeMilestone(WAREHOUSE, 'Office block handed over') }
 
@@ -245,6 +253,7 @@ const pa3: TourStep[] = [
     run: raiseTerraceAddendum,
     route: tab(TERRACE, 'setup'),
     target: 'pa-addenda',
+    find: () => rowWith(TERRACE_REASON) ?? live('pa-addenda'),
     title: 'The client enlarges the terrace. The project manager raises an addendum.',
     body: 'The contract is never edited in place. The project manager raises a dated addendum with a reason and answers the one question the system cannot: is the added scope distinct? A bigger terrace is more of the same job, so it is not distinct.',
     watch: 'Rp45.000.000,00 to Rp54.000.000,00, Not distinct, Pending: submitted by Made Ardika · Project Manager, awaiting Finance approval. The contract value stays Rp45.000.000,00 until then, and a pending addendum blocks closing.',
@@ -254,6 +263,7 @@ const pa3: TourStep[] = [
     run: approveTerraceAddendum,
     route: tab(TERRACE, 'setup'),
     target: 'pa-addenda',
+    find: () => rowWith(TERRACE_REASON) ?? live('pa-addenda'),
     title: 'Finance approves it, and revenue to date catches up at once.',
     body: 'Under PSAK 72, scope that is not distinct is the same obligation, so revenue already recognised is measured again on the new value. The difference is a one-time catch-up in the current period.',
     watch: 'Approved by Anggun Prakoso · Finance Controller. Catch-up adjustment of Rp5.550.000,00 in the current period. The original contract stays on the list.',
@@ -271,6 +281,7 @@ const pa3: TourStep[] = [
     run: raiseWarehouseAddendum,
     route: tab(WAREHOUSE, 'setup'),
     target: 'pa-addenda',
+    find: () => rowWith(OFFICE_REASON) ?? live('pa-addenda'),
     title: 'On the warehouse, the client adds an office block.',
     body: 'The office block is a separate structure priced on its own, so this time the added scope is distinct.',
     watch: 'Rp2.400.000.000,00 to Rp3.000.000.000,00, Distinct scope, Pending: submitted by Rina Wulandari · Project Manager.',
@@ -280,6 +291,9 @@ const pa3: TourStep[] = [
     run: approveWarehouseAddendum,
     route: tab(WAREHOUSE, 'setup'),
     target: 'pa-scope-pending',
+    // Once the next step adds the milestone the notice is gone; going Back
+    // then shows the milestones it produced instead of a waiting panel.
+    find: () => live('pa-scope-pending') ?? live('pa-contract-milestones'),
     title: 'Finance approves. Nothing already agreed is restated.',
     body: 'Distinct scope is accounted for from now on. Each existing milestone keeps the money it was worth, so its weight shrinks against the larger contract, and the added scope needs a milestone of its own.',
     watch: 'Add a milestone for the added scope: Rp600.000.000,00 of separate scope. The three milestones now weigh 32%, 24% and 24%, still Rp960.000.000,00, Rp720.000.000,00 and Rp720.000.000,00.',
