@@ -506,6 +506,7 @@ const NewSalesQuotePage = asyncPage(() => import('~/components/pages/NewSalesQuo
 const NewSalesDeliveryPage = asyncPage(() => import('~/components/pages/NewSalesDeliveryPage.vue'))
 const NewPurchaseQuotePage = asyncPage(() => import('~/components/pages/NewPurchaseQuotePage.vue'))
 const NewPurchaseDeliveryPage = asyncPage(() => import('~/components/pages/NewPurchaseDeliveryPage.vue'))
+const NewPurchaseInvoicePage = asyncPage(() => import('~/components/pages/NewPurchaseInvoicePage.vue'))
 const BillReviewPage = asyncPage(() => import('~/components/pages/BillReviewPage.vue'))
 const InvoiceReviewPage = asyncPage(() => import('~/components/pages/InvoiceReviewPage.vue'))
 const ReceiptReviewPage = asyncPage(() => import('~/components/pages/ReceiptReviewPage.vue'))
@@ -1011,6 +1012,13 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   }
   if (segs.length >= 2 && segs[0] === 'purchase-requests' && segs[1] !== 'awaiting-approval') {
     return { component: PurchaseRequestDetailsPage, id: segs[1] }
+  }
+  // /purchase-invoices/{new,:id/edit} → New/Edit purchase invoice form (prod-parity w4)
+  if (segs.length >= 2 && segs[0] === 'purchase-invoices' && segs[1] === 'new') {
+    return { component: NewPurchaseInvoicePage, id: 'new' }
+  }
+  if (segs.length >= 3 && segs[0] === 'purchase-invoices' && segs[2] === 'edit') {
+    return { component: NewPurchaseInvoicePage, id: segs[1] }
   }
   // /purchase-invoices/:id → detail (index has tabs; guard the tab slugs)
   if (segs.length >= 2 && segs[0] === 'purchase-invoices'
@@ -2328,7 +2336,7 @@ function startResize(e: MouseEvent) {
             </div>
           </div>
 
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/purchase-invoices/new')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>

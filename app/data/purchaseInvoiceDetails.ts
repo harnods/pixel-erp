@@ -1,4 +1,4 @@
-import { purchaseInvoices } from './purchaseInvoices'
+import { purchaseInvoices, createdPurchaseInvoices } from './purchaseInvoices'
 import { products } from './products'
 import type { SalesOrderTotals } from './salesOrders'
 import type { PurchaseInvoice, SalesOrderItem, SILineItem } from './types'
@@ -196,6 +196,11 @@ function buildDetail(base: PurchaseInvoice, idx: number): PurchaseInvoiceDetail 
 
 /** Look up a full detail record by PurchaseInvoice id; falls back to the first invoice. */
 export function getPurchaseInvoiceDetail(id: string): PurchaseInvoiceDetail {
+  const created = createdPurchaseInvoices.find(inv => inv.id === id)
+  if (created) {
+    const { detail, ...base } = created
+    return { ...buildDetail(base, parseInt(created.id.replace(/\D/g, ''), 10)), ...(detail ?? {}), orderNo: '', linkedTransactions: [], payments: [] }
+  }
   const i = purchaseInvoices.findIndex(inv => inv.id === id)
   const idx = i >= 0 ? i : 0
   return buildDetail(purchaseInvoices[idx]!, idx)

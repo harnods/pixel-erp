@@ -250,29 +250,29 @@ function goBack() { router.push('/purchase-invoices') }
         <div class="content-list-grid">
           <!-- col 1: addresses -->
           <div class="content-list-col">
-            <ContentList :label="t('Billing address')" :value="invoice.billingAddress" />
-            <ContentList v-if="invoice.isShipped" :label="t('Ship to')" :value="invoice.shipTo" />
+            <ContentList :label="t('Billing address')" :value="invoice.billingAddress || '—'" />
+            <ContentList v-if="invoice.isShipped" :label="t('Ship to')" :value="invoice.shipTo || '—'" />
           </div>
           <!-- col 2: invoice dates -->
           <div class="content-list-col">
             <ContentList :label="t('Transaction date')" :value="formatDateLong(invoice.date)" />
             <ContentList :label="t('Due date')" :value="formatDateLong(invoice.dueDate)" />
-            <ContentList :label="t('Payment terms')" :value="invoice.paymentTerms" />
+            <ContentList :label="t('Payment terms')" :value="invoice.paymentTerms || '—'" />
           </div>
           <!-- col 3: shipping — prod shows it only when the invoice is shipped -->
           <div v-if="invoice.isShipped" class="content-list-col">
-            <ContentList :label="t('Received date')" :value="formatDateLong(invoice.receivedDate)" />
-            <ContentList :label="t('Ship via')" :value="invoice.shipVia" />
-            <ContentList :label="t('Tracking no.')" :value="invoice.trackingNo" />
+            <ContentList :label="t('Received date')" :value="invoice.receivedDate ? formatDateLong(invoice.receivedDate) : '—'" />
+            <ContentList :label="t('Ship via')" :value="invoice.shipVia || '—'" />
+            <ContentList :label="t('Tracking no.')" :value="invoice.trackingNo || '—'" />
           </div>
           <!-- col 4: references -->
           <div class="content-list-col">
             <ContentList :label="t('Transaction no.')" :value="`${t('Purchase Invoice')} #${invoice.number}`" />
-            <ContentList :label="t('Bill / reference number')" :value="invoice.referenceNo" />
-            <ContentList :label="t('Order no.')">
+            <ContentList :label="t('Bill / reference number')" :value="invoice.referenceNo || '—'" />
+            <ContentList v-if="invoice.orderNo" :label="t('Order no.')">
               <a class="cell-link cell-text" @click.prevent="notInPrototype">{{ invoice.orderNo }}</a>
             </ContentList>
-            <ContentList :label="t('Warehouse')" :value="invoice.warehouse" />
+            <ContentList :label="t('Warehouse')" :value="invoice.warehouse || '—'" />
           </div>
           <!-- col 4: tags -->
           <div class="content-list-col">

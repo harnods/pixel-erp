@@ -21,6 +21,7 @@ import SalesInvoiceFiltersDrawer, { emptySalesInvoiceFilters, type SalesInvoiceF
 import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
 import { infoToast } from '~/utils/toasts'
 import { purchaseInvoices } from '~/data'
+import { createdPurchaseInvoices } from '~/data/purchaseInvoices'
 import type { PurchaseInvoice } from '~/data'
 
 const { t } = useLocale()
@@ -61,7 +62,7 @@ const deletedIds = ref(new Set<string>())
 const rows = computed<Row[]>(() =>
   previewMode.value === 'empty'
     ? []
-    : purchaseInvoices.filter(inv => !deletedIds.value.has(inv.id)).map(inv => {
+    : [...createdPurchaseInvoices, ...purchaseInvoices].filter(inv => !deletedIds.value.has(inv.id)).map(({ detail: _d, ...inv }: PurchaseInvoice & { detail?: unknown }) => {
     const overdueLabel = inv.status === 'overdue'
       ? (() => {
           const days = Math.floor((Date.now() - new Date(inv.dueDate).getTime()) / 86_400_000)
