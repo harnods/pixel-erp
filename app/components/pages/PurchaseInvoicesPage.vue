@@ -1,9 +1,11 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/purchase-invoices/views/panels/PurchaseInvoiceListPanel.vue -->
 <script setup lang="ts">
 import { type Ref } from 'vue'
 import { formatIDR } from '~/utils/currency'
 import {
   MpIcon, MpButton, MpButtonGroup, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+  MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -15,6 +17,9 @@ import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import CopyLinkDrawer from '~/components/patterns/CopyLinkDrawer.vue'
 import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
+import SalesInvoiceFiltersDrawer, { emptySalesInvoiceFilters, type SalesInvoiceFiltersValue } from '~/components/patterns/SalesInvoiceFiltersDrawer.vue'
+import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
+import { infoToast } from '~/utils/toasts'
 import { purchaseInvoices } from '~/data'
 import type { PurchaseInvoice } from '~/data'
 
@@ -30,7 +35,8 @@ const columns: TableColumn[] = [
   { key: 'vendorName', label: 'Vendor',     kind: 'name', sortable: true,                 sortType: 'text'   },
   { key: 'dueDate',    label: 'Due date',   kind: 'date',                                 sortType: 'date'   },
   { key: 'status',     label: 'Status',     kind: 'status',                                 sortType: 'text'   },
-  { key: 'amount',     label: 'Balance due', kind: 'amount', align: 'right', sortable: true,  sortType: 'number' },
+  { key: 'balanceDue', label: 'Balance due', kind: 'amount', align: 'right', sortable: true,  sortType: 'number' },
+  { key: 'amount',     label: 'Total',      kind: 'amount', align: 'right', sortable: true,  sortType: 'number' },
   { key: 'tags',       label: 'Tags',       kind: 'tags'                                  },
 ]
 
@@ -40,6 +46,8 @@ type Row = PurchaseInvoice & {
   vendorName: string
   attachment: boolean
   overdueLabel: string | null
+  /** Paid invoices owe nothing; open/overdue still owe the full total. */
+  balanceDue: number
 }
 
 // ─── Flatten + enrich ─────────────────────────────────────────────────────────
@@ -47,14 +55,17 @@ type Row = PurchaseInvoice & {
 // Prototype preview toggle (ScenarioFab, bottom-right): data vs empty-state view
 const previewMode = ref<'data' | 'empty'>('data')
 
+// Session-only bulk delete: hides rows without touching the seed (reports read it).
+const deletedIds = ref(new Set<string>())
+
 const rows = computed<Row[]>(() =>
   previewMode.value === 'empty'
     ? []
-    : purchaseInvoices.map(inv => {
+    : purchaseInvoices.filter(inv => !deletedIds.value.has(inv.id)).map(inv => {
     const overdueLabel = inv.status === 'overdue'
       ? (() => {
           const days = Math.floor((Date.now() - new Date(inv.dueDate).getTime()) / 86_400_000)
-          return days > 0 ? `${days} day${days !== 1 ? 's' : ''}` : null
+          return days > 0 ? (days === 1 ? t('Overdue by 1 day') : `${t('Overdue by')} ${days} ${t('days')}`) : null
         })()
       : null
 
@@ -63,9 +74,38 @@ const rows = computed<Row[]>(() =>
       vendorName: inv.vendor.name,
       attachment: inv.hasAttachment ?? false,
       overdueLabel,
+      balanceDue: inv.status === 'paid' ? 0 : inv.amount,
     }
   })
 )
+
+// ─── "All filters" drawer (prod FilterDrawer: Keywords, Transaction date, Due
+// date, Status, Total, Tags) — ANDed with the toolbar Status select + search. ──
+const filtersOpen = ref(false)
+const appliedFilters = reactive<SalesInvoiceFiltersValue>(emptySalesInvoiceFilters())
+const keywordColumns = [
+  { key: 'number',     label: t('Number') },
+  { key: 'vendorName', label: t('Vendor') },
+  { key: 'tags',       label: t('Tags') },
+]
+const tagOptions = computed(() => [...new Set(purchaseInvoices.flatMap(inv => inv.tags ?? []))].sort())
+function applyDrawerFilters(v: SalesInvoiceFiltersValue) {
+  Object.assign(appliedFilters, v)
+  toast.notify({ variant: 'success', title: t('Filters applied'), rootProps: { class: 'toast-enterprise' } })
+}
+function dayStart(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
+function matchesDateRange(iso: string, range: Date[] | null): boolean {
+  if (!range) return true
+  const ts = dayStart(new Date(iso)).getTime()
+  return ts >= dayStart(range[0]!).getTime() && ts <= dayStart(range[1]!).getTime()
+}
+function matchesAmountFilter(amount: number, comparator: AmountComparator, value: string, min: string, max: string): boolean {
+  if (comparator === 'gt') return value === '' || amount > Number(value)
+  if (comparator === 'lt') return value === '' || amount < Number(value)
+  const lo = min === '' ? -Infinity : Number(min)
+  const hi = max === '' ? Infinity : Number(max)
+  return amount >= lo && amount <= hi
+}
 
 // ─── Table state ──────────────────────────────────────────────────────────────
 
@@ -73,19 +113,57 @@ const {
   search, statusFilter, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState(rows, {
-  filterFn: (row: Row, s, status) =>
-    (row.number.toLowerCase().includes(s) || row.vendorName.toLowerCase().includes(s)) &&
-    (!status || row.status === status),
+  filterFn: (row: Row, s, status) => {
+    const f = appliedFilters
+    const kw = f.keyword.toLowerCase().trim()
+    const rowTags = row.tags ?? []
+    const matchesKeyword = !kw || (
+      f.keywordColumn === 'all'
+        ? row.number.toLowerCase().includes(kw) || row.vendorName.toLowerCase().includes(kw) || rowTags.some(tg => tg.toLowerCase().includes(kw))
+        : f.keywordColumn === 'number' ? row.number.toLowerCase().includes(kw)
+        : f.keywordColumn === 'vendorName' ? row.vendorName.toLowerCase().includes(kw)
+        : rowTags.some(tg => tg.toLowerCase().includes(kw))
+    )
+    const matchesTags = f.tags.length === 0
+      || (f.tagsComparator === 'isAnyOf' ? f.tags.some(tg => rowTags.includes(tg))
+        : f.tagsComparator === 'isAllOf' ? f.tags.every(tg => rowTags.includes(tg))
+        : f.tags.every(tg => !rowTags.includes(tg)))
+    return (row.number.toLowerCase().includes(s) || row.vendorName.toLowerCase().includes(s))
+      && (!status || row.status === status)
+      && matchesKeyword
+      && matchesDateRange(row.date, f.transactionDate)
+      && matchesDateRange(row.dueDate, f.dueDate)
+      && (f.status.length === 0 || f.status.includes(row.status))
+      && matchesAmountFilter(row.amount, f.totalComparator, f.totalValue, f.totalMin, f.totalMax)
+      && matchesTags
+  },
+})
+watch(appliedFilters, () => setPage(1))
+const activeFilterCount = computed(() => {
+  const f = appliedFilters
+  let n = 0
+  if (f.keyword) n++
+  if (f.transactionDate) n++
+  if (f.dueDate) n++
+  if (f.status.length > 0) n++
+  if (f.totalValue !== '' || f.totalMin !== '' || f.totalMax !== '') n++
+  if (f.tags.length > 0) n++
+  return n
 })
 
 // ─── Filter options ───────────────────────────────────────────────────────────
 
+// Prod order: Open, Overdue, Paid, Partially paid, Voided, Unpaid.
 const statusOptions = [
-  { label: t('All status'), value: ''        },
-  { label: t('Paid'),       value: 'paid'    },
-  { label: t('Open'),       value: 'open'    },
-  { label: t('Overdue'),    value: 'overdue' },
+  { label: t('All status'),     value: ''        },
+  { label: t('Open'),           value: 'open'    },
+  { label: t('Overdue'),        value: 'overdue' },
+  { label: t('Paid'),           value: 'paid'    },
+  { label: t('Partially paid'), value: 'partial' },
+  { label: t('Voided'),         value: 'voided'  },
+  { label: t('Unpaid'),         value: 'unpaid'  },
 ]
+const drawerStatusOptions = statusOptions.slice(1)
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
@@ -114,7 +192,27 @@ const loading = ref(true)
 onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
 
 const emptyIllustration = '/illustrations/empty-folder.png'
-function clearFilters() { search.value = ''; statusFilter.value = '' }
+function clearFilters() { search.value = ''; statusFilter.value = ''; Object.assign(appliedFilters, emptySalesInvoiceFilters()) }
+
+// ─── Bulk delete (prod: Delete button in the selection bar + confirm modal) ───
+const bulkDeleteOpen = ref(false)
+const bulkDeleteIds = ref<string[]>([])
+let bulkDeselect: (() => void) | null = null
+function selectedFrom(sel: Set<number>): Row[] {
+  return [...sel].map(i => (paginated.value as Row[])[i]).filter((r): r is Row => !!r)
+}
+function openBulkDelete(sel: Set<number>, deselectAll: () => void) {
+  bulkDeleteIds.value = selectedFrom(sel).map(r => r.id)
+  bulkDeselect = deselectAll
+  bulkDeleteOpen.value = true
+}
+function confirmBulkDelete() {
+  const n = bulkDeleteIds.value.length
+  deletedIds.value = new Set([...deletedIds.value, ...bulkDeleteIds.value])
+  toast.notify({ variant: 'success', title: n === 1 ? t('1 purchase invoice deleted') : `${n} ${t('purchase invoices deleted')}`, rootProps: { class: 'toast-enterprise' } })
+  bulkDeselect?.()
+  bulkDeleteOpen.value = false
+}
 
 // ─── Export / Copy link / Share via email (shared patterns) ────────────────────
 const exportOpen = ref(false)
@@ -136,12 +234,20 @@ function openShare(r: Row) {
   shareAttachment.value = `PINV-${r.number}.pdf`
   shareOpen.value = true
 }
+// Prod export column list (PurchaseInvoiceListPanel exportColumns), same order.
 const exportColumns = computed(() => [
-  ...columns
-    .filter(c => c.label && !c.noHeader)
-    .map(c => ({ key: c.key, label: c.label, ...(c.key === 'number' ? { required: true } : {}) })),
+  { key: 'date', label: t('Date') },
+  { key: 'number', label: t('Number'), required: true },
+  { key: 'vendor', label: t('Vendor') },
+  { key: 'email', label: t('Email') },
+  { key: 'dueDate', label: t('Due date') },
+  { key: 'status', label: t('Status') },
+  { key: 'balanceDue', label: t('Balance due') },
+  { key: 'total', label: t('Total') },
+  { key: 'tags', label: t('Tags') },
   { key: 'warehouse', label: t('Warehouse') },
   { key: 'referenceNo', label: t('Reference no.') },
+  { key: 'paymentTerms', label: t('Payment terms') },
   { key: 'message', label: t('Message') },
   { key: 'memo', label: t('Memo') },
 ])
@@ -159,7 +265,7 @@ const exportColumns = computed(() => [
     has-checkbox
     :loading="loading"
     :search="search"
-    :has-active-filter="!!search || !!statusFilter"
+    :has-active-filter="!!search || !!statusFilter || activeFilterCount > 0"
     filter-empty-label="invoice"
     @page-change="setPage"
     @per-page-change="setPerPage"
@@ -170,16 +276,21 @@ const exportColumns = computed(() => [
   >
 
     <!-- ── Bulk actions ── -->
-    <template #bulk-actions>
+    <template #bulk-actions="{ selectedRows, deselectAll }">
       <MpPopover id="pi-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
         <MpPopoverTrigger>
           <MpButton size="sm" variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('Actions') }}</MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
-            <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="rows.length && openShare(rows[0]!)">{{ t('Share via email') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="openCopyLinks(rows.slice(0, 5) as Row[])">{{ t('Copy link') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="infoToast(t('Not in this prototype'))">{{ t('Pay with Mekari Pay') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="infoToast(t('Not in this prototype'))">{{ t('Print PDF') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="selectedFrom(selectedRows as Set<number>).length && openShare(selectedFrom(selectedRows as Set<number>)[0]!)">{{ t('Share via email') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openCopyLinks(selectedFrom(selectedRows as Set<number>))">{{ t('Copy link') }}</MpPopoverListItem>
+          </MpPopoverList>
+          <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
+          <MpPopoverList>
+            <MpPopoverListItem @click="openBulkDelete(selectedRows as Set<number>, deselectAll)">{{ t('Delete') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -199,7 +310,7 @@ const exportColumns = computed(() => [
 
         <!-- Card 2: Unpaid -->
         <div class="stat-card stat-card--bordered">
-          <div class="stat-title">{{ t('Unpaid') }}</div>
+          <div class="stat-title">{{ t('Open invoices') }}</div>
           <div class="stat-period">{{ t('As of today') }}</div>
           <div class="stat-amount">Rp602.150.000,00</div>
           <a class="stat-link">{{ t('12 invoices') }}</a>
@@ -230,7 +341,7 @@ const exportColumns = computed(() => [
       <div class="filter-left">
         <ErpFilterSelect id="pi-status" v-model="statusFilter" :placeholder="t('Status')" :options="statusOptions.slice(1)" />
 
-        <MpButton variant="secondary" left-icon="filter" is-rounded class="filter-all-btn">{{ t('All filters') }}</MpButton>
+        <MpButton variant="secondary" left-icon="filter" is-rounded class="filter-all-btn" @click="filtersOpen = true">{{ t('All filters') }}{{ activeFilterCount > 0 ? ` (${activeFilterCount})` : '' }}</MpButton>
       </div>
 
       <!-- Right: icon buttons + search -->
@@ -298,6 +409,10 @@ const exportColumns = computed(() => [
     </template>
 
     <!-- ── Cell: Amount ── -->
+    <template #cell-balanceDue="{ value }">
+      {{ formatIDR(value as number) }}
+    </template>
+
     <template #cell-amount="{ value }">
       {{ formatIDR(value as number) }}
     </template>
@@ -319,9 +434,11 @@ const exportColumns = computed(() => [
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="navigateTo(`/purchase-invoices/${(row as Row).id}`)">{{ t('View details') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="infoToast(t('Not in this prototype'))">{{ t('Duplicate') }}</MpPopoverListItem>
           </MpPopoverList>
           <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
           <MpPopoverList>
+            <MpPopoverListItem @click="infoToast(t('Not in this prototype'))">{{ t('Share via WhatsApp') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openShare(row as Row)">{{ t('Share via email') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openCopyLinks([row as Row])">{{ t('Copy link') }}</MpPopoverListItem>
           </MpPopoverList>
@@ -339,6 +456,7 @@ const exportColumns = computed(() => [
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
         <p class="empty-full-title">{{ t('No purchase invoices') }}</p>
         <p class="empty-full-desc">{{ t('Purchase invoices will appear here.') }}</p>
+        <MpButton variant="secondary" left-icon="add" is-rounded @click="navigateTo('/purchase-invoices/new')">{{ t('New purchase invoice') }}</MpButton>
       </div>
     </template>
   </ErpTablePage>
@@ -347,6 +465,37 @@ const exportColumns = computed(() => [
   <ExportModal :open="exportOpen" :title="t('Export purchase invoices')" entity-label="purchase invoices" :columns="exportColumns" :custom-fields="[t('Sample custom field 1'), t('Sample custom field 2')]" :total="total" @close="exportOpen = false" @export="exportOpen = false" />
   <CopyLinkDrawer :open="copyOpen" :items="copyItems" @close="copyOpen = false" @download-csv="copyOpen = false" />
   <ShareViaEmailModal :open="shareOpen" :title="shareTitle" :subject="shareSubject" :attachment-name="shareAttachment" :attachment-size-k-b="128" sender-email="rizal.candra@centralperk.co.id" @close="shareOpen = false" @send="shareOpen = false" />
+
+  <SalesInvoiceFiltersDrawer
+    id="pi-allfilters"
+    :is-open="filtersOpen"
+    :model-value="appliedFilters"
+    :columns="keywordColumns"
+    :status-options="drawerStatusOptions"
+    :tag-options="tagOptions"
+    :djp-status-options="[]"
+    @update:is-open="filtersOpen = $event"
+    @apply="applyDrawerFilters"
+  />
+
+  <MpModal id="pi-bulk-delete-modal" :is-open="bulkDeleteOpen" size="md" :is-keep-alive="false" :is-close-on-esc="false" :is-close-on-overlay-click="false" @close="bulkDeleteOpen = false">
+    <MpModalContent>
+      <MpModalHeader>
+        {{ bulkDeleteIds.length === 1 ? t('Delete purchase invoice?') : t('Delete purchase invoices?') }}
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        {{ bulkDeleteIds.length === 1 ? t('Deleted purchase invoice cannot be restored.') : `${t('Deleted')} ${bulkDeleteIds.length} ${t('purchase invoices cannot be restored.')}` }}
+      </MpModalBody>
+      <MpModalFooter>
+        <MpButtonGroup class="erp-action-footer">
+          <MpButton variant="ghost" is-rounded @click="bulkDeleteOpen = false">{{ t('Cancel') }}</MpButton>
+          <MpButton variant="danger" is-rounded @click="confirmBulkDelete">{{ t('Delete') }}</MpButton>
+        </MpButtonGroup>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 
   <!-- ── Prototype scenario FAB (bottom-right): toggle data vs empty-state view ── -->
   <ScenarioFab v-model="previewMode" />

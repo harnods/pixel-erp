@@ -1194,7 +1194,7 @@ const pageTabs: Record<string, string[]> = {
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Expenses': ['Bills', 'Awaiting Approval', 'Dropbox'],
-  'Purchase invoices': ['All purchase invoices', 'Awaiting Approval', 'Dropbox'],
+  'Purchase invoices': ['All purchase invoices', 'Awaiting approval', 'Dropbox'],
   'Purchase requests': ['All requests', 'Awaiting approval'],
   'Sales invoices': ['All sales invoices', 'Awaiting approval'],
   'Sales orders': ['All sales orders', 'Awaiting approval'],
@@ -1279,7 +1279,7 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   }
   if (currentPageKey.value === 'Purchase invoices') {
     const out: Record<string, number> = {}
-    if (purchaseInvoicesAwaitingApproval.length) out['Awaiting Approval'] = purchaseInvoicesAwaitingApproval.length
+    if (purchaseInvoicesAwaitingApproval.length) out['Awaiting approval'] = purchaseInvoicesAwaitingApproval.length
     if (purchaseInvoiceReviewFiles.length) out['Dropbox'] = purchaseInvoiceReviewFiles.length
     return out
   }
@@ -1484,7 +1484,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
   // the `surface` prop swaps both the data and the review route.
   'Purchase invoices': {
     'All purchase invoices': PurchaseInvoicesPage,
-    'Awaiting Approval': PurchaseInvoicesAwaitingApprovalPage,
+    'Awaiting approval': PurchaseInvoicesAwaitingApprovalPage,
     'Dropbox': () => h(BillsReviewFilesPage, { surface: 'purchase-invoices' }),
   },
   // Awaiting approval reuses the Expenses approval-queue table (Approve button +
