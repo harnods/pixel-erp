@@ -67,14 +67,22 @@ const TAGS_COMPARATOR_LABELS: Record<TagsComparator, string> = {
   isNoneOf: 'Is none of',
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   id: string
   isOpen: boolean
   modelValue: SalesQuoteFiltersValue
   columns: { key: string; label: string }[]
   statusOptions: { value: string; label: string }[]
   tagOptions: string[]
-}>()
+  /** Label/placeholder of the second (expiry) date range — Sales quotes uses prod's "Expiration date". */
+  dateLabel?: string
+  datePlaceholder?: string
+  resetLabel?: string
+}>(), {
+  dateLabel: 'Valid until',
+  datePlaceholder: 'Select valid until date',
+  resetLabel: 'Reset filter',
+})
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
   (e: 'apply', v: SalesQuoteFiltersValue): void
@@ -168,10 +176,10 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
 
           <!-- Valid until — forward-looking range (Next 7 / 14 / 30 days). -->
           <div class="sqf-field">
-            <span class="sqf-field-label">Valid until</span>
+            <span class="sqf-field-label">{{ dateLabel }}</span>
             <AdvancedDateRangePicker
               :id="`${id}-validuntil`" :model-value="draft.validUntil" direction="future"
-              is-full-width hide-label placeholder="Select valid until date"
+              is-full-width hide-label :placeholder="datePlaceholder"
               @update:model-value="draft.validUntil = $event"
             />
           </div>
@@ -255,7 +263,7 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
         </div>
 
         <footer class="sqf-filters-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="clearAll">Reset filter</button>
+          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="clearAll">{{ resetLabel }}</button>
           <div class="sqf-footer-right">
             <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">Cancel</button>
             <button class="btn-enterprise btn-enterprise--primary" type="button" @click="apply">Apply</button>

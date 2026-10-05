@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/sales/orders/views/SalesOrderCreateView.vue (+ SalesOrderEditView.vue) -->
 <script setup lang="ts">
 /**
  * "New sales invoice" form — Sales ▸ Sales invoices ▸ New sales invoice
@@ -27,6 +28,9 @@ import type { SalesOrder, SalesOrderItem } from '~/data/types'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import type { SalesFormPrefill } from '~/data/salesFormPrefill'
+import { addSalesOrder, updateSalesOrder } from '~/data/salesOrders'
+import { getSalesOrderDetail } from '~/data/salesOrderDetails'
+import { cashAccounts } from '~/data/cashAccounts'
 
 // Embedded mode: the form is rendered inside a full-screen drawer (e.g. from a CRM
 // Deal). It hides its own title bar and, instead of routing on cancel/save, emits
@@ -34,7 +38,7 @@ import type { SalesFormPrefill } from '~/data/salesFormPrefill'
 // `productsOnly` renders just the line-items + totals editor (no customer/header,
 // no notes) — used by the CRM Deal "Add product" full-screen drawer. Save then
 // emits the working products/totals instead of creating a sales order.
-const props = withDefaults(defineProps<{ embedded?: boolean; productsOnly?: boolean; prefill?: SalesFormPrefill | null }>(), { embedded: false, productsOnly: false, prefill: null })
+const props = withDefaults(defineProps<{ embedded?: boolean; productsOnly?: boolean; prefill?: SalesFormPrefill | null; orderId?: string }>(), { embedded: false, productsOnly: false, prefill: null, orderId: 'new' })
 const emit = defineEmits<{
   cancel: []
   created: [order: SalesOrder]
@@ -71,6 +75,8 @@ const emailTags      = ref<DataInterface[]>([])
 const billingAddress = ref('')
 const shipTo         = ref('')
 const txDate         = ref(isoToDMY(todayISO()))
+const txDateError    = ref(false)
+watch(txDate, (v) => { if (v) txDateError.value = false })
 const dueDate        = ref('')
 const shipDate       = ref('')
 const shipVia        = ref('')
@@ -215,6 +221,11 @@ const total       = computed(() => taxBase.value + taxAmount.value + shippingFee
 // A sales order is not a payment document — no withholding/deposit at create; the
 // header figure is the order total.
 const orderTotal = computed(() => total.value)
+// Prod SO form: "Less: Deposit" (amount + deposit account) → Balance due.
+const depositAmount  = ref(0)
+const depositAccount = ref('')
+const depositAccountOptions = cashAccounts.filter(a => a.currency === 'IDR').map(a => `${a.code} - ${a.name}`)
+const balanceDue = computed(() => Math.max(0, total.value - depositAmount.value))
 
 const fmt = formatIDR
 /** Table cells show the bare number — the "Rp" lives in the cell's prefix box. */
@@ -245,6 +256,8 @@ function removeAttachment(idx: number) { attachments.value.splice(idx, 1) }
 function validate(): boolean {
   let ok = true
   if (!customerId.value) { customerError.value = true; ok = false }
+  txDateError.value = !txDate.value
+  if (!txDate.value) ok = false
   noItemsError.value = !items.value.length
   if (!items.value.length) ok = false
 
@@ -307,7 +320,27 @@ function applyPrefill(p: SalesFormPrefill) {
     }))
   }
 }
-onMounted(() => { if (props.prefill) applyPrefill(props.prefill) })
+// Edit mode (/sales-orders/:id/edit) — seed every field from the existing order.
+const isEdit = computed(() => !props.embedded && !!props.orderId && props.orderId !== 'new')
+const editing = computed(() => (isEdit.value ? salesOrders.find(o => o.id === props.orderId) ?? null : null))
+function applyEdit() {
+  const o = editing.value
+  if (!o) return
+  const d = getSalesOrderDetail(o.id)
+  applyPrefill({
+    customerId: o.customer.id, emails: d.email, billingAddress: d.billingAddress, shipTo: d.shipTo,
+    txDate: o.date, dueDate: o.dueDate, shipDate: d.shipDate, shipVia: d.shipVia, paymentTerms: d.paymentTerms,
+    trackingNo: d.trackingNo, referenceNo: d.referenceNo, warehouse: d.warehouse, tags: o.tags ?? [],
+    shippingFee: o.shippingFee, globalDiscountType: 'Rp', globalDiscountValue: o.globalDiscount,
+    items: o.items.map(it => ({ product: it.product, sku: it.sku, description: it.description, qty: it.qty, unit: it.unit, unitPrice: it.unitPrice, discountPct: it.discountPct })),
+  } as SalesFormPrefill)
+  message.value = d.message
+  memo.value = d.memo
+}
+function notInPrototype() {
+  toast.notify({ variant: 'success', title: t('Not in this prototype'), rootProps: { class: 'toast-enterprise' } })
+}
+onMounted(() => { if (props.prefill) applyPrefill(props.prefill); applyEdit() })
 
 function onSave() {
   // Products-only (Deal → Add product): validate line items only, then emit.
@@ -333,22 +366,24 @@ function onSave() {
     qty: it.qty, unit: it.unit, unitPrice: it.unitPrice, discountPct: it.discountPct,
     amount: Math.round(it.qty * it.unitPrice * (1 - it.discountPct / 100)),
   }))
+  const prev = editing.value
   const order: SalesOrder = {
-    id: nextOrderId(),
-    number: nextOrderNumber(),
+    id: prev?.id ?? nextOrderId(),
+    number: prev?.number ?? nextOrderNumber(),
     customer: { id: customer.id, name: customer.name },
     date: dmyToIso(txDate.value),
     dueDate: dmyToIso(dueDate.value || txDate.value),
-    status: 'open',
-    balanceDue: total.value,
+    status: prev?.status ?? 'open',
+    balanceDue: balanceDue.value,
     total: total.value,
     tags: tagsList.value.map(t2 => String(t2.value)),
     items: orderItems,
     globalDiscount: globalDiscountAmount.value,
     shippingFee: shippingFee.value,
   }
-  salesOrders.push(order)
-  toast.notify({ variant: 'success', title: t('Sales order created'), rootProps: { class: 'toast-enterprise' } })
+  if (prev) updateSalesOrder(order)
+  else addSalesOrder(order)
+  toast.notify({ variant: 'success', title: t('Sales order saved'), rootProps: { class: 'toast-enterprise' } })
   if (props.embedded) { emit('created', order); return }
   router.push(`/sales-orders/${order.id}`)
 }
@@ -361,7 +396,7 @@ function onSave() {
     <header v-if="!embedded" class="si-form-bar">
       <div class="si-form-bar-left">
         <MpTextlink id="si-crumb" as="a" class="si-crumb" @click.prevent="onCancel">{{ t('Sales orders') }}</MpTextlink>
-        <h1 class="si-form-h1">{{ t('New sales order') }}</h1>
+        <h1 class="si-form-h1">{{ isEdit ? t('Edit sales order') : t('New sales order') }}</h1>
       </div>
     </header>
 
@@ -378,16 +413,16 @@ function onSave() {
             :placeholder="t('Select customer')" :is-invalid="customerError"
             @update:model-value="onCustomerChange"
           />
-          <MpFormErrorMessage>{{ t('You must select customer') }}</MpFormErrorMessage>
+          <MpFormErrorMessage>{{ t('Customer is required') }}</MpFormErrorMessage>
         </MpFormControl>
 
         <MpFormControl id="f-email" class="si-field">
           <MpFormLabel>{{ t('Email') }}</MpFormLabel>
-          <MpInputTag id="f-email-inp" :data="emailTags" :placeholder="t('+Add email')" @change="onEmailChange" />
+          <MpInputTag id="f-email-inp" :data="emailTags" :placeholder="t('Enter email')" @change="onEmailChange" />
         </MpFormControl>
 
         <div class="si-header1-total">
-          <h3 class="si-header1-total-value">{{ t('Order total') }} {{ fmt(orderTotal) }}</h3>
+          <h3 class="si-header1-total-value">{{ t('Total') }} {{ fmt(orderTotal) }}</h3>
         </div>
       </section>
 
@@ -413,7 +448,7 @@ function onSave() {
 
         <!-- Col 2: dates + terms -->
         <div class="si-header2-col">
-          <MpFormControl id="f-tx-date" class="si-field">
+          <MpFormControl id="f-tx-date" class="si-field" is-required :is-invalid="txDateError">
             <MpFormLabel>{{ t('Transaction date') }}</MpFormLabel>
             <MpDatePicker id="f-tx-date-inp" v-model="txDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
           </MpFormControl>
@@ -432,7 +467,7 @@ function onSave() {
         <!-- Col 3: shipping — only when "Requires shipping" is on -->
         <div v-if="requiresShipping" class="si-header2-col">
           <MpFormControl id="f-ship-date" class="si-field">
-            <MpFormLabel>{{ t('Ship date') }}</MpFormLabel>
+            <MpFormLabel>{{ t('Delivery date') }}</MpFormLabel>
             <MpDatePicker id="f-ship-date-inp" v-model="shipDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
           </MpFormControl>
 
@@ -475,7 +510,7 @@ function onSave() {
         <!-- Col 5: tags — last column, same 24px gap as every other pair -->
         <div class="si-header2-col">
           <MpFormControl id="f-tags" class="si-field">
-            <MpFormLabel>{{ t('Tag') }}</MpFormLabel>
+            <MpFormLabel>{{ t('Tags') }}</MpFormLabel>
             <MpInputTag id="f-tags-inp" :data="tagsList" :placeholder="t('Select tags')" @change="onTagsChange" />
           </MpFormControl>
         </div>
@@ -489,8 +524,8 @@ function onSave() {
 
         <MpBanner v-if="hasLineItemErrors || noItemsError" id="si-lineitems-error-banner" variant="danger" align-items="center" class="si-items-error-banner">
           <MpBannerIcon id="si-lineitems-error-banner-icon" />
-          <MpBannerTitle>{{ noItemsError && !hasLineItemErrors ? t('Add at least one product') : t('Failed to save') }}</MpBannerTitle>
-          <MpBannerDescription>{{ noItemsError && !hasLineItemErrors ? t('A sales invoice needs at least one line item before you can save.') : t('The transaction contains incomplete or invalid data. Review the highlighted fields.') }}</MpBannerDescription>
+          <MpBannerTitle>{{ noItemsError && !hasLineItemErrors ? t('Failed to save') : t('Failed to save') }}</MpBannerTitle>
+          <MpBannerDescription>{{ noItemsError && !hasLineItemErrors ? t('At least one line item is required') : t('The transaction contains incomplete or invalid data. Review the highlighted fields.') }}</MpBannerDescription>
         </MpBanner>
 
         <div class="si-items-scroll">
@@ -534,7 +569,7 @@ function onSave() {
                 <td class="si-td si-td--input si-td--border" :class="{ 'si-td--error': item.productError }">
                   <MpTooltip
                     v-if="item.productError" :id="`si-product-tt-${item._key}`"
-                    :label="t('You must select product')" placement="top" use-portal
+                    :label="t('Product is required')" placement="top" use-portal
                     class="si-error-tooltip-wrap"
                   >
                     <MpInput
@@ -571,7 +606,7 @@ function onSave() {
                 <td class="si-td si-td--input si-td--border" :class="{ 'si-td--error': item.qtyError }">
                   <MpTooltip
                     v-if="item.qtyError" :id="`si-qty-tt-${item._key}`"
-                    :label="t('Qty must be more than 0')" placement="top" use-portal
+                    :label="t('Quantity must be greater than 0')" placement="top" use-portal
                     class="si-error-tooltip-wrap"
                   >
                     <MpInput type="number" :model-value="item.qty" is-full-width
@@ -759,6 +794,23 @@ function onSave() {
             <span>{{ t('Total') }}</span>
             <span>{{ fmt(total) }}</span>
           </div>
+          <template v-if="!productsOnly">
+            <div class="si-totals-row">
+              <span class="si-inline-field-label">
+                <span>{{ t('Less: Deposit') }}</span>
+                <MpAutocomplete id="f-deposit-account" v-model="depositAccount" :data="depositAccountOptions" :placeholder="t('Account')" use-portal is-clearable />
+              </span>
+              <MpInputGroup id="f-deposit-group" class="si-unit-field">
+                <MpInputLeftAddon has-background>Rp</MpInputLeftAddon>
+                <MpInput type="number" :model-value="depositAmount" is-full-width
+                  @update:model-value="(v) => depositAmount = Math.max(0, Number(v) || 0)" />
+              </MpInputGroup>
+            </div>
+            <div class="si-totals-row si-totals-row--h3">
+              <span>{{ t('Balance due') }}</span>
+              <span>{{ fmt(balanceDue) }}</span>
+            </div>
+          </template>
         </div>
       </section>
 
@@ -766,23 +818,37 @@ function onSave() {
       <MpButtonGroup class="erp-action-footer si-form-footer" :class="{ 'si-form-footer--sticky': productsOnly }">
         <MpButton variant="ghost" is-rounded @click="onCancel">{{ t('Cancel') }}</MpButton>
 
-        <MpPopover id="si-form-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <MpButton variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('More') }}</MpButton>
-          </MpPopoverTrigger>
-          <MpPopoverContent class="erp-dropdown-menu">
-            <MpPopoverList>
-              <MpPopoverListItem @click="onSave">{{ t('Save & close') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="onSave">{{ t('Save & share via WhatsApp') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="onSave">{{ t('Save & share via email') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="onSave">{{ t('Save as draft') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Print draft PDF') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-
-        <MpButton variant="primary" is-rounded @click="onSave">{{ t('Save') }}</MpButton>
+        <!-- Prod TransactionFooter: edit → Save changes; create → Save & close (secondary)
+             + Save & share ▾ (primary) + kebab (Sales settings; Save as draft / Preview /
+             Print draft PDF are local-only, kept). Products-only keeps a single Save. -->
+        <MpButton v-if="isEdit || productsOnly" variant="primary" is-rounded @click="onSave">{{ productsOnly ? t('Save') : t('Save changes') }}</MpButton>
+        <template v-else>
+          <MpButton variant="secondary" is-rounded @click="onSave">{{ t('Save & close') }}</MpButton>
+          <MpPopover id="si-form-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <MpButton variant="primary" right-icon="chevrons-down" is-rounded>{{ t('Save & share') }}</MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent class="erp-dropdown-menu">
+              <MpPopoverList>
+                <MpPopoverListItem @click="onSave">{{ t('Share via WhatsApp') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="onSave">{{ t('Share via email') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+          <MpPopover id="si-form-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More options')" is-rounded />
+            </MpPopoverTrigger>
+            <MpPopoverContent class="erp-dropdown-menu">
+              <MpPopoverList>
+                <MpPopoverListItem @click="router.push('/sales-settings')">{{ t('Sales settings') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="onSave">{{ t('Save as draft') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="notInPrototype">{{ t('Preview') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="notInPrototype">{{ t('Print draft PDF') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </template>
       </MpButtonGroup>
 
     </div><!-- /si-form-stage -->

@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/sales/orders/views/SalesOrderListView.vue -->
 <script setup lang="ts">
 import {
   MpButton, MpButtonGroup, MpPopover, MpPopoverTrigger, MpPopoverContent,
@@ -21,6 +22,7 @@ import MarkSalesOrderCompletedModal from '~/components/patterns/MarkSalesOrderCo
 import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
 import { salesOrders, awaitingSalesOrders } from '~/data'
 import { salesOrderCompletionRows, type SalesOrderCompletionRow } from '~/data/salesOrders'
+import { getSalesOrderDetail } from '~/data/salesOrderDetails'
 import type { SalesOrder } from '~/data'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -28,14 +30,14 @@ const { t } = useLocale()
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'date',         label: t('Date'),        kind: 'date',                                sortType: 'date'   },
+  { key: 'date',         label: t('Date'),        kind: 'date', sortable: true,                sortType: 'date'   },
   { key: 'number',       label: t('Number'),      kind: 'number', sortable: true,                sortType: 'number' },
   { key: 'customerName', label: t('Customer'),    kind: 'name', sortable: true,                sortType: 'text'   },
-  { key: 'dueDate',      label: t('Due date'),    kind: 'date',                                sortType: 'date'   },
-  { key: 'status',       label: t('Status'),      kind: 'status',                                sortType: 'text'   },
+  { key: 'dueDate',      label: t('Due date'),    kind: 'date', sortable: true,                sortType: 'date'   },
+  { key: 'status',       label: t('Status'),      kind: 'status', sortable: true,                sortType: 'text'   },
   { key: 'balanceDue',   label: t('Balance due'), kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
   { key: 'total',        label: t('Total'),       kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'tags',         label: t('Tags'),        kind: 'tags'                                 },
+  { key: 'tags',         label: t('Tags'),        kind: 'tags', sortable: true,                sortType: 'text'   },
 ]
 
 // ─── Row type + flatten ─────────────────────────────────────────────────────────
@@ -59,11 +61,37 @@ const rows = computed<Row[]>(() =>
 const filtersOpen = ref(false)
 const appliedFilters = reactive<SalesOrderFiltersValue>(emptySalesOrderFilters())
 
+// Keyword scope — prod FilterDrawer search columns (salesOrder.list.filters.searchColumns).
 const keywordColumns = [
-  { key: 'number',       label: t('Number')   },
-  { key: 'customerName', label: t('Customer') },
-  { key: 'tags',         label: t('Tags')     },
+  { key: 'number',       label: t('Number')        },
+  { key: 'customerName', label: t('Customer')      },
+  { key: 'warehouse',    label: t('Warehouse')     },
+  { key: 'product',      label: t('Product')       },
+  { key: 'sku',          label: t('SKU')           },
+  { key: 'referenceNo',  label: t('Reference no.') },
+  { key: 'memo',         label: t('Memo')          },
+  { key: 'message',      label: t('Message')       },
 ]
+// Searchable text per keyword column (detail fields come from the detail mock).
+const detailCache = new Map<string, ReturnType<typeof getSalesOrderDetail>>()
+function detailOf(id: string) {
+  if (!detailCache.has(id)) detailCache.set(id, getSalesOrderDetail(id))
+  return detailCache.get(id)!
+}
+function keywordHaystack(row: Row, col: string): string[] {
+  const d = col === 'number' || col === 'customerName' || col === 'product' || col === 'sku' ? null : detailOf(row.id)
+  switch (col) {
+    case 'number': return [String(row.number)]
+    case 'customerName': return [row.customerName]
+    case 'warehouse': return [d!.warehouse]
+    case 'product': return row.items.map(it => it.product)
+    case 'sku': return row.items.map(it => it.sku)
+    case 'referenceNo': return [d!.referenceNo]
+    case 'memo': return [d!.memo]
+    case 'message': return [d!.message]
+    default: return []
+  }
+}
 const tagOptions = computed(() => [...new Set(salesOrders.flatMap(so => so.tags ?? []))].sort())
 
 function applyDrawerFilters(v: SalesOrderFiltersValue) { Object.assign(appliedFilters, v) }
@@ -98,13 +126,8 @@ const {
     const f = appliedFilters
     const kw = f.keyword.toLowerCase().trim()
     const rowTags = row.tags ?? []
-    const matchesKeyword = !kw || (
-      f.keywordColumn === 'all'
-        ? String(row.number).includes(kw) || row.customerName.toLowerCase().includes(kw) || rowTags.some(tg => tg.toLowerCase().includes(kw))
-        : f.keywordColumn === 'number' ? String(row.number).includes(kw)
-        : f.keywordColumn === 'customerName' ? row.customerName.toLowerCase().includes(kw)
-        : rowTags.some(tg => tg.toLowerCase().includes(kw))
-    )
+    const cols = f.keywordColumn === 'all' ? keywordColumns.map(c => c.key) : [f.keywordColumn]
+    const matchesKeyword = !kw || cols.some(c => keywordHaystack(row, c).some(v => (v ?? '').toLowerCase().includes(kw)))
     const matchesTransactionDate = matchesDateRange(row.date, f.transactionDate)
     const matchesDueDate = matchesDateRange(row.dueDate, f.dueDate)
     const matchesDrawerStatus = f.status.length === 0 || f.status.includes(row.status)
@@ -137,12 +160,21 @@ const isDrawerFilterActive = computed(() => activeFilterCount.value > 0)
 
 // ─── Filter options ───────────────────────────────────────────────────────────
 // Quick-filter options — NO "All status" entry; clearing (x) resets to show-all.
+// Prod order + wording (salesOrder.list.statusFilter): Open, Closed, Partially sent.
+// The mock's 'partially processed' state is prod's "Partially sent". Voided is local-only.
 const statusOptions = [
-  { label: t('Open'),                value: 'open'                },
-  { label: t('Partially processed'), value: 'partially processed' },
-  { label: t('Closed'),              value: 'closed'              },
-  { label: t('Voided'),              value: 'voided'              },
+  { label: t('Open'),           value: 'open'                },
+  { label: t('Closed'),         value: 'closed'              },
+  { label: t('Partially sent'), value: 'partially processed' },
+  { label: t('Voided'),         value: 'voided'              },
 ]
+// Prod badge colours: Open / Partially sent → warning, Closed → announcement (gray).
+const STATUS_BADGE: Record<string, { label: string; type: 'warning' | 'announcement' | 'critical' }> = {
+  'open':                { label: t('Open'),           type: 'warning'      },
+  'partially processed': { label: t('Partially sent'), type: 'warning'      },
+  'closed':              { label: t('Closed'),         type: 'announcement' },
+  'voided':              { label: t('Voided'),         type: 'critical'     },
+}
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 function formatDate(iso: string) {
@@ -171,6 +203,9 @@ function clearFilters() {
 const router = useRouter()
 function viewDetails(id: string) {
   router.push(`/sales-orders/${id}`)
+}
+function notInPrototype() {
+  toast.notify({ variant: 'success', title: t('Not in this prototype'), rootProps: { class: 'toast-enterprise' } })
 }
 
 // Column show/hide (first column always on; Last updated appended, hidden by default)
@@ -240,6 +275,9 @@ function confirmBulkDelete() {
     rootProps: { class: 'toast-enterprise' },
   })
 }
+const bulkDeleteTitle = computed(() => bulkSelectedCount.value === 1
+  ? t('Delete sales order?')
+  : `${t('Delete')} ${bulkSelectedCount.value} ${t('sales orders')}?`)
 </script>
 
 <template>
@@ -255,6 +293,7 @@ function confirmBulkDelete() {
     :has-active-filter="!!search || !!statusFilter || isDrawerFilterActive"
     :search="search"
     has-checkbox
+    bulk-label="transaction"
     :context-label="(row) => `${t('Sales Order')} #${row.number}`"
     @page-change="setPage"
     @per-page-change="setPerPage"
@@ -273,16 +312,13 @@ function confirmBulkDelete() {
         </MpPopoverTrigger>
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
-            <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="rows.length && openShare(rows[0])">{{ t('Share via email') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="notInPrototype">{{ t('Print PDF') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="rows.length && openShare(rows[0]!)">{{ t('Share via email') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openCopyLinks(rows.slice(0, 5) as Row[])">{{ t('Copy link') }}</MpPopoverListItem>
-          </MpPopoverList>
-          <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-          <MpPopoverList>
-            <MpPopoverListItem @click="openBulkDelete(count as number)">{{ t('Delete') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
+      <MpButton size="sm" variant="secondary" is-rounded @click="openBulkDelete(count as number)">{{ t('Delete') }}</MpButton>
     </template>
 
     <!-- ── Filter bar ── -->
@@ -345,7 +381,7 @@ function confirmBulkDelete() {
 
     <!-- ── Cell: Status ── -->
     <template #cell-status="{ value }">
-      <ErpStatusBadge :status="value as string" />
+      <ErpStatusBadge :status="value as string" :label="STATUS_BADGE[value as string]?.label" :type="STATUS_BADGE[value as string]?.type" />
     </template>
 
     <!-- ── Cell: Balance due ── -->
@@ -386,17 +422,17 @@ function confirmBulkDelete() {
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails((row as Row).id)">{{ t('View details') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Create sales delivery') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Create sales invoice') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="router.push('/sales-deliveries/new')">{{ t('Create sales delivery') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="router.push('/sales-invoices/new')">{{ t('Create sales invoice') }}</MpPopoverListItem>
             <!-- Only Open / Partially processed can be completed — hidden for Closed / Voided -->
             <MpPopoverListItem v-if="canMarkCompleted((row as Row).status)" @click="openMarkComplete(row as Row)">{{ t('Mark as completed') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="router.push('/sales-orders/new')">{{ t('Duplicate') }}</MpPopoverListItem>
           </MpPopoverList>
           <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
           <MpPopoverList>
-            <MpPopoverListItem>{{ t('Share via WhatsApp') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="notInPrototype">{{ t('Share via WhatsApp') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openShare(row as Row)">{{ t('Share via email') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openCopyLinks([row as Row])">{{ t('Copy link') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -431,10 +467,8 @@ function confirmBulkDelete() {
 
   <ConfirmModal
     v-model:is-open="bulkDeleteOpen"
-    :title="t('Delete sales orders?')"
-    :description="bulkSelectedCount === 1
-      ? t('1 sales order will be permanently deleted. This cannot be undone.')
-      : `${bulkSelectedCount} ${t('sales orders will be permanently deleted. This cannot be undone.')}`"
+    :title="bulkDeleteTitle"
+    :description="t('Deleted sales order cannot be restored.')"
     :confirm-label="t('Delete')"
     @confirm="confirmBulkDelete"
   />

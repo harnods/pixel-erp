@@ -1,6 +1,7 @@
 import type { SalesOrder, SalesOrderItem, SalesOrderStatus } from './types'
 import { CATALOG } from './catalog'
 import { customers } from './customers'
+import { loadCreated, saveCreated } from './persist'
 
 /**
  * Mock sales orders for a wholesale + retail coffee business
@@ -156,6 +157,22 @@ function build(): SalesOrder[] {
 }
 
 export const salesOrders: SalesOrder[] = build()
+
+// User-created orders (New sales order form) survive a reload — appended after the seed.
+const CREATED_KEY = 'sales-orders-created'
+for (const o of loadCreated<SalesOrder>(CREATED_KEY)) if (!salesOrders.some(x => x.id === o.id)) salesOrders.push(o)
+export function addSalesOrder(order: SalesOrder): SalesOrder {
+  salesOrders.push(order)
+  saveCreated(CREATED_KEY, [...loadCreated<SalesOrder>(CREATED_KEY), order])
+  return order
+}
+/** Edit of a user-created order is persisted; edits to seed orders stay in session. */
+export function updateSalesOrder(order: SalesOrder): void {
+  const i = salesOrders.findIndex(o => o.id === order.id)
+  if (i >= 0) salesOrders[i] = order
+  const created = loadCreated<SalesOrder>(CREATED_KEY)
+  if (created.some(o => o.id === order.id)) saveCreated(CREATED_KEY, created.map(o => (o.id === order.id ? order : o)))
+}
 
 /** "Awaiting approval" queue for the Sales orders › Awaiting approval tab
  *  (deterministic every-7th subset; drives both the list and the count badge). */

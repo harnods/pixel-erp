@@ -254,7 +254,7 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
         </div>
 
         <footer class="sof-filters-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="clearAll">Reset filter</button>
+          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="clearAll">Reset</button>
           <div class="sof-footer-right">
             <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">Cancel</button>
             <button class="btn-enterprise btn-enterprise--primary" type="button" @click="apply">Apply</button>
