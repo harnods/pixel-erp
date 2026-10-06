@@ -3,7 +3,7 @@
  *
  * Talenta sends facts; Jurnal decides the accounting (LR-1). Every figure is
  * computed on read from the stored sends, the settings and the posted journals.
- * Nothing seeds a total. Persists under `erp-db:payroll:state-v1`;
+ * Nothing seeds a total. Persists under `erp-db:payroll:state-v2`;
  * resetPayroll() returns to the sample. No employee names anywhere (LR-7).
  *
  * ─── API (UI agents: this block is the contract) ─────────────────────────────
@@ -46,7 +46,7 @@
  *   addPayrollAccount({ code, name, type, party, reused? })   add an account to the payroll set (TS-03).
  *   previewDryRun(runId, no?)       OD-10: holds and would-be draft on current settings; stores and posts nothing.
  *   proposeCutover(month) (Accountant) / confirmCutover() (Finance Manager) / setCutoverMode('Block'|'Flag') (Finance Manager)
- *   setLimits(patch), setPayday(day), setAccrualSettings({ account, cutoffDay }) (Finance Manager), setSuspenseAccount(code)
+ *   setLimits(patch), setPayday(day), setSuspenseAccount(code)
  *
  * Intake (OD-01, LR-3)
  *   simulateSend(kind, opts?)       kinds: 'regular' | 'new-pay-item' | 'revision' | 'partial' | 'separate-run' | 'duplicate'
@@ -77,7 +77,7 @@
  *   confirmPostAsFinanceManager(runId)   the MLP stopgap confirm when overrides or changed settings exist.
  *   postRun(runId, { versionNo? })  all-or-nothing post; stale, newer-version, revised and dry-run blocks; locked month redirect.
  *   reverseRun(runId, { date?, confirmPayments? })   reverses every live journal of the run together.
- *   reverseJournal(journalId, opts) same, starting from one journal (accrual journals fill their reversal slot).
+ *   reverseJournal(journalId, opts) same, starting from one journal.
  *   compareVersions(runId, a?, b?)  { byPayItem, byAccountTag, settingsMoved, headcount, oldLabel, newLabel }
  *   reverseAndRepost(runId, no?) / postDifference(runId, no?, { includeSettingsMoves })
  *   liveJournals(runId), journalsOf(runId), journalById(id), journalTotals(j)
@@ -99,11 +99,6 @@
  *   setVarianceNote(month, rowKey, { reason, note }), setCheckNote(month, checkId, note)
  *   markReadyForSignOff(month) (Accountant) / signOffMonth(month, { hrConfirmed }) (Finance Manager)
  *   pph21Monthly(month), pph21Annual(year), setEbupotTotal(month, amount), markPph21Reconciled(month, note?)
- *
- * Accrual (FG-7)
- *   accrualEstimate(month)          { state, lines, base, days, baseDays, message }
- *   editAccrualLine(month, key, amount, reason) / resetAccrualLine(month, key)
- *   postAccrual(month), accrualFor(month)
  *
  * Log and notices (TS-06)
  *   syncLog (computed, newest first), noticesFor(role)
@@ -142,8 +137,6 @@ export interface PayItemMapping {
   party: PayableParty | null
   programme: BpjsProgramme | null
   override: Override | null
-  /** THR / Severance: "Do you accrue this?" */
-  accrue: boolean | null
   addedBy: 'Talenta' | 'Jurnal'
 }
 export interface Tags { Organization: string | null; Branch: string | null }
@@ -180,7 +173,6 @@ export interface PayrollSettings {
   suspenseAccount: string | null
   hutangGaji: string
   payday: number
-  accrual: { account: string; cutoffDay: number | null }
   otherEntity: { field: 'organization_name' | 'branch_name'; value: string }[]
 }
 export interface SettingsSnapshot { id: string; at: string; by: string; note: string; settings: PayrollSettings }
@@ -191,7 +183,7 @@ export type HoldCode =
   | 'tax-rule' | 'negative-payable' | 'archived-account'
 export interface Hold { code: HoldCode; message: string; details: Record<string, unknown> }
 
-export interface LineSource { item: string; section: PaySection | 'preset' | 'gap' | 'rounding' | 'accrual'; role: PayRole | null; side: 'D' | 'C'; cents: number; staff: string[] }
+export interface LineSource { item: string; section: PaySection | 'preset' | 'gap' | 'rounding'; role: PayRole | null; side: 'D' | 'C'; cents: number; staff: string[] }
 export interface JournalLine {
   account: string
   tags: Tags
@@ -254,7 +246,7 @@ export interface Run {
   revised: boolean
   reversedAt: string | null
 }
-export type JournalType = 'Payroll' | 'Reversal' | 'Difference' | 'Payroll accrual' | 'Accrual reversal' | 'Salary payment' | 'Statutory payment' | 'Payment void'
+export type JournalType = 'Payroll' | 'Reversal' | 'Difference' | 'Salary payment' | 'Statutory payment' | 'Payment void'
 export interface Journal {
   id: string
   number: string
@@ -273,7 +265,6 @@ export interface Journal {
   reversesId: string | null
   reversedById: string | null
   fmConfirmedBy: string | null
-  accrualId: string | null
   paymentId: string | null
 }
 export interface PaymentPeriodLine { month: string; amount: number; billingCode: string | null; ntpn: string | null }
@@ -294,17 +285,6 @@ export interface Payment {
   voidedBy: string | null
 }
 export interface PayrollEvent { id: string; type: EmployeeEventType; employee_id: string; effective: string | null; from: GroupFields | null; to: GroupFields | null; receivedAt: string }
-export interface Accrual {
-  id: string
-  month: string
-  journalId: string
-  baseRunId: string
-  nextRunStart: string
-  nextRunKey: string
-  reversalJournalId: string | null
-  reversedBy: 'run' | 'manual' | null
-  log: string[]
-}
 export interface AmendmentTask {
   id: string
   taxMonth: string
@@ -375,8 +355,6 @@ export interface PayrollState {
   journals: Journal[]
   payments: Payment[]
   events: PayrollEvent[]
-  accruals: Accrual[]
-  accrualEdits: Record<string, Record<string, { amount: number; reason: string }>>
   tasks: AmendmentTask[]
   bpjsInvoices: BpjsInvoice[]
   recon: MonthRecon[]
@@ -434,7 +412,7 @@ export function tagsLabel(t: Tags): string { return [t.Organization, t.Branch].f
 
 // ── State ───────────────────────────────────────────────────────────────────
 
-const SNAPSHOT_KEY = 'payroll:state-v1'
+const SNAPSHOT_KEY = 'payroll:state-v2'
 
 function defaultSettings(): PayrollSettings {
   return {
@@ -453,7 +431,6 @@ function defaultSettings(): PayrollSettings {
     suspenseAccount: ACC.suspense,
     hutangGaji: ACC.hutangGaji,
     payday: 25,
-    accrual: { account: ACC.accrued, cutoffDay: null },
     otherEntity: [],
   }
 }
@@ -464,7 +441,7 @@ function emptyState(): PayrollState {
     connection: { status: 'Not connected', companyId: null, startedBy: null, startedAt: null, endedReason: null, sourceConfirmedBy: null, sourceConfirmedAt: null, otherEntitiesAnswer: null, lastAcceptedAt: null, rejected: [] },
     accounts: clone(PAYROLL_ACCOUNTS), tags: clone(PAYROLL_TAGS),
     settings: defaultSettings(), snapshots: [], roster: [], runs: [], journals: [], payments: [], events: [],
-    accruals: [], accrualEdits: {}, tasks: [], bpjsInvoices: [], recon: [], lockedMonths: [], knownGaps: [],
+    tasks: [], bpjsInvoices: [], recon: [], lockedMonths: [], knownGaps: [],
     log: [], notices: [], oldSync: [], simOptions: {}, payNo: 0, bnkNo: 0,
   }
 }
@@ -489,7 +466,7 @@ export type PayrollAction =
   | 'post' | 'post.confirm' | 'reverse' | 'fix' | 'warning.dismiss' | 'period.lock' | 'task.close'
   | 'payment.salary' | 'payment.statutory' | 'payment.void' | 'bpjs.programme' | 'bpjs.invoice' | 'bpjs.review'
   | 'recon.note' | 'recon.ready' | 'recon.signoff' | 'ebupot.enter' | 'pph21.reconcile'
-  | 'accrual.edit' | 'accrual.post' | 'accrual.settings' | 'payByEmployee.view' | 'log.export' | 'report.export'
+  | 'payByEmployee.view' | 'log.export' | 'report.export'
 
 const O: PayrollRole = 'Jurnal Owner', A: PayrollRole = 'Accountant', F: PayrollRole = 'Finance Manager', T: PayrollRole = 'Tax Staff', U: PayrollRole = 'Auditor'
 const ACCESS: Record<PayrollAction, PayrollRole[]> = {
@@ -500,7 +477,7 @@ const ACCESS: Record<PayrollAction, PayrollRole[]> = {
   'post': [A], 'post.confirm': [F], 'reverse': [A, F], 'fix': [A, F], 'warning.dismiss': [A], 'period.lock': [F], 'task.close': [T],
   'payment.salary': [A], 'payment.statutory': [A, T], 'payment.void': [A], 'bpjs.programme': [A], 'bpjs.invoice': [A, T], 'bpjs.review': [A],
   'recon.note': [A], 'recon.ready': [A], 'recon.signoff': [F], 'ebupot.enter': [T, F], 'pph21.reconcile': [T, F],
-  'accrual.edit': [A], 'accrual.post': [A], 'accrual.settings': [F], 'payByEmployee.view': [A], 'log.export': [A, U], 'report.export': [O, A, F, T, U],
+  'payByEmployee.view': [A], 'log.export': [A, U], 'report.export': [O, A, F, T, U],
 }
 export function can(action: PayrollAction, role: PayrollRole = payroll.viewAs): boolean { return ACCESS[action].includes(role) }
 export function setPayrollViewAs(role: PayrollRole): void { payroll.viewAs = role }
@@ -645,7 +622,7 @@ export function validateMapping(row: Pick<PayItemMapping, 'role' | 'debit' | 'cr
   return { blocks, overridable }
 }
 
-export function setPayItemMapping(key: string, patch: Partial<Pick<PayItemMapping, 'role' | 'debit' | 'credit' | 'party' | 'programme' | 'accrue'>>, overrideReason?: string): Result {
+export function setPayItemMapping(key: string, patch: Partial<Pick<PayItemMapping, 'role' | 'debit' | 'credit' | 'party' | 'programme'>>, overrideReason?: string): Result {
   if (!can('settings.edit')) return denied()
   const row = payroll.settings.mapping.find((m) => m.key === key)
   if (!row) return { ok: false, message: 'Pay item not found.' }
@@ -657,15 +634,13 @@ export function setPayItemMapping(key: string, patch: Partial<Pick<PayItemMappin
     if (r.length < 20 || r.length > 500) return { ok: false, message: 'This mapping breaks a guardrail. Add a reason of 20 to 500 characters to override it.', needsOverride: v.overridable }
     next.override = { reason: r, by: actingPerson(), at: now(), breaches: v.overridable }
   } else next.override = null
-  if ((next.role === 'THR' || next.role === 'Severance') && patch.accrue === true && !isLiability(next.debit))
-    return { ok: false, message: 'An accrued item must debit a liability account.' }
   Object.assign(row, next, { roleConfirmed: !!next.role })
   changed(`Pay item ${row.name} (${row.section}) mapped: Dr ${accountLabel(row.debit)}, Cr ${accountLabel(row.credit)}, role ${row.role}`)
   return { ok: true }
 }
 
 function newMappingRow(name: string, section: PaySection, addedBy: 'Talenta' | 'Jurnal'): PayItemMapping {
-  return { key: payItemKey(name, section), name: name.trim(), section, role: null, roleConfirmed: false, debit: null, credit: null, party: partyFromName(name), programme: programmeFromName(name), override: null, accrue: null, addedBy }
+  return { key: payItemKey(name, section), name: name.trim(), section, role: null, roleConfirmed: false, debit: null, credit: null, party: partyFromName(name), programme: programmeFromName(name), override: null, addedBy }
 }
 export function addPayItem(name: string, section: PaySection): Result {
   if (!can('settings.edit')) return denied()
@@ -836,14 +811,6 @@ export function setSuspenseAccount(code: string | null): Result {
   if (!can('settings.edit')) return denied()
   payroll.settings.suspenseAccount = code
   changed(`Payroll suspense account set to ${accountLabel(code)}`)
-  return { ok: true }
-}
-export function setAccrualSettings(p: { account?: string; cutoffDay?: number | null }): Result {
-  if (!can('accrual.settings')) return denied()
-  if (p.account && !isLiability(p.account)) return { ok: false, message: 'Pick a current liability account.' }
-  if (p.cutoffDay != null && (p.cutoffDay < 1 || p.cutoffDay > 28)) return { ok: false, message: 'Pick a cut-off day from 1 to 28.' }
-  Object.assign(payroll.settings.accrual, p)
-  changed('Accrual settings changed')
   return { ok: true }
 }
 
@@ -1758,14 +1725,13 @@ export function postRun(runId: string, o: { versionNo?: number } = {}): Result {
     type: 'Payroll', runId, versionNo: v.no, date: pd.date, taxMonth: run.month,
     memo: pd.redirected ? `Payroll ${periodLabel(run.start, run.end)} v${v.no}, posted in the first open period. ${v.draft.memo}` : v.draft.memo,
     reference: pd.redirected ? monthLabel(run.month) : null, correction: pd.redirected,
-    lines: clone(v.draft.lines), snapshotId: v.draft.snapshotId, reversesId: null, fmConfirmedBy: v.draft.fmConfirmedBy, accrualId: null, paymentId: null,
+    lines: clone(v.draft.lines), snapshotId: v.draft.snapshotId, reversesId: null, fmConfirmedBy: v.draft.fmConfirmedBy, paymentId: null,
   })
   run.ledgerVersion = v.no; run.revised = false; run.reversedAt = null
   for (const k of payroll.knownGaps) if (k.releasedOn !== run.id) k.runsSeen++
   addLog({ type: 'Post', status: 'Posted', reason: `Posted as ${j.number}`, nextStep: 'Record the salary payment on payday.', runId, runKey: run.key, version: v.no, employees: v.payload.employees.length, journalNo: j.number })
-  const accr = reverseAccrualForRun(run, j)
   markReconOutOfDate(run.month)
-  return { ok: true, journalId: j.id, number: j.number, redirected: pd.redirected, warnings: review.unnotedLargeChanges ? [`${review.unnotedLargeChanges} large change${review.unnotedLargeChanges > 1 ? 's have' : ' has'} no note.`] : [], accrual: accr }
+  return { ok: true, journalId: j.id, number: j.number, redirected: pd.redirected, warnings: review.unnotedLargeChanges ? [`${review.unnotedLargeChanges} large change${review.unnotedLargeChanges > 1 ? 's have' : ' has'} no note.`] : [] }
 }
 
 // ── Reverse, compare, fix (TS-07, OD-14, OD-15, OD-17, LR-4) ────────────────
@@ -1773,10 +1739,10 @@ export function postRun(runId: string, o: { versionNo?: number } = {}): Result {
 function reversalOf(j: Journal, date: string, extra: Partial<Journal> = {}): Journal {
   const pd = postingDate(date < j.date ? j.date : date)
   const r = addJournal({
-    type: j.type === 'Payroll accrual' ? 'Accrual reversal' : 'Reversal', runId: j.runId, versionNo: j.versionNo, date: pd.date, taxMonth: j.taxMonth,
+    type: 'Reversal', runId: j.runId, versionNo: j.versionNo, date: pd.date, taxMonth: j.taxMonth,
     memo: `Reversal of ${j.number}`, reference: pd.redirected ? monthLabel(j.taxMonth) : j.reference, correction: pd.redirected || j.correction,
     lines: j.lines.map((l) => ({ ...clone(l), debit: l.credit, credit: l.debit, sources: l.sources.map((s) => ({ ...s, cents: -s.cents, side: s.side === 'D' ? 'C' : 'D' })) })),
-    snapshotId: j.snapshotId, reversesId: j.id, fmConfirmedBy: null, accrualId: j.accrualId, paymentId: j.paymentId, ...extra,
+    snapshotId: j.snapshotId, reversesId: j.id, fmConfirmedBy: null, paymentId: j.paymentId, ...extra,
   })
   j.reversedById = r.id
   return r
@@ -1795,15 +1761,6 @@ export function reverseRun(runId: string, o: { date?: string; confirmPayments?: 
   const done = live.map((j) => reversalOf(j, date))
   run.reversedAt = payroll.clock
   for (const d of done) addLog({ type: 'Reversal', status: 'Reversed', reason: d.memo, nextStep: 'Repost the latest version.', runId, runKey: run.key, version: d.versionNo, journalNo: d.number })
-  // A reversed run reopens the accrual it reversed (FG-7).
-  for (const a of payroll.accruals) {
-    if (run.kind !== 'Regular' || a.reversedBy !== 'run' || a.nextRunStart !== run.start) continue
-    const rj = journalById(a.reversalJournalId)
-    if (!rj) continue
-    reversalOf(rj, date)
-    a.reversalJournalId = null; a.reversedBy = null
-    a.log.push(`Reopened: payroll ${periodLabel(run.start, run.end)} was reversed`)
-  }
   // Draft of the ledger version is ready to post again.
   const v = currentVersionOf(run)
   if (v) checkVersion(run, v)
@@ -1817,14 +1774,6 @@ export function reverseJournal(journalId: string, o: { date?: string; confirmPay
   if (!j) return { ok: false, status: 404 }
   if (j.reversesId) return { ok: false, message: 'A reversal cannot be reversed.' }
   if (j.reversedById) return { ok: false, message: 'This journal is already reversed.' }
-  if (j.type === 'Payroll accrual') {
-    const a = payroll.accruals.find((x) => x.journalId === j.id)
-    if (!a) return { ok: false }
-    now()
-    const r = reversalOf(j, o.date ?? addDays(j.date, 1))
-    a.reversalJournalId = r.id; a.reversedBy = 'manual'; a.log.push(`Reversed by hand as ${r.number}`)
-    return { ok: true, journals: [r.number] }
-  }
   if (j.runId && (j.type === 'Payroll' || j.type === 'Difference')) return reverseRun(j.runId, o)
   return { ok: false, message: 'Payments are voided, not reversed.' }
 }
@@ -1906,7 +1855,6 @@ function afterFix(run: Run, oldV: RunVersion, v: RunVersion, journals: Journal[]
   retireLedgerVersion(run, oldV, v)
   for (const j of journals) addLog({ type: j.type === 'Reversal' ? 'Reversal' : 'Post', status: j.type === 'Reversal' ? 'Reversed' : 'Posted', reason: `${j.memo} (${j.number})`, nextStep: 'Check payables for the change.', runId: run.id, runKey: run.key, version: v.no, journalNo: j.number })
   if (taxChanges(oldV.payload, v.payload).length) openAmendmentTask(run, oldV, v, false)
-  reverseAccrualForRun(run, journals[journals.length - 1]!)
   markReconOutOfDate(run.month)
 }
 export function reverseAndRepost(runId: string, no?: number): Result {
@@ -1922,7 +1870,7 @@ export function reverseAndRepost(runId: string, no?: number): Result {
   const j = addJournal({
     type: 'Payroll', runId, versionNo: v.no, date: pd.date, taxMonth: run.month,
     memo: pd.redirected ? correctionMemo(run, v, live[0]?.number ?? null) : b.draft.memo, reference: pd.redirected ? monthLabel(run.month) : null, correction: pd.redirected,
-    lines: b.draft.lines, snapshotId: currentSnapshotId(), reversesId: null, fmConfirmedBy: v.draft?.fmConfirmedBy ?? null, accrualId: null, paymentId: null,
+    lines: b.draft.lines, snapshotId: currentSnapshotId(), reversesId: null, fmConfirmedBy: v.draft?.fmConfirmedBy ?? null, paymentId: null,
   })
   afterFix(run, oldV, v, [...reversals, j])
   return { ok: true, journals: [...reversals, j].map((x) => x.number), redirected: pd.redirected }
@@ -1946,7 +1894,7 @@ export function postDifference(runId: string, no?: number, o: { includeSettingsM
     type: 'Difference', runId, versionNo: v.no, date: pd.date, taxMonth: run.month,
     memo: pd.redirected ? correctionMemo(run, v, live[0]?.number ?? null) : `Difference v${run.ledgerVersion} to v${v.no}. ${memoFor(run, v)}`,
     reference: pd.redirected ? monthLabel(run.month) : null, correction: pd.redirected,
-    lines, snapshotId: currentSnapshotId(), reversesId: null, fmConfirmedBy: null, accrualId: null, paymentId: null,
+    lines, snapshotId: currentSnapshotId(), reversesId: null, fmConfirmedBy: null, paymentId: null,
   })
   afterFix(run, oldV, v, [j])
   return { ok: true, journals: [j.number], journalId: j.id, redirected: pd.redirected }
@@ -2214,7 +2162,7 @@ function journalForPayment(p: Omit<Payment, 'id' | 'journalId'>, memo: string): 
     for (const x of p.periods) lines.push({ account: p.account, tags: NO_TAGS, debit: x.amount, credit: 0, why: [`${p.party} ${monthLabel(x.month)}${x.billingCode ? `, billing code ${x.billingCode}` : ''}${x.ntpn ? `, NTPN ${x.ntpn}` : ''}`], sources: [] })
     lines.push({ account: p.bank, tags: NO_TAGS, debit: 0, credit: p.amount, why: ['Bank'], sources: [] })
   }
-  return addJournal({ number: nextBnkNo(), type: p.kind === 'Salary' ? 'Salary payment' : 'Statutory payment', runId: p.runId, versionNo: null, date: p.date, taxMonth: p.periods[0]!.month, memo, reference: memo, correction: false, lines, snapshotId: null, reversesId: null, fmConfirmedBy: null, accrualId: null, paymentId: null })
+  return addJournal({ number: nextBnkNo(), type: p.kind === 'Salary' ? 'Salary payment' : 'Statutory payment', runId: p.runId, versionNo: null, date: p.date, taxMonth: p.periods[0]!.month, memo, reference: memo, correction: false, lines, snapshotId: null, reversesId: null, fmConfirmedBy: null, paymentId: null })
 }
 export function recordSalaryPayment(runId: string, o: { bank: string; date: string; amount?: number; splits?: { branch: string; bank: string }[] }): Result {
   if (!can('payment.salary')) return denied()
@@ -2462,8 +2410,6 @@ export function signOffMonth(month: string, o: { hrConfirmed: boolean }): Result
   if (off) return { ok: false, message: `${off.label} is off by ${rupiah(Math.abs(off.difference ?? 0))} with no confirmed note.` }
   const reversed = monthRuns(month).find((x) => runStatus(x) === 'Reversed')
   if (reversed) return { ok: false, message: `Reversed, not reposted: ${periodLabel(reversed.start, reversed.end)}.` }
-  const prev = payroll.accruals.find((a) => a.month < month && !a.reversalJournalId && monthRuns(month).some((x) => x.start === a.nextRunStart && liveJournals(x.id).length))
-  if (prev) return { ok: false, message: `${MON[Number(prev.month.slice(5)) - 1]} accrual ${rupiah(journalTotals(journalById(prev.journalId)!).debit)} not reversed.` }
   const open = monthRuns(month).filter((x) => ['Received', 'Held', 'Ready to post', 'Waiting for your choice', 'Revised'].includes(runStatus(x)))
   reconOf(month).signOff = { by: actingPerson(), at: now(), hrConfirmedBy: actingPerson(), fingerprint: fingerprint(month), snapshot: clone({ accountRows: r.accountRows, payableRows: r.payableRows, versions: monthRuns(month).map((x) => ({ run: x.key, version: x.ledgerVersion })), journals: payrollJournalsOf(month).map((j) => j.number) }) }
   return { ok: true, warnings: open.map((x) => `${periodLabel(x.start, x.end)}: ${runStatus(x)}`) }
@@ -2527,88 +2473,6 @@ export function markPph21Reconciled(month: string, note?: string): Result {
   return { ok: true }
 }
 
-// ── Accrual (OD-29) ─────────────────────────────────────────────────────────
-
-/** Estimate: Earning and Employer contribution cost of the last posted regular run, by account and tag, x days after cut-off / days in the base period. */
-export function accrualEstimate(month: string) {
-  const posted = regularRuns().filter((r) => liveJournals(r.id).length)
-  const base = posted.filter((r) => r.end <= lastDayOf(month)).pop()
-  const done = accrualFor(month)
-  if (!base) return { state: 'waiting' as const, message: 'No regular run is posted yet. The accrual waits.', lines: [], base: null, days: 0, baseDays: 0, total: 0, posted: done }
-  if (base.end === lastDayOf(month)) return { state: 'none' as const, message: 'The pay period ends on month end. No accrual is needed.', lines: [], base, days: 0, baseDays: 0, total: 0, posted: done }
-  if (monthOf(base.end) !== month) {
-    const nextStart = addDays(base.end, 1)
-    const waiting = regularRuns().find((r) => r.start === nextStart)
-    return { state: 'late' as const, message: `The ${periodLabel(nextStart, waiting?.end ?? `${month}-${base.end.slice(8)}`)} run is not posted yet. The accrual waits until it posts.`, lines: [], base, days: 0, baseDays: 0, total: 0, posted: done }
-  }
-  const last3 = posted.slice(-3).map((r) => Number(r.end.slice(8)))
-  const cutoff = new Set(last3).size === 1 ? last3[0]! : payroll.settings.accrual.cutoffDay
-  if (cutoff == null) return { state: 'cutoff' as const, message: 'The last three runs end on different days. The Finance Manager sets a cut-off day.', lines: [], base, days: 0, baseDays: 0, total: 0, posted: done }
-  const days = Number(lastDayOf(month).slice(8)) - cutoff
-  const baseDays = daysBetween(base.start, base.end) + 1
-  const sums = new Map<string, { account: string; tags: Tags; cents: number }>()
-  for (const j of liveJournals(base.id)) for (const l of j.lines) {
-    if (!isCost(l.account)) continue
-    for (const s of l.sources) if (s.side === 'D' && (s.role === 'Earning' || s.role === 'Employer contribution')) {
-      const k = `${l.account}#${tagsKey(l.tags)}`
-      const x = sums.get(k) ?? { account: l.account, tags: l.tags, cents: 0 }
-      x.cents += s.cents; sums.set(k, x)
-    }
-  }
-  const edits = payroll.accrualEdits[month] ?? {}
-  const lines = [...sums.entries()].map(([key, x]) => {
-    const est = roundCents(Math.round((x.cents * days) / baseDays))
-    const ed = edits[key]
-    return { key, account: x.account, tags: x.tags, base: roundCents(x.cents), estimate: est, amount: ed?.amount ?? est, reason: ed?.reason ?? null, warn: ed && est ? Math.abs(ed.amount - est) / est > 0.2 : false }
-  }).sort((a, b) => a.key.localeCompare(b.key))
-  return { state: 'ready' as const, message: null, lines, base, days, baseDays, cutoff, total: lines.reduce((s, l) => s + l.amount, 0), posted: done }
-}
-export function editAccrualLine(month: string, key: string, amount: number, reason: string): Result {
-  if (!can('accrual.edit')) return denied()
-  if (reason.trim().length < 5) return { ok: false, message: 'Give a reason.' }
-  ;(payroll.accrualEdits[month] ??= {})[key] = { amount: Math.round(amount), reason: reason.trim() }
-  return { ok: true }
-}
-export function resetAccrualLine(month: string, key: string): Result {
-  if (!can('accrual.edit')) return denied()
-  delete payroll.accrualEdits[month]?.[key]
-  return { ok: true }
-}
-export function accrualFor(month: string): Accrual | undefined { return payroll.accruals.find((a) => a.month === month) }
-export function postAccrual(month: string): Result {
-  if (!can('accrual.post')) return denied()
-  if (accrualFor(month)) return { ok: false, message: `The ${monthLabel(month)} accrual is already posted.` }
-  if (isLocked(month)) return { ok: false, message: `${monthLabel(month)} is locked.` }
-  const est = accrualEstimate(month)
-  if (est.state !== 'ready' || !est.base) return { ok: false, message: est.message ?? 'Nothing to accrue.' }
-  if (!est.total) return { ok: false, message: 'Nothing to accrue.' }
-  now()
-  const acct = payroll.settings.accrual.account
-  const lines: JournalLine[] = est.lines.filter((l) => l.amount).map((l) => ({ account: l.account, tags: l.tags, debit: l.amount, credit: 0, why: [`${est.days} of ${est.baseDays} days of ${accountLabel(l.account)} from ${periodLabel(est.base!.start, est.base!.end)}${l.reason ? `. Edited: ${l.reason}` : ''}`], sources: [{ item: 'Accrual', section: 'accrual', role: 'Earning', side: 'D', cents: l.amount * 100, staff: [] }] }))
-  lines.push({ account: acct, tags: NO_TAGS, debit: 0, credit: est.total, why: ['Accrued payroll'], sources: [] })
-  const nextStart = addDays(est.base.end, 1)
-  const nextKey = `${PAYROLL_COMPANY_ID} / monthly / ${nextStart} / ${nextMonthOf(month)}-${est.base.end.slice(8)}`
-  const id = nextId('acc')
-  const j = addJournal({ type: 'Payroll accrual', runId: null, versionNo: null, date: lastDayOf(month), taxMonth: month, memo: `Payroll accrual ${monthLabel(month)}: ${est.days} of ${est.baseDays} days after cut-off`, reference: nextKey, correction: false, lines, snapshotId: currentSnapshotId(), reversesId: null, fmConfirmedBy: null, accrualId: id, paymentId: null })
-  payroll.accruals.push({ id, month, journalId: j.id, baseRunId: est.base.id, nextRunStart: nextStart, nextRunKey: nextKey, reversalJournalId: null, reversedBy: null, log: [`Posted as ${j.number}`] })
-  addLog({ type: 'Post', status: 'Posted', reason: `Payroll accrual ${monthLabel(month)} posted as ${j.number}`, nextStep: 'It reverses when the next run posts.', journalNo: j.number })
-  return { ok: true, journalId: j.id, number: j.number }
-}
-/** TN-20: any post of the next run reverses the accrual once, on the run's journal date. */
-function reverseAccrualForRun(run: Run, posted: Journal): string | null {
-  if (run.kind !== 'Regular') return null
-  const a = payroll.accruals.find((x) => x.nextRunStart === run.start)
-  if (!a) return null
-  if (a.reversalJournalId) {
-    const by = journalById(a.reversalJournalId)
-    if (a.reversedBy === 'manual' && !a.log.some((l) => l.startsWith('Already reversed'))) a.log.push(`Already reversed by ${by?.number}`)
-    return null
-  }
-  const r = reversalOf(journalById(a.journalId)!, posted.date)
-  a.reversalJournalId = r.id; a.reversedBy = 'run'; a.log.push(`Reversed by ${run.label} ${periodLabel(run.start, run.end)} as ${r.number}`)
-  return r.number
-}
-
 // ── Sample data ─────────────────────────────────────────────────────────────
 
 function as<T>(role: PayrollRole, fn: () => T): T { const prev = payroll.viewAs; payroll.viewAs = role; try { return fn() } finally { payroll.viewAs = prev } }
@@ -2625,7 +2489,7 @@ function seedSettings() {
   M('Uang Makan', 'allowance', 'Earning', ACC.salaries, HG, 'Staff')
   M('Reimbursement Medical', 'allowance', 'Reimbursement', ACC.medical, HG, 'Staff')
   M('PPh 21 Ditanggung Pemerintah', 'allowance', 'Tax', ACC.dtp, HG, null)
-  M('THR Keagamaan', 'allowance', 'THR', ACC.salaries, HG, 'Staff', { addedBy: 'Jurnal', accrue: false })
+  M('THR Keagamaan', 'allowance', 'THR', ACC.salaries, HG, 'Staff', { addedBy: 'Jurnal' })
   M('JHT Employee', 'deduction', 'Employee deduction', HG, ACC.bpjsTk)
   M('JP Employee', 'deduction', 'Employee deduction', HG, ACC.bpjsTk)
   M('BPJSK Employee', 'deduction', 'Employee deduction', HG, ACC.bpjsKes)
@@ -2666,18 +2530,14 @@ function seed() {
   payroll.settings.cutover = { firstLive: '2026-07', proposedBy: payrollPerson('Accountant').person, confirmedBy: payrollPerson('Finance Manager').person, mode: 'Block' }
   for (const r of payroll.runs) r.mode = runMode(r.month)
   takeSnapshot('First live period Jul 2026 confirmed')
-  // July: posted, paid, accrued, reconciled, signed off, locked.
+  // July: posted, paid, reconciled, signed off, locked.
   monthCycle('2026-06-21', '2026-07-20', '2026-07-22T03:00:00Z', { pay: '2026-07-24', statutory: { kes: '2026-08-07', tk: '2026-08-12', pph: '2026-08-13' } })
-  setClock('2026-07-31T10:00:00Z')
-  as('Accountant', () => must(postAccrual('2026-07'), 'accrual Jul'))
   // EMP-0038 resigns effective 20 Aug (reported before August posts).
   setClock('2026-08-05T02:00:00Z')
   receiveEmployeeEvent({ type: 'talenta.employee.resignation.created', employee_id: 'EMP-0038', effective: '2026-08-20' })
   monthCycle('2026-07-21', '2026-08-20', '2026-08-21T03:00:00Z', { pay: '2026-08-25', statutory: { kes: '2026-09-08', tk: '2026-09-14', pph: '2026-09-14' } })
   setClock('2026-08-25T03:00:00Z')
   receiveEmployeeEvent({ type: 'talenta.employee.detail.created', employee_id: 'EMP-0041', effective: '2026-09-01', to: { organization_name: 'Sales', branch_name: 'Bandung', cost_center_name: 'Regional Sales' } })
-  setClock('2026-08-31T10:00:00Z')
-  as('Accountant', () => must(postAccrual('2026-08'), 'accrual Aug'))
   for (const m of ['2026-07', '2026-08']) closeMonth(m)
   setClock('2026-09-10T03:00:00Z')
   as('Finance Manager', () => must(lockPeriod('2026-07'), 'lock Jul'))

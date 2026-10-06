@@ -167,11 +167,11 @@ const steps: PayrollStep[] = [
     run: post,
     route: () => `${runRoute()}?tab=journals`,
     target: 'payroll-journal',
-    find: () => journalOpen('PAY-0006'),
+    find: () => journalOpen('PAY-0003'),
     role: 'Accountant',
     title: 'The Accountant posts one PAY journal.',
-    body: 'One balanced journal per run, dated on the period end. Cost lands by account and tag: Direct Labour for store staff, Sales Salaries for the sales team, Salaries for the rest. Each party gets one payable line, so tax and BPJS are paid and checked on their own. The August accrual reversed on the same date.',
-    watch: 'PAY-0006, 20 Sep 2026, Rp554.203.937. One payable each: Salaries Payable Rp446.901.857 for staff, PPh 21 Rp18.323.082, PPh 26 Rp21.209.400, BPJS Kesehatan Rp16.097.025, BPJS Ketenagakerjaan Rp38.969.125.',
+    body: 'One balanced journal per run, dated on the period end. Cost lands by account and tag: Direct Labour for store staff, Sales Salaries for the sales team, Salaries for the rest. Each party gets one payable line, so tax and BPJS are paid and checked on their own.',
+    watch: 'PAY-0003, 20 Sep 2026, Rp554.203.937. One payable each: Salaries Payable Rp446.901.857 for staff, PPh 21 Rp18.323.082, PPh 26 Rp21.209.400, BPJS Kesehatan Rp16.097.025, BPJS Ketenagakerjaan Rp38.969.125.',
     placement: 'top',
   },
   {
@@ -201,7 +201,7 @@ const steps: PayrollStep[] = [
     target: 'payroll-run-journals',
     title: 'It is a revision. Jurnal compares v1 with v2 and posts the difference.',
     body: 'A posted journal is never edited. v2 raises Basic Salary by Rp2.000.000 for Human Capital, so the difference journal carries only that change: Salaries Payable up Rp1.732.959 and PPh 21 up Rp197.041. Reverse and repost is the other way out.',
-    watch: 'PAY-0008, a Difference journal of Rp2.199.800, sits beside PAY-0006. 2 live, and the ledger reflects v2.',
+    watch: 'PAY-0004, a Difference journal of Rp2.199.800, sits beside PAY-0003. 2 live, and the ledger reflects v2.',
     placement: 'top',
   },
   {

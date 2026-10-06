@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 import {
   payroll, runs, runStatus, runHolds, draftOf, draftReview, whyLine, liveJournals, journalTotals, journalById,
   payablesTracker, compareVersions, amendmentTasks, pph21Monthly, independentChecks, reconciliation, accountLabel, tagsLabel,
-  postRun, rupiah, dateLabel, accrualFor, sourceSummary,
+  postRun, rupiah, dateLabel, sourceSummary,
 } from '../app/data/payrollStore'
 import { ACC } from '../app/data/payrollMaster'
 import { reconView } from '../app/data/payrollUiRecon'
@@ -122,7 +122,7 @@ describe('PAY-1 guided tour (auto-play)', () => {
     const live = liveJournals(run.id)
     expect(live).toHaveLength(1)
     const j = live[0]!
-    expect(j.number).toBe('PAY-0006')
+    expect(j.number).toBe('PAY-0003')
     expect(dateLabel(j.date)).toBe('20 Sep 2026')
     q(4, journalTotals(j).debit, 554_203_937)
     const parties: [string, number][] = [[ACC.hutangGaji, 446_901_857], [ACC.pph21, 18_323_082], [ACC.pph26, 21_209_400], [ACC.bpjsKes, 16_097_025], [ACC.bpjsTk, 38_969_125]]
@@ -131,7 +131,6 @@ describe('PAY-1 guided tour (auto-play)', () => {
       q(4, net(j.lines, acct), amt)
     }
     expect(j.lines.some((l) => l.account === ACC.directLabour)).toBe(true)
-    expect(journalById(accrualFor('2026-08')!.reversalJournalId)!.date).toBe('2026-09-20')
 
     // 6. Salary paid from Salaries Payable.
     at(5)
@@ -158,7 +157,7 @@ describe('PAY-1 guided tour (auto-play)', () => {
     expect(cmp.byAccountTag.filter((r) => r.diff > 0).every((r) => r.label.includes('Human Capital'))).toBe(true)
     at(7)
     const live8 = liveJournals(run.id)
-    expect(live8.map((x) => [x.number, x.type])).toEqual([['PAY-0006', 'Payroll'], ['PAY-0008', 'Difference']])
+    expect(live8.map((x) => [x.number, x.type])).toEqual([['PAY-0003', 'Payroll'], ['PAY-0004', 'Difference']])
     const diff = live8[1]!
     q(7, journalTotals(diff).debit, 2_199_800)
     q(7, net(diff.lines, ACC.hutangGaji), 1_732_959)

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Side panel shell for the payroll pay, prove and accrue screens. Same Teleport
+ * Side panel shell for the payroll pay and prove screens. Same Teleport
  * structure as CoaAccountDrawer (MpDrawer has no structural CSS in this build).
  * A form: an overlay click is ignored, so typed input is never lost.
  */

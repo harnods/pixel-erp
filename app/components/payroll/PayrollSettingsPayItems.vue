@@ -74,11 +74,11 @@ function onConfirmAll() {
 // ── Edit drawer ──
 const editKey = ref<string | null>(null)
 const editRow = computed(() => payroll.settings.mapping.find((m) => m.key === editKey.value) ?? null)
-const ed = reactive({ role: '', debit: '', credit: '', party: 'none', accrue: 'no', reason: '' })
+const ed = reactive({ role: '', debit: '', credit: '', party: 'none', reason: '' })
 const edError = ref('')
 function openEdit(m: PayItemMapping) {
   editKey.value = m.key
-  Object.assign(ed, { role: m.role ?? '', debit: m.debit ?? '', credit: m.credit ?? '', party: m.party ?? 'none', accrue: m.accrue ? 'yes' : 'no', reason: m.override?.reason ?? '' })
+  Object.assign(ed, { role: m.role ?? '', debit: m.debit ?? '', credit: m.credit ?? '', party: m.party ?? 'none', reason: m.override?.reason ?? '' })
   edError.value = ''
 }
 function useSuggestion() {
@@ -97,7 +97,6 @@ const draftRow = computed(() => editRow.value && ({
   party: ed.party === 'none' ? null : (ed.party as PayableParty),
 }))
 const check = computed(() => (draftRow.value ? validateMapping(draftRow.value) : { blocks: [], overridable: [] }))
-const asksAccrual = computed(() => ed.role === 'THR' || ed.role === 'Severance')
 /** Posting preview with the last-run amount (FG1-AC6). */
 const preview = computed(() => {
   const m = editRow.value
@@ -117,7 +116,7 @@ function save() {
   if (!m) return
   if (!ed.role) { edError.value = t('Pick a role.'); return }
   if (!ed.debit || !ed.credit) { edError.value = t('Pick a debit and a credit account.'); return }
-  const patch = { role: ed.role as PayRole, debit: ed.debit, credit: ed.credit, party: ed.party === 'none' ? null : (ed.party as PayableParty), ...(asksAccrual.value ? { accrue: ed.accrue === 'yes' } : {}) }
+  const patch = { role: ed.role as PayRole, debit: ed.debit, credit: ed.credit, party: ed.party === 'none' ? null : (ed.party as PayableParty) }
   const r = setPayItemMapping(m.key, patch, check.value.overridable.length ? ed.reason : undefined)
   if (!r.ok) { edError.value = t(r.message ?? ''); return }
   editKey.value = null
@@ -254,10 +253,6 @@ const notInPrototype = () => infoToast(t('Not in this prototype'))
             <ErpFilterSelect v-if="can('settings.edit')" id="pset-ed-credit" v-model="ed.credit" :placeholder="t('Account')" :options="accountOptions" width="100%" :is-clearable="false" @update:model-value="edError = ''" />
             <span v-else>{{ accountLabel(editRow.credit) }}</span>
           </div>
-        </div>
-        <div v-if="asksAccrual && can('settings.edit')" class="pset-field">
-          <span class="pset-label">{{ t('Do you accrue this?') }}</span>
-          <ErpFilterSelect id="pset-ed-accrue" v-model="ed.accrue" :placeholder="t('Accrue')" :options="[{ value: 'no', label: 'No' }, { value: 'yes', label: 'Yes, debit the accrued liability' }]" width="100%" :is-clearable="false" />
         </div>
 
         <!-- Guardrails (OD-06) -->

@@ -447,7 +447,7 @@ const erpNavGroups: NavItem[][] = [
             { label: 'Payroll inbox' },
             { label: 'Payroll payables' },
             { label: 'Payroll reconciliation' },
-            { label: 'Payroll accrual' },
+            { label: 'Payroll claims' },
             { label: 'Payroll settings' },
           ] },
           { label: 'Bank rules' },

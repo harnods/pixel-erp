@@ -3,7 +3,7 @@ import {
   payroll, resetPayroll, runs, runById, runStatus, runHolds, currentVersionOf, versionLabel, draftOf, liveJournals,
   journalTotals, journalById, simulateSend, setPayrollViewAs, setPayItemMapping, payItemKey, postRun, confirmPostAsFinanceManager,
   isDraftStale, setPayday, chooseRevision, postDifference, reverseJournal, reverseAndRepost, lockPeriod, decidePartial,
-  totalGaps, releaseTaxHold, pph21Monthly, independentChecks, reconciliation, accrualFor, compareVersions, can,
+  totalGaps, releaseTaxHold, pph21Monthly, independentChecks, reconciliation, compareVersions, can, addPayrollAccount,
   amendmentTasks, syncLog, type Run, type JournalLine,
 } from '../app/data/payrollStore'
 import { ACC, buildSalaryDetail } from '../app/data/payrollMaster'
@@ -146,13 +146,14 @@ describe('payroll engine (PRD FG-1 to FG-7, LR-1 to LR-14)', () => {
     expect(setPayItemMapping(payItemKey('Loan Instalment', 'deduction'), { credit: ACC.salaries }).message).toBe('A loan cannot post to an expense account.')
     // An unlabelled liability takes both BPJS bodies: the draft holds.
     mapInsentif()
-    expect(setPayItemMapping(payItemKey('BPJSK Employee', 'deduction'), { credit: ACC.accrued }).ok).toBe(true)
-    expect(setPayItemMapping(payItemKey('JHT Employee', 'deduction'), { credit: ACC.accrued }).ok).toBe(true)
+    expect(addPayrollAccount({ code: '2-20513', name: 'Other Payroll Payable', type: 'liability', party: null }).ok).toBe(true)
+    expect(setPayItemMapping(payItemKey('BPJSK Employee', 'deduction'), { credit: '2-20513' }).ok).toBe(true)
+    expect(setPayItemMapping(payItemKey('JHT Employee', 'deduction'), { credit: '2-20513' }).ok).toBe(true)
     const sep = run(SEP)
     // Settings changed: the draft is stale, Post rebuilds it and the rebuilt draft holds.
     expect(postRun(sep.id).stale).toBe(true)
     expect(runHolds(sep).map((h) => h.code)).toContain('two-parties')
-    expect(runHolds(sep).find((h) => h.code === 'two-parties')!.message).toBe('Accrued Payroll holds BPJS Kesehatan and BPJS Ketenagakerjaan. Each party needs its own payable.')
+    expect(runHolds(sep).find((h) => h.code === 'two-parties')!.message).toBe('Other Payroll Payable holds BPJS Kesehatan and BPJS Ketenagakerjaan. Each party needs its own payable.')
     expect(postRun(sep.id).ok).toBe(false)
   })
 
@@ -218,7 +219,7 @@ describe('payroll engine (PRD FG-1 to FG-7, LR-1 to LR-14)', () => {
     expect(j.date).toBe('2026-09-01')
     expect(j.taxMonth).toBe('2026-08')
     expect(j.reference).toBe('Aug 2026')
-    expect(j.memo).toMatch(/^Correction of payroll 21 Jul-20 Aug 2026 v1 \(PAY-0003\), from v2 sent 5 Oct 2026$/)
+    expect(j.memo).toMatch(/^Correction of payroll 21 Jul-20 Aug 2026 v1 \(PAY-0002\), from v2 sent 5 Oct 2026$/)
     const task = amendmentTasks.value.find((t) => t.taxMonth === '2026-08')!
     expect(task.status).toBe('Open')
     expect(task.title).toBe('Amend e-Bupot 21/26 for Aug 2026')
@@ -259,32 +260,6 @@ describe('payroll engine (PRD FG-1 to FG-7, LR-1 to LR-14)', () => {
     expect(exp.status).toBe('Off')
     expect(exp.difference).toBe(-10_500_000)
     expect(independentChecks('2026-09').find((c) => c.id === 'thp')!.status).toBe('Matches')
-  })
-
-  it('TN-20: the accrual reverses once, when the next run posts, and never again on a repost', () => {
-    const acc = accrualFor('2026-08')!
-    expect(acc.reversalJournalId).toBeNull()
-    const p = postSep()
-    expect(p.accrual).toMatch(/^PAY-\d{4}$/)
-    const rev = journalById(acc.reversalJournalId)!
-    expect(rev.type).toBe('Accrual reversal')
-    expect(rev.date).toBe('2026-09-20')
-    expect(journalTotals(rev).debit).toBe(journalTotals(journalById(acc.journalId)!).debit)
-    const sep = run(SEP)
-    simulateSend('revision', { runId: sep.id })
-    chooseRevision(sep.id, 2)
-    expect(reverseAndRepost(sep.id).ok).toBe(true)
-    expect(payroll.journals.filter((j) => j.type === 'Accrual reversal' && j.accrualId === acc.id)).toHaveLength(1)
-    // July's accrual was reversed by the August run.
-    expect(accrualFor('2026-07')!.reversedBy).toBe('run')
-  })
-
-  it('a manual reversal fills the slot and the run skips its own', () => {
-    const acc = accrualFor('2026-08')!
-    expect(reverseJournal(acc.journalId, { date: '2026-09-01' }).ok).toBe(true)
-    postSep()
-    expect(payroll.journals.filter((j) => j.type === 'Accrual reversal' && j.accrualId === acc.id)).toHaveLength(1)
-    expect(acc.log.some((l) => l.startsWith('Already reversed by PAY-'))).toBe(true)
   })
 
   it('access: hidden actions per role', () => {

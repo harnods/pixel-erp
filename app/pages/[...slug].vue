@@ -115,7 +115,7 @@ const pageRegistry: Record<string, Component> = {
   'Payroll inbox':          defineAsyncComponent(() => import('~/components/pages/PayrollInboxPage.vue')),
   'Payroll payables':       defineAsyncComponent(() => import('~/components/pages/PayrollPayablesPage.vue')),
   'Payroll reconciliation': defineAsyncComponent(() => import('~/components/pages/PayrollReconciliationPage.vue')),
-  'Payroll accrual':        defineAsyncComponent(() => import('~/components/pages/PayrollAccrualPage.vue')),
+  'Payroll claims':         defineAsyncComponent(() => import('~/components/pages/PayrollClaimsPage.vue')),
   'Payroll settings':       defineAsyncComponent(() => import('~/components/pages/PayrollSettingsPage.vue')),
   // Accounting › Fixed assets (current) — prod's current asset module, beside the new one.
   'Current assets':    defineAsyncComponent(() => import('~/components/pages/CurrentAssetsPage.vue')),

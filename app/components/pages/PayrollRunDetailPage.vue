@@ -85,7 +85,6 @@ function doPost() {
     staleChanges.value = []; fmNeeded.value = false
     successToast(t(`Posted as ${r.number as string}`))
     for (const w of (r.warnings as string[] | undefined) ?? []) infoToast(t(w))
-    if (r.accrual) infoToast(t(`Accrual reversed as ${r.accrual as string}`))
     tab.value = 'review'
     return
   }

@@ -28,7 +28,6 @@ const role = (code: string) => {
   if (code === s.value.hutangGaji) return 'Hutang Gaji'
   if (code === s.value.roundingAccount) return 'Payroll rounding'
   if (code === s.value.suspenseAccount) return 'Payroll suspense'
-  if (code === s.value.accrual.account) return 'Accrued payroll'
   return null
 }
 
