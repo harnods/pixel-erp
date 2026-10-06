@@ -167,8 +167,8 @@ type SortableRow = WorklistRow & {
   suggestedQty: number
 }
 
-const baseRows = computed<SortableRow[]>(() =>
-  worklist.value.rows.map((row) => ({
+function toSortable(rows: WorklistRow[]): SortableRow[] {
+  return rows.map((row) => ({
     ...row,
     fsnClass: row.fsn.committed,
     onHandQty: row.atp.onHand,
@@ -181,8 +181,31 @@ const baseRows = computed<SortableRow[]>(() =>
     vendorName: row.vendor?.name ?? '',
     // The number the cell shows (the stock-unit need), not the PO-rounded figure.
     suggestedQty: row.suggestion.rawQty,
-  })),
+  }))
+}
+
+// Which worklist state the table shows. "To order" is the default; "Covered by
+// inbound" (§2.7 / D24) is the triggered-but-an-open-PO-already-fills-it set, kept
+// out of To order and its count — reachable via its stat card.
+const view = ref<'to-order' | 'covered'>('to-order')
+const baseRows = computed<SortableRow[]>(() =>
+  toSortable(view.value === 'covered' ? worklist.value.coveredByInbound : worklist.value.rows),
 )
+
+/** In-transit split by owner (US-028/029): approved-PO-owned vs handed to WMS Inbound. */
+function inTransitSplitLabel(row: WorklistRow): string {
+  let po = 0
+  let wms = 0
+  for (const d of row.atp.onOrderDocs) {
+    if (d.owner === 'purchase_order') po += d.outstanding
+    else wms += d.outstanding
+  }
+  const parts: string[] = []
+  if (po) parts.push(`${t('PO')} ${num(po)}`)
+  if (wms) parts.push(`${t('Inbound')} ${num(wms)}`)
+  // Only worth a sub-line when both owners contribute; a single owner is obvious.
+  return po && wms ? parts.join(' · ') : ''
+}
 
 // ─── Filters ─────────────────────────────────────────────────────────────────
 const fsnFilter = ref('')
@@ -261,13 +284,17 @@ const {
  */
 const cardStats = computed(() => {
   const s = search.value.trim().toLowerCase()
-  const rows = baseRows.value.filter((r) => matchesAll(r, s))
+  // Always describe the TO-ORDER set, not the currently viewed table — so the cards
+  // read the same whether or not "Covered by inbound" is open.
+  const toOrder = (worklist.value.rows as SortableRow[]).filter((r) => matchesAll(r, s))
+  const covered = (worklist.value.coveredByInbound as SortableRow[]).filter((r) => matchesAll(r, s))
   return {
     // Unique SKUs, not SKU-warehouse pairs — one SKU short in two warehouses is
     // still one product to order.
-    toOrderSkus: new Set(rows.map((r) => r.sku)).size,
-    stocksOut: rows.filter((r) => r.flags.belowLeadTime).length,
-    noVendor: rows.filter((r) => !r.vendor).length,
+    toOrderSkus: new Set(toOrder.map((r) => r.sku)).size,
+    stocksOut: toOrder.filter((r) => r.flags.belowLeadTime).length,
+    noVendor: toOrder.filter((r) => !r.vendor).length,
+    covered: new Set(covered.map((r) => r.sku)).size,
   }
 })
 
@@ -586,11 +613,38 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
           <MpBannerDescription>{{ staleMessage }}</MpBannerDescription>
         </MpBanner>
         <div class="stats-section">
-          <div class="stat-card stat-card--bordered">
+          <!-- To order ↔ Covered by inbound are the two worklist states; the card is
+               the switch between them (§2.7 / D24). -->
+          <div
+            class="stat-card stat-card--bordered stat-card--toggle"
+            :class="{ 'stat-card--active': view === 'to-order' }"
+            role="button"
+            tabindex="0"
+            :aria-pressed="view === 'to-order'"
+            @click="view = 'to-order'"
+            @keydown.enter.prevent="view = 'to-order'"
+            @keydown.space.prevent="view = 'to-order'"
+          >
             <div class="stat-title">{{ t('To order') }}</div>
             <div class="stat-period">{{ t('At or below reorder point') }}</div>
             <div class="stat-amount stat-amount--warning">{{ cardStats.toOrderSkus }}</div>
             <span class="stat-asof">{{ t('of') }} {{ worklist.totals.skus }} {{ t('stocked products') }}</span>
+          </div>
+          <div
+            class="stat-card stat-card--bordered stat-card--toggle"
+            :class="{ 'stat-card--active': view === 'covered' }"
+            role="button"
+            tabindex="0"
+            :aria-pressed="view === 'covered'"
+            data-devchange="replenishment-covered-by-inbound"
+            @click="view = 'covered'"
+            @keydown.enter.prevent="view = 'covered'"
+            @keydown.space.prevent="view = 'covered'"
+          >
+            <div class="stat-title">{{ t('Covered by inbound') }}</div>
+            <div class="stat-period">{{ t('An open PO already covers these') }}</div>
+            <div class="stat-amount">{{ cardStats.covered }}</div>
+            <span class="stat-asof">{{ t('excluded from To order') }}</span>
           </div>
           <div class="stat-card stat-card--bordered">
             <div class="stat-title">{{ t('Stocks out before resupply') }}</div>
@@ -689,16 +743,19 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
     <!-- ── Bulk actions ── -->
     <template #bulk-actions="{ deselectAll, selectedRows }">
       <!-- A PO has one ship-to. Requesting across warehouses would fan out into many
-           POs, so it is only offered for a single-warehouse selection. -->
-      <span v-if="selectionSpansWarehouses(selectedRows as Set<number>)" class="rp-bulk-info">
-        <MpIcon name="info" size="sm" />
-        {{ t('Select replenishment from the same warehouse to create a purchase request.') }}
-      </span>
-      <button
-        v-else
-        class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
-        @click="bulkCreatePr(selectedRows as Set<number>, deselectAll)"
-      >{{ t('Request to purchase') }}</button>
+           POs, so it is only offered for a single-warehouse selection. Covered-by-
+           inbound rows have nothing to order (suggested qty 0), so no request there. -->
+      <template v-if="view !== 'covered'">
+        <span v-if="selectionSpansWarehouses(selectedRows as Set<number>)" class="rp-bulk-info">
+          <MpIcon name="info" size="sm" />
+          {{ t('Select replenishment from the same warehouse to create a purchase request.') }}
+        </span>
+        <button
+          v-else
+          class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+          @click="bulkCreatePr(selectedRows as Set<number>, deselectAll)"
+        >{{ t('Request to purchase') }}</button>
+      </template>
       <button
         class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
         @click="askBulkMute(selectedRows as Set<number>, deselectAll)"
@@ -732,9 +789,13 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
     <template #cell-signals="{ row }">
       <div
         v-if="(row as any).flags.provisional || (row as any).flags.volatile
-          || (row as any).flags.leadTimeEstimated || (row as any).leadTimeTier === 'none'"
+          || (row as any).flags.leadTimeEstimated || (row as any).leadTimeTier === 'none'
+          || (row as any).flags.coveredByInbound"
         class="rp-badges"
       >
+        <MpBadge v-if="(row as any).flags.coveredByInbound" for="tableStatus" type="announcement">
+          {{ t('Covered by inbound') }}
+        </MpBadge>
         <MpBadge v-if="(row as any).flags.provisional" for="tableStatus" type="information">
           {{ t('Provisional') }}
         </MpBadge>
@@ -761,7 +822,12 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
     <!-- ── Stock group: bare numbers, unit shown once in its own column ── -->
     <template #cell-onHandQty="{ value }">{{ num(value as number) }}</template>
     <template #cell-reservedQty="{ value }">{{ num(value as number) }}</template>
-    <template #cell-onOrderQty="{ value }">{{ num(value as number) }}</template>
+    <!-- In transit, with the owner split (approved PO vs handed to WMS Inbound) when
+         both contribute (US-028/029). -->
+    <template #cell-onOrderQty="{ row }">
+      {{ num((row as any).atp.onOrder) }}
+      <span v-if="inTransitSplitLabel(row as any)" class="rp-intransit-sub">{{ inTransitSplitLabel(row as any) }}</span>
+    </template>
 
     <!-- Available is the number days-of-cover divides, so it is the one that
          carries emphasis — and the Oversold flag when reserved exceeds on hand. -->
@@ -876,7 +942,10 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
             <MpPopoverListItem @click="openVendors((row as any).sku)">
               {{ t('View vendors, lead time and MOQ') }}
             </MpPopoverListItem>
-            <MpPopoverListItem @click="openPoForRows([row as unknown as WorklistRow])">
+            <MpPopoverListItem
+              v-if="!(row as any).flags.coveredByInbound"
+              @click="openPoForRows([row as unknown as WorklistRow])"
+            >
               {{ t('Request to purchase') }}
             </MpPopoverListItem>
             <MpPopoverListItem @click="openSettings(row as unknown as WorklistRow)">
@@ -895,12 +964,16 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
       <div class="empty-full">
         <img src="/illustrations/empty-folder.png" alt="" class="empty-illustration" width="288" height="240" />
         <p class="empty-full-title">
-          {{ !anyWarehouseEnabled ? t('Replenishment not set up') : t('No products to order') }}
+          {{ !anyWarehouseEnabled ? t('Replenishment not set up')
+            : view === 'covered' ? t('Nothing covered by inbound')
+            : t('No products to order') }}
         </p>
         <p class="empty-full-desc">
           {{ !anyWarehouseEnabled
             ? t('Turn on the replenishment worklist in Configure warehouse to see which products to reorder.')
-            : t('Every tracked product is above its reorder point.') }}
+            : view === 'covered'
+              ? t('No triggered product is fully covered by an open purchase order right now.')
+              : t('Every tracked product is above its reorder point.') }}
         </p>
         <!-- rule/empty-state-structure: every empty state carries a secondary button.
              "Not set up" goes to where the switch lives: straight to Configure warehouse
@@ -996,6 +1069,11 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
   padding-right: var(--mp-spacing-6); align-self: stretch;
 }
 .stat-card--bordered { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
+/* Worklist-state switch cards (To order / Covered by inbound). */
+.stat-card--toggle { cursor: pointer; border-radius: var(--mp-radii-md, 8px); }
+.stat-card--toggle:hover { background: var(--mp-background-neutral-subtle); }
+.stat-card--toggle:focus-visible { outline: 2px solid var(--mp-border-focus, #166582); outline-offset: 2px; }
+.stat-card--active { box-shadow: inset 0 -2px 0 0 var(--mp-background-brand, #04846c); }
 .stat-title {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   line-height: var(--mp-line-heights-md); white-space: nowrap;
@@ -1075,6 +1153,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
 .filter-airene-btn :deep(svg) { color: var(--mp-airene-default); }
 .rp-badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .rp-signal-none { color: var(--mp-text-subtle); }
+.rp-intransit-sub { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); white-space: nowrap; }
 
 /* Bulk bar guidance when a selection spans warehouses — no cross-warehouse PR. */
 .rp-bulk-info {

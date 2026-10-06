@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'replenishment-covered-by-inbound',
+    title: 'Replenishment: "Covered by inbound" worklist state',
+    description:
+      'An approved PO now posts In-Transit owned by the PO; receiving it hands ownership to WMS Inbound so incoming is counted once (US-028/029). A product that is below its reorder point but already fully covered by that inbound drops off "To order" and its count, and shows here instead. The card switches the table to those rows; the in-transit column and the calculation drawer break the quantity down by owner (PO vs WMS inbound). A row that still stocks out before resupply stays on To order (stockout wins).',
+    date: '2026-10-06',
+    files: ['replenishment.ts', 'ReplenishmentPage.vue', 'SuggestionBreakdownDrawer.vue'],
+  },
+  {
     id: 'vendors-drawer-preferred',
     title: 'Vendors drawer: choose the preferred vendor again',
     description:

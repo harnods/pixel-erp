@@ -26,8 +26,8 @@ function dueWithVendor(): WorklistRow {
   return row
 }
 
-describe('US-004 AC-03 — a row an open PO already covers stays on the worklist', () => {
-  it('shows suggested 0 and names the covering PO, instead of vanishing', () => {
+describe('US-028/029 + D24 — a row an open PO already covers moves to "Covered by inbound"', () => {
+  it('posts PO-owned in-transit, floors suggested to 0, and leaves "To order" (unless it still stocks out)', () => {
     const row = dueWithVendor()
     const po = { ...purchaseOrders[0]!, id: 'PO-TEST-COVER', number: 'PO-TEST-COVER', status: 'approved' as const }
     purchaseOrders.push(po)
@@ -41,14 +41,55 @@ describe('US-004 AC-03 — a row an open PO already covers stays on the worklist
     })
     invalidateReplenishmentCaches()
     try {
-      const after = replenishmentWorklist('all').rows.find((r) => r.key === row.key)
-      expect(after, 'a covered row must stay on To order').toBeTruthy()
+      const wl = replenishmentWorklist('all')
+      const after = [...wl.rows, ...wl.coveredByInbound].find((r) => r.key === row.key)
+      expect(after, 'the covered row must still be visible somewhere').toBeTruthy()
       expect(after!.suggestion.rawQty).toBe(0)
       expect(after!.suggestion.coveredBy).toContain('PO-TEST-COVER')
+
+      // The added PO books PO-owned In-Transit (US-028) — it is not a receipt.
+      const poDoc = after!.atp.onOrderDocs.find((d) => d.number === 'PO-TEST-COVER')
+      expect(poDoc?.owner).toBe('purchase_order')
+
+      if (after!.cover.belowLeadTime) {
+        // Stockout-wins (§2.7): it stays on To order so the user verifies the arrival.
+        expect(wl.rows.some((r) => r.key === row.key)).toBe(true)
+        expect(after!.flags.coveredByInbound).toBe(false)
+      } else {
+        // Covered by inbound: off To order and its count, into the covered state.
+        expect(wl.coveredByInbound.some((r) => r.key === row.key)).toBe(true)
+        expect(wl.rows.some((r) => r.key === row.key)).toBe(false)
+        expect(after!.flags.coveredByInbound).toBe(true)
+      }
     } finally {
       purchaseOrders.splice(purchaseOrders.indexOf(po), 1)
       invalidateReplenishmentCaches()
     }
+  })
+})
+
+describe('US-028/029 — in-transit carries an owner, counted once', () => {
+  it('tags every in-transit doc with an owner (purchase_order or wms_inbound)', () => {
+    const wl = replenishmentWorklist('all')
+    for (const r of [...wl.rows, ...wl.coveredByInbound]) {
+      for (const d of r.atp.onOrderDocs) {
+        expect(['purchase_order', 'wms_inbound']).toContain(d.owner)
+      }
+    }
+  })
+
+  it('every covered-by-inbound row is triggered, has inbound, floors to 0, and is not a stockout', () => {
+    const wl = replenishmentWorklist('all')
+    const keys = new Set(wl.rows.map((r) => r.key))
+    for (const r of wl.coveredByInbound) {
+      expect(r.suggestion.rawQty).toBe(0)
+      expect(r.atp.onOrder).toBeGreaterThan(0)
+      expect(r.cover.belowLeadTime).toBe(false) // stockout would keep it on To order
+      expect(r.flags.coveredByInbound).toBe(true)
+      expect(keys.has(r.key)).toBe(false) // never also on To order
+    }
+    // The due count excludes covered-by-inbound (US-013 due-count semantics).
+    expect(wl.totals.due).toBe(wl.rows.length)
   })
 })
 

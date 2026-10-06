@@ -176,6 +176,13 @@ export interface AtpOnOrderDoc {
   eta: string
   outstanding: number
   vendorName?: string
+  /**
+   * Who owns this In-Transit quantity (US-028/029, D25): `wms_inbound` once a PO has
+   * been pushed to WMS Inbound / goods receipt (a Receipt exists), else
+   * `purchase_order` for an approved PO still only on order. Each incoming qty is
+   * owned by exactly one — counted once, never both (US-029 handover).
+   */
+  owner: 'purchase_order' | 'wms_inbound'
 }
 
 export interface AtpResult {
@@ -279,17 +286,21 @@ function onOrderIndex(warehouseId: string) {
         eta: receipt.estimatedArrival,
         outstanding,
         vendorName: receipt.vendor,
+        // A receipt means the PO was pushed to WMS Inbound (or received directly),
+        // so this incoming qty is owned by WMS Inbound (US-029 handover).
+        owner: 'wms_inbound',
       })
       map.set(line.sku, list)
     }
   }
 
-  // ── Non-WMS path (PRD US-004): an open PO with no WMS inbound still counts ──
-  // "In transit = ordered − received on open POs, regardless of WMS." A PO that a
-  // WMS receipt already references is counted through that receipt above (trust
-  // the posted receipt, never both — EH-01). Only POs with real coffee lines and
-  // a warehouse (created in the app, e.g. converted from a replenishment request)
-  // can be netted; the seed POs carry no SKU lines.
+  // ── PO-owned In-Transit (US-028 / D25): an approved PO with no WMS inbound ──
+  // An approved PO books In-Transit (Incoming) directly, owner = purchase_order
+  // (US-028). Once it is pushed to WMS Inbound a Receipt exists and that same
+  // incoming qty is owned by wms_inbound and counted through the receipt above —
+  // ownership HANDS OVER, counted once, never both (US-029 dedup / EH-01). Only POs
+  // with real coffee lines and a warehouse (created in the app, e.g. converted from
+  // a replenishment request) can be netted; the seed POs carry no SKU lines.
   const wmsLinkedPoNumbers = new Set(receipts.map((r) => r.purchaseNo))
   for (const po of purchaseOrders) {
     if (!OPEN_PO_STATUSES.has(po.status)) continue
@@ -306,6 +317,9 @@ function onOrderIndex(warehouseId: string) {
         eta: doc.shipDate,
         outstanding: line.qty,
         vendorName: po.vendor.name,
+        // An approved PO with no receipt yet is In-Transit owned by the PO itself
+        // (US-028) — it has not been handed over to WMS Inbound.
+        owner: 'purchase_order',
       })
       map.set(line.sku, list)
     }
@@ -586,7 +600,7 @@ export function daysOfCover(available: number, avgDailySales: number, resupplyDa
 
 // ── Worklist row ─────────────────────────────────────────────────────────────
 
-export type WorklistBucket = 'reorder' | 'needs-setup' | 'no-vendor' | 'covered' | 'not-tracked'
+export type WorklistBucket = 'reorder' | 'needs-setup' | 'no-vendor' | 'covered' | 'covered-inbound' | 'not-tracked'
 
 export interface WorklistRow {
   /** `${sku}::${warehouseId}` */
@@ -647,6 +661,13 @@ export interface WorklistRow {
     mutedButActive: boolean
     /** Within the launch window — demand is real but early, coverage forced to 0 (§2.7). */
     provisional: boolean
+    /**
+     * Triggered (available ≤ reorder point) but in-transit already brings it to the
+     * order-up-to target, so suggested qty floored to 0 — an existing PO covers it
+     * (§2.7 / D24). Excluded from the "To order" count. A stockout-before-resupply
+     * row is NOT marked covered — the stockout wins (see `coveredByInbound` bucket).
+     */
+    coveredByInbound: boolean
   }
   /** Sort score — urgency, never shown as a column. */
   urgency: number
@@ -770,16 +791,36 @@ export function buildRow(
   if (!vendorItem) missing.push('Vendor')
   if (leadTimeMissing) missing.push('Lead time')
 
-  const dueForReorder = settings.tracked
+  // Triggered = below the reorder point on available stock (§2.7 STEP 2, no
+  // in-transit in the trigger). "Due" is the subset that still needs a PR.
+  const triggered = settings.tracked
     && canRecommend
     && rop.source !== 'none'
     && !suppressedByCover
+
+  // Covered by inbound (§2.7 / D24): triggered, but in-transit already fills to the
+  // order-up-to target so the suggested qty floors to 0 — an existing PO covers it,
+  // no new PR needed. Stockout-wins guard: if the row will still stock out before
+  // resupply, the stockout takes precedence and it stays on "To order" so the user
+  // verifies the inbound arrival.
+  const inboundFillsTarget = triggered && rawQty === 0 && atp.onOrder > 0
+  const stockoutWins = inboundFillsTarget && cover.belowLeadTime
+  // "Covered by inbound" is the quantity-covered case MINUS the stockout-wins one:
+  // a row that still stocks out before resupply keeps the stockout, not the covered
+  // badge (§2.7 stockout-wins guard), and stays on To order.
+  const coveredByInbound = inboundFillsTarget && !stockoutWins
+  // Covered-by-inbound is NOT due — it drops off "To order" and the due count
+  // (US-013 due-count semantics: triggered AND suggested qty > 0).
+  const dueForReorder = triggered && !coveredByInbound
 
   let bucket: WorklistBucket
   if (!settings.tracked) bucket = 'not-tracked'
   // Only a missing lead time routes here now. An ESTIMATED lead time is not a gap
   // — it resolved, it is simply tagged — so it must not land in Needs setup.
   else if (leadTimeMissing) bucket = 'needs-setup'
+  // Covered by inbound leaves "To order" and its count (stockout-wins already
+  // excluded from `coveredByInbound`).
+  else if (coveredByInbound) bucket = 'covered-inbound'
   else if (dueForReorder && !vendorItem) bucket = 'no-vendor'
   else if (dueForReorder) bucket = 'reorder'
   else bucket = 'covered'
@@ -848,6 +889,7 @@ export function buildRow(
       leadTimeEstimated,
       mutedButActive,
       provisional: velocity.provisional,
+      coveredByInbound,
     },
     urgency,
     asOf,
@@ -864,6 +906,9 @@ export interface Worklist {
   needsSetup: WorklistRow[]
   notTracked: WorklistRow[]
   mutedButActive: WorklistRow[]
+  /** Triggered but an existing PO already fills them to target — excluded from "To
+   *  order" and its count (§2.7 / D24). */
+  coveredByInbound: WorklistRow[]
   totals: {
     pairs: number
     /** Distinct SKUs stocked in scope — the "of N" behind the To order card (US-013). */
@@ -874,6 +919,7 @@ export interface Worklist {
     needsSetup: number
     noVendor: number
     overstock: number
+    coveredByInbound: number
   }
 }
 
@@ -1188,6 +1234,7 @@ export function replenishmentWorklist(
   const needsSetup: WorklistRow[] = []
   const notTracked: WorklistRow[] = []
   const mutedButActive: WorklistRow[] = []
+  const coveredByInbound: WorklistRow[] = []
   let pairs = 0
   const skuSet = new Set<string>()
   let oversold = 0
@@ -1213,6 +1260,7 @@ export function replenishmentWorklist(
         case 'no-vendor': rows.push(row); noVendor++; if (row.flags.belowLeadTime) belowLeadTime++; break
         case 'needs-setup': needsSetup.push(row); break
         case 'not-tracked': notTracked.push(row); break
+        case 'covered-inbound': coveredByInbound.push(row); break
         default: break
       }
     }
@@ -1222,6 +1270,7 @@ export function replenishmentWorklist(
   rows.sort(byUrgency)
   needsSetup.sort((a, b) => b.missing.length - a.missing.length || a.atp.available - b.atp.available)
   notTracked.sort((a, b) => a.productName.localeCompare(b.productName))
+  coveredByInbound.sort((a, b) => a.atp.available - b.atp.available)
 
   return {
     asOf,
@@ -1230,6 +1279,7 @@ export function replenishmentWorklist(
     needsSetup,
     notTracked,
     mutedButActive,
+    coveredByInbound,
     totals: {
       pairs,
       skus: skuSet.size,
@@ -1239,6 +1289,7 @@ export function replenishmentWorklist(
       needsSetup: needsSetup.length,
       noVendor,
       overstock,
+      coveredByInbound: coveredByInbound.length,
     },
   }
 }

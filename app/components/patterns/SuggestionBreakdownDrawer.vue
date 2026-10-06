@@ -274,11 +274,13 @@ function exportPurchase() {
                 </span>
               </ContentList>
 
+              <!-- In transit shows each source with its OWNER (US-028/029): an approved
+                   PO still on order vs one handed over to WMS Inbound. -->
               <ContentList horizontal :label="t('In transit qty')">
                 {{ qty(row.atp.onOrder, row.unit) }}
                 <span class="rp-bd-note">
                   {{ row.atp.onOrderDocs.length
-                    ? row.atp.onOrderDocs.map(d => `${d.number} (${d.outstanding})`).join(' · ')
+                    ? row.atp.onOrderDocs.map(d => `${d.number} (${d.outstanding} · ${d.owner === 'purchase_order' ? t('PO') : t('WMS inbound')})`).join(' · ')
                     : t('No open purchase orders or receipts') }}
                 </span>
               </ContentList>
