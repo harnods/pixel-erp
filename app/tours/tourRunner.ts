@@ -99,6 +99,8 @@ type PanelProps = {
   watch?: string
   nextLabel?: string
   backLabel?: string
+  stepNo?: number
+  stepTotal?: number
 }
 
 function show(panel: PanelProps, target: HTMLElement | null, step: TourStep | null) {
@@ -228,6 +230,8 @@ async function enterStep(r: Running) {
     watch: step.watch,
     nextLabel: index === m - 1 ? 'Finish' : 'Next',
     backLabel: 'Back',
+    stepNo: index + 1,
+    stepTotal: m,
   }
 
   let shownWaiting = false
@@ -268,6 +272,8 @@ async function enterStep(r: Running) {
         watch: step.ifMissing ? undefined : index === m - 1 ? 'Or select Finish to end the tour.' : 'Or select Skip this step to carry on.',
         nextLabel: index === m - 1 ? 'Finish' : 'Skip this step',
         backLabel: 'Back',
+        stepNo: index + 1,
+        stepTotal: m,
       }, null, null)
     }
     pollTimer = setTimeout(attempt, WAIT_MS)

@@ -118,25 +118,99 @@ function start(t: AssetTour, closePopover: () => void) {
   border-radius: var(--mp-radii-md);
 }
 .gt-panel {
-  width: var(--mp-sizes-sm, 24rem);
+  width: calc(var(--mp-sizes-sm, 24rem) + var(--mp-spacing-12, 48px));
   max-width: calc(100vw - var(--mp-spacing-8, 32px));
   max-height: calc(100vh - var(--mp-spacing-20, 80px));
-  overflow-y: auto;
+  /* The body scrolls, not the panel: the footer stays reachable on a long step. */
+  overflow: hidden;
   padding: var(--mp-spacing-4);
   background: var(--mp-colors-background-surface, #fff);
   border: 1px solid var(--mp-colors-border-default, #d0d6dd);
   border-radius: var(--mp-radii-lg, 8px);
   display: flex;
   flex-direction: column;
-  gap: var(--mp-spacing-2);
+  gap: var(--mp-spacing-3);
 }
 .gt-head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
 .gt-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary); }
+.gt-progress {
+  flex: none;
+  /* The house tab underline's weight, so the rail reads as app furniture. */
+  height: 2px;
+  border-radius: var(--mp-radii-sm, 4px);
+  background: var(--mp-colors-border-default, #d0d6dd);
+  overflow: hidden;
+}
+.gt-progress-fill {
+  height: 100%;
+  background: var(--mp-colors-border-success, #029861);
+  transition: width 160ms ease;
+}
 .gt-title { font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default); }
-.gt-body { margin: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-colors-text-default); }
-.gt-block { display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding-top: var(--mp-spacing-2); border-top: 1px solid var(--mp-colors-border-default, #d0d6dd); }
-.gt-label { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-secondary); }
+.gt-body { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+/*
+ * One sentence per line, so a four-sentence explanation reads as four things
+ * rather than one block.
+ */
+.gt-line { margin: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-colors-text-secondary); }
+.gt-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-1);
+  padding: var(--mp-spacing-3);
+  border-radius: var(--mp-radii-md, 6px);
+  background: var(--mp-colors-background-neutral-subtle, #f8f9f9);
+  border-left: 3px solid var(--mp-colors-border-default, #d0d6dd);
+}
+.gt-block--watch {
+  background: var(--mp-colors-background-success, #e3fcef);
+  border-left-color: var(--mp-colors-background-success-bold, #006644);
+}
+.gt-block--action {
+  border-left-color: var(--mp-colors-text-secondary, #3a4749);
+}
+.gt-label {
+  font-size: var(--mp-font-sizes-xs, 11px);
+  font-weight: var(--mp-font-weights-bold, 700);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mp-colors-text-secondary);
+}
 .gt-text { font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-colors-text-default); }
-.gt-foot { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding-top: var(--mp-spacing-2); }
+.gt-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.gt-item {
+  position: relative;
+  padding-left: var(--mp-spacing-4);
+  font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-md);
+  color: var(--mp-colors-text-default);
+}
+/* The app resets list-style, so the marker is drawn rather than inherited. */
+.gt-item::before {
+  content: '';
+  position: absolute;
+  left: var(--mp-spacing-1);
+  top: 0.6em;
+  width: var(--mp-sizes-1, 4px);
+  height: var(--mp-sizes-1, 4px);
+  border-radius: 50%;
+  background: var(--mp-colors-text-secondary, #3a4749);
+}
+/* Figures carry the step: tabular numerals keep columns of them comparable. */
+.gt-fig {
+  font-weight: var(--mp-font-weights-semi-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--mp-colors-text-default);
+  white-space: nowrap;
+}
+.gt-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-3);
+}
+.gt-foot { flex: none; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding-top: var(--mp-spacing-1); }
 </style>
 
