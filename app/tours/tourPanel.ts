@@ -36,8 +36,8 @@ export function clauses(text: string): string[] {
       if (out.length && t.length < 25) { out[out.length - 1] += `; ${t}`; return }
       // A clause promoted to its own line is a sentence: it opens with a
       // capital and closes with a stop, or it reads as cut off.
-      if (i > 0) { out.push(t.charAt(0).toUpperCase() + t.slice(1)); return }
-      out.push(parts.length > 1 && !/[.!?]$/.test(t) ? `${t}.` : t)
+      const stopped = /[.!?]$/.test(t) || parts.length === 1 ? t : `${t}.`
+      out.push(i > 0 ? stopped.charAt(0).toUpperCase() + stopped.slice(1) : stopped)
     })
   }
   return out

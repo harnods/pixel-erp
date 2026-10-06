@@ -31,12 +31,20 @@ describe('SIM-1 to SIM-3 are auto-play', () => {
       expect(t.steps.some((s) => s.run)).toBe(true)
     })
   }
-  it('every step with work says what the tour did, in the screen\'s words', () => {
+  it('every step with work reports a result, never its own clicks', () => {
     const t1 = tour('SIM-1'); const t2 = tour('SIM-2'); const t3 = tour('SIM-3')
     expect(t1.steps.filter((s) => s.run).length).toBe(1)
     expect(t2.steps.filter((s) => s.run).length).toBe(3)
     expect(t3.steps.filter((s) => s.run).length).toBe(3)
-    for (const t of [t1, t2, t3]) for (const s of t.steps.filter((x) => x.run)) expect(`${s.body} ${s.watch}`).toMatch(/tour|Posted/)
+    // The reader pressed Next and watched. Copy that narrates the demo
+    // driving the UI ("the tour selected X") describes the machinery rather
+    // than the product, so a step states what the record now says instead.
+    for (const t of [t1, t2, t3]) {
+      for (const s of t.steps.filter((x) => x.run)) {
+        expect(`${s.body} ${s.watch}`, s.title).not.toMatch(/\bthe tour\b/i)
+        expect(s.watch, s.title).toBeTruthy()
+      }
+    }
   })
 })
 
