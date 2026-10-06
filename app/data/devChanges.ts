@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'sample-multi-preferred-vendor',
+    title: 'Sample: products with more than one preferred vendor',
+    description:
+      'Two demo products now ship with a DIFFERENT preferred vendor in some of their warehouses (D23), so the multi-preferred-vendor case is reachable on a fresh demo: "Roasted Beans House Blend Medium" (1101) — Toraja Sapan Estate in 5 warehouses, Klasik Beans Cooperative in 4; and "Batch Brewer 2.5L Thermal" (2201) — Roast Machinery Indonesia in 5, PT Kemasan Prima Nusantara in 4. The split seeds the per-warehouse overlay and is overridden by any real edit on the Stock-by-warehouses tab.',
+    date: '2026-10-06',
+    files: ['vendorItems.ts'],
+  },
+  {
     id: 'product-warehouses-preferred-vendor',
     title: 'Set the preferred vendor per warehouse (Stock by warehouses)',
     description:

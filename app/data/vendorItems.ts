@@ -22,6 +22,7 @@ import { reactive } from 'vue'
 import { CATALOG } from './catalog'
 import { productBySku } from './inventory'
 import { vendors } from './vendors'
+import { warehouses } from './warehouses'
 import { hashStr } from './cycleCountRecommendations'
 import { factorFor, largestUnitFor } from './productUnits'
 
@@ -331,14 +332,42 @@ function persist(): void {
 const PREFERRED_WH_KEY = 'erp-db:preferred-vendor-by-warehouse-v1'
 const whKey = (sku: string, warehouseId: string) => `${sku}::${warehouseId}`
 
+/**
+ * Demo seed (D23): a few multi-vendor SKUs ship with a DIFFERENT preferred vendor in
+ * some of their warehouses, so "a product with more than one preferred vendor" is
+ * reachable on a fresh demo — the alternate vendor is preferred in roughly half the
+ * active warehouses, the SKU default keeps the rest. Client-only (tests get `{}`),
+ * and merged UNDER stored picks so any real edit wins and overrides it.
+ */
+/** Named demo products that carry a second supplier — so the sample is nameable and
+ *  predictable. Any that turn out single-sourced are skipped. */
+const PREFERRED_WH_SAMPLE_SKUS = ['1101', '2201']
+
+function buildPreferredWarehouseSeed(): Record<string, string> {
+  const seed: Record<string, string> = {}
+  const activeWh = warehouses.filter((w) => w.status === 'active').map((w) => w.id)
+  for (const sku of PREFERRED_WH_SAMPLE_SKUS) {
+    const items = vendorItemsForSku(sku)
+    const alternate = items[1]?.vendorId
+    if (!alternate) continue
+    // Alternate preferred in every other active warehouse; the default keeps the rest,
+    // so the product genuinely has more than one preferred vendor across its warehouses.
+    activeWh.forEach((whId, i) => { if (i % 2 === 0) seed[whKey(sku, whId)] = alternate })
+  }
+  return seed
+}
+
 function loadPreferredByWarehouse(): Record<string, string> {
   if (!import.meta.client) return {}
+  const seed = buildPreferredWarehouseSeed()
   try {
     const raw = localStorage.getItem(PREFERRED_WH_KEY)
     const parsed = raw ? JSON.parse(raw) : {}
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, string>) : {}
+    const stored = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, string>) : {}
+    // Stored (real edits) win over the demo seed.
+    return { ...seed, ...stored }
   } catch {
-    return {}
+    return seed
   }
 }
 
