@@ -116,13 +116,13 @@ function confirm() {
           <MpCheckbox id="pcf-moves" :is-checked="includeMoves" @change="includeMoves = !includeMoves" />
           <span>{{ t(`Include ${data.settingsMoved.length} lines moved by settings change`) }}</span>
         </label>
-        <div v-if="!diffLines.length" class="pcf__empty">{{ t('Rp0 by account and tag. Nothing posts; the log shows No ledger change.') }}</div>
+        <div v-if="!diffLines.length" class="pcf__empty">{{ t('Rp0 by account and dimension. Nothing posts; the log shows No ledger change.') }}</div>
         <div v-else class="pcf__scroll">
           <table class="pcf__table">
             <thead>
               <tr>
                 <th class="pcf__th">{{ t('Account') }}</th>
-                <th class="pcf__th">{{ t('Tags') }}</th>
+                <th class="pcf__th">{{ t('Dimensions') }}</th>
                 <th class="pcf__th pcf__num">{{ t('Debit') }}</th>
                 <th class="pcf__th pcf__num">{{ t('Credit') }}</th>
               </tr>

@@ -29,7 +29,7 @@ const periodText = computed(() => (run.value ? `${run.value.start} to ${run.valu
 
 const TITLES: Record<string, string> = {
   'confirm-source': 'Confirm the source', choice: 'Revision or separate run', partial: 'Looks partial',
-  'duplicate-employee': 'Duplicate employee rows', 'unmapped-item': 'Pay items with no account', 'unmapped-group': 'Groups with no tag',
+  'duplicate-employee': 'Duplicate employee rows', 'unmapped-item': 'Pay items with no account', 'unmapped-group': 'Groups with no dimension',
   'new-field-value': 'New values in rule fields', 'empty-field': 'Empty grouping fields', 'total-gap': "Lines differ from Talenta's totals",
   'hutang-gaji': 'Salaries payable differs from take-home pay', 'two-parties': 'Two parties on one payable', rounding: 'Rounding over the limit',
   'tax-rule': 'PPh 21 differs from the tax rule', 'negative-payable': 'Payable below Rp0', 'archived-account': 'Archived account',
@@ -84,13 +84,13 @@ const dimOf = (field: string): TagDimension => (field === 'branch_name' ? 'Branc
 function tagOptions(field: string, value: string) {
   const dim = dimOf(field)
   const opts = payroll.tags.filter((tg) => tg.dimension === dim && tg.name !== FALLBACK_TAG).map((tg) => ({ value: tg.name, label: tg.name }))
-  if (can('settings.edit') && !opts.some((o) => o.value === value)) opts.push({ value: `new:${value}`, label: `${t('Create tag')} "${value}"` })
+  if (can('settings.edit') && !opts.some((o) => o.value === value)) opts.push({ value: `new:${value}`, label: `${t('Create dimension value')} "${value}"` })
   return opts
 }
 function saveGroup(g: { field: string; value: string }) {
   const k = `${g.field}|${g.value}`
   let tag = groupPick[k] ?? ''
-  if (!tag) { groupError[k] = 'Pick a tag.'; return }
+  if (!tag) { groupError[k] = 'Pick a dimension value.'; return }
   if (tag.startsWith('new:')) {
     tag = tag.slice(4)
     const c = createPayrollTag(dimOf(g.field), tag)
@@ -325,7 +325,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
         <p v-if="!can('settings.edit')" class="ph__hint">{{ t('The Accountant maps these items.') }}</p>
       </div>
 
-      <!-- Groups with no tag (OD-08, TN-13: never the fallback tag from here) -->
+      <!-- Groups with no dimension (OD-08, TN-13: never the fallback dimension value from here) -->
       <div v-else-if="h.code === 'unmapped-group'" class="ph__fix">
         <div v-for="g in d(h).groups" :key="`${g.field}|${g.value}`" class="ph__line">
           <div class="ph__linetext">
@@ -333,7 +333,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
             <span class="ph__muted"> · {{ t(dimOf(g.field)) }} · {{ g.staff }} {{ t('employees') }}</span>
           </div>
           <template v-if="can('run.release')">
-            <ErpFilterSelect :id="`ph-tag-${safeId(g.field + '-' + g.value)}`" v-model="groupPick[`${g.field}|${g.value}`]" :placeholder="t('Tag')" :options="tagOptions(g.field, g.value)" width="220px" />
+            <ErpFilterSelect :id="`ph-tag-${safeId(g.field + '-' + g.value)}`" v-model="groupPick[`${g.field}|${g.value}`]" :placeholder="t('Dimension value')" :options="tagOptions(g.field, g.value)" width="220px" />
             <MpButton variant="secondary" is-rounded @click="saveGroup(g)">{{ t('Map group') }}</MpButton>
           </template>
           <p v-if="groupError[`${g.field}|${g.value}`]" class="ph__error">{{ t(groupError[`${g.field}|${g.value}`]!) }}</p>

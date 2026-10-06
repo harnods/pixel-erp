@@ -273,7 +273,7 @@ const notInPrototype = () => infoToast(t('Not in this prototype'))
           <table class="pset-table">
             <tbody>
               <tr v-for="l in preview.lines" :key="l.side">
-                <td class="pset-td">{{ l.side }} {{ accountLabel(l.account) }}<span v-if="l.side === 'Dr' && isCostAccount(l.account)" class="pset-line">{{ t('Tags from the organization and branch maps, or a rule') }}</span></td>
+                <td class="pset-td">{{ l.side }} {{ accountLabel(l.account) }}<span v-if="l.side === 'Dr' && isCostAccount(l.account)" class="pset-line">{{ t('Dimensions from the organization and branch maps, or a rule') }}</span></td>
                 <td class="pset-td pset-td--num">{{ rupiah(l.amount) }}</td>
               </tr>
             </tbody>

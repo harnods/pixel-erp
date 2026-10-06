@@ -68,9 +68,9 @@ const PRESETS: { key: 'pph21' | 'dtp' | 'pph26' | 'resign' | 'trueUp'; label: st
 
     <div class="pbw__grid">
       <section class="pbw__card">
-        <header class="pbw__cardhead"><div class="pbw__cardtitle">{{ t('Group to tag') }}</div></header>
+        <header class="pbw__cardhead"><div class="pbw__cardtitle">{{ t('Group to dimension') }}</div></header>
         <table class="pbw__table">
-          <thead><tr><th class="pbw__th">{{ t('Dimension') }}</th><th class="pbw__th">{{ t('Talenta value') }}</th><th class="pbw__th">{{ t('Tag') }}</th></tr></thead>
+          <thead><tr><th class="pbw__th">{{ t('Dimension') }}</th><th class="pbw__th">{{ t('Talenta value') }}</th><th class="pbw__th">{{ t('Dimension value') }}</th></tr></thead>
           <tbody>
             <tr v-for="g in groupRows" :key="`${g.dim}${g.value}`"><td class="pbw__td">{{ t(g.dim) }}</td><td class="pbw__td">{{ g.value }}</td><td class="pbw__td">{{ g.tag }}</td></tr>
           </tbody>

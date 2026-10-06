@@ -412,7 +412,7 @@ export function tagsLabel(t: Tags): string { return [t.Organization, t.Branch].f
 
 // ── State ───────────────────────────────────────────────────────────────────
 
-const SNAPSHOT_KEY = 'payroll:state-v2'
+const SNAPSHOT_KEY = 'payroll:state-v3'
 
 function defaultSettings(): PayrollSettings {
   return {
@@ -512,7 +512,7 @@ export function addPayrollAccount(a: { code: string; name: string; type: Payroll
 }
 export function createPayrollTag(dimension: TagDimension, name: string): Result {
   if (!can('settings.edit')) return denied()
-  if (!name.trim()) return { ok: false, message: 'Enter a tag name.' }
+  if (!name.trim()) return { ok: false, message: 'Enter a dimension value.' }
   if (!payroll.tags.some((t) => t.dimension === dimension && norm(t.name) === norm(name))) payroll.tags.push({ dimension, name: name.trim() })
   return { ok: true }
 }
@@ -692,17 +692,17 @@ export function setPayableParty(code: string, party: PayableParty | null): Resul
 
 export function mapGroup(dimension: TagDimension, value: string, tag: string, opts: { fromHold?: boolean } = {}): Result {
   if (!can('settings.edit') && !(opts.fromHold && can('run.release'))) return denied()
-  if (opts.fromHold && tag === FALLBACK_TAG) return { ok: false, message: 'Pick a real tag. A new group cannot go to the fallback tag from here.' }
-  if (!payroll.tags.some((t) => t.dimension === dimension && t.name === tag)) return { ok: false, message: 'Pick a tag from this dimension or create it first.' }
+  if (opts.fromHold && tag === FALLBACK_TAG) return { ok: false, message: 'Pick a real dimension value. A new group cannot go to the fallback dimension value from here.' }
+  if (!payroll.tags.some((t) => t.dimension === dimension && t.name === tag)) return { ok: false, message: 'Pick a value from this dimension or create it first.' }
   payroll.settings.groupMaps[dimension][value] = tag
-  changed(`${dimension} ${value} mapped to tag ${tag}`)
+  changed(`${dimension} ${value} mapped to dimension ${tag}`)
   return { ok: true }
 }
 export function saveRule(rule: Omit<AllocationRule, 'id'> & { id?: string }): Result {
   if (!can('settings.edit')) return denied()
   if (!rule.name.trim()) return { ok: false, message: 'Name the rule.' }
   if (!rule.conditions.length || rule.conditions.length > 5) return { ok: false, message: 'A rule tests 1 to 5 fields.' }
-  if (!rule.account && !rule.tags) return { ok: false, message: 'A rule sets an account, tags or both.' }
+  if (!rule.account && !rule.tags) return { ok: false, message: 'A rule sets an account, dimensions or both.' }
   if (rule.account && !isCost(rule.account)) return { ok: false, message: 'A rule account must be an expense or cost of goods sold account.' }
   const roles = rule.roles.length ? rule.roles : ['Earning', 'Employer contribution'] as PayRole[]
   if (rule.id) {
@@ -732,7 +732,7 @@ export function moveRule(id: string, dir: -1 | 1): Result {
 }
 export function sendToFallback(field: string, value: string, reason: string): Result {
   if (!can('settings.edit')) return denied()
-  if (reason.trim().length < 10) return { ok: false, message: 'Say why this value goes to the fallback tag (10 characters or more).' }
+  if (reason.trim().length < 10) return { ok: false, message: 'Say why this value goes to the fallback dimension value (10 characters or more).' }
   if (!payroll.settings.fallback.some((f) => f.field === field && f.value === value))
     payroll.settings.fallback.push({ field, value, reason: reason.trim(), by: actingPerson(), at: now() })
   changed(`${value} (${field}) confirmed to fallback`)
@@ -1034,7 +1034,7 @@ function nextStepFor(v: RunVersion): string {
   const steps: Partial<Record<HoldCode, string>> = {
     'confirm-source': 'The Jurnal Owner confirms the source.', choice: 'Pick Revision of the posted run or Separate run.',
     partial: 'Pick Replace the full run or Reject.', 'unmapped-item': 'Map the pay item, then release the run.',
-    'unmapped-group': 'Map the group to a tag, then release the run.', 'total-gap': 'Ask HR, or the Finance Manager releases with gap.',
+    'unmapped-group': 'Map the group to a dimension value, then release the run.', 'total-gap': 'Ask HR, or the Finance Manager releases with gap.',
     'tax-rule': 'Tax Staff or the Finance Manager releases with a reason.',
   }
   return steps[h.code] ?? 'Fix the issue, then release the run.'
@@ -1280,7 +1280,7 @@ function checkVersion(run: Run, v: RunVersion): void {
       if (!known) { const k = `${f}|${val}`; const n = newValues.get(k) ?? { field: f, value: val, staff: 0 }; n.staff++; newValues.set(k, n) }
     }
   }
-  if (groups.size) holds.push({ code: 'unmapped-group', message: `${groups.size} group${groups.size > 1 ? 's have' : ' has'} no tag: ${[...groups.values()].map((g) => `${g.value} (${g.staff} employees)`).join(', ')}`, details: { groups: [...groups.values()] } })
+  if (groups.size) holds.push({ code: 'unmapped-group', message: `${groups.size} group${groups.size > 1 ? 's have' : ' has'} no dimension: ${[...groups.values()].map((g) => `${g.value} (${g.staff} employees)`).join(', ')}`, details: { groups: [...groups.values()] } })
   if (newValues.size) holds.push({ code: 'new-field-value', message: `New values in fields the allocation rules read: ${[...newValues.values()].map((n) => `${n.value} (${n.staff} employees)`).join(', ')}`, details: { values: [...newValues.values()] } })
   if (empty.size) holds.push({ code: 'empty-field', message: `Employees with an empty grouping field: ${[...empty.entries()].map(([f, n]) => `${f.replace('_name', '')} ${n}`).join(', ')}`, details: { fields: Object.fromEntries(empty) } })
   // Total check (OD-04), only once items are mapped (the deductions basis depends on roles).
@@ -1434,9 +1434,9 @@ function buildJournal(run: Run, v: RunVersion, s: PayrollSettings): BuildResult 
         let ruleWhy = ''
         if (rule) {
           if (rule.account && m.role && COST_ROLES.includes(m.role) && isCost(debit)) { debit = rule.account; ruleWhy = `Rule "${rule.name}" sets ${accountLabel(rule.account)}` }
-          if (rule.tags) { lineTags = { ...tags, ...rule.tags } as Tags; ruleWhy = ruleWhy || `Rule "${rule.name}" sets the tags` }
+          if (rule.tags) { lineTags = { ...tags, ...rule.tags } as Tags; ruleWhy = ruleWhy || `Rule "${rule.name}" sets the dimensions` }
         }
-        const tagWhy = isCost(debit) && (lineTags.Organization || lineTags.Branch) ? `Tags ${tagsLabel(lineTags)} from ${rule?.tags ? `rule "${rule.name}"` : 'organization and branch maps'}` : ''
+        const tagWhy = isCost(debit) && (lineTags.Organization || lineTags.Branch) ? `Dimensions ${tagsLabel(lineTags)} from ${rule?.tags ? `rule "${rule.name}"` : 'organization and branch maps'}` : ''
         const src = { item: m.name, section, role: m.role }
         add(debit, lineTags, c, [why, ruleWhy, tagWhy].filter(Boolean).join('. '), src, e.employee_id)
         add(m.credit, lineTags, -c, why, src, e.employee_id)
@@ -1899,7 +1899,7 @@ export function postDifference(runId: string, no?: number, o: { includeSettingsM
   afterFix(run, oldV, v, [j])
   return { ok: true, journals: [j.number], journalId: j.id, redirected: pd.redirected }
 }
-export function dismissWarning(runId: string, warningId: string, reason: string, pick: 'Cost stays (accepted)' | 'Post tag reclass'): Result {
+export function dismissWarning(runId: string, warningId: string, reason: string, pick: 'Cost stays (accepted)' | 'Post dimension reclass'): Result {
   if (!can('warning.dismiss')) return denied()
   const w = runById(runId)?.warnings.find((x) => x.id === warningId)
   if (!w) return { ok: false }
@@ -2520,7 +2520,7 @@ function seed() {
   setClock('2026-06-01T02:00:00Z')
   as('Jurnal Owner', () => { must(startConnection(PAYROLL_COMPANY_ID), 'start'); answerOtherEntities(false) })
   seedSettings()
-  takeSnapshot('Payroll setup: accounts, pay items, tags, allocation rules and tax presets')
+  takeSnapshot('Payroll setup: accounts, pay items, dimensions, allocation rules and tax presets')
   // June dry run (before a first live period is set).
   setClock('2026-06-22T03:00:00Z')
   const jun = simulateSend('regular', { start: '2026-05-21', end: '2026-06-20', sentAt: '2026-06-22T03:00:00Z' })

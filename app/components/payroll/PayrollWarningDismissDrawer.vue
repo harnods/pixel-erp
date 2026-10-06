@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * Dismiss an early warning (TN-16): a reason of 10 characters or more; a transfer also needs
- * a pick, "Cost stays (accepted)" or "Post tag reclass". Errors show inline; Dismiss stays clickable.
+ * a pick, "Cost stays (accepted)" or "Post dimension reclass". Errors show inline; Dismiss stays clickable.
  */
 import { MpTextarea, MpFormControl, MpFormLabel, MpFormErrorMessage, MpRadio } from '@mekari/pixel3'
 import PayrollCompareDrawerShell from '~/components/payroll/PayrollCompareDrawerShell.vue'
@@ -12,8 +12,8 @@ const props = defineProps<{ runId: string; warning: EarlyWarning | null }>()
 const emit = defineEmits<{ close: [] }>()
 const { t } = useLocale()
 
-type Pick = 'Cost stays (accepted)' | 'Post tag reclass'
-const PICKS: Pick[] = ['Cost stays (accepted)', 'Post tag reclass']
+type Pick = 'Cost stays (accepted)' | 'Post dimension reclass'
+const PICKS: Pick[] = ['Cost stays (accepted)', 'Post dimension reclass']
 const reason = ref('')
 const pick = ref<Pick | ''>('')
 const error = ref('')
@@ -24,7 +24,7 @@ watch(() => props.warning, () => { reason.value = ''; pick.value = ''; error.val
 function save() {
   const w = props.warning
   if (!w) return
-  if (isTransfer.value && !pick.value) { error.value = t('Pick Cost stays (accepted) or Post tag reclass.'); return }
+  if (isTransfer.value && !pick.value) { error.value = t('Pick Cost stays (accepted) or Post dimension reclass.'); return }
   const r = dismissWarning(props.runId, w.id, reason.value, (pick.value || 'Cost stays (accepted)') as Pick)
   if (!r.ok) { error.value = t(r.message ?? 'The warning could not be dismissed.'); return }
   successToast(t('Warning dismissed'))

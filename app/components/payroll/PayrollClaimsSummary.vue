@@ -29,7 +29,7 @@ const grand = computed(() => claimRuns.value.reduce((s, x) => s + x.summary.tota
           <span class="pac-run-total">{{ rupiah(x.summary.total) }}</span>
         </div>
         <table v-if="x.summary.rows.length" class="pac-table">
-          <thead><tr><th>{{ t('Pay item') }}</th><th>{{ t('Account') }}</th><th>{{ t('Tag') }}</th><th>{{ t('Journal') }}</th><th class="pac-r">{{ t('Amount') }}</th></tr></thead>
+          <thead><tr><th>{{ t('Pay item') }}</th><th>{{ t('Account') }}</th><th>{{ t('Dimensions') }}</th><th>{{ t('Journal') }}</th><th class="pac-r">{{ t('Amount') }}</th></tr></thead>
           <tbody>
             <tr v-for="(r, i) in x.summary.rows" :key="i">
               <td>{{ r.item }}</td><td>{{ r.account }}</td><td>{{ r.tags || '-' }}</td><td>{{ r.journal ?? '-' }}</td><td class="pac-r">{{ rupiah(r.amount) }}</td>

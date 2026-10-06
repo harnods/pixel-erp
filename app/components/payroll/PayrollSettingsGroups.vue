@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
- * Groups and rules (TS-04, OD-08): organization and branch to tag maps with
+ * Groups and rules (TS-04, OD-08): organization and branch to dimension maps with
  * staff counts, cost center categories, allocation rules in priority order
  * above the fixed fallback, per-value fallback confirmations and the
  * empty-field policies. A rule's account applies only to the roles it lists;
- * rules tag expense lines only.
+ * rules set dimensions on expense lines only.
  */
 import { computed, reactive, ref } from 'vue'
 import { MpButton, MpIcon, MpInput, MpCheckbox, MpTextarea } from '@mekari/pixel3'
@@ -27,7 +27,7 @@ const fieldLabel = (f: string) => TALENTA_FIELDS.find((x) => x.field === f)?.lab
 const notInPrototype = () => infoToast(t('Not in this prototype'))
 const lastRun = computed(() => latestRegularRun())
 
-// ── Group to tag maps (TS-04) ──
+// ── Group to dimension maps (TS-04) ──
 const DIMS: { dim: TagDimension; field: 'organization_name' | 'branch_name'; label: string }[] = [
   { dim: 'Organization', field: 'organization_name', label: 'Organizations' },
   { dim: 'Branch', field: 'branch_name', label: 'Branches' },
@@ -46,7 +46,7 @@ const mapErrors = reactive<Record<string, string>>({})
 function onMap(dim: TagDimension, value: string, tag: string) {
   const r = mapGroup(dim, value, tag)
   mapErrors[`${dim}|${value}`] = r.ok ? '' : t(r.message ?? '')
-  if (r.ok) successToast(t(`${value} maps to tag ${tag}`))
+  if (r.ok) successToast(t(`${value} maps to dimension ${tag}`))
 }
 function createAndMap(dim: TagDimension, value: string) {
   const r = createPayrollTag(dim, value)
@@ -103,7 +103,7 @@ function openRule(r?: AllocationRule) {
 const fieldOptions = TALENTA_FIELDS.map((f) => ({ value: f.field, label: f.label }))
 const opOptions = [{ value: 'is', label: 'is any of' }, { value: 'is not', label: 'is none of' }]
 const costAccountOptions = computed(() => [{ value: '', label: 'Use mapped account' }, ...payroll.accounts.filter((a) => (a.type === 'expense' || a.type === 'cogs') && !a.archived).map((a) => ({ value: a.code, label: `${a.code} ${a.name}` }))])
-const ruleTagOptions = (dim: TagDimension) => [{ value: '', label: 'Keep mapped tag' }, ...payroll.tags.filter((x) => x.dimension === dim).map((x) => ({ value: x.name, label: x.name }))]
+const ruleTagOptions = (dim: TagDimension) => [{ value: '', label: 'Keep mapped dimension' }, ...payroll.tags.filter((x) => x.dimension === dim).map((x) => ({ value: x.name, label: x.name }))]
 function addCondition() { if (ed.conditions.length < 5) ed.conditions.push({ field: 'job_level', op: 'is', values: [] }) }
 function toggleValue(c: RuleCondition, v: string) { const i = c.values.indexOf(v); if (i >= 0) c.values.splice(i, 1); else c.values.push(v) }
 function toggleRole(r: PayRole) { const i = ed.roles.indexOf(r); if (i >= 0) ed.roles.splice(i, 1); else ed.roles.push(r) }
@@ -132,7 +132,7 @@ function onFallback() {
   const r = sendToFallback(fb.field, fb.value, fb.reason)
   if (!r.ok) { fbError.value = t(r.message ?? ''); return }
   fbOpen.value = false
-  successToast(t(`${fb.value} goes to the ${FALLBACK_TAG} tag`))
+  successToast(t(`${fb.value} goes to the ${FALLBACK_TAG} dimension value`))
 }
 const POLICY_FIELDS: { field: GroupingField; label: string }[] = GROUPING_FIELDS.map((f) => ({ field: f, label: fieldLabel(f) }))
 const policyOptions = [{ value: 'hold', label: 'Hold the run' }, { value: 'skip', label: 'Skip rules that test this field' }]
@@ -149,10 +149,10 @@ function onPolicy(field: GroupingField, v: string) {
       <div class="pset-card__head">
         <div>
           <div class="pset-card__title">{{ t(d.label) }}</div>
-          <div class="pset-card__sub">{{ t(`Each Talenta ${d.dim.toLowerCase()} maps to one tag in the ${d.dim} dimension. Expense lines carry it; payable lines carry no group tag.`) }}</div>
+          <div class="pset-card__sub">{{ t(`Each Talenta ${d.dim.toLowerCase()} maps to one value in the ${d.dim} dimension. Expense lines carry it; payable lines carry no group dimension.`) }}</div>
         </div>
         <div class="pset-card__actions">
-          <MpButton v-if="can('settings.edit') && missingCount(d.dim, d.field)" variant="secondary" is-rounded @click="createAllMissing(d.dim, d.field)">{{ t(`Create ${missingCount(d.dim, d.field)} missing tag${missingCount(d.dim, d.field) > 1 ? 's' : ''}`) }}</MpButton>
+          <MpButton v-if="can('settings.edit') && missingCount(d.dim, d.field)" variant="secondary" is-rounded @click="createAllMissing(d.dim, d.field)">{{ t(`Create ${missingCount(d.dim, d.field)} missing dimension value${missingCount(d.dim, d.field) > 1 ? 's' : ''}`) }}</MpButton>
         </div>
       </div>
       <table class="pset-table">
@@ -160,7 +160,7 @@ function onPolicy(field: GroupingField, v: string) {
           <tr>
             <th class="pset-th">{{ t(d.dim) }}</th>
             <th class="pset-th pset-th--num">{{ t('Staff in last run') }}</th>
-            <th class="pset-th">{{ t('Tag') }}</th>
+            <th class="pset-th">{{ t('Dimension value') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -173,11 +173,11 @@ function onPolicy(field: GroupingField, v: string) {
               </template>
               <template v-else-if="can('settings.edit')">
                 <div class="pset-chips">
-                  <ErpFilterSelect :id="`pset-map-${d.dim}-${g.value.replace(/\s+/g, '-')}`" :model-value="g.tag ?? ''" :placeholder="t('No tag')" :options="tagOptions(d.dim)" width="220px" :is-clearable="false" @update:model-value="(v: string) => onMap(d.dim, g.value, v)" />
-                  <MpButton v-if="!g.tag && !g.tagExists" size="sm" variant="secondary" is-rounded @click="createAndMap(d.dim, g.value)">{{ t(`Create tag ${g.value}`) }}</MpButton>
+                  <ErpFilterSelect :id="`pset-map-${d.dim}-${g.value.replace(/\s+/g, '-')}`" :model-value="g.tag ?? ''" :placeholder="t('No dimension')" :options="tagOptions(d.dim)" width="220px" :is-clearable="false" @update:model-value="(v: string) => onMap(d.dim, g.value, v)" />
+                  <MpButton v-if="!g.tag && !g.tagExists" size="sm" variant="secondary" is-rounded @click="createAndMap(d.dim, g.value)">{{ t(`Create dimension value ${g.value}`) }}</MpButton>
                 </div>
               </template>
-              <span v-else>{{ g.tag ?? t('No tag') }}</span>
+              <span v-else>{{ g.tag ?? t('No dimension') }}</span>
               <span v-if="mapErrors[`${d.dim}|${g.value}`]" class="pset-line pset-danger">{{ mapErrors[`${d.dim}|${g.value}`] }}</span>
             </td>
           </tr>
@@ -190,7 +190,7 @@ function onPolicy(field: GroupingField, v: string) {
       <div class="pset-card__head">
         <div>
           <div class="pset-card__title">{{ t('Allocation rules') }}</div>
-          <div class="pset-card__sub">{{ t('The first matching rule sets the account and tags for the roles it lists. Rules tag expense lines only.') }}<template v-if="lastRun">{{ ' ' + t(`Matches counted on the ${periodLabel(lastRun.start, lastRun.end)} send.`) }}</template></div>
+          <div class="pset-card__sub">{{ t('The first matching rule sets the account and dimensions for the roles it lists. Rules set dimensions on expense lines only.') }}<template v-if="lastRun">{{ ' ' + t(`Matches counted on the ${periodLabel(lastRun.start, lastRun.end)} send.`) }}</template></div>
         </div>
         <div class="pset-card__actions">
           <MpButton v-if="can('settings.edit')" variant="secondary" is-rounded @click="notInPrototype">{{ t('Percentage split') }}</MpButton>
@@ -278,7 +278,7 @@ function onPolicy(field: GroupingField, v: string) {
     <div class="pset-card">
       <div class="pset-card__head">
         <div>
-          <div class="pset-card__title">{{ t('Values sent to the fallback tag') }}</div>
+          <div class="pset-card__title">{{ t('Values sent to the fallback dimension value') }}</div>
           <div class="pset-card__sub">{{ t(`Each value takes a one-time confirmation with a reason before it posts to ${FALLBACK_TAG}.`) }}</div>
         </div>
         <MpButton v-if="can('settings.edit')" variant="secondary" is-rounded @click="fbOpen = true; fb.value = ''; fb.reason = ''; fbError = ''">{{ t('Send a value to fallback') }}</MpButton>
@@ -292,7 +292,7 @@ function onPolicy(field: GroupingField, v: string) {
           </tr>
         </thead>
         <tbody>
-          <tr v-if="!s.fallback.length"><td class="pset-td pset-muted" colspan="3">{{ t('No value goes to the fallback tag.') }}</td></tr>
+          <tr v-if="!s.fallback.length"><td class="pset-td pset-muted" colspan="3">{{ t('No value goes to the fallback dimension value.') }}</td></tr>
           <tr v-for="f in s.fallback" :key="`${f.field}|${f.value}`">
             <td class="pset-td">{{ f.value }}<span class="pset-line">{{ t(fieldLabel(f.field)) }}</span></td>
             <td class="pset-td">{{ f.reason }}</td>
@@ -360,12 +360,12 @@ function onPolicy(field: GroupingField, v: string) {
           <ErpFilterSelect id="pset-rule-account" v-model="ed.account" :placeholder="t('Use mapped account')" :options="costAccountOptions" width="100%" :is-clearable="false" />
         </div>
         <div class="pset-field">
-          <span class="pset-label">{{ t('Organization tag') }}</span>
-          <ErpFilterSelect id="pset-rule-org" v-model="ed.orgTag" :placeholder="t('Keep mapped tag')" :options="ruleTagOptions('Organization')" width="100%" :is-clearable="false" />
+          <span class="pset-label">{{ t('Organization dimension') }}</span>
+          <ErpFilterSelect id="pset-rule-org" v-model="ed.orgTag" :placeholder="t('Keep mapped dimension')" :options="ruleTagOptions('Organization')" width="100%" :is-clearable="false" />
         </div>
         <div class="pset-field">
-          <span class="pset-label">{{ t('Branch tag') }}</span>
-          <ErpFilterSelect id="pset-rule-branch" v-model="ed.branchTag" :placeholder="t('Keep mapped tag')" :options="ruleTagOptions('Branch')" width="100%" :is-clearable="false" />
+          <span class="pset-label">{{ t('Branch dimension') }}</span>
+          <ErpFilterSelect id="pset-rule-branch" v-model="ed.branchTag" :placeholder="t('Keep mapped dimension')" :options="ruleTagOptions('Branch')" width="100%" :is-clearable="false" />
         </div>
       </div>
       <div class="pset-note" :class="{ 'pset-note--warn': edPreview.shadowed }">
@@ -399,7 +399,7 @@ function onPolicy(field: GroupingField, v: string) {
       </div>
       <div class="pset-field">
         <span class="pset-label">{{ t('Value') }}</span>
-        <ErpFilterSelect id="pset-fb-value" v-model="fb.value" :placeholder="t('Value with no tag')" :options="fbValueOptions" width="100%" :is-clearable="false" empty-text="Every value has a tag" />
+        <ErpFilterSelect id="pset-fb-value" v-model="fb.value" :placeholder="t('Value with no dimension')" :options="fbValueOptions" width="100%" :is-clearable="false" empty-text="Every value has a dimension" />
       </div>
       <div class="pset-field">
         <label class="pset-label" for="pset-fb-reason">{{ t('Reason') }}</label>

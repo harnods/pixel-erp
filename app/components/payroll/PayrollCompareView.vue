@@ -54,7 +54,7 @@ const selNew = computed({ get: () => newNo.value || String(data.value?.newNo ?? 
 
 const view = ref<'item' | 'account'>('account')
 const viewOptions = [
-  { id: 'pcv-account', value: 'account', label: 'By account and tag' },
+  { id: 'pcv-account', value: 'account', label: 'By account and dimension' },
   { id: 'pcv-item', value: 'item', label: 'By pay item' },
 ]
 
@@ -129,14 +129,14 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
           <span v-if="data.noLedgerChange" class="pcv__chip">{{ t('No ledger change') }}</span>
         </div>
 
-        <!-- By account and tag -->
+        <!-- By account and dimension -->
         <div v-if="view === 'account'" class="pcv__scroll">
-          <div v-if="!accountRows.length" class="pcv__empty">{{ t('Same lines by account and tag. No ledger change.') }}</div>
+          <div v-if="!accountRows.length" class="pcv__empty">{{ t('Same lines by account and dimension. No ledger change.') }}</div>
           <table v-else class="pcv__table">
             <thead>
               <tr>
                 <th class="pcv__th">{{ t('Account') }}</th>
-                <th class="pcv__th">{{ t('Tags') }}</th>
+                <th class="pcv__th">{{ t('Dimensions') }}</th>
                 <th class="pcv__th pcv__num">{{ t(data.oldLabel) }}</th>
                 <th class="pcv__th pcv__num">{{ t(data.newLabel) }}</th>
                 <th class="pcv__th pcv__num">{{ t('Debit') }}</th>
@@ -198,7 +198,7 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
               <thead>
                 <tr>
                   <th class="pcv__th">{{ t('Account') }}</th>
-                  <th class="pcv__th">{{ t('Tags') }}</th>
+                  <th class="pcv__th">{{ t('Dimensions') }}</th>
                   <th class="pcv__th pcv__num">{{ t('Posted') }}</th>
                   <th class="pcv__th pcv__num">{{ t('On current settings') }}</th>
                   <th class="pcv__th pcv__num">{{ t('Difference') }}</th>

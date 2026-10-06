@@ -39,7 +39,7 @@ const state = (j: (typeof list.value)[number]) => j.reversesId ? 'Reversal' : j.
         <div class="prj__total">{{ rupiah(j.debit) }}</div>
       </div>
       <table v-if="open === j.id" class="prj__table">
-        <thead><tr><th class="prj__th">{{ t('Account') }}</th><th class="prj__th">{{ t('Tags') }}</th><th class="prj__th prj__num">{{ t('Debit') }}</th><th class="prj__th prj__num">{{ t('Credit') }}</th></tr></thead>
+        <thead><tr><th class="prj__th">{{ t('Account') }}</th><th class="prj__th">{{ t('Dimensions') }}</th><th class="prj__th prj__num">{{ t('Debit') }}</th><th class="prj__th prj__num">{{ t('Credit') }}</th></tr></thead>
         <tbody>
           <tr v-for="(l, i) in j.lines" :key="i">
             <td class="prj__td">{{ accountLabel(l.account) }}</td>

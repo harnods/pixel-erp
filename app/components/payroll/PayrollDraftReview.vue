@@ -117,7 +117,7 @@ const hcHasEvents = computed(() => payroll.events.length > 0)
       <table v-if="review.previous" class="pdr__table">
         <thead>
           <tr>
-            <th class="pdr__th">{{ t('Account and tag') }}</th>
+            <th class="pdr__th">{{ t('Account and dimension') }}</th>
             <th class="pdr__th pdr__num">{{ t('Last period') }}</th>
             <th class="pdr__th pdr__num">{{ t('This draft') }}</th>
             <th class="pdr__th pdr__num">{{ t('Change') }}</th>
@@ -236,7 +236,7 @@ const hcHasEvents = computed(() => payroll.events.length > 0)
         <thead>
           <tr>
             <th class="pdr__th">{{ t('Account') }}</th>
-            <th class="pdr__th">{{ t('Tags') }}</th>
+            <th class="pdr__th">{{ t('Dimensions') }}</th>
             <th class="pdr__th pdr__num">{{ t('Debit') }}</th>
             <th class="pdr__th pdr__num">{{ t('Credit') }}</th>
             <th class="pdr__th" />

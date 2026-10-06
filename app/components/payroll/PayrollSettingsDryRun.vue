@@ -215,7 +215,7 @@ const varianceClass = (n: number) => (n ? 'pset-danger' : 'pset-ok')
           <thead>
             <tr>
               <th class="pset-th">{{ t('Account') }}</th>
-              <th class="pset-th">{{ t('Tags') }}</th>
+              <th class="pset-th">{{ t('Dimensions') }}</th>
               <th class="pset-th pset-th--num">{{ t('Debit') }}</th>
               <th class="pset-th pset-th--num">{{ t('Credit') }}</th>
             </tr>
@@ -248,7 +248,7 @@ const varianceClass = (n: number) => (n ? 'pset-danger' : 'pset-ok')
           <thead>
             <tr>
               <th class="pset-th">{{ t('Account') }}</th>
-              <th class="pset-th">{{ t('Tags') }}</th>
+              <th class="pset-th">{{ t('Dimensions') }}</th>
               <th class="pset-th pset-th--num">{{ t('Before') }}</th>
               <th class="pset-th pset-th--num">{{ t('Now') }}</th>
               <th class="pset-th pset-th--num">{{ t('Moved') }}</th>
@@ -269,12 +269,12 @@ const varianceClass = (n: number) => (n ? 'pset-danger' : 'pset-ok')
 
       <!-- Groups -->
       <div class="pset-card">
-        <div class="pset-card__head"><div class="pset-card__title">{{ t('Groups: headcount and cost by account and tag') }}</div></div>
+        <div class="pset-card__head"><div class="pset-card__title">{{ t('Groups: headcount and cost by account and dimension') }}</div></div>
         <table class="pset-table">
           <thead>
             <tr>
               <th class="pset-th">{{ t('Account') }}</th>
-              <th class="pset-th">{{ t('Tags') }}</th>
+              <th class="pset-th">{{ t('Dimensions') }}</th>
               <th class="pset-th pset-th--num">{{ t('Staff') }}</th>
               <th class="pset-th pset-th--num">{{ t('Cost') }}</th>
             </tr>

@@ -170,7 +170,7 @@ const steps: PayrollStep[] = [
     find: () => journalOpen('PAY-0003'),
     role: 'Accountant',
     title: 'The Accountant posts one PAY journal.',
-    body: 'One balanced journal per run, dated on the period end. Cost lands by account and tag: Direct Labour for store staff, Sales Salaries for the sales team, Salaries for the rest. Each party gets one payable line, so tax and BPJS are paid and checked on their own.',
+    body: 'One balanced journal per run, dated on the period end. Cost lands by account and dimension: Direct Labour for store staff, Sales Salaries for the sales team, Salaries for the rest. Each party gets one payable line, so tax and BPJS are paid and checked on their own.',
     watch: 'PAY-0003, 20 Sep 2026, Rp554.203.937. One payable each: Salaries Payable Rp446.901.857 for staff, PPh 21 Rp18.323.082, PPh 26 Rp21.209.400, BPJS Kesehatan Rp16.097.025, BPJS Ketenagakerjaan Rp38.969.125.',
     placement: 'top',
   },
@@ -243,7 +243,7 @@ export const PAYROLL_TOUR: AssetTour = {
   persona: 'Accountant, Finance Manager, Tax Staff',
   role: 'Accountant' as unknown as ViewAsRole,
   blurb: 'September arrives from Talenta with a pay item no one has mapped. The Accountant maps it, the Finance Manager confirms, one PAY journal posts and the salary is paid. A revision posts as a difference, Tax Staff pay and file PPh 21, the month signs off and the old sync is blocked.',
-  closing: 'The new pay item held the run until it had an account, the draft tied to Talenta, the Finance Manager confirmed the changed settings, one PAY journal posted cost by tag and one payable per party, the revision posted only its difference, PPh 21 was paid and filed against the ledger, five independent checks matched at sign-off, and the old sync could not book September twice. To try it yourself, use Reset sample data under View as.',
+  closing: 'The new pay item held the run until it had an account, the draft tied to Talenta, the Finance Manager confirmed the changed settings, one PAY journal posted cost by dimension and one payable per party, the revision posted only its difference, PPh 21 was paid and filed against the ledger, five independent checks matched at sign-off, and the old sync could not book September twice. To try it yourself, use Reset sample data under View as.',
   steps: steps as unknown as TourStep[],
   onReset: () => {
     Object.assign(tourCtx, { runId: '' })

@@ -117,7 +117,7 @@ const remaining = computed(() => {
           </div>
         </div>
         <p v-if="showErrors && branchError" class="psf-error">{{ t('Pick a bank for') }} {{ branchError.branch }}.</p>
-        <p class="psf-hint">{{ t('One journal posts a credit per bank and Hutang Gaji debits tagged by branch.') }}</p>
+        <p class="psf-hint">{{ t('One journal posts a credit per bank and Hutang Gaji debits with branch dimensions.') }}</p>
       </template>
 
       <MpFormControl id="psf-date" is-required :is-invalid="showErrors && !!dateError">

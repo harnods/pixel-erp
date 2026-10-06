@@ -55,12 +55,12 @@ function save() {
     </MpFormControl>
     <div class="pme-pair">
       <MpFormControl id="pme-org">
-        <MpFormLabel>{{ t('Organization tag') }}</MpFormLabel>
-        <ErpFilterSelect id="pme-org-select" :model-value="org" :placeholder="t('No tag')" :options="orgOptions" width="100%" @update:model-value="(v: string) => (org = v)" />
+        <MpFormLabel>{{ t('Organization dimension') }}</MpFormLabel>
+        <ErpFilterSelect id="pme-org-select" :model-value="org" :placeholder="t('No dimension')" :options="orgOptions" width="100%" @update:model-value="(v: string) => (org = v)" />
       </MpFormControl>
       <MpFormControl id="pme-branch">
-        <MpFormLabel>{{ t('Branch tag') }}</MpFormLabel>
-        <ErpFilterSelect id="pme-branch-select" :model-value="branch" :placeholder="t('No tag')" :options="branchOptions" width="100%" @update:model-value="(v: string) => (branch = v)" />
+        <MpFormLabel>{{ t('Branch dimension') }}</MpFormLabel>
+        <ErpFilterSelect id="pme-branch-select" :model-value="branch" :placeholder="t('No dimension')" :options="branchOptions" width="100%" @update:model-value="(v: string) => (branch = v)" />
       </MpFormControl>
     </div>
     <MpSegmentedControl id="pme-side" v-model="side" name="pme-side" :data="sideOptions" />

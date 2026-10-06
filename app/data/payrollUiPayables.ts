@@ -74,11 +74,11 @@ export function setPayableNote(row: PayableRow, note: string): Result {
   return setVarianceNote(row.month, noteKey(row), { reason: 'Open balance', note })
 }
 
-/** Journal lines behind a tracker row, by tag: what was owed and what paid it. */
+/** Journal lines behind a tracker row, by dimension: what was owed and what paid it. */
 export function payableDrill(row: PayableRow) {
   const owed = payroll.journals
     .filter((j) => j.taxMonth === row.month && (!row.runId || j.runId === row.runId) && ['Payroll', 'Difference', 'Reversal'].includes(j.type))
-    .flatMap((j) => j.lines.filter((l) => l.account === row.account).map((l) => ({ number: j.number, date: dateLabel(j.date), type: j.type, tags: tagsLabel(l.tags) || 'No tag', amount: l.credit - l.debit, runId: j.runId })))
+    .flatMap((j) => j.lines.filter((l) => l.account === row.account).map((l) => ({ number: j.number, date: dateLabel(j.date), type: j.type, tags: tagsLabel(l.tags) || 'No dimension', amount: l.credit - l.debit, runId: j.runId })))
   const paid = payroll.payments
     .filter((p) => p.account === row.account && p.periods.some((x) => x.month === row.month) && (!row.runId || p.runId === row.runId))
     .map((p) => {

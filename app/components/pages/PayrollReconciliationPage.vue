@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * Payroll reconciliation (FG-6: OD-22, OD-23; OD-25 audit export is Next).
- * Month picker; Talenta beside the ledger by account and tag, payables and pay item, with
+ * Month picker; Talenta beside the ledger by account and dimension, payables and pay item, with
  * variance notes; independent checks; PPh 21 monthly and annual with the e-Bupot filed total;
  * Ready for sign-off (Accountant) and sign-off with the HR tick (Finance Manager only);
  * Out of date once a new version, journal, payment or manual entry lands after sign-off.
@@ -28,7 +28,7 @@ const v = computed(() => reconView(month.value))
 const section = ref<'payroll' | 'pph21'>(route.query.tab === 'pph21' ? 'pph21' : 'payroll')
 const sectionOptions = computed(() => [{ id: 'pr-s-payroll', label: t('Payroll'), value: 'payroll' }, { id: 'pr-s-pph21', label: t('PPh 21'), value: 'pph21' }])
 const by = ref<'account' | 'item'>('account')
-const byOptions = computed(() => [{ id: 'pr-by-acc', label: t('By account and tag'), value: 'account' }, { id: 'pr-by-item', label: t('By pay item'), value: 'item' }])
+const byOptions = computed(() => [{ id: 'pr-by-acc', label: t('By account and dimension'), value: 'account' }, { id: 'pr-by-item', label: t('By pay item'), value: 'item' }])
 
 // ─── Stats ──────────────────────────────────────────────────────────────────
 const checksOff = computed(() => v.value.checks.filter((c) => c.status === 'Off').length)
@@ -160,7 +160,7 @@ const manualOpen = ref(false)
         <MpSegmentedControl id="pr-by" v-model="by" name="pr-by" :data="byOptions" />
       </div>
       <template v-if="by === 'account'">
-        <PayrollReconTable :title="t('Expense by account and tag')" :first-column="t('Account and tag')" :rows="v.accountRows" :highlight="highlight" @note="openNote" @confirm="confirmNote" />
+        <PayrollReconTable :title="t('Expense by account and dimension')" :first-column="t('Account and dimension')" :rows="v.accountRows" :highlight="highlight" @note="openNote" @confirm="confirmNote" />
         <PayrollReconTable :title="t('Payables')" :first-column="t('Payable')" :rows="v.payableRows" :highlight="highlight" @note="openNote" @confirm="confirmNote" />
       </template>
       <PayrollReconTable v-else :title="t('By pay item')" :first-column="t('Pay item')" :rows="v.payItemRows" :highlight="highlight" @note="openNote" @confirm="confirmNote" />

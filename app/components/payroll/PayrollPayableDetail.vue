@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * One payable row opened (OD-18): the journal lines behind "owed", by tag; the payments
+ * One payable row opened (OD-18): the journal lines behind "owed", by dimension; the payments
  * behind "paid" with billing code and NTPN; a void per payment (a linked reversal, never an
  * edit, LR-8); and a note that explains a balance left open. No employee names.
  */
@@ -51,9 +51,9 @@ function confirmVoid() {
       </dl>
 
       <section class="ppx-section">
-        <h3 class="ppx-h">{{ t('Owed: journal lines by tag') }}</h3>
+        <h3 class="ppx-h">{{ t('Owed: journal lines by dimension') }}</h3>
         <table class="ppx-table">
-          <thead><tr><th>{{ t('Journal') }}</th><th>{{ t('Type') }}</th><th>{{ t('Date') }}</th><th>{{ t('Tag') }}</th><th class="ppx-r">{{ t('Amount') }}</th></tr></thead>
+          <thead><tr><th>{{ t('Journal') }}</th><th>{{ t('Type') }}</th><th>{{ t('Date') }}</th><th>{{ t('Dimensions') }}</th><th class="ppx-r">{{ t('Amount') }}</th></tr></thead>
           <tbody>
             <tr v-for="(l, i) in drill.owed" :key="i">
               <td><NuxtLink v-if="l.runId" class="ppx-link" :to="`/payroll-runs/${l.runId}`">{{ l.number }}</NuxtLink><span v-else>{{ l.number }}</span></td>

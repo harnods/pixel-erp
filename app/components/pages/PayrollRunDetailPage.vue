@@ -189,7 +189,7 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
           <div class="prr__cardsub">{{ t('Settings changed since the draft was built. Review the moved lines and post again.') }}</div>
         </div>
         <table class="prr__table">
-          <thead><tr><th class="prr__th">{{ t('Account and tag') }}</th><th class="prr__th prr__num">{{ t('Before') }}</th><th class="prr__th prr__num">{{ t('After') }}</th><th class="prr__th prr__num">{{ t('Difference') }}</th></tr></thead>
+          <thead><tr><th class="prr__th">{{ t('Account and dimension') }}</th><th class="prr__th prr__num">{{ t('Before') }}</th><th class="prr__th prr__num">{{ t('After') }}</th><th class="prr__th prr__num">{{ t('Difference') }}</th></tr></thead>
           <tbody>
             <tr v-for="c in staleChanges" :key="c.key">
               <td class="prr__td">{{ lineLabel(c.account, c.tags) }}</td>

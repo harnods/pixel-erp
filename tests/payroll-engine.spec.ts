@@ -4,9 +4,9 @@ import {
   journalTotals, journalById, simulateSend, setPayrollViewAs, setPayItemMapping, payItemKey, postRun, confirmPostAsFinanceManager,
   isDraftStale, setPayday, chooseRevision, postDifference, reverseJournal, reverseAndRepost, lockPeriod, decidePartial,
   totalGaps, releaseTaxHold, pph21Monthly, independentChecks, reconciliation, compareVersions, can, addPayrollAccount,
-  amendmentTasks, syncLog, type Run, type JournalLine,
+  amendmentTasks, syncLog, mapGroup, saveRule, type Run, type JournalLine,
 } from '../app/data/payrollStore'
-import { ACC, buildSalaryDetail } from '../app/data/payrollMaster'
+import { ACC, buildSalaryDetail, FALLBACK_TAG } from '../app/data/payrollMaster'
 
 const SEP = '1212 / monthly / 2026-08-21 / 2026-09-20'
 const AUG = '1212 / monthly / 2026-07-21 / 2026-08-20'
@@ -271,5 +271,22 @@ describe('payroll engine (PRD FG-1 to FG-7, LR-1 to LR-14)', () => {
     expect(can('reverse', 'Auditor')).toBe(false)
     expect(as('Auditor', () => postRun(run(SEP).id)).status).toBe(403)
     expect(runById(run(SEP).id)).toBeDefined()
+  })
+})
+
+describe('copy: Jurnal calls the organization and branch values dimensions', () => {
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant') })
+  it('group-map and rule messages say dimension, never tag', () => {
+    const msgs = [
+      mapGroup('Organization', 'New team', FALLBACK_TAG, { fromHold: true }).message,
+      mapGroup('Organization', 'New team', 'No such value').message,
+      saveRule({ name: 'Empty', conditions: [{ field: 'organization_name', op: 'is', values: ['Sales'] }], roles: ['Earning'], account: null, tags: null, active: true }).message,
+    ]
+    expect(msgs).toEqual([
+      'Pick a real dimension value. A new group cannot go to the fallback dimension value from here.',
+      'Pick a value from this dimension or create it first.',
+      'A rule sets an account, dimensions or both.',
+    ])
+    for (const m of msgs) expect(m).not.toMatch(/\btags?\b/i)
   })
 })
