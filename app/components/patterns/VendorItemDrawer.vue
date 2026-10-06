@@ -37,7 +37,7 @@ import {
 import { recommendPreferredVendor, type VendorReasonKind } from '~/data/vendorRecommendation'
 import { vendors } from '~/data/vendors'
 import { productBySku } from '~/data/inventory'
-import { deriveLeadTime } from '~/data/leadTimeHistory'
+import { deriveLeadTime, isEstimatedTier, leadTimeTierLabel } from '~/data/leadTimeHistory'
 import { getProductWarehouseStock } from '~/data/productDetails'
 import { unitOptionsForSku, factorFor, baseUnitFor } from '~/data/productUnits'
 import { formatIDR } from '~/utils/currency'
@@ -107,26 +107,28 @@ const addableVendors = computed(() => {
 // current (possibly edited-but-unsaved) terms.
 /**
  * Lead time is DERIVED, never typed (US-001 / D5): it comes from this vendor's
- * PO→goods-receipt history per warehouse, falling to the category default. So it
- * is shown read-only here as the per-warehouse range, and the recommendation
- * scores vendors on that derived figure — not on an editable field.
+ * PO→goods-receipt history per warehouse, falling to the category default. The
+ * drawer is scoped to one selected warehouse (that is the grain a preferred vendor
+ * is chosen at — D10/D23), so lead time shows that warehouse's single figure, not
+ * a cross-warehouse range. The recommendation scores vendors on the derived figure.
  */
 function derivedLeadDays(vendorId: string): number {
   if (!props.sku) return 0
-  return deriveLeadTime(vendorId, props.sku).days ?? 0
+  const wh = selectedWarehouse.value
+  return (wh ? deriveLeadTime(vendorId, props.sku, undefined, wh) : deriveLeadTime(vendorId, props.sku)).days ?? 0
 }
 function leadLabel(vendorId: string): string {
   if (!props.sku) return '—'
-  const days = getProductWarehouseStock(props.sku)
-    .map((s) => deriveLeadTime(vendorId, props.sku!, undefined, s.warehouseId).days)
-    .filter((d): d is number => d != null)
-  if (!days.length) {
-    const d = deriveLeadTime(vendorId, props.sku).days
-    return d != null ? `${d} days` : '—'
-  }
-  const min = Math.min(...days)
-  const max = Math.max(...days)
-  return min === max ? `${min} days` : `${min}–${max} days`
+  const wh = selectedWarehouse.value
+  const d = wh ? deriveLeadTime(vendorId, props.sku, undefined, wh) : deriveLeadTime(vendorId, props.sku)
+  return d.days != null ? `${d.days} days` : '—'
+}
+/** The basis behind the number for the selected warehouse — measured vs estimated. */
+function leadSub(vendorId: string): string {
+  if (!props.sku || !selectedWarehouse.value) return ''
+  const d = deriveLeadTime(vendorId, props.sku, undefined, selectedWarehouse.value)
+  if (d.days == null) return ''
+  return leadTimeTierLabel(d.tier, d.sampleSize)
 }
 
 const showReasons = ref(false)
@@ -452,9 +454,9 @@ const conversionsLabel = computed(() => unitOptions.value
                     </span>
                   </template>
                 </td>
-                <td class="rp-vi-td rp-vi-td--num">
+                <td class="rp-vi-td rp-vi-td--num" data-devchange="vendors-drawer-lead-per-warehouse">
                   <span class="rp-vi-lead-ro">{{ leadLabel(row.vendorId) }}</span>
-                  <span class="rp-vi-cell-sub">{{ t('measured per warehouse') }}</span>
+                  <span v-if="leadSub(row.vendorId)" class="rp-vi-cell-sub">{{ leadSub(row.vendorId) }}</span>
                 </td>
                 <td class="rp-vi-td rp-vi-td--num">
                   <MpInput v-if="!readonly" :id="`rp-vi-moq-${i}`" v-model="row.moq" type="number" :class="css({ width: '68px' })" />

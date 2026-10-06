@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'product-vendors-preferred-by-warehouse',
+    title: 'Product Vendors tab: preferred vendor by warehouse',
+    description:
+      'The preferred vendor is per SKU × warehouse (D23), so a single global checkmark could not show it. A "Preferred vendor by warehouse" summary now sits on top of the Vendors tab — each warehouse, its preferred vendor, and that pair\'s single lead time. The full vendor list below still shows every linked vendor (orderable alternates), and its Preferred column now names the warehouse(s) where each vendor is the pick instead of one global tick.',
+    date: '2026-10-06',
+    files: ['ProductDetailsPage.vue'],
+  },
+  {
+    id: 'vendors-drawer-lead-per-warehouse',
+    title: 'Vendors drawer: lead time follows the selected warehouse',
+    description:
+      'The Vendors drawer is scoped to one warehouse (that is the grain a preferred vendor is chosen at — D10/D23), so the Lead time column now shows that warehouse\'s single derived figure with its basis (measured average vs estimated), not a cross-warehouse range.',
+    date: '2026-10-06',
+    files: ['VendorItemDrawer.vue'],
+  },
+  {
     id: 'replenishment-lead-time-no-vendor-default',
     title: 'Lead-time ladder drops the vendor-default rung',
     description:

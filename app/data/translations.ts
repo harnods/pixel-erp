@@ -1033,6 +1033,10 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Purchase unit': 'Unit pembelian',
   'Price': 'Harga',
   'Preferred': 'Utama',
+  'Preferred vendor by warehouse': 'Vendor utama per gudang',
+  'Preferred vendor': 'Vendor utama',
+  'No preferred vendor set': 'Belum ada vendor utama',
+  '{first} +{n}': '{first} +{n}',
   'Product added': 'Produk berhasil ditambahkan',
 
   // ── WMS statuses ────────────────────────────────────────────────────────────

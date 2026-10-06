@@ -35,7 +35,7 @@ import { cutoverState } from '~/data/wmsCutover'
 import { formatDateTimeLong } from '~/utils/date'
 import { generateBarcodeLabelPdf, generateBarcodeSheetPdf } from '~/utils/barcodeLabelPdf'
 import { TODAY } from '~/data/master'
-import { vendorItemsForSku, preferredVendorItem, vendorNameFor } from '~/data/vendorItems'
+import { vendorItemsForSku, preferredVendorItem, preferredVendorFor, vendorNameFor } from '~/data/vendorItems'
 import {
   unitConversionsForSku, upsertUnitConversion, removeUnitConversion, describeQty,
 } from '~/data/productUnits'
@@ -216,6 +216,48 @@ function vendorLeadByWarehouse(vendorId: string) {
     const d = deriveLeadTime(vendorId, sku, undefined, s.warehouseId)
     return { warehouseId: s.warehouseId, warehouseName: s.warehouseName, days: d.days, estimated: isEstimatedTier(d.tier) }
   })
+}
+
+/**
+ * The preferred vendor PER WAREHOUSE (D23): a SKU can prefer a different vendor in
+ * each warehouse, so one global "preferred" checkmark is no longer the truth. This
+ * resolves each stocked warehouse's own pick (falling back to the SKU-level default
+ * via the ladder) plus that pair's single lead time — the source for the summary
+ * table on the Vendors tab.
+ */
+const preferredByWarehouse = computed(() => {
+  void vendorTick.value
+  void replenishmentRevision.value
+  const sku = product.value?.sku
+  if (!sku) return [] as {
+    warehouseId: string; warehouseName: string
+    vendorId: string | null; vendorName: string | null
+    leadDays: number | null; leadEstimated: boolean
+  }[]
+  return warehouseStock.value.map((s) => {
+    const vi = preferredVendorFor(sku, s.warehouseId)
+    const d = vi ? deriveLeadTime(vi.vendorId, sku, undefined, s.warehouseId) : null
+    return {
+      warehouseId: s.warehouseId,
+      warehouseName: s.warehouseName,
+      vendorId: vi?.vendorId ?? null,
+      vendorName: vi ? vendorNameFor(vi.vendorId) : null,
+      leadDays: d?.days ?? null,
+      leadEstimated: d ? isEstimatedTier(d.tier) : false,
+    }
+  })
+})
+
+/** The warehouses in which a given vendor is the preferred pick (for the terms table). */
+function preferredInWarehouses(vendorId: string) {
+  return preferredByWarehouse.value.filter((r) => r.vendorId === vendorId)
+}
+/** Compact "where is this vendor preferred" label: a name, or the first + a count. */
+function preferredWhLabel(vendorId: string): string {
+  const names = preferredInWarehouses(vendorId).map((r) => r.warehouseName)
+  if (!names.length) return ''
+  if (names.length === 1) return names[0]!
+  return tf('{first} +{n}', { first: names[0], n: names.length - 1 })
 }
 
 // Which vendor rows have their per-warehouse lead-time breakdown expanded.
@@ -1087,6 +1129,46 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
               <div class="pd-filter-bar pd-filter-bar--end">
                 <MpButton id="pd-view-vendors" variant="secondary" is-rounded @click="vendorOpen = true">{{ t('View vendors') }}</MpButton>
               </div>
+
+              <!-- Which vendor is preferred in each warehouse (D23): the preferred vendor
+                   is per SKU × warehouse, so a single global checkmark can't say it. This
+                   summary answers it at a glance; the terms table below lists every vendor. -->
+              <section v-if="preferredByWarehouse.length" class="pd-pref-summary" data-devchange="product-vendors-preferred-by-warehouse">
+                <h3 class="pd-pref-summary__title">{{ t('Preferred vendor by warehouse') }}</h3>
+                <div class="pd-table-scroll">
+                  <table class="pd-table pd-pref-table">
+                    <colgroup>
+                      <col style="width: 240px" /><!-- pixel-police-allow: table column width, not spacing -->
+                      <col style="width: 280px" /><!-- pixel-police-allow: table column width, not spacing -->
+                      <col style="width: 160px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th class="pd-th">{{ t('Warehouse') }}</th>
+                        <th class="pd-th">{{ t('Preferred vendor') }}</th>
+                        <th class="pd-th pd-th--num">{{ t('Lead time') }}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="r in preferredByWarehouse" :key="r.warehouseId" class="pd-tr">
+                        <td class="pd-td">{{ r.warehouseName }}</td>
+                        <td class="pd-td">
+                          <span v-if="r.vendorName" class="pd-vendor-name">{{ r.vendorName }}</span>
+                          <span v-else class="pd-vendor-alt">{{ t('No preferred vendor set') }}</span>
+                        </td>
+                        <td class="pd-td pd-td--num">
+                          <template v-if="r.leadDays != null">
+                            {{ tf('{n} days', { n: r.leadDays }) }}
+                            <span v-if="r.leadEstimated" class="pd-lead-est">{{ t('Estimated') }}</span>
+                          </template>
+                          <span v-else class="pd-vendor-alt">—</span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
               <div class="pd-table-scroll">
                 <table class="pd-table">
                   <colgroup>
@@ -1142,7 +1224,10 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                         </span>
                       </td>
                       <td class="pd-td">
-                        <MpIcon v-if="vi.isPreferred" name="check" size="sm" class="pd-vendor-check" :aria-label="t('Preferred')" />
+                        <template v-if="preferredInWarehouses(vi.vendorId).length">
+                          <span class="pd-pref-wh"><MpIcon name="check" size="sm" class="pd-vendor-check" :aria-label="t('Preferred')" /></span>
+                          <span class="pd-vendor-note">{{ preferredWhLabel(vi.vendorId) }}</span>
+                        </template>
                         <span v-else class="pd-vendor-alt">—</span>
                       </td>
                       <td class="pd-td pd-td--num">
@@ -2019,6 +2104,15 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 }
 .pd-vendor-none { color: var(--mp-text-secondary); }
 .pd-vendor-alt { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
+
+/* "Preferred vendor by warehouse" summary — sits above the full terms table (D23). */
+.pd-pref-summary { margin-bottom: var(--mp-spacing-5, 20px); }
+.pd-pref-summary__title {
+  margin: 0 0 var(--mp-spacing-2, 8px);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+.pd-pref-wh { display: inline-flex; align-items: center; }
 
 /* Per-warehouse lead-time breakdown (VR-01) — expand under the range. */
 .pd-lead-toggle {
