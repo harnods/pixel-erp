@@ -323,6 +323,37 @@ function persist(): void {
   saveOverlay(overlay)
 }
 
+// ── Per-warehouse preferred vendor (D23) ─────────────────────────────────────
+// The preferred vendor may differ per warehouse. This overlay holds the explicit
+// per-SKU×warehouse choice; a warehouse with no entry falls back to the SKU-level
+// `isPreferred` default (then the category-default lead-time ladder). A separate
+// localStorage key, like the vendor-items overlay above.
+const PREFERRED_WH_KEY = 'erp-db:preferred-vendor-by-warehouse-v1'
+const whKey = (sku: string, warehouseId: string) => `${sku}::${warehouseId}`
+
+function loadPreferredByWarehouse(): Record<string, string> {
+  if (!import.meta.client) return {}
+  try {
+    const raw = localStorage.getItem(PREFERRED_WH_KEY)
+    const parsed = raw ? JSON.parse(raw) : {}
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, string>) : {}
+  } catch {
+    return {}
+  }
+}
+
+const preferredByWarehouse = reactive<Record<string, string>>(loadPreferredByWarehouse())
+
+function savePreferredByWarehouse(): void {
+  if (!import.meta.client) return
+  try { localStorage.setItem(PREFERRED_WH_KEY, JSON.stringify({ ...preferredByWarehouse })) } catch { /* non-fatal */ }
+}
+
+/** The vendor id explicitly chosen as preferred for this SKU in this warehouse, if any. */
+export function preferredVendorIdForWarehouse(sku: string, warehouseId: string): string | undefined {
+  return preferredByWarehouse[whKey(sku, warehouseId)]
+}
+
 // ── Reads ────────────────────────────────────────────────────────────────────
 
 /** Every ACTIVE vendor link for a SKU, preferred first then by lead time. */
@@ -332,9 +363,26 @@ export function vendorItemsForSku(sku: string): VendorItem[] {
     .sort((a, b) => Number(b.isPreferred) - Number(a.isPreferred) || a.leadTimeDays - b.leadTimeDays)
 }
 
+/** The SKU-level default preferred link (ignores any per-warehouse override). */
 export function preferredVendorItem(sku: string): VendorItem | undefined {
   const list = vendorItemsForSku(sku)
   return list.find((v) => v.isPreferred) ?? list[0]
+}
+
+/**
+ * Preferred vendor link for a SKU, PER WAREHOUSE (D23). A warehouse's explicit pick
+ * wins; otherwise the SKU-level default. An explicit pick that is no longer an active
+ * link falls through to the default. Pass no warehouseId for the SKU-level default.
+ */
+export function preferredVendorFor(sku: string, warehouseId?: string): VendorItem | undefined {
+  if (warehouseId) {
+    const vid = preferredByWarehouse[whKey(sku, warehouseId)]
+    if (vid) {
+      const vi = vendorItemFor(sku, vid)
+      if (vi) return vi
+    }
+  }
+  return preferredVendorItem(sku)
 }
 
 export function vendorItemFor(sku: string, vendorId: string): VendorItem | undefined {
@@ -423,8 +471,17 @@ export function upsertVendorItem(patch: Partial<VendorItem> & { sku: string; ven
   return row
 }
 
-/** Make one vendor preferred for a SKU, clearing the flag on its siblings. */
-export function setPreferredVendor(sku: string, vendorId: string): void {
+/**
+ * Make one vendor preferred for a SKU. With a `warehouseId` it sets the preferred
+ * vendor for THAT warehouse only (D23 — different vendor allowed per warehouse);
+ * without one it sets the SKU-level default, clearing the flag on its siblings.
+ */
+export function setPreferredVendor(sku: string, vendorId: string, warehouseId?: string): void {
+  if (warehouseId) {
+    preferredByWarehouse[whKey(sku, warehouseId)] = vendorId
+    savePreferredByWarehouse()
+    return
+  }
   for (const v of vendorItems) {
     if (v.sku !== sku) continue
     v.isPreferred = v.vendorId === vendorId
@@ -432,6 +489,13 @@ export function setPreferredVendor(sku: string, vendorId: string): void {
     delete v.wasPreferred
   }
   persist()
+}
+
+/** Clear a warehouse's explicit preferred vendor, so it falls back to the SKU default (D23). */
+export function clearPreferredVendorForWarehouse(sku: string, warehouseId: string): void {
+  if (preferredByWarehouse[whKey(sku, warehouseId)] === undefined) return
+  delete preferredByWarehouse[whKey(sku, warehouseId)]
+  savePreferredByWarehouse()
 }
 
 export function deactivateVendorItem(sku: string, vendorId: string): void {

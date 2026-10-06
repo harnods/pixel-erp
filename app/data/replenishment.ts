@@ -44,7 +44,7 @@ import {
   type DemandDoc,
 } from './demandHistory'
 import {
-  preferredVendorItem, vendorItemFor, vendorItemsForSku, vendorNameFor, type VendorItem,
+  preferredVendorItem, preferredVendorFor, vendorItemFor, vendorItemsForSku, vendorNameFor, type VendorItem,
   inactivePreferredVendorItem,
 } from './vendorItems'
 import {
@@ -689,7 +689,9 @@ export function buildRow(
   const atp = atpFor(sku, warehouseId)
   const fsn = fsnFor(sku, warehouseId, cfg, asOf)
 
-  const vendorItem = preferredVendorItem(sku) ?? null
+  // Preferred vendor is resolved per warehouse (D23): this warehouse's explicit pick,
+  // else the SKU-level default.
+  const vendorItem = preferredVendorFor(sku, warehouseId) ?? null
   const alternates = vendorItemsForSku(sku).filter((v) => v.vendorId !== vendorItem?.vendorId)
 
   // Lead time is MEASURED from this vendor+product's PO→receipt history, then
@@ -1156,7 +1158,8 @@ export function recommendedMinStock(
   cfg: ReplenishmentConfig = getReplenishmentConfig(),
   asOf: string = REPL_ASOF_ISO,
 ): MinStockRecommendation {
-  const vendorItem = preferredVendorItem(sku) ?? null
+  // SKU-level default, used only for the no-warehouse fallback below.
+  const skuVendorItem = preferredVendorItem(sku) ?? null
 
   let best: MinStockRecommendation | null = null
   let count = 0
@@ -1165,6 +1168,8 @@ export function recommendedMinStock(
     if (!warehouseProducts(wh.id).some((p) => p.sku === sku)) continue
     count++
 
+    // Preferred vendor can differ per warehouse (D23), so resolve it in the loop.
+    const vendorItem = preferredVendorFor(sku, wh.id) ?? null
     // Lead time is measured per warehouse (VR-01), so it is derived inside the loop.
     const derived = deriveLeadTime(vendorItem?.vendorId ?? null, sku, cfg, wh.id)
     const settings = effectiveSettings(sku, wh.id, cfg)
@@ -1201,7 +1206,7 @@ export function recommendedMinStock(
   // Nothing to compute from yet — a brand-new product, or one that has never
   // moved. Report that honestly rather than inventing a floor (US-003 CON-02).
   // No warehouse to attribute to here, so lead time is the network-aggregate.
-  const derivedAgg = deriveLeadTime(vendorItem?.vendorId ?? null, sku, cfg)
+  const derivedAgg = deriveLeadTime(skuVendorItem?.vendorId ?? null, sku, cfg)
   return {
     value: null,
     avgDailySales: 0,
@@ -1209,8 +1214,8 @@ export function recommendedMinStock(
     leadTimeTier: derivedAgg.tier,
     leadTimeEstimated: isEstimatedTier(derivedAgg.tier),
     leadTimeSampleSize: derivedAgg.sampleSize,
-    preferredVendorId: vendorItem?.vendorId ?? null,
-    preferredVendorName: vendorItem ? vendorNameFor(vendorItem.vendorId) : '',
+    preferredVendorId: skuVendorItem?.vendorId ?? null,
+    preferredVendorName: skuVendorItem ? vendorNameFor(skuVendorItem.vendorId) : '',
     safetyDays: safetyDaysOverride ?? cfg.safetyDaysGlobal,
     warehouseId: '',
     warehouseName: '',

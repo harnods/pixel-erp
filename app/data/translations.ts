@@ -3990,6 +3990,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'No demand yet to size an order': 'Belum ada permintaan untuk menghitung ukuran pesanan',
   'No vendor supplies this product yet, so it cannot be ordered. Add one in the Vendors module.': 'Belum ada vendor yang memasok produk ini, jadi belum bisa dipesan. Tambahkan di modul Vendor.',
   'Select replenishment from the same warehouse to create a purchase request.': 'Pilih daftar pengisian ulang dari gudang yang sama untuk membuat permintaan pembelian.',
+  'Preferred vendor for': 'Vendor utama untuk',
+  'A product can have a different preferred vendor in each warehouse.': 'Sebuah produk bisa punya vendor utama berbeda di setiap gudang.',
   'Covered by inbound': 'Tercukupi stok masuk',
   'An open PO already covers these': 'Pesanan pembelian terbuka sudah mencukupi',
   'excluded from To order': 'tidak masuk Perlu dipesan',

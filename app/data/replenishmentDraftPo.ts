@@ -32,7 +32,7 @@ import { setPurchaseOrderDocument } from './purchaseOrderLines'
 import { PAYMENT_TERMS, type POLineItem, type POTotals } from './purchaseOrderDetails'
 import { productBySku } from './inventory'
 import { warehouses } from './warehouses'
-import { vendorItemFor, vendorNameFor, vendorItemsForSku, preferredVendorItem, type VendorItem } from './vendorItems'
+import { vendorItemFor, vendorNameFor, vendorItemsForSku, preferredVendorFor, type VendorItem } from './vendorItems'
 import { updatePurchaseRequest } from './purchaseRequests'
 import { SIM_TODAY_ISO } from './simClock'
 import { shiftDays } from './master'
@@ -314,9 +314,10 @@ export function defaultConversionWarehouse(pr: PurchaseRequest): string {
   return pr.replenishment?.warehouseId ?? warehouses[0]?.id ?? ''
 }
 
-/** The vendor pre-selected for a PR line: preferred vendor, else the first linked. */
-export function suggestedVendorForSku(sku: string): string | null {
-  return preferredVendorItem(sku)?.vendorId ?? vendorItemsForSku(sku)[0]?.vendorId ?? null
+/** The vendor pre-selected for a PR line: the warehouse's preferred vendor (D23),
+ *  else the SKU default, else the first linked. */
+export function suggestedVendorForSku(sku: string, warehouseId?: string): string | null {
+  return preferredVendorFor(sku, warehouseId)?.vendorId ?? vendorItemsForSku(sku)[0]?.vendorId ?? null
 }
 
 /**
@@ -349,7 +350,7 @@ export function planPosFromPurchaseRequest(
     // per-SKU override is passed (a whole-PR vendor change sets them together).
     const vendorId = prLine.sku in vendorChoices
       ? vendorChoices[prLine.sku]!
-      : (pr.vendor?.id ?? suggestedVendorForSku(prLine.sku))
+      : (pr.vendor?.id ?? suggestedVendorForSku(prLine.sku, warehouseId))
 
     if (!vendorId) { skipped.push({ ...base, reason: 'no-vendor' }); continue }
 
@@ -469,7 +470,7 @@ export function planPosFromPurchaseRequests(
   for (const pr of prs) {
     const prVendor = pr.vendor?.id ?? null
     for (const line of pr.lines) {
-      const vendorId = line.sku in vendorChoices ? vendorChoices[line.sku]! : (prVendor ?? suggestedVendorForSku(line.sku))
+      const vendorId = line.sku in vendorChoices ? vendorChoices[line.sku]! : (prVendor ?? suggestedVendorForSku(line.sku, pr.replenishment?.warehouseId))
       const key = `${vendorId ?? '∅'}::${line.sku}`
       if (!merged.has(key)) merged.set(key, { vendorId, sku: line.sku, product: line.product, need: 0, sources: [] })
       const m = merged.get(key)!

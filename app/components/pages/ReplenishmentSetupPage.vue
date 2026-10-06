@@ -113,11 +113,16 @@ const FSN_BADGE: Record<string, { type: string; label: string }> = {
 const settingsRow = ref<WorklistRow | null>(null)
 const settingsOpen = ref(false)
 const vendorSku = ref<string | null>(null)
+const vendorWarehouse = ref<string | undefined>(undefined)
 const vendorOpen = ref(false)
 
 function viewProduct(sku: string) { router.push(`/product-list/${sku}`) }
 function openSettings(row: WorklistRow) { settingsRow.value = row; settingsOpen.value = true }
-function openVendors(sku: string) { vendorSku.value = sku; vendorOpen.value = true }
+function openVendors(sku: string, warehouseId?: string) {
+  vendorSku.value = sku
+  vendorWarehouse.value = warehouseId
+  vendorOpen.value = true
+}
 
 function turnOnTracking(row: WorklistRow) {
   setTracked(row.sku, row.warehouseId, true)
@@ -277,7 +282,7 @@ function onSaved() {
         <MpPopoverContent :class="css({ minWidth: '210px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewProduct((row as any).sku)">{{ t('View details') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="openVendors((row as any).sku)">
+            <MpPopoverListItem @click="openVendors((row as any).sku, (row as any).warehouseId)">
               {{ t('View vendors, lead time and MOQ') }}
             </MpPopoverListItem>
             <MpPopoverListItem @click="openSettings(row as unknown as WorklistRow)">
@@ -321,6 +326,7 @@ function onSaved() {
   <VendorItemDrawer
     v-model:is-open="vendorOpen"
     :sku="vendorSku"
+    :warehouse-id="vendorWarehouse"
     readonly
     @saved="onSaved"
   />

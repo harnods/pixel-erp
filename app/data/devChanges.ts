@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'vendors-preferred-per-warehouse',
+    title: 'Preferred vendor is per warehouse',
+    description:
+      'The preferred vendor can now differ per warehouse (D23). Pick a warehouse here, then the radio below sets the preferred vendor for that warehouse; a warehouse with no pick falls back to the SKU default. Opened from a worklist row the warehouse is pre-selected. The replenishment engine resolves lead time and the draft-PR vendor per SKU × warehouse accordingly.',
+    date: '2026-10-06',
+    files: ['vendorItems.ts', 'replenishment.ts', 'VendorItemDrawer.vue'],
+  },
+  {
     id: 'replenishment-covered-by-inbound',
     title: 'Replenishment: "Covered by inbound" worklist state',
     description:
