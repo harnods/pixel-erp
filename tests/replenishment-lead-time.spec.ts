@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import {
-  deriveLeadTime, leadTimeSamplesFor, vendorDefaultLeadTime, computedLeadTimeCoverage,
+  deriveLeadTime, leadTimeSamplesFor, computedLeadTimeCoverage,
   isEstimatedTier, leadTimeTierLabel, noPoReceiptCount,
 } from '~/data/leadTimeHistory'
 import { vendorItems, VENDORLESS_SKUS } from '~/data/vendorItems'
@@ -113,16 +113,20 @@ describe('the resolution ladder (VR-04)', () => {
     }
   })
 
-  it('falls to the vendor default when a warehouse cell is too thin (AC-03, per warehouse)', () => {
-    // Lead time is now per vendor×product×warehouse (VR-01), so thin cells are
-    // found at that grain — a warehouse whose own PO→GR history is sparse.
+  it('a warehouse cell too thin to compute falls to an estimated tier, never a 0 (AC-03, per warehouse)', () => {
+    // Lead time is per vendor×product×warehouse (VR-01), so thin cells are found at
+    // that grain — a warehouse whose own PO→GR history is sparse. The vendor-default
+    // rung was removed (D5a / D10): these now fall straight to category, then the
+    // global floor — never to the vendor's quoted term, and never to a fabricated 0.
     const thin = active
       .flatMap((v) => activeWarehouses.map((wh) => ({ v, d: deriveLeadTime(v.vendorId, v.sku, cfg, wh) })))
-      .filter((x) => x.d.tier === 'vendor-default')
+      .filter((x) => x.d.sampleSize === 0 && x.d.tier !== 'none')
     expect(thin.length).toBeGreaterThan(0)
-    for (const { v, d } of thin) {
+    for (const { d } of thin) {
       expect(d.sampleSize).toBe(0)
-      expect(d.days).toBe(vendorDefaultLeadTime(v.vendorId))
+      expect(['category', 'global']).toContain(d.tier)
+      expect(d.days).not.toBeNull()
+      expect(d.days!).toBeGreaterThan(0)
       expect(isEstimatedTier(d.tier)).toBe(true)
     }
   })
@@ -133,7 +137,7 @@ describe('the resolution ladder (VR-04)', () => {
     // which US-022 AC-06 explicitly rejects.
     const d = deriveLeadTime(null, PRODUCTS[0]!.sku, cfg)
     expect(d.tier).not.toBe('computed')
-    expect(d.tier).not.toBe('vendor-default')
+    expect(['category', 'global']).toContain(d.tier)
     expect(d.days).not.toBeNull()
   })
 
@@ -145,7 +149,7 @@ describe('the resolution ladder (VR-04)', () => {
   })
 
   it('tags every non-computed tier as estimated (AC-03 / AC-04)', () => {
-    for (const tier of ['vendor-default', 'category', 'global'] as const) {
+    for (const tier of ['category', 'global'] as const) {
       expect(isEstimatedTier(tier)).toBe(true)
       expect(leadTimeTierLabel(tier)).toMatch(/estimated/)
     }

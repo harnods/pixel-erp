@@ -146,8 +146,10 @@ describe('override precedence (US-011, US-024)', () => {
   })
 
   it('the reorder point is per warehouse, and clearing restores the calculated value', () => {
+    // D13 — the manual min is clamped to the computed Max: min(manual min, Max).
+    const max = Math.round(buildRow(SKU, WH).suggestion.targetQty)
     saveSkuWarehouseOverride(SKU, WH, { reorderPoint: 500 })
-    expect(buildRow(SKU, WH).reorderPoint).toBe(500)
+    expect(buildRow(SKU, WH).reorderPoint).toBe(Math.min(500, max))
     expect(buildRow(SKU, WH).reorderPointSource).toBe('sku-warehouse')
     // Another warehouse is unaffected — settings are per SKU-warehouse (US-024 AC-01).
     expect(buildRow(SKU, 'wh-002').reorderPointSource).toBe('calculated')

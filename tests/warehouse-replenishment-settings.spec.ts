@@ -92,33 +92,43 @@ describe('min. stock per warehouse', () => {
     )
   })
 
-  it('an explicit floor overrides the calculation and says so', () => {
+  it('an explicit floor overrides the calculation and says so, capped at Max (D13)', () => {
     const { sku, a } = pair()
+    // D13 — the manual min is the trigger but is clamped to the computed Max
+    // (order-up-to): effective trigger = min(manual min, computed Max).
+    const max = Math.round(buildRow(sku, a, cfg).suggestion.targetQty)
     saveSkuWarehouseOverride(sku, a, { reorderPoint: 777 })
     invalidateReplenishmentCaches()
 
     const row = buildRow(sku, a, cfg)
-    expect(row.reorderPoint).toBe(777)
+    expect(row.reorderPoint).toBe(Math.min(777, max))
     expect(row.reorderPointSource).toBe('sku-warehouse')
+    expect(row.reorderPointClampedToMax).toBe(777 > max)
   })
 
   it('two warehouses of the same SKU hold independent floors (D2)', () => {
     const { sku, a, b } = pair()
+    // Each warehouse keeps its own trigger, each clamped to its own Max (D13).
+    const maxA = Math.round(buildRow(sku, a, cfg).suggestion.targetQty)
+    const maxB = Math.round(buildRow(sku, b, cfg).suggestion.targetQty)
     saveSkuWarehouseOverride(sku, a, { reorderPoint: 500 })
     saveSkuWarehouseOverride(sku, b, { reorderPoint: 5 })
     invalidateReplenishmentCaches()
 
-    expect(buildRow(sku, a, cfg).reorderPoint).toBe(500)
-    expect(buildRow(sku, b, cfg).reorderPoint).toBe(5)
+    expect(buildRow(sku, a, cfg).reorderPoint).toBe(Math.min(500, maxA))
+    expect(buildRow(sku, b, cfg).reorderPoint).toBe(Math.min(5, maxB))
   })
 
   it('clearing it returns to calculated, not to the last typed number', () => {
     const { sku, a } = pair()
-    const calculated = buildRow(sku, a, cfg).reorderPoint
+    const base = buildRow(sku, a, cfg)
+    const calculated = base.reorderPoint
+    const max = Math.round(base.suggestion.targetQty)
 
     saveSkuWarehouseOverride(sku, a, { reorderPoint: 999 })
     invalidateReplenishmentCaches()
-    expect(buildRow(sku, a, cfg).reorderPoint).toBe(999)
+    // The typed 999 is capped to Max (D13), but it is still the stored override.
+    expect(buildRow(sku, a, cfg).reorderPoint).toBe(Math.min(999, max))
 
     clearSkuWarehouseOverride(sku, a)
     invalidateReplenishmentCaches()

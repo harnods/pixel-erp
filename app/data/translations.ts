@@ -3870,6 +3870,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'No purchase-order history for this vendor and product, so lead time cannot be measured. Set it here, or start raising POs and it will be measured automatically': 'Belum ada riwayat pesanan pembelian untuk vendor dan produk ini, jadi waktu tunggu tidak bisa diukur. Isi di sini, atau mulai buat PO dan waktu tunggu akan terukur otomatis',
   'When off, this product never appears in the worklist for this warehouse, but a genuine stockout still raises an alert': 'Jika nonaktif, produk ini tidak muncul di daftar pengisian ulang untuk gudang ini, tetapi stok habis yang sebenarnya tetap memicu peringatan',
   'This is well below the calculated reorder point, so this warehouse may stock out before it is flagged': 'Nilai ini jauh di bawah titik pemesanan ulang hasil hitungan, jadi gudang ini bisa kehabisan stok sebelum ditandai',
+  'Above the order-up-to level ({n} {unit}), so the trigger is capped there': 'Di atas level isi-sampai ({n} {unit}), jadi pemicunya dibatasi di angka itu',
   'No demand yet, so nothing is calculated': 'Belum ada permintaan, jadi belum ada yang dihitung',
   'Suggested qty without a vendor is {to}. Your qty is {from}': 'Qty disarankan tanpa vendor adalah {to}. Qty Anda {from}',
   'Suggested qty for {vendor} is {to}. Your qty is {from}': 'Qty disarankan untuk {vendor} adalah {to}. Qty Anda {from}',

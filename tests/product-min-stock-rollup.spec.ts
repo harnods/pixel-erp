@@ -72,8 +72,11 @@ describe('aggregation runs bottom-up, never top-down (D13)', () => {
     invalidateReplenishmentCaches()
 
     const after = warehouseMinStockRollup(sku, cfg)
-    expect(after.total).toBe(before.total + 500)
-    expect(after.perWarehouse[0]!.source).toBe('sku-warehouse')
+    const movedTarget = after.perWarehouse.find((w) => w.warehouseId === target.warehouseId)!
+    // The total tracks this warehouse's own change, bottom-up — however much the
+    // trigger actually moved (a manual min above Max is capped to it, D13).
+    expect(after.total).toBe(before.total - target.value + movedTarget.value)
+    expect(movedTarget.source).toBe('sku-warehouse')
   })
 
   it('the product total is never itself stored or pushed down', () => {
@@ -99,17 +102,26 @@ describe('aggregation runs bottom-up, never top-down (D13)', () => {
     const roll = warehouseMinStockRollup(sku, cfg)
     const pinned = roll.perWarehouse[0]!
 
+    // D13 — a manual min (whether SKU-warehouse or the SKU default) is the trigger
+    // but is clamped to each warehouse's computed Max: min(manual min, Max). A
+    // warehouse with no demand has Max 0 and is not clamped.
+    const clampTo = (v: number, whId: string) => {
+      const max = Math.round(buildRow(sku, whId, cfg).suggestion.targetQty)
+      return max > 0 ? Math.min(v, max) : v
+    }
+
     saveSkuWarehouseOverride(sku, pinned.warehouseId, { reorderPoint: 42 })
     saveSkuOverride(sku, { reorderPoint: 7 })
     invalidateReplenishmentCaches()
 
     const after = warehouseMinStockRollup(sku, cfg)
     // The warehouse that set its own wins over the product default.
-    expect(after.perWarehouse.find((w) => w.warehouseId === pinned.warehouseId)!.value).toBe(42)
+    expect(after.perWarehouse.find((w) => w.warehouseId === pinned.warehouseId)!.value)
+      .toBe(clampTo(42, pinned.warehouseId))
     // Others take the product default rather than their computed figure (VR-03).
     for (const w of after.perWarehouse) {
       if (w.warehouseId === pinned.warehouseId) continue
-      expect(w.value).toBe(7)
+      expect(w.value).toBe(clampTo(7, w.warehouseId))
       expect(w.source).toBe('sku')
     }
   })

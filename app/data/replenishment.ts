@@ -489,6 +489,8 @@ export function isSuppressed(
 export interface ReorderPointResult {
   value: number
   source: 'sku-warehouse' | 'sku' | 'calculated' | 'none'
+  /** The manual min was above the computed Max and was capped to it (D13). */
+  clampedToMax?: boolean
 }
 
 /**
@@ -514,11 +516,19 @@ export function resolveReorderPoint(
   settings: EffectiveReplenishmentSettings,
   velocity: number,
   leadDays: number,
+  computedMax?: number,
 ): ReorderPointResult {
   if (settings.reorderPointOverride !== null) {
+    // D13 — a manual min is the TRIGGER, but it is clamped to the computed Max
+    // (order-up-to level): a reorder point above the level we would ever stock up
+    // to is self-contradictory, so effective trigger = min(manual min, computed Max).
+    // The unclamped computed reorder point is still kept beside it as a note (D17).
+    const canClamp = computedMax != null && computedMax > 0
+    const clampedToMax = canClamp && settings.reorderPointOverride > computedMax!
     return {
-      value: settings.reorderPointOverride,
+      value: clampedToMax ? computedMax! : settings.reorderPointOverride,
       source: settings.reorderPointSource === 'sku-warehouse' ? 'sku-warehouse' : 'sku',
+      clampedToMax,
     }
   }
   // No demand (neither measured nor a cold-start seed) ⇒ no reorder point (D17).
@@ -617,6 +627,11 @@ export interface WorklistRow {
   reorderPoint: number
   reorderPointSource: ReorderPointResult['source']
   /**
+   * The typed manual min was above the computed Max (order-up-to) and the trigger
+   * was capped to it (D13 — effective trigger = min(manual min, computed Max)).
+   */
+  reorderPointClampedToMax: boolean
+  /**
    * What the engine WOULD set, even when a manual override is the trigger (D17 —
    * the computed value is kept as a note beside the override). Null without demand.
    */
@@ -708,7 +723,17 @@ export function buildRow(
   // No vendor and no manual figure means nothing to measure against at all.
   const leadTimeMissing = manualLead === null && derivedLead.tier === 'none'
 
-  const rop = resolveReorderPoint(settings, velocity.avgDailySales, leadTimeDays)
+  // Provisional launch window (§2.7 / US-008 AC-06): force coverage to 0 so the
+  // order-up-to level collapses to the reorder point — a launch spike tops up to
+  // the trigger, never to a full coverage horizon.
+  const coverageDays = velocity.provisional ? 0 : settings.coverageDays
+  // The order-up-to level (Max): the demand that lead + safety + coverage days
+  // represents. Resolved before the reorder point so a manual min can be clamped
+  // to it (D13 — effective trigger = min(manual min, computed Max)).
+  const targetQty = (leadTimeDays + settings.safetyDays + coverageDays) * velocity.avgDailySales
+  const computedMax = Math.round(targetQty)
+
+  const rop = resolveReorderPoint(settings, velocity.avgDailySales, leadTimeDays, computedMax)
   const cover = daysOfCover(atp.available, velocity.avgDailySales, leadTimeDays + settings.safetyDays)
 
   // ── Suggestion ──
@@ -718,12 +743,6 @@ export function buildRow(
   // reach the UI with a zero quantity, so no rendering mistake can ever surface
   // a fabricated figure.
   const canRecommend = hasDemandBasis && !leadTimeMissing
-  // Provisional launch window (§2.7 / US-008 AC-06): force coverage to 0 so the
-  // order-up-to level collapses to the reorder point — a launch spike tops up to
-  // the trigger, never to a full coverage horizon.
-  const coverageDays = velocity.provisional ? 0 : settings.coverageDays
-  // The order-up-to level: the demand that lead + safety + coverage days represents.
-  const targetQty = (leadTimeDays + settings.safetyDays + coverageDays) * velocity.avgDailySales
   const gapQty = targetQty - (atp.available + atp.onOrder)
   const rawQty = canRecommend
     ? suggestedRawQty(
@@ -855,6 +874,7 @@ export function buildRow(
 
     reorderPoint: rop.value,
     reorderPointSource: rop.source,
+    reorderPointClampedToMax: rop.clampedToMax ?? false,
     calculatedReorderPoint: velocity.avgDailySales > 0
       ? Math.ceil(velocity.avgDailySales * (leadTimeDays + settings.safetyDays))
       : null,

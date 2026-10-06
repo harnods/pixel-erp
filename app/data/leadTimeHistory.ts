@@ -64,7 +64,7 @@ import {
 export type LeadTimeExclusion = 'no-po' | 'not-first-receipt' | 'outlier'
 
 /** Which rung of the resolution ladder produced the value (US-001 VR-04). */
-export type LeadTimeTier = 'computed' | 'vendor-default' | 'category' | 'global' | 'manual' | 'none'
+export type LeadTimeTier = 'computed' | 'category' | 'global' | 'manual' | 'none'
 
 export interface LeadTimeSample {
   vendorId: string
@@ -348,36 +348,23 @@ export function noPoReceiptCount(sku: string): number {
 }
 
 /**
- * The vendor-level default (Tier 2): the average captured term across everything
- * this vendor supplies. "for thin or brand-new product cells of a known vendor" —
- * a vendor that ships in a fortnight generally ships in a fortnight, whatever the
- * product, so this is a far better guess than a category average.
- */
-export function vendorDefaultLeadTime(vendorId: string): number | null {
-  const items = vendorItems.filter((v) => v.vendorId === vendorId && v.active)
-  if (!items.length) return null
-  const sum = items.reduce((s, v) => s + v.leadTimeDays, 0)
-  return Math.round(sum / items.length)
-}
-
-/**
  * Resolve lead time for a vendor×product cell down the PRD's ladder (VR-04, D22):
  *
- *   Tier 1  computed        average of the last N PO-backed receipts, when the
- *                           cell has at least `leadTimeMinSamples` eligible ones
- *   Tier 2  vendor default  the vendor's average captured term, for a known vendor
- *                           whose warehouse history is still too thin to compute
- *   Tier 2  category        the added-category default from config
- *   Tier 3  global          the "Other categories" floor, when it is a NUMBER
- *                           (an estimate) — tagged "estimated — Other categories"
- *   none                    → the floor is "Not set" (null) and nothing computed,
- *                           so lead time stays BLANK and the pair is routed to
- *                           Needs setup with a reason (US-005 EH-01, D22) — never
- *                           a fabricated 0
+ *   Tier 1  computed    average of the last N PO-backed receipts, when the cell
+ *                       has at least `leadTimeMinSamples` eligible ones
+ *   Tier 2  category    the product's primary-category default from config. There
+ *                       is deliberately NO vendor-level rung (D5a / D10): below the
+ *                       minimum samples a thin cell falls straight here, never to
+ *                       the vendor's quoted term.
+ *   Tier 3  global      the "Other categories" floor, when it is a NUMBER (an
+ *                       estimate) — tagged "estimated — Other categories"
+ *   none                → the floor is "Not set" (null) and nothing computed, so
+ *                       lead time stays BLANK and the pair is routed to Needs
+ *                       setup with a reason (US-005 EH-01, D22) — never a 0
  *
- * A product with NO preferred vendor cannot compute and has no vendor default, so
- * per US-001 Tier 3 it drops straight to the "Other categories" floor: its real
- * gap is a vendor, which the Needs-setup reason names ("add a preferred vendor").
+ * A product with NO preferred vendor cannot compute, so per US-001 it drops to the
+ * category default (then the floor): its real gap is a vendor, which the Needs-setup
+ * reason names ("add a preferred vendor").
  *
  * `manual` never appears here: a hand-entered value overrides the whole ladder
  * and is applied by the caller, which is the only place that knows the warehouse.
@@ -391,10 +378,10 @@ export function deriveLeadTime(
   const excludedNoPo = noPoReceiptCount(sku)
   const empty = { samples: [] as LeadTimeSample[], sampleSize: 0, excludedNoPo }
 
-  // Tiers 1 and 2 are vendor-specific, so a SKU with no preferred vendor skips
-  // them — but it does NOT skip the ladder. Category and global defaults know
-  // nothing about vendors, so they still apply. Short-circuiting to 'none' here
-  // would push every vendorless SKU into Needs setup and strand it there, when
+  // Only Tier 1 (computed) is vendor-specific, so a SKU with no preferred vendor
+  // skips it — but it does NOT skip the ladder. The category default knows nothing
+  // about vendors, so it still applies (US-001 AC-05). Short-circuiting to 'none'
+  // here would push every vendorless SKU into Needs setup and strand it there, when
   // US-022 AC-06 explicitly allows a request to be raised without a bound vendor.
   // Tier 1 is scoped to the given warehouse (VR-01); omitting warehouseId
   // aggregates across the network for vendor-level views.
@@ -416,11 +403,9 @@ export function deriveLeadTime(
     }
   }
 
-  const vendorDefault = vendorId ? vendorDefaultLeadTime(vendorId) : null
-  if (vendorDefault !== null) {
-    return { days: vendorDefault, tier: 'vendor-default', ...empty, samples: eligible }
-  }
-
+  // Tier 2 — the product's primary-category default. There is deliberately NO
+  // vendor-level tier (D5a / D10): below the minimum samples a thin cell falls
+  // straight to the category default, never to the vendor's quoted term.
   const category = productBySku(sku)?.category ?? ''
   const categoryDefault = leadTimeForCategory(category, cfg)
   if (categoryDefault !== null) {
@@ -442,7 +427,6 @@ export function deriveLeadTime(
 export function leadTimeTierLabel(tier: LeadTimeTier, sampleSize = 0): string {
   switch (tier) {
     case 'computed': return `avg of last ${sampleSize} receipt${sampleSize === 1 ? '' : 's'}`
-    case 'vendor-default': return 'estimated (vendor default)'
     case 'category': return 'estimated (category default)'
     case 'global': return 'estimated (global default)'
     case 'manual': return 'set manually'

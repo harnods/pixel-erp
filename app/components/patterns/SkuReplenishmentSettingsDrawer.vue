@@ -84,6 +84,20 @@ const overrideTooLow = computed(() => {
   return !Number.isNaN(v) && v < calc * 0.8
 })
 
+/** The order-up-to (Max) level — the ceiling a manual reorder point is clamped to. */
+const maxLevel = computed(() => (props.row ? Math.round(props.row.suggestion.targetQty) : 0))
+
+/**
+ * A reorder point above the order-up-to (Max) is self-contradictory: the trigger
+ * would sit above the level we ever stock up to. The engine caps it to Max (D13),
+ * so the form says so rather than imply a number that won't take effect.
+ */
+const overrideAboveMax = computed(() => {
+  if (reorderPoint.value === '' || maxLevel.value <= 0) return false
+  const v = Number(reorderPoint.value)
+  return !Number.isNaN(v) && v > maxLevel.value
+})
+
 function leave() { discardConfirmOpen.value = false; emit('update:isOpen', false) }
 
 /** × and Cancel both land here: with edits, ask before discarding them. */
@@ -237,6 +251,9 @@ function confirmMute() {
               </span>
               <span v-if="overrideTooLow" class="rp-set-hint rp-set-hint--warning">
                 {{ t('This is well below the calculated reorder point, so this warehouse may stock out before it is flagged') }}
+              </span>
+              <span v-if="overrideAboveMax" class="rp-set-hint rp-set-hint--warning" data-devchange="replenishment-manual-min-clamped-to-max">
+                {{ tf('Above the order-up-to level ({n} {unit}), so the trigger is capped there', { n: num(maxLevel), unit: row.unit }) }}
               </span>
             </MpFormControl>
 

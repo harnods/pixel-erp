@@ -209,6 +209,25 @@ describe('resolveReorderPoint', () => {
     expect(r.source).toBe('sku-warehouse')
   })
 
+  it('clamps a manual override above the computed Max down to Max (D13)', () => {
+    // A trigger above the order-up-to level is self-contradictory: effective
+    // trigger = min(manual min, computed Max). Max = 210 here, override = 500.
+    const r = resolveReorderPoint(
+      settings({ reorderPointOverride: 500, reorderPointSource: 'sku-warehouse' }), 2, 14, 210,
+    )
+    expect(r.value).toBe(210)
+    expect(r.clampedToMax).toBe(true)
+    expect(r.source).toBe('sku-warehouse')
+  })
+
+  it('leaves a manual override at or below Max untouched (D13)', () => {
+    const r = resolveReorderPoint(
+      settings({ reorderPointOverride: 150, reorderPointSource: 'sku-warehouse' }), 2, 14, 210,
+    )
+    expect(r.value).toBe(150)
+    expect(r.clampedToMax).toBe(false)
+  })
+
   it('has no reorder point at zero velocity — no category floor exists (D17)', () => {
     // Min stock is ALWAYS demand × (lead + safety). With no demand — measured or
     // seeded — there is nothing to compute, so no floor is invented; the SKU is

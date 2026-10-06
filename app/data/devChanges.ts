@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'replenishment-lead-time-no-vendor-default',
+    title: 'Lead-time ladder drops the vendor-default rung',
+    description:
+      'The lead-time resolution ladder no longer has a vendor-level default tier (D5a / D10). A SKU × warehouse cell too thin to compute from PO→GR history now falls straight to the category default, then the "Other categories" floor, then Needs setup — never to an average of the vendor\'s other products. The calculation breakdown therefore tags a thin cell as "estimated (category default)" rather than "estimated (vendor default)".',
+    date: '2026-10-06',
+    files: ['leadTimeHistory.ts'],
+  },
+  {
+    id: 'replenishment-manual-min-clamped-to-max',
+    title: 'Manual min stock is capped at the order-up-to (Max)',
+    description:
+      'A typed manual reorder point is still the trigger, but it is now clamped to the computed order-up-to level — effective trigger = min(manual min, computed Max) (D13). A reorder point above the level we would ever stock up to is self-contradictory, so the settings drawer warns when the typed value is above Max and the engine caps it there. The computed reorder point is still shown beside it as a note, and demand, Max, suggested qty and days of cover stay system-computed.',
+    date: '2026-10-06',
+    files: ['replenishment.ts', 'SkuReplenishmentSettingsDrawer.vue'],
+  },
+  {
     id: 'vendors-preferred-per-warehouse',
     title: 'Preferred vendor is per warehouse',
     description:
