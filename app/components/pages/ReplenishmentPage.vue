@@ -436,7 +436,6 @@ watch(poOpen, (open) => { if (open) prError.value = '' })
 const muteRow = ref<WorklistRow | null>(null)
 const muteOpen = ref(false)
 const vendorSku = ref<string | null>(null)
-const vendorWarehouse = ref<string | undefined>(undefined)
 const vendorOpen = ref(false)
 let clearSelection: (() => void) | null = null
 
@@ -453,10 +452,8 @@ function openSettings(row: WorklistRow) {
   settingsOpen.value = true
 }
 
-function openVendors(sku: string, warehouseId?: string) {
+function openVendors(sku: string) {
   vendorSku.value = sku
-  // Pre-select the row's warehouse so the preferred-vendor pick lands there (D23).
-  vendorWarehouse.value = warehouseId
   vendorOpen.value = true
 }
 
@@ -893,7 +890,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
           <a
             v-if="(row as any).alternates.length"
             class="cell-link rp-vendor-sub rp-vendor-more"
-            @click.stop="openVendors((row as any).sku, (row as any).warehouseId)"
+            @click.stop="openVendors((row as any).sku)"
           >
             +{{ (row as any).alternates.length }}
             {{ (row as any).alternates.length === 1 ? t('more vendor') : t('more vendors') }}
@@ -942,7 +939,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
             <MpPopoverListItem @click="openBreakdown(row as unknown as WorklistRow)">
               {{ t('View suggested qty calculation') }}
             </MpPopoverListItem>
-            <MpPopoverListItem @click="openVendors((row as any).sku, (row as any).warehouseId)">
+            <MpPopoverListItem @click="openVendors((row as any).sku)">
               {{ t('View vendors, lead time and MOQ') }}
             </MpPopoverListItem>
             <MpPopoverListItem
@@ -1018,7 +1015,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
     :row="breakdownRow"
     @create-purchase-request="(row) => { breakdownOpen = false; openPoForRows([row]) }"
     @edit-settings="(row) => { breakdownOpen = false; openSettings(row) }"
-    @edit-vendors="(row) => { breakdownOpen = false; openVendors(row.sku, row.warehouseId) }"
+    @edit-vendors="(row) => { breakdownOpen = false; openVendors(row.sku) }"
   />
 
   <CreatePurchaseRequestModal
@@ -1040,7 +1037,6 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
   <VendorItemDrawer
     v-model:is-open="vendorOpen"
     :sku="vendorSku"
-    :warehouse-id="vendorWarehouse"
     readonly
     @saved="onSettingsSaved"
   />

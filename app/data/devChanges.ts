@@ -28,20 +28,20 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
-    id: 'product-vendors-preferred-by-warehouse',
-    title: 'Product Vendors tab: preferred vendor by warehouse',
+    id: 'product-warehouses-preferred-vendor',
+    title: 'Set the preferred vendor per warehouse (Stock by warehouses)',
     description:
-      'The preferred vendor is per SKU × warehouse (D23), so a single global checkmark could not show it. A "Preferred vendor by warehouse" summary now sits on top of the Vendors tab — each warehouse, its preferred vendor, and that pair\'s single lead time. The full vendor list below still shows every linked vendor (orderable alternates), and its Preferred column now names the warehouse(s) where each vendor is the pick instead of one global tick.',
+      'The preferred vendor is per SKU × warehouse (D23), so it is now set where the other per-warehouse decisions live — the product\'s Stock-by-warehouses tab. In Edit mode each warehouse row has a vendor selector (with bulk-apply) next to Safety days and Reorder point, and the saved pick shows with its single lead time. Data grain is separated cleanly: MOQ / purchase multiplier / cost stay on the Vendors tab (vendor × product); lead time and preferred vendor are per warehouse.',
     date: '2026-10-06',
-    files: ['ProductDetailsPage.vue'],
+    files: ['ProductDetailsPage.vue', 'vendorItems.ts'],
   },
   {
-    id: 'vendors-drawer-lead-per-warehouse',
-    title: 'Vendors drawer: lead time follows the selected warehouse',
+    id: 'vendors-drawer-readonly-preferred',
+    title: 'Vendors drawer is terms-only; preferred moved to warehouses',
     description:
-      'The Vendors drawer is scoped to one warehouse (that is the grain a preferred vendor is chosen at — D10/D23), so the Lead time column now shows that warehouse\'s single derived figure with its basis (measured average vs estimated), not a cross-warehouse range.',
+      'With the preferred vendor now set per warehouse on the product\'s Stock-by-warehouses tab, the shared Vendors drawer no longer picks it — it is a vendor × product TERMS editor (MOQ, purchase multiplier, cost) plus a SKU-level default. Lead time shows as the per-warehouse range. Opened read-only from the worklist or product page, it points to the warehouses tab for the preferred vendor. The product Vendors tab keeps a simple ✓ for any vendor preferred in at least one warehouse.',
     date: '2026-10-06',
-    files: ['VendorItemDrawer.vue'],
+    files: ['VendorItemDrawer.vue', 'ProductDetailsPage.vue', 'ReplenishmentPage.vue', 'ReplenishmentSetupPage.vue'],
   },
   {
     id: 'replenishment-lead-time-no-vendor-default',
@@ -61,11 +61,11 @@ export const DEV_CHANGES: DevChange[] = [
   },
   {
     id: 'vendors-preferred-per-warehouse',
-    title: 'Preferred vendor is per warehouse',
+    title: 'Preferred vendor is per warehouse (engine)',
     description:
-      'The preferred vendor can now differ per warehouse (D23). Pick a warehouse here, then the radio below sets the preferred vendor for that warehouse; a warehouse with no pick falls back to the SKU default. Opened from a worklist row the warehouse is pre-selected. The replenishment engine resolves lead time and the draft-PR vendor per SKU × warehouse accordingly.',
+      'The preferred vendor can differ per SKU × warehouse (D23): a per-warehouse overlay sits on top of the SKU-level default, and a warehouse with no pick falls back to it. The replenishment engine resolves lead time and the draft-PR vendor per SKU × warehouse accordingly. (Editing now lives on the product\'s Stock-by-warehouses tab.)',
     date: '2026-10-06',
-    files: ['vendorItems.ts', 'replenishment.ts', 'VendorItemDrawer.vue'],
+    files: ['vendorItems.ts', 'replenishment.ts'],
   },
   {
     id: 'replenishment-covered-by-inbound',

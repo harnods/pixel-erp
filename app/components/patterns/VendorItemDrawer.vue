@@ -32,28 +32,23 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
   vendorItemsForSku, upsertVendorItem, setPreferredVendor, deactivateVendorItem, vendorNameFor,
-  preferredVendorIdForWarehouse,
 } from '~/data/vendorItems'
 import { recommendPreferredVendor, type VendorReasonKind } from '~/data/vendorRecommendation'
 import { vendors } from '~/data/vendors'
 import { productBySku } from '~/data/inventory'
-import { deriveLeadTime, isEstimatedTier, leadTimeTierLabel } from '~/data/leadTimeHistory'
+import { deriveLeadTime } from '~/data/leadTimeHistory'
 import { getProductWarehouseStock } from '~/data/productDetails'
 import { unitOptionsForSku, factorFor, baseUnitFor } from '~/data/productUnits'
 import { formatIDR } from '~/utils/currency'
 
 /**
  * `readonly` — vendor TERMS (lead time, MOQ, purchase multiplier, cost) show as
- * text, with no inputs and no add/remove: those are edited by purchasing in the
- * Vendors module. The one thing that stays editable is WHICH vendor is preferred —
- * a radio per row, saved with "Save changes", which persists only that flag. Every
- * current caller (worklist, Needs setup, product detail) opens it this way.
- *
- * `warehouseId` — the preferred vendor is per SKU × warehouse (D23). Opened from a
- * worklist row the warehouse is known and pre-selected; from the product page it is
- * not, so a warehouse selector lets the user choose which warehouse they are setting.
+ * text, with no inputs, no add/remove and no default picking: those are edited by
+ * purchasing in the Vendors module. The PREFERRED vendor is a per-warehouse decision
+ * set on the product's Stock-by-warehouses tab (D23), never here; a read-only caller
+ * (worklist, Needs setup, product detail) shows terms and points there for preferred.
  */
-const props = defineProps<{ isOpen: boolean; sku: string | null; readonly?: boolean; warehouseId?: string }>()
+const props = defineProps<{ isOpen: boolean; sku: string | null; readonly?: boolean }>()
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
   (e: 'saved'): void
@@ -64,25 +59,6 @@ const { t, tf } = useLocale()
 const rows = ref<VendorItemDraft[]>([])
 const removed = ref<string[]>([])
 const error = ref('')
-
-// ── Per-warehouse preferred vendor (D23) ──
-// The warehouses this SKU is stocked in — the scope the preferred vendor is chosen
-// per. `selectedWarehouse` is the one being edited; `chosen` holds unsaved picks
-// keyed by warehouse id.
-const warehouseOptions = computed(() =>
-  props.sku ? getProductWarehouseStock(props.sku).map((s) => ({ value: s.warehouseId, label: s.warehouseName })) : [],
-)
-const selectedWarehouse = ref('')
-const chosen = ref<Record<string, string>>({})
-
-/** The SKU-level default preferred vendor id (fallback when a warehouse has no pick). */
-const skuDefaultVendorId = computed(() => rows.value.find((r) => r.isPreferred)?.vendorId ?? rows.value[0]?.vendorId ?? null)
-
-/** The effective preferred vendor for a warehouse: unsaved pick → stored per-warehouse → SKU default. */
-function preferredForWarehouse(wh: string): string | null {
-  if (!props.sku || !wh) return skuDefaultVendorId.value
-  return chosen.value[wh] ?? preferredVendorIdForWarehouse(props.sku, wh) ?? skuDefaultVendorId.value
-}
 
 const product = computed(() => (props.sku ? productBySku(props.sku) : undefined))
 
@@ -107,28 +83,27 @@ const addableVendors = computed(() => {
 // current (possibly edited-but-unsaved) terms.
 /**
  * Lead time is DERIVED, never typed (US-001 / D5): it comes from this vendor's
- * PO→goods-receipt history per warehouse, falling to the category default. The
- * drawer is scoped to one selected warehouse (that is the grain a preferred vendor
- * is chosen at — D10/D23), so lead time shows that warehouse's single figure, not
- * a cross-warehouse range. The recommendation scores vendors on the derived figure.
+ * PO→goods-receipt history per warehouse, falling to the category default. This
+ * drawer edits vendor×product TERMS (warehouse-independent), so lead time shows as
+ * the per-warehouse range; the single per-warehouse figure — and the preferred
+ * vendor it belongs to — live on the product's Stock-by-warehouses tab (D10/D23).
  */
 function derivedLeadDays(vendorId: string): number {
   if (!props.sku) return 0
-  const wh = selectedWarehouse.value
-  return (wh ? deriveLeadTime(vendorId, props.sku, undefined, wh) : deriveLeadTime(vendorId, props.sku)).days ?? 0
+  return deriveLeadTime(vendorId, props.sku).days ?? 0
 }
 function leadLabel(vendorId: string): string {
   if (!props.sku) return '—'
-  const wh = selectedWarehouse.value
-  const d = wh ? deriveLeadTime(vendorId, props.sku, undefined, wh) : deriveLeadTime(vendorId, props.sku)
-  return d.days != null ? `${d.days} days` : '—'
-}
-/** The basis behind the number for the selected warehouse — measured vs estimated. */
-function leadSub(vendorId: string): string {
-  if (!props.sku || !selectedWarehouse.value) return ''
-  const d = deriveLeadTime(vendorId, props.sku, undefined, selectedWarehouse.value)
-  if (d.days == null) return ''
-  return leadTimeTierLabel(d.tier, d.sampleSize)
+  const days = getProductWarehouseStock(props.sku)
+    .map((s) => deriveLeadTime(vendorId, props.sku!, undefined, s.warehouseId).days)
+    .filter((d): d is number => d != null)
+  if (!days.length) {
+    const d = deriveLeadTime(vendorId, props.sku).days
+    return d != null ? `${d} days` : '—'
+  }
+  const min = Math.min(...days)
+  const max = Math.max(...days)
+  return min === max ? `${min} days` : `${min}–${max} days`
 }
 
 const showReasons = ref(false)
@@ -174,14 +149,6 @@ function load() {
   removed.value = []
   error.value = ''
   showReasons.value = false
-  initialPreferred.value = rows.value.find((r) => r.isPreferred)?.vendorId ?? null
-  // Per-warehouse preferred (D23): pre-select the warehouse the drawer was opened
-  // from, else the first the SKU is stocked in; drop any unsaved picks.
-  chosen.value = {}
-  const opts = warehouseOptions.value
-  selectedWarehouse.value = (props.warehouseId && opts.some((o) => o.value === props.warehouseId))
-    ? props.warehouseId
-    : (opts[0]?.value ?? '')
 }
 watch(() => props.isOpen, (open) => { if (open) load() })
 
@@ -220,11 +187,14 @@ function removeRow(index: number) {
   if (rows.value.length && !rows.value.some((r) => r.isPreferred)) rows.value[0]!.isPreferred = true
 }
 
-/** Pick the preferred vendor for the SELECTED warehouse (D23) — a local edit until save. */
-function makeDefault(index: number) {
-  const row = rows.value[index]
-  if (!row || !selectedWarehouse.value) return
-  chosen.value = { ...chosen.value, [selectedWarehouse.value]: row.vendorId }
+/**
+ * The SKU-level DEFAULT vendor — the fallback a warehouse uses when it has no pick
+ * of its own (D23). The per-warehouse preferred vendor is set on the product's
+ * Stock-by-warehouses tab; this is only the default behind it. Edited in the
+ * Vendors module (terms editing), a local change until Save.
+ */
+function makeDefaultSku(index: number) {
+  rows.value.forEach((r, i) => { r.isPreferred = i === index })
 }
 
 function onUnitChange(index: number, unitName: string) {
@@ -321,27 +291,6 @@ function save() {
   toast.notify({ variant: 'success', title: t('Vendor terms saved'), maxWidth: 'max-content' })
 }
 
-/**
- * Read-only mode still lets a stockist pick the preferred vendor — that choice is
- * theirs, not a purchasing term. This persists ONLY the preferred flag, never the
- * (read-only) terms. Saving with nothing changed just closes.
- */
-const initialPreferred = ref<string | null>(null)
-function savePreferred() {
-  if (!props.sku) return
-  // Persist every warehouse whose preferred vendor was changed (D23).
-  let changed = 0
-  for (const [wh, vendorId] of Object.entries(chosen.value)) {
-    const stored = preferredVendorIdForWarehouse(props.sku, wh) ?? skuDefaultVendorId.value
-    if (vendorId !== stored) { setPreferredVendor(props.sku, vendorId, wh); changed++ }
-  }
-  if (changed) {
-    emit('saved')
-    toast.notify({ variant: 'success', title: t('Preferred vendor saved'), maxWidth: 'max-content' })
-  }
-  close()
-}
-
 /** "Pack = 6 Bag, Carton = 12 Bag" — the larger units this product is bought in. */
 const conversionsLabel = computed(() => unitOptions.value
   .filter((o) => !o.isBase)
@@ -397,22 +346,6 @@ const conversionsLabel = computed(() => unitOptions.value
             </template>
           </div>
 
-          <!-- Preferred vendor is per warehouse (D23): pick the warehouse, then the
-               preferred vendor below applies to it. -->
-          <div v-if="rows.length && warehouseOptions.length" class="rp-vi-wh" data-devchange="vendors-preferred-per-warehouse">
-            <span class="rp-vi-wh-label">{{ t('Preferred vendor for') }}</span>
-            <ErpFilterSelect
-              id="rp-vi-wh"
-              :model-value="selectedWarehouse"
-              :placeholder="t('Warehouse')"
-              :options="warehouseOptions"
-              width="240px"
-              :is-clearable="false"
-              @update:model-value="(v: string) => (selectedWarehouse = v)"
-            />
-            <span class="rp-vi-wh-hint">{{ t('A product can have a different preferred vendor in each warehouse.') }}</span>
-          </div>
-
           <!-- A mini-table inside a drawer is a contained object: outer border in
                border-bold, default-weight inner dividers (rule/table-outer-border-bold). -->
           <div v-if="rows.length" class="rp-vi-table-wrap">
@@ -425,7 +358,7 @@ const conversionsLabel = computed(() => unitOptions.value
                 <th class="rp-vi-th">{{ t('MOQ unit') }}</th>
                 <th class="rp-vi-th rp-vi-th--num">{{ t('Purchase multiplier') }}</th>
                 <th class="rp-vi-th rp-vi-th--num">{{ t('Unit cost') }}</th>
-                <th class="rp-vi-th rp-vi-th--center">{{ t('Preferred') }}</th>
+                <th v-if="!readonly" class="rp-vi-th rp-vi-th--center">{{ t('Default') }}</th>
                 <th v-if="!readonly" class="rp-vi-th" />
               </tr>
             </thead>
@@ -454,9 +387,9 @@ const conversionsLabel = computed(() => unitOptions.value
                     </span>
                   </template>
                 </td>
-                <td class="rp-vi-td rp-vi-td--num" data-devchange="vendors-drawer-lead-per-warehouse">
+                <td class="rp-vi-td rp-vi-td--num">
                   <span class="rp-vi-lead-ro">{{ leadLabel(row.vendorId) }}</span>
-                  <span v-if="leadSub(row.vendorId)" class="rp-vi-cell-sub">{{ leadSub(row.vendorId) }}</span>
+                  <span class="rp-vi-cell-sub">{{ t('per warehouse — see Stock by warehouses') }}</span>
                 </td>
                 <td class="rp-vi-td rp-vi-td--num">
                   <MpInput v-if="!readonly" :id="`rp-vi-moq-${i}`" v-model="row.moq" type="number" :class="css({ width: '68px' })" />
@@ -490,15 +423,15 @@ const conversionsLabel = computed(() => unitOptions.value
                   <span v-else class="rp-vi-lead-ro">{{ formatIDR(Number(row.unitCost) || 0) }}</span>
                   <span class="rp-vi-cell-sub">{{ formatIDR(Number(row.unitCost) || 0) }} / {{ row.purchaseUnit }}</span>
                 </td>
-                <!-- The preferred vendor is chosen per warehouse (D23): the radio reflects
-                     the vendor preferred for the selected warehouse. -->
-                <td class="rp-vi-td rp-vi-td--center">
+                <!-- The SKU-level DEFAULT vendor (the fallback). The per-warehouse preferred
+                     vendor is set on the product's Stock-by-warehouses tab (D23). -->
+                <td v-if="!readonly" class="rp-vi-td rp-vi-td--center">
                   <MpRadio
                     :id="`rp-vi-default-${i}`"
                     :name="`rp-vi-default-${sku}`"
-                    :is-checked="preferredForWarehouse(selectedWarehouse) === row.vendorId"
-                    :aria-label="tf('Set {vendor} as preferred', { vendor: vendorNameFor(row.vendorId) })"
-                    @change="makeDefault(i)"
+                    :is-checked="row.isPreferred"
+                    :aria-label="tf('Set {vendor} as the default', { vendor: vendorNameFor(row.vendorId) })"
+                    @change="makeDefaultSku(i)"
                   />
                 </td>
                 <td v-if="!readonly" class="rp-vi-td rp-vi-td--center">
@@ -521,14 +454,20 @@ const conversionsLabel = computed(() => unitOptions.value
             </template>
             <template v-else>{{ t('· no multi-units registered yet') }}</template>
           </p>
+
+          <!-- Read-only here: the preferred vendor is a per-warehouse decision, set on
+               the product's Stock-by-warehouses tab (D23). -->
+          <p v-if="readonly && rows.length" class="rp-vi-hint" data-devchange="vendors-drawer-readonly-preferred">
+            {{ t('Vendor terms are read-only here. Set the preferred vendor for each warehouse on the product\'s Stock by warehouses tab.') }}
+          </p>
         </div>
 
-        <footer class="rp-vi-footer" data-devchange="vendors-drawer-preferred">
+        <footer class="rp-vi-footer">
           <!-- Inline, never a toast (rule/form-errors-inline). -->
           <span v-if="error" class="rp-vi-error" role="alert">{{ error }}</span>
           <MpButtonGroup class="erp-action-footer">
-            <MpButton id="rp-vi-cancel" variant="ghost" is-rounded @click="close">{{ t('Cancel') }}</MpButton>
-            <MpButton id="rp-vi-save" variant="primary" is-rounded @click="readonly ? savePreferred() : save()">{{ t('Save changes') }}</MpButton>
+            <MpButton id="rp-vi-cancel" variant="ghost" is-rounded @click="close">{{ readonly ? t('Close') : t('Cancel') }}</MpButton>
+            <MpButton v-if="!readonly" id="rp-vi-save" variant="primary" is-rounded @click="save">{{ t('Save changes') }}</MpButton>
           </MpButtonGroup>
         </footer>
       </div>
@@ -588,9 +527,6 @@ const conversionsLabel = computed(() => unitOptions.value
 }
 
 /* Per-warehouse preferred-vendor selector (D23). */
-.rp-vi-wh { display: flex; align-items: center; flex-wrap: wrap; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-3); }
-.rp-vi-wh-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.rp-vi-wh-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); flex-basis: 100%; }
 
 /* ── Airene recommendation ── */
 .rp-vi-ai {

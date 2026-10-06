@@ -19,6 +19,7 @@ import StockSerialDrawer from '~/components/patterns/StockSerialDrawer.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
 import VendorItemDrawer from '~/components/patterns/VendorItemDrawer.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
   getProductDetail, getProductTransactions, getProductWarehouseStock, getProductBatches, getProductSerialStock,
   getProductAllSerials, type ProductBatchSummary,
@@ -35,7 +36,10 @@ import { cutoverState } from '~/data/wmsCutover'
 import { formatDateTimeLong } from '~/utils/date'
 import { generateBarcodeLabelPdf, generateBarcodeSheetPdf } from '~/utils/barcodeLabelPdf'
 import { TODAY } from '~/data/master'
-import { vendorItemsForSku, preferredVendorItem, preferredVendorFor, vendorNameFor } from '~/data/vendorItems'
+import {
+  vendorItemsForSku, preferredVendorItem, preferredVendorFor, vendorNameFor,
+  preferredVendorIdForWarehouse, setPreferredVendor, clearPreferredVendorForWarehouse,
+} from '~/data/vendorItems'
 import {
   unitConversionsForSku, upsertUnitConversion, removeUnitConversion, describeQty,
 } from '~/data/productUnits'
@@ -248,16 +252,24 @@ const preferredByWarehouse = computed(() => {
   })
 })
 
-/** The warehouses in which a given vendor is the preferred pick (for the terms table). */
+/** The warehouses in which a given vendor is the preferred pick — drives the ✓ in the
+ *  terms table (preferred in ≥1 warehouse). Editing happens on Stock by warehouses. */
 function preferredInWarehouses(vendorId: string) {
   return preferredByWarehouse.value.filter((r) => r.vendorId === vendorId)
 }
-/** Compact "where is this vendor preferred" label: a name, or the first + a count. */
-function preferredWhLabel(vendorId: string): string {
-  const names = preferredInWarehouses(vendorId).map((r) => r.warehouseName)
-  if (!names.length) return ''
-  if (names.length === 1) return names[0]!
-  return tf('{first} +{n}', { first: names[0], n: names.length - 1 })
+/** "how many" a vendor is preferred in — "All N warehouses" when it is every one. */
+function preferredCountLabel(vendorId: string): string {
+  const n = preferredInWarehouses(vendorId).length
+  const total = preferredByWarehouse.value.length
+  if (n > 0 && n === total) return tf('All {n} warehouses', { n })
+  return n === 1 ? t('1 warehouse') : tf('{n} warehouses', { n })
+}
+/** "which" warehouses — the names, so two vendors preferred in different warehouses
+ *  each read clearly. Omitted when a vendor is preferred everywhere (count says it). */
+function preferredWhNames(vendorId: string): string {
+  const rows = preferredInWarehouses(vendorId)
+  if (!rows.length || rows.length === preferredByWarehouse.value.length) return ''
+  return rows.map((r) => r.warehouseName).join(', ')
 }
 
 // Which vendor rows have their per-warehouse lead-time breakdown expanded.
@@ -550,6 +562,40 @@ function clearWhErrors() { for (const k of Object.keys(whErrors)) delete whError
 function cancelEditMinStock() { clearWhErrors(); whEditing.value = false }
 const whMinDraft = reactive<Record<string, string>>({})
 const whSafetyDraft = reactive<Record<string, string>>({})
+/** Preferred vendor per warehouse (D23) — editable here, the one place it is set. */
+const whPreferredDraft = reactive<Record<string, string>>({})
+
+/** The SKU's linked vendors, as options for the per-warehouse preferred selector. */
+const whVendorOptions = computed(() => {
+  void vendorTick.value
+  return vendorRows.value.map((v) => ({ value: v.vendorId, label: vendorNameFor(v.vendorId) }))
+})
+/** The read-mode preferred vendor name for a warehouse (resolved pick, D23). */
+function whPreferredName(warehouseId: string): string {
+  void vendorTick.value
+  void replenishmentRevision.value
+  const sku = product.value?.sku
+  if (!sku) return ''
+  return preferredVendorFor(sku, warehouseId)?.vendorId
+    ? vendorNameFor(preferredVendorFor(sku, warehouseId)!.vendorId)
+    : ''
+}
+/**
+ * The lead time for a warehouse's preferred vendor — the draft pick while editing,
+ * the saved pick otherwise. This is the single per-warehouse figure (D10), shown as
+ * a sub-line so the vendor choice and its consequence read together.
+ */
+function whLeadInfo(warehouseId: string): { days: number | null; estimated: boolean } {
+  void vendorTick.value
+  void replenishmentRevision.value
+  const sku = product.value?.sku
+  const vendorId = whEditing.value
+    ? (whPreferredDraft[warehouseId] || '')
+    : (sku ? (preferredVendorFor(sku, warehouseId)?.vendorId ?? '') : '')
+  if (!sku || !vendorId) return { days: null, estimated: false }
+  const d = deriveLeadTime(vendorId, sku, undefined, warehouseId)
+  return { days: d.days, estimated: isEstimatedTier(d.tier) }
+}
 
 /**
  * Bulk safety-days edit.
@@ -562,6 +608,7 @@ const whSafetyDraft = reactive<Record<string, string>>({})
 const whSelected = ref<Set<string>>(new Set())
 const whBulkSafety = ref('')
 const whBulkMinStock = ref('')
+const whBulkPreferred = ref('')
 
 const whAllSelected = computed(() =>
   warehouseStock.value.length > 0 && whSelected.value.size === warehouseStock.value.length,
@@ -593,12 +640,15 @@ function toggleWhSelectAll(): void {
 function applyBulk(): void {
   const safety = whBulkSafety.value.trim().replace(/\D/g, '')
   const min = whBulkMinStock.value.trim().replace(/\D/g, '')
+  const vendor = whBulkPreferred.value
   for (const id of whSelected.value) {
     if (safety !== '') whSafetyDraft[id] = safety
     if (min !== '') whMinDraft[id] = min
+    if (vendor !== '') whPreferredDraft[id] = vendor
   }
   whBulkSafety.value = ''
   whBulkMinStock.value = ''
+  whBulkPreferred.value = ''
   whSelected.value = new Set()
 }
 
@@ -612,11 +662,14 @@ function applyBulk(): void {
  * none. There is no product-level or category min-stock default any more (D17).
  */
 function clearBulk(): void {
+  const skuDefaultVendorId = product.value ? (preferredVendorItem(product.value.sku)?.vendorId ?? '') : ''
   for (const id of whSelected.value) {
     const r = whReplenishment.value[id]
     if (!r) continue
     whSafetyDraft[id] = String(r.inheritedSafetyDays)
     if (r.recommended !== null) whMinDraft[id] = String(r.recommended)
+    // Preferred falls back to the SKU-level default (cleared on save, D23).
+    whPreferredDraft[id] = skuDefaultVendorId
   }
   whSelected.value = new Set()
 }
@@ -626,6 +679,7 @@ function startEditMinStock() {
   whBulkSafety.value = ''
   for (const id of Object.keys(whMinDraft)) delete whMinDraft[id]
   for (const id of Object.keys(whSafetyDraft)) delete whSafetyDraft[id]
+  for (const id of Object.keys(whPreferredDraft)) delete whPreferredDraft[id]
   const sku = product.value?.sku
   // The form opens FILLED with the value in force, never blank. Saving a value that
   // still equals its default stores no override (see saveMinStock), so it keeps
@@ -635,6 +689,8 @@ function startEditMinStock() {
     const override = sku ? getSkuWarehouseOverride(sku, s.warehouseId) : {}
     whMinDraft[s.warehouseId] = String(override.reorderPoint ?? r?.recommended ?? s.minStock)
     whSafetyDraft[s.warehouseId] = String(r?.safetyDays ?? '')
+    // The resolved preferred vendor (explicit pick, else the SKU default via the ladder).
+    whPreferredDraft[s.warehouseId] = sku ? (preferredVendorFor(sku, s.warehouseId)?.vendorId ?? '') : ''
   }
   clearWhErrors()
   whEditing.value = true
@@ -681,9 +737,22 @@ function saveMinStock() {
     if (reorderPoint !== undefined && reorderPoint !== s.minStock) {
       setWarehouseMinStock(s.warehouseId, sku, reorderPoint)
     }
+
+    // Preferred vendor per warehouse (D23). A pick equal to the SKU-level default is
+    // not an override — clear it so the warehouse keeps inheriting; otherwise store
+    // the explicit per-warehouse pick. Only write when it actually changed.
+    const chosenVendor = whPreferredDraft[s.warehouseId] || ''
+    const skuDefaultVendorId = preferredVendorItem(sku)?.vendorId ?? ''
+    const currentExplicit = preferredVendorIdForWarehouse(sku, s.warehouseId)
+    if (chosenVendor && chosenVendor !== skuDefaultVendorId) {
+      if (chosenVendor !== currentExplicit) setPreferredVendor(sku, chosenVendor, s.warehouseId)
+    } else if (currentExplicit) {
+      clearPreferredVendorForWarehouse(sku, s.warehouseId)
+    }
   }
 
   invalidateReplenishmentCaches()
+  vendorTick.value++ // refresh the Vendors tab ✓ and any preferred-derived reads
   whEditing.value = false
 }
 
@@ -1130,50 +1199,11 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                 <MpButton id="pd-view-vendors" variant="secondary" is-rounded @click="vendorOpen = true">{{ t('View vendors') }}</MpButton>
               </div>
 
-              <!-- Which vendor is preferred in each warehouse (D23): the preferred vendor
-                   is per SKU × warehouse, so a single global checkmark can't say it. This
-                   summary answers it at a glance; the terms table below lists every vendor. -->
-              <section v-if="preferredByWarehouse.length" class="pd-pref-summary" data-devchange="product-vendors-preferred-by-warehouse">
-                <h3 class="pd-pref-summary__title">{{ t('Preferred vendor by warehouse') }}</h3>
-                <div class="pd-table-scroll">
-                  <table class="pd-table pd-pref-table">
-                    <colgroup>
-                      <col style="width: 240px" /><!-- pixel-police-allow: table column width, not spacing -->
-                      <col style="width: 280px" /><!-- pixel-police-allow: table column width, not spacing -->
-                      <col style="width: 160px" /><!-- pixel-police-allow: table column width, not spacing -->
-                    </colgroup>
-                    <thead>
-                      <tr>
-                        <th class="pd-th">{{ t('Warehouse') }}</th>
-                        <th class="pd-th">{{ t('Preferred vendor') }}</th>
-                        <th class="pd-th pd-th--num">{{ t('Lead time') }}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="r in preferredByWarehouse" :key="r.warehouseId" class="pd-tr">
-                        <td class="pd-td">{{ r.warehouseName }}</td>
-                        <td class="pd-td">
-                          <span v-if="r.vendorName" class="pd-vendor-name">{{ r.vendorName }}</span>
-                          <span v-else class="pd-vendor-alt">{{ t('No preferred vendor set') }}</span>
-                        </td>
-                        <td class="pd-td pd-td--num">
-                          <template v-if="r.leadDays != null">
-                            {{ tf('{n} days', { n: r.leadDays }) }}
-                            <span v-if="r.leadEstimated" class="pd-lead-est">{{ t('Estimated') }}</span>
-                          </template>
-                          <span v-else class="pd-vendor-alt">—</span>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-
               <div class="pd-table-scroll">
                 <table class="pd-table">
                   <colgroup>
                     <col style="width: 208px" /><!-- pixel-police-allow: table column width, not spacing -->
-                    <col style="width: 104px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 220px" /><!-- pixel-police-allow: table column width, not spacing -->
                     <col style="width: 136px" /><!-- pixel-police-allow: table column width, not spacing -->
                     <col style="width: 88px" /><!-- pixel-police-allow: table column width, not spacing -->
                     <col style="width: 96px" /><!-- pixel-police-allow: table column width, not spacing -->
@@ -1223,10 +1253,13 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                           {{ tf('1 {unit} = {n} {base}', { unit: vi.purchaseUnit, n: vi.unitsPerPurchaseUnit, base: product.unit }) }}
                         </span>
                       </td>
-                      <td class="pd-td">
+                      <td class="pd-td" data-devchange="product-vendors-preferred-which-warehouses">
                         <template v-if="preferredInWarehouses(vi.vendorId).length">
-                          <span class="pd-pref-wh"><MpIcon name="check" size="sm" class="pd-vendor-check" :aria-label="t('Preferred')" /></span>
-                          <span class="pd-vendor-note">{{ preferredWhLabel(vi.vendorId) }}</span>
+                          <span class="pd-pref-head">
+                            <MpIcon name="check" size="sm" class="pd-vendor-check" :aria-label="t('Preferred')" />
+                            <span class="pd-pref-count">{{ preferredCountLabel(vi.vendorId) }}</span>
+                          </span>
+                          <span v-if="preferredWhNames(vi.vendorId)" class="pd-vendor-note pd-pref-names">{{ preferredWhNames(vi.vendorId) }}</span>
                         </template>
                         <span v-else class="pd-vendor-alt">—</span>
                       </td>
@@ -1545,10 +1578,20 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                   {{ t('Reorder point') }}
                   <MpInput id="pd-wh-bulk-min-stock" v-model="whBulkMinStock" type="number" :class="css({ width: '96px' })" />
                 </label>
+                <label class="pd-bulk-field" for="pd-wh-bulk-preferred">
+                  {{ t('Preferred vendor') }}
+                  <ErpFilterSelect
+                    id="pd-wh-bulk-preferred"
+                    v-model="whBulkPreferred"
+                    :options="whVendorOptions"
+                    :placeholder="t('Select vendor')"
+                    width="200px"
+                  />
+                </label>
                 <MpButton id="pd-wh-bulk-apply" variant="secondary" size="sm" is-rounded @click="applyBulk">{{ t('Apply to selected') }}</MpButton>
                 <MpButton id="pd-wh-bulk-clear" variant="ghost" size="sm" is-rounded @click="clearBulk">{{ t('Use defaults') }}</MpButton>
               </template>
-              <span v-else class="pd-bulk-hint">{{ t('Select warehouses to set their safety days or reorder point together') }}</span>
+              <span v-else class="pd-bulk-hint">{{ t('Select warehouses to set their safety days, reorder point or preferred vendor together') }}</span>
             </div>
 
             <div v-if="pagedWarehouseStock.length" class="pd-table-scroll" :class="{ 'pd-form-table': whEditing }">
@@ -1562,6 +1605,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                   <col style="width: 104px" /><!-- pixel-police-allow: table column width, not spacing -->
                   <col style="width: 136px" /><!-- pixel-police-allow: table column width, not spacing -->
                   <col style="width: 152px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 220px" /><!-- pixel-police-allow: table column width, not spacing -->
                   <col style="width: 72px" /><!-- pixel-police-allow: table column width, not spacing -->
                 </colgroup>
                 <thead>
@@ -1593,6 +1637,18 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                         <MpTooltip
                           id="pd-th-minstock-tip"
                           :label="t('Calculated per warehouse as daily sales × (lead time + safety days). A value you set replaces the calculation.')"
+                          placement="top" use-portal
+                        >
+                          <span class="pd-th-icon"><MpIcon name="info" size="sm" /></span>
+                        </MpTooltip>
+                      </span>
+                    </th>
+                    <th class="pd-th">
+                      <span class="pd-th-info">
+                        {{ t('Preferred vendor') }}
+                        <MpTooltip
+                          id="pd-th-preferred-tip"
+                          :label="t('The vendor this warehouse orders from by default. Can differ by warehouse; its lead time feeds the reorder point.')"
                           placement="top" use-portal
                         >
                           <span class="pd-th-icon"><MpIcon name="info" size="sm" /></span>
@@ -1682,12 +1738,33 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                         @click.prevent="whMinDraft[s.warehouseId] = String(whReplenishment[s.warehouseId]?.recommended ?? '')"
                       >{{ t('Use calculated') }}</MpTextlink>
                     </td>
+
+                    <!-- Preferred vendor — the one place it is set per warehouse (D23). -->
+                    <td class="pd-td" :class="{ 'pd-td--input': whEditing }" data-devchange="product-warehouses-preferred-vendor">
+                      <ErpFilterSelect
+                        v-if="whEditing"
+                        :id="`pd-wh-preferred-${s.warehouseId}`"
+                        v-model="whPreferredDraft[s.warehouseId]"
+                        :options="whVendorOptions"
+                        :placeholder="t('Select vendor')"
+                        width="200px"
+                      />
+                      <template v-else>
+                        <span v-if="whPreferredName(s.warehouseId)" class="pd-vendor-name">{{ whPreferredName(s.warehouseId) }}</span>
+                        <span v-else class="pd-vendor-alt">{{ t('No preferred vendor set') }}</span>
+                      </template>
+                      <span v-if="whLeadInfo(s.warehouseId).days != null" class="pd-cell-sub">
+                        {{ tf('Lead time: {n} days', { n: whLeadInfo(s.warehouseId).days }) }}
+                        <span v-if="whLeadInfo(s.warehouseId).estimated" class="pd-lead-est">{{ t('Estimated') }}</span>
+                      </span>
+                    </td>
+
                     <td class="pd-td">{{ s.unit }}</td>
                   </tr>
 
                   <!-- Working shown on request. -->
                   <tr v-if="expandedWh.has(s.warehouseId)" :key="`${s.warehouseId}-why`" class="pd-tr pd-tr--details">
-                    <td class="pd-td pd-td--details" :colspan="whEditing ? 9 : 8">
+                    <td class="pd-td pd-td--details" :colspan="whEditing ? 10 : 9">
                       <div class="pd-why">
                         <p v-for="line in whWhyLines(s)" :key="line" class="pd-why-row">{{ line }}</p>
                         <p class="pd-why-row pd-why-links">
@@ -2030,6 +2107,10 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 }
 .pd-wh-error { margin: 0 auto 0 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-danger); }
 .pd-vendor-check { color: var(--mp-colors-icon-brand); }
+.pd-pref-head { display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 4px); }
+.pd-pref-count { color: var(--mp-text-default); }
+/* The warehouse names wrap within the column instead of overflowing the nowrap cell. */
+.pd-pref-names { display: block; max-width: 220px; white-space: normal; word-break: break-word; }
 .pd-td--action { text-align: right; padding-top: var(--mp-spacing-1); padding-bottom: var(--mp-spacing-1); }
 .pd-tx-number { color: var(--mp-text-default); }
 .row-kebab { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
@@ -2104,15 +2185,6 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 }
 .pd-vendor-none { color: var(--mp-text-secondary); }
 .pd-vendor-alt { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
-
-/* "Preferred vendor by warehouse" summary — sits above the full terms table (D23). */
-.pd-pref-summary { margin-bottom: var(--mp-spacing-5, 20px); }
-.pd-pref-summary__title {
-  margin: 0 0 var(--mp-spacing-2, 8px);
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
-}
-.pd-pref-wh { display: inline-flex; align-items: center; }
 
 /* Per-warehouse lead-time breakdown (VR-01) — expand under the range. */
 .pd-lead-toggle {
