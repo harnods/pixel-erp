@@ -13,7 +13,7 @@
  *   coverageDays      category → global only (US-005 AC-06: no SKU entry point)
  *   lookbackDays      SKU-warehouse → SKU → category → global
  *   tracked           SKU-warehouse → SKU → tracked by default
- *   manualLeadTime    SKU-warehouse → SKU → (engine: derived ladder)
+ *   lead time         never typed (US-001 AC-09): derived ladder only
  *
  * NOTE on reorderPoint: this module returns only the OVERRIDE. The computed
  * default lives in the engine because it depends on velocity, and importing the
@@ -39,8 +39,6 @@ export interface ReplenishmentOverride {
   lookbackDays?: number
   /** false = muted from the worklist (US-013). Never deletes or hides from search. */
   tracked?: boolean
-  /** Days entered by hand when the PO→receipt ladder resolves to nothing (US-003 AC-02). */
-  manualLeadTimeDays?: number
   updatedBy?: string
   updatedAt?: string
 }
@@ -58,13 +56,6 @@ export interface EffectiveReplenishmentSettings {
   coverageDaysSource: Extract<OverrideSource, 'category' | 'global'>
   lookbackDays: number
   lookbackDaysSource: Extract<OverrideSource, 'sku-warehouse' | 'sku' | 'category' | 'global'>
-  /**
-   * Floor for a warehouse with nothing to calculate from (US-024 AC-03).
-   * null when neither the category nor the company sets one, which correctly
-   * leaves such a warehouse with no floor rather than an invented zero.
-   */
-  manualLeadTimeDays: number | null
-  manualLeadTimeSource: Extract<OverrideSource, 'sku-warehouse' | 'sku' | 'none'>
   tracked: boolean
   trackedSource: Extract<OverrideSource, 'sku-warehouse' | 'sku' | 'default'>
 }
@@ -146,10 +137,6 @@ export function effectiveSettings(
     : skuLevel.lookbackDays !== undefined ? 'sku' as const
     : catLookback !== undefined ? 'category' as const : 'global' as const
 
-  const manualLeadTimeDays = pair.manualLeadTimeDays ?? skuLevel.manualLeadTimeDays ?? null
-  const manualLeadTimeSource = pair.manualLeadTimeDays !== undefined
-    ? 'sku-warehouse' as const
-    : skuLevel.manualLeadTimeDays !== undefined ? 'sku' as const : 'none' as const
 
   const tracked = pair.tracked ?? skuLevel.tracked ?? true
   const trackedSource = pair.tracked !== undefined
@@ -165,8 +152,6 @@ export function effectiveSettings(
     coverageDaysSource,
     lookbackDays,
     lookbackDaysSource,
-    manualLeadTimeDays,
-    manualLeadTimeSource,
     tracked,
     trackedSource,
   }

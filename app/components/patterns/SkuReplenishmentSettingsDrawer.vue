@@ -29,12 +29,12 @@ const emit = defineEmits<{
 }>()
 
 const { t, tf } = useLocale()
+const router = useRouter()
 
-type Field = 'reorderPoint' | 'safetyDays' | 'manualLeadTime'
+type Field = 'reorderPoint' | 'safetyDays'
 
 const reorderPoint = ref('')
 const safetyDays = ref('')
-const manualLeadTime = ref('')
 const tracked = ref(true)
 const errors = reactive<Partial<Record<Field, string>>>({})
 const muteConfirmOpen = ref(false)
@@ -43,7 +43,7 @@ const discardConfirmOpen = ref(false)
 const saveError = ref('')
 /** The form as it was loaded — what "unsaved" is measured against. */
 const initial = ref('')
-const snapshot = () => JSON.stringify([reorderPoint.value, safetyDays.value, manualLeadTime.value, tracked.value])
+const snapshot = () => JSON.stringify([reorderPoint.value, safetyDays.value, tracked.value])
 const isDirty = computed(() => initial.value !== '' && snapshot() !== initial.value)
 /** Set once the user confirms turning tracking off, so Save then goes through. */
 let muteConfirmed = false
@@ -63,7 +63,6 @@ watch(() => props.isOpen, (open) => {
   reorderPoint.value = override.reorderPoint !== undefined ? String(override.reorderPoint) : calc !== null ? String(calc) : ''
   safetyDays.value = String(row.safetyDays)
   hadSafetyOverride = override.safetyDays !== undefined
-  manualLeadTime.value = override.manualLeadTimeDays !== undefined ? String(override.manualLeadTimeDays) : ''
   tracked.value = row.fsn.tracked
   muteConfirmed = false
   saveError.value = ''
@@ -98,6 +97,14 @@ const overrideAboveMax = computed(() => {
   return !Number.isNaN(v) && v > maxLevel.value
 })
 
+/** The "how it gets resolved" note, split around the link to the lead-time defaults. */
+const leadNoteParts = computed(() =>
+  tf('No purchase orders for this vendor and product yet, so lead time cannot be measured. Add a preferred vendor, make a purchase, or set a default in {link}', { link: '\u0000' }).split('\u0000'))
+function goToDefaults() {
+  leave()
+  router.push('/replenishment-settings#lead-time')
+}
+
 function leave() { discardConfirmOpen.value = false; emit('update:isOpen', false) }
 
 /** × and Cancel both land here: with edits, ask before discarding them. */
@@ -117,8 +124,7 @@ function useCalculated() {
 }
 
 /**
- * A lead time or safety-days value of 0 is not usable, so those start at 1; the
- * reorder point may be 0. `required` fields cannot be left empty.
+ * A safety-days value of 0 is not usable, so it starts at 1; the reorder point may be 0. `required` fields cannot be left empty.
  */
 function parse(field: Field, raw: string, min = 0, required = false): number | null | undefined {
   if (raw === '' && !required) return null
@@ -142,7 +148,6 @@ function save() {
   // demand yet there is nothing to pre-fill, so it may stay blank.
   const rop = parse('reorderPoint', reorderPoint.value, 0, row.calculatedReorderPoint !== null)
   const safety = parse('safetyDays', safetyDays.value, 1, true)
-  const lead = parse('manualLeadTime', manualLeadTime.value, 1)
   if (Object.keys(errors).length) return
 
   // Turning tracking off hides the row from the worklist — confirm it, as the
@@ -154,10 +159,10 @@ function save() {
   // A value still equal to its default is not an override: store nothing so it keeps inheriting.
   const ropOverride = rop !== null && rop !== undefined && rop !== row.calculatedReorderPoint ? rop : null
   const safetyOverride = safety !== null && safety !== undefined && (hadSafetyOverride || safety !== row.safetyDays) ? safety : null
-  commit({ rop: ropOverride, safety: safetyOverride, lead: lead ?? null })
+  commit({ rop: ropOverride, safety: safetyOverride })
 }
 
-function commit(v: { rop: number | null; safety: number | null; lead: number | null }) {
+function commit(v: { rop: number | null; safety: number | null }) {
   const row = props.row
   if (!row) return
   // Passing `undefined` CLEARS a key rather than storing it: the settings module
@@ -168,7 +173,6 @@ function commit(v: { rop: number | null; safety: number | null; lead: number | n
     saveSkuWarehouseOverride(row.sku, row.warehouseId, {
       reorderPoint: v.rop ?? undefined,
       safetyDays: v.safety ?? undefined,
-      manualLeadTimeDays: v.lead ?? undefined,
       tracked: tracked.value ? undefined : false,
     })
   } catch {
@@ -267,22 +271,14 @@ function confirmMute() {
             </MpFormControl>
           </div>
 
-          <!-- Only shown when the ladder found nothing to measure (US-003 AC-02). -->
-          <MpFormControl
-            v-if="row.leadTimeTier === 'none' || row.leadTimeTier === 'manual'"
-            id="rp-set-lead-fc"
-            :is-invalid="!!errors.manualLeadTime"
-          >
-            <MpFormLabel>{{ t('Lead time') }}</MpFormLabel>
-            <MpInputGroup id="rp-set-lead-g">
-              <MpInput id="rp-set-lead" v-model="manualLeadTime" type="number" />
-              <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
-            </MpInputGroup>
-            <MpFormErrorMessage v-if="errors.manualLeadTime">{{ errors.manualLeadTime }}</MpFormErrorMessage>
-            <span class="rp-set-hint">
-              {{ t('No purchase-order history for this vendor and product, so lead time cannot be measured. Set it here, or start raising POs and it will be measured automatically') }}
-            </span>
-          </MpFormControl>
+          <!-- Lead time is never typed (US-001 AC-09). With nothing to measure it is simply not set:
+               say how it gets resolved instead of offering a field. -->
+          <div v-if="row.leadTimeTier === 'none'" class="rp-set-lead" data-devchange="sku-settings-lead-time-not-set">
+            <ContentList :label="t('Lead time')" :value="t('Not set')" />
+            <p class="rp-set-hint">
+              {{ leadNoteParts[0] }}<MpTextlink id="rp-set-lead-defaults" as="a" class="rp-set-link" @click.prevent="goToDefaults">{{ t('Replenishment settings') }}</MpTextlink>{{ leadNoteParts[1] }}
+            </p>
+          </div>
 
           <!-- A failed save keeps every edit and says so here, never in a toast. -->
           <p v-if="saveError" class="rp-set-error" role="alert">{{ saveError }}</p>
@@ -373,6 +369,7 @@ function confirmMute() {
 }
 .rp-set-toggle-text { display: flex; flex-direction: column; min-width: 0; }
 
+.rp-set-lead { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .rp-set-hint {
   display: block; margin-top: var(--mp-spacing-1);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);

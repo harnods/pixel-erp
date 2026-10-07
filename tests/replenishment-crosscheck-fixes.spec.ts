@@ -61,9 +61,10 @@ describe('bug 7 — "stocks out before resupply" uses lead time + safety days (�
     }
   })
 
-  it('the card counts only worklist rows, so it matches the Signals filter', () => {
+  it('the card counts every row that stocks out — due AND covered-by-inbound — so it matches the Signals filter', () => {
     const wl = replenishmentWorklist('all')
-    expect(wl.totals.belowLeadTime).toBe(wl.rows.filter((r) => r.flags.belowLeadTime).length)
+    const onTable = [...wl.rows, ...wl.coveredByInbound]
+    expect(wl.totals.belowLeadTime).toBe(onTable.filter((r) => r.flags.belowLeadTime).length)
   })
 })
 

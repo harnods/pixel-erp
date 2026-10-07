@@ -76,6 +76,38 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['vendorItems.ts', 'replenishment.ts'],
   },
   {
+    id: 'replenishment-covered-stockout-wins',
+    title: 'Replenishment: a covered row that still stocks out asks to verify the arrival',
+    description:
+      'A product whose open PO fills it to target stays in the covered state and out of the To order count (PRD §2.7), even when it will still stock out before the PO arrives. In that case the Signals badge reads "Verify inbound arrival" instead of "Covered by inbound", and it still counts on the "Stocks out before resupply" card.',
+    date: '2026-10-07',
+    files: ['replenishment.ts', 'ReplenishmentPage.vue'],
+  },
+  {
+    id: 'sku-settings-lead-time-not-set',
+    title: 'Product replenishment settings: lead time is not typed',
+    description:
+      'The lead-time input is gone (PRD US-001 AC-09: lead time is measured from receipts, then the category default, then Other categories). When nothing can be resolved the drawer shows "Lead time: Not set" and how to fix it — add a preferred vendor, make a purchase, or set a default in Replenishment settings.',
+    date: '2026-10-07',
+    files: ['SkuReplenishmentSettingsDrawer.vue', 'replenishment.ts', 'replenishmentSettings.ts', 'leadTimeHistory.ts'],
+  },
+  {
+    id: 'product-warehouses-inactive-preferred',
+    title: 'Inactive preferred vendor is detected per warehouse',
+    description:
+      'When the vendor a warehouse itself prefers is deactivated, only that warehouse is flagged ("Preferred vendor is inactive") and its lead time falls back to the next listed vendor; a warehouse with a healthy pick of its own is not flagged by someone else\'s. Choosing another vendor on Stock by warehouses clears it.',
+    date: '2026-10-07',
+    files: ['vendorItems.ts', 'replenishment.ts', 'ProductDetailsPage.vue'],
+  },
+  {
+    id: 'replenishment-outlier-cap',
+    title: 'Replenishment settings: Outlier cap (default 1.5×)',
+    description:
+      'Daily sales above this multiple of the typical day (the median) are capped before averaging, so one promo or bulk order cannot set the reorder point. The default is now 1.5× (PRD §2.2, it was 4×) and it is editable under Demand in Replenishment settings; every input in the Demand section is the same width (wide enough for the "× median" suffix). In Lead time, Other categories now has a switch ("Use a default lead time") with the days input below it: on = an estimate for products with no measured lead time, off = Not set (they wait in Needs setup).',
+    date: '2026-10-07',
+    files: ['replenishmentConfig.ts', 'SettingsReplenishmentPage.vue'],
+  },
+  {
     id: 'product-vendors-preferred-drawer',
     title: 'Vendors tab: preferred warehouses open in a drawer',
     description:

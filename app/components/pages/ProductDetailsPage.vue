@@ -39,7 +39,7 @@ import { TODAY } from '~/data/master'
 import {
   vendorItemsForSku, preferredVendorItem, preferredVendorFor, vendorNameFor,
   preferredVendorIdForWarehouse, setPreferredVendor, clearPreferredVendorForWarehouse,
-  vendorItemFor, type VendorItem,
+  vendorItemFor, inactivePreferredVendorFor, type VendorItem,
 } from '~/data/vendorItems'
 import {
   unitConversionsForSku, upsertUnitConversion, removeUnitConversion, describeQty,
@@ -544,7 +544,6 @@ function whLeadTimeLine(warehouseId: string): string {
 function whLeadBasis(warehouseId: string): string {
   const r = whReplenishment.value[warehouseId]
   if (!r) return ''
-  if (r.leadTimeTier === 'manual') return t('Set manually')
   if (!r.vendorId) return t('Category default')
   if (r.leadTimeEstimated) return tf('{vendor}, estimated', { vendor: r.vendorName })
   return tf('{vendor}, avg of last {n} receipts', { vendor: r.vendorName, n: r.leadTimeSampleSize })
@@ -652,6 +651,13 @@ const whVendorOptions = computed(() => {
   void vendorTick.value
   return vendorRows.value.map((v) => ({ value: v.vendorId, label: vendorNameFor(v.vendorId) }))
 })
+/** This warehouse's own preferred vendor went inactive: lead time fell back to the next listed one (US-001 EH-01). */
+function whInactivePreferred(warehouseId: string): boolean {
+  void vendorTick.value
+  void replenishmentRevision.value
+  const sku = product.value?.sku
+  return !!sku && !!inactivePreferredVendorFor(sku, warehouseId)
+}
 /** The read-mode preferred vendor name for a warehouse (resolved pick, D23). */
 function whPreferredName(warehouseId: string): string {
   void vendorTick.value
@@ -1903,6 +1909,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                       <template v-else>
                         <span v-if="whPreferredName(s.warehouseId)" class="pd-vendor-name">{{ whPreferredName(s.warehouseId) }}</span>
                         <span v-else class="pd-vendor-alt">{{ t('No preferred vendor set') }}</span>
+                        <span v-if="whInactivePreferred(s.warehouseId)" class="pd-cell-sub pd-cell-sub--warning" data-devchange="product-warehouses-inactive-preferred">{{ t('Preferred vendor is inactive') }}</span>
                         <span v-if="whLeadInfo(s.warehouseId).days != null" class="pd-cell-sub">
                           {{ tf('Lead time: {n} days', { n: whLeadInfo(s.warehouseId).days }) }}
                           <span v-if="whLeadInfo(s.warehouseId).estimated" class="pd-lead-est">{{ whLeadInfo(s.warehouseId).basis }}</span>
@@ -2261,6 +2268,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 .pd-th-icon:hover { color: var(--mp-icon-default, #4b5563); }
 
 .pd-bulk-count { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.pd-cell-sub--warning { color: var(--mp-colors-text-warning); }
 .pd-bulk-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 .pd-table-scroll { overflow-x: auto; }

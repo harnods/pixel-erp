@@ -45,7 +45,7 @@ import {
 } from './demandHistory'
 import {
   preferredVendorItem, preferredVendorFor, vendorItemFor, vendorItemsForSku, vendorNameFor, type VendorItem,
-  inactivePreferredVendorItem,
+  inactivePreferredVendorFor,
 } from './vendorItems'
 import {
   currentRunNo, hasRunHistory, writeRun,
@@ -679,10 +679,14 @@ export interface WorklistRow {
     /**
      * Triggered (available ≤ reorder point) but in-transit already brings it to the
      * order-up-to target, so suggested qty floored to 0 — an existing PO covers it
-     * (§2.7 / D24). Excluded from the "To order" count. A stockout-before-resupply
-     * row is NOT marked covered — the stockout wins (see `coveredByInbound` bucket).
+     * (§2.7 / D24). Excluded from the "To order" count.
      */
     coveredByInbound: boolean
+    /**
+     * Covered, yet it will still stock out before resupply: the stockout wins over the
+     * calm "covered" label and the user is prompted to verify the inbound arrival.
+     */
+    verifyInbound: boolean
   }
   /** Sort score — urgency, never shown as a column. */
   urgency: number
@@ -709,19 +713,18 @@ export function buildRow(
   const vendorItem = preferredVendorFor(sku, warehouseId) ?? null
   const alternates = vendorItemsForSku(sku).filter((v) => v.vendorId !== vendorItem?.vendorId)
 
-  // Lead time is MEASURED from this vendor+product's PO→receipt history, then
-  // falls down the ladder (US-001 VR-04). A hand-entered value outranks the whole
-  // ladder — it is the buyer telling the system something it could not observe.
+  // Lead time is MEASURED from this vendor+product's PO→receipt history, then falls
+  // down the ladder (US-001 VR-04). It cannot be typed over (US-001 AC-09): a thin cell
+  // takes the category default, then the "Other categories" floor, then Needs setup.
   const derivedLead = deriveLeadTime(vendorItem?.vendorId ?? null, sku, cfg, warehouseId)
-  const manualLead = settings.manualLeadTimeDays
   // `?? 0` only matters when the ladder resolves to none (the floor is "Not set"):
   // the row is then routed to Needs setup and no quantity is produced, so the 0 is
   // never used to compute an order — it just keeps the display arithmetic finite.
-  const leadTimeDays = manualLead ?? derivedLead.days ?? cfg.fallbackLeadTimeDays ?? 0
-  const leadTimeTier: LeadTimeTier = manualLead !== null ? 'manual' : derivedLead.tier
+  const leadTimeDays = derivedLead.days ?? cfg.fallbackLeadTimeDays ?? 0
+  const leadTimeTier: LeadTimeTier = derivedLead.tier
   const leadTimeEstimated = isEstimatedTier(leadTimeTier)
-  // No vendor and no manual figure means nothing to measure against at all.
-  const leadTimeMissing = manualLead === null && derivedLead.tier === 'none'
+  // Nothing resolved on the ladder means nothing to measure against at all.
+  const leadTimeMissing = derivedLead.tier === 'none'
 
   // Provisional launch window (§2.7 / US-008 AC-06): force coverage to 0 so the
   // order-up-to level collapses to the reorder point — a launch spike tops up to
@@ -820,18 +823,14 @@ export function buildRow(
     && !suppressedByCover
 
   // Covered by inbound (§2.7 / D24): triggered, but in-transit already fills to the
-  // order-up-to target so the suggested qty floors to 0 — an existing PO covers it,
-  // no new PR needed. Stockout-wins guard: if the row will still stock out before
-  // resupply, the stockout takes precedence and it stays on "To order" so the user
-  // verifies the inbound arrival.
-  const inboundFillsTarget = triggered && rawQty === 0 && atp.onOrder > 0
-  const stockoutWins = inboundFillsTarget && cover.belowLeadTime
-  // "Covered by inbound" is the quantity-covered case MINUS the stockout-wins one:
-  // a row that still stocks out before resupply keeps the stockout, not the covered
-  // badge (§2.7 stockout-wins guard), and stays on To order.
-  const coveredByInbound = inboundFillsTarget && !stockoutWins
-  // Covered-by-inbound is NOT due — it drops off "To order" and the due count
-  // (US-013 due-count semantics: triggered AND suggested qty > 0).
+  // order-up-to target so the suggested qty floors to 0 — an existing PO covers it, no
+  // new PR needed. It leaves the "To order" COUNT either way (due = triggered AND
+  // suggested qty > 0). Stockout-wins guard: if the row will still stock out before
+  // resupply it stays in this state but the stockout takes precedence over the calm
+  // "covered" label — `verifyInbound` prompts the user to check the inbound arrival.
+  const coveredByInbound = triggered && rawQty === 0 && atp.onOrder > 0
+  const verifyInbound = coveredByInbound && cover.belowLeadTime
+  // Covered-by-inbound is NOT due — it drops off the due count (US-013 due-count semantics).
   const dueForReorder = triggered && !coveredByInbound
 
   let bucket: WorklistBucket
@@ -895,7 +894,7 @@ export function buildRow(
     vendor: vendorItem ? { id: vendorItem.vendorId, name: vendorNameFor(vendorItem.vendorId) } : null,
     vendorItem,
     inactivePreferredVendor: (() => {
-      const gone = inactivePreferredVendorItem(sku)
+      const gone = inactivePreferredVendorFor(sku, warehouseId)
       return gone ? { id: gone.vendorId, name: vendorNameFor(gone.vendorId) } : null
     })(),
     alternates,
@@ -912,6 +911,7 @@ export function buildRow(
       mutedButActive,
       provisional: velocity.provisional,
       coveredByInbound,
+      verifyInbound,
     },
     urgency,
     asOf,
@@ -1195,8 +1195,8 @@ export function recommendedMinStock(
     const settings = effectiveSettings(sku, wh.id, cfg)
     const velocity = velocityFor(sku, wh.id, cfg, asOf)
     const safetyDays = safetyDaysOverride ?? settings.safetyDays
-    const leadTimeDays = settings.manualLeadTimeDays ?? derived.days ?? cfg.fallbackLeadTimeDays ?? 0
-    const tier: LeadTimeTier = settings.manualLeadTimeDays !== null ? 'manual' : derived.tier
+    const leadTimeDays = derived.days ?? cfg.fallbackLeadTimeDays ?? 0
+    const tier: LeadTimeTier = derived.tier
 
     // No demand basis means no reorder point — the same rule the worklist uses,
     // so the form cannot show a number the engine would refuse to stand behind.
@@ -1279,13 +1279,15 @@ export function replenishmentWorklist(
       if (row.flags.mutedButActive) mutedButActive.push(row)
 
       switch (row.bucket) {
-        // The "Stocks out before resupply" card counts worklist rows only, so it
-        // matches what the Signals filter shows on the same list.
+        // The "Stocks out before resupply" card counts every row that will stock out
+        // before resupply — due rows and covered-by-inbound ones alike — so it matches
+        // the Signals filter on the same table.
         case 'reorder': rows.push(row); if (row.flags.belowLeadTime) belowLeadTime++; break
         case 'no-vendor': rows.push(row); noVendor++; if (row.flags.belowLeadTime) belowLeadTime++; break
         case 'needs-setup': needsSetup.push(row); break
         case 'not-tracked': notTracked.push(row); break
-        case 'covered-inbound': coveredByInbound.push(row); break
+        // A covered row that still stocks out is a stockout all the same (§2.7 stockout-wins).
+        case 'covered-inbound': coveredByInbound.push(row); if (row.flags.belowLeadTime) belowLeadTime++; break
         default: break
       }
     }

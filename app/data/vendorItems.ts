@@ -430,6 +430,23 @@ export function inactivePreferredVendorItem(sku: string): VendorItem | undefined
   return vendorItems.find((v) => v.sku === sku && !v.active && v.wasPreferred)
 }
 
+/**
+ * The preferred vendor of ONE warehouse that has gone inactive (US-001 EH-01, D23).
+ * A warehouse's own pick that is no longer an active link falls back to the next listed
+ * vendor — this names the one that went away so the row can say so. A warehouse with no
+ * pick of its own follows the SKU default, so it is flagged only when that default was
+ * deactivated; a warehouse whose own pick is healthy is never flagged by someone else's.
+ */
+export function inactivePreferredVendorFor(sku: string, warehouseId: string): VendorItem | undefined {
+  const explicit = preferredByWarehouse[whKey(sku, warehouseId)]
+  if (explicit) {
+    const link = vendorItems.find((v) => v.sku === sku && v.vendorId === explicit)
+    if (link?.active) return undefined
+    if (link) return link
+  }
+  return inactivePreferredVendorItem(sku)
+}
+
 /** SKUs with no usable vendor — the draft-PO skip list (US-021 EH-01). */
 export function skusWithoutVendor(): string[] {
   return CATALOG.map((c) => c.sku).filter((sku) => vendorItemsForSku(sku).length === 0)

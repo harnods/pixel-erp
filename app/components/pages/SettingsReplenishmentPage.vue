@@ -19,7 +19,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, type RouteLocationRaw } from 'vue-router'
 import {
   toast, css, MpBadge, MpButton, MpButtonGroup, MpInput, MpInputGroup, MpInputRightAddon,
-  MpInputTag, MpFormControl, MpFormLabel, MpFormErrorMessage, MpTextlink, type DataInterface,
+  MpInputTag, MpFormControl, MpFormLabel, MpFormErrorMessage, MpTextlink, MpToggle, type DataInterface,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
@@ -138,6 +138,11 @@ function floorSetNotSet() { draft.fallbackLeadTimeDays = null }
 function floorSetNumber() {
   draft.fallbackLeadTimeDays = committed.value.fallbackLeadTimeDays ?? REPL_DEFAULTS.fallbackLeadTimeDays ?? 14
 }
+/** The switch over the floor's days input: on = a default number, off = "Not set". */
+const floorOn = computed({
+  get: () => draft.fallbackLeadTimeDays !== null,
+  set: (v: boolean) => { if (v) floorSetNumber(); else floorSetNotSet() },
+})
 
 /** How many SKU/warehouse rows override safety days — so editing the default and
  *  seeing nothing move is explained (the override wins, D14 / D16). */
@@ -200,6 +205,8 @@ function validate(): boolean {
   need('lookback', isWhole(draft.lookbackDays) && Number(draft.lookbackDays) >= 1, MIN1)
   need('volatility', String(draft.volatileCvThreshold) !== '' && Number(draft.volatileCvThreshold) > 0,
     t('Enter a number greater than 0'))
+  need('outlier', String(draft.demandOutlierCapMultiple) !== '' && Number(draft.demandOutlierCapMultiple) >= 1,
+    t('Enter a number of 1 or more'))
   need('coldstart', isWhole(draft.coldStartMinDays) && Number(draft.coldStartMinDays) >= 1, MIN1)
   need('safety', isWhole(draft.safetyDaysGlobal) && Number(draft.safetyDaysGlobal) >= 0, MIN0)
   need('coverage', isWhole(draft.coverageDaysGlobal) && Number(draft.coverageDaysGlobal) >= 0, MIN0)
@@ -217,7 +224,7 @@ function validate(): boolean {
   }
   if (draft.fallbackLeadTimeDays !== null) {
     need('lead', isWhole(draft.fallbackLeadTimeDays) && Number(draft.fallbackLeadTimeDays) >= 1,
-      t('Enter a whole number of 1 or more, or choose Not set'))
+      MIN1)
   }
   need('cap', isWhole(draft.leadTimeOutlierCapDays) && Number(draft.leadTimeOutlierCapDays) >= 1, MIN1)
   need('receipts', isWhole(draft.leadTimeMinSamples) && Number(draft.leadTimeMinSamples) >= 1
@@ -257,6 +264,7 @@ function save() {
     fsnFastPct: Number(draft.fsnFastPct),
     fsnSlowPct: Number(draft.fsnSlowPct),
     volatileCvThreshold: Number(draft.volatileCvThreshold),
+    demandOutlierCapMultiple: Number(draft.demandOutlierCapMultiple),
     fallbackLeadTimeDays: draft.fallbackLeadTimeDays === null ? null : Number(draft.fallbackLeadTimeDays),
     leadTimeSampleCount: Number(draft.leadTimeSampleCount),
     leadTimeMinSamples: Number(draft.leadTimeMinSamples),
@@ -390,7 +398,7 @@ function goToWorklist() { router.push('/replenishment') }
             </div>
             <div class="rs-control">
               <MpInputGroup v-if="isEditing" id="rs-lookback">
-                <MpInput id="rs-lookback-input" v-model="draft.lookbackDays" type="number" :class="css({ width: '128px' })" />
+                <MpInput id="rs-lookback-input" v-model="draft.lookbackDays" type="number" :class="css({ width: '176px' })" />
                 <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
               </MpInputGroup>
               <span v-else class="rs-value">{{ days(committed.lookbackDays) }}</span>
@@ -406,9 +414,26 @@ function goToWorklist() { router.push('/replenishment') }
               </span>
             </div>
             <div class="rs-control">
-              <MpInput v-if="isEditing" id="rs-cv" v-model="draft.volatileCvThreshold" type="number" step="0.1" :class="css({ width: '128px' })" />
+              <MpInput v-if="isEditing" id="rs-cv" v-model="draft.volatileCvThreshold" type="number" step="0.1" :class="css({ width: '176px' })" />
               <span v-else class="rs-value">{{ committed.volatileCvThreshold }}</span>
               <MpFormErrorMessage v-if="fieldErrors.volatility">{{ fieldErrors.volatility }}</MpFormErrorMessage>
+            </div>
+          </MpFormControl>
+
+          <MpFormControl id="rs-outlier-fc" class="rs-row" :is-invalid="!!fieldErrors.outlier" data-devchange="replenishment-outlier-cap">
+            <div class="rs-label">
+              <MpFormLabel>{{ t('Outlier cap') }}</MpFormLabel>
+              <span class="rs-caption">
+                {{ t('A day\'s sales above this multiple of the typical day (the median) are capped at it before averaging, so one promo or bulk order cannot set the reorder point.') }}
+              </span>
+            </div>
+            <div class="rs-control">
+              <MpInputGroup v-if="isEditing" id="rs-outlier">
+                <MpInput id="rs-outlier-input" v-model="draft.demandOutlierCapMultiple" type="number" step="0.1" :class="css({ width: '176px' })" />
+                <MpInputRightAddon has-background>{{ t('× median') }}</MpInputRightAddon>
+              </MpInputGroup>
+              <span v-else class="rs-value">{{ committed.demandOutlierCapMultiple }}{{ t('× median') }}</span>
+              <MpFormErrorMessage v-if="fieldErrors.outlier">{{ fieldErrors.outlier }}</MpFormErrorMessage>
             </div>
           </MpFormControl>
 
@@ -421,7 +446,7 @@ function goToWorklist() { router.push('/replenishment') }
             </div>
             <div class="rs-control">
               <MpInputGroup v-if="isEditing" id="rs-coldstart">
-                <MpInput id="rs-coldstart-input" v-model="draft.coldStartMinDays" type="number" :class="css({ width: '128px' })" />
+                <MpInput id="rs-coldstart-input" v-model="draft.coldStartMinDays" type="number" :class="css({ width: '176px' })" />
                 <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
               </MpInputGroup>
               <span v-else class="rs-value">{{ days(committed.coldStartMinDays) }}</span>
@@ -556,24 +581,21 @@ function goToWorklist() { router.push('/replenishment') }
                 </div>
                 <div class="rs-cat-row rs-cat-row--fallback">
                   <span class="rs-cat-name rs-cat-name--fallback">{{ t('Other categories') }}</span>
-                  <!-- The only floor that accepts "Not set" (D22): a number is an estimate;
-                       "Not set" makes products with no measured lead time wait in Needs setup.
-                       Rendered as a distinct empty state, never a typed 0. -->
-                  <template v-if="isEditing">
-                    <template v-if="draft.fallbackLeadTimeDays !== null">
-                      <MpFormControl id="rs-fallback-lead-fc" class="rs-inline-fc" :is-invalid="!!fieldErrors.lead">
-                        <MpInputGroup id="rs-fallback-lead">
-                          <MpInput id="rs-fallback-lead-input" v-model="draft.fallbackLeadTimeDays" type="number" :class="css({ width: '128px' })" />
-                          <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
-                        </MpInputGroup>
-                      </MpFormControl>
-                      <MpButton variant="ghost" is-rounded @click="floorSetNotSet">{{ t('Use Not set') }}</MpButton>
-                    </template>
-                    <template v-else>
-                      <span class="rs-notset">{{ t('Not set') }}</span>
-                      <MpButton variant="ghost" is-rounded @click="floorSetNumber">{{ t('Set a number') }}</MpButton>
-                    </template>
-                  </template>
+                  <!-- The only floor that accepts "Not set" (D22): switch it on to give products with no
+                       measured lead time an estimate, off to make them wait in Needs setup. The days
+                       input appears below the switch. Never a typed 0. -->
+                  <div v-if="isEditing" class="rs-floor">
+                    <label class="rs-floor-switch" for="rs-fallback-lead-toggle">
+                      <MpToggle id="rs-fallback-lead-toggle" v-model:is-checked="floorOn" :aria-label="t('Use a default lead time')" />
+                      <span class="rs-floor-label">{{ t('Use a default lead time') }}</span>
+                    </label>
+                    <MpFormControl v-if="floorOn" id="rs-fallback-lead-fc" class="rs-inline-fc" :is-invalid="!!fieldErrors.lead">
+                      <MpInputGroup id="rs-fallback-lead">
+                        <MpInput id="rs-fallback-lead-input" v-model="draft.fallbackLeadTimeDays" type="number" :class="css({ width: '128px' })" />
+                        <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
+                      </MpInputGroup>
+                    </MpFormControl>
+                  </div>
                   <span v-else-if="committed.fallbackLeadTimeDays !== null" class="rs-value">{{ days(committed.fallbackLeadTimeDays) }}</span>
                   <span v-else class="rs-notset">{{ t('Not set') }}</span>
                 </div>
@@ -802,7 +824,11 @@ function goToWorklist() { router.push('/replenishment') }
 /* Per-category grid: one row per listed category, "Other categories" last. */
 .rs-cat-grid { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .rs-cat-row { display: flex; align-items: center; gap: var(--mp-spacing-2); min-height: var(--mp-sizes-9, 36px); }
-.rs-cat-row--fallback { margin-top: var(--mp-spacing-1); padding-top: var(--mp-spacing-2); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+.rs-cat-row--fallback { align-items: flex-start; margin-top: var(--mp-spacing-1); padding-top: var(--mp-spacing-2); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+.rs-cat-row--fallback .rs-cat-name { padding-top: var(--mp-spacing-1\.5); }
+.rs-floor { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.rs-floor-switch { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); cursor: pointer; min-height: var(--mp-sizes-9, 36px); }
+.rs-floor-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .rs-cat-name { flex: 0 0 var(--mp-sizes-40, 160px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .rs-cat-name--fallback { color: var(--mp-text-secondary); }
 

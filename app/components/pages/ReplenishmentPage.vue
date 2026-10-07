@@ -303,7 +303,8 @@ const cardStats = computed(() => {
     // Unique SKUs, not SKU-warehouse pairs — one SKU short in two warehouses is
     // still one product to order.
     toOrderSkus: new Set(toOrder.map((r) => r.sku)).size,
-    stocksOut: toOrder.filter((r) => r.flags.belowLeadTime).length,
+    // A covered row that will still stock out is a stockout all the same (§2.7).
+    stocksOut: toOrder.filter((r) => r.flags.belowLeadTime).length + covered.filter((r) => r.flags.belowLeadTime).length,
     noVendor: toOrder.filter((r) => !r.vendor).length,
   }
 })
@@ -797,8 +798,10 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
           || (row as any).flags.coveredByInbound"
         class="rp-badges"
       >
+        <!-- Covered by an open PO; if it will still stock out first, the stockout wins over the
+             calm label and prompts the user to verify the arrival (§2.7). -->
         <MpBadge v-if="(row as any).flags.coveredByInbound" for="tableStatus" type="announcement" data-devchange="replenishment-covered-by-inbound">
-          {{ t('Covered by inbound') }}
+          {{ (row as any).flags.verifyInbound ? t('Verify inbound arrival') : t('Covered by inbound') }}
         </MpBadge>
         <MpBadge v-if="(row as any).flags.provisional" for="tableStatus" type="announcement">
           {{ t('Provisional') }}

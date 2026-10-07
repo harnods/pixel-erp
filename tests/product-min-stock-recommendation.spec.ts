@@ -102,7 +102,7 @@ describe('grain — a SKU-level default warehouses inherit (US-024 AC-03)', () =
       if (v <= 0) continue
       const settings = effectiveSettings(sku, wh.id, cfg)
       // Lead time is per warehouse (VR-01), so mirror the engine per warehouse.
-      const lead = settings.manualLeadTimeDays ?? deriveLeadTime(vendorId, sku, cfg, wh.id).days ?? cfg.fallbackLeadTimeDays
+      const lead = deriveLeadTime(vendorId, sku, cfg, wh.id).days ?? cfg.fallbackLeadTimeDays
       highest = Math.max(highest, Math.ceil(v * (lead + settings.safetyDays)))
     }
     expect(r.value).toBe(highest)
@@ -153,7 +153,7 @@ describe('lead-time confidence is reported, not hidden', () => {
     for (const p of PRODUCTS) {
       const r = recommendedMinStock(p.sku, undefined, cfg)
       // The flag and the tier can never disagree — the UI branches on both.
-      expect(r.leadTimeEstimated).toBe(r.leadTimeTier !== 'computed' && r.leadTimeTier !== 'manual')
+      expect(r.leadTimeEstimated).toBe(r.leadTimeTier !== 'computed')
     }
   })
 })

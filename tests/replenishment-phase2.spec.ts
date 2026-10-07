@@ -27,7 +27,7 @@ function dueWithVendor(): WorklistRow {
 }
 
 describe('US-028/029 + D24 — a row an open PO already covers moves to "Covered by inbound"', () => {
-  it('posts PO-owned in-transit, floors suggested to 0, and leaves "To order" (unless it still stocks out)', () => {
+  it('posts PO-owned in-transit, floors suggested to 0, and leaves the "To order" count (stockout-wins only relabels it)', () => {
     const row = dueWithVendor()
     const po = { ...purchaseOrders[0]!, id: 'PO-TEST-COVER', number: 'PO-TEST-COVER', status: 'approved' as const }
     purchaseOrders.push(po)
@@ -51,16 +51,12 @@ describe('US-028/029 + D24 — a row an open PO already covers moves to "Covered
       const poDoc = after!.atp.onOrderDocs.find((d) => d.number === 'PO-TEST-COVER')
       expect(poDoc?.owner).toBe('purchase_order')
 
-      if (after!.cover.belowLeadTime) {
-        // Stockout-wins (§2.7): it stays on To order so the user verifies the arrival.
-        expect(wl.rows.some((r) => r.key === row.key)).toBe(true)
-        expect(after!.flags.coveredByInbound).toBe(false)
-      } else {
-        // Covered by inbound: off To order and its count, into the covered state.
-        expect(wl.coveredByInbound.some((r) => r.key === row.key)).toBe(true)
-        expect(wl.rows.some((r) => r.key === row.key)).toBe(false)
-        expect(after!.flags.coveredByInbound).toBe(true)
-      }
+      // Covered by inbound: off the To order count and list, in the covered state — whether
+      // or not it still stocks out first. A stockout only changes the label (§2.7 stockout-wins).
+      expect(wl.coveredByInbound.some((r) => r.key === row.key)).toBe(true)
+      expect(wl.rows.some((r) => r.key === row.key)).toBe(false)
+      expect(after!.flags.coveredByInbound).toBe(true)
+      expect(after!.flags.verifyInbound).toBe(after!.cover.belowLeadTime)
     } finally {
       purchaseOrders.splice(purchaseOrders.indexOf(po), 1)
       invalidateReplenishmentCaches()
@@ -78,13 +74,13 @@ describe('US-028/029 — in-transit carries an owner, counted once', () => {
     }
   })
 
-  it('every covered-by-inbound row is triggered, has inbound, floors to 0, and is not a stockout', () => {
+  it('every covered-by-inbound row is triggered, has inbound and floors to 0; one that still stocks out asks to verify the arrival', () => {
     const wl = replenishmentWorklist('all')
     const keys = new Set(wl.rows.map((r) => r.key))
     for (const r of wl.coveredByInbound) {
       expect(r.suggestion.rawQty).toBe(0)
       expect(r.atp.onOrder).toBeGreaterThan(0)
-      expect(r.cover.belowLeadTime).toBe(false) // stockout would keep it on To order
+      expect(r.flags.verifyInbound).toBe(r.cover.belowLeadTime) // stockout wins over the calm label
       expect(r.flags.coveredByInbound).toBe(true)
       expect(keys.has(r.key)).toBe(false) // never also on To order
     }

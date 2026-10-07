@@ -64,7 +64,7 @@ import {
 export type LeadTimeExclusion = 'no-po' | 'not-first-receipt' | 'outlier'
 
 /** Which rung of the resolution ladder produced the value (US-001 VR-04). */
-export type LeadTimeTier = 'computed' | 'category' | 'global' | 'manual' | 'none'
+export type LeadTimeTier = 'computed' | 'category' | 'global' | 'none'
 
 export interface LeadTimeSample {
   vendorId: string
@@ -429,14 +429,13 @@ export function leadTimeTierLabel(tier: LeadTimeTier, sampleSize = 0): string {
     case 'computed': return `avg of last ${sampleSize} receipt${sampleSize === 1 ? '' : 's'}`
     case 'category': return 'estimated (category default)'
     case 'global': return 'estimated (global default)'
-    case 'manual': return 'set manually'
     default: return 'no lead-time data'
   }
 }
 
 /** Anything other than a measured average is "estimated" and must be tagged as such. */
 export function isEstimatedTier(tier: LeadTimeTier): boolean {
-  return tier !== 'computed' && tier !== 'manual'
+  return tier !== 'computed'
 }
 
 /**
