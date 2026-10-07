@@ -726,6 +726,27 @@ function goToWorklist() { router.push('/replenishment') }
             </div>
           </MpFormControl>
         </section>
+
+        <!-- ── Daily reminder (US-021 AC-05) ── -->
+        <section class="rs-section" data-devchange="replenishment-daily-reminder">
+          <h2 class="rs-section-title">{{ t('Reminder') }}</h2>
+
+          <MpFormControl id="rs-reminder-fc" class="rs-row">
+            <div class="rs-label">
+              <MpFormLabel>{{ t('Daily reminder') }}</MpFormLabel>
+              <span class="rs-caption">
+                {{ t('Every day, a notification in your Inbox summarises the products at or below their reorder point, with a link to the worklist.') }}
+              </span>
+            </div>
+            <div class="rs-control">
+              <label v-if="isEditing" class="rs-floor-switch" for="rs-reminder-toggle">
+                <MpToggle id="rs-reminder-toggle" v-model:is-checked="draft.dailyReminder" :aria-label="t('Daily reminder')" />
+                <span class="rs-floor-label">{{ t('Remind me when products need ordering') }}</span>
+              </label>
+              <span v-else class="rs-value">{{ committed.dailyReminder ? t('On') : t('Off') }}</span>
+            </div>
+          </MpFormControl>
+        </section>
       </div>
 
       <!-- ── Footer — only while editing (rule/btn-responsive-footer) ── -->

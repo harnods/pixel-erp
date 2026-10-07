@@ -81,6 +81,12 @@ export interface ReplenishmentConfig {
    * and order-coverage floors stay numeric (0 is a valid policy value there).
    */
   fallbackLeadTimeDays: number | null
+  /**
+   * Daily Inbox summary of the products that need ordering, with a link to the worklist
+   * (PRD US-021 AC-05). Email delivery is not built in the prototype, so the reminder is
+   * in-app only.
+   */
+  dailyReminder: boolean
 }
 
 export const REPL_DEFAULTS: ReplenishmentConfig = {
@@ -137,6 +143,7 @@ export const REPL_DEFAULTS: ReplenishmentConfig = {
   fsnSlowPct: 10,
   volatileCvThreshold: 1.2,
   fallbackLeadTimeDays: 14,
+  dailyReminder: true,
 }
 
 /**

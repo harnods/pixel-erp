@@ -2,6 +2,8 @@
 import { MpIcon, MpButton } from '@mekari/pixel3'
 import type { Notification } from '~/data/notifications'
 
+const router = useRouter()
+
 defineProps<{
   notification: Notification
   hasPrev: boolean
@@ -66,6 +68,7 @@ defineEmits<{
           :key="action.label"
           class="btn-enterprise"
           :class="action.primary ? 'btn-enterprise--primary' : 'btn-enterprise--ghost'"
+          @click="action.to && router.push(action.to)"
         >
           {{ action.label }}
         </MpButton>

@@ -76,6 +76,14 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['vendorItems.ts', 'replenishment.ts'],
   },
   {
+    id: 'replenishment-daily-reminder',
+    title: 'Replenishment: daily reminder in the Inbox',
+    description:
+      'Replenishment settings has a new Reminder section with a Daily reminder switch (on by default). While it is on and something needs ordering, the Inbox shows a notification at the top — "N products to order" — summarising the products at or below their reorder point (which warehouse has the most, how many will stock out before resupply, how many are covered by inbound) with a "View worklist" button that opens the worklist (PRD US-021 AC-05). It is derived from the live worklist, so it matches the To order count. Email is not built in the prototype, so it is in-app only.',
+    date: '2026-10-07',
+    files: ['replenishmentReminder.ts', 'NotificationsView.vue', 'NotificationDetailPane.vue', 'SettingsReplenishmentPage.vue', 'replenishmentConfig.ts'],
+  },
+  {
     id: 'replenishment-bulk-pr-background',
     title: 'Replenishment: large Request to purchase runs in the background',
     description:

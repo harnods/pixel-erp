@@ -1,18 +1,27 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { MpCheckbox, MpIcon, MpInput, MpInputGroup, MpInputLeftAddon } from '@mekari/pixel3'
-import { notifications as allNotifications, type Notification } from '~/data/notifications'
+import { notifications as seedNotifications, type Notification } from '~/data/notifications'
+import { replenishmentReminder } from '~/data/replenishmentReminder'
 import NotificationListItem from '~/components/patterns/NotificationListItem.vue'
 import NotificationDetailPane from '~/components/patterns/NotificationDetailPane.vue'
 
+const { t, tf } = useLocale()
+
+// The daily replenishment reminder sits on top when it applies (PRD US-021 AC-05).
+const allNotifications = computed<Notification[]>(() => {
+  const reminder = replenishmentReminder(t, tf)
+  return reminder ? [reminder, ...seedNotifications] : seedNotifications
+})
+
 const search = ref('')
 const checkedIds = ref<Set<string>>(new Set())
-const selectedId = ref<string | null>(allNotifications[0]?.id ?? null)
+const selectedId = ref<string | null>(allNotifications.value[0]?.id ?? null)
 
 const filtered = computed<Notification[]>(() => {
   const q = search.value.trim().toLowerCase()
-  if (!q) return allNotifications
-  return allNotifications.filter(n =>
+  if (!q) return allNotifications.value
+  return allNotifications.value.filter(n =>
     n.title.toLowerCase().includes(q) || n.preview.toLowerCase().includes(q),
   )
 })
