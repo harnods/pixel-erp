@@ -3747,6 +3747,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Waiting for start": "Menunggu dimulai",
 
   // Partial production completion
+  "Reduced to the stock this warehouse holds": "Disesuaikan dengan stok yang tersedia di gudang ini",
+  "The work order still needs the balance — transfer it once the stock arrives.": "Perintah kerja masih membutuhkan sisanya — transfer setelah stok tersedia.",
   "Cost per unit estimation": "Estimasi biaya per unit",
   "Remaining": "Sisa",
   "more than this line has left to charge": "melebihi sisa yang bisa dibebankan pada baris ini",

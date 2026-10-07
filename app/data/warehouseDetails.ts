@@ -522,6 +522,12 @@ const MIN_ONHAND_OVERRIDE: Record<string, number> = {
   'wh-001::FAB-KTN-01': 2_000,
   'wh-001::THR-JHT-02': 120,
   'wh-001::BTN-STD-04': 12_000,
+  // ── Subcontracting scenario: BOM #10092 transfers 400 lembar / 200 set /
+  //    600 m2 / 200 set out of the same warehouse. Matches catalog.ts stock. ──
+  'wh-001::PNL-PRT-18': 1_600,
+  'wh-001::FRM-BSI-02': 420,
+  'wh-001::HPL-OAK-08': 2_400,
+  'wh-001::HRD-FIT-11': 3_100,
   // ── pairs from earlier sessions ───────────────────────────────────────────
   'wh-008::2102': 9,   // pre-shipped seed order out-sh-001
   'wh-002::2102': 9,

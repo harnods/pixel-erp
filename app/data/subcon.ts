@@ -356,6 +356,34 @@ export function componentSupplyStep(
  */
 const SHIPPED_TO_VENDOR: SubconDocKind[] = ['componentPr', 'rawPr']
 
+/**
+ * Cap each transfer line at the stock the origin warehouse actually holds.
+ *
+ * A work order says what it NEEDS; the origin says what can leave it. Prefilling
+ * the need alone produced a form that could never be saved — the transfer form
+ * refuses any line over available stock — while showing a negative
+ * after-transfer figure, so the operator was told the quantity was wrong without
+ * being given one that was right.
+ *
+ * Lines are reduced, never dropped: a line with nothing available stays at zero
+ * so the operator can see it was asked for. `shortfalls` reports what could not
+ * be met, so the gap is stated rather than silently absorbed — the work order
+ * still needs the balance, and a later transfer can carry it.
+ */
+export function capLinesToAvailable<T extends { sku: string; qty: number }>(
+  lines: readonly T[],
+  availableFor: (sku: string) => number,
+): { lines: T[]; shortfalls: { sku: string; asked: number; capped: number }[] } {
+  const shortfalls: { sku: string; asked: number; capped: number }[] = []
+  const capped = lines.map((line) => {
+    const available = Math.max(0, availableFor(line.sku))
+    const qty = Math.min(line.qty, available)
+    if (qty < line.qty) shortfalls.push({ sku: line.sku, asked: line.qty, capped: qty })
+    return { ...line, qty }
+  })
+  return { lines: capped, shortfalls }
+}
+
 export function shipsToSubconVendor(kind: SubconDocKind): boolean {
   return SHIPPED_TO_VENDOR.includes(kind)
 }

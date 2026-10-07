@@ -15,7 +15,7 @@ import SelectProductDrawer, { type PickerProduct } from '~/components/patterns/S
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { warehouses } from '~/data/warehouses'
-import { decodeSubconPrefill, SUBCON_VENDOR_WAREHOUSES } from '~/data/subcon'
+import { decodeSubconPrefill, capLinesToAvailable, SUBCON_VENDOR_WAREHOUSES } from '~/data/subcon'
 import { recordSubconDocument } from '~/data/workOrders'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
@@ -378,6 +378,8 @@ const subconSource = ref<ReturnType<typeof decodeSubconPrefill>>(null)
 /** SKU → outstanding qty for the originating subcon work order. */
 const subconMaxBySku = ref<Record<string, number>>({})
 const subconFullySent = ref(false)
+/** Lines the prefill had to reduce because the origin does not hold that much. */
+const subconCappedLines = ref<string[]>([])
 
 function prefillFromSubcon(): boolean {
   const p = decodeSubconPrefill(route.query.subcon)
@@ -397,7 +399,16 @@ function prefillFromSubcon(): boolean {
   // Nothing outstanding — the work order has already had everything transferred.
   // Say so, rather than opening an empty table the operator has to interpret.
   subconFullySent.value = p.lines.length === 0
-  rows.value = p.lines.map(l => {
+
+  // The work order says what it NEEDS; the origin warehouse says what can
+  // actually leave it. Opening with the need alone produced a form that could
+  // never be saved — Save refuses a line over available stock — and showed a
+  // negative after-transfer figure while refusing it. Each line is capped at
+  // what is really there, and the shortfall is reported rather than hidden: the
+  // work order still needs the rest, and a second transfer can follow once the
+  // stock does.
+  const { lines, shortfalls } = capLinesToAvailable(p.lines, availableFor)
+  rows.value = lines.map(l => {
     const known = productBySku(l.sku)
     return {
       id: rowSeq++,
@@ -409,6 +420,11 @@ function prefillFromSubcon(): boolean {
       qty: String(l.qty),
       qtyError: false,
     }
+  })
+  subconCappedLines.value = shortfalls.map((sf) => {
+    const line = p.lines.find(l => l.sku === sf.sku)
+    const name = productBySku(sf.sku)?.name ?? line?.name ?? sf.sku
+    return `${name} (${sf.capped}/${sf.asked} ${line?.unit ?? ''})`.trim()
   })
   return true
 }
@@ -628,6 +644,16 @@ onUnmounted(() => { stageObserver?.disconnect() })
         <MpBanner v-if="subconFullySent" variant="info" class="wtf-subcon-banner">
           <MpBannerDescription>
             {{ t('Every component this work order needs has already been transferred. Add products below only if you are sending extra.') }}
+          </MpBannerDescription>
+        </MpBanner>
+
+        <!-- Not an error: the transfer is valid, it just cannot carry everything
+             the work order wants yet. -->
+        <MpBanner v-if="subconCappedLines.length" variant="warning" class="wtf-subcon-banner">
+          <MpBannerDescription>
+            {{ t('Reduced to the stock this warehouse holds') }}:
+            {{ subconCappedLines.join(' · ') }}.
+            {{ t('The work order still needs the balance — transfer it once the stock arrives.') }}
           </MpBannerDescription>
         </MpBanner>
 
