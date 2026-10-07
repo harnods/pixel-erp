@@ -253,16 +253,105 @@ function subconDemoBom(): BillOfMaterials {
   }
 }
 
+/**
+ * The second subcontracting BOM — an office desk, 200 units.
+ *
+ * A deliberately different shape from the garment BOM so the subcon screens are
+ * exercised against more than one case: four components rather than three, two
+ * chargeable services rather than one, and a bought-in steel frame that makes
+ * the dropship method natural to demonstrate (the frame can ship from its own
+ * supplier straight to the subcon vendor, while the panels go by transfer).
+ *
+ *   Papan partikel 18mm   400 lembar × Rp185.000   Rp 74.000.000
+ *   Rangka besi meja      200 set    × Rp320.000   Rp 64.000.000
+ *   Pelapis HPL           600 m2     × Rp 95.000   Rp 57.000.000
+ *   Sekrup & fitting      200 set    × Rp 25.000   Rp  5.000.000
+ *   Estimated raw materials subtotal                Rp200.000.000
+ *
+ *   Potong & perakitan kayu (Unit)                  Rp 36.000.000
+ *   Finishing & pengecatan  (Unit)                  Rp 18.000.000
+ *   Subcon handling & freight (Amount)              Rp  2.000.000
+ *   Subcon cost subtotal                            Rp 56.000.000
+ *
+ *   Estimated total of subcon process cost          Rp256.000.000
+ *   Main output 95% → Rp243.200.000 · per unit Rp1.216.000
+ */
+function mejaKerjaBom(): BillOfMaterials {
+  const rawMaterials: BomRawMaterial[] = [
+    { productId: 'p35', needed: 400, unit: 'lembar', purchaseCost: 185_000 },
+    { productId: 'p36', needed: 200, unit: 'set',    purchaseCost: 320_000 },
+    { productId: 'p37', needed: 600, unit: 'm2',     purchaseCost:  95_000 },
+    { productId: 'p38', needed: 200, unit: 'set',    purchaseCost:  25_000 },
+  ]
+  const subconCost: BomSubconCostLine[] = [
+    {
+      productId: 'svc-woodwork', name: 'Potong & perakitan kayu', sku: 'SVC-KYU-01',
+      costDriver: 'Unit', accountMapping: 'Subcon service cost', amount: 36_000_000,
+    },
+    {
+      productId: 'svc-finishing', name: 'Finishing & pengecatan', sku: 'SVC-FNS-01',
+      costDriver: 'Unit', accountMapping: 'Subcon service cost', amount: 18_000_000,
+    },
+    {
+      productId: 'svc-handling', name: 'Subcon handling & freight', sku: 'SVC-FRT-01',
+      costDriver: 'Amount', accountMapping: 'Subcon service cost', amount: 2_000_000,
+    },
+  ]
+  const rawSubtotal = rawMaterials.reduce((t, r) => t + r.needed * r.purchaseCost, 0)
+  const subconSubtotal = subconCost.reduce((t, c) => t + c.amount, 0)
+  const total = rawSubtotal + subconSubtotal          // Rp256.000.000
+
+  return {
+    id: 'bom-10092',
+    number: 'Bill of Materials #10092',
+    name: 'Meja Kerja',
+    category: 'Subcontracting',
+    costingReference: 'Standard cost',
+    finishedGoodId: 'p39',
+    finishedGoodQty: 200,
+    finishedGoodUnit: 'Pcs',
+    finishedGoodPercentage: 95,
+    description: 'Office work desk 120 × 60 cm — cutting, assembly and finishing outsourced.',
+    allowBomAdjustment: true,
+    archived: false,
+    rawMaterials,
+    // A subcontracting BOM has no in-house cost structure: the work is bought.
+    productionCost: [],
+    routing: [],
+    subconCost,
+    otherOutputs: [],
+    productionWaste: [
+      { accountMapping: 'Production waste', allocationMethod: 'Percentage', percentage: 5, amount: Math.round(total * 0.05) },
+    ],
+  }
+}
+
 function buildSeed(): BillOfMaterials[] {
   return SEED_SPEC.map((s, i) => seedBom(i, s.fg, s.materials, s.category, s.costing, s.desc))
     .filter(b => !!catalogProduct(b.finishedGoodId))
-    .concat(subconDemoBom())
+    .concat(subconDemoBom(), mejaKerjaBom())
 }
 
 // Persisted as a full snapshot (seed + user-created) — mirrors outgoing.ts: a
 // present snapshot wins over the freshly-generated seed; "Reset demo data" clears it.
 const bomSnapshot = loadSnapshot<BillOfMaterials>('billOfMaterials-v2')
-export const billOfMaterials = reactive<BillOfMaterials[]>(bomSnapshot ?? buildSeed())
+
+/**
+ * A snapshot wins, but it cannot HIDE a BOM the seed has since gained.
+ *
+ * Someone who has used the app already has a snapshot, and a new seed BOM would
+ * otherwise never appear for them — they would have to clear their data to see
+ * it, losing whatever they had built. Seeded BOMs missing from the snapshot are
+ * appended; anything the snapshot already holds is left exactly as it is, so a
+ * BOM the user edited is never overwritten by its seed version.
+ */
+function mergeSeed(snapshot: BillOfMaterials[]): BillOfMaterials[] {
+  const have = new Set(snapshot.map(b => b.id))
+  return [...snapshot, ...buildSeed().filter(b => !have.has(b.id))]
+}
+
+export const billOfMaterials = reactive<BillOfMaterials[]>(
+  bomSnapshot ? mergeSeed(bomSnapshot) : buildSeed())
 
 /** Persist the BOM snapshot (call after any mutation). */
 export function persistBillOfMaterials(): void {

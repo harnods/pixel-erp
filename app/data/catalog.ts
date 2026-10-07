@@ -301,6 +301,47 @@ export const SUBCON_CATALOG: readonly CatalogItem[] = [
     sku: 'FG-KMJ-001', hue: 220,
     img: '',
   },
+
+  // ── Furniture line — the office-desk subcontracting scenario ─────────────
+  // A second subcon scenario alongside the garment one, with a different shape:
+  // four components instead of three, two chargeable services instead of one,
+  // and a component (the steel frame) that is itself bought in rather than cut
+  // from stock — so the dropship method has something natural to demonstrate.
+  {
+    id: 'p35', category: 'Wood Panel', unit: 'lembar', price: 185_000, stock: 1_600,
+    name: 'Papan partikel 18mm',
+    desc: 'Particle board E1, 18 mm, 1220 × 2440 mm',
+    sku: 'PNL-PRT-18', hue: 30,
+    img: '',
+  },
+  {
+    id: 'p36', category: 'Metal Frame', unit: 'set', price: 320_000, stock: 420,
+    name: 'Rangka besi meja',
+    desc: 'Powder-coated steel desk frame, 120 × 60 cm, adjustable feet',
+    sku: 'FRM-BSI-02', hue: 205,
+    img: '',
+  },
+  {
+    id: 'p37', category: 'Wood Panel', unit: 'm2', price: 95_000, stock: 2_400,
+    name: 'Pelapis HPL',
+    desc: 'High-pressure laminate, 0.8 mm, matte oak finish',
+    sku: 'HPL-OAK-08', hue: 25,
+    img: '',
+  },
+  {
+    id: 'p38', category: 'Hardware', unit: 'set', price: 25_000, stock: 3_100,
+    name: 'Sekrup & fitting',
+    desc: 'Assembly hardware set — cam locks, dowels, screws, cable grommet',
+    sku: 'HRD-FIT-11', hue: 95,
+    img: '',
+  },
+  {
+    id: 'p39', category: 'Furniture', unit: 'Pcs', price: 1_750_000, stock: 0,
+    name: 'Meja Kerja',
+    desc: 'Office work desk 120 × 60 cm — cutting, assembly and finishing outsourced',
+    sku: 'FG-MJA-001', hue: 35,
+    img: '',
+  },
 ]
 
 /** Every product a picker may offer — the stocked catalog plus the apparel line. */

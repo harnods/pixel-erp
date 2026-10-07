@@ -559,6 +559,17 @@ export const SUBCON_SERVICE_PRODUCTS: readonly SubconServiceProduct[] = [
     productType: 'single-not-tracked', accountMapping: 'Subcon service cost',
     defaultCostDriver: 'Unit', defaultPrice: 4_000_000,
   },
+  // ── Furniture line (cut-assemble-finish) — the office-desk scenario ──
+  {
+    id: 'svc-woodwork', name: 'Potong & perakitan kayu', sku: 'SVC-KYU-01',
+    productType: 'single-not-tracked', accountMapping: 'Subcon service cost',
+    defaultCostDriver: 'Unit', defaultPrice: 36_000_000,
+  },
+  {
+    id: 'svc-finishing', name: 'Finishing & pengecatan', sku: 'SVC-FNS-01',
+    productType: 'single-not-tracked', accountMapping: 'Subcon service cost',
+    defaultCostDriver: 'Unit', defaultPrice: 18_000_000,
+  },
 ]
 
 export function subconServiceProduct(id: string): SubconServiceProduct | undefined {

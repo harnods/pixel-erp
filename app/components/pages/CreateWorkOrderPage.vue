@@ -521,7 +521,13 @@ const makeWaste = (): WasteRow => ({ id: wasteSeq++, accountMapping: '', allocat
 const wasteRows = ref<WasteRow[]>([makeWaste()])
 function onWasteMapping(row: WasteRow, _id: string) { appendIfLast(wasteRows, row.id, makeWaste) }
 const wasteSubtotal = computed(() => wasteRows.value.reduce((s, r) => s + num(r.amount), 0))
-const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutputsSubtotal.value - wasteSubtotal.value)
+/**
+ * The outputs add back up to what the run costs. Waste is already DEDUCTED from
+ * the main output's value, so the total adds it rather than taking it off again
+ * — subtracting it counted the same deduction twice. Matches the work order
+ * detail, where this total and the production cost total are the same number.
+ */
+const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutputsSubtotal.value + wasteSubtotal.value)
 
 // ── Shared row helpers ───────────────────────────────────────────────────────
 // Append a fresh empty row once the last row's key cell gets a value.
@@ -584,7 +590,12 @@ function fillFromBom(id: string) {
   const routingSubtotal = bom.routing.reduce((s, r) => s + r.amount, 0)
   const otherOutputsSubtotal = bom.otherOutputs.reduce((s, o) => s + o.estCost, 0)
   const wasteSubtotalBom = bom.productionWaste.reduce((s, w) => s + w.amount, 0)
-  const totalCost = rawSubtotal + productionCostSubtotal + routingSubtotal
+  // Subcon cost counts too. On a Subcontracting BOM productionCost and routing
+  // are both empty by definition — the work is bought, not performed — so
+  // omitting the vendor's charges left the main output valued at its raw
+  // materials alone.
+  const subconSubtotal = (bom.subconCost ?? []).reduce((s, c) => s + c.amount, 0)
+  const totalCost = rawSubtotal + productionCostSubtotal + routingSubtotal + subconSubtotal
   const mainEstCost = Math.max(0, totalCost - otherOutputsSubtotal - wasteSubtotalBom)
   mainRows.value = [
     { id: mainSeq++, productId: bom.finishedGoodId, sku: fg?.sku ?? '', producedQty: String(bom.finishedGoodQty), unit: bom.finishedGoodUnit, percentage: String(bom.finishedGoodPercentage), estCost: String(Math.round(mainEstCost)) },
