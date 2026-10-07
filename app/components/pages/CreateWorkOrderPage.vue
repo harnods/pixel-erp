@@ -210,6 +210,29 @@ const subconMethodHint = computed(() => t(SUBCON_METHOD_DESCRIPTION[subconScope.
 /** Only `resupply` moves stock out of a company warehouse. */
 const subconNeedsSource = computed(() => subconMethod.value === 'resupply')
 
+/**
+ * Both `resupply` and `dropship` need the vendor's own location named.
+ *
+ * Resupply transfers company stock there. Dropship never touches our sites at
+ * all — a 3rd party ships straight to the vendor — but the component purchase
+ * request still has to be addressed somewhere, and that somewhere is the same
+ * vendor warehouse. Without it the request would be raised against a company
+ * warehouse the goods never reach.
+ *
+ * `basic` is the exception: the vendor supplies its own materials, so there is
+ * nothing to send and nowhere to send it.
+ */
+const subconNeedsVendorWarehouse = computed(() => subconMethod.value !== 'basic')
+
+/** What the vendor's location is FOR, which differs by how components arrive. */
+const subconWarehouseLabel = computed(() => subconMethod.value === 'dropship'
+  ? t('Deliver components to')
+  : t('Transfer components to'))
+
+const subconWarehouseHint = computed(() => subconMethod.value === 'dropship'
+  ? t('The component purchase request is addressed here — the goods never reach your own warehouse.')
+  : t('In the vendor\'s custody — still on your books until consumed.'))
+
 
 // The vendor's own locations. Changing vendor re-points the destination unless
 // the user has deliberately chosen a different one.
@@ -373,11 +396,14 @@ interface SubconCostRow {
   /** Non-track service product id (SUBCON_SERVICE_PRODUCTS). */
   productId: string
   costDriver: string
+  /** How many units the charge covers. Seeded from the driver, then editable. */
+  qty: string
+  /** The line total for that quantity, not a unit rate. */
   amount: string
 }
 let subconCostSeq = 0
 function makeSubconCost(partial: Partial<SubconCostRow> = {}): SubconCostRow {
-  return { id: subconCostSeq++, productId: '', costDriver: '', amount: '', ...partial }
+  return { id: subconCostSeq++, productId: '', costDriver: '', qty: '', amount: '', ...partial }
 }
 const subconCostRows = ref<SubconCostRow[]>([makeSubconCost()])
 
@@ -394,7 +420,8 @@ function defaultSubconCostRows(): SubconCostRow[] {
   if (fromBom.length) {
     return [
       ...fromBom.map(l => makeSubconCost({
-        productId: l.productId, costDriver: l.costDriver, amount: String(l.amount),
+        productId: l.productId, costDriver: l.costDriver,
+        qty: String(subconCostQty(l.costDriver)), amount: String(l.amount),
       })),
       makeSubconCost(),
     ]
@@ -402,8 +429,14 @@ function defaultSubconCostRows(): SubconCostRow[] {
   const service = subconServiceProduct(scopeServiceId.value)!
   const freight = subconServiceProduct('svc-handling')!
   return [
-    makeSubconCost({ productId: service.id, costDriver: service.defaultCostDriver, amount: String(service.defaultPrice) }),
-    makeSubconCost({ productId: freight.id, costDriver: freight.defaultCostDriver, amount: String(freight.defaultPrice) }),
+    makeSubconCost({
+      productId: service.id, costDriver: service.defaultCostDriver,
+      qty: String(subconCostQty(service.defaultCostDriver)), amount: String(service.defaultPrice),
+    }),
+    makeSubconCost({
+      productId: freight.id, costDriver: freight.defaultCostDriver,
+      qty: String(subconCostQty(freight.defaultCostDriver)), amount: String(freight.defaultPrice),
+    }),
     makeSubconCost(),
   ]
 }
@@ -428,13 +461,23 @@ watch([isSubcon, subconScope, bomId], ([on]) => {
   if (empty || subconCostUntouched()) subconCostRows.value = defaultSubconCostRows()
 }, { immediate: true })
 
-/** Picking a service fills its usual driver and price — both still editable. */
+/** Picking a service fills its usual driver, quantity and price — all editable. */
 function onSubconCostProduct(row: SubconCostRow, id: string) {
   const p = subconServiceProduct(id)
   if (!p) return
   row.costDriver = p.defaultCostDriver
+  if (!row.qty) row.qty = String(subconCostQty(p.defaultCostDriver))
   if (!row.amount) row.amount = String(p.defaultPrice)
   appendIfLast(subconCostRows, row.id, makeSubconCost)
+}
+
+/**
+ * A new driver implies a different quantity, so the suggestion follows it. What
+ * the user typed is not preserved across that change: the old number described
+ * the old basis and would be wrong against the new one.
+ */
+function onSubconCostDriver(row: SubconCostRow) {
+  row.qty = String(subconCostQty(row.costDriver))
 }
 /** The contract value — the charges as entered, before any gross-up. */
 /**
@@ -453,6 +496,20 @@ function subconCostQty(costDriver: string): number {
 }
 
 const subconContractValue = computed(() => subconCostRows.value.reduce((s, r) => s + num(r.amount), 0))
+
+/**
+ * The quantities as entered, keyed by the service product the detail page reads
+ * them back by. Only rows that name a product and a quantity are kept — an empty
+ * row has nothing to say.
+ */
+function buildCostLineQty(): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const row of subconCostRows.value) {
+    if (!row.productId || !row.qty) continue
+    out[row.productId] = num(row.qty)
+  }
+  return out
+}
 
 /**
  * Pricing at the ESTIMATED state: no purchase order exists yet, so the basis is
@@ -687,10 +744,11 @@ function saveWorkOrder() {
           promisedDate: subconPromisedDate.value,
           sourceWarehouseId: subconNeedsSource.value ? subconSourceWarehouseId.value : undefined,
           sourceWarehouseName: subconNeedsSource.value ? warehouseName(subconSourceWarehouseId.value) : undefined,
-          subconWarehouseId: subconNeedsSource.value ? subconWarehouseId.value : undefined,
-          subconWarehouseName: subconNeedsSource.value ? subconWarehouseNameOf(subconWarehouseId.value) : undefined,
+          subconWarehouseId: subconNeedsVendorWarehouse.value ? subconWarehouseId.value : undefined,
+          subconWarehouseName: subconNeedsVendorWarehouse.value ? subconWarehouseNameOf(subconWarehouseId.value) : undefined,
           receivingWarehouseId: subconReceivingWarehouseId.value,
           receivingWarehouseName: warehouseName(subconReceivingWarehouseId.value),
+          costLineQty: buildCostLineQty(),
         }
       : undefined,
   })
@@ -937,15 +995,16 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <!-- The vendor's own location. Stock sent here is in their custody
                  but still on the company's books, which is what the custody
                  dashboard reconciles — so it is a real, addressable destination,
-                 not a company warehouse. -->
-            <MpFormControl v-if="subconNeedsSource" id="wo-subcon-dest-wh" is-required>
-              <MpFormLabel>{{ t('Transfer components to') }}</MpFormLabel>
+                 not a company warehouse. Needed on dropship too: the component
+                 purchase request is addressed here. -->
+            <MpFormControl v-if="subconNeedsVendorWarehouse" id="wo-subcon-dest-wh" is-required>
+              <MpFormLabel>{{ subconWarehouseLabel }}</MpFormLabel>
               <MpAutocomplete
                 id="wo-subcon-dest-wh-ac" v-model="subconWarehouseId" :data="SUBCON_WAREHOUSE_OPTIONS"
                 label-prop="name" value-prop="id" :placeholder="t('Select subcon warehouse')"
                 is-searchable use-portal is-full-width
               />
-              <p class="wo-subcon-hint">{{ t('In the vendor\'s custody — still on your books until consumed.') }}</p>
+              <p class="wo-subcon-hint">{{ subconWarehouseHint }}</p>
             </MpFormControl>
 
           </div>
@@ -994,7 +1053,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </colgroup>
               <thead>
                 <tr>
-                  <th class="wo-th">{{ t('Product') }}</th><th class="wo-th">{{ t('Purchase cost') }}</th><th class="wo-th">{{ t('Warehouse') }}</th>
+                  <!-- Where the material is DRAWN FROM — named as such so it is
+                       not read as where the output lands. -->
+                  <th class="wo-th">{{ t('Product') }}</th><th class="wo-th">{{ t('Purchase cost') }}</th><th class="wo-th">{{ t('Origin warehouse') }}</th>
                   <th class="wo-th">{{ t('Needed qty') }}</th><th class="wo-th">{{ t('Unit') }}</th><th class="wo-th">{{ t('Required date') }}</th>
                   <th class="wo-th wo-th--right">{{ t('Estimated cost') }}</th><th class="wo-th wo-th--del" />
                 </tr>
@@ -1191,13 +1252,14 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       label-prop="name" value-prop="id"
                       :placeholder="t('Select cost driver')"
                       is-searchable is-clearable use-portal is-full-width
+                      @update:model-value="() => onSubconCostDriver(row)"
                     />
                   </td>
-                  <!-- Follows the cost driver rather than being entered: the
-                       driver already decides how many charges there are, and two
-                       fields saying it would only disagree. -->
-                  <td class="wo-td wo-td--num wo-td--muted">
-                    <template v-if="row.productId">{{ subconCostQty(row.costDriver) }}</template>
+                  <!-- Seeded from the cost driver, then editable: a vendor may
+                       charge for a different number than the order plans — a
+                       minimum batch, say — and what was agreed is what counts. -->
+                  <td class="wo-td wo-td--input wo-td--num-input">
+                    <MpInput v-if="row.productId" :id="`subcon-cost-qty-${row.id}`" v-model="row.qty" type="number" placeholder="0" is-full-width />
                   </td>
                   <td class="wo-td wo-td--input wo-td--num-input">
                     <MpInput v-if="row.productId" :id="`subcon-cost-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width />

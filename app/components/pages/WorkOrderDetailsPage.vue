@@ -293,7 +293,11 @@ const subconCostLines = computed(() => {
    *   Batch  → one charge per production batch
    *   Amount → a lump sum, so a single charge however many pieces are made
    */
-  const qtyFor = (driver: string) => {
+  const qtyFor = (driver: string, lineId?: string) => {
+    // What was agreed on the work order form wins; the driver only supplies the
+    // default for records saved before the quantity was captured.
+    const entered = lineId ? c.costLineQty?.[lineId] : undefined
+    if (entered !== undefined) return entered
     if (driver === 'Unit') return w.plannedQty
     if (driver === 'Batch') return Math.max(1, Math.round(factor))
     return 1
@@ -301,7 +305,7 @@ const subconCostLines = computed(() => {
 
   const extras = (c.extraCostLines ?? []).map(l => ({
     account: l.name,
-    qty: qtyFor(l.costDriver),
+    qty: qtyFor(l.costDriver, l.id),
     chargedBy: c.vendorName,
     amount: amountFor(l.id, l.amount),
   }))
@@ -311,7 +315,7 @@ const subconCostLines = computed(() => {
     return [
       ...fromBom.map(l => ({
         account: l.name,
-        qty: qtyFor(l.costDriver),
+        qty: qtyFor(l.costDriver, l.productId),
         chargedBy: c.vendorName,
         amount: amountFor(l.productId, Math.round(l.amount * factor)),
       })),
@@ -322,13 +326,13 @@ const subconCostLines = computed(() => {
   return [
     {
       account: t(SUBCON_SERVICE_FEE[c.scope].name),
-      qty: qtyFor('Unit'),
+      qty: qtyFor('Unit', 'svc-fee'),
       chargedBy: c.vendorName,
       amount: amountFor('svc-fee', Math.round(SUBCON_SERVICE_FEE[c.scope].amount * factor)),
     },
     {
       account: t(SUBCON_HANDLING_FEE.name),
-      qty: qtyFor('Amount'),
+      qty: qtyFor('Amount', 'svc-handling'),
       chargedBy: c.vendorName,
       amount: amountFor('svc-handling', Math.round(SUBCON_HANDLING_FEE.amount * factor)),
     },
@@ -1729,7 +1733,9 @@ function suppressFabClick(e: MouseEvent) {
                 <tr>
                   <th class="wod-th">{{ t('Product') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Purchase cost') }}</th>
-                  <th class="wod-th">{{ t('Warehouse') }}</th>
+                  <!-- Where the material is DRAWN FROM — named as such so it is
+                       not read as where the output lands. -->
+                  <th class="wod-th">{{ t('Origin warehouse') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Needed qty') }}</th>
                   <!-- Subcon reports what LEFT for the vendor; a normal work
                        order reports what was consumed in-house. -->

@@ -118,6 +118,13 @@ export interface WorkOrderSubconSetup {
    * order's renegotiated price must not rewrite it for every other order.
    */
   costLineOverrides?: Record<string, number>
+  /**
+   * How many units each cost line covers, by line id. Entered on the work order
+   * form: the cost driver seeds it, but a vendor may charge for a different
+   * number than the order plans — a minimum batch, say — so it is editable and
+   * what was agreed is kept rather than recomputed.
+   */
+  costLineQty?: Record<string, number>
 }
 
 /** A document created from a subcon work order, and where its detail page lives. */

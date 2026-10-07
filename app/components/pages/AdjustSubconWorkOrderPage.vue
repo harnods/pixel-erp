@@ -36,6 +36,24 @@ const bom = computed(() => billOfMaterials.find(b => b.id === wo.value?.bomId))
 
 function goBack() { router.push(`/work-orders/${props.orderId}`) }
 
+/**
+ * Which warehouse a component is adjusted AGAINST — which is not where it was
+ * drawn from.
+ *
+ * On `resupply` the components have already been transferred into the vendor's
+ * location, so by the time anything is adjusted that is where they sit; naming
+ * the company warehouse they left would point at stock that is no longer there.
+ *
+ * On `dropship` they never entered a company warehouse at all — a 3rd party
+ * shipped them straight to the vendor — so the row shows the warehouse the work
+ * order recorded for it, and nothing when there was none.
+ */
+function componentWarehouseName(productId: string): string {
+  const c = subcon.value
+  if (c?.method === 'resupply' && c.subconWarehouseName) return c.subconWarehouseName
+  return wo.value?.componentWarehouses?.[productId]?.name ?? t('Unassigned')
+}
+
 // ── Components ────────────────────────────────────────────────────────────────
 
 /** How much of each component has actually gone to the vendor. */
@@ -87,7 +105,7 @@ onMounted(() => {
       sku,
       product: p?.name ?? '—',
       unitCost: r.purchaseCost,
-      warehouse: w.componentWarehouses?.[r.productId]?.name ?? t('Unassigned'),
+      warehouse: componentWarehouseName(r.productId),
       onHand: 0,
       sent: sentBySku.value[sku] ?? 0,
       planned,
@@ -248,7 +266,7 @@ function onSave() {
                 <th class="awo-th">{{ t('Product name') }}</th>
                 <th class="awo-th">{{ t('Product code / SKU') }}</th>
                 <th class="awo-th awo-th--num">{{ t('Unit buy price') }}</th>
-                <th class="awo-th">{{ t('Warehouse name') }}</th>
+                <th class="awo-th">{{ t('Warehouse') }}</th>
                 <th class="awo-th awo-th--num">{{ t('Sent to vendor') }}</th>
                 <th class="awo-th awo-th--num">{{ t('Qty needed') }}</th>
                 <th class="awo-th">{{ t('Unit') }}</th>
@@ -367,7 +385,7 @@ function onSave() {
             <thead>
               <tr>
                 <th class="awo-th">{{ t('Product name') }}</th>
-                <th class="awo-th">{{ t('Warehouse name') }}</th>
+                <th class="awo-th">{{ t('Warehouse') }}</th>
                 <th class="awo-th awo-th--num">{{ t('Qty needed') }}</th>
                 <th class="awo-th">{{ t('Unit') }}</th>
                 <th class="awo-th awo-th--num">{{ t('Estimated price') }}</th>

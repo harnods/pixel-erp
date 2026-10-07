@@ -3747,6 +3747,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Waiting for start": "Menunggu dimulai",
 
   // Partial production completion
+  "Deliver components to": "Kirim komponen ke",
+  "The component purchase request is addressed here — the goods never reach your own warehouse.": "Permintaan pembelian komponen dialamatkan ke sini — barang tidak pernah masuk ke gudang Anda.",
   "Charged once, on the first record": "Dibebankan sekali, pada pencatatan pertama",
   "This BOM has no other outputs.": "BoM ini tidak memiliki output lain.",
   "This BOM allocates no production waste.": "BoM ini tidak mengalokasikan limbah produksi.",

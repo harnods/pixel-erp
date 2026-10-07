@@ -79,6 +79,21 @@ const sentBySku = computed<Record<string, number>>(() => {
  */
 const componentQty = ref<Record<string, string>>({})
 
+/**
+ * Which warehouse a component is consumed FROM on this record — not where it was
+ * originally drawn from.
+ *
+ * On `resupply` it was transferred into the vendor's location before the run
+ * started, so that is where it is consumed. On `dropship` it never entered a
+ * company warehouse — a 3rd party shipped it straight to the vendor — so the row
+ * shows whatever the work order recorded.
+ */
+function componentWarehouseName(productId: string): string {
+  const c = subcon.value
+  if (c?.method === 'resupply' && c.subconWarehouseName) return c.subconWarehouseName
+  return wo.value?.componentWarehouses?.[productId]?.name ?? '—'
+}
+
 const components = computed(() => (bom.value?.rawMaterials ?? []).map((r) => {
   const p = catalogProduct(r.productId)
   const sku = p?.sku ?? '—'
@@ -93,7 +108,7 @@ const components = computed(() => (bom.value?.rawMaterials ?? []).map((r) => {
     product: p?.name ?? '—',
     sku,
     unitCost: r.purchaseCost,
-    warehouse: wo.value?.componentWarehouses?.[r.productId]?.name ?? '—',
+    warehouse: componentWarehouseName(r.productId),
     onHand: sentBySku.value[sku] ?? 0,
     remaining,
     needed,
@@ -292,7 +307,7 @@ function save(close: boolean) {
                 <th class="ppc-th">{{ t('Product name') }}</th>
                 <th class="ppc-th">{{ t('Product code / SKU') }}</th>
                 <th class="ppc-th ppc-th--num">{{ t('Unit buy price') }}</th>
-                <th class="ppc-th">{{ t('Warehouse name') }}</th>
+                <th class="ppc-th">{{ t('Warehouse') }}</th>
                 <th class="ppc-th ppc-th--num">{{ t('Stock on hand') }}</th>
                 <th class="ppc-th ppc-th--num">{{ t('Qty remaining') }}</th>
                 <th class="ppc-th ppc-th--num">{{ t('Qty needed') }}</th>
@@ -387,7 +402,7 @@ function save(close: boolean) {
               <tr>
                 <th class="ppc-th">{{ t('Product name') }}</th>
                 <th class="ppc-th">{{ t('Product code / SKU') }}</th>
-                <th class="ppc-th">{{ t('Warehouse name') }}</th>
+                <th class="ppc-th">{{ t('Warehouse') }}</th>
                 <th class="ppc-th ppc-th--num">{{ t('Qty produced') }}</th>
                 <th class="ppc-th">{{ t('Unit') }}</th>
                 <th class="ppc-th ppc-th--num">{{ t('Percentage') }}</th>
@@ -416,7 +431,7 @@ function save(close: boolean) {
               <tr>
                 <th class="ppc-th">{{ t('Product name') }}</th>
                 <th class="ppc-th">{{ t('Product code / SKU') }}</th>
-                <th class="ppc-th">{{ t('Warehouse name') }}</th>
+                <th class="ppc-th">{{ t('Warehouse') }}</th>
                 <th class="ppc-th ppc-th--num">{{ t('Qty produced') }}</th>
                 <th class="ppc-th">{{ t('Unit') }}</th>
                 <th class="ppc-th ppc-th--num">{{ t('Percentage') }}</th>
