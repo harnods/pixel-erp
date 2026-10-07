@@ -8,7 +8,7 @@
  */
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpSelect, MpCheckbox, MpTooltip, MpIcon, MpBadge, MpInput, MpButton, MpButtonGroup, MpTextlink, css,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpSelect, MpCheckbox, MpTooltip, MpIcon, MpBadge, MpInput, MpInputGroup, MpInputRightAddon, MpButton, MpButtonGroup, MpTextlink, css,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -18,8 +18,8 @@ import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import StockSerialDrawer from '~/components/patterns/StockSerialDrawer.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
-import VendorItemDrawer from '~/components/patterns/VendorItemDrawer.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import PreferredWarehousesDrawer from '~/components/patterns/PreferredWarehousesDrawer.vue'
 import {
   getProductDetail, getProductTransactions, getProductWarehouseStock, getProductBatches, getProductSerialStock,
   getProductAllSerials, type ProductBatchSummary,
@@ -29,7 +29,7 @@ import {
   buildRow, invalidateReplenishmentCaches, isManualFloorTooLow, productActionRollup,
   warehouseMinStockRollup,
 } from '~/data/replenishment'
-import { deriveLeadTime, isEstimatedTier } from '~/data/leadTimeHistory'
+import { deriveLeadTime, isEstimatedTier, type LeadTimeTier } from '~/data/leadTimeHistory'
 import { getSkuWarehouseOverride, saveSkuWarehouseOverride, inheritedSafetyDays } from '~/data/replenishmentSettings'
 import { replenishmentRevision } from '~/data/replenishmentStore'
 import { cutoverState } from '~/data/wmsCutover'
@@ -39,6 +39,7 @@ import { TODAY } from '~/data/master'
 import {
   vendorItemsForSku, preferredVendorItem, preferredVendorFor, vendorNameFor,
   preferredVendorIdForWarehouse, setPreferredVendor, clearPreferredVendorForWarehouse,
+  vendorItemFor, type VendorItem,
 } from '~/data/vendorItems'
 import {
   unitConversionsForSku, upsertUnitConversion, removeUnitConversion, describeQty,
@@ -173,7 +174,6 @@ function deleteConversion(name: string) {
 // ── Vendors (who sells us this product, and on what terms) ────────────────────
 // Read live from the vendor↔item link table, so the terms shown here are the same
 // ones the replenishment engine uses to size a suggested order.
-const vendorOpen = ref(false)
 const vendorTick = ref(0)
 
 const vendorRows = computed(() => {
@@ -184,6 +184,23 @@ const vendorRows = computed(() => {
 const preferredVendor = computed(() => {
   void vendorTick.value
   return product.value ? preferredVendorItem(product.value.sku) : undefined
+})
+
+/**
+ * What the Purchase info "Preferred vendor" field can honestly say (D23): the vendor is
+ * chosen PER WAREHOUSE, so one name is only true when every stocked warehouse uses the
+ * same one. Otherwise it reads "Varies by warehouse".
+ */
+const purchaseInfoVendor = computed<{ kind: 'same'; vendorId: string; item: VendorItem | undefined } | { kind: 'varies' } | { kind: 'none' }>(() => {
+  void vendorTick.value
+  void replenishmentRevision.value
+  const picks = preferredByWarehouse.value
+  const ids = new Set(picks.map((r) => r.vendorId).filter((v): v is string => !!v))
+  if (ids.size > 1 || (ids.size === 1 && picks.some((r) => !r.vendorId))) return { kind: 'varies' }
+  const only = [...ids][0]
+  if (only) return { kind: 'same', vendorId: only, item: product.value ? vendorItemFor(product.value.sku, only) : undefined }
+  const fallback = preferredVendor.value
+  return fallback ? { kind: 'same', vendorId: fallback.vendorId, item: fallback } : { kind: 'none' }
 })
 
 /**
@@ -215,10 +232,10 @@ function vendorLeadByWarehouse(vendorId: string) {
   void vendorTick.value
   void replenishmentRevision.value
   const sku = product.value?.sku
-  if (!sku) return [] as { warehouseId: string; warehouseName: string; days: number | null; estimated: boolean }[]
+  if (!sku) return [] as { warehouseId: string; warehouseName: string; days: number | null; estimated: boolean; basis: string }[]
   return warehouseStock.value.map((s) => {
     const d = deriveLeadTime(vendorId, sku, undefined, s.warehouseId)
-    return { warehouseId: s.warehouseId, warehouseName: s.warehouseName, days: d.days, estimated: isEstimatedTier(d.tier) }
+    return { warehouseId: s.warehouseId, warehouseName: s.warehouseName, days: d.days, estimated: isEstimatedTier(d.tier), basis: estimatedBasis(d.tier) }
   })
 }
 
@@ -236,7 +253,7 @@ const preferredByWarehouse = computed(() => {
   if (!sku) return [] as {
     warehouseId: string; warehouseName: string
     vendorId: string | null; vendorName: string | null
-    leadDays: number | null; leadEstimated: boolean
+    leadDays: number | null; leadEstimated: boolean; estimatedBasis: string
   }[]
   return warehouseStock.value.map((s) => {
     const vi = preferredVendorFor(sku, s.warehouseId)
@@ -248,6 +265,7 @@ const preferredByWarehouse = computed(() => {
       vendorName: vi ? vendorNameFor(vi.vendorId) : null,
       leadDays: d?.days ?? null,
       leadEstimated: d ? isEstimatedTier(d.tier) : false,
+      estimatedBasis: d && isEstimatedTier(d.tier) ? estimatedBasis(d.tier) : '',
     }
   })
 })
@@ -263,13 +281,6 @@ function preferredCountLabel(vendorId: string): string {
   const total = preferredByWarehouse.value.length
   if (n > 0 && n === total) return tf('All {n} warehouses', { n })
   return n === 1 ? t('1 warehouse') : tf('{n} warehouses', { n })
-}
-/** "which" warehouses — the names, so two vendors preferred in different warehouses
- *  each read clearly. Omitted when a vendor is preferred everywhere (count says it). */
-function preferredWhNames(vendorId: string): string {
-  const rows = preferredInWarehouses(vendorId)
-  if (!rows.length || rows.length === preferredByWarehouse.value.length) return ''
-  return rows.map((r) => r.warehouseName).join(', ')
 }
 
 // Which vendor rows have their per-warehouse lead-time breakdown expanded.
@@ -366,12 +377,6 @@ const actionRollup = computed(() => {
   void replenishmentRevision.value
   return sku ? productActionRollup(sku) : null
 })
-
-/** Jump to the tab where a floor is actually set. The tab is driven by the
- *  `section` query param, so navigate rather than poke component state. */
-function goToWarehouseStock(): void {
-  router.replace({ query: { ...route.query, section: 'warehouses' } })
-}
 
 const whReplenishment = computed(() => {
   // The engine reads its settings from localStorage, which Vue cannot track, so
@@ -483,15 +488,15 @@ function whCalculatedHint(warehouseId: string): string {
   return tf('Calculated: {n}', { n: r.recommended })
 }
 
-/** One whole label per row: where the reorder point in force comes from. */
+/**
+ * A caption only where someone set the reorder point by hand: the calculated figure
+ * stays visible beside it (D17). A calculated number carries no label — the chevron
+ * beside it opens the working.
+ */
 function whMinStockSub(warehouseId: string): string {
   const r = whReplenishment.value[warehouseId]
-  if (!r) return ''
-  if (whMinStockIsCustom(warehouseId)) return whCalculatedHint(warehouseId) || t('Set for this warehouse')
-  // With no sales there is no computed reorder point (D17); the number shown is the
-  // stored figure the low-stock alerts still enforce.
-  if (r.recommended === null) return t('No sales yet')
-  return t('Calculated')
+  if (!r || !whMinStockIsCustom(warehouseId)) return ''
+  return whCalculatedHint(warehouseId) || t('Set for this warehouse')
 }
 
 /** The draft differs from what the warehouse would inherit / what the formula gives. */
@@ -514,10 +519,16 @@ function whRopDiffers(warehouseId: string): boolean {
  */
 const expandedWh = ref<Set<string>>(new Set())
 
+/** One calculation open at a time: opening another closes the one before it. */
 function toggleWhDetails(warehouseId: string): void {
-  const next = new Set(expandedWh.value)
-  next.has(warehouseId) ? next.delete(warehouseId) : next.add(warehouseId)
-  expandedWh.value = next
+  expandedWh.value = expandedWh.value.has(warehouseId) ? new Set() : new Set([warehouseId])
+}
+
+/** A click anywhere on the row opens it — except on something that has its own job. */
+function onWhRowClick(e: MouseEvent, warehouseId: string): void {
+  if (whEditing.value) return
+  if ((e.target as HTMLElement).closest('a, button, input, label, [role="button"]')) return
+  toggleWhDetails(warehouseId)
 }
 
 /** Where this warehouse's lead time came from — measured, estimated, or vendorless. */
@@ -527,6 +538,66 @@ function whLeadTimeLine(warehouseId: string): string {
   if (!r.vendorId) return tf('No preferred vendor, so this uses the category default of {n} days.', { n: r.leadTimeDays })
   if (r.leadTimeEstimated) return tf('Lead time is an estimate. {vendor} has no delivered purchase orders yet.', { vendor: r.vendorName })
   return tf('Lead time is measured from {vendor}, the average of the last {n} receipts.', { vendor: r.vendorName, n: r.leadTimeSampleSize })
+}
+
+/** Where the lead time on the calculation card comes from — vendor and basis. */
+function whLeadBasis(warehouseId: string): string {
+  const r = whReplenishment.value[warehouseId]
+  if (!r) return ''
+  if (r.leadTimeTier === 'manual') return t('Set manually')
+  if (!r.vendorId) return t('Category default')
+  if (r.leadTimeEstimated) return tf('{vendor}, estimated', { vendor: r.vendorName })
+  return tf('{vendor}, avg of last {n} receipts', { vendor: r.vendorName, n: r.leadTimeSampleSize })
+}
+
+/** Where the safety days on the calculation card come from. */
+function whSafetySource(warehouseId: string): string {
+  switch (whReplenishment.value[warehouseId]?.safetyDaysSource) {
+    case 'sku-warehouse': return t('Set for this warehouse')
+    case 'sku': return t('Set for this product')
+    case 'warehouse': return t('Warehouse setting')
+    case 'category': return t('Category default')
+    default: return t('Default')
+  }
+}
+
+/**
+ * The reorder point the table CELL shows: with no sales there is nothing to calculate,
+ * so the cell shows the stored figure the low-stock alerts enforce — the panel must
+ * compare stock against that same number, not the engine's 0.
+ */
+function whRopShown(s: { warehouseId: string; minStock: number }): number {
+  const r = whReplenishment.value[s.warehouseId]
+  if (r && r.recommended === null && r.source === 'none') return s.minStock
+  return r?.effective ?? s.minStock
+}
+
+/** Room above the larger of position and reorder point, so the marker never sits at the end. */
+const POSITION_HEADROOM = 1.3
+
+/** Fill and marker positions of the stock-position bar, as percentages of its track. */
+function whPositionPct(s: { warehouseId: string; available: number; onTheWay: number; minStock: number }): { fill: string; marker: string } {
+  const rop = whRopShown(s)
+  const position = Math.max(0, s.available + s.onTheWay)
+  const scale = Math.max(position, rop, 1) * POSITION_HEADROOM
+  return { fill: `${Math.min(100, (position / scale) * 100)}%`, marker: `${Math.min(100, (rop / scale) * 100)}%` }
+}
+
+/** The two captions under the bar: the position's arithmetic, and how it stands against the point. */
+function whPositionCaption(s: { warehouseId: string; available: number; onTheWay: number; minStock: number; unit: string }): { left: string; right: string; short: boolean } {
+  const rop = whRopShown(s)
+  const position = s.available + s.onTheWay
+  const gap = rop - position
+  const left = tf('{available} available + {transit} in transit = {total} {unit}', {
+    available: s.available.toLocaleString('id-ID'), transit: s.onTheWay.toLocaleString('id-ID'),
+    total: position.toLocaleString('id-ID'), unit: s.unit,
+  })
+  const right = gap > 0
+    ? tf('{n} {unit} below reorder point ({rop})', { n: gap.toLocaleString('id-ID'), unit: s.unit, rop: rop.toLocaleString('id-ID') })
+    : gap < 0
+      ? tf('{n} {unit} above reorder point ({rop})', { n: Math.abs(gap).toLocaleString('id-ID'), unit: s.unit, rop: rop.toLocaleString('id-ID') })
+      : tf('At reorder point ({rop})', { rop: rop.toLocaleString('id-ID') })
+  return { left, right, short: gap > 0 }
 }
 
 /** The working behind one warehouse's reorder point, as whole sentences. */
@@ -562,6 +633,17 @@ function clearWhErrors() { for (const k of Object.keys(whErrors)) delete whError
 function cancelEditMinStock() { clearWhErrors(); whEditing.value = false }
 const whMinDraft = reactive<Record<string, string>>({})
 const whSafetyDraft = reactive<Record<string, string>>({})
+/** The vendor whose preferred warehouses the drawer is listing (Vendors tab). */
+const prefDrawerVendor = ref<string | null>(null)
+const prefDrawerOpen = computed({
+  get: () => prefDrawerVendor.value !== null,
+  set: (v) => { if (!v) prefDrawerVendor.value = null },
+})
+function openPrefDrawer(vendorId: string): void { prefDrawerVendor.value = vendorId }
+const prefDrawerRows = computed(() =>
+  prefDrawerVendor.value ? preferredInWarehouses(prefDrawerVendor.value) : [],
+)
+
 /** Preferred vendor per warehouse (D23) — editable here, the one place it is set. */
 const whPreferredDraft = reactive<Record<string, string>>({})
 
@@ -585,16 +667,24 @@ function whPreferredName(warehouseId: string): string {
  * the saved pick otherwise. This is the single per-warehouse figure (D10), shown as
  * a sub-line so the vendor choice and its consequence read together.
  */
-function whLeadInfo(warehouseId: string): { days: number | null; estimated: boolean } {
+/**
+ * The tag on a lead time that was not measured (US-001 AC-04): says WHICH default it
+ * comes from — the product's category, or the "Other categories" floor.
+ */
+function estimatedBasis(tier: LeadTimeTier): string {
+  return tier === 'global' ? t('Estimated (other categories)') : t('Estimated (category default)')
+}
+
+function whLeadInfo(warehouseId: string): { days: number | null; estimated: boolean; basis: string } {
   void vendorTick.value
   void replenishmentRevision.value
   const sku = product.value?.sku
   const vendorId = whEditing.value
     ? (whPreferredDraft[warehouseId] || '')
     : (sku ? (preferredVendorFor(sku, warehouseId)?.vendorId ?? '') : '')
-  if (!sku || !vendorId) return { days: null, estimated: false }
+  if (!sku || !vendorId) return { days: null, estimated: false, basis: '' }
   const d = deriveLeadTime(vendorId, sku, undefined, warehouseId)
-  return { days: d.days, estimated: isEstimatedTier(d.tier) }
+  return { days: d.days, estimated: isEstimatedTier(d.tier), basis: estimatedBasis(d.tier) }
 }
 
 /**
@@ -984,7 +1074,6 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                 :label="t('Total suggested qty')"
                 :value="`${actionRollup.totalSuggestedQty.toLocaleString('id-ID')} ${product.unit}`"
               />
-              <a class="pd-link" @click="goToWarehouseStock">{{ t('View reorder point per warehouse') }}</a>
             </template>
             <ContentList v-else :label="t('Due for reorder')" value="—" />
           </div>
@@ -1011,10 +1100,13 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
               <!-- Preferred vendor + its minimum order — the two facts a buyer
                    opens this page for. The full comparison is in the Vendors tab. -->
               <ContentList label="Preferred vendor">
-                <template v-if="preferredVendor">
-                  <span>{{ vendorNameFor(preferredVendor.vendorId) }}</span>
-                  <span class="pd-vendor-note">{{ tf('Lead time: {lead}', { lead: vendorLeadLabel(preferredVendor.vendorId) }) }}</span>
-                  <span class="pd-vendor-note">{{ tf('MOQ: {moq}', { moq: moqLabel(preferredVendor.moq, preferredVendor.purchaseUnit, preferredVendor.unitsPerPurchaseUnit) }) }}</span>
+                <template v-if="purchaseInfoVendor.kind === 'same'">
+                  <span>{{ vendorNameFor(purchaseInfoVendor.vendorId) }}</span>
+                  <span class="pd-vendor-note">{{ tf('Lead time: {lead}', { lead: vendorLeadLabel(purchaseInfoVendor.vendorId) }) }}</span>
+                  <span v-if="purchaseInfoVendor.item" class="pd-vendor-note">{{ tf('MOQ: {moq}', { moq: moqLabel(purchaseInfoVendor.item.moq, purchaseInfoVendor.item.purchaseUnit, purchaseInfoVendor.item.unitsPerPurchaseUnit) }) }}</span>
+                </template>
+                <template v-else-if="purchaseInfoVendor.kind === 'varies'">
+                  <span class="pd-vendor-name" data-devchange="product-preferred-varies-by-warehouse">{{ t('Varies by warehouse') }}</span>
                 </template>
                 <template v-else>
                   <span class="pd-vendor-none">{{ t('Not set') }}</span>
@@ -1195,10 +1287,6 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                a suggested quantity came out the way it did. -->
           <MpTabPanel value="vendors">
             <div v-if="vendorRows.length" class="pd-vendor-panel">
-              <div class="pd-filter-bar pd-filter-bar--end">
-                <MpButton id="pd-view-vendors" variant="secondary" is-rounded @click="vendorOpen = true">{{ t('View vendors') }}</MpButton>
-              </div>
-
               <div class="pd-table-scroll">
                 <table class="pd-table">
                   <colgroup>
@@ -1254,13 +1342,13 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                         </span>
                       </td>
                       <td class="pd-td" data-devchange="product-vendors-preferred-which-warehouses">
-                        <template v-if="preferredInWarehouses(vi.vendorId).length">
-                          <span class="pd-pref-head">
-                            <MpIcon name="check" size="sm" class="pd-vendor-check" :aria-label="t('Preferred')" />
-                            <span class="pd-pref-count">{{ preferredCountLabel(vi.vendorId) }}</span>
-                          </span>
-                          <span v-if="preferredWhNames(vi.vendorId)" class="pd-vendor-note pd-pref-names">{{ preferredWhNames(vi.vendorId) }}</span>
-                        </template>
+                        <!-- The count opens a drawer with the warehouses behind it. -->
+                        <MpTextlink
+                          v-if="preferredInWarehouses(vi.vendorId).length"
+                          :id="`pd-pref-link-${vi.vendorId}`"
+                          data-devchange="product-vendors-preferred-drawer"
+                          @click="openPrefDrawer(vi.vendorId)"
+                        >{{ preferredCountLabel(vi.vendorId) }}</MpTextlink>
                         <span v-else class="pd-vendor-alt">—</span>
                       </td>
                       <td class="pd-td pd-td--num">
@@ -1273,7 +1361,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                             <span class="pd-lead-wh">{{ w.warehouseName }}</span>
                             <span class="pd-lead-days">
                               {{ w.days != null ? tf('{n} days', { n: w.days }) : '—' }}
-                              <span v-if="w.estimated" class="pd-lead-est">{{ t('Estimated') }}</span>
+                              <span v-if="w.estimated" class="pd-lead-est">{{ w.basis }}</span>
                             </span>
                           </li>
                         </ul>
@@ -1564,37 +1652,9 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                serial breakdown rather than instead of it. -->
           <MpTabPanel value="warehouses">
             <div v-if="pagedWarehouseStock.length && !whEditing" class="pd-filter-bar pd-filter-bar--end">
-              <MpButton id="pd-wh-edit" variant="secondary" is-rounded @click="startEditMinStock">{{ t('Edit') }}</MpButton>
+              <MpButton id="pd-wh-edit" variant="secondary" is-rounded data-devchange="product-warehouses-tidy" @click="startEditMinStock">{{ t('Edit vendor') }}</MpButton>
             </div>
-            <!-- Bulk set — the same value for several warehouses should not be typed nine times. -->
-            <div v-if="whEditing && pagedWarehouseStock.length" class="pd-bulk-bar">
-              <span class="pd-bulk-count">{{ tf('{n} warehouses selected', { n: whSelected.size }) }}</span>
-              <template v-if="whSelected.size">
-                <label class="pd-bulk-field" for="pd-wh-bulk-safety">
-                  {{ t('Safety days') }}
-                  <MpInput id="pd-wh-bulk-safety" v-model="whBulkSafety" type="number" :class="css({ width: '96px' })" />
-                </label>
-                <label class="pd-bulk-field" for="pd-wh-bulk-min-stock">
-                  {{ t('Reorder point') }}
-                  <MpInput id="pd-wh-bulk-min-stock" v-model="whBulkMinStock" type="number" :class="css({ width: '96px' })" />
-                </label>
-                <label class="pd-bulk-field" for="pd-wh-bulk-preferred">
-                  {{ t('Preferred vendor') }}
-                  <ErpFilterSelect
-                    id="pd-wh-bulk-preferred"
-                    v-model="whBulkPreferred"
-                    :options="whVendorOptions"
-                    :placeholder="t('Select vendor')"
-                    width="200px"
-                  />
-                </label>
-                <MpButton id="pd-wh-bulk-apply" variant="secondary" size="sm" is-rounded @click="applyBulk">{{ t('Apply to selected') }}</MpButton>
-                <MpButton id="pd-wh-bulk-clear" variant="ghost" size="sm" is-rounded @click="clearBulk">{{ t('Use defaults') }}</MpButton>
-              </template>
-              <span v-else class="pd-bulk-hint">{{ t('Select warehouses to set their safety days, reorder point or preferred vendor together') }}</span>
-            </div>
-
-            <div v-if="pagedWarehouseStock.length" class="pd-table-scroll" :class="{ 'pd-form-table': whEditing }">
+            <div v-if="pagedWarehouseStock.length" class="pd-table-scroll pd-wh-scroll" :class="{ 'pd-form-table': whEditing }">
               <table class="pd-table">
                 <colgroup>
                   <col v-if="whEditing" style="width: 44px" /><!-- pixel-police-allow: table column width, not spacing -->
@@ -1603,12 +1663,59 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                   <col style="width: 104px" /><!-- pixel-police-allow: table column width, not spacing -->
                   <col style="width: 104px" /><!-- pixel-police-allow: table column width, not spacing -->
                   <col style="width: 104px" /><!-- pixel-police-allow: table column width, not spacing -->
-                  <col style="width: 136px" /><!-- pixel-police-allow: table column width, not spacing -->
                   <col style="width: 152px" /><!-- pixel-police-allow: table column width, not spacing -->
-                  <col style="width: 220px" /><!-- pixel-police-allow: table column width, not spacing -->
-                  <col style="width: 72px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col v-if="!whEditing" style="width: 72px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 136px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col :style="{ width: whEditing ? '380px' : '220px' }" /><!-- pixel-police-allow: table column width, not spacing -->
                 </colgroup>
                 <thead>
+                  <!-- Bulk set — the same value for several warehouses should not be typed nine times.
+                       Each field sits above the column it fills, so the column header is its label. -->
+                  <tr v-if="whEditing" class="pd-bulk-row" data-devchange="product-warehouses-bulk-row">
+                    <td colspan="6" class="pd-bulk-cell">
+                      <span class="pd-bulk-lead">
+                        <span v-if="whSelected.size" class="pd-bulk-count">{{ tf('{n} warehouses selected', { n: whSelected.size }) }}</span>
+                        <span v-else class="pd-bulk-hint">{{ t('Select warehouses to set their safety days, reorder point or preferred vendor together') }}</span>
+                      </span>
+                    </td>
+                    <td class="pd-bulk-cell">
+                      <MpInputGroup v-if="whSelected.size" id="pd-wh-bulk-min-stock-group">
+                        <MpInput id="pd-wh-bulk-min-stock" v-model="whBulkMinStock" type="number" :aria-label="t('Reorder point')" />
+                        <MpInputRightAddon has-background>{{ pagedWarehouseStock[0]?.unit }}</MpInputRightAddon>
+                      </MpInputGroup>
+                    </td>
+                    <td class="pd-bulk-cell">
+                      <MpInputGroup v-if="whSelected.size" id="pd-wh-bulk-safety-group">
+                        <MpInput id="pd-wh-bulk-safety" v-model="whBulkSafety" type="number" :aria-label="t('Safety days')" />
+                        <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
+                      </MpInputGroup>
+                    </td>
+                    <td class="pd-bulk-cell">
+                      <span v-if="whSelected.size" class="pd-bulk-vendor">
+                        <ErpFilterSelect
+                          id="pd-wh-bulk-preferred"
+                          v-model="whBulkPreferred"
+                          :options="whVendorOptions"
+                          :placeholder="t('Select vendor')"
+                          width="100%"
+                        />
+                        <!-- Split button: Apply acts at once; the chevron only holds "Use defaults". -->
+                        <span class="pd-split">
+                          <MpButton id="pd-wh-bulk-apply" variant="secondary" size="sm" is-rounded class="pd-split-main" @click="applyBulk">{{ t('Apply') }}</MpButton>
+                          <MpPopover id="pd-wh-bulk-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                            <MpPopoverTrigger>
+                              <MpButton variant="secondary" size="sm" is-rounded class="pd-split-more" :aria-label="t('More actions')" right-icon="chevrons-down" />
+                            </MpPopoverTrigger>
+                            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
+                              <MpPopoverList>
+                                <MpPopoverListItem @click="clearBulk">{{ t('Use defaults') }}</MpPopoverListItem>
+                              </MpPopoverList>
+                            </MpPopoverContent>
+                          </MpPopover>
+                        </span>
+                      </span>
+                    </td>
+                  </tr>
                   <tr>
                     <th v-if="whEditing" class="pd-th">
                       <MpCheckbox id="pd-wh-select-all" :is-checked="whAllSelected" @change="toggleWhSelectAll" />
@@ -1618,19 +1725,6 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                     <th class="pd-th pd-th--num">{{ t('Reserved qty') }}</th>
                     <th class="pd-th pd-th--num">{{ t('Available qty') }}</th>
                     <th class="pd-th pd-th--num">{{ t('In transit qty') }}</th>
-                    <!-- The input comes before the number it produces. -->
-                    <th class="pd-th pd-th--num">
-                      <span class="pd-th-info">
-                        {{ t('Safety days') }}
-                        <MpTooltip
-                          id="pd-th-safety-tip"
-                          :label="t('Extra cover on top of the vendor lead time. A warehouse without its own value uses the category default from Replenishment settings.')"
-                          placement="top" use-portal
-                        >
-                          <span class="pd-th-icon"><MpIcon name="info" size="sm" /></span>
-                        </MpTooltip>
-                      </span>
-                    </th>
                     <th class="pd-th pd-th--num">
                       <span class="pd-th-info">
                         {{ t('Reorder point') }}
@@ -1643,24 +1737,36 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                         </MpTooltip>
                       </span>
                     </th>
-                    <th class="pd-th">
+                    <th v-if="!whEditing" class="pd-th">{{ t('Unit') }}</th>
+                    <th class="pd-th pd-th--num">
                       <span class="pd-th-info">
-                        {{ t('Preferred vendor') }}
+                        {{ t('Safety days') }}
                         <MpTooltip
-                          id="pd-th-preferred-tip"
-                          :label="t('The vendor this warehouse orders from by default. Can differ by warehouse; its lead time feeds the reorder point.')"
+                          id="pd-th-safety-tip"
+                          :label="t('Extra cover on top of the vendor lead time. A warehouse without its own value uses the category default from Replenishment settings.')"
                           placement="top" use-portal
                         >
                           <span class="pd-th-icon"><MpIcon name="info" size="sm" /></span>
                         </MpTooltip>
                       </span>
                     </th>
-                    <th class="pd-th">{{ t('Unit') }}</th>
+                    <th class="pd-th">
+                      <span class="pd-th-info">
+                        {{ t('Preferred vendor') }}
+                        <MpTooltip
+                          id="pd-th-preferred-tip"
+                          :label="t('The vendor this warehouse orders from. It can differ by warehouse, and its lead time sets the reorder point.')"
+                          placement="top" use-portal
+                        >
+                          <span class="pd-th-icon"><MpIcon name="info" size="sm" /></span>
+                        </MpTooltip>
+                      </span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   <template v-for="s in pagedWarehouseStock" :key="s.warehouseId">
-                  <tr class="pd-tr">
+                  <tr class="pd-tr" :class="{ 'pd-tr--clickable': !whEditing, 'pd-tr--open': expandedWh.has(s.warehouseId) }" @click="onWhRowClick($event, s.warehouseId)">
                     <td v-if="whEditing" class="pd-td">
                       <MpCheckbox
                         :id="`pd-wh-select-${s.warehouseId}`"
@@ -1669,25 +1775,79 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                       />
                     </td>
                     <td class="pd-td">
-                      <a class="cell-link cell-text" @click.stop="router.push(`/warehouses/${s.warehouseId}`)">{{ s.warehouseName }}</a>
+                      <span class="pd-wh-name">
+                        <!-- While editing, the name is just a label — nothing here navigates away mid-edit. -->
+                        <span v-if="whEditing" class="cell-text">{{ s.warehouseName }}</span>
+                        <a v-else class="cell-link cell-text" @click.stop="router.push(`/warehouses/${s.warehouseId}`)">{{ s.warehouseName }}</a>
+                        <!-- The working behind this warehouse's reorder point opens from the chevron
+                             (or anywhere on the row); right-aligned so the chevrons form one column. -->
+                        <MpButton
+                          v-if="!whEditing"
+                          :id="`pd-wh-why-${s.warehouseId}`"
+                          variant="ghost"
+                          class="pd-cell-toggle"
+                          :aria-label="expandedWh.has(s.warehouseId) ? t('Hide calculation') : t('Show calculation')"
+                          :aria-expanded="expandedWh.has(s.warehouseId)"
+                          @click.stop="toggleWhDetails(s.warehouseId)"
+                        >
+                          <MpIcon :name="expandedWh.has(s.warehouseId) ? 'chevrons-up' : 'chevrons-down'" size="sm" />
+                        </MpButton>
+                      </span>
                     </td>
                     <td class="pd-td pd-td--num">{{ s.onHand.toLocaleString('id-ID') }}</td>
                     <td class="pd-td pd-td--num">{{ s.reserved.toLocaleString('id-ID') }}</td>
                     <td class="pd-td pd-td--num">{{ s.available.toLocaleString('id-ID') }}</td>
                     <td class="pd-td pd-td--num">{{ s.onTheWay.toLocaleString('id-ID') }}</td>
 
+                    <!-- Reorder point — calculated unless someone set it for this warehouse. -->
+                    <td
+                      class="pd-td pd-td--num"
+                      :class="{ 'pd-td--input': whEditing, 'pd-td--error': whEditing && whErrors[`rop:${s.warehouseId}`] }"
+                    >
+                      <MpInputGroup v-if="whEditing" :id="`pd-wh-min-stock-group-${s.warehouseId}`">
+                        <MpInput
+                          :id="`pd-wh-min-stock-${s.warehouseId}`"
+                          v-model="whMinDraft[s.warehouseId]"
+                          type="number"
+                          :aria-label="tf('Reorder point for {warehouse}', { warehouse: s.warehouseName })"
+                        />
+                        <MpInputRightAddon has-background>{{ s.unit }}</MpInputRightAddon>
+                      </MpInputGroup>
+                      <!-- With no sales there is nothing to calculate, so the stored figure the
+                           low-stock alerts enforce is shown and labelled as such. -->
+                      <template v-else-if="whReplenishment[s.warehouseId]?.recommended === null && whReplenishment[s.warehouseId]?.source === 'none'">
+                        {{ s.minStock.toLocaleString('id-ID') }}
+                      </template>
+                      <template v-else>
+                        {{ (whReplenishment[s.warehouseId]?.effective ?? s.minStock).toLocaleString('id-ID') }}
+                      </template>
+                      <span v-if="whReplenishment[s.warehouseId]?.manualTooLow" class="pd-cell-warn">{{ t('Below calculated') }}</span>
+                      <span v-if="whMinStockSub(s.warehouseId)" class="pd-cell-sub">{{ whMinStockSub(s.warehouseId) }}</span>
+                      <MpTextlink
+                        v-if="whEditing && whRopDiffers(s.warehouseId)"
+                        :id="`pd-wh-rop-calc-${s.warehouseId}`"
+                        as="a"
+                        class="pd-cell-link"
+                        @click.prevent="whMinDraft[s.warehouseId] = String(whReplenishment[s.warehouseId]?.recommended ?? '')"
+                      >{{ t('Use calculated') }}</MpTextlink>
+                    </td>
+
+                    <td v-if="!whEditing" class="pd-td">{{ s.unit }}</td>
+
                     <!-- Safety days — opens filled with the value in force (docs/patterns/FormTable.md). -->
                     <td
                       class="pd-td pd-td--num"
                       :class="{ 'pd-td--input': whEditing, 'pd-td--error': whEditing && whErrors[`safety:${s.warehouseId}`] }"
                     >
-                      <MpInput
-                        v-if="whEditing"
-                        :id="`pd-wh-safety-${s.warehouseId}`"
-                        v-model="whSafetyDraft[s.warehouseId]"
-                        type="number"
-                        :aria-label="tf('Safety days for {warehouse}', { warehouse: s.warehouseName })"
-                      />
+                      <MpInputGroup v-if="whEditing" :id="`pd-wh-safety-group-${s.warehouseId}`">
+                        <MpInput
+                          :id="`pd-wh-safety-${s.warehouseId}`"
+                          v-model="whSafetyDraft[s.warehouseId]"
+                          type="number"
+                          :aria-label="tf('Safety days for {warehouse}', { warehouse: s.warehouseName })"
+                        />
+                        <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
+                      </MpInputGroup>
                       <template v-else>{{ whReplenishment[s.warehouseId]?.safetyDays ?? '—' }}</template>
                       <span v-if="whSafetyIsCustom(s.warehouseId)" class="pd-cell-sub">{{ t('Set for this warehouse') }}</span>
                       <MpTextlink
@@ -1699,80 +1859,107 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                       >{{ t('Use default') }}</MpTextlink>
                     </td>
 
-                    <!-- Reorder point — calculated unless someone set it for this warehouse. -->
-                    <td
-                      class="pd-td pd-td--num"
-                      :class="{ 'pd-td--input': whEditing, 'pd-td--error': whEditing && whErrors[`rop:${s.warehouseId}`] }"
-                    >
-                      <MpInput
-                        v-if="whEditing"
-                        :id="`pd-wh-min-stock-${s.warehouseId}`"
-                        v-model="whMinDraft[s.warehouseId]"
-                        type="number"
-                        :aria-label="tf('Reorder point for {warehouse}', { warehouse: s.warehouseName })"
-                      />
-                      <!-- With no sales there is nothing to calculate, so the stored figure the
-                           low-stock alerts enforce is shown and labelled as such. -->
-                      <template v-else-if="whReplenishment[s.warehouseId]?.recommended === null && whReplenishment[s.warehouseId]?.source === 'none'">
-                        {{ s.minStock.toLocaleString('id-ID') }}
-                      </template>
-                      <template v-else>
-                        {{ (whReplenishment[s.warehouseId]?.effective ?? s.minStock).toLocaleString('id-ID') }}
-                      </template>
-                      <span v-if="whReplenishment[s.warehouseId]?.manualTooLow" class="pd-cell-warn">{{ t('Below calculated') }}</span>
-                      <MpButton
-                        v-if="whMinStockSub(s.warehouseId)"
-                        :id="`pd-wh-why-${s.warehouseId}`"
-                        variant="ghost"
-                        class="pd-cell-toggle"
-                        @click="toggleWhDetails(s.warehouseId)"
-                      >
-                        {{ whMinStockSub(s.warehouseId) }}
-                        <MpIcon :name="expandedWh.has(s.warehouseId) ? 'chevrons-up' : 'chevrons-down'" size="sm" />
-                      </MpButton>
-                      <MpTextlink
-                        v-if="whEditing && whRopDiffers(s.warehouseId)"
-                        :id="`pd-wh-rop-calc-${s.warehouseId}`"
-                        as="a"
-                        class="pd-cell-link"
-                        @click.prevent="whMinDraft[s.warehouseId] = String(whReplenishment[s.warehouseId]?.recommended ?? '')"
-                      >{{ t('Use calculated') }}</MpTextlink>
-                    </td>
 
                     <!-- Preferred vendor — the one place it is set per warehouse (D23). -->
-                    <td class="pd-td" :class="{ 'pd-td--input': whEditing }" data-devchange="product-warehouses-preferred-vendor">
-                      <ErpFilterSelect
-                        v-if="whEditing"
+                    <td
+                      class="pd-td"
+                      :class="{ 'pd-td--select': whEditing && whVendorOptions.length }"
+                      data-devchange="product-warehouses-preferred-vendor"
+                    >
+                      <!-- Editing: a select-like cell (FormTable.md › Select / Search Cell) — custom
+                           single-root trigger, no inner border; the cell draws the focus ring. -->
+                      <MpPopover
+                        v-if="whEditing && whVendorOptions.length"
                         :id="`pd-wh-preferred-${s.warehouseId}`"
-                        v-model="whPreferredDraft[s.warehouseId]"
-                        :options="whVendorOptions"
-                        :placeholder="t('Select vendor')"
-                        width="200px"
-                      />
+                        is-close-on-select
+                        use-portal
+                        :is-keep-alive="false"
+                        placement="bottom-start"
+                      >
+                        <MpPopoverTrigger>
+                          <div class="pd-select-trigger" role="button" tabindex="0">
+                            <span class="pd-select-text">
+                              <span v-if="whPreferredDraft[s.warehouseId]" class="pd-vendor-name">{{ vendorNameFor(whPreferredDraft[s.warehouseId]!) }}</span>
+                              <span v-else class="pd-vendor-alt">{{ t('Select vendor') }}</span>
+                              <span v-if="whLeadInfo(s.warehouseId).days != null" class="pd-cell-sub">
+                                {{ tf('Lead time: {n} days', { n: whLeadInfo(s.warehouseId).days }) }}
+                                <span v-if="whLeadInfo(s.warehouseId).estimated" class="pd-lead-est">{{ whLeadInfo(s.warehouseId).basis }}</span>
+                              </span>
+                            </span>
+                            <MpIcon name="chevrons-down" size="sm" class="pd-select-chevron" />
+                          </div>
+                        </MpPopoverTrigger>
+                        <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content' })">
+                          <MpPopoverList>
+                            <MpPopoverListItem
+                              v-for="o in whVendorOptions"
+                              :key="o.value"
+                              :is-active="o.value === whPreferredDraft[s.warehouseId]"
+                              @click="whPreferredDraft[s.warehouseId] = o.value"
+                            >{{ o.label }}</MpPopoverListItem>
+                          </MpPopoverList>
+                        </MpPopoverContent>
+                      </MpPopover>
                       <template v-else>
                         <span v-if="whPreferredName(s.warehouseId)" class="pd-vendor-name">{{ whPreferredName(s.warehouseId) }}</span>
                         <span v-else class="pd-vendor-alt">{{ t('No preferred vendor set') }}</span>
+                        <span v-if="whLeadInfo(s.warehouseId).days != null" class="pd-cell-sub">
+                          {{ tf('Lead time: {n} days', { n: whLeadInfo(s.warehouseId).days }) }}
+                          <span v-if="whLeadInfo(s.warehouseId).estimated" class="pd-lead-est">{{ whLeadInfo(s.warehouseId).basis }}</span>
+                        </span>
                       </template>
-                      <span v-if="whLeadInfo(s.warehouseId).days != null" class="pd-cell-sub">
-                        {{ tf('Lead time: {n} days', { n: whLeadInfo(s.warehouseId).days }) }}
-                        <span v-if="whLeadInfo(s.warehouseId).estimated" class="pd-lead-est">{{ t('Estimated') }}</span>
-                      </span>
                     </td>
-
-                    <td class="pd-td">{{ s.unit }}</td>
                   </tr>
 
                   <!-- Working shown on request. -->
-                  <tr v-if="expandedWh.has(s.warehouseId)" :key="`${s.warehouseId}-why`" class="pd-tr pd-tr--details">
-                    <td class="pd-td pd-td--details" :colspan="whEditing ? 10 : 9">
-                      <div class="pd-why">
-                        <p v-for="line in whWhyLines(s)" :key="line" class="pd-why-row">{{ line }}</p>
-                        <p class="pd-why-row pd-why-links">
+                  <!-- How the reorder point is calculated: the formula as cards, then where stock
+                       stands against it. Every figure comes from the same row the table reads. -->
+                  <tr v-if="expandedWh.has(s.warehouseId) && !whEditing" :key="`${s.warehouseId}-why`" class="pd-tr pd-tr--details">
+                    <td class="pd-td pd-td--details" colspan="9">
+                      <div class="pd-calc" data-devchange="product-warehouses-calc-panel">
+                        <template v-if="whReplenishment[s.warehouseId]?.recommended != null">
+                          <p class="pd-calc-title">{{ t('How reorder point is calculated') }}</p>
+                          <div class="pd-calc-formula">
+                            <div class="pd-calc-card">
+                              <span class="pd-calc-label">{{ t('Avg daily sales') }}</span>
+                              <span class="pd-calc-value">{{ whReplenishment[s.warehouseId]!.velocity.toFixed(2) }} {{ s.unit }}</span>
+                              <span class="pd-calc-sub">{{ tf('{n} {unit} ÷ {days} days', { n: whReplenishment[s.warehouseId]!.lookbackUnits, unit: s.unit, days: whReplenishment[s.warehouseId]!.lookbackDays }) }}</span>
+                            </div>
+                            <span class="pd-calc-op">× (</span>
+                            <div class="pd-calc-card">
+                              <span class="pd-calc-label">{{ t('Lead time') }}</span>
+                              <span class="pd-calc-value">{{ tf('{n} days', { n: whReplenishment[s.warehouseId]!.leadTimeDays }) }}</span>
+                              <span class="pd-calc-sub pd-calc-sub--link">{{ whLeadBasis(s.warehouseId) }}</span>
+                            </div>
+                            <span class="pd-calc-op">+</span>
+                            <div class="pd-calc-card">
+                              <span class="pd-calc-label">{{ t('Safety days') }}</span>
+                              <span class="pd-calc-value">{{ tf('{n} days', { n: whReplenishment[s.warehouseId]!.safetyDays }) }}</span>
+                              <span class="pd-calc-sub">{{ whSafetySource(s.warehouseId) }}</span>
+                            </div>
+                            <span class="pd-calc-op">) =</span>
+                            <div class="pd-calc-card pd-calc-card--result">
+                              <span class="pd-calc-label">{{ t('Reorder point') }}</span>
+                              <span class="pd-calc-value">{{ (whReplenishment[s.warehouseId]?.effective ?? s.minStock).toLocaleString('id-ID') }} {{ s.unit }}</span>
+                              <span class="pd-calc-sub">{{ whMinStockIsCustom(s.warehouseId) ? t('Set for this warehouse') : t('Calculated') }}</span>
+                              <span v-if="whMinStockIsCustom(s.warehouseId)" class="pd-calc-sub">{{ whCalculatedHint(s.warehouseId) }}</span>
+                            </div>
+                          </div>
+                        </template>
+                        <p v-else class="pd-calc-note">{{ whWhyLines(s)[0] }}</p>
+
+                        <p class="pd-calc-title">{{ t('Stock position vs reorder point') }}</p>
+                        <div class="pd-calc-bar" role="img" :aria-label="whPositionCaption(s).right">
+                          <span class="pd-calc-fill" :style="{ width: whPositionPct(s).fill }" />
+                          <span class="pd-calc-marker" :style="{ left: whPositionPct(s).marker }" />
+                        </div>
+                        <div class="pd-calc-captions">
+                          <span>{{ whPositionCaption(s).left }}</span>
+                          <span :class="{ 'pd-calc-short': whPositionCaption(s).short }">{{ whPositionCaption(s).right }}</span>
+                        </div>
+                        <p class="pd-calc-links">
                           <MpTextlink :id="`pd-wh-lead-defaults-${s.warehouseId}`" as="a" class="pd-cell-link" @click.prevent="router.push('/replenishment-settings#lead-time')">
                             {{ t('View lead time defaults') }}
-                          </MpTextlink>
-                          <MpTextlink :id="`pd-wh-vendors-${s.warehouseId}`" as="a" class="pd-cell-link" @click.prevent="router.push(`/product-list/${product?.sku}?section=vendors`)">
-                            {{ t('View vendors') }}
                           </MpTextlink>
                         </p>
                       </div>
@@ -1792,7 +1979,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                 <MpButton id="pd-wh-save" variant="primary" is-rounded @click="saveMinStock">{{ t('Save changes') }}</MpButton>
               </MpButtonGroup>
             </div>
-            <div v-else class="empty-full">
+            <div v-if="!pagedWarehouseStock.length" class="empty-full">
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
               <p class="empty-full-title">No stock</p>
               <p class="empty-full-desc">Warehouses will appear here.</p>
@@ -1841,14 +2028,13 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
       @close="barcodePreviewOpen = false"
     />
 
-    <!-- Read-only: vendor terms are owned by purchasing and edited only in the
-         Vendors module. The product page (like the replenishment worklist) only
-         views them. -->
-    <VendorItemDrawer
-      v-model:is-open="vendorOpen"
+    <PreferredWarehousesDrawer
+      v-model:is-open="prefDrawerOpen"
+      @open-warehouse="(id) => { prefDrawerVendor = null; router.push(`/warehouses/${id}`) }"
+      :vendor-name="prefDrawerVendor ? vendorNameFor(prefDrawerVendor) : ''"
+      :product-name="product.name"
       :sku="product.sku"
-      readonly
-      @saved="vendorTick++"
+      :rows="prefDrawerRows.map((r) => ({ warehouseId: r.warehouseId, warehouseName: r.warehouseName, leadDays: r.leadDays, estimatedBasis: r.estimatedBasis }))"
     />
   </div>
 
@@ -1980,47 +2166,62 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 /* Where a number came from, under the number itself — muted so the figure still
    reads first and the provenance is there when questioned. */
 
-/* The provenance word, made operable. Muted like the text it replaces so the
-   table's quiet does not turn into a column of links. */
-/* The provenance label doubles as the disclosure trigger. Sized like the caption it
-   replaces: MpButton pins 14px with a layered !important, so it is scaled instead. */
+/* The disclosure chevron, left of the warehouse it explains. MpButton pins its own padding,
+   so it is reset to a bare icon target. */
 .pd-cell-toggle {
-  display: flex; align-items: center; gap: var(--mp-spacing-0\.5);
-  width: fit-content; height: auto; margin-left: auto; padding: 0;
-  font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary);
-  zoom: calc(12 / 14);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: auto; min-width: 0; height: auto; padding: var(--mp-spacing-0\.5);
+  vertical-align: middle; color: var(--mp-text-secondary);
 }
+.pd-wh-name { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
+.pd-tr--clickable { cursor: pointer; }
+.pd-tr--clickable:hover > .pd-td { background: var(--mp-background-neutral-subtle); }
 .pd-cell-toggle:hover { color: var(--mp-text-default); }
 
 .pd-tr--details > .pd-td--details { padding: 0; }
+/* ── How the reorder point is calculated (the expanded warehouse row) ── */
+/* The scroll area is a size container, so the panel can be exactly as wide as what is
+   visible (100cqw) and stay pinned left while the table scrolls under it. */
+.pd-wh-scroll { container-type: inline-size; }
+.pd-calc {
+  position: sticky; left: 0; box-sizing: border-box; width: 100cqw;
+  display: flex; flex-direction: column; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4); text-align: left; white-space: normal;
+  background: var(--mp-background-neutral-subtle);
+}
+.pd-calc-title { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pd-calc-formula { display: flex; flex-wrap: wrap; align-items: center; gap: var(--mp-spacing-2); }
+.pd-calc-op { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); white-space: nowrap; }
+.pd-calc-card {
+  display: flex; flex-direction: column;
+  min-width: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
+}
+.pd-calc-card--result { border-color: var(--mp-colors-border-selected); }
+.pd-calc-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
+.pd-calc-value { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-lg); }
+.pd-calc-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pd-calc-sub--link { color: var(--mp-text-link); }
+.pd-calc-card--result .pd-calc-label,
+.pd-calc-card--result .pd-calc-value,
+.pd-calc-card--result .pd-calc-sub { color: var(--mp-text-selected); }
+.pd-calc-note { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+/* Track, the stock held, and a marker where the reorder point sits. */
+.pd-calc-bar {
+  position: relative; height: var(--mp-sizes-2); overflow: hidden;
+  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-sm);
+}
+.pd-calc-fill { position: absolute; inset: 0 auto 0 0; background: var(--mp-border-bold); }
+.pd-calc-marker { position: absolute; top: 0; bottom: 0; width: var(--mp-spacing-0\.5); background: var(--mp-colors-background-warning-bold); }
+.pd-calc-captions { display: flex; justify-content: space-between; gap: var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pd-calc-short { color: var(--mp-colors-text-warning); }
+.pd-calc-links { margin: 0; display: flex; gap: var(--mp-spacing-3); }
+.pd-calc-links .pd-cell-link { margin-left: 0; }
 
-/* The detail spans every column, so by default it renders at the far left of a
-   table that is usually scrolled right to reach Reorder point — putting the
-   explanation off-screen exactly when it is opened. Sticking it to the scroll
-   viewport's left edge keeps it read-able at any horizontal position. */
-.pd-why {
-  position: sticky;
-  left: 0;
-  display: inline-block;
-  max-width: 560px;
-  margin: 0 0 12px 12px;
-  padding-left: 10px;
-  border-left: 2px solid var(--mp-border-subdued, #e5e7eb);
-  text-align: left;
-  white-space: normal;
-}
-.pd-why-row {
-  margin: 0 0 4px;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--mp-text-subdued, #6b7280);
-}
-.pd-why-row:last-child { margin-bottom: 0; }
+
 
 /* MpTextlink pins 14px with a layered !important; scale it to the 12px caption. */
 .pd-cell-link { display: flex; width: fit-content; margin-left: auto; zoom: calc(12 / 14); }
-.pd-why-links { display: flex; gap: var(--mp-spacing-3); }
-.pd-why-links .pd-cell-link { margin-left: 0; }
 
 /* A hand-set floor materially under the calculated one. Amber, not red: it is a
    judgement the buyer is allowed to make, not an error. */
@@ -2033,12 +2234,22 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
   display: block; font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm);
   font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary);
 }
-.pd-bulk-bar {
-  display: flex; align-items: center; gap: var(--mp-spacing-3); flex-wrap: wrap;
-  margin-bottom: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border-radius: var(--mp-radii-md); background: var(--mp-background-neutral-subtle);
+/* The bulk-set row: a table row above the headers, so each field sits over its column. */
+.pd-bulk-row > .pd-bulk-cell {
+  padding: var(--mp-spacing-2); vertical-align: middle;
+  background: var(--mp-background-neutral-subtle);
 }
-.pd-bulk-field { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.pd-bulk-lead { display: flex; align-items: center; gap: var(--mp-spacing-3); white-space: normal; }
+.pd-bulk-row :deep(.mp-input__root) { width: 100%; }
+.pd-bulk-vendor { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.pd-bulk-vendor :deep(.efs) { flex: 1; min-width: 0; }
+/* Split button: the main half and the chevron half read as one control. */
+.pd-split { display: inline-flex; flex-shrink: 0; }
+.pd-split :deep(.pd-split-main) { border-top-right-radius: 0 !important; border-bottom-right-radius: 0 !important; }
+.pd-split :deep(.pd-split-more) {
+  border-top-left-radius: 0 !important; border-bottom-left-radius: 0 !important;
+  margin-left: -1px; padding-left: var(--mp-spacing-1\.5) !important; padding-right: var(--mp-spacing-1\.5) !important;
+}
 /* Header label plus its info affordance. Inline-flex so the icon rides the text
    baseline instead of forcing the numeric column's right alignment open. */
 .pd-th-info { display: inline-flex; align-items: center; gap: 4px; }
@@ -2050,10 +2261,6 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 .pd-th-icon:hover { color: var(--mp-icon-default, #4b5563); }
 
 .pd-bulk-count { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-/* Pixel's MpInput root is full-width by default, so inside a flex row each one
-   claims the whole line and the fields stack. Shrink the wrapper, not just the
-   control it contains. */
-.pd-bulk-bar :deep(.mp-input__root) { width: auto; flex: 0 0 auto; }
 .pd-bulk-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 .pd-table-scroll { overflow-x: auto; }
@@ -2081,12 +2288,30 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
    rule/table-nonform-bg-gray). */
 .pd-form-table .pd-td { background: var(--mp-background-neutral-subtle); border-right: 1px solid var(--mp-border-default); }
 .pd-form-table .pd-td:last-child { border-right: none; }
-.pd-form-table .pd-td--input { padding: 0; background: var(--mp-background-neutral); position: relative; }
+.pd-form-table .pd-td--input { padding: 0; background: var(--mp-background-neutral); position: relative; vertical-align: top; }
 .pd-form-table .pd-td--input :deep([class*='input']) {
   width: 100%; height: var(--mp-sizes-10);
   border-color: transparent; border-radius: 0; box-shadow: none !important; /* pixel-police-allow-shadow: strips the input's own ring, the cell draws it */
   text-align: right; font-variant-numeric: tabular-nums;
 }
+/* A cell whose only content is the input (no "Use default" / "Use calculated" link or caption
+   under it) lets the input fill the whole cell, so no empty band is left under it. */
+.pd-form-table .pd-td--input:has(> :only-child) { height: 1px; }
+/* Suffix (days / unit) inside an input cell: Pixel lays the addon over the input's padding,
+   which leaves a white gap between the number and the segment. In a cell it sits in the flow
+   instead — the input takes what is left, the addon is a flush subtle segment at the end. */
+.pd-form-table .pd-td--input :deep([class*='input-group']) { display: flex; width: 100%; height: var(--mp-sizes-10); }
+.pd-form-table .pd-td--input :deep([class*='input-group'] > [class*='input__root']) { flex: 1 1 0; width: auto; min-width: 0; }
+.pd-form-table .pd-td--input :deep([class*='input-group'] [class*='input__control']) { padding-right: var(--mp-spacing-2); }
+.pd-form-table .pd-td--input :deep([class*='input-addon']) {
+  position: static; inset: auto; transform: none; flex: 0 0 auto; width: auto; height: auto; align-self: stretch;
+  display: flex; align-items: center; padding: 0 var(--mp-spacing-3);
+  text-align: left; border-radius: 0; border-color: transparent;
+  background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary);
+}
+.pd-form-table .pd-td--input:has(> :only-child) :deep([class*='input']) { height: 100%; }
+.pd-form-table .pd-td--input:has(> :only-child):focus-within::after,
+.pd-form-table .pd-td--error:has(> :only-child)::after { height: auto; bottom: 0; }
 .pd-form-table .pd-td--input:focus-within::after,
 .pd-form-table .pd-td--error::after {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: var(--mp-sizes-10);
@@ -2097,20 +2322,27 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 .pd-form-table .pd-td--error :deep([class*='input']) { background: transparent; }
 .pd-form-table .pd-td--input > .pd-cell-sub,
 .pd-form-table .pd-td--input > .pd-cell-warn,
-.pd-form-table .pd-td--input > .pd-cell-toggle,
 .pd-form-table .pd-td--input > .pd-cell-link { margin-right: var(--mp-spacing-2); }
 .pd-form-table .pd-td--input > .pd-cell-sub,
 .pd-form-table .pd-td--input > .pd-cell-warn { padding-right: var(--mp-spacing-2); margin-right: 0; }
+.pd-form-table .pd-td--select { padding: 0; background: var(--mp-background-neutral); position: relative; }
+.pd-form-table .pd-td--select:focus-within::after {
+  content: ''; position: absolute; inset: 0; border: 1px solid var(--mp-border-bold); pointer-events: none;
+}
+/* Custom single-root select trigger: the cell owns the border and focus ring. */
+.pd-select-trigger {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-2);
+  min-height: var(--mp-sizes-10); padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-3);
+  cursor: pointer; text-align: left;
+}
+.pd-select-text { display: flex; flex-direction: column; min-width: 0; }
+.pd-select-text .pd-vendor-name { overflow-wrap: anywhere; }
+.pd-select-chevron { flex-shrink: 0; margin-top: var(--mp-spacing-0\.5); }
 .pd-wh-footer {
   display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-4);
   margin-top: var(--mp-spacing-4);
 }
 .pd-wh-error { margin: 0 auto 0 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-danger); }
-.pd-vendor-check { color: var(--mp-colors-icon-brand); }
-.pd-pref-head { display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 4px); }
-.pd-pref-count { color: var(--mp-text-default); }
-/* The warehouse names wrap within the column instead of overflowing the nowrap cell. */
-.pd-pref-names { display: block; max-width: 220px; white-space: normal; word-break: break-word; }
 .pd-td--action { text-align: right; padding-top: var(--mp-spacing-1); padding-bottom: var(--mp-spacing-1); }
 .pd-tx-number { color: var(--mp-text-default); }
 .row-kebab { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }

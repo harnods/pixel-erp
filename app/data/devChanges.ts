@@ -76,6 +76,38 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['vendorItems.ts', 'replenishment.ts'],
   },
   {
+    id: 'product-vendors-preferred-drawer',
+    title: 'Vendors tab: preferred warehouses open in a drawer',
+    description:
+      'The Preferred column no longer shows a check mark or an info icon. The count is a link; clicking it opens a drawer with the vendor, the product and the list of warehouses that prefer this vendor, each with its lead time (and the basis when it is an estimate). Each warehouse name is a link to that warehouse.',
+    date: '2026-10-07',
+    files: ['ProductDetailsPage.vue', 'PreferredWarehousesDrawer.vue'],
+  },
+  {
+    id: 'product-warehouses-bulk-row',
+    title: 'Stock by warehouses: bulk set sits above its columns',
+    description:
+      'In Edit vendor mode the bulk-set controls are a row above the table headers: Reorder point (with its unit), Safety days (with "days") and Preferred vendor each sit above their own column, so the headers label them. The Apply button is a split button beside the vendor select — Apply acts at once, and its chevron holds "Use defaults". Columns now run Reorder point, Unit, Safety days, Preferred vendor; while editing, the Unit column is hidden and the unit/days show as suffixes inside the inputs. With nothing ticked the row shows the hint instead.',
+    date: '2026-10-07',
+    files: ['ProductDetailsPage.vue'],
+  },
+  {
+    id: 'product-warehouses-tidy',
+    title: 'Stock by warehouses: tidier table',
+    description:
+      'The button is now "Edit vendor", left-aligned above the table. The stray "No stock" empty state under a populated table is gone. The reorder point no longer carries a "Calculated / No sales yet" label — a chevron left of the warehouse opens the working instead (a hand-set value still shows its calculated figure beneath). The opened row shows the formula as cards (avg daily sales × (lead time + safety days) = reorder point, each with where it comes from) and a bar of stock position vs the reorder point, all from the same engine row the table reads. The Vendors tab loses its "View vendors" button, which repeated the table.',
+    date: '2026-10-07',
+    files: ['ProductDetailsPage.vue'],
+  },
+  {
+    id: 'product-preferred-varies-by-warehouse',
+    title: 'Product page: preferred vendor reads honestly per warehouse',
+    description:
+      'Purchase info shows a single Preferred vendor only when every stocked warehouse uses it; otherwise it says "Varies by warehouse". The Product info and Purchase info panels carry no shortcut links to the Stock by warehouses tab. On that tab the vendor picker is now a proper form-table select cell (borderless, the cell draws the focus ring, long vendor names wrap, lead time sits inside the cell), and an estimated lead time says its basis ("Estimated (category default)"). On the Vendors tab the Preferred column is just a link ("5 warehouses", "All 9 warehouses") — no check, no info icon — that opens a drawer listing the warehouses that prefer the vendor, each with its lead time. The header tooltip is tighter.',
+    date: '2026-10-07',
+    files: ['ProductDetailsPage.vue'],
+  },
+  {
     id: 'replenishment-signals-grey',
     title: 'Replenishment: every Signals badge is grey',
     description:
