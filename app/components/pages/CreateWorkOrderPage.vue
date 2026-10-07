@@ -787,8 +787,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <MpFormErrorMessage>{{ t('You must select work order type') }}</MpFormErrorMessage>
             </MpFormControl>
 
-            <!-- Track routing -->
-            <MpFormControl id="wo-routing" is-required>
+            <!-- Track routing. Hidden on subcontracting: the routing being followed
+                 is the vendor's, not ours, so there is no company routing to track
+                 and nothing for the user to decide. The value is still written
+                 (forced to 'no' by the category watcher) so saved records stay
+                 well-formed. -->
+            <MpFormControl v-if="!isSubcon" id="wo-routing" is-required>
               <MpFormLabel>{{ t('Track routing') }}</MpFormLabel>
               <div class="wo-radio-group">
                 <label class="wo-radio-item">
@@ -929,21 +933,16 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <p class="wo-subcon-hint">{{ t('In the vendor\'s custody — still on your books until consumed.') }}</p>
             </MpFormControl>
 
-            <MpFormControl id="wo-subcon-receiving-wh" is-required>
-              <MpFormLabel>{{ t('Receive output into') }}</MpFormLabel>
-              <MpAutocomplete
-                id="wo-subcon-receiving-wh-ac" v-model="subconReceivingWarehouseId" :data="warehouseOptions"
-                label-prop="name" value-prop="id" :placeholder="t('Select warehouse')"
-                is-searchable use-portal is-full-width
-              />
-            </MpFormControl>
           </div>
 
-          <!-- The consequence of the three choices, stated once and inline. -->
+          <!-- The consequence of the three choices, stated once and inline. The
+               chain sits on the same line as its label: it is a reminder of what
+               follows, not a section of its own, and the fields above have more
+               claim on the space. -->
           <div class="wo-subcon-plan">
             <span class="wo-subcon-plan__label">{{ t('Documents this work order will raise') }}</span>
             <SubconPlanPreview
-              compact
+              dense
               :scope="subconScope"
               :split="subconSplit"
               :method="subconMethod"
@@ -1245,17 +1244,18 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <table class="wo-table">
               <colgroup>
                 <col /><col style="width:140px" /><col style="width:140px" />
-                <col style="width:110px" /><col style="width:140px" /><col style="width:160px" /><col style="width:44px" />
+                <col style="width:110px" /><col v-if="isSubcon" style="width:220px" /><col style="width:140px" /><col style="width:160px" /><col style="width:44px" />
               </colgroup>
               <thead>
                 <tr>
                   <th class="wo-th">{{ t('Product') }}</th><th class="wo-th">{{ t('SKU') }}</th><th class="wo-th">{{ t('Produced qty') }}</th>
-                  <th class="wo-th">{{ t('Unit') }}</th><th class="wo-th">{{ t('Percentage') }}</th><th class="wo-th wo-th--right">{{ t('Estimated cost') }}</th><th class="wo-th wo-th--del" />
+                  <th class="wo-th">{{ t('Unit') }}</th><th v-if="isSubcon" class="wo-th">{{ t('Warehouse') }}</th>
+                  <th class="wo-th">{{ t('Percentage') }}</th><th class="wo-th wo-th--right">{{ t('Estimated cost') }}</th><th class="wo-th wo-th--del" />
                 </tr>
               </thead>
               <tbody v-if="bomLoading">
                 <tr v-for="n in 3" :key="`sk${n}`" class="wo-tr">
-                  <td v-for="c in 6" :key="c" class="wo-td"><span class="wo-skel" /></td>
+                  <td v-for="c in (isSubcon ? 7 : 6)" :key="c" class="wo-td"><span class="wo-skel" /></td>
                   <td class="wo-td wo-td--del" />
                 </tr>
               </tbody>
@@ -1266,6 +1266,16 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="wo-td">{{ row.sku || '—' }}</td>
                   <td class="wo-td wo-td--input"><MpInput :id="`main-qty-${row.id}`" v-model="row.producedQty" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td">{{ row.unit || '—' }}</td>
+                  <!-- Where the finished goods land. Asked once, on the output it
+                       belongs to, rather than as a separate field in the subcon
+                       setup — the other outputs follow it (see below). -->
+                  <td v-if="isSubcon" class="wo-td wo-td--input">
+                    <MpAutocomplete
+                      :id="`main-wh-${row.id}`" v-model="subconReceivingWarehouseId" :data="warehouseOptions"
+                      label-prop="name" value-prop="id" :placeholder="t('Select warehouse')"
+                      is-searchable use-portal is-full-width
+                    />
+                  </td>
                   <td class="wo-td">{{ row.percentage ? `${row.percentage}%` : '—' }}</td>
                   <td class="wo-td wo-td--num">{{ formatIDR(num(row.estCost)) }}</td>
                   <td class="wo-td wo-td--del" />
@@ -1284,17 +1294,18 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <table class="wo-table">
               <colgroup>
                 <col /><col style="width:140px" /><col style="width:140px" />
-                <col style="width:110px" /><col style="width:140px" /><col style="width:160px" /><col style="width:44px" />
+                <col style="width:110px" /><col v-if="isSubcon" style="width:220px" /><col style="width:140px" /><col style="width:160px" /><col style="width:44px" />
               </colgroup>
               <thead>
                 <tr>
                   <th class="wo-th">{{ t('Product') }}</th><th class="wo-th">{{ t('SKU') }}</th><th class="wo-th">{{ t('Produced qty') }}</th>
-                  <th class="wo-th">{{ t('Unit') }}</th><th class="wo-th">{{ t('Percentage') }}</th><th class="wo-th wo-th--right">{{ t('Estimated cost') }}</th><th class="wo-th wo-th--del" />
+                  <th class="wo-th">{{ t('Unit') }}</th><th v-if="isSubcon" class="wo-th">{{ t('Warehouse') }}</th>
+                  <th class="wo-th">{{ t('Percentage') }}</th><th class="wo-th wo-th--right">{{ t('Estimated cost') }}</th><th class="wo-th wo-th--del" />
                 </tr>
               </thead>
               <tbody v-if="bomLoading">
                 <tr v-for="n in 3" :key="`sk${n}`" class="wo-tr">
-                  <td v-for="c in 6" :key="c" class="wo-td"><span class="wo-skel" /></td>
+                  <td v-for="c in (isSubcon ? 7 : 6)" :key="c" class="wo-td"><span class="wo-skel" /></td>
                   <td class="wo-td wo-td--del" />
                 </tr>
               </tbody>
@@ -1307,6 +1318,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="wo-td wo-td--input"><MpInput v-if="row.productId" :id="`other-qty-${row.id}`" v-model="row.producedQty" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input">
                     <MpAutocomplete v-if="row.productId" :id="`other-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select unit')" is-searchable use-portal is-full-width />
+                  </td>
+                  <!-- Read-only: the other outputs come off the same run and land
+                       with the main output, so they cannot be routed elsewhere. -->
+                  <td v-if="isSubcon" class="wo-td wo-td--muted">
+                    <template v-if="row.productId">{{ warehouseName(subconReceivingWarehouseId) || '—' }}</template>
                   </td>
                   <td class="wo-td wo-td--input"><MpInput v-if="row.productId" :id="`other-pct-${row.id}`" v-model="row.percentage" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input wo-td--num-input"><MpInput v-if="row.productId" :id="`other-cost-${row.id}`" v-model="row.estCost" type="number" placeholder="0" is-full-width /></td>
@@ -1526,10 +1542,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
   line-height: var(--mp-line-heights-sm, 16px);
   color: var(--mp-text-secondary);
 }
-.wo-subcon-plan { margin-top: var(--mp-spacing-6); }
+.wo-subcon-plan {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: var(--mp-spacing-2) var(--mp-spacing-3);
+  margin-top: var(--mp-spacing-4);
+}
 .wo-subcon-plan__label {
-  display: block;
-  margin-bottom: var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
@@ -1645,6 +1663,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wo-td:last-child { border-right: none; }
 .wo-tr:last-child .wo-td { border-bottom: none; }
 .wo-td--num { font-variant-numeric: tabular-nums; color: var(--mp-text-default); }
+/* A value this row inherits and cannot set — shown so the row is complete, muted
+   so it doesn't read as an editable field sitting next to real ones. */
+.wo-td--muted { color: var(--mp-text-secondary); }
 .wo-td--right { text-align: right; }
 .wo-td--input { padding: 0; vertical-align: middle; background: var(--mp-background-neutral, #fff); }
 .wo-td--num-input { padding: 0; background: var(--mp-background-neutral, #fff); }

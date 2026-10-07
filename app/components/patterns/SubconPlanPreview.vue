@@ -28,6 +28,14 @@ const props = defineProps<{
    * state the same number twice and cost a screenful of height.
    */
   compact?: boolean
+  /**
+   * Dense: the chain reduced to its document tags on a single line. Used where
+   * the chain is a reminder rather than the subject — the subcon block on the
+   * work order form, which has to fit beside the fields it belongs to. Each tag
+   * carries the full document name as its tooltip, so nothing is lost, only
+   * folded away.
+   */
+  dense?: boolean
 }>()
 
 const { t } = useLocale()
@@ -46,8 +54,19 @@ const estimate = computed(() => {
 </script>
 
 <template>
+  <!-- Dense: tags only, one line, full names on hover. -->
+  <ol v-if="dense" class="scp__dense">
+    <li v-for="(step, i) in plan" :key="step.kind" class="scp__dense-item">
+      <span
+        class="scp__chip-tag" :class="`scp__chip-tag--${step.tag.toLowerCase()}`"
+        :title="t(step.title)"
+      >{{ t(step.tag) }}</span>
+      <span v-if="i < plan.length - 1" class="scp__dense-sep" aria-hidden="true">›</span>
+    </li>
+  </ol>
+
   <!-- Compact: the chain as one line of chips. -->
-  <ol v-if="compact" class="scp__chain">
+  <ol v-else-if="compact" class="scp__chain">
     <li v-for="(step, i) in plan" :key="step.kind" class="scp__chain-item">
       <span class="scp__chip">
         <span class="scp__chip-tag" :class="`scp__chip-tag--${step.tag.toLowerCase()}`">{{ t(step.tag) }}</span>
@@ -92,6 +111,14 @@ const estimate = computed(() => {
 
 <style scoped>
 .scp { max-width: 860px; }
+
+/* ── Dense: tags only ────────────────────────────────────────────────────── */
+.scp__dense {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--mp-spacing-1);
+  margin: 0; padding: 0; list-style: none;
+}
+.scp__dense-item { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
+.scp__dense-sep { color: var(--mp-text-subtle, #75808f); font-size: var(--mp-font-sizes-md); }
 
 /* ── Compact: one inline chain ───────────────────────────────────────────── */
 .scp__chain {

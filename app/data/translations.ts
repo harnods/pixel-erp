@@ -3745,4 +3745,16 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Planned": "Direncanakan",
   "Ready to raise": "Siap dibuat",
   "Waiting for start": "Menunggu dimulai",
+
+  // Transfer origin breakdown — components split across warehouses
+  "Components by origin warehouse": "Komponen per gudang asal",
+  "These components are stored in more than one warehouse. A transfer moves stock out of a single warehouse, so raise one per origin.": "Komponen ini tersimpan di lebih dari satu gudang. Transfer hanya memindahkan stok dari satu gudang, jadi buat satu transfer untuk setiap gudang asal.",
+  "All of them are headed to": "Semuanya dikirim ke",
+  "Create transfer": "Buat transfer",
+  "Fully transferred": "Sudah ditransfer penuh",
+  "Every component has already been transferred.": "Semua komponen sudah ditransfer.",
+  "Planned qty": "Jumlah rencana",
+  "Remaining qty": "Sisa jumlah",
+  "Unit": "Satuan",
+  "Goods, not vendor work": "Barang, bukan jasa vendor",
 }

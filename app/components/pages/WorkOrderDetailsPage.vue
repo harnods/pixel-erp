@@ -34,6 +34,7 @@ import {
 } from '~/data/subconPricing'
 import SubconJournalModal from '~/components/patterns/SubconJournalModal.vue'
 import ConfirmWorkOrderAdjustmentModal from '~/components/patterns/ConfirmWorkOrderAdjustmentModal.vue'
+import TransferOriginBreakdownModal, { type TransferOriginGroup } from '~/components/patterns/TransferOriginBreakdownModal.vue'
 import {
   buildSubconJournals, accountLabel,
   type SubconAccountingInput, type SubconCostLineInput, type SubconComponentInput,
@@ -804,6 +805,46 @@ const subconOrigin = computed(() => {
   return first?.warehouseId ? { id: first.warehouseId, name: first.warehouse } : undefined
 })
 
+/**
+ * The components grouped by the warehouse they are drawn from, with what is
+ * planned and what is still outstanding.
+ *
+ * A warehouse transfer has a single source, so components spread across several
+ * warehouses cannot leave on one document — this is what the breakdown modal
+ * shows before the form opens, and what each per-origin transfer is built from.
+ */
+const rawOriginGroups = computed<TransferOriginGroup[]>(() => {
+  const groups: TransferOriginGroup[] = []
+  for (const r of rawMaterials.value) {
+    const id = r.warehouseId ?? ''
+    const planned = plannedQtyFor(r)
+    const line = {
+      productId: r.productId, product: r.product, sku: r.sku, unit: r.unit,
+      planned,
+      remaining: Math.max(0, planned - (sentToVendorBySku.value[r.sku] ?? 0)),
+    }
+    const existing = groups.find(g => g.warehouseId === id)
+    if (existing) existing.lines.push(line)
+    else groups.push({ warehouseId: id, warehouseName: r.warehouse, lines: [line] })
+  }
+  return groups
+})
+
+/**
+ * More than one source warehouse means more than one transfer.
+ *
+ * Counts only components that actually name a warehouse. Records saved before the
+ * component warehouse was persisted carry none, and those fall back to the single
+ * origin the work order already resolves — splitting on a blank would offer a
+ * transfer with no source to draw from.
+ */
+const hasMultipleOrigins = computed(() =>
+  new Set(rawMaterials.value.map(r => r.warehouseId).filter(Boolean)).size > 1)
+
+const originBreakdownOpen = ref(false)
+/** The transfer kind the breakdown was opened for, replayed once an origin is picked. */
+const originBreakdownKind = ref<SubconDocKind>('transfer')
+
 
 // ── Complete work order — blocked by unconsumed raw material qty ────────────
 // Clicking "Complete work order" while any raw material still has qty left to
@@ -1059,13 +1100,18 @@ const DOC_ROUTE: Partial<Record<SubconDocKind, string>> = {
  *  • A PR buys the vendor's service, and carries the output as a tracked line so
  *    the goods receipt has something to receive against.
  */
-function prefillLines(kind: SubconDocKind): SubconPrefillLine[] {
+function prefillLines(kind: SubconDocKind, originWarehouseId?: string): SubconPrefillLine[] {
   const w = wo.value
   const c = subcon.value
   if (!w || !c) return []
 
   if (kind === 'transfer' || kind === 'rawTransfer') {
-    const components = kind === 'rawTransfer' ? rawMaterials.value.slice(0, 1) : rawMaterials.value
+    const all = kind === 'rawTransfer' ? rawMaterials.value.slice(0, 1) : rawMaterials.value
+    // When the components span warehouses, the transfer carries only the ones
+    // drawn from the origin that was picked — a transfer has a single source.
+    const components = originWarehouseId
+      ? all.filter(r => (r.warehouseId ?? '') === originWarehouseId)
+      : all
     // A second transfer carries what is still OUTSTANDING, not the full BOM
     // quantity again — otherwise re-opening the form offers to send everything a
     // second time. Lines already fully sent drop out entirely.
@@ -1102,16 +1148,34 @@ function prefillLines(kind: SubconDocKind): SubconPrefillLine[] {
   }))
 }
 
+/** An origin was picked in the breakdown — raise that warehouse's transfer. */
+function createTransferFromOrigin(warehouseId: string) {
+  originBreakdownOpen.value = false
+  createDocument(originBreakdownKind.value, warehouseId)
+}
+
 /** Open a raised document's detail page. */
 function openRaisedDocument(doc: { route: string; id: string }) {
   router.push(`${doc.route}/${doc.id}`)
 }
 
 /** Open a document's form, prefilled from this work order. */
-function createDocument(kind: SubconDocKind) {
+function createDocument(kind: SubconDocKind, originWarehouseId?: string) {
   const w = wo.value
   const c = subcon.value
   if (!w || !c) return
+
+  /**
+   * Components in more than one warehouse cannot leave on a single transfer, so
+   * the split is shown before the form opens and each origin is raised on its
+   * own. Without this the form would quietly draw every line from whichever
+   * warehouse sorted first.
+   */
+  if ((kind === 'transfer' || kind === 'rawTransfer') && !originWarehouseId && hasMultipleOrigins.value) {
+    originBreakdownKind.value = kind
+    originBreakdownOpen.value = true
+    return
+  }
 
   /**
    * Documents downstream of the request are raised AGAINST their parent, not from
@@ -1141,13 +1205,15 @@ function createDocument(kind: SubconDocKind) {
     bomNumber: bom.value?.number ?? '',
     vendorName: c.vendorName,
     requiredDate: c.promisedDate,
-    originWarehouseId: subconOrigin.value?.id ?? c.sourceWarehouseId,
-    originWarehouseName: subconOrigin.value?.name ?? c.sourceWarehouseName,
+    originWarehouseId: originWarehouseId ?? subconOrigin.value?.id ?? c.sourceWarehouseId,
+    originWarehouseName: originWarehouseId
+      ? (rawOriginGroups.value.find(g => g.warehouseId === originWarehouseId)?.warehouseName ?? '')
+      : (subconOrigin.value?.name ?? c.sourceWarehouseName),
     receivingWarehouseId: c.receivingWarehouseId,
     receivingWarehouseName: c.receivingWarehouseName,
     destinationWarehouseId: subconDestination.value?.id,
     destinationWarehouseName: subconDestination.value?.name,
-    lines: prefillLines(kind),
+    lines: prefillLines(kind, originWarehouseId),
     memo: `${t('Raised from')} ${w.number} · ${t('subcon')} · ${c.vendorName}`,
   })
   const path = DOC_ROUTE[kind]
@@ -1922,56 +1988,57 @@ function suppressFabClick(e: MouseEvent) {
             </MpPopover>
           </div>
 
-          <div class="wod-table-scroll">
-            <table class="wod-table">
-              <thead>
-                <tr>
-                  <th class="wod-th">{{ t('Type') }}</th>
-                  <th class="wod-th">{{ t('Transaction no.') }}</th>
-                  <th class="wod-th">{{ t('Module') }}</th>
-                  <th class="wod-th">{{ t('Date') }}</th>
-                  <th class="wod-th">{{ t('Status') }}</th>
-                </tr>
-              </thead>
-              <tbody v-for="group in subconTransactionGroups" :key="group.key">
-                <!-- One heading per transaction type. On dropship the two
-                     purchase requests are different animals — raw material from a
-                     3rd party, and the vendor's service — so they head up
-                     separately rather than sharing a row. -->
-                <tr class="wod-tr wod-tr--group">
-                  <td class="wod-td wod-td--group" colspan="5">
-                    <span class="wod-group-label" :class="{ 'wod-group-label--material': group.variant === 'material' }">
-                      {{ group.label }}
-                    </span>
-                    <span class="wod-group-count">{{ group.rows.length }}</span>
-                  </td>
-                </tr>
-                <tr v-for="tx in group.rows" :key="tx.key" class="wod-tr">
-                  <td class="wod-td wod-td--indent">{{ t(tx.type) }}</td>
-                  <td class="wod-td">
-                    <a v-if="tx.doc" class="cell-link" @click.prevent="openRaisedDocument(tx.doc)">{{ tx.doc.number }}</a>
-                    <span v-else class="wod-subcon-muted">{{ t(tx.title) }}</span>
-                  </td>
-                  <td class="wod-td">{{ tx.module }}</td>
-                  <td class="wod-td">{{ tx.doc?.raisedAt ? formatDate(tx.doc.raisedAt) : '—' }}</td>
-                  <!-- A raised transaction shows its own status, badged the same
-                       way its index and detail pages badge it. A step not raised
-                       yet has no record to have a status, so it says where the
-                       chain stands instead. -->
-                  <td class="wod-td">
-                    <ErpStatusBadge v-if="tx.status" :status="tx.status" />
-                    <span v-else-if="tx.doc" class="wod-subcon-status wod-subcon-status--done">{{ t('Raised') }}</span>
-                    <span
-                      v-else
-                      class="wod-subcon-status"
-                      :class="subconStarted ? 'wod-subcon-status--ready' : 'wod-subcon-status--blocked'"
-                    >
-                      {{ subconStarted ? t('Ready to raise') : t('Waiting for start') }}
-                    </span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <!-- One titled section per transaction type, each with its own table —
+               the same shape the Linked production request tab uses. A heading
+               above a plain table reads as a group; a heading row *inside* the
+               table competes with the data rows for the same columns. On dropship
+               the two purchase requests are different animals (raw material from
+               a 3rd party, and the vendor's service), so they title separately
+               rather than sharing a section. -->
+          <div v-for="group in subconTransactionGroups" :key="group.key" class="wod-tx-group">
+            <h3 class="wod-tx-group-title">
+              {{ group.label }}
+              <span v-if="group.variant === 'material'" class="wod-tx-group-flag">{{ t('Goods, not vendor work') }}</span>
+            </h3>
+            <div class="wod-table-scroll">
+              <table class="wod-table">
+                <thead>
+                  <tr>
+                    <th class="wod-th wod-th--plain">{{ t('Type') }}</th>
+                    <th class="wod-th wod-th--plain">{{ t('Transaction no.') }}</th>
+                    <th class="wod-th wod-th--plain">{{ t('Module') }}</th>
+                    <th class="wod-th wod-th--plain">{{ t('Date') }}</th>
+                    <th class="wod-th wod-th--plain">{{ t('Status') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="tx in group.rows" :key="tx.key" class="wod-tr">
+                    <td class="wod-td">{{ t(tx.type) }}</td>
+                    <td class="wod-td">
+                      <a v-if="tx.doc" class="cell-link" @click.prevent="openRaisedDocument(tx.doc)">{{ tx.doc.number }}</a>
+                      <span v-else class="wod-subcon-muted">{{ t(tx.title) }}</span>
+                    </td>
+                    <td class="wod-td">{{ tx.module }}</td>
+                    <td class="wod-td">{{ tx.doc?.raisedAt ? formatDate(tx.doc.raisedAt) : '—' }}</td>
+                    <!-- A raised transaction shows its own status, badged the same
+                         way its index and detail pages badge it. A step not raised
+                         yet has no record to have a status, so it says where the
+                         chain stands instead. -->
+                    <td class="wod-td">
+                      <ErpStatusBadge v-if="tx.status" :status="tx.status" />
+                      <span v-else-if="tx.doc" class="wod-subcon-status wod-subcon-status--done">{{ t('Raised') }}</span>
+                      <span
+                        v-else
+                        class="wod-subcon-status"
+                        :class="subconStarted ? 'wod-subcon-status--ready' : 'wod-subcon-status--blocked'"
+                      >
+                        {{ subconStarted ? t('Ready to raise') : t('Waiting for start') }}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </template>
 
@@ -2115,6 +2182,14 @@ function suppressFabClick(e: MouseEvent) {
       @proceed="proceedToComplete"
     />
 
+    <TransferOriginBreakdownModal
+      v-if="subcon"
+      v-model:is-open="originBreakdownOpen"
+      :groups="rawOriginGroups"
+      :destination-name="subconDestination?.name"
+      @select="createTransferFromOrigin"
+    />
+
     <SubconJournalModal
       v-if="subcon"
       v-model:is-open="showJournalModal"
@@ -2227,30 +2302,26 @@ function suppressFabClick(e: MouseEvent) {
 :deep(.psn-overlay), :deep(.pbd-overlay) { z-index: 1500; }
 
 /* ── Transactions tab (subcon) ────────────────────────────────────────────── */
-/* A type heading inside the transactions table. */
-.wod-tr--group .wod-td--group {
-  padding-top: var(--mp-spacing-4);
-  border-bottom: 1px solid var(--mp-border-default);
-}
-.wod-group-label {
+/* One titled section per transaction type, matching the Linked production
+   request tab: a bold title, then a plain table. */
+.wod-tx-group + .wod-tx-group { margin-top: var(--mp-spacing-6); }
+.wod-tx-group-title {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  margin: 0 0 var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
 /* The raw-material purchase buys goods, not the vendor's work — a different
    account and a different destination, so it is marked as its own thing. */
-.wod-group-label--material {
+.wod-tx-group-flag {
   padding: 0 var(--mp-spacing-2);
   border-radius: var(--mp-radii-sm);
   background: var(--mp-background-warning-subtle, #fffaea);
   color: var(--mp-text-warning, #b54708);
-}
-.wod-group-count {
-  margin-left: var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-sm);
-  color: var(--mp-text-secondary);
+  font-weight: var(--mp-font-weights-regular);
 }
-.wod-td--indent { padding-left: var(--mp-spacing-5); }
 
 .wod-tx-head {
   display: flex;
@@ -2560,6 +2631,16 @@ function suppressFabClick(e: MouseEvent) {
   border-bottom: 1px solid var(--mp-border-default);
 }
 .wod-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
+/* Sentence-case, full-contrast header — the transactions tables follow the
+   reference screen rather than the uppercase caption style used elsewhere on
+   this page. */
+.wod-th--plain {
+  height: auto;
+  padding: var(--mp-spacing-3) var(--mp-spacing-4) var(--mp-spacing-3) var(--mp-spacing-2);
+  text-transform: none;
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-default);
+}
 .wod-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: top;
