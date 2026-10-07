@@ -76,6 +76,14 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['vendorItems.ts', 'replenishment.ts'],
   },
   {
+    id: 'replenishment-settings-import',
+    title: 'Replenishment: bulk import of per-warehouse settings',
+    description:
+      'New Import button on the worklist title bar opens a page to set safety days, reorder point and preferred vendor for many product × warehouse pairs from one CSV (PRD US-021 AC-02, US-008 EH-01). Download a template that already holds today\'s values, change what should move, upload it, and review before anything is saved: valid rows are applied, rejected rows are listed with the row number and reason and can be downloaded as an error report. A value equal to what the warehouse already inherits stores no override. Max 1,000 rows.',
+    date: '2026-10-07',
+    files: ['ImportReplenishmentSettingsPage.vue', 'replenishmentSettingsImport.ts', '[...slug].vue', 'csv.ts'],
+  },
+  {
     id: 'product-category-change-warning',
     title: 'Edit product: warning when a category change moves replenishment defaults',
     description:

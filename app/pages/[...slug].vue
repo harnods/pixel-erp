@@ -207,6 +207,7 @@ const NewWarehousePage = asyncPage(() => import('~/components/pages/NewWarehouse
 const WarehouseDetailsPage = asyncPage(() => import('~/components/pages/WarehouseDetailsPage.vue'))
 const ConfigureWarehousePage = asyncPage(() => import('~/components/pages/ConfigureWarehousePage.vue'))
 const SettingsReplenishmentPage = asyncPage(() => import('~/components/pages/SettingsReplenishmentPage.vue'))
+const ImportReplenishmentSettingsPage = asyncPage(() => import('~/components/pages/ImportReplenishmentSettingsPage.vue'))
 const StorageLocationDetailsPage = asyncPage(() => import('~/components/pages/StorageLocationDetailsPage.vue'))
 const CashManagementDetailPage = asyncPage(() => import('~/components/pages/CashManagementDetailPage.vue'))
 const CreateCashAccountPage = asyncPage(() => import('~/components/pages/CreateCashAccountPage.vue'))
@@ -483,6 +484,11 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // back to Replenishment + H1 + Edit) — docs/patterns/settings-page.md.
   if (segs.length === 1 && segs[0] === 'replenishment-settings') {
     return { component: SettingsReplenishmentPage, id: 'settings' }
+  }
+  // /replenishment/import → bulk import of per-warehouse settings (a full page: it has a
+  // preview-before-commit step with its own table).
+  if (segs.length === 2 && segs[0] === 'replenishment' && segs[1] === 'import') {
+    return { component: ImportReplenishmentSettingsPage, id: 'import' }
   }
   // /crm[/sub] → CRM (Qontak) level-1 pages. Each is full-bleed and owns its own
   // title bar + stage, so it renders outside the standard padded stage/title bar.
@@ -1863,6 +1869,13 @@ function startResize(e: MouseEvent) {
         <!-- Replenishment: the worklist is DERIVED, so there is no "+ New" primary.
              Recalculate is the primary action, Settings the secondary. -->
         <div v-else-if="currentPageKey === 'Replenishment'" class="page-title-actions">
+          <button
+            class="btn-enterprise btn-enterprise--secondary"
+            data-devchange="replenishment-settings-import"
+            @click="router.push('/replenishment/import')"
+          >
+            {{ t('Import') }}
+          </button>
           <button
             class="btn-enterprise btn-enterprise--secondary"
             @click="router.push('/replenishment-settings')"
