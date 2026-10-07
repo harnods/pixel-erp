@@ -1040,8 +1040,6 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
   <VendorItemDrawer
     v-model:is-open="vendorOpen"
     :sku="vendorSku"
-    readonly
-    @saved="onSettingsSaved"
   />
 
   <ConfirmModal

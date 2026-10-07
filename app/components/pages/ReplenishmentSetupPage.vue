@@ -326,8 +326,6 @@ function onSaved() {
   <VendorItemDrawer
     v-model:is-open="vendorOpen"
     :sku="vendorSku"
-    readonly
-    @saved="onSaved"
   />
 </template>
 

@@ -1,97 +1,40 @@
-<script lang="ts">
-/**
- * Vendor terms for ONE product — the vendor database behind every recommendation.
- *
- * This is where lead time, MOQ, pack size and cost actually live (per vendor, per
- * SKU), so it is also where "why is the suggested quantity 8 Carton and not 5?"
- * ultimately gets answered.
- */
-export interface VendorItemDraft {
-  id: string
-  vendorId: string
-  leadTimeDays: string
-  moq: string
-  packSize: string
-  unitCost: string
-  /** The unit MOQ and pack size are quoted in — the base unit or a registered
-   *  multi-unit from the product's unit conversions. */
-  purchaseUnit: string
-  /** Base units per 1 purchaseUnit. Always derived from the product's conversion
-   *  table, never typed, so a unit can't be pinned to a disagreeing factor. */
-  unitsPerPurchaseUnit: number
-  isPreferred: boolean
-  /** Rows added in this session, so Cancel can simply drop them. */
-  isNew: boolean
-}
-</script>
-
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-import { toast, MpIcon, MpButton, MpButtonGroup, MpTextlink, MpInput, MpRadio, css } from '@mekari/pixel3'
+/**
+ * Vendor terms for ONE product — a read-only view of the vendor database behind every
+ * recommendation. This is where lead time, MOQ, purchase multiplier and cost live (per
+ * vendor, per SKU), so it is where "why is the suggested quantity 8 Carton and not 5?"
+ * gets answered.
+ *
+ * Terms are edited by purchasing in the Vendors module, never here. The PREFERRED
+ * vendor is a per-warehouse decision set on the product's Stock-by-warehouses tab
+ * (D23), so this drawer only points there. Lead time is DERIVED, never typed (US-001 /
+ * D5): it comes from the vendor's PO→goods-receipt history per warehouse, falling to
+ * the category default, so the terms row shows the per-warehouse RANGE (D10).
+ */
+import { computed } from 'vue'
+import { MpIcon, MpButton, MpTextlink, MpTooltip } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
-import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
-import {
-  vendorItemsForSku, upsertVendorItem, setPreferredVendor, deactivateVendorItem, vendorNameFor,
-} from '~/data/vendorItems'
-import { recommendPreferredVendor, type VendorReasonKind } from '~/data/vendorRecommendation'
-import { vendors } from '~/data/vendors'
+import { vendorItemsForSku, vendorNameFor } from '~/data/vendorItems'
 import { productBySku } from '~/data/inventory'
 import { deriveLeadTime } from '~/data/leadTimeHistory'
 import { getProductWarehouseStock } from '~/data/productDetails'
-import { unitOptionsForSku, factorFor, baseUnitFor } from '~/data/productUnits'
+import { unitOptionsForSku, baseUnitFor } from '~/data/productUnits'
 import { formatIDR } from '~/utils/currency'
 
-/**
- * `readonly` — vendor TERMS (lead time, MOQ, purchase multiplier, cost) show as
- * text, with no inputs, no add/remove and no default picking: those are edited by
- * purchasing in the Vendors module. The PREFERRED vendor is a per-warehouse decision
- * set on the product's Stock-by-warehouses tab (D23), never here; a read-only caller
- * (worklist, Needs setup, product detail) shows terms and points there for preferred.
- */
-const props = defineProps<{ isOpen: boolean; sku: string | null; readonly?: boolean }>()
-const emit = defineEmits<{
-  (e: 'update:isOpen', v: boolean): void
-  (e: 'saved'): void
-}>()
+const props = defineProps<{ isOpen: boolean; sku: string | null }>()
+const emit = defineEmits<{ (e: 'update:isOpen', v: boolean): void }>()
 
 const { t, tf } = useLocale()
-
-const rows = ref<VendorItemDraft[]>([])
-const removed = ref<string[]>([])
-const error = ref('')
+const router = useRouter()
 
 const product = computed(() => (props.sku ? productBySku(props.sku) : undefined))
-
-/**
- * Units a MOQ can be quoted in: the product's base unit plus every multi-unit
- * registered on its Unit conversions tab. This is why the two features are wired
- * together — register "1 Pack = 12 Bag" there and it becomes selectable here.
- */
 const unitOptions = computed(() => (props.sku ? unitOptionsForSku(props.sku) : []))
 const baseUnit = computed(() => (props.sku ? baseUnitFor(props.sku) : ''))
+const rows = computed(() => (props.sku && props.isOpen ? vendorItemsForSku(props.sku) : []))
 
-/** Vendors not already linked to this SKU — the only ones worth offering. */
-const addableVendors = computed(() => {
-  const taken = new Set(rows.value.map((r) => r.vendorId))
-  return vendors.filter((v) => !taken.has(v.id))
-})
+function close() { emit('update:isOpen', false) }
 
-// ── Airene: preferred-vendor recommendation ───────────────────────────────────
-// The list of vendors here grows on its own as purchases are made, so with more
-// than one linked vendor the buyer can be unsure which to prefer. Airene scores
-// them on lead time, price, MOQ and purchase history and names one, live off the
-// current (possibly edited-but-unsaved) terms.
-/**
- * Lead time is DERIVED, never typed (US-001 / D5): it comes from this vendor's
- * PO→goods-receipt history per warehouse, falling to the category default. This
- * drawer edits vendor×product TERMS (warehouse-independent), so lead time shows as
- * the per-warehouse range; the single per-warehouse figure — and the preferred
- * vendor it belongs to — live on the product's Stock-by-warehouses tab (D10/D23).
- */
-function derivedLeadDays(vendorId: string): number {
-  if (!props.sku) return 0
-  return deriveLeadTime(vendorId, props.sku).days ?? 0
-}
+/** The per-warehouse range of this vendor's lead time. */
 function leadLabel(vendorId: string): string {
   if (!props.sku) return '—'
   const days = getProductWarehouseStock(props.sku)
@@ -106,189 +49,23 @@ function leadLabel(vendorId: string): string {
   return min === max ? `${min} days` : `${min}–${max} days`
 }
 
-const showReasons = ref(false)
-/** The headline split around the vendor name, so the name alone can be bold. */
-const aiHead = computed(() => tf('Airene recommends {vendor} as the preferred vendor', { vendor: '\u0000' }).split('\u0000'))
-
-function reasonText(kind: VendorReasonKind): string {
-  const r = recommendedRow.value
-  if (!r) return ''
-  switch (kind) {
-    case 'lead': return tf('Fastest lead time: {n} days', { n: r.leadTimeDays })
-    case 'price': return tf('Lowest price: {price} per unit', { price: formatIDR(Math.round(r.costPerBase)) })
-    case 'moq': return tf('Lowest MOQ: {n} units', { n: r.moqInBase.toLocaleString('id-ID') })
-    case 'history': return tf('Most delivered orders: {n}', { n: r.purchases })
-    default: return t('Best overall balance of lead time, price and MOQ')
-  }
-}
-const recommendation = computed(() => {
-  if (!props.sku || rows.value.length < 2) return null
-  return recommendPreferredVendor(props.sku, rows.value.map((r) => ({
-    vendorId: r.vendorId,
-    leadTimeDays: derivedLeadDays(r.vendorId),
-    moq: Number(r.moq) || 0,
-    unitCost: Number(r.unitCost) || 0,
-    unitsPerPurchaseUnit: r.unitsPerPurchaseUnit,
-  })))
-})
-const recommendedRow = computed(() => recommendation.value?.scores.find((s) => s.isRecommended) ?? null)
-function load() {
-  if (!props.sku) return
-  rows.value = vendorItemsForSku(props.sku).map((v) => ({
-    id: v.id,
-    vendorId: v.vendorId,
-    leadTimeDays: String(v.leadTimeDays),
-    moq: String(v.moq),
-    packSize: String(v.packSize),
-    unitCost: String(v.unitCost),
-    purchaseUnit: v.purchaseUnit,
-    unitsPerPurchaseUnit: v.unitsPerPurchaseUnit,
-    isPreferred: v.isPreferred,
-    isNew: false,
-  }))
-  removed.value = []
-  error.value = ''
-  showReasons.value = false
-}
-watch(() => props.isOpen, (open) => { if (open) load() })
-
-function close() { emit('update:isOpen', false) }
-
-function addRow() {
-  const vendor = addableVendors.value[0]
-  if (!vendor) {
-    error.value = t('Every vendor is already linked to this product.')
-    return
-  }
-  // A brand-new link inherits the category's purchase UoM from an existing row so
-  // the units stay coherent; with no rows yet, upsertVendorItem fills them in.
-  const template = rows.value[0]
-  rows.value.push({
-    id: `vi-${vendor.id}-${props.sku}`,
-    vendorId: vendor.id,
-    leadTimeDays: template?.leadTimeDays ?? '14',
-    moq: template?.moq ?? '1',
-    packSize: template?.packSize ?? '1',
-    unitCost: template?.unitCost ?? '0',
-    purchaseUnit: template?.purchaseUnit ?? (product.value?.unit ?? 'Unit'),
-    unitsPerPurchaseUnit: template?.unitsPerPurchaseUnit ?? 1,
-    isPreferred: rows.value.length === 0,
-    isNew: true,
-  })
-  error.value = ''
-}
-
-function removeRow(index: number) {
-  const row = rows.value[index]
-  if (!row) return
-  if (!row.isNew) removed.value.push(row.vendorId)
-  rows.value.splice(index, 1)
-  // Never leave the product without a default while it still has vendors.
-  if (rows.value.length && !rows.value.some((r) => r.isPreferred)) rows.value[0]!.isPreferred = true
-}
-
-/**
- * The SKU-level DEFAULT vendor — the fallback a warehouse uses when it has no pick
- * of its own (D23). The per-warehouse preferred vendor is set on the product's
- * Stock-by-warehouses tab; this is only the default behind it. Edited in the
- * Vendors module (terms editing), a local change until Save.
- */
-function makeDefaultSku(index: number) {
-  rows.value.forEach((r, i) => { r.isPreferred = i === index })
-}
-
-function onUnitChange(index: number, unitName: string) {
-  const row = rows.value[index]
-  if (!row || !props.sku) return
-  row.purchaseUnit = unitName
-  // The factor always comes from the product's conversion table, so "4 Pallet"
-  // can never end up meaning something the product does not agree with.
-  row.unitsPerPurchaseUnit = factorFor(props.sku, unitName)
-}
-
-function onVendorChange(index: number, vendorId: string) {
-  const row = rows.value[index]
-  if (!row) return
-  row.vendorId = vendorId
-  row.id = `vi-${vendorId}-${props.sku}`
-}
-
-/** Advisory, not blocking: MOQ that is not a whole number of packs cannot be
- *  ordered as stated, and it breaks the rounding equivalence the engine relies on. */
-function moqNote(row: VendorItemDraft): string {
-  const moq = Number(row.moq)
-  const pack = Number(row.packSize)
+/** Advisory: a MOQ that is not a whole number of packs cannot be ordered as stated. */
+function moqNote(moq: number, pack: number): string {
   if (!moq || !pack || Number.isNaN(moq) || Number.isNaN(pack)) return ''
   if (pack > 1 && moq % pack !== 0) return tf('MOQ is not a multiple of purchase multiplier {n}', { n: pack })
   return ''
 }
 
-/** What the MOQ actually amounts to in the unit the product is stocked in — a
- *  pallet MOQ is meaningless without it. */
-function moqInStockUnits(row: VendorItemDraft): string {
-  const moq = Number(row.moq)
-  if (!moq || Number.isNaN(moq)) return ''
-  if (row.unitsPerPurchaseUnit <= 1) return ''
-  return `= ${(moq * row.unitsPerPurchaseUnit).toLocaleString('id-ID')} ${product.value?.unit ?? ''}`
+/** What the MOQ amounts to in the unit the product is stocked in. */
+function moqInStockUnits(moq: number, unitsPerPurchaseUnit: number): string {
+  if (!moq || Number.isNaN(moq) || unitsPerPurchaseUnit <= 1) return ''
+  return `= ${(moq * unitsPerPurchaseUnit).toLocaleString('id-ID')} ${product.value?.unit ?? ''}`
 }
 
-function save() {
-  if (!props.sku) return
-
-  // Validate on click and show an inline error — never a disabled button (DESIGN.md).
-  const seen = new Set<string>()
-  for (const row of rows.value) {
-    if (!row.vendorId) { error.value = t('You must select a vendor for every row'); return }
-    if (seen.has(row.vendorId)) {
-      error.value = t('Each vendor can only be listed once for a product')
-      return
-    }
-    seen.add(row.vendorId)
-
-    if (!unitOptions.value.some((o) => o.name === row.purchaseUnit)) {
-      error.value = `${row.purchaseUnit} is no longer a unit of this product — pick another`
-      return
-    }
-
-    for (const [label, raw, min] of [
-      [t('Lead time'), row.leadTimeDays, 0],
-      [t('MOQ'), row.moq, 1],
-      [t('Purchase multiplier'), row.packSize, 1],
-      [t('Unit cost'), row.unitCost, 0],
-    ] as const) {
-      const n = Number(raw)
-      if (raw === '' || Number.isNaN(n) || n < min) {
-        error.value = `${label} ${t('must be')} ${min} ${t('or more')}`
-        return
-      }
-    }
-  }
-  if (rows.value.length && !rows.value.some((r) => r.isPreferred)) {
-    error.value = t('You must set one default vendor')
-    return
-  }
-
-  for (const vendorId of removed.value) deactivateVendorItem(props.sku, vendorId)
-  for (const row of rows.value) {
-    upsertVendorItem({
-      sku: props.sku,
-      vendorId: row.vendorId,
-      leadTimeDays: Number(row.leadTimeDays),
-      moq: Number(row.moq),
-      packSize: Number(row.packSize),
-      unitCost: Number(row.unitCost),
-      purchaseUnit: row.purchaseUnit,
-      unitsPerPurchaseUnit: row.unitsPerPurchaseUnit,
-      active: true,
-    })
-  }
-  // Applied after the upserts, so the flag lands on a row that definitely exists.
-  const preferred = rows.value.find((r) => r.isPreferred)
-  if (preferred) setPreferredVendor(props.sku, preferred.vendorId)
-
-  emit('saved')
-  close()
-  toast.notify({ variant: 'success', title: t('Vendor terms saved'), maxWidth: 'max-content' })
+/** The cost per stocking unit — only worth a second line when it differs from the quoted cost. */
+function costPerBase(unitCost: number, unitsPerPurchaseUnit: number): string {
+  if (unitsPerPurchaseUnit <= 1) return ''
+  return `${formatIDR(Math.round(unitCost / unitsPerPurchaseUnit))} / ${baseUnit.value}`
 }
 
 /** "Pack = 6 Bag, Carton = 12 Bag" — the larger units this product is bought in. */
@@ -296,6 +73,16 @@ const conversionsLabel = computed(() => unitOptions.value
   .filter((o) => !o.isBase)
   .map((o) => tf('1 {unit} = {n} {base}', { unit: o.name, n: o.factor, base: baseUnit.value }))
   .join(', '))
+
+/** The note under the table, split around the link so only the tab name is clickable. */
+const noteParts = computed(() =>
+  tf('Vendor terms are read-only here. Set each warehouse\'s preferred vendor on the product\'s {tab}', { tab: '\u0000' }).split('\u0000'))
+
+function goToWarehouseStock() {
+  if (!props.sku) return
+  close()
+  router.push(`/product-list/${props.sku}?section=warehouses`)
+}
 </script>
 
 <template>
@@ -320,156 +107,61 @@ const conversionsLabel = computed(() => unitOptions.value
           </div>
 
           <p v-if="!rows.length" class="rp-vi-empty">
-            <template v-if="readonly">
-              {{ t('No vendor supplies this product yet, so it cannot be ordered. Add one in the Vendors module.') }}
-            </template>
-            <template v-else>
-              {{ t('No vendor supplies this product yet, so it cannot be ordered. Add one to include it in the worklist.') }}
-            </template>
+            {{ t('No vendor supplies this product yet, so it cannot be ordered. Add one in the Vendors module.') }}
           </p>
-
-          <!-- Airene preferred-vendor recommendation — only with something to choose between. -->
-          <div v-if="recommendation && recommendedRow" class="rp-vi-ai" data-devchange="vendors-airene-recommendation">
-            <div class="rp-vi-ai-head">
-              <MpIcon name="airene-brand" size="sm" class="rp-vi-ai-icon" />
-              <!-- One translated sentence; only the vendor name is emphasised. -->
-              <span class="rp-vi-ai-text">{{ aiHead[0] }}<strong>{{ recommendedRow.vendorName }}</strong>{{ aiHead[1] }}</span>
-              <MpTextlink id="rp-vi-ai-why" as="a" @click.prevent="showReasons = !showReasons">
-                {{ showReasons ? t('Hide reasons') : t('View reasons') }}
-              </MpTextlink>
-            </div>
-            <template v-if="showReasons">
-              <ul class="rp-vi-ai-reasons">
-                <li v-for="kind in recommendedRow.reasonKinds" :key="kind">{{ reasonText(kind) }}</li>
-              </ul>
-              <p class="rp-vi-ai-note">{{ t('Based on lead time, price, MOQ and purchase history.') }}</p>
-            </template>
-          </div>
 
           <!-- A mini-table inside a drawer is a contained object: outer border in
                border-bold, default-weight inner dividers (rule/table-outer-border-bold). -->
           <div v-if="rows.length" class="rp-vi-table-wrap">
-          <table class="rp-vi-table">
-            <thead>
-              <tr>
-                <th class="rp-vi-th rp-vi-th--vendor">{{ t('Vendor') }}</th>
-                <th class="rp-vi-th rp-vi-th--num">{{ t('Lead time') }}</th>
-                <th class="rp-vi-th rp-vi-th--num">{{ t('MOQ') }}</th>
-                <th class="rp-vi-th">{{ t('MOQ unit') }}</th>
-                <th class="rp-vi-th rp-vi-th--num">{{ t('Purchase multiplier') }}</th>
-                <th class="rp-vi-th rp-vi-th--num">{{ t('Unit cost') }}</th>
-                <th v-if="!readonly" class="rp-vi-th rp-vi-th--center">{{ t('Default') }}</th>
-                <th v-if="!readonly" class="rp-vi-th" />
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(row, i) in rows" :key="row.id">
-                <td class="rp-vi-td">
-                  <!-- rule/select-erpfilterselect: an MpPopover menu, not the OS dropdown. -->
-                  <ErpFilterSelect
-                    v-if="row.isNew"
-                    :id="`rp-vi-vendor-${i}`"
-                    :model-value="row.vendorId"
-                    :placeholder="t('Vendor')"
-                    :options="vendors.map(v => ({ value: v.id, label: v.name }))"
-                    width="100%"
-                    :is-clearable="false"
-                    @update:model-value="(v: string) => onVendorChange(i, v)"
-                  />
-                  <template v-else>
-                    <span class="rp-vi-vendor">{{ vendors.find(v => v.id === row.vendorId)?.name ?? row.vendorId }}</span>
-                    <span
-                      v-if="recommendation && row.vendorId === recommendation.recommendedVendorId"
-                      class="rp-vi-ai-chip"
-                      :title="t('Airene\'s recommended preferred vendor')"
-                    >
-                      <MpIcon name="airene-brand" size="sm" /> {{ t('AI pick') }}
+            <table class="rp-vi-table">
+              <thead>
+                <tr>
+                  <th class="rp-vi-th rp-vi-th--vendor">{{ t('Vendor') }}</th>
+                  <th class="rp-vi-th rp-vi-th--num">
+                    <span class="rp-vi-th-info">
+                      {{ t('Lead time') }}
+                      <MpTooltip
+                        id="rp-vi-lead-tip"
+                        :label="t('The range across warehouses. Each warehouse\'s own lead time is on the product\'s Stock by warehouses tab.')"
+                        placement="top" use-portal
+                      >
+                        <span class="rp-vi-th-icon"><MpIcon name="info" size="sm" /></span>
+                      </MpTooltip>
                     </span>
-                  </template>
-                </td>
-                <td class="rp-vi-td rp-vi-td--num">
-                  <span class="rp-vi-lead-ro">{{ leadLabel(row.vendorId) }}</span>
-                  <span class="rp-vi-cell-sub">{{ t('per warehouse — see Stock by warehouses') }}</span>
-                </td>
-                <td class="rp-vi-td rp-vi-td--num">
-                  <MpInput v-if="!readonly" :id="`rp-vi-moq-${i}`" v-model="row.moq" type="number" :class="css({ width: '68px' })" />
-                  <span v-else class="rp-vi-lead-ro">{{ row.moq }}</span>
-                  <span v-if="moqNote(row)" class="rp-vi-cell-sub rp-vi-cell-sub--warning">{{ moqNote(row) }}</span>
-                </td>
-                <!-- Quote the minimum in the base unit or in any multi-unit the
-                     product has registered. Picking one re-derives the conversion,
-                     so the "= N base" reading below always tells the truth. -->
-                <td class="rp-vi-td">
-                  <ErpFilterSelect
-                    v-if="!readonly"
-                    :id="`rp-vi-unit-${i}`"
-                    :model-value="row.purchaseUnit"
-                    :placeholder="t('MOQ unit')"
-                    :options="unitOptions.map(o => o.name)"
-                    width="112px"
-                    :is-clearable="false"
-                    @update:model-value="(v: string) => onUnitChange(i, v)"
-                  />
-                  <span v-else class="rp-vi-lead-ro">{{ row.purchaseUnit }}</span>
-                  <span v-if="moqInStockUnits(row)" class="rp-vi-cell-sub">{{ moqInStockUnits(row) }}</span>
-                  <span v-else class="rp-vi-cell-sub">{{ t('base unit') }}</span>
-                </td>
-                <td class="rp-vi-td rp-vi-td--num">
-                  <MpInput v-if="!readonly" :id="`rp-vi-pack-${i}`" v-model="row.packSize" type="number" :class="css({ width: '68px' })" />
-                  <span v-else class="rp-vi-lead-ro">{{ row.packSize }}</span>
-                </td>
-                <td class="rp-vi-td rp-vi-td--num">
-                  <MpInput v-if="!readonly" :id="`rp-vi-cost-${i}`" v-model="row.unitCost" type="number" :class="css({ width: '124px' })" />
-                  <span v-else class="rp-vi-lead-ro">{{ formatIDR(Number(row.unitCost) || 0) }}</span>
-                  <span class="rp-vi-cell-sub">{{ formatIDR(Number(row.unitCost) || 0) }} / {{ row.purchaseUnit }}</span>
-                </td>
-                <!-- The SKU-level DEFAULT vendor (the fallback). The per-warehouse preferred
-                     vendor is set on the product's Stock-by-warehouses tab (D23). -->
-                <td v-if="!readonly" class="rp-vi-td rp-vi-td--center">
-                  <MpRadio
-                    :id="`rp-vi-default-${i}`"
-                    :name="`rp-vi-default-${sku}`"
-                    :is-checked="row.isPreferred"
-                    :aria-label="tf('Set {vendor} as the default', { vendor: vendorNameFor(row.vendorId) })"
-                    @change="makeDefaultSku(i)"
-                  />
-                </td>
-                <td v-if="!readonly" class="rp-vi-td rp-vi-td--center">
-                  <MpButton variant="ghost" class="rp-vi-remove" :aria-label="t('Remove')" @click="removeRow(i)">
-                    <MpIcon name="minus-circular" size="md" />
-                  </MpButton>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                  </th>
+                  <th class="rp-vi-th rp-vi-th--num">{{ t('MOQ') }}</th>
+                  <th class="rp-vi-th">{{ t('MOQ unit') }}</th>
+                  <th class="rp-vi-th rp-vi-th--num">{{ t('Purchase multiplier') }}</th>
+                  <th class="rp-vi-th rp-vi-th--num">{{ t('Unit cost') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in rows" :key="row.id">
+                  <td class="rp-vi-td"><span class="rp-vi-vendor">{{ vendorNameFor(row.vendorId) }}</span></td>
+                  <td class="rp-vi-td rp-vi-td--num"><span class="rp-vi-ro">{{ leadLabel(row.vendorId) }}</span></td>
+                  <td class="rp-vi-td rp-vi-td--num">
+                    <span class="rp-vi-ro">{{ row.moq }}</span>
+                    <span v-if="moqNote(row.moq, row.packSize)" class="rp-vi-cell-sub rp-vi-cell-sub--warning">{{ moqNote(row.moq, row.packSize) }}</span>
+                  </td>
+                  <td class="rp-vi-td">
+                    <span class="rp-vi-ro">{{ row.purchaseUnit }}</span>
+                    <span class="rp-vi-cell-sub">{{ moqInStockUnits(row.moq, row.unitsPerPurchaseUnit) || t('base unit') }}</span>
+                  </td>
+                  <td class="rp-vi-td rp-vi-td--num"><span class="rp-vi-ro">{{ row.packSize }}</span></td>
+                  <td class="rp-vi-td rp-vi-td--num">
+                    <span class="rp-vi-ro">{{ formatIDR(row.unitCost || 0) }}</span>
+                    <span v-if="costPerBase(row.unitCost, row.unitsPerPurchaseUnit)" class="rp-vi-cell-sub">{{ costPerBase(row.unitCost, row.unitsPerPurchaseUnit) }}</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
-          <MpButton v-if="!readonly" variant="ghost" left-icon="add" class="rp-vi-add" @click="addRow">{{ t('Vendor') }}</MpButton>
-
-          <p v-if="!readonly" class="rp-vi-hint">
-            {{ t('Unit options come from this product\'s unit conversions. Base unit:') }}
-            <strong>{{ baseUnit }}</strong>{{ unitOptions.length > 1 ? ', ' : '' }}
-            <template v-if="unitOptions.length > 1">
-              {{ unitOptions.filter(o => !o.isBase).map(o => `${o.name} = ${o.factor} ${baseUnit}`).join(', ') }}
-            </template>
-            <template v-else>{{ t('· no multi-units registered yet') }}</template>
-          </p>
-
-          <!-- Read-only here: the preferred vendor is a per-warehouse decision, set on
-               the product's Stock-by-warehouses tab (D23). -->
-          <p v-if="readonly && rows.length" class="rp-vi-hint" data-devchange="vendors-drawer-readonly-preferred">
-            {{ t('Vendor terms are read-only here. Set the preferred vendor for each warehouse on the product\'s Stock by warehouses tab.') }}
+          <!-- The preferred vendor is a per-warehouse decision (D23); point at where it is set. -->
+          <p v-if="rows.length" class="rp-vi-hint" data-devchange="vendors-drawer-readonly-preferred">
+            {{ noteParts[0] }}<MpTextlink id="rp-vi-warehouses-link" as="a" class="rp-vi-link" @click.prevent="goToWarehouseStock">{{ t('Stock by warehouses tab') }}</MpTextlink>{{ noteParts[1] }}
           </p>
         </div>
-
-        <footer class="rp-vi-footer">
-          <!-- Inline, never a toast (rule/form-errors-inline). -->
-          <span v-if="error" class="rp-vi-error" role="alert">{{ error }}</span>
-          <MpButtonGroup class="erp-action-footer">
-            <MpButton id="rp-vi-cancel" variant="ghost" is-rounded @click="close">{{ readonly ? t('Close') : t('Cancel') }}</MpButton>
-            <MpButton v-if="!readonly" id="rp-vi-save" variant="primary" is-rounded @click="save">{{ t('Save changes') }}</MpButton>
-          </MpButtonGroup>
-        </footer>
       </div>
     </div>
   </Transition>
@@ -490,8 +182,8 @@ const conversionsLabel = computed(() => unitOptions.value
 }
 .rp-vi-panel {
   margin: var(--mp-spacing-3);
-  /* Wide enough for all seven columns: the table needs about 875px. */
-  width: min(960px, calc(100% - 24px));
+  /* Wide enough for the six columns without a horizontal scrollbar. */
+  width: min(880px, calc(100% - 24px));
   height: calc(100% - 24px);
   display: flex; flex-direction: column;
   background: var(--mp-background-stage, #fff);
@@ -526,35 +218,6 @@ const conversionsLabel = computed(() => unitOptions.value
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
 }
 
-/* Per-warehouse preferred-vendor selector (D23). */
-
-/* ── Airene recommendation ── */
-.rp-vi-ai {
-  margin-bottom: var(--mp-spacing-4);
-  border: 1px solid var(--mp-colors-border-information);
-  border-radius: var(--mp-radii-md);
-  background: var(--mp-colors-background-information);
-  padding: var(--mp-spacing-3);
-}
-.rp-vi-ai-head { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
-.rp-vi-ai-icon { color: var(--mp-colors-icon-information); flex-shrink: 0; }
-/* One text style throughout: 14px body in the default colour (rule/type-14-default). */
-.rp-vi-ai-text, .rp-vi-ai-reasons, .rp-vi-ai-note { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-/* A real list, so it keeps its markers (CLAUDE.md › List bullets). */
-.rp-vi-ai-reasons { list-style: disc outside; margin: var(--mp-spacing-2) 0 0; padding-left: var(--mp-spacing-5); }
-.rp-vi-ai-reasons li { display: list-item; margin-top: var(--mp-spacing-0\.5); }
-.rp-vi-ai-note { margin: var(--mp-spacing-2) 0 0; }
-.rp-vi-ai-chip {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-0\.5, 2px); margin-top: var(--mp-spacing-1);
-  padding: 0 var(--mp-spacing-1\.5, 6px); height: 20px;
-  border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-colors-background-information);
-  color: var(--mp-colors-text-information);
-  font-size: var(--mp-font-sizes-xs, 12px); font-weight: var(--mp-font-weights-medium, 500);
-  white-space: nowrap; vertical-align: middle;
-}
-.rp-vi-ai-chip :deep(svg) { width: 12px; height: 12px; }
-
 .rp-vi-table-wrap {
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md);
   overflow-x: auto;
@@ -563,7 +226,6 @@ const conversionsLabel = computed(() => unitOptions.value
 .rp-vi-table tbody tr:last-child .rp-vi-td { border-bottom: none; }
 .rp-vi-th:first-child, .rp-vi-td:first-child { padding-left: var(--mp-spacing-4); }
 .rp-vi-th:last-child, .rp-vi-td:last-child { padding-right: var(--mp-spacing-4); }
-/* The vendor name stays on one line; the AI pick chip sits under it, left-aligned. */
 .rp-vi-th--vendor { min-width: var(--mp-sizes-52, 208px); }
 .rp-vi-th {
   text-align: left; padding: var(--mp-spacing-2) var(--mp-spacing-2\.5);
@@ -573,7 +235,9 @@ const conversionsLabel = computed(() => unitOptions.value
   white-space: nowrap;
 }
 .rp-vi-th--num { text-align: right; }
-.rp-vi-th--center { text-align: center; }
+.rp-vi-th-info { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
+.rp-vi-th-icon { display: inline-flex; color: var(--mp-icon-subdued, #9ca3af); cursor: help; }
+.rp-vi-th-icon:hover { color: var(--mp-icon-default, #4b5563); }
 .rp-vi-td {
   padding: var(--mp-spacing-2\.5) var(--mp-spacing-2\.5);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
@@ -581,37 +245,18 @@ const conversionsLabel = computed(() => unitOptions.value
   vertical-align: top;
 }
 .rp-vi-td--num { text-align: right; }
-.rp-vi-td--center { text-align: center; }
-/* MpRadio reserves room for a label even when it has none, which pushes the control
-   left of centre. Drop the empty label so the radio sits under its "Preferred" header. */
-.rp-vi-td--center :deep(.mp-radio__root) { display: inline-flex; justify-content: center; gap: 0; }
-.rp-vi-td--center :deep(.mp-radio__label) { display: none; }
 .rp-vi-vendor { display: block; white-space: nowrap; }
-.rp-vi-vendor-sub { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
 .rp-vi-cell-sub {
   display: block; margin-top: 2px;
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); white-space: nowrap;
 }
 .rp-vi-cell-sub--warning { color: var(--mp-colors-text-warning); }
-.rp-vi-lead-ro { font-variant-numeric: tabular-nums; color: var(--mp-text-default); white-space: nowrap; }
-.rp-vi-remove {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
-  border: none; background: none; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-text-secondary);
-}
-.rp-vi-remove:hover { background: var(--mp-background-neutral-hovered, #eef0f3); color: var(--mp-text-danger); }
+.rp-vi-ro { font-variant-numeric: tabular-nums; color: var(--mp-text-default); white-space: nowrap; }
 
-.rp-vi-add { margin-top: var(--mp-spacing-3); }
 .rp-vi-hint {
   margin-top: var(--mp-spacing-4);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
 }
-
-.rp-vi-footer {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-4);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-top: 1px solid var(--mp-border-default, #e3e7e9);
-}
-.rp-vi-error { margin-right: auto; font-size: var(--mp-font-sizes-md); color: var(--mp-text-danger); }
+/* MpTextlink pins 14px with a layered !important; scaled to the 12px caption it sits in. */
+.rp-vi-link { display: inline-flex; zoom: calc(12 / 14); }
 </style>

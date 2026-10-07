@@ -45,11 +45,11 @@ export const DEV_CHANGES: DevChange[] = [
   },
   {
     id: 'vendors-drawer-readonly-preferred',
-    title: 'Vendors drawer is terms-only; preferred moved to warehouses',
+    title: 'Vendors drawer is a read-only view of vendor terms',
     description:
-      'With the preferred vendor now set per warehouse on the product\'s Stock-by-warehouses tab, the shared Vendors drawer no longer picks it — it is a vendor × product TERMS editor (MOQ, purchase multiplier, cost) plus a SKU-level default. Lead time shows as the per-warehouse range. Opened read-only from the worklist or product page, it points to the warehouses tab for the preferred vendor. The product Vendors tab keeps a simple ✓ for any vendor preferred in at least one warehouse.',
-    date: '2026-10-06',
-    files: ['VendorItemDrawer.vue', 'ProductDetailsPage.vue', 'ReplenishmentPage.vue', 'ReplenishmentSetupPage.vue'],
+      'Preferred vendor is chosen per warehouse on the product\'s Stock by warehouses tab, so the Vendors drawer (opened from the worklist and Needs setup) is now only a viewer: no radios, add/remove, inputs, Save or footer. Lead time shows as the per-warehouse range with a header tooltip (no repeated sub-line), Unit cost appears once (a per-stocking-unit line only when it differs), the Airene recommendation banner and "AI pick" tag are hidden, and the note under the table links to the Stock by warehouses tab.',
+    date: '2026-10-07',
+    files: ['VendorItemDrawer.vue', 'ReplenishmentPage.vue', 'ReplenishmentSetupPage.vue'],
   },
   {
     id: 'replenishment-lead-time-no-vendor-default',
@@ -132,18 +132,10 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['replenishment.ts', 'ReplenishmentPage.vue', 'ReplenishmentFiltersDrawer.vue', 'SuggestionBreakdownDrawer.vue'],
   },
   {
-    id: 'vendors-drawer-preferred',
-    title: 'Vendors drawer: choose the preferred vendor again',
-    description:
-      'Each vendor row has a radio to mark it as preferred, and the footer has Cancel and Save changes. Only the preferred vendor is saved; lead time, MOQ, purchase multiplier and cost stay read-only. The product line above the table is now labelled fields (Product, SKU, Base unit, Unit conversions).',
-    date: '2026-10-02',
-    files: ['VendorItemDrawer.vue'],
-  },
-  {
     id: 'replenishment-velocity-unit',
     title: 'Replenishment: demand velocity shows its unit',
     description:
-      'The "Demand velocity per day" column now shows the unit beside the figure (for example "1,84 Bag"). The Vendors drawer is also wider (960px) so its seven-column table no longer scrolls sideways.',
+      'The "Demand velocity per day" column now shows the unit beside the figure (for example "1,84 Bag"). ',
     date: '2026-10-02',
     files: ['ReplenishmentPage.vue', 'VendorItemDrawer.vue'],
   },
@@ -154,14 +146,6 @@ export const DEV_CHANGES: DevChange[] = [
       'A long list of covering documents used to spill out of the Suggested qty cell and overlap the next column. It now reads "Covered by N orders", stays inside the column, and shows the full list on hover.',
     date: '2026-10-02',
     files: ['ReplenishmentPage.vue'],
-  },
-  {
-    id: 'vendors-airene-recommendation',
-    title: 'Vendors drawer: Airene recommendation copy and text style',
-    description:
-      'The recommendation reads as translated sentences ("Fastest lead time: 16 days", "Lowest MOQ: 48 units"), the link is "View reasons" / "Hide reasons", and all text uses one style. The "Based on…" note is a line under the list instead of a grey bullet.',
-    date: '2026-10-02',
-    files: ['VendorItemDrawer.vue', 'vendorRecommendation.ts'],
   },
   {
     id: 'configure-warehouse-replenishment',
