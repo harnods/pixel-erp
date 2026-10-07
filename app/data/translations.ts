@@ -3746,6 +3746,28 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Ready to raise": "Siap dibuat",
   "Waiting for start": "Menunggu dimulai",
 
+  // Partial production completion
+  "Charged once, on the first record": "Dibebankan sekali, pada pencatatan pertama",
+  "This BOM has no other outputs.": "BoM ini tidak memiliki output lain.",
+  "This BOM allocates no production waste.": "BoM ini tidak mengalokasikan limbah produksi.",
+  "Estimated subtotal of other output prices": "Estimasi subtotal harga output lain",
+  "Estimated subtotal of production waste": "Estimasi subtotal limbah produksi",
+  "Partial production completion": "Penyelesaian produksi sebagian",
+  "Important information": "Informasi penting",
+  "All values (qty, percentage, amount) on this page are the remaining values of the ongoing production process.": "Semua nilai (jumlah, persentase, jumlah uang) di halaman ini adalah sisa dari proses produksi yang berjalan.",
+  "Qty produced is different from the initial plan. Please adjust in the related column.": "Jumlah yang diproduksi berbeda dari rencana awal. Silakan sesuaikan di kolom terkait.",
+  "To continue the production in the same work order, click Save button.": "Untuk melanjutkan produksi di perintah kerja yang sama, klik tombol Simpan.",
+  "Partial production end date": "Tanggal selesai produksi sebagian",
+  "Remaining qty to produce": "Sisa jumlah yang harus diproduksi",
+  "Stock on hand": "Stok tersedia",
+  "Qty remaining": "Sisa jumlah",
+  "Estimated subtotal of product component prices": "Estimasi subtotal harga komponen produk",
+  "Estimated total of production process cost": "Estimasi total biaya proses produksi",
+  "Estimated subtotal of main output prices": "Estimasi subtotal harga output utama",
+  "Estimated total of production output prices": "Estimasi total harga output produksi",
+  "Estimated main output price per unit": "Estimasi harga output utama per unit",
+  "Pick the date this partial production ended.": "Pilih tanggal selesainya produksi sebagian ini.",
+
   // Work order — next-step primary action, partial production, transactions
   "Create purchase request for raw material": "Buat permintaan pembelian bahan baku",
   "Create purchase order": "Buat pesanan pembelian",

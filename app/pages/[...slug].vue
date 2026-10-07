@@ -270,6 +270,7 @@ const CreateWorkOrderPage = asyncPage(() => import('~/components/pages/CreateWor
 const WorkOrderDetailsPage = asyncPage(() => import('~/components/pages/WorkOrderDetailsPage.vue'))
 const NewMaterialRecordPage = asyncPage(() => import('~/components/pages/NewMaterialRecordPage.vue'))
 const AdjustSubconWorkOrderPage = asyncPage(() => import('~/components/pages/AdjustSubconWorkOrderPage.vue'))
+const PartialProductionCompletionPage = asyncPage(() => import('~/components/pages/PartialProductionCompletionPage.vue'))
 const BillOfMaterialsDetailsPage = asyncPage(() => import('~/components/pages/BillOfMaterialsDetailsPage.vue'))
 const CreateBillOfMaterialsPage = asyncPage(() => import('~/components/pages/CreateBillOfMaterialsPage.vue'))
 const SubconOrderDetailsPage = asyncPage(() => import('~/components/pages/SubconOrderDetailsPage.vue'))
@@ -676,6 +677,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /work-orders/:id/adjust → restate the order's own numbers (full page)
   if (segs.length >= 3 && segs[0] === 'work-orders' && segs[2] === 'adjust') {
     return { component: AdjustSubconWorkOrderPage, id: segs[1]! }
+  }
+  // /work-orders/:id/partial-production → close part of the quantity (full page)
+  if (segs.length >= 3 && segs[0] === 'work-orders' && segs[2] === 'partial-production') {
+    return { component: PartialProductionCompletionPage, id: segs[1]! }
   }
   // /work-orders/:id → work order detail (read-only, status-aware)
   if (segs.length >= 2 && segs[0] === 'work-orders') {

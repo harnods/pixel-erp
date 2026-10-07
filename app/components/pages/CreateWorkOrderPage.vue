@@ -14,7 +14,7 @@ import { priceSubconOrder, SUBCON_PRICE_BASIS_SHORT, SUBCON_PRICE_STATE_LABEL } 
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpAutocomplete, MpInput, MpInputGroup, MpInputRightAddon, MpDatePicker, MpButton, MpIcon,
-  MpCheckbox, MpRadio, MpTooltip, MpBadge, toast,
+  MpCheckbox, MpRadio, MpTooltip, toast,
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
@@ -28,7 +28,7 @@ import {
   SUBCON_VENDORS, DEFAULT_SUBCON_VENDOR, SUBCON_SCOPE_LABEL,
   PRODUCTION_WAREHOUSE, SUBCON_VENDOR_WAREHOUSES,
   SUBCON_METHOD_LABEL, SUBCON_METHOD_DESCRIPTION,
-  SUBCON_SERVICE_PRODUCTS, subconServiceProduct, SUBCON_COST_DRIVERS,
+  SUBCON_SERVICE_PRODUCTS, subconServiceProduct, SUBCON_COST_DRIVERS, SUBCON_BATCH_QTY,
   type SubconScope, type SubconSplit, type SubconMethod,
 } from '~/data/subcon'
 import { formatDate } from '~/utils/date'
@@ -437,6 +437,21 @@ function onSubconCostProduct(row: SubconCostRow, id: string) {
   appendIfLast(subconCostRows, row.id, makeSubconCost)
 }
 /** The contract value — the charges as entered, before any gross-up. */
+/**
+ * How many charges a cost line carries, read off its driver — the same rule the
+ * work order detail applies, so the figure does not change on save.
+ *
+ *   Unit   → one charge per piece produced
+ *   Batch  → one charge per production batch
+ *   Amount → a lump sum, so a single charge however many pieces are made
+ */
+function subconCostQty(costDriver: string): number {
+  const qty = num(producedQty.value) || SUBCON_BATCH_QTY
+  if (costDriver === 'Unit') return qty
+  if (costDriver === 'Batch') return Math.max(1, Math.round(qty / SUBCON_BATCH_QTY))
+  return 1
+}
+
 const subconContractValue = computed(() => subconCostRows.value.reduce((s, r) => s + num(r.amount), 0))
 
 /**
@@ -1131,15 +1146,15 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <colgroup>
                 <!-- All fixed: the vendor name must not wrap, so the table
                      scrolls on a narrow stage rather than squeezing columns. -->
-                <col class="wo-col-svc" /><col class="wo-col-type" /><col class="wo-col-by" />
-                <col class="wo-col-driver" /><col class="wo-col-amt" /><col class="wo-col-del" />
+                <col class="wo-col-svc" /><col class="wo-col-by" />
+                <col class="wo-col-driver" /><col class="wo-col-qty" /><col class="wo-col-amt" /><col class="wo-col-del" />
               </colgroup>
               <thead>
                 <tr>
                   <th class="wo-th">{{ t('Service product') }}</th>
-                  <th class="wo-th">{{ t('Type') }}</th>
                   <th class="wo-th">{{ t('Charged by') }}</th>
                   <th class="wo-th">{{ t('Cost driver') }}</th>
+                  <th class="wo-th wo-th--right">{{ t('Qty') }}</th>
                   <th class="wo-th wo-th--right">{{ t('Amount') }}</th>
                   <th class="wo-th wo-th--del" />
                 </tr>
@@ -1163,10 +1178,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       @update:model-value="(v: string) => onSubconCostProduct(row, v)"
                     />
                   </td>
-                  <!-- Stated on every row: the reason these lines never touch stock. -->
-                  <td class="wo-td">
-                    <MpBadge v-if="row.productId" for="tableStatus" type="announcement">{{ t('Non-track') }}</MpBadge>
-                  </td>
                   <!-- Always the subcon vendor: these are their charges, by definition. -->
                   <td class="wo-td">
                     <span v-if="row.productId">{{ subconVendor.name }}</span>
@@ -1181,6 +1192,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       :placeholder="t('Select cost driver')"
                       is-searchable is-clearable use-portal is-full-width
                     />
+                  </td>
+                  <!-- Follows the cost driver rather than being entered: the
+                       driver already decides how many charges there are, and two
+                       fields saying it would only disagree. -->
+                  <td class="wo-td wo-td--num wo-td--muted">
+                    <template v-if="row.productId">{{ subconCostQty(row.costDriver) }}</template>
                   </td>
                   <td class="wo-td wo-td--input wo-td--num-input">
                     <MpInput v-if="row.productId" :id="`subcon-cost-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width />
@@ -1203,9 +1220,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     {{ t('Withholding borne by company') }}
                     <span class="wo-derived-note">{{ t('Arises because the vendor price is agreed net.') }}</span>
                   </td>
-                  <td class="wo-td" />
                   <td class="wo-td">{{ subconVendor.name }}</td>
                   <td class="wo-td">{{ t(SUBCON_PRICE_BASIS_SHORT[subconVendor.defaultPriceBasis]) }}</td>
+                  <!-- Derived from the order as a whole, so it has no quantity. -->
+                  <td class="wo-td wo-td--num wo-td--muted">—</td>
                   <td class="wo-td wo-td--num">{{ formatIDR(subconGrossUp) }}</td>
                   <td class="wo-td wo-td--del" />
                 </tr>
@@ -1533,8 +1551,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
 }
 /* Subcon cost column widths — token scale, so the table reads like every other. */
 .wo-col-svc    { width: var(--mp-sizes-75, 300px); }
-.wo-col-type   { width: var(--mp-sizes-28, 112px); }
 .wo-col-by     { width: var(--mp-sizes-56, 224px); }
+.wo-col-qty    { width: var(--mp-sizes-28, 112px); }
 .wo-col-driver { width: var(--mp-sizes-38, 152px); }
 .wo-col-amt    { width: var(--mp-sizes-42, 168px); }
 .wo-col-del    { width: var(--mp-sizes-11, 44px);  }

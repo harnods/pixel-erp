@@ -35,7 +35,6 @@ import {
 import SubconJournalModal from '~/components/patterns/SubconJournalModal.vue'
 import ConfirmWorkOrderAdjustmentModal from '~/components/patterns/ConfirmWorkOrderAdjustmentModal.vue'
 import TransferOriginBreakdownModal, { type TransferOriginGroup } from '~/components/patterns/TransferOriginBreakdownModal.vue'
-import PartialProductionModal from '~/components/patterns/PartialProductionModal.vue'
 import {
   buildSubconJournals, accountLabel,
   type SubconAccountingInput, type SubconCostLineInput, type SubconComponentInput,
@@ -52,7 +51,7 @@ import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer
 import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
 import { formatDate } from '~/utils/date'
 import { successToast } from '~/utils/toasts'
-import { workOrders, persistWorkOrders, adjustSubconWorkOrderQty, recordSubconDocument, recordSubconProduction, setSubconComponentQty, addSubconCostLine, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
+import { workOrders, persistWorkOrders, adjustSubconWorkOrderQty, recordSubconDocument, setSubconComponentQty, addSubconCostLine, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 import { warehouseTransfers, addTransfer } from '~/data/warehouseTransfers'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { productionSettings } from '~/data/productionSettings'
@@ -693,9 +692,13 @@ const primaryAction = computed(() => {
     case 'in progress':
     case 'partially produced':
     case 'partially completed':
-      // The vendor's work is not contractually placed until the request and the
-      // order both exist, so there is nothing to close against.
-      if (subcon.value && nextServiceStep.value) return nextServiceStep.value.label
+      if (subcon.value) {
+        // Raise the request here; the order follows from the request itself.
+        if (pendingServiceRequest.value) return pendingServiceRequest.value.label
+        // Requested but not yet ordered: the next move belongs to Purchases, so
+        // this page offers nothing rather than a button it cannot honour.
+        if (!subconPoRaised.value) return ''
+      }
       return t('Complete work order')
     default: return '' // completed / canceled → no primary action
   }
@@ -918,20 +921,14 @@ function completeWorkOrder() {
 }
 
 // ── Partial production ──────────────────────────────────────────────────────
-const showPartialProductionModal = ref(false)
-
 /**
- * Record part of the quantity as produced. `recordSubconProduction` owns the
- * status rule — partially produced until the total reaches the plan, partially
- * completed once it does — so several records close an order out together, and
- * a subcon delivery and a manual record cannot disagree about it.
+ * Closing part of the quantity is a form, not a prompt: the components it
+ * consumes, the vendor's charges against it and the output it yields all have to
+ * be seen and adjusted before it is recorded. It follows the standard partial
+ * production completion page rather than asking for a number in a dialog.
  */
-function onPartialProduction(qty: number) {
-  const w = wo.value
-  if (!w) return
-  showPartialProductionModal.value = false
-  recordSubconProduction(w.id, qty)
-  successToast(t('Partial production recorded'))
+function goPartialProduction() {
+  router.push(`/work-orders/${props.orderId}/partial-production`)
 }
 function onAutoConsumeAndComplete() {
   if (!wo.value) return
@@ -1080,32 +1077,30 @@ const rawMaterialsFulfilled = computed(() => {
 })
 
 /**
- * The next document the service thread still owes, once the order has started.
+ * The service request this order still owes — the document that places the
+ * vendor's work. Its kind varies by scope (`subconPr` / `processPr`), so it is
+ * read off this order's own plan rather than assumed.
  *
- * The vendor's work is placed by a purchase request and then a purchase order, in
- * that order — the order is built FROM the request, so naming the order while no
- * request exists would be a button with nothing to act on. `undefined` once both
- * are raised, which is when there is finally something to close.
+ * The work order raises the REQUEST only. The purchase order is raised from the
+ * request's own detail page, where it belongs: it is a Purchases decision, made
+ * against the request's lines, and duplicating that entry point here would give
+ * two places to create the same document.
  */
-const SERVICE_STEPS: { kind: SubconDocKind; label: string }[] = [
-  { kind: 'subconPr', label: 'Create purchase request' },
-  { kind: 'purchaseOrder', label: 'Create purchase order' },
-]
-
-const nextServiceStep = computed(() => {
+const pendingServiceRequest = computed(() => {
   const raised = subcon.value?.raisedDocuments ?? []
   const plan = subconPlan.value.flatMap(r => r.entries.map(e => e.kind))
-  for (const step of SERVICE_STEPS) {
-    // The service request's kind varies by scope (`subconPr` / `processPr`), so
-    // take whichever one this order's own plan actually calls for.
-    const kind = step.kind === 'subconPr'
-      ? (plan.find(k => k === 'subconPr' || k === 'processPr') ?? 'subconPr')
-      : step.kind
-    if (!plan.includes(kind)) continue
-    if (!raised.some(d => d.kind === kind)) return { kind, label: t(step.label) }
-  }
-  return undefined
+  const kind = plan.find(k => k === 'subconPr' || k === 'processPr')
+  if (!kind || raised.some(d => d.kind === kind)) return undefined
+  return { kind, label: t('Create purchase request') }
 })
+
+/**
+ * The purchase order places the vendor's work. Until it exists there is no
+ * commitment to close against, so the order can be neither completed nor
+ * partially completed — it is raised from the purchase request's detail page.
+ */
+const subconPoRaised = computed(() =>
+  (subcon.value?.raisedDocuments ?? []).some(d => d.kind === 'purchaseOrder'))
 
 /**
  * The document that supplies the vendor, as a button label. A transfer moves our
@@ -1327,9 +1322,9 @@ function handlePrimaryAction() {
     return
   }
 
-  const serviceStep = nextServiceStep.value
-  if (serviceStep && primaryAction.value === serviceStep.label) {
-    createDocument(serviceStep.kind)
+  const request = pendingServiceRequest.value
+  if (request && primaryAction.value === request.label) {
+    createDocument(request.kind)
     return
   }
 
@@ -1605,7 +1600,7 @@ function suppressFabClick(e: MouseEvent) {
         <button
           v-if="canPartiallyProduce"
           class="detail-btn detail-btn--secondary"
-          @click="showPartialProductionModal = true"
+          @click="goPartialProduction"
         >{{ t('Partially produce') }}</button>
         <button v-if="primaryAction" class="detail-btn detail-btn--primary" @click="handlePrimaryAction">{{ primaryAction }}</button>
       </div>
@@ -2296,14 +2291,6 @@ function suppressFabClick(e: MouseEvent) {
       :groups="rawOriginGroups"
       :destination-name="subconDestination?.name"
       @select="createTransferFromOrigin"
-    />
-
-    <PartialProductionModal
-      v-model:is-open="showPartialProductionModal"
-      :planned-qty="wo.plannedQty"
-      :produced-qty="wo.producedQty"
-      :unit="mainOutput.unit"
-      @confirm="onPartialProduction"
     />
 
     <SubconJournalModal
