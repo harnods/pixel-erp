@@ -338,9 +338,23 @@ const subconVendorRecord = computed(() => {
   return id ? SUBCON_VENDORS.find(v => v.id === id) : undefined
 })
 
-/** The purchase order this work order raised, once it has one. */
+/**
+ * Requests that buy raw material rather than the vendor's work.
+ *
+ * On dropship a work order raises both, and each grows its own purchase order.
+ * Treating the component order as THE order made the run look placed when only
+ * the materials had been bought — the work order then offered nothing further,
+ * which is exactly the dead end this is here to prevent.
+ */
+const COMPONENT_REQUEST_KINDS = ['componentPr', 'rawPr']
+function isServiceOrder(d: { kind: string; fromKind?: string }): boolean {
+  return d.kind === 'purchaseOrder'
+    && !(d.fromKind && COMPONENT_REQUEST_KINDS.includes(d.fromKind))
+}
+
+/** The purchase order for the vendor's WORK, once this order has one. */
 const subconRaisedOrder = computed(() => {
-  const doc = (subcon.value?.raisedDocuments ?? []).find(d => d.kind === 'purchaseOrder')
+  const doc = (subcon.value?.raisedDocuments ?? []).find(isServiceOrder)
   return doc ? { doc, order: purchaseOrders.find(o => o.id === doc.id) } : undefined
 })
 
@@ -501,7 +515,11 @@ const accountingReceipts = computed(() =>
  */
 const accountingVendorCharges = computed(() =>
   (subcon.value?.raisedDocuments ?? [])
-    .filter(d => d.kind === 'purchaseOrder')
+    // The SUBCON vendor's charge only. A dropship component order buys raw
+    // material from a 3rd party — that is already carried as material cost, and
+    // posting it here would charge the same goods twice and credit the subcon
+    // vendor with a payable it is not owed.
+    .filter(isServiceOrder)
     .map((d) => {
       const po = purchaseOrders.find(o => o.id === d.id)
       if (!po) return null
@@ -669,6 +687,41 @@ const STATUS_LABEL: Record<WorkOrderStatus, string> = {
  * Non-subcon work orders are unaffected: they have no vendor to supply and no
  * purchase order to place, so both guards fall through.
  */
+/**
+ * The document the run is waiting on, when the next move is not this page's.
+ *
+ * A purchase order is created from its request, and a delivery from its order —
+ * both in Purchases. The work order used to show nothing at all in those
+ * windows, which read as a dead end: the order sat there with no button, no
+ * explanation, and nothing to click. It now points at the exact document that
+ * carries the next action.
+ */
+const pendingExternalDoc = computed(() => {
+  const c = subcon.value
+  if (!c) return undefined
+  const docs = c.raisedDocuments ?? []
+  // ── The component thread (dropship): request → order → delivery ──────────
+  if (!rawMaterialsFulfilled.value && c.method === 'dropship') {
+    const componentPr = docs.find(d => COMPONENT_REQUEST_KINDS.includes(d.kind))
+    if (componentPr) {
+      const componentPo = docs.find(d => d.kind === 'purchaseOrder' && !isServiceOrder(d))
+      if (!componentPo) {
+        return { doc: componentPr, label: t('View purchase request'), next: t('Create purchase order') }
+      }
+      return { doc: componentPo, label: t('View purchase order'), next: t('Create purchase delivery') }
+    }
+  }
+
+  // ── The service thread: request → order ──────────────────────────────────
+  if (rawMaterialsFulfilled.value && !subconPoRaised.value) {
+    const servicePr = docs.find(d => d.kind === 'subconPr' || d.kind === 'processPr')
+    if (servicePr) {
+      return { doc: servicePr, label: t('View purchase request'), next: t('Create purchase order') }
+    }
+  }
+  return undefined
+})
+
 const primaryAction = computed(() => {
   switch (wo.value?.status) {
     case 'not started':
@@ -679,7 +732,9 @@ const primaryAction = computed(() => {
         // dropship component request is raised ONCE and then grows an order and
         // a delivery in Purchases; offering it a second time would duplicate it,
         // so this page stands back until the goods are confirmed delivered.
-        if (subcon.value.method === 'dropship' && subconSupplyRaised.value) return ''
+        if (subcon.value.method === 'dropship' && subconSupplyRaised.value) {
+          return pendingExternalDoc.value?.label ?? ''
+        }
         return supplyActionLabel.value
       }
       return canStartManually.value ? t('Start work order') : ''
@@ -687,7 +742,7 @@ const primaryAction = computed(() => {
       // Materials are with the vendor; the work still has to be ordered. The
       // request is raised here, the order from the request's own page.
       if (subcon.value && pendingServiceRequest.value) return pendingServiceRequest.value.label
-      return ''
+      return pendingExternalDoc.value?.label ?? ''
     case 'in progress':
     case 'partially produced':
     case 'partially completed':
@@ -695,8 +750,8 @@ const primaryAction = computed(() => {
         // Raise the request here; the order follows from the request itself.
         if (pendingServiceRequest.value) return pendingServiceRequest.value.label
         // Requested but not yet ordered: the next move belongs to Purchases, so
-        // this page offers nothing rather than a button it cannot honour.
-        if (!subconPoRaised.value) return ''
+        // this page points at the document that carries it.
+        if (!subconPoRaised.value) return pendingExternalDoc.value?.label ?? ''
       }
       return t('Complete work order')
     default: return '' // completed / canceled → no primary action
@@ -1151,7 +1206,7 @@ const pendingServiceRequest = computed(() => {
  * partially completed — it is raised from the purchase request's detail page.
  */
 const subconPoRaised = computed(() =>
-  (subcon.value?.raisedDocuments ?? []).some(d => d.kind === 'purchaseOrder'))
+  (subcon.value?.raisedDocuments ?? []).some(isServiceOrder))
 
 /**
  * The document that supplies the vendor, as a button label. A transfer moves our
@@ -1357,11 +1412,14 @@ function createDocument(kind: SubconDocKind, originWarehouseId?: string) {
    */
   const raised = c.raisedDocuments ?? []
   if (kind === 'purchaseOrder') {
-    const request = raised.find(d => d.route === '/purchase-requests')
+    const request = raised.find(d => d.route === '/purchase-requests'
+      && !COMPONENT_REQUEST_KINDS.includes(d.kind))
     if (request) { router.push({ path: '/purchase-orders', query: { fromPr: request.id } }); return }
   }
   if (kind === 'purchaseDelivery' || kind === 'purchaseInvoice') {
-    const order = raised.find(d => d.kind === 'purchaseOrder')
+    // The vendor's work is delivered and invoiced — not the raw material, which
+    // has its own order and its own delivery.
+    const order = raised.find(isServiceOrder)
     if (order) {
       const path = kind === 'purchaseDelivery' ? '/purchase-deliveries/new' : '/purchase-invoices/new'
       router.push({ path, query: { fromPo: order.id } })
@@ -1405,6 +1463,13 @@ function handlePrimaryAction() {
   const request = pendingServiceRequest.value
   if (request && primaryAction.value === request.label) {
     createDocument(request.kind)
+    return
+  }
+
+  // Waiting on Purchases — open the document that carries the next step.
+  const pending = pendingExternalDoc.value
+  if (pending && primaryAction.value === pending.label) {
+    openRaisedDocument(pending.doc as { route: string; id: string })
     return
   }
 
@@ -1821,6 +1886,17 @@ function suppressFabClick(e: MouseEvent) {
           <MpBannerIcon />
           <MpBannerTitle>{{ t('Supply the vendor first') }}</MpBannerTitle>
           <MpBannerDescription>{{ startBlockedMessage }}</MpBannerDescription>
+        </MpBanner>
+
+        <!-- Says WHY there is nothing to do here, which a bare page did not.
+             The action lives on the document, not on the work order. -->
+        <MpBanner v-if="pendingExternalDoc" variant="info" align-items="center" class="wod-subcon-blocked">
+          <MpBannerIcon />
+          <MpBannerTitle>{{ t('Waiting on Purchases') }}</MpBannerTitle>
+          <MpBannerDescription>
+            {{ pendingExternalDoc.next }} {{ t('from') }} {{ pendingExternalDoc.doc.number }}
+            — {{ t('open it and choose it from the Actions menu there.') }}
+          </MpBannerDescription>
         </MpBanner>
 
         <!-- Refused rather than offered as a choice: see `completeBlockedMessage`. -->

@@ -3747,6 +3747,10 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Waiting for start": "Menunggu dimulai",
 
   // Partial production completion
+  "View purchase request": "Lihat permintaan pembelian",
+  "View purchase order": "Lihat pesanan pembelian",
+  "Waiting on Purchases": "Menunggu Pembelian",
+  "open it and choose it from the Actions menu there.": "buka dokumennya dan pilih dari menu Actions di sana.",
   "Delivered to the vendor for": "Dikirim ke vendor untuk",
   "Awaiting purchase order": "Menunggu pesanan pembelian",
   "Not everything has been produced yet": "Belum semuanya diproduksi",
