@@ -194,14 +194,19 @@ export interface WorkOrderMaterialReservation {
 export type WorkOrderStatus =
   | 'not started'
   /**
-   * Materials are with the vendor, but the work has not been placed.
-   *
-   * The gap between supplying the vendor and ordering the work used to be
-   * invisible: the order sat at "not started" whether nothing had happened or
-   * everything but the purchase order had. Someone looking for what to chase
-   * could not tell the two apart. This says which.
+   * The raw material is being procured — a transfer or a component purchase is
+   * under way, but the vendor does not hold everything yet.
    */
-  | 'awaiting purchase order'
+  | 'waiting rm procurement'
+  /**
+   * The vendor has the materials; the work itself has not been ordered.
+   *
+   * These two used to be one status, and before that both sat under "not
+   * started" — so an order waiting on a warehouse and an order waiting on a
+   * buyer looked identical. They are chased by different people, so they are
+   * named separately.
+   */
+  | 'waiting subcon order'
   | 'canceled'
   | 'in progress'
   | 'partially produced'
@@ -309,6 +314,7 @@ function buildSeed(): WorkOrder[] {
 
 // Persisted as a full snapshot (seed + user-created) — mirrors outgoing.ts.
 const workOrderSnapshot = loadSnapshot<WorkOrder>('workOrders-v2')
+
 export const workOrders = reactive<WorkOrder[]>(workOrderSnapshot ?? buildSeed())
 
 /** Persist the work-order snapshot (call after any mutation). */
@@ -384,7 +390,7 @@ function dropshipComponentsFulfilled(wo: WorkOrder): boolean {
 export function syncSubconStatus(wo: WorkOrder): void {
   const c = wo.subcon
   if (!c) return
-  if (!['not started', 'awaiting purchase order', 'in progress'].includes(wo.status)) return
+  if (!['not started', 'waiting rm procurement', 'waiting subcon order', 'in progress'].includes(wo.status)) return
 
   const docs = c.raisedDocuments ?? []
   // The order that places the vendor's WORK — not a component order, which buys
@@ -401,8 +407,19 @@ export function syncSubconStatus(wo: WorkOrder): void {
     return
   }
 
+  // An order never walks backwards. The statuses below describe the run BEFORE
+  // the work was ordered, and a record already in progress has passed them —
+  // seeded ones carry no documents at all, and re-deriving from documents would
+  // put them back at the start.
+  if (wo.status === 'in progress') return
+
   const ready = c.method === 'basic' || c.materialsReady || dropshipComponentsFulfilled(wo)
-  if (ready && wo.status === 'not started') wo.status = 'awaiting purchase order'
+  if (ready) { wo.status = 'waiting subcon order'; return }
+
+  // Procurement has started but has not delivered everything yet.
+  const RM_KINDS = ['transfer', 'rawTransfer', 'componentPr', 'rawPr']
+  const procuring = docs.some(d => RM_KINDS.includes(d.kind))
+  wo.status = procuring ? 'waiting rm procurement' : 'not started'
 }
 
 /**
@@ -412,10 +429,14 @@ export function syncSubconStatus(wo: WorkOrder): void {
  */
 export function setSubconMaterialsReady(workOrderId: string, ready: boolean): void {
   const wo = workOrders.find(w => w.id === workOrderId)
-  if (!wo?.subcon || wo.subcon.materialsReady === ready) return
+  if (!wo?.subcon) return
+  // Re-derive even when readiness has not changed. A record written before these
+  // statuses existed carries an old one and nothing would otherwise correct it;
+  // opening the work order is the moment to put it right.
+  const was = { status: wo.status, ready: wo.subcon.materialsReady }
   wo.subcon.materialsReady = ready
   syncSubconStatus(wo)
-  persistWorkOrders()
+  if (wo.status !== was.status || was.ready !== ready) persistWorkOrders()
 }
 
 /**
@@ -555,4 +576,23 @@ export function addWorkOrder(data: Omit<WorkOrder, 'id' | 'number'>): WorkOrder 
   workOrders.unshift(wo)
   persistWorkOrders()
   return wo
+}
+
+/**
+ * Carry records written under the single `awaiting purchase order` status over
+ * to the pair that replaced it.
+ *
+ * Anyone who has used the app already has those stored, and an unrecognised
+ * status renders as a bare string with no badge. Which of the two it becomes is
+ * decided the same way a new record decides: `syncSubconStatus` reads the
+ * documents.
+ *
+ * Runs at the END of the module, not beside the snapshot load: it calls into
+ * `syncSubconStatus`, whose own constants are declared further down and are in
+ * the temporal dead zone while the file is still evaluating.
+ */
+for (const wo of workOrders) {
+  if ((wo.status as string) !== 'awaiting purchase order') continue
+  wo.status = 'waiting rm procurement'   // a floor `syncSubconStatus` can raise
+  syncSubconStatus(wo)
 }

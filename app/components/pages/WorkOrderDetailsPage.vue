@@ -671,7 +671,9 @@ const planRange = computed(() => wo.value ? `${formatDate(wo.value.planStartDate
 
 // ── Header status → primary action ──────────────────────────────────────────────
 const STATUS_LABEL: Record<WorkOrderStatus, string> = {
-  'not started': t('Not started'), 'awaiting purchase order': t('Awaiting purchase order'),
+  'not started': t('Not started'),
+  'waiting rm procurement': t('Waiting RM procurement'),
+  'waiting subcon order': t('Waiting subcon order'),
   'in progress': t('In progress'), 'partially produced': t('Partially produced'),
   'partially completed': t('Partially completed'), 'completed': t('Completed'), 'canceled': t('Canceled'),
 }
@@ -738,7 +740,14 @@ const primaryAction = computed(() => {
         return supplyActionLabel.value
       }
       return canStartManually.value ? t('Start work order') : ''
-    case 'awaiting purchase order':
+    case 'waiting rm procurement':
+      // Procurement is under way; the next step is on the document carrying it.
+      if (subcon.value && !rawMaterialsFulfilled.value && supplyActionLabel.value
+          && !(subcon.value.method === 'dropship' && subconSupplyRaised.value)) {
+        return supplyActionLabel.value
+      }
+      return pendingExternalDoc.value?.label ?? ''
+    case 'waiting subcon order':
       // Materials are with the vendor; the work still has to be ordered. The
       // request is raised here, the order from the request's own page.
       if (subcon.value && pendingServiceRequest.value) return pendingServiceRequest.value.label
@@ -865,7 +874,8 @@ const sendsCompanyStock = computed(() =>
   subcon.value?.method === 'resupply' || subcon.value?.method === 'dropship')
 
 // Actual start/end shown only when the work order has reached that stage.
-const showStart = computed(() => !['not started', 'awaiting purchase order', 'canceled'].includes(wo.value?.status ?? ''))
+const showStart = computed(() =>
+  !['not started', 'waiting rm procurement', 'waiting subcon order', 'canceled'].includes(wo.value?.status ?? ''))
 const showEnd = computed(() => ['partially completed', 'completed', 'canceled'].includes(wo.value?.status ?? ''))
 
 // ── Line-item data — sourced from the real BOM this work order was raised from ──
@@ -1169,7 +1179,7 @@ const rawMaterialsFulfilled = computed(() => {
 
 /**
  * Tell the store when the vendor has everything, so the status can move to
- * "awaiting purchase order".
+ * "waiting subcon order".
  *
  * Resupply NEEDS telling — its quantities live in the warehouse transfers, which
  * the store does not read. Dropship does not, since its receipts are on the work
@@ -1631,25 +1641,37 @@ const otherOutputs = computed(() => {
   // Components the vendor did not consume came back with the finished goods, so
   // they are output of this run too — valued at what they cost to buy, since
   // that is what they are still worth.
+  //
+  // Their percentage is DERIVED from that value, not entered: nobody plans to
+  // have material left over, so there is no figure to plan with. What the row is
+  // worth against the run's total cost is the only honest answer, and it is what
+  // the main output's share is then measured against.
+  const total = totalProductionCost.value
   const unused = (subcon.value?.unusedOutputs ?? []).map((u) => {
     const r = rawMaterials.value.find(m => m.sku === u.sku)
+    const estCost = (r?.purchaseCost ?? 0) * u.qty
     return {
       product: r?.product ?? u.sku,
       sku: u.sku,
       qty: u.qty,
       unit: r?.unit ?? '',
-      percentage: 0,
-      estCost: (r?.purchaseCost ?? 0) * u.qty,
+      percentage: total > 0 ? Math.round((estCost / total) * 10_000) / 100 : 0,
+      estCost,
     }
   })
   return [...fromBom, ...unused]
 })
 const otherOutputsSubtotal = computed(() => otherOutputs.value.reduce((s, r) => s + r.estCost, 0))
+/** What the by-products claim between them, which the main output gives up. */
+const otherOutputsPercentage = computed(() =>
+  otherOutputs.value.reduce((s, r) => s + r.percentage, 0))
 
 const productionWaste = computed(() => (bom.value?.productionWaste ?? []).map(w => ({
   mapping: w.accountMapping, method: w.allocationMethod, percentage: w.percentage, amount: w.amount,
 })))
 const wasteSubtotal = computed(() => productionWaste.value.reduce((s, r) => s + r.amount, 0))
+const wastePercentage = computed(() =>
+  productionWaste.value.reduce((s, r) => s + r.percentage, 0))
 
 // Main output absorbs whatever production cost isn't allocated to other outputs/waste.
 const mainOutput = computed(() => {
@@ -1662,7 +1684,16 @@ const mainOutput = computed(() => {
     /** What the work order needs — the denominator a subcon order reports against. */
     needed: wo.value?.plannedQty ?? bom.value?.finishedGoodQty ?? 0,
     unit: bom.value?.finishedGoodUnit ?? 'Pcs',
-    percentage: bom.value?.finishedGoodPercentage ?? 100,
+    /**
+     * The share left once every other output and the waste have taken theirs.
+     *
+     * The BOM plans this figure, but material coming back unused is not planned
+     * — it changes what the run actually yielded. Leaving the planned 95% beside
+     * a new output row would have the shares summing past 100 and the main
+     * output claiming value that went elsewhere.
+     */
+    percentage: Math.max(0, Math.round(
+      (100 - otherOutputsPercentage.value - wastePercentage.value) * 100) / 100),
     estCost,
   }
 })

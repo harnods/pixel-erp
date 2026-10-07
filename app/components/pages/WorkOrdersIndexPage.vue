@@ -49,9 +49,11 @@ const typeLabel = computed(() => TYPE_OPTIONS.find(o => o.value === typeFilter.v
 // Status — the six work-order statuses. Clearing (x) resets to show-all.
 const STATUS_OPTIONS: { label: string; value: WorkOrderStatus }[] = [
   { label: t('Not started'),          value: 'not started'          },
-  // Between supplying the vendor and ordering the work — filterable, because it
-  // is the queue someone chasing purchase orders actually wants.
-  { label: t('Awaiting purchase order'), value: 'awaiting purchase order' },
+  // The two pre-production queues, filterable because they are worked by
+  // different people: the warehouse gets the materials there, Purchases places
+  // the order.
+  { label: t('Waiting RM procurement'), value: 'waiting rm procurement' },
+  { label: t('Waiting subcon order'),   value: 'waiting subcon order'   },
   { label: t('In progress'),          value: 'in progress'          },
   { label: t('Partially produced'),   value: 'partially produced'   },
   { label: t('Partially completed'),  value: 'partially completed'  },
