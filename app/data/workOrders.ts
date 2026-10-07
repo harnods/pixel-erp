@@ -119,12 +119,11 @@ export interface WorkOrderSubconSetup {
    */
   costLineOverrides?: Record<string, number>
   /**
-   * How many units each cost line covers, by line id. Entered on the work order
-   * form: the cost driver seeds it, but a vendor may charge for a different
-   * number than the order plans — a minimum batch, say — so it is editable and
-   * what was agreed is kept rather than recomputed.
+   * How much of each cost line has already been taken onto a partial production
+   * record, by line id. What is left is what the next partial may still charge,
+   * so several records cannot between them bill more than the order agreed.
    */
-  costLineQty?: Record<string, number>
+  costLineRecorded?: Record<string, number>
 }
 
 /** A document created from a subcon work order, and where its detail page lives. */
@@ -314,6 +313,23 @@ export function workOrderForDocument(documentId: string): WorkOrder | undefined 
  * total reaches what was planned, so several deliveries can close it out
  * together.
  */
+/**
+ * Take cost onto a partial production record. Accumulates per line so the
+ * remaining amount each later record may charge is what the order agreed less
+ * what has already been taken.
+ */
+export function recordSubconCost(workOrderId: string, amounts: Record<string, number>): void {
+  const wo = workOrders.find(w => w.id === workOrderId)
+  if (!wo?.subcon) return
+  const taken = { ...(wo.subcon.costLineRecorded ?? {}) }
+  for (const [id, amount] of Object.entries(amounts)) {
+    if (!amount) continue
+    taken[id] = (taken[id] ?? 0) + amount
+  }
+  wo.subcon.costLineRecorded = taken
+  persistWorkOrders()
+}
+
 export function recordSubconProduction(workOrderId: string, qty: number): void {
   const wo = workOrders.find(w => w.id === workOrderId)
   if (!wo || qty <= 0) return

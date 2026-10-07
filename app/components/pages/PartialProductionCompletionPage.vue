@@ -20,7 +20,7 @@
 import { MpIcon, MpInput, MpInputGroup, MpInputRightAddon } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import { successToast } from '~/utils/toasts'
-import { workOrders, recordSubconProduction } from '~/data/workOrders'
+import { workOrders, recordSubconProduction, recordSubconCost } from '~/data/workOrders'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 import { warehouseTransfers } from '~/data/warehouseTransfers'
 import { SUBCON_BATCH_QTY } from '~/data/subcon'
@@ -123,34 +123,40 @@ const componentsSubtotal = computed(() =>
 // ── Subcon cost ─────────────────────────────────────────────────────────────
 
 /**
- * The vendor's charges for THIS batch. A per-unit charge scales with the pieces
- * made; a lump sum is charged once against the order and so does not recur on a
- * second partial record.
+ * The vendor's charges, taken onto this record the way production cost is: the
+ * amount is entered, not derived.
+ *
+ * A partial run does not necessarily cost a pro-rata slice of the order — the
+ * vendor may bill the setup once, charge a minimum, or split it differently — so
+ * the form suggests the batch's share and lets it be set. What it will not allow
+ * is charging more than the order agreed: each line shows the amount still
+ * remaining across every record, and `costLineRecorded` is what earlier ones
+ * already took.
  */
+const costAmount = ref<Record<string, string>>({})
+
 const subconCostLines = computed(() => {
   const c = subcon.value
   if (!c) return []
-  const orderFactor = (wo.value?.plannedQty ?? 0) / SUBCON_BATCH_QTY
-  const lines = bom.value?.subconCost ?? []
-  return lines.map((l) => {
+  const planned = wo.value?.plannedQty ?? 0
+  const orderFactor = planned / SUBCON_BATCH_QTY
+  return (bom.value?.subconCost ?? []).map((l) => {
     const perOrder = c.costLineOverrides?.[l.productId] ?? Math.round(l.amount * orderFactor)
-    const isLump = l.costDriver !== 'Unit' && l.costDriver !== 'Batch'
-    const qty = l.costDriver === 'Unit'
-      ? batchQty.value
-      : l.costDriver === 'Batch'
-        ? Math.max(1, Math.round(batchQty.value / SUBCON_BATCH_QTY))
-        : 1
+    const taken = c.costLineRecorded?.[l.productId] ?? 0
+    const remaining = Math.max(0, perOrder - taken)
+    // The batch's share, never more than is left to charge.
+    const suggested = Math.min(remaining, Math.round(perOrder * batchFactor.value))
+    const entered = costAmount.value[l.productId]
+    const amount = entered !== undefined && entered !== '' ? num(entered) : suggested
     return {
+      id: l.productId,
       account: l.name,
       chargedBy: c.vendorName,
-      qty,
-      // A lump sum belongs to the order, not the batch, and is charged in full
-      // the first time anything is recorded against it.
-      amount: isLump
-        ? (alreadyProduced.value > 0 ? 0 : perOrder)
-        : Math.round(perOrder * batchFactor.value),
-      /** Why a line that has an amount on the order reads zero here. */
-      note: isLump && alreadyProduced.value > 0 ? t('Charged once, on the first record') : '',
+      /** What one unit of output costs at the order's agreed total. */
+      perUnit: planned > 0 ? perOrder / planned : 0,
+      remaining,
+      amount,
+      over: amount > remaining,
     }
   })
 })
@@ -228,18 +234,31 @@ function validate(): boolean {
     error.value = t('Pick the date this partial production ended.')
     return false
   }
+  // A line may not take more than the order still has to give — several partial
+  // records must not between them bill more than was agreed.
+  const over = subconCostLines.value.find(l => l.over)
+  if (over) {
+    error.value = `${over.account}: ${t('more than this line has left to charge')} (${formatIDR(over.remaining)}).`
+    return false
+  }
   error.value = ''
   return true
 }
 
 function save(close: boolean) {
   if (!wo.value || !validate()) return
+  // Cost first: the quantity record is what changes the order's status, so the
+  // charges it carries must already be on the order when that happens.
+  recordSubconCost(wo.value.id, Object.fromEntries(
+    subconCostLines.value.map(l => [l.id, l.amount]),
+  ))
   recordSubconProduction(wo.value.id, batchQty.value)
   successToast(t('Partial production recorded'))
   if (close) { goBack(); return }
   // Staying on the form: the figures now describe what is still outstanding.
   qtyProduced.value = ''
   componentQty.value = {}
+  costAmount.value = {}
 }
 </script>
 
@@ -355,18 +374,31 @@ function save(close: boolean) {
               <tr>
                 <th class="ppc-th">{{ t('Cost component') }}</th>
                 <th class="ppc-th">{{ t('Charged by') }}</th>
-                <th class="ppc-th ppc-th--num">{{ t('Qty') }}</th>
+                <th class="ppc-th ppc-th--num">{{ t('Cost per unit estimation') }}</th>
                 <th class="ppc-th ppc-th--num">{{ t('Amount') }}</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="l in subconCostLines" :key="l.account" class="ppc-tr">
+              <tr v-for="l in subconCostLines" :key="l.id" class="ppc-tr">
                 <td class="ppc-td">{{ l.account }}</td>
                 <td class="ppc-td">{{ l.chargedBy }}</td>
-                <td class="ppc-td ppc-td--num">{{ l.qty }}</td>
+                <td class="ppc-td ppc-td--num">{{ formatIDR(l.perUnit) }}</td>
+                <!-- Entered, like the multiplier on a standard partial: what the
+                     vendor is actually billing for this batch, bounded by what is
+                     left of the order's agreed total. -->
                 <td class="ppc-td ppc-td--num">
-                  {{ formatIDR(l.amount) }}
-                  <span v-if="l.note" class="ppc-cell-note">{{ l.note }}</span>
+                  <div class="ppc-qty-input">
+                    <MpInput
+                      :id="`ppc-cost-${l.id}`"
+                      :model-value="String(l.amount)"
+                      type="number"
+                      is-full-width
+                      @update:model-value="(v: string) => costAmount[l.id] = v"
+                    />
+                  </div>
+                  <span class="ppc-cell-note" :class="{ 'ppc-cell-note--bad': l.over }">
+                    {{ t('Remaining') }}: {{ formatIDR(l.remaining) }}
+                  </span>
                 </td>
               </tr>
             </tbody>
@@ -615,6 +647,7 @@ function save(close: boolean) {
 .ppc-td--num { text-align: right; font-variant-numeric: tabular-nums; }
 .ppc-td--empty { color: var(--mp-text-secondary); }
 .ppc-cell-note { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.ppc-cell-note--bad { color: var(--mp-text-danger, #a8352d); }
 .ppc-subsection-title {
   margin: var(--mp-spacing-5) 0 var(--mp-spacing-3);
   font-size: var(--mp-font-sizes-md);

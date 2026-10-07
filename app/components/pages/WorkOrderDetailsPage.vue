@@ -284,28 +284,8 @@ const subconCostLines = computed(() => {
   /** A revised amount wins over the BOM's — see `costLineOverrides`. */
   const amountFor = (id: string, fallback: number) => c.costLineOverrides?.[id] ?? fallback
 
-  /**
-   * What the vendor is charging FOR, in units of its own cost driver. The driver
-   * is no longer a column of its own — the quantity it produces says the same
-   * thing more usefully, and the amount divided by it is the rate.
-   *
-   *   Unit   → one charge per piece produced
-   *   Batch  → one charge per production batch
-   *   Amount → a lump sum, so a single charge however many pieces are made
-   */
-  const qtyFor = (driver: string, lineId?: string) => {
-    // What was agreed on the work order form wins; the driver only supplies the
-    // default for records saved before the quantity was captured.
-    const entered = lineId ? c.costLineQty?.[lineId] : undefined
-    if (entered !== undefined) return entered
-    if (driver === 'Unit') return w.plannedQty
-    if (driver === 'Batch') return Math.max(1, Math.round(factor))
-    return 1
-  }
-
   const extras = (c.extraCostLines ?? []).map(l => ({
     account: l.name,
-    qty: qtyFor(l.costDriver, l.id),
     chargedBy: c.vendorName,
     amount: amountFor(l.id, l.amount),
   }))
@@ -315,7 +295,6 @@ const subconCostLines = computed(() => {
     return [
       ...fromBom.map(l => ({
         account: l.name,
-        qty: qtyFor(l.costDriver, l.productId),
         chargedBy: c.vendorName,
         amount: amountFor(l.productId, Math.round(l.amount * factor)),
       })),
@@ -326,13 +305,11 @@ const subconCostLines = computed(() => {
   return [
     {
       account: t(SUBCON_SERVICE_FEE[c.scope].name),
-      qty: qtyFor('Unit', 'svc-fee'),
       chargedBy: c.vendorName,
       amount: amountFor('svc-fee', Math.round(SUBCON_SERVICE_FEE[c.scope].amount * factor)),
     },
     {
       account: t(SUBCON_HANDLING_FEE.name),
-      qty: qtyFor('Amount', 'svc-handling'),
       chargedBy: c.vendorName,
       amount: amountFor('svc-handling', Math.round(SUBCON_HANDLING_FEE.amount * factor)),
     },
@@ -404,8 +381,6 @@ const subconGrossUpRow = computed(() => {
   return {
     account: t('Withholding borne by company'),
     chargedBy: subcon.value?.vendorName ?? '',
-    // Derived from the order as a whole, not charged per piece — so no quantity.
-    qty: undefined,
     amount: p.grossUp,
   }
 })
@@ -1858,7 +1833,6 @@ function suppressFabClick(e: MouseEvent) {
                 <tr>
                   <th class="wod-th">{{ t('Cost component') }}</th>
                   <th class="wod-th">{{ t('Charged by') }}</th>
-                  <th class="wod-th wod-th--num">{{ t('Qty') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Amount') }}</th>
                 </tr>
               </thead>
@@ -1866,7 +1840,6 @@ function suppressFabClick(e: MouseEvent) {
                 <tr v-for="l in subconCostLines" :key="l.account" class="wod-tr">
                   <td class="wod-td">{{ l.account }}</td>
                   <td class="wod-td">{{ l.chargedBy }}</td>
-                  <td class="wod-td wod-td--num">{{ l.qty }}</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(l.amount) }}</td>
                 </tr>
 
@@ -1885,7 +1858,6 @@ function suppressFabClick(e: MouseEvent) {
                     </span>
                   </td>
                   <td class="wod-td">{{ subconGrossUpRow.chargedBy }}</td>
-                  <td class="wod-td wod-td--num">—</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(subconGrossUpRow.amount) }}</td>
                 </tr>
               </tbody>

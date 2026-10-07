@@ -28,7 +28,7 @@ import {
   SUBCON_VENDORS, DEFAULT_SUBCON_VENDOR, SUBCON_SCOPE_LABEL,
   PRODUCTION_WAREHOUSE, SUBCON_VENDOR_WAREHOUSES,
   SUBCON_METHOD_LABEL, SUBCON_METHOD_DESCRIPTION,
-  SUBCON_SERVICE_PRODUCTS, subconServiceProduct, SUBCON_COST_DRIVERS, SUBCON_BATCH_QTY,
+  SUBCON_SERVICE_PRODUCTS, subconServiceProduct, SUBCON_COST_DRIVERS,
   type SubconScope, type SubconSplit, type SubconMethod,
 } from '~/data/subcon'
 import { formatDate } from '~/utils/date'
@@ -396,14 +396,12 @@ interface SubconCostRow {
   /** Non-track service product id (SUBCON_SERVICE_PRODUCTS). */
   productId: string
   costDriver: string
-  /** How many units the charge covers. Seeded from the driver, then editable. */
-  qty: string
-  /** The line total for that quantity, not a unit rate. */
+  /** The line total the vendor charges. */
   amount: string
 }
 let subconCostSeq = 0
 function makeSubconCost(partial: Partial<SubconCostRow> = {}): SubconCostRow {
-  return { id: subconCostSeq++, productId: '', costDriver: '', qty: '', amount: '', ...partial }
+  return { id: subconCostSeq++, productId: '', costDriver: '', amount: '', ...partial }
 }
 const subconCostRows = ref<SubconCostRow[]>([makeSubconCost()])
 
@@ -420,8 +418,7 @@ function defaultSubconCostRows(): SubconCostRow[] {
   if (fromBom.length) {
     return [
       ...fromBom.map(l => makeSubconCost({
-        productId: l.productId, costDriver: l.costDriver,
-        qty: String(subconCostQty(l.costDriver)), amount: String(l.amount),
+        productId: l.productId, costDriver: l.costDriver, amount: String(l.amount),
       })),
       makeSubconCost(),
     ]
@@ -429,14 +426,8 @@ function defaultSubconCostRows(): SubconCostRow[] {
   const service = subconServiceProduct(scopeServiceId.value)!
   const freight = subconServiceProduct('svc-handling')!
   return [
-    makeSubconCost({
-      productId: service.id, costDriver: service.defaultCostDriver,
-      qty: String(subconCostQty(service.defaultCostDriver)), amount: String(service.defaultPrice),
-    }),
-    makeSubconCost({
-      productId: freight.id, costDriver: freight.defaultCostDriver,
-      qty: String(subconCostQty(freight.defaultCostDriver)), amount: String(freight.defaultPrice),
-    }),
+    makeSubconCost({ productId: service.id, costDriver: service.defaultCostDriver, amount: String(service.defaultPrice) }),
+    makeSubconCost({ productId: freight.id, costDriver: freight.defaultCostDriver, amount: String(freight.defaultPrice) }),
     makeSubconCost(),
   ]
 }
@@ -461,55 +452,16 @@ watch([isSubcon, subconScope, bomId], ([on]) => {
   if (empty || subconCostUntouched()) subconCostRows.value = defaultSubconCostRows()
 }, { immediate: true })
 
-/** Picking a service fills its usual driver, quantity and price — all editable. */
+/** Picking a service fills its usual driver and price — both still editable. */
 function onSubconCostProduct(row: SubconCostRow, id: string) {
   const p = subconServiceProduct(id)
   if (!p) return
   row.costDriver = p.defaultCostDriver
-  if (!row.qty) row.qty = String(subconCostQty(p.defaultCostDriver))
   if (!row.amount) row.amount = String(p.defaultPrice)
   appendIfLast(subconCostRows, row.id, makeSubconCost)
 }
-
-/**
- * A new driver implies a different quantity, so the suggestion follows it. What
- * the user typed is not preserved across that change: the old number described
- * the old basis and would be wrong against the new one.
- */
-function onSubconCostDriver(row: SubconCostRow) {
-  row.qty = String(subconCostQty(row.costDriver))
-}
 /** The contract value — the charges as entered, before any gross-up. */
-/**
- * How many charges a cost line carries, read off its driver — the same rule the
- * work order detail applies, so the figure does not change on save.
- *
- *   Unit   → one charge per piece produced
- *   Batch  → one charge per production batch
- *   Amount → a lump sum, so a single charge however many pieces are made
- */
-function subconCostQty(costDriver: string): number {
-  const qty = num(producedQty.value) || SUBCON_BATCH_QTY
-  if (costDriver === 'Unit') return qty
-  if (costDriver === 'Batch') return Math.max(1, Math.round(qty / SUBCON_BATCH_QTY))
-  return 1
-}
-
 const subconContractValue = computed(() => subconCostRows.value.reduce((s, r) => s + num(r.amount), 0))
-
-/**
- * The quantities as entered, keyed by the service product the detail page reads
- * them back by. Only rows that name a product and a quantity are kept — an empty
- * row has nothing to say.
- */
-function buildCostLineQty(): Record<string, number> {
-  const out: Record<string, number> = {}
-  for (const row of subconCostRows.value) {
-    if (!row.productId || !row.qty) continue
-    out[row.productId] = num(row.qty)
-  }
-  return out
-}
 
 /**
  * Pricing at the ESTIMATED state: no purchase order exists yet, so the basis is
@@ -748,7 +700,6 @@ function saveWorkOrder() {
           subconWarehouseName: subconNeedsVendorWarehouse.value ? subconWarehouseNameOf(subconWarehouseId.value) : undefined,
           receivingWarehouseId: subconReceivingWarehouseId.value,
           receivingWarehouseName: warehouseName(subconReceivingWarehouseId.value),
-          costLineQty: buildCostLineQty(),
         }
       : undefined,
   })
@@ -1208,14 +1159,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 <!-- All fixed: the vendor name must not wrap, so the table
                      scrolls on a narrow stage rather than squeezing columns. -->
                 <col class="wo-col-svc" /><col class="wo-col-by" />
-                <col class="wo-col-driver" /><col class="wo-col-qty" /><col class="wo-col-amt" /><col class="wo-col-del" />
+                <col class="wo-col-driver" /><col class="wo-col-amt" /><col class="wo-col-del" />
               </colgroup>
               <thead>
                 <tr>
                   <th class="wo-th">{{ t('Service product') }}</th>
                   <th class="wo-th">{{ t('Charged by') }}</th>
                   <th class="wo-th">{{ t('Cost driver') }}</th>
-                  <th class="wo-th wo-th--right">{{ t('Qty') }}</th>
                   <th class="wo-th wo-th--right">{{ t('Amount') }}</th>
                   <th class="wo-th wo-th--del" />
                 </tr>
@@ -1252,14 +1202,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       label-prop="name" value-prop="id"
                       :placeholder="t('Select cost driver')"
                       is-searchable is-clearable use-portal is-full-width
-                      @update:model-value="() => onSubconCostDriver(row)"
                     />
-                  </td>
-                  <!-- Seeded from the cost driver, then editable: a vendor may
-                       charge for a different number than the order plans — a
-                       minimum batch, say — and what was agreed is what counts. -->
-                  <td class="wo-td wo-td--input wo-td--num-input">
-                    <MpInput v-if="row.productId" :id="`subcon-cost-qty-${row.id}`" v-model="row.qty" type="number" placeholder="0" is-full-width />
                   </td>
                   <td class="wo-td wo-td--input wo-td--num-input">
                     <MpInput v-if="row.productId" :id="`subcon-cost-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width />
@@ -1284,8 +1227,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   </td>
                   <td class="wo-td">{{ subconVendor.name }}</td>
                   <td class="wo-td">{{ t(SUBCON_PRICE_BASIS_SHORT[subconVendor.defaultPriceBasis]) }}</td>
-                  <!-- Derived from the order as a whole, so it has no quantity. -->
-                  <td class="wo-td wo-td--num wo-td--muted">—</td>
                   <td class="wo-td wo-td--num">{{ formatIDR(subconGrossUp) }}</td>
                   <td class="wo-td wo-td--del" />
                 </tr>
@@ -1614,7 +1555,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
 /* Subcon cost column widths — token scale, so the table reads like every other. */
 .wo-col-svc    { width: var(--mp-sizes-75, 300px); }
 .wo-col-by     { width: var(--mp-sizes-56, 224px); }
-.wo-col-qty    { width: var(--mp-sizes-28, 112px); }
 .wo-col-driver { width: var(--mp-sizes-38, 152px); }
 .wo-col-amt    { width: var(--mp-sizes-42, 168px); }
 .wo-col-del    { width: var(--mp-sizes-11, 44px);  }

@@ -3747,9 +3747,11 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Waiting for start": "Menunggu dimulai",
 
   // Partial production completion
+  "Cost per unit estimation": "Estimasi biaya per unit",
+  "Remaining": "Sisa",
+  "more than this line has left to charge": "melebihi sisa yang bisa dibebankan pada baris ini",
   "Deliver components to": "Kirim komponen ke",
   "The component purchase request is addressed here — the goods never reach your own warehouse.": "Permintaan pembelian komponen dialamatkan ke sini — barang tidak pernah masuk ke gudang Anda.",
-  "Charged once, on the first record": "Dibebankan sekali, pada pencatatan pertama",
   "This BOM has no other outputs.": "BoM ini tidak memiliki output lain.",
   "This BOM allocates no production waste.": "BoM ini tidak mengalokasikan limbah produksi.",
   "Estimated subtotal of other output prices": "Estimasi subtotal harga output lain",
@@ -3788,7 +3790,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Transfer stock": "Transfer stok",
   "Issue components": "Keluarkan komponen",
   "Receive output": "Terima hasil",
-  "Qty": "Jumlah",
 
   // Transfer origin breakdown — components split across warehouses
   "Components by origin warehouse": "Komponen per gudang asal",
