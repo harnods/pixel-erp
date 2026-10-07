@@ -206,11 +206,13 @@ function onSaved() {
     </template>
 
     <template #bulk-actions="{ deselectAll, selectedRows: sel }">
-      <button
+      <MpButton
         v-if="mutedIn(sel as Set<number>).length"
-        class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+        variant="secondary"
+        size="sm"
+        is-rounded
         @click="bulkTrackOn(sel as Set<number>, deselectAll)"
-      >{{ t('Turn on tracking') }} ({{ mutedIn(sel as Set<number>).length }})</button>
+      >{{ t('Turn on tracking') }} ({{ mutedIn(sel as Set<number>).length }})</MpButton>
       <span v-else class="rp-bulk-info">
         <MpIcon name="info" size="sm" />
         {{ t('Only products with tracking off can be turned back on. Missing lead times are fixed in Vendors or Replenishment settings.') }}

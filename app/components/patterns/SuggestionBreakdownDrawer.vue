@@ -280,7 +280,7 @@ function exportPurchase() {
                 {{ qty(row.atp.onOrder, row.unit) }}
                 <span class="rp-bd-note">
                   {{ row.atp.onOrderDocs.length
-                    ? row.atp.onOrderDocs.map(d => `${d.number} (${d.outstanding} · ${d.owner === 'purchase_order' ? t('PO') : t('WMS inbound')})`).join(' · ')
+                    ? row.atp.onOrderDocs.map(d => `${d.number}: ${d.outstanding} (${d.owner === 'purchase_order' ? t('on order') : t('in WMS inbound')})`).join(' · ')
                     : t('No open purchase orders or receipts') }}
                 </span>
               </ContentList>

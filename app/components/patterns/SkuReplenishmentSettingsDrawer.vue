@@ -253,7 +253,7 @@ function confirmMute() {
                 {{ t('This is well below the calculated reorder point, so this warehouse may stock out before it is flagged') }}
               </span>
               <span v-if="overrideAboveMax" class="rp-set-hint rp-set-hint--warning" data-devchange="replenishment-manual-min-clamped-to-max">
-                {{ tf('Above the order-up-to level ({n} {unit}), so the trigger is capped there', { n: num(maxLevel), unit: row.unit }) }}
+                {{ tf('This is above the order-up-to level ({n} {unit}), so {n} is used as the reorder point', { n: num(maxLevel), unit: row.unit }) }}
               </span>
             </MpFormControl>
 

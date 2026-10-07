@@ -5,19 +5,33 @@
  * In a plain <script> block, not <script setup>: runtime exports are not allowed
  * there. Same split as PurchaseRequestFiltersDrawer.vue.
  */
+import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
+
 export interface ReplenishmentFiltersValue {
+  /**
+   * The worklist's warehouse SCOPE (one warehouse, or all). It always holds a value, so
+   * it is not "applied or not" and is NOT counted in the "All filters (N)" pill.
+   */
+  warehouseId: string
+  /** Movement class (Fast / Slow / Non-moving), '' = any — same value as the quick filter. */
+  fsn: string
+  /** One replenishment signal, '' = any — same value as the quick filter. */
+  signal: string
   vendorIds: string[]
   categories: string[]
-  coverFrom: string
-  coverTo: string
-  signals: string[]
+  /** Days of cover: "Is greater than / between / less than" (AmountComparatorField). */
+  coverComparator: AmountComparator
+  coverValue: string
+  coverMin: string
+  coverMax: string
 }
 
 /**
- * Row-level signals a buyer triages by (US-013 AC-01 §4). The first four mirror the
- * worklist's "Signals" column — the demand read and the lead-time basis — and
- * "Stocks out before resupply" is kept as the fifth, since that risk shows as a
- * days-of-cover emphasis rather than a column badge.
+ * Row-level signals a buyer triages by (US-013 AC-01 §4) — the options of the
+ * worklist's "Signals" quick filter. The first four mirror the "Signals" column — the
+ * demand read and the lead-time basis — "Stocks out before resupply" is kept since that
+ * risk shows as a days-of-cover emphasis rather than a column badge, and "Covered by
+ * inbound" isolates the rows an open PO already fills.
  */
 export const REPLENISHMENT_SIGNALS: { id: string; name: string }[] = [
   { id: 'volatile', name: 'Volatile demand' },
@@ -25,20 +39,36 @@ export const REPLENISHMENT_SIGNALS: { id: string; name: string }[] = [
   { id: 'estimated-lead', name: 'Estimated lead time' },
   { id: 'waiting-lead', name: 'Waiting for real lead time' },
   { id: 'below-lead', name: 'Stocks out before resupply' },
+  { id: 'covered', name: 'Covered by inbound' },
   // Numbers from a recalculation older than the nightly window (US-002 EH-01).
   { id: 'stale', name: 'Stale velocity' },
 ]
 
 export function emptyReplenishmentFilters(): ReplenishmentFiltersValue {
-  return { vendorIds: [], categories: [], coverFrom: '', coverTo: '', signals: [] }
+  return { warehouseId: '', fsn: '', signal: '', vendorIds: [], categories: [], coverComparator: 'gt', coverValue: '', coverMin: '', coverMax: '' }
 }
 
 /** How many controls are actually set — drives the "All filters (N)" pill. */
 export function countReplenishmentFilters(v: ReplenishmentFiltersValue): number {
-  return (v.vendorIds.length ? 1 : 0)
+  return (v.fsn ? 1 : 0)
+    + (v.signal ? 1 : 0)
+    + (v.vendorIds.length ? 1 : 0)
     + (v.categories.length ? 1 : 0)
-    + (v.coverFrom || v.coverTo ? 1 : 0)
-    + (v.signals.length ? 1 : 0)
+    + (v.coverComparator === 'between' ? (v.coverMin || v.coverMax ? 1 : 0) : (v.coverValue ? 1 : 0))
+}
+
+/** Whether a row's days of cover satisfies the drawer's comparator (null cover never does). */
+export function coverMatches(cover: number | null, f: ReplenishmentFiltersValue): boolean {
+  const active = f.coverComparator === 'between' ? (f.coverMin !== '' || f.coverMax !== '') : f.coverValue !== ''
+  if (!active) return true
+  // A row with no cover figure cannot satisfy a numeric range — exclude it rather
+  // than silently treating "unknown" as 0 or infinity.
+  if (cover === null) return false
+  if (f.coverComparator === 'gt') return cover > Number(f.coverValue)
+  if (f.coverComparator === 'lt') return cover < Number(f.coverValue)
+  const lo = f.coverMin === '' ? -Infinity : Number(f.coverMin)
+  const hi = f.coverMax === '' ? Infinity : Number(f.coverMax)
+  return cover >= lo && cover <= hi
 }
 </script>
 
@@ -49,11 +79,14 @@ export function countReplenishmentFilters(v: ReplenishmentFiltersValue): number 
  * this Pixel3 build). Edits a local draft and only commits on Apply; × and Cancel
  * discard it. The overlay ignores clicks (rule/modal-drawer-close-explicit-only).
  *
- * Warehouse is deliberately NOT here: it is the page's scope selector, not a
- * filter, and offering it in two places invites a blended selection. Tracked-only
- * and needs-setup are likewise absent — they are the tab axis.
+ * Warehouse, Movement and Signals repeat the filter bar's three controls and edit the
+ * same values, so the drawer is a complete filter surface on its own. Warehouse stays
+ * single-choice (a scope, never a blend). Tracked-only and needs-setup are absent —
+ * they are the tab axis.
  */
-import { MpIcon, MpButton, MpInput, MpCheckbox, MpFormControl, MpFormLabel, MpInputGroup, MpInputRightAddon } from '@mekari/pixel3'
+import { MpIcon, MpButton, MpCheckbox, MpFormControl, MpFormLabel } from '@mekari/pixel3'
+import AmountComparatorField from '~/components/patterns/AmountComparatorField.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 
 const { t } = useLocale()
 
@@ -62,6 +95,9 @@ const props = defineProps<{
   modelValue: ReplenishmentFiltersValue
   vendorOptions: { id: string; name: string }[]
   categoryOptions: { id: string; name: string }[]
+  warehouseOptions: { value: string; label: string }[]
+  fsnOptions: { value: string; label: string }[]
+  signalOptions: { value: string; label: string }[]
 }>()
 
 const emit = defineEmits<{
@@ -74,14 +110,17 @@ watch(() => props.isOpen, (open) => { if (open) Object.assign(draft, props.model
 
 function close() { emit('update:isOpen', false) }
 function apply() { emit('apply', { ...draft }); close() }
-function clearAll() { Object.assign(draft, emptyReplenishmentFilters()) }
+// Reset clears every filter; the warehouse scope always holds a value, so it goes back
+// to the widest one on offer (the first option is "All warehouses" when it exists).
+function clearAll() {
+  Object.assign(draft, { ...emptyReplenishmentFilters(), warehouseId: props.warehouseOptions[0]?.value ?? draft.warehouseId })
+}
 
 function toggle(list: string[], id: string): string[] {
   return list.includes(id) ? list.filter((v) => v !== id) : [...list, id]
 }
 function toggleVendor(id: string) { draft.vendorIds = toggle(draft.vendorIds, id) }
 function toggleCategory(id: string) { draft.categories = toggle(draft.categories, id) }
-function toggleSignal(id: string) { draft.signals = toggle(draft.signals, id) }
 </script>
 
 <template>
@@ -101,6 +140,45 @@ function toggleSignal(id: string) { draft.signals = toggle(draft.signals, id) }
         <div class="rp-filters-body">
           <!-- No Keywords field: the page's search box already searches SKU, product,
                vendor and warehouse (US-013) — two keyword inputs would disagree. -->
+          <!-- Same three controls as the filter bar (warehouse scope, Movement, Signals),
+               so everything can be set from here too — they edit the same values. -->
+          <MpFormControl id="rp-filters-warehouse-fc">
+            <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
+            <ErpFilterSelect
+              id="rp-filters-warehouse"
+              :model-value="draft.warehouseId"
+              :placeholder="t('Warehouse')"
+              :options="warehouseOptions"
+              width="100%"
+              :is-clearable="false"
+              @update:model-value="(v: string) => { draft.warehouseId = v }"
+            />
+          </MpFormControl>
+
+          <MpFormControl id="rp-filters-fsn-fc">
+            <MpFormLabel>{{ t('Movement') }}</MpFormLabel>
+            <ErpFilterSelect
+              id="rp-filters-fsn"
+              :model-value="draft.fsn"
+              :placeholder="t('Movement')"
+              :options="fsnOptions"
+              width="100%"
+              @update:model-value="(v: string) => { draft.fsn = v }"
+            />
+          </MpFormControl>
+
+          <MpFormControl id="rp-filters-signal-fc">
+            <MpFormLabel>{{ t('Signals') }}</MpFormLabel>
+            <ErpFilterSelect
+              id="rp-filters-signal"
+              :model-value="draft.signal"
+              :placeholder="t('Signals')"
+              :options="signalOptions"
+              width="100%"
+              @update:model-value="(v: string) => { draft.signal = v }"
+            />
+          </MpFormControl>
+
           <MpFormControl id="rp-filters-vendor-fc">
             <MpFormLabel>{{ t('Vendor') }}</MpFormLabel>
             <div class="rp-filters-checkbox-list">
@@ -129,29 +207,17 @@ function toggleSignal(id: string) { draft.signals = toggle(draft.signals, id) }
 
           <MpFormControl id="rp-filters-cover-fc">
             <MpFormLabel>{{ t('Days of cover') }}</MpFormLabel>
-            <div class="rp-filters-range">
-              <MpInputGroup id="rp-filters-cover-from-g">
-                <MpInput id="rp-filters-cover-from" v-model="draft.coverFrom" type="number" :aria-label="t('From')" />
-                <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
-              </MpInputGroup>
-              <MpInputGroup id="rp-filters-cover-to-g">
-                <MpInput id="rp-filters-cover-to" v-model="draft.coverTo" type="number" :aria-label="t('To')" />
-                <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
-              </MpInputGroup>
-            </div>
-          </MpFormControl>
-
-          <MpFormControl id="rp-filters-signals-fc">
-            <MpFormLabel>{{ t('Signals') }}</MpFormLabel>
-            <div class="rp-filters-checkbox-list">
-              <label v-for="opt in REPLENISHMENT_SIGNALS" :key="opt.id" class="rp-filters-checkbox-item">
-                <MpCheckbox
-                  :id="`rp-filters-signal-${opt.id}`"
-                  :is-checked="draft.signals.includes(opt.id)"
-                  @change="toggleSignal(opt.id)"
-                >{{ t(opt.name) }}</MpCheckbox>
-              </label>
-            </div>
+            <AmountComparatorField
+              id="rp-filters-cover"
+              :comparator="draft.coverComparator"
+              :value="draft.coverValue"
+              :min="draft.coverMin"
+              :max="draft.coverMax"
+              @update:comparator="draft.coverComparator = $event"
+              @update:value="draft.coverValue = $event"
+              @update:min="draft.coverMin = $event"
+              @update:max="draft.coverMax = $event"
+            />
           </MpFormControl>
         </div>
 
@@ -214,10 +280,22 @@ function toggleSignal(id: string) { draft.signals = toggle(draft.signals, id) }
   display: flex; flex-direction: column; gap: var(--mp-spacing-4);
   padding: var(--mp-spacing-4);
 }
-/* Plain checklist, no surrounding box — same as BillsFiltersDrawer's .bfd-checklist. */
-.rp-filters-checkbox-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.rp-filters-checkbox-item { display: flex; align-items: center; }
-.rp-filters-range { display: flex; gap: var(--mp-spacing-2); }
+/* The selects fill the drawer's width like every other field (the wrapper is inline-flex). */
+.rp-filters-body :deep(.efs) { display: flex; width: 100%; }
+
+/* A company can have any number of vendors and categories, so each checklist is a
+   bordered panel that shows up to 10 rows and scrolls beyond that (the documented
+   10-row page size, Form.md › line items). Row height is fixed so the cap is exact. */
+.rp-filters-checkbox-list {
+  display: flex; flex-direction: column;
+  max-height: calc(10 * var(--mp-sizes-8));
+  overflow-y: auto;
+  border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-md);
+}
+.rp-filters-checkbox-item {
+  display: flex; align-items: center; flex-shrink: 0;
+  min-height: var(--mp-sizes-8); padding: 0 var(--mp-spacing-3);
+}
 
 .rp-filters-footer {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2);

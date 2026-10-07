@@ -76,12 +76,28 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['vendorItems.ts', 'replenishment.ts'],
   },
   {
-    id: 'replenishment-covered-by-inbound',
-    title: 'Replenishment: "Covered by inbound" worklist state',
+    id: 'replenishment-signals-grey',
+    title: 'Replenishment: every Signals badge is grey',
     description:
-      'An approved PO now posts In-Transit owned by the PO; receiving it hands ownership to WMS Inbound so incoming is counted once (US-028/029). A product that is below its reorder point but already fully covered by that inbound drops off "To order" and its count, and shows here instead. The card switches the table to those rows; the in-transit column and the calculation drawer break the quantity down by owner (PO vs WMS inbound). A row that still stocks out before resupply stays on To order (stockout wins).',
-    date: '2026-10-06',
-    files: ['replenishment.ts', 'ReplenishmentPage.vue', 'SuggestionBreakdownDrawer.vue'],
+      'Provisional, Volatile demand, Estimated lead time, Waiting for real lead time and Covered by inbound all use the grey (announcement) badge. Signals are context about how reliable a number is, not a status to act on, so they no longer compete with the blue / amber status badges.',
+    date: '2026-10-07',
+    files: ['ReplenishmentPage.vue'],
+  },
+  {
+    id: 'replenishment-signals-quick-filter',
+    title: 'Replenishment: Signals filter, fuller All filters drawer, days-of-cover comparator',
+    description:
+      'Signals is now a quick filter beside Movement (one signal at a time, incl. Covered by inbound). All filters now also holds Warehouse, Movement and Signals — the same three controls as the bar, editing the same values, so either place works (warehouse stays single-choice; the pill counts Movement/Signals but not the always-set warehouse). The Vendor and Category checklists sit in a bordered panel that shows 10 rows and scrolls beyond that (a company can have any number), and Days of cover uses the library comparator field (Is greater than / between / less than) instead of two loose From / To inputs.',
+    date: '2026-10-07',
+    files: ['ReplenishmentPage.vue', 'ReplenishmentFiltersDrawer.vue'],
+  },
+  {
+    id: 'replenishment-covered-by-inbound',
+    title: 'Replenishment: "Covered by inbound" card and rows',
+    description:
+      'An approved PO now posts In-Transit owned by the PO; receiving it hands ownership to WMS Inbound so incoming is counted once (US-028/029). A product that is below its reorder point but already fully covered by that inbound stays on the To order table with a suggested qty of 0 and a "Covered by inbound" signal (US-004 AC-03) — it is counted on its own card instead of To order, has no Request to purchase, and can be isolated with the Signals quick filter. The In transit column and the calculation drawer break the quantity down by owner (on order vs in WMS inbound). A row that still stocks out before resupply keeps the stockout (stockout wins).',
+    date: '2026-10-07',
+    files: ['replenishment.ts', 'ReplenishmentPage.vue', 'ReplenishmentFiltersDrawer.vue', 'SuggestionBreakdownDrawer.vue'],
   },
   {
     id: 'vendors-drawer-preferred',

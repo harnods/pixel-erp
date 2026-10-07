@@ -59,8 +59,19 @@ describe('ReplenishmentPage — the worklist renders', () => {
     const rows = wrapper.findAll('.erp-tr')
     expect(rows.length).toBeGreaterThan(0)
 
-    const expected = Math.min(25, replenishmentWorklist('all').rows.length)
+    // Covered-by-inbound rows stay on the table (US-004 AC-03), flagged, with qty 0.
+    const wl = replenishmentWorklist('all')
+    const expected = Math.min(25, wl.rows.length + wl.coveredByInbound.length)
     expect(rows.length).toBe(expected)
+  })
+
+  it('shows a Covered by inbound card with its own count, apart from To order', async () => {
+    const wrapper = await mountLoaded(ReplenishmentPage)
+    const wl = replenishmentWorklist('all')
+    expect(wl.coveredByInbound.length).toBeGreaterThan(0)
+    const covered = wrapper.findAll('.stat-card').find((c) => c.text().includes('Covered by inbound'))!
+    expect(covered.exists()).toBe(true)
+    expect(covered.text()).toContain(String(new Set(wl.coveredByInbound.map((r) => r.sku)).size))
   })
 
   it('renders real product names, not placeholders', async () => {
@@ -84,7 +95,10 @@ describe('ReplenishmentPage — the worklist renders', () => {
     const wrapper = await mountLoaded(ReplenishmentPage)
     const text = wrapper.text()
     expect(text).toContain('To order')
-    expect(text).toContain('Needs setup')
+    expect(text).toContain('Stocks out before resupply')
+    expect(text).toContain('No vendor')
+    // Needs setup is a page tab with its own count — not a stat card.
+    expect(text).not.toContain('Needs setup')
     expect(text).toContain('As of')
     // The Recalculate action lives in the title bar only — no duplicate link here.
     expect(wrapper.find('.rp-freshness-link').exists()).toBe(false)

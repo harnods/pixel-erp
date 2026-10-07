@@ -26,7 +26,8 @@ import CreatePurchaseRequestModal from '~/components/patterns/CreatePurchaseRequ
 import SkuReplenishmentSettingsDrawer from '~/components/patterns/SkuReplenishmentSettingsDrawer.vue'
 import VendorItemDrawer from '~/components/patterns/VendorItemDrawer.vue'
 import ReplenishmentFiltersDrawer, {
-  emptyReplenishmentFilters, countReplenishmentFilters, type ReplenishmentFiltersValue,
+  emptyReplenishmentFilters, countReplenishmentFilters, coverMatches, REPLENISHMENT_SIGNALS,
+  type ReplenishmentFiltersValue,
 } from '~/components/patterns/ReplenishmentFiltersDrawer.vue'
 import {
   replenishmentWorklist, recalculateReplenishment, ensureRunHistory,
@@ -184,15 +185,14 @@ function toSortable(rows: WorklistRow[]): SortableRow[] {
   }))
 }
 
-// Which worklist state the table shows. "To order" is the default; "Covered by
-// inbound" (§2.7 / D24) is the triggered-but-an-open-PO-already-fills-it set, kept
-// out of To order and its count — reachable via its stat card.
-const view = ref<'to-order' | 'covered'>('to-order')
+// "Covered by inbound" (§2.7 / D24, US-004 AC-03) rows are triggered but an open PO
+// already fills them to target. They stay on the To order table — flagged, with a
+// suggested qty of 0 — but are kept out of its count and the stat cards.
 const baseRows = computed<SortableRow[]>(() =>
-  toSortable(view.value === 'covered' ? worklist.value.coveredByInbound : worklist.value.rows),
+  toSortable([...worklist.value.rows, ...worklist.value.coveredByInbound]),
 )
 
-/** In-transit split by owner (US-028/029): approved-PO-owned vs handed to WMS Inbound. */
+/** In-transit split by owner (US-028/029): on order (approved PO) vs in WMS inbound. */
 function inTransitSplitLabel(row: WorklistRow): string {
   let po = 0
   let wms = 0
@@ -201,16 +201,26 @@ function inTransitSplitLabel(row: WorklistRow): string {
     else wms += d.outstanding
   }
   const parts: string[] = []
-  if (po) parts.push(`${t('PO')} ${num(po)}`)
-  if (wms) parts.push(`${t('Inbound')} ${num(wms)}`)
+  if (po) parts.push(`${t('On order')} ${num(po)}`)
+  if (wms) parts.push(`${t('WMS inbound')} ${num(wms)}`)
   // Only worth a sub-line when both owners contribute; a single owner is obvious.
   return po && wms ? parts.join(' · ') : ''
 }
 
 // ─── Filters ─────────────────────────────────────────────────────────────────
-const fsnFilter = ref('')
 const filtersOpen = ref(false)
-const appliedFilters = ref<ReplenishmentFiltersValue>(emptyReplenishmentFilters())
+// One source of truth for every filter: the bar's Movement / Signals selects and the
+// All filters drawer both read and write it. The warehouse is the scope singleton.
+const appliedFilters = ref<Omit<ReplenishmentFiltersValue, 'warehouseId'>>(emptyReplenishmentFilters())
+const fsnFilter = computed(() => appliedFilters.value.fsn)
+const signalFilter = computed(() => appliedFilters.value.signal)
+function setQuickFilter(key: 'fsn' | 'signal', v: string) { appliedFilters.value = { ...appliedFilters.value, [key]: v } }
+const drawerValue = computed<ReplenishmentFiltersValue>(() => ({ ...appliedFilters.value, warehouseId: warehouseId.value }))
+function applyDrawer(v: ReplenishmentFiltersValue) {
+  const { warehouseId: wh, ...rest } = v
+  appliedFilters.value = rest
+  if (wh && wh !== warehouseId.value) setWarehouse(wh)
+}
 const drawerFilterCount = computed(() => countReplenishmentFilters(appliedFilters.value))
 
 const vendorOptions = computed(() => vendors.map((v) => ({ id: v.id, name: v.name })))
@@ -234,26 +244,23 @@ function matchesDrawer(row: WorklistRow): boolean {
   if (f.vendorIds.length && (!row.vendor || !f.vendorIds.includes(row.vendor.id))) return false
   if (f.categories.length && !f.categories.includes(row.category)) return false
 
-  const from = f.coverFrom === '' ? null : Number(f.coverFrom)
-  const to = f.coverTo === '' ? null : Number(f.coverTo)
-  if (from !== null || to !== null) {
-    // A row with no cover figure cannot satisfy a numeric range — exclude it rather
-    // than silently treating "unknown" as 0 or infinity.
-    if (row.cover.coverDays === null) return false
-    if (from !== null && row.cover.coverDays < from) return false
-    if (to !== null && row.cover.coverDays > to) return false
-  }
-
-  for (const signal of f.signals) {
-    if (signal === 'volatile' && !row.flags.volatile) return false
-    if (signal === 'provisional' && !row.flags.provisional) return false
-    if (signal === 'estimated-lead' && !row.flags.leadTimeEstimated) return false
-    if (signal === 'waiting-lead' && row.leadTimeTier !== 'none') return false
-    if (signal === 'below-lead' && !row.flags.belowLeadTime) return false
-    // Velocity is only as fresh as the last run, so staleness applies to every row.
-    if (signal === 'stale' && !isStale.value) return false
-  }
+  if (!coverMatches(row.cover.coverDays, f)) return false
   return true
+}
+
+/** The Signals quick filter (US-013 AC-01 §4): one signal at a time. */
+function matchesSignal(row: WorklistRow): boolean {
+  switch (signalFilter.value) {
+    case 'volatile': return row.flags.volatile
+    case 'provisional': return row.flags.provisional
+    case 'estimated-lead': return row.flags.leadTimeEstimated
+    case 'waiting-lead': return row.leadTimeTier === 'none'
+    case 'below-lead': return row.flags.belowLeadTime
+    case 'covered': return row.flags.coveredByInbound
+    // Velocity is only as fresh as the last run, so staleness applies to every row.
+    case 'stale': return isStale.value
+    default: return true
+  }
 }
 
 /** Search covers SKU, product, vendor and warehouse name (US-013 AC-01). */
@@ -263,14 +270,17 @@ function matchesSearch(row: SortableRow, s: string): boolean {
     .some((v) => v.toLowerCase().includes(s))
 }
 
-/** One predicate for the table AND the stat cards, so they can never disagree. */
-function matchesAll(row: SortableRow, s: string): boolean {
+function matchesBase(row: SortableRow, s: string): boolean {
   if (!matchesSearch(row, s)) return false
   // The FSN quick filter is read straight from its own ref rather than through
   // useTableState's generic `status` slot — it is a class, not a status.
   if (fsnFilter.value && row.fsn.committed !== fsnFilter.value) return false
+  if (!matchesSignal(row)) return false
   return matchesDrawer(row)
 }
+
+/** One predicate for the table AND the stat cards, so they can never disagree. */
+const matchesAll = matchesBase
 
 const {
   search, currentPage, paginated, sorted, total, perPage,
@@ -278,27 +288,26 @@ const {
 } = useTableState<SortableRow>(baseRows, { filterFn: matchesAll })
 
 /**
- * Stat cards follow the warehouse scope AND every active filter (US-013 AC-01:
- * "from the filtered warehouse in the worklist index"), so the numbers above the
- * table always describe the rows in it.
+ * Stat cards follow the warehouse scope AND every active filter (US-013 AC-01: "from
+ * the filtered warehouse in the worklist index"), so the numbers above the table
+ * describe the To-order set in it. Covered-by-inbound rows are counted on their own
+ * card instead — they are triggered but not due.
  */
 const cardStats = computed(() => {
   const s = search.value.trim().toLowerCase()
-  // Always describe the TO-ORDER set, not the currently viewed table — so the cards
-  // read the same whether or not "Covered by inbound" is open.
-  const toOrder = (worklist.value.rows as SortableRow[]).filter((r) => matchesAll(r, s))
-  const covered = (worklist.value.coveredByInbound as SortableRow[]).filter((r) => matchesAll(r, s))
+  const toOrder = (worklist.value.rows as SortableRow[]).filter((r) => matchesBase(r, s))
+  const covered = (worklist.value.coveredByInbound as SortableRow[]).filter((r) => matchesBase(r, s))
   return {
+    // Covered rows are triggered but not due, so they are counted apart from To order.
+    covered: new Set(covered.map((r) => r.sku)).size,
     // Unique SKUs, not SKU-warehouse pairs — one SKU short in two warehouses is
     // still one product to order.
     toOrderSkus: new Set(toOrder.map((r) => r.sku)).size,
     stocksOut: toOrder.filter((r) => r.flags.belowLeadTime).length,
     noVendor: toOrder.filter((r) => !r.vendor).length,
-    covered: new Set(covered.map((r) => r.sku)).size,
   }
 })
 
-watch(fsnFilter, () => setPage(1))
 watch(appliedFilters, () => setPage(1))
 watch(warehouseId, () => setPage(1))
 
@@ -306,11 +315,10 @@ watch(warehouseId, () => setPage(1))
 sortKey.value = 'urgency'
 sortDir.value = 'desc'
 
-const hasActiveFilter = computed(() => !!search.value || !!fsnFilter.value || drawerFilterCount.value > 0)
+const hasActiveFilter = computed(() => !!search.value || drawerFilterCount.value > 0)
 function clearFilters() {
   // The warehouse scope is deliberately NOT cleared — one is always in force.
   search.value = ''
-  fsnFilter.value = ''
   appliedFilters.value = emptyReplenishmentFilters()
 }
 
@@ -457,7 +465,9 @@ function openVendors(sku: string) {
   vendorOpen.value = true
 }
 
-function openPoForRows(rows: WorklistRow[], deselect?: () => void) {
+function openPoForRows(allRows: WorklistRow[], deselect?: () => void) {
+  // Covered-by-inbound rows have a suggested qty of 0 — nothing to request.
+  const rows = allRows.filter((r) => !r.flags.coveredByInbound)
   // Both guards are unreachable from the UI (the bulk bar only offers the action
   // for a non-empty, single-warehouse selection) — they stay as silent no-ops, not
   // error toasts (rule/toast-success-only).
@@ -482,6 +492,11 @@ function selectedWorklistRows(sel: Set<number>): WorklistRow[] {
  */
 function selectionSpansWarehouses(sel: Set<number>): boolean {
   return new Set(selectedWorklistRows(sel).map((r) => r.warehouseId)).size > 1
+}
+
+/** Whether the selection holds anything that can still be requested (not covered by inbound). */
+function selectionHasOrderable(sel: Set<number>): boolean {
+  return selectedWorklistRows(sel).some((r) => !r.flags.coveredByInbound)
 }
 
 function bulkCreatePr(sel: Set<number>, deselectAll: () => void) {
@@ -613,49 +628,23 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
           <MpBannerDescription>{{ staleMessage }}</MpBannerDescription>
         </MpBanner>
         <div class="stats-section">
-          <!-- To order ↔ Covered by inbound are the two worklist states; the card is
-               the switch between them (§2.7 / D24). -->
-          <div
-            class="stat-card stat-card--bordered stat-card--toggle"
-            :class="{ 'stat-card--active': view === 'to-order' }"
-            role="button"
-            tabindex="0"
-            :aria-pressed="view === 'to-order'"
-            @click="view = 'to-order'"
-            @keydown.enter.prevent="view = 'to-order'"
-            @keydown.space.prevent="view = 'to-order'"
-          >
+          <div class="stat-card stat-card--bordered">
             <div class="stat-title">{{ t('To order') }}</div>
             <div class="stat-period">{{ t('At or below reorder point') }}</div>
             <div class="stat-amount stat-amount--warning">{{ cardStats.toOrderSkus }}</div>
             <span class="stat-asof">{{ t('of') }} {{ worklist.totals.skus }} {{ t('stocked products') }}</span>
           </div>
-          <div
-            class="stat-card stat-card--bordered stat-card--toggle"
-            :class="{ 'stat-card--active': view === 'covered' }"
-            role="button"
-            tabindex="0"
-            :aria-pressed="view === 'covered'"
-            data-devchange="replenishment-covered-by-inbound"
-            @click="view = 'covered'"
-            @keydown.enter.prevent="view = 'covered'"
-            @keydown.space.prevent="view = 'covered'"
-          >
+          <div class="stat-card stat-card--bordered" data-devchange="replenishment-covered-by-inbound">
             <div class="stat-title">{{ t('Covered by inbound') }}</div>
-            <div class="stat-period">{{ t('An open PO already covers these') }}</div>
+            <div class="stat-period">{{ t('Open purchase orders cover the shortfall') }}</div>
             <div class="stat-amount">{{ cardStats.covered }}</div>
-            <span class="stat-asof">{{ t('excluded from To order') }}</span>
+            <span class="stat-asof">{{ t('Not counted in To order') }}</span>
           </div>
           <div class="stat-card stat-card--bordered">
             <div class="stat-title">{{ t('Stocks out before resupply') }}</div>
             <div class="stat-period">{{ t('Cover below lead time + safety days') }}</div>
             <div class="stat-amount stat-amount--danger">{{ cardStats.stocksOut }}</div>
             <span class="stat-asof">{{ t('on the worklist') }}</span>
-          </div>
-          <div class="stat-card stat-card--bordered">
-            <div class="stat-title">{{ t('Needs setup') }}</div>
-            <div class="stat-period">{{ t('Missing lead time, or tracking turned off') }}</div>
-            <div class="stat-amount">{{ worklist.totals.needsSetup + worklist.notTracked.length }}</div>
           </div>
           <div class="stat-card">
             <div class="stat-title">{{ t('No vendor') }}</div>
@@ -701,7 +690,17 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
           :placeholder="t('Movement')"
           :options="FSN_OPTIONS.map((o) => ({ value: o.id, label: t(o.name) }))"
           width="170px"
-          @update:model-value="(v: string) => { fsnFilter = v }"
+          @update:model-value="(v: string) => setQuickFilter('fsn', v)"
+        />
+
+        <ErpFilterSelect
+          id="rp-signal-select"
+          :model-value="signalFilter"
+          :placeholder="t('Signals')"
+          :options="REPLENISHMENT_SIGNALS.map((o) => ({ value: o.id, label: t(o.name) }))"
+          width="170px"
+          data-devchange="replenishment-signals-quick-filter"
+          @update:model-value="(v: string) => setQuickFilter('signal', v)"
         />
 
         <MpButton variant="secondary" class="filter-all-btn" left-icon="filter" @click="filtersOpen = true">
@@ -745,21 +744,25 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
       <!-- A PO has one ship-to. Requesting across warehouses would fan out into many
            POs, so it is only offered for a single-warehouse selection. Covered-by-
            inbound rows have nothing to order (suggested qty 0), so no request there. -->
-      <template v-if="view !== 'covered'">
+      <template v-if="selectionHasOrderable(selectedRows as Set<number>)">
         <span v-if="selectionSpansWarehouses(selectedRows as Set<number>)" class="rp-bulk-info">
           <MpIcon name="info" size="sm" />
           {{ t('Select replenishment from the same warehouse to create a purchase request.') }}
         </span>
-        <button
+        <MpButton
           v-else
-          class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+          variant="secondary"
+          size="sm"
+          is-rounded
           @click="bulkCreatePr(selectedRows as Set<number>, deselectAll)"
-        >{{ t('Request to purchase') }}</button>
+        >{{ t('Request to purchase') }}</MpButton>
       </template>
-      <button
-        class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+      <MpButton
+        variant="secondary"
+        size="sm"
+        is-rounded
         @click="askBulkMute(selectedRows as Set<number>, deselectAll)"
-      >{{ t('Turn off tracking') }}</button>
+      >{{ t('Turn off tracking') }}</MpButton>
     </template>
 
     <!-- ── Product ── -->
@@ -788,24 +791,25 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
          separate from FSN's movement class. -->
     <template #cell-signals="{ row }">
       <div
+        data-devchange="replenishment-signals-grey"
         v-if="(row as any).flags.provisional || (row as any).flags.volatile
           || (row as any).flags.leadTimeEstimated || (row as any).leadTimeTier === 'none'
           || (row as any).flags.coveredByInbound"
         class="rp-badges"
       >
-        <MpBadge v-if="(row as any).flags.coveredByInbound" for="tableStatus" type="announcement">
+        <MpBadge v-if="(row as any).flags.coveredByInbound" for="tableStatus" type="announcement" data-devchange="replenishment-covered-by-inbound">
           {{ t('Covered by inbound') }}
         </MpBadge>
-        <MpBadge v-if="(row as any).flags.provisional" for="tableStatus" type="information">
+        <MpBadge v-if="(row as any).flags.provisional" for="tableStatus" type="announcement">
           {{ t('Provisional') }}
         </MpBadge>
-        <MpBadge v-if="(row as any).flags.volatile" for="tableStatus" type="information">
+        <MpBadge v-if="(row as any).flags.volatile" for="tableStatus" type="announcement">
           {{ t('Volatile demand') }}
         </MpBadge>
-        <MpBadge v-if="(row as any).flags.leadTimeEstimated" for="tableStatus" type="information">
+        <MpBadge v-if="(row as any).flags.leadTimeEstimated" for="tableStatus" type="announcement">
           {{ t('Estimated lead time') }}
         </MpBadge>
-        <MpBadge v-if="(row as any).leadTimeTier === 'none'" for="tableStatus" type="warning">
+        <MpBadge v-if="(row as any).leadTimeTier === 'none'" for="tableStatus" type="announcement">
           {{ t('Waiting for real lead time') }}
         </MpBadge>
       </div>
@@ -964,16 +968,12 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
       <div class="empty-full">
         <img src="/illustrations/empty-folder.png" alt="" class="empty-illustration" width="288" height="240" />
         <p class="empty-full-title">
-          {{ !anyWarehouseEnabled ? t('Replenishment not set up')
-            : view === 'covered' ? t('Nothing covered by inbound')
-            : t('No products to order') }}
+          {{ !anyWarehouseEnabled ? t('Replenishment not set up') : t('No products to order') }}
         </p>
         <p class="empty-full-desc">
           {{ !anyWarehouseEnabled
             ? t('Turn on the replenishment worklist in Configure warehouse to see which products to reorder.')
-            : view === 'covered'
-              ? t('No triggered product is fully covered by an open purchase order right now.')
-              : t('Every tracked product is above its reorder point.') }}
+            : t('Every tracked product is above its reorder point.') }}
         </p>
         <!-- rule/empty-state-structure: every empty state carries a secondary button.
              "Not set up" goes to where the switch lives: straight to Configure warehouse
@@ -1004,10 +1004,13 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
   <!-- ── Overlays ── -->
   <ReplenishmentFiltersDrawer
     v-model:is-open="filtersOpen"
-    :model-value="appliedFilters"
+    :model-value="drawerValue"
     :vendor-options="vendorOptions"
     :category-options="categoryOptions"
-    @apply="(v) => { appliedFilters = v }"
+    :warehouse-options="warehouseSelectOptions"
+    :fsn-options="FSN_OPTIONS.map((o) => ({ value: o.id, label: t(o.name) }))"
+    :signal-options="REPLENISHMENT_SIGNALS.map((o) => ({ value: o.id, label: t(o.name) }))"
+    @apply="applyDrawer"
   />
 
   <SuggestionBreakdownDrawer
@@ -1069,11 +1072,8 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
   padding-right: var(--mp-spacing-6); align-self: stretch;
 }
 .stat-card--bordered { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
-/* Worklist-state switch cards (To order / Covered by inbound). */
-.stat-card--toggle { cursor: pointer; border-radius: var(--mp-radii-md, 8px); }
-.stat-card--toggle:hover { background: var(--mp-background-neutral-subtle); }
-.stat-card--toggle:focus-visible { outline: 2px solid var(--mp-border-focus, #166582); outline-offset: 2px; }
-.stat-card--active { box-shadow: inset 0 -2px 0 0 var(--mp-background-brand, #04846c); }
+.stat-title { color: var(--mp-text-link); }
+.stat-card--active .stat-title { color: var(--mp-text-link); font-weight: var(--mp-font-weights-semi-bold); }
 .stat-title {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   line-height: var(--mp-line-heights-md); white-space: nowrap;
