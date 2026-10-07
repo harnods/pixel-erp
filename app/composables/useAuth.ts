@@ -28,9 +28,21 @@ export function useAuth() {
       const res = await $fetch<{ gateEnabled: boolean; user: AuthUser | null }>('/api/auth/me')
       user.value = res.user
       status.value = 'authed' // gate off → open; gate on + valid session → authed
-    } catch {
+    } catch (e: any) {
+      // 401 is the ONLY answer that means "not signed in" — see
+      // server/api/auth/me.get.ts. Anything else means the probe did not reach a
+      // gate at all: no server behind this build, an offline moment, a 404. The
+      // gate is off unless configured, so those must not fake a rejection —
+      // doing so shows a login card the deployment cannot even satisfy, and on a
+      // static build it hides the whole app behind a sign-in that will never work.
+      const code = e?.statusCode ?? e?.response?.status
+      if (code === 401) {
+        user.value = null
+        status.value = 'anonymous'
+        return
+      }
       user.value = null
-      status.value = 'anonymous'
+      status.value = 'authed'
     }
   }
 
