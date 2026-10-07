@@ -374,43 +374,133 @@ export function createPurchaseRequests(
 ): PrResult {
   const plan = planPurchaseRequests(rows, overrides, vendorChoices)
   const created: PrResult['created'] = []
-
   const skipped = [...plan.skipped]
   for (const planned of plan.groups) {
-    // Defence in depth: a 0-qty line is never written to a request (the modal
-    // blocks confirming one, but the data layer must not rely on that).
-    const lines = planned.lines.filter((l) => l.finalQty > 0)
-    for (const l of planned.lines) {
-      if (l.finalQty <= 0) {
-        skipped.push({
-          sku: l.sku, productName: l.productName, warehouseId: l.warehouseId,
-          warehouseName: planned.warehouseName, reason: 'zero-qty',
-        })
-      }
-    }
-    if (!lines.length) continue
-    // US-019 VR-04: requesting from a vendor that does not list this SKU creates the
-    // vendor–SKU link, with no MOQ / multiplier yet and the category lead time as
-    // its term (never a 0-day lead time feeding the next recalculation).
-    for (const l of lines) {
-      if (!l.newVendorLink || !l.vendorId) continue
-      upsertVendorItem({
-        sku: l.sku, vendorId: l.vendorId, moq: 0, packSize: 0,
-        leadTimeDays: l.context.leadTimeDays, isPreferred: false,
+    const c = commitPlannedGroup(planned, createdBy, skipped)
+    if (c) created.push(c)
+  }
+  return { created, skipped }
+}
+
+/**
+ * Commit ONE planned vendor group as one request. Returns what was created, or null
+ * when every line was 0-qty. 0-qty lines are pushed onto `skipped`.
+ */
+export function commitPlannedGroup(
+  planned: PrGroup,
+  createdBy: string,
+  skipped: PrSkippedLine[],
+): PrResult['created'][number] | null {
+  // Defence in depth: a 0-qty line is never written to a request (the modal
+  // blocks confirming one, but the data layer must not rely on that).
+  const lines = planned.lines.filter((l) => l.finalQty > 0)
+  for (const l of planned.lines) {
+    if (l.finalQty <= 0) {
+      skipped.push({
+        sku: l.sku, productName: l.productName, warehouseId: l.warehouseId,
+        warehouseName: planned.warehouseName, reason: 'zero-qty',
       })
     }
-    const group = { ...planned, lines }
-    const pr = createPurchaseRequestFromGroup(group, createdBy)
-    created.push({
-      id: pr.id,
-      number: pr.number,
-      vendorId: group.vendorId,
-      vendorName: group.vendorName,
-      warehouseId: group.warehouseId,
-      lineCount: group.lines.length,
-      requiredDate: pr.requiredDate,
+  }
+  if (!lines.length) return null
+  // US-019 VR-04: requesting from a vendor that does not list this SKU creates the
+  // vendor–SKU link, with no MOQ / multiplier yet and the category lead time as
+  // its term (never a 0-day lead time feeding the next recalculation).
+  for (const l of lines) {
+    if (!l.newVendorLink || !l.vendorId) continue
+    upsertVendorItem({
+      sku: l.sku, vendorId: l.vendorId, moq: 0, packSize: 0,
+      leadTimeDays: l.context.leadTimeDays, isPreferred: false,
     })
   }
+  const group = { ...planned, lines }
+  const pr = createPurchaseRequestFromGroup(group, createdBy)
+  return {
+    id: pr.id,
+    number: pr.number,
+    vendorId: group.vendorId,
+    vendorName: group.vendorName,
+    warehouseId: group.warehouseId,
+    lineCount: group.lines.length,
+    requiredDate: pr.requiredDate,
+  }
+}
 
-  return { created, skipped }
+// ── Large selections run in the background (US-018 AC-03, US-015 AC-02) ─────────
+
+/**
+ * From this many lines the worklist stops creating requests in one blocking step and
+ * runs them as a background job with progress. The production figure is for
+ * engineering to set (the PRD's example is 1,000 lines); this one is at demo scale so
+ * the busiest demo warehouse (14 due rows) can reach it.
+ */
+export const BULK_ASYNC_MIN_LINES = 10
+
+export interface PrFailedGroup {
+  vendorName: string
+  warehouseName: string
+  lineCount: number
+  error: string
+  group: PrGroup
+}
+
+export interface BatchedPrResult extends PrResult {
+  /** Groups that could not be created — kept whole so they can be retried (US-018 EH-01). */
+  failed: PrFailedGroup[]
+}
+
+export interface BatchOptions {
+  createdBy?: string
+  /** Called after every group with how many lines have been handled so far. */
+  onProgress?: (done: number, total: number) => void
+  /** Test seam: commit one group (defaults to the real thing). */
+  commit?: (g: PrGroup, createdBy: string, skipped: PrSkippedLine[]) => PrResult['created'][number] | null
+  /** Pause between groups, so progress is visible and the page stays responsive. */
+  pauseMs?: number
+}
+
+/**
+ * Create the requests for already-planned groups, one group at a time, reporting
+ * progress and keeping going past a failure: a group that throws is recorded whole in
+ * `failed` and the rest are still created (partial commit, "X created, Y failed — retry
+ * failed"). Run again with just `failed[i].group` to retry them.
+ */
+export async function createPurchaseRequestsFromGroups(
+  groups: PrGroup[],
+  opts: BatchOptions = {},
+): Promise<BatchedPrResult> {
+  const { createdBy = 'You', onProgress, commit = commitPlannedGroup, pauseMs = 120 } = opts
+  const created: PrResult['created'] = []
+  const skipped: PrSkippedLine[] = []
+  const failed: PrFailedGroup[] = []
+  const total = groups.reduce((n, g) => n + g.lines.length, 0)
+  let done = 0
+  for (const g of groups) {
+    try {
+      const c = commit(g, createdBy, skipped)
+      if (c) created.push(c)
+    } catch (e) {
+      failed.push({
+        vendorName: g.vendorName, warehouseName: g.warehouseName, lineCount: g.lines.length,
+        error: e instanceof Error ? e.message : 'Unknown error', group: g,
+      })
+    }
+    done += g.lines.length
+    onProgress?.(done, total)
+    if (pauseMs > 0) await new Promise((r) => setTimeout(r, pauseMs))
+  }
+  return { created, skipped, failed }
+}
+
+/** Plan, then run as a background job. */
+export function createPurchaseRequestsBatched(
+  rows: WorklistRow[],
+  overrides: Record<string, number> = {},
+  vendorChoices: Record<string, string | null> = {},
+  opts: BatchOptions = {},
+): Promise<BatchedPrResult> {
+  const plan = planPurchaseRequests(rows, overrides, vendorChoices)
+  return createPurchaseRequestsFromGroups(plan.groups, opts).then((r) => ({
+    ...r, skipped: [...plan.skipped, ...r.skipped],
+  }))
 }

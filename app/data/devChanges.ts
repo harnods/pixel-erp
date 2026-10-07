@@ -76,6 +76,14 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['vendorItems.ts', 'replenishment.ts'],
   },
   {
+    id: 'replenishment-bulk-pr-background',
+    title: 'Replenishment: large Request to purchase runs in the background',
+    description:
+      'Selecting 10 or more worklist lines and confirming Request to purchase no longer blocks on one step (PRD US-018 AC-03 / EH-01). The requests are created vendor group by vendor group while a modal shows progress ("12 of 25 lines"); you can close it and a toast reports the end. When done it says how many were created and lists any that failed with a Retry failed button; View purchase requests opens the list. The 10-line threshold is demo scale — production figure TBD (the PRD example is 1,000).',
+    date: '2026-10-07',
+    files: ['BulkPrProgressModal.vue', 'ReplenishmentPage.vue', 'replenishmentPurchaseRequest.ts'],
+  },
+  {
     id: 'replenishment-settings-import',
     title: 'Replenishment: bulk import of per-warehouse settings',
     description:

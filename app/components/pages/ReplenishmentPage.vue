@@ -23,6 +23,7 @@ import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import SuggestionBreakdownDrawer from '~/components/patterns/SuggestionBreakdownDrawer.vue'
 import CreatePurchaseRequestModal from '~/components/patterns/CreatePurchaseRequestModal.vue'
+import BulkPrProgressModal from '~/components/patterns/BulkPrProgressModal.vue'
 import SkuReplenishmentSettingsDrawer from '~/components/patterns/SkuReplenishmentSettingsDrawer.vue'
 import VendorItemDrawer from '~/components/patterns/VendorItemDrawer.vue'
 import ReplenishmentFiltersDrawer, {
@@ -35,7 +36,8 @@ import {
 } from '~/data/replenishment'
 import { lastRun, isRunStale } from '~/data/replenishmentRuns'
 import { setTracked } from '~/data/replenishmentSettings'
-import { createPurchaseRequests } from '~/data/replenishmentPurchaseRequest'
+import { createPurchaseRequests, planPurchaseRequests, createPurchaseRequestsFromGroups, BULK_ASYNC_MIN_LINES,
+  type BatchedPrResult } from '~/data/replenishmentPurchaseRequest'
 import { REPL_ASOF_ISO } from '~/data/replenishmentConfig'
 import { readStore, writeStore } from '~/data/replenishmentStore'
 import { downloadCsv, splitCsv, type CsvRow } from '~/utils/csv'
@@ -504,10 +506,65 @@ function bulkCreatePr(sel: Set<number>, deselectAll: () => void) {
   openPoForRows(selectedWorklistRows(sel), deselectAll)
 }
 
+// ─── Large selections run as a background job (US-018 AC-03) ───────────────────
+const bulkOpen = ref(false)
+const bulkRunning = ref(false)
+const bulkDone = ref(0)
+const bulkTotal = ref(0)
+const bulkResult = ref<BatchedPrResult | null>(null)
+/** The user closed the progress window before the job finished. */
+const bulkDismissed = ref(false)
+watch(bulkOpen, (open) => { if (!open && bulkRunning.value) bulkDismissed.value = true })
+
+/** Run planned groups in the background; merge into what earlier attempts already created. */
+async function runBulk(groups: Parameters<typeof createPurchaseRequestsFromGroups>[0], skipped: BatchedPrResult['skipped'] = []) {
+  bulkRunning.value = true
+  bulkDone.value = 0
+  bulkTotal.value = groups.reduce((n, g) => n + g.lines.length, 0)
+  const prev = bulkResult.value
+  const r = await createPurchaseRequestsFromGroups(groups, {
+    onProgress: (done, total) => { bulkDone.value = done; bulkTotal.value = total },
+  })
+  bulkResult.value = {
+    created: [...(prev?.created ?? []), ...r.created],
+    skipped: [...(prev?.skipped ?? []), ...skipped, ...r.skipped],
+    failed: r.failed,
+  }
+  bulkRunning.value = false
+  invalidateReplenishmentCaches()
+  recalcTick.value++
+  // Closed while it ran: say how it ended.
+  if (bulkDismissed.value) {
+    toast.notify({
+      variant: 'success',
+      title: tf('{n} purchase requests created', { n: bulkResult.value.created.length }),
+      maxWidth: 'max-content',
+    })
+  }
+}
+function startBulk(payload: { overrides: Record<string, number>; vendorChoices: Record<string, string | null> }) {
+  const plan = planPurchaseRequests(poRows.value, payload.overrides, payload.vendorChoices)
+  poOpen.value = false
+  clearSelection?.()
+  clearSelection = null
+  bulkResult.value = null
+  bulkDismissed.value = false
+  // Start the job now; show its window once the request modal has finished closing, so
+  // two modals are never open at once.
+  void runBulk(plan.groups, plan.skipped)
+  setTimeout(() => { if (!bulkDismissed.value) bulkOpen.value = true }, 350)
+}
+function retryBulk() {
+  const groups = (bulkResult.value?.failed ?? []).map((f) => f.group)
+  if (groups.length) void runBulk(groups)
+}
+
 function confirmPr(payload: {
   overrides: Record<string, number>
   vendorChoices: Record<string, string | null>
 }) {
+  // A big selection is created in the background with progress (US-018 AC-03).
+  if (poRows.value.length >= BULK_ASYNC_MIN_LINES) { startBulk(payload); return }
   // Nothing is closed or cleared until the requests exist: on failure the modal
   // stays open with every edit intact and an inline error (US-017 EH-01,
   // rule/form-errors-inline — never an error toast over a closed form).
@@ -1030,6 +1087,17 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
     :submit-error="prError"
     @confirm="confirmPr"
     @assign-vendor="(sku) => { poOpen = false; openVendors(sku) }"
+  />
+
+  <BulkPrProgressModal
+    v-model:is-open="bulkOpen"
+    :running="bulkRunning"
+    :done="bulkDone"
+    :total="bulkTotal"
+    :result="bulkResult"
+    data-devchange="replenishment-bulk-pr-background"
+    @retry="retryBulk"
+    @view="bulkOpen = false; router.push('/purchase-requests')"
   />
 
   <SkuReplenishmentSettingsDrawer
