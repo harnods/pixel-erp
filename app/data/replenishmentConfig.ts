@@ -202,3 +202,46 @@ export function leadTimeOutlierCapForCategory(category: string, cfg: Replenishme
 export function leadTimeForCategory(category: string, cfg: ReplenishmentConfig = getReplenishmentConfig()): number | null {
   return cfg.leadTimeByCategory[category] ?? null
 }
+
+// ── What a category means for a product's replenishment ──────────────────────
+
+/** The four category-level defaults a product inherits (PRD §2.5, US-008 AC-01). */
+export interface CategoryReplenishmentDefaults {
+  /** Tier 2/3 lead time; null = the "Other categories" floor is "Not set". */
+  leadTimeDays: number | null
+  safetyDays: number
+  coverageDays: number
+  ignoreGapsOverDays: number
+}
+
+export function replenishmentDefaultsForCategory(
+  category: string,
+  cfg: ReplenishmentConfig = getReplenishmentConfig(),
+): CategoryReplenishmentDefaults {
+  return {
+    leadTimeDays: leadTimeForCategory(category, cfg) ?? cfg.fallbackLeadTimeDays,
+    safetyDays: safetyDaysForCategory(category, cfg),
+    coverageDays: coverageDaysForCategory(category, cfg),
+    ignoreGapsOverDays: leadTimeOutlierCapForCategory(category, cfg),
+  }
+}
+
+export type CategoryDefaultField = keyof CategoryReplenishmentDefaults
+
+/**
+ * Which inherited defaults change when a product moves from one category to another
+ * (PRD §2.5: "the product form warns on save when the first category change alters
+ * the effective defaults"). Empty when nothing a product inherits would differ.
+ */
+export function categoryDefaultChanges(
+  from: string,
+  to: string,
+  cfg: ReplenishmentConfig = getReplenishmentConfig(),
+): { field: CategoryDefaultField; from: number | null; to: number | null }[] {
+  if (from === to) return []
+  const a = replenishmentDefaultsForCategory(from, cfg)
+  const b = replenishmentDefaultsForCategory(to, cfg)
+  return (Object.keys(a) as CategoryDefaultField[])
+    .filter((k) => a[k] !== b[k])
+    .map((k) => ({ field: k, from: a[k], to: b[k] }))
+}

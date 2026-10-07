@@ -7,7 +7,7 @@
  *  4. An inactive preferred vendor is detected per SKU × warehouse (US-001 EH-01 / D23).
  */
 import { describe, it, expect } from 'vitest'
-import { REPL_DEFAULTS } from '~/data/replenishmentConfig'
+import { REPL_DEFAULTS, categoryDefaultChanges, replenishmentDefaultsForCategory } from '~/data/replenishmentConfig'
 import { effectiveSettings } from '~/data/replenishmentSettings'
 import { buildRow, replenishmentWorklist, invalidateReplenishmentCaches } from '~/data/replenishment'
 import {
@@ -78,5 +78,28 @@ describe('item 4 — inactive preferred vendor is per warehouse', () => {
       clearPreferredVendorForWarehouse(sku, whB)
       invalidateReplenishmentCaches()
     }
+  })
+})
+
+describe('category change — which inherited defaults move (PRD §2.5)', () => {
+  it('reports nothing for the same category', () => {
+    expect(categoryDefaultChanges('Roasted Beans', 'Roasted Beans')).toEqual([])
+  })
+
+  it('lists exactly the defaults that differ, with before and after', () => {
+    const a = replenishmentDefaultsForCategory('Roasted Beans')
+    const b = replenishmentDefaultsForCategory('Espresso Machine')
+    const changes = categoryDefaultChanges('Roasted Beans', 'Espresso Machine')
+    expect(changes.length).toBeGreaterThan(0)
+    for (const c of changes) {
+      expect(c.from).toBe(a[c.field])
+      expect(c.to).toBe(b[c.field])
+      expect(c.from).not.toBe(c.to)
+    }
+  })
+
+  it('a category that falls to the Other categories floor shows Not set when the floor is Not set', () => {
+    const cfg = { ...REPL_DEFAULTS, fallbackLeadTimeDays: null }
+    expect(replenishmentDefaultsForCategory('Grinder', cfg).leadTimeDays).toBeNull()
   })
 })

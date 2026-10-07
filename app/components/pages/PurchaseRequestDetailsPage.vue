@@ -17,6 +17,7 @@ import { leadTimeTierLabel } from '~/data/leadTimeHistory'
 const props = defineProps<{ orderId: string }>()
 
 const { t, tf } = useLocale()
+const { canCreatePurchaseOrders } = usePurchasingAccess()
 
 // Title-bar icon actions (Task + Comment) — a purchase request has an approval flow.
 const hasApproval = true
@@ -397,7 +398,7 @@ function goBack() { router.push('/purchase-requests') }
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
               <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Create purchase order') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="canCreatePurchaseOrders">{{ t('Create purchase order') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Void') }}</MpPopoverListItem>
               <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>

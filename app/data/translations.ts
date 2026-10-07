@@ -3779,6 +3779,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'The vendor this warehouse orders from. It can differ by warehouse, and its lead time sets the reorder point.': 'Vendor tempat gudang ini memesan. Vendor bisa berbeda per gudang, dan waktu tunggunya menentukan titik pemesanan ulang.',
   'Varies by warehouse': 'Beragam per gudang',
   'Preferred warehouses': 'Gudang vendor utama',
+  'Purchasing access': 'Akses pembelian',
+  'Changing the category changes this product\'s replenishment defaults ({changes}). A value set on the product or a warehouse keeps applying.': 'Mengubah kategori mengubah standar pengisian ulang produk ini ({changes}). Nilai yang diatur pada produk atau gudang tetap berlaku.',
   'No purchase orders for this vendor and product yet, so lead time cannot be measured. Add a preferred vendor, make a purchase, or set a default in {link}': 'Belum ada pesanan pembelian untuk vendor dan produk ini, jadi waktu tunggu belum bisa diukur. Tambahkan vendor utama, lakukan pembelian, atau atur standar di {link}',
   'Verify inbound arrival': 'Pastikan stok masuk tiba',
   'Vendor terms are read-only here. Set each warehouse\'s preferred vendor on the product\'s {tab}': 'Syarat vendor hanya bisa dilihat di sini. Atur vendor utama tiap gudang di {tab} pada produk ini',

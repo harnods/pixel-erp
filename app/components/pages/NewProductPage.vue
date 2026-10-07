@@ -7,14 +7,17 @@
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpInput, MpTextarea, MpRadio, MpCheckbox, MpAutocomplete, MpButton, toast,
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpTextlink, css,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpTextlink,
+  MpBanner, MpBannerIcon, MpBannerDescription, css,
 } from '@mekari/pixel3'
 import BarcodeSettingsButton from '~/components/patterns/BarcodeSettingsButton.vue'
 import { PRODUCTS, type Product } from '~/data/inventory'
 import { customProducts, addCustomProduct, updateCustomProduct } from '~/data/customProducts'
 import { GOODS_CLASSIFICATION_CODES, SERVICE_CLASSIFICATION_CODES } from '~/data/taxClassificationCodes'
 import { productActionRollup } from '~/data/replenishment'
+import { categoryDefaultChanges, type CategoryDefaultField } from '~/data/replenishmentConfig'
 import { getProductTaxInfo, setProductTaxInfo } from '~/data/productsIndex'
+import { productCategories } from '~/data/productCategories'
 
 const { t, tf } = useLocale()
 
@@ -39,6 +42,8 @@ const name = ref('')
 const sku = ref('')
 const barcode = ref('')
 const category = ref('')
+/** The category the product had when the form opened (edit mode) — what a change is measured against. */
+const savedCategory = ref('')
 const unit = ref('Pcs')
 const description = ref('')
 const photoDataUrl = ref('')
@@ -95,6 +100,7 @@ onMounted(async () => {
   name.value = p.name
   sku.value = p.sku
   category.value = p.category
+  savedCategory.value = p.category
   unit.value = p.unit
   description.value = p.desc
   photoDataUrl.value = p.img
@@ -132,6 +138,39 @@ const rollup = computed(() => {
   const s = sku.value.trim()
   return s ? productActionRollup(s) : null
 })
+
+/**
+ * Replenishment resolves lead time, safety days, order coverage and the ignore-gaps
+ * cap from the product's category (PRD §2.5), so moving an existing product to another
+ * category can change its reorder point and worklist position. Say so, with the actual
+ * before → after, before the change is saved. Empty for a new product or when nothing
+ * the product inherits would differ.
+ */
+const FIELD_LABELS: Record<CategoryDefaultField, string> = {
+  leadTimeDays: 'Lead time',
+  safetyDays: 'Safety days',
+  coverageDays: 'Order coverage',
+  ignoreGapsOverDays: 'Ignore gaps over',
+}
+const categoryChangeNotice = computed(() => {
+  if (!isEdit.value || !savedCategory.value || !category.value) return ''
+  const changes = categoryDefaultChanges(savedCategory.value, category.value)
+  if (!changes.length) return ''
+  const part = (c: (typeof changes)[number]) => {
+    const v = (n: number | null) => (n === null ? t('Not set') : tf('{n} days', { n }))
+    return `${t(FIELD_LABELS[c.field]).toLowerCase()}: ${v(c.from)} → ${v(c.to)}`
+  }
+  return tf('Changing the category changes this product\'s replenishment defaults ({changes}). A value set on the product or a warehouse keeps applying.', {
+    changes: changes.map(part).join('; '),
+  })
+})
+
+/**
+ * The category master. This computed was dropped by mistake when the product-level
+ * safety-days field was removed, which left the Category field with no options (so an
+ * existing product opened with it blank and a new one could not pick one).
+ */
+const categoryOptions = computed(() => productCategories.map((c) => ({ label: c, value: c })))
 
 /** Whether the per-warehouse breakdown under "Due for reorder" is expanded. */
 const dueDetailsOpen = ref(false)
@@ -574,6 +613,18 @@ onUnmounted(() => { footerObserver?.disconnect() })
                   @update:model-value="categoryError = ''"
                 />
                 <MpFormErrorMessage>{{ categoryError }}</MpFormErrorMessage>
+                <!-- Moving an existing product to another category can move its reorder point. -->
+                <MpBanner
+                  v-if="categoryChangeNotice"
+                  id="np-category-change-banner"
+                  variant="warning"
+                  align-items="center"
+                  class="np-category-banner"
+                  data-devchange="product-category-change-warning"
+                >
+                  <MpBannerIcon id="np-category-change-banner-icon" />
+                  <MpBannerDescription>{{ categoryChangeNotice }}</MpBannerDescription>
+                </MpBanner>
               </MpFormControl>
 
               <!-- Base unit -->
@@ -1026,6 +1077,7 @@ onUnmounted(() => { footerObserver?.disconnect() })
 .np-field-details-links .np-field-link { margin-left: 0; }
 
 .np-field-270 { width: 270px; flex-shrink: 0; }
+.np-category-banner { margin-top: var(--mp-spacing-2); }
 
 /* Radio group */
 .np-radio-group { display: flex; gap: var(--mp-spacing-6); align-items: center; }

@@ -189,6 +189,21 @@
             </MpCheckbox>
           </div>
         </nav>
+
+        <!-- Converting a purchase request into a purchase order is a purchasing-role
+             privilege (PRD US-020 AC-03). The back-office account has it; turn it off to
+             preview a stockist who can raise requests but not convert them. -->
+        <nav v-if="!isWarehouseOperator" class="user-menu__group">
+          <div class="user-menu__row">
+            <MpCheckbox
+              id="user-menu-purchasing-access"
+              :is-checked="hasPurchasingAccess"
+              @change="setPurchasingAccess(!hasPurchasingAccess)"
+            >
+              {{ t('Purchasing access') }}
+            </MpCheckbox>
+          </div>
+        </nav>
       </template>
 
       <!-- ── Scenario: pick the demo storyline ─────────────── -->
@@ -288,6 +303,7 @@ const { activeScenario, setScenario } = useScenario();
 // Ops scenarios the signed-in user IS an operator, so this is what decides whether
 // they get manager-only actions such as changing a task's assignee.
 const { hasLmAccess, setLmAccess, isWarehouseOperator } = useLineManagerAccess();
+const { hasPurchasingAccess, setPurchasingAccess } = usePurchasingAccess();
 const { navigate } = useNavigation();
 
 // In an Ops scenario the signed-in user IS the warehouse operator (the assigned

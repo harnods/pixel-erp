@@ -171,9 +171,13 @@ function clearFilters() {
 // Create purchase order → opens the conversion modal, where the requested qty is
 // rounded to the chosen vendor's MOQ & purchase multiplier before the draft PO is
 // raised (PRD D12 / US-019). Works for replenishment and manual requests alike.
+// Only whoever holds purchase-order creation access can do this (US-020 AC-03): the
+// actions are hidden for everyone else, and the handlers refuse as a second line.
+const { canCreatePurchaseOrders } = usePurchasingAccess()
 const convertOpen = ref(false)
 const convertPr = ref<PurchaseRequest | null>(null)
 function createPurchaseOrder(pr: PurchaseRequest) {
+  if (!canCreatePurchaseOrders.value) return
   convertPr.value = pr
   convertOpen.value = true
 }
@@ -215,6 +219,7 @@ function confirmConvert(payload: {
 const bulkConvertOpen = ref(false)
 const bulkConvertPrs = ref<PurchaseRequest[]>([])
 function bulkCreatePurchaseOrder(selectedRows: Set<number>) {
+  if (!canCreatePurchaseOrders.value) return
   const prs = bulkSelectedRequests(selectedRows) as unknown as PurchaseRequest[]
   if (!prs.length) return
   bulkConvertPrs.value = prs
@@ -322,7 +327,7 @@ const exportColumns = computed(() => [
         </MpPopoverTrigger>
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
-            <MpPopoverListItem @click="bulkCreatePurchaseOrder(selectedRows as Set<number>)">{{ t('Create purchase order') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="canCreatePurchaseOrders" data-devchange="pr-create-po-permission" @click="bulkCreatePurchaseOrder(selectedRows as Set<number>)">{{ t('Create purchase order') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openShareBulk(selectedRows as Set<number>)">{{ t('Share via email') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openCopyLinks(bulkSelectedRequests(selectedRows as Set<number>).slice(0, 5))">{{ t('Copy link') }}</MpPopoverListItem>
@@ -446,7 +451,7 @@ const exportColumns = computed(() => [
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails((row as PurchaseRequest).id)">{{ t('View details') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="createPurchaseOrder(row as PurchaseRequest)">{{ t('Create purchase order') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="canCreatePurchaseOrders" @click="createPurchaseOrder(row as PurchaseRequest)">{{ t('Create purchase order') }}</MpPopoverListItem>
             <MpPopoverListItem @click="markCompleted((row as PurchaseRequest).id)">{{ t('Mark as completed') }}</MpPopoverListItem>
             <MpPopoverListItem @click="duplicate(row as PurchaseRequest)">{{ t('Duplicate') }}</MpPopoverListItem>
           </MpPopoverList>

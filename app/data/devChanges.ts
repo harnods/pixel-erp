@@ -76,6 +76,22 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['vendorItems.ts', 'replenishment.ts'],
   },
   {
+    id: 'product-category-change-warning',
+    title: 'Edit product: warning when a category change moves replenishment defaults',
+    description:
+      'Replenishment takes lead time, safety days, order coverage and the ignore-gaps cap from the product\'s category (PRD §2.5). When you change the category of an existing product, a warning under the field shows exactly which of those defaults would change (before → after) and that a value set on the product or a warehouse keeps applying. Nothing shows for a new product or when nothing differs.',
+    date: '2026-10-07',
+    files: ['NewProductPage.vue', 'replenishmentConfig.ts'],
+  },
+  {
+    id: 'pr-create-po-permission',
+    title: 'Purchase requests: only purchasing can create a purchase order',
+    description:
+      'Converting a purchase request into a purchase order is a purchasing-role privilege (PRD US-020 AC-03). "Create purchase order" — in the row menu, the bulk Actions menu and the request detail menu — is shown only to users with purchase-order creation access and hidden for everyone else; the handlers refuse as a second line. The account menu has a new "Purchasing access" checkbox (on by default, back-office accounts only) to preview a stockist who can raise requests but not convert them; warehouse operators never have it.',
+    date: '2026-10-07',
+    files: ['usePurchasingAccess.ts', 'PurchaseRequestsPage.vue', 'PurchaseRequestDetailsPage.vue', 'ErpUserMenu.vue'],
+  },
+  {
     id: 'replenishment-covered-stockout-wins',
     title: 'Replenishment: a covered row that still stocks out asks to verify the arrival',
     description:
