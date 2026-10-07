@@ -3756,5 +3756,4 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Planned qty": "Jumlah rencana",
   "Remaining qty": "Sisa jumlah",
   "Unit": "Satuan",
-  "Goods, not vendor work": "Barang, bukan jasa vendor",
 }

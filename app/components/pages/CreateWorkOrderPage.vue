@@ -1243,8 +1243,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <div class="wo-table-scroll">
             <table class="wo-table">
               <colgroup>
-                <col /><col style="width:140px" /><col style="width:140px" />
-                <col style="width:110px" /><col v-if="isSubcon" style="width:220px" /><col style="width:140px" /><col style="width:160px" /><col style="width:44px" />
+                <col /><col class="wo-col--sku" /><col class="wo-col--qty" />
+                <col class="wo-col--unit" /><col v-if="isSubcon" class="wo-col--warehouse" /><col class="wo-col--pct" /><col class="wo-col--cost" /><col class="wo-col--del" />
               </colgroup>
               <thead>
                 <tr>
@@ -1293,8 +1293,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <div class="wo-table-scroll">
             <table class="wo-table">
               <colgroup>
-                <col /><col style="width:140px" /><col style="width:140px" />
-                <col style="width:110px" /><col v-if="isSubcon" style="width:220px" /><col style="width:140px" /><col style="width:160px" /><col style="width:44px" />
+                <col /><col class="wo-col--sku" /><col class="wo-col--qty" />
+                <col class="wo-col--unit" /><col v-if="isSubcon" class="wo-col--warehouse" /><col class="wo-col--pct" /><col class="wo-col--cost" /><col class="wo-col--del" />
               </colgroup>
               <thead>
                 <tr>
@@ -1666,6 +1666,18 @@ onUnmounted(() => { stageObserver?.disconnect() })
 /* A value this row inherits and cannot set — shown so the row is complete, muted
    so it doesn't read as an editable field sitting next to real ones. */
 .wo-td--muted { color: var(--mp-text-secondary); }
+/* Column widths for the Main output / Other outputs tables, which share a
+   colgroup so their columns line up. In CSS rather than inline styles
+   (rule/token-no-hardcoded-px); the product column is left to flex. Warehouse is
+   wide enough for the longest name ("Gudang Semarang Industrial") without
+   pushing the money columns off. */
+.wo-col--sku { width: 140px; }
+.wo-col--qty { width: 140px; }
+.wo-col--unit { width: 110px; }
+.wo-col--warehouse { width: 220px; }
+.wo-col--pct { width: 140px; }
+.wo-col--cost { width: 160px; }
+.wo-col--del { width: 44px; }
 .wo-td--right { text-align: right; }
 .wo-td--input { padding: 0; vertical-align: middle; background: var(--mp-background-neutral, #fff); }
 .wo-td--num-input { padding: 0; background: var(--mp-background-neutral, #fff); }

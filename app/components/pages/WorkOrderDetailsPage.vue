@@ -265,8 +265,6 @@ const subconTransactionGroups = computed(() => {
   const groups: {
     key: string
     label: string
-    /** Set on the raw-material purchase so it can be told apart at a glance. */
-    variant?: 'material'
     rows: typeof subconTransactions.value
   }[] = []
 
@@ -283,12 +281,7 @@ const subconTransactionGroups = computed(() => {
 
     const existing = groups.find(g => g.key === key)
     if (existing) { existing.rows.push(tx); continue }
-    groups.push({
-      key,
-      label,
-      ...(qualify && nature === 'material' ? { variant: 'material' as const } : {}),
-      rows: [tx],
-    })
+    groups.push({ key, label, rows: [tx] })
   }
   return groups
 })
@@ -1988,27 +1981,23 @@ function suppressFabClick(e: MouseEvent) {
             </MpPopover>
           </div>
 
-          <!-- One titled section per transaction type, each with its own table —
-               the same shape the Linked production request tab uses. A heading
-               above a plain table reads as a group; a heading row *inside* the
-               table competes with the data rows for the same columns. On dropship
-               the two purchase requests are different animals (raw material from
-               a 3rd party, and the vendor's service), so they title separately
-               rather than sharing a section. -->
-          <div v-for="group in subconTransactionGroups" :key="group.key" class="wod-tx-group">
-            <h3 class="wod-tx-group-title">
-              {{ group.label }}
-              <span v-if="group.variant === 'material'" class="wod-tx-group-flag">{{ t('Goods, not vendor work') }}</span>
-            </h3>
+          <!-- One titled section per transaction type, built from the same
+               subsection-title + table the Linked transactions tab already uses.
+               On dropship the two purchase requests are different animals (raw
+               material from a 3rd party, and the vendor's service) — the group
+               label says which, so they title separately rather than sharing a
+               section. -->
+          <div v-for="group in subconTransactionGroups" :key="group.key">
+            <h3 class="wod-subsection-title">{{ group.label }}</h3>
             <div class="wod-table-scroll">
               <table class="wod-table">
                 <thead>
                   <tr>
-                    <th class="wod-th wod-th--plain">{{ t('Type') }}</th>
-                    <th class="wod-th wod-th--plain">{{ t('Transaction no.') }}</th>
-                    <th class="wod-th wod-th--plain">{{ t('Module') }}</th>
-                    <th class="wod-th wod-th--plain">{{ t('Date') }}</th>
-                    <th class="wod-th wod-th--plain">{{ t('Status') }}</th>
+                    <th class="wod-th">{{ t('Type') }}</th>
+                    <th class="wod-th">{{ t('Transaction no.') }}</th>
+                    <th class="wod-th">{{ t('Module') }}</th>
+                    <th class="wod-th">{{ t('Date') }}</th>
+                    <th class="wod-th">{{ t('Status') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2302,27 +2291,6 @@ function suppressFabClick(e: MouseEvent) {
 :deep(.psn-overlay), :deep(.pbd-overlay) { z-index: 1500; }
 
 /* ── Transactions tab (subcon) ────────────────────────────────────────────── */
-/* One titled section per transaction type, matching the Linked production
-   request tab: a bold title, then a plain table. */
-.wod-tx-group + .wod-tx-group { margin-top: var(--mp-spacing-6); }
-.wod-tx-group-title {
-  display: flex; align-items: center; gap: var(--mp-spacing-2);
-  margin: 0 0 var(--mp-spacing-2);
-  font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
-}
-/* The raw-material purchase buys goods, not the vendor's work — a different
-   account and a different destination, so it is marked as its own thing. */
-.wod-tx-group-flag {
-  padding: 0 var(--mp-spacing-2);
-  border-radius: var(--mp-radii-sm);
-  background: var(--mp-background-warning-subtle, #fffaea);
-  color: var(--mp-text-warning, #b54708);
-  font-size: var(--mp-font-sizes-sm);
-  font-weight: var(--mp-font-weights-regular);
-}
-
 .wod-tx-head {
   display: flex;
   align-items: center;
@@ -2631,16 +2599,6 @@ function suppressFabClick(e: MouseEvent) {
   border-bottom: 1px solid var(--mp-border-default);
 }
 .wod-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
-/* Sentence-case, full-contrast header — the transactions tables follow the
-   reference screen rather than the uppercase caption style used elsewhere on
-   this page. */
-.wod-th--plain {
-  height: auto;
-  padding: var(--mp-spacing-3) var(--mp-spacing-4) var(--mp-spacing-3) var(--mp-spacing-2);
-  text-transform: none;
-  font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-default);
-}
 .wod-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: top;
