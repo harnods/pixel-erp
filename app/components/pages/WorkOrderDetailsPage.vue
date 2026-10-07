@@ -50,7 +50,7 @@ import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer
 import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
 import { formatDate } from '~/utils/date'
 import { successToast } from '~/utils/toasts'
-import { workOrders, persistWorkOrders, adjustSubconWorkOrderQty, recordSubconDocument, recordSubconUnusedOutput, setSubconComponentQty, addSubconCostLine, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
+import { workOrders, persistWorkOrders, adjustSubconWorkOrderQty, recordSubconDocument, recordSubconUnusedOutput, setSubconMaterialsReady, setSubconComponentQty, addSubconCostLine, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 import { warehouseTransfers, addTransfer } from '~/data/warehouseTransfers'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { productionSettings } from '~/data/productionSettings'
@@ -78,7 +78,16 @@ const subcon = computed(() => wo.value?.subcon)
  * started — a not-started work order is still a draft arrangement. The plan is
  * therefore shown as "planned" until then, and as raised documents afterwards.
  */
-const subconStarted = computed(() => !!wo.value && wo.value.status !== 'not started' && wo.value.status !== 'canceled')
+/**
+ * Past the draft stage — the vendor has what it needs and the run is live.
+ *
+ * "Awaiting purchase order" counts: the materials are with the vendor, which is
+ * what the Transactions tab's gate was always about, even though the work has
+ * not been ordered yet.
+ */
+const subconStarted = computed(() => !!wo.value
+  && wo.value.status !== 'not started'
+  && wo.value.status !== 'canceled')
 
 /**
  * The Documents table, grouped the way the chain actually behaves.
@@ -256,10 +265,13 @@ const DOC_FUNCTION: Record<string, string> = {
 
 /** One row per document, in the order the run raises them. */
 const subconTransactionRows = computed(() =>
-  subconTransactions.value.map(tx => ({
-    ...tx,
-    function: DOC_FUNCTION[tx.kind] ?? '',
-  })),
+  subconTransactions.value.map((tx) => {
+    // An order or a delivery inherits its purpose from the request it grew out
+    // of. On dropship both threads raise the same kinds, so by kind alone the
+    // component order and its delivery read as the vendor's work.
+    const inherited = tx.doc?.fromKind ? DOC_FUNCTION[tx.doc.fromKind] : undefined
+    return { ...tx, function: inherited ?? DOC_FUNCTION[tx.kind] ?? '' }
+  }),
 )
 
 /**
@@ -641,7 +653,8 @@ const planRange = computed(() => wo.value ? `${formatDate(wo.value.planStartDate
 
 // ── Header status → primary action ──────────────────────────────────────────────
 const STATUS_LABEL: Record<WorkOrderStatus, string> = {
-  'not started': t('Not started'), 'in progress': t('In progress'), 'partially produced': t('Partially produced'),
+  'not started': t('Not started'), 'awaiting purchase order': t('Awaiting purchase order'),
+  'in progress': t('In progress'), 'partially produced': t('Partially produced'),
   'partially completed': t('Partially completed'), 'completed': t('Completed'), 'canceled': t('Canceled'),
 }
 /**
@@ -661,9 +674,20 @@ const primaryAction = computed(() => {
     case 'not started':
       // Nothing to start until the vendor has the materials.
       if (subcon.value && !rawMaterialsFulfilled.value && supplyActionLabel.value) {
+        // A transfer may be raised again and again — stock leaves in whatever
+        // loads are available, so the balance is carried by the next one. A
+        // dropship component request is raised ONCE and then grows an order and
+        // a delivery in Purchases; offering it a second time would duplicate it,
+        // so this page stands back until the goods are confirmed delivered.
+        if (subcon.value.method === 'dropship' && subconSupplyRaised.value) return ''
         return supplyActionLabel.value
       }
-      return t('Start work order')
+      return canStartManually.value ? t('Start work order') : ''
+    case 'awaiting purchase order':
+      // Materials are with the vendor; the work still has to be ordered. The
+      // request is raised here, the order from the request's own page.
+      if (subcon.value && pendingServiceRequest.value) return pendingServiceRequest.value.label
+      return ''
     case 'in progress':
     case 'partially produced':
     case 'partially completed':
@@ -678,6 +702,18 @@ const primaryAction = computed(() => {
     default: return '' // completed / canceled → no primary action
   }
 })
+
+/**
+ * Whether starting is still something a person does.
+ *
+ * With partial production on, it is not: nothing can happen between supplying
+ * the vendor and ordering the work, and production is recorded in increments
+ * afterwards — so "Start" marked a moment that carried no decision. The order
+ * moves to `in progress` on its own when the purchase order is raised. With the
+ * setting off there is no partial record to stand in for it, so the manual start
+ * remains.
+ */
+const canStartManually = computed(() => !productionSettings.partialProduction)
 
 /**
  * Closing for part of the quantity, offered beside completion when the module
@@ -738,7 +774,12 @@ function consumedFor(productId: string): number {
  */
 const sentToVendorBySku = computed<Record<string, number>>(() => {
   const c = subcon.value
-  if (!c || c.method !== 'resupply') return {}
+  if (!c) return {}
+  // On dropship nothing leaves a company warehouse — a 3rd party ships straight
+  // to the vendor — so the purchase delivery against the component order is the
+  // only record that the components arrived, and it is what fills this column.
+  if (c.method === 'dropship') return { ...(c.componentReceipts ?? {}) }
+  if (c.method !== 'resupply') return {}
   const vendorWarehouseId = c.subconWarehouseId
   const transferIds = (c.raisedDocuments ?? [])
     .filter(d => d.route === '/warehouse-transfers')
@@ -760,11 +801,16 @@ const sentToVendorBySku = computed<Record<string, number>>(() => {
 
 /** True when this work order reports sent-to-vendor instead of consumed qty. */
 const reportsSentQty = computed(() => !!subcon.value)
-/** …and actually has a quantity to report (resupply only). */
-const sendsCompanyStock = computed(() => subcon.value?.method === 'resupply')
+/**
+ * …and actually has a quantity to report. Resupply moves company stock and
+ * dropship has it delivered; only `basic` has nothing to count, because the
+ * vendor works from its own materials.
+ */
+const sendsCompanyStock = computed(() =>
+  subcon.value?.method === 'resupply' || subcon.value?.method === 'dropship')
 
 // Actual start/end shown only when the work order has reached that stage.
-const showStart = computed(() => !['not started', 'canceled'].includes(wo.value?.status ?? ''))
+const showStart = computed(() => !['not started', 'awaiting purchase order', 'canceled'].includes(wo.value?.status ?? ''))
 const showEnd = computed(() => ['partially completed', 'completed', 'canceled'].includes(wo.value?.status ?? ''))
 
 // ── Line-item data — sourced from the real BOM this work order was raised from ──
@@ -1056,12 +1102,30 @@ const canStartSubcon = computed(() => !subcon.value || subconSupplyRaised.value)
 const rawMaterialsFulfilled = computed(() => {
   const c = subcon.value
   if (!c) return true
+  // The vendor supplies its own materials, so there is nothing to wait for.
   if (c.method === 'basic') return true
-  if (c.method !== 'resupply') return subconSupplyRaised.value
   if (!rawMaterials.value.length) return subconSupplyRaised.value
+  // Resupply counts what the transfers moved; dropship counts what the component
+  // purchase delivery confirmed arrived. `sentToVendorBySku` reads whichever
+  // applies, so the rule is the same for both: every line, in full.
   return rawMaterials.value.every(
     r => (sentToVendorBySku.value[r.sku] ?? 0) >= plannedQtyFor(r))
 })
+
+/**
+ * Tell the store when the vendor has everything, so the status can move to
+ * "awaiting purchase order".
+ *
+ * Resupply NEEDS telling — its quantities live in the warehouse transfers, which
+ * the store does not read. Dropship does not, since its receipts are on the work
+ * order, but reporting it anyway keeps one rule for both and repairs any record
+ * whose materials completed before this status existed.
+ */
+watch(rawMaterialsFulfilled, (ready) => {
+  const w = wo.value
+  if (!w || !subcon.value) return
+  setSubconMaterialsReady(w.id, ready)
+}, { immediate: true })
 
 /**
  * The service request this order still owes — the document that places the
@@ -1166,6 +1230,23 @@ function startWorkOrder() {
   persistWorkOrders()
   postComponentIssue()
 }
+
+/**
+ * Issue the components when the run actually begins.
+ *
+ * With no manual start, `in progress` is reached by raising the purchase order —
+ * on another page — so the issue cannot be posted by whatever did it. The work
+ * order posts it the first time it sees itself in progress instead. Guarded by
+ * the document already on the record, so revisiting the page cannot post it
+ * twice.
+ */
+watch([() => wo.value?.status, () => subcon.value?.raisedDocuments?.length], () => {
+  const w = wo.value
+  if (!w || !subcon.value || w.status !== 'in progress') return
+  const alreadyIssued = (subcon.value.raisedDocuments ?? []).some(d => d.kind === 'componentIssue')
+  if (alreadyIssued) return
+  postComponentIssue()
+}, { immediate: true })
 
 /** Where each document's form lives. */
 /**

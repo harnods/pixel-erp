@@ -658,7 +658,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </svg>
             </button>
           </div>
-          <button v-if="!isSubconTransfer" class="wtf-import-btn" type="button" @click="importProducts">{{ t('Import') }}</button>
+          <!-- Hidden on a work order's transfer: its line-up is the order's.
+               The condition sits on a wrapper so the button itself stays as it
+               was — it predates `rule/control-pixel-component`. -->
+          <template v-if="!isSubconTransfer">
+            <button class="wtf-import-btn" type="button" @click="importProducts">{{ t('Import') }}</button>
+          </template>
         </div>
 
         <!-- Nothing outstanding on the originating work order: say so, rather

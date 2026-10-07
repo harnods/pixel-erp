@@ -120,6 +120,8 @@ const statusConfig: Record<string, StatusConfig> = {
   'partially shipped': { type: 'information', label: 'Partially shipped' },
   'partially fulfilled': { type: 'information', label: 'Partially fulfilled' },
   'in progress':{ type: 'information',  label: 'In progress' },
+  // Waiting on someone else's action (Purchases), not on production.
+  'awaiting purchase order': { type: 'warning', label: 'Awaiting purchase order' },
   in_progress:{ type: 'information',  label: 'In progress' },
   'task created':{ type: 'information', label: 'Task created' },
   new:        { type: 'information',  label: 'New'        },

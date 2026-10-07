@@ -395,8 +395,13 @@ function createDuplicateOrder(overrides?: Partial<PurchaseOrder>): string | null
   for (const prId of props.purchaseRequestIds ?? []) {
     const wo = workOrderForDocument(prId)
     if (!wo) continue
+    // Carry the request's own kind forward. On dropship two requests of
+    // different natures each grow an order, and only this tells them apart
+    // downstream — see `fromKind`.
+    const request = (wo.subcon?.raisedDocuments ?? []).find(d => d.id === prId)
     recordSubconDocument(wo.id, {
       kind: 'purchaseOrder', id: newId, number: newOrder.number, route: '/purchase-orders',
+      ...(request ? { fromKind: request.kind } : {}),
     })
     break
   }

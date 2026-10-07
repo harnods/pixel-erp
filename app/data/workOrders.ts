@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
 import { TODAY } from './master'
-import { billOfMaterials } from './billOfMaterials'
+import { billOfMaterials, catalogProduct } from './billOfMaterials'
 import type { SubconScope, SubconSplit, SubconMethod } from './subcon'
 import { loadSnapshot, saveSnapshot } from './persist'
 
@@ -134,6 +134,21 @@ export interface WorkOrderSubconSetup {
    * only trace.
    */
   unusedOutputs?: { sku: string; qty: number }[]
+  /**
+   * Components confirmed to have reached the vendor, by SKU.
+   *
+   * Only `dropship` fills this. The goods go from a 3rd party straight to the
+   * subcon vendor and never pass through a company warehouse, so there is no
+   * transfer to count — the purchase delivery against the component order is the
+   * only evidence that they arrived.
+   */
+  componentReceipts?: Record<string, number>
+  /**
+   * Set once a resupply order's transfers cover every component. Held here
+   * because the quantities live in the warehouse transfers, which this module
+   * does not read — the work order detail decides it and says so.
+   */
+  materialsReady?: boolean
 }
 
 /** A document created from a subcon work order, and where its detail page lives. */
@@ -156,6 +171,17 @@ export interface RaisedSubconDocument {
    * allocate subcon cost across staged receipts is unrecoverable.
    */
   qty?: number
+  /**
+   * The document this one was built FROM, when the run has two threads that
+   * raise the same kind of document.
+   *
+   * On `dropship` a work order raises two purchase requests — one buying raw
+   * material from a 3rd party, one buying the vendor's work — and each grows its
+   * own order and delivery. By kind alone those are indistinguishable, so a
+   * delivery of components would be counted as finished goods produced. This
+   * says which request the chain started from.
+   */
+  fromKind?: string
 }
 
 export interface WorkOrderMaterialReservation {
@@ -167,6 +193,15 @@ export interface WorkOrderMaterialReservation {
 
 export type WorkOrderStatus =
   | 'not started'
+  /**
+   * Materials are with the vendor, but the work has not been placed.
+   *
+   * The gap between supplying the vendor and ordering the work used to be
+   * invisible: the order sat at "not started" whether nothing had happened or
+   * everything but the purchase order had. Someone looking for what to chase
+   * could not tell the two apart. This says which.
+   */
+  | 'awaiting purchase order'
   | 'canceled'
   | 'in progress'
   | 'partially produced'
@@ -304,6 +339,82 @@ export function recordSubconDocument(workOrderId: string, doc: RaisedSubconDocum
   const existing = wo.subcon.raisedDocuments ?? []
   if (existing.some(d => d.id === doc.id)) return
   wo.subcon.raisedDocuments = [...existing, { raisedAt: new Date().toISOString().slice(0, 10), ...doc }]
+  syncSubconStatus(wo)
+  persistWorkOrders()
+}
+
+/** Request kinds that buy raw material rather than the vendor's work. */
+const COMPONENT_REQUEST_KINDS = ['componentPr', 'rawPr']
+
+/**
+ * Whether a dropship vendor has every component the run needs.
+ *
+ * Dropship never touches a company warehouse, so the purchase delivery against
+ * the component order is the only record that the goods arrived. A resupply
+ * order's quantities live in the warehouse transfers, which this module does not
+ * read — the work order detail decides that one and calls
+ * `setSubconMaterialsReady`.
+ */
+function dropshipComponentsFulfilled(wo: WorkOrder): boolean {
+  if (wo.subcon?.method !== 'dropship') return false
+  const received = wo.subcon.componentReceipts ?? {}
+  const bom = billOfMaterials.find(b => b.id === wo.bomId)
+  const lines = bom?.rawMaterials ?? []
+  if (!lines.length) return false
+  return lines.every((line) => {
+    const sku = catalogProduct(line.productId)?.sku
+    if (!sku) return false
+    const planned = wo.subcon?.componentAdjustments?.[sku] ?? line.needed
+    return (received[sku] ?? 0) >= planned
+  })
+}
+
+/**
+ * Keep the early-stage status in step with the documents raised.
+ *
+ * The run has two milestones before production: the vendor gets the materials,
+ * and the work is ordered. Previously both sat under "not started" and someone
+ * looking for what to chase could not tell them apart — and starting was a
+ * manual act that added nothing, since nothing can happen until the order
+ * exists anyway.
+ *
+ * Statuses from `partially produced` onward are left alone: production has begun
+ * and this is no longer the thing that decides where the order stands.
+ */
+export function syncSubconStatus(wo: WorkOrder): void {
+  const c = wo.subcon
+  if (!c) return
+  if (!['not started', 'awaiting purchase order', 'in progress'].includes(wo.status)) return
+
+  const docs = c.raisedDocuments ?? []
+  // The order that places the vendor's WORK — not a component order, which buys
+  // raw material and settles nothing about the work itself.
+  const servicePo = docs.some(d =>
+    d.kind === 'purchaseOrder'
+    && !(d.fromKind && COMPONENT_REQUEST_KINDS.includes(d.fromKind)))
+
+  if (servicePo) {
+    if (wo.status !== 'in progress') {
+      wo.status = 'in progress'
+      wo.startDate = wo.startDate ?? new Date().toISOString().slice(0, 10)
+    }
+    return
+  }
+
+  const ready = c.method === 'basic' || c.materialsReady || dropshipComponentsFulfilled(wo)
+  if (ready && wo.status === 'not started') wo.status = 'awaiting purchase order'
+}
+
+/**
+ * Told by the work order detail that a resupply order's transfers now cover
+ * every component — the quantities live in the transfers, which this module
+ * does not read.
+ */
+export function setSubconMaterialsReady(workOrderId: string, ready: boolean): void {
+  const wo = workOrders.find(w => w.id === workOrderId)
+  if (!wo?.subcon || wo.subcon.materialsReady === ready) return
+  wo.subcon.materialsReady = ready
+  syncSubconStatus(wo)
   persistWorkOrders()
 }
 
@@ -337,6 +448,26 @@ export function recordSubconCost(workOrderId: string, amounts: Record<string, nu
     taken[id] = (taken[id] ?? 0) + amount
   }
   wo.subcon.costLineRecorded = taken
+  persistWorkOrders()
+}
+
+/** Record components confirmed delivered to the vendor (dropship). */
+export function recordSubconComponentReceipt(
+  workOrderId: string,
+  lines: { sku: string; qty: number }[],
+): void {
+  const wo = workOrders.find(w => w.id === workOrderId)
+  if (!wo?.subcon) return
+  const received = { ...(wo.subcon.componentReceipts ?? {}) }
+  for (const line of lines) {
+    if (line.qty <= 0) continue
+    received[line.sku] = (received[line.sku] ?? 0) + line.qty
+  }
+  wo.subcon.componentReceipts = received
+  // The receipt is what makes a dropship order's materials complete, so the
+  // status is re-derived AFTER it lands — the document that carried it was
+  // recorded a moment earlier, when this was not yet true.
+  syncSubconStatus(wo)
   persistWorkOrders()
 }
 

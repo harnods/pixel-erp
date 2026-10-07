@@ -27,7 +27,7 @@ import { addPurchaseDelivery } from '~/data/purchaseDeliveries'
 import { setPurchaseOrderStatus } from '~/data/purchaseOrders'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
-import { recordSubconDocument, recordSubconProduction, workOrderForDocument } from '~/data/workOrders'
+import { recordSubconDocument, recordSubconProduction, recordSubconComponentReceipt, workOrderForDocument } from '~/data/workOrders'
 import { SUBCON_VENDORS } from '~/data/subcon'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 
@@ -128,6 +128,26 @@ const subconWorkOrder = computed(() => {
 const fromPurchaseOrderId = computed(() =>
   typeof route.query.fromPo === 'string' ? route.query.fromPo : '')
 
+/**
+ * Which thread of the run this delivery belongs to.
+ *
+ * On `dropship` a work order raises two purchase orders: one for raw material a
+ * 3rd party ships straight to the subcon vendor, one for the vendor's own work.
+ * A delivery against the first is COMPONENTS ARRIVING AT THE VENDOR — it is the
+ * only evidence we get that they did, since the goods never touch our sites —
+ * and a delivery against the second is finished goods coming back. Counting the
+ * first as production would credit the order with output the vendor has not
+ * started on.
+ */
+const COMPONENT_REQUEST_KINDS = ['componentPr', 'rawPr']
+const isComponentDelivery = computed(() => {
+  const wo = subconWorkOrder.value
+  const poId = fromPurchaseOrderId.value
+  if (!wo || !poId) return false
+  const order = (wo.subcon?.raisedDocuments ?? []).find(d => d.id === poId && d.kind === 'purchaseOrder')
+  return !!order?.fromKind && COMPONENT_REQUEST_KINDS.includes(order.fromKind)
+})
+
 /** What the work order still needs produced — the cap on this delivery. */
 const subconOverDeliverError = ref('')
 
@@ -139,9 +159,39 @@ const outstandingFg = computed(() => {
 onMounted(() => {
   const wo = subconWorkOrder.value
   if (!wo) return
-  const output = catalogProduct(billOfMaterials.find(b => b.id === wo.bomId)?.finishedGoodId ?? '')
+  const bom = billOfMaterials.find(b => b.id === wo.bomId)
   const vendor = vendorOptions.value.find(v => v.name === wo.subcon?.vendorName)
   if (vendor) vendorId.value = vendor.id
+
+  // A COMPONENT delivery brings raw material to the vendor, so it opens with
+  // the components still outstanding — not with the finished good, which the
+  // vendor has not made yet.
+  if (isComponentDelivery.value) {
+    const received = wo.subcon?.componentReceipts ?? {}
+    items.value = (bom?.rawMaterials ?? []).flatMap((line) => {
+      const p = catalogProduct(line.productId)
+      if (!p) return []
+      const planned = wo.subcon?.componentAdjustments?.[p.sku] ?? line.needed
+      const outstanding = Math.max(0, planned - (received[p.sku] ?? 0))
+      if (outstanding <= 0) return []
+      return [{
+        _key: ++_seq,
+        product: p.name,
+        sku: p.sku,
+        description: `${t('Delivered to the vendor for')} ${wo.number}`,
+        qty: outstanding,
+        unit: line.unit,
+        unitPrice: line.purchaseCost,
+        discountPct: 0,
+        taxLabel: 'PPN 11%',
+        productError: false,
+        qtyError: false,
+      }]
+    })
+    return
+  }
+
+  const output = catalogProduct(bom?.finishedGoodId ?? '')
   if (!output) return
   items.value = [{
     _key: ++_seq,
@@ -294,7 +344,7 @@ function validate(): boolean {
 
   // A subcon delivery produces finished goods, so it cannot deliver more than the
   // work order still needs — otherwise a second delivery would over-produce it.
-  if (subconWorkOrder.value) {
+  if (subconWorkOrder.value && !isComponentDelivery.value) {
     const delivered = items.value.reduce((sum, it) => sum + (Number(it.qty) || 0), 0)
     if (delivered > outstandingFg.value) {
       items.value.forEach(it => { it.qtyError = true })
@@ -350,8 +400,17 @@ function onSave() {
       number: `${t('Purchase Delivery')} #${delivery.number}`,
       route: '/purchase-deliveries',
       qty: deliveredQty,
+      ...(isComponentDelivery.value ? { fromKind: 'componentPr' } : {}),
     })
-    recordSubconProduction(wo.id, deliveredQty)
+    if (isComponentDelivery.value) {
+      // Components reaching the vendor, per line: this is what fills "Sent to
+      // vendor" on a dropship order, where no warehouse transfer ever happens.
+      recordSubconComponentReceipt(wo.id, items.value
+        .filter(it => it.sku && Number(it.qty) > 0)
+        .map(it => ({ sku: it.sku, qty: Number(it.qty) })))
+    } else {
+      recordSubconProduction(wo.id, deliveredQty)
+    }
   }
   // The goods are in, so the order it was raised against is now waiting on the
   // vendor's bill — which is what makes "Create purchase invoice" the next step.

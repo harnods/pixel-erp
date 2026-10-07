@@ -3747,6 +3747,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Waiting for start": "Menunggu dimulai",
 
   // Partial production completion
+  "Delivered to the vendor for": "Dikirim ke vendor untuk",
+  "Awaiting purchase order": "Menunggu pesanan pembelian",
   "Not everything has been produced yet": "Belum semuanya diproduksi",
   "Adjust the work order to what was actually produced, then complete it.": "Sesuaikan perintah kerja ke jumlah yang benar-benar diproduksi, lalu selesaikan.",
   "Unused components returned with the output of": "Komponen tidak terpakai dikembalikan bersama hasil dari",
