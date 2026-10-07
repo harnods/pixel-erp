@@ -35,6 +35,7 @@ import {
 import SubconJournalModal from '~/components/patterns/SubconJournalModal.vue'
 import ConfirmWorkOrderAdjustmentModal from '~/components/patterns/ConfirmWorkOrderAdjustmentModal.vue'
 import TransferOriginBreakdownModal, { type TransferOriginGroup } from '~/components/patterns/TransferOriginBreakdownModal.vue'
+import PartialProductionModal from '~/components/patterns/PartialProductionModal.vue'
 import {
   buildSubconJournals, accountLabel,
   type SubconAccountingInput, type SubconCostLineInput, type SubconComponentInput,
@@ -51,9 +52,10 @@ import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer
 import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
 import { formatDate } from '~/utils/date'
 import { successToast } from '~/utils/toasts'
-import { workOrders, persistWorkOrders, adjustSubconWorkOrderQty, recordSubconDocument, setSubconComponentQty, addSubconCostLine, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
+import { workOrders, persistWorkOrders, adjustSubconWorkOrderQty, recordSubconDocument, recordSubconProduction, setSubconComponentQty, addSubconCostLine, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 import { warehouseTransfers, addTransfer } from '~/data/warehouseTransfers'
 import { workOrderLinks } from '~/data/workOrderLinks'
+import { productionSettings } from '~/data/productionSettings'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 import { recordsForWorkOrder, addMaterialConsumeReturnRecord, remainingReservation } from '~/data/materialConsumeReturn'
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
@@ -231,60 +233,36 @@ const subconTransactions = computed(() =>
 )
 
 /**
- * The run grouped by transaction type, which is how it is read: someone asking
- * "did the invoice go out?" wants the invoices together, not interleaved with
- * everything else in chain order.
+ * What each document is FOR, which is the question the type alone cannot answer.
  *
- * **The purchase requests split by what they actually buy.** They share a type but
- * not a nature, and the difference decides which account and which warehouse they
- * hit, so lumping them under one undifferentiated heading would hide exactly the
- * distinction the supply method exists to make:
- *
- *   • raw material — bought from a 3rd party and shipped to the vendor (dropship)
- *   • subcon cost  — the vendor's own service
- *   • in-house     — the half of a partial split bought normally into our own
- *                    warehouse, which is not subcontracted at all
- *
- * Every other type groups on its own.
+ * On dropship a work order raises two purchase requests of the same type that do
+ * entirely different jobs — one buys raw material from a 3rd party, the other
+ * buys the vendor's work — and the difference decides which account and which
+ * warehouse they hit. The type column says "Purchase Request" for both; this
+ * column says which is which.
  */
-const PR_NATURE = {
-  componentPr: 'material',
-  rawPr: 'material',
-  subconPr: 'service',
-  processPr: 'service',
-  purchasePr: 'inHouse',
-} as const
+const DOC_FUNCTION: Record<string, string> = {
+  componentPr: 'Procure raw material',
+  rawPr: 'Procure raw material',
+  subconPr: 'Subcon cost',
+  processPr: 'Subcon cost',
+  purchasePr: 'In-house portion',
+  purchaseOrder: 'Subcon cost',
+  purchaseDelivery: 'Subcon cost',
+  purchaseInvoice: 'Subcon cost',
+  transfer: 'Transfer stock',
+  rawTransfer: 'Transfer stock',
+  componentIssue: 'Issue components',
+  receipt: 'Receive output',
+}
 
-const PR_NATURE_LABEL = {
-  material: 'raw material',
-  service: 'subcon cost',
-  inHouse: 'in-house portion',
-} as const
-
-const subconTransactionGroups = computed(() => {
-  const groups: {
-    key: string
-    label: string
-    rows: typeof subconTransactions.value
-  }[] = []
-
-  for (const tx of subconTransactions.value) {
-    const nature = PR_NATURE[tx.kind as keyof typeof PR_NATURE]
-    // Only worth qualifying when the order actually raises more than one kind of
-    // request; a single request needs no disambiguation.
-    const qualify = !!nature && subconTransactions.value
-      .filter(o => PR_NATURE[o.kind as keyof typeof PR_NATURE])
-      .some(o => PR_NATURE[o.kind as keyof typeof PR_NATURE] !== nature)
-
-    const key = qualify ? `${tx.tag}-${nature}` : tx.tag
-    const label = qualify ? `${tx.type} — ${t(PR_NATURE_LABEL[nature])}` : tx.type
-
-    const existing = groups.find(g => g.key === key)
-    if (existing) { existing.rows.push(tx); continue }
-    groups.push({ key, label, rows: [tx] })
-  }
-  return groups
-})
+/** One row per document, in the order the run raises them. */
+const subconTransactionRows = computed(() =>
+  subconTransactions.value.map(tx => ({
+    ...tx,
+    function: DOC_FUNCTION[tx.kind] ?? '',
+  })),
+)
 
 /** Everything that can be raised right now, across both threads. */
 const subconCreateActions = computed(() => subconPlan.value.flatMap(row => row.actions))
@@ -307,9 +285,24 @@ const subconCostLines = computed(() => {
   /** A revised amount wins over the BOM's — see `costLineOverrides`. */
   const amountFor = (id: string, fallback: number) => c.costLineOverrides?.[id] ?? fallback
 
+  /**
+   * What the vendor is charging FOR, in units of its own cost driver. The driver
+   * is no longer a column of its own — the quantity it produces says the same
+   * thing more usefully, and the amount divided by it is the rate.
+   *
+   *   Unit   → one charge per piece produced
+   *   Batch  → one charge per production batch
+   *   Amount → a lump sum, so a single charge however many pieces are made
+   */
+  const qtyFor = (driver: string) => {
+    if (driver === 'Unit') return w.plannedQty
+    if (driver === 'Batch') return Math.max(1, Math.round(factor))
+    return 1
+  }
+
   const extras = (c.extraCostLines ?? []).map(l => ({
     account: l.name,
-    driver: t(l.costDriver),
+    qty: qtyFor(l.costDriver),
     chargedBy: c.vendorName,
     amount: amountFor(l.id, l.amount),
   }))
@@ -319,7 +312,7 @@ const subconCostLines = computed(() => {
     return [
       ...fromBom.map(l => ({
         account: l.name,
-        driver: t(l.costDriver),
+        qty: qtyFor(l.costDriver),
         chargedBy: c.vendorName,
         amount: amountFor(l.productId, Math.round(l.amount * factor)),
       })),
@@ -330,13 +323,13 @@ const subconCostLines = computed(() => {
   return [
     {
       account: t(SUBCON_SERVICE_FEE[c.scope].name),
-      driver: t('Unit'),
+      qty: qtyFor('Unit'),
       chargedBy: c.vendorName,
       amount: amountFor('svc-fee', Math.round(SUBCON_SERVICE_FEE[c.scope].amount * factor)),
     },
     {
       account: t(SUBCON_HANDLING_FEE.name),
-      driver: t('Amount'),
+      qty: qtyFor('Amount'),
       chargedBy: c.vendorName,
       amount: amountFor('svc-handling', Math.round(SUBCON_HANDLING_FEE.amount * factor)),
     },
@@ -408,7 +401,8 @@ const subconGrossUpRow = computed(() => {
   return {
     account: t('Withholding borne by company'),
     chargedBy: subcon.value?.vendorName ?? '',
-    driver: t(SUBCON_PRICE_BASIS_SHORT[p.basis]),
+    // Derived from the order as a whole, not charged per piece — so no quantity.
+    qty: undefined,
     amount: p.grossUp,
   }
 })
@@ -676,15 +670,46 @@ const STATUS_LABEL: Record<WorkOrderStatus, string> = {
   'not started': t('Not started'), 'in progress': t('In progress'), 'partially produced': t('Partially produced'),
   'partially completed': t('Partially completed'), 'completed': t('Completed'), 'canceled': t('Canceled'),
 }
+/**
+ * The primary button is the next required step, not a fixed verb.
+ *
+ * A subcon run has an order to it — supply the vendor, start, place the order,
+ * close it — and until now the button said "Start work order" at a point where
+ * starting was impossible, then explained the refusal in a banner. Naming the
+ * step that is actually due turns a dead end into the way forward, and keeps the
+ * button live rather than disabled (rule/btn-no-disabled-validation).
+ *
+ * Non-subcon work orders are unaffected: they have no vendor to supply and no
+ * purchase order to place, so both guards fall through.
+ */
 const primaryAction = computed(() => {
   switch (wo.value?.status) {
-    case 'not started': return t('Start work order')
+    case 'not started':
+      // Nothing to start until the vendor has the materials.
+      if (subcon.value && !rawMaterialsFulfilled.value && supplyActionLabel.value) {
+        return supplyActionLabel.value
+      }
+      return t('Start work order')
     case 'in progress':
-    case 'partially produced': return t('Complete work order')
-    case 'partially completed': return t('Complete work order')
+    case 'partially produced':
+    case 'partially completed':
+      // The vendor's work is not contractually placed until the request and the
+      // order both exist, so there is nothing to close against.
+      if (subcon.value && nextServiceStep.value) return nextServiceStep.value.label
+      return t('Complete work order')
     default: return '' // completed / canceled → no primary action
   }
 })
+
+/**
+ * Closing for part of the quantity, offered beside completion when the module
+ * allows it. Only once there is something to close — the same point at which the
+ * primary action becomes Complete work order.
+ */
+const canPartiallyProduce = computed(() =>
+  productionSettings.partialProduction
+  && primaryAction.value === t('Complete work order')
+  && wo.value?.status !== 'partially completed')
 // Actions menu items — terminal statuses drop the destructive/edit options.
 const actionItems = computed(() => {
   const s = wo.value?.status
@@ -891,6 +916,23 @@ function completeWorkOrder() {
   persistWorkOrders()
   toast.notify({ variant: 'success', title: 'Work order completed' })
 }
+
+// ── Partial production ──────────────────────────────────────────────────────
+const showPartialProductionModal = ref(false)
+
+/**
+ * Record part of the quantity as produced. `recordSubconProduction` owns the
+ * status rule — partially produced until the total reaches the plan, partially
+ * completed once it does — so several records close an order out together, and
+ * a subcon delivery and a manual record cannot disagree about it.
+ */
+function onPartialProduction(qty: number) {
+  const w = wo.value
+  if (!w) return
+  showPartialProductionModal.value = false
+  recordSubconProduction(w.id, qty)
+  successToast(t('Partial production recorded'))
+}
 function onAutoConsumeAndComplete() {
   if (!wo.value) return
   const isoDate = new Date().toISOString().slice(0, 10)
@@ -1016,6 +1058,67 @@ const subconSupplyRaised = computed(() => {
 
 /** Blocked until the components are on their way to the vendor. */
 const canStartSubcon = computed(() => !subcon.value || subconSupplyRaised.value)
+
+/**
+ * Whether every component this order needs has actually been supplied — not
+ * merely whether a document exists.
+ *
+ * On `resupply` the measure is quantity: a transfer that moved half the fabric
+ * leaves the vendor unable to finish, so the order is not ready to start just
+ * because one transfer was raised. On `dropship` the goods are bought straight to
+ * the vendor and we never see them, so the request existing is all we can know.
+ * On `basic` the vendor supplies its own, so there is nothing to wait for.
+ */
+const rawMaterialsFulfilled = computed(() => {
+  const c = subcon.value
+  if (!c) return true
+  if (c.method === 'basic') return true
+  if (c.method !== 'resupply') return subconSupplyRaised.value
+  if (!rawMaterials.value.length) return subconSupplyRaised.value
+  return rawMaterials.value.every(
+    r => (sentToVendorBySku.value[r.sku] ?? 0) >= plannedQtyFor(r))
+})
+
+/**
+ * The next document the service thread still owes, once the order has started.
+ *
+ * The vendor's work is placed by a purchase request and then a purchase order, in
+ * that order — the order is built FROM the request, so naming the order while no
+ * request exists would be a button with nothing to act on. `undefined` once both
+ * are raised, which is when there is finally something to close.
+ */
+const SERVICE_STEPS: { kind: SubconDocKind; label: string }[] = [
+  { kind: 'subconPr', label: 'Create purchase request' },
+  { kind: 'purchaseOrder', label: 'Create purchase order' },
+]
+
+const nextServiceStep = computed(() => {
+  const raised = subcon.value?.raisedDocuments ?? []
+  const plan = subconPlan.value.flatMap(r => r.entries.map(e => e.kind))
+  for (const step of SERVICE_STEPS) {
+    // The service request's kind varies by scope (`subconPr` / `processPr`), so
+    // take whichever one this order's own plan actually calls for.
+    const kind = step.kind === 'subconPr'
+      ? (plan.find(k => k === 'subconPr' || k === 'processPr') ?? 'subconPr')
+      : step.kind
+    if (!plan.includes(kind)) continue
+    if (!raised.some(d => d.kind === kind)) return { kind, label: t(step.label) }
+  }
+  return undefined
+})
+
+/**
+ * The document that supplies the vendor, as a button label. A transfer moves our
+ * own stock; a dropship request buys it from a 3rd party and ships it on.
+ */
+const supplyActionKind = computed(() => subconSupplyStep.value?.kind)
+const supplyActionLabel = computed(() => {
+  const kind = supplyActionKind.value
+  if (!kind) return ''
+  return kind === 'transfer' || kind === 'rawTransfer'
+    ? t('Create warehouse transfer')
+    : t('Create purchase request for raw material')
+})
 
 /** Shown in place of opening the Start modal when the supply document is missing. */
 const startBlockedMessage = ref('')
@@ -1215,7 +1318,22 @@ function createDocument(kind: SubconDocKind, originWarehouseId?: string) {
 }
 
 function handlePrimaryAction() {
-  if (primaryAction.value === 'Start work order') {
+  // The supply step, named on the button when it is what is due. Opens the same
+  // form the Transactions tab raises it from — including the origin breakdown
+  // when the components span warehouses.
+  if (primaryAction.value === supplyActionLabel.value && supplyActionKind.value) {
+    startBlockedMessage.value = ''
+    createDocument(supplyActionKind.value)
+    return
+  }
+
+  const serviceStep = nextServiceStep.value
+  if (serviceStep && primaryAction.value === serviceStep.label) {
+    createDocument(serviceStep.kind)
+    return
+  }
+
+  if (primaryAction.value === t('Start work order')) {
     // A subcon order cannot start until its components are on their way: the
     // vendor has nothing to work on otherwise. The button stays live and explains
     // itself rather than going grey (rule/btn-no-disabled-validation).
@@ -1233,7 +1351,7 @@ function handlePrimaryAction() {
     successToast(t('Work order started'))
     return
   }
-  if (primaryAction.value !== 'Complete work order') return
+  if (primaryAction.value !== t('Complete work order')) return
   // Offer the fork before any of the completion dialogs: correcting the order is
   // a different job from closing it, and it has to happen first.
   if (subcon.value && !confirmedNoDifferences.value) { showConfirmAdjust.value = true; return }
@@ -1482,6 +1600,13 @@ function suppressFabClick(e: MouseEvent) {
           </MpPopoverContent>
         </MpPopover>
 
+        <!-- Closing short is a different decision from closing, so it stands as
+             its own control rather than hiding in the Actions menu. -->
+        <button
+          v-if="canPartiallyProduce"
+          class="detail-btn detail-btn--secondary"
+          @click="showPartialProductionModal = true"
+        >{{ t('Partially produce') }}</button>
         <button v-if="primaryAction" class="detail-btn detail-btn--primary" @click="handlePrimaryAction">{{ primaryAction }}</button>
       </div>
     </header>
@@ -1732,7 +1857,7 @@ function suppressFabClick(e: MouseEvent) {
                 <tr>
                   <th class="wod-th">{{ t('Cost component') }}</th>
                   <th class="wod-th">{{ t('Charged by') }}</th>
-                  <th class="wod-th">{{ t('Cost driver') }}</th>
+                  <th class="wod-th wod-th--num">{{ t('Qty') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Amount') }}</th>
                 </tr>
               </thead>
@@ -1740,7 +1865,7 @@ function suppressFabClick(e: MouseEvent) {
                 <tr v-for="l in subconCostLines" :key="l.account" class="wod-tr">
                   <td class="wod-td">{{ l.account }}</td>
                   <td class="wod-td">{{ l.chargedBy }}</td>
-                  <td class="wod-td">{{ l.driver }}</td>
+                  <td class="wod-td wod-td--num">{{ l.qty }}</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(l.amount) }}</td>
                 </tr>
 
@@ -1759,7 +1884,7 @@ function suppressFabClick(e: MouseEvent) {
                     </span>
                   </td>
                   <td class="wod-td">{{ subconGrossUpRow.chargedBy }}</td>
-                  <td class="wod-td">{{ subconGrossUpRow.driver }}</td>
+                  <td class="wod-td wod-td--num">—</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(subconGrossUpRow.amount) }}</td>
                 </tr>
               </tbody>
@@ -1981,53 +2106,47 @@ function suppressFabClick(e: MouseEvent) {
             </MpPopover>
           </div>
 
-          <!-- One titled section per transaction type, built from the same
-               subsection-title + table the Linked transactions tab already uses.
-               On dropship the two purchase requests are different animals (raw
-               material from a 3rd party, and the vendor's service) — the group
-               label says which, so they title separately rather than sharing a
-               section. -->
-          <div v-for="group in subconTransactionGroups" :key="group.key">
-            <h3 class="wod-subsection-title">{{ group.label }}</h3>
-            <div class="wod-table-scroll">
-              <table class="wod-table">
-                <thead>
-                  <tr>
-                    <th class="wod-th">{{ t('Type') }}</th>
-                    <th class="wod-th">{{ t('Transaction no.') }}</th>
-                    <th class="wod-th">{{ t('Module') }}</th>
-                    <th class="wod-th">{{ t('Date') }}</th>
-                    <th class="wod-th">{{ t('Status') }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="tx in group.rows" :key="tx.key" class="wod-tr">
-                    <td class="wod-td">{{ t(tx.type) }}</td>
-                    <td class="wod-td">
-                      <a v-if="tx.doc" class="cell-link" @click.prevent="openRaisedDocument(tx.doc)">{{ tx.doc.number }}</a>
-                      <span v-else class="wod-subcon-muted">{{ t(tx.title) }}</span>
-                    </td>
-                    <td class="wod-td">{{ tx.module }}</td>
-                    <td class="wod-td">{{ tx.doc?.raisedAt ? formatDate(tx.doc.raisedAt) : '—' }}</td>
-                    <!-- A raised transaction shows its own status, badged the same
-                         way its index and detail pages badge it. A step not raised
-                         yet has no record to have a status, so it says where the
-                         chain stands instead. -->
-                    <td class="wod-td">
-                      <ErpStatusBadge v-if="tx.status" :status="tx.status" />
-                      <span v-else-if="tx.doc" class="wod-subcon-status wod-subcon-status--done">{{ t('Raised') }}</span>
-                      <span
-                        v-else
-                        class="wod-subcon-status"
-                        :class="subconStarted ? 'wod-subcon-status--ready' : 'wod-subcon-status--blocked'"
-                      >
-                        {{ subconStarted ? t('Ready to raise') : t('Waiting for start') }}
-                      </span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+          <!-- One table, in the order the run raises its documents. Type says
+               what the document is; Function says what it is for — on dropship
+               two purchase requests of the same type do entirely different jobs. -->
+          <div class="wod-table-scroll">
+            <table class="wod-table">
+              <thead>
+                <tr>
+                  <th class="wod-th">{{ t('Transaction type') }}</th>
+                  <th class="wod-th">{{ t('Function') }}</th>
+                  <th class="wod-th">{{ t('Transaction no.') }}</th>
+                  <th class="wod-th">{{ t('Date') }}</th>
+                  <th class="wod-th">{{ t('Status') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="tx in subconTransactionRows" :key="tx.key" class="wod-tr">
+                  <td class="wod-td">{{ t(tx.type) }}</td>
+                  <td class="wod-td">{{ tx.function ? t(tx.function) : '—' }}</td>
+                  <td class="wod-td">
+                    <a v-if="tx.doc" class="cell-link" @click.prevent="openRaisedDocument(tx.doc)">{{ tx.doc.number }}</a>
+                    <span v-else class="wod-subcon-muted">{{ t(tx.title) }}</span>
+                  </td>
+                  <td class="wod-td">{{ tx.doc?.raisedAt ? formatDate(tx.doc.raisedAt) : '—' }}</td>
+                  <!-- A raised transaction shows its own status, badged the same
+                       way its index and detail pages badge it. A step not raised
+                       yet has no record to have a status, so it says where the
+                       chain stands instead. -->
+                  <td class="wod-td">
+                    <ErpStatusBadge v-if="tx.status" :status="tx.status" />
+                    <span v-else-if="tx.doc" class="wod-subcon-status wod-subcon-status--done">{{ t('Raised') }}</span>
+                    <span
+                      v-else
+                      class="wod-subcon-status"
+                      :class="subconStarted ? 'wod-subcon-status--ready' : 'wod-subcon-status--blocked'"
+                    >
+                      {{ subconStarted ? t('Ready to raise') : t('Waiting for start') }}
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </template>
 
@@ -2177,6 +2296,14 @@ function suppressFabClick(e: MouseEvent) {
       :groups="rawOriginGroups"
       :destination-name="subconDestination?.name"
       @select="createTransferFromOrigin"
+    />
+
+    <PartialProductionModal
+      v-model:is-open="showPartialProductionModal"
+      :planned-qty="wo.plannedQty"
+      :produced-qty="wo.producedQty"
+      :unit="mainOutput.unit"
+      @confirm="onPartialProduction"
     />
 
     <SubconJournalModal

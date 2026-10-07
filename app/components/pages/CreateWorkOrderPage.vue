@@ -950,10 +950,14 @@ onUnmounted(() => { stageObserver?.disconnect() })
             />
           </div>
 
-          <!-- The draft gate: nothing can be procured until the WO is started. -->
+          <!-- The draft gate. It matters at save time, not while configuring, so
+               it hangs off an info icon rather than taking four lines of the
+               block. MpTooltip wraps long labels on its own. -->
           <p class="wo-subcon-gate">
-            <MpIcon name="info" size="sm" />
-            {{ subconGateText }}
+            <MpTooltip id="wo-subcon-gate-tip" :label="subconGateText" placement="right" use-portal>
+              <MpIcon name="info" size="sm" />
+            </MpTooltip>
+            {{ t('Saved as a draft until you start it.') }}
           </p>
         </section>
 

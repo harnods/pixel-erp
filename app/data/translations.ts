@@ -3746,6 +3746,26 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Ready to raise": "Siap dibuat",
   "Waiting for start": "Menunggu dimulai",
 
+  // Work order — next-step primary action, partial production, transactions
+  "Create purchase request for raw material": "Buat permintaan pembelian bahan baku",
+  "Create purchase order": "Buat pesanan pembelian",
+  "Partially produce": "Produksi sebagian",
+  "Record partial production": "Catat produksi sebagian",
+  "Already produced": "Sudah diproduksi",
+  "Produced now": "Diproduksi sekarang",
+  "Record production": "Catat produksi",
+  "Partial production recorded": "Produksi sebagian dicatat",
+  "Enter how many were produced.": "Masukkan jumlah yang diproduksi.",
+  "That is more than the remaining quantity": "Jumlah ini melebihi sisa yang belum diproduksi",
+  "The balance stays open — this work order becomes partially produced, and the rest can be recorded against it later.": "Sisanya tetap terbuka — perintah kerja ini menjadi produksi sebagian, dan sisanya bisa dicatat kemudian.",
+  "Saved as a draft until you start it.": "Disimpan sebagai draf sampai Anda memulainya.",
+  "Procure raw material": "Pengadaan bahan baku",
+  "In-house portion": "Porsi internal",
+  "Transfer stock": "Transfer stok",
+  "Issue components": "Keluarkan komponen",
+  "Receive output": "Terima hasil",
+  "Qty": "Jumlah",
+
   // Transfer origin breakdown — components split across warehouses
   "Components by origin warehouse": "Komponen per gudang asal",
   "These components are stored in more than one warehouse. A transfer moves stock out of a single warehouse, so raise one per origin.": "Komponen ini tersimpan di lebih dari satu gudang. Transfer hanya memindahkan stok dari satu gudang, jadi buat satu transfer untuk setiap gudang asal.",
