@@ -124,6 +124,16 @@ export interface WorkOrderSubconSetup {
    * so several records cannot between them bill more than the order agreed.
    */
   costLineRecorded?: Record<string, number>
+  /**
+   * Components the vendor did not consume, returned with the run's output.
+   *
+   * They are an ADDITIONAL OUTPUT of the work order, not a correction to what
+   * was sent: the quantity handed over stands, and this is what came back with
+   * the finished goods. Kept here so the Finished goods section can show them
+   * alongside the main output rather than leaving the stock adjustment as the
+   * only trace.
+   */
+  unusedOutputs?: { sku: string; qty: number }[]
 }
 
 /** A document created from a subcon work order, and where its detail page lives. */
@@ -327,6 +337,24 @@ export function recordSubconCost(workOrderId: string, amounts: Record<string, nu
     taken[id] = (taken[id] ?? 0) + amount
   }
   wo.subcon.costLineRecorded = taken
+  persistWorkOrders()
+}
+
+/** Record what came back unused, as additional output of the run. */
+export function recordSubconUnusedOutput(
+  workOrderId: string,
+  lines: { sku: string; qty: number }[],
+): void {
+  const wo = workOrders.find(w => w.id === workOrderId)
+  if (!wo?.subcon) return
+  const kept = [...(wo.subcon.unusedOutputs ?? [])]
+  for (const line of lines) {
+    if (line.qty <= 0) continue
+    const existing = kept.find(k => k.sku === line.sku)
+    if (existing) existing.qty += line.qty
+    else kept.push({ ...line })
+  }
+  wo.subcon.unusedOutputs = kept
   persistWorkOrders()
 }
 

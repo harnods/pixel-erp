@@ -251,6 +251,12 @@ export interface PurchaseRequest {
    * those goods never reach a company site.
    */
   warehouse?: string
+  /**
+   * Free text carried from whatever raised the request — a work order names
+   * itself and the subcon vendor here, so the request can be traced back to the
+   * run it serves without opening it.
+   */
+  memo?: string
 }
 
 export interface SalesQuote {

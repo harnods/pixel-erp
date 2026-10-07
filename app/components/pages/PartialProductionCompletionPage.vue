@@ -245,7 +245,7 @@ function validate(): boolean {
   return true
 }
 
-function save(close: boolean) {
+function save() {
   if (!wo.value || !validate()) return
   // Cost first: the quantity record is what changes the order's status, so the
   // charges it carries must already be on the order when that happens.
@@ -254,11 +254,10 @@ function save(close: boolean) {
   ))
   recordSubconProduction(wo.value.id, batchQty.value)
   successToast(t('Partial production recorded'))
-  if (close) { goBack(); return }
-  // Staying on the form: the figures now describe what is still outstanding.
-  qtyProduced.value = ''
-  componentQty.value = {}
-  costAmount.value = {}
+  // Both paths return to the work order: the record is made, and what it changed
+  // — produced qty, the charges taken, what is still outstanding — is read
+  // there, not on a form that has already done its job.
+  goBack()
 }
 </script>
 
@@ -550,8 +549,9 @@ function save(close: boolean) {
 
     <footer class="ppc-footer">
       <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="goBack">{{ t('Cancel') }}</button>
-      <button class="btn-enterprise btn-enterprise--secondary ppc-action" type="button" @click="save(true)">{{ t('Save & close') }}</button>
-      <button class="btn-enterprise btn-enterprise--primary ppc-action" type="button" @click="save(false)">{{ t('Save') }}</button>
+      <!-- One Save: both buttons now returned to the work order, so offering
+           "Save & close" beside it was two labels for one action. -->
+      <button class="btn-enterprise btn-enterprise--primary ppc-action" type="button" @click="save()">{{ t('Save') }}</button>
     </footer>
   </div>
 

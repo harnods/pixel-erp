@@ -18,7 +18,6 @@ import {
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import SubconMethodChip from '~/components/patterns/SubconMethodChip.vue'
-import SubconShortfallModal from '~/components/patterns/SubconShortfallModal.vue'
 import CompleteSubconWorkOrderModal, { type SubconComponentUsage } from '~/components/patterns/CompleteSubconWorkOrderModal.vue'
 import {
   buildDocumentPlan, SUBCON_SCOPE_LABEL,
@@ -51,7 +50,7 @@ import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer
 import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
 import { formatDate } from '~/utils/date'
 import { successToast } from '~/utils/toasts'
-import { workOrders, persistWorkOrders, adjustSubconWorkOrderQty, recordSubconDocument, setSubconComponentQty, addSubconCostLine, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
+import { workOrders, persistWorkOrders, adjustSubconWorkOrderQty, recordSubconDocument, recordSubconUnusedOutput, setSubconComponentQty, addSubconCostLine, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 import { warehouseTransfers, addTransfer } from '~/data/warehouseTransfers'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { productionSettings } from '~/data/productionSettings'
@@ -262,9 +261,6 @@ const subconTransactionRows = computed(() =>
     function: DOC_FUNCTION[tx.kind] ?? '',
   })),
 )
-
-/** Everything that can be raised right now, across both threads. */
-const subconCreateActions = computed(() => subconPlan.value.flatMap(row => row.actions))
 
 /**
  * Subcon cost — the vendor's charges, which stand in for Production cost and
@@ -743,13 +739,19 @@ function consumedFor(productId: string): number {
 const sentToVendorBySku = computed<Record<string, number>>(() => {
   const c = subcon.value
   if (!c || c.method !== 'resupply') return {}
+  const vendorWarehouseId = c.subconWarehouseId
   const transferIds = (c.raisedDocuments ?? [])
     .filter(d => d.route === '/warehouse-transfers')
     .map(d => d.id)
   const totals: Record<string, number> = {}
   for (const id of transferIds) {
     const transfer = warehouseTransfers.find(t => t.id === id)
-    for (const line of transfer?.lines ?? []) {
+    if (!transfer) continue
+    // Direction matters. Only stock moving INTO the vendor's location is stock
+    // sent; anything headed the other way is a return, and counting it here
+    // would report more as handed over than ever left.
+    if (vendorWarehouseId && transfer.destinationId !== vendorWarehouseId) continue
+    for (const line of transfer.lines ?? []) {
       totals[line.sku] = (totals[line.sku] ?? 0) + line.qty
     }
   }
@@ -940,7 +942,6 @@ function onAutoConsumeAndComplete() {
 // get materials to the vendor, so it asks which to raise and opens that form
 // prefilled — otherwise the user is left hunting for the right form in another
 // module and retyping what the work order already knows.
-const showShortfallModal = ref(false)
 const showCompleteSubconModal = ref(false)
 
 /**
@@ -972,49 +973,56 @@ function completeSubconWorkOrder(unused: { sku: string; qty: number }[]) {
   if (!w || !c) return
   showCompleteSubconModal.value = false
 
+  /**
+   * Components the vendor did not consume come back as an ADDITIONAL OUTPUT of
+   * the run, not as a transfer.
+   *
+   * They arrive with the finished goods, into the same receiving warehouse, so a
+   * stock adjustment IN is what actually happened — one movement, at the place
+   * the goods turn up. Returning them to their original warehouse would invent a
+   * second movement nobody made, and because the return was recorded as a
+   * warehouse transfer against this work order it was being counted again as
+   * stock SENT to the vendor, inflating the figure the order reconciles against.
+   */
   if (unused.length) {
-    const origin = subconDestination.value                       // the vendor location
-    const destination = subconOrigin.value                       // where components came from
-    const transfer = addTransfer({
-      date: new Date().toISOString().slice(0, 10),
-      originId: origin?.id ?? '',
-      originName: origin?.name ?? '',
-      destinationId: destination?.id ?? '',
-      destinationName: destination?.name ?? '',
-      tags: [],
-      memo: `${t('Unused components returned from')} ${w.number}`,
-      lines: unused,
-    })
-    recordSubconDocument(w.id, {
-      kind: 'transfer', id: transfer.id, number: transfer.number, route: '/warehouse-transfers',
-    })
+    const warehouse = subconReceiving.value
+    if (warehouse) {
+      const adj = addAdjustment({
+        kind: 'in-out',
+        date: new Date().toISOString().slice(0, 10),
+        warehouseId: warehouse.id,
+        warehouseName: warehouse.name,
+        category: 'General',
+        tags: [],
+        memo: `${t('Unused components returned with the output of')} ${w.number}`,
+        // Positive qty is stock IN — the same convention the Stock in/out form uses.
+        lines: unused.map(u => ({ sku: u.sku, qty: u.qty })),
+      })
+      recordSubconDocument(w.id, {
+        kind: 'componentIssue', id: adj.id, number: adj.number, route: '/stock-adjustments',
+      })
+      // Kept on the order so the Finished goods section can show them as the
+      // additional output they are, rather than leaving the adjustment as the
+      // only trace.
+      recordSubconUnusedOutput(w.id, unused)
+    }
   }
   completeWorkOrder()
 }
+
+/** Where the run's output lands — and so where unused components come back to. */
+const subconReceiving = computed(() => {
+  const c = subcon.value
+  return c?.receivingWarehouseId
+    ? { id: c.receivingWarehouseId, name: c.receivingWarehouseName ?? '' }
+    : undefined
+})
 
 /** How much the vendor still owes against what the work order needs. */
 const subconShortfall = computed(() => {
   const w = wo.value
   return w && subcon.value ? Math.max(0, w.plannedQty - w.producedQty) : 0
 })
-
-/** Close the order short: reduce what it needs to what actually arrived. */
-function adjustAndComplete(reason: string) {
-  const w = wo.value
-  if (!w) return
-  showShortfallModal.value = false
-  adjustSubconWorkOrderQty(w.id, w.producedQty, reason.trim() || t('Closed short — vendor under-delivered'))
-  completeWorkOrder()
-}
-
-/** Raise another delivery for the balance instead of closing short. */
-function deliverBalance() {
-  showShortfallModal.value = false
-  const po = (subcon.value?.raisedDocuments ?? []).find(d => d.kind === 'purchaseOrder')
-  router.push(po
-    ? { path: '/purchase-deliveries/new', query: { fromPo: po.id } }
-    : { path: '/purchase-deliveries/new' })
-}
 
 /**
  * The document that has to exist before a subcon order can start — the transfer
@@ -1096,6 +1104,18 @@ const supplyActionLabel = computed(() => {
 
 /** Shown in place of opening the Start modal when the supply document is missing. */
 const startBlockedMessage = ref('')
+
+/**
+ * Shown in place of completing when the vendor has not delivered everything.
+ *
+ * Closing short used to be offered as a choice in the moment — deliver the
+ * balance, or write off the difference with a reason typed into the same dialog.
+ * That put a quantity revision inside a completion flow, where it reads as a
+ * formality rather than the decision it is. The order is now refused, and the
+ * revision is made where it belongs: Adjust work order, which states the before
+ * and after and keeps the reason on the record.
+ */
+const completeBlockedMessage = ref('')
 
 /**
  * Issue the components into the vendor's process — a stock adjustment OUT of the
@@ -1330,11 +1350,19 @@ function handlePrimaryAction() {
   // a different job from closing it, and it has to happen first.
   if (subcon.value && !confirmedNoDifferences.value) { showConfirmAdjust.value = true; return }
   // A subcon order is finished when the vendor's deliveries add up to what it
-  // needs. Short of that, ask: deliver the balance, or close it short on the
-  // record. (The unconsumed-material guard below is about in-house consumption,
-  // which a subcon order does not have.)
-  if (subcon.value) {
-    if (subconShortfall.value > 0) { showShortfallModal.value = true; return }
+  // needs. Short of that it is refused: revising the quantity is an adjustment,
+  // made on the adjust form where it is recorded with its reason, not a step
+  // inside completion. (The unconsumed-material guard below is about in-house
+  // consumption, which a subcon order does not have.)
+  const order = wo.value
+  if (subcon.value && order) {
+    if (subconShortfall.value > 0) {
+      completeBlockedMessage.value =
+        `${t('Produced')} ${order.producedQty}/${order.plannedQty} — ${subconShortfall.value} ${t('still outstanding.')} `
+        + t('Adjust the work order to what was actually produced, then complete it.')
+      return
+    }
+    completeBlockedMessage.value = ''
     // Delivered in full — but the components sent to the vendor are still on the
     // company's books until they are accounted for, so completing asks how much
     // was used and returns the rest.
@@ -1449,10 +1477,27 @@ const totalProductionCost = computed(() => (subcon.value
   ? rawSubtotal.value + subconCostSubtotal.value
   : rawSubtotal.value + productionCostSubtotal.value + routingSubtotal.value))
 
-const otherOutputs = computed(() => (bom.value?.otherOutputs ?? []).map(o => {
-  const p = catalogProduct(o.productId)
-  return { product: p?.name ?? '—', sku: p?.sku ?? '—', qty: o.qty, unit: o.unit, percentage: o.percentage, estCost: o.estCost }
-}))
+const otherOutputs = computed(() => {
+  const fromBom = (bom.value?.otherOutputs ?? []).map(o => {
+    const p = catalogProduct(o.productId)
+    return { product: p?.name ?? '—', sku: p?.sku ?? '—', qty: o.qty, unit: o.unit, percentage: o.percentage, estCost: o.estCost }
+  })
+  // Components the vendor did not consume came back with the finished goods, so
+  // they are output of this run too — valued at what they cost to buy, since
+  // that is what they are still worth.
+  const unused = (subcon.value?.unusedOutputs ?? []).map((u) => {
+    const r = rawMaterials.value.find(m => m.sku === u.sku)
+    return {
+      product: r?.product ?? u.sku,
+      sku: u.sku,
+      qty: u.qty,
+      unit: r?.unit ?? '',
+      percentage: 0,
+      estCost: (r?.purchaseCost ?? 0) * u.qty,
+    }
+  })
+  return [...fromBom, ...unused]
+})
 const otherOutputsSubtotal = computed(() => otherOutputs.value.reduce((s, r) => s + r.estCost, 0))
 
 const productionWaste = computed(() => (bom.value?.productionWaste ?? []).map(w => ({
@@ -1624,7 +1669,11 @@ function suppressFabClick(e: MouseEvent) {
           <div class="content-list-col">
             <ContentList :label="t('Type')" :value="wo.type" />
             <ContentList :label="t('Track routing')" :value="wo.trackRouting ? t('Yes') : t('No')" />
-            <ContentList :label="t('Produced qty')" :value="`${wo.producedQty}`" />
+            <!-- Accumulated against the target, so partial records read as
+                 progress rather than as a number with no scale. `plannedQty` IS
+                 the adjusted figure — `adjustSubconWorkOrderQty` writes it — so
+                 an adjustment moves the denominator with it. -->
+            <ContentList :label="t('Produced qty')" :value="`${wo.producedQty}/${wo.plannedQty}`" />
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Production plan dates')" :value="planRange" />
@@ -1691,6 +1740,18 @@ function suppressFabClick(e: MouseEvent) {
           <MpBannerIcon />
           <MpBannerTitle>{{ t('Supply the vendor first') }}</MpBannerTitle>
           <MpBannerDescription>{{ startBlockedMessage }}</MpBannerDescription>
+        </MpBanner>
+
+        <!-- Refused rather than offered as a choice: see `completeBlockedMessage`. -->
+        <MpBanner v-if="completeBlockedMessage" variant="danger" align-items="center" class="wod-subcon-blocked">
+          <MpBannerIcon />
+          <MpBannerTitle>{{ t('Not everything has been produced yet') }}</MpBannerTitle>
+          <MpBannerDescription>
+            {{ completeBlockedMessage }}
+            <button class="wod-blocked-link btn-enterprise" type="button" @click="goAdjust">
+              {{ t('Adjust work order') }}
+            </button>
+          </MpBannerDescription>
         </MpBanner>
 
       </section>
@@ -2057,26 +2118,6 @@ function suppressFabClick(e: MouseEvent) {
                   ? t('Supply the vendor first — the rest of the run unlocks once the work order starts.')
                   : t('Start the work order to raise the rest of its documents.') }}
             </p>
-            <!-- Always rendered once started, never disabled: when nothing is
-                 ready the menu says so rather than the button going grey
-                 (rule/btn-no-disabled-validation). -->
-            <MpPopover placement="bottom-end">
-              <MpPopoverTrigger>
-                <MpButton variant="primary" is-rounded>{{ t('Create transaction') }}</MpButton>
-              </MpPopoverTrigger>
-              <MpPopoverContent>
-                <MpPopoverList>
-                  <MpPopoverListItem
-                    v-for="action in subconCreateActions"
-                    :key="action.kind"
-                    @click="createDocument(action.kind)"
-                  >{{ action.label }}</MpPopoverListItem>
-                  <MpPopoverListItem v-if="!subconCreateActions.length" class="wod-tx-menu-empty">
-                    {{ t('Nothing left to raise') }}
-                  </MpPopoverListItem>
-                </MpPopoverList>
-              </MpPopoverContent>
-            </MpPopover>
           </div>
 
           <!-- One table, in the order the run raises its documents. Type says
@@ -2311,16 +2352,6 @@ function suppressFabClick(e: MouseEvent) {
       :components="subconComponentUsage"
       :subcon-warehouse-name="subconDestination?.name"
       @complete="completeSubconWorkOrder"
-    />
-
-    <SubconShortfallModal
-      v-if="subcon && wo"
-      v-model:is-open="showShortfallModal"
-      :produced="wo.producedQty"
-      :planned="wo.plannedQty"
-      :unit="mainOutput.unit"
-      @adjust="adjustAndComplete"
-      @deliver="deliverBalance"
     />
 
 
@@ -2562,6 +2593,10 @@ function suppressFabClick(e: MouseEvent) {
 /* Several documents can be ready at once (a repeatable delivery alongside the
    invoice), so the buttons wrap toward the right rather than widening the cell. */
 .wod-subcon-blocked { margin-top: var(--mp-spacing-4); }
+.wod-blocked-link {
+  padding: 0; border: none; background: transparent; cursor: pointer;
+  font-size: inherit; color: var(--mp-text-link); text-decoration: underline;
+}
 
 .wod-subcon-actions {
   display: flex;

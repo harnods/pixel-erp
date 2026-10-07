@@ -70,7 +70,10 @@ function buildDetail(base: PurchaseRequest, idx: number): PurchaseRequestDetail 
     // back to the generated list.
     warehouse: base.warehouse ?? pick(WAREHOUSES, idx),
     deliverTo: pick(DELIVER_TO, idx),
-    note: pick(NOTES, idx),
+    // Same rule as the warehouse: a request created through the form carries its
+    // own memo — a work order names itself and the vendor there — and only
+    // seeded ones fall back to the generated list.
+    note: base.memo ?? pick(NOTES, idx),
     attachments: base.attachment ? [{ name: `PR-${base.number}.pdf`, sizeKB: 48 }] : [],
     lastUpdatedBy: base.procurementStaff,
     lastUpdatedAt: `${base.date}T09:30:00+07:00`,

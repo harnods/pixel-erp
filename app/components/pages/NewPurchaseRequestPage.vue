@@ -9,7 +9,7 @@
 import {
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
   MpButton, MpButtonGroup, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput,
-  MpDatePicker, MpAutocomplete, MpTooltip,
+  MpDatePicker, MpAutocomplete, MpTooltip, MpTextarea,
   MpIcon, MpTextlink, toast, css,
   // The line-items product picker is an MpPopover menu. Without these imports Vue
   // renders <MpPopover> as an unknown element, so the match list spills inline into
@@ -95,7 +95,23 @@ function productMatches(query: string) {
 // the apparel components sit outside the stocked catalog — neither resolves
 // through a SKU lookup here.
 const subconPrefill = decodeSubconPrefill(route.query.subcon)
+
+/**
+ * Raised from a work order, so the request is not the buyer's to reshape.
+ *
+ * The work order decides what is bought, how much, and where it delivers — the
+ * lines ARE its subcon cost, and the warehouse is the one it named. Editing any
+ * of that here would produce a request that no longer answers the order it was
+ * raised for, and nothing downstream would notice the difference. Price and
+ * urgency stay open: those are the buyer's to negotiate.
+ */
+const isSubconRequest = computed(() => !!subconPrefill)
+
+/** Carried from the work order, like the warehouse transfer's. */
+const memo = ref('')
+
 if (subconPrefill) {
+  memo.value = subconPrefill.memo
   requiredDate.value = isoToDMY(subconPrefill.requiredDate)
   urgency.value = 'High'
   // Where this request delivers. A dropship component request never touches our
@@ -201,6 +217,7 @@ function onSave() {
     urgency: urgency.value.toLowerCase() as UrgencyLevel,
     lines,
     ...(warehouse.value ? { warehouse: warehouse.value } : {}),
+    ...(memo.value ? { memo: memo.value } : {}),
   })
   const id = request.id
   // Raised from a subcon work order → link it back, so that work order's
@@ -271,7 +288,9 @@ function onSave() {
 
           <MpFormControl id="f-warehouse" class="si-field">
             <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
-            <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="warehouseOptions" use-portal is-clearable is-full-width />
+            <!-- Fixed when a work order named it; see `isSubconRequest`. -->
+            <MpInput v-if="isSubconRequest" id="f-warehouse-fixed" :model-value="warehouse" is-disabled is-full-width />
+            <MpAutocomplete v-else id="f-warehouse-inp" v-model="warehouse" :data="warehouseOptions" use-portal is-clearable is-full-width />
           </MpFormControl>
         </div>
       </section>
@@ -322,7 +341,11 @@ function onSave() {
                     @close="openProductRow = null"
                   >
                     <MpPopoverTrigger>
-                      <MpInput :id="`f-product-${item._key}`" v-model="item.product" is-full-width @focus="openProductRow = item._key" />
+                      <MpInput
+                        :id="`f-product-${item._key}`" v-model="item.product" is-full-width
+                        :is-disabled="isSubconRequest"
+                        @focus="openProductRow = isSubconRequest ? null : item._key"
+                      />
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ minWidth: '220px', maxHeight: '240px', overflowY: 'auto' })" @blur="openProductRow = null">
                       <MpPopoverList>
@@ -352,22 +375,26 @@ function onSave() {
                       @update:model-value="(v) => { item.qty = Number(v); item.qtyError = false }" />
                   </MpTooltip>
                   <MpInput v-else type="number" :model-value="item.qty" is-full-width
+                    :is-disabled="isSubconRequest"
                     @update:model-value="(v) => { item.qty = Number(v); item.qtyError = false }" />
                 </td>
 
                 <td class="si-td si-td--input si-td--border">
-                  <MpAutocomplete v-model="item.unit" :data="unitOptions" use-portal is-full-width />
+                  <MpInput v-if="isSubconRequest" :model-value="item.unit" is-disabled is-full-width />
+                  <MpAutocomplete v-else v-model="item.unit" :data="unitOptions" use-portal is-full-width />
                 </td>
 
                 <td class="si-td si-td--del">
-                  <MpButton class="si-del-btn" :aria-label="`${t('Remove')} ${item.product}`" @click="removeItem(item._key)">
+                  <!-- The work order's line-up is the request's line-up: a line
+                       removed here would leave the run short with no record. -->
+                  <MpButton v-if="!isSubconRequest" class="si-del-btn" :aria-label="`${t('Remove')} ${item.product}`" @click="removeItem(item._key)">
                     <MpIcon name="minus-circular" size="sm" />
                   </MpButton>
                 </td>
               </tr>
 
               <!-- Trailing "Select product" row — picking here appends a new line -->
-              <tr class="si-tr">
+              <tr v-if="!isSubconRequest" class="si-tr">
                 <td class="si-td si-td--input si-td--border">
                   <MpPopover
                     is-manual :is-open="openProductRow === NEW_ROW_KEY" is-close-on-select
@@ -401,6 +428,15 @@ function onSave() {
         </div>
       </section>
 
+      <!-- ── Memo ── carried from whatever raised the request ── -->
+      <section class="si-memo-section">
+        <MpFormControl id="f-memo">
+          <MpFormLabel>{{ t('Memo') }}</MpFormLabel>
+          <MpTextarea id="f-memo-inp" v-model="memo" :placeholder="t('Add a note')" is-full-width :rows="3" />
+          <p class="si-memo-hint">{{ t('Only visible to you and your team') }}</p>
+        </MpFormControl>
+      </section>
+
       <!-- ── Footer ── ghost Cancel · primary "Save" (rightmost) -->
       <MpButtonGroup class="erp-action-footer si-form-footer">
         <MpButton variant="ghost" is-rounded @click="onCancel">{{ t('Cancel') }}</MpButton>
@@ -412,6 +448,12 @@ function onSave() {
 </template>
 
 <style scoped>
+.si-memo-section { margin-top: var(--mp-spacing-6); max-width: 420px; }
+.si-memo-hint {
+  margin: var(--mp-spacing-1) 0 0;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
+}
+
 .si-form-page {
   --si-field-wide: 318px;
   --si-field: 228px;

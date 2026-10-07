@@ -381,6 +381,17 @@ const subconFullySent = ref(false)
 /** Lines the prefill had to reduce because the origin does not hold that much. */
 const subconCappedLines = ref<string[]>([])
 
+/**
+ * Raised from a work order, so the document is not the operator's to reshape.
+ *
+ * The work order decides which components move, where they come from and where
+ * they go — changing any of that here would produce a transfer that no longer
+ * answers the order it was raised for, and nothing downstream would notice. The
+ * quantities stay editable: how much actually ships is a real decision made at
+ * the loading bay.
+ */
+const isSubconTransfer = computed(() => !!subconSource.value)
+
 function prefillFromSubcon(): boolean {
   const p = decodeSubconPrefill(route.query.subcon)
   if (!p) return false
@@ -602,7 +613,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
           <MpFormControl id="wtf-origin" class="wtf-f-origin" is-required :is-invalid="originError">
             <MpFormLabel>{{ t('Origin warehouse') }}</MpFormLabel>
+            <!-- Fixed when the work order named it; see `isSubconTransfer`. -->
+            <MpInput
+              v-if="isSubconTransfer"
+              id="wtf-origin-fixed" :model-value="warehouseName(originId)" is-disabled is-full-width
+            />
             <MpAutocomplete
+              v-else
               id="wtf-origin-ac" v-model="originId" :data="warehouseOptions" label-prop="name" value-prop="id"
               :placeholder="t('Select warehouse')"
               is-searchable use-portal is-full-width :is-invalid="originError"
@@ -613,7 +630,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
           <MpFormControl id="wtf-dest" class="wtf-f-dest" is-required :is-invalid="destError">
             <MpFormLabel>{{ t('Destination warehouse') }}</MpFormLabel>
+            <MpInput
+              v-if="isSubconTransfer"
+              id="wtf-dest-fixed" :model-value="warehouseName(destId)" is-disabled is-full-width
+            />
             <MpAutocomplete
+              v-else
               id="wtf-dest-ac" v-model="destId" :data="destinationOptions" label-prop="name" value-prop="id"
               :placeholder="t('Select warehouse')"
               is-searchable use-portal is-full-width :is-invalid="destError"
@@ -636,7 +658,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </svg>
             </button>
           </div>
-          <button class="wtf-import-btn" type="button" @click="importProducts">{{ t('Import') }}</button>
+          <button v-if="!isSubconTransfer" class="wtf-import-btn" type="button" @click="importProducts">{{ t('Import') }}</button>
         </div>
 
         <!-- Nothing outstanding on the originating work order: say so, rather
@@ -745,7 +767,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     </button>
                   </td>
                 </tr>
-                <tr class="wtf-tr">
+                <tr v-if="!isSubconTransfer" class="wtf-tr">
                   <td class="wtf-td wtf-td--prod">
                     <button class="wtf-prod-trigger" type="button" @click="drawerOpen = true">
                       <span class="wtf-prod-placeholder">{{ t('Select product') }}</span>
