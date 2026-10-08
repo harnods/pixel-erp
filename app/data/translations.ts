@@ -3617,4 +3617,22 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Restore report": "Pulihkan laporan",
   "Report info": "Info laporan",
   "Report details": "Detail laporan",
+
+  // Project accounting > New engagement — Setup form (client, budget, project assignment).
+  "Add new contact": "Tambah kontak baru",
+  "Select budget": "Pilih anggaran",
+  "View budget": "Lihat anggaran",
+  "Add new budget": "Tambah anggaran baru",
+  "The budget this engagement draws against": "Anggaran yang digunakan proyek ini",
+  "Filled from the selected budget. You can edit it": "Diisi dari anggaran yang dipilih. Anda dapat mengubahnya",
+  "Project assignment": "Penugasan proyek",
+  "Define who leads the project and who works on it.": "Tentukan siapa yang memimpin proyek dan siapa yang mengerjakannya.",
+  "Project manager": "Manajer proyek",
+  "Select project manager": "Pilih manajer proyek",
+  "Users with the Owner, Ultimate or Project Manager role": "Pengguna dengan peran Owner, Ultimate, atau Project Manager",
+  "Team member": "Anggota tim",
+  "What each member can see follows their own role permissions": "Yang dapat dilihat anggota mengikuti izin peran mereka",
+  "Select team members": "Pilih anggota tim",
+  "No selected team members": "Belum ada anggota tim yang dipilih",
+  "Selected team members will appear here.": "Anggota tim yang dipilih akan muncul di sini.",
 }

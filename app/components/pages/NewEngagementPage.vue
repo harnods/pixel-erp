@@ -256,7 +256,7 @@ function cancel() { router.push('/project-accounting') }
               <MpAutocomplete
                 id="ne-budget-line-input" v-model="draft.budgetLineId" :data="budgetLineData"
                 label-prop="name" value-prop="id" is-searchable use-portal is-full-width
-                :placeholder="t('Select a budget')"
+                :placeholder="t('Select budget')"
                 is-show-button-action
                 @update:model-value="onBudgetLinePicked"
                 @button-action="openNewBudget"
@@ -269,7 +269,7 @@ function cancel() { router.push('/project-accounting') }
                     <button
                       type="button"
                       class="btn-enterprise btn-enterprise--plain ne-option-open"
-                      :aria-label="`${t('Open budget in a new tab')}: ${item.name}`"
+                      :aria-label="`${t('View budget')}: ${item.name}`"
                       @click.stop.prevent="openBudgetLine(item.id)"
                     >
                       <MpIcon name="newtab" size="sm" />
@@ -278,7 +278,7 @@ function cancel() { router.push('/project-accounting') }
                 </template>
                 <template #buttonAction>{{ t('Add new budget') }}</template>
               </MpAutocomplete>
-              <p class="ne-hint">{{ t('The budget line this engagement draws against') }}</p>
+              <p class="ne-hint">{{ t('The budget this engagement draws against') }}</p>
             </MpFormControl>
 
             <MpFormControl id="ne-budget">
@@ -287,7 +287,7 @@ function cancel() { router.push('/project-accounting') }
                 <MpInputLeftAddon>Rp</MpInputLeftAddon>
                 <MpInput id="ne-budget-input" v-model="draft.budget" type="number" placeholder="0" is-full-width />
               </MpInputGroup>
-              <p class="ne-hint">{{ t('Filled from the selected budget. Editable') }}</p>
+              <p class="ne-hint">{{ t('Filled from the selected budget. You can edit it') }}</p>
             </MpFormControl>
           </div>
 
@@ -307,14 +307,14 @@ function cancel() { router.push('/project-accounting') }
         <!-- ── Project assignment ── -->
         <section class="ne-section">
           <h2 class="ne-section-title">{{ t('Project assignment') }}</h2>
-          <p class="ne-hint ne-hint--lead">{{ t('Who leads the project, and who works on it') }}</p>
+          <p class="ne-hint ne-hint--lead">{{ t('Define who leads the project and who works on it.') }}</p>
           <div class="ne-grid ne-grid--2">
             <MpFormControl id="ne-pm">
               <MpFormLabel>{{ t('Project manager') }}</MpFormLabel>
               <MpAutocomplete
                 id="ne-pm-input" v-model="draft.pm" :data="pmData"
                 label-prop="name" value-prop="name" use-portal is-full-width
-                :placeholder="t('Select a project manager')"
+                :placeholder="t('Select project manager')"
               />
               <p class="ne-hint">{{ t('Users with the Owner, Ultimate or Project Manager role') }}</p>
             </MpFormControl>
