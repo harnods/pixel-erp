@@ -845,8 +845,9 @@ ERP override wins.
 - **`rule/settings-page-layout`** — *Do:* a module settings page opened from inside a
   module renders via `detailMatch` and **owns its title bar**. The bar has a
   **breadcrumb** back to the module (`MpTextlink`) above the **H1 `<Module> settings`**.
-  The one page action, a secondary `Edit` `MpButton`, sits top-right; a `View only`
-  `MpBadge` (`additionalInformation`) replaces it when the user can't edit. Content is
+  Each H2 section has its own secondary `Edit` `MpButton` beside its title (like Company
+  profile); a `View only` `MpBadge` (`additionalInformation`) top-right replaces them when
+  the user can't edit. Content is
   **H2 sections** (20px semibold) with a divider between them, max 900px. *Don't:* nest
   the settings under the module's own H1 with a second in-content heading and Edit
   button, or add a page/section description subtitle. **Why:** the page says what it is
@@ -863,8 +864,9 @@ ERP override wins.
   is read far more than edited; value and explanation must sit side by side, in the same
   place in both modes. This is a deliberate, documented exception to
   `rule/form-field-stacking` for settings pages only. **Lint:** review.
-- **`rule/settings-edit-mode`** — *Do:* `Edit` works on a draft. While editing, a
-  **sticky** footer (`MpButtonGroup.erp-action-footer`, no divider above it) holds ghost
+- **`rule/settings-edit-mode`** — *Do:* `Edit` works on a draft, **per section**: one section
+  is editable at a time, its title becomes `Edit <section>`, and a section-local action group
+  (`MpButtonGroup.erp-action-footer`, no divider above it) at the bottom of that section holds ghost
   `Reset to defaults` (optional), ghost `Cancel` and primary `Save changes`
   (`:is-loading` while saving), with an inline error pointer beside it. A save error
   stays inline and keeps the draft. Success toasts `"<Module> settings saved"`. Leaving

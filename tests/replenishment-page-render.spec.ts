@@ -20,6 +20,7 @@ import SettingsReplenishmentPage from '~/components/pages/SettingsReplenishmentP
 import { replenishmentWorklist } from '~/data/replenishment'
 import { useTableState } from '~/composables/useTableState'
 import { useReplenishmentWarehouse } from '~/composables/useReplenishmentWarehouse'
+import { useReplenishmentAccess } from '~/composables/useReplenishmentAccess'
 
 vi.stubGlobal('inject', () => undefined)
 vi.stubGlobal('ref', ref)
@@ -39,6 +40,7 @@ vi.stubGlobal('useWarehouseContext', () => ({
 vi.stubGlobal('useActiveWarehouseFilter', () => ref([]))
 vi.stubGlobal('useTableState', useTableState)
 vi.stubGlobal('useReplenishmentWarehouse', useReplenishmentWarehouse)
+vi.stubGlobal('useReplenishmentAccess', useReplenishmentAccess)
 vi.stubGlobal('useScenario', () => ({ activeScenario: ref('ERP'), setScenario: vi.fn() }))
 class FakeObserver { observe() {} unobserve() {} disconnect() {} }
 vi.stubGlobal('ResizeObserver', FakeObserver)
@@ -174,9 +176,14 @@ describe('SettingsReplenishmentPage — renders and validates', () => {
     // Not editing yet, so no Save button.
     expect(wrapper.text()).not.toContain('Save changes')
 
-    await wrapper.findAll('button').find((b) => b.text().includes('Edit'))!.trigger('click')
+    // Edit lives on each section (like Company profile), one open at a time.
+    const edits = wrapper.findAll('button').filter((b) => b.text() === 'Edit')
+    expect(edits.length).toBe(7)
+    await edits[1]!.trigger('click')
     await nextTick()
     expect(wrapper.text()).toContain('Save changes')
+    expect(wrapper.findAll('h2').map((h) => h.text())).toContain('Edit demand')
+    expect(wrapper.findAll('button').filter((b) => b.text() === 'Save changes').length).toBe(1)
   })
 
   it('follows the settings-page pattern (docs/patterns/settings-page.md)', async () => {
@@ -196,7 +203,8 @@ describe('SettingsReplenishmentPage — renders and validates', () => {
 
   it('shows an inline error instead of disabling Save when a rule is invalid', async () => {
     const wrapper = await mountLoaded(SettingsReplenishmentPage)
-    await wrapper.findAll('button').find((b) => b.text().includes('Edit'))!.trigger('click')
+    // Open the FSN section (6th Edit button).
+    await wrapper.findAll('button').filter((b) => b.text() === 'Edit')[5]!.trigger('click')
     await nextTick()
 
     // Break the FSN bands: Fast must stay above Slow.

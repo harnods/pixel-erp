@@ -204,6 +204,20 @@
             </MpCheckbox>
           </div>
         </nav>
+
+        <!-- Changing replenishment settings is an admin privilege. Back-office (ERP) only; turn it
+             off to preview a user who can see the worklist but not change it. -->
+        <nav v-if="activeScenario === 'ERP'" class="user-menu__group">
+          <div class="user-menu__row">
+            <MpCheckbox
+              id="user-menu-replenishment-access"
+              :is-checked="hasReplenishmentAccess"
+              @change="setReplenishmentAccess(!hasReplenishmentAccess)"
+            >
+              {{ t('Replenishment access') }}
+            </MpCheckbox>
+          </div>
+        </nav>
       </template>
 
       <!-- ── Scenario: pick the demo storyline ─────────────── -->
@@ -304,6 +318,7 @@ const { activeScenario, setScenario } = useScenario();
 // they get manager-only actions such as changing a task's assignee.
 const { hasLmAccess, setLmAccess, isWarehouseOperator } = useLineManagerAccess();
 const { hasPurchasingAccess, setPurchasingAccess } = usePurchasingAccess();
+const { hasReplenishmentAccess, setReplenishmentAccess } = useReplenishmentAccess();
 const { navigate } = useNavigation();
 
 // In an Ops scenario the signed-in user IS the warehouse operator (the assigned

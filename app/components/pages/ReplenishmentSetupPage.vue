@@ -32,6 +32,7 @@ defineProps<{ mode?: 'needs-setup' }>()
 
 const router = useRouter()
 const { t, tf } = useLocale()
+const { canManageReplenishment } = useReplenishmentAccess()
 
 const loading = ref(true)
 onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
@@ -123,6 +124,7 @@ function openVendors(sku: string) {
 }
 
 function turnOnTracking(row: WorklistRow) {
+  if (!canManageReplenishment.value) return
   setTracked(row.sku, row.warehouseId, true)
   invalidateReplenishmentCaches()
   tick.value++
@@ -138,6 +140,7 @@ function mutedIn(sel: Set<number>): WorklistRow[] {
 }
 
 function bulkTrackOn(sel: Set<number>, deselectAll: () => void) {
+  if (!canManageReplenishment.value) return
   const selected = mutedIn(sel)
   if (!selected.length) return
   for (const row of selected) setTracked(row.sku, row.warehouseId, true)
@@ -207,13 +210,13 @@ function onSaved() {
 
     <template #bulk-actions="{ deselectAll, selectedRows: sel }">
       <MpButton
-        v-if="mutedIn(sel as Set<number>).length"
+        v-if="canManageReplenishment && mutedIn(sel as Set<number>).length"
         variant="secondary"
         size="sm"
         is-rounded
         @click="bulkTrackOn(sel as Set<number>, deselectAll)"
       >{{ t('Turn on tracking') }} ({{ mutedIn(sel as Set<number>).length }})</MpButton>
-      <span v-else class="rp-bulk-info">
+      <span v-else-if="canManageReplenishment" class="rp-bulk-info">
         <MpIcon name="info" size="sm" />
         {{ t('Only products with tracking off can be turned back on. Missing lead times are fixed in Vendors or Replenishment settings.') }}
       </span>
@@ -254,7 +257,7 @@ function onSaved() {
         <!-- US-010 AC-03: a muted SKU that is moving Fast again is suggested back. -->
         <span v-if="(row as any).bucket === 'not-tracked' && (row as any).fsn.committed === 'fast'" class="rp-missing-reason">
           {{ t('Moving fast again.') }}
-          <a class="rp-setup-link" @click="turnOnTracking(row as unknown as WorklistRow)">{{ t('Turn tracking back on') }}</a>
+          <a v-if="canManageReplenishment" class="rp-setup-link" @click="turnOnTracking(row as unknown as WorklistRow)">{{ t('Turn tracking back on') }}</a>
         </span>
       </div>
     </template>
@@ -286,10 +289,10 @@ function onSaved() {
               {{ t('View vendors, lead time and MOQ') }}
             </MpPopoverListItem>
             <MpPopoverListItem @click="openSettings(row as unknown as WorklistRow)">
-              {{ t('Replenishment settings') }}
+              {{ canManageReplenishment ? t('Replenishment settings') : t('View replenishment settings') }}
             </MpPopoverListItem>
             <MpPopoverListItem
-              v-if="(row as any).bucket === 'not-tracked'"
+              v-if="canManageReplenishment && (row as any).bucket === 'not-tracked'"
               @click="turnOnTracking(row as unknown as WorklistRow)"
             >{{ t('Turn on tracking') }}</MpPopoverListItem>
           </MpPopoverList>
@@ -319,6 +322,7 @@ function onSaved() {
   <SkuReplenishmentSettingsDrawer
     v-model:is-open="settingsOpen"
     :row="settingsRow"
+    :readonly="!canManageReplenishment"
     @saved="onSaved"
   />
 

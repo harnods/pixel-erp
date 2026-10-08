@@ -1170,6 +1170,7 @@ const currentTabCounts = computed<Record<string, number>>(() => {
 // warehouse's tasks just never appear in it, no need to hide the tab itself.
 const { hasWarehouseContext, activeWarehouse } = useWarehouseContext()
 const { activeScenario } = useScenario()
+const { canManageReplenishment } = useReplenishmentAccess()
 const currentTabs = computed<string[]>(() => {
   const tabs = pageTabs[currentPageKey.value] ?? []
   const config = (hasWarehouseContext.value && activeWarehouse.value) ? getWarehouseConfig(activeWarehouse.value.id) : null
@@ -1870,6 +1871,7 @@ function startResize(e: MouseEvent) {
              Recalculate is the primary action, Settings the secondary. -->
         <div v-else-if="currentPageKey === 'Replenishment'" class="page-title-actions">
           <button
+            v-if="canManageReplenishment"
             class="btn-enterprise btn-enterprise--secondary"
             data-devchange="replenishment-settings-import"
             @click="router.push('/replenishment/import')"

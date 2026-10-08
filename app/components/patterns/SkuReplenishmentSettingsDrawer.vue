@@ -22,7 +22,10 @@ import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import type { WorklistRow } from '~/data/replenishment'
 import { getSkuWarehouseOverride, saveSkuWarehouseOverride } from '~/data/replenishmentSettings'
 
-const props = defineProps<{ isOpen: boolean; row: WorklistRow | null }>()
+const props = defineProps<{ isOpen: boolean; row: WorklistRow | null
+  /** View-only: show the values, offer nothing that changes them. */
+  readonly?: boolean
+}>()
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
   (e: 'saved'): void
@@ -222,7 +225,24 @@ function confirmMute() {
             </ContentList>
           </div>
 
-          <MpFormControl id="rp-set-tracked-fc" class="rp-set-toggle-row">
+          <!-- View-only: the same facts as text, nothing to change. -->
+          <template v-if="readonly">
+            <ContentList :label="t('Track for replenishment')" :value="row.fsn.tracked ? t('On') : t('Off')" />
+            <div class="rp-set-pair">
+              <ContentList :label="t('Reorder point')" :value="`${num(row.reorderPoint)} ${row.unit}`">
+                <template #default>
+                  {{ num(row.reorderPoint) }} {{ row.unit }}
+                  <span class="rp-set-hint">
+                    <template v-if="row.calculatedReorderPoint === null">{{ t('No demand yet, so nothing is calculated') }}</template>
+                    <template v-else>{{ tf('Calculated reorder point: {n} {unit}', { n: num(row.calculatedReorderPoint), unit: row.unit }) }}</template>
+                  </span>
+                </template>
+              </ContentList>
+              <ContentList :label="t('Safety days')" :value="tf('{n} days', { n: row.safetyDays })" />
+            </div>
+          </template>
+
+          <MpFormControl v-if="!readonly" id="rp-set-tracked-fc" class="rp-set-toggle-row">
             <div class="rp-set-toggle-text">
               <MpFormLabel>{{ t('Track for replenishment') }}</MpFormLabel>
               <span class="rp-set-hint">
@@ -233,7 +253,7 @@ function confirmMute() {
           </MpFormControl>
 
           <!-- Reorder point and safety days sit side by side. -->
-          <div class="rp-set-pair">
+          <div v-if="!readonly" class="rp-set-pair">
             <MpFormControl id="rp-set-rop-fc" :is-invalid="!!errors.reorderPoint">
               <MpFormLabel>{{ t('Reorder point') }}</MpFormLabel>
               <MpInputGroup id="rp-set-rop-g">
@@ -284,7 +304,7 @@ function confirmMute() {
           <p v-if="saveError" class="rp-set-error" role="alert">{{ saveError }}</p>
         </div>
 
-        <footer class="rp-set-footer">
+        <footer v-if="!readonly" class="rp-set-footer">
           <MpButtonGroup class="erp-action-footer">
             <MpButton id="rp-set-cancel" variant="ghost" is-rounded @click="close">{{ t('Cancel') }}</MpButton>
             <MpButton id="rp-set-save" variant="primary" is-rounded @click="save">{{ t('Save changes') }}</MpButton>

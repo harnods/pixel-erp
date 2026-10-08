@@ -76,6 +76,14 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['vendorItems.ts', 'replenishment.ts'],
   },
   {
+    id: 'replenishment-section-edit',
+    title: 'Replenishment settings: Edit on each section',
+    description:
+      'Replenishment settings no longer has one page-level Edit and a sticky footer. Each section (Product categories, Demand, Safety days, Reorder point & coverage, Lead time, Movement classification, Reminder) has its own Edit button, like Company profile. Editing opens that section ("Edit demand"), with its own Reset to defaults, Cancel and Save changes at the bottom; only one section is editable at a time and Save changes saves just that section. View-only users see no Edit buttons.',
+    date: '2026-10-08',
+    files: ['SettingsReplenishmentPage.vue', 'settings-page.md', 'RULES.md'],
+  },
+  {
     id: 'replenishment-daily-reminder',
     title: 'Replenishment: daily reminder in the Inbox',
     description:
@@ -154,6 +162,14 @@ export const DEV_CHANGES: DevChange[] = [
       'In Edit vendor mode the bulk-set controls are a row above the table headers: Reorder point (with its unit), Safety days (with "days") and Preferred vendor each sit above their own column, so the headers label them. The Apply button is a split button beside the vendor select — Apply acts at once, and its chevron holds "Use defaults". Columns now run Reorder point, Unit, Safety days, Preferred vendor; while editing, the Unit column is hidden and the unit/days show as suffixes inside the inputs. With nothing ticked the row shows the hint instead.',
     date: '2026-10-07',
     files: ['ProductDetailsPage.vue'],
+  },
+  {
+    id: 'replenishment-view-only',
+    title: 'Replenishment: a view-only state for users who cannot change settings',
+    description:
+      'Changing replenishment settings (reorder point, safety days, tracking, preferred vendor, bulk import) is an admin privilege. Without it the worklist has no badge; the actions that change things are simply hidden rather than disabled: Turn off / on tracking (row and bulk), Edit vendor on the product page, and Import. "Replenishment settings" becomes "View replenishment settings" and opens the drawer as plain values with no Save. The settings page keeps its existing View only badge. The account menu has a new "Replenishment access" checkbox (ERP back-office, on by default) to preview it; the Import page shows a no-access message if reached directly.',
+    date: '2026-10-08',
+    files: ['useReplenishmentAccess.ts', 'ReplenishmentPage.vue', 'ReplenishmentSetupPage.vue', 'SkuReplenishmentSettingsDrawer.vue', 'ProductDetailsPage.vue', 'ImportReplenishmentSettingsPage.vue', 'ErpUserMenu.vue', 'SettingsReplenishmentPage.vue'],
   },
   {
     id: 'product-vendors-expand',

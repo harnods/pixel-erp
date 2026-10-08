@@ -40,7 +40,7 @@ const { activeScenario } = useScenario()
 
 /** No RBAC plumbing in the prototype — the ERP scenario stands in for an admin.
  *  Everything else renders read-only (the permission state of the pattern). */
-const canEdit = computed(() => activeScenario.value === 'ERP')
+const { canManageReplenishment: canEdit } = useReplenishmentAccess()
 
 /** Deep copy that is safe on a reactive proxy — the config is plain JSON data. */
 function cloneConfig(cfg: ReplenishmentConfig): ReplenishmentConfig {
@@ -49,7 +49,31 @@ function cloneConfig(cfg: ReplenishmentConfig): ReplenishmentConfig {
 
 const committed = ref<ReplenishmentConfig>(getReplenishmentConfig())
 const draft = reactive<ReplenishmentConfig>(cloneConfig(getReplenishmentConfig()))
-const isEditing = ref(false)
+type SectionId = 'categories' | 'demand' | 'safety' | 'coverage' | 'lead' | 'fsn' | 'reminder'
+/** One section is editable at a time (docs/patterns/settings-page.md, per-section Edit). */
+const editing = ref<SectionId | null>(null)
+/** Config keys each section owns — Reset to defaults touches only these. */
+const SECTION_FIELDS: Record<SectionId, (keyof ReplenishmentConfig)[]> = {
+  categories: [],
+  demand: ['lookbackDays', 'volatileCvThreshold', 'demandOutlierCapMultiple', 'coldStartMinDays'],
+  safety: ['safetyDaysGlobal', 'safetyDaysByCategory'],
+  coverage: ['coverageDaysGlobal', 'coverageDaysByCategory', 'reorderBoundary'],
+  lead: ['fallbackLeadTimeDays', 'leadTimeByCategory', 'leadTimeSampleCount', 'leadTimeMinSamples', 'leadTimeOutlierCapDays', 'leadTimeOutlierCapByCategory'],
+  fsn: ['fsnWindowDays', 'fsnFastPct', 'fsnSlowPct'],
+  reminder: ['dailyReminder'],
+}
+const SECTION_TITLES: Record<SectionId, string> = {
+  categories: 'Product categories',
+  demand: 'Demand',
+  safety: 'Safety days',
+  coverage: 'Reorder point & coverage',
+  lead: 'Lead time',
+  fsn: 'Movement classification (FSN)',
+  reminder: 'Reminder',
+}
+function sectionTitle(id: SectionId): string {
+  return editing.value === id ? tf('Edit {section}', { section: t(SECTION_TITLES[id]).toLowerCase() }) : t(SECTION_TITLES[id])
+}
 const saving = ref(false)
 /** One-line pointer in the footer; the field-level message sits AT the field. */
 const formError = ref('')
@@ -68,7 +92,7 @@ const PER_CATEGORY_MAPS = [
 ] as const
 
 const categories = computed(() => {
-  const src = isEditing.value ? draft : committed.value
+  const src = editing.value ? draft : committed.value
   const set = new Set<string>()
   for (const key of PER_CATEGORY_MAPS) for (const k of Object.keys(src[key])) set.add(k)
   for (const c of extraCategories) set.add(c)
@@ -171,23 +195,29 @@ function resetDraftTo(cfg: ReplenishmentConfig) {
   categoryTagsKey.value++
 }
 
-function startEdit() {
+function startEdit(section: SectionId) {
   resetDraftTo(committed.value)
-  isEditing.value = true
+  editing.value = section
 }
 
 function cancel() {
   resetDraftTo(committed.value)
-  isEditing.value = false
+  editing.value = null
 }
 
+/** Reset only the fields the open section owns. */
 function resetToDefaults() {
-  resetDraftTo(REPL_DEFAULTS)
+  const section = editing.value
+  if (!section) return
+  clearFieldErrors()
+  formError.value = ''
+  const defaults = cloneConfig(REPL_DEFAULTS)
+  for (const k of SECTION_FIELDS[section]) (draft as Record<string, unknown>)[k] = defaults[k]
 }
 
 /** Unsaved edits exist — drives the leave-page confirm. */
 const isDirty = computed(() =>
-  isEditing.value && (
+  editing.value !== null && (
     JSON.stringify(draft) !== JSON.stringify(committed.value)
     || extraCategories.length > 0 || removedCategories.size > 0
   ),
@@ -254,7 +284,9 @@ function save() {
     return
   }
 
+  // Only one section is open, so the draft differs from committed in that section alone.
   const next: ReplenishmentConfig = {
+    ...committed.value,
     ...draft,
     safetyDaysGlobal: Number(draft.safetyDaysGlobal),
     lookbackDays: Number(draft.lookbackDays),
@@ -294,7 +326,7 @@ function save() {
     removedCategories.clear()
     extraCategories.length = 0
     clearFieldErrors()
-    isEditing.value = false
+    editing.value = null
     saving.value = false
     toast.notify({
       variant: 'success',
@@ -349,7 +381,6 @@ function goToWorklist() { router.push('/replenishment') }
       <div class="rs-titlebar-right">
         <!-- Permission state: read-only, said once, next to the title. -->
         <MpBadge v-if="!canEdit" for="additionalInformation" type="announcement">{{ t('View only') }}</MpBadge>
-        <MpButton v-else-if="!isEditing" variant="secondary" is-rounded @click="startEdit">{{ t('Edit') }}</MpButton>
       </div>
     </div>
 
@@ -360,7 +391,10 @@ function goToWorklist() { router.push('/replenishment') }
 
         <!-- ── Product categories ── -->
         <section class="rs-section">
-          <h2 class="rs-section-title">{{ t('Product categories') }}</h2>
+          <div class="rs-section-header">
+            <h2 class="rs-section-title">{{ sectionTitle('categories') }}</h2>
+            <MpButton v-if="canEdit && editing !== 'categories'" variant="secondary" is-rounded data-devchange="replenishment-section-edit" @click="startEdit('categories')">{{ t('Edit') }}</MpButton>
+          </div>
           <MpFormControl id="rs-categories-fc" class="rs-row">
             <div class="rs-label">
               <MpFormLabel>{{ t('Categories with their own defaults') }}</MpFormLabel>
@@ -369,7 +403,7 @@ function goToWorklist() { router.push('/replenishment') }
             <div class="rs-control">
               <!-- rule/select-multi-mpinputtag — the list IS a multi-select. -->
               <MpInputTag
-                v-if="isEditing"
+                v-if="editing === 'categories'"
                 id="rs-categories"
                 class="rs-field-wide"
                 :key="categoryTagsKey"
@@ -385,11 +419,21 @@ function goToWorklist() { router.push('/replenishment') }
               </span>
             </div>
           </MpFormControl>
+          <div v-if="editing === 'categories'" class="rs-actions">
+            <p v-if="formError" class="rs-footer-error">{{ formError }}</p>
+            <MpButtonGroup class="erp-action-footer">
+              <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
+              <MpButton variant="primary" is-rounded :is-loading="saving" @click="save">{{ t('Save changes') }}</MpButton>
+            </MpButtonGroup>
+          </div>
         </section>
 
         <!-- ── Demand ── -->
         <section class="rs-section">
-          <h2 class="rs-section-title">{{ t('Demand') }}</h2>
+          <div class="rs-section-header">
+            <h2 class="rs-section-title">{{ sectionTitle('demand') }}</h2>
+            <MpButton v-if="canEdit && editing !== 'demand'" variant="secondary" is-rounded data-devchange="replenishment-section-edit" @click="startEdit('demand')">{{ t('Edit') }}</MpButton>
+          </div>
 
           <MpFormControl id="rs-lookback-fc" class="rs-row" :is-invalid="!!fieldErrors.lookback">
             <div class="rs-label">
@@ -397,7 +441,7 @@ function goToWorklist() { router.push('/replenishment') }
               <span class="rs-caption">{{ t('How far back sales are averaged to get demand per day.') }}</span>
             </div>
             <div class="rs-control">
-              <MpInputGroup v-if="isEditing" id="rs-lookback">
+              <MpInputGroup v-if="editing === 'demand'" id="rs-lookback">
                 <MpInput id="rs-lookback-input" v-model="draft.lookbackDays" type="number" :class="css({ width: '176px' })" />
                 <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
               </MpInputGroup>
@@ -414,7 +458,7 @@ function goToWorklist() { router.push('/replenishment') }
               </span>
             </div>
             <div class="rs-control">
-              <MpInput v-if="isEditing" id="rs-cv" v-model="draft.volatileCvThreshold" type="number" step="0.1" :class="css({ width: '176px' })" />
+              <MpInput v-if="editing === 'demand'" id="rs-cv" v-model="draft.volatileCvThreshold" type="number" step="0.1" :class="css({ width: '176px' })" />
               <span v-else class="rs-value">{{ committed.volatileCvThreshold }}</span>
               <MpFormErrorMessage v-if="fieldErrors.volatility">{{ fieldErrors.volatility }}</MpFormErrorMessage>
             </div>
@@ -428,7 +472,7 @@ function goToWorklist() { router.push('/replenishment') }
               </span>
             </div>
             <div class="rs-control">
-              <MpInputGroup v-if="isEditing" id="rs-outlier">
+              <MpInputGroup v-if="editing === 'demand'" id="rs-outlier">
                 <MpInput id="rs-outlier-input" v-model="draft.demandOutlierCapMultiple" type="number" step="0.1" :class="css({ width: '176px' })" />
                 <MpInputRightAddon has-background>{{ t('× median') }}</MpInputRightAddon>
               </MpInputGroup>
@@ -445,7 +489,7 @@ function goToWorklist() { router.push('/replenishment') }
               </span>
             </div>
             <div class="rs-control">
-              <MpInputGroup v-if="isEditing" id="rs-coldstart">
+              <MpInputGroup v-if="editing === 'demand'" id="rs-coldstart">
                 <MpInput id="rs-coldstart-input" v-model="draft.coldStartMinDays" type="number" :class="css({ width: '176px' })" />
                 <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
               </MpInputGroup>
@@ -453,13 +497,24 @@ function goToWorklist() { router.push('/replenishment') }
               <MpFormErrorMessage v-if="fieldErrors.coldstart">{{ fieldErrors.coldstart }}</MpFormErrorMessage>
             </div>
           </MpFormControl>
+          <div v-if="editing === 'demand'" class="rs-actions">
+            <p v-if="formError" class="rs-footer-error">{{ formError }}</p>
+            <MpButtonGroup class="erp-action-footer">
+              <MpButton variant="ghost" is-rounded @click="resetToDefaults">{{ t('Reset to defaults') }}</MpButton>
+              <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
+              <MpButton variant="primary" is-rounded :is-loading="saving" @click="save">{{ t('Save changes') }}</MpButton>
+            </MpButtonGroup>
+          </div>
         </section>
 
         <!-- ── Safety days ──
           One list per policy, with the company fallback ("Other categories") as its
           LAST row, so "what does anything not listed use?" answers itself. -->
         <section class="rs-section">
-          <h2 class="rs-section-title">{{ t('Safety days') }}</h2>
+          <div class="rs-section-header">
+            <h2 class="rs-section-title">{{ sectionTitle('safety') }}</h2>
+            <MpButton v-if="canEdit && editing !== 'safety'" variant="secondary" is-rounded data-devchange="replenishment-section-edit" @click="startEdit('safety')">{{ t('Edit') }}</MpButton>
+          </div>
 
           <MpFormControl id="rs-safety-fc" class="rs-row" :is-invalid="!!fieldErrors.safety">
             <div class="rs-label">
@@ -474,7 +529,7 @@ function goToWorklist() { router.push('/replenishment') }
                 <div v-for="cat in categories" :key="cat" class="rs-cat-row">
                   <span class="rs-cat-name">{{ cat }}</span>
                   <!-- Own MpFormControl so this input keeps a unique id (a row-level one would give every input in the row the same id). -->
-                  <MpFormControl v-if="isEditing" :id="`rs-safety-cat-${cat}-fc`" class="rs-inline-fc" :is-invalid="!!fieldErrors.safety">
+                  <MpFormControl v-if="editing === 'safety'" :id="`rs-safety-cat-${cat}-fc`" class="rs-inline-fc" :is-invalid="!!fieldErrors.safety">
                     <MpInputGroup :id="`rs-safety-cat-${cat}`">
                       <MpInput :id="`rs-safety-cat-input-${cat}`" v-model="draft.safetyDaysByCategory[cat]" type="number" :class="css({ width: '128px' })" />
                       <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
@@ -484,7 +539,7 @@ function goToWorklist() { router.push('/replenishment') }
                 </div>
                 <div class="rs-cat-row rs-cat-row--fallback">
                   <span class="rs-cat-name rs-cat-name--fallback">{{ t('Other categories') }}</span>
-                  <MpFormControl v-if="isEditing" id="rs-safety-fc" class="rs-inline-fc" :is-invalid="!!fieldErrors.safety">
+                  <MpFormControl v-if="editing === 'safety'" id="rs-safety-fc" class="rs-inline-fc" :is-invalid="!!fieldErrors.safety">
                     <MpInputGroup id="rs-safety">
                       <MpInput id="rs-safety-input" v-model="draft.safetyDaysGlobal" type="number" :class="css({ width: '128px' })" />
                       <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
@@ -496,13 +551,24 @@ function goToWorklist() { router.push('/replenishment') }
               <MpFormErrorMessage v-if="fieldErrors.safety">{{ fieldErrors.safety }}</MpFormErrorMessage>
             </div>
           </MpFormControl>
+          <div v-if="editing === 'safety'" class="rs-actions">
+            <p v-if="formError" class="rs-footer-error">{{ formError }}</p>
+            <MpButtonGroup class="erp-action-footer">
+              <MpButton variant="ghost" is-rounded @click="resetToDefaults">{{ t('Reset to defaults') }}</MpButton>
+              <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
+              <MpButton variant="primary" is-rounded :is-loading="saving" @click="save">{{ t('Save changes') }}</MpButton>
+            </MpButtonGroup>
+          </div>
         </section>
 
         <!-- ── Reorder point & coverage ──
           There is deliberately NO "default min. stock" field (D16/D17): min stock is a
           derived OUTPUT — demand × (lead + safety) — never a typed-in default. -->
         <section class="rs-section">
-          <h2 class="rs-section-title">{{ t('Reorder point & coverage') }}</h2>
+          <div class="rs-section-header">
+            <h2 class="rs-section-title">{{ sectionTitle('coverage') }}</h2>
+            <MpButton v-if="canEdit && editing !== 'coverage'" variant="secondary" is-rounded data-devchange="replenishment-section-edit" @click="startEdit('coverage')">{{ t('Edit') }}</MpButton>
+          </div>
 
           <MpFormControl id="rs-coverage-fc" class="rs-row" :is-invalid="!!fieldErrors.coverage">
             <div class="rs-label">
@@ -513,7 +579,7 @@ function goToWorklist() { router.push('/replenishment') }
               <div class="rs-cat-grid">
                 <div v-for="cat in categories" :key="cat" class="rs-cat-row">
                   <span class="rs-cat-name">{{ cat }}</span>
-                  <MpFormControl v-if="isEditing" :id="`rs-coverage-cat-${cat}-fc`" class="rs-inline-fc" :is-invalid="!!fieldErrors.coverage">
+                  <MpFormControl v-if="editing === 'coverage'" :id="`rs-coverage-cat-${cat}-fc`" class="rs-inline-fc" :is-invalid="!!fieldErrors.coverage">
                     <MpInputGroup :id="`rs-coverage-cat-${cat}`">
                       <MpInput :id="`rs-coverage-cat-input-${cat}`" v-model="draft.coverageDaysByCategory[cat]" type="number" :class="css({ width: '128px' })" />
                       <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
@@ -523,7 +589,7 @@ function goToWorklist() { router.push('/replenishment') }
                 </div>
                 <div class="rs-cat-row rs-cat-row--fallback">
                   <span class="rs-cat-name rs-cat-name--fallback">{{ t('Other categories') }}</span>
-                  <MpFormControl v-if="isEditing" id="rs-coverage-fc" class="rs-inline-fc" :is-invalid="!!fieldErrors.coverage">
+                  <MpFormControl v-if="editing === 'coverage'" id="rs-coverage-fc" class="rs-inline-fc" :is-invalid="!!fieldErrors.coverage">
                     <MpInputGroup id="rs-coverage">
                       <MpInput id="rs-coverage-input" v-model="draft.coverageDaysGlobal" type="number" :class="css({ width: '128px' })" />
                       <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
@@ -544,7 +610,7 @@ function goToWorklist() { router.push('/replenishment') }
             <div class="rs-control">
               <!-- Same fixed width as the categories tag input (docs/patterns/settings-page.md). -->
               <ErpFilterSelect
-                v-if="isEditing"
+                v-if="editing === 'coverage'"
                 id="rs-boundary"
                 :model-value="draft.reorderBoundary"
                 :placeholder="t('Reorder-point boundary')"
@@ -556,11 +622,22 @@ function goToWorklist() { router.push('/replenishment') }
               <span v-else class="rs-value">{{ boundaryLabel }}</span>
             </div>
           </MpFormControl>
+          <div v-if="editing === 'coverage'" class="rs-actions">
+            <p v-if="formError" class="rs-footer-error">{{ formError }}</p>
+            <MpButtonGroup class="erp-action-footer">
+              <MpButton variant="ghost" is-rounded @click="resetToDefaults">{{ t('Reset to defaults') }}</MpButton>
+              <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
+              <MpButton variant="primary" is-rounded :is-loading="saving" @click="save">{{ t('Save changes') }}</MpButton>
+            </MpButtonGroup>
+          </div>
         </section>
 
         <!-- ── Lead time (US-001) ── -->
         <section id="lead-time" class="rs-section">
-          <h2 class="rs-section-title">{{ t('Lead time') }}</h2>
+          <div class="rs-section-header">
+            <h2 class="rs-section-title">{{ sectionTitle('lead') }}</h2>
+            <MpButton v-if="canEdit && editing !== 'lead'" variant="secondary" is-rounded data-devchange="replenishment-section-edit" @click="startEdit('lead')">{{ t('Edit') }}</MpButton>
+          </div>
 
           <MpFormControl id="rs-lead-fc" class="rs-row" :is-invalid="!!fieldErrors.lead">
             <div class="rs-label">
@@ -571,7 +648,7 @@ function goToWorklist() { router.push('/replenishment') }
               <div class="rs-cat-grid">
                 <div v-for="cat in categories" :key="cat" class="rs-cat-row">
                   <span class="rs-cat-name">{{ cat }}</span>
-                  <MpFormControl v-if="isEditing" :id="`rs-lead-cat-${cat}-fc`" class="rs-inline-fc" :is-invalid="!!fieldErrors.lead">
+                  <MpFormControl v-if="editing === 'lead'" :id="`rs-lead-cat-${cat}-fc`" class="rs-inline-fc" :is-invalid="!!fieldErrors.lead">
                     <MpInputGroup :id="`rs-lead-cat-${cat}`">
                       <MpInput :id="`rs-lead-cat-input-${cat}`" v-model="draft.leadTimeByCategory[cat]" type="number" :class="css({ width: '128px' })" />
                       <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
@@ -584,7 +661,7 @@ function goToWorklist() { router.push('/replenishment') }
                   <!-- The only floor that accepts "Not set" (D22): switch it on to give products with no
                        measured lead time an estimate, off to make them wait in Needs setup. The days
                        input appears below the switch. Never a typed 0. -->
-                  <div v-if="isEditing" class="rs-floor">
+                  <div v-if="editing === 'lead'" class="rs-floor">
                     <label class="rs-floor-switch" for="rs-fallback-lead-toggle">
                       <MpToggle id="rs-fallback-lead-toggle" v-model:is-checked="floorOn" :aria-label="t('Use a default lead time')" />
                       <span class="rs-floor-label">{{ t('Use a default lead time') }}</span>
@@ -600,7 +677,7 @@ function goToWorklist() { router.push('/replenishment') }
                   <span v-else class="rs-notset">{{ t('Not set') }}</span>
                 </div>
               </div>
-              <span v-if="(isEditing ? draft : committed).fallbackLeadTimeDays === null" class="rs-caption rs-notset-hint">
+              <span v-if="(editing === 'lead' ? draft : committed).fallbackLeadTimeDays === null" class="rs-caption rs-notset-hint">
                 {{ t('Not set: a product with no measured lead time and no preferred vendor waits in Needs setup instead of getting an estimate. It still raises a stockout alert if it runs low.') }}
               </span>
               <MpFormErrorMessage v-if="fieldErrors.lead">{{ fieldErrors.lead }}</MpFormErrorMessage>
@@ -615,7 +692,7 @@ function goToWorklist() { router.push('/replenishment') }
               <span class="rs-caption">{{ t('A measured lead time averages a vendor product\'s most recent delivered orders: at most the maximum, and at least the minimum before it\'s trusted. Fewer than the minimum falls back to the default lead time above.') }}</span>
             </div>
             <div class="rs-control">
-              <div v-if="isEditing" class="rs-cat-grid">
+              <div v-if="editing === 'lead'" class="rs-cat-grid">
                 <div class="rs-cat-row">
                   <span class="rs-cat-name">{{ t('Minimum') }}</span>
                   <MpFormControl id="rs-lead-min-fc" class="rs-inline-fc" :is-invalid="!!fieldErrors.receipts">
@@ -651,7 +728,7 @@ function goToWorklist() { router.push('/replenishment') }
               <div class="rs-cat-grid">
                 <div v-for="cat in categories" :key="cat" class="rs-cat-row">
                   <span class="rs-cat-name">{{ cat }}</span>
-                  <MpFormControl v-if="isEditing" :id="`rs-cap-cat-${cat}-fc`" class="rs-inline-fc" :is-invalid="!!fieldErrors.cap">
+                  <MpFormControl v-if="editing === 'lead'" :id="`rs-cap-cat-${cat}-fc`" class="rs-inline-fc" :is-invalid="!!fieldErrors.cap">
                     <MpInputGroup :id="`rs-cap-cat-${cat}`">
                       <MpInput :id="`rs-cap-cat-input-${cat}`" v-model="draft.leadTimeOutlierCapByCategory[cat]" type="number" :class="css({ width: '128px' })" />
                       <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
@@ -661,7 +738,7 @@ function goToWorklist() { router.push('/replenishment') }
                 </div>
                 <div class="rs-cat-row rs-cat-row--fallback">
                   <span class="rs-cat-name rs-cat-name--fallback">{{ t('Other categories') }}</span>
-                  <MpFormControl v-if="isEditing" id="rs-cap-fallback-fc" class="rs-inline-fc" :is-invalid="!!fieldErrors.cap">
+                  <MpFormControl v-if="editing === 'lead'" id="rs-cap-fallback-fc" class="rs-inline-fc" :is-invalid="!!fieldErrors.cap">
                     <MpInputGroup id="rs-cap-fallback">
                       <MpInput id="rs-cap-fallback-input" v-model="draft.leadTimeOutlierCapDays" type="number" :class="css({ width: '128px' })" />
                       <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
@@ -673,11 +750,22 @@ function goToWorklist() { router.push('/replenishment') }
               <MpFormErrorMessage v-if="fieldErrors.cap">{{ fieldErrors.cap }}</MpFormErrorMessage>
             </div>
           </MpFormControl>
+          <div v-if="editing === 'lead'" class="rs-actions">
+            <p v-if="formError" class="rs-footer-error">{{ formError }}</p>
+            <MpButtonGroup class="erp-action-footer">
+              <MpButton variant="ghost" is-rounded @click="resetToDefaults">{{ t('Reset to defaults') }}</MpButton>
+              <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
+              <MpButton variant="primary" is-rounded :is-loading="saving" @click="save">{{ t('Save changes') }}</MpButton>
+            </MpButtonGroup>
+          </div>
         </section>
 
         <!-- ── Movement classification (FSN) ── -->
         <section class="rs-section">
-          <h2 class="rs-section-title">{{ t('Movement classification (FSN)') }}</h2>
+          <div class="rs-section-header">
+            <h2 class="rs-section-title">{{ sectionTitle('fsn') }}</h2>
+            <MpButton v-if="canEdit && editing !== 'fsn'" variant="secondary" is-rounded data-devchange="replenishment-section-edit" @click="startEdit('fsn')">{{ t('Edit') }}</MpButton>
+          </div>
 
           <MpFormControl id="rs-fsn-window-fc" class="rs-row" :is-invalid="!!fieldErrors.fsnWindow">
             <div class="rs-label">
@@ -685,7 +773,7 @@ function goToWorklist() { router.push('/replenishment') }
               <span class="rs-caption">{{ t('How much history the classification looks at.') }}</span>
             </div>
             <div class="rs-control">
-              <MpInputGroup v-if="isEditing" id="rs-fsn-window">
+              <MpInputGroup v-if="editing === 'fsn'" id="rs-fsn-window">
                 <MpInput id="rs-fsn-window-input" v-model="draft.fsnWindowDays" type="number" :class="css({ width: '128px' })" />
                 <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
               </MpInputGroup>
@@ -703,7 +791,7 @@ function goToWorklist() { router.push('/replenishment') }
               <div class="rs-cat-grid">
                 <div class="rs-cat-row">
                   <span class="rs-cat-name">{{ t('Fast') }}</span>
-                  <MpFormControl v-if="isEditing" id="rs-fast-fc" class="rs-inline-fc" :is-invalid="!!fieldErrors.fsnBands">
+                  <MpFormControl v-if="editing === 'fsn'" id="rs-fast-fc" class="rs-inline-fc" :is-invalid="!!fieldErrors.fsnBands">
                     <MpInputGroup id="rs-fast">
                       <MpInput id="rs-fast-input" v-model="draft.fsnFastPct" type="number" :class="css({ width: '128px' })" />
                       <MpInputRightAddon has-background>%</MpInputRightAddon>
@@ -713,7 +801,7 @@ function goToWorklist() { router.push('/replenishment') }
                 </div>
                 <div class="rs-cat-row">
                   <span class="rs-cat-name">{{ t('Slow') }}</span>
-                  <MpFormControl v-if="isEditing" id="rs-slow-fc" class="rs-inline-fc" :is-invalid="!!fieldErrors.fsnBands">
+                  <MpFormControl v-if="editing === 'fsn'" id="rs-slow-fc" class="rs-inline-fc" :is-invalid="!!fieldErrors.fsnBands">
                     <MpInputGroup id="rs-slow">
                       <MpInput id="rs-slow-input" v-model="draft.fsnSlowPct" type="number" :class="css({ width: '128px' })" />
                       <MpInputRightAddon has-background>%</MpInputRightAddon>
@@ -725,11 +813,22 @@ function goToWorklist() { router.push('/replenishment') }
               <MpFormErrorMessage v-if="fieldErrors.fsnBands">{{ fieldErrors.fsnBands }}</MpFormErrorMessage>
             </div>
           </MpFormControl>
+          <div v-if="editing === 'fsn'" class="rs-actions">
+            <p v-if="formError" class="rs-footer-error">{{ formError }}</p>
+            <MpButtonGroup class="erp-action-footer">
+              <MpButton variant="ghost" is-rounded @click="resetToDefaults">{{ t('Reset to defaults') }}</MpButton>
+              <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
+              <MpButton variant="primary" is-rounded :is-loading="saving" @click="save">{{ t('Save changes') }}</MpButton>
+            </MpButtonGroup>
+          </div>
         </section>
 
         <!-- ── Daily reminder (US-021 AC-05) ── -->
         <section class="rs-section" data-devchange="replenishment-daily-reminder">
-          <h2 class="rs-section-title">{{ t('Reminder') }}</h2>
+          <div class="rs-section-header">
+            <h2 class="rs-section-title">{{ sectionTitle('reminder') }}</h2>
+            <MpButton v-if="canEdit && editing !== 'reminder'" variant="secondary" is-rounded data-devchange="replenishment-section-edit" @click="startEdit('reminder')">{{ t('Edit') }}</MpButton>
+          </div>
 
           <MpFormControl id="rs-reminder-fc" class="rs-row">
             <div class="rs-label">
@@ -739,24 +838,22 @@ function goToWorklist() { router.push('/replenishment') }
               </span>
             </div>
             <div class="rs-control">
-              <label v-if="isEditing" class="rs-floor-switch" for="rs-reminder-toggle">
+              <label v-if="editing === 'reminder'" class="rs-floor-switch" for="rs-reminder-toggle">
                 <MpToggle id="rs-reminder-toggle" v-model:is-checked="draft.dailyReminder" :aria-label="t('Daily reminder')" />
                 <span class="rs-floor-label">{{ t('Remind me when products need ordering') }}</span>
               </label>
               <span v-else class="rs-value">{{ committed.dailyReminder ? t('On') : t('Off') }}</span>
             </div>
           </MpFormControl>
+          <div v-if="editing === 'reminder'" class="rs-actions">
+            <p v-if="formError" class="rs-footer-error">{{ formError }}</p>
+            <MpButtonGroup class="erp-action-footer">
+              <MpButton variant="ghost" is-rounded @click="resetToDefaults">{{ t('Reset to defaults') }}</MpButton>
+              <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
+              <MpButton variant="primary" is-rounded :is-loading="saving" @click="save">{{ t('Save changes') }}</MpButton>
+            </MpButtonGroup>
+          </div>
         </section>
-      </div>
-
-      <!-- ── Footer — only while editing (rule/btn-responsive-footer) ── -->
-      <div v-if="isEditing" class="rs-footer">
-        <p v-if="formError" class="rs-footer-error">{{ formError }}</p>
-        <MpButtonGroup class="erp-action-footer">
-          <MpButton variant="ghost" is-rounded @click="resetToDefaults">{{ t('Reset to defaults') }}</MpButton>
-          <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
-          <MpButton variant="primary" is-rounded :is-loading="saving" @click="save">{{ t('Save changes') }}</MpButton>
-        </MpButtonGroup>
       </div>
     </div>
 
@@ -812,14 +909,17 @@ function goToWorklist() { router.push('/replenishment') }
   background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
 }
 .rs-content {
-  flex: 1; width: 100%; max-width: var(--rs-content-max, 900px);
-  padding: var(--mp-spacing-6);
-  display: flex; flex-direction: column; gap: var(--mp-spacing-6);
+  flex: 1; width: 100%; display: flex; flex-direction: column;
 }
+/* View-only caption sits above the first section, at its inset. */
+.rs-content > .rs-caption { padding: var(--mp-spacing-6) var(--mp-spacing-6) 0; }
 
 /* Sections: H2 (rule/type-scale — xl/20, semibold), separated by a divider. */
-.rs-section { display: flex; flex-direction: column; }
-.rs-section + .rs-section { padding-top: var(--mp-spacing-6); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+.rs-section { display: flex; flex-direction: column; padding: var(--mp-spacing-6); }
+/* The divider between sections runs the full stage (as Company profile); the form
+   content inside each section stays within the 900px reading width. */
+.rs-section + .rs-section { border-top: 1px solid var(--mp-border-default, #e3e7e9); }
+.rs-section > * { width: 100%; max-width: var(--rs-content-max, 852px); }
 .rs-section-title {
   margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-xl);
   font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-xl, 28px);
@@ -830,12 +930,10 @@ function goToWorklist() { router.push('/replenishment') }
 .rs-row {
   display: grid !important; grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
   gap: var(--mp-spacing-6); padding: var(--mp-spacing-3) 0; align-items: start;
-  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
-.rs-section .rs-row:last-child { border-bottom: none; }
 .rs-label { display: flex; flex-direction: column; gap: var(--mp-spacing-1); min-width: 0; }
 .rs-label :deep(label) { margin: 0; }
-.rs-page { --rs-field-width: 320px; }
+.rs-page { --rs-field-width: 100%; }
 .rs-field-wide { width: var(--rs-field-width) !important; max-width: 100%; }
 .rs-control { display: flex; flex-direction: column; gap: var(--mp-spacing-1); min-width: 0; }
 .rs-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
@@ -862,14 +960,16 @@ function goToWorklist() { router.push('/replenishment') }
 }
 .rs-notset-hint { max-width: var(--mp-sizes-100, 420px); }
 
-/* Sticky footer while editing — no divider above it (Form.md › Action group).
-   Its own stacking layer: input addons create stacking contexts and would
-   otherwise paint over the footer as the rows scroll beneath it. */
-.rs-footer {
-  position: sticky; bottom: 0; z-index: 2; flex-shrink: 0; isolation: isolate;
+/* Section header: title left, Edit button right-aligned with the widest form row. */
+.rs-section-header {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
+  margin-bottom: var(--mp-spacing-2);
+}
+.rs-section-header .rs-section-title { margin: 0; }
+/* Section-local action group (no divider above — Form.md › Action group). */
+.rs-actions {
   display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-4);
-  padding: var(--mp-spacing-4) var(--mp-spacing-6);
-  background: var(--mp-background-stage, #ffffff);
+  padding-top: var(--mp-spacing-4);
 }
 .rs-footer-error { flex: 1; margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-danger); }
 .rs-inline-fc { width: auto !important; }

@@ -48,6 +48,8 @@ import { formatDate } from '~/utils/date'
 
 const router = useRouter()
 const { t, tf } = useLocale()
+// View-only users see everything but cannot change it (tracking, settings, vendor picks).
+const { canManageReplenishment } = useReplenishmentAccess()
 
 // ─── First-load skeleton (matches the other index pages) ─────────────────────
 const loading = ref(true)
@@ -605,6 +607,7 @@ function confirmPr(payload: {
 }
 
 function askMute(row: WorklistRow) {
+  if (!canManageReplenishment.value) return
   muteRow.value = row
   muteOpen.value = true
 }
@@ -627,6 +630,7 @@ const bulkMuteOpen = ref(false)
 let bulkMuteDeselect: (() => void) | null = null
 
 function askBulkMute(sel: Set<number>, deselectAll: () => void) {
+  if (!canManageReplenishment.value) return
   const rows = selectedWorklistRows(sel)
   if (!rows.length) return
   bulkMuteRows.value = rows
@@ -816,6 +820,8 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
         >{{ t('Request to purchase') }}</MpButton>
       </template>
       <MpButton
+        v-if="canManageReplenishment"
+        data-devchange="replenishment-view-only"
         variant="secondary"
         size="sm"
         is-rounded
@@ -1013,9 +1019,9 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
               {{ t('Request to purchase') }}
             </MpPopoverListItem>
             <MpPopoverListItem @click="openSettings(row as unknown as WorklistRow)">
-              {{ t('Replenishment settings') }}
+              {{ canManageReplenishment ? t('Replenishment settings') : t('View replenishment settings') }}
             </MpPopoverListItem>
-            <MpPopoverListItem @click="askMute(row as unknown as WorklistRow)">
+            <MpPopoverListItem v-if="canManageReplenishment" @click="askMute(row as unknown as WorklistRow)">
               {{ t('Turn off tracking') }}
             </MpPopoverListItem>
           </MpPopoverList>
@@ -1103,6 +1109,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
   <SkuReplenishmentSettingsDrawer
     v-model:is-open="settingsOpen"
     :row="settingsRow"
+    :readonly="!canManageReplenishment"
     @saved="onSettingsSaved"
   />
 

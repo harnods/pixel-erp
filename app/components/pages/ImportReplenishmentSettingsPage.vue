@@ -22,6 +22,8 @@ import { successToast } from '~/utils/toasts'
 
 const router = useRouter()
 const { t, tf } = useLocale()
+// Importing changes settings in bulk, so it needs replenishment access.
+const { canManageReplenishment } = useReplenishmentAccess()
 
 const MAX_MB = 10
 type Stage = 'upload' | 'preview' | 'done'
@@ -113,8 +115,17 @@ function downloadErrorReport(): void {
     <div class="irs-stage">
       <div class="irs-wrapper">
 
+        <!-- No access: say so and leave, rather than offering an upload that cannot be applied. -->
+        <div v-if="!canManageReplenishment" class="irs-result" data-devchange="replenishment-view-only">
+          <h2 class="irs-result-title">{{ t('You cannot import replenishment settings') }}</h2>
+          <p class="irs-result-desc">{{ t('Changing replenishment settings needs replenishment access. Ask an admin to give it to you.') }}</p>
+          <div class="irs-result-actions">
+            <MpButton id="irs-no-access-back" variant="primary" is-rounded @click="goBack">{{ t('Back to replenishment') }}</MpButton>
+          </div>
+        </div>
+
         <!-- ─────────── Upload ─────────── -->
-        <template v-if="stage === 'upload'">
+        <template v-else-if="stage === 'upload'">
           <p class="irs-intro">
             {{ t('Set safety days, reorder point and preferred vendor for many products and warehouses from one spreadsheet.') }}
           </p>

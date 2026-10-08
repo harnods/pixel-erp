@@ -47,6 +47,8 @@ import type jsPDF from 'jspdf'
 
 const props = defineProps<{ orderId: string }>()
 const { t, tf } = useLocale()
+// Changing a warehouse's reorder point, safety days or preferred vendor needs replenishment access.
+const { canManageReplenishment } = useReplenishmentAccess()
 const router = useRouter()
 const route = useRoute()
 
@@ -752,6 +754,7 @@ function clearBulk(): void {
 }
 
 function startEditMinStock() {
+  if (!canManageReplenishment.value) return
   whSelected.value = new Set()
   whBulkSafety.value = ''
   for (const id of Object.keys(whMinDraft)) delete whMinDraft[id]
@@ -1659,7 +1662,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
           <!-- Stock by warehouses — shown for every product, alongside the batch /
                serial breakdown rather than instead of it. -->
           <MpTabPanel value="warehouses">
-            <div v-if="pagedWarehouseStock.length && !whEditing" class="pd-filter-bar pd-filter-bar--end">
+            <div v-if="pagedWarehouseStock.length && !whEditing && canManageReplenishment" class="pd-filter-bar pd-filter-bar--end">
               <MpButton id="pd-wh-edit" variant="secondary" is-rounded data-devchange="product-warehouses-tidy" @click="startEditMinStock">{{ t('Edit vendor') }}</MpButton>
             </div>
             <div v-if="pagedWarehouseStock.length" class="pd-table-scroll pd-wh-scroll" :class="{ 'pd-form-table': whEditing }">

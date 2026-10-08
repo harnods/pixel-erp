@@ -30,10 +30,10 @@ pages), plus the form rules each control already follows.
 ```
 ┌── title bar (72px, neutral-subtle) ─────────────────────────────────────────┐
 │  Replenishment ‹breadcrumb›                                                  │
-│  Replenishment settings                                  [ Edit ] / [View only]│
+│  Replenishment settings                                  [View only]            │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌── stage (white, scrolls) ────────────────────────────────────────────────────┐
-│  H2 Section title                                                             │
+│  H2 Section title                       [ Edit ]  (per section)               │
 │  ┌──────────────────────────────┬─────────────────────────────────────────┐  │
 │  │ Label (MpFormLabel)          │ value  — or, in edit mode, the control  │  │
 │  │ caption (12px, secondary)    │ MpFormErrorMessage when invalid         │  │
@@ -42,7 +42,7 @@ pages), plus the form rules each control already follows.
 │  ──────────────────────────────────────────────── (divider between sections)  │
 │  H2 Next section                                                              │
 │                                                                               │
-│                 [error pointer]   [Reset to defaults] [Cancel] [Save changes] │ ← sticky, edit mode only
+│                 [error pointer]   [Reset to defaults] [Cancel] [Save changes] │ ← under the open section only
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -54,10 +54,10 @@ pages), plus the form rules each control already follows.
   neutral-subtle).
   - A **breadcrumb** back to the module (`MpTextlink as="a"`, 12px link) sits directly
     above the **H1 `<Module> settings`**.
-  - **Right**: the one page action. `Edit` is a secondary `MpButton` (`is-rounded`),
-    shown in view mode only.
-  - If the user can't edit, show a `View only` `MpBadge for="additionalInformation"` in
-    place of Edit.
+  - **Right**: nothing in edit-capable mode — `Edit` lives on **each section** (like
+    Company profile), see §4.
+  - If the user can't edit, show a `View only` `MpBadge for="additionalInformation"` here
+    and render no Edit buttons.
 - **No page or section description subtitle** (`rule/no-page-description-subtitle`).
   Explanations belong in the row captions.
 
@@ -79,7 +79,7 @@ pages), plus the form rules each control already follows.
     `${v}d` (`rule/copy-id-translations`).
   - **Edit mode**: the control, always size md (`rule/form-size-md-only`).
     - **Number with a unit**: `MpInputGroup` + `MpInput` (**128px**, the same everywhere) + `MpInputRightAddon has-background` with **12px** horizontal padding. The addon sits INSIDE the input's box, so the input width has to hold the number *and* the suffix; narrower inputs clip the value. The group hugs its input (`width: fit-content`).
-    - **Select** (`ErpFilterSelect`) and **multi-select** (`MpInputTag`): one fixed width, **320px** (`--rs-field-width`), so they line up and long option labels still fit. This replaces `rule/form-select-half` on settings pages.
+    - **Select** (`ErpFilterSelect`) and **multi-select** (`MpInputTag`): the **full width of the control column** (`--rs-field-width: 100%`), so the control occupies the same width as the view-mode value it replaces. This replaces `rule/form-select-half` on settings pages.
     - **Multi-select**: `MpInputTag` (`rule/select-multi-mpinputtag`).
     - **Toggle**: `MpToggle v-model:is-checked`, left-aligned in the control column
       (`rule/form-toggle-inline`).
@@ -93,11 +93,14 @@ pages), plus the form rules each control already follows.
   secondary text, visually distinct from any number. Never render it as `0` or `—`.
 
 ### 4. Edit mode (`rule/settings-edit-mode`)
-- `Edit` copies the committed config into a **draft**, and the rows switch to controls
-  in place.
-- **Footer**: sticky at the bottom of the stage, **edit mode only**, on its own stacking layer (`z-index` + `isolation: isolate`). Otherwise input addons paint over it while the rows scroll beneath. It's an
+- Each H2 section has a secondary `Edit` `MpButton` (`is-rounded`) on the right of its title, aligned with the widest form row. Section dividers run the full stage width; rows inside a section have no dividers. `Edit` copies the committed config into a **draft** and that section's
+  rows switch to controls in place; the title becomes `Edit <section>`. **One section is
+  editable at a time** (starting another discards the open draft); other sections stay
+  read-only.
+- **Action group**: at the bottom of the open section (not sticky), an
   `MpButtonGroup class="erp-action-footer"` (`rule/btn-responsive-footer`), with no
-  divider above it.
+  divider above it. `Save changes` saves that section only; `Reset to defaults` resets
+  only that section's fields.
   - Buttons: ghost `Reset to defaults` (optional), ghost `Cancel`, primary
     `Save changes` (`rule/form-edit-save-changes`).
   - An inline **error pointer** sits to the left of the buttons.
