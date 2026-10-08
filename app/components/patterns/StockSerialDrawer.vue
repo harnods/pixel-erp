@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  MpIcon, MpSpinner, MpCheckbox,
+  MpIcon, MpSpinner, MpCheckbox, MpButton,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import {
@@ -216,14 +216,14 @@ const receiptNumber = computed(() =>
 
       <header class="ssd-header">
         <div class="ssd-header-left">
-          <button v-if="step === 'detail'" class="ssd-back" type="button" aria-label="Back to list" @click="backToList">
+          <MpButton v-if="step === 'detail'" class="ssd-back" variant="ghost" type="button" aria-label="Back to list" @click="backToList">
             <MpIcon name="chevrons-left" size="md" />
-          </button>
+          </MpButton>
           <h2 class="ssd-title">{{ step === 'detail' ? 'Serial number details' : title }}</h2>
         </div>
-        <button class="ssd-close" type="button" aria-label="Close" @click="close">
+        <MpButton class="ssd-close" variant="ghost" type="button" aria-label="Close" @click="close">
           <MpIcon name="close" size="md" />
-        </button>
+        </MpButton>
       </header>
 
       <!-- Step: detail — one serial's own record, replacing the list in place -->
@@ -270,11 +270,11 @@ const receiptNumber = computed(() =>
         <div class="ssd-search">
           <MpIcon name="search" size="md" />
           <input v-model="search" class="ssd-search-input" type="text" placeholder="Search..." />
-          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+          <MpButton v-if="search" class="search-clear-btn" variant="ghost" type="button" aria-label="Clear search" @click="search = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
             </svg>
-          </button>
+          </MpButton>
         </div>
       </div>
 
@@ -301,7 +301,7 @@ const receiptNumber = computed(() =>
                       @change="toggleAll"
                     />
                     <span class="ssd-bulkbar__count">{{ selectedLabel }}</span>
-                    <button class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" type="button" @click="printSelectedBarcodes">Print barcode</button>
+                    <MpButton class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" variant="primary" type="button" @click="printSelectedBarcodes">Print barcode</MpButton>
                     <a class="ssd-bulkbar__clear" @click="clearSelection">Clear</a>
                   </div>
                 </th>
@@ -340,11 +340,11 @@ const receiptNumber = computed(() =>
                 <td class="ssd-td ssd-td--action">
                   <MpPopover :id="`ssd-actions-${row.serial}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                     <MpPopoverTrigger>
-                      <button class="row-kebab" aria-label="More actions" @click.stop>
+                      <MpButton class="row-kebab" variant="ghost" aria-label="More actions" @click.stop>
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                           <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
                         </svg>
-                      </button>
+                      </MpButton>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                       <MpPopoverList>
@@ -383,9 +383,9 @@ const receiptNumber = computed(() =>
       </div>
 
       <footer v-if="filtered.length" class="ssd-footer">
-        <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="printAllBarcodes">
+        <MpButton class="btn-enterprise btn-enterprise--secondary" variant="secondary" type="button" @click="printAllBarcodes">
           Print all barcode
-        </button>
+        </MpButton>
       </footer>
       </template>
 

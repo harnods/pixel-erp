@@ -113,7 +113,7 @@ const footer = css({
           <MpText size="body" color="text.default">{{ COPY.heroBody }}</MpText>
         </div>
         <div>
-          <button class="btn-enterprise btn-enterprise--primary">{{ COPY.cta }}</button>
+          <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary">{{ COPY.cta }}</MpButton>
         </div>
       </div>
 

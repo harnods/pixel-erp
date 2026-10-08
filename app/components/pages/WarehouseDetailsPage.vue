@@ -867,7 +867,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
     <!-- ── Title bar (breadcrumb + title + Actions dropdown) ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button v-if="showBreadcrumb" class="detail-breadcrumb" @click="goBack">{{ t('Warehouses') }}</button>
+        <MpButton v-if="showBreadcrumb" variant="ghost" class="detail-breadcrumb" @click="goBack">{{ t('Warehouses') }}</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ warehouse.name }}</h1>
           <MpBadge v-if="warehouse.isDefault" for="additionalInformation" type="information" size="sm">{{ t('Default') }}</MpBadge>
@@ -876,27 +876,27 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
           <!-- Chevron → jump-to-warehouse switcher -->
           <MpPopover id="wh-detail-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" :aria-label="t('Switch warehouse')">
+              <MpButton variant="ghost" class="detail-jump-chevron" :aria-label="t('Switch warehouse')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
+                  <MpButton v-if="jumpSearch" variant="ghost" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
-                  </button>
+                  </MpButton>
                 </div>
                 <div class="detail-jump-list">
-                  <button v-for="w in jumpResults" :key="w.id" class="detail-jump-item" @click="jumpTo(w.id)">
+                  <MpButton v-for="w in jumpResults" :key="w.id" variant="ghost" class="detail-jump-item" @click="jumpTo(w.id)">
                     <span class="detail-jump-item-name">{{ w.name }}</span>
                     <span class="detail-jump-item-sub">{{ w.code }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No warehouses found.') }}</p>
                 </div>
               </div>
@@ -908,12 +908,12 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
       <!-- Actions dropdown: Edit · Archive/Unarchive · Delete (if applicable) · divider · Configure warehouse -->
       <MpPopover id="wh-detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--primary">
+          <MpButton variant="primary" class="detail-btn detail-btn--primary">
             {{ t('Actions') }}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -995,29 +995,27 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               <template #filters>
                 <div class="wh-toolbar">
                   <MpTooltip id="wh-tt-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
-                    <button class="wh-tool-btn wh-tool-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
+                    <MpButton variant="ghost" class="wh-tool-btn wh-tool-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
                       <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                         <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
                         <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
                       </svg>
-                    </button>
+                    </MpButton>
                   </MpTooltip>
                   <ColumnSettingsMenu id="wh-tt-columns" :items="stockColItems" :visibility="stockColVisibility" />
                   <MpTooltip id="wh-tt-export" :label="t('Export')" placement="bottom" use-portal>
-                    <button class="wh-tool-btn" :aria-label="t('Export')">
-                      <MpIcon name="download" size="md" />
-                    </button>
+                    <MpButton variant="ghost" class="wh-tool-btn" :aria-label="t('Export')" left-icon="download" />
                   </MpTooltip>
                   <div class="wh-search">
                     <MpIcon name="search" size="md" />
                     <input v-model="search" class="wh-search-input" type="text" :placeholder="t('Search...')" />
-                    <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
+                    <MpButton v-if="search" variant="ghost" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                         <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                       </svg>
-                    </button>
+                    </MpButton>
                   </div>
-                  <button v-if="filteredStock.length" class="wh-print-all-btn" type="button" @click="printAllPlainBarcodes">{{ t('Print all barcode') }}</button>
+                  <MpButton v-if="filteredStock.length" variant="secondary" class="wh-print-all-btn" type="button" @click="printAllPlainBarcodes">{{ t('Print all barcode') }}</MpButton>
                 </div>
               </template>
 
@@ -1062,9 +1060,9 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                   <ul class="wh-cat-list">
                     <li v-for="cat in (expandedCategories.has((row as any).id) ? (row as any).categories : (row as any).categories.slice(0, CAT_MAX))" :key="cat" class="wh-cat-item">{{ cat }}</li>
                   </ul>
-                  <button v-if="(row as any).categories.length > CAT_MAX" class="wh-cat-toggle" type="button" @click.stop="toggleCategories((row as any).id)">
+                  <MpButton v-if="(row as any).categories.length > CAT_MAX" variant="link" class="wh-cat-toggle" type="button" @click.stop="toggleCategories((row as any).id)">
                     {{ expandedCategories.has((row as any).id) ? t('View less') : `+${(row as any).categories.length - CAT_MAX} ${t('more')}` }}
-                  </button>
+                  </MpButton>
                 </template>
                 <template v-else>{{ (row as any).category }}</template>
               </template>
@@ -1086,13 +1084,13 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               <template #actions="{ row }">
                 <MpPopover :id="`wh-stock-${(row as any).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                   <MpPopoverTrigger>
-                    <button class="row-kebab" :aria-label="t('More actions')">
+                    <MpButton variant="ghost" class="row-kebab" :aria-label="t('More actions')">
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                         <circle cx="12" cy="5" r="2" />
                         <circle cx="12" cy="12" r="2" />
                         <circle cx="12" cy="19" r="2" />
                       </svg>
-                    </button>
+                    </MpButton>
                   </MpPopoverTrigger>
                   <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                     <MpPopoverList>
@@ -1105,11 +1103,12 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 
               <!-- bulk selection actions -->
               <template #bulk-actions="{ selectedRows, deselectAll }">
-                <button
+                <MpButton
+                  variant="primary"
                   class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
                   type="button"
                   @click="printSelectedPlainBarcodes(selectedRows as Set<number>); deselectAll()"
-                >{{ t('Print barcode') }}</button>
+                >{{ t('Print barcode') }}</MpButton>
               </template>
 
               <!-- full empty state -->
@@ -1159,27 +1158,27 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               </div>
               <div class="wh-toolbar">
                 <MpTooltip id="wh-bt-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
-                  <button class="wh-tool-btn wh-tool-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
+                  <MpButton variant="ghost" class="wh-tool-btn wh-tool-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
                     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                       <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
                       <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
                     </svg>
-                  </button>
+                  </MpButton>
                 </MpTooltip>
                 <ColumnSettingsMenu id="wh-bt-columns" :items="batchColItems" :visibility="batchColVisibility" />
                 <MpTooltip id="wh-bt-export" :label="t('Export')" placement="bottom" use-portal>
-                  <button class="wh-tool-btn" :aria-label="t('Export')"><MpIcon name="download" size="md" /></button>
+                  <MpButton variant="ghost" class="wh-tool-btn" :aria-label="t('Export')" left-icon="download" />
                 </MpTooltip>
                 <div class="wh-search">
                   <MpIcon name="search" size="md" />
                   <input v-model="batchSearch" class="wh-search-input" type="text" :placeholder="t('Search...')" />
-                  <button v-if="batchSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="batchSearch = ''">
+                  <MpButton v-if="batchSearch" variant="ghost" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="batchSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
-                  </button>
+                  </MpButton>
                 </div>
-                <button v-if="filteredBatchProducts.length" class="wh-print-all-btn" type="button" @click="printAllBatchBarcodes">{{ t('Print all barcode') }}</button>
+                <MpButton v-if="filteredBatchProducts.length" variant="secondary" class="wh-print-all-btn" type="button" @click="printAllBatchBarcodes">{{ t('Print all barcode') }}</MpButton>
               </div>
             </div>
 
@@ -1212,7 +1211,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                           @change="toggleAllBatchProducts"
                         />
                         <span class="wh-bulkbar__count">{{ batchSelectedLabel }}</span>
-                        <button class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" type="button" @click="printSelectedBatchBarcodes(selectedBatchProducts); clearBatchSelection()">{{ t('Print barcode') }}</button>
+                        <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" type="button" @click="printSelectedBatchBarcodes(selectedBatchProducts); clearBatchSelection()">{{ t('Print barcode') }}</MpButton>
                         <a class="wh-bulkbar__clear" @click="clearBatchSelection">{{ t('Clear') }}</a>
                       </div>
                     </th>
@@ -1257,7 +1256,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                               :is-checked="selectedBatchProducts.has(p.id)"
                               @change="toggleBatchProduct(p.id)"
                             />
-                            <button
+                            <MpButton
+                              variant="ghost"
                               class="wh-expand-btn"
                               :aria-label="isBatchExpanded(p.id) ? t('Collapse') : t('Expand')"
                               @click="toggleBatch(p.id)"
@@ -1268,7 +1268,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                               >
                                 <path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                               </svg>
-                            </button>
+                            </MpButton>
                           </span>
                           <div class="wh-product">
                             <img class="wh-thumb" :src="p.photo" :alt="p.name" loading="lazy" />
@@ -1343,27 +1343,27 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             <div class="wh-filter-bar wh-filter-bar--end">
               <div class="wh-toolbar">
                 <MpTooltip id="wh-st-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
-                  <button class="wh-tool-btn wh-tool-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
+                  <MpButton variant="ghost" class="wh-tool-btn wh-tool-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
                     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                       <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
                       <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
                     </svg>
-                  </button>
+                  </MpButton>
                 </MpTooltip>
                 <ColumnSettingsMenu id="wh-st-columns" :items="serialColItems" :visibility="serialColVisibility" />
                 <MpTooltip id="wh-st-export" :label="t('Export')" placement="bottom" use-portal>
-                  <button class="wh-tool-btn" :aria-label="t('Export')"><MpIcon name="download" size="md" /></button>
+                  <MpButton variant="ghost" class="wh-tool-btn" :aria-label="t('Export')" left-icon="download" />
                 </MpTooltip>
                 <div class="wh-search">
                   <MpIcon name="search" size="md" />
                   <input v-model="serialSearch" class="wh-search-input" type="text" :placeholder="t('Search...')" />
-                  <button v-if="serialSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="serialSearch = ''">
+                  <MpButton v-if="serialSearch" variant="ghost" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="serialSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
-                  </button>
+                  </MpButton>
                 </div>
-                <button v-if="filteredSerialProducts.length" class="wh-print-all-btn" type="button" @click="printAllSerialBarcodes">{{ t('Print all barcode') }}</button>
+                <MpButton v-if="filteredSerialProducts.length" variant="secondary" class="wh-print-all-btn" type="button" @click="printAllSerialBarcodes">{{ t('Print all barcode') }}</MpButton>
               </div>
             </div>
 
@@ -1467,24 +1467,24 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               </div>
               <div class="wh-toolbar">
                 <MpTooltip id="wh-tx-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
-                  <button class="wh-tool-btn wh-tool-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
+                  <MpButton variant="ghost" class="wh-tool-btn wh-tool-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
                     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                       <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
                       <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
                     </svg>
-                  </button>
+                  </MpButton>
                 </MpTooltip>
                 <MpTooltip id="wh-tx-export" :label="t('Export')" placement="bottom" use-portal>
-                  <button class="wh-tool-btn" :aria-label="t('Export')"><MpIcon name="download" size="md" /></button>
+                  <MpButton variant="ghost" class="wh-tool-btn" :aria-label="t('Export')" left-icon="download" />
                 </MpTooltip>
                 <div class="wh-search">
                   <MpIcon name="search" size="md" />
                   <input v-model="txSearch" class="wh-search-input" type="text" :placeholder="t('Search...')" />
-                  <button v-if="txSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="txSearch = ''">
+                  <MpButton v-if="txSearch" variant="ghost" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="txSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
-                  </button>
+                  </MpButton>
                 </div>
               </div>
             </div>
@@ -1551,11 +1551,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               <div class="wh-search">
                 <MpIcon name="search" size="md" />
                 <input v-model="locSearch" class="wh-search-input" type="text" :placeholder="t('Search...')" />
-                <button v-if="locSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="locSearch = ''">
+                <MpButton v-if="locSearch" variant="ghost" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="locSearch = ''">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                   </svg>
-                </button>
+                </MpButton>
               </div>
               <MpButton variant="tertiary" is-rounded left-icon="add" @click="openNewLoc">{{ t('New location') }}</MpButton>
             </div>
@@ -1612,11 +1612,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                     <td class="wh-btd wh-loc-td--action">
                       <MpPopover :id="`wh-loc-actions-${row.node.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                         <MpPopoverTrigger>
-                          <button class="row-kebab" :aria-label="t('More actions')" @click.stop>
+                          <MpButton variant="ghost" class="row-kebab" :aria-label="t('More actions')" @click.stop>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                               <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
                             </svg>
-                          </button>
+                          </MpButton>
                         </MpPopoverTrigger>
                         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
                           <MpPopoverList>
@@ -1651,11 +1651,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               <div class="wh-search">
                 <MpIcon name="search" size="md" />
                 <input v-model="teamSearch" class="wh-search-input" type="text" :placeholder="t('Search...')" />
-                <button v-if="teamSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="teamSearch = ''">
+                <MpButton v-if="teamSearch" variant="ghost" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="teamSearch = ''">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                   </svg>
-                </button>
+                </MpButton>
               </div>
               <MpButton variant="tertiary" is-rounded left-icon="add" @click="openAddTeamMember">{{ t('Add team member') }}</MpButton>
             </div>
@@ -1695,11 +1695,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                     <td class="wh-btd wh-loc-td--action">
                       <MpPopover :id="`wh-team-actions-${member.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                         <MpPopoverTrigger>
-                          <button class="row-kebab" :aria-label="t('More actions')" @click.stop>
+                          <MpButton variant="ghost" class="row-kebab" :aria-label="t('More actions')" @click.stop>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                               <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
                             </svg>
-                          </button>
+                          </MpButton>
                         </MpPopoverTrigger>
                         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                           <MpPopoverList>
@@ -1750,8 +1750,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="archiveModalOpen = false">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--primary" @click="confirmArchive">{{ t('Archive') }}</button>
+            <MpButton variant="ghost" class="btn-enterprise btn-enterprise--ghost" @click="archiveModalOpen = false">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" @click="confirmArchive">{{ t('Archive') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -1776,8 +1776,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="deleteModalOpen = false">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">{{ t('Delete') }}</button>
+            <MpButton variant="ghost" class="btn-enterprise btn-enterprise--ghost" @click="deleteModalOpen = false">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="danger" class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">{{ t('Delete') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -1828,8 +1828,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="closeTeamModal">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveTeamMember">{{ isSaving ? t('Saving…') : t('Save') }}</button>
+            <MpButton variant="ghost" class="btn-enterprise btn-enterprise--ghost" @click="closeTeamModal">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" :is-disabled="isSaving" @click="saveTeamMember">{{ isSaving ? t('Saving…') : t('Save') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -1881,12 +1881,13 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="removeTeamModalOpen = false">{{ t('Cancel') }}</button>
-            <button
+            <MpButton variant="ghost" class="btn-enterprise btn-enterprise--ghost" @click="removeTeamModalOpen = false">{{ t('Cancel') }}</MpButton>
+            <MpButton
               v-if="memberActiveTaskCount === 0 || reassignOptions.length > 0"
+              variant="danger"
               class="btn-enterprise btn-enterprise--danger"
               @click="confirmRemoveTeamMember"
-            >{{ t('Remove') }}</button>
+            >{{ t('Remove') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>

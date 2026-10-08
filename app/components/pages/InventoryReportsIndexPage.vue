@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { MpButton } from '@mekari/pixel3'
+import { infoToast } from '~/utils/toasts'
 // Inventory → Reports index (Reports module → Inventory submenu). Same card grid as
 // Reports › WMS (WmsReportsIndexPage): cards fill the stage width as an equal-column
 // grid, the last row is padded with fillers so every column is present top and bottom,
 // and the outer right + bottom borders are clipped.
 //
 // Built: "Dual Unit Inventory" (PRD Dual Unit Inventory, Story 14) and "Batch
-// traceability" (PRD Batch Traceability Report). The rest are
-// listed so the section reads complete; they carry a caption instead of a disabled
-// button — DESIGN.md forbids disabled buttons for state.
+// traceability" (PRD Batch Traceability Report). The rest are listed so the section
+// reads complete; their "View report" shows the coming-soon toast, same as the other
+// report indexes.
 const { t } = useLocale()
 const router = useRouter()
 
@@ -17,13 +18,13 @@ interface ReportCard {
   slug: string
   title: string
   description: string
-  /** false → no "View report" button yet, shows the "Coming soon" caption. */
+  /** false → no report page yet; "View report" shows the coming-soon toast. */
   built: boolean
 }
 const reports: ReportCard[] = [
   {
     slug: 'dual-unit',
-    title: 'Dual Unit Inventory',
+    title: 'Dual unit inventory',
     description: 'Stock mutation and on-hand stock in both base and secondary inventory unit, per batch. For products using a secondary inventory unit.',
     built: true,
   },
@@ -80,8 +81,9 @@ onMounted(async () => {
 })
 onUnmounted(() => ro?.disconnect())
 
-function viewReport(slug: string) {
-  router.push(`/inventory-report/${slug}`)
+function viewReport(r: ReportCard) {
+  if (r.built) router.push(`/inventory-report/${r.slug}`)
+  else infoToast(`${t(r.title)} report — coming soon`)
 }
 </script>
 
@@ -93,8 +95,7 @@ function viewReport(slug: string) {
           <h2 class="report-card-title">{{ t(r.title) }}</h2>
           <p class="report-card-desc">{{ t(r.description) }}</p>
         </div>
-        <MpButton v-if="r.built" variant="secondary" is-rounded class="report-view-btn" @click="viewReport(r.slug)">{{ t('View report') }}</MpButton>
-        <span v-else class="report-soon">{{ t('Coming soon') }}</span>
+        <MpButton variant="secondary" is-rounded class="report-view-btn" @click="viewReport(r)">{{ t('View report') }}</MpButton>
       </div>
       <!-- Empty filler cells keep the last row's columns present (complete grid). -->
       <div v-for="n in fillerCount" :key="`filler-${n}`" class="report-card report-card--filler" aria-hidden="true" />
@@ -148,13 +149,4 @@ function viewReport(slug: string) {
 /* Visual comes from .btn-enterprise--secondary (erp.css); only the placement is local. */
 .report-view-btn { align-self: flex-start; }
 
-/* Not built yet — a caption, not a disabled button (DESIGN.md button rules). */
-.report-soon {
-  align-self: flex-start;
-  padding: var(--mp-spacing-2, 8px) 0;
-  font-size: var(--mp-font-sizes-sm, 12px);
-  font-weight: var(--mp-font-weights-regular, 400);
-  line-height: var(--mp-line-heights-md, 20px);
-  color: var(--mp-text-secondary);
-}
 </style>

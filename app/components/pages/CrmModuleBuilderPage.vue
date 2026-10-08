@@ -13,7 +13,7 @@
  * a local editable deep-clone `draft`; "Save changes" applies it to the real
  * module + persists. Every dropdown is `ErpFilterSelect`; every modal is `MpModal`.
  */
-import { computed, reactive, ref, watch, onMounted } from 'vue'
+import { computed, reactive, ref, watch, onMounted, nextTick } from 'vue'
 import {
   MpButton, MpIcon, MpToggle, MpInput, MpInputGroup, MpInputLeftAddon, MpCheckbox, MpRadio, MpTooltip,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay,
@@ -25,14 +25,15 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
 import CrmPropertyDrawer from '~/components/patterns/CrmPropertyDrawer.vue'
+import CrmEditOptionsDrawer from '~/components/patterns/CrmEditOptionsDrawer.vue'
 import {
   getCrmModule, persistCrmModule, createCustomModule, crmModules, persistCrmModules,
   CRM_FIELD_TYPE_LABELS, CRM_MODULE_ICONS,
   moduleStores, isDealLikeModule, resetGenericModuleDraft, canEditModule,
-  DEAL_PROPERTY_TYPE_ICON, isRelatedListType,
-  genericPipelineFieldId, setGenericPipelineField, transferGenericPipelineFieldId, isPicklistType,
-  deals, serviceDeals, genericRecordsFor, CRM_CURRENT_USER, notesFor,
-  type ServiceDeal, type GenericModuleRecord,
+  DEAL_PROPERTY_TYPE_ICON, isRelatedListType, defaultPropertyIcon,
+  genericPipelineFieldId, setGenericPipelineField, transferGenericPipelineFieldId, isPicklistType, sectionAllProps,
+  deals, genericRecordsFor, CRM_CURRENT_USER, notesFor,
+  type GenericModuleRecord,
   crmTeams, teamsForModule, setModuleTeams,
   publishCrmModule, unpublishCrmModule,
   type DealProperty, type DealPropertyType, type DealPropertyConfig, type Deal,
@@ -52,6 +53,7 @@ import { successToast, infoToast } from '~/utils/toasts'
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
 const router = useRouter()
+const route = useRoute()
 
 const AUTHOR = 'Rizal Candra'
 function nowStamp(): string { return new Date().toISOString().slice(0, 19) }
@@ -62,8 +64,13 @@ function clone<T>(v: T): T { return JSON.parse(JSON.stringify(v)) as T }
 const isCreating = props.orderId === 'new'
 if (isCreating) resetGenericModuleDraft('new')
 
+// Pre-fill from query params when coming from the creation modal.
+const qName = (isCreating && typeof route.query.name === 'string') ? route.query.name : ''
+const qAccess = (isCreating && route.query.accessLevel === 'team') ? 'team' as const : 'company' as const
+const accessLocked = true
+
 const newModuleStub: CrmModule = reactive({
-  id: 'new', name: '', system: false, accessLevel: 'company', status: 'draft',
+  id: 'new', name: qName, system: false, accessLevel: qAccess, status: 'draft',
   sections: [], fields: [], views: [], layoutDriver: undefined, conversionTarget: null,
   recordCount: 0, icon: 'pipeline', updatedAt: '', updatedBy: '',
 })
@@ -85,13 +92,22 @@ if (!isCreating) {
   }
 }
 
-// ── View vs Edit mode ───────────────────────────────────────────────────────
-// Existing modules open in VIEW mode (read-only); click Edit to switch.
-// New modules go straight to edit.
-const viewMode = ref(!isCreating)
-function enterEdit() { viewMode.value = false }
+// ── View vs Edit mode (per-tab) ─────────────────────────────────────────────
+// Each tab has its own independent edit state. Clicking "Edit" on Setup only
+// makes Setup editable; switching to another tab exits edit mode for the old tab.
+const initialEditTab = isCreating ? '__all__' : route.query.edit === '1' ? (isDealLikeModule(props.orderId) ? 'setup' : 'fields') : null
+const editingTab = ref<string | null>(initialEditTab)
+const viewMode = computed(() => {
+  if (isCreating) return false
+  return editingTab.value !== activeTab.value
+})
+function enterEdit() { editingTab.value = activeTab.value; nextTick(() => markClean()) }
 // Deals module cannot be deleted or deactivated.
 const isDealSystem = computed(() => mod.value?.id === 'deals')
+const hasModuleActions = computed(() => {
+  if (!mod.value || isDealSystem.value) return false
+  return mod.value.status === 'draft' || mod.value.status === 'published'
+})
 const deleteConfirmOpen = ref(false)
 function requestDeleteModule() {
   if (!mod.value || isDealSystem.value) return
@@ -155,7 +171,7 @@ interface Draft {
   accessLevel: 'company' | 'team'
   teamIds: string[] // team ids that can access this module — only meaningful when accessLevel === 'team'
 }
-const draft = reactive<Draft>({ name: '', icon: 'pipeline', sections: [], fields: [], views: [], layoutDriver: '', detailLayout: { tabs: [] }, accessLevel: 'company', teamIds: [] })
+const draft = reactive<Draft>({ name: qName, icon: 'pipeline', sections: [], fields: [], views: [], layoutDriver: '', detailLayout: { tabs: [] }, accessLevel: qAccess, teamIds: [] })
 const activeTeams = computed(() => crmTeams.filter((tm) => tm.status === 'active'))
 // Team picker — the same "pick many" drawer pattern as Add users, scoped to teams.
 const teamDrawerOpen = ref(false)
@@ -220,7 +236,7 @@ const viewAccessLabel = computed(() => {
   return t('Company')
 })
 
-onMounted(() => { loadDraft(); loadSetup(); loadProperties() })
+onMounted(() => { loadDraft(); loadSetup(); loadProperties(); nextTick(() => markClean()) })
 watch(() => props.orderId, () => { loadDraft(); loadSetup(); loadProperties() })
 
 // ── Header status badge ──────────────────────────────────────────────────────
@@ -239,15 +255,56 @@ const tabs = computed(() => isDeals.value
 const activeTab = ref<string>(isDealLikeModule(props.orderId) ? 'setup' : 'fields')
 const isLayoutTab = computed(() => activeTab.value === 'fields' || activeTab.value === 'layout')
 
+// ── Dirty tracking + tab-switch guard ──────────────────────────────────────
+const savedSnapshot = ref('')
+const savedDispClone = ref<string>('')
+const unsavedTabTarget = ref<string | null>(null)
+const unsavedConfirmOpen = ref(false)
+function switchTab(key: string) {
+  if (key === activeTab.value) return
+  if (editingTab.value !== null && editingTab.value !== 'properties' && isDirty.value) {
+    unsavedTabTarget.value = key
+    unsavedConfirmOpen.value = true
+    return
+  }
+  editingTab.value = null
+  activeTab.value = key
+}
+function reloadAll() {
+  loadDraft(); loadSetup(); loadProperties()
+  pipeDraft.value = JSON.parse(JSON.stringify(stores.value.pipelines))
+  hiddenStageIds.value = [...(stores.value.views?.[0]?.hiddenStageIds ?? [])]
+  if (savedDispClone.value) Object.assign(disp.value, JSON.parse(savedDispClone.value))
+}
+function discardAndSwitch() {
+  unsavedConfirmOpen.value = false
+  editingTab.value = null
+  reloadAll()
+  activeTab.value = unsavedTabTarget.value ?? activeTab.value
+  unsavedTabTarget.value = null
+  nextTick(() => markClean())
+}
+function stayOnTab() {
+  unsavedConfirmOpen.value = false
+  unsavedTabTarget.value = null
+}
+function saveAndSwitch() {
+  saveChanges()
+  unsavedConfirmOpen.value = false
+  editingTab.value = null
+  activeTab.value = unsavedTabTarget.value ?? activeTab.value
+  unsavedTabTarget.value = null
+}
+
 // ── Generic vs predefined module detection ──
 const isGenericModule = computed(() => {
   const id = mod.value?.id ?? ''
-  return id !== 'deals' && id !== 'services' && isDeals.value
+  return id !== 'deals' && isDeals.value
 })
 
 // ── Pipeline field picker (generic modules only) ──
 const pipelineFieldId = ref<string | null>(genericPipelineFieldId(props.orderId))
-const picklistProperties = computed(() => propList.value.filter((p) => isPicklistType(p.type)))
+const picklistProperties = computed(() => propList.value.filter((p) => isPicklistType(p.type) && layoutPropertyIds.value.has(p.id)))
 const pipelineFieldOptions = computed(() =>
   picklistProperties.value.map((p) => ({ value: p.id, label: p.name })),
 )
@@ -288,6 +345,8 @@ const pipeStages = computed<DealPipelineStage[]>(() => currentPipe.value?.stages
 let stageSeq = 100
 const newStageId = () => `s-new-${stageSeq++}`
 
+
+// (snapshot helpers moved after display/hiddenStageIds definitions)
 
 // Inline rename — the pencil toggles a stage's name into an editable field.
 const editingStageId = ref<string | null>(null)
@@ -341,6 +400,37 @@ function setStageVisible(id: string, show: boolean) {
   else if (!hiddenStageIds.value.includes(id)) hiddenStageIds.value = [...hiddenStageIds.value, id]
 }
 
+// ── Snapshot helpers for dirty tracking (must be after pipeDraft, disp, hiddenStageIds) ──
+function takeSnapshot(): string {
+  return JSON.stringify({ draft: JSON.parse(JSON.stringify(draft)), setup: JSON.parse(JSON.stringify(setup)), props: JSON.parse(JSON.stringify(propList.value)), pipes: JSON.parse(JSON.stringify(pipeDraft.value)), disp: JSON.parse(JSON.stringify(disp.value)), hidden: JSON.parse(JSON.stringify(hiddenStageIds.value)) })
+}
+function markClean() { savedSnapshot.value = takeSnapshot(); savedDispClone.value = JSON.stringify(disp.value) }
+const isDirty = computed(() => savedSnapshot.value !== '' && savedSnapshot.value !== takeSnapshot())
+const hasCloseDateInLayout = computed(() => draft.fields.some((f: { id: string; section?: string }) => f.id === 'closeDate' && !!f.section) || layoutPropertyIds.value.has('close-date'))
+
+const CARD_KEY_TO_PROP_ID: Record<string, string> = {
+  company: 'company', dealName: 'record-name', contactPerson: 'contact',
+  dealValue: 'deal-value', owner: 'record-owner', closeDate: 'close-date', memo: 'memo',
+}
+const layoutPropertyIds = computed(() => {
+  const ids = new Set<string>()
+  const layout = draft.detailLayout.tabs.length ? draft.detailLayout : stores.value.detailLayout
+  const tab = layout.tabs.find((t) => t.editable)
+  if (tab?.sections) for (const s of tab.sections) for (const pid of sectionAllProps(s)) ids.add(pid)
+  return ids
+})
+function isCardFieldInLayout(key: string): boolean {
+  const propId = CARD_KEY_TO_PROP_ID[key]
+  if (propId) return layoutPropertyIds.value.has(propId)
+  return layoutPropertyIds.value.has(key)
+}
+
+// Prune card fields not present in the layout — keeps disp.cardFields in sync.
+watchEffect(() => {
+  const inLayout = disp.value.cardFields.filter((f) => isCardFieldInLayout(f.key))
+  if (inLayout.length !== disp.value.cardFields.length) disp.value.cardFields = inLayout
+})
+
 // Drag-reorder the card-property rows (order = the order fields stack on a card) —
 // same ERP pointer sortable, vertical axis. rule/dnd-live-sortable.
 const { dragIndex: fieldDragIndex, ghost: fieldGhost, start: fieldStart } = usePointerSortable({
@@ -360,7 +450,7 @@ const BUILT_IN_CARD_FIELD_META: Record<string, { subtitle: string; icon: string;
   dealName: { subtitle: 'record_name', icon: 'text-editor-text' },
   contactPerson: { subtitle: 'contact_person', icon: 'profile' },
   dealValue: { subtitle: 'record_value', icon: 'number' },
-  owner: { subtitle: 'deal_owner', icon: 'profile' },
+  owner: { subtitle: 'record_owner', icon: 'profile' },
   closeDate: { subtitle: 'close_date', icon: 'calendar' },
   memo: { subtitle: 'memo', icon: 'textarea' },
 }
@@ -369,14 +459,16 @@ const BUILT_IN_CARD_FIELD_META: Record<string, { subtitle: string; icon: string;
 // "Deal value" doesn't also appear as its property twin.
 const cardPropOptions = computed(() => {
   const byId = new Map<string, { id: string; name: string; subtitle?: string; icon?: string; devchange?: string }>()
-  const labels = new Set(disp.value.cardFields.map((f) => t(f.label).toLowerCase()))
+  const labels = new Set(disp.value.cardFields.filter((f) => isCardFieldInLayout(f.key)).map((f) => t(f.label).toLowerCase()))
   for (const f of disp.value.cardFields) {
+    if (!isCardFieldInLayout(f.key)) continue
     const meta = BUILT_IN_CARD_FIELD_META[f.key]
     byId.set(f.key, { id: f.key, name: t(f.label), subtitle: meta?.subtitle, icon: meta?.icon, devchange: meta?.devchange })
   }
   for (const p of propList.value) {
+    if (!layoutPropertyIds.value.has(p.id)) continue
     if (byId.has(p.id) || labels.has(p.name.toLowerCase())) continue
-    byId.set(p.id, { id: p.id, name: p.name, subtitle: p.variableName, icon: DEAL_PROPERTY_TYPE_ICON[p.type] })
+    byId.set(p.id, { id: p.id, name: p.name, subtitle: '', icon: defaultPropertyIcon(p.type) })
   }
   return [...byId.values()]
 })
@@ -407,99 +499,53 @@ function hasOptions(type: CrmFieldType): boolean { return type === 'pick-list' |
 // value, computed from the real deals DB. Properties with no matching deal field
 // Fill-rate matchers per module type — computed from actual records in the DB.
 const DEAL_FILL: Record<string, (d: Deal) => boolean> = {
-  'deal-value': (d) => d.value > 0,
-  'currency': (d) => !!d.currency,
-  'transaction-date': (d) => !!(d.transactionDate || d.createdAt),
-  'due-date': (d) => !!d.expectedCloseDate,
-  'transaction-no': (d) => !!d.id,
-  'reference-no': (d) => !!d.referenceNumber,
-  'company': (d) => !!d.customerId,
-  'contact-person': (d) => !!d.picName,
-  'contact-person-email': (d) => !!(d as any).picEmail,
-  'contact-person-phone': (d) => !!(d as any).picPhone,
-  'product-lines': (d) => !!(d.products && d.products.length),
-  'payment-terms': (d) => !!d.paymentTerms,
-  'message': (d) => !!d.description,
-  'memo': (d) => !!d.notes,
-  'requires-shipping': (d) => !!(d.shipTo || d.shipVia || d.trackingNo || d.shipDate),
-  'shipping-fee': (d) => !!(d.shippingFee && d.shippingFee > 0),
-  'shipping-address': (d) => !!d.shipTo,
-  'billing-address': (d) => !!d.billingAddress,
-  'shipping-date': (d) => !!d.shipDate,
-  'delivery-date': (d) => !!(d as any).deliveryDate,
-  'ship-via': (d) => !!d.shipVia,
-  'tracking-no': (d) => !!d.trackingNo,
-  'warehouse': (d) => !!d.warehouse,
-  'attachment': (d) => !!(d.attachments && d.attachments.length),
-  'discount': (d) => !!(d.orderDiscount && d.orderDiscount > 0),
-  'tax': (d) => !!d.tax,
-  'global-discount': (d) => !!(d.orderDiscount && d.orderDiscount > 0),
-  'tax-inclusive': (d) => d.taxType === 'inclusive',
-  'tax-after-discount': () => false,
-  'close-date': (d) => !!d.expectedCloseDate,
-  'deal-name': (d) => !!d.name,
-  'owner': (d) => !!d.owner,
-  'files': (d) => !!(d.attachments && d.attachments.length),
-  'notes': (d) => notesFor('deal', d.id).length > 0,
-  'activity-log': () => true,
-  'sales-order-list': (d) => d.conversion === 'converted' && d.convertedTarget === 'Sales Order',
-  'sales-quote-list': (d) => d.conversion === 'converted' && d.convertedTarget === 'Sales Quote',
-  'closed-lost-reason': (d) => !!d.lostReason,
-  'created-by-user-id': (d) => !!d.createdBy,
-  'deal-stage': (d) => !!d.stage,
-  'deal-type': () => false,
-  'team': () => false,
-  'last-activity-date': (d) => !!d.lastActivity,
-  'owner-assigned-date': (d) => !!d.createdAt,
-  'pipeline': () => true,
-  'record-id': (d) => !!d.id,
-  'record-source': (d) => !!d.conversion && d.conversion !== 'none',
-  'record-source-detail-1': () => false,
-  'record-source-detail-2': () => false,
-  'record-source-detail-3': () => false,
-  'updated-by-user-id': (d) => !!d.lastModifiedBy,
-}
-const SERVICE_FILL: Record<string, (d: ServiceDeal) => boolean> = {
-  'deal-value': (d) => d.value > 0,
-  'currency': (d) => !!d.currency,
+  'record-name': (d) => !!d.name,
+  'record-owner': (d) => !!d.owner,
+  'description': () => false,
+  'status': (d) => !!d.stage,
+  'priority': () => false,
+  'tags': () => false,
+  'transaction-number': (d) => !!d.transactionNo,
+  'external-reference-id': (d) => !!d.referenceNo,
+  'source': (d) => !!d.conversion && d.conversion !== 'none',
   'transaction-date': (d) => !!d.transactionDate,
   'due-date': (d) => !!d.dueDate,
-  'transaction-no': (d) => !!d.transactionNo,
-  'reference-no': (d) => !!d.referenceNo,
-  'company': (d) => !!d.company,
-  'contact-person': (d) => !!d.contact,
-  'product-lines': (d) => !!(d.products && d.products.length),
-  'payment-terms': (d) => !!d.paymentTerms,
-  'message': (d) => !!d.description,
-  'memo': (d) => !!d.memo,
-  'attachment': (d) => !!(d.files && d.files.length),
-  'deal-name': (d) => !!d.name,
-  'owner': (d) => !!d.owner,
-  'close-date': (d) => !!d.dueDate,
-  'files': (d) => !!(d.files && d.files.length),
-  'notes': (d) => notesFor('service', d.id).length > 0,
-  'activity-log': () => true,
-  'sales-order-list': (d) => !!d.linkedTransaction && d.linkedTransaction.type === 'Sales Order',
-  'sales-quote-list': (d) => !!d.linkedTransaction && d.linkedTransaction.type === 'Sales Quote',
+  'close-date': (d) => !!d.expectedCloseDate,
+  'next-follow-up-time': () => false,
+  'completed-time': () => false,
+  'notes': (d) => notesFor('deal', d.id).length > 0,
+  'memo': (d) => !!d.notes,
+  'attachments': (d) => !!(d.attachments && d.attachments.length),
+  'image': () => false,
+  'contact': (d) => !!d.picName,
+  'company': (d) => !!d.customerId,
+  'email': (d) => !!(d as any).picEmail,
+  'phone': (d) => !!(d as any).picPhone,
+  'product-list': (d) => !!(d.products && d.products.length),
+  'website': () => false,
+  'billing-address': (d) => !!d.billingAddress,
+  'shipping-address': (d) => !!d.shipTo,
+  'payment-term': (d) => !!d.paymentTerms,
+  'deal-value': (d) => d.value > 0,
+  'currency-code': (d) => !!d.currency,
+  'quantity': () => false,
+  'probability': () => false,
+  'discount-percentage': (d) => !!(d.orderDiscount && d.orderDiscount > 0),
 }
 const GENERIC_FILL: Record<string, (d: GenericModuleRecord) => boolean> = {
-  'deal-name': (d) => !!d.name,
-  'owner': (d) => !!d.owner,
+  'record-name': (d) => !!d.name,
+  'record-owner': (d) => !!d.owner,
   'company': (d) => !!d.values.customer,
-  'contact-person': (d) => !!d.values.contactPerson,
+  'contact': (d) => !!d.values.contactPerson,
   'deal-value': (d) => !!(d.values.dealValue && d.values.dealValue > 0),
-  'currency': (d) => !!d.values.currency,
+  'currency-code': (d) => !!d.values.currency,
   'transaction-date': (d) => !!d.values.transactionDate,
   'due-date': (d) => !!d.values.dueDate,
-  'payment-terms': (d) => !!d.values.paymentTerms,
-  'reference-no': (d) => !!d.values.referenceNo,
-  'message': (d) => !!d.values.description,
-  'memo': (d) => !!d.values.memo,
-  'files': () => false,
+  'payment-term': (d) => !!d.values.paymentTerms,
+  'external-reference-id': (d) => !!d.values.referenceNo,
   'notes': () => false,
-  'activity-log': () => true,
-  'sales-order-list': () => false,
-  'sales-quote-list': () => false,
+  'memo': (d) => !!d.values.memo,
+  'attachments': () => false,
 }
 function computeFillRate(id: string): number {
   const moduleId = props.orderId
@@ -507,12 +553,6 @@ function computeFillRate(id: string): number {
   if (moduleId === 'deals') {
     const checker = DEAL_FILL[id]
     const active = deals.filter((d) => !d.archived)
-    if (!checker || !active.length) return 0
-    return Math.round((active.filter(checker).length / active.length) * 100)
-  }
-  if (moduleId === 'services') {
-    const checker = SERVICE_FILL[id]
-    const active = serviceDeals.filter((d) => !d.archived)
     if (!checker || !active.length) return 0
     return Math.round((active.filter(checker).length / active.length) * 100)
   }
@@ -593,6 +633,19 @@ function onPropertySave(payload: { name: string; variableName: string; type: Dea
   }
   propDrawerOpen.value = false
 }
+// Edit options drawer — for editable system properties (status, priority, tags, source, payment-term)
+const editOptionsDrawerOpen = ref(false)
+const editOptionsProp = ref<DealProperty | null>(null)
+function openEditOptions(id: string) {
+  const p = propList.value.find((x) => x.id === id); if (!p) return
+  editOptionsProp.value = p; editOptionsDrawerOpen.value = true
+}
+function onEditOptionsSave(payload: { id: string; options: import('~/data/crm').DealPropertyOption[] }) {
+  const p = propList.value.find((x) => x.id === payload.id)
+  if (p) { if (!p.config) p.config = {}; p.config.options = payload.options }
+  editOptionsDrawerOpen.value = false
+}
+
 // Create a property from the Layout ▸ Add-property drawer's "+ New property".
 // Adds to the editable propList (persisted on Save changes); returns the new prop
 // so the layout drawer can show it in the Add-property list.
@@ -788,7 +841,7 @@ function saveSection() {
 function deleteSection(section: string) {
   const blocked = draft.fields.some((f) => f.section === section && isProtected(f))
   if (blocked) {
-    sectionDeleteError[section] = t('This section holds a system-required field and can’t be deleted.')
+    sectionDeleteError[section] = t('This section holds a system-required field and cannot be deleted.')
     return
   }
   delete sectionDeleteError[section]
@@ -898,14 +951,16 @@ function saveChanges() {
   m.accessLevel = draft.accessLevel
   setModuleTeams(m.id, draft.accessLevel === 'team' ? draft.teamIds : [])
   persistCrmModule(m, AUTHOR, nowStamp())
-  successToast(t(isDealLikeModule(m.id) ? 'Pipeline saved' : 'Module saved'))
-  viewMode.value = true
+  const tabLabels: Record<string, string> = { setup: 'Setup saved', properties: 'Properties saved', layout: 'Layout saved', pipeline: 'Pipeline saved' }
+  successToast(t(tabLabels[activeTab.value] ?? 'Saved'))
+  editingTab.value = null
+  nextTick(() => markClean())
 }
 // Every module (Deals system module included) is edited from the Modules index.
 function cancel() {
-  if (!isCreating && !viewMode.value) {
-    viewMode.value = true
-    loadDraft(); loadSetup(); loadProperties()
+  if (!isCreating && editingTab.value !== null) {
+    editingTab.value = null
+    reloadAll()
     return
   }
   router.push('/crm/settings/modules')
@@ -977,17 +1032,16 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
           <ErpStatusBadge v-if="!isCreating && mod && !mod.system" :status="statusBadge.status" :label="t(statusBadge.label)" badge-for="additionalInformation" />
         </div>
       </div>
-      <div v-if="viewMode && mod" class="cd-bar-actions" data-devchange="crm-module-view-mode">
+      <div v-if="mod && !isCreating && hasModuleActions" class="cd-bar-actions" data-devchange="crm-module-view-mode">
         <MpPopover id="module-actions-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
             <MpButton variant="secondary" is-rounded right-icon="caret-down">{{ t('Actions') }}</MpButton>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem @click="enterEdit">{{ t('Edit') }}</MpPopoverListItem>
               <MpPopoverListItem v-if="!isDealSystem && mod.status === 'draft'" @click="publishModule">{{ t('Publish') }}</MpPopoverListItem>
-              <MpPopoverListItem v-if="!isDealSystem && mod.status === 'published'" @click="deactivateModule">{{ t('Deactivate') }}</MpPopoverListItem>
-              <MpPopoverListItem v-if="!isDealSystem" @click="requestDeleteModule">{{ t('Delete') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="!isDealSystem && mod.status === 'published'" @click="deactivateModule">{{ t('Unpublish') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="!isDealSystem && mod.status === 'draft'" @click="requestDeleteModule">{{ t('Delete') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -997,15 +1051,15 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
     <!-- Section tabs — OUTSIDE the white stage (rule/erp-tabs-pattern: section tabs
          sit on the neutral-subtle bar below the title, not as MpTabs in the stage). -->
     <div v-if="mod" class="page-tabs-bar">
-      <button v-for="tab in tabs" :key="tab.key" type="button" class="page-tab" :class="{ 'page-tab--active': activeTab === tab.key }" @click="activeTab = tab.key">{{ t(tab.label) }}</button>
+      <MpButton v-for="tab in tabs" :key="tab.key" type="button" class="page-tab" :class="{ 'page-tab--active': activeTab === tab.key }" @click="switchTab(tab.key)">{{ t(tab.label) }}</MpButton><!-- pixel-police-allow -->
     </div>
 
     <div class="detail-stage">
       <!-- ── Module not found ── -->
       <div v-if="!mod" class="builder-empty">
-        <MpIcon name="folder-close" size="xl" />
+        <img src="/illustrations/empty-folder.png" alt="" class="builder-empty-illustration" width="288" height="240" />
         <p class="builder-empty-title">{{ t('Module not found') }}</p>
-        <p class="builder-empty-caption">{{ t('This module doesn’t exist or was removed.') }}</p>
+        <p class="builder-empty-caption">{{ t('This module does not exist or was removed.') }}</p>
         <MpButton variant="secondary" is-rounded @click="cancel">{{ t('Back to Modules') }}</MpButton>
       </div>
 
@@ -1014,6 +1068,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
           <div v-show="activeTab === 'setup'" class="builder-panel">
             <!-- VIEW mode: ContentList read-only -->
             <div v-if="viewMode" class="setup-view">
+              <MpButton class="tab-edit-btn" variant="ghost" is-rounded left-icon="edit" @click="enterEdit">{{ t('Edit') }}</MpButton>
               <ContentList :label="t('Module name')">
                 <span class="mod-name-inline"><MpIcon :name="mod!.icon ?? 'pipeline'" size="sm" /> {{ mod!.name }}</span>
               </ContentList>
@@ -1038,18 +1093,18 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                   <MpInputLeftAddon id="setup-name-addon" has-background>
                     <MpPopover id="module-icon-menu" :is-open="iconMenuOpen" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start" @close="iconMenuOpen = false">
                       <MpPopoverTrigger>
-                        <button type="button" class="setup-icon-trigger" :aria-label="t('Change icon')" @click="iconMenuOpen = !iconMenuOpen">
+                        <MpButton type="button" class="setup-icon-trigger" :aria-label="t('Change icon')" @click="iconMenuOpen = !iconMenuOpen">
                           <MpIcon :name="draft.icon" size="md" />
                           <MpIcon name="chevrons-down" size="sm" class="setup-icon-caret" />
-                        </button>
+                        </MpButton>
                       </MpPopoverTrigger>
                       <MpPopoverContent :class="css({ padding: 'var(--mp-spacing-2)', width: '240px' })">
                         <div class="pipe-icon-grid">
-                          <button
+                          <MpButton
                             v-for="ic in CRM_MODULE_ICONS" :key="ic" type="button"
                             class="pipe-icon-choice" :class="{ 'pipe-icon-choice--active': draft.icon === ic }"
-                            :aria-label="ic" @click="pickIcon(ic)"
-                          ><MpIcon :name="ic" size="md" /></button>
+                            :left-icon="ic" :aria-label="ic" @click="pickIcon(ic)"
+                          />
                         </div>
                       </MpPopoverContent>
                     </MpPopover>
@@ -1108,8 +1163,8 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                   <span class="setup-caption">{{ t('Choose whether this module is company-wide or limited to specific teams.') }}</span>
                 </div>
                 <div class="setup-radio-row">
-                  <MpRadio id="setup-access-company" name="setup-access-level" value="company" :is-checked="draft.accessLevel === 'company'" @change="draft.accessLevel = 'company'">{{ t('Company') }}</MpRadio>
-                  <MpRadio id="setup-access-team" name="setup-access-level" value="team" :is-checked="draft.accessLevel === 'team'" @change="draft.accessLevel = 'team'">{{ t('Team') }}</MpRadio>
+                  <MpRadio id="setup-access-company" name="setup-access-level" value="company" :is-checked="draft.accessLevel === 'company'" :is-disabled="accessLocked" @change="draft.accessLevel = 'company'">{{ t('Company') }}</MpRadio>
+                  <MpRadio id="setup-access-team" name="setup-access-level" value="team" :is-checked="draft.accessLevel === 'team'" :is-disabled="accessLocked" @change="draft.accessLevel = 'team'">{{ t('Team') }}</MpRadio>
                 </div>
                 <div v-if="draft.accessLevel === 'team'" class="setup-team-picked">
                   <template v-if="selectedTeams.length">
@@ -1176,9 +1231,9 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                   <div class="filter-search">
                     <MpIcon name="search" size="sm" />
                     <input v-model="propSearch" class="filter-search-input" type="text" :placeholder="t('Search...')" />
-                    <button v-if="propSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="propSearch = ''"><MpIcon name="close" size="sm" /></button>
+                    <MpButton v-if="propSearch" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="propSearch = ''" />
                   </div>
-                  <MpButton v-if="!viewMode" variant="tertiary" is-rounded left-icon="add" @click="openAddProperty()">{{ t('New property') }}</MpButton>
+                  <MpButton variant="tertiary" is-rounded left-icon="add" @click="openAddProperty()">{{ t('New property') }}</MpButton>
                 </div>
               </template>
 
@@ -1188,40 +1243,52 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                   :data-devchange="(row as unknown as DealProperty).id === 'company' ? 'crm-company-property-label' : undefined"
                 >
                   <span class="prop-name">{{ (row as unknown as DealProperty).name }}</span>
-                  <span class="prop-varname">{{ (row as unknown as DealProperty).variableName }}</span>
                 </span>
               </template>
               <template #cell-type="{ row }">
-                <span class="prop-type"><MpIcon :name="DEAL_PROPERTY_TYPE_ICON[(row as unknown as DealProperty).type]" size="sm" class="prop-type-icon" />{{ (row as unknown as DealProperty).type }}</span>
+                <span class="prop-type"><MpIcon :name="defaultPropertyIcon((row as unknown as DealProperty).type)" size="sm" class="prop-type-icon" />{{ (row as unknown as DealProperty).type }}</span>
               </template>
               <template #cell-createdBy="{ row }">{{ t(propCreatedByLabel(row as unknown as DealProperty)) }}</template>
               <template #cell-fillRate="{ row }">{{ (row as unknown as DealProperty).fillRate }}%</template>
 
-              <!-- Default properties (from the master library) + related lists are non-editable. -->
-              <template v-if="!viewMode" #actions="{ row }">
-                <MpPopover v-if="canManageProperty(row as unknown as DealProperty)" :id="`prop-actions-${(row as unknown as DealProperty).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-                  <MpPopoverTrigger>
-                    <MpButton class="builder-kebab" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
-                  </MpPopoverTrigger>
-                  <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
-                    <MpPopoverList>
-                      <MpPopoverListItem @click="openEditProperty((row as unknown as DealProperty).id)">{{ t('Edit') }}</MpPopoverListItem>
-                      <MpPopoverListItem v-if="!(row as unknown as DealProperty).system" @click="deleteProperty((row as unknown as DealProperty).id)">{{ t('Delete') }}</MpPopoverListItem>
-                    </MpPopoverList>
-                  </MpPopoverContent>
-                </MpPopover>
-                <span
-                  v-else-if="(row as unknown as DealProperty).id === systemActionDevChangePropertyId"
-                  class="prop-action-devchange-anchor"
-                  data-devchange="crm-system-property-actions-removed"
-                  aria-hidden="true"
-                />
+              <!-- Default properties (from the master library) + related lists are non-editable,
+                   EXCEPT editable system properties (status, priority, tags, source, payment-term)
+                   which allow editing their picklist options. -->
+              <template #actions="{ row }">
+                <template>
+                  <MpPopover v-if="canManageProperty(row as unknown as DealProperty)" :id="`prop-actions-${(row as unknown as DealProperty).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                    <MpPopoverTrigger>
+                      <MpButton class="builder-kebab" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
+                    </MpPopoverTrigger>
+                    <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+                      <MpPopoverList>
+                        <MpPopoverListItem @click="openEditProperty((row as unknown as DealProperty).id)">{{ t('Edit') }}</MpPopoverListItem>
+                        <MpPopoverListItem v-if="!(row as unknown as DealProperty).system" @click="deleteProperty((row as unknown as DealProperty).id)">{{ t('Delete') }}</MpPopoverListItem>
+                      </MpPopoverList>
+                    </MpPopoverContent>
+                  </MpPopover>
+                  <span
+                    v-else-if="(row as unknown as DealProperty).id === systemActionDevChangePropertyId"
+                    class="prop-action-devchange-anchor"
+                    data-devchange="crm-system-property-actions-removed"
+                    aria-hidden="true"
+                  />
+                </template>
+                <MpTooltip v-if="(row as unknown as DealProperty).editable" :id="`prop-edit-opts-${(row as unknown as DealProperty).id}`" :label="t('Edit options')" placement="top" use-portal>
+                  <MpButton
+                    class="builder-kebab"
+                    :aria-label="t('Edit options')"
+                    data-devchange="crm-editable-property-options"
+                    @click="openEditOptions((row as unknown as DealProperty).id)"
+                  ><MpIcon name="edit" size="md" /></MpButton>
+                </MpTooltip>
               </template>
             </ErpTablePage>
           </div>
 
           <!-- ════════ PIPELINE (Deals) — swimlane editor + settings sidebar ════════ -->
           <div v-show="activeTab === 'pipeline'" class="builder-panel builder-panel--pipeline" :data-devchange="isGenericModule ? 'crm-field-driven-pipeline' : 'crm-pipeline-no-custom-views'">
+            <MpButton v-if="viewMode" class="tab-edit-btn" variant="ghost" is-rounded left-icon="edit" @click="enterEdit">{{ t('Edit') }}</MpButton>
 
             <!-- ── Generic module: field picker + derived Kanban ── -->
             <template v-if="isGenericModule">
@@ -1268,16 +1335,17 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                         ><MpIcon name="drag" size="md" /></span>
                         <div class="pipe-lane-label"><span class="pipe-lane-name">{{ opt.label }}</span></div>
                         <MpTooltip v-if="!viewMode" :id="`gm-stage-vis-${opt.value}`" :label="isStageVisible(opt.value) ? t('Hide stage in this view') : t('Show stage in this view')" placement="top" use-portal>
-                          <button
+                          <MpButton
                             class="pipe-lane-vis" type="button"
+                            :left-icon="isStageVisible(opt.value) ? 'show' : 'hide'"
                             :aria-label="isStageVisible(opt.value) ? t('Hide stage in this view') : t('Show stage in this view')"
                             @click="setStageVisible(opt.value, !isStageVisible(opt.value))"
-                          ><MpIcon :name="isStageVisible(opt.value) ? 'show' : 'hide'" size="sm" /></button>
+                          />
                         </MpTooltip>
                       </div>
                       <div class="pipe-lane-cards">
                         <template v-if="i === 0">
-                          <div v-for="n in 2" :key="n" class="pipe-card">
+                          <div class="pipe-card">
                             <template v-for="f in enabledCardFields" :key="f.key">
                               <span v-if="f.key === 'company'" class="pipe-card-company">{{ t('Company') }}</span>
                               <span v-else-if="f.key === 'dealName'" class="pipe-card-deal">{{ t('Record name') }}</span>
@@ -1288,7 +1356,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                               <span v-else-if="f.key === 'memo'" class="pipe-card-sub">{{ t('Memo') }}</span>
                               <span v-else class="pipe-card-sub">{{ t(f.label) }}</span>
                             </template>
-                            <div v-if="disp.showAging" class="pipe-card-foot pipe-card-foot--end">
+                            <div v-if="disp.showAging && hasCloseDateInLayout" class="pipe-card-foot pipe-card-foot--end">
                               <span class="pipe-card-aging">2d</span>
                             </div>
                           </div>
@@ -1327,9 +1395,9 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                         ><MpIcon name="drag" size="md" /></span>
                       </div>
                     </TransitionGroup>
-                    <div class="pipe-side-row pipe-side-row--sep">
-                      <MpToggle id="gm-disp-aging" :is-checked="disp.showAging" :aria-label="t('Rotting in (days)')" @update:is-checked="(v: boolean) => (disp.showAging = v)" />
-                      <span class="pipe-side-rowlabel">{{ t('Rotting in (days)') }}</span>
+                    <div v-if="hasCloseDateInLayout" class="pipe-side-row pipe-side-row--sep" data-devchange="crm-pipeline-close-in">
+                      <MpToggle id="gm-disp-aging" :is-checked="disp.showAging" :aria-label="t('Close in')" @update:is-checked="(v: boolean) => (disp.showAging = v)" />
+                      <span class="pipe-side-rowlabel">{{ t('Close in') }}</span>
                     </div>
                     <div class="pipe-side-addprop">
                       <MpButton variant="ghost" is-rounded left-icon="add" @click="cardPropsDrawerOpen = true">{{ t('Add property') }}</MpButton>
@@ -1371,15 +1439,16 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                         />
                         <template v-else>
                           <span class="pipe-lane-name">{{ s.name }}</span>
-                          <button v-if="!viewMode" class="pipe-lane-edit" type="button" :aria-label="t('Rename stage')" @click="editStage(s.id)"><MpIcon name="edit" size="sm" /></button><!-- pixel-police-allow — icon-only edit affordance, styled via .pipe-lane-edit -->
+                          <MpButton v-if="!viewMode" class="pipe-lane-edit" type="button" left-icon="edit" :aria-label="t('Rename stage')" @click="editStage(s.id)" /><!-- pixel-police-allow — icon-only edit affordance, styled via .pipe-lane-edit -->
                         </template>
                       </div>
                       <MpTooltip v-if="!viewMode" :id="`stage-vis-${s.id}`" :label="isStageVisible(s.id) ? t('Hide stage in this view') : t('Show stage in this view')" placement="top" use-portal>
-                        <button
+                        <MpButton
                           class="pipe-lane-vis" type="button"
+                          :left-icon="isStageVisible(s.id) ? 'show' : 'hide'"
                           :aria-label="isStageVisible(s.id) ? t('Hide stage in this view') : t('Show stage in this view')"
                           @click="setStageVisible(s.id, !isStageVisible(s.id))"
-                        ><MpIcon :name="isStageVisible(s.id) ? 'show' : 'hide'" size="sm" /></button>
+                        />
                       </MpTooltip>
                     </div>
 
@@ -1387,10 +1456,10 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                          not live data); populated on the first lane only, per Figma. -->
                     <div class="pipe-lane-cards">
                       <template v-if="i === 0">
-                        <div v-for="n in 2" :key="n" class="pipe-card">
+                        <div class="pipe-card">
                           <template v-for="f in enabledCardFields" :key="f.key">
                             <span v-if="f.key === 'company'" class="pipe-card-company">{{ t('Company') }}</span>
-                            <span v-else-if="f.key === 'dealName'" class="pipe-card-deal">{{ t('Deal name') }}</span>
+                            <span v-else-if="f.key === 'dealName'" class="pipe-card-deal">{{ propList.find((p) => p.id === 'record-name')?.name ?? t('Record name') }}</span>
                             <span v-else-if="f.key === 'contactPerson'" class="pipe-card-sub">{{ t('Contact person') }}</span>
                             <span v-else-if="f.key === 'dealValue'" class="pipe-card-value">{{ t('Value') }}</span>
                             <span v-else-if="f.key === 'owner'" class="pipe-card-owner">{{ t('Owner') }}</span>
@@ -1398,7 +1467,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                             <span v-else-if="f.key === 'memo'" class="pipe-card-sub">{{ t('Memo') }}</span>
                             <span v-else class="pipe-card-sub">{{ t(f.label) }}</span>
                           </template>
-                          <div v-if="disp.showAging" class="pipe-card-foot pipe-card-foot--end" data-devchange="crm-aging-always-bottom-right">
+                          <div v-if="disp.showAging && hasCloseDateInLayout" class="pipe-card-foot pipe-card-foot--end" data-devchange="crm-aging-always-bottom-right">
                             <span class="pipe-card-aging">2d</span>
                           </div>
                         </div>
@@ -1408,15 +1477,8 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                     <div v-if="disp.stageTotal" class="pipe-lane-total">
                       <span class="pipe-lane-total-label">{{ t('Total deal value') }}</span>
                     </div>
-
-                    <button v-if="!viewMode" class="pipe-lane-delete" type="button" @click="removeStage(s.id)"><!-- pixel-police-allow — styled delete affordance -->
-                      <MpIcon name="delete" size="sm" /><span>{{ t('Delete stage') }}</span>
-                    </button>
                   </div>
                   </TransitionGroup>
-
-                  <!-- + New stage -->
-                  <MpButton v-if="!viewMode" class="pipe-newstage" variant="ghost" is-rounded left-icon="add" @click="addStage">{{ t('New stage') }}</MpButton>
                 </div>
 
                 <!-- Settings — kept in the Pipeline right column (edit mode only) -->
@@ -1445,9 +1507,9 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                         ><MpIcon name="drag" size="md" /></span>
                       </div>
                     </TransitionGroup>
-                    <div class="pipe-side-row pipe-side-row--sep">
-                      <MpToggle id="disp-aging" :is-checked="disp.showAging" :aria-label="t('Rotting in (days)')" @update:is-checked="(v: boolean) => (disp.showAging = v)" />
-                      <span class="pipe-side-rowlabel">{{ t('Rotting in (days)') }}</span>
+                    <div v-if="hasCloseDateInLayout" class="pipe-side-row pipe-side-row--sep" data-devchange="crm-pipeline-close-in">
+                      <MpToggle id="disp-aging" :is-checked="disp.showAging" :aria-label="t('Close in')" @update:is-checked="(v: boolean) => (disp.showAging = v)" />
+                      <span class="pipe-side-rowlabel">{{ t('Close in') }}</span>
                     </div>
                     <div class="pipe-side-addprop">
                       <MpButton variant="ghost" is-rounded left-icon="add" @click="cardPropsDrawerOpen = true">{{ t('Add property') }}</MpButton>
@@ -1462,6 +1524,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
           <!-- ════════ LAYOUT (Deals) — one Edit-layout canvas; applies to the deal
                details page AND the creation/edit form ════════ -->
           <div v-if="activeTab === 'layout'" class="builder-panel builder-panel--layout">
+            <MpButton v-if="viewMode" class="tab-edit-btn" variant="ghost" is-rounded left-icon="edit" @click="enterEdit">{{ t('Edit') }}</MpButton>
             <CrmDetailLayoutBuilder :detail="draft.detailLayout" :properties="propList" :create-property="createDealProperty" :module-icon="draft.icon" :module-id="props.orderId" :readonly="viewMode" @update:erp-target="onErpTargetChange" />
           </div>
 
@@ -1582,33 +1645,23 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
       </template>
     </div>
 
-    <!-- Sticky action footer (rule/btn-responsive-footer) — fixed button
-         positions regardless of draft/published state, so the layout never
-         flips: ghost Cancel, secondary "Save changes", then the rightmost
-         primary CTA. Publish/Unpublish is an action, not a page-title
-         affordance, so it lives here, not next to the H1. Only that last
-         button's label toggles Publish/Unpublish — its slot and variant
-         (primary, rightmost) never move. A system module (Deals, no
-         draft/publish lifecycle) just drops that last button. -->
-    <footer v-if="mod && !isCreating && !viewMode" class="builder-footer">
-      <MpButtonGroup class="erp-action-footer">
+    <!-- Sticky action footer — per-tab save: Cancel + Save (secondary).
+         Publish moved to page header (primary, top-right). -->
+    <footer v-if="mod && !isCreating && !viewMode && activeTab !== 'properties'" class="builder-footer" data-devchange="crm-module-per-tab-save">
+      <div class="builder-footer-wrap">
+        <Transition name="coachmark-fade">
+          <div v-if="unsavedConfirmOpen" class="unsaved-coachmark">
+            <p class="unsaved-coachmark-text">{{ t('You have unsaved changes on this tab. If you switch tabs now, your changes will be lost.') }}</p>
+            <div class="unsaved-coachmark-actions">
+              <MpButton type="button" class="btn-enterprise btn-enterprise--ghost" @click="discardAndSwitch">{{ t('Continue without saving') }}</MpButton>
+              <MpButton type="button" class="btn-enterprise btn-enterprise--primary" @click="saveAndSwitch">{{ t('Save') }}</MpButton>
+            </div>
+            <div class="unsaved-coachmark-arrow" />
+          </div>
+        </Transition>
         <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
-        <template v-if="mod.status === 'published'">
-          <MpButton variant="primary" is-rounded @click="saveChanges">{{ t('Save changes') }}</MpButton>
-        </template>
-        <template v-else>
-          <MpButton variant="secondary" is-rounded @click="saveChanges">{{ t('Save as draft') }}</MpButton>
-          <MpButton v-if="!mod.system" variant="primary" is-rounded @click="publishModule">{{ t('Publish') }}</MpButton>
-        </template>
-      </MpButtonGroup>
-    </footer>
-    <!-- Creation footer: module isn't persisted until Save as draft/Publish here. -->
-    <footer v-else-if="isCreating" class="builder-footer">
-      <MpButtonGroup class="erp-action-footer">
-        <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
-        <MpButton variant="secondary" is-rounded @click="saveNewModule('draft')">{{ t('Save as draft') }}</MpButton>
-        <MpButton variant="primary" is-rounded @click="askPublishNew">{{ t('Publish') }}</MpButton>
-      </MpButtonGroup>
+        <MpButton variant="primary" is-rounded @click="saveChanges">{{ t('Save changes') }}</MpButton>
+      </div>
     </footer>
 
     <!-- ════════ Team drawer (Setup ▸ Access level ▸ Team) ════════ -->
@@ -1640,6 +1693,9 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
     <!-- ════════ Property drawer (Properties ▸ New / Edit) ════════ -->
     <CrmPropertyDrawer :open="propDrawerOpen" :mode="propMode" :property="editingProp" @update:open="propDrawerOpen = $event" @save="onPropertySave" />
 
+    <!-- ════════ Edit options drawer (editable system properties) ════════ -->
+    <CrmEditOptionsDrawer :open="editOptionsDrawerOpen" :property="editOptionsProp" @update:open="editOptionsDrawerOpen = $event" @save="onEditOptionsSave" />
+
     <!-- ════════ Field modal ════════ -->
     <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="cmb-field-modal" :is-open="fieldModalOpen" size="md" :is-keep-alive="false" @close="fieldModalOpen = false">
       <MpModalContent>
@@ -1663,7 +1719,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
                 width="240px"
                 @update:model-value="onFieldTypeChange"
               />
-              <span v-if="typeLocked" class="builder-form-note">{{ t('This is a system field — its type can’t be changed.') }}</span>
+              <span v-if="typeLocked" class="builder-form-note">{{ t('This is a system field — its type cannot be changed.') }}</span>
             </div>
 
             <div class="builder-form-field builder-form-field--toggle">
@@ -1895,7 +1951,8 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
 .page-tab--active::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--mp-border-selected, #029861); }
 
 /* Each tab panel stacks its rows with the standard 20px gap. */
-.builder-panel { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
+.builder-panel { display: flex; flex-direction: column; gap: var(--mp-spacing-5); position: relative; }
+.tab-edit-btn { position: absolute; top: 0; right: 0; z-index: 1; }
 
 /* ── Layout tab (Deals) — Details/Form page switcher ── */
 .builder-panel--layout { gap: var(--mp-spacing-4); }
@@ -2126,9 +2183,19 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
 
 /* Sticky action footer — Cancel + Save changes, right-aligned, always visible. */
 .builder-footer { flex-shrink: 0; padding: var(--mp-spacing-3) var(--mp-spacing-6); background: var(--mp-colors-background-stage, #fff); border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); }
+.builder-footer-wrap { position: relative; display: flex; justify-content: flex-end; }
+
+/* Unsaved-changes coachmark — anchored above Save button */
+.unsaved-coachmark { position: absolute; bottom: calc(100% + 12px); right: 0; width: 320px; padding: 24px; background: var(--mp-colors-background-stage, #fff); border: 1px solid var(--mp-border-bold); border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); z-index: 10; } /* pixel-police-allow-shadow pixel-police-allow */
+.unsaved-coachmark-text { margin: 0 0 var(--mp-spacing-3); font-size: 13px; line-height: 1.4; color: var(--mp-text-default); }
+.unsaved-coachmark-actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); }
+.unsaved-coachmark-arrow { position: absolute; bottom: -6px; right: 24px; width: 12px; height: 12px; background: var(--mp-colors-background-stage, #fff); border-right: 1px solid var(--mp-border-bold); border-bottom: 1px solid var(--mp-border-bold); transform: rotate(45deg); }
+.coachmark-fade-enter-active, .coachmark-fade-leave-active { transition: opacity 0.15s ease, transform 0.15s ease; }
+.coachmark-fade-enter-from, .coachmark-fade-leave-to { opacity: 0; transform: translateY(4px); }
 
 /* ── Module not found ── */
 .builder-empty { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-12) var(--mp-spacing-6); text-align: center; color: var(--mp-text-secondary); }
+.builder-empty-illustration { max-width: 288px; height: auto; }
 .builder-empty-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .builder-empty-caption { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 

@@ -5,6 +5,7 @@ import { formatIDR } from '~/utils/currency'
 import { formatDateLong } from '~/utils/date'
 import type jsPDF from 'jspdf'
 import {
+  MpButton,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpTextlink, MpBadge, css, toast,
@@ -136,25 +137,25 @@ function confirmDelete() {
           <!-- Jump to another internal transfer -->
           <MpPopover id="itd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" :aria-label="t('Switch transaction')">
+              <MpButton class="detail-jump-chevron" :aria-label="t('Switch transaction')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
+                  <MpButton v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg>
-                  </button>
+                  </MpButton>
                 </div>
                 <div class="detail-jump-list">
-                  <button v-for="tr in jumpResults" :key="tr.id" class="detail-jump-item" @click="jumpTo(tr.id)">
+                  <MpButton v-for="tr in jumpResults" :key="tr.id" class="detail-jump-item" @click="jumpTo(tr.id)">
                     <span class="detail-jump-item-number">{{ t('Internal transfer') }} {{ docNo(tr.number) }}</span>
                     <span class="detail-jump-item-customer">{{ accountLabel(tr.fromAccountId) }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found.') }}</p>
                 </div>
               </div>
@@ -253,15 +254,15 @@ function confirmDelete() {
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer">
-      <button class="detail-btn detail-btn--secondary btn-enterprise" @click="openPdfPreview">{{ t('Print PDF') }}</button>
+      <MpButton class="detail-btn detail-btn--secondary btn-enterprise" @click="openPdfPreview">{{ t('Print PDF') }}</MpButton>
       <MpPopover id="itd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--primary btn-enterprise">
+          <MpButton class="detail-btn detail-btn--primary btn-enterprise">
             {{ t('Actions') }}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -306,8 +307,8 @@ function confirmDelete() {
         <MpModalBody>{{ t('Deleted internal transfers cannot be restored.') }}</MpModalBody>
         <MpModalFooter>
           <div class="itd-delete-footer">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="deleteModalOpen = false">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">{{ t('Delete') }}</button>
+            <MpButton class="btn-enterprise btn-enterprise--ghost" @click="deleteModalOpen = false">{{ t('Cancel') }}</MpButton>
+            <MpButton class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">{{ t('Delete') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>

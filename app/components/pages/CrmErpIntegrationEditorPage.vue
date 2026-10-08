@@ -23,7 +23,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { MpButton, MpIcon, MpToggle, MpRadio, MpFormControl, MpFormLabel, MpModal, MpModalOverlay, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import CrmMappingRow from '~/components/patterns/CrmMappingRow.vue'
-import { getCrmModule, moduleStores, type CrmModule } from '~/data/crm'
+import { getCrmModule, moduleStores, sectionAllProps, type CrmModule } from '~/data/crm'
 import {
   ensureConversionConfig, getConversionConfig, saveConfig,
   erpTargetFields, evalEntry,
@@ -81,30 +81,42 @@ function setEntry(next: MappingEntry) {
 // ── Custom-module blocking criterion (one field + operator + value) ──────────
 const criterionEnabled = ref(false)
 watch(() => props.orderId, () => { criterionEnabled.value = !!getConversionConfig(props.orderId)?.criterion }, { immediate: true })
-// Fields eligible for the criterion: scalar text/option/number/date/boolean — not
-// customer / product-list / user (PRD §Custom-module conversion limitation criterion).
+// Fields eligible for the criterion: only option-type properties that are placed
+// in the module's detail layout (PRD §Custom-module conversion limitation criterion).
+const CRITERION_OPTION_TYPES = new Set(['Dropdown select', 'Radio select', 'Multiple checkboxes'])
+const layoutPropIds = computed(() => {
+  const layout = moduleStores(props.orderId).detailLayout
+  const ids = new Set<string>()
+  for (const tab of layout.tabs) for (const s of tab.sections ?? []) for (const id of sectionAllProps(s)) ids.add(id)
+  return ids
+})
+const layoutProperties = computed(() => modProperties.value.filter((p) => layoutPropIds.value.has(p.id)))
+const mappingProperties = computed(() => isDeals.value ? modProperties.value : layoutProperties.value)
 const criterionFieldOptions = computed(() =>
-  (mod.value?.fields ?? [])
-    .filter((f) => ['text', 'number', 'date', 'pick-list', 'radio'].includes(f.type))
-    .map((f) => ({ value: f.id, label: f.label })),
+  layoutProperties.value
+    .filter((p) => CRITERION_OPTION_TYPES.has(p.type))
+    .map((p) => ({ value: p.id, label: p.name })),
 )
-const operatorOptions = computed(() => {
-  const f = mod.value?.fields.find((x) => x.id === draft.criterion?.fieldId)
-  // Contains only applies to free-text-like fields.
-  if (f && f.type === 'text') return [{ value: 'equals', label: 'Equals' }, { value: 'contains', label: 'Contains' }]
-  return [{ value: 'equals', label: 'Equals' }]
+const criterionValueOptions = computed(() => {
+  const p = modProperties.value.find((x) => x.id === draft.criterion?.fieldId)
+  return (p?.config?.options ?? []).map((o) => ({ value: o.value, label: o.label }))
 })
 function ensureCriterion() {
-  if (!draft.criterion) draft.criterion = { fieldId: criterionFieldOptions.value[0]?.value ?? '', operator: 'equals', value: '' }
+  if (!draft.criterion) draft.criterion = { fieldId: criterionFieldOptions.value[0]?.value ?? '', operator: 'equals' as CriterionOperator, value: '' }
 }
 watch(criterionEnabled, (on) => { if (on) ensureCriterion(); else draft.criterion = null })
+
+const targetLabel = computed(() => draft.target === 'sales-quote' ? t('Sales Quote') : t('Sales Order'))
+const dealsRuleCaption = computed(() => `${t('Deals in the Lost stage cannot be converted to a')} ${targetLabel.value} ${t('in ERP.')}`)
+const criterionCaption = computed(() => `${t('Records matching this condition cannot be converted to a')} ${targetLabel.value} ${t('in ERP.')}`)
+const criterionToggleLabel = computed(() => `${t('Do not convert to')} ${targetLabel.value} ${t('when')}`)
 
 // Blocking validation errors (mandatory unmapped/incompatible + broken optional) —
 // gate the enabled save and surface inline (no side panel).
 const validationErrors = computed(() => {
   const errs: string[] = []
   for (const f of allFields.value) {
-    const r = evalEntry(entryFor(f.key), f, mod.value ?? ({ fields: [] } as unknown as CrmModule), modProperties.value)
+    const r = evalEntry(entryFor(f.key), f, mod.value ?? ({ fields: [] } as unknown as CrmModule), mappingProperties.value)
     if (r.status === 'missing' || r.status === 'incompatible') errs.push(r.message ?? `${t(f.label)} is not mapped correctly.`)
   }
   return errs
@@ -112,8 +124,9 @@ const validationErrors = computed(() => {
 
 // ── Actions ──────────────────────────────────────────────────────────────────
 const saveError = ref('')
+const showMappingErrors = ref(false)
 const enableConfirmOpen = ref(false)
-function goBack() { router.push('/crm/settings/erp-integrations') }
+function goBack() { router.push(`/crm/settings/erp-integrations/${props.orderId}`) }
 
 function applySave() {
   saveConfig(props.orderId, {
@@ -127,6 +140,7 @@ function applySave() {
 function onSave() {
   // Enabled + incomplete → block with inline error (button never disabled per rule).
   if (draft.enabled && validationErrors.value.length) {
+    showMappingErrors.value = true
     saveError.value = t('Resolve the mapping errors below before enabling conversion.')
     return
   }
@@ -142,17 +156,18 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
   <div class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <NuxtLink class="detail-breadcrumb" to="/crm/settings/erp-integrations">{{ t('ERP integrations') }}</NuxtLink>
+        <NuxtLink class="detail-breadcrumb" :to="`/crm/settings/erp-integrations/${orderId}`">{{ mod ? mod.name : t('ERP integrations') }}</NuxtLink>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">{{ mod ? mod.name : t('Module not found') }}</h1>
+          <h1 class="detail-title">{{ mod ? `${t('Edit')} ${mod.name}` : t('Module not found') }}</h1>
         </div>
       </div>
     </header>
 
     <div class="detail-stage">
       <div v-if="!mod" class="editor-empty">
-        <MpIcon name="folder-close" size="xl" />
+        <img src="/illustrations/empty-folder.png" alt="" class="editor-empty-illustration" width="288" height="240" />
         <p class="editor-empty-title">{{ t('Module not found') }}</p>
+        <p class="editor-empty-caption">{{ t('This module does not exist or was removed.') }}</p>
         <MpButton class="btn-enterprise--secondary" is-rounded @click="goBack">{{ t('Back to ERP integrations') }}</MpButton>
       </div>
 
@@ -188,10 +203,6 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
                     </MpRadio>
                   </div>
                 </MpFormControl>
-                <div class="ed-notice">
-                  <MpIcon name="info" size="sm" />
-                  <span>{{ t('Conversion is always manual. A record is only converted when a user explicitly creates the ERP transaction, never automatically by stage, status, or schedule.') }}</span>
-                </div>
               </template>
             </div>
           </section>
@@ -220,7 +231,8 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
                     :field="f"
                     :entry="entryFor(f.key)"
                     :mod="mod"
-                    :properties="modProperties"
+                    :properties="mappingProperties"
+                    :show-errors="showMappingErrors"
                     @update:entry="setEntry"
                   />
                 </div>
@@ -241,7 +253,8 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
                     :field="f"
                     :entry="entryFor(f.key)"
                     :mod="mod"
-                    :properties="modProperties"
+                    :properties="mappingProperties"
+                    :show-errors="showMappingErrors"
                     @update:entry="setEntry"
                   />
                 </div>
@@ -251,19 +264,41 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
 
           <!-- 4. Conversion limitation — only when conversion is enabled. -->
           <section v-if="draft.enabled" class="ed-section">
-            <h2 class="ed-section-title">{{ t('Conversion limitation') }}</h2>
-            <!-- Deals: fixed Lost-stage rule (read-only). -->
-            <div v-if="isDeals" class="ed-notice ed-notice--muted">
-              <MpIcon name="info" size="sm" />
-              <span>{{ t('Deals in the Lost stage can never be converted. This rule is fixed and cannot be changed.') }}</span>
-            </div>
+            <h2 class="ed-section-title">{{ t('Conversion rules') }}</h2>
+            <!-- Deals: fixed Lost-stage rule displayed as disabled criterion form for consistency. -->
+            <template v-if="isDeals">
+              <p class="ed-section-cap">{{ dealsRuleCaption }}</p>
+              <div class="ed-criterion">
+                <ErpFilterSelect
+                  id="ed-crit-field-deals"
+                  model-value="stage"
+                  placeholder="Field"
+                  :options="[{ value: 'stage', label: t('Stage') }]"
+                  disabled
+                />
+                <ErpFilterSelect
+                  id="ed-crit-op-deals"
+                  model-value="equals"
+                  placeholder="Operator"
+                  :options="[{ value: 'equals', label: t('Equals') }]"
+                  disabled
+                />
+                <ErpFilterSelect
+                  id="ed-crit-value-deals"
+                  model-value="lost"
+                  placeholder="Value"
+                  :options="[{ value: 'lost', label: t('Lost') }]"
+                  disabled
+                />
+              </div>
+            </template>
             <!-- Custom modules: at most one blocking criterion. -->
             <template v-else>
-              <p class="ed-section-cap">{{ t('Optionally block conversion when a record matches one condition.') }}</p>
+              <p class="ed-limitation-desc">{{ criterionCaption }}</p>
               <div class="ed-toggle-row">
-                <MpToggle v-model:is-checked="criterionEnabled" :aria-label="t('Block conversion when a condition is met')" />
+                <MpToggle v-model:is-checked="criterionEnabled" :aria-label="criterionToggleLabel" />
                 <div class="ed-toggle-text">
-                  <span class="ed-toggle-label">{{ t('Block conversion when a condition is met') }}</span>
+                  <span class="ed-toggle-label">{{ criterionToggleLabel }}</span>
                 </div>
               </div>
               <div v-if="criterionEnabled && draft.criterion" class="ed-criterion">
@@ -272,19 +307,20 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
                   :model-value="draft.criterion.fieldId"
                   placeholder="Select field"
                   :options="criterionFieldOptions"
-                  @update:model-value="(v: string) => draft.criterion && (draft.criterion.fieldId = v)"
+                  @update:model-value="(v: string) => { if (draft.criterion) { draft.criterion.fieldId = v; draft.criterion.value = '' } }"
                 />
                 <ErpFilterSelect
                   id="ed-crit-op"
-                  :model-value="draft.criterion.operator"
+                  model-value="equals"
                   placeholder="Operator"
-                  :options="operatorOptions"
-                  @update:model-value="(v: string) => draft.criterion && (draft.criterion.operator = v as CriterionOperator)"
+                  :options="[{ value: 'equals', label: t('Equals') }]"
+                  disabled
                 />
-                <MpInput
+                <ErpFilterSelect
                   id="ed-crit-value"
                   :model-value="draft.criterion.value"
-                  :placeholder="t('Value')"
+                  placeholder="Select value"
+                  :options="criterionValueOptions"
                   @update:model-value="(v: string) => draft.criterion && (draft.criterion.value = v)"
                 />
               </div>
@@ -328,11 +364,13 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
 .detail-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
 .detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: var(--mp-spacing-6); display: flex; flex-direction: column; }
 
-.editor-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-10) 0; color: var(--mp-text-secondary); }
+.editor-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-10) 0; color: var(--mp-text-secondary); text-align: center; }
+.editor-empty-illustration { max-width: 288px; height: auto; }
 .editor-empty-title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.editor-empty-caption { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* Full-width single column (the readiness/dependencies side panel was removed). */
-.editor-main { display: flex; flex-direction: column; gap: var(--mp-spacing-6); min-width: 0; }
+.editor-main { display: flex; flex-direction: column; gap: var(--mp-spacing-6); min-width: 0; flex: 1; padding-bottom: var(--mp-spacing-5, 20px); }
 
 /* .ed-section stacks [header-list, body] with a 12px gap between them. No divider
    between sections (the editor-main gap separates them). */
@@ -344,6 +382,7 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
 /* Section headings are H2 → xl/20px semibold (rule/type-scale: H1 24, H2 20, H3 16). */
 .ed-section-title { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-xl, 28px); color: var(--mp-text-default); }
 .ed-section-cap { margin: 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
+.ed-limitation-desc { margin: 0; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); }
 /* Body: form controls stacked with the standard 20px form row gap (Form.md). */
 .ed-body { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
 .ed-toggle-row { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); }
@@ -375,5 +414,5 @@ function confirmEnabledSave() { enableConfirmOpen.value = false; applySave() }
 /* Action bar inside the stage — sticky to the bottom of the scrollable white area.
    Negative margins bleed it to the stage edges (the stage has spacing-6 padding);
    margin-top pushes it below the content with a divider. */
-.ed-footer { position: sticky; bottom: calc(-1 * var(--mp-spacing-6)); margin: var(--mp-spacing-6) calc(-1 * var(--mp-spacing-6)) calc(-1 * var(--mp-spacing-6)); display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-6); background: var(--mp-background-stage, #ffffff); border-top: 1px solid var(--mp-border-subtle, #e6e8eb); }
+.ed-footer { position: sticky; bottom: calc(-1 * var(--mp-spacing-6)); margin: auto calc(-1 * var(--mp-spacing-6)) calc(-1 * var(--mp-spacing-6)); display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-6); background: var(--mp-background-stage, #ffffff); border-top: 1px solid var(--mp-border-subtle, #e6e8eb); }
 </style>

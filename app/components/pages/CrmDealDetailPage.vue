@@ -11,11 +11,10 @@
  *    CrmDealStageModal (captures a Lost reason). A Lost deal shows the terminal
  *    stepper node as red "Lost" and cannot be converted.
  *
- * ERP conversion (PRD): a MANUAL "Create Sales Order/Quote" action (primary when
- * Won, else in the kebab) opens CrmConversionReviewDrawer — a READ-ONLY review +
- * explicit confirm that creates exactly one ERP transaction (see crmConversion.ts:
- * dealConvEligibility / runDealConversion). One success per deal; a Failed attempt
- * can be retried; a converted deal links to the ERP transaction (Open in ERP).
+ * ERP conversion: a MANUAL "Create Sales Order/Quote" action (primary when Won,
+ * else in the kebab) navigates to the CRM-embedded sales order form
+ * (/crm/deals/:id/create-order) pre-filled with the deal's data. After saving,
+ * the deal is marked converted and linked to the ERP transaction.
  */
 import { ref, computed } from 'vue'
 import {
@@ -28,7 +27,6 @@ import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import CrmDealStageModal from '~/components/patterns/CrmDealStageModal.vue'
-import CrmConversionReviewDrawer from '~/components/patterns/CrmConversionReviewDrawer.vue'
 import ActivityLogTable from '~/components/patterns/ActivityLogTable.vue'
 import CrmNotesPanel from '~/components/patterns/CrmNotesPanel.vue'
 import FilePreviewModal from '~/components/patterns/FilePreviewModal.vue'
@@ -37,14 +35,15 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import { formatMoney } from '~/utils/currency'
 import { successToast, infoToast } from '~/utils/toasts'
 import {
-  getDeal, moduleStores, ONGOING_STAGES, moveDealStage, archiveDeal, restoreDeal, deleteDeal,
+  getDeal, moduleStores, ONGOING_STAGES, DEAL_STAGES, moveDealStage, archiveDeal, restoreDeal, deleteDeal,
   dealTotals, dealExpectedValue, dealDaysInStage, dealStageAgingDays, formatAging,
   dealActivityLog, addDealAttachment, removeDealAttachment, setDealProductsFull,
   getDealSalesOrder,
   lineSubtotal, crmCustomers, dealNo, dealStageLabel,
   type DealStage, type DealLineItem, type DealAttachment, type DealProductsPayload,
 } from '~/data/crm'
-import { dealConvEligibility, dealTargetLabel, runDealConversion, dealErpTxn } from '~/data/crmConversion'
+import { dealConvEligibility, dealTargetLabel, dealErpTxn, dealTarget } from '~/data/crmConversion'
+import { dealToSalesPrefill, pendingSalesPrefill, pendingConversionDealId } from '~/data/salesFormPrefill'
 
 const currentUser = 'Rizal Candra'
 
@@ -107,6 +106,13 @@ function agingLabel(i: number) {
 // old → new · conversion / lost / archive), same table as ActivityLogModal ──
 const dealActivity = computed(() => (deal.value ? dealActivityLog(deal.value) : []))
 
+// ── "Move to" dropdown — all stages except the current one ──
+const availableStages = computed<DealStage[]>(() => {
+  const cur = deal.value?.stage
+  return ([...DEAL_STAGES] as DealStage[]).filter((s) => s !== cur)
+})
+const moveToMenuOpen = ref(false)
+
 // ── Stage moves ──
 function moveTo(stage: DealStage): boolean {
   const d = deal.value; if (!d) return false
@@ -115,11 +121,14 @@ function moveTo(stage: DealStage): boolean {
   successToast(`${t('Stage changed to')} ${stage}`)
   return true
 }
-// "Mark as won" → mark Won only. Conversion is NEVER auto-triggered by stage
-// (PRD manual-only invariant) — the user converts via the explicit Create action.
-function markWon() { moveTo('Won') }
-// Stage picker (chevron popover) → move directly.
-function onPickStage(stage: DealStage) { moveTo(stage) }
+function onPickStage(stage: DealStage) {
+  if (stage === 'Lost') { openMarkLost(); return }
+  const d = deal.value; if (!d) return
+  if ((d.stage === 'Won' || d.stage === 'Lost') && stage !== 'Lost') {
+    pendingStage.value = stage; reopenConfirmOpen.value = true; return
+  }
+  moveTo(stage)
+}
 
 // Lost (needs a reason) / reopen — via CrmDealStageModal
 const stageModalOpen = ref(false)
@@ -146,25 +155,19 @@ function confirmReopen() {
   reopenConfirmOpen.value = false; pendingStage.value = null
 }
 
-// ── Manual ERP conversion — read-only review + confirm (PRD) ──
-const reviewOpen = ref(false)
-// Open the read-only review; a blocked record surfaces an inline reason (no drawer).
+// ── Manual ERP conversion — navigate to CRM-embedded sales order form ──
 function openConvertReview() {
   const d = deal.value; if (!d) return
   const e = dealConvEligibility(d)
   if (!e.ok) { infoToast(e.reason ?? t('This deal cannot be converted.')); return }
-  reviewOpen.value = true
-}
-function onConfirmConversion() {
-  const d = deal.value; if (!d) return
-  const r = runDealConversion(d.id)
-  reviewOpen.value = false
-  if (r.ok) successToast(`${t(convTarget.value)} ${t('created')}`)
-  else infoToast(r.error ?? t('Conversion failed'))
+  pendingSalesPrefill.value = dealToSalesPrefill(d)
+  pendingConversionDealId.value = d.id
+  const target = dealTarget()
+  router.push(target === 'sales-quote' ? `/crm/deals/${d.id}/create-quote` : `/crm/deals/${d.id}/create-order`)
 }
 // Open the created ERP transaction (converted deals).
 function openErpTxn() { if (erpTxn.value) router.push(erpTxn.value.route) }
-// Failed → retry replays the conversion (the one-success guard blocks a duplicate).
+// Failed → retry replays the conversion.
 function retryConversion() { openConvertReview() }
 
 // ── Archive / restore / delete ──
@@ -299,57 +302,35 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
       </div>
 
       <div class="detail-titlerow-right">
-        <!-- Ongoing: "Mark as won" split button + inline stage picker -->
-        <div v-if="!isArchived && isOngoing" class="detail-split-btn">
-          <button class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="markWon">{{ t('Mark as won') }}</button>
-          <MpPopover id="deal-stage-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-            <MpPopoverTrigger>
-              <button class="btn-enterprise btn-enterprise--primary detail-split-btn__chevron" :aria-label="t('Change stage')">
-                <MpIcon name="chevrons-down" size="sm" />
-              </button>
-            </MpPopoverTrigger>
-            <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-              <p class="deal-stage-menu-label">{{ t('Move to stage') }}</p>
-              <MpPopoverList>
-                <MpPopoverListItem v-for="s in ONGOING_STAGES.filter((x) => x !== deal!.stage)" :key="s" @click="onPickStage(s)">{{ s }}</MpPopoverListItem>
-              </MpPopoverList>
-              <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-              <MpPopoverList>
-                <MpPopoverListItem @click="openMarkLost">{{ t('Mark as lost') }}</MpPopoverListItem>
-              </MpPopoverList>
-            </MpPopoverContent>
-          </MpPopover>
-        </div>
-        <!-- Won & not converted: manual conversion via read-only review (PRD). -->
-        <button v-else-if="!isArchived && isWon && !isConverted" class="btn-enterprise btn-enterprise--primary" @click="openConvertReview">{{ t('Create') }} {{ t(convTarget) }}</button>
-        <!-- Converted: open the created ERP transaction. -->
-        <button v-else-if="!isArchived && isConverted && erpTxn" class="btn-enterprise btn-enterprise--secondary" @click="openErpTxn">{{ t('Open in ERP') }}</button>
-        <!-- Lost: reopen -->
-        <button v-else-if="!isArchived && isLost" class="btn-enterprise btn-enterprise--primary" @click="openReopen">{{ t('Reopen deal') }}</button>
-        <!-- Archived: restore -->
-        <button v-else-if="isArchived" class="btn-enterprise btn-enterprise--secondary" @click="onRestore">{{ t('Restore') }}</button>
+        <!-- Archived: restore only -->
+        <MpButton v-if="isArchived" class="btn-enterprise btn-enterprise--secondary" @click="onRestore">{{ t('Restore') }}</MpButton>
 
-        <!-- Kebab -->
+        <!-- Non-archived: "Move to" dropdown button -->
+        <MpPopover v-if="!isArchived" id="deal-stage-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+          <MpPopoverTrigger>
+            <MpButton variant="primary" right-icon="chevrons-down" is-rounded>{{ t('Move to') }}</MpButton>
+          </MpPopoverTrigger>
+          <MpPopoverContent class="deal-stage-dropdown">
+            <MpPopoverList>
+              <MpPopoverListItem v-for="s in availableStages" :key="s" @click="onPickStage(s)">{{ t(dealStageLabel(s)) }}</MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
+
+        <!-- Kebab actions -->
         <MpPopover id="deal-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
-            <MpButton class="detail-icon-btn" :aria-label="t('More actions')"><MpIcon name="menu-kebab" size="md" /></MpButton>
+            <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
           </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
+          <MpPopoverContent class="deal-actions-dropdown">
             <template v-if="isArchived">
               <MpPopoverList>
                 <MpPopoverListItem @click="deleteConfirmOpen = true">{{ t('Delete') }}</MpPopoverListItem>
               </MpPopoverList>
             </template>
             <template v-else>
-              <!-- A Won deal can be moved back to an earlier stage, or marked Lost. -->
-              <MpPopoverList v-if="isWon">
-                <MpPopoverListItem @click="openReopen">{{ t('Move to stage…') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="openMarkLost">{{ t('Mark as lost') }}</MpPopoverListItem>
-              </MpPopoverList>
-              <div v-if="isWon" :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
               <MpPopoverList>
-                <!-- Manual convert available at any eligible stage (Won has its own primary button). -->
-                <MpPopoverListItem v-if="convEligible && !isWon" @click="openConvertReview">{{ t('Create') }} {{ t(convTarget) }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="!isLost" @click="openConvertReview">{{ t('Create') }} {{ t(convTarget) }}</MpPopoverListItem>
                 <MpPopoverListItem @click="router.push(`/crm/deals/${deal.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="archiveConfirmOpen = true">{{ t('Archive') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="deleteConfirmOpen = true">{{ t('Delete') }}</MpPopoverListItem>
@@ -522,7 +503,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                   <div class="filter-search">
                     <MpIcon name="search" size="sm" />
                     <input v-model="productSearch" class="filter-search-input" type="text" :placeholder="t('Search products…')" />
-                    <button v-if="productSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="productSearch = ''"><MpIcon name="close" size="sm" /></button>
+                    <MpButton v-if="productSearch" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="productSearch = ''" />
                   </div>
                   <MpButton variant="tertiary" is-rounded left-icon="add" @click="productDrawerOpen = true">{{ t('Add product') }}</MpButton>
                 </div>
@@ -564,20 +545,9 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
               </div>
             </section>
 
-            <!-- ── Notes + totals ── -->
-            <section class="detail-notes detail-details-block">
-              <div class="detail-notes-left">
-                <ContentList v-if="deal.description" :label="t('Message')">
-                  <p class="detail-note-text">{{ deal.description }}</p>
-                </ContentList>
-                <ContentList v-if="deal.notes" :label="t('Memo')">
-                  <p class="detail-note-text">{{ deal.notes }}</p>
-                </ContentList>
-              </div>
-
-              <!-- Totals only apply once the deal has products; otherwise the Deal
-                   value emphasis (above) carries the estimated value. -->
-              <div v-if="deal.products?.length" class="detail-totals">
+            <!-- ── Totals ── -->
+            <section v-if="deal.products?.length" class="detail-totals-section detail-details-block">
+              <div class="detail-totals">
                 <div class="detail-total-row">
                   <span class="detail-total-row-label detail-total-row-label--strong">{{ t('Subtotal') }}</span>
                   <span class="detail-total-row-amt detail-total-row-amt--strong">{{ money(totals!.subtotal) }}</span>
@@ -605,6 +575,16 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                 </div>
               </div>
             </section>
+
+            <!-- ── Memo ── -->
+            <section v-if="deal.description || deal.notes" class="detail-memo-section detail-details-block">
+              <ContentList v-if="deal.description" :label="t('Message')">
+                <p class="detail-note-text">{{ deal.description }}</p>
+              </ContentList>
+              <ContentList v-if="deal.notes" :label="t('Memo')">
+                <p class="detail-note-text">{{ deal.notes }}</p>
+              </ContentList>
+            </section>
           </MpTabPanel>
 
           <!-- ── Notes — write + threaded notes/comments (self + teammates) ── -->
@@ -624,7 +604,7 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
                 <div class="filter-search">
                   <MpIcon name="search" size="sm" />
                   <input v-model="fileSearch" class="filter-search-input" type="text" :placeholder="t('Search files…')" />
-                  <button v-if="fileSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="fileSearch = ''"><MpIcon name="close" size="sm" /></button>
+                  <MpButton v-if="fileSearch" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="fileSearch = ''" />
                 </div>
                 <MpButton variant="tertiary" is-rounded @click="pickFiles">{{ t('Upload file') }}</MpButton>
                 <input ref="fileInput" type="file" multiple class="deal-files-input" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.xls,.xlsx,.csv,.doc,.docx" @change="onFileInput" />
@@ -750,13 +730,6 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
       @confirm="confirmReopen"
     />
 
-    <!-- ── Manual ERP conversion — read-only review + confirm (PRD) ── -->
-    <CrmConversionReviewDrawer
-      :open="reviewOpen"
-      :deal="deal"
-      @close="reviewOpen = false"
-      @confirm="onConfirmConversion"
-    />
 
     <!-- ── Add / edit products (full-screen line-items + totals editor) ── -->
     <CrmEditProductsDrawer
@@ -850,10 +823,8 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
   border-radius: 0 var(--mp-radii-full, 999px) var(--mp-radii-full, 999px) 0;
   border-left: 1px solid rgba(255, 255, 255, 0.3);
 }
-.deal-stage-menu-label {
-  margin: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1);
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
-}
+.deal-stage-dropdown { min-width: 200px; width: max-content; white-space: nowrap; }
+.deal-actions-dropdown { min-width: 180px; width: max-content; white-space: nowrap; }
 
 /* ── Stage ── */
 .detail-stage {
@@ -1000,8 +971,9 @@ a.deal-contact-line:hover { text-decoration: underline; text-underline-offset: 2
 .cell-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── Notes + totals ── */
-.detail-notes { display: grid; grid-template-columns: 1fr 380px; gap: var(--mp-spacing-6); align-items: start; }
-.detail-notes-left { display: flex; flex-direction: column; }
+.detail-totals-section { display: grid; grid-template-columns: 1fr 380px; }
+.detail-totals-section .detail-totals { grid-column: 2; }
+.detail-memo-section { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
 .detail-note-text { margin: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default); white-space: pre-line; }
 .detail-attach-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .detail-attach { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); cursor: pointer; width: fit-content; }
@@ -1011,7 +983,7 @@ a.deal-contact-line:hover { text-decoration: underline; text-underline-offset: 2
 .detail-attach:hover .detail-attach-name { text-decoration: underline; text-underline-offset: 2px; }
 .detail-attach-size { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
-.detail-totals { display: flex; flex-direction: column; gap: var(--mp-spacing-4); padding-top: var(--mp-spacing-2); }
+.detail-totals { display: flex; flex-direction: column; gap: var(--mp-spacing-4); padding-top: var(--mp-spacing-2); width: 380px; flex-shrink: 0; }
 .detail-total-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
 .detail-total-row-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .detail-total-row-amt { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }

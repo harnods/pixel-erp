@@ -8,7 +8,7 @@
 import { ref, computed, watch } from 'vue'
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  MpInput, MpAutocomplete, MpDatePicker, MpRadio, MpFormControl, MpFormLabel, MpFormErrorMessage,
+  MpInput, MpAutocomplete, MpDatePicker, MpRadio, MpFormControl, MpFormLabel, MpFormErrorMessage, MpButton,
 } from '@mekari/pixel3'
 import { formatDateLong } from '~/utils/date'
 
@@ -158,8 +158,8 @@ function save() {
       </MpModalBody>
       <MpModalFooter>
         <div class="sr-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="emit('close')">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="save">{{ t('Save') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="emit('close')">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" @click="save">{{ t('Save') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>

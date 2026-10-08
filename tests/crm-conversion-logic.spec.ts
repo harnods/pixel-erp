@@ -263,42 +263,36 @@ describe('compatibleCrmTypes', () => {
 
 // ── erpTargetFields ─────────────────────────────────────────────────────────
 describe('erpTargetFields', () => {
-  it('sales-order returns COMMON_ERP_FIELDS without expiryDate', () => {
-    const fields = erpTargetFields('sales-order')
-    expect(fields.find((f) => f.key === 'expiryDate')).toBeUndefined()
-    expect(fields.find((f) => f.key === 'customer')).toBeDefined()
-    expect(fields.find((f) => f.key === 'productLines')).toBeDefined()
+  it('sales-order and sales-quote return the same fields', () => {
+    const soFields = erpTargetFields('sales-order')
+    const sqFields = erpTargetFields('sales-quote')
+    expect(soFields.map((f) => f.key)).toEqual(sqFields.map((f) => f.key))
+    expect(soFields.find((f) => f.key === 'customer')).toBeDefined()
+    expect(soFields.find((f) => f.key === 'productLines')).toBeDefined()
   })
 
-  it('sales-quote includes expiryDate after dueDate', () => {
-    const fields = erpTargetFields('sales-quote')
-    const expiryIdx = fields.findIndex((f) => f.key === 'expiryDate')
-    const dueDateIdx = fields.findIndex((f) => f.key === 'dueDate')
-    expect(expiryIdx).toBeGreaterThan(-1)
-    expect(expiryIdx).toBe(dueDateIdx + 1)
+  it('sales-quote has the same number of fields as sales-order', () => {
+    expect(erpTargetFields('sales-quote').length).toBe(erpTargetFields('sales-order').length)
   })
 
-  it('sales-quote has one more field than sales-order', () => {
-    expect(erpTargetFields('sales-quote').length).toBe(erpTargetFields('sales-order').length + 1)
-  })
-
-  it('required fields include customer, txDate, dueDate, productLines, currency', () => {
+  it('required fields include customer, total, txDate, dueDate, txNumber, productLines', () => {
     const required = erpTargetFields('sales-order').filter((f) => f.requirement === 'required')
     const keys = required.map((f) => f.key)
     expect(keys).toContain('customer')
+    expect(keys).toContain('total')
     expect(keys).toContain('txDate')
     expect(keys).toContain('dueDate')
+    expect(keys).toContain('txNumber')
     expect(keys).toContain('productLines')
-    expect(keys).toContain('currency')
   })
 })
 
 // ── DEFAULT_PROPERTIES ──────────────────────────────────────────────────────
 describe('DEFAULT_PROPERTIES completeness', () => {
-  it('includes exchange-rate property', () => {
-    const er = DEFAULT_PROPERTIES.find((p) => p.id === 'exchange-rate')
-    expect(er).toBeDefined()
-    expect(er!.fieldType).toBe('Number')
+  it('includes deal-value property', () => {
+    const dv = DEFAULT_PROPERTIES.find((p) => p.id === 'deal-value')
+    expect(dv).toBeDefined()
+    expect(dv!.fieldType).toBe('number')
   })
 
   it('every DEFAULT_PROPERTIES id is in DEFAULT_PROPERTY_IDS set', () => {
@@ -307,9 +301,10 @@ describe('DEFAULT_PROPERTIES completeness', () => {
     }
   })
 
-  it('defaultDealProperties returns same length as DEFAULT_PROPERTIES + any custom', () => {
+  it('defaultDealProperties returns visible properties only (excludes hidden)', () => {
     const dp = defaultDealProperties()
-    expect(dp.length).toBeGreaterThanOrEqual(DEFAULT_PROPERTIES.length)
+    const visibleCount = DEFAULT_PROPERTIES.filter((p) => !p.hidden).length
+    expect(dp.length).toBe(visibleCount)
   })
 
   it('every property in defaultDealProperties has a valid DealPropertyType', () => {

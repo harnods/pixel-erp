@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton,
+  MpModalOverlay, MpModalCloseButton, MpButton,
 } from '@mekari/pixel3'
 
 defineProps<{
@@ -29,14 +29,13 @@ const emit = defineEmits<{ leave: []; draft: []; cancel: [] }>()
       </MpModalBody>
       <MpModalFooter>
         <div class="ucm-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="emit('cancel')">Cancel</button>
-          <button
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="emit('cancel')">Cancel</MpButton>
+          <MpButton
             class="btn-enterprise"
             :class="hasSaveDraft ? 'btn-enterprise--secondary' : 'btn-enterprise--danger'"
-            type="button"
             @click="emit('leave')"
-          >Leave without saving</button>
-          <button v-if="hasSaveDraft" class="btn-enterprise btn-enterprise--primary" type="button" @click="emit('draft')">Save as draft</button>
+          >Leave without saving</MpButton>
+          <MpButton v-if="hasSaveDraft" class="btn-enterprise btn-enterprise--primary" @click="emit('draft')">Save as draft</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>

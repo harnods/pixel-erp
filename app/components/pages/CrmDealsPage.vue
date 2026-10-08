@@ -74,13 +74,14 @@ function updatedTime(id: string): string {
   const mm = (n * 7) % 60
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
 }
-/** Days a deal has been open (aging), from creation to today. */
-function agingDays(d: Deal): number {
-  const [y, m, dd] = d.createdAt.split('-').map(Number)
+/** Days remaining until expected close date. Negative = overdue. */
+function closeInDays(d: Deal): number | null {
+  if (!d.expectedCloseDate) return null
+  const [y, m, dd] = d.expectedCloseDate.split('-').map(Number)
   const [ty, tm, td] = TODAY.split('-').map(Number)
-  return Math.max(0, Math.round((Date.UTC(ty!, tm! - 1, td!) - Date.UTC(y!, m! - 1, dd!)) / 86_400_000))
+  return Math.round((Date.UTC(y!, m! - 1, dd!) - Date.UTC(ty!, tm! - 1, td!)) / 86_400_000)
 }
-function agingTone(n: number): '' | 'warn' | 'danger' { return n > 30 ? 'danger' : n > 14 ? 'warn' : '' }
+function closeInTone(n: number): '' | 'warn' | 'danger' { return n < 0 ? 'danger' : n <= 7 ? 'warn' : '' }
 
 /** Owner avatar — initials on a deterministic pastel background, with the initials
  *  in a darker shade of the same hue. */
@@ -505,43 +506,41 @@ const toggleAirene = inject<() => void>('toggleAirene')
       <!-- ── Fixed metrics (PRD: 5 cards, click-through) ── -->
       <div class="cc-stats">
         <div class="stats-section">
-          <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'ongoing' }" @click="applyMetric('ongoing')">
+          <MpButton type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'ongoing' }" @click="applyMetric('ongoing')">
             <div class="stat-title">{{ t('Total ongoing deals') }}</div>
             <div class="stat-amount">{{ m.totalOngoing }}</div>
             <div class="stat-sub">{{ t('In the pipeline') }}</div>
-          </button>
-          <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'ongoing' }" @click="applyMetric('ongoing')">
+          </MpButton>
+          <MpButton type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'ongoing' }" @click="applyMetric('ongoing')">
             <div class="stat-title">{{ t('Total deal value') }}</div>
             <div class="stat-amount">{{ formatMoney(m.totalOngoingValue, 'IDR') }}</div>
             <div class="stat-sub">{{ t('Ongoing, base currency') }}</div>
-          </button>
-          <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'closing' }" @click="applyMetric('closing')">
+          </MpButton>
+          <MpButton type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'closing' }" @click="applyMetric('closing')">
             <div class="stat-title">{{ t('Closing this month') }}</div>
             <div class="stat-amount">{{ m.closingThisMonthCount }}</div>
             <div class="stat-sub">{{ formatMoney(m.closingThisMonthValue, 'IDR') }}</div>
-          </button>
-          <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'overdue' }" @click="applyMetric('overdue')">
+          </MpButton>
+          <MpButton type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'overdue' }" @click="applyMetric('overdue')">
             <div class="stat-title">{{ t('Overdue') }}</div>
             <div class="stat-amount" :class="{ 'stat-amount--danger': m.overdueCount > 0 }">{{ m.overdueCount }}</div>
             <div class="stat-sub">{{ t('Past due date') }}</div>
-          </button>
-          <button type="button" class="stat-card" :class="{ 'stat-card--active': metricFilter === 'converted' }" @click="applyMetric('converted')">
+          </MpButton>
+          <MpButton type="button" class="stat-card" :class="{ 'stat-card--active': metricFilter === 'converted' }" @click="applyMetric('converted')">
             <div class="stat-title">{{ convTargetShort }} {{ t('created') }}</div>
             <div class="stat-amount">{{ m.txnCreatedPast30Count }}</div>
             <div class="stat-sub">{{ t('Past 30 days') }}</div>
-          </button>
+          </MpButton>
         </div>
         <!-- ── Optional report-backed pins — a distinct extension area after the
              protected fixed cards above (never replaces/reorders them). ── -->
         <div v-if="pinnedDealMetrics.length" class="cc-pinned-metrics">
           <div v-for="pin in pinnedDealMetrics" :key="pin.id" class="pinned-metric-card">
-            <button type="button" class="pinned-metric-body" @click="router.push(`/crm/reports/${pin.reportId}`)">
+            <MpButton type="button" class="pinned-metric-body" @click="router.push(`/crm/reports/${pin.reportId}`)">
               <div class="stat-title">{{ pin.label }}</div>
               <div class="stat-amount">{{ metricPinValue(pin) ?? '—' }}</div>
-            </button>
-            <button type="button" class="pinned-metric-unpin" :aria-label="t('Unpin')" @click="unpinReportMetric(pin.id)">
-              <MpIcon name="close" size="sm" />
-            </button>
+            </MpButton>
+            <MpButton type="button" class="pinned-metric-unpin" left-icon="close" :aria-label="t('Unpin')" @click="unpinReportMetric(pin.id)" />
           </div>
         </div>
       </div>
@@ -585,7 +584,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
           <div class="filter-search">
             <MpIcon name="search" size="sm" />
             <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search deals…')" />
-            <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''"><MpIcon name="close" size="sm" /></button>
+            <MpButton v-if="search" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="search = ''" />
           </div>
         </div>
       </div>
@@ -631,8 +630,8 @@ const toggleAirene = inject<() => void>('toggleAirene')
                   <span class="deal__avatar" :style="ownerAvatarStyle(d.owner)">{{ ownerInitials(d.owner) }}</span>
                   {{ d.owner }}
                 </span>
-                <div v-if="dealPipelineDisplay.showAging && isDealOpen(d)" class="deal__foot deal__foot--end" data-devchange="crm-aging-always-bottom-right">
-                  <span class="deal__aging" :class="`deal__aging--${agingTone(agingDays(d))}`" :title="`${t('Open for')} ${agingDays(d)} ${t('days')}`">{{ agingDays(d) }}d</span>
+                <div v-if="dealPipelineDisplay.showAging && closeInDays(d) !== null" class="deal__foot deal__foot--end" data-devchange="crm-close-in-live">
+                  <span class="deal__aging" :class="`deal__aging--${closeInTone(closeInDays(d)!)}`" :title="`${t('Expected close date')}: ${d.expectedCloseDate}`">{{ closeInDays(d)! }}d</span>
                 </div>
               </article>
               <p v-if="!col.cards.length" class="kcol__empty">{{ t('No deals') }}</p>
@@ -714,18 +713,18 @@ const toggleAirene = inject<() => void>('toggleAirene')
             <MpPopoverContent class="erp-dropdown-menu">
               <!-- Change stage swaps this SAME popover's content — no modal (rule/dnd… see CLAUDE.md). -->
               <div v-if="stagePicker.mode === 'row' && stagePicker.ids[0] === asDeal(row).id" class="stage-picker">
-                <button type="button" class="stage-picker-back" @click="closeStagePicker()"><MpIcon name="chevrons-left" size="sm" />{{ t('Change stage') }}</button>
-                <button
+                <MpButton type="button" class="stage-picker-back" left-icon="chevrons-left" @click="closeStagePicker()">{{ t('Change stage') }}</MpButton>
+                <MpButton
                   v-for="s in stageOptionsFor(stagePicker.ids)" :key="s" type="button" class="stage-picker-item"
                   @click="pickStage(s); if (!stagePicker.mode) onClosePopover()"
-                >{{ t(dealStageLabel(s)) }}</button>
+                >{{ t(dealStageLabel(s)) }}</MpButton>
                 <div v-if="stagePicker.awaitingLostReason" class="stage-picker-lost">
                   <span class="stage-picker-lost-label">{{ t('Lost reason') }}</span>
                   <textarea v-model="stagePicker.lostReason" class="stage-picker-textarea" rows="2" @input="stagePicker.error = ''" />
                   <span v-if="stagePicker.error" class="stage-picker-err">{{ stagePicker.error }}</span>
                   <div class="stage-picker-lost-actions">
-                    <button type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="cancelLostReason()">{{ t('Cancel') }}</button>
-                    <button type="button" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="confirmLostReason(); if (!stagePicker.mode) onClosePopover()">{{ t('Confirm') }}</button>
+                    <MpButton type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="cancelLostReason()">{{ t('Cancel') }}</MpButton>
+                    <MpButton type="button" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="confirmLostReason(); if (!stagePicker.mode) onClosePopover()">{{ t('Confirm') }}</MpButton>
                   </div>
                 </div>
               </div>
@@ -762,18 +761,18 @@ const toggleAirene = inject<() => void>('toggleAirene')
             </MpPopoverTrigger>
             <MpPopoverContent class="erp-dropdown-menu">
               <div v-if="stagePicker.mode === 'bulk'" class="stage-picker">
-                <button type="button" class="stage-picker-back" @click="closeStagePicker()"><MpIcon name="chevrons-left" size="sm" />{{ t('Change stage') }}</button>
-                <button
+                <MpButton type="button" class="stage-picker-back" left-icon="chevrons-left" @click="closeStagePicker()">{{ t('Change stage') }}</MpButton>
+                <MpButton
                   v-for="s in stageOptionsFor(stagePicker.ids)" :key="s" type="button" class="stage-picker-item"
                   @click="pickStage(s); if (!stagePicker.mode) onClosePopover()"
-                >{{ t(dealStageLabel(s)) }}</button>
+                >{{ t(dealStageLabel(s)) }}</MpButton>
                 <div v-if="stagePicker.awaitingLostReason" class="stage-picker-lost">
                   <span class="stage-picker-lost-label">{{ t('Lost reason') }}</span>
                   <textarea v-model="stagePicker.lostReason" class="stage-picker-textarea" rows="2" @input="stagePicker.error = ''" />
                   <span v-if="stagePicker.error" class="stage-picker-err">{{ stagePicker.error }}</span>
                   <div class="stage-picker-lost-actions">
-                    <button type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="cancelLostReason()">{{ t('Cancel') }}</button>
-                    <button type="button" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="confirmLostReason(); if (!stagePicker.mode) onClosePopover()">{{ t('Confirm') }}</button>
+                    <MpButton type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="cancelLostReason()">{{ t('Cancel') }}</MpButton>
+                    <MpButton type="button" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="confirmLostReason(); if (!stagePicker.mode) onClosePopover()">{{ t('Confirm') }}</MpButton>
                   </div>
                 </div>
               </div>
@@ -909,7 +908,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
    pinned bar carries an opaque strip above it. Rest-state spacing unchanged. */
 .cc-stats { padding-top: var(--mp-spacing-5); margin-bottom: var(--mp-spacing-5); }
 .stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
-.stat-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding: 0 var(--mp-spacing-6) 0 0; align-self: stretch; background: none; border: none; text-align: left; cursor: pointer; border-radius: var(--mp-radii-md); }
+.stat-card.mp-button { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: var(--mp-spacing-1); padding: 0 var(--mp-spacing-6) 0 0; align-self: stretch; background: none; border: none; text-align: left; cursor: pointer; border-radius: var(--mp-radii-md); }
 .stat-card--bordered { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .stat-card:hover .stat-title { color: var(--mp-text-link); }
 .stat-card--active .stat-title { color: var(--mp-text-link); font-weight: var(--mp-font-weights-semi-bold); }

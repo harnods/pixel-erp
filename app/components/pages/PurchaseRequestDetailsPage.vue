@@ -320,10 +320,9 @@ function goBack() { router.push('/purchase-requests') }
         <!-- Print & share (secondary dropdown) -->
         <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--secondary">
+            <MpButton class="btn-enterprise btn-enterprise--secondary" variant="secondary" right-icon="chevrons-down">
               {{ t('Print & share') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
+            </MpButton>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
@@ -336,10 +335,9 @@ function goBack() { router.push('/purchase-requests') }
         <!-- Actions (primary dropdown) -->
         <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--primary">
+            <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" right-icon="chevrons-down">
               {{ t('Actions') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
+            </MpButton>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>

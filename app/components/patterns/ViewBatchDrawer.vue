@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { MpIcon } from '@mekari/pixel3'
+import { MpIcon, MpButton } from '@mekari/pixel3'
 import ScanBar from '~/components/patterns/ScanBar.vue'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { productBySku } from '~/data/inventory'
@@ -294,9 +294,9 @@ function close() { emit('update:open', false) }
 
       <header class="vbd-header">
         <h2 class="vbd-title">{{ t('Batch detail') }}</h2>
-        <button class="vbd-close" type="button" :aria-label="t('Close')" @click="close">
+        <MpButton class="vbd-close" variant="ghost" type="button" :aria-label="t('Close')" @click="close">
           <MpIcon name="close" size="md" />
-        </button>
+        </MpButton>
       </header>
 
       <div class="vbd-content">

@@ -299,21 +299,21 @@ function onYearClick(y: number) {
           <div class="adr-sidebar">
             <template v-if="topPresets.length">
               <div class="adr-sidebar-title">Time range</div>
-              <button
+              <MpButton
                 v-for="opt in topPresets" :key="opt.key"
                 class="adr-sidebar-item adr-sidebar-item--preset" :class="{ 'adr-sidebar-item--active': mode === opt.key }"
                 @click.stop="selectInstant(opt.key)"
               >
                 <span class="adr-preset-label">{{ opt.label }}</span>
                 <span class="adr-preset-range">{{ presetRangeText(opt.key) }}</span>
-              </button>
+              </MpButton>
               <div class="adr-sidebar-divider" />
             </template>
-            <button
+            <MpButton
               v-for="opt in granularityPresets" :key="opt.key"
               class="adr-sidebar-item" :class="{ 'adr-sidebar-item--active': mode === opt.key }"
               @click.stop="opt.instant ? selectInstant(opt.key) : selectGranularity(opt.key)"
-            >{{ opt.label }}</button>
+            >{{ opt.label }}</MpButton>
           </div>
 
           <div v-if="showCalendar" class="adr-calendar">
@@ -332,7 +332,7 @@ function onYearClick(y: number) {
                 <span v-for="wd in ['Su','Mo','Tu','We','Th','Fr','Sa']" :key="wd">{{ wd }}</span>
               </div>
               <div class="adr-cal-days">
-                <button
+                <MpButton
                   v-for="(d, i) in dayGrid" :key="i"
                   class="adr-cal-day"
                   :class="{
@@ -342,7 +342,7 @@ function onYearClick(y: number) {
                     'adr-cal-day--edge': isSameDay(d, range[0]) || isSameDay(d, range[1]),
                   }"
                   @click.stop="onDayClick(d)"
-                >{{ d.getDate() }}</button>
+                >{{ d.getDate() }}</MpButton>
               </div>
               <div class="adr-cal-anchor">Today</div>
             </template>
@@ -359,12 +359,12 @@ function onYearClick(y: number) {
                 </MpButton>
               </div>
               <div class="adr-grid adr-grid--month">
-                <button
+                <MpButton
                   v-for="(m, mi) in MONTHS_SHORT" :key="mi"
                   class="adr-grid-cell"
                   :class="{ 'adr-grid-cell--current': viewYear === today.getFullYear() && mi === today.getMonth() }"
                   @click.stop="onMonthClick(mi)"
-                >{{ m }}</button>
+                >{{ m }}</MpButton>
               </div>
               <div class="adr-cal-anchor">This month</div>
             </template>
@@ -381,12 +381,12 @@ function onYearClick(y: number) {
                 </MpButton>
               </div>
               <div class="adr-grid adr-grid--year">
-                <button
+                <MpButton
                   v-for="y in Array.from({ length: 10 }, (_, i) => decadeStart + i)" :key="y"
                   class="adr-grid-cell"
                   :class="{ 'adr-grid-cell--current': y === today.getFullYear() }"
                   @click.stop="onYearClick(y)"
-                >{{ y }}</button>
+                >{{ y }}</MpButton>
               </div>
               <div class="adr-cal-anchor">This Year</div>
             </template>
@@ -430,9 +430,11 @@ function onYearClick(y: number) {
 }
 .adr-sidebar-item {
   text-align: left;
-  padding: var(--mp-spacing-2) var(--mp-spacing-4);
-  background: transparent;
-  border: none;
+  padding: var(--mp-spacing-2) var(--mp-spacing-4) !important;
+  min-width: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
   cursor: pointer;
@@ -440,7 +442,7 @@ function onYearClick(y: number) {
 .adr-sidebar-item:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 /* Quick presets show their resolved range on the right (Today = a single date). */
 .adr-sidebar-item--preset {
-  display: flex;
+  display: flex !important;
   align-items: center;
   justify-content: space-between;
   gap: var(--mp-spacing-4);
@@ -486,9 +488,11 @@ function onYearClick(y: number) {
 .adr-cal-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
 .adr-cal-day {
   height: var(--mp-sizes-7\.5, 30px);
-  border: none;
-  background: transparent;
-  border-radius: var(--mp-radii-sm);
+  min-width: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  border-radius: var(--mp-radii-sm) !important;
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-default);
   cursor: pointer;
@@ -510,10 +514,11 @@ function onYearClick(y: number) {
 .adr-grid--month { grid-template-columns: repeat(4, 1fr); }
 .adr-grid--year { grid-template-columns: repeat(4, 1fr); }
 .adr-grid-cell {
-  padding: var(--mp-spacing-2);
-  border: none;
-  background: var(--mp-background-neutral-subtle, #f8f9f9);
-  border-radius: var(--mp-radii-md);
+  padding: var(--mp-spacing-2) !important;
+  min-width: 0 !important;
+  border: none !important;
+  background: var(--mp-background-neutral-subtle, #f8f9f9) !important;
+  border-radius: var(--mp-radii-md) !important;
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-default);
   cursor: pointer;

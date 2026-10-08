@@ -4,8 +4,12 @@
  * forms accept a `prefill` prop of this shape and seed their fields from it; every
  * field stays editable. Dates are ISO here and converted to DD/MM/YYYY by the form.
  */
+import { ref } from 'vue'
 import type { Deal } from '~/data/crm'
 import { lineSubtotal } from '~/data/crm'
+
+export const pendingSalesPrefill = ref<SalesFormPrefill | null>(null)
+export const pendingConversionDealId = ref<string | null>(null)
 
 export interface SalesFormPrefillItem {
   product: string

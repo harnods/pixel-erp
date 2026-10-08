@@ -8,7 +8,7 @@
  */
 import { ref, reactive, computed, watch } from 'vue'
 import { infoToast } from '~/utils/toasts'
-import { toast, MpTooltip } from '@mekari/pixel3'
+import { toast, MpTooltip, MpButton } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import toggleIcon from '~/assets/images/sidebar-toggle.svg?url'
 import { getEmployee } from '~/data'
@@ -198,9 +198,9 @@ function goView(view?: string) {
   <div class="sidebar-wrapper">
     <nav class="sidebar hr-sidebar" :class="{ 'is-expanded': railExpanded }" aria-label="HR navigation">
       <div class="sidebar-header" data-devchange="sidebar-collapsed-tooltip">
-        <button class="sidebar-toggle" title="Toggle sidebar" @click="expanded = !expanded">
+        <MpButton variant="ghost" class="sidebar-toggle" title="Toggle sidebar" @click="expanded = !expanded">
           <img :src="toggleIcon" alt="Toggle sidebar">
-        </button>
+        </MpButton>
       </div>
 
       <div v-for="(group, gi) in groups" :key="gi" class="nav-group">
@@ -215,7 +215,8 @@ function goView(view?: string) {
             placement="right"
             use-portal
           >
-            <button
+            <MpButton
+              variant="ghost"
               class="nav-item"
               :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
               @click="handleNavClick(item)"
@@ -225,10 +226,11 @@ function goView(view?: string) {
               <img :src="`https://cdn.mekari.design/icons/${item.icon}-outline.svg`" class="nav-icon-line" alt="" />
               <img :src="`https://cdn.mekari.design/icons/${item.icon}-fill.svg`" class="nav-icon-fill" alt="" />
               <span class="nav-label">{{ item.name }}</span>
-            </button>
+            </MpButton>
           </MpTooltip>
-          <button
+          <MpButton
             v-else
+            variant="ghost"
             class="nav-item"
             :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
             @click="handleNavClick(item)"
@@ -238,7 +240,7 @@ function goView(view?: string) {
             <img :src="`https://cdn.mekari.design/icons/${item.icon}-outline.svg`" class="nav-icon-line" alt="" />
             <img :src="`https://cdn.mekari.design/icons/${item.icon}-fill.svg`" class="nav-icon-fill" alt="" />
             <span class="nav-label">{{ item.name }}</span>
-          </button>
+          </MpButton>
         </template>
       </div>
     </nav>
@@ -264,24 +266,25 @@ function goView(view?: string) {
           <div class="panel-list">
             <template v-for="item in PROFILE_MENU" :key="item.label">
               <template v-if="item.children">
-                <button class="panel-item panel-item--accordion" :class="{ 'is-open': openAccordions[item.label], 'is-active-parent': accordionActive(item) }" @click="toggleAccordion(item.label)">
+                <MpButton variant="ghost" class="panel-item panel-item--accordion" :class="{ 'is-open': openAccordions[item.label], 'is-active-parent': accordionActive(item) }" @click="toggleAccordion(item.label)">
                   <span>{{ item.label }}</span>
                   <svg class="panel-accordion-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
-                </button>
-                <button
+                </MpButton>
+                <MpButton
                   v-for="child in item.children"
                   v-show="openAccordions[item.label]"
                   :key="child.label"
+                  variant="ghost"
                   class="panel-item panel-item--child"
                   :class="{ active: isViewActive(child.view) }"
                   @click="goView(child.view)"
                 >
                   <span>{{ child.label }}</span>
-                </button>
+                </MpButton>
               </template>
-              <button v-else class="panel-item" :class="{ active: isViewActive(item.view) }" @click="goView(item.view)">
+              <MpButton v-else variant="ghost" class="panel-item" :class="{ active: isViewActive(item.view) }" @click="goView(item.view)">
                 <span>{{ item.label }}</span>
-              </button>
+              </MpButton>
             </template>
           </div>
         </template>
@@ -294,15 +297,16 @@ function goView(view?: string) {
           <div class="panel-list">
             <template v-for="(group, gi) in activePanel.submenu" :key="gi">
               <div v-if="gi > 0" class="panel-divider" />
-              <button
+              <MpButton
                 v-for="sub in group"
                 :key="sub.label"
+                variant="ghost"
                 class="panel-item"
                 :class="{ active: subMatches(sub) }"
                 @click="handlePanelSubItemClick(sub)"
               >
                 <span>{{ sub.label }}</span>
-              </button>
+              </MpButton>
             </template>
           </div>
         </template>
@@ -321,15 +325,16 @@ function goView(view?: string) {
     >
       <template v-for="(group, gi) in flyoutGroups" :key="gi">
         <div class="submenu-group" :class="{ 'has-border': gi < flyoutGroups.length - 1 }">
-          <button
+          <MpButton
             v-for="sub in group"
             :key="sub.label"
+            variant="ghost"
             class="submenu-item"
             :class="{ active: subMatches(sub) }"
             @click="handleFlyoutSubItemClick(sub)"
           >
             <span>{{ sub.label }}</span>
-          </button>
+          </MpButton>
         </div>
       </template>
     </div>
@@ -444,7 +449,7 @@ function goView(view?: string) {
   cursor: pointer; text-align: left; line-height: var(--mp-line-heights-md); transition: background-color 100ms;
 }
 .panel-item:hover { background-color: var(--mp-background-neutral-subtle-hovered); }
-.panel-item.active { background-color: #E2E8F0; font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link, #165082); }
+.panel-item.active { background-color: var(--mp-background-neutral-pressed, #E2E8F0); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link, #165082); }
 /* Accordion header (Employee profile, Time management, …) — chevron rotates when open */
 .panel-accordion-chevron { flex-shrink: 0; color: var(--mp-icon-default, var(--mp-text-secondary)); transition: transform 150ms; }
 .panel-item--accordion { font-weight: var(--mp-font-weights-regular); }
@@ -486,5 +491,5 @@ function goView(view?: string) {
   transition: background-color 100ms;
 }
 .submenu-item:hover { background-color: var(--mp-background-neutral-subtle-hovered); }
-.submenu-item.active { background-color: #E2E8F0; font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link, #165082); }
+.submenu-item.active { background-color: var(--mp-background-neutral-pressed, #E2E8F0); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link, #165082); }
 </style>

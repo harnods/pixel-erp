@@ -28,6 +28,134 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-generic-actions-column',
+    title: 'Custom module: actions column with kebab menu',
+    description:
+      'Index table now has a [...] actions column at the right with View details, Edit, Archive, and Delete options. Archive and Delete show a confirmation modal before proceeding.',
+    date: '2026-10-01',
+    files: ['CrmGenericModulePage.vue'],
+  },
+  {
+    id: 'crm-generic-empty-state',
+    title: 'Custom module: proper empty state on index page',
+    description:
+      'Index page now shows the standard empty state (illustration + title + caption + secondary CTA) when no records exist, matching the Deals and Companies pattern per rule/empty-state-structure.',
+    date: '2026-10-01',
+    files: ['CrmGenericModulePage.vue'],
+  },
+  {
+    id: 'crm-generic-product-list',
+    title: 'Custom module: full product list on record detail page',
+    description:
+      'Record detail page now renders a full product list table matching Deals — search bar, Add product button, ProductCell rows, empty states, totals section (subtotal, discounts, tax, shipping, total), and CrmEditProductsDrawer for adding/editing products.',
+    date: '2026-09-30',
+    files: ['CrmGenericRecordDetailPage.vue', 'crm.ts'],
+  },
+  {
+    id: 'crm-generic-filters-auto-fields',
+    title: 'Custom module: "All filters" drawer auto-generates filter controls',
+    description:
+      'The "All filters" drawer now automatically shows filter dropdowns for every dropdown/checkbox/radio type field that is placed in the module\'s detail layout. Filters apply to the index table.',
+    date: '2026-09-30',
+    files: ['CrmGenericFiltersDrawer.vue', 'CrmGenericModulePage.vue'],
+  },
+  {
+    id: 'crm-generic-dynamic-pages',
+    title: 'Custom module: dynamic creation form, detail page, and filters drawer',
+    description:
+      'Custom module pages now fully reflect their module settings. "Create new record" opens a Deals-style form with fields from the module\'s layout. Detail page renders dynamic sections/fields. "All filters" button opens a keyword search drawer.',
+    date: '2026-09-29',
+    files: ['NewCrmGenericRecordPage.vue', 'CrmGenericRecordDetailPage.vue', 'CrmGenericModulePage.vue', 'CrmGenericFiltersDrawer.vue', '[...slug].vue'],
+  },
+  {
+    id: 'crm-erp-integration-detail',
+    title: 'ERP Integration Settings: detail page before editor',
+    description:
+      'Clicking "Manage" on the ERP Integrations list now opens a read-only detail page showing the module\'s conversion config. An "Edit" button navigates to the editor page.',
+    date: '2026-09-28',
+    files: ['CrmErpIntegrationDetailPage.vue', 'CrmErpIntegrationEditorPage.vue', '[...slug].vue'],
+  },
+  {
+    id: 'crm-create-sales-order-inline',
+    title: 'Create Sales Order form now in CRM',
+    description:
+      'The "Create Sales Order" button in CRM Deals now opens the full sales order form within CRM (/crm/deals/:id/create-order) instead of navigating to the ERP module. The form is the same ERP form, embedded with CRM breadcrumb navigation.',
+    date: '2026-09-28',
+    files: ['CrmNewSalesOrderPage.vue', 'CrmDealDetailPage.vue', '[...slug].vue'],
+  },
+  {
+    id: 'crm-deals-exist-in-deals',
+    title: 'Deals: properties aligned to PRD "Exist in Deals"',
+    description:
+      'The Deals module now only shows properties marked "Exist in Deals: TRUE" in the PRD. Properties like Notes, Memo, Description, Priority, billing/shipping addresses, deal value, and product list are excluded from Deals (they remain available for other modules). Detail layout updated accordingly.',
+    date: '2026-09-24',
+    files: ['crm.ts'],
+  },
+  {
+    id: 'crm-additional-setup-drawer',
+    title: 'New property: additional setup per field type',
+    description:
+      'The create/edit property drawer now shows per-field-type setup sections: text size for multi-line text, configurable boolean labels, image access (public/private), currency digits/decimals, sort options for picklist types, and 5 new field types (Percentage, Image, Date and time picker, Date range, Currency).',
+    date: '2026-09-24',
+    files: ['CrmPropertyDrawer.vue', 'crm.ts'],
+  },
+  {
+    id: 'crm-property-type-labels',
+    title: 'Properties: consistent field type labels',
+    description:
+      'Field type labels in the Properties table and filter dropdown now use human-readable names (e.g. "Dropdown select" instead of "pick_list") — matching the labels shown in the create property drawer.',
+    date: '2026-09-24',
+    files: ['crm.ts', 'CrmModuleBuilderPage.vue'],
+  },
+  {
+    id: 'crm-hide-variable-name',
+    title: 'New property: hide Variable name field',
+    description:
+      'The Variable name field is now auto-generated from the property name and hidden from the create/edit property drawer. Users no longer need to manage it manually.',
+    date: '2026-09-24',
+    files: ['CrmPropertyDrawer.vue'],
+  },
+  {
+    id: 'crm-editable-property-options',
+    title: 'Properties: editable system property options',
+    description:
+      'System properties marked as editable (Status, Priority, Tags, Source, Payment Terms) now show an "Edit options" button. Opens a drawer where options can be renamed (rename scope) or added/deleted/renamed (add-delete-rename scope).',
+    date: '2026-09-23',
+    files: ['CrmModuleBuilderPage.vue', 'CrmEditOptionsDrawer.vue', 'crm.ts'],
+  },
+  {
+    id: 'crm-pipeline-close-in',
+    title: 'Pipeline: "Close in" replaces "Rotting in (days)"',
+    description:
+      '"Rotting in (days)" renamed to "Close in" and only available when Expected close date is in the layout. Swimlane preview cards reduced to 1. Delete stage and New stage buttons removed.',
+    date: '2026-09-23',
+    files: ['CrmModuleBuilderPage.vue'],
+  },
+  {
+    id: 'crm-module-per-tab-save',
+    title: 'Module builder: per-tab save with unsaved-changes prompt',
+    description:
+      'Save is now per-tab — switching tabs with unsaved changes shows a discard confirmation. "Save changes" renamed to "Save" (secondary). Publish button moved from footer to page title area (primary, top-right) for draft modules.',
+    date: '2026-09-22',
+    files: ['CrmModuleBuilderPage.vue'],
+  },
+  {
+    id: 'crm-new-module-modal',
+    title: 'New module: creation modal with locked access level',
+    description:
+      'Clicking "+ New module" now opens a modal asking for Module name and Access level (Company or Team). After "Continue", the Setup page opens with the name prefilled and the access level locked — Company users cannot switch to Team and vice versa.',
+    date: '2026-09-21',
+    files: ['CrmModulesPage.vue', 'CrmModuleBuilderPage.vue'],
+  },
+  {
+    id: 'crm-generic-filterbar',
+    title: 'Custom modules: Deals-style filter bar & dynamic columns',
+    description:
+      'Custom module filter bar follows Deals layout. View toggle and pipeline filter only appear when kanban is configured; "All filters" button always shows. Table columns are dynamically derived from properties placed in the module Layout tab.',
+    date: '2026-09-29',
+    files: ['CrmGenericModulePage.vue'],
+  },
+  {
     id: 'crm-field-driven-pipeline',
     title: 'Custom modules: field-driven Kanban pipeline',
     description:
@@ -141,19 +269,19 @@ export const DEV_CHANGES: DevChange[] = [
   },
   {
     id: 'crm-layout-preview',
-    title: 'Preview layout drawer',
+    title: 'Preview layout drawer — Deal & custom module replicas',
     description:
-      'A "Preview layout" button in the Edit layout header opens a full-screen drawer that mirrors the actual record detail page format — title bar, pipeline stepper, tabs, ContentList key-value grid, and product table. Two switchable views: "Form" (empty form fields) and "Details record" (populated with dummy data).',
-    date: '2026-09-20',
+      'Preview layout drawer: for all modules, both Form and Details record previews follow the same high-fidelity format. Deals module previews are exact replicas of their actual pages. Custom module previews use the same dp-*/si-* component structure — products table with thumbnail/SKU/search/add, memo/attachment + totals section, form with drag-handle line items table, checkbox fields, and section headers.',
+    date: '2026-09-22',
     files: ['CrmDetailLayoutBuilder.vue'],
   },
   {
     id: 'crm-record-name-value-rename',
-    title: 'Properties use "Deal name/value" for Deals module',
+    title: 'Generic modules use "Record" terminology for all properties',
     description:
-      'Default properties use "Deal name" and "Deal value" labels for the Deals module. The variable names remain module-neutral (record_name, record_value) so custom modules can relabel without changing the schema.',
-    date: '2026-09-20',
-    files: ['crm.ts', 'CrmModuleBuilderPage.vue', 'translations.ts'],
+      'Custom/generic modules now use "Record name", "Record value", "Record stage", "Record type" and variableName record_owner/record_stage/record_type instead of "Deal" prefixed labels. Only the Deals module keeps "Deal" terminology. Pipeline card preview and detail page also use the property\'s actual name.',
+    date: '2026-09-21',
+    files: ['crm.ts', 'CrmModuleBuilderPage.vue', 'CrmGenericRecordDetailPage.vue'],
   },
   {
     id: 'crm-module-name-mandatory',
@@ -172,12 +300,12 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['CrmModuleBuilderPage.vue'],
   },
   {
-    id: 'crm-aging-always-bottom-right',
-    title: 'Aging indicator always bottom-right',
+    id: 'crm-close-in-live',
+    title: 'Close in — days until expected close date',
     description:
-      'The rotting-in-days aging badge on pipeline cards is now always positioned at the bottom-right of the card, regardless of how many fields are enabled. Previously it was inline with Owner and could be pushed up by fields below it.',
-    date: '2026-09-20',
-    files: ['CrmDealsPage.vue', 'CrmModuleBuilderPage.vue'],
+      'Pipeline card badge now shows days remaining until the expected close date ("Close in") instead of days since deal creation ("Rotting in"). Only shown when the deal has an expected close date. Warn tone when ≤7 days, danger when overdue.',
+    date: '2026-09-23',
+    files: ['CrmDealsPage.vue'],
   },
   {
     id: 'crm-pipeline-card-props',
@@ -199,7 +327,7 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'crm-default-properties-v2',
     title: 'Default properties unified across all modules',
     description:
-      'All CRM properties are shared as DEFAULT_PROPERTIES — every module (Deals, Service deals, custom) gets the identical property set. Fill rates are computed per-module from actual records.',
+      'All CRM properties are shared as DEFAULT_PROPERTIES — every module (Deals, custom) gets the identical property set. Fill rates are computed per-module from actual records.',
     date: '2026-09-19',
     files: ['crm.ts', 'crmConversion.ts', 'CrmModuleBuilderPage.vue', 'crmReports.ts'],
   },
@@ -230,11 +358,11 @@ export const DEV_CHANGES: DevChange[] = [
   },
   {
     id: 'crm-settings-properties-hidden',
-    title: 'Settings Properties page hidden',
+    title: 'Settings Properties page deprecated',
     description:
-      'The standalone CRM Settings Properties page is hidden from Settings. Property management stays inside each module under Settings > Modules.',
-    date: '2026-09-18',
-    files: ['CrmSidebar.vue', '[...slug].vue'],
+      'The standalone CRM Settings Properties page is removed. Property management stays inside each module under Settings > Modules. System properties overhauled to match the definitive list.',
+    date: '2026-09-23',
+    files: ['CrmSidebar.vue', '[...slug].vue', 'crm.ts'],
   },
   {
     id: 'crm-company-property-label',
@@ -243,6 +371,14 @@ export const DEV_CHANGES: DevChange[] = [
       'The CRM module property formerly labelled Customer is now labelled Company, matching its Company association type and the company-first CRM model.',
     date: '2026-09-18',
     files: ['crm.ts', 'CrmModuleBuilderPage.vue'],
+  },
+  {
+    id: 'crm-system-properties-overhaul',
+    title: 'System properties overhauled',
+    description:
+      'DEFAULT_PROPERTIES rewritten to the definitive 32 visible + 10 hidden system properties. Uses API-style field types. Editable properties (Status, Priority, Tags, Source, Payment Terms) show an edit button. Properties with existInDeals=false are excluded from default layout/pipeline card. Removed deprecated shipping, tax, and ERP-specific properties.',
+    date: '2026-09-23',
+    files: ['crm.ts', 'CrmModuleBuilderPage.vue', 'crmConversion.ts', 'crmReports.ts', 'CrmDetailLayoutBuilder.vue'],
   },
   {
     id: 'crm-system-property-actions-removed',
@@ -312,7 +448,7 @@ export const DEV_CHANGES: DevChange[] = [
       'All CRM UI labels now match the labels defined in DEFAULT_PROPERTIES: "Customer" → "Company", "Deal value" → "Value", "Close date" → "Expected close date". Applied across preview drawer, detail page, index pages, filters, export columns, and pipeline card fields.',
     date: '2026-09-21',
     pr: '#86',
-    files: ['CrmDealPreviewDrawer.vue', 'CrmDealDetailPage.vue', 'CrmDealsPage.vue', 'CrmServicesPage.vue', 'CrmGenericModulePage.vue', 'CrmModuleBuilderPage.vue', 'CrmDealsFiltersDrawer.vue'],
+    files: ['CrmDealPreviewDrawer.vue', 'CrmDealDetailPage.vue', 'CrmDealsPage.vue', 'CrmGenericModulePage.vue', 'CrmModuleBuilderPage.vue', 'CrmDealsFiltersDrawer.vue'],
   },
   {
     id: 'deal-preview-totals',
@@ -322,6 +458,30 @@ export const DEV_CHANGES: DevChange[] = [
     date: '2026-09-21',
     pr: '#86',
     files: ['CrmDealPreviewDrawer.vue', 'crm.ts'],
+  },
+  {
+    id: 'crm-pipeline-card-props-layout-filter',
+    title: 'Pipeline card properties filtered by layout',
+    description:
+      'Card properties in the pipeline editor now show only properties that exist in the module\'s detail layout. The "Add property" drawer also only offers layout properties. For custom modules, the pipeline "Group by" field picker only lists picklist properties present in the layout.',
+    date: '2026-09-24',
+    files: ['CrmModuleBuilderPage.vue'],
+  },
+  {
+    id: 'crm-generic-detail-page-overhaul',
+    title: 'Custom module detail page redesign',
+    description:
+      'Detail page now follows Deals format: Move to dropdown (pipeline only), kebab menu with Edit/Delete, pipeline stepper (when configured), sections driven 100% by detailLayout config. Date fields are formatted.',
+    date: '2026-09-30',
+    files: ['CrmGenericRecordDetailPage.vue'],
+  },
+  {
+    id: 'crm-generic-index-all-props',
+    title: 'Custom module index shows all properties',
+    description:
+      'The table on the custom module index page now shows ALL properties as columns instead of only those placed in layout sections.',
+    date: '2026-09-30',
+    files: ['CrmGenericModulePage.vue'],
   },
 ]
 

@@ -22,7 +22,7 @@ import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
 import CrmPropertyDrawer from '~/components/patterns/CrmPropertyDrawer.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
-  DEAL_PROPERTY_TYPE_ICON, newDetailSectionId, isRelatedListType, sectionAllProps, distributeCols,
+  DEAL_PROPERTY_TYPE_ICON, defaultPropertyIcon, newDetailSectionId, isRelatedListType, sectionAllProps, distributeCols,
   type DealDetailLayout, type DetailLayoutSection, type DetailLayoutTab,
   type DealProperty, type DealPropertyType, type DealPropertyConfig, type PropertyCondition,
   type CrmConversionTarget,
@@ -65,31 +65,22 @@ const PREVIEW_MODES = [
   { id: 'prev-details', label: 'Details record', value: 'details' },
 ]
 const DUMMY_DATA: Record<string, string> = {
-  'deal-name': 'Annual espresso contract', 'deal-value': 'Rp 19.200.000', 'company': 'Kopi Kenangan Pusat',
-  'contact-person': 'Ratna Sari', 'contact-person-email': 'buyer@kopikenangan.com', 'contact-person-phone': '+62 811 5550 006',
-  'owner': 'Dewi Lestari', 'currency': 'IDR', 'billing-address': 'Jl. Menteng Raya No. 42, Jakarta',
+  'record-name': 'Annual espresso contract', 'deal-value': 'Rp 19.200.000', 'company': 'Kopi Kenangan Pusat',
+  'contact': 'Ratna Sari', 'email': 'buyer@kopikenangan.com', 'phone': '+62 811 5550 006',
+  'record-owner': 'Dewi Lestari', 'currency-code': 'IDR', 'billing-address': 'Jl. Menteng Raya No. 42, Jakarta',
   'transaction-date': '15/09/2026', 'due-date': '15/10/2026', 'close-date': '30/09/2026',
-  'transaction-no': 'TXN-0913', 'reference-no': 'RFQ-8815', 'payment-terms': 'Net 30',
-  'exchange-rate': '1.00', 'warehouse': 'Gudang Utama', 'shipping-address': 'Jl. Menteng Raya No. 42',
-  'shipping-date': '16/09/2026', 'delivery-date': '18/09/2026', 'ship-via': 'JNE Regular',
-  'tracking-no': 'JNE-88150913', 'shipping-fee': 'Rp 150.000',
-  'discount': '5%', 'global-discount': '0%', 'tax': 'PPN 11%', 'tax-inclusive': 'No', 'tax-after-discount': 'Yes',
-  'memo': 'Twelve-month espresso bean supply across all outlets.', 'attachment': '—', 'message': '—',
+  'transaction-number': 'TXN-0913', 'external-reference-id': 'RFQ-8815', 'payment-term': 'Net 30',
+  'shipping-address': 'Jl. Menteng Raya No. 42',
+  'discount-percentage': '5%',
+  'notes': 'Twelve-month espresso bean supply across all outlets.', 'attachments': '—', 'memo': '—',
   'service-type': 'Consultation', 'priority': 'High',
-  'record-name': 'Annual espresso contract', 'record-value': 'Rp 19.200.000',
+  'status': 'Proposal', 'tags': 'VIP, Hot lead', 'source': 'Referral',
+  'description': 'Annual supply agreement for premium espresso beans.',
+  'image': '—', 'website': 'kopikenangan.com', 'product-list': '—',
+  'quantity': '12', 'probability': '75%',
+  'next-follow-up-time': '20/09/2026 10:00', 'completed-time': '—',
 }
 const PREVIEW_STAGES = ['Open Lead', '1st Meeting', 'Proposal', 'Negotiation', 'Won']
-const previewActiveTab = ref('details')
-const previewTabs = computed(() => {
-  const editable = props.detail.tabs.filter((tp) => tp.editable && tp.visible)
-  const system: { key: string; label: string }[] = []
-  for (const tp of props.detail.tabs) {
-    if (tp.editable || !tp.visible) continue
-    if (tp.key === 'orders' && !tp.erpTarget) continue
-    system.push({ key: tp.key, label: tp.key === 'orders' ? (tp.erpTarget === 'sales-order' ? 'Sales order list' : 'Sales quote list') : tp.label })
-  }
-  return [...editable.map((tp) => ({ key: tp.key, label: tp.label })), ...system]
-})
 function detailsTabSections() {
   const tp = props.detail.tabs.find((t) => t.editable && t.visible)
   return tp?.sections ?? []
@@ -161,7 +152,8 @@ const addPropOptions = computed(() => {
   const own = new Set(sectionAllProps(section))
   return props.properties
     .filter((p) => own.has(p.id) || !elsewhere.has(p.id))
-    .map((p) => ({ id: p.id, name: p.name, subtitle: p.variableName, icon: DEAL_PROPERTY_TYPE_ICON[p.type] }))
+    .map((p) => ({ id: p.id, name: p.name, subtitle: '', icon: defaultPropertyIcon(p.type) }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 })
 // Reconcile the drawer's picked set into the section's columns: drop de-selected
 // ids from every column, append newly-picked ids to the shortest column (keeps
@@ -273,6 +265,11 @@ const condSentence = computed(() => {
   }
 })
 function removeProperty(section: DetailLayoutSection, id: string) { section.cols = section.cols.map((c) => c.filter((x) => x !== id)) }
+function toggleMandatory(section: DetailLayoutSection, pid: string) {
+  if (!section.mandatory) section.mandatory = {}
+  section.mandatory[pid] = !section.mandatory[pid]
+  if (!section.mandatory[pid]) delete section.mandatory[pid]
+}
 
 // Delete section — immediate (nothing is saved until "Save changes", so no confirm).
 function deleteSection(s: DetailLayoutSection) {
@@ -334,7 +331,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
     ghostDY = e.clientY - rect.top
     ghost.value = {
       x: rect.left, y: rect.top, w: rect.width,
-      icon: p?.type ? DEAL_PROPERTY_TYPE_ICON[p.type] : 'text-editor-text',
+      icon: p?.type ? defaultPropertyIcon(p.type) : 'text-editor-text',
       label: p?.name ?? pid, variable: p?.variableName ?? pid,
     }
   }
@@ -404,7 +401,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
           autofocus @keydown.enter="commitRenameTab(tp)" @keydown.esc="renamingTabId = ''" @blur="commitRenameTab(tp)"
         />
         <template v-else>
-          <button type="button" class="dlb-tab-btn" @click="selectTab(tp.id)">{{ t(tp.label) }}</button>
+          <MpButton class="dlb-tab-btn" @click="selectTab(tp.id)">{{ t(tp.label) }}</MpButton>
           <span class="dlb-kebab dlb-tab-kebab">
             <MpPopover :id="`dlb-tab-${tp.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
               <MpPopoverTrigger>
@@ -452,7 +449,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
             </header>
 
             <!-- Each column is its own drop list (independent card counts). -->
-            <div class="dlb-cols" :style="{ gridTemplateColumns: `repeat(${section.columns}, minmax(0, 1fr))` }">
+            <div v-if="section.cols.some((c) => c.length)" class="dlb-cols" :style="{ gridTemplateColumns: `repeat(${section.columns}, minmax(0, 1fr))` }">
               <TransitionGroup
                 v-for="(col, ci) in section.cols" :key="ci"
                 name="dlb-prop" tag="div" class="dlb-col"
@@ -462,10 +459,9 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                   class="dlb-prop" :class="{ 'is-dragging': propDrag?.sec === section.id && propDrag?.pid === pid }"
                 >
                   <span class="dlb-drag" :aria-label="t('Drag to reorder')" @pointerdown="onPropPointerDown(section, pid, $event)"><MpIcon name="drag" size="sm" /></span>
-                  <MpIcon :name="prop(pid)?.type ? DEAL_PROPERTY_TYPE_ICON[prop(pid)!.type] : 'text-editor-text'" size="sm" class="dlb-prop-type" />
+                  <MpIcon :name="prop(pid)?.type ? defaultPropertyIcon(prop(pid)!.type) : 'text-editor-text'" size="sm" class="dlb-prop-type" />
                   <div class="dlb-prop-text">
-                    <span class="dlb-prop-label">{{ prop(pid)?.name ?? pid }}</span>
-                    <span class="dlb-prop-var">{{ prop(pid)?.variableName ?? pid }}</span>
+                    <span class="dlb-prop-label">{{ prop(pid)?.name ?? pid }}<span v-if="section.mandatory?.[pid]" class="dlb-mandatory">*</span></span>
                   </div>
                   <MpTooltip v-if="section.conditions?.[pid]" :id="`dlb-cond-${section.id}-${pid}`" :label="t('Has conditional logic')" placement="top" use-portal>
                     <MpIcon name="condition" size="sm" class="dlb-prop-cond" />
@@ -478,7 +474,8 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                       <MpPopoverContent :class="css({ minWidth: '190px' })">
                         <MpPopoverList>
                           <MpPopoverListItem @click="openCondition(section, pid)">{{ t('Set conditional logic') }}</MpPopoverListItem>
-                          <MpPopoverListItem @click="removeProperty(section, pid)">{{ t('Remove card') }}</MpPopoverListItem>
+                          <MpPopoverListItem @click="toggleMandatory(section, pid)">{{ section.mandatory?.[pid] ? t('Mark as optional') : t('Mark as mandatory') }}</MpPopoverListItem>
+                          <MpPopoverListItem @click="removeProperty(section, pid)">{{ t('Remove property') }}</MpPopoverListItem>
                         </MpPopoverList>
                       </MpPopoverContent>
                     </MpPopover>
@@ -486,7 +483,10 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                 </div>
               </TransitionGroup>
             </div>
-            <p v-if="!section.cols.some((c) => c.length)" class="dlb-empty">{{ t('No properties yet. Add one from the section menu.') }}</p>
+            <div v-if="!section.cols.some((c) => c.length)" class="dlb-empty">
+              <p class="dlb-empty-text">{{ t('No properties yet.') }}</p>
+              <MpButton variant="secondary" is-rounded left-icon="add" @click="openAddProperty(section)">{{ t('Add property') }}</MpButton>
+            </div>
           </section>
         </TransitionGroup>
 
@@ -636,7 +636,6 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
         <MpIcon :name="ghost.icon" size="sm" class="dlb-prop-type" />
         <div class="dlb-prop-text">
           <span class="dlb-prop-label">{{ ghost.label }}</span>
-          <span class="dlb-prop-var">{{ ghost.variable }}</span>
         </div>
       </div>
     </Teleport>
@@ -653,177 +652,156 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
               <MpButton variant="ghost" is-rounded left-icon="close" :aria-label="t('Close')" @click="previewOpen = false" />
             </header>
             <div class="dlb-preview-body">
-              <!-- Details record preview -->
+              <!-- Details record preview — dynamic from layout sections (all modules) -->
               <template v-if="previewMode === 'details'">
-                <div class="dlb-prev-record">
-                  <!-- Title bar -->
-                  <div class="dlb-prev-titlebar">
-                    <div class="dlb-prev-breadcrumb">{{ t('Deals') }}</div>
-                    <div class="dlb-prev-titlerow">
-                      <h2 class="dlb-prev-dealname">{{ DUMMY_DATA['deal-name'] || DUMMY_DATA['record-name'] || 'Deal name' }}</h2>
-                      <span class="dlb-prev-action-btn">{{ t('Mark as won') }}</span>
+                <div class="dlb-prev-detail-page">
+                  <div class="dp-stage">
+                    <div class="dp-tabs">
+                      <MpButton v-for="(tp, ti) in detail.tabs.filter(t => t.visible)" :key="tp.id" class="dp-tab" :class="{ 'dp-tab--active': ti === 0 }" :disabled="ti !== 0">{{ t(tp.label) }}</MpButton><!-- pixel-police-allow -->
                     </div>
-                  </div>
-                  <!-- Pipeline stepper -->
-                  <div class="dlb-prev-stepper">
-                    <div class="dlb-prev-stepper-labels">
-                      <span v-for="(s, i) in PREVIEW_STAGES" :key="i" class="dlb-prev-step-label" :class="{ 'dlb-prev-step-label--active': i === 2 }">{{ t(s) }}</span>
-                    </div>
-                    <div class="dlb-prev-stepper-bar">
-                      <span v-for="(_, i) in PREVIEW_STAGES" :key="i" class="dlb-prev-bar-seg" :class="{ 'dlb-prev-bar-seg--filled': i <= 2 }" />
-                    </div>
-                  </div>
-                  <!-- Tabs -->
-                  <div class="dlb-prev-tabs">
-                    <button v-for="tb in previewTabs" :key="tb.key" class="dlb-prev-tab-btn" :class="{ 'dlb-prev-tab-btn--active': previewActiveTab === tb.key }" @click="previewActiveTab = tb.key">{{ t(tb.label) }}</button><!-- pixel-police-allow -->
-                  </div>
-                  <!-- Tab content -->
-                  <div class="dlb-prev-tab-content">
-                    <!-- Editable details tab -->
-                    <template v-if="previewActiveTab === 'details'">
-                      <div v-for="section in detailsTabSections()" :key="section.id" class="dlb-prev-section">
-                        <h5 v-if="section.name" class="dlb-prev-sec-name">{{ t(section.name) }}</h5>
-                        <div v-if="section.kind === 'products'" class="dlb-prev-products">
-                          <table class="dlb-prev-table">
-                            <thead><tr><th>{{ t('Product') }}</th><th>{{ t('Description') }}</th><th class="dlb-prev-th--num">{{ t('Qty') }}</th><th>{{ t('Unit') }}</th><th class="dlb-prev-th--num">{{ t('Unit price') }}</th><th class="dlb-prev-th--num">{{ t('Discount') }}</th><th>{{ t('Tax') }}</th></tr></thead>
-                            <tbody>
-                              <tr><td>Espresso Blend 1kg</td><td class="dlb-prev-td--muted">Premium single-origin</td><td class="dlb-prev-td--num">60</td><td>bag</td><td class="dlb-prev-td--num">Rp 320.000</td><td class="dlb-prev-td--num">0%</td><td>PPN 11%</td></tr>
-                            </tbody>
-                          </table>
+                    <template v-for="section in detailsTabSections()" :key="section.id">
+                      <section v-if="section.kind === 'products'" class="dp-section dp-items-section">
+                        <div class="dp-filter-bar">
+                          <div />
+                          <div class="dp-filter-right">
+                            <div class="dp-search-pill"><MpIcon name="search" size="sm" /><span class="dp-search-text">{{ t('Search products…') }}</span></div>
+                            <MpButton class="btn-enterprise btn-enterprise--tertiary dp-add-product" disabled><MpIcon name="add" size="sm" />{{ t('Add product') }}</MpButton><!-- pixel-police-allow -->
+                          </div>
                         </div>
-                        <div v-else class="dlb-prev-content-grid" :style="{ '--dlb-cols': Math.max(1, section.columns - 1) }">
-                          <div v-for="(col, ci) in section.cols" :key="ci" class="dlb-prev-content-col">
-                            <div v-for="pid in col" :key="pid" class="dlb-prev-cl">
-                              <span class="dlb-prev-cl-label">{{ prop(pid)?.name ?? pid }}</span>
-                              <span class="dlb-prev-cl-value">{{ DUMMY_DATA[pid] || '—' }}</span>
+                        <table class="dp-items">
+                          <thead>
+                            <tr>
+                              <th class="dp-th">{{ t('Product') }}</th>
+                              <th class="dp-th">{{ t('Description') }}</th>
+                              <th class="dp-th dp-th--num">{{ t('Qty') }}</th>
+                              <th class="dp-th">{{ t('Unit') }}</th>
+                              <th class="dp-th dp-th--num">{{ t('Unit price') }}</th>
+                              <th class="dp-th dp-th--num">{{ t('Discount') }}</th>
+                              <th class="dp-th">{{ t('Tax') }}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td class="dp-td"><div class="dp-product-cell"><div class="dp-product-thumb" /><div class="dp-product-meta"><span class="dp-product-name">Espresso Blend 1kg</span><span class="dp-product-sku">SKU: P001</span></div></div></td>
+                              <td class="dp-td dp-td--muted">Premium single-origin</td>
+                              <td class="dp-td dp-td--num">60</td>
+                              <td class="dp-td">bag</td>
+                              <td class="dp-td dp-td--num">Rp320.000,00</td>
+                              <td class="dp-td dp-td--num">0%</td>
+                              <td class="dp-td">PPN 11%</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                        <div class="dp-items-count">{{ t('Showing') }} 1 {{ t('of') }} 1 {{ t('products') }}</div>
+                      </section>
+                      <section v-if="section.kind === 'products'" class="dp-section dp-totals-section">
+                        <div class="dp-totals">
+                          <div class="dp-total-row"><span class="dp-total-label dp-total-label--strong">{{ t('Subtotal') }}</span><span class="dp-total-amt dp-total-amt--strong">Rp19.200.000,00</span></div>
+                          <div class="dp-total-row"><span class="dp-total-label">{{ t('Discount per line') }}</span><span class="dp-total-amt">Rp0,00</span></div>
+                          <div class="dp-total-row"><span class="dp-total-label">{{ t('Global discount') }}</span><span class="dp-total-amt">Rp0,00</span></div>
+                          <div class="dp-total-row"><span class="dp-total-label">PPN 11%</span><span class="dp-total-amt">Rp2.112.000,00</span></div>
+                          <div class="dp-total-rule" />
+                          <div class="dp-total-row"><span class="dp-total-label dp-total-label--total">{{ t('Total') }}</span><span class="dp-total-amt dp-total-amt--total">Rp21.312.000,00</span></div>
+                        </div>
+                      </section>
+                      <section v-else-if="!(section.id.includes('pricing') && detailsTabSections().some(s => s.kind === 'products'))" class="dp-section">
+                        <h3 v-if="section.name" class="dp-section-title">{{ t(section.name) }}</h3>
+                        <div class="dp-grid" :class="{ 'dp-grid--3': section.columns === 3, 'dp-grid--4': section.columns === 4 }" :style="section.columns > 4 || (section.columns !== 3 && section.columns !== 4) ? { gridTemplateColumns: `repeat(${section.columns}, minmax(0, 1fr))` } : undefined">
+                          <div v-for="(col, ci) in section.cols" :key="ci" class="dp-grid-col">
+                            <div v-for="pid in col" :key="pid" class="dp-cl">
+                              <span class="dp-cl-label">{{ prop(pid)?.name ?? pid }}</span>
+                              <span class="dp-cl-value">{{ DUMMY_DATA[pid] || '—' }}</span>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    </template>
-                    <!-- System tabs with dummy data -->
-                    <template v-else-if="previewActiveTab === 'activity'">
-                      <table class="dlb-prev-table">
-                        <thead><tr><th>{{ t('Date') }}</th><th>{{ t('User') }}</th><th>{{ t('Action') }}</th></tr></thead>
-                        <tbody>
-                          <tr><td>20 Sep 2026, 14:30</td><td>Dewi Lestari</td><td>{{ t('Moved stage from Open Lead to 1st Meeting') }}</td></tr>
-                          <tr><td>18 Sep 2026, 09:15</td><td>Rizal Candra</td><td>{{ t('Created deal') }}</td></tr>
-                        </tbody>
-                      </table>
-                    </template>
-                    <template v-else-if="previewActiveTab === 'notes'">
-                      <div class="dlb-prev-notes-list">
-                        <div class="dlb-prev-note">
-                          <div class="dlb-prev-note-header"><strong>Dewi Lestari</strong><span class="dlb-prev-note-date">20 Sep 2026, 14:30</span></div>
-                          <p class="dlb-prev-note-body">{{ t('Follow up call scheduled for next week. Client interested in premium blend.') }}</p>
-                        </div>
-                        <div class="dlb-prev-note">
-                          <div class="dlb-prev-note-header"><strong>Rizal Candra</strong><span class="dlb-prev-note-date">18 Sep 2026, 09:15</span></div>
-                          <p class="dlb-prev-note-body">{{ t('Initial meeting went well. Sent catalog and price list.') }}</p>
-                        </div>
-                      </div>
-                    </template>
-                    <template v-else-if="previewActiveTab === 'files'">
-                      <table class="dlb-prev-table">
-                        <thead><tr><th>{{ t('File name') }}</th><th>{{ t('Size') }}</th><th>{{ t('Uploaded by') }}</th><th>{{ t('Date') }}</th></tr></thead>
-                        <tbody>
-                          <tr><td>Proposal_Espresso_2026.pdf</td><td>2.4 MB</td><td>Dewi Lestari</td><td>19 Sep 2026</td></tr>
-                          <tr><td>Price_List_Q4.xlsx</td><td>156 KB</td><td>Rizal Candra</td><td>18 Sep 2026</td></tr>
-                        </tbody>
-                      </table>
-                    </template>
-                    <template v-else-if="previewActiveTab === 'orders'">
-                      <table class="dlb-prev-table">
-                        <thead><tr><th>{{ t('Transaction no.') }}</th><th>{{ t('Date') }}</th><th>{{ t('Customer') }}</th><th>{{ t('Amount') }}</th><th>{{ t('Status') }}</th></tr></thead>
-                        <tbody>
-                          <tr><td>SO-20260920-001</td><td>20 Sep 2026</td><td>Kopi Kenangan Pusat</td><td>Rp 19.200.000</td><td><span class="dlb-prev-status dlb-prev-status--open">Open</span></td></tr>
-                        </tbody>
-                      </table>
+                      </section>
                     </template>
                   </div>
                 </div>
               </template>
-              <!-- Form preview — hardcoded copy of NewCrmDealPage structure -->
-              <template v-else>
-                <div class="si-form-page dlb-prev-form-page">
+              <!-- Form preview — Deals module: exact replica of NewCrmDealPage -->
+              <template v-else-if="previewMode === 'form' && moduleId === 'deals'">
+                <div class="dlb-prev-form-page">
+                  <!-- Header bar -->
+                  <header class="si-form-bar">
+                    <div class="si-form-bar-left">
+                      <span class="si-crumb">{{ t('Deals') }}</span>
+                      <h1 class="si-form-h1">{{ t('New deal') }}</h1>
+                    </div>
+                  </header>
+                  <!-- Scrollable stage -->
                   <div class="si-form-stage">
-                    <!-- Section 1: Deal name — standalone, dashed divider -->
+                    <!-- Deal name -->
                     <section class="si-header1 si-dashed-divider">
                       <MpFormControl id="fp-deal-name" class="si-field" style="flex:0 0 var(--si-field-wide)">
                         <MpFormLabel>{{ t('Deal name') }}</MpFormLabel>
-                        <MpInput id="fp-deal-name-inp" is-full-width disabled />
+                        <MpInput is-full-width disabled :placeholder="t('Enter deal name')" />
                       </MpFormControl>
                     </section>
-
-                    <!-- Section 2: Contact + Company + Deal value -->
+                    <!-- Contact + Company + Deal value -->
                     <section class="si-header1 si-dashed-divider">
-                      <MpFormControl id="fp-contact" class="si-field" style="flex:0 0 var(--si-field-wide)" is-required>
+                      <MpFormControl id="fp-contact" class="si-field" style="flex:0 0 var(--si-field-wide)">
                         <MpFormLabel>{{ t('Contact') }}</MpFormLabel>
-                        <MpAutocomplete id="fp-contact-inp" :data="[]" :placeholder="t('Select contact')" is-full-width use-portal disabled />
-                      </MpFormControl>
-                      <MpFormControl id="fp-company" class="si-field" style="flex:0 0 var(--si-field-wide)">
-                        <MpFormLabel>{{ t('Company') }}</MpFormLabel>
-                        <MpAutocomplete id="fp-company-inp" :data="[]" :placeholder="t('Select company')" is-full-width use-portal disabled />
+                        <MpInput is-full-width disabled :placeholder="t('Select contact')" />
                       </MpFormControl>
                       <div class="si-header1-total">
-                        <h3 class="si-header1-total-value">{{ t('Deal value') }} Rp 0</h3>
+                        <h3 class="si-header1-total-value">{{ t('Deal value') }} Rp0,00</h3>
                       </div>
                     </section>
-
-                    <!-- Section 3: Header fields — 4 columns like the real form -->
+                    <!-- Address + Dates + References columns -->
                     <section class="si-header2">
-                      <!-- Col 1: Billing address + Requires shipping -->
-                      <div class="si-header2-col">
+                      <!-- Col 1: addresses -->
+                      <div class="si-header2-col si-header2-col--wide">
                         <MpFormControl id="fp-billing" class="si-field">
                           <MpFormLabel>{{ t('Billing address') }}</MpFormLabel>
-                          <MpTextarea id="fp-billing-inp" is-full-width disabled />
+                          <MpTextarea is-full-width disabled />
                         </MpFormControl>
-                        <MpCheckbox id="fp-requires-shipping" :is-checked="false" disabled>{{ t('Requires shipping') }}</MpCheckbox>
+                        <div class="si-checkbox-stack">
+                          <MpCheckbox :is-checked="false" disabled>{{ t('Requires shipping') }}</MpCheckbox>
+                        </div>
                       </div>
-                      <!-- Col 2: Dates + terms -->
+                      <!-- Col 2: dates + terms -->
                       <div class="si-header2-col">
                         <MpFormControl id="fp-tx-date" class="si-field">
                           <MpFormLabel>{{ t('Transaction date') }}</MpFormLabel>
-                          <MpDatePicker id="fp-tx-date-inp" class="dlb-fp-datepicker" format="DD/MM/YYYY" value-type="format" use-portal disabled />
+                          <MpDatePicker class="dlb-fp-datepicker" format="DD/MM/YYYY" value-type="format" use-portal disabled />
                         </MpFormControl>
                         <MpFormControl id="fp-close-date" class="si-field">
                           <MpFormLabel>{{ t('Close date') }}</MpFormLabel>
-                          <MpDatePicker id="fp-close-date-inp" class="dlb-fp-datepicker" format="DD/MM/YYYY" value-type="format" use-portal disabled />
+                          <MpDatePicker class="dlb-fp-datepicker" format="DD/MM/YYYY" value-type="format" use-portal disabled />
                         </MpFormControl>
                         <MpFormControl id="fp-payment" class="si-field">
                           <MpFormLabel>{{ t('Payment terms') }}</MpFormLabel>
-                          <MpAutocomplete id="fp-payment-inp" :data="[]" is-full-width use-portal disabled />
+                          <MpInput is-full-width disabled :placeholder="t('Payment terms')" />
                         </MpFormControl>
                       </div>
-                      <!-- Col 3: References -->
+                      <!-- Col 3: references -->
                       <div class="si-header2-col">
                         <MpFormControl id="fp-tx-no" class="si-field">
                           <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
-                          <MpInput id="fp-tx-no-inp" :placeholder="t('Auto')" is-disabled is-full-width />
+                          <MpInput is-full-width disabled :placeholder="t('Auto')" />
                         </MpFormControl>
                         <MpFormControl id="fp-ref" class="si-field">
                           <MpFormLabel>{{ t('Reference no.') }}</MpFormLabel>
-                          <MpInput id="fp-ref-inp" is-full-width disabled />
+                          <MpInput is-full-width disabled />
                         </MpFormControl>
                         <MpFormControl id="fp-warehouse" class="si-field">
                           <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
-                          <MpAutocomplete id="fp-warehouse-inp" :data="[]" :placeholder="t('Select warehouse')" is-full-width use-portal disabled />
+                          <MpInput is-full-width disabled :placeholder="t('Select warehouse')" />
                         </MpFormControl>
                       </div>
                     </section>
-
                     <!-- Line items -->
                     <section class="si-items-section">
                       <div class="si-items-header-row">
-                        <MpCheckbox id="fp-price-incl-tax" :is-checked="false" disabled>{{ t('Price includes tax') }}</MpCheckbox>
+                        <MpCheckbox :is-checked="false" disabled>{{ t('Price includes tax') }}</MpCheckbox>
                       </div>
                       <div class="si-items-scroll">
                         <table class="si-items-table">
                           <colgroup>
                             <col class="si-col-drag" /><col class="si-col-product" /><col class="si-col-desc" />
                             <col class="si-col-qty" /><col class="si-col-unit" /><col class="si-col-price" />
-                            <col class="si-col-discount" /><col class="si-col-tax" /><col class="si-col-amount" />
-                            <col class="si-col-del" />
+                            <col class="si-col-discount" /><col class="si-col-tax" /><col class="si-col-amount" /><col class="si-col-del" />
                           </colgroup>
                           <thead>
                             <tr>
@@ -840,65 +818,165 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                             </tr>
                           </thead>
                           <tbody>
-                            <tr>
+                            <tr class="si-tr">
                               <td class="si-td si-td--drag si-td--border"><MpIcon name="drag" size="sm" /></td>
                               <td class="si-td si-td--input si-td--border"><MpInput is-full-width disabled :placeholder="t('Select product')" /></td>
-                              <td class="si-td si-td--input si-td--border"><MpInput is-full-width disabled /></td>
-                              <td class="si-td si-td--input si-td--border"><MpInput type="number" model-value="1" is-full-width disabled /></td>
-                              <td class="si-td si-td--border si-td--affix si-td--calc"><div class="si-affix-cell"><span class="si-unit-ro">—</span></div></td>
-                              <td class="si-td si-td--input si-td--border si-td--affix"><div class="si-affix-cell"><span class="si-affix">Rp</span><MpInput type="number" model-value="0" is-full-width disabled class="dlb-fp-affix-input" /></div></td>
-                              <td class="si-td si-td--input si-td--border si-td--affix"><div class="si-affix-cell"><MpInput type="number" model-value="0" is-full-width disabled class="dlb-fp-affix-input" /><span class="si-affix">%</span></div></td>
-                              <td class="si-td si-td--input si-td--border"><MpAutocomplete :data="[]" is-full-width use-portal disabled /></td>
-                              <td class="si-td si-td--border si-td--affix si-td--calc"><div class="si-affix-cell"><span class="si-affix">Rp</span><span class="si-affix-value">0</span></div></td>
-                              <td class="si-td si-td--del" />
+                              <td class="si-td si-td--border" /><td class="si-td si-td--border" /><td class="si-td si-td--border" />
+                              <td class="si-td si-td--border" /><td class="si-td si-td--border" /><td class="si-td si-td--border" />
+                              <td class="si-td si-td--border" /><td class="si-td si-td--del" />
                             </tr>
                           </tbody>
                         </table>
                       </div>
                     </section>
-
-                    <!-- Bottom: Message + Memo + Attachment (left) | Totals (right) -->
+                    <!-- Totals -->
                     <section class="si-bottom-section">
-                      <div class="si-notes-col">
-                        <MpFormControl id="fp-message" class="si-note-field">
-                          <MpFormLabel>{{ t('Message') }}</MpFormLabel>
-                          <MpTextarea id="fp-message-inp" is-full-width disabled />
-                        </MpFormControl>
-                        <MpFormControl id="fp-memo" class="si-note-field">
-                          <MpFormLabel>{{ t('Memo') }}</MpFormLabel>
-                          <MpTextarea id="fp-memo-inp" is-full-width disabled />
-                          <span class="si-field-caption">{{ t('Only visible to you and your team') }}</span>
-                        </MpFormControl>
-                        <div class="si-attachment-section">
-                          <span class="si-attachment-label">{{ t('Attachment') }}</span>
-                          <MpUpload id="fp-attachment" :button-text="t('Choose file')" :placeholder="t('or drag and drop here')" is-full-width disabled />
-                          <p class="si-field-caption">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP format, with a maximum size of 10 MB per file and 5 files per transaction') }}</p>
-                        </div>
-                      </div>
                       <div class="si-totals-col">
-                        <div class="si-totals-row si-totals-row--h3"><span>{{ t('Subtotal') }}</span><span>Rp 0</span></div>
+                        <div class="si-totals-row si-totals-row--h3"><span>{{ t('Subtotal') }}</span><span>Rp0,00</span></div>
                         <div class="si-discount-block">
                           <div class="si-discount-rows">
-                            <div class="si-totals-row"><span>{{ t('Discount per line') }}</span><span class="si-deduction">(Rp 0)</span></div>
+                            <div class="si-totals-row"><span>{{ t('Discount per line') }}</span><span class="si-deduction">(Rp0,00)</span></div>
                             <div class="si-totals-row">
                               <span class="si-inline-field-label">
                                 <span>{{ t('Global discount') }}</span>
-                                <MpInputGroup id="fp-global-discount-group" class="si-unit-field">
-                                  <MpInputLeftAddon has-background class="si-unit-addon"><span class="dlb-fp-unit-label">Rp</span></MpInputLeftAddon>
+                                <MpInputGroup class="si-unit-field">
+                                  <MpInputLeftAddon has-background class="si-unit-addon"><span class="dlb-fp-unit-label">%</span></MpInputLeftAddon>
                                   <MpInput type="number" model-value="0" is-full-width disabled />
                                 </MpInputGroup>
                               </span>
-                              <span class="si-deduction">(Rp 0)</span>
+                              <span class="si-deduction">(Rp0,00)</span>
                             </div>
                           </div>
                         </div>
-                        <div class="si-totals-row"><span>{{ t('Tax') }}</span><span>Rp 0</span></div>
+                        <div class="si-totals-row"><span>PPN 11%</span><span>Rp0,00</span></div>
                         <div class="si-total-rule" />
-                        <div class="si-totals-row si-totals-row--h3"><span>{{ t('Total') }}</span><span>Rp 0</span></div>
+                        <div class="si-totals-row si-totals-row--h3"><span>{{ t('Total') }}</span><span>Rp0,00</span></div>
                       </div>
                     </section>
-
+                    <!-- Memo + Attachment -->
+                    <section class="si-memo-attachment-section">
+                      <MpFormControl id="fp-memo" class="si-note-field">
+                        <div class="si-lbl-row"><MpFormLabel>{{ t('Memo') }}</MpFormLabel><span class="si-counter">0/250</span></div>
+                        <MpTextarea is-full-width disabled />
+                        <span class="si-field-caption">{{ t('Only visible to you and your team') }}</span>
+                      </MpFormControl>
+                      <div class="si-attachment-section">
+                        <span class="si-attachment-label">{{ t('Attachment') }}</span>
+                        <MpUpload id="fp-attachment" :button-text="t('Choose file')" :placeholder="t('or drag and drop here')" is-full-width disabled />
+                        <p class="si-field-caption">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP format, with a maximum size of 10 MB per file and 5 files per transaction') }}</p>
+                      </div>
+                    </section>
                     <!-- Footer -->
+                    <MpButtonGroup class="erp-action-footer si-form-footer">
+                      <MpButton variant="ghost" is-rounded disabled>{{ t('Cancel') }}</MpButton>
+                      <MpButton variant="primary" is-rounded disabled>{{ t('Save') }}</MpButton>
+                    </MpButtonGroup>
+                  </div>
+                </div>
+              </template>
+              <!-- Form preview — generic modules: dynamic grid from layout sections -->
+              <template v-else>
+                <div class="dlb-prev-form-page">
+                  <header class="si-form-bar">
+                    <div class="si-form-bar-left">
+                      <h1 class="si-form-h1">{{ t('New record') }}</h1>
+                    </div>
+                  </header>
+                  <div class="si-form-stage">
+                    <template v-for="section in detailsTabSections()" :key="section.id">
+                      <section v-if="section.kind === 'products'" class="si-items-section">
+                        <div class="si-items-header-row">
+                          <MpCheckbox :is-checked="false" disabled>{{ t('Price includes tax') }}</MpCheckbox>
+                        </div>
+                        <div class="si-items-scroll">
+                          <table class="si-items-table">
+                            <colgroup>
+                              <col class="si-col-drag" /><col class="si-col-product" /><col class="si-col-desc" />
+                              <col class="si-col-qty" /><col class="si-col-unit" /><col class="si-col-price" />
+                              <col class="si-col-discount" /><col class="si-col-tax" /><col class="si-col-amount" /><col class="si-col-del" />
+                            </colgroup>
+                            <thead>
+                              <tr>
+                                <th class="si-th si-th--drag" />
+                                <th class="si-th">{{ t('Product') }}</th>
+                                <th class="si-th">{{ t('Description') }}</th>
+                                <th class="si-th">{{ t('Qty') }}</th>
+                                <th class="si-th">{{ t('Unit') }}</th>
+                                <th class="si-th">{{ t('Unit price') }}</th>
+                                <th class="si-th">{{ t('Discount') }}</th>
+                                <th class="si-th">{{ t('Tax') }}</th>
+                                <th class="si-th">{{ t('Amount') }}</th>
+                                <th class="si-th si-th--del" />
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr class="si-tr">
+                                <td class="si-td si-td--drag si-td--border"><MpIcon name="drag" size="sm" /></td>
+                                <td class="si-td si-td--input si-td--border"><MpInput is-full-width disabled :placeholder="t('Select product')" /></td>
+                                <td class="si-td si-td--border" /><td class="si-td si-td--border" /><td class="si-td si-td--border" />
+                                <td class="si-td si-td--border" /><td class="si-td si-td--border" /><td class="si-td si-td--border" />
+                                <td class="si-td si-td--border" /><td class="si-td si-td--del" />
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
+                      <section v-else-if="!(section.id.includes('pricing') && detailsTabSections().some(s => s.kind === 'products'))" class="si-generic-section">
+                        <h5 v-if="section.name" class="si-generic-sec-name">{{ t(section.name) }}</h5>
+                        <div class="si-generic-grid" :style="{ gridTemplateColumns: `repeat(${Math.min(section.columns, 3)}, minmax(0, 1fr))` }">
+                          <template v-for="(col, ci) in section.cols" :key="ci">
+                            <MpFormControl v-for="pid in col" :key="pid" :id="`fp-${pid}`" class="dlb-prev-form-field">
+                              <template v-if="prop(pid)?.type === 'Single checkbox'">
+                                <MpCheckbox :is-checked="false" disabled>{{ prop(pid)?.name ?? pid }}</MpCheckbox>
+                              </template>
+                              <template v-else>
+                                <MpFormLabel>{{ prop(pid)?.name ?? pid }}</MpFormLabel>
+                                <MpTextarea v-if="prop(pid)?.type === 'Multi-line text'" is-full-width disabled :rows="2" />
+                                <MpDatePicker v-else-if="prop(pid)?.type === 'Date picker' || prop(pid)?.type === 'Date and time picker'" class="dlb-fp-datepicker" format="DD/MM/YYYY" value-type="format" use-portal disabled />
+                                <MpInput v-else-if="prop(pid)?.type === 'Number'" type="number" model-value="" is-full-width disabled />
+                                <MpInput v-else is-full-width disabled />
+                              </template>
+                            </MpFormControl>
+                          </template>
+                        </div>
+                      </section>
+                    </template>
+                    <p v-if="!detailsTabSections().length" class="dlb-prev-placeholder">{{ t('No sections configured. Add sections and properties in the Layout tab.') }}</p>
+                    <section v-if="detailsTabSections().some(s => s.kind === 'products')" class="si-bottom-section">
+                      <div class="si-totals-col">
+                        <div class="si-totals-row si-totals-row--h3"><span>{{ t('Subtotal') }}</span><span>Rp0,00</span></div>
+                        <div class="si-discount-block">
+                          <div class="si-discount-rows">
+                            <div class="si-totals-row"><span>{{ t('Discount per line') }}</span><span class="si-deduction">(Rp0,00)</span></div>
+                            <div class="si-totals-row">
+                              <span class="si-inline-field-label">
+                                <span>{{ t('Global discount') }}</span>
+                                <MpInputGroup class="si-unit-field">
+                                  <MpInputLeftAddon has-background class="si-unit-addon"><span class="dlb-fp-unit-label">%</span></MpInputLeftAddon>
+                                  <MpInput type="number" model-value="0" is-full-width disabled />
+                                </MpInputGroup>
+                              </span>
+                              <span class="si-deduction">(Rp0,00)</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="si-totals-row"><span>PPN 11%</span><span>Rp0,00</span></div>
+                        <div class="si-total-rule" />
+                        <div class="si-totals-row si-totals-row--h3"><span>{{ t('Total') }}</span><span>Rp0,00</span></div>
+                      </div>
+                    </section>
+                    <section v-if="detailsTabSections().some(s => s.kind === 'products')" class="si-memo-attachment-section">
+                      <MpFormControl id="fp-memo-g" class="si-note-field">
+                        <div class="si-lbl-row"><MpFormLabel>{{ t('Memo') }}</MpFormLabel><span class="si-counter">0/250</span></div>
+                        <MpTextarea is-full-width disabled />
+                        <span class="si-field-caption">{{ t('Only visible to you and your team') }}</span>
+                      </MpFormControl>
+                      <div class="si-attachment-section">
+                        <span class="si-attachment-label">{{ t('Attachment') }}</span>
+                        <MpUpload id="fp-attachment-g" :button-text="t('Choose file')" :placeholder="t('or drag and drop here')" is-full-width disabled />
+                        <p class="si-field-caption">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP format, with a maximum size of 10 MB per file and 5 files per transaction') }}</p>
+                      </div>
+                    </section>
                     <MpButtonGroup class="erp-action-footer si-form-footer">
                       <MpButton variant="ghost" is-rounded disabled>{{ t('Cancel') }}</MpButton>
                       <MpButton variant="primary" is-rounded disabled>{{ t('Save') }}</MpButton>
@@ -926,7 +1004,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 /* Text tab strip with a green active underline; each tab reveals a hover kebab */
 .dlb-tabstrip { display: flex; align-items: center; gap: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
 .dlb-tab { position: relative; display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 4px); }
-.dlb-tab-btn { padding: var(--mp-spacing-3) 0; border: none; background: transparent; cursor: pointer; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #536062); }
+.dlb-tab-btn { padding: var(--mp-spacing-3) 0 !important; border: none !important; background: transparent !important; cursor: pointer; font-size: var(--mp-font-sizes-md, 14px) !important; color: var(--mp-colors-text-secondary, #536062) !important; min-width: 0 !important; }
 .dlb-tab--active .dlb-tab-btn { color: var(--mp-colors-text-success, #16b364); font-weight: var(--mp-font-weights-semi-bold, 600); }
 .dlb-tab--active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--mp-colors-background-success-bold, #16b364); }
 .dlb-tab-input { width: 132px; }
@@ -990,8 +1068,10 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 .dlb-prop-cond { color: var(--mp-colors-icon-information, #2f6fd0); flex-shrink: 0; }
 .dlb-prop-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .dlb-prop-label { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dlb-mandatory { color: var(--mp-colors-text-danger, #c81e1e); margin-left: 2px; }
 .dlb-prop-var { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); font-family: var(--mp-fonts-mono, ui-monospace, SFMono-Regular, Menlo, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dlb-empty { grid-column: 1 / -1; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #6b7678); margin: 0; padding: var(--mp-spacing-2) 0; }
+.dlb-empty { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-6) 0; }
+.dlb-empty-text { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #6b7678); margin: 0; }
 
 .dlb-add-section { padding-top: var(--mp-spacing-2); }
 
@@ -1010,8 +1090,12 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 .dlb-preview-panel { margin: 12px; width: calc(100% - 24px); height: calc(100% - 24px); border-radius: 12px; background: var(--mp-colors-background-neutral, #fff); display: flex; flex-direction: column; overflow: hidden; }
 .dlb-preview-header { display: flex; align-items: center; gap: var(--mp-spacing-4); padding: var(--mp-spacing-4) var(--mp-spacing-6); border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
 .dlb-preview-header :deep(.mp-segmented-control) { width: auto; flex-shrink: 0; }
+.dlb-preview-header :deep(.mp-segmented-control__root) { gap: 3px; }
+.dlb-preview-header :deep(.mp-segmented-control__item) { flex: 0 0 auto; padding: 0; }
 .dlb-preview-title { font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-bold, 700); color: var(--mp-colors-text-default, #080d0e); margin: 0; }
-.dlb-preview-body { flex: 1; overflow-y: auto; padding: var(--mp-spacing-6) var(--mp-spacing-8); }
+.dlb-preview-body { flex: 1; overflow-y: auto; padding: var(--mp-spacing-6) var(--mp-spacing-8); min-height: 0; }
+.dlb-preview-body:has(.dlb-prev-form-page),
+.dlb-preview-body:has(.dlb-prev-detail-page) { overflow: hidden; }
 /* Preview record — mirrors CrmDealDetailPage layout */
 .dlb-prev-record { display: flex; flex-direction: column; gap: 0; }
 /* Title bar */
@@ -1028,12 +1112,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 .dlb-prev-stepper-bar { display: flex; gap: 2px; }
 .dlb-prev-bar-seg { flex: 1; height: 12px; background: var(--mp-color-neutral-40, #d0d5dd); }
 .dlb-prev-bar-seg--filled { background: var(--mp-border-selected, #029861); }
-/* Tabs (styled like MpTabs in the detail page) */
-.dlb-prev-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); margin-bottom: var(--mp-spacing-5); }
-.dlb-prev-tab-btn { background: none; border: none; border-bottom: 2px solid transparent; padding: var(--mp-spacing-3) var(--mp-spacing-4); font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #6b7678); cursor: pointer; white-space: nowrap; }
-.dlb-prev-tab-btn:hover { color: var(--mp-colors-text-default, #080d0e); }
-.dlb-prev-tab-btn--active { color: var(--mp-colors-text-default, #080d0e); font-weight: var(--mp-font-weights-semi-bold, 600); border-bottom-color: var(--mp-colors-background-success-bold, #16b364); }
-/* Tab content area */
+/* Section content area */
 .dlb-prev-tab-content { display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
 /* Sections */
 .dlb-prev-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
@@ -1046,6 +1125,12 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 .dlb-prev-cl-value { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-default, #080d0e); }
 /* Placeholder for system tabs */
 .dlb-prev-placeholder { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #6b7678); margin: 0; padding: var(--mp-spacing-10) 0; text-align: center; border: 1px dashed var(--mp-colors-border-default, #e3e7e9); border-radius: 8px; }
+/* Dynamic form preview */
+.dlb-prev-form-page { padding: 0; }
+.dlb-prev-form-body { display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
+.dlb-prev-form-section { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
+.dlb-prev-form-grid { display: grid; gap: var(--mp-spacing-4); }
+.dlb-prev-form-field { min-width: 0; }
 /* Product table */
 .dlb-prev-products { border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: 0; overflow: hidden; }
 .dlb-prev-table { width: 100%; border-collapse: collapse; font-size: var(--mp-font-sizes-md, 14px); }
@@ -1053,21 +1138,33 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 .dlb-prev-table td { padding: var(--mp-spacing-2) var(--mp-spacing-3); color: var(--mp-colors-text-default, #080d0e); vertical-align: top; }
 .dlb-prev-th--num, .dlb-prev-td--num { text-align: right; }
 .dlb-prev-td--muted { color: var(--mp-colors-text-secondary, #6b7678); }
-/* Notes tab dummy */
-.dlb-prev-notes-list { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
-.dlb-prev-note { display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding: var(--mp-spacing-3) 0; border-bottom: 1px solid var(--mp-colors-border-subtle, #f0f2f3); }
-.dlb-prev-note-header { display: flex; align-items: center; gap: var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm, 12px); }
-.dlb-prev-note-date { color: var(--mp-colors-text-secondary, #6b7678); }
-.dlb-prev-note-body { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-default, #080d0e); margin: 0; }
-/* Status badge */
-.dlb-prev-status { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold, 600); }
-.dlb-prev-status--open { background: var(--mp-colors-background-info-subtle, #e8f4fd); color: var(--mp-colors-text-info, #1d6fb8); }
 /* Form preview — copies si-* layout rules from NewCrmDealPage (scoped there, so duplicated here) */
 .dlb-prev-form-page {
   --si-field-wide: 318px;
   --si-field: 228px;
   height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+  padding: 0; margin: calc(-1 * var(--mp-spacing-6)) calc(-1 * var(--mp-spacing-8));
 }
+.dlb-prev-form-page .si-generic-section { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
+.dlb-prev-form-page .si-generic-sec-name { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-text-default, #080d0e); margin: 0; }
+.dlb-prev-form-page .si-generic-grid { display: grid; gap: var(--mp-spacing-4); }
+.dlb-prev-form-page .si-form-bar {
+  flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box;
+  background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
+}
+.dlb-prev-form-page .si-form-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
+.dlb-prev-form-page .si-crumb {
+  align-self: flex-start; background: none; border: none; padding: 0; cursor: default;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); line-height: var(--mp-line-heights-sm, 16px);
+}
+.dlb-prev-form-page .si-form-h1 {
+  margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: 32px; letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); white-space: nowrap;
+}
+.dlb-prev-form-page .si-checkbox-stack { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.dlb-prev-form-page .si-lbl-row { display: flex; align-items: baseline; justify-content: space-between; }
+.dlb-prev-form-page .si-counter { font-size: var(--mp-font-sizes-sm, 0.75rem); color: var(--mp-text-secondary); }
 .dlb-prev-form-page .si-form-stage {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
   background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
@@ -1120,8 +1217,9 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 }
 .dlb-prev-form-page .si-affix-value { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: flex-end; padding: 0 var(--mp-spacing-2); white-space: nowrap; }
 .dlb-prev-form-page .si-unit-ro { flex: 1; display: flex; align-items: center; padding: 0 var(--mp-spacing-2); color: var(--mp-text-secondary, #64748b); }
-.dlb-prev-form-page .si-bottom-section { display: flex; align-items: flex-start; gap: var(--mp-spacing-6); }
-.dlb-prev-form-page .si-notes-col { display: flex; flex-direction: column; gap: 20px; width: 432px; flex-shrink: 0; }
+.dlb-prev-form-page .si-bottom-section { display: grid; grid-template-columns: 1fr 428px; }
+.dlb-prev-form-page .si-bottom-section .si-totals-col { grid-column: 2; }
+.dlb-prev-form-page .si-memo-attachment-section { display: flex; flex-direction: column; gap: 20px; max-width: 432px; }
 .dlb-prev-form-page .si-note-field { display: flex; flex-direction: column; }
 .dlb-prev-form-page .si-field-caption { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1, 4px); }
 .dlb-prev-form-page .si-totals-col { margin-left: auto; width: 428px; flex-shrink: 0; display: flex; flex-direction: column; }
@@ -1191,4 +1289,99 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 .dlb--readonly .dlb-add-section { display: none; }
 .dlb--readonly .dlb-prop { cursor: default; }
 .dlb--readonly .dlb-section { cursor: default; }
+
+/* ── Deal detail page preview (replica of CrmDealDetailPage) ── */
+.dlb-prev-detail-page {
+  height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+  padding: 0; margin: calc(-1 * var(--mp-spacing-6)) calc(-1 * var(--mp-spacing-8));
+}
+.dp-stage {
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  background: var(--mp-background-stage, #ffffff);
+  border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
+  padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
+  border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
+  display: flex; flex-direction: column; gap: var(--mp-spacing-8);
+}
+.dp-tabs {
+  display: flex; gap: 0; border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+}
+.dp-tab {
+  padding: var(--mp-spacing-2) var(--mp-spacing-4) !important; border: none !important; background: none !important; cursor: default;
+  font-size: var(--mp-font-sizes-md) !important; font-weight: var(--mp-font-weights-regular) !important;
+  color: var(--mp-text-secondary) !important; position: relative; min-width: 0 !important;
+}
+.dp-tab--active { color: var(--mp-text-selected, #029861); font-weight: var(--mp-font-weights-semi-bold); }
+.dp-tab--active::after {
+  content: ''; position: absolute; bottom: -1px; left: 0; right: 0;
+  height: var(--mp-spacing-0\.5, 2px); background: var(--mp-border-selected, #029861);
+}
+.dp-section-title {
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default); margin: 0 0 var(--mp-spacing-4) 0;
+}
+.dp-grid { display: grid; column-gap: var(--mp-spacing-6); row-gap: 0; }
+.dp-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.dp-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.dp-grid-col { display: flex; flex-direction: column; min-width: 0; }
+.dp-cl { display: flex; flex-direction: column; padding: var(--mp-spacing-2) 0; }
+.dp-cl-label { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm, 16px); color: var(--mp-text-secondary); }
+.dp-cl-value { font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default); }
+.dp-cl-link { color: var(--mp-text-link); }
+.dp-value-amount { font-size: var(--mp-font-sizes-lg, 18px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.dp-section { display: flex; flex-direction: column; }
+.dp-items-section { display: flex; flex-direction: column; flex-shrink: 0; }
+.dp-filter-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-3); }
+.dp-filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.dp-search-pill {
+  display: flex; align-items: center; gap: var(--mp-spacing-2); width: 248px;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  background: var(--mp-background-neutral, #fff); border: 1px solid var(--mp-border-default, #e3e7e9);
+  border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-placeholder, #97a0af);
+}
+.dp-search-text { font-size: var(--mp-font-sizes-md); }
+.dp-add-product { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); border-radius: var(--mp-radii-full, 999px); }
+.dp-items { width: 100%; border-collapse: collapse; }
+.dp-th {
+  height: var(--mp-sizes-7, 28px); text-align: left;
+  padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-secondary); text-transform: uppercase;
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); white-space: nowrap;
+}
+.dp-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
+.dp-td {
+  height: var(--mp-sizes-10, 40px);
+  padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); vertical-align: top;
+}
+.dp-td--num { text-align: right; white-space: nowrap; padding: var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-4); }
+.dp-td--muted { color: var(--mp-text-secondary); }
+.dp-product-cell { display: flex; align-items: center; gap: var(--mp-spacing-3); min-width: 0; }
+.dp-product-thumb { width: 40px; height: 40px; border-radius: var(--mp-radii-md); background: var(--mp-background-neutral-subtle, #f4f5f7); flex-shrink: 0; }
+.dp-product-meta { display: flex; flex-direction: column; min-width: 0; }
+.dp-product-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dp-product-sku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); margin-top: var(--mp-spacing-0\.5, 2px); }
+.dp-items-count {
+  display: flex; align-items: center; padding: var(--mp-spacing-3) var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+}
+.dp-totals-section { display: grid; grid-template-columns: 1fr 380px; }
+.dp-totals-section .dp-totals { grid-column: 2; }
+.dp-memo-section { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
+.dp-totals { display: flex; flex-direction: column; gap: var(--mp-spacing-4); padding-top: var(--mp-spacing-2); width: 380px; flex-shrink: 0; }
+.dp-total-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
+.dp-total-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.dp-total-amt { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }
+.dp-total-label--strong, .dp-total-amt--strong,
+.dp-total-label--total, .dp-total-amt--total {
+  font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
+}
+.dp-total-rule {
+  height: var(--mp-border-width-sm, 1px);
+  background: repeating-linear-gradient(to right, var(--mp-border-default, #e3e7e9) 0, var(--mp-border-default, #e3e7e9) 4px, transparent 4px, transparent 8px);
+}
 </style>

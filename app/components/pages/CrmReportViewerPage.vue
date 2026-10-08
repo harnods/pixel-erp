@@ -359,10 +359,9 @@ function onExportConfirm(payload: { scope: 'all' | 'page' | 'selected'; columns:
                    rule/filter-bar-all-filters-drawer); right: search. -->
               <div class="rv-table-filterbar">
                 <div class="filter-left">
-                  <button class="btn-enterprise btn-enterprise--secondary filter-all-btn" type="button" @click="filtersOpen = true">
-                    <MpIcon name="filter" size="sm" />
+                  <MpButton class="btn-enterprise btn-enterprise--secondary filter-all-btn" type="button" left-icon="filter" @click="filtersOpen = true">
                     {{ t('All filters') }}{{ activeFilterCount ? ` (${activeFilterCount})` : '' }}
-                  </button>
+                  </MpButton>
                 </div>
                 <div class="filter-right">
                   <MpButtonGroup class="filter-btn-group">
@@ -374,7 +373,7 @@ function onExportConfirm(payload: { scope: 'all' | 'page' | 'selected'; columns:
                   <div class="filter-search">
                     <MpIcon name="search" size="sm" />
                     <input v-model="tableSearch" class="filter-search-input" type="text" :placeholder="t('Search results…')">
-                    <button v-if="tableSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="tableSearch = ''"><MpIcon name="close" size="sm" /></button>
+                    <MpButton v-if="tableSearch" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="tableSearch = ''" />
                   </div>
                 </div>
               </div>
@@ -523,8 +522,8 @@ function onExportConfirm(payload: { scope: 'all' | 'page' | 'selected'; columns:
             </div>
 
             <footer class="rv-filters-footer">
-              <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="clearQuickFilters">{{ t('Reset filter') }}</button>
-              <button class="btn-enterprise btn-enterprise--primary" type="button" @click="filtersOpen = false">{{ t('Apply') }}</button>
+              <MpButton class="btn-enterprise btn-enterprise--ghost" type="button" @click="clearQuickFilters">{{ t('Reset filter') }}</MpButton>
+              <MpButton class="btn-enterprise btn-enterprise--primary" type="button" @click="filtersOpen = false">{{ t('Apply') }}</MpButton>
             </footer>
           </div>
         </div>

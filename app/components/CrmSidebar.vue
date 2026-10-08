@@ -7,7 +7,7 @@
  * secondary panel and the rail collapses to icons, exactly like Sales in the ERP.
  */
 import { ref, computed } from 'vue'
-import { MpTooltip } from '@mekari/pixel3'
+import { MpTooltip, MpButton } from '@mekari/pixel3'
 import { useLocale } from '~/composables/useLocale'
 import { getCrmModule, crmModules, isModuleVisibleToCurrentUser } from '~/data/crm'
 import toggleIcon from '~/assets/images/sidebar-toggle.svg?url'
@@ -123,9 +123,9 @@ function navItemTooltip(item: Item): string | undefined {
     <nav class="sidebar" :class="{ 'is-expanded': navExpanded }" aria-label="CRM navigation">
       <!-- Toggle -->
       <div class="sidebar-header" data-devchange="sidebar-collapsed-tooltip">
-        <button class="sidebar-toggle" type="button" title="Toggle sidebar" @click="handleToggle">
+        <MpButton variant="ghost" class="sidebar-toggle" type="button" title="Toggle sidebar" @click="handleToggle">
           <img :src="toggleIcon" alt="Toggle sidebar">
-        </button>
+        </MpButton>
       </div>
 
       <!-- Level-1 nav rail -->
@@ -141,7 +141,8 @@ function navItemTooltip(item: Item): string | undefined {
             placement="right"
             use-portal
           >
-            <button
+            <MpButton
+              variant="ghost"
               class="nav-item"
               :class="{ active: activeItem === item.name }"
               :data-devchange="item.name === 'Settings' ? 'crm-settings-properties-hidden' : undefined"
@@ -151,10 +152,11 @@ function navItemTooltip(item: Item): string | undefined {
               <img :src="`https://cdn.mekari.design/icons/${navIcon(item)}-outline.svg`" class="nav-icon-line" alt="">
               <img :src="`https://cdn.mekari.design/icons/${navIcon(item)}-fill.svg`" class="nav-icon-fill" alt="">
               <span class="nav-label">{{ navLabel(item) }}</span>
-            </button>
+            </MpButton>
           </MpTooltip>
-          <button
+          <MpButton
             v-else
+            variant="ghost"
             class="nav-item"
             :class="{ active: activeItem === item.name }"
             :data-devchange="item.name === 'Settings' ? 'crm-settings-properties-hidden' : undefined"
@@ -164,7 +166,7 @@ function navItemTooltip(item: Item): string | undefined {
             <img :src="`https://cdn.mekari.design/icons/${navIcon(item)}-outline.svg`" class="nav-icon-line" alt="">
             <img :src="`https://cdn.mekari.design/icons/${navIcon(item)}-fill.svg`" class="nav-icon-fill" alt="">
             <span class="nav-label">{{ navLabel(item) }}</span>
-          </button>
+          </MpButton>
         </template>
       </div>
     </nav>
@@ -176,16 +178,17 @@ function navItemTooltip(item: Item): string | undefined {
           <span class="panel-title">{{ t(activePanel.name).toUpperCase() }}</span>
         </div>
         <div class="panel-list">
-          <button
+          <MpButton
             v-for="child in activePanel.children"
             :key="child.name"
+            variant="ghost"
             class="panel-item"
             :class="{ active: isChildActive(child.to) }"
             type="button"
             @click="router.push(child.to)"
           >
             <span>{{ t(child.name) }}</span>
-          </button>
+          </MpButton>
         </div>
       </div>
     </Transition>

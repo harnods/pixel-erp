@@ -160,26 +160,26 @@ onMounted(() => {
       </div>
       <SearchBox class="hero__search" placeholder="How can I help you today?" @aimode="v => heroAi = v" />
       <div class="chips">
-        <button v-for="a in selectedActions.slice(0, 4)" :key="a.key" class="chip" type="button" @click="runAction(a)">
+        <MpButton v-for="a in selectedActions.slice(0, 4)" :key="a.key" class="chip" type="button" @click="runAction(a)">
           <MpIcon :name="a.icon" size="sm" class="chip__icon" />
           {{ a.label }}
-        </button>
-        <button class="chip" type="button" @click="manageActionsOpen = true">
+        </MpButton>
+        <MpButton class="chip" type="button" @click="manageActionsOpen = true">
           <MpIcon name="add" size="sm" class="chip__icon" />
           Add actions
-        </button>
+        </MpButton>
       </div>
     </section>
 
     <!-- Get started strip -->
     <div class="strip">
-      <button v-for="s in strip" :key="s.title" class="strip__item" type="button" :style="{ background: s.bg }" @click="onStripClick(s)">
+      <MpButton v-for="s in strip" :key="s.title" class="strip__item" type="button" :style="{ background: s.bg }" @click="onStripClick(s)">
         <span class="strip__text">
           <span class="strip__title">{{ s.title }}</span>
           <span class="strip__desc">{{ s.desc }}</span>
         </span>
         <img :src="s.icon" alt="" class="strip__icon">
-      </button>
+      </MpButton>
     </div>
 
     <div class="below">
@@ -207,10 +207,9 @@ onMounted(() => {
           </div>
           <div v-if="anomalies.length > 1 && !anomalyExpanded" class="anomaly-peek" aria-hidden="true" />
         </div>
-        <button v-if="anomalies.length > 1" class="anomaly-toggle" type="button" @click="anomalyExpanded = !anomalyExpanded">
-          <MpIcon :name="anomalyExpanded ? 'caret-up' : 'caret-down'" size="sm" />
+        <MpButton v-if="anomalies.length > 1" class="anomaly-toggle" type="button" :left-icon="anomalyExpanded ? 'caret-up' : 'caret-down'" @click="anomalyExpanded = !anomalyExpanded">
           {{ anomalyExpanded ? 'Show less' : 'Show more' }}
-        </button>
+        </MpButton>
       </div>
 
       <!-- KPI stats -->
@@ -223,10 +222,10 @@ onMounted(() => {
             <svg v-else-if="s.deltaTone === 'warn'" class="stat__delta-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" fill="currentColor"/><path d="M12 9v4" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.5" r="1.05" fill="#fff"/></svg>
             {{ s.delta }}
           </p>
-          <button class="stat__ai" type="button" @click="soon(s.ai)">
+          <MpButton class="stat__ai" type="button" @click="soon(s.ai)">
             <Sparkle :size="14" />
             {{ s.ai }}
-          </button>
+          </MpButton>
         </div>
       </div>
 
@@ -247,9 +246,9 @@ onMounted(() => {
             <!-- Edit-mode controls: drag grip + minus remove -->
             <div v-if="editing" class="widget__edit">
               <span class="widget__grip"><MpIcon name="drag" size="sm" /> {{ WIDGET_TITLES[w] }}</span>
-              <button class="widget__remove" type="button" aria-label="Remove widget" @click="removeWidget(col, i)">
+              <MpButton class="widget__remove" type="button" aria-label="Remove widget" @click="removeWidget(col, i)">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-              </button>
+              </MpButton>
             </div>
 
             <HomeWidgetV2 :which="w" />
@@ -263,9 +262,9 @@ onMounted(() => {
         <p class="gallery__title"><Sparkle :size="14" /> Add widgets</p>
         <div class="gallery__grid">
           <div v-for="k in galleryItems" :key="k" class="gallery-card">
-            <button class="gallery-card__add" type="button" aria-label="Add widget" @click="addFromGallery(k)">
+            <MpButton class="gallery-card__add" type="button" aria-label="Add widget" @click="addFromGallery(k)">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-            </button>
+            </MpButton>
             <div class="gallery-card__preview"><HomeWidgetV2 :which="k" /></div>
           </div>
           <p v-if="!availableWidgets.length" class="gallery__hint">All widgets are on your dashboard. Add a custom one above.</p>
@@ -273,10 +272,9 @@ onMounted(() => {
       </div>
     </div>
 
-    <button class="manage" type="button" :class="{ 'manage--active': editing }" @click="toggleManage">
-      <MpIcon :name="editing ? 'check' : 'settings'" size="sm" />
+    <MpButton class="manage" type="button" :class="{ 'manage--active': editing }" :left-icon="editing ? 'check' : 'settings'" @click="toggleManage">
       {{ editing ? 'Done' : 'Manage widgets' }}
-    </button>
+    </MpButton>
 
     <HomeActionsDrawer v-model:isOpen="manageActionsOpen" />
     <WhatsNewModal v-model:isOpen="whatsNewOpen" />
@@ -323,7 +321,7 @@ onMounted(() => {
 .anomaly-block { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .anomaly-stack { display: flex; flex-direction: column; }
 .anomaly-stack--deck { position: relative; padding-bottom: 10px; isolation: isolate; }
-.anomaly-stack--deck .anomaly { position: relative; z-index: 2; border: 2px solid #fff; }
+.anomaly-stack--deck .anomaly { position: relative; z-index: 2; border: 2px solid var(--mp-colors-white); }
 .anomaly-peek { position: absolute; left: 8px; right: 8px; bottom: 0; height: 40px; z-index: 1; border-radius: var(--mp-radii-xl, 12px); background: linear-gradient(90deg, #dbe4f5 0%, #e2def4 100%); }
 .anomaly-stack:not(.anomaly-stack--deck) { gap: 4px; }
 .anomaly-stack:not(.anomaly-stack--deck) .anomaly { border-radius: 0; }

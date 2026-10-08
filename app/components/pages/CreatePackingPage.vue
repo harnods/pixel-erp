@@ -186,6 +186,18 @@ const sourcePickingLists = computed<PickingTask[]>(() => {
 // Why a given picking list's order(s) can't be packed yet — empty when every
 // order it touches is packable. A picking list can bundle multiple sales
 // orders, so this can report more than one blocking reason.
+/**
+ * The ONE reason to show on the badge. "Not packable" covered three very different
+ * situations with one word — the operator could not tell "keep picking, you're
+ * halfway" from "this order is already packed elsewhere", which is the difference
+ * between doing more work and doing none.
+ *
+ * Priority is by what the operator should do next: a part-picked order is the one
+ * they can still finish, so it wins over an order nothing has been picked for, and
+ * both beat an order that is already packed (nothing to do there at all). The
+ * tooltip still spells out every blocked order by number — a picking list can bundle
+ * several, and only that list can say which is which.
+ */
 function pickingListBlockReasons(pt: PickingTask): string[] {
   const tr = t
   const byOrderId = new Map(orderTables.value.map(t => [t.orderId, t]))
@@ -194,10 +206,10 @@ function pickingListBlockReasons(pt: PickingTask): string[] {
     const t = byOrderId.get(orderId)
     // A cancelled order never blocks packing — it's dropped from this packing entirely
     // (see canceledTables note), so it must not drag the whole picking list to
-    // "Not packable". Skip it alongside already-packable orders.
+    // the blocked badge. Skip it alongside already-packable orders.
     if (!t || t.packable || t.canceled) continue
     if (t.alreadyPacked) reasons.push(`${t.salesNo} ${tr('already has a packing task')}`)
-    else if (t.isMarketplace) reasons.push(`${t.salesNo} ${tr("(marketplace) isn't fully picked yet across its picking lists")}`)
+    else if (t.isMarketplace) reasons.push(`${t.salesNo} ${tr('can only be packed once every SKU on it is picked in full — some are still short across its picking lists')}`)
     else reasons.push(`${t.salesNo} ${tr('has nothing picked yet')}`)
   }
   return reasons
@@ -490,7 +502,7 @@ async function handleCreate() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goPacking">{{ t('Packing') }}</button>
+          <MpButton variant="textLink" class="detail-breadcrumb" @click="goPacking">{{ t('Packing') }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('New packing') }}</h1>
@@ -577,16 +589,20 @@ async function handleCreate() {
                     <td class="pk-td pk-td--num">{{ formatNum(pt.skuQty) }}</td>
                     <td class="pk-td pk-td--num">{{ formatNum(pt.pickedQty) }}</td>
                     <td class="pk-td">
-                      <template v-if="pickingListBlockReasons(pt).length">
-                        <MpTooltip
-                          :id="`pk-tt-block-${pt.id}`"
-                          :label="pickingListBlockReasons(pt).join('; ')"
-                          placement="top"
-                          use-portal
-                        >
-                          <MpBadge for="tableStatus" type="warning">{{ t('Not packable') }}</MpBadge>
-                        </MpTooltip>
-                      </template>
+                      <!-- One badge for every kind of trouble: "some" is the point — not
+                           all of what this list picked can go into a packing task, whether
+                           that is an order still short of a full pick or one already packed
+                           elsewhere. Which orders, and why, is the tooltip's job; a list
+                           can bundle several and only it can name them. -->
+                      <MpTooltip
+                        v-if="pickingListBlockReasons(pt).length"
+                        :id="`pk-tt-block-${pt.id}`"
+                        :label="pickingListBlockReasons(pt).join('; ')"
+                        placement="top"
+                        use-portal
+                      >
+                        <MpBadge for="tableStatus" type="warning">{{ t('Some not packable') }}</MpBadge>
+                      </MpTooltip>
                       <MpBadge v-else for="tableStatus" type="completed">{{ t('Ready to pack') }}</MpBadge>
                     </td>
                   </tr>
@@ -731,14 +747,10 @@ async function handleCreate() {
                       <td v-if="meta.groupIndex === 0" :rowspan="meta.groupSize" class="pk-td">{{ meta.row.unit }}</td>
                       <td v-if="!isDirectMode && meta.groupIndex === 0" :rowspan="meta.groupSize" class="pk-td pk-td--action">
                         <MpTooltip v-if="isBatchTrackedSku(meta.row.sku)" :id="`pc-tt-batch-${meta.row.key}`" :label="tl('View batch')" placement="top" use-portal>
-                          <button class="pk-view-btn" type="button" :aria-label="tl('View batch')" @click.stop="openViewBatch(t.orderId, meta.row)">
-                            <MpIcon name="competencies" size="md" />
-                          </button>
+                          <MpButton class="pk-view-btn" type="button" variant="ghost" left-icon="competencies" :aria-label="tl('View batch')" @click.stop="openViewBatch(t.orderId, meta.row)" />
                         </MpTooltip>
                         <MpTooltip v-else-if="isSerialTrackedSku(meta.row.sku)" :id="`pc-tt-serial-${meta.row.key}`" :label="tl('View serial number')" placement="top" use-portal>
-                          <button class="pk-view-btn" type="button" :aria-label="tl('View serial number')" @click.stop="openViewSerial(t.orderId, meta.row)">
-                            <MpIcon name="competencies" size="md" />
-                          </button>
+                          <MpButton class="pk-view-btn" type="button" variant="ghost" left-icon="competencies" :aria-label="tl('View serial number')" @click.stop="openViewSerial(t.orderId, meta.row)" />
                         </MpTooltip>
                       </td>
                     </tr>

@@ -9,6 +9,7 @@
  * error-detection needed.
  */
 import { ref, computed, watch } from 'vue'
+import { css } from '@mekari/pixel3'
 
 const props = defineProps<{
   src?: string
@@ -27,17 +28,51 @@ const initial = computed(() => (props.name?.trim()?.charAt(0) || '?').toUpperCas
 const px = computed(() => `${props.size ?? 40}px`)
 const tileStyle = computed(() => {
   const h = props.hue ?? 210
+  // hsl() colors are dynamic per-product — kept as inline styles
   return { width: px.value, height: px.value, backgroundColor: `hsl(${h} 55% 88%)`, color: `hsl(${h} 45% 32%)` }
+})
+
+const thumbClass = css({
+  position: 'relative',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  flexShrink: '0',
+  rounded: 'md',
+  overflow: 'hidden',
+  fontWeight: 'semiBold',
+  fontSize: 'md',
+  lineHeight: '1',
+  userSelect: 'none',
+})
+
+const initialClass = css({
+  position: 'relative',
+  zIndex: '0',
+})
+
+const imgBaseClass = css({
+  position: 'absolute',
+  inset: '0',
+  zIndex: '1',
+  width: 'full',
+  height: 'full',
+  objectFit: 'cover',
+  opacity: '0',
+  transition: 'opacity 0.15s ease',
+})
+
+const imgOnClass = css({
+  opacity: '1',
 })
 </script>
 
 <template>
-  <span class="pt-thumb" :style="tileStyle">
-    <span class="pt-initial">{{ initial }}</span>
+  <span :class="thumbClass" :style="tileStyle">
+    <span :class="initialClass">{{ initial }}</span>
     <img
       v-if="src"
-      class="pt-img"
-      :class="{ 'pt-img--on': loaded }"
+      :class="[imgBaseClass, { [imgOnClass]: loaded }]"
       :src="src"
       :alt="name"
       loading="lazy"
@@ -45,31 +80,3 @@ const tileStyle = computed(() => {
     />
   </span>
 </template>
-
-<style scoped>
-.pt-thumb {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  border-radius: var(--mp-radii-md, 8px);
-  overflow: hidden;
-  font-weight: 600;
-  font-size: 15px;
-  line-height: 1;
-  user-select: none;
-}
-.pt-initial { position: relative; z-index: 0; }
-.pt-img {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-.pt-img--on { opacity: 1; }
-</style>

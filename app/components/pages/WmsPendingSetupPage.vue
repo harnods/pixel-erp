@@ -20,7 +20,7 @@ import { useRouter } from 'vue-router'
 import {
   MpIcon, MpCheckbox, MpBanner, MpBannerIcon, MpBannerDescription,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTextlink, toast, css,
+  MpTextlink, MpButton, toast, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import {
@@ -153,12 +153,12 @@ function goBack() {
 
             <MpPopover id="pen-bulk-account" is-close-on-select>
               <MpPopoverTrigger>
-                <button type="button" class="pen-trigger pen-trigger--wide" :class="{ 'pen-trigger--set': !!bulkAccount }">
+                <MpButton type="button" class="pen-trigger pen-trigger--wide" :class="{ 'pen-trigger--set': !!bulkAccount }" variant="ghost">
                   <span class="pen-trigger-label">
                     {{ bulkAccount ? labelFor(inventoryAccounts, bulkAccount) : t('Select inventory account') }}
                   </span>
                   <MpIcon name="chevrons-down" size="sm" />
-                </button>
+                </MpButton>
               </MpPopoverTrigger>
               <MpPopoverContent :class="css({ minWidth: '280px', width: 'max-content', maxWidth: '360px' })">
                 <MpPopoverList>
@@ -174,12 +174,12 @@ function goBack() {
               </MpPopoverContent>
             </MpPopover>
 
-            <button type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="applyBulkAccount">
+            <MpButton type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" variant="secondary" @click="applyBulkAccount">
               {{ t('Apply') }}
-            </button>
-            <button type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="selectedIds = []; bulkError = ''">
+            </MpButton>
+            <MpButton type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" variant="ghost" @click="selectedIds = []; bulkError = ''">
               {{ t('Clear') }}
-            </button>
+            </MpButton>
             <span v-if="bulkError" class="pen-error">{{ bulkError }}</span>
           </div>
 
@@ -239,12 +239,12 @@ function goBack() {
                   <td class="pen-td pen-td--select" :class="{ 'pen-td--error': !p.inventoryAccount && !!formError }">
                     <MpPopover :id="`pen-acct-${p.id}`" placement="bottom-start" use-portal is-close-on-select>
                       <MpPopoverTrigger>
-                        <button type="button" class="pen-cell-trigger">
+                        <MpButton type="button" class="pen-cell-trigger" variant="ghost">
                           <span :class="p.inventoryAccount ? 'pen-cell-value' : 'pen-cell-placeholder'">
                             {{ p.inventoryAccount ? labelFor(inventoryAccounts, p.inventoryAccount) : t('Select account') }}
                           </span>
                           <MpIcon name="chevrons-down" size="sm" />
-                        </button>
+                        </MpButton>
                       </MpPopoverTrigger>
                       <MpPopoverContent :class="css({ width: '320px', maxHeight: '260px', overflowY: 'auto', padding: '0' })">
                         <MpPopoverList>
@@ -273,12 +273,12 @@ function goBack() {
           </div>
 
           <div class="pen-actions">
-            <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="goBack">
+            <MpButton type="button" class="btn-enterprise btn-enterprise--ghost" variant="ghost" @click="goBack">
               {{ t('Back') }}
-            </button>
-            <button type="button" class="btn-enterprise btn-enterprise--primary" @click="postEntries">
+            </MpButton>
+            <MpButton type="button" class="btn-enterprise btn-enterprise--primary" variant="primary" @click="postEntries">
               {{ t('Post held entries') }}
-            </button>
+            </MpButton>
           </div>
         </template>
 
