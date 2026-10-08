@@ -76,6 +76,14 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['vendorItems.ts', 'replenishment.ts'],
   },
   {
+    id: 'replenishment-recalc-failed',
+    title: 'Replenishment: failed recalculation keeps the last numbers',
+    description:
+      'If Recalculate fails, the worklist no longer shows a success toast or goes blank: an error banner above the cards says "Recalculation failed. The numbers below are from <date>." with a Try again button, and the table keeps the last good run (PRD US-013 EH-02). The stale-numbers banner is replaced while the error shows.',
+    date: '2026-10-08',
+    files: ['ReplenishmentPage.vue'],
+  },
+  {
     id: 'replenishment-section-edit',
     title: 'Replenishment settings: Edit on each section',
     description:

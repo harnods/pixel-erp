@@ -105,21 +105,32 @@ const recalcSignal = inject<Ref<number> | null>('replenishRecalcSignal', null)
 const recalcTick = ref(0)
 const recalculating = ref(false)
 
+/** Set when a recalculation fails — the last good numbers stay on screen (US-013 EH-02). */
+const recalcFailed = ref(false)
+
 function recalculate() {
   recalculating.value = true
+  recalcFailed.value = false
   loading.value = true
-  invalidateReplenishmentCaches()
-  const result = recalculateReplenishment(isAllWarehouses.value ? 'all' : warehouseId.value)
   setTimeout(() => {
-    recalcTick.value++
-    loading.value = false
-    recalculating.value = false
-    toast.notify({
-      variant: 'success',
-      title: t('Replenishment recalculated'),
-      description: `${result.due} ${t('products to order.')}`,
-      maxWidth: 'max-content',
-    })
+    try {
+      invalidateReplenishmentCaches()
+      const result = recalculateReplenishment(isAllWarehouses.value ? 'all' : warehouseId.value)
+      recalcTick.value++
+      toast.notify({
+        variant: 'success',
+        title: t('Replenishment recalculated'),
+        description: `${result.due} ${t('products to order.')}`,
+        maxWidth: 'max-content',
+      })
+    } catch {
+      // Inline, not a toast (rule/form-errors-inline): the previous run is untouched, so
+      // the worklist keeps showing it, flagged — never a blank or half-updated table.
+      recalcFailed.value = true
+    } finally {
+      loading.value = false
+      recalculating.value = false
+    }
   }, 900)
 }
 if (recalcSignal) watch(recalcSignal, () => recalculate())
@@ -138,6 +149,10 @@ const isStale = computed(() => {
 const staleMessage = computed(() => lastRunLabel.value
   ? tf('Replenishment was last recalculated on {date}. Click the Recalculate button to update demand and suggested qty.', { date: lastRunLabel.value })
   : t('Replenishment has not been recalculated yet. Click the Recalculate button to update demand and suggested qty.'))
+
+const recalcFailedMessage = computed(() => lastRunLabel.value
+  ? tf('Recalculation failed. The numbers below are from {date}.', { date: lastRunLabel.value })
+  : t('Recalculation failed. No earlier numbers are available.'))
 
 const lastRunLabel = computed(() => {
   void recalcTick.value
@@ -685,7 +700,13 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
       <div class="rp-stats-wrap">
         <!-- US-013 EH-01: stale numbers never block the worklist — they are called out,
              above the figures they qualify. Icon + description, no title. -->
-        <MpBanner v-if="isStale" id="rp-stale-banner" variant="warning" align-items="center" data-devchange="replenishment-stale-banner">
+        <!-- A failed recalculation (US-013 EH-02): the last good numbers stay, with a retry. -->
+        <MpBanner v-if="recalcFailed" id="rp-recalc-failed-banner" variant="danger" align-items="center" data-devchange="replenishment-recalc-failed">
+          <MpBannerIcon id="rp-recalc-failed-banner-icon" />
+          <MpBannerDescription>{{ recalcFailedMessage }}</MpBannerDescription>
+          <MpBannerLink id="rp-recalc-failed-banner-link"><a href="#" @click.prevent="recalculate">{{ t('Try again') }}</a></MpBannerLink>
+        </MpBanner>
+        <MpBanner v-if="isStale && !recalcFailed" id="rp-stale-banner" variant="warning" align-items="center" data-devchange="replenishment-stale-banner">
           <MpBannerIcon id="rp-stale-banner-icon" />
           <MpBannerDescription>{{ staleMessage }}</MpBannerDescription>
         </MpBanner>
