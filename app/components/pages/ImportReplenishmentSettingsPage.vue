@@ -176,13 +176,13 @@ function downloadErrorReport(): void {
           <MpBanner v-if="rejected.length" id="irs-preview-banner" variant="warning" is-inline class="irs-banner">
             <MpBannerIcon id="irs-preview-banner-icon" />
             <MpBannerDescription id="irs-preview-banner-desc">
-              {{ tf('{n} rows will be updated and {m} will be skipped. Fix the skipped rows in your file and import them again.', { n: toUpdate.length, m: rejected.length }) }}
+              {{ tf('Rows to update: {n}. Rows to skip: {m}. Fix the skipped rows in your file and import them again.', { n: toUpdate.length, m: rejected.length }) }}
             </MpBannerDescription>
           </MpBanner>
           <MpBanner v-else id="irs-preview-ok" variant="info" is-inline class="irs-banner">
             <MpBannerIcon id="irs-preview-ok-icon" />
             <MpBannerDescription id="irs-preview-ok-desc">
-              {{ tf('{n} rows will be updated and {m} already match. Nothing has been saved yet.', { n: toUpdate.length, m: unchanged.length }) }}
+              {{ tf('Rows to update: {n}. Rows that already match: {m}. Nothing has been saved yet.', { n: toUpdate.length, m: unchanged.length }) }}
             </MpBannerDescription>
           </MpBanner>
 
@@ -214,7 +214,7 @@ function downloadErrorReport(): void {
             <MpButtonGroup class="erp-action-footer">
               <MpButton id="irs-back" variant="ghost" is-rounded @click="stage = 'upload'">{{ t('Back') }}</MpButton>
               <MpButton id="irs-import" variant="primary" is-rounded @click="commitImport">
-                {{ tf('Import {n} rows', { n: toUpdate.length }) }}
+                {{ toUpdate.length === 1 ? t('Import 1 row') : tf('Import {n} rows', { n: toUpdate.length }) }}
               </MpButton>
             </MpButtonGroup>
           </footer>
@@ -225,7 +225,7 @@ function downloadErrorReport(): void {
           <div class="irs-result">
             <h2 class="irs-result-title">{{ t('Import finished') }}</h2>
             <p class="irs-result-desc">
-              {{ tf('{n} rows updated, {m} unchanged, {k} skipped', { n: written, m: unchanged.length, k: rejected.length }) }}
+              {{ tf('Rows updated: {n}. Rows unchanged: {m}. Rows skipped: {k}', { n: written, m: unchanged.length, k: rejected.length }) }}
             </p>
             <div class="irs-result-actions">
               <MpButton v-if="rejected.length" id="irs-error-report" variant="secondary" is-rounded @click="downloadErrorReport">{{ t('Download error report') }}</MpButton>
