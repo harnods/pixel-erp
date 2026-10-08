@@ -13,8 +13,10 @@ import * as vue from 'vue'
 import { useTableState } from '~/composables/useTableState'
 import BatchTraceabilityByTransaction from '~/components/patterns/BatchTraceabilityByTransaction.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
-import MultiSelectDropdown from '~/components/patterns/MultiSelectDropdown.vue'
-import { searchTransactions, batchesInTransactions, FULL_ACCESS } from '~/data/batchTraceability'
+import {
+  emptyTransactionFilters, type TransactionFiltersValue,
+} from '~/components/patterns/BatchTransactionFiltersDrawer.vue'
+import { searchTransactions, batchesInTransactions, FULL_ACCESS, TRACE_TX_TYPES } from '~/data/batchTraceability'
 import { useBatchTraceabilityReportState } from '~/composables/useBatchTraceabilityReportState'
 
 const { nextTick } = vue
@@ -43,11 +45,15 @@ afterEach(() => {
   useBatchTraceabilityReportState().resetTransactionSearch()
 })
 
-/** Pick transaction types in the bar and click Filter. */
-async function filterBy(w: VueWrapper, types: string[] | 'all') {
-  const typeFilter = w.findAllComponents(MultiSelectDropdown).find((c) => c.props('id') === 'btx-type')!
-  typeFilter.vm.$emit('update:modelValue', types === 'all' ? [...(typeFilter.props('options') as string[])] : types)
+/** Set filters in the All filters drawer and click Filter — every filter lives there. */
+async function setFilters(w: VueWrapper, patch: Partial<TransactionFiltersValue>) {
+  const drawer = w.findComponent({ name: 'BatchTransactionFiltersDrawer' })
+  drawer.vm.$emit('apply', { ...emptyTransactionFilters(), ...patch })
   await flushPromises()
+}
+
+async function filterBy(w: VueWrapper, types: string[] | 'all') {
+  await setFilters(w, { typeLabels: types === 'all' ? [...TRACE_TX_TYPES] : types })
   await w.find('.btx-filter-btn').trigger('click')
   await flushPromises()
   // The first-load skeleton runs on a timer; under a busy full-suite run it can outlast
@@ -87,8 +93,7 @@ describe('By transaction — filter first', () => {
   it('filters by date alone', async () => {
     const w = await mountView(null)
     const date = { op: 'after' as const, date: '2026-01-01' }
-    w.findComponent({ name: 'DateConditionField' }).vm.$emit('update:modelValue', date)
-    await flushPromises()
+    await setFilters(w, { dateCondition: date })
     await w.find('.btx-filter-btn').trigger('click')
     await flushPromises()
     expect(w.findComponent(ErpPagination).props('total')).toBe(searchTransactions({ date }).length)
@@ -97,10 +102,23 @@ describe('By transaction — filter first', () => {
   it('keeps showing the applied result while the bar is edited, until Filter again', async () => {
     const w = await mountView('all')
     const total = searchTransactions().length
-    const typeFilter = w.findAllComponents(MultiSelectDropdown).find((c) => c.props('id') === 'btx-type')!
-    typeFilter.vm.$emit('update:modelValue', ['Work order'])
-    await flushPromises()
+    await setFilters(w, { typeLabels: ['Work order'] })
     expect(w.findComponent(ErpPagination).props('total')).toBe(total)
+  })
+})
+
+describe('By transaction — All filters drawer', () => {
+  it('applies the drawer only on Filter, and counts it as a filter on its own', async () => {
+    const w = await mountView(null)
+    const numbers = searchTransactions().slice(0, 2).map((t) => t.number)
+    await setFilters(w, { numbers })
+    // Nothing lists yet — the drawer edits the draft, Filter applies it.
+    expect(parents(w)).toHaveLength(0)
+
+    await w.find('.btx-filter-btn').trigger('click')
+    await flushPromises()
+    expect(w.find('.btx-filter-error').exists()).toBe(false)
+    expect(parents(w).map((p) => p.find('.btx-tx-number').text()).sort()).toEqual([...numbers].sort())
   })
 })
 
@@ -115,17 +133,23 @@ describe('By transaction — grouped rows', () => {
     expect(numbers[0]).toBe(newest.number)
   })
 
-  it('lists each transaction\'s batches under it, and folds them away', async () => {
+  it('starts folded, and a transaction row opens its batches', async () => {
     const w = await mountView('all')
     const first = parents(w)[0]!
     const number = first.find('.btx-tx-number').text()
     const lines = batchesInTransactions([number])
-    expect(w.findAll('.btx-child')).not.toHaveLength(0)
+    // Folded by default — the result reads as a transaction list until one is opened.
+    expect(w.findAll('.btx-child')).toHaveLength(0)
     expect(first.text()).toContain(lines.length === 1 ? '1 batch' : `${lines.length} batches`)
 
-    const before = w.findAll('.btx-child').length
     await first.find('.btx-parent-cell').trigger('click')
-    expect(w.findAll('.btx-child').length).toBe(before - lines.length)
+    expect(w.findAll('.btx-child')).toHaveLength(lines.length)
+    // The product leads each child row, merged across its batches.
+    const products = new Set(lines.map((l) => l.sku))
+    expect(w.findAll('.btx-child-product')).toHaveLength(products.size)
+
+    await first.find('.btx-parent-cell').trigger('click')
+    expect(w.findAll('.btx-child')).toHaveLength(0)
   })
 
   it('names the attributes on the transaction row — the union of its products\' sets', async () => {
@@ -140,6 +164,7 @@ describe('By transaction — grouped rows', () => {
 
   it('shows a Work order output as + and its raw materials as −', async () => {
     const w = await mountView(['Work order'])
+    await parents(w)[0]!.find('.btx-parent-cell').trigger('click')
     const number = parents(w)[0]!.find('.btx-tx-number').text()
     const signs = batchesInTransactions([number]).map((l) => l.baseDelta)
     expect(signs.some((d) => d > 0)).toBe(true)

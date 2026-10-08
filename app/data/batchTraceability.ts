@@ -1066,84 +1066,41 @@ export function batchJourneyTimeline(sku: string, batchNo: string, access: Trace
   return out
 }
 
-// ── Visual journey (PRD story 11): flow by counterparty ─────────────────────────
-/** Who (or what) is on the other side of a flow node. */
-export type FlowPartyKind = 'vendor' | 'customer' | 'work-order' | 'other'
-
-/** One flow node: everything that moved between the batch and one party, one way. */
-export interface FlowParty {
-  key: string
-  kind: FlowPartyKind
-  /** Vendor / customer id, the Work order number, or the transaction type for `other`. */
-  refId: string
-  direction: 'in' | 'out'
-  /** Transaction types behind the node, first-seen order (e.g. Purchase delivery). */
-  types: TraceTxType[]
-  /** Base-unit quantity across the node. */
-  qty: number
-  /** Oldest first. */
-  transactions: { id: string; number: string; date: string; qty: number; type: TraceTxType }[]
-  /** Work order nodes only: the batches on the other side of that Work order (story 10). */
-  batches: RelatedBatchRow[]
-}
-
-export interface BatchFlowGraph {
-  /** Where the batch came from, biggest quantity first. */
-  incoming: FlowParty[]
-  /** Where the batch went, biggest quantity first. */
-  outgoing: FlowParty[]
-  /** Moves that don't change the batch total — transfers, stock counts — oldest first. */
-  internal: JourneyRow[]
-  received: number
-  issued: number
-}
-
+// ── Batch details ledger (the Transactions tab) ─────────────────────────────────
 /**
- * The journey as parties, not transaction types: who the batch came from and who it
- * went to, sized by quantity — the recall question ("who got it?") and the root-cause
- * one ("where did it come from?"). A presentation of the journey (story 8) and related
- * batches (story 10): no new data, the History table stays the source of truth.
- * - A vendor or customer is one node per direction (a purchase return is its own node
- *   on the way out).
- * - Each Work order is its own node, carrying the batches on its other side.
- * - Lines with no counterparty (stock in/out, invoices, reversals) group by type.
+ * One row of the Batch details Transactions tab: the traceability journey line (type,
+ * warehouses, counterparty, signed mutation, running balance, recorded attributes)
+ * carrying the stock columns that tab has always shown.
+ *
+ * Only `onHand` is history — it's the journey's running balance. The other three are
+ * derived, because the ledger tracks ownership of stock, not its reservation state:
+ * `reserved` is the batch's reservation today, shown from the first line whose balance
+ * can cover it; `available` is what's left of the balance after it; `inTransit` is the
+ * quantity a warehouse transfer is moving on that line, nothing otherwise.
  */
-export function batchFlowGraph(sku: string, batchNo: string, access: TraceabilityAccess = FULL_ACCESS): BatchFlowGraph {
-  const rows = batchJourney(sku, batchNo, access)
-  const related = relatedBatches(sku, batchNo)
-  const parties = new Map<string, FlowParty>()
-  const internal: JourneyRow[] = []
-  let received = 0
-  let issued = 0
-  for (const row of rows) {
-    if (row.direction === 'neutral') { internal.push(row); continue }
-    if (row.direction === 'in') received += row.qty
-    else issued += row.qty
-    const kind: FlowPartyKind = row.type === 'Work order' ? 'work-order' : row.counterparty?.kind ?? 'other'
-    const refId = kind === 'work-order' ? row.number : row.counterparty?.id ?? row.type
-    const key = `${row.direction}:${kind}:${refId}`
-    let party = parties.get(key)
-    if (!party) {
-      const side = row.direction === 'in' ? related.sources : related.results
-      party = {
-        key, kind, refId, direction: row.direction, types: [], qty: 0, transactions: [],
-        batches: kind === 'work-order' ? side.filter((b) => b.workOrderNumber === row.number) : [],
-      }
-      parties.set(key, party)
+export interface BatchLedgerRow extends JourneyRow {
+  reserved: number
+  available: number
+  inTransit: number
+  unit: string
+}
+
+export function batchLedgerRows(sku: string, batchNo: string, access: TraceabilityAccess = FULL_ACCESS): BatchLedgerRow[] {
+  const ref = findBatch(sku, batchNo)
+  if (!ref) return []
+  const reservedToday = ref.batch.reserved
+  let reserved = 0
+  return batchJourney(sku, batchNo, access).map((row) => {
+    if (!reserved && reservedToday && row.balanceBase >= reservedToday) reserved = reservedToday
+    const inTransit = row.type === 'Warehouse transfer' ? row.qty : 0
+    return {
+      ...row,
+      reserved,
+      available: Math.max(0, row.balanceBase - reserved),
+      inTransit,
+      unit: ref.unit,
     }
-    if (!party.types.includes(row.type)) party.types.push(row.type)
-    party.qty += row.qty
-    party.transactions.push({ id: row.id, number: row.number, date: row.date, qty: row.qty, type: row.type })
-  }
-  const all = [...parties.values()]
-  const bySize = (a: FlowParty, b: FlowParty) => b.qty - a.qty
-  return {
-    incoming: all.filter((p) => p.direction === 'in').sort(bySize),
-    outgoing: all.filter((p) => p.direction === 'out').sort(bySize),
-    internal,
-    received,
-    issued,
-  }
+  })
 }
 
 // ── Access (PRD story 1) ────────────────────────────────────────────────────────

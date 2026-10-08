@@ -215,6 +215,41 @@ PRD story 1 gives the report (read, filter, export) to **Owner, Ultimate and Sto
 
 **Tests:** data spec (Owner / Ultimate / Stockist allowed; Sales, Report reader and no role denied) · detail spec (the no-access scenario replaces the four sections with the no-access state).
 
+## 3i. Merged into Batch details (8 Oct 2026)
+
+The separate traceability detail page is **gone** — a batch has one detail page again.
+`BatchTraceabilityDetailPage.vue`, its route, the *View traceability* action,
+`BatchJourneyDiagram.vue` and `batchFlowGraph()` are deleted; both report modes now open
+`/product-list/:sku/batches/:batchNo` (By transaction still passes `?transaction=`, which
+highlights that row).
+
+**`BatchDetailsPage.vue` carries it instead** (product batches only — a warehouse-scoped
+lot and the Unassigned batch aren't in the ledger, so they keep the plain transaction
+list and get no Related batch tab):
+- **Batch info** — *Total received* / *Total issued* beside the quantity fields.
+- **Transactions tab** — rows come from `batchLedgerRows()` (the journey + the quantity
+  columns), so the table keeps Date · Number · Movement · On hand · Reserved · Available ·
+  In transit · Unit **and** adds Transaction type · Warehouse origin · Warehouse
+  destination · Counterparty · Mutation (secondary unit) · Balance (secondary unit). A row
+  expands to the values recorded on that transaction, rendered as `ContentList` fields with
+  a dot on values that differ from the batch master today.
+  Only `onHand` is history (the running balance); `reserved` is the batch's reservation
+  today shown from the first line whose balance covers it, `available` is the balance after
+  it, `inTransit` is what a warehouse transfer moves on that line.
+- **Related batch** — the Source / Result tables as a third tab, unchanged.
+- **Attribute changes stay out of the table** (user decision): the Activity log is their
+  home, on this page and on the report-side trail.
+
+**Filters, both modes (6–8 Oct 2026):** every filter lives in the All filters drawer AND
+the bar keeps its own (Product · Batch number · Warehouse; Transaction type · date) on the
+same draft; bar order is **Filter · All filters (N)**; the table search bars are gone; the
+long option lists are searchable from the field itself (`MultiSelectDropdown` combobox,
+like `ErpFilterSelect`), and the popover sizes to its options. By transaction has column
+settings, and both grouped tables start folded with their content top-aligned.
+
+**Dropped with the page:** the Journey map diagram (user decision) and the detail-page
+**Export** (story 12's third entry point) — the report's two exports are untouched.
+
 ## 4. Decisions — recommended answers adopted (15 Sep 2026)
 
 The PRD left these open. The recommended answer was adopted for each, so the prototype no longer runs on "interim" behaviour — but every one is **pending PM confirmation**, and this table is where a change lands if the PM decides otherwise.

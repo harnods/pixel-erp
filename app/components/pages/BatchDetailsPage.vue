@@ -9,6 +9,15 @@
  *
  * Batch Attribute (plan Phase 3): Batch info lists the product's attributes in its
  * order, Edit opens BatchFormModal, and the activity log shows recorded creates/edits.
+ *
+ * Batch Traceability (merged here 2026-10-08, replacing the separate traceability detail
+ * page): for a product batch the Transactions tab's rows come from the traceability
+ * ledger (`batchLedgerRows`), so each line also carries its transaction type, warehouses,
+ * counterparty, signed mutation and secondary-unit balance, expands to the attribute
+ * values recorded on it, and shows the attribute-change markers between movements.
+ * Batch info carries Total received / Total issued, and Related batch is a tab.
+ * A warehouse-scoped lot and the Unassigned batch aren't in that ledger, so they keep
+ * the plain transaction list and get no Related batch tab.
  */
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
@@ -28,7 +37,14 @@ import {
   type ProductBatchSummary,
 } from '~/data/productDetails'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
-import { getBatchTrace, batchAttributeChanges } from '~/data/batchTraceability'
+import {
+  getBatchTrace, batchAttributeChanges, batchLedgerRows, batchStockPosition,
+  relatedBatches, attributeCell,
+  type BatchLedgerRow, type RelatedBatchRow,
+} from '~/data/batchTraceability'
+import { TRACE_ATTRIBUTE_COLUMNS, useTraceabilityCells } from '~/composables/useTraceabilityCells'
+import { warehouses } from '~/data/warehouses'
+import { customerName } from '~/data/customers'
 import { batchAttributeDef, formatExpiry, getBatchAttributeConfig, type BatchAttributeKey } from '~/data/batchAttributes'
 import { batchActivityFor } from '~/data/batchStore'
 import { gradeById } from '~/data/grades'
@@ -58,16 +74,22 @@ function goToProducts() { router.push('/product-list') }
 function goToWarehouse() { if (warehouseId.value) router.push(`/warehouses/${warehouseId.value}?tab=batches`) }
 function goToWarehouses() { router.push('/warehouses') }
 
+const { attributeText, mutationText, qtyText, vendorName } = useTraceabilityCells()
+
 // ── Tabs — driven by ?section= (see ProductDetailsPage.vue for why not ?tab=). ──
-const TAB_NAMES = ['transactions', 'warehouses']
+// Related batch only exists for a traced product batch (see isTraced below), and the
+// list must match the rendered order — MpTabs addresses tabs by index.
+const TAB_NAMES = computed(() => (isTraced.value
+  ? ['transactions', 'warehouses', 'related']
+  : ['transactions', 'warehouses']))
 const activeTabIndex = computed({
   get(): number {
     const tab = route.query.section as string | undefined
-    const idx = tab ? TAB_NAMES.indexOf(tab) : -1
+    const idx = tab ? TAB_NAMES.value.indexOf(tab) : -1
     return idx >= 0 ? idx : 0
   },
   set(idx: number) {
-    router.replace({ query: { ...route.query, section: TAB_NAMES[idx] ?? 'transactions' } })
+    router.replace({ query: { ...route.query, section: TAB_NAMES.value[idx] ?? 'transactions' } })
   },
 })
 
@@ -120,15 +142,39 @@ const attributeRows = computed(() => {
  *  list, and the Unassigned batch can't be edited (PM answer A5). */
 const canEdit = computed(() => !!batch.value && !batch.value.isUnassigned && !batch.value.id.includes('::lot::'))
 
-// ── Traceability (Batch Traceability plan decision Q8) ──────────────────────────
+// ── Traceability ────────────────────────────────────────────────────────────────
 /** The report traces product batches; warehouse-scoped lots and the Unassigned batch
- *  aren't in its ledger, so they don't get the link. */
-const canTrace = computed(() =>
+ *  aren't in its ledger, so they keep the plain transaction list. */
+const isTraced = computed(() =>
   !warehouseId.value && !!batch.value && !batch.value.isUnassigned && !!getBatchTrace(sku.value, batchNo.value),
 )
-function openTraceability() {
-  router.push(`/inventory-report/batch-traceability/${sku.value}/${encodeURIComponent(batchNo.value)}`)
+/** Totals behind Batch info's Total received / Total issued. */
+const position = computed(() => (isTraced.value ? batchStockPosition(sku.value, batchNo.value) : undefined))
+function warehouseLabel(id: string | null): string {
+  return id ? warehouses.find((w) => w.id === id)?.name ?? id : '—'
 }
+function counterpartyLabel(row: BatchLedgerRow): string {
+  if (!row.counterparty) return '—'
+  return row.counterparty.kind === 'customer' ? customerName(row.counterparty.id) : vendorName(row.counterparty.id)
+}
+/** Dual Unit Inventory products carry a second unit; the rest read NA. */
+const secondaryUnit = computed(() => position.value?.secondaryUnit ?? null)
+function secondaryMutation(row: BatchLedgerRow): string {
+  return row.secondaryDelta === null ? 'NA' : mutationText(row.direction, row.secondaryDelta, secondaryUnit.value)
+}
+function secondaryBalance(row: BatchLedgerRow): string {
+  return row.balanceSecondary === null ? 'NA' : qtyText(row.balanceSecondary, secondaryUnit.value)
+}
+/** Recorded attribute values behind an expanded row. */
+function recordedAttributes(row: BatchLedgerRow) {
+  return TRACE_ATTRIBUTE_COLUMNS.map((a) => ({
+    key: a.key,
+    label: a.label,
+    value: attributeText(attributeCell(sku.value, row.attributes, a.key), a.key) || '—',
+    changed: row.changedAttributes.includes(a.key),
+  }))
+}
+
 const editOpen = ref(false)
 function onBatchSaved(saved: ProductBatchSummary) {
   // A rename changes the batch number in the URL — follow it so the page still resolves.
@@ -195,7 +241,77 @@ const activityEntries = computed<ActivityEntry[]>(() => {
 const emptyIllustration = '/illustrations/empty-folder.png'
 
 // ── Transactions tab ─────────────────────────────────────────────────────────────
-const allTransactions = computed(() => batch.value ? getBatchTransactions(sku.value, batchNo.value) : [])
+// A traced product batch reads the traceability ledger (type, warehouses, counterparty,
+// mutation, balance, recorded attributes + the quantity columns); anything else keeps
+// the plain seeded transaction list, which fills only the columns it has.
+const tracedRows = computed<BatchLedgerRow[]>(() =>
+  isTraced.value ? [...batchLedgerRows(sku.value, batchNo.value)].reverse() : [])
+
+interface TxRow {
+  id: string
+  date: string
+  number: string
+  type: string
+  delta: number
+  affects: string[]
+  onHand: number
+  reserved: number
+  available: number
+  inTransit: number
+  unit: string
+  /** Traced rows only — the journey columns and the expandable snapshot. */
+  traced: BatchLedgerRow | null
+}
+
+const allTransactions = computed<TxRow[]>(() => {
+  if (!batch.value) return []
+  if (isTraced.value) {
+    return tracedRows.value.map((r) => ({
+      id: r.id,
+      date: r.date,
+      number: r.number,
+      type: r.type,
+      delta: r.baseDelta,
+      affects: [],
+      onHand: r.balanceBase,
+      reserved: r.reserved,
+      available: r.available,
+      inTransit: r.inTransit,
+      unit: r.unit,
+      traced: r,
+    }))
+  }
+  return getBatchTransactions(sku.value, batchNo.value).map((t) => ({
+    id: t.id,
+    date: t.date,
+    number: t.number,
+    type: t.type,
+    delta: t.delta,
+    affects: t.affects,
+    onHand: t.onHand,
+    reserved: t.reserved,
+    available: t.available,
+    inTransit: t.onTheWay,
+    unit: t.unit,
+    traced: null,
+  }))
+})
+
+// Attribute changes are not movements, so they stay out of this table — the Activity
+// log lists them (Batch Traceability story 9).
+
+// A row expands to the attribute values recorded on that transaction.
+const expandedRows = ref(new Set<string>())
+function isRowOpen(id: string) { return expandedRows.value.has(id) }
+function toggleRow(id: string) {
+  const next = new Set(expandedRows.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  expandedRows.value = next
+}
+/** Arriving from By transaction highlights that line. */
+const highlightTransaction = computed(() => (typeof route.query.transaction === 'string' ? route.query.transaction : ''))
+
 const txTypeFilter = ref('')
 const txSearch = ref('')
 const txTypeOptions = computed(() => [...new Set(allTransactions.value.map(t => t.type))])
@@ -232,6 +348,14 @@ async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 |
   }, qty, columns)
   barcodePreviewFilename.value = `Barcode - ${b.batchNo}.pdf`
   barcodePreviewOpen.value = true
+}
+
+// ── Related batch tab (Batch Traceability story 10) ─────────────────────────────
+const related = computed(() => (isTraced.value
+  ? relatedBatches(sku.value, batchNo.value)
+  : { sources: [] as RelatedBatchRow[], results: [] as RelatedBatchRow[] }))
+function openRelated(row: RelatedBatchRow) {
+  router.push(`/product-list/${row.sku}/batches/${encodeURIComponent(row.batchNo)}`)
 }
 
 // ── Stock by warehouses tab ──────────────────────────────────────────────────────
@@ -277,7 +401,6 @@ const pagedWarehouseStock = computed(() => {
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem v-if="canEdit" @click="editOpen = true">Edit</MpPopoverListItem>
-            <MpPopoverListItem v-if="canTrace" @click="openTraceability">View traceability</MpPopoverListItem>
             <!-- The Unassigned batch isn't a physical lot, so it has no label to print. -->
             <MpPopoverListItem v-if="!batch?.isUnassigned" @click="openPrintBarcode">Print barcode</MpPopoverListItem>
             <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })">Archive</MpPopoverListItem>
@@ -306,6 +429,11 @@ const pagedWarehouseStock = computed(() => {
             <ContentList label="Reserved qty" :value="formatQty(batch.reserved, batch.unit)" />
             <ContentList label="Available qty" :value="formatQty(batch.available, batch.unit)" />
             <ContentList label="Min. stock" :value="formatQty(batch.minStock, batch.unit)" />
+            <!-- Traceability totals (Received − Issued = on hand) -->
+            <template v-if="position">
+              <ContentList label="Total received" :value="formatQty(position.received, batch.unit)" />
+              <ContentList label="Total issued" :value="formatQty(position.issued, batch.unit)" />
+            </template>
           </div>
         </div>
       </section>
@@ -319,6 +447,7 @@ const pagedWarehouseStock = computed(() => {
         <MpTabList>
           <MpTab id="bd-tab-transactions" value="transactions">Transactions</MpTab>
           <MpTab id="bd-tab-warehouses" value="warehouses">Stock by warehouses</MpTab>
+          <MpTab v-if="isTraced" id="bd-tab-related" value="related">Related batch</MpTab>
         </MpTabList>
         <MpTabPanels>
 
@@ -368,45 +497,91 @@ const pagedWarehouseStock = computed(() => {
             <div v-if="pagedTransactions.length" class="pd-table-scroll">
               <table class="pd-table">
                 <colgroup>
+                  <col v-if="isTraced" style="width: 32px" />
                   <col style="width: 120px" />
                   <col style="width: 220px" />
+                  <col v-if="isTraced" style="width: 160px" />
                   <col style="width: 110px" />
+                  <col v-if="isTraced" style="width: 180px" />
+                  <col v-if="isTraced" style="width: 180px" />
+                  <col v-if="isTraced" style="width: 200px" />
                   <col style="width: 100px" />
                   <col style="width: 100px" />
                   <col style="width: 100px" />
                   <col style="width: 100px" />
                   <col style="width: 90px" />
+                  <col v-if="isTraced" style="width: 160px" />
+                  <col v-if="isTraced" style="width: 160px" />
                 </colgroup>
                 <thead>
                   <tr>
+                    <th v-if="isTraced" class="pd-th" />
                     <th class="pd-th">Date</th>
                     <th class="pd-th">Number</th>
+                    <th v-if="isTraced" class="pd-th">Transaction type</th>
                     <th class="pd-th">Movement</th>
+                    <th v-if="isTraced" class="pd-th">Warehouse origin</th>
+                    <th v-if="isTraced" class="pd-th">Warehouse destination</th>
+                    <th v-if="isTraced" class="pd-th">Counterparty</th>
                     <th class="pd-th pd-th--num">On hand qty</th>
                     <th class="pd-th pd-th--num">Reserved qty</th>
                     <th class="pd-th pd-th--num">Available qty</th>
                     <th class="pd-th pd-th--num">In transit qty</th>
                     <th class="pd-th">Unit</th>
+                    <th v-if="isTraced" class="pd-th pd-th--num">Mutation (secondary unit)</th>
+                    <th v-if="isTraced" class="pd-th pd-th--num">Balance (secondary unit)</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="tx in pagedTransactions" :key="tx.id" class="pd-tr">
-                    <td class="pd-td">{{ formatDate(tx.date) }}</td>
-                    <td class="pd-td">
-                      <a class="cell-link cell-text" @click.stop>{{ tx.number }}</a>
-                    </td>
-                    <td class="pd-td">
-                      <div class="pd-movement" :class="tx.delta >= 0 ? 'pd-movement--pos' : 'pd-movement--neg'">
-                        {{ tx.delta >= 0 ? `+${tx.delta}` : tx.delta }}
-                      </div>
-                      <span v-for="a in tx.affects" :key="a" class="pd-movement-caption">{{ a }}</span>
-                    </td>
-                    <td class="pd-td pd-td--num">{{ tx.onHand.toLocaleString('id-ID') }}</td>
-                    <td class="pd-td pd-td--num">{{ tx.reserved.toLocaleString('id-ID') }}</td>
-                    <td class="pd-td pd-td--num">{{ tx.available.toLocaleString('id-ID') }}</td>
-                    <td class="pd-td pd-td--num">{{ tx.onTheWay.toLocaleString('id-ID') }}</td>
-                    <td class="pd-td">{{ tx.unit }}</td>
-                  </tr>
+                  <template v-for="tx in pagedTransactions" :key="tx.id">
+                    <tr
+                      class="pd-tr" :class="{ 'pd-tr--clickable': !!tx.traced, 'pd-tr--highlight': tx.number === highlightTransaction }"
+                      @click="tx.traced && toggleRow(tx.id)"
+                    >
+                      <td v-if="isTraced" class="pd-td pd-td--chevron">
+                        <span v-if="tx.traced" class="pd-chevron" :class="{ 'pd-chevron--open': isRowOpen(tx.id) }" aria-hidden="true">
+                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                            <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                          </svg>
+                        </span>
+                      </td>
+                      <td class="pd-td">{{ formatDate(tx.date) }}</td>
+                      <td class="pd-td">
+                        <a class="cell-link cell-text" @click.stop>{{ tx.number }}</a>
+                      </td>
+                      <td v-if="isTraced" class="pd-td">{{ tx.type }}</td>
+                      <td class="pd-td">
+                        <div class="pd-movement" :class="tx.delta >= 0 ? 'pd-movement--pos' : 'pd-movement--neg'">
+                          {{ tx.delta >= 0 ? `+${tx.delta}` : tx.delta }}
+                        </div>
+                        <span v-for="a in tx.affects" :key="a" class="pd-movement-caption">{{ a }}</span>
+                      </td>
+                      <td v-if="isTraced" class="pd-td">{{ warehouseLabel(tx.traced?.originWarehouseId ?? null) }}</td>
+                      <td v-if="isTraced" class="pd-td">{{ warehouseLabel(tx.traced?.destinationWarehouseId ?? null) }}</td>
+                      <td v-if="isTraced" class="pd-td">{{ tx.traced ? counterpartyLabel(tx.traced) : '—' }}</td>
+                      <td class="pd-td pd-td--num">{{ tx.onHand.toLocaleString('id-ID') }}</td>
+                      <td class="pd-td pd-td--num">{{ tx.reserved.toLocaleString('id-ID') }}</td>
+                      <td class="pd-td pd-td--num">{{ tx.available.toLocaleString('id-ID') }}</td>
+                      <td class="pd-td pd-td--num">{{ tx.inTransit.toLocaleString('id-ID') }}</td>
+                      <td class="pd-td">{{ tx.unit }}</td>
+                      <td v-if="isTraced" class="pd-td pd-td--num">{{ tx.traced ? secondaryMutation(tx.traced) : '—' }}</td>
+                      <td v-if="isTraced" class="pd-td pd-td--num">{{ tx.traced ? secondaryBalance(tx.traced) : '—' }}</td>
+                    </tr>
+
+                    <!-- The attribute values recorded on that transaction (ContentList
+                         key/value, as the detail pages render any field) -->
+                    <tr v-if="tx.traced && isRowOpen(tx.id)" :key="`${tx.id}-snapshot`" class="pd-tr pd-tr--snapshot">
+                      <td class="pd-td" :colspan="15">
+                        <p class="pd-snapshot-title">Recorded values</p>
+                        <div class="pd-snapshot-grid">
+                          <ContentList v-for="a in recordedAttributes(tx.traced)" :key="a.key" :label="a.label">
+                            <span class="pd-snapshot-value">{{ a.value }}</span>
+                            <span v-if="a.changed" class="pd-snapshot-dot" title="Value at the time of this transaction" />
+                          </ContentList>
+                        </div>
+                      </td>
+                    </tr>
+                  </template>
                 </tbody>
               </table>
             </div>
@@ -481,6 +656,45 @@ const pagedWarehouseStock = computed(() => {
             />
           </MpTabPanel>
 
+          <!-- Related batch (Batch Traceability story 10) — one Work order level each way -->
+          <MpTabPanel v-if="isTraced" value="related">
+            <div v-for="group in (['sources', 'results'] as const)" :key="group" class="bd-related">
+              <div class="bd-related-head">
+                <h3 class="bd-related-title">{{ group === 'sources' ? 'Source batch' : 'Result batch' }}</h3>
+                <p class="bd-related-caption">
+                  {{ group === 'sources'
+                    ? 'Batches consumed by the work order that produced this batch'
+                    : 'Batches produced by work orders that consumed this batch' }}
+                </p>
+              </div>
+              <div class="pd-table-scroll">
+                <table v-if="related[group].length" class="pd-table">
+                  <thead>
+                    <tr>
+                      <th class="pd-th">Product</th>
+                      <th class="pd-th">Batch number</th>
+                      <th class="pd-th">Work order number</th>
+                      <th class="pd-th">Work order date</th>
+                      <th class="pd-th pd-th--num">{{ group === 'sources' ? 'Qty consumed' : 'Qty produced' }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="r in related[group]" :key="`${r.workOrderNumber}::${r.sku}::${r.batchNo}`" class="pd-tr">
+                      <td class="pd-td">{{ r.productName }}</td>
+                      <td class="pd-td">
+                        <a class="cell-link cell-text" @click.stop="openRelated(r)">{{ r.batchNo }}</a>
+                      </td>
+                      <td class="pd-td">{{ r.workOrderNumber }}</td>
+                      <td class="pd-td">{{ formatDate(r.workOrderDate) }}</td>
+                      <td class="pd-td pd-td--num">{{ formatQty(r.qty, r.unit) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <p v-else class="bd-related-empty">{{ group === 'sources' ? 'No source batch' : 'No result batch' }}</p>
+              </div>
+            </div>
+          </MpTabPanel>
+
         </MpTabPanels>
       </MpTabs>
     </div>
@@ -525,6 +739,46 @@ const pagedWarehouseStock = computed(() => {
 </template>
 
 <style scoped>
+/* ── Traceability rows in the Transactions table ── */
+.pd-tr--clickable { cursor: pointer; }
+.pd-tr--highlight > .pd-td { background: var(--mp-background-selected, #e8f1fb); }
+.pd-td--chevron { width: var(--mp-sizes-8, 32px); }
+.pd-chevron {
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--mp-text-secondary); transition: transform 120ms ease;
+}
+.pd-chevron--open { transform: rotate(180deg); }
+.pd-tr--snapshot > .pd-td {
+  white-space: normal; background: var(--mp-background-neutral-subtle, #f8f9f9);
+  /* Its own padding — the row's tight cell padding crowds a multi-field panel. */
+  padding: var(--mp-spacing-4) var(--mp-spacing-5, 20px);
+}
+.pd-snapshot-title {
+  margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
+}
+/* ContentList fields side by side; each keeps its own 8px top/bottom padding, and a
+   floor width so the labels line up in a column when the row wraps. */
+.pd-snapshot-grid { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2) var(--mp-spacing-8, 32px); }
+.pd-snapshot-grid > :deep(.content-list) { min-width: var(--mp-sizes-45, 180px); padding-top: 0; }
+.pd-snapshot-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.pd-snapshot-dot {
+  display: inline-block; margin-left: var(--mp-spacing-1);
+  width: var(--mp-sizes-2, 8px); height: var(--mp-sizes-2, 8px); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-warning-bold, #e5a400);
+}
+
+/* ── Related batch tab ── */
+.bd-related { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
+.bd-related + .bd-related { margin-top: var(--mp-spacing-8, 32px); }
+.bd-related-head { display: flex; flex-direction: column; }
+.bd-related-title {
+  margin: 0; font-size: var(--mp-font-sizes-lg, 16px); line-height: var(--mp-line-heights-lg, 24px);
+  font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
+}
+.bd-related-caption { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.bd-related-empty { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
 /* ── Shell — identical to ProductDetailsPage.vue / WarehouseDetailsPage.vue (docs/patterns/details-page-format.md §C) ── */
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar {

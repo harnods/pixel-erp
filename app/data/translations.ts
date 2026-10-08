@@ -4216,4 +4216,12 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Select a transaction type or date, then click Filter.": "Pilih jenis transaksi atau tanggal, lalu klik Filter.",
   "Search transaction or batch number": "Cari nomor transaksi atau batch",
   "No transactions match your filters": "Tidak ada transaksi yang sesuai dengan filter",
+  "Open All filters, set at least one filter, then click Filter.": "Buka Semua filter, atur minimal satu filter, lalu klik Filter.",
+  "Select batch number": "Pilih nomor batch",
+  "Search product": "Cari produk",
+  "Search batch number": "Cari nomor batch",
+  "Search warehouse": "Cari gudang",
+  "Search vendor": "Cari vendor",
+  "Search customer": "Cari pelanggan",
+  "Search transaction type": "Cari jenis transaksi",
 }

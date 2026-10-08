@@ -447,60 +447,7 @@ describe('batch number options', () => {
   })
 })
 
-describe('visual journey — flow by counterparty', () => {
-  it('puts every in/out line in exactly one party node, and every neutral line in the batch', () => {
-    for (const { sku, batch } of stockedBatches().slice(0, 15)) {
-      const graph = api.batchFlowGraph(sku, batch.batchNo)
-      const parties = [...graph.incoming, ...graph.outgoing]
-      const journey = api.batchJourney(sku, batch.batchNo)
-      const lines = parties.reduce((sum, p) => sum + p.transactions.length, 0) + graph.internal.length
-      expect(lines, `${sku} ${batch.batchNo}`).toBe(journey.length)
-      expect(new Set(parties.map((p) => p.key)).size).toBe(parties.length)
-      expect(graph.internal.every((r) => r.direction === 'neutral')).toBe(true)
-    }
-  })
-
-  it('balances: received minus issued is on hand, and parties are biggest first', () => {
-    for (const { sku, batch } of stockedBatches().slice(0, 15)) {
-      const graph = api.batchFlowGraph(sku, batch.batchNo)
-      expect(graph.received - graph.issued, `${sku} ${batch.batchNo}`).toBe(batch.onHand)
-      expect(graph.incoming.reduce((sum, p) => sum + p.qty, 0)).toBe(graph.received)
-      expect(graph.outgoing.reduce((sum, p) => sum + p.qty, 0)).toBe(graph.issued)
-      for (const side of [graph.incoming, graph.outgoing]) {
-        expect(side.map((p) => p.qty)).toEqual([...side.map((p) => p.qty)].sort((a, b) => b - a))
-      }
-    }
-  })
-
-  it('names the party: a vendor or customer, not a transaction type', () => {
-    const graph = api.batchFlowGraph('1001', 'Batch #001')
-    const journey = api.batchJourney('1001', 'Batch #001')
-    const delivery = journey.find((r) => r.type === 'Purchase delivery')!
-    const vendorNode = graph.incoming.find((p) => p.kind === 'vendor' && p.refId === delivery.counterparty!.id)!
-    expect(vendorNode.types).toContain('Purchase delivery')
-    const sale = journey.find((r) => r.type === 'Sales delivery')!
-    expect(graph.outgoing.some((p) => p.kind === 'customer' && p.refId === sale.counterparty!.id)).toBe(true)
-  })
-
-  it('gives each Work order its own node, carrying the batches on its other side', () => {
-    const roasted = api.getProductBatches('1101')[0]!
-    const output = api.batchFlowGraph('1101', roasted.batchNo).incoming.find((p) => p.kind === 'work-order')!
-    const sources = api.relatedBatches('1101', roasted.batchNo).sources
-    expect(output.batches).toEqual(sources.filter((b) => b.workOrderNumber === output.refId))
-
-    const source = output.batches[0]!
-    const consumed = api.batchFlowGraph(source.sku, source.batchNo).outgoing.filter((p) => p.kind === 'work-order')
-    expect(consumed.some((p) => p.batches.some((b) => b.sku === '1101' && b.batchNo === roasted.batchNo))).toBe(true)
-  })
-
-  it('has no Work order coming in for a green bean — it is bought, not made', () => {
-    const graph = api.batchFlowGraph('1004', 'Batch #001')
-    expect(graph.incoming.some((p) => p.kind === 'work-order')).toBe(false)
-    expect(graph.incoming.some((p) => p.kind === 'vendor')).toBe(true)
-  })
-})
-
-describe('link from the product batch page (decision Q8)', () => {
+describe('link from the report to the batch page', () => {
   it('resolves product batches, but not a warehouse-scoped lot', async () => {
     const { getWarehouseDetail } = await import('~/data/warehouseDetails')
     const batch = api.getProductBatches('1001')[0]!

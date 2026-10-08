@@ -1,6 +1,6 @@
 /**
- * useBatchTraceabilityReportState — the Batch Traceability report's filters, search,
- * sort, page and folded rows, kept OUTSIDE the page components.
+ * useBatchTraceabilityReportState — the Batch Traceability report's filters, sort,
+ * page and folded rows, kept OUTSIDE the page components.
  *
  * Why: the app never keep-alives pages, so opening a batch's detail page unmounts the
  * report and every local ref is lost. PRD story 7 needs the breadcrumb back to land on
@@ -12,41 +12,30 @@
  * report's own Reset filter / Clear all filters.
  */
 import { reactive } from 'vue'
-import type { DateCondition } from '~/data/batchTraceability'
+import { emptyBatchFilters, type BatchFiltersValue } from '~/components/patterns/BatchTraceabilityFiltersDrawer.vue'
+import { emptyTransactionFilters, type TransactionFiltersValue } from '~/components/patterns/BatchTransactionFiltersDrawer.vue'
 
 export interface TableViewState {
-  search: string
   sortKey: string
   sortDir: 'asc' | 'desc'
   page: number
   perPage: number
 }
 
-/** Product / Batch number / Warehouse, as the filter bar holds them (names). */
-export interface BatchFilterSelection {
-  productNames: string[]
-  batchNos: string[]
-  warehouseNames: string[]
-}
-
-/** By batch is filter-first: the bar edits a draft, and nothing shows until Filter
- *  copies it to `applied` (null = not filtered yet). */
-export interface BatchSearchState extends BatchFilterSelection {
-  applied: BatchFilterSelection | null
+/** By batch is filter-first: the All filters drawer edits `filters`, and nothing shows
+ *  until Filter copies it to `applied` (null = not filtered yet). */
+export interface BatchSearchState {
+  filters: BatchFiltersValue
+  applied: BatchFiltersValue | null
   table: TableViewState
 }
 
-/** Transaction type and date, as the filter bar holds them. */
-export interface TransactionFilterSelection {
-  typeLabels: string[]
-  dateCondition: DateCondition | null
-}
-
-/** Filter-first, like By batch: the bar edits a draft; Filter copies it to `applied`.
- *  `collapsed` lists the transactions whose batch rows the user folded away. */
-export interface TransactionSearchState extends TransactionFilterSelection {
-  applied: TransactionFilterSelection | null
-  collapsed: string[]
+/** Filter-first, like By batch; rows start folded, so `expanded` lists the transactions
+ *  the user opened. */
+export interface TransactionSearchState {
+  filters: TransactionFiltersValue
+  applied: TransactionFiltersValue | null
+  expanded: string[]
   table: TableViewState
 }
 
@@ -57,27 +46,15 @@ export interface BatchTraceabilityReportState {
 }
 
 function emptyTable(): TableViewState {
-  return { search: '', sortKey: '', sortDir: 'asc', page: 1, perPage: 25 }
+  return { sortKey: '', sortDir: 'asc', page: 1, perPage: 25 }
 }
 
 function emptyBatchSearch(): BatchSearchState {
-  return {
-    productNames: [],
-    batchNos: [],
-    warehouseNames: [],
-    applied: null,
-    table: emptyTable(),
-  }
+  return { filters: emptyBatchFilters(), applied: null, table: emptyTable() }
 }
 
 function emptyTransactionSearch(): TransactionSearchState {
-  return {
-    typeLabels: [],
-    dateCondition: null,
-    applied: null,
-    collapsed: [],
-    table: emptyTable(),
-  }
+  return { filters: emptyTransactionFilters(), applied: null, expanded: [], table: emptyTable() }
 }
 
 const state = reactive<BatchTraceabilityReportState>({

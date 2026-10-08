@@ -9,12 +9,11 @@
  * keep their filters, search, sort and page in useBatchTraceabilityReportState, so the
  * detail page's breadcrumb returns to the report exactly as it was (story 7).
  *
- * By batch (stories 2, 3) is filter-first, like General ledger: pick Product, Batch number
- * (each has an "All" option) or Warehouse — at least one — then click Filter; a filter left
- * empty means all of it. Nothing lists before that.
- * The bar edits a draft; Filter applies it. The attribute filters (Vendor, Grade, the three
- * dates) were dropped from this search (product decision, 2026-09-21). Rows come straight
- * from `searchBatches()` — this page only maps, searches and exports.
+ * By batch (stories 2, 3) is filter-first, like General ledger: Product, Batch number and
+ * Warehouse sit in the bar AND in the All filters drawer (same draft — the drawer also
+ * holds Vendor, Grade and the three dates), then Filter · All filters. Set at least one
+ * filter, then click Filter; a filter left empty means all of it, and nothing lists before
+ * that. Rows come straight from `searchBatches()` — this page only maps and exports.
  *
  * Full-bleed (resolved via detailMatch in [...slug].vue), so it draws its own title bar
  * and stage, like DualUnitInventoryReportPage.
@@ -41,6 +40,9 @@ import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import { columnWidth } from '~/components/patterns/columnWidths'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import MultiSelectDropdown from '~/components/patterns/MultiSelectDropdown.vue'
+import BatchTraceabilityFiltersDrawer, {
+  countBatchFilters, type BatchFiltersValue,
+} from '~/components/patterns/BatchTraceabilityFiltersDrawer.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import BatchTraceabilityByTransaction from '~/components/patterns/BatchTraceabilityByTransaction.vue'
@@ -57,13 +59,13 @@ import { warehouses } from '~/data/warehouses'
 import { successToast } from '~/utils/toasts'
 import { useBatchTraceabilityReportState } from '~/composables/useBatchTraceabilityReportState'
 import {
-  buildExportDocument, downloadExport, type ExportFilter, type ExportFormat,
+  buildExportDocument, describeDateCondition, downloadExport, type ExportFilter, type ExportFormat,
 } from '~/utils/traceabilityExport'
-import { formatDateTime } from '~/utils/date'
+import { formatDate, formatDateTime } from '~/utils/date'
 
 const { t } = useLocale()
 const router = useRouter()
-const { attributeSortValue, attributeText, qtyText, qtyCellText } = useTraceabilityCells()
+const { attributeSortValue, attributeText, qtyText, qtyCellText, vendorName, gradeName } = useTraceabilityCells()
 
 // ─── Scenario (demo) ────────────────────────────────────────────────────────────
 // The two entitlement scenarios preview what a Jurnal company sees (PRD story 1).
@@ -98,46 +100,44 @@ function setMode(next: string) {
   setReportMode(next as Mode)
 }
 
-// ─── Filters ────────────────────────────────────────────────────────────────────
-// MultiSelectDropdown works in option strings, so selections are held as names and
-// mapped back to ids for the query.
+// ─── Filters (drawer draft → Filter → applied) ──────────────────────────────────
+// MultiSelectDropdown works in option strings, so products and warehouses are held as
+// names and mapped back to ids for the query.
 const productOptions = computed(() => traceProductOptions())
 const productOptionNames = computed(() => productOptions.value.map((p) => p.name))
-const batchNumberOptions = computed(() => traceBatchNumberOptions(draftSkus.value))
 const activeWarehouses = computed(() => warehouses.filter((w) => !w.isDefault && w.status === 'active'))
 const warehouseOptionNames = computed(() => activeWarehouses.value.map((w) => w.name))
 
-const productNames = toRef(reportState.batch, 'productNames')
-const batchNos = toRef(reportState.batch, 'batchNos')
-// Empty or every warehouse ticked = All warehouse: one summed line per batch.
-const warehouseNames = toRef(reportState.batch, 'warehouseNames')
+const draftFilters = toRef(reportState.batch, 'filters')
+// Batch numbers follow the products picked, in the bar as in the drawer.
+const draftSkus = computed(() => {
+  const skuByName = new Map(productOptions.value.map((p) => [p.name, p.sku]))
+  return draftFilters.value.productNames.map((n) => skuByName.get(n)).filter((s): s is string => !!s)
+})
+const batchNumberOptions = computed(() => traceBatchNumberOptions(draftSkus.value))
+watch(batchNumberOptions, (options) => {
+  const kept = draftFilters.value.batchNos.filter((b) => options.includes(b))
+  if (kept.length !== draftFilters.value.batchNos.length) draftFilters.value.batchNos = kept
+})
+const filtersOpen = ref(false)
+const filterCount = computed(() => countBatchFilters(draftFilters.value, access.value))
+function applyDrawerFilters(v: BatchFiltersValue) { draftFilters.value = v }
+
 /** What the last Filter click applied — null until the user has filtered once. */
 const applied = toRef(reportState.batch, 'applied')
 
-// Batch numbers follow the products picked; a batch that no longer fits drops out.
-const draftSkus = computed(() => {
-  const skuByName = new Map(productOptions.value.map((p) => [p.name, p.sku]))
-  return productNames.value.map((n) => skuByName.get(n)).filter((s): s is string => !!s)
-})
-watch(batchNumberOptions, (options) => {
-  const kept = batchNos.value.filter((b) => options.includes(b))
-  if (kept.length !== batchNos.value.length) batchNos.value = kept
-})
-
-/** Filter — apply the bar. Needs at least one filter; one left empty means all of it. */
+/** Filter — apply the drawer. Needs at least one filter; one left empty means all of it. */
 const filterError = ref('')
-const hasDraftFilter = computed(() => productNames.value.length > 0 || batchNos.value.length > 0 || warehouseNames.value.length > 0)
 function runFilter() {
-  if (!hasDraftFilter.value) {
+  if (!filterCount.value) {
     filterError.value = t('Select at least one filter, then click Filter.')
     return
   }
   filterError.value = ''
-  applied.value = { productNames: [...productNames.value], batchNos: [...batchNos.value], warehouseNames: [...warehouseNames.value] }
-  search.value = ''
+  applied.value = JSON.parse(JSON.stringify(draftFilters.value)) as BatchFiltersValue
   currentPage.value = 1
 }
-watch(hasDraftFilter, (has) => { if (has) filterError.value = '' })
+watch(filterCount, (n) => { if (n) filterError.value = '' })
 
 /** The applied selection as a search — "All" (every option ticked) searches everything. */
 const query = computed<BatchSearchFilter | null>(() => {
@@ -151,6 +151,11 @@ const query = computed<BatchSearchFilter | null>(() => {
     productSkus: allProducts ? [] : a.productNames.map((n) => skuByName.get(n)).filter((s): s is string => !!s),
     batchNos: a.batchNos,
     warehouseIds: allWarehouses ? 'all' : a.warehouseNames.map((n) => idByName.get(n)).filter((s): s is string => !!s),
+    vendorIds: a.vendorIds,
+    gradeIds: a.gradeIds,
+    expiry: a.expiry ?? undefined,
+    manufacturing: a.manufacturing ?? undefined,
+    bestBefore: a.bestBefore ?? undefined,
   }
 })
 
@@ -197,13 +202,6 @@ const rows = computed<ReportRow[]>(() => {
   })
 })
 
-function matchesSearch(row: ReportRow, s: string): boolean {
-  return !s
-    || row.productName.toLowerCase().includes(s)
-    || row.source.sku.toLowerCase().includes(s)
-    || row.batchNo.toLowerCase().includes(s)
-}
-
 // ─── Product groups (Production request table structure) ──────────────────────
 /** One parent row per product; its batch lines are the child rows. */
 interface ProductGroup {
@@ -229,56 +227,40 @@ const groups = computed<ProductGroup[]>(() => {
   return [...bySku.values()]
 })
 
-// Search matches a product (every batch stays) or a batch number (only those batches).
 // Pagination counts products, like the Production request table.
 const {
-  search, currentPage, paginated, total, perPage,
-  setPage, setPerPage, sortKey, sortDir,
-} = useTableState<ProductGroup>(groups, {
-  perPage: 25,
-  filterFn: (g, s) => g.lines.some((r) => matchesSearch(r, s)),
-})
-
-function visibleLines(g: ProductGroup): ReportRow[] {
-  const s = search.value.trim().toLowerCase()
-  if (!s || g.productName.toLowerCase().includes(s) || g.sku.toLowerCase().includes(s)) return g.lines
-  return g.lines.filter((r) => r.batchNo.toLowerCase().includes(s))
-}
-const pagedGroups = computed(() => (paginated.value as ProductGroup[]).map((g) => ({ ...g, lines: visibleLines(g) })))
-/** Every line the search keeps, product by product — what "All" exports. */
-const matchingLines = computed(() => {
-  const s = search.value.trim().toLowerCase()
-  return groups.value.filter((g) => g.lines.some((r) => matchesSearch(r, s))).flatMap(visibleLines)
-})
+  currentPage, paginated, total, perPage, setPage, setPerPage, sortKey, sortDir,
+} = useTableState<ProductGroup>(groups, { perPage: 25 })
+const pagedGroups = computed(() => paginated.value as ProductGroup[])
+/** Every line in the result — what "All" exports. */
+const matchingLines = computed(() => groups.value.flatMap((g) => g.lines))
 
 // ─── Expand / collapse ──────────────────────────────────────────────────────────
-// A report is read, so products open expanded; a parent row folds its batches away.
-const closedSkus = ref(new Set<string>())
-function isOpen(sku: string) { return !closedSkus.value.has(sku) }
+// Products start folded — the result reads as a product list until one is opened.
+const openSkus = ref(new Set<string>())
+function isOpen(sku: string) { return openSkus.value.has(sku) }
 function toggleGroup(sku: string) {
-  const next = new Set(closedSkus.value)
+  const next = new Set(openSkus.value)
   if (next.has(sku)) next.delete(sku)
   else next.add(sku)
-  closedSkus.value = next
+  openSkus.value = next
 }
 
 // Restore the table as the user left it, then keep the store in step. The page comes
-// back a tick later: restoring search / per-page makes useTableState reset it to 1 first.
+// back a tick later: restoring per-page makes useTableState reset it to 1 first.
 {
   const saved = { ...reportState.batch.table }
-  search.value = saved.search
   sortKey.value = saved.sortKey
   sortDir.value = saved.sortDir
   perPage.value = saved.perPage
   void nextTick(() => { currentPage.value = saved.page })
 }
-watch([search, sortKey, sortDir, currentPage, perPage], ([s, key, dir, page, size]) => {
-  Object.assign(reportState.batch.table, { search: s, sortKey: key, sortDir: dir, page, perPage: size })
+watch([sortKey, sortDir, currentPage, perPage], ([key, dir, page, size]) => {
+  Object.assign(reportState.batch.table, { sortKey: key, sortDir: dir, page, perPage: size })
 })
 
 function resetFilters() {
   resetBatchSearch()
-  search.value = ''
 }
 
 // ─── Columns ────────────────────────────────────────────────────────────────────
@@ -367,10 +349,11 @@ function isNa(row: ReportRow, column: string): boolean {
   return column === 'onHandSecondary' && row.source.onHandSecondary.state === 'na'
 }
 
-/** Opens the batch's traceability detail; a warehouse line highlights that warehouse there. */
+/** Opens the product's Batch details page — the batch's single detail page since the
+ *  traceability detail merged into it (2026-10-08). */
 function openBatch(row: ReportRow) {
   router.push({
-    path: `/inventory-report/batch-traceability/${row.source.sku}/${encodeURIComponent(row.batchNo)}`,
+    path: `/product-list/${row.source.sku}/batches/${encodeURIComponent(row.batchNo)}`,
     query: row.source.warehouseId ? { warehouse: row.source.warehouseId } : {},
   })
 }
@@ -395,7 +378,14 @@ const appliedFilters = computed<ExportFilter[]>(() => {
   out.push({ label: t('Product'), value: all(a.productNames, productOptionNames.value, t('All product')) })
   out.push({ label: t('Batch number'), value: all(a.batchNos, traceBatchNumberOptions(query.value?.productSkus ?? []), t('All batch')) })
   if (query.value?.warehouseIds !== 'all') out.push({ label: t('Warehouse'), value: a.warehouseNames.join(', ') })
-  if (search.value.trim()) out.push({ label: t('Search keyword'), value: search.value.trim() })
+  const f = a
+  const addOn = access.value.batchAttribute
+  const dateLabels = { between: t('Is between'), before: t('Is before'), after: t('Is after') }
+  if (addOn && f.vendorIds.length) out.push({ label: t('Vendor'), value: f.vendorIds.map(vendorName).join(', ') })
+  if (addOn && f.gradeIds.length) out.push({ label: t('Grade'), value: f.gradeIds.map(gradeName).join(', ') })
+  if (f.expiry) out.push({ label: t('Expiry date'), value: describeDateCondition(f.expiry, dateLabels, formatDate) })
+  if (addOn && f.manufacturing) out.push({ label: t('Manufacturing date'), value: describeDateCondition(f.manufacturing, dateLabels, formatDate) })
+  if (addOn && f.bestBefore) out.push({ label: t('Best before date'), value: describeDateCondition(f.bestBefore, dateLabels, formatDate) })
   return out
 })
 
@@ -448,19 +438,27 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <!-- ── Filter bar ── -->
         <div class="bt-filter-bar">
           <div class="filter-left">
+            <!-- The bar's three filters are the drawer's first three — one draft, two places. -->
             <MultiSelectDropdown
-              id="bt-product" v-model="productNames" :options="productOptionNames" :placeholder="t('Product')"
+              id="bt-product" v-model="draftFilters.productNames" :options="productOptionNames" :placeholder="t('Product')"
               :select-all-label="t('All product')" :all-selected-label="t('All product')"
+              searchable :search-placeholder="t('Search product')"
             />
             <MultiSelectDropdown
-              id="bt-batch-number" v-model="batchNos" :options="batchNumberOptions" :placeholder="t('Batch number')"
+              id="bt-batch-number" v-model="draftFilters.batchNos" :options="batchNumberOptions" :placeholder="t('Batch number')"
               :select-all-label="t('All batch')" :all-selected-label="t('All batch')"
+              searchable :search-placeholder="t('Search batch number')"
             />
             <MultiSelectDropdown
-              id="bt-warehouse" v-model="warehouseNames" :options="warehouseOptionNames"
+              id="bt-warehouse" v-model="draftFilters.warehouseNames" :options="warehouseOptionNames"
               :placeholder="t('All warehouse')" :select-all-label="t('All warehouse')" :all-selected-label="t('All warehouse')"
+              searchable :search-placeholder="t('Search warehouse')"
             />
             <button type="button" class="btn-enterprise btn-enterprise--primary bt-filter-btn" @click="runFilter">{{ t('Filter') }}</button>
+            <MpButton is-rounded class="bt-all-filters" :class="{ 'bt-all-filters--active': filterCount > 0 }" @click="filtersOpen = true">
+              <MpIcon name="filter" size="sm" />
+              {{ t('All filters') }}{{ filterCount > 0 ? ` (${filterCount})` : '' }}
+            </MpButton>
           </div>
 
           <div class="filter-right">
@@ -475,14 +473,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               </MpTooltip>
             </MpButtonGroup>
 
-            <div class="filter-search">
-              <MpIcon name="search" size="sm" />
-              <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search product or batch')">
-              <MpButton
-                v-if="search" variant="ghost" class="filter-search-clear"
-                left-icon="close" :aria-label="t('Clear search')" @click="search = ''"
-              />
-            </div>
           </div>
         </div>
 
@@ -502,7 +492,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <div v-else-if="!applied" class="empty-full">
           <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240">
           <p class="empty-full-title">{{ t('Filter to see batches') }}</p>
-          <p class="empty-full-desc">{{ t('Select a product, batch number or warehouse, then click Filter.') }}</p>
+          <p class="empty-full-desc">{{ t('Select at least one filter, then click Filter.') }}</p>
         </div>
 
         <!-- ── Grouped table: product parent rows, batch child rows ── -->
@@ -592,11 +582,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           />
         </template>
 
-        <!-- ── Filtered empty — the filter or search found no batch ── -->
+        <!-- ── Filtered empty — the filter found no batch ── -->
         <div v-else class="empty-full">
           <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240">
-          <p class="empty-full-title">{{ search.trim() ? `"${search.trim()}" ${t('not found')}` : t('No batches match your filters') }}</p>
-          <p class="empty-full-desc">{{ search.trim() ? t('Recheck the keywords you have typed and try searching again.') : t('Recheck the filters you have applied and try filtering again.') }}</p>
+          <p class="empty-full-title">{{ t('No batches match your filters') }}</p>
+          <p class="empty-full-desc">{{ t('Recheck the filters you have applied and try filtering again.') }}</p>
           <a class="empty-clear" @click="resetFilters">{{ t('Clear all filters') }}</a>
         </div>
 
@@ -605,6 +595,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <!-- ── By transaction (stories 4, 5) ── -->
       <BatchTraceabilityByTransaction v-else :access="access" :empty="scenario === 'empty'" />
     </div>
+
+    <BatchTraceabilityFiltersDrawer
+      id="bt-filters"
+      v-model:is-open="filtersOpen"
+      :model-value="draftFilters"
+      :access="access"
+      @apply="applyAttributeFilters"
+    />
 
     <ExportModal
       :open="exportOpen"
@@ -663,16 +661,21 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   min-width: 0 !important; padding: var(--mp-spacing-2) !important;
   color: var(--mp-colors-text-default, #232933);
 }
-.filter-search-input {
-  flex: 1; min-width: 0; border: none; outline: none; background: transparent;
-  font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
-  color: var(--mp-colors-text-default, #232933);
+
+/* All filters — secondary look; the (N) is the active signal, never a brand colour
+   (rule/filter-all-filters-active-count). */
+.bt-all-filters {
+  display: inline-flex !important; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3) !important;
+  background: var(--mp-background-neutral, #ffffff) !important;
+  border: 1px solid var(--mp-colors-border-bold, #8c9596) !important;
+  border-radius: var(--mp-radii-full, 999px) !important;
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-md); color: var(--mp-colors-text-default, #232933);
+  white-space: nowrap; cursor: pointer;
 }
-.filter-search-clear {
-  display: inline-flex !important; align-items: center; justify-content: center;
-  width: var(--mp-sizes-5, 20px) !important; height: var(--mp-sizes-5, 20px) !important;
-  min-width: 0 !important; padding: 0 !important;
-}
+.bt-all-filters:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; }
+.bt-all-filters--active { background: var(--mp-background-neutral-subtle, #f8f9f9) !important; }
 
 /* Filter — primary pill, applies the bar (btn-enterprise--primary from erp.css). */
 .bt-filter-btn { white-space: nowrap; }
@@ -708,7 +711,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   padding: var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-2);
   border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  vertical-align: top; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   background: inherit;
 }
 .bt-td--right { text-align: right; padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-4); }
@@ -728,7 +731,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .bt-parent-cell { white-space: normal; cursor: pointer; }
 .bt-parent-cell:hover .bt-product-name { color: var(--mp-text-selected); }
 .bt-parent-cell:hover .bt-expand { color: var(--mp-text-default); }
-.bt-product { display: flex; align-items: center; gap: var(--mp-spacing-3); min-width: 0; }
+.bt-product { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); min-width: 0; }
 .bt-thumb {
   width: var(--mp-sizes-10, 40px); height: var(--mp-sizes-10, 40px);
   border-radius: var(--mp-radii-md); flex-shrink: 0; object-fit: cover;
