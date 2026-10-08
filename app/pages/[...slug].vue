@@ -26,6 +26,7 @@ syncOutboundOrderStatuses()
 import { packingOpenCount } from '~/data/packingTasks'
 import { deliveryOpenCount } from '~/data/deliveryTasks'
 import { awaitingAdjustmentCount } from '~/data/stockAdjustments'
+import { pendingCount as woApprovalPendingCount } from '~/data/woApproval'
 import { awaitingPurchaseRequestCount } from '~/data/purchaseRequests'
 import { openWmsCountTaskCount, awaitingWmsCountApprovalCount } from '~/data/wmsStockAdjustments'
 import { recommendationCount, topRecommendedProductNames } from '~/data/cycleCountRecommendations'
@@ -228,6 +229,7 @@ const BillsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/Bil
 const BillsReviewFilesPage = asyncPage(() => import('~/components/pages/BillsReviewFilesPage.vue'))
 const PurchaseInvoicesPage = asyncPage(() => import('~/components/pages/PurchaseInvoicesPage.vue'))
 const PurchaseRequestsPage = asyncPage(() => import('~/components/pages/PurchaseRequestsPage.vue'))
+const WorkOrdersAwaitingApprovalPage = asyncPage(() => import('~/components/pages/WorkOrdersAwaitingApprovalPage.vue'))
 const PurchaseRequestsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/PurchaseRequestsAwaitingApprovalPage.vue'))
 const PurchaseInvoicesAwaitingApprovalPage = asyncPage(() => import('~/components/pages/PurchaseInvoicesAwaitingApprovalPage.vue'))
 const ReceiptIndexPage = asyncPage(() => import('~/components/pages/ReceiptIndexPage.vue'))
@@ -998,6 +1000,9 @@ const pageTabs: Record<string, string[]> = {
   'Sales quotes': ['All sales quotes', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
+  // Work order approval (PRD "Require approval" tab — named Awaiting approval like every
+  // other module's approval queue). Badge = every pending request, for all users.
+  'Work orders':       ['All work orders', 'Awaiting approval'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
   'Product list':      ['All products', 'Awaiting approval'],
   // Settings → Users & roles (Jurnal benchmark: User list / Custom role).
@@ -1083,6 +1088,10 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   if (currentPageKey.value === 'Stock adjustments') {
     const awaiting = awaitingAdjustmentCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
+  }
+  if (currentPageKey.value === 'Work orders') {
+    const n = woApprovalPendingCount()
+    return n ? { 'Awaiting approval': n } : {}
   }
   if (currentPageKey.value === 'Production request') {
     const pending = productionRequestPendingCount()
@@ -1283,6 +1292,10 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Purchase requests': {
     'All requests': PurchaseRequestsPage,
     'Awaiting approval': PurchaseRequestsAwaitingApprovalPage,
+  },
+  'Work orders': {
+    'All work orders': pageRegistry['Work orders']!,
+    'Awaiting approval': WorkOrdersAwaitingApprovalPage,
   },
   'Stock adjustments': {
     'All stock adjustments': StockAdjustmentsPage,

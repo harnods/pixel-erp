@@ -28,6 +28,78 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'wo-approval-status',
+    title: 'Work order status while approval is pending',
+    description:
+      'The status shows Draft while a Start work order request waits for approval (In progress once approved), and Waiting approval while an adjustment, completion or cancel/close waits (then In progress, Completed or Canceled once approved). Approval notices now sit inside the content under the Overview / Material consume & return tabs. Partial completion is out of MVP scope and no longer a gated type. If the requester is the only approver at a level (self-approval off), that level is skipped and logged, so the request moves to the next level instead of getting stuck.',
+    date: '2026-10-08',
+    files: ['woApproval.ts', 'WorkOrderDetailsPage.vue', 'WorkOrdersIndexPage.vue', 'ErpStatusBadge.vue'],
+  },
+  {
+    id: 'wo-approval-mvp-scope',
+    title: 'Work order approval — MVP scope',
+    description:
+      'Awaiting approval lists every pending request for all users (badge = all pending); Approve, Reject and the checkbox appear only where you are the current-level approver, with a "Waiting for" column. Start work order replaces Work order creation as a gated type — creation saves Not started, and material is reserved when the start is approved. Material consume / return and partial completion are not gated. A Work order transaction type can belong to only one workflow.',
+    date: '2026-10-05',
+    files: ['woApproval.ts', 'WorkOrdersAwaitingApprovalPage.vue', 'WorkOrderDetailsPage.vue', 'CreateApprovalWorkflowPage.vue', 'CreateWorkOrderPage.vue'],
+  },
+  {
+    id: 'wo-approval-rev3',
+    title: 'Work order approval aligned to PRD Rev 3',
+    description:
+      'Cancel/close is a gated type (work order Actions menu); new Work order workflows are pre-filled with Start, Adjustment, Completion and Cancel/close; a per-workflow "Allow requester to approve own request" toggle (off by default); adjustments need a reason and an adjustment date, shown in the approval log; the approval log shows a Completion summary (output and cost vs plan), tagged "Out of scope for MVP".',
+    date: '2026-10-05',
+    files: ['woApproval.ts', 'WoTransactionModal.vue', 'CreateApprovalWorkflowPage.vue', 'NewMaterialRecordPage.vue', 'ApprovalLogModal.vue'],
+  },
+  {
+    id: 'wo-approval-queue',
+    title: 'Work orders: Awaiting approval tab',
+    description:
+      'Approver queue (PRD "Require approval" tab, named Awaiting approval like other modules) with Approval log, Comments, Approve and Reject (reason required), plus bulk Approve / Reject. Switch "View as" in the scenario FAB to check level 1, level 2 and requester views.',
+    date: '2026-10-02',
+    files: ['WorkOrdersAwaitingApprovalPage.vue', 'woApproval.ts', 'ApprovalLogModal.vue'],
+  },
+  {
+    id: 'wo-approval-list-indicator',
+    title: 'Work order list: approval status filter',
+    description:
+      'New Approval status filter (Waiting for approval / Rejected). The status column shows Draft or Waiting approval while a request is pending (no separate clock icon).',
+    date: '2026-10-02',
+    files: ['WorkOrdersIndexPage.vue'],
+  },
+  {
+    id: 'wo-approval-detail',
+    title: 'Work order detail: approval notices and guards',
+    description:
+      'For an approver at the current level, the primary action (e.g. Start work order) becomes an Approve split button with Reject in its dropdown; pending and rejected notices (the pending notice opens the Approval log), "waiting for approval" captions on consumed / produced qty, and inline refusals when a pending request blocks an action (buttons stay enabled).',
+    date: '2026-10-02',
+    files: ['WorkOrderDetailsPage.vue', 'WoTransactionModal.vue'],
+  },
+  {
+    id: 'wo-approval-forms',
+    title: 'Gated transactions: pre-submit notice and Submit for approval',
+    description:
+      'Start work order, Adjust work order, Partial completion, Complete and Cancel/close show "This transaction needs approval from level 1: …" when a Work order workflow gates them, and save a request instead of executing. Adjust and Partial completion are stand-in modals (no form existed before). Material consume / return post immediately but are refused while an adjustment, completion or cancel/close is pending, and consume is capped at the planned qty.',
+    date: '2026-10-02',
+    files: ['CreateWorkOrderPage.vue', 'NewMaterialRecordPage.vue', 'WoTransactionModal.vue'],
+  },
+  {
+    id: 'wo-approval-resubmit',
+    title: 'Resubmit a rejected request',
+    description:
+      'A rejected request shows a notice on the work order with Submit again (start) or Create again (other types), which reopens the form pre-filled with the original data and date.',
+    date: '2026-10-02',
+    files: ['CreateWorkOrderPage.vue', 'NewMaterialRecordPage.vue', 'WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-approval-rules',
+    title: 'Approval workflows: Work order transaction type',
+    description:
+      'Choosing transaction type "Work order" shows a second dropdown under it to pick the work order transaction the workflow gates (Start work order, adjustment, partial completion, completion, cancel/close). A type can have only one ACTIVE workflow — types another active workflow already has are not offered, and turning on a workflow whose type is already covered asks to turn the other one off. Approvers are limited to users with Work order access, up to 4 levels, and the list shows "Applies to: …".',
+    date: '2026-10-08',
+    files: ['CreateApprovalWorkflowPage.vue', 'ApprovalWorkflowsPage.vue', 'approvalWorkflows.ts'],
+  },
+  {
     id: 'crm-generic-actions-column',
     title: 'Custom module: actions column with kebab menu',
     description:

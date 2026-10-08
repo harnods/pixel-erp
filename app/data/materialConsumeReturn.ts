@@ -34,6 +34,11 @@ export interface MaterialConsumeReturnRecord {
 
 const CRR_RECORDER_POOL = ['Agung Mulyadi', 'Siti Rahma', 'Bayu Saputra']
 
+// Work orders whose seeded completion is waiting for approval (see woApproval.ts) —
+// their material is already fully consumed, so the Completion summary compares real
+// output and cost against plan instead of an empty run.
+const FULLY_CONSUMED_SEED = new Set(['wo-7'])
+
 // consumed-so-far, mirroring the Overview → Raw materials "Consumed qty" column.
 function consumedForStatus(needed: number, status: WorkOrderStatus): number {
   if (status === 'partially produced' || status === 'partially completed') return Math.round(needed * 0.5)
@@ -62,7 +67,7 @@ function buildSeed(): MaterialConsumeReturnRecord[] {
     if (!bom) continue
     const reservations: Record<string, WorkOrderMaterialReservation> = {}
     bom.rawMaterials.forEach((r, i) => {
-      const consumedQty = consumedForStatus(r.needed, wo.status)
+      const consumedQty = FULLY_CONSUMED_SEED.has(wo.id) ? r.needed : consumedForStatus(r.needed, wo.status)
       let netConsumed = 0
       if (consumedQty > 0) {
         netConsumed = consumedQty
@@ -80,7 +85,7 @@ function buildSeed(): MaterialConsumeReturnRecord[] {
           memo: '',
           recordedBy,
         })
-        if (i % 2 === 1) {
+        if (i % 2 === 1 && !FULLY_CONSUMED_SEED.has(wo.id)) {
           const returnQty = Math.min(5, consumedQty)
           netConsumed -= returnQty
           records.push({
@@ -113,7 +118,12 @@ function buildSeed(): MaterialConsumeReturnRecord[] {
         if (serials.length) reservations[r.productId] = { warehouseId: defaultWarehouseId, serialSelection: serials }
       }
     })
-    if (Object.keys(reservations).length) wo.materialReservations = reservations
+    // Work order approval (MVP) — material is reserved only when the work order starts, so
+    // a Not started work order holds its picks as an unreserved plan.
+    if (Object.keys(reservations).length) {
+      if (wo.status === 'not started') wo.reservationPlan = reservations
+      else wo.materialReservations = reservations
+    }
   }
   return records
 }

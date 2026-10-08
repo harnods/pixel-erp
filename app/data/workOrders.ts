@@ -51,6 +51,12 @@ export interface WorkOrder {
    * reserved but unconsumed.
    */
   materialReservations?: Record<string, WorkOrderMaterialReservation>
+  /**
+   * Work order approval (MVP) — material is RESERVED only when the work order starts (or
+   * its Start request is approved). Until then the picks made on the create form are held
+   * here, unreserved; startWorkOrder() moves them into materialReservations.
+   */
+  reservationPlan?: Record<string, WorkOrderMaterialReservation>
 }
 
 export interface WorkOrderMaterialReservation {
@@ -121,6 +127,11 @@ const SEED: Array<Omit<WorkOrder, 'id' | 'number' | 'bomId' | 'bomName'> & { bom
   { bomIndex: 0, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'canceled', producedQty: 0, plannedQty: 100, planStartDate: isoOffset(-5), planEndDate: isoOffset(0),  endDate: isoOffset(-3) },
   { bomIndex: 1, category: 'Standard', type: 'Disassembly', trackRouting: true, status: 'canceled', producedQty: 0, plannedQty: 60,  planStartDate: isoOffset(-4), planEndDate: isoOffset(1),  endDate: isoOffset(-2), parentNumber: 'WO-2026-0021' },
   { bomIndex: 9, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'canceled', producedQty: 0, plannedQty: 160, planStartDate: isoOffset(-3), planEndDate: isoOffset(2),  endDate: isoOffset(-1) },
+
+  // ── work order approval (see woApproval.ts) ─────────────────────────────
+  // wo-25: Start waiting for approval level 2 · wo-26: Start rejected at level 1.
+  { bomIndex: 2, category: 'Standard', type: 'Assembly',    trackRouting: false, status: 'not started', producedQty: 0, plannedQty: 250, planStartDate: isoOffset(4),  planEndDate: isoOffset(8) },
+  { bomIndex: 5, category: 'Standard', type: 'Assembly',    trackRouting: false, status: 'not started', producedQty: 0, plannedQty: 80,  planStartDate: isoOffset(3),  planEndDate: isoOffset(6) },
 ]
 
 function buildSeed(): WorkOrder[] {
@@ -151,6 +162,22 @@ function nextWorkOrderNumber(): string {
     if (m) max = Math.max(max, parseInt(m[1]!, 10))
   }
   return `WO-2026-${String(max + 1).padStart(4, '0')}`
+}
+
+// Snapshots saved before work order approval shipped don't carry the approval seed
+// rows (wo-25 / wo-26) the approval requests point at — append any that are missing,
+// renumbered if a user-created work order already took that number.
+if (workOrderSnapshot) {
+  for (const seed of buildSeed().filter(s => s.id === 'wo-25' || s.id === 'wo-26')) {
+    if (workOrders.some(w => w.id === seed.id)) continue
+    if (workOrders.some(w => w.number === seed.number)) seed.number = nextWorkOrderNumber()
+    workOrders.push(seed)
+  }
+  // Draft / Rejected were creation-approval statuses — creation is no longer gated.
+  for (const w of workOrders) {
+    const legacy = w.status as string
+    if (legacy === 'draft' || legacy === 'rejected') w.status = 'not started'
+  }
 }
 
 /** Create a new work order from the New work order form — must reference an existing BOM. */

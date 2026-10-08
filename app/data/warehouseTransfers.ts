@@ -240,11 +240,27 @@ export interface ApprovalStage {
   rule: 'everyone' | 'anyone'
   approvers: string[]
   approvals: ApprovalStep[]
+  /** Set when an approver in this stage rejected — stops the whole chain. */
+  rejection?: ApprovalStep & { reason: string }
+  /** Set for a stage the request hasn't reached yet, e.g. "Waiting for level 1". */
+  waitingFor?: string
+  /** Set when the stage was skipped (its only approver is the requester), with the reason. */
+  skipped?: string
 }
 export interface ApprovalLog {
   requestedBy: string
   requestedAt: string
   stages: ApprovalStage[]
+  /** Block heading when the modal lists several requests (e.g. "Material consume MC-0045"). */
+  heading?: string
+  /** Why the transaction was held, shown above the timeline. */
+  reason?: string
+  /** What is being decided (e.g. adjustment changes + reason, completion output/cost). */
+  details?: { label: string; value: string; tag?: string }[]
+  /** First-row verb — defaults to "Requested by" ("Resubmitted by" after a rejection). */
+  requestedLabel?: string
+  /** Earlier rejected cycles of the same request, shown collapsed as "Previous submission". */
+  previous?: ApprovalLog[]
 }
 
 const REQUESTER_POOL = ['Budi Santoso', 'Rizki Pratama', 'Hendra Wijaya', 'Andi Kusuma', 'Ratna Sari', 'Farhan Nugroho', 'Lestari Putri', 'Yusuf Hakim', 'Bayu Pradana']

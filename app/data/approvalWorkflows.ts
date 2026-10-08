@@ -8,12 +8,12 @@
  * the rule configuration surface.
  */
 import { reactive } from 'vue'
-import { loadSnapshot, saveSnapshot } from './persist'
+import { loadSnapshot, saveSnapshot, loadFlag, saveFlag } from './persist'
 import { users } from './users'
 
 export type ApprovalTransactionType =
   | 'sales-invoice' | 'sales-order' | 'purchase-order' | 'purchase-invoice'
-  | 'bill' | 'stock-adjustment' | 'warehouse-transfer'
+  | 'bill' | 'stock-adjustment' | 'warehouse-transfer' | 'work-order'
 
 export const TRANSACTION_TYPE_OPTIONS: { value: ApprovalTransactionType; label: string }[] = [
   { value: 'sales-invoice',     label: 'Sales invoice' },
@@ -23,7 +23,48 @@ export const TRANSACTION_TYPE_OPTIONS: { value: ApprovalTransactionType; label: 
   { value: 'bill',              label: 'Bill' },
   { value: 'stock-adjustment',  label: 'Stock adjustment' },
   { value: 'warehouse-transfer', label: 'Warehouse transfer' },
+  { value: 'work-order',        label: 'Work order' },
 ]
+
+/**
+ * Work order approval — the production transaction types a Work order rule can gate (MVP,
+ * 2026-10-05: work order creation and material consume / return are not gated; Start work
+ * order is). Work order rules have no amount condition: their criteria are a list of these
+ * types instead, and an EMPTY list means every type requires approval. A type can belong
+ * to only ONE Work order workflow (see woCriteriaConflicts).
+ */
+export type WoTransactionType = 'start' | 'adjustment' | 'completion' | 'cancel'
+
+export const WO_TRANSACTION_TYPE_OPTIONS: { value: WoTransactionType; label: string }[] = [
+  { value: 'start',      label: 'Start work order' },
+  { value: 'adjustment', label: 'Work order adjustment' },
+  { value: 'completion', label: 'Work order completion' },
+  { value: 'cancel',     label: 'Work order cancel/close' },
+]
+
+/** Types a Work order rule covers — empty criteria means all of them. */
+export function woRuleTypes(rule: Pick<ApprovalWorkflowRule, 'woCriteria'>): WoTransactionType[] {
+  const c = rule.woCriteria ?? []
+  return c.length ? c : WO_TRANSACTION_TYPE_OPTIONS.map(o => o.value)
+}
+
+/**
+ * Work order types already covered by OTHER *active* Work order workflows, with the
+ * workflow that owns each — a type can have only one active workflow. Inactive workflows
+ * don't block a type (turning one on asks to turn the conflicting one off).
+ */
+export function woTypesTakenByOthers(excludeRuleId?: string): Map<WoTransactionType, string> {
+  const taken = new Map<WoTransactionType, string>()
+  for (const r of approvalWorkflows) {
+    if (r.id === excludeRuleId || !r.isActive || r.appliesTo !== 'transaction' || r.transactionType !== 'work-order') continue
+    for (const t of woRuleTypes(r)) if (!taken.has(t)) taken.set(t, r.name)
+  }
+  return taken
+}
+
+export function woTransactionTypeLabel(type: string): string {
+  return WO_TRANSACTION_TYPE_OPTIONS.find((o) => o.value === type)?.label ?? type
+}
 
 export function transactionTypeLabel(type: string): string {
   return TRANSACTION_TYPE_OPTIONS.find((o) => o.value === type)?.label ?? type
@@ -138,6 +179,11 @@ export interface ApprovalWorkflowRule {
    *  entirely, not shown-disabled. Stays at its default ('all' / []) for those rules. */
   createdByScope: 'all' | 'some'
   createdByUserIds: string[]
+  /** Work order rules only — gated transaction types; [] = all seven. */
+  woCriteria?: WoTransactionType[]
+  /** Work order rules only — may a requester who is also an approver approve their own
+   *  request? Off by default (PRD Rev 3). */
+  allowSelfApproval?: boolean
   levels: ApprovalWorkflowLevel[]
   applyToDraft: boolean
   isActive: boolean
@@ -154,6 +200,31 @@ function idOf(name: string): string {
 function projIdOf(name: string): string {
   return projects.find((p) => p.name === name)?.id ?? ''
 }
+
+/**
+ * One seeded Work order workflow per work order transaction type. Start is active;
+ * Adjustment, Completion and Cancel/close are seeded inactive, so a new workflow can still
+ * pick those types (only ACTIVE workflows block a type). Partial completion and material
+ * consume / return are out of MVP scope — not gated.
+ */
+function woSeedRule(id: string, name: string, description: string, type: WoTransactionType, levelNames: string[][], updatedAt: string, isActive = true): ApprovalWorkflowRule {
+  return {
+    id, name, description,
+    appliesTo: 'transaction', transactionType: 'work-order', projectAction: '',
+    projectScope: 'all', projectIds: [], minAmount: null,
+    createdByScope: 'all', createdByUserIds: [],
+    woCriteria: [type], allowSelfApproval: false,
+    levels: levelNames.map((names, i) => ({ id: `lvl-${i + 1}`, matchType: 'any' as const, approverIds: names.map(idOf).filter(Boolean) })),
+    applyToDraft: true, isActive, updatedAt, updatedBy: 'Rizal Candra',
+  }
+}
+const SUPERVISOR_THEN_MANAGER = [['Budi Santoso'], ['Sari Indah', 'Dewi Rahayu']]
+const WO_SEED_RULES: ApprovalWorkflowRule[] = [
+  woSeedRule('awf-007', 'Start work order approval', 'Supervisor then production manager approve starting a work order', 'start', SUPERVISOR_THEN_MANAGER, '2026-06-20T09:00:00'),
+  woSeedRule('awf-009', 'Work order adjustment approval', 'Corrections to a run are reviewed before they change the work order', 'adjustment', SUPERVISOR_THEN_MANAGER, '2026-06-20T09:10:00', false),
+  woSeedRule('awf-010', 'Work order completion approval', 'Output is reviewed before the work order closes', 'completion', SUPERVISOR_THEN_MANAGER, '2026-06-20T09:20:00', false),
+  woSeedRule('awf-011', 'Work order cancel/close approval', 'Remaining WIP is never written off unreviewed', 'cancel', SUPERVISOR_THEN_MANAGER, '2026-06-20T09:30:00', false),
+]
 
 const SEED_APPROVAL_WORKFLOWS: ApprovalWorkflowRule[] = [
   {
@@ -276,11 +347,28 @@ const SEED_APPROVAL_WORKFLOWS: ApprovalWorkflowRule[] = [
     updatedAt: '2026-08-05T13:45:00',
     updatedBy: 'Rizal Candra',
   },
+  ...WO_SEED_RULES,
 ]
 
 const APPROVAL_WORKFLOWS_KEY = 'approval-workflows-v3'
 const snapshot = loadSnapshot<ApprovalWorkflowRule>(APPROVAL_WORKFLOWS_KEY)
 export const approvalWorkflows = reactive<ApprovalWorkflowRule[]>(snapshot ?? [...SEED_APPROVAL_WORKFLOWS])
+
+// Snapshots saved before one-type-per-workflow (2026-10-08) carry the older seeded Work
+// order rules — replace them with the current seeds once (flagged, so later edits stick).
+const WO_RULE_SEEDED_FLAG = 'approval-workflows-wo-seeded-v5'
+if (snapshot && !loadFlag(WO_RULE_SEEDED_FLAG)) {
+  // Partial completion left MVP scope — drop its seeded workflow.
+  const partialIdx = approvalWorkflows.findIndex((r) => r.id === 'awf-008')
+  if (partialIdx !== -1) approvalWorkflows.splice(partialIdx, 1)
+  for (const seed of WO_SEED_RULES) {
+    const i = approvalWorkflows.findIndex((r) => r.id === seed.id)
+    if (i === -1) approvalWorkflows.push(seed)
+    else approvalWorkflows.splice(i, 1, seed)
+  }
+  saveFlag(WO_RULE_SEEDED_FLAG, true)
+  saveSnapshot(APPROVAL_WORKFLOWS_KEY, approvalWorkflows)
+}
 
 function persist(): void {
   saveSnapshot(APPROVAL_WORKFLOWS_KEY, approvalWorkflows)
@@ -303,6 +391,8 @@ export interface ApprovalWorkflowInput {
   minAmount: number | null
   createdByScope: 'all' | 'some'
   createdByUserIds: string[]
+  woCriteria?: WoTransactionType[]
+  allowSelfApproval?: boolean
   levels: { matchType: 'any' | 'all'; approverIds: string[] }[]
   applyToDraft: boolean
 }
@@ -326,6 +416,8 @@ export function addApprovalWorkflow(data: ApprovalWorkflowInput): ApprovalWorkfl
     minAmount: data.minAmount,
     createdByScope: data.createdByScope,
     createdByUserIds: data.createdByUserIds,
+    woCriteria: data.transactionType === 'work-order' ? (data.woCriteria ?? []) : undefined,
+    allowSelfApproval: data.transactionType === 'work-order' ? !!data.allowSelfApproval : undefined,
     levels: toLevels(data.levels),
     applyToDraft: data.applyToDraft,
     isActive: true,
@@ -351,12 +443,23 @@ export function updateApprovalWorkflow(id: string, data: ApprovalWorkflowInput):
   rule.minAmount = data.minAmount
   rule.createdByScope = data.createdByScope
   rule.createdByUserIds = data.createdByUserIds
+  rule.woCriteria = data.transactionType === 'work-order' ? (data.woCriteria ?? []) : undefined
+  rule.allowSelfApproval = data.transactionType === 'work-order' ? !!data.allowSelfApproval : undefined
   rule.levels = toLevels(data.levels)
   rule.applyToDraft = data.applyToDraft
   rule.updatedAt = new Date().toISOString()
   rule.updatedBy = ACTING_USER
   persist()
   return rule
+}
+
+/** Other ACTIVE Work order workflows that cover a type this one covers (turning it on would overlap). */
+export function activeWoConflicts(id: string): ApprovalWorkflowRule[] {
+  const rule = approvalWorkflows.find((r) => r.id === id)
+  if (!rule || rule.transactionType !== 'work-order') return []
+  const types = new Set(woRuleTypes(rule))
+  return approvalWorkflows.filter((r) => r.id !== id && r.isActive && r.transactionType === 'work-order'
+    && woRuleTypes(r).some((t) => types.has(t)))
 }
 
 export function setApprovalWorkflowActive(id: string, isActive: boolean): void {

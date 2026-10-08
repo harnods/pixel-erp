@@ -5,8 +5,9 @@
  * (no modal/overlay) — positioned bottom-end (right aligned, 4px gap below the
  * button), matching ApprovalLogPopover's pattern exactly.
  *
- * Posting is local-only (demo has no backend) — new comments are appended to an
- * internal copy of the `comments` prop, not persisted back to the task.
+ * Posting appends to an internal copy of the `comments` prop and emits `post` — a
+ * parent that persists comments (Work order approval) saves it and passes the
+ * updated list back in; others stay local-only (demo has no backend).
  *
  * Layout/spacing matches Figma node 750:3046 ("Modal / View Comments"):
  * header bg fill, per-comment avatar+name/timestamp row followed by an
@@ -17,13 +18,18 @@ import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon, MpAvatar, MpButt
 import type { TaskComment } from '~/data/tasks'
 import { formatDateTime } from '~/utils/date'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   id: string
   comments: TaskComment[]
-}>()
+  /** Name stamped on a comment posted here. */
+  author?: string
+}>(), { author: 'You' })
+
+const emit = defineEmits<{ post: [text: string] }>()
 
 const open = ref(false)
 const localComments = ref<TaskComment[]>([...props.comments])
+watch(() => props.comments, (next) => { localComments.value = [...next] }, { deep: true })
 const draft = ref('')
 
 function post() {
@@ -31,11 +37,12 @@ function post() {
   if (!text) return
   localComments.value.push({
     id: `${props.id}-new-${localComments.value.length + 1}`,
-    author: 'You',
+    author: props.author,
     timestamp: new Date().toISOString(),
     text,
   })
   draft.value = ''
+  emit('post', text)
 }
 
 // Deterministic per-author avatar color, matching the Figma reference's varied
@@ -80,6 +87,7 @@ function commentParts(text: string) {
         <MpButton
           v-tooltip="{ label: 'Comments', placement: 'top' }"
           class="row-icon-btn"
+          variant="ghost"
           aria-label="Comments"
           @click.stop="open = !open"
         >

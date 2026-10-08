@@ -10,12 +10,17 @@
  * Saving creates one persisted record per checked row (see
  * ~/data/materialConsumeReturn.ts) and returns to the work order's Material
  * consume & return tab.
+ *
+ * Work order approval (MVP): material consume / return is NOT gated — it posts
+ * immediately. The form refuses (inline, Save stays enabled) while an adjustment,
+ * completion or cancel/close is waiting for approval on the work order, and consume
+ * is capped at the planned qty — extra material / scrap goes through Adjust work order.
  */
 import { ref, reactive, computed } from 'vue'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpAutocomplete, MpDatePicker, MpInput, MpTextarea, MpButton, MpIcon,
-  MpCheckbox, MpRadio, toast,
+  MpCheckbox, MpRadio, MpBanner, MpBannerIcon, MpBannerDescription, toast,
 } from '@mekari/pixel3'
 import { workOrders } from '~/data/workOrders'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
@@ -24,8 +29,10 @@ import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import { recordsForWorkOrder, addMaterialConsumeReturnRecord, remainingReservation } from '~/data/materialConsumeReturn'
 import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
 import PickBatchDrawer, { type PickedBatch } from '~/components/patterns/PickBatchDrawer.vue'
+import { guardMessage, consumableQty } from '~/data/woApproval'
 
 const props = defineProps<{ orderId: string }>()
+const { t } = useLocale()
 const router = useRouter()
 const route = useRoute()
 
@@ -60,6 +67,8 @@ interface MaterialRow {
   neededQty: number
   onHandQty: number
   consumedQty: number // net already consumed for this work order + product
+  /** Consume ceiling — planned qty − consumed (work order approval MVP). */
+  consumableQty: number
   qtyValue: string
   selected: boolean
   trackingType?: 'serial' | 'batch'
@@ -117,6 +126,7 @@ const rows = reactive<MaterialRow[]>(
       neededQty: r.needed,
       onHandQty: r.needed,
       consumedQty: Math.max(0, netConsumed(r.productId)),
+      consumableQty: wo.value ? consumableQty(wo.value.id, r.productId) : r.needed,
       qtyValue: prefillQty > 0 ? String(prefillQty) : '',
       selected: true,
       trackingType,
@@ -207,6 +217,14 @@ function parseDMY(v: string): string {
   return dd && mm && yyyy ? `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}` : today
 }
 
+// Work order approval — a pending adjustment / completion / cancel-close blocks new records.
+const guard = computed(() => (wo.value ? guardMessage(wo.value.id, 'transaction') : null))
+const guardShown = ref(false)
+// Consume is capped at the planned qty — flagged inline under the field, not clamped.
+function consumeExceeds(row: MaterialRow): boolean {
+  return isConsume.value && row.selected && effectiveQty(row) > row.consumableQty
+}
+
 function validate() {
   let ok = true
   if (!recordDate.value) { recordDateError.value = true; ok = false }
@@ -215,7 +233,9 @@ function validate() {
 }
 
 function handleSave() {
-  if (!wo.value || !validate()) return
+  if (!wo.value) return
+  if (guard.value) { guardShown.value = true; return }
+  if (!validate() || rows.some(consumeExceeds)) return
   const isoDate = parseDMY(recordDate.value)
   let saved = 0
   rows.forEach(row => {
@@ -261,6 +281,10 @@ function handleSave() {
     <!-- ── Scrollable stage ── -->
     <div class="detail-stage">
       <div class="mr-body">
+        <MpBanner v-if="guard && guardShown" variant="danger" data-devchange="wo-approval-forms">
+          <MpBannerIcon />
+          <MpBannerDescription>{{ t(guard) }}</MpBannerDescription>
+        </MpBanner>
 
         <!-- ── Record type ── -->
         <MpFormControl id="mr-type" is-required>
@@ -374,7 +398,10 @@ function handleSave() {
                     <td class="mr-td mr-td--locked mr-td--num">{{ row.consumedQty }}</td>
                     <td class="mr-td mr-td--locked mr-td--num">{{ row.onHandQty }}</td>
                     <td class="mr-td mr-td--input">
-                      <MpInput :id="`mr-qty-${row.productId}`" v-model="row.qtyValue" type="number" placeholder="0" is-full-width />
+                      <MpInput :id="`mr-qty-${row.productId}`" v-model="row.qtyValue" type="number" placeholder="0" is-full-width :is-invalid="consumeExceeds(row)" />
+                      <span v-if="consumeExceeds(row)" class="mr-field-error" data-devchange="wo-approval-forms">
+                        {{ t('Qty exceeds the remaining planned qty ({qty} {unit}). Use Adjust work order for extra material or scrap').replace('{qty}', String(row.consumableQty)).replace('{unit}', row.unit) }}
+                      </span>
                       <template v-if="row.trackingType">
                         <span v-if="num(row.qtyValue) > 0" class="mr-tracked-hint">{{ effectiveQty(row) }} of {{ num(row.qtyValue) }} selected</span>
                         <a class="mr-tracking" :class="{ 'mr-tracking--disabled': !warehouseId }" @click.prevent="openTracking(row)">
@@ -464,6 +491,8 @@ function handleSave() {
 </template>
 
 <style scoped>
+.mr-field-error { display: block; margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); white-space: normal; }
+
 /* ── Page shell (shared create-page pattern) ─────────────────────────────── */
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar {

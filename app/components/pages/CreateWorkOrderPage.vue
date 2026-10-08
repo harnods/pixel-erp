@@ -374,8 +374,10 @@ function parseDateRange(v: Date[]): { start: string; end: string } {
   return { start, end: v[1] ? toLocalIso(v[1]) : start }
 }
 
-// Reservation attached to the saved WorkOrder — only tracked rows with an
-// actual pick contribute an entry.
+// Batch/serial picks attached to the saved WorkOrder — only tracked rows with an
+// actual pick contribute an entry. Work order approval (MVP): they're held as the
+// work order's unreserved `reservationPlan` — material is reserved only when the work
+// order starts (or its Start request is approved).
 function buildMaterialReservations(): Record<string, WorkOrderMaterialReservation> | undefined {
   const out: Record<string, WorkOrderMaterialReservation> = {}
   for (const row of rawRows.value) {
@@ -406,7 +408,7 @@ function saveWorkOrder() {
     planStartDate: start,
     planEndDate: end,
     sourceProductionRequestNo: fromProductionRequest.value ? (route.query.prNumber as string | undefined) : undefined,
-    materialReservations: buildMaterialReservations(),
+    reservationPlan: buildMaterialReservations(),
   })
 }
 function handleSave() {

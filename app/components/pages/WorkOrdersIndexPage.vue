@@ -18,6 +18,8 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import WorkOrderFiltersDrawer, { type WorkOrderFiltersValue } from '~/components/patterns/WorkOrderFiltersDrawer.vue'
 import { formatDate } from '~/utils/date'
 import { workOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import { workOrderApprovalStatus, displayStatus } from '~/data/woApproval'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const { t } = useLocale()
@@ -47,7 +49,12 @@ const typeFilter = ref('')
 const typeLabel = computed(() => TYPE_OPTIONS.find(o => o.value === typeFilter.value)?.label ?? '')
 
 // Status — the six work-order statuses. Clearing (x) resets to show-all.
-const STATUS_OPTIONS: { label: string; value: WorkOrderStatus }[] = [
+// Work order approval adds two DISPLAY statuses, derived from pending requests:
+// Draft (start waiting for approval) and Waiting approval (adjustment / completion /
+// cancel-close waiting). The status filter matches what the badge shows.
+const STATUS_OPTIONS: { label: string; value: WorkOrderStatus | 'draft' | 'waiting approval' }[] = [
+  { label: t('Draft'),                value: 'draft'                },
+  { label: t('Waiting approval'),     value: 'waiting approval'     },
   { label: t('Not started'),          value: 'not started'          },
   { label: t('In progress'),          value: 'in progress'          },
   { label: t('Partially produced'),   value: 'partially produced'   },
@@ -55,6 +62,14 @@ const STATUS_OPTIONS: { label: string; value: WorkOrderStatus }[] = [
   { label: t('Completed'),            value: 'completed'            },
   { label: t('Canceled'),             value: 'canceled'             },
 ]
+
+// Approval status — work orders with a request waiting for approval, or whose latest
+// request was rejected. Derived from woApproval.ts, never stored.
+const APPROVAL_STATUS_OPTIONS = [
+  { label: t('Waiting for approval'), value: 'waiting' },
+  { label: t('Rejected'),             value: 'rejected' },
+]
+const approvalStatusFilter = ref('')
 const statusFilter = ref('')
 const statusLabel = computed(() => STATUS_OPTIONS.find(o => o.value === statusFilter.value)?.label ?? '')
 
@@ -105,25 +120,27 @@ const {
       || row.bomName.toLowerCase().includes(s)
       || (row.parentNumber?.toLowerCase().includes(s) ?? false)
     const matchesType = !typeFilter.value || row.type === typeFilter.value
-    const matchesStatus = !statusFilter.value || row.status === statusFilter.value
+    const matchesStatus = !statusFilter.value || displayStatus(row) === statusFilter.value
+    const matchesApproval = !approvalStatusFilter.value || workOrderApprovalStatus(row) === approvalStatusFilter.value
     const startFilterDate = parseDMY(startDateFilter.value)
     const matchesStart = !startFilterDate
       || (!!row.startDate && dayStart(new Date(row.startDate)).getTime() === dayStart(startFilterDate).getTime())
     const endFilterDate = parseDMY(endDateFilter.value)
     const matchesEnd = !endFilterDate
       || (!!row.endDate && dayStart(new Date(row.endDate)).getTime() === dayStart(endFilterDate).getTime())
-    return matchesSearch && matchesType && matchesStatus && matchesStart && matchesEnd
+    return matchesSearch && matchesType && matchesStatus && matchesApproval && matchesStart && matchesEnd
   },
 })
 
 // Reset to page 1 when the extra (non-built-in) filters change
-watch([typeFilter, statusFilter, startDateFilter, endDateFilter], () => setPage(1))
+watch([typeFilter, statusFilter, approvalStatusFilter, startDateFilter, endDateFilter], () => setPage(1))
 
 const hasActiveFilter = computed(() =>
-  !!search.value || !!typeFilter.value || !!statusFilter.value || !!startDateFilter.value || !!endDateFilter.value,
+  !!search.value || !!typeFilter.value || !!statusFilter.value || !!approvalStatusFilter.value || !!startDateFilter.value || !!endDateFilter.value,
 )
 function clearFilters() {
   search.value = ''
+  approvalStatusFilter.value = ''
   typeFilter.value = ''
   statusFilter.value = ''
   startDateFilter.value = ''
@@ -231,6 +248,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
+        <ErpFilterSelect
+          id="wo-approval-status-select"
+          v-model="approvalStatusFilter"
+          data-devchange="wo-approval-list-indicator"
+          :placeholder="t('Approval status')"
+          :options="APPROVAL_STATUS_OPTIONS"
+          width="196px"
+        />
+
         <MpButton class="filter-all-btn" type="button" variant="ghost" @click="isFiltersDrawerOpen = true">
           <MpIcon name="filter" size="sm" />
           {{ t('All filters') }}
@@ -271,10 +297,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #cell-trackRouting="{ value }">{{ value ? t('Yes') : t('No') }}</template>
 
     <!-- ── Status badge ── -->
-    <template #cell-status="{ value }">
+    <template #cell-status="{ row }">
+      <!-- Work order approval — Draft / Waiting approval while a request is pending -->
       <ErpStatusBadge
-        :status="(value as string)"
-        :label="value === 'in progress' ? t('In progress') : undefined"
+        :status="displayStatus(row as unknown as WorkOrder)"
+        :label="displayStatus(row as unknown as WorkOrder) === 'in progress' ? t('In progress') : undefined"
+        data-devchange="wo-approval-status"
       />
     </template>
 
