@@ -19,7 +19,6 @@ import StockSerialDrawer from '~/components/patterns/StockSerialDrawer.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
-import PreferredWarehousesDrawer from '~/components/patterns/PreferredWarehousesDrawer.vue'
 import {
   getProductDetail, getProductTransactions, getProductWarehouseStock, getProductBatches, getProductSerialStock,
   getProductAllSerials, type ProductBatchSummary,
@@ -227,18 +226,6 @@ function vendorLeadLabel(vendorId: string): string {
   return min === max ? `${min} days` : `${min}–${max} days`
 }
 
-/** Per-warehouse lead time for one vendor — the breakdown behind the range. */
-function vendorLeadByWarehouse(vendorId: string) {
-  void vendorTick.value
-  void replenishmentRevision.value
-  const sku = product.value?.sku
-  if (!sku) return [] as { warehouseId: string; warehouseName: string; days: number | null; estimated: boolean; basis: string }[]
-  return warehouseStock.value.map((s) => {
-    const d = deriveLeadTime(vendorId, sku, undefined, s.warehouseId)
-    return { warehouseId: s.warehouseId, warehouseName: s.warehouseName, days: d.days, estimated: isEstimatedTier(d.tier), basis: estimatedBasis(d.tier) }
-  })
-}
-
 /**
  * The preferred vendor PER WAREHOUSE (D23): a SKU can prefer a different vendor in
  * each warehouse, so one global "preferred" checkmark is no longer the truth. This
@@ -284,10 +271,15 @@ function preferredCountLabel(vendorId: string): string {
 }
 
 // Which vendor rows have their per-warehouse lead-time breakdown expanded.
-const leadTimeOpen = reactive<Set<string>>(new Set())
-function toggleLeadTime(vendorId: string) {
-  if (leadTimeOpen.has(vendorId)) leadTimeOpen.delete(vendorId)
-  else leadTimeOpen.add(vendorId)
+/** One vendor's warehouse list open at a time (the same rule as the warehouse calculations). */
+const expandedVendor = ref<string | null>(null)
+function toggleVendor(vendorId: string) {
+  expandedVendor.value = expandedVendor.value === vendorId ? null : vendorId
+}
+/** A click anywhere on the row opens it — except on something that has its own job. */
+function onVendorRowClick(e: MouseEvent, vendorId: string): void {
+  if ((e.target as HTMLElement).closest('a, button, input, label, [role="button"]')) return
+  toggleVendor(vendorId)
 }
 
 /** MOQ in the purchase unit, plus what that means in stock units — "4 Pallet" is
@@ -632,17 +624,6 @@ function clearWhErrors() { for (const k of Object.keys(whErrors)) delete whError
 function cancelEditMinStock() { clearWhErrors(); whEditing.value = false }
 const whMinDraft = reactive<Record<string, string>>({})
 const whSafetyDraft = reactive<Record<string, string>>({})
-/** The vendor whose preferred warehouses the drawer is listing (Vendors tab). */
-const prefDrawerVendor = ref<string | null>(null)
-const prefDrawerOpen = computed({
-  get: () => prefDrawerVendor.value !== null,
-  set: (v) => { if (!v) prefDrawerVendor.value = null },
-})
-function openPrefDrawer(vendorId: string): void { prefDrawerVendor.value = vendorId }
-const prefDrawerRows = computed(() =>
-  prefDrawerVendor.value ? preferredInWarehouses(prefDrawerVendor.value) : [],
-)
-
 /** Preferred vendor per warehouse (D23) — editable here, the one place it is set. */
 const whPreferredDraft = reactive<Record<string, string>>({})
 
@@ -1340,46 +1321,67 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="vi in vendorRows" :key="vi.id" class="pd-tr">
-                      <td class="pd-td">
-                        <span class="pd-vendor-name">{{ vendorNameFor(vi.vendorId) }}</span>
-                        <span v-if="vi.unitsPerPurchaseUnit > 1" class="pd-vendor-note">
-                          {{ tf('1 {unit} = {n} {base}', { unit: vi.purchaseUnit, n: vi.unitsPerPurchaseUnit, base: product.unit }) }}
-                        </span>
-                      </td>
-                      <td class="pd-td" data-devchange="product-vendors-preferred-which-warehouses">
-                        <!-- The count opens a drawer with the warehouses behind it. -->
-                        <MpTextlink
-                          v-if="preferredInWarehouses(vi.vendorId).length"
-                          :id="`pd-pref-link-${vi.vendorId}`"
-                          data-devchange="product-vendors-preferred-drawer"
-                          @click="openPrefDrawer(vi.vendorId)"
-                        >{{ preferredCountLabel(vi.vendorId) }}</MpTextlink>
-                        <span v-else class="pd-vendor-alt">—</span>
-                      </td>
-                      <td class="pd-td pd-td--num">
-                        <MpButton variant="ghost" class="pd-lead-toggle" @click="toggleLeadTime(vi.vendorId)">
-                          <span>{{ vendorLeadLabel(vi.vendorId) }}</span>
-                          <MpIcon :name="leadTimeOpen.has(vi.vendorId) ? 'chevrons-up' : 'chevrons-down'" size="sm" />
-                        </MpButton>
-                        <ul v-if="leadTimeOpen.has(vi.vendorId)" class="pd-lead-breakdown">
-                          <li v-for="w in vendorLeadByWarehouse(vi.vendorId)" :key="w.warehouseId" class="pd-lead-row">
-                            <span class="pd-lead-wh">{{ w.warehouseName }}</span>
-                            <span class="pd-lead-days">
-                              {{ w.days != null ? tf('{n} days', { n: w.days }) : '—' }}
-                              <span v-if="w.estimated" class="pd-lead-est">{{ w.basis }}</span>
+                    <template v-for="vi in vendorRows" :key="vi.id">
+                      <tr
+                        class="pd-tr"
+                        :class="{ 'pd-tr--clickable': preferredInWarehouses(vi.vendorId).length, 'pd-tr--open': expandedVendor === vi.vendorId }"
+                        @click="onVendorRowClick($event, vi.vendorId)"
+                      >
+                        <td class="pd-td">
+                          <!-- Name on the left, the disclosure chevron right-aligned so the chevrons
+                               form one column — the same cell as the warehouse rows. -->
+                          <span class="pd-wh-name pd-wh-name--top">
+                            <span class="pd-vendor-cell">
+                              <span class="pd-vendor-name">{{ vendorNameFor(vi.vendorId) }}</span>
+                              <span v-if="vi.unitsPerPurchaseUnit > 1" class="pd-vendor-note">
+                                {{ tf('1 {unit} = {n} {base}', { unit: vi.purchaseUnit, n: vi.unitsPerPurchaseUnit, base: product.unit }) }}
+                              </span>
                             </span>
-                          </li>
-                        </ul>
-                      </td>
-                      <td class="pd-td pd-td--num">{{ vi.moq.toLocaleString('id-ID') }}</td>
-                      <td class="pd-td">{{ vi.purchaseUnit }}</td>
-                      <td class="pd-td pd-td--num">
-                        {{ (vi.moq * vi.unitsPerPurchaseUnit).toLocaleString('id-ID') }} {{ product.unit }}
-                      </td>
-                      <td class="pd-td pd-td--num">{{ vi.packSize }} {{ vi.purchaseUnit }}</td>
-                      <td class="pd-td pd-td--num">{{ formatIDR(vi.unitCost) }}</td>
-                    </tr>
+                            <MpButton
+                              v-if="preferredInWarehouses(vi.vendorId).length"
+                              :id="`pd-vendor-why-${vi.vendorId}`"
+                              variant="ghost"
+                              class="pd-cell-toggle"
+                              data-devchange="product-vendors-expand"
+                              :aria-label="expandedVendor === vi.vendorId ? t('Hide warehouses') : t('Show warehouses')"
+                              :aria-expanded="expandedVendor === vi.vendorId"
+                              @click.stop="toggleVendor(vi.vendorId)"
+                            >
+                              <MpIcon :name="expandedVendor === vi.vendorId ? 'chevrons-up' : 'chevrons-down'" size="sm" />
+                            </MpButton>
+                          </span>
+                        </td>
+                        <td class="pd-td">
+                          <span v-if="preferredInWarehouses(vi.vendorId).length">{{ preferredCountLabel(vi.vendorId) }}</span>
+                          <span v-else class="pd-vendor-alt">—</span>
+                        </td>
+                        <td class="pd-td pd-td--num">{{ vendorLeadLabel(vi.vendorId) }}</td>
+                        <td class="pd-td pd-td--num">{{ vi.moq.toLocaleString('id-ID') }}</td>
+                        <td class="pd-td">{{ vi.purchaseUnit }}</td>
+                        <td class="pd-td pd-td--num">
+                          {{ (vi.moq * vi.unitsPerPurchaseUnit).toLocaleString('id-ID') }} {{ product.unit }}
+                        </td>
+                        <td class="pd-td pd-td--num">{{ vi.packSize }} {{ vi.purchaseUnit }}</td>
+                        <td class="pd-td pd-td--num">{{ formatIDR(vi.unitCost) }}</td>
+                      </tr>
+
+                      <!-- Opened: one line per warehouse that prefers this vendor — its name under
+                           Preferred, its lead time under Lead time. -->
+                      <template v-if="expandedVendor === vi.vendorId">
+                        <tr v-for="w in preferredInWarehouses(vi.vendorId)" :key="`${vi.id}-${w.warehouseId}`" class="pd-tr pd-tr--sub">
+                          <td class="pd-td" />
+                          <td class="pd-td">{{ w.warehouseName }}</td>
+                          <td class="pd-td pd-td--num">
+                            <template v-if="w.leadDays != null">
+                              {{ tf('{n} days', { n: w.leadDays }) }}
+                              <span v-if="w.leadEstimated" class="pd-lead-est pd-lead-est--below">{{ w.estimatedBasis }}</span>
+                            </template>
+                            <template v-else>—</template>
+                          </td>
+                          <td class="pd-td" colspan="5" />
+                        </tr>
+                      </template>
+                    </template>
                   </tbody>
                 </table>
               </div>
@@ -2034,15 +2036,6 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
       title="Barcode preview"
       @close="barcodePreviewOpen = false"
     />
-
-    <PreferredWarehousesDrawer
-      v-model:is-open="prefDrawerOpen"
-      @open-warehouse="(id) => { prefDrawerVendor = null; router.push(`/warehouses/${id}`) }"
-      :vendor-name="prefDrawerVendor ? vendorNameFor(prefDrawerVendor) : ''"
-      :product-name="product.name"
-      :sku="product.sku"
-      :rows="prefDrawerRows.map((r) => ({ warehouseId: r.warehouseId, warehouseName: r.warehouseName, leadDays: r.leadDays, estimatedBasis: r.estimatedBasis }))"
-    />
   </div>
 
   <div v-else class="detail-page">
@@ -2426,26 +2419,13 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 .pd-vendor-none { color: var(--mp-text-secondary); }
 .pd-vendor-alt { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
 
-/* Per-warehouse lead-time breakdown (VR-01) — expand under the range. */
-.pd-lead-toggle {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-1); margin-left: auto; height: auto;
-  border: none; background: none; padding: 0; cursor: pointer;
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  font-variant-numeric: tabular-nums;
-}
-.pd-lead-toggle:hover { color: var(--mp-text-link); }
-/* A real list, so it keeps its markers (CLAUDE.md › List bullets). */
-.pd-lead-breakdown {
-  list-style: disc outside; margin: var(--mp-spacing-2) 0 0;
-  padding: var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-6);
-  background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-sm);
-  text-align: left;
-}
-.pd-lead-row {
-  display: list-item;
-  padding: var(--mp-spacing-0\.5) 0; font-size: var(--mp-font-sizes-sm);
-}
-.pd-lead-wh { color: var(--mp-text-secondary); }
-.pd-lead-days { float: right; margin-left: var(--mp-spacing-3); color: var(--mp-text-default); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* The vendor name and its unit note, stacked, left of the chevron. */
+.pd-vendor-cell { display: flex; flex-direction: column; min-width: 0; }
+/* The warehouse lines opened under a vendor: lighter, and joined to the row above. */
+.pd-tr--sub > .pd-td { background: var(--mp-background-neutral-subtle); border-bottom-color: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.pd-tr--sub:last-of-type > .pd-td, .pd-tr--sub:has(+ .pd-tr:not(.pd-tr--sub)) > .pd-td { border-bottom-color: var(--mp-border-default); }
+.pd-wh-name--top { align-items: flex-start; }
+/* The estimate basis sits on its own line under the days, not beside them. */
+.pd-lead-est--below { display: block; margin-left: 0; margin-top: 2px; }
 .pd-lead-est { margin-left: 4px; color: var(--mp-text-subtle); font-size: var(--mp-font-sizes-xs, 11px); }
 </style>

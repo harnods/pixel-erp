@@ -148,19 +148,19 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['replenishmentConfig.ts', 'SettingsReplenishmentPage.vue'],
   },
   {
-    id: 'product-vendors-preferred-drawer',
-    title: 'Vendors tab: preferred warehouses open in a drawer',
-    description:
-      'The Preferred column no longer shows a check mark or an info icon. The count is a link; clicking it opens a drawer with the vendor, the product and the list of warehouses that prefer this vendor, each with its lead time (and the basis when it is an estimate). Each warehouse name is a link to that warehouse.',
-    date: '2026-10-07',
-    files: ['ProductDetailsPage.vue', 'PreferredWarehousesDrawer.vue'],
-  },
-  {
     id: 'product-warehouses-bulk-row',
     title: 'Stock by warehouses: bulk set sits above its columns',
     description:
       'In Edit vendor mode the bulk-set controls are a row above the table headers: Reorder point (with its unit), Safety days (with "days") and Preferred vendor each sit above their own column, so the headers label them. The Apply button is a split button beside the vendor select — Apply acts at once, and its chevron holds "Use defaults". Columns now run Reorder point, Unit, Safety days, Preferred vendor; while editing, the Unit column is hidden and the unit/days show as suffixes inside the inputs. With nothing ticked the row shows the hint instead.',
     date: '2026-10-07',
+    files: ['ProductDetailsPage.vue'],
+  },
+  {
+    id: 'product-vendors-expand',
+    title: 'Vendors tab: the chevron sits in the Vendor column and opens the warehouses in place',
+    description:
+      'Like the Stock by warehouses table, each vendor row has a right-aligned chevron in the Vendor column (and the whole row is clickable; one vendor open at a time). Opening it adds one line per warehouse that prefers the vendor: the warehouse name sits under Preferred and its lead time under Lead time (with the estimate basis). The "N warehouses" count is plain text now — the link and its drawer are gone.',
+    date: '2026-10-08',
     files: ['ProductDetailsPage.vue'],
   },
   {
@@ -175,7 +175,7 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'product-preferred-varies-by-warehouse',
     title: 'Product page: preferred vendor reads honestly per warehouse',
     description:
-      'Purchase info shows a single Preferred vendor only when every stocked warehouse uses it; otherwise it says "Varies by warehouse". The Product info and Purchase info panels carry no shortcut links to the Stock by warehouses tab. On that tab the vendor picker is now a proper form-table select cell (borderless, the cell draws the focus ring, long vendor names wrap, lead time sits inside the cell), and an estimated lead time says its basis ("Estimated (category default)"). On the Vendors tab the Preferred column is just a link ("5 warehouses", "All 9 warehouses") — no check, no info icon — that opens a drawer listing the warehouses that prefer the vendor, each with its lead time. The header tooltip is tighter.',
+      'Purchase info shows a single Preferred vendor only when every stocked warehouse uses it; otherwise it says "Varies by warehouse". The Product info and Purchase info panels carry no shortcut links to the Stock by warehouses tab. On that tab the vendor picker is now a proper form-table select cell (borderless, the cell draws the focus ring, long vendor names wrap, lead time sits inside the cell), and an estimated lead time says its basis ("Estimated (category default)"). On the Vendors tab the Preferred column is plain text ("5 warehouses", "All 9 warehouses") with no check or info icon; the warehouses behind it open in the row (see the Vendors tab entry). The header tooltip is tighter.',
     date: '2026-10-07',
     files: ['ProductDetailsPage.vue'],
   },
