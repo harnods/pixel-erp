@@ -144,6 +144,13 @@ watch(() => linesUi.request?.nonce, () => {
   else if (a === 'compare') { refusal.value = ''; compareOpen.value = true }
 })
 watch(() => budget.viewAs, () => { refusal.value = '' })
+
+// ?action=new opens the Add drawer straight away, so another page can send the
+// reader here in a new tab to create a budget line (the New engagement form's
+// "Add new budget"). linesUi is in-memory, so a fresh tab needs the URL to say it.
+onMounted(() => {
+  if (useRoute().query.action === 'new') openNew()
+})
 </script>
 
 <template>
@@ -203,7 +210,7 @@ watch(() => budget.viewAs, () => { refusal.value = '' })
         <ErpFilterSelect id="bl-year" v-model="yearValue" :placeholder="t('Budget year')" :options="yearOptions" width="208px" :is-clearable="false" />
         <MultiSelectDropdown id="bl-dept" v-model="deptPick" :options="DEPT_OPTIONS.map((o) => o.label)" :placeholder="t('Department')" />
         <MultiSelectDropdown id="bl-project" v-model="projectPick" :options="PROJECT_OPTIONS.map((o) => o.label)" :placeholder="t('Project')" />
-        <MpButton class="filter-all-btn" :class="{ 'filter-all-btn--active': filterCount > 0 }" @click="filtersOpen = true">
+        <MpButton is-rounded class="filter-all-btn" :class="{ 'filter-all-btn--active': filterCount > 0 }" @click="filtersOpen = true">
           <MpIcon name="filter" size="sm" />
           {{ t('All filters') }}{{ filterCount > 0 ? ` (${filterCount})` : '' }}
         </MpButton>

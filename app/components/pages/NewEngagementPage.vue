@@ -13,12 +13,17 @@
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpInput, MpInputGroup, MpInputLeftAddon, MpInputRightAddon, MpIcon, toast, MpTextlink,
+  MpAutocomplete, MpTooltip,
 } from '@mekari/pixel3'
+import SelectAccessDrawer, { type AccessOption } from '~/components/patterns/SelectAccessDrawer.vue'
 import {
-  createEngagement, draftWeightSum, formatIdr,
+  createEngagement, draftWeightSum,
   COST_ACCOUNTS, REVENUE_ACCOUNT,
   type EngagementDraft, type RecognitionMethod,
 } from '~/data/projectAccounting'
+import { contactsOfType } from '~/data/contacts'
+import { budget, BUDGET_YEAR, lineById, lineTitle, lineTotal, isSavingLine } from '~/data/budgetStore'
+import { accessUsers, projectLeadUsers } from '~/data/accessControl'
 
 const router = useRouter()
 const { t } = useLocale()
@@ -34,6 +39,8 @@ const draft = reactive<EngagementDraft>({
   method: 'tm',
   value: '',
   budget: '',
+  budgetLineId: '',
+  team: [],
   markup: '20',
   milestones: [
     { id: 'd1', label: 'Fabrication complete', pct: '40' },
@@ -68,12 +75,61 @@ const isCostPlus = computed(() => draft.method === 'tm')
 const isOutput = computed(() => draft.method === 'output')
 const valueLabel = computed(() => (isCostPlus.value ? t('Fee estimate') : t('Contract value')))
 
-// ── Budget plan ───────────────────────────────────────────────────────────────
-const plannedRevenue = computed(() => draft.budgetLines.revenue.reduce((a, l) => a + (Number(l.amount) || 0), 0))
-const plannedCost = computed(() => draft.budgetLines.cost.reduce((a, l) => a + (Number(l.amount) || 0), 0))
+// ── Client ────────────────────────────────────────────────────────────────────
+// Picked from the Contacts master rather than typed, so an engagement always
+// names a contact that exists. Stored as the display name (Engagement.client is
+// a string), which keeps the seeded engagements readable as-is.
+const clientData = computed(() =>
+  contactsOfType('customer')
+    .filter(c => !c.archived && c.displayName)
+    .map(c => ({ id: c.id, name: c.displayName })),
+)
 
-function addRevenueLine() { draft.budgetLines.revenue.push({ id: nextId('br'), account: '', amount: '' }) }
-function addCostLine() { draft.budgetLines.cost.push({ id: nextId('bc'), account: '', amount: '' }) }
+// ── Budget line ───────────────────────────────────────────────────────────────
+// The Accounting > Budgets line this engagement draws against. Saving-bucket
+// lines are not a spendable budget, so they are left out of the picker.
+const budgetLineData = computed(() =>
+  budget.lines
+    .filter(l => l.year === BUDGET_YEAR && !isSavingLine(l))
+    .map(l => ({ id: l.id, name: lineTitle(l) })),
+)
+
+/** Picking a budget seeds the estimated cost from its annual total; still editable. */
+function onBudgetLinePicked(id: string) {
+  const l = lineById(id || null)
+  if (l) draft.budget = String(lineTotal(l))
+}
+
+// Everything below leaves this page in a new tab (window.open — the pattern
+// ErpDimensionsInfoPopover and DimensionFormDrawer already use), so a
+// half-filled Setup form is never lost to a detour.
+
+/** Read one budget without selecting it first. */
+function openBudgetLine(id: string) {
+  if (!id) return
+  window.open(`/budget-lines/${id}`, '_blank', 'noopener')
+}
+
+/** Create a contact the Client list does not have yet. */
+function openNewContact() { window.open('/customers/new', '_blank', 'noopener') }
+
+/** Create a budget line. `action=new` opens the Add drawer on arrival. */
+function openNewBudget() { window.open('/budget-lines?action=new', '_blank', 'noopener') }
+
+// ── Project assignment ────────────────────────────────────────────────────────
+// Only Owner / Ultimate / Project Manager can lead a project; a team member is
+// anyone. Membership is recorded here — what each member may SEE is governed by
+// their own role permissions, which this prototype does not yet gate on.
+const pmData = computed(() => projectLeadUsers().map(u => ({ id: u.id, name: u.name })))
+
+const teamOptions: AccessOption[] = accessUsers.map(u => ({ id: u.id, name: u.name, subtitle: u.roles.join(', ') }))
+const teamIds = ref<string[]>([])
+const teamDrawerOpen = ref(false)
+const teamRows = computed(() => teamOptions.filter(o => teamIds.value.includes(o.id)))
+
+function syncTeam() { draft.team = teamRows.value.map(r => r.name) }
+function onTeamSaved(ids: string[]) { teamIds.value = ids; syncTeam() }
+function removeMember(id: string) { teamIds.value = teamIds.value.filter(x => x !== id); syncTeam() }
 
 // ── Milestones ────────────────────────────────────────────────────────────────
 const weightSum = computed(() => draftWeightSum(draft))
@@ -146,11 +202,16 @@ function cancel() { router.push('/project-accounting') }
 
             <MpFormControl id="ne-client" is-required :is-invalid="clientError">
               <MpFormLabel>{{ t('Client') }}</MpFormLabel>
-              <MpInput
-                id="ne-client-input" v-model="draft.client" is-full-width :is-invalid="clientError"
-                :placeholder="t('e.g. PT Sinar Abadi')"
+              <MpAutocomplete
+                id="ne-client-input" v-model="draft.client" :data="clientData"
+                label-prop="name" value-prop="name" is-searchable use-portal is-full-width
+                :is-invalid="clientError" :placeholder="t('Select a contact')"
+                is-show-button-action
                 @update:model-value="clientError = false"
-              />
+                @button-action="openNewContact"
+              >
+                <template #buttonAction>{{ t('Add new contact') }}</template>
+              </MpAutocomplete>
               <MpFormErrorMessage>{{ t('You must fill in client') }}</MpFormErrorMessage>
             </MpFormControl>
           </div>
@@ -171,7 +232,7 @@ function cancel() { router.push('/project-accounting') }
               @click="draft.method = m.key"
             >
               <span class="ne-method-title">
-                <MpIcon v-if="draft.method === m.key" name="checkmark-circle-solid" size="sm" />
+                <MpIcon v-if="draft.method === m.key" name="check" size="sm" />
                 {{ t(m.title) }}
               </span>
               <span class="ne-method-desc">{{ t(m.desc) }}</span>
@@ -182,11 +243,6 @@ function cancel() { router.push('/project-accounting') }
         <!-- ── Commercials ── -->
         <section class="ne-section">
           <div class="ne-grid ne-grid--3">
-            <MpFormControl id="ne-pm">
-              <MpFormLabel>{{ t('Project manager') }}</MpFormLabel>
-              <MpInput id="ne-pm-input" v-model="draft.pm" is-full-width :placeholder="t('e.g. Made Ardika')" />
-            </MpFormControl>
-
             <MpFormControl id="ne-value">
               <MpFormLabel>{{ valueLabel }}</MpFormLabel>
               <MpInputGroup id="ne-value-group" is-full-width>
@@ -195,13 +251,43 @@ function cancel() { router.push('/project-accounting') }
               </MpInputGroup>
             </MpFormControl>
 
+            <MpFormControl id="ne-budget-line">
+              <MpFormLabel>{{ t('Budget') }}</MpFormLabel>
+              <MpAutocomplete
+                id="ne-budget-line-input" v-model="draft.budgetLineId" :data="budgetLineData"
+                label-prop="name" value-prop="id" is-searchable use-portal is-full-width
+                :placeholder="t('Select a budget')"
+                is-show-button-action
+                @update:model-value="onBudgetLinePicked"
+                @button-action="openNewBudget"
+              >
+                <!-- Each budget carries its own open-in-a-new-tab icon, so a budget
+                     can be read without first selecting it. -->
+                <template #default="{ item }">
+                  <span class="ne-option">
+                    <span class="ne-option-label">{{ item.name }}</span>
+                    <button
+                      type="button"
+                      class="btn-enterprise btn-enterprise--plain ne-option-open"
+                      :aria-label="`${t('Open budget in a new tab')}: ${item.name}`"
+                      @click.stop.prevent="openBudgetLine(item.id)"
+                    >
+                      <MpIcon name="newtab" size="sm" />
+                    </button>
+                  </span>
+                </template>
+                <template #buttonAction>{{ t('Add new budget') }}</template>
+              </MpAutocomplete>
+              <p class="ne-hint">{{ t('The budget line this engagement draws against') }}</p>
+            </MpFormControl>
+
             <MpFormControl id="ne-budget">
               <MpFormLabel>{{ t('Budgeted cost') }}</MpFormLabel>
               <MpInputGroup id="ne-budget-group" is-full-width>
                 <MpInputLeftAddon>Rp</MpInputLeftAddon>
                 <MpInput id="ne-budget-input" v-model="draft.budget" type="number" placeholder="0" is-full-width />
               </MpInputGroup>
-              <p class="ne-hint">{{ t('Used when no expense accounts are budgeted below') }}</p>
+              <p class="ne-hint">{{ t('Filled from the selected budget. Editable') }}</p>
             </MpFormControl>
           </div>
 
@@ -218,41 +304,45 @@ function cancel() { router.push('/project-accounting') }
           </div>
         </section>
 
-        <!-- ── Project budget ── -->
+        <!-- ── Project assignment ── -->
         <section class="ne-section">
-          <h2 class="ne-section-title">{{ t('Project budget') }}</h2>
+          <h2 class="ne-section-title">{{ t('Project assignment') }}</h2>
+          <p class="ne-hint ne-hint--lead">{{ t('Who leads the project, and who works on it') }}</p>
+          <div class="ne-grid ne-grid--2">
+            <MpFormControl id="ne-pm">
+              <MpFormLabel>{{ t('Project manager') }}</MpFormLabel>
+              <MpAutocomplete
+                id="ne-pm-input" v-model="draft.pm" :data="pmData"
+                label-prop="name" value-prop="name" use-portal is-full-width
+                :placeholder="t('Select a project manager')"
+              />
+              <p class="ne-hint">{{ t('Users with the Owner, Ultimate or Project Manager role') }}</p>
+            </MpFormControl>
 
-          <h3 class="ne-subhead">{{ t('Projected revenue') }}</h3>
-          <div v-for="l in draft.budgetLines.revenue" :key="l.id" class="ne-line">
-            <MpInput :id="`ne-rev-acct-${l.id}`" v-model="l.account" is-full-width :placeholder="t('Account')" />
-            <MpInputGroup :id="`ne-rev-amt-group-${l.id}`" class="ne-line-amount">
-              <MpInputLeftAddon>Rp</MpInputLeftAddon>
-              <MpInput :id="`ne-rev-amt-${l.id}`" v-model="l.amount" type="number" placeholder="0" />
-            </MpInputGroup>
-          </div>
-          <button type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm btn-enterprise--icon-before" @click="addRevenueLine">
-            <MpIcon name="add" size="sm" />
-            {{ t('Revenue account') }}
-          </button>
-
-          <h3 class="ne-subhead">{{ t('Projected expense') }}</h3>
-          <div v-for="l in draft.budgetLines.cost" :key="l.id" class="ne-line">
-            <MpInput :id="`ne-cost-acct-${l.id}`" v-model="l.account" is-full-width :placeholder="t('Account')" />
-            <MpInputGroup :id="`ne-cost-amt-group-${l.id}`" class="ne-line-amount">
-              <MpInputLeftAddon>Rp</MpInputLeftAddon>
-              <MpInput :id="`ne-cost-amt-${l.id}`" v-model="l.amount" type="number" placeholder="0" />
-            </MpInputGroup>
-          </div>
-          <div class="ne-line-foot">
-            <button type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm btn-enterprise--icon-before" @click="addCostLine">
-              <MpIcon name="add" size="sm" />
-              {{ t('Expense account') }}
-            </button>
-            <p class="ne-summary">
-              {{ t('Projected revenue') }}: {{ formatIdr(plannedRevenue) }} ·
-              {{ t('Projected expense') }}: {{ formatIdr(plannedCost) }} ·
-              {{ t('Projected margin') }}: {{ formatIdr(plannedRevenue - plannedCost) }}
-            </p>
+            <MpFormControl id="ne-team">
+              <MpFormLabel>{{ t('Team member') }}</MpFormLabel>
+              <div v-if="teamRows.length" class="ne-sel-list">
+                <div v-for="m in teamRows" :key="m.id" class="ne-sel-row">
+                  <span class="ne-sel-info">
+                    <span class="ne-sel-name">{{ m.name }}</span>
+                    <span v-if="m.subtitle" class="ne-sel-sub">{{ m.subtitle }}</span>
+                  </span>
+                  <MpTooltip :id="`ne-rm-member-${m.id}`" :label="t('Remove')" placement="top" use-portal class="ne-sel-tip">
+                    <button class="btn-enterprise btn-enterprise--plain ne-sel-remove" type="button" :aria-label="t('Remove')" @click="removeMember(m.id)">
+                      <MpIcon name="minus-circular" size="sm" />
+                    </button>
+                  </MpTooltip>
+                </div>
+              </div>
+              <button
+                type="button"
+                class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm ne-add-btn"
+                @click="teamDrawerOpen = true"
+              >
+                {{ t('Add team member') }}
+              </button>
+              <p class="ne-hint">{{ t('What each member can see follows their own role permissions') }}</p>
+            </MpFormControl>
           </div>
         </section>
 
@@ -286,6 +376,18 @@ function cancel() { router.push('/project-accounting') }
             </p>
           </div>
         </section>
+
+        <!-- ── Team member picker ── -->
+        <SelectAccessDrawer
+          v-model:open="teamDrawerOpen"
+          :title="t('Select team members')"
+          :list-title="t('Users')"
+          :options="teamOptions"
+          :model-value="teamIds"
+          :empty-title="t('No selected team members')"
+          :empty-caption="t('Selected team members will appear here.')"
+          @save="onTeamSaved"
+        />
 
         <!-- ── Actions ── -->
         <div class="ne-actions">
@@ -333,10 +435,6 @@ function cancel() { router.push('/project-accounting') }
   margin: 0 0 var(--mp-spacing-1); font-size: var(--mp-font-sizes-xl, 20px);
   font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-xl, 32px); color: var(--mp-text-default);
 }
-.ne-subhead {
-  margin: var(--mp-spacing-5) 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm);
-  font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; color: var(--mp-text-secondary);
-}
 .ne-hint { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .ne-hint--lead { margin: 0 0 var(--mp-spacing-4); }
 .ne-section-title:not(:has(+ .ne-hint--lead)) { margin-bottom: var(--mp-spacing-4); }
@@ -367,9 +465,32 @@ function cancel() { router.push('/project-accounting') }
 }
 .ne-method-desc { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
 
+/* ── Dropdown option with its own open-in-a-new-tab action ──────────────── */
+.ne-option { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); width: 100%; min-width: 0; }
+.ne-option-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ne-option-open { flex-shrink: 0; padding: var(--mp-spacing-1); min-width: 0; }
+.ne-option-open:hover { color: var(--mp-text-link); }
+
+/* ── Selected team members (mirrors the Cash account access picker) ──────── */
+.ne-sel-list {
+  display: flex; flex-direction: column;
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-lg, 8px);
+  margin-bottom: var(--mp-spacing-3); overflow: hidden;
+}
+.ne-sel-row {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+}
+.ne-sel-row + .ne-sel-row { border-top: 1px solid var(--mp-border-default); }
+.ne-sel-info { display: flex; flex-direction: column; min-width: 0; }
+.ne-sel-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.ne-sel-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.ne-sel-tip { flex-shrink: 0; }
+.ne-sel-remove { flex-shrink: 0; padding: var(--mp-spacing-1); min-width: 0; }
+.ne-add-btn { align-self: flex-start; }
+
 /* ── Repeatable lines ────────────────────────────────────────────────────── */
 .ne-line { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-2); }
-.ne-line-amount { width: 220px; flex-shrink: 0; }
 .ne-line-pct { width: 120px; flex-shrink: 0; }
 .ne-line-remove { flex-shrink: 0; }
 .ne-line-foot { display: flex; align-items: center; gap: var(--mp-spacing-4); flex-wrap: wrap; margin-top: var(--mp-spacing-3); }

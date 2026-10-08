@@ -138,7 +138,14 @@ export interface Engagement {
   contractValue: number
   /** null = never set at Setup, so cost variance cannot be computed. */
   budget: number | null
+  /**
+   * The budget line (budgetStore) this engagement draws against, picked at
+   * Setup. null = none linked; the `budget` figure then stands on its own.
+   */
+  budgetLineId: string | null
   budgetLines: BudgetLines | null
+  /** Assigned team members, by name. The PM is held separately in `pm`. */
+  team: string[]
   entries: CostEntry[]
   invoices: ProjectInvoice[]
   milestones: Milestone[] | null
@@ -244,7 +251,9 @@ function baseEngagement(partial: Partial<Engagement> & Pick<Engagement, 'id' | '
     feeEstimate: 0,
     contractValue: 0,
     budget: null,
+    budgetLineId: null,
     budgetLines: null,
+    team: [],
     entries: [],
     invoices: [],
     milestones: null,
@@ -606,6 +615,11 @@ export interface EngagementDraft {
   /** Fee estimate (tm) or contract value (input/output), as typed. */
   value: string
   budget: string
+  /** Linked budget line id, or '' when none is picked. Optional: drafts built
+   *  before the Setup form gained the field simply carry no budget link. */
+  budgetLineId?: string
+  /** Assigned team members, by name. Optional for the same reason. */
+  team?: string[]
   markup: string
   milestones: DraftMilestone[]
   budgetLines: { revenue: { id: string; account: string; amount: string }[]; cost: { id: string; account: string; amount: string }[] }
@@ -636,7 +650,9 @@ export function createEngagement(d: EngagementDraft): Engagement {
     markupPct: d.method === 'tm' ? (d.markup === '' ? 20 : Number(d.markup) || 0) : 0,
     // An itemised cost plan wins over the single estimated-cost figure.
     budget: costPlan > 0 ? costPlan : (d.budget === '' ? null : Number(d.budget) || 0),
+    budgetLineId: d.budgetLineId || null,
     budgetLines: hasLines ? lines : null,
+    team: (d.team ?? []).filter(Boolean),
     milestones: d.method === 'output'
       ? d.milestones.map(m => ({ id: m.id, label: m.label.trim() || 'Milestone', pct: Number(m.pct) || 0, verified: false, invId: null, recognized: 0 }))
       : null,

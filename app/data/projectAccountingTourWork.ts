@@ -31,7 +31,8 @@ function cost(
 
 function eng(p: Partial<Engagement> & Pick<Engagement, 'id' | 'name' | 'client' | 'pm' | 'method' | 'stage'>): Engagement {
   const e: Engagement = {
-    markupPct: 0, feeEstimate: 0, contractValue: 0, budget: null, budgetLines: null, entries: [], invoices: [],
+    markupPct: 0, feeEstimate: 0, contractValue: 0, budget: null, budgetLineId: null, budgetLines: null,
+    team: [], entries: [], invoices: [],
     milestones: null, billing: null, vos: [], recognizedBase: 0, pctAtVO: 0, weightsNeedConfirm: false,
     closedAt: null, scopePending: null, ...p,
   }
