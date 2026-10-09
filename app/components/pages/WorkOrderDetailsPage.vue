@@ -113,13 +113,18 @@ const primaryAction = computed(() => {
 })
 // Actions menu items — terminal statuses drop the destructive/edit options. The
 // requester's own pending request adds "Cancel approval request" (until someone approves).
+// While approval is running, Cancel/close, Edit, Replace attachment and Delete are hidden.
+const HIDDEN_WHILE_PENDING = new Set(['Cancel/close work order', 'Edit', 'Replace attachment', 'Delete'])
 const actionItems = computed(() => {
   const s = wo.value?.status
   const own = cancelableRequest.value ? ['Cancel approval request'] : []
-  if (s === 'completed') return [...own, 'Print']
-  if (s === 'canceled') return [...own, 'Print', 'Delete']
-  if (s === 'in progress' || s === 'partially produced') return [...own, 'Adjust work order', 'Cancel/close work order', 'Edit', 'Replace attachment', 'Print', 'Delete']
-  return [...own, 'Cancel/close work order', 'Edit', 'Replace attachment', 'Print', 'Delete']
+  let items: string[]
+  if (s === 'completed') items = ['Print']
+  else if (s === 'canceled') items = ['Print', 'Delete']
+  else if (s === 'in progress' || s === 'partially produced') items = ['Adjust work order', 'Cancel/close work order', 'Edit', 'Replace attachment', 'Print', 'Delete']
+  else items = ['Cancel/close work order', 'Edit', 'Replace attachment', 'Print', 'Delete']
+  if (pending.value.length) items = items.filter(i => !HIDDEN_WHILE_PENDING.has(i))
+  return [...own, ...items]
 })
 
 // ── Attachments (representative) ────────────────────────────────────────────────
@@ -408,10 +413,6 @@ function startNow() {
   toast.notify({ variant: 'success', title: t('Work order started') })
 }
 
-function createAgain(req: WoApprovalRequest) {
-  if (blocked()) return
-  openTransaction(req.type, req)
-}
 function onActionItem(item: string) {
   // Exempt from the freeze.
   if (item === 'Print') return
@@ -715,7 +716,6 @@ function suppressFabClick(e: MouseEvent) {
         v-else-if="notice?.kind === 'rejected'"
         :request="notice.request"
         @dismiss="dismissRejection(notice.request.id)"
-        @resubmit="createAgain(notice.request)"
         @view-log="openApprovalLog(notice.request.id)"
       />
       <WoActionReasonBanner

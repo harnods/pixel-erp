@@ -454,7 +454,7 @@ export function latestRejectedRequest(woId: string): WoApprovalRequest | undefin
 
 /**
  * Rejection notices on the work order detail, newest first. A rejection notice is sticky:
- * it stays until the user dismisses it (×) or acts on it (Submit again / Create again).
+ * it stays until the user dismisses it (×).
  */
 export function rejectedNotices(woId: string): WoApprovalRequest[] {
   return requestsForWorkOrder(woId)

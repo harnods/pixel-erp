@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
  * WoRejectBanner — a rejected work order approval request (grooming 2026-10-09).
- * Sticky: it stays until the user dismisses it with × (persisted per request) or acts on
- * it with Submit again / Create again. Shows who rejected it and the reject reason.
+ * Sticky: it stays until the user dismisses it with × (persisted per request). Shows who rejected it and the reject reason; the user starts the action again from the
+ * header / Actions menu.
  */
 import {
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpBannerCloseButton, MpButton,
@@ -10,7 +10,7 @@ import {
 import { rejectionOf, type WoApprovalRequest } from '~/data/woApproval'
 
 const props = defineProps<{ request: WoApprovalRequest }>()
-const emit = defineEmits<{ dismiss: []; resubmit: []; viewLog: [] }>()
+const emit = defineEmits<{ dismiss: []; viewLog: [] }>()
 const { t } = useLocale()
 
 const rejection = computed(() => rejectionOf(props.request))
@@ -26,7 +26,6 @@ const title = computed(() => `${t(SHORT_TYPE[props.request.type])}${props.reques
       {{ t('{name}: {reason}').replace('{name}', rejection.user).replace('{reason}', rejection.reason ?? '') }}
     </MpBannerDescription>
     <MpBannerLink>
-      <MpButton variant="textLink" size="sm" @click="emit('resubmit')">{{ request.type === 'start' ? t('Submit again') : t('Create again') }}</MpButton>
       <MpButton variant="textLink" size="sm" @click="emit('viewLog')">{{ t('View approval log') }}</MpButton>
     </MpBannerLink>
     <MpBannerCloseButton :aria-label="t('Dismiss')" @click="emit('dismiss')" />
