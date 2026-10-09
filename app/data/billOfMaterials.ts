@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 import { CATALOG, FULL_CATALOG } from './catalog'
 import { loadSnapshot, saveSnapshot } from './persist'
+import { SUBCON_SERVICE_PRODUCTS } from './subcon'
 
 /**
  * One subcon cost line on a Subcontracting BOM — the charge the vendor makes for
@@ -15,7 +16,15 @@ export interface BomSubconCostLine {
   /** Denormalized for display — mirrors the service product's name/SKU. */
   name: string
   sku: string
-  /** How the vendor quotes it — Unit · Amount · Batch. */
+  /**
+   * The unit the charge is quoted in — Pcs, Kg, Shipment, Batch.
+   *
+   * Defaults to the service product's own unit and is editable on the BOM form,
+   * because the same service is sometimes quoted per piece and sometimes per
+   * batch. Every screen downstream reads what the recipe saved here. (The name
+   * is historic: this once held a Unit/Amount/Batch allocation driver, which no
+   * longer selects anything.)
+   */
   costDriver: string
   /** Account the charge is mapped to. */
   accountMapping: string
@@ -217,11 +226,11 @@ function subconDemoBom(): BillOfMaterials {
   const subconCost: BomSubconCostLine[] = [
     {
       productId: 'svc-sew', name: 'Jahit & assembly', sku: 'SVC-JHT-01',
-      costDriver: 'Unit', accountMapping: 'Work in process', amount: 12_500_000,
+      costDriver: 'Pcs', accountMapping: 'Work in process', amount: 12_500_000,
     },
     {
       productId: 'svc-handling', name: 'Subcon handling & freight', sku: 'SVC-FRT-01',
-      costDriver: 'Amount', accountMapping: 'Work in process', amount: 600_000,
+      costDriver: 'Shipment', accountMapping: 'Work in process', amount: 600_000,
     },
   ]
   const rawSubtotal = rawMaterials.reduce((t, r) => t + r.needed * r.purchaseCost, 0)
@@ -286,15 +295,15 @@ function mejaKerjaBom(): BillOfMaterials {
   const subconCost: BomSubconCostLine[] = [
     {
       productId: 'svc-woodwork', name: 'Potong & perakitan kayu', sku: 'SVC-KYU-01',
-      costDriver: 'Unit', accountMapping: 'Work in process', amount: 36_000_000,
+      costDriver: 'Pcs', accountMapping: 'Work in process', amount: 36_000_000,
     },
     {
       productId: 'svc-finishing', name: 'Finishing & pengecatan', sku: 'SVC-FNS-01',
-      costDriver: 'Unit', accountMapping: 'Work in process', amount: 18_000_000,
+      costDriver: 'Pcs', accountMapping: 'Work in process', amount: 18_000_000,
     },
     {
       productId: 'svc-handling', name: 'Subcon handling & freight', sku: 'SVC-FRT-01',
-      costDriver: 'Amount', accountMapping: 'Work in process', amount: 2_000_000,
+      costDriver: 'Shipment', accountMapping: 'Work in process', amount: 2_000_000,
     },
   ]
   const rawSubtotal = rawMaterials.reduce((t, r) => t + r.needed * r.purchaseCost, 0)
@@ -406,4 +415,20 @@ export function bomCostSummary(b: Pick<BillOfMaterials, 'rawMaterials' | 'produc
 /** Options for a BOM autocomplete — id/name/no/finishedGoodId, newest first. */
 export function bomOptions() {
   return billOfMaterials.map(b => ({ id: b.id, name: b.name, no: b.number, finishedGoodId: b.finishedGoodId }))
+}
+
+/**
+ * A subcon cost line's `costDriver` now holds a UNIT of measure.
+ *
+ * It used to hold an allocation driver — Unit, Amount or Batch — which no
+ * longer selects anything. A record stored before the change still carries one,
+ * and since a saved unit wins over the service product's default, those labels
+ * would otherwise surface on the form as if someone had chosen them.
+ */
+const LEGACY_COST_DRIVERS = ['Unit', 'Amount', 'Batch']
+for (const bom of billOfMaterials) {
+  for (const line of bom.subconCost ?? []) {
+    if (!LEGACY_COST_DRIVERS.includes(line.costDriver)) continue
+    line.costDriver = SUBCON_SERVICE_PRODUCTS.find(p => p.id === line.productId)?.unit ?? ''
+  }
 }

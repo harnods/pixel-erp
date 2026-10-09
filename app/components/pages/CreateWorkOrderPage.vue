@@ -417,7 +417,9 @@ function defaultSubconCostRows(): SubconCostRow[] {
     return [
       ...fromBom.map(l => makeSubconCost({
         productId: l.productId,
-        costDriver: subconServiceProduct(l.productId)?.unit ?? l.costDriver,
+        // The BOM's unit is the recipe's decision; the product's is only the
+        // default it was offered.
+        costDriver: l.costDriver || subconServiceProduct(l.productId)?.unit || '',
         accountMapping: optionId(ACCOUNT_MAPPING_OPTIONS, l.accountMapping),
         amount: String(l.amount),
       })),

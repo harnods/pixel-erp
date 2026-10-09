@@ -120,6 +120,18 @@ function makeSubconCostRow(partial: Partial<SubconCostRow> = {}): SubconCostRow 
 }
 const subconCostRows = ref<SubconCostRow[]>([makeSubconCostRow()])
 
+/**
+ * Units a subcon charge can be quoted in.
+ *
+ * The catalog's units plus the ones only services use — a charge per shipment
+ * or per batch has no stocked product behind it, so those would otherwise be
+ * missing from the list that offers them.
+ */
+const SUBCON_UNIT_OPTIONS = [...new Set([
+  ...UNIT_OPTIONS.map(u => u.id),
+  ...SUBCON_SERVICE_PRODUCTS.map(p => p.unit),
+])].map(u => ({ id: u, name: u }))
+
 const SUBCON_PRODUCT_OPTIONS = SUBCON_SERVICE_PRODUCTS.map(p => ({
   id: p.id, name: `${p.name} · ${p.sku}`,
 }))
@@ -364,7 +376,7 @@ function prefillFrom(bom: BillOfMaterials) {
   // vendor's charges off the recipe.
   subconCostRows.value = (bom.subconCost ?? []).map(c => makeSubconCostRow({
     productId: c.productId,
-    costDriver: subconServiceProduct(c.productId)?.unit ?? c.costDriver,
+    costDriver: c.costDriver || subconServiceProduct(c.productId)?.unit || '',
     accountMapping: optionId(ACCOUNT_MAPPING_OPTIONS, c.accountMapping),
     amount: String(c.amount),
   }))
@@ -838,10 +850,20 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       @update:model-value="(v: string) => onSubconProduct(row, v)"
                     />
                   </td>
-                  <!-- The service's own unit — read, not chosen: a line free to
-                       disagree with its product is a line that will. -->
-                  <td class="bf-td">
-                    <template v-if="row.productId">{{ row.costDriver || '—' }}</template>
+                  <!-- Defaults to the service's own unit, and can be changed:
+                       the same service is sometimes quoted per piece and
+                       sometimes per batch, and the recipe is where that is
+                       settled. Every screen downstream reads what is saved here. -->
+                  <td class="bf-td bf-td--input">
+                    <MpAutocomplete
+                      v-if="row.productId"
+                      :id="`subcon-unit-${row.id}`"
+                      v-model="row.costDriver"
+                      :data="SUBCON_UNIT_OPTIONS"
+                      label-prop="name" value-prop="id"
+                      :placeholder="t('Select unit')"
+                      is-searchable use-portal is-full-width
+                    />
                   </td>
                   <td class="bf-td bf-td--input">
                     <MpAutocomplete

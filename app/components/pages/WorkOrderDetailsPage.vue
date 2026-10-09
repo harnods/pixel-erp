@@ -308,9 +308,10 @@ const subconCostLines = computed(() => {
       ...fromBom.map(l => ({
         account: l.name,
         chargedBy: c.vendorName,
-        // The service's own unit, so the purchase request is raised in the
-        // same measure the charge was quoted in.
-        unit: subconServiceProduct(l.productId)?.unit ?? l.costDriver ?? t('Service'),
+        // The unit the charge was quoted in, so the purchase request is raised
+        // in the same measure. What the BOM saved wins — the product's unit was
+        // only the default it started from.
+        unit: l.costDriver || subconServiceProduct(l.productId)?.unit || t('Service'),
         accountMapping: l.accountMapping || SUBCON_DEFAULT_ACCOUNT_MAPPING,
         amount: amountFor(l.productId, Math.round(l.amount * factor)),
       })),
