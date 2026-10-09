@@ -113,8 +113,8 @@ const primaryAction = computed(() => {
 })
 // Actions menu items — terminal statuses drop the destructive/edit options. The
 // requester's own pending request adds "Cancel approval request" (until someone approves).
-// While approval is running, Cancel/close, Edit, Replace attachment and Delete are hidden.
-const HIDDEN_WHILE_PENDING = new Set(['Cancel/close work order', 'Edit', 'Replace attachment', 'Delete'])
+// While approval is running, Adjust, Cancel/close, Edit, Replace attachment and Delete are hidden.
+const HIDDEN_WHILE_PENDING = new Set(['Adjust work order', 'Cancel/close work order', 'Edit', 'Replace attachment', 'Delete'])
 const actionItems = computed(() => {
   const s = wo.value?.status
   const own = cancelableRequest.value ? ['Cancel approval request'] : []

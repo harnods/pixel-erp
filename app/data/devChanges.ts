@@ -119,7 +119,7 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'wo-approval-reject-banner',
     title: 'Sticky rejection notice',
     description:
-      'A rejected request shows a danger notice with the reject reason that stays until the user dismisses it (×, remembered). No Submit again / Create again on it — the action is started again from the header or Actions menu. While a request is pending, the Actions menu hides Cancel/close, Edit, Replace attachment and Delete (Print, Adjust and Cancel approval request remain).',
+      'A rejected request shows a danger notice with the reject reason that stays until the user dismisses it (×, remembered). No Submit again / Create again on it — the action is started again from the header or Actions menu. While a request is pending, the Actions menu hides Adjust, Cancel/close, Edit, Replace attachment and Delete (Print and Cancel approval request remain).',
     date: '2026-10-09',
     files: ['WoRejectBanner.vue', 'WorkOrderDetailsPage.vue'],
   },
