@@ -463,7 +463,15 @@ export function subconMaterialsFulfilled(wo: WorkOrder): boolean {
 export function syncSubconStatus(wo: WorkOrder): void {
   const c = wo.subcon
   if (!c) return
-  if (!['not started', 'waiting rm procurement', 'waiting subcon order', 'in progress'].includes(wo.status)) return
+
+  // Past this point the status is production's to move, not this function's.
+  // The next action is still derived, though: a finished or cancelled order owes
+  // nothing, and leaving the last value it held is what put Complete and
+  // Partially produce on the header of an order that was already closed.
+  if (!['not started', 'waiting rm procurement', 'waiting subcon order', 'in progress'].includes(wo.status)) {
+    c.nextAction = deriveNextAction(wo)
+    return
+  }
 
   const docs = c.raisedDocuments ?? []
   // The order that places the vendor's WORK — not a component order, which buys
@@ -536,8 +544,13 @@ export function deriveNextAction(wo: WorkOrder): SubconNextAction {
 
   // ── Ordered, and not yet begun. Starting is a deliberate act: it is the
   //    moment the vendor is told to go, and with partial production off it is
-  //    also what issues the components into their process. ─────────────────
-  if (wo.status !== 'in progress') return 'start'
+  //    also what issues the components into their process.
+  //
+  //    Tested on the statuses that mean the run has NOT begun, not on the one
+  //    that means it has: a partially produced or partially completed order has
+  //    output against it already, and offering to start it would be nonsense.
+  const NOT_YET_BEGUN = ['not started', 'waiting rm procurement', 'waiting subcon order']
+  if (NOT_YET_BEGUN.includes(wo.status)) return 'start'
 
   // ── Running. Production is recorded against the vendor's deliveries ─────
   return 'complete'
