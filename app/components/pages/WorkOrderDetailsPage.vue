@@ -15,12 +15,13 @@
  *   • while a request is pending the work order is frozen — every action refuses inline
  *     (buttons never disabled) except Print and the requester's Cancel approval request;
  *   • rejection notices are sticky until dismissed (×); the Adjust / Cancel-close reason
- *     shows in a notice; an "Approval log" tab lists every request.
+ *     shows in a notice; the Approval log icon in the header (rule/detail-approval-header)
+ *     opens every request on the work order in ApprovalLogModal.
  */
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { formatIDR } from '~/utils/currency'
 import {
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpPopover, MpPopoverTrigger, MpTooltip, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpIcon, MpSelect, MpDatePicker, MpButton, css, toast,
   MpBanner, MpBannerIcon, MpBannerDescription, MpBannerLink, MpBannerCloseButton,
 } from '@mekari/pixel3'
@@ -30,7 +31,6 @@ import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import WoTransactionModal, { type WoTransactionMode, type WoTransactionResult } from '~/components/patterns/WoTransactionModal.vue'
 import WoRejectBanner from '~/components/patterns/WoRejectBanner.vue'
 import WoActionReasonBanner from '~/components/patterns/WoActionReasonBanner.vue'
-import WoApprovalLogTable from '~/components/patterns/WoApprovalLogTable.vue'
 import {
   pendingForWorkOrder, rejectedNotices, dismissRejection, guardMessage, startWorkOrder,
   approvalLogsForWorkOrder, approvalLogFor, queueFor, rejectRequest, waitingForText,
@@ -84,11 +84,10 @@ const bottomTabs = computed(() =>
 const activeBottomTab = ref('Partial production')
 
 // ── Top-level tabs (Overview / Material consume & return) ────────────────────
-const topTabs = ['Overview', 'Material consume & return', 'Approval log'] as const
+const topTabs = ['Overview', 'Material consume & return'] as const
 type TopTab = typeof topTabs[number]
 const activeTopTab = ref<TopTab>(
-  route.query.tab === 'material-consume-return' ? 'Material consume & return'
-    : route.query.tab === 'approval-log' ? 'Approval log' : 'Overview',
+  route.query.tab === 'material-consume-return' ? 'Material consume & return' : 'Overview',
 )
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -335,7 +334,7 @@ function rejectHere(reason: string) {
 }
 
 const approvalLogOpen = ref(false)
-// One request (from the Approval log tab / a rejection notice) or all of them (pending notices).
+// One request (from a rejection notice) or all of them (header icon / pending notices).
 const approvalLogRequestId = ref('')
 const approvalLogs = computed(() => {
   if (!wo.value) return []
@@ -607,6 +606,10 @@ function suppressFabClick(e: MouseEvent) {
 
       <!-- Header actions -->
       <div class="detail-bar-actions">
+        <!-- Approval log — same header icon as the transaction details (rule/detail-approval-header) -->
+        <MpTooltip id="wod-tt-approval" :label="t('Approval log')" placement="bottom" use-portal>
+          <MpButton variant="ghost" class="detail-icon-btn" :aria-label="t('Approval log')" left-icon="task-todo" data-devchange="wo-approval-log-tab" @click="openApprovalLog()" />
+        </MpTooltip>
         <MpPopover id="wod-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
             <MpButton class="detail-btn detail-btn--secondary" variant="secondary">
@@ -630,9 +633,8 @@ function suppressFabClick(e: MouseEvent) {
 
         <!-- Approver view — when a request on this work order awaits the viewer's level,
              the primary action becomes Approve (the work order can't move on until it's
-             decided anyway); the chevron segment offers Reject. No Approval log / Comments
-             header icons (deliberate deviation from rule/detail-approval-header, product
-             decision 2026-10-02) — the log opens from the pending notice. -->
+             decided anyway); the chevron segment offers Reject. The Approval log icon sits
+             left of Actions (rule/detail-approval-header); no Comments icon on the WO. -->
         <div v-if="myRequest" class="detail-split-btn" data-devchange="wo-approval-detail">
           <MpButton variant="primary" is-rounded class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="approveHere">{{ t('Approve') }}</MpButton>
           <MpPopover id="wod-approve-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
@@ -656,7 +658,6 @@ function suppressFabClick(e: MouseEvent) {
         v-for="tab in topTabs" :key="tab"
         class="detail-toptab" variant="ghost" :class="{ 'detail-toptab--active': activeTopTab === tab }"
         role="tab" :aria-selected="activeTopTab === tab"
-        :data-devchange="tab === 'Approval log' ? 'wo-approval-log-tab' : undefined"
         @click="activeTopTab = tab"
       >{{ t(tab) }}</MpButton>
     </div>
@@ -1021,11 +1022,6 @@ function suppressFabClick(e: MouseEvent) {
 
     </div>
 
-    <!-- ── Approval log — every approval request on this work order ── -->
-    <div v-else-if="activeTopTab === 'Approval log'" class="detail-stage detail-stage--crr" :class="{ 'detail-stage--continued': hasNotices }">
-      <WoApprovalLogTable :work-order-id="wo.id" @view-log="openApprovalLog" />
-    </div>
-
     <!-- ── Material consume & return — no records at all: illustration only, no filter bar ── -->
     <div v-else-if="consumeReturnRecords.length === 0" class="detail-stage detail-stage--crr" :class="{ 'detail-stage--continued': hasNotices }">
       <div class="crr-full-empty">
@@ -1266,6 +1262,9 @@ function suppressFabClick(e: MouseEvent) {
 
 <style scoped>
 /* ── Work order approval ──────────────────────────────────────────────────── */
+/* Header icon button (Approval log) — same as StockAdjustmentDetailsPage. */
+.detail-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
+.detail-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
 /* Split button — Approve + chevron (Reject) sharing one pill; outer corners rounded only. */
 .detail-split-btn { display: inline-flex; align-items: stretch; }
 .detail-split-btn__main { border-radius: var(--mp-radii-full) 0 0 var(--mp-radii-full) !important; }

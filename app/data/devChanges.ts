@@ -133,11 +133,11 @@ export const DEV_CHANGES: DevChange[] = [
   },
   {
     id: 'wo-approval-log-tab',
-    title: 'Approval log tab on the work order',
+    title: 'Approval log icon in the work order header',
     description:
-      'A third tab lists every approval request on the work order: requested on, transaction type, request no., requested by, approval rule, status and latest action (approved / rejected with reason / canceled / waiting for). Each row opens the approval log timeline.',
+      'Like the transaction detail pages (rule/detail-approval-header), the work order header has an Approval log icon button left of Actions. It opens the Approval log modal with every request on the work order (pending first, then the latest decided): requester, levels, approved / rejected with reason / skipped / canceled. Replaces the Approval log tab.',
     date: '2026-10-09',
-    files: ['WoApprovalLogTable.vue', 'WorkOrderDetailsPage.vue'],
+    files: ['WorkOrderDetailsPage.vue', 'ApprovalLogModal.vue'],
   },
   {
     id: 'wo-approval-rules',

@@ -196,5 +196,8 @@ function pendingRows(stage: ApprovalStage): string[] {
 .alm-detail dt { color: var(--mp-text-secondary); }
 .alm-detail dd { margin: 0; color: var(--mp-text-default); display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-1); }
 .alm-reason { padding-bottom: var(--mp-spacing-3); border-bottom: 1px solid var(--mp-border-default); }
+/* Pixel renders captions as inline spans — two in a row (reject reason + timestamp) would
+   run together on one line. */
+:deep(.mp-timeline__caption) { display: block; }
 .alm-previous-toggle { padding: 0; height: auto; color: var(--mp-text-link); }
 </style>
