@@ -99,7 +99,16 @@ function componentWarehouseName(productId: string): string {
   return wo.value?.componentWarehouses?.[productId]?.name ?? '—'
 }
 
-const components = computed(() => (bom.value?.rawMaterials ?? []).map((r) => {
+/** Basic: the vendor's own stock, so this run consumes no material of ours. */
+const subconIsBasic = computed(() => subcon.value?.method === 'basic')
+
+/**
+ * Empty on a Basic order rather than merely hidden: these components are the
+ * vendor's, so they are not consumed from our stock and their value is not part
+ * of what this batch costs us. Leaving them in the list would keep them in the
+ * process cost while the table that explains them is gone.
+ */
+const components = computed(() => (subconIsBasic.value ? [] : (bom.value?.rawMaterials ?? [])).map((r) => {
   const p = catalogProduct(r.productId)
   const sku = p?.sku ?? '—'
   const planned = subcon.value?.componentAdjustments?.[sku] ?? r.needed
@@ -318,7 +327,7 @@ function save() {
       <p v-if="error" class="ppc-error">{{ error }}</p>
 
       <!-- ── Product components ── -->
-      <section class="ppc-section">
+      <section v-if="!subconIsBasic" class="ppc-section">
         <h2 class="ppc-section-title">{{ t('Product components') }}</h2>
         <div class="ppc-note ppc-note--inline">
           <MpIcon name="information" size="md" />

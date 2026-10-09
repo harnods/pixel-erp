@@ -2,7 +2,6 @@ import { reactive } from 'vue'
 import { TODAY } from './master'
 import { billOfMaterials, catalogProduct } from './billOfMaterials'
 import { warehouseTransfers } from './warehouseTransfers'
-import { productionSettings } from './productionSettings'
 import type { SubconScope, SubconSplit, SubconMethod } from './subcon'
 import { loadSnapshot, saveSnapshot } from './persist'
 
@@ -452,9 +451,11 @@ export function subconMaterialsFulfilled(wo: WorkOrder): boolean {
  *
  * The run has two milestones before production: the vendor gets the materials,
  * and the work is ordered. Previously both sat under "not started" and someone
- * looking for what to chase could not tell them apart — and starting was a
- * manual act that added nothing, since nothing can happen until the order
- * exists anyway.
+ * looking for what to chase could not tell them apart.
+ *
+ * Raising the purchase order does NOT start the run. It commits the vendor; a
+ * person still says go, and that moment is what issues the components. So this
+ * never writes `in progress` — `startWorkOrder` does.
  *
  * Statuses from `partially produced` onward are left alone: production has begun
  * and this is no longer the thing that decides where the order stands.
@@ -471,11 +472,9 @@ export function syncSubconStatus(wo: WorkOrder): void {
     d.kind === 'purchaseOrder'
     && !(d.fromKind && COMPONENT_REQUEST_KINDS.includes(d.fromKind)))
 
+  // The work is ordered. The run itself waits for someone to start it, so the
+  // status stays where it is and only the next action moves on.
   if (servicePo) {
-    if (wo.status !== 'in progress') {
-      wo.status = 'in progress'
-      wo.startDate = wo.startDate ?? new Date().toISOString().slice(0, 10)
-    }
     c.nextAction = deriveNextAction(wo)
     return
   }
@@ -529,24 +528,18 @@ export function deriveNextAction(wo: WorkOrder): SubconNextAction {
     }
   }
 
-  // ── Materials are there. With no partial production the run is started by
-  //    hand, and that start is what issues the components into the vendor's
-  //    process — so it comes before the service request.
-  //
-  //    Tested on the run not having begun rather than on one status: readiness
-  //    has already moved the order to `waiting subcon order` by the time this
-  //    reads it. ───────────────────────────────────────────────────────────
-  if (!productionSettings.partialProduction && !servicePo && wo.status !== 'in progress') {
-    return 'start'
-  }
-
-  // ── Then the work itself: requested here, ordered from the request ───────
+  // ── The work itself: requested here, ordered from the request ───────────
   if (!servicePo) {
     if (!has(serviceRequestKind)) return 'create-service-request'
     return 'view-service-request'
   }
 
-  // ── Ordered. Production is recorded against the vendor's deliveries ──────
+  // ── Ordered, and not yet begun. Starting is a deliberate act: it is the
+  //    moment the vendor is told to go, and with partial production off it is
+  //    also what issues the components into their process. ─────────────────
+  if (wo.status !== 'in progress') return 'start'
+
+  // ── Running. Production is recorded against the vendor's deliveries ─────
   return 'complete'
 }
 

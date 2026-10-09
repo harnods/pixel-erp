@@ -32,7 +32,6 @@ import {
   SUBCON_PRICE_BASIS_SHORT, SUBCON_PRICING_SETTINGS, type SubconPriceState,
 } from '~/data/subconPricing'
 import SubconJournalModal from '~/components/patterns/SubconJournalModal.vue'
-import ConfirmWorkOrderAdjustmentModal from '~/components/patterns/ConfirmWorkOrderAdjustmentModal.vue'
 import TransferOriginBreakdownModal, { type TransferOriginGroup } from '~/components/patterns/TransferOriginBreakdownModal.vue'
 import {
   buildSubconJournals, accountLabel,
@@ -585,19 +584,8 @@ const subconJournals = computed(() => accountingInput.value ? buildSubconJournal
 
 const showJournalModal = ref(false)
 
-/** The completion fork, and whether it has already been answered this visit. */
-const showConfirmAdjust = ref(false)
-const confirmedNoDifferences = ref(false)
-
 function goAdjust() {
-  showConfirmAdjust.value = false
   router.push(`/work-orders/${props.orderId}/adjust`)
-}
-
-function proceedToComplete() {
-  showConfirmAdjust.value = false
-  confirmedNoDifferences.value = true
-  handlePrimaryAction()
 }
 
 /** The stock movements this work order produced, for the modal's second tab. */
@@ -1254,31 +1242,26 @@ function postComponentIssue() {
   })
 }
 
+/**
+ * Begin the run.
+ *
+ * Starting is a deliberate act, taken once the vendor is under order. With
+ * partial production OFF the whole order is handed over in one go, so starting
+ * issues every component into the vendor's process. With it ON the components
+ * go out against each partial record instead, so starting posts nothing — one
+ * issue for the whole quantity would charge WIP for material the vendor has not
+ * been given yet.
+ */
 function startWorkOrder() {
   const w = wo.value
   if (!w) return
   w.status = 'in progress'
   w.startDate = new Date().toISOString().slice(0, 10)
   persistWorkOrders()
-  postComponentIssue()
+  if (!productionSettings.partialProduction) postComponentIssue()
+  // The run has moved on, so what it owes next has too.
+  refreshSubconWorkOrder(w.id)
 }
-
-/**
- * Issue the components when the run actually begins.
- *
- * With no manual start, `in progress` is reached by raising the purchase order —
- * on another page — so the issue cannot be posted by whatever did it. The work
- * order posts it the first time it sees itself in progress instead. Guarded by
- * the document already on the record, so revisiting the page cannot post it
- * twice.
- */
-watch([() => wo.value?.status, () => subcon.value?.raisedDocuments?.length], () => {
-  const w = wo.value
-  if (!w || !subcon.value || w.status !== 'in progress') return
-  const alreadyIssued = (subcon.value.raisedDocuments ?? []).some(d => d.kind === 'componentIssue')
-  if (alreadyIssued) return
-  postComponentIssue()
-}, { immediate: true })
 
 /** Where each document's form lives. */
 /**
@@ -1496,9 +1479,6 @@ function handlePrimaryAction() {
     return
   }
   if (primaryAction.value !== t('Complete work order')) return
-  // Offer the fork before any of the completion dialogs: correcting the order is
-  // a different job from closing it, and it has to happen first.
-  if (subcon.value && !confirmedNoDifferences.value) { showConfirmAdjust.value = true; return }
   // A subcon order is finished when the vendor's deliveries add up to what it
   // needs. Short of that it is refused: revising the quantity is an adjustment,
   // made on the adjust form where it is recorded with its reason, not a step
@@ -2491,13 +2471,6 @@ function suppressFabClick(e: MouseEvent) {
 
       </ErpTablePage>
     </div>
-
-    <ConfirmWorkOrderAdjustmentModal
-      v-if="subcon"
-      v-model:is-open="showConfirmAdjust"
-      @adjust="goAdjust"
-      @proceed="proceedToComplete"
-    />
 
     <TransferOriginBreakdownModal
       v-if="subcon"
