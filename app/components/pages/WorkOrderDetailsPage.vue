@@ -1188,17 +1188,12 @@ const subconPoRaised = computed(() =>
   (subcon.value?.raisedDocuments ?? []).some(isServiceOrder))
 
 /**
- * The document that supplies the vendor, as a button label. A transfer moves our
- * own stock; a dropship request buys it from a 3rd party and ships it on.
+ * The document that supplies the vendor. A transfer moves our own stock; a
+ * dropship request buys it from a 3rd party and ships it on. The button's
+ * WORDING comes from the step the record names — see `SUBCON_ACTION_LABEL` —
+ * so only the kind is needed here, to know which form to open.
  */
 const supplyActionKind = computed(() => subconSupplyStep.value?.kind)
-const supplyActionLabel = computed(() => {
-  const kind = supplyActionKind.value
-  if (!kind) return ''
-  return kind === 'transfer' || kind === 'rawTransfer'
-    ? t('Create warehouse transfer')
-    : t('Create purchase request for raw material')
-})
 
 /** Shown in place of opening the Start modal when the supply document is missing. */
 const startBlockedMessage = ref('')
