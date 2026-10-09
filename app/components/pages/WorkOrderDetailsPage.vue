@@ -32,7 +32,7 @@ import WoTransactionModal, { type WoTransactionMode, type WoTransactionResult } 
 import WoRejectBanner from '~/components/patterns/WoRejectBanner.vue'
 import WoActionReasonBanner from '~/components/patterns/WoActionReasonBanner.vue'
 import {
-  pendingForWorkOrder, rejectedNotices, dismissRejection, guardMessage, startWorkOrder,
+  pendingForWorkOrder, rejectedNotices, rejectionOf, dismissRejection, guardMessage, startWorkOrder,
   approvalLogsForWorkOrder, approvalLogFor, queueFor, rejectRequest, waitingForText,
   approveRequest, displayStatus, typeLabel, requestTitle, requestById,
   canCancelRequest, cancelRequest,
@@ -255,15 +255,31 @@ function handlePrimaryAction() {
 // ── Work order approval ───────────────────────────────────────────────────────
 const { actor, setActor } = useWoApprovalActor()
 const pending = computed(() => (wo.value ? pendingForWorkOrder(wo.value.id) : []))
-const startPending = computed(() => pending.value.some(r => r.type === 'start'))
-const otherPending = computed(() => pending.value.filter(r => r.type !== 'start'))
 const rejections = computed(() => (wo.value ? rejectedNotices(wo.value.id) : []))
-// Adjust / Cancel-close reason — hidden for the session once dismissed.
 const actionReason = computed(() => wo.value?.actionReason)
 const actionReasonRequest = computed(() => requestById(actionReason.value?.requestId))
-const reasonDismissedAt = ref('')
-const showActionReason = computed(() => !!actionReason.value && reasonDismissedAt.value !== actionReason.value.at)
-const hasNotices = computed(() => !!(guardText.value || pending.value.length || rejections.value.length || showActionReason.value))
+
+/**
+ * Only ONE notice shows on the work order — the latest. An inline refusal (the user just
+ * clicked a locked action) always wins; otherwise the newest of: a pending request
+ * (submitted at), an undismissed rejection (rejected at) and the Adjust / Cancel-close
+ * reason (given at). A pending request's reason rides on its pending notice instead.
+ */
+type Notice =
+  | { kind: 'guard' }
+  | { kind: 'pending'; request: WoApprovalRequest }
+  | { kind: 'rejected'; request: WoApprovalRequest }
+  | { kind: 'reason' }
+const notice = computed<Notice | null>(() => {
+  if (guardText.value) return { kind: 'guard' }
+  const candidates: { at: string; rank: number; n: Notice }[] = []
+  for (const r of pending.value) candidates.push({ at: r.log[0]?.at ?? r.transactionDate, rank: 3, n: { kind: 'pending', request: r } })
+  for (const r of rejections.value) candidates.push({ at: rejectionOf(r)?.at ?? '', rank: 2, n: { kind: 'rejected', request: r } })
+  if (actionReason.value && actionReasonRequest.value?.status !== 'pending') candidates.push({ at: actionReason.value.at, rank: 1, n: { kind: 'reason' } })
+  candidates.sort((a, b) => b.at.localeCompare(a.at) || b.rank - a.rank)
+  return candidates[0]?.n ?? null
+})
+const hasNotices = computed(() => !!notice.value)
 
 // Freeze — any pending request locks every action but Print and Cancel approval request.
 // Actions stay enabled and explain themselves inline (rule: never disabled).
@@ -666,53 +682,41 @@ function suppressFabClick(e: MouseEvent) {
          Material consume & return tabs, on whichever tab is open ── -->
     <div v-if="hasNotices"
       class="wod-notices" data-devchange="wo-approval-detail">
-      <MpBanner v-if="guardText" variant="danger" is-inline data-devchange="wo-approval-freeze">
+      <MpBanner v-if="notice?.kind === 'guard'" variant="danger" is-inline data-devchange="wo-approval-freeze">
         <MpBannerIcon />
         <MpBannerDescription>{{ t(guardText) }}</MpBannerDescription>
         <MpBannerCloseButton @click="guardText = ''" />
       </MpBanner>
-      <MpBanner v-if="startPending" variant="warning">
+      <MpBanner v-else-if="notice?.kind === 'pending'" variant="warning">
         <MpBannerIcon />
         <MpBannerDescription>
-          {{ t('Starting this work order is waiting for approval. Material is reserved once it\'s approved.') }}
-          <span v-for="r in pending.filter(p => p.type === 'start')" :key="r.id" class="wod-notice-list" data-devchange="wo-approval-status">
-            {{ t('Waiting for {names} (approval level {n})').replace('{names}', waitingForText(r)).replace('{n}', String(r.currentLevel)) }}
+          {{ notice.request.type === 'start'
+            ? t('Starting this work order is waiting for approval. Material is reserved once it\'s approved.')
+            : t('1 request on this work order is waiting for approval. Stock and journal entries are held until it\'s approved.') }}
+          <span class="wod-notice-list" data-devchange="wo-approval-status">
+            <template v-if="notice.request.type !== 'start'">{{ t(requestTitle(notice.request)) }} · </template>{{ t('Waiting for {names} (approval level {n})').replace('{names}', waitingForText(notice.request)).replace('{n}', String(notice.request.currentLevel)) }}
+          </span>
+          <span v-if="notice.request.payload.note && notice.request.type !== 'start'" class="wod-notice-list" data-devchange="wo-approval-reason-banner">
+            {{ notice.request.type === 'adjustment' ? t('Adjustment reason') : t('Cancel/close reason') }}: {{ notice.request.payload.note }}
           </span>
           <span class="wod-notice-list">{{ t('Actions on this work order are locked until it\'s decided. Print stays available.') }}</span>
         </MpBannerDescription>
         <MpBannerLink>
           <MpButton variant="textLink" size="sm" @click="openApprovalLog()">{{ t('View approval log') }}</MpButton>
-          <MpButton v-if="cancelableRequest?.type === 'start'" variant="textLink" size="sm" data-devchange="wo-approval-cancel-request" @click="askCancelRequest(cancelableRequest)">{{ t('Cancel approval request') }}</MpButton>
+          <MpButton v-if="canCancelRequest(notice.request, actor)" variant="textLink" size="sm" data-devchange="wo-approval-cancel-request" @click="askCancelRequest(notice.request)">{{ t('Cancel approval request') }}</MpButton>
         </MpBannerLink>
       </MpBanner>
-      <MpBanner v-if="otherPending.length" variant="warning">
-        <MpBannerIcon />
-        <MpBannerDescription>
-          {{ otherPending.length === 1
-            ? t('1 request on this work order is waiting for approval. Stock and journal entries are held until it\'s approved.')
-            : t('{n} requests on this work order are waiting for approval. Stock and journal entries are held until they\'re approved.').replace('{n}', String(otherPending.length)) }}
-          <span v-for="r in otherPending" :key="r.id" class="wod-notice-list" data-devchange="wo-approval-status">
-            {{ t(requestTitle(r)) }} · {{ t('Waiting for {names} (approval level {n})').replace('{names}', waitingForText(r)).replace('{n}', String(r.currentLevel)) }}
-          </span>
-          <span class="wod-notice-list">{{ t('Actions on this work order are locked until it\'s decided. Print stays available.') }}</span>
-        </MpBannerDescription>
-        <MpBannerLink>
-          <MpButton variant="textLink" size="sm" @click="openApprovalLog()">{{ t('View approval log') }}</MpButton>
-          <MpButton v-if="cancelableRequest && cancelableRequest.type !== 'start'" variant="textLink" size="sm" data-devchange="wo-approval-cancel-request" @click="askCancelRequest(cancelableRequest)">{{ t('Cancel approval request') }}</MpButton>
-        </MpBannerLink>
-      </MpBanner>
-      <WoActionReasonBanner
-        v-if="showActionReason && actionReason"
-        :reason="actionReason"
-        :pending="actionReasonRequest?.status === 'pending'"
-        :ref-no="actionReasonRequest?.ref"
-      />
       <WoRejectBanner
-        v-for="r in rejections" :key="r.id"
-        :request="r"
-        @dismiss="dismissRejection(r.id)"
-        @resubmit="createAgain(r)"
-        @view-log="openApprovalLog(r.id)"
+        v-else-if="notice?.kind === 'rejected'"
+        :request="notice.request"
+        @dismiss="dismissRejection(notice.request.id)"
+        @resubmit="createAgain(notice.request)"
+        @view-log="openApprovalLog(notice.request.id)"
+      />
+      <WoActionReasonBanner
+        v-else-if="notice?.kind === 'reason' && actionReason"
+        :reason="actionReason"
+        :ref-no="actionReasonRequest?.ref"
       />
     </div>
 

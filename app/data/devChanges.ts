@@ -71,8 +71,8 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'wo-approval-detail',
     title: 'Work order detail: approval notices and guards',
     description:
-      'For an approver at the current level, the primary action (e.g. Start work order) becomes an Approve split button with Reject in its dropdown; pending and rejected notices (the pending notice opens the Approval log), "waiting for approval" captions on consumed / produced qty, and inline refusals when a pending request blocks an action (buttons stay enabled).',
-    date: '2026-10-02',
+      'For an approver at the current level, the primary action (e.g. Start work order) becomes an Approve split button with Reject in its dropdown; pending and rejected notices (the pending notice opens the Approval log), "waiting for approval" captions on consumed / produced qty, and inline refusals when a pending request blocks an action (buttons stay enabled). Only ONE notice shows at a time — the latest: an inline refusal right after a click, otherwise the newest of the pending request (with its adjust / cancel reason), the undismissed rejection and the Adjust / Cancel-close reason.',
+    date: '2026-10-10',
     files: ['WorkOrderDetailsPage.vue', 'WoTransactionModal.vue'],
   },
   {
