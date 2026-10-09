@@ -370,8 +370,19 @@ if (snapshot && !loadFlag(WO_RULE_SEEDED_FLAG)) {
   saveSnapshot(APPROVAL_WORKFLOWS_KEY, approvalWorkflows)
 }
 
+/**
+ * Listeners run after every saved change to the workflows (create / edit / turn on-off /
+ * delete). Work order approval uses it so requests still waiting for approval follow
+ * the rule as it is now (woApproval.ts › syncPendingWithRules).
+ */
+const changeListeners: (() => void)[] = []
+export function onApprovalWorkflowsChanged(fn: () => void): void {
+  changeListeners.push(fn)
+}
+
 function persist(): void {
   saveSnapshot(APPROVAL_WORKFLOWS_KEY, approvalWorkflows)
+  for (const fn of changeListeners) fn()
 }
 
 let seq = approvalWorkflows.filter((r) => r.id.startsWith('awf-new-')).length

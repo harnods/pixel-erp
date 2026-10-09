@@ -23,7 +23,8 @@ import {
   LEVEL_1, LEVEL_2, PPIC, LINE_LEADER,
 } from '~/data/woApproval'
 import { workOrders } from '~/data/workOrders'
-import { approvalWorkflows, woTypesTakenByOthers, woRuleTypes, activeWoConflicts } from '~/data/approvalWorkflows'
+import { approvalWorkflows, woTypesTakenByOthers, woRuleTypes, activeWoConflicts, updateApprovalWorkflow } from '~/data/approvalWorkflows'
+import { findUserByName } from '~/data/users'
 import { useValApprovalRule, valUnavailable } from '~/data/valApprovalRule'
 
 const SARI = LEVEL_2[0]!
@@ -296,5 +297,40 @@ describe('grooming 2026-10-09', () => {
   it('not gated → VAL says so', async () => {
     const val = useValApprovalRule()
     expect(await val.load({ module: 'work-order', transactionType: 'adjustment', requester: PPIC })).toMatchObject({ gated: false })
+  })
+})
+
+describe('pending requests follow the approval rule live', () => {
+  const id = (name: string) => findUserByName(name)!.id
+  const input = (r: ReturnType<typeof rule>, levels: { matchType: 'any' | 'all'; approverIds: string[] }[]) => ({
+    name: r.name, description: r.description, appliesTo: r.appliesTo, transactionType: r.transactionType,
+    projectAction: r.projectAction, projectScope: r.projectScope, projectIds: r.projectIds, minAmount: r.minAmount,
+    createdByScope: r.createdByScope, createdByUserIds: r.createdByUserIds, woCriteria: r.woCriteria,
+    allowSelfApproval: r.allowSelfApproval, applyToDraft: r.applyToDraft, levels,
+  })
+
+  it('a changed approver applies to requests already waiting', () => {
+    // wor-002 (start, wo-2) waits at level 1 — Budi. Swap level 1 to Dewi.
+    updateApprovalWorkflow('awf-007', input(rule('awf-007'), [
+      { matchType: 'any', approverIds: [id(LEVEL_2[1]!)] },
+      { matchType: 'any', approverIds: [id(SARI)] },
+    ]))
+    expect(req('wor-002').levels[0]!.approvers).toEqual([LEVEL_2[1]])
+    expect(canApprove(req('wor-002'), LEVEL_1)).toBe(false)
+    expect(canApprove(req('wor-002'), LEVEL_2[1]!)).toBe(true)
+  })
+
+  it('removing the level a request waits at lets it execute', () => {
+    // wor-001 (start, wo-25) already passed level 1 and waits at level 2.
+    updateApprovalWorkflow('awf-007', input(rule('awf-007'), [{ matchType: 'any', approverIds: [id(LEVEL_1)] }]))
+    expect(req('wor-001').status).toBe('executed')
+    expect(wo('wo-25').status).toBe('in progress')
+    expect(req('wor-002').status).toBe('pending') // still needs level 1
+  })
+
+  it('decided requests keep the levels they were decided under', () => {
+    const before = JSON.stringify(req('wor-004').levels)
+    updateApprovalWorkflow('awf-007', input(rule('awf-007'), [{ matchType: 'any', approverIds: [id(SARI)] }]))
+    expect(JSON.stringify(req('wor-004').levels)).toBe(before)
   })
 })

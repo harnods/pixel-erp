@@ -37,7 +37,7 @@ import { formatDateLong } from '~/utils/date'
 import { warehouses } from './warehouses'
 import { users, getUserById, findUserByName } from './users'
 import {
-  approvalWorkflows, woTransactionTypeLabel,
+  approvalWorkflows, woTransactionTypeLabel, onApprovalWorkflowsChanged,
   type ApprovalWorkflowRule, type WoTransactionType,
 } from './approvalWorkflows'
 import type { ApprovalLog, ApprovalStage } from './warehouseTransfers'
@@ -389,6 +389,44 @@ function advanceSkippedLevels(req: WoApprovalRequest): void {
       req.currentLevel += 1
     }
   }
+}
+
+/**
+ * Requests still waiting for approval READ THE RULE LIVE: whenever an approval workflow is
+ * saved, every pending request of that rule takes the rule's current levels and approvers
+ * (decided requests keep the levels they were decided under — the log is history).
+ * Approvals already given stay; then the request moves on from its current level:
+ *   • the level was removed (the rule now has fewer levels) → nothing is left, it executes;
+ *   • nobody but the requester can act at the level (self-approval off) → skipped + logged;
+ *   • the approvals already given now satisfy the level (e.g. All → Any) → next level.
+ * A rule that's turned off or deleted leaves its pending requests on their last levels.
+ */
+export function syncPendingWithRules(): void {
+  let changed = false
+  for (const req of woApprovalRequests) {
+    if (req.status !== 'pending' || req.currentLevel == null) continue
+    const rule = approvalWorkflows.find(r => r.id === req.ruleId)
+    if (!rule || !rule.isActive || !rule.levels.length) continue
+    const levels = levelsFromRule(rule)
+    if (JSON.stringify(levels) !== JSON.stringify(req.levels)) { req.levels = levels; changed = true }
+    while (req.status === 'pending' && req.currentLevel != null) {
+      const level: number = req.currentLevel
+      if (level > req.levels.length) { finalize(req); changed = true; break }
+      if (!eligibleApprovers(req, level).length) { advanceSkippedLevels(req); changed = true; continue }
+      if (!approvalsAtLevel(req, level).length || !levelSatisfied(req, level)) break
+      if (level >= req.levels.length) finalize(req)
+      else req.currentLevel = level + 1
+      changed = true
+    }
+  }
+  if (changed) persistWoApproval()
+}
+
+/** Final approval reached — the request executes. */
+function finalize(req: WoApprovalRequest): void {
+  req.status = 'executed'
+  req.currentLevel = null
+  execute(req)
 }
 
 /**
@@ -881,3 +919,7 @@ export function approvalLogsForWorkOrder(woId: string, opts: { pendingOnly?: boo
     .slice(0, 5)
   return [...pending, ...decided].map(approvalLogFor)
 }
+
+// Pending requests follow the approval rule as it is now — on load and after every save.
+onApprovalWorkflowsChanged(syncPendingWithRules)
+syncPendingWithRules()
