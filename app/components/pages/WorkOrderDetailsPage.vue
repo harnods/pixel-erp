@@ -262,9 +262,15 @@ const DOC_FUNCTION: Record<string, string> = {
   receipt: 'Receive output',
 }
 
-/** One row per document, in the order the run raises them. */
+/**
+ * One row per document that EXISTS, in the order the run raised them.
+ *
+ * Steps not raised yet are left out: the tab lists transactions, and a step
+ * still to come is not one. What is due next is already named on the primary
+ * button, so it does not need a placeholder row here as well.
+ */
 const subconTransactionRows = computed(() =>
-  subconTransactions.value.map((tx) => {
+  subconTransactions.value.filter(tx => !!tx.doc).map((tx) => {
     // An order or a delivery inherits its purpose from the request it grew out
     // of. On dropship both threads raise the same kinds, so by kind alone the
     // component order and its delivery read as the vendor's work.
@@ -2281,20 +2287,10 @@ function suppressFabClick(e: MouseEvent) {
         </div>
         <!-- Subcon: the whole document run, listed and raised from one place. -->
         <template v-else-if="activeBottomTab === 'Transactions'">
-          <div class="wod-tx-head">
-            <p class="wod-tx-caption">
-              {{ subconStarted
-                ? t('Every document raised for this work order, and what is still to come.')
-                : subconSupplyStep && !subconSupplyRaised
-                  ? t('Supply the vendor first — the rest of the run unlocks once the work order starts.')
-                  : t('Start the work order to raise the rest of its documents.') }}
-            </p>
-          </div>
-
-          <!-- One table, in the order the run raises its documents. Type says
+          <!-- One table, in the order the run raised its documents. Type says
                what the document is; Function says what it is for — on dropship
                two purchase requests of the same type do entirely different jobs. -->
-          <div class="wod-table-scroll">
+          <div v-if="subconTransactionRows.length" class="wod-table-scroll">
             <table class="wod-table">
               <thead>
                 <tr>
@@ -2311,27 +2307,22 @@ function suppressFabClick(e: MouseEvent) {
                   <td class="wod-td">{{ tx.function ? t(tx.function) : '—' }}</td>
                   <td class="wod-td">
                     <a v-if="tx.doc" class="cell-link" @click.prevent="openRaisedDocument(tx.doc)">{{ tx.doc.number }}</a>
-                    <span v-else class="wod-subcon-muted">{{ t(tx.title) }}</span>
                   </td>
                   <td class="wod-td">{{ tx.doc?.raisedAt ? formatDate(tx.doc.raisedAt) : '—' }}</td>
-                  <!-- A raised transaction shows its own status, badged the same
-                       way its index and detail pages badge it. A step not raised
-                       yet has no record to have a status, so it says where the
-                       chain stands instead. -->
+                  <!-- Each transaction's own status, badged the same way its
+                       index and detail pages badge it. -->
                   <td class="wod-td">
                     <ErpStatusBadge v-if="tx.status" :status="tx.status" />
-                    <span v-else-if="tx.doc" class="wod-subcon-status wod-subcon-status--done">{{ t('Raised') }}</span>
-                    <span
-                      v-else
-                      class="wod-subcon-status"
-                      :class="subconStarted ? 'wod-subcon-status--ready' : 'wod-subcon-status--blocked'"
-                    >
-                      {{ subconStarted ? t('Ready to raise') : t('Waiting for start') }}
-                    </span>
+                    <span v-else class="wod-subcon-muted">—</span>
                   </td>
                 </tr>
               </tbody>
             </table>
+          </div>
+          <!-- Same empty state as the page's other bottom tabs. -->
+          <div v-else class="wod-empty">
+            <p class="wod-empty-title">{{ t('No transactions') }}</p>
+            <p class="wod-empty-desc">{{ t('Transactions created for this work order will appear here.') }}</p>
           </div>
         </template>
 
@@ -2579,23 +2570,6 @@ function suppressFabClick(e: MouseEvent) {
 :deep(.psn-overlay), :deep(.pbd-overlay) { z-index: 1500; }
 
 /* ── Transactions tab (subcon) ────────────────────────────────────────────── */
-.wod-tx-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--mp-spacing-4);
-  margin-bottom: var(--mp-spacing-4);
-}
-.wod-tx-caption {
-  margin: 0;
-  font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-secondary);
-}
-/* A menu line that reports state rather than offering an action. */
-.wod-tx-menu-empty {
-  color: var(--mp-text-secondary);
-  pointer-events: none;
-}
 
 /* ── Bottom tabs (Partial production / Linked transactions) ───────────────── */
 .wod-section--tabs { border-bottom: none; }
@@ -2765,24 +2739,8 @@ function suppressFabClick(e: MouseEvent) {
   justify-content: flex-end;
   gap: var(--mp-spacing-2);
 }
-.wod-subcon-status { font-size: var(--mp-font-sizes-md); }
-.wod-subcon-status--ready { color: var(--mp-text-success, #18794e); }
-.wod-subcon-status--done { color: var(--mp-text-link); }
 .wod-subcon-muted,
 .wod-muted { color: var(--mp-text-secondary); }
-.wod-subcon-docs { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.wod-subcon-doc { display: flex; align-items: center; gap: var(--mp-spacing-2); white-space: nowrap; }
-.wod-subcon-doc__tag {
-  flex: none;
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  border-radius: var(--mp-radii-sm); padding: 0 var(--mp-spacing-1\.5);
-}
-.wod-subcon-doc__tag--pr { background: var(--mp-background-information, #eef0fc); color: var(--mp-text-link); }
-.wod-subcon-doc__tag--transfer { background: var(--mp-background-warning-subtle, #fffaea); color: var(--mp-text-warning, #b54708); }
-.wod-subcon-doc__tag--receipt,
-.wod-subcon-doc__tag--pd { background: var(--mp-background-success-subtle, #e8f4ef); color: var(--mp-text-success, #18794e); }
-.wod-subcon-doc__tag--po { background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); }
-.wod-subcon-status--blocked { color: var(--mp-text-secondary); }
 
 .wod-section-title {
   margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold);
