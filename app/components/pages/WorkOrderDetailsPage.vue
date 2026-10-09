@@ -49,7 +49,7 @@ import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer
 import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
 import { formatDate } from '~/utils/date'
 import { successToast } from '~/utils/toasts'
-import { workOrders, persistWorkOrders, adjustSubconWorkOrderQty, recordSubconDocument, recordSubconUnusedOutput, refreshSubconWorkOrder, subconSentToVendor, subconMaterialsFulfilled, setSubconComponentQty, addSubconCostLine, type WorkOrder, type WorkOrderStatus, type SubconNextAction } from '~/data/workOrders'
+import { workOrders, persistWorkOrders, adjustSubconWorkOrderQty, recordSubconDocument, recordSubconUnusedOutput, refreshSubconWorkOrder, subconSentToVendor, subconMaterialsFulfilled, setSubconComponentQty, addSubconCostLine, recordSubconCost, recordSubconProduction, type WorkOrder, type WorkOrderStatus, type SubconNextAction } from '~/data/workOrders'
 import { warehouseTransfers, addTransfer } from '~/data/warehouseTransfers'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { productionSettings } from '~/data/productionSettings'
@@ -584,10 +584,6 @@ const subconJournals = computed(() => accountingInput.value ? buildSubconJournal
 
 const showJournalModal = ref(false)
 
-function goAdjust() {
-  router.push(`/work-orders/${props.orderId}/adjust`)
-}
-
 /** The stock movements this work order produced, for the modal's second tab. */
 const subconStockMovements = computed(() =>
   (subcon.value?.raisedDocuments ?? [])
@@ -1102,6 +1098,28 @@ const subconReceiving = computed(() => {
     : undefined
 })
 
+/**
+ * What each subcon charge still has left to take, by line.
+ *
+ * The order agreed a total per line; `costLineRecorded` is what partial records
+ * have already charged against it. Completing takes the rest, so the finished
+ * order carries the whole agreed cost however many records it took to get there.
+ */
+const remainingSubconCost = computed<Record<string, number>>(() => {
+  const c = subcon.value
+  const w = wo.value
+  if (!c || !w) return {}
+  const factor = (w.plannedQty / SUBCON_BATCH_QTY) * (c.split === 'partial' ? 0.5 : 1)
+  const out: Record<string, number> = {}
+  for (const l of bom.value?.subconCost ?? []) {
+    const perOrder = c.costLineOverrides?.[l.productId] ?? Math.round(l.amount * factor)
+    const taken = c.costLineRecorded?.[l.productId] ?? 0
+    const left = Math.max(0, perOrder - taken)
+    if (left > 0) out[l.productId] = left
+  }
+  return out
+})
+
 /** How much the vendor still owes against what the work order needs. */
 const subconShortfall = computed(() => {
   const w = wo.value
@@ -1188,18 +1206,6 @@ const supplyActionKind = computed(() => subconSupplyStep.value?.kind)
 
 /** Shown in place of opening the Start modal when the supply document is missing. */
 const startBlockedMessage = ref('')
-
-/**
- * Shown in place of completing when the vendor has not delivered everything.
- *
- * Closing short used to be offered as a choice in the moment — deliver the
- * balance, or write off the difference with a reason typed into the same dialog.
- * That put a quantity revision inside a completion flow, where it reads as a
- * formality rather than the decision it is. The order is now refused, and the
- * revision is made where it belongs: Adjust work order, which states the before
- * and after and keeps the reason on the record.
- */
-const completeBlockedMessage = ref('')
 
 /**
  * Issue the components into the vendor's process — a stock adjustment OUT of the
@@ -1479,23 +1485,22 @@ function handlePrimaryAction() {
     return
   }
   if (primaryAction.value !== t('Complete work order')) return
-  // A subcon order is finished when the vendor's deliveries add up to what it
-  // needs. Short of that it is refused: revising the quantity is an adjustment,
-  // made on the adjust form where it is recorded with its reason, not a step
-  // inside completion. (The unconsumed-material guard below is about in-house
-  // consumption, which a subcon order does not have.)
   const order = wo.value
   if (subcon.value && order) {
+    // Completing an order that has not produced its full quantity closes the
+    // gap rather than refusing. Whatever the run still owes is produced now and
+    // charged with what the order has left to charge — so the record ends
+    // stating the whole quantity and the whole cost, which is what completing
+    // it means. Correcting the quantity itself is still the adjust form's job.
     if (subconShortfall.value > 0) {
-      completeBlockedMessage.value =
-        `${t('Produced')} ${order.producedQty}/${order.plannedQty} — ${subconShortfall.value} ${t('still outstanding.')} `
-        + t('Adjust the work order to what was actually produced, then complete it.')
-      return
+      // Charges first: the quantity record is what moves the order's status, so
+      // what it carries has to be on the order before that happens.
+      recordSubconCost(order.id, remainingSubconCost.value)
+      recordSubconProduction(order.id, subconShortfall.value)
     }
-    completeBlockedMessage.value = ''
-    // Delivered in full — but the components sent to the vendor are still on the
-    // company's books until they are accounted for, so completing asks how much
-    // was used and returns the rest.
+    // The components sent to the vendor are still on the company's books until
+    // they are accounted for, so completing asks how much was used and returns
+    // the rest.
     showCompleteSubconModal.value = true
     return
   }
@@ -1896,18 +1901,6 @@ function suppressFabClick(e: MouseEvent) {
           <MpBannerIcon />
           <MpBannerTitle>{{ t('Supply the vendor first') }}</MpBannerTitle>
           <MpBannerDescription>{{ startBlockedMessage }}</MpBannerDescription>
-        </MpBanner>
-
-        <!-- Refused rather than offered as a choice: see `completeBlockedMessage`. -->
-        <MpBanner v-if="completeBlockedMessage" variant="danger" align-items="center" class="wod-subcon-blocked">
-          <MpBannerIcon />
-          <MpBannerTitle>{{ t('Not everything has been produced yet') }}</MpBannerTitle>
-          <MpBannerDescription>
-            {{ completeBlockedMessage }}
-            <button class="wod-blocked-link btn-enterprise" type="button" @click="goAdjust">
-              {{ t('Adjust work order') }}
-            </button>
-          </MpBannerDescription>
         </MpBanner>
 
       </section>
@@ -2761,10 +2754,6 @@ function suppressFabClick(e: MouseEvent) {
 /* Several documents can be ready at once (a repeatable delivery alongside the
    invoice), so the buttons wrap toward the right rather than widening the cell. */
 .wod-subcon-blocked { margin-top: var(--mp-spacing-4); }
-.wod-blocked-link {
-  padding: 0; border: none; background: transparent; cursor: pointer;
-  font-size: inherit; color: var(--mp-text-link); text-decoration: underline;
-}
 
 .wod-subcon-actions {
   display: flex;
