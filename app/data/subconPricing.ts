@@ -44,6 +44,18 @@ import type { SubconMethod, SubconPriceBasis } from './subcon'
 
 export interface SubconPricingSettings {
   /**
+   * Whether this release handles subcon tax at all — the PPh 23 withholding and
+   * the Net-basis gross-up that follows from it.
+   *
+   * Off for now: the tax treatment is out of scope for this release. The rules
+   * below and their tests stay as they are, because the behaviour is agreed and
+   * only its exposure is deferred — deleting them would mean deriving it all
+   * again later from the PRD. Every surface that showed a basis, a withholding
+   * figure or a gross-up reads this flag and stands down, so a subcon purchase
+   * order prices exactly like any other.
+   */
+  taxHandling: boolean
+  /**
    * Whether changing a purchase order's price basis has to be approved. Off:
    * the basis is a commercial term the buyer owns. Open with Finance — it moves
    * real money, so it may warrant the same gate as a price change.
@@ -56,6 +68,7 @@ export interface SubconPricingSettings {
 }
 
 export const SUBCON_PRICING_SETTINGS: SubconPricingSettings = {
+  taxHandling: false,
   priceBasisChangeNeedsApproval: false,
   withholdingRateWithNpwp: 0.02,
   withholdingRateWithoutNpwp: 0.04,

@@ -29,7 +29,7 @@ import {
 import { addAdjustment, stockAdjustments } from '~/data/stockAdjustments'
 import {
   priceSubconOrder, subconCostPerUnit, SUBCON_PRICE_STATE_LABEL,
-  SUBCON_PRICE_BASIS_SHORT, type SubconPriceState,
+  SUBCON_PRICE_BASIS_SHORT, SUBCON_PRICING_SETTINGS, type SubconPriceState,
 } from '~/data/subconPricing'
 import SubconJournalModal from '~/components/patterns/SubconJournalModal.vue'
 import ConfirmWorkOrderAdjustmentModal from '~/components/patterns/ConfirmWorkOrderAdjustmentModal.vue'
@@ -393,6 +393,10 @@ const subconBasisDiffersFromDefault = computed(() =>
 
 /** Pricing for this work order — read from the module, never recomputed here. */
 const subconPricing = computed(() => {
+  // Out of scope this release — see `SUBCON_PRICING_SETTINGS.taxHandling`. With
+  // no pricing there is no gross-up row, no basis caption and no price state,
+  // and the subcon cost reads as the contract value it was agreed at.
+  if (!SUBCON_PRICING_SETTINGS.taxHandling) return null
   const c = subcon.value
   if (!c) return null
   return priceSubconOrder({
@@ -2114,13 +2118,14 @@ function suppressFabClick(e: MouseEvent) {
             <span>
               {{ t('Subcon cost subtotal') }}
               <!-- Where the figure stands: a forecast until a purchase order
-                   exists, a fact once the vendor has invoiced. -->
-              <span class="wod-price-state">{{ t(SUBCON_PRICE_STATE_LABEL[subconPriceState]) }}</span>
+                   exists, a fact once the vendor has invoiced. It tracks the
+                   PRICED value, so it goes with the tax treatment. -->
+              <span v-if="subconPricing" class="wod-price-state">{{ t(SUBCON_PRICE_STATE_LABEL[subconPriceState]) }}</span>
             </span>
             <span class="wod-amount">{{ formatIDR(subconCostSubtotal) }}</span>
           </div>
 
-          <p v-if="subconBasisDiffersFromDefault" class="wod-basis-note">
+          <p v-if="subconPricing && subconBasisDiffersFromDefault" class="wod-basis-note">
             {{ t('This order was agreed on a different basis than the vendor’s usual') }} —
             {{ t(SUBCON_PRICE_BASIS_SHORT[subconEffectiveBasis]) }}.
           </p>

@@ -296,6 +296,11 @@ const globalDiscountFactor = computed(() => {
 })
 
 const subconPricing = computed(() => {
+  // Subcon tax is out of scope for this release, so the order prices exactly
+  // like any other purchase order: VAT from the subtotal, no basis, no
+  // withholding, no gross-up. Everything below reads this one value, so the
+  // whole treatment stands down together rather than in pieces.
+  if (!SUBCON_PRICING_SETTINGS.taxHandling) return null
   const wo = subconWorkOrder.value
   const c = wo?.subcon
   if (!c) return null

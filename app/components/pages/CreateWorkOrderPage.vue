@@ -10,7 +10,7 @@
  */
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { formatIDR } from '~/utils/currency'
-import { priceSubconOrder, SUBCON_PRICE_BASIS_SHORT, SUBCON_PRICE_STATE_LABEL } from '~/data/subconPricing'
+import { priceSubconOrder, SUBCON_PRICE_BASIS_SHORT, SUBCON_PRICE_STATE_LABEL, SUBCON_PRICING_SETTINGS } from '~/data/subconPricing'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpAutocomplete, MpInput, MpInputGroup, MpInputRightAddon, MpDatePicker, MpButton, MpIcon,
@@ -28,7 +28,7 @@ import {
   SUBCON_VENDORS, DEFAULT_SUBCON_VENDOR, SUBCON_SCOPE_LABEL,
   PRODUCTION_WAREHOUSE, SUBCON_VENDOR_WAREHOUSES,
   SUBCON_METHOD_LABEL, SUBCON_METHOD_DESCRIPTION,
-  SUBCON_SERVICE_PRODUCTS, subconServiceProduct,
+  SUBCON_SERVICE_PRODUCTS, subconServiceProduct, SUBCON_DEFAULT_ACCOUNT_MAPPING,
   type SubconScope, type SubconSplit, type SubconMethod,
 } from '~/data/subcon'
 import { formatDate } from '~/utils/date'
@@ -480,6 +480,9 @@ const subconContractValue = computed(() => subconCostRows.value.reduce((s, r) =>
  * makes the run cost more than the charges as typed.
  */
 const subconPricing = computed(() => {
+  // Out of scope this release — see `SUBCON_PRICING_SETTINGS.taxHandling`. The
+  // subcon cost table then shows the charges as agreed, with no gross-up row.
+  if (!SUBCON_PRICING_SETTINGS.taxHandling) return null
   if (!isSubcon.value) return null
   return priceSubconOrder({
     method: subconMethod.value,
@@ -1284,6 +1287,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   </td>
                   <td class="wo-td">{{ subconVendor.name }}</td>
                   <td class="wo-td">{{ t(SUBCON_PRICE_BASIS_SHORT[subconVendor.defaultPriceBasis]) }}</td>
+                  <td class="wo-td">{{ SUBCON_DEFAULT_ACCOUNT_MAPPING }}</td>
                   <td class="wo-td wo-td--num">{{ formatIDR(subconGrossUp) }}</td>
                   <td class="wo-td wo-td--del" />
                 </tr>
