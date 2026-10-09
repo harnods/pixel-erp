@@ -2081,6 +2081,7 @@ function suppressFabClick(e: MouseEvent) {
                 <tr>
                   <th class="wod-th">{{ t('Cost component') }}</th>
                   <th class="wod-th">{{ t('Charged by') }}</th>
+                  <th class="wod-th">{{ t('Unit') }}</th>
                   <th class="wod-th">{{ t('Account mapping') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Amount') }}</th>
                 </tr>
@@ -2089,6 +2090,7 @@ function suppressFabClick(e: MouseEvent) {
                 <tr v-for="l in subconCostLines" :key="l.account" class="wod-tr">
                   <td class="wod-td">{{ l.account }}</td>
                   <td class="wod-td">{{ l.chargedBy }}</td>
+                  <td class="wod-td">{{ l.unit }}</td>
                   <td class="wod-td">{{ l.accountMapping }}</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(l.amount) }}</td>
                 </tr>
@@ -2108,6 +2110,7 @@ function suppressFabClick(e: MouseEvent) {
                     </span>
                   </td>
                   <td class="wod-td">{{ subconGrossUpRow.chargedBy }}</td>
+                  <td class="wod-td"><span class="wod-muted">—</span></td>
                   <td class="wod-td">{{ subconGrossUpRow.accountMapping }}</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(subconGrossUpRow.amount) }}</td>
                 </tr>
