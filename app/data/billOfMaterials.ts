@@ -217,11 +217,11 @@ function subconDemoBom(): BillOfMaterials {
   const subconCost: BomSubconCostLine[] = [
     {
       productId: 'svc-sew', name: 'Jahit & assembly', sku: 'SVC-JHT-01',
-      costDriver: 'Unit', accountMapping: 'Subcon service cost', amount: 12_500_000,
+      costDriver: 'Unit', accountMapping: 'Work in process', amount: 12_500_000,
     },
     {
       productId: 'svc-handling', name: 'Subcon handling & freight', sku: 'SVC-FRT-01',
-      costDriver: 'Amount', accountMapping: 'Subcon service cost', amount: 600_000,
+      costDriver: 'Amount', accountMapping: 'Work in process', amount: 600_000,
     },
   ]
   const rawSubtotal = rawMaterials.reduce((t, r) => t + r.needed * r.purchaseCost, 0)
@@ -286,15 +286,15 @@ function mejaKerjaBom(): BillOfMaterials {
   const subconCost: BomSubconCostLine[] = [
     {
       productId: 'svc-woodwork', name: 'Potong & perakitan kayu', sku: 'SVC-KYU-01',
-      costDriver: 'Unit', accountMapping: 'Subcon service cost', amount: 36_000_000,
+      costDriver: 'Unit', accountMapping: 'Work in process', amount: 36_000_000,
     },
     {
       productId: 'svc-finishing', name: 'Finishing & pengecatan', sku: 'SVC-FNS-01',
-      costDriver: 'Unit', accountMapping: 'Subcon service cost', amount: 18_000_000,
+      costDriver: 'Unit', accountMapping: 'Work in process', amount: 18_000_000,
     },
     {
       productId: 'svc-handling', name: 'Subcon handling & freight', sku: 'SVC-FRT-01',
-      costDriver: 'Amount', accountMapping: 'Subcon service cost', amount: 2_000_000,
+      costDriver: 'Amount', accountMapping: 'Work in process', amount: 2_000_000,
     },
   ]
   const rawSubtotal = rawMaterials.reduce((t, r) => t + r.needed * r.purchaseCost, 0)

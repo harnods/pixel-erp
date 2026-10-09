@@ -3814,4 +3814,9 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Planned qty": "Jumlah rencana",
   "Remaining qty": "Sisa jumlah",
   "Unit": "Satuan",
+  "Returned qty": "Jumlah dikembalikan",
+  "Subcontracting one component is not supported yet.": "Subkontrak satu komponen belum didukung.",
+  "Subcontracting part of the quantity is not supported yet.": "Subkontrak sebagian jumlah belum didukung.",
+  "Subcontracting does not support multi-level work orders yet.": "Subkontrak belum mendukung work order multi-level.",
+  "The promised return date cannot be before the plan start date": "Tanggal pengembalian yang dijanjikan tidak boleh sebelum tanggal mulai rencana",
 }

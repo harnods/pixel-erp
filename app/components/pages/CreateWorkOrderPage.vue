@@ -28,7 +28,7 @@ import {
   SUBCON_VENDORS, DEFAULT_SUBCON_VENDOR, SUBCON_SCOPE_LABEL,
   PRODUCTION_WAREHOUSE, SUBCON_VENDOR_WAREHOUSES,
   SUBCON_METHOD_LABEL, SUBCON_METHOD_DESCRIPTION,
-  SUBCON_SERVICE_PRODUCTS, subconServiceProduct, SUBCON_COST_DRIVERS,
+  SUBCON_SERVICE_PRODUCTS, subconServiceProduct,
   type SubconScope, type SubconSplit, type SubconMethod,
 } from '~/data/subcon'
 import { formatDate } from '~/utils/date'
@@ -125,7 +125,10 @@ const PROCESS_OPTIONS = [
 const SUBCON_PRODUCT_OPTIONS = SUBCON_SERVICE_PRODUCTS.map(p => ({
   id: p.id, name: `${p.name} · ${p.sku}`,
 }))
-const SUBCON_COST_DRIVER_OPTIONS = SUBCON_COST_DRIVERS.map(d => ({ id: d, name: d }))
+/** A mapping is stored by its label; the pickers address it by id. */
+const optionId = (options: { id: string; name: string }[], label: string) =>
+  options.find(o => o.name === label)?.id ?? ''
+
 const ACCOUNT_MAPPING_OPTIONS = [
   { id: 'wip', name: 'Work in process' },
   { id: 'routing-cost', name: 'Routing cost' },
@@ -216,6 +219,8 @@ const subconNeedsSource = computed(() => subconMethod.value === 'resupply')
  * nothing to send and nowhere to send it.
  */
 const subconNeedsVendorWarehouse = computed(() => subconMethod.value !== 'basic')
+/** Basic: the vendor's own stock, so this order moves no material of ours. */
+const subconIsBasic = computed(() => isSubcon.value && subconMethod.value === 'basic')
 
 /** What the vendor's location is FOR, which differs by how components arrive. */
 const subconWarehouseLabel = computed(() => subconMethod.value === 'dropship'
@@ -385,13 +390,16 @@ interface SubconCostRow {
   id: number
   /** Non-track service product id (SUBCON_SERVICE_PRODUCTS). */
   productId: string
+  /** The service's unit of measure, taken from the product. */
   costDriver: string
+  /** Which production account the charge lands in. */
+  accountMapping: string
   /** The line total the vendor charges. */
   amount: string
 }
 let subconCostSeq = 0
 function makeSubconCost(partial: Partial<SubconCostRow> = {}): SubconCostRow {
-  return { id: subconCostSeq++, productId: '', costDriver: '', amount: '', ...partial }
+  return { id: subconCostSeq++, productId: '', costDriver: '', accountMapping: '', amount: '', ...partial }
 }
 const subconCostRows = ref<SubconCostRow[]>([makeSubconCost()])
 
@@ -408,7 +416,10 @@ function defaultSubconCostRows(): SubconCostRow[] {
   if (fromBom.length) {
     return [
       ...fromBom.map(l => makeSubconCost({
-        productId: l.productId, costDriver: l.costDriver, amount: String(l.amount),
+        productId: l.productId,
+        costDriver: subconServiceProduct(l.productId)?.unit ?? l.costDriver,
+        accountMapping: optionId(ACCOUNT_MAPPING_OPTIONS, l.accountMapping),
+        amount: String(l.amount),
       })),
       makeSubconCost(),
     ]
@@ -416,8 +427,16 @@ function defaultSubconCostRows(): SubconCostRow[] {
   const service = subconServiceProduct(scopeServiceId.value)!
   const freight = subconServiceProduct('svc-handling')!
   return [
-    makeSubconCost({ productId: service.id, costDriver: service.defaultCostDriver, amount: String(service.defaultPrice) }),
-    makeSubconCost({ productId: freight.id, costDriver: freight.defaultCostDriver, amount: String(freight.defaultPrice) }),
+    makeSubconCost({
+      productId: service.id, costDriver: service.unit,
+      accountMapping: optionId(ACCOUNT_MAPPING_OPTIONS, service.accountMapping),
+      amount: String(service.defaultPrice),
+    }),
+    makeSubconCost({
+      productId: freight.id, costDriver: freight.unit,
+      accountMapping: optionId(ACCOUNT_MAPPING_OPTIONS, freight.accountMapping),
+      amount: String(freight.defaultPrice),
+    }),
     makeSubconCost(),
   ]
 }
@@ -446,7 +465,8 @@ watch([isSubcon, subconScope, bomId], ([on]) => {
 function onSubconCostProduct(row: SubconCostRow, id: string) {
   const p = subconServiceProduct(id)
   if (!p) return
-  row.costDriver = p.defaultCostDriver
+  row.costDriver = p.unit
+  row.accountMapping = optionId(ACCOUNT_MAPPING_OPTIONS, p.accountMapping)
   if (!row.amount) row.amount = String(p.defaultPrice)
   appendIfLast(subconCostRows, row.id, makeSubconCost)
 }
@@ -1016,15 +1036,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
         <!-- ══ Raw materials ════════════════════════════════════════════════ -->
         <!-- The line-item sections appear only once a BOM is chosen (it defines them). -->
-        <section v-if="hasBom" class="wo-section">
+        <!-- Hidden on Basic: the vendor sources every component from its own
+             stock, so this order neither reserves nor ships any material and the
+             table would state a plan nobody acts on. -->
+        <section v-if="hasBom && !subconIsBasic" class="wo-section">
           <h2 class="wo-section-title">{{ t('Raw materials') }}</h2>
-          <!-- Kept visible on Basic rather than hidden: the recipe is still the
-               recipe, and the reader needs to see WHY nothing will be shipped. -->
-          <p class="wo-section-desc">
-            {{ isSubcon && subconMethod === 'basic'
-              ? t('The subcon vendor supplies these materials from their own stock, so none are sent from your warehouses.')
-              : t('Unit purchase cost may change when inventory value adjusts.') }}
-          </p>
+          <p class="wo-section-desc">{{ t('Unit purchase cost may change when inventory value adjusts.') }}</p>
           <label class="wo-checkbox-row wo-checkbox-row--tight">
             <MpCheckbox id="wo-bulk-wh" :is-checked="bulkSetWarehouse" @change="bulkSetWarehouse = !bulkSetWarehouse" />
             <span>{{ t('Bulk set warehouse') }}</span>
@@ -1106,7 +1123,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </thead>
               <tbody v-if="bomLoading">
                 <tr v-for="n in 3" :key="`sk${n}`" class="wo-tr">
-                  <td v-for="c in 5" :key="c" class="wo-td"><span class="wo-skel" /></td>
+                  <td v-for="c in 6" :key="c" class="wo-td"><span class="wo-skel" /></td>
                   <td class="wo-td wo-td--del" />
                 </tr>
               </tbody>
@@ -1193,13 +1210,15 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 <!-- All fixed: the vendor name must not wrap, so the table
                      scrolls on a narrow stage rather than squeezing columns. -->
                 <col class="wo-col-svc" /><col class="wo-col-by" />
-                <col class="wo-col-driver" /><col class="wo-col-amt" /><col class="wo-col-del" />
+                <col class="wo-col-driver" /><col class="wo-col-map" />
+                <col class="wo-col-amt" /><col class="wo-col-del" />
               </colgroup>
               <thead>
                 <tr>
                   <th class="wo-th">{{ t('Service product') }}</th>
                   <th class="wo-th">{{ t('Charged by') }}</th>
                   <th class="wo-th">{{ t('Unit') }}</th>
+                  <th class="wo-th">{{ t('Account mapping') }}</th>
                   <th class="wo-th wo-th--right">{{ t('Amount') }}</th>
                   <th class="wo-th wo-th--del" />
                 </tr>
@@ -1227,14 +1246,18 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="wo-td">
                     <span v-if="row.productId">{{ subconVendor.name }}</span>
                   </td>
+                  <!-- The service's own unit — read, not chosen. -->
+                  <td class="wo-td">
+                    <template v-if="row.productId">{{ row.costDriver || '—' }}</template>
+                  </td>
                   <td class="wo-td wo-td--input">
                     <MpAutocomplete
                       v-if="row.productId"
-                      :id="`subcon-cost-drv-${row.id}`"
-                      v-model="row.costDriver"
-                      :data="SUBCON_COST_DRIVER_OPTIONS"
+                      :id="`subcon-cost-map-${row.id}`"
+                      v-model="row.accountMapping"
+                      :data="ACCOUNT_MAPPING_OPTIONS"
                       label-prop="name" value-prop="id"
-                      :placeholder="t('Select cost driver')"
+                      :placeholder="t('Select account mapping')"
                       is-searchable is-clearable use-portal is-full-width
                     />
                   </td>
@@ -1590,6 +1613,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wo-col-svc    { width: var(--mp-sizes-75, 300px); }
 .wo-col-by     { width: var(--mp-sizes-56, 224px); }
 .wo-col-driver { width: var(--mp-sizes-38, 152px); }
+.wo-col-map    { width: var(--mp-sizes-56, 224px); }
 .wo-col-amt    { width: var(--mp-sizes-42, 168px); }
 .wo-col-del    { width: var(--mp-sizes-11, 44px);  }
 

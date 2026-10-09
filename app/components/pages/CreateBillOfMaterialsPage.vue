@@ -24,7 +24,6 @@ import {
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
   SUBCON_SERVICE_PRODUCTS, subconServiceProduct,
-  SUBCON_COST_DRIVERS, SUBCON_ACCOUNT_MAPPINGS,
 } from '~/data/subcon'
 import { FULL_CATALOG } from '~/data/catalog'
 import {
@@ -124,15 +123,13 @@ const subconCostRows = ref<SubconCostRow[]>([makeSubconCostRow()])
 const SUBCON_PRODUCT_OPTIONS = SUBCON_SERVICE_PRODUCTS.map(p => ({
   id: p.id, name: `${p.name} · ${p.sku}`,
 }))
-const SUBCON_DRIVER_OPTIONS = SUBCON_COST_DRIVERS.map(d => ({ id: d, name: d }))
-const SUBCON_MAPPING_OPTIONS = SUBCON_ACCOUNT_MAPPINGS.map(a => ({ id: a, name: a }))
 
 /** Picking the service fills its usual driver, account and price — all still editable. */
 function onSubconProduct(row: SubconCostRow, id: string) {
   const p = subconServiceProduct(id)
   if (p) {
-    row.costDriver = p.defaultCostDriver
-    row.accountMapping = p.accountMapping
+    row.costDriver = p.unit
+    row.accountMapping = optionId(ACCOUNT_MAPPING_OPTIONS, p.accountMapping)
     if (!row.amount) row.amount = String(p.defaultPrice)
     appendIfLast(subconCostRows, row.id, makeSubconCostRow)
   }
@@ -361,6 +358,17 @@ function prefillFrom(bom: BillOfMaterials) {
     accountMapping: optionId(ACCOUNT_MAPPING_OPTIONS, r.accountMapping), amount: String(r.amount),
   }))
   routeRows.value.push(makeRoute())
+
+  // A Subcontracting BOM keeps its charges here instead of Production cost and
+  // Routing. Without this the section opened empty on edit and saving wiped the
+  // vendor's charges off the recipe.
+  subconCostRows.value = (bom.subconCost ?? []).map(c => makeSubconCostRow({
+    productId: c.productId,
+    costDriver: subconServiceProduct(c.productId)?.unit ?? c.costDriver,
+    accountMapping: optionId(ACCOUNT_MAPPING_OPTIONS, c.accountMapping),
+    amount: String(c.amount),
+  }))
+  subconCostRows.value.push(makeSubconCostRow())
 
   const fg = catalogProduct(bom.finishedGoodId)
   mainRow.value = {
@@ -830,23 +838,17 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       @update:model-value="(v: string) => onSubconProduct(row, v)"
                     />
                   </td>
-                  <td class="bf-td bf-td--input">
-                    <MpAutocomplete
-                      v-if="row.productId"
-                      :id="`subcon-drv-${row.id}`"
-                      v-model="row.costDriver"
-                      :data="SUBCON_DRIVER_OPTIONS"
-                      label-prop="name" value-prop="id"
-                      :placeholder="t('Select cost driver')"
-                      is-searchable is-clearable use-portal is-full-width
-                    />
+                  <!-- The service's own unit — read, not chosen: a line free to
+                       disagree with its product is a line that will. -->
+                  <td class="bf-td">
+                    <template v-if="row.productId">{{ row.costDriver || '—' }}</template>
                   </td>
                   <td class="bf-td bf-td--input">
                     <MpAutocomplete
                       v-if="row.productId"
                       :id="`subcon-map-${row.id}`"
                       v-model="row.accountMapping"
-                      :data="SUBCON_MAPPING_OPTIONS"
+                      :data="ACCOUNT_MAPPING_OPTIONS"
                       label-prop="name" value-prop="id"
                       :placeholder="t('Select account mapping')"
                       is-searchable is-clearable use-portal is-full-width

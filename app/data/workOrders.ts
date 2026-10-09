@@ -2,6 +2,7 @@ import { reactive } from 'vue'
 import { TODAY } from './master'
 import { billOfMaterials, catalogProduct } from './billOfMaterials'
 import { warehouseTransfers } from './warehouseTransfers'
+import { productionSettings } from './productionSettings'
 import type { SubconScope, SubconSplit, SubconMethod } from './subcon'
 import { loadSnapshot, saveSnapshot } from './persist'
 
@@ -171,6 +172,7 @@ export interface WorkOrderSubconSetup {
  * nothing.
  */
 export type SubconNextAction =
+  | 'start'
   | 'create-transfer'
   | 'create-component-request'
   | 'view-component-request'
@@ -525,6 +527,17 @@ export function deriveNextAction(wo: WorkOrder): SubconNextAction {
       const componentPo = docs.find(d => d.kind === 'purchaseOrder' && !isServiceOrderDoc(d))
       return componentPo ? 'view-component-order' : 'view-component-request'
     }
+  }
+
+  // ── Materials are there. With no partial production the run is started by
+  //    hand, and that start is what issues the components into the vendor's
+  //    process — so it comes before the service request.
+  //
+  //    Tested on the run not having begun rather than on one status: readiness
+  //    has already moved the order to `waiting subcon order` by the time this
+  //    reads it. ───────────────────────────────────────────────────────────
+  if (!productionSettings.partialProduction && !servicePo && wo.status !== 'in progress') {
+    return 'start'
   }
 
   // ── Then the work itself: requested here, ordered from the request ───────

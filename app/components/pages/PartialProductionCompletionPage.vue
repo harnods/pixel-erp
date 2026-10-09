@@ -34,7 +34,12 @@ const wo = computed(() => workOrders.find(w => w.id === props.orderId))
 const subcon = computed(() => wo.value?.subcon)
 const bom = computed(() => billOfMaterials.find(b => b.id === wo.value?.bomId))
 
-function goBack() { router.push(`/work-orders/${props.orderId}`) }
+function goBack(completed = false) {
+  // `complete=1` tells the work order this record finished the quantity, so it
+  // can offer completion straight away instead of making the user find the
+  // button for a run that has nothing left to produce.
+  router.push(`/work-orders/${props.orderId}${completed ? '?complete=1' : ''}`)
+}
 
 const num = (v: string) => { const n = Number(v); return Number.isFinite(n) ? n : 0 }
 
@@ -253,11 +258,12 @@ function save() {
     subconCostLines.value.map(l => [l.id, l.amount]),
   ))
   recordSubconProduction(wo.value.id, batchQty.value)
+  const finished = (wo.value.producedQty ?? 0) >= (wo.value.plannedQty ?? 0)
   successToast(t('Partial production recorded'))
   // Both paths return to the work order: the record is made, and what it changed
   // — produced qty, the charges taken, what is still outstanding — is read
   // there, not on a form that has already done its job.
-  goBack()
+  goBack(finished)
 }
 </script>
 

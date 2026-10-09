@@ -23,7 +23,7 @@ import {
   buildDocumentPlan, SUBCON_SCOPE_LABEL,
   SUBCON_SERVICE_FEE, SUBCON_HANDLING_FEE, SUBCON_BATCH_QTY,
   encodeSubconPrefill, subconVendorWarehouse, SUBCON_DOC_TYPE_LABEL, SUBCON_VENDORS,
-  isComponentSupply, componentSupplyStep,
+  isComponentSupply, componentSupplyStep, subconServiceProduct,
   type SubconDocKind, type SubconPrefillLine,
 } from '~/data/subcon'
 import { addAdjustment, stockAdjustments } from '~/data/stockAdjustments'
@@ -295,6 +295,7 @@ const subconCostLines = computed(() => {
   const extras = (c.extraCostLines ?? []).map(l => ({
     account: l.name,
     chargedBy: c.vendorName,
+    unit: l.costDriver || t('Service'),
     amount: amountFor(l.id, l.amount),
   }))
 
@@ -304,6 +305,9 @@ const subconCostLines = computed(() => {
       ...fromBom.map(l => ({
         account: l.name,
         chargedBy: c.vendorName,
+        // The service's own unit, so the purchase request is raised in the
+        // same measure the charge was quoted in.
+        unit: subconServiceProduct(l.productId)?.unit ?? l.costDriver ?? t('Service'),
         amount: amountFor(l.productId, Math.round(l.amount * factor)),
       })),
       ...extras,
@@ -314,11 +318,13 @@ const subconCostLines = computed(() => {
     {
       account: t(SUBCON_SERVICE_FEE[c.scope].name),
       chargedBy: c.vendorName,
+      unit: subconServiceProduct(c.scope === 'finished-good' ? 'svc-roast-pack' : 'svc-roast')?.unit ?? t('Service'),
       amount: amountFor('svc-fee', Math.round(SUBCON_SERVICE_FEE[c.scope].amount * factor)),
     },
     {
       account: t(SUBCON_HANDLING_FEE.name),
       chargedBy: c.vendorName,
+      unit: subconServiceProduct('svc-handling')?.unit ?? t('Service'),
       amount: amountFor('svc-handling', Math.round(SUBCON_HANDLING_FEE.amount * factor)),
     },
     ...extras,
@@ -739,6 +745,7 @@ const nextAction = computed<SubconNextAction>(() => {
 
 /** Step → button. The wording lives here; the store names only the step. */
 const SUBCON_ACTION_LABEL: Record<SubconNextAction, string> = {
+  start: t('Start work order'),
   'create-transfer': t('Create warehouse transfer'),
   'create-component-request': t('Create purchase request for raw material'),
   'view-component-request': t('View purchase request'),
@@ -750,15 +757,7 @@ const SUBCON_ACTION_LABEL: Record<SubconNextAction, string> = {
 }
 
 const primaryAction = computed(() => {
-  if (subcon.value) {
-    // Start is the one action the flag does not name: whether it exists at all
-    // is a module setting, not a property of this run.
-    if (nextAction.value === 'create-transfer' && canStartManually.value
-        && wo.value?.status === 'not started' && subconSupplyRaised.value) {
-      return t('Start work order')
-    }
-    return SUBCON_ACTION_LABEL[nextAction.value]
-  }
+  if (subcon.value) return SUBCON_ACTION_LABEL[nextAction.value]
   switch (wo.value?.status) {
     case 'not started': return t('Start work order')
     case 'in progress':
@@ -768,17 +767,6 @@ const primaryAction = computed(() => {
   }
 })
 
-/**
- * Whether starting is still something a person does.
- *
- * With partial production on, it is not: nothing can happen between supplying
- * the vendor and ordering the work, and production is recorded in increments
- * afterwards — so "Start" marked a moment that carried no decision. The order
- * moves to `in progress` on its own when the purchase order is raised. With the
- * setting off there is no partial record to stand in for it, so the manual start
- * remains.
- */
-const canStartManually = computed(() => !productionSettings.partialProduction)
 
 /**
  * Closing for part of the quantity, offered beside completion when the module
@@ -846,6 +834,9 @@ const sentToVendorBySku = computed<Record<string, number>>(() =>
   (wo.value ? subconSentToVendor(wo.value) : {}))
 
 /** True when this work order reports sent-to-vendor instead of consumed qty. */
+/** Basic: the vendor's own stock, so this order moves no material of ours. */
+const subconIsBasic = computed(() => subcon.value?.method === 'basic')
+
 const reportsSentQty = computed(() => !!subcon.value)
 /**
  * …and actually has a quantity to report. Resupply moves company stock and
@@ -1342,7 +1333,7 @@ function prefillLines(kind: SubconDocKind, originWarehouseId?: string): SubconPr
     name: l.account,
     sku: 'SVC',
     qty: 1,
-    unit: 'Service',
+    unit: l.unit,
     unitCost: Math.round(l.amount),
     nonTrack: true,
   }))
@@ -1424,11 +1415,25 @@ function createDocument(kind: SubconDocKind, originWarehouseId?: string) {
   router.push({ path, query: { subcon: prefill } })
 }
 
+/**
+ * Arriving back from a partial production record that finished the quantity.
+ *
+ * The run has nothing left to produce, so completion is the only thing left to
+ * do — offering it straight away beats returning the reader to a page where
+ * they have to work that out and find the button themselves.
+ */
+watch(() => [wo.value?.id, route.query.complete], ([id, flag]) => {
+  if (!id || flag !== '1' || !subcon.value) return
+  if ((wo.value?.producedQty ?? 0) < (wo.value?.plannedQty ?? 0)) return
+  router.replace(`/work-orders/${id}`)
+  handlePrimaryAction()
+}, { immediate: true })
+
 function handlePrimaryAction() {
   // Dispatch on the STEP the record names, not on the button's words — a
   // translated label is not an identity, and comparing against one breaks the
   // moment the copy changes or the locale does.
-  if (subcon.value && primaryAction.value !== t('Start work order')) {
+  if (subcon.value && nextAction.value !== 'start') {
     switch (nextAction.value) {
       // A transfer may be raised again and again — stock leaves in whatever
       // loads are available, so the balance is carried by the next one.
@@ -1610,33 +1615,26 @@ const totalProductionCost = computed(() => (subcon.value
   ? rawSubtotal.value + subconCostSubtotal.value
   : rawSubtotal.value + productionCostSubtotal.value + routingSubtotal.value))
 
-const otherOutputs = computed(() => {
-  const fromBom = (bom.value?.otherOutputs ?? []).map(o => {
+/**
+ * Other outputs are what the RECIPE says the run also makes.
+ *
+ * Components the vendor did not consume are not among them. They are the same
+ * material that went out, coming back unchanged — so they belong beside what was
+ * sent, as a Returned qty on the Raw materials line, not as a second product the
+ * run produced. Treating a returned offcut as output overstated what the run
+ * made and quietly took a share of cost away from the finished good.
+ */
+const otherOutputs = computed(() =>
+  (bom.value?.otherOutputs ?? []).map((o) => {
     const p = catalogProduct(o.productId)
     return { product: p?.name ?? '—', sku: p?.sku ?? '—', qty: o.qty, unit: o.unit, percentage: o.percentage, estCost: o.estCost }
-  })
-  // Components the vendor did not consume came back with the finished goods, so
-  // they are output of this run too — valued at what they cost to buy, since
-  // that is what they are still worth.
-  //
-  // Their percentage is DERIVED from that value, not entered: nobody plans to
-  // have material left over, so there is no figure to plan with. What the row is
-  // worth against the run's total cost is the only honest answer, and it is what
-  // the main output's share is then measured against.
-  const total = totalProductionCost.value
-  const unused = (subcon.value?.unusedOutputs ?? []).map((u) => {
-    const r = rawMaterials.value.find(m => m.sku === u.sku)
-    const estCost = (r?.purchaseCost ?? 0) * u.qty
-    return {
-      product: r?.product ?? u.sku,
-      sku: u.sku,
-      qty: u.qty,
-      unit: r?.unit ?? '',
-      percentage: total > 0 ? Math.round((estCost / total) * 10_000) / 100 : 0,
-      estCost,
-    }
-  })
-  return [...fromBom, ...unused]
+  }))
+
+/** What each component came back with, by SKU — shown against what was sent. */
+const returnedBySku = computed<Record<string, number>>(() => {
+  const out: Record<string, number> = {}
+  for (const u of subcon.value?.unusedOutputs ?? []) out[u.sku] = (out[u.sku] ?? 0) + u.qty
+  return out
 })
 const otherOutputsSubtotal = computed(() => otherOutputs.value.reduce((s, r) => s + r.estCost, 0))
 /** What the by-products claim between them, which the main output gives up. */
@@ -1915,8 +1913,11 @@ function suppressFabClick(e: MouseEvent) {
 
       </section>
 
-      <!-- ── Raw materials ── -->
-      <section class="wod-section">
+      <!-- ── Raw materials ──
+           Hidden on a Basic subcon order: the vendor sources every component
+           from its own stock, so nothing here was ever reserved, sent or
+           consumed, and the table would report a plan nobody acted on. -->
+      <section v-if="!subconIsBasic" class="wod-section">
         <button class="wod-section-head" @click="collapsed.raw = !collapsed.raw">
           <h2 class="wod-section-title">{{ t('Raw materials') }}</h2>
           <svg class="wod-chevron" :class="{ 'wod-chevron--open': !collapsed.raw }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -1935,6 +1936,9 @@ function suppressFabClick(e: MouseEvent) {
                   <!-- Subcon reports what LEFT for the vendor; a normal work
                        order reports what was consumed in-house. -->
                   <th class="wod-th wod-th--num">{{ reportsSentQty ? t('Sent to vendor') : t('Consumed qty') }}</th>
+                  <!-- What came back unconsumed at completion. Beside what was
+                       sent, because it is the same material returning. -->
+                  <th v-if="reportsSentQty" class="wod-th wod-th--num">{{ t('Returned qty') }}</th>
                   <th class="wod-th">{{ t('Unit') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Estimated cost') }}</th>
                 </tr>
@@ -1955,6 +1959,10 @@ function suppressFabClick(e: MouseEvent) {
                   <td class="wod-td wod-td--num">
                     <template v-if="!reportsSentQty">{{ num(consumedFor(r.productId)) }}/{{ num(plannedQtyFor(r)) }}</template>
                     <template v-else-if="sendsCompanyStock">{{ num(sentToVendorBySku[r.sku] ?? 0) }}/{{ num(plannedQtyFor(r)) }}</template>
+                    <span v-else class="wod-muted">—</span>
+                  </td>
+                  <td v-if="reportsSentQty" class="wod-td wod-td--num">
+                    <template v-if="returnedBySku[r.sku]">{{ num(returnedBySku[r.sku] ?? 0) }}</template>
                     <span v-else class="wod-muted">—</span>
                   </td>
                   <td class="wod-td">{{ r.unit }}</td>

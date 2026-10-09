@@ -546,6 +546,15 @@ export interface SubconServiceProduct {
   accountMapping: string
   /** How the vendor quotes it — per unit produced, as a lump amount, or per batch. */
   defaultCostDriver: 'Unit' | 'Amount' | 'Batch'
+  /**
+   * The unit this service is measured in — what a subcon cost line's Unit column
+   * shows, and what the purchase request is raised in.
+   *
+   * Taken from the product rather than chosen per line: the same service is
+   * always quoted the same way, and a line free to disagree with its product is
+   * a line that will.
+   */
+  unit: string
   /** Indicative price for one reference batch, IDR. */
   defaultPrice: number
 }
@@ -553,63 +562,65 @@ export interface SubconServiceProduct {
 export const SUBCON_SERVICE_PRODUCTS: readonly SubconServiceProduct[] = [
   {
     id: 'svc-roast-pack', name: 'Roasting & packing service', sku: 'SVC-RST-01',
-    productType: 'single-not-tracked', accountMapping: 'Subcon service cost',
+    productType: 'single-not-tracked', accountMapping: 'Work in process',
     defaultCostDriver: 'Unit', defaultPrice: 25_000_000,
+    unit: 'Pcs',
   },
   {
     id: 'svc-roast', name: 'Roasting service', sku: 'SVC-RST-02',
-    productType: 'single-not-tracked', accountMapping: 'Subcon service cost',
+    productType: 'single-not-tracked', accountMapping: 'Work in process',
     defaultCostDriver: 'Unit', defaultPrice: 12_000_000,
+    unit: 'Kg',
   },
   {
     id: 'svc-handling', name: 'Subcon handling & freight', sku: 'SVC-FRT-01',
-    productType: 'single-not-tracked', accountMapping: 'Subcon service cost',
+    productType: 'single-not-tracked', accountMapping: 'Work in process',
     defaultCostDriver: 'Amount', defaultPrice: 1_500_000,
+    unit: 'Shipment',
   },
   {
     id: 'svc-qc', name: 'Subcon quality inspection', sku: 'SVC-QC-01',
-    productType: 'single-not-tracked', accountMapping: 'Subcon service cost',
+    productType: 'single-not-tracked', accountMapping: 'Work in process',
     defaultCostDriver: 'Batch', defaultPrice: 750_000,
+    unit: 'Batch',
   },
   {
     id: 'svc-blend', name: 'Blending & cupping service', sku: 'SVC-BLD-01',
-    productType: 'single-not-tracked', accountMapping: 'Other subcon cost',
+    productType: 'single-not-tracked', accountMapping: 'Work in process',
     defaultCostDriver: 'Batch', defaultPrice: 2_000_000,
+    unit: 'Batch',
   },
   // ── Apparel line (cut-make-trim) — the garment subcontracting scenario ──
   {
     id: 'svc-sew', name: 'Jahit & assembly', sku: 'SVC-JHT-01',
-    productType: 'single-not-tracked', accountMapping: 'Subcon service cost',
+    productType: 'single-not-tracked', accountMapping: 'Work in process',
     defaultCostDriver: 'Unit', defaultPrice: 12_500_000,
+    unit: 'Pcs',
   },
   {
     id: 'svc-print-dye', name: 'Printing & pewarnaan', sku: 'SVC-PRT-01',
-    productType: 'single-not-tracked', accountMapping: 'Subcon service cost',
+    productType: 'single-not-tracked', accountMapping: 'Work in process',
     defaultCostDriver: 'Unit', defaultPrice: 4_000_000,
+    unit: 'Pcs',
   },
   // ── Furniture line (cut-assemble-finish) — the office-desk scenario ──
   {
     id: 'svc-woodwork', name: 'Potong & perakitan kayu', sku: 'SVC-KYU-01',
-    productType: 'single-not-tracked', accountMapping: 'Subcon service cost',
+    productType: 'single-not-tracked', accountMapping: 'Work in process',
     defaultCostDriver: 'Unit', defaultPrice: 36_000_000,
+    unit: 'Pcs',
   },
   {
     id: 'svc-finishing', name: 'Finishing & pengecatan', sku: 'SVC-FNS-01',
-    productType: 'single-not-tracked', accountMapping: 'Subcon service cost',
+    productType: 'single-not-tracked', accountMapping: 'Work in process',
     defaultCostDriver: 'Unit', defaultPrice: 18_000_000,
+    unit: 'Pcs',
   },
 ]
 
 export function subconServiceProduct(id: string): SubconServiceProduct | undefined {
   return SUBCON_SERVICE_PRODUCTS.find(p => p.id === id)
 }
-
-/** Account codes a subcon cost line can be mapped to. */
-export const SUBCON_ACCOUNT_MAPPINGS = [
-  'Subcon service cost',
-  'Other subcon cost',
-  'Work in process',
-] as const
 
 /** How a vendor quotes a charge. */
 export const SUBCON_COST_DRIVERS = ['Unit', 'Amount', 'Batch'] as const

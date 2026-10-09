@@ -14,6 +14,7 @@ import { MpAutocomplete } from '@mekari/pixel3'
 import { getPurchaseOrderDetail, purchaseOrders, PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS, products, getPurchaseRequest, vendors, addPurchaseOrder } from '~/data'
 import type { POAttachment } from '~/data/purchaseOrderDetails'
 import { recordSubconDocument, workOrderForDocument } from '~/data/workOrders'
+import { getPurchaseRequestDetail } from '~/data/purchaseRequestDetails'
 import { SUBCON_VENDORS, type SubconPriceBasis } from '~/data/subcon'
 import {
   priceSubconOrder, withholdingCaption, isVatCreditable,
@@ -121,7 +122,11 @@ const warehouse    = ref(source.value?.warehouse ?? '')
 const trackingNo   = ref(source.value?.trackingNo ?? '')
 const shipTo       = ref(source.value?.shipTo ?? '')
 const message      = ref(source.value?.message ?? '')
-const memo         = ref(source.value?.memo ?? '')
+const firstRequest = computed(() => {
+  const id = (props.purchaseRequestIds ?? [])[0]
+  return id ? getPurchaseRequestDetail(id) : undefined
+})
+const memo         = ref(source.value?.memo ?? firstRequest.value?.note ?? '')
 const tagsList     = ref<DataInterface[]>(toTagData(source.value?.tags ?? []))
 
 const requiresShipping = ref(!!source.value?.shipVia)
@@ -163,6 +168,19 @@ function groupFromPR(id: string): POGroup | null {
 // From-PR mode → accordion groups. Blank/duplicate mode → flat product rows.
 const groups = ref<POGroup[]>((props.purchaseRequestIds ?? []).map(groupFromPR).filter((g): g is POGroup => !!g))
 const fromPr = computed(() => groups.value.length > 0)
+
+/**
+ * This order places a subcon work order's charges.
+ *
+ * Everything the work order already decided is shown but not editable here —
+ * the vendor it was agreed with, the warehouse the request named, and the
+ * quantities and prices the request carries. Re-opening those on the order would
+ * let the paperwork drift from the run it is paying for, and the work order is
+ * where a change belongs. Dates, terms and shipping stay open: those are the
+ * buyer's to negotiate.
+ */
+const isSubconOrder = computed(() =>
+  (props.purchaseRequestIds ?? []).some(id => !!workOrderForDocument(id)))
 
 const blankItems = ref<POLine[]>((source.value?.lineItems ?? []).map(it => ({
   _key: ++_seq, product: it.product, sku: it.sku, description: it.description,
@@ -458,7 +476,10 @@ function onSendToFulfillment() {
         <section class="po-header1 po-dashed-divider">
           <MpFormControl id="f-vendor" class="po-field po-col-span-3">
             <MpFormLabel>Vendor <span class="po-required">*</span></MpFormLabel>
+            <!-- Fixed when a subcon work order named it; see `isSubconOrder`. -->
+            <MpInput v-if="isSubconOrder" id="f-vendor-fixed" :model-value="vendor" is-disabled is-full-width />
             <MpAutocomplete
+              v-else
               id="f-vendor-inp"
               v-model="vendor"
               :data="vendorOptions"
@@ -572,7 +593,8 @@ function onSendToFulfillment() {
           <div class="po-header2-col po-col-span-3">
             <MpFormControl id="f-warehouse" class="po-field">
               <MpFormLabel>Warehouse</MpFormLabel>
-              <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width placeholder="Select warehouse" />
+              <MpInput v-if="isSubconOrder" id="f-warehouse-fixed" :model-value="warehouse" is-disabled is-full-width />
+            <MpAutocomplete v-else id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width placeholder="Select warehouse" />
             </MpFormControl>
 
             <MpFormControl id="f-tags" class="po-field">
@@ -655,13 +677,13 @@ function onSendToFulfillment() {
                     <td class="pit-td pit-td--num pit-td--ro pit-td--border">{{ line.requestedQty }}</td>
                     <td class="pit-td pit-td--num pit-td--ro pit-td--border">{{ line.availableQty }}</td>
                     <td class="pit-td pit-td--input pit-td--num pit-td--border">
-                      <MpInput :id="`po-qty-${line._key}`" type="number" :model-value="line.qty" is-full-width class="pit-num-input" @update:model-value="(v) => line.qty = Number(v)" />
+                      <MpInput :id="`po-qty-${line._key}`" type="number" :model-value="line.qty" :is-disabled="isSubconOrder" is-full-width class="pit-num-input" @update:model-value="(v) => line.qty = Number(v)" />
                     </td>
                     <td class="pit-td pit-td--ro pit-td--clip pit-td--border">{{ line.unit }}</td>
                     <td class="pit-td pit-td--input pit-td--num pit-td--border">
                       <div class="pit-affix-cell">
                         <span class="pit-affix pit-affix--prefix">Rp</span>
-                        <MpInput :id="`po-cost-${line._key}`" type="number" :model-value="line.unitCost" is-full-width class="pit-num-input" @update:model-value="(v) => line.unitCost = Number(v)" />
+                        <MpInput :id="`po-cost-${line._key}`" type="number" :model-value="line.unitCost" :is-disabled="isSubconOrder" is-full-width class="pit-num-input" @update:model-value="(v) => line.unitCost = Number(v)" />
                       </div>
                     </td>
                     <td class="pit-td pit-td--input pit-td--num pit-td--border">
