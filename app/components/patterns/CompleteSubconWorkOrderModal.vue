@@ -29,6 +29,8 @@ const props = defineProps<{
   isOpen: boolean
   /** Finished good produced against the order. */
   producedQty: number
+  /** What the order set out to produce. */
+  plannedQty: number
   producedUnit: string
   productName: string
   components: SubconComponentUsage[]
@@ -46,6 +48,9 @@ const { t } = useLocale()
 
 /** Unused quantity per SKU, keyed by sku. Defaults to zero — the common case is
  *  that the vendor consumed everything sent. */
+/** What the run still owes, and so what completing will produce for it. */
+const shortfall = computed(() => Math.max(0, props.plannedQty - props.producedQty))
+
 const unused = ref<Record<string, string>>({})
 
 watch(() => props.isOpen, (open) => {
@@ -89,7 +94,15 @@ function confirm() {
             <div class="csw-produced">
               <span class="csw-produced__label">{{ t('Finished good produced') }}</span>
               <span class="csw-produced__value">
-                {{ producedQty.toLocaleString('id-ID') }} {{ producedUnit }} · {{ productName }}
+                {{ producedQty.toLocaleString('id-ID') }}/{{ plannedQty.toLocaleString('id-ID') }}
+                {{ producedUnit }} · {{ productName }}
+              </span>
+              <!-- Said before it happens, not after: completing closes the gap,
+                   and the figure above is what it closes. -->
+              <span v-if="shortfall > 0" class="csw-produced__note">
+                {{ t('Completing will produce the remaining') }}
+                {{ shortfall.toLocaleString('id-ID') }} {{ producedUnit }}
+                {{ t('and charge what the order has left to charge.') }}
               </span>
             </div>
 
@@ -211,6 +224,10 @@ function confirm() {
   background: var(--mp-background-success-subtle, #e8f4ef);
 }
 .csw-produced__label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.csw-produced__note {
+  display: block; margin-top: var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
+}
 .csw-produced__value {
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);

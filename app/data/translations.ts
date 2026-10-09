@@ -3821,4 +3821,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "The promised return date cannot be before the plan start date": "Tanggal pengembalian yang dijanjikan tidak boleh sebelum tanggal mulai rencana",
   "Adjusting raw materials from a work order is not fully available yet.": "Penyesuaian bahan baku dari work order belum sepenuhnya tersedia.",
   "Adding a sub-assembly product is not available yet.": "Menambahkan produk sub-rakitan belum tersedia.",
+  "Completing will produce the remaining": "Menyelesaikan akan memproduksi sisa",
+  "and charge what the order has left to charge.": "dan membebankan sisa biaya yang belum ditagih pada pesanan ini.",
 }

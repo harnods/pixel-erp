@@ -1053,6 +1053,15 @@ function completeSubconWorkOrder(unused: { sku: string; qty: number }[]) {
   if (!w || !c) return
   showCompleteSubconModal.value = false
 
+  // Produce whatever the run still owed, and charge what the order had left to
+  // charge, so the closed record states the whole quantity and the whole agreed
+  // cost. Charges go on first: the quantity record is what moves the status, so
+  // what it carries has to be on the order by then.
+  if (subconShortfall.value > 0) {
+    recordSubconCost(w.id, remainingSubconCost.value)
+    recordSubconProduction(w.id, subconShortfall.value)
+  }
+
   /**
    * Components the vendor did not consume come back as an ADDITIONAL OUTPUT of
    * the run, not as a transfer.
@@ -1487,17 +1496,11 @@ function handlePrimaryAction() {
   if (primaryAction.value !== t('Complete work order')) return
   const order = wo.value
   if (subcon.value && order) {
-    // Completing an order that has not produced its full quantity closes the
-    // gap rather than refusing. Whatever the run still owes is produced now and
-    // charged with what the order has left to charge — so the record ends
-    // stating the whole quantity and the whole cost, which is what completing
-    // it means. Correcting the quantity itself is still the adjust form's job.
-    if (subconShortfall.value > 0) {
-      // Charges first: the quantity record is what moves the order's status, so
-      // what it carries has to be on the order before that happens.
-      recordSubconCost(order.id, remainingSubconCost.value)
-      recordSubconProduction(order.id, subconShortfall.value)
-    }
+    // A run short of its planned quantity is not refused: completing closes the
+    // gap. The modal states the gap first and the balance is produced when it is
+    // confirmed, so backing out of completion leaves the order exactly as it was
+    // rather than silently topped up.
+    //
     // The components sent to the vendor are still on the company's books until
     // they are accounted for, so completing asks how much was used and returns
     // the rest.
@@ -2508,6 +2511,7 @@ function suppressFabClick(e: MouseEvent) {
       v-if="subcon && wo"
       v-model:is-open="showCompleteSubconModal"
       :produced-qty="wo.producedQty"
+      :planned-qty="wo.plannedQty"
       :produced-unit="mainOutput.unit"
       :product-name="mainOutput.product"
       :components="subconComponentUsage"
