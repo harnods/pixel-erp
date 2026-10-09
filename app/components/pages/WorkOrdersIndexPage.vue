@@ -272,8 +272,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <span class="wo-bom-name">{{ value }}</span>
     </template>
 
-    <!-- ── Track routing — Yes / No ── -->
-    <template #cell-trackRouting="{ value }">{{ value ? t('Yes') : t('No') }}</template>
+    <!-- ── Track routing — Yes / No, or em dash on a subcon order, where the
+         routing is the vendor's and the question was never asked ── -->
+    <template #cell-trackRouting="{ value }">{{ value === undefined ? '—' : value ? t('Yes') : t('No') }}</template>
 
     <!-- ── Status badge ── -->
     <template #cell-status="{ value }">

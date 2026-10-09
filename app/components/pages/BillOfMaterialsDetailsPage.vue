@@ -17,7 +17,6 @@ import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpIcon, MpButton, css, toast,
-  MpBadge,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
@@ -309,8 +308,7 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
                 <tr>
                   <th class="bom-th">{{ t('Service product') }}</th>
                   <th class="bom-th">{{ t('SKU') }}</th>
-                  <th class="bom-th">{{ t('Type') }}</th>
-                  <th class="bom-th">{{ t('Cost driver') }}</th>
+                  <th class="bom-th">{{ t('Unit') }}</th>
                   <th class="bom-th">{{ t('Account mapping') }}</th>
                   <th class="bom-th bom-th--num">{{ t('Amount') }}</th>
                 </tr>
@@ -319,8 +317,6 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
                 <tr v-for="l in subconCostLines" :key="l.productId" class="bom-tr">
                   <td class="bom-td">{{ l.name }}</td>
                   <td class="bom-td">{{ l.sku }}</td>
-                  <!-- Stated per row: these lines carry cost, never stock. -->
-                  <td class="bom-td"><MpBadge for="tableStatus" type="announcement">{{ t('Non-track') }}</MpBadge></td>
                   <td class="bom-td">{{ l.costDriver }}</td>
                   <td class="bom-td">{{ l.accountMapping }}</td>
                   <td class="bom-td bom-td--num">{{ formatIDR(l.amount) }}</td>

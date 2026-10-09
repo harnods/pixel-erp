@@ -175,7 +175,8 @@ const subconPromisedDate = ref('')
 // warehouse, so it is derived from the chosen vendor rather than picked.
 const subconWarehouseId = ref(DEFAULT_SUBCON_VENDOR.warehouseId ?? '')
 const subconReceivingWarehouseId = ref(PRODUCTION_WAREHOUSE.id)
-const subconDateError = ref(false)
+/** Empty when the promised date is good; otherwise the reason it is not. */
+const subconDateError = ref('')
 
 const SUBCON_VENDOR_OPTIONS = SUBCON_VENDORS
   .filter(v => v.role === 'subcon')
@@ -183,14 +184,6 @@ const SUBCON_VENDOR_OPTIONS = SUBCON_VENDORS
 
 const subconVendor = computed(() =>
   SUBCON_VENDORS.find(v => v.id === subconVendorId.value) ?? DEFAULT_SUBCON_VENDOR)
-
-const SUBCON_SCOPE_OPTIONS = (Object.keys(SUBCON_SCOPE_LABEL) as SubconScope[])
-  .map(k => ({ id: k, name: t(SUBCON_SCOPE_LABEL[k]) }))
-
-const SUBCON_SPLIT_OPTIONS = [
-  { id: 'full', name: t('Full quantity') },
-  { id: 'partial', name: t('Partial (split)') },
-]
 
 // Each method's label says WHO supplies the components — the distinction that
 // decides the document chain. The chosen one's detail shows as a caption.
@@ -250,9 +243,6 @@ function subconWarehouseNameOf(id: string) {
 function warehouseName(id: string) {
   return warehouseOptions.find(w => w.id === id)?.name ?? ''
 }
-
-/** A subcon work order cannot raise its supply documents while it is still a draft. */
-const subconGateText = t('Saving this work order creates it as a draft. Supply the vendor first — raise the component transfer or purchase request — then start the work order, which issues the components and unlocks the rest of the run.')
 
 
 const bomNo = computed(() => BOM_OPTIONS.value.find(b => b.id === bomId.value)?.no ?? '')
@@ -637,7 +627,19 @@ function validate() {
   if (!planDates.value.length) { planDatesError.value = true; ok = false }
   // A subcon work order needs the date the vendor has committed to — everything
   // downstream (overdue tracking, the custody dashboard) is measured against it.
-  if (isSubcon.value && !subconPromisedDate.value) { subconDateError.value = true; ok = false }
+  // The vendor cannot promise the goods back before the run is due to begin, so
+  // a date earlier than the plan start is a typo rather than a tight schedule.
+  if (isSubcon.value) {
+    const planStart = planDates.value[0] ? toLocalIso(planDates.value[0]) : ''
+    if (!subconPromisedDate.value) {
+      subconDateError.value = t('Pick the date the vendor has promised the goods back.')
+      ok = false
+    } else if (planStart && subconPromisedDate.value < planStart) {
+      subconDateError.value =
+        `${t('The promised return date cannot be before the plan start date')} (${planStart}).`
+      ok = false
+    }
+  }
   return ok
 }
 // [startDate, endDate] → ISO start/end (planDates is validated non-empty before this runs).
@@ -688,7 +690,10 @@ function saveWorkOrder() {
     bomName: bom.name,
     category: category.value as 'Standard' | 'Order' | 'Subcontracting',
     type: workOrderType.value as 'Assembly' | 'Disassembly',
-    trackRouting: trackRouting.value === 'yes',
+    // Omitted entirely on subcon — the field is hidden on the form because the
+    // routing is the vendor's, so sending `false` would record an answer the
+    // user was never asked for.
+    ...(isSubcon.value ? {} : { trackRouting: trackRouting.value === 'yes' }),
     status: 'not started' as WorkOrderStatus,
     producedQty: 0,
     plannedQty: num(producedQty.value) || bom.finishedGoodQty,
@@ -886,9 +891,25 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </ul>
           </div>
 
+          <!-- Multi-level is not supported on a subcon order, so the checkbox is
+               shown inert with its reason on the label rather than removed —
+               disappearing controls read as a bug. -->
           <label class="wo-checkbox-row">
-            <MpCheckbox id="wo-subassembly" :is-checked="createAsSubAssembly" @change="createAsSubAssembly = !createAsSubAssembly" />
-            <span>{{ t('Set as sub-assembly') }}</span>
+            <MpCheckbox
+              id="wo-subassembly" :is-checked="createAsSubAssembly" :is-disabled="isSubcon"
+              @change="!isSubcon && (createAsSubAssembly = !createAsSubAssembly)"
+            />
+            <span v-if="isSubcon" class="wo-checkbox-label--off">
+              {{ t('Set as sub-assembly') }}
+              <MpTooltip
+                id="wo-subassembly-tip"
+                :label="t('Subcontracting does not support multi-level work orders yet.')"
+                placement="right" use-portal
+              >
+                <MpIcon name="info" size="sm" />
+              </MpTooltip>
+            </span>
+            <span v-else>{{ t('Set as sub-assembly') }}</span>
           </label>
         </section>
 
@@ -914,33 +935,38 @@ onUnmounted(() => { stageObserver?.disconnect() })
               />
             </MpFormControl>
 
-            <MpFormControl id="wo-subcon-promised" is-required :is-invalid="subconDateError">
+            <MpFormControl id="wo-subcon-promised" is-required :is-invalid="!!subconDateError">
               <MpFormLabel>{{ t('Promised return date') }}</MpFormLabel>
               <MpInput
                 id="wo-subcon-promised-input" v-model="subconPromisedDate" type="date" is-full-width
-                :is-invalid="subconDateError" @update:model-value="subconDateError = false"
+                :is-invalid="!!subconDateError" @update:model-value="subconDateError = ''"
               />
-              <MpFormErrorMessage v-if="subconDateError">
-                {{ t('Pick the date the vendor has promised the goods back.') }}
-              </MpFormErrorMessage>
+              <MpFormErrorMessage v-if="subconDateError">{{ subconDateError }}</MpFormErrorMessage>
             </MpFormControl>
 
-            <MpFormControl id="wo-subcon-scope" is-required>
+            <!-- Scope and split are fixed for this release. Both axes exist in
+                 the model and in `buildDocumentPlan`, so the branches are real —
+                 they are simply not offered yet. Shown as a filled, disabled
+                 field rather than hidden, so the reader can see what this run
+                 IS, not just what it is not. -->
+            <MpFormControl id="wo-subcon-scope">
               <MpFormLabel>{{ t('What is subcontracted') }}</MpFormLabel>
-              <MpAutocomplete
-                id="wo-subcon-scope-ac" v-model="subconScope" :data="SUBCON_SCOPE_OPTIONS"
-                label-prop="name" value-prop="id" :placeholder="t('Select scope')"
-                use-portal is-full-width
+              <MpInput
+                id="wo-subcon-scope-input"
+                :model-value="t(SUBCON_SCOPE_LABEL['finished-good'])"
+                is-disabled is-full-width
               />
+              <p class="wo-subcon-hint">{{ t('Subcontracting one component is not supported yet.') }}</p>
             </MpFormControl>
 
-            <MpFormControl id="wo-subcon-split" is-required>
+            <MpFormControl id="wo-subcon-split">
               <MpFormLabel>{{ t('Quantity subcontracted') }}</MpFormLabel>
-              <MpAutocomplete
-                id="wo-subcon-split-ac" v-model="subconSplit" :data="SUBCON_SPLIT_OPTIONS"
-                label-prop="name" value-prop="id" :placeholder="t('Select quantity')"
-                use-portal is-full-width
+              <MpInput
+                id="wo-subcon-split-input"
+                :model-value="t('Full quantity')"
+                is-disabled is-full-width
               />
+              <p class="wo-subcon-hint">{{ t('Subcontracting part of the quantity is not supported yet.') }}</p>
             </MpFormControl>
 
             <MpFormControl id="wo-subcon-method" is-required>
@@ -986,22 +1012,19 @@ onUnmounted(() => { stageObserver?.disconnect() })
             />
           </div>
 
-          <!-- The draft gate. It matters at save time, not while configuring, so
-               it hangs off an info icon rather than taking four lines of the
-               block. MpTooltip wraps long labels on its own. -->
-          <p class="wo-subcon-gate">
-            <MpTooltip id="wo-subcon-gate-tip" :label="subconGateText" placement="right" use-portal>
-              <MpIcon name="info" size="sm" />
-            </MpTooltip>
-            {{ t('Saved as a draft until you start it.') }}
-          </p>
         </section>
 
         <!-- ══ Raw materials ════════════════════════════════════════════════ -->
         <!-- The line-item sections appear only once a BOM is chosen (it defines them). -->
         <section v-if="hasBom" class="wo-section">
           <h2 class="wo-section-title">{{ t('Raw materials') }}</h2>
-          <p class="wo-section-desc">{{ t('Unit purchase cost may change when inventory value adjusts.') }}</p>
+          <!-- Kept visible on Basic rather than hidden: the recipe is still the
+               recipe, and the reader needs to see WHY nothing will be shipped. -->
+          <p class="wo-section-desc">
+            {{ isSubcon && subconMethod === 'basic'
+              ? t('The subcon vendor supplies these materials from their own stock, so none are sent from your warehouses.')
+              : t('Unit purchase cost may change when inventory value adjusts.') }}
+          </p>
           <label class="wo-checkbox-row wo-checkbox-row--tight">
             <MpCheckbox id="wo-bulk-wh" :is-checked="bulkSetWarehouse" @change="bulkSetWarehouse = !bulkSetWarehouse" />
             <span>{{ t('Bulk set warehouse') }}</span>
@@ -1176,7 +1199,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 <tr>
                   <th class="wo-th">{{ t('Service product') }}</th>
                   <th class="wo-th">{{ t('Charged by') }}</th>
-                  <th class="wo-th">{{ t('Cost driver') }}</th>
+                  <th class="wo-th">{{ t('Unit') }}</th>
                   <th class="wo-th wo-th--right">{{ t('Amount') }}</th>
                   <th class="wo-th wo-th--del" />
                 </tr>
@@ -1587,10 +1610,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
-.wo-subcon-gate {
-  display: flex; align-items: flex-start; gap: var(--mp-spacing-2);
-  margin: var(--mp-spacing-4) 0 0; max-width: 860px;
-  font-size: var(--mp-font-sizes-sm);
+/* A label whose control is inert — the words stay readable, the tooltip beside
+   them carries the reason. */
+.wo-checkbox-label--off {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
   color: var(--mp-text-secondary);
 }
 

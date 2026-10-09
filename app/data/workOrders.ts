@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 import { TODAY } from './master'
 import { billOfMaterials, catalogProduct } from './billOfMaterials'
+import { warehouseTransfers } from './warehouseTransfers'
 import type { SubconScope, SubconSplit, SubconMethod } from './subcon'
 import { loadSnapshot, saveSnapshot } from './persist'
 
@@ -23,8 +24,14 @@ export interface WorkOrder {
   category: 'Standard' | 'Order' | 'Subcontracting'
   /** Assembly = build the output · Disassembly = break the output into components */
   type: 'Assembly' | 'Disassembly'
-  /** whether the WO follows a defined routing (sequence of operations) */
-  trackRouting: boolean
+  /**
+   * Whether the WO follows a defined routing (sequence of operations).
+   *
+   * Absent on a Subcontracting order rather than false: the routing being
+   * followed is the vendor's, so the question does not apply. "No" would be an
+   * answer to it; omitting the field says there was nothing to answer.
+   */
+  trackRouting?: boolean
   /** not started · canceled · in progress · partially produced · partially completed · completed */
   status: WorkOrderStatus
   /** parent WO number when this is a sub-assembly, else undefined */
@@ -144,12 +151,34 @@ export interface WorkOrderSubconSetup {
    */
   componentReceipts?: Record<string, number>
   /**
-   * Set once a resupply order's transfers cover every component. Held here
-   * because the quantities live in the warehouse transfers, which this module
-   * does not read — the work order detail decides it and says so.
+   * Whether the vendor holds every component the run needs. Derived from the
+   * transfers (resupply) or the component delivery (dropship) and written here
+   * so the figure is read once and agreed on everywhere.
    */
   materialsReady?: boolean
+  /**
+   * The one step this order owes next. Written by the store whenever a document
+   * is recorded; the screen renders it and never works it out for itself.
+   */
+  nextAction?: SubconNextAction
 }
+
+/**
+ * The step a subcon work order owes next.
+ *
+ * Names the STEP, not the button — the view owns the wording and its
+ * translation. `none` means the order is finished or cancelled and asks
+ * nothing.
+ */
+export type SubconNextAction =
+  | 'create-transfer'
+  | 'create-component-request'
+  | 'view-component-request'
+  | 'view-component-order'
+  | 'create-service-request'
+  | 'view-service-request'
+  | 'complete'
+  | 'none'
 
 /** A document created from a subcon work order, and where its detail page lives. */
 export interface RaisedSubconDocument {
@@ -353,25 +382,66 @@ export function recordSubconDocument(workOrderId: string, doc: RaisedSubconDocum
 const COMPONENT_REQUEST_KINDS = ['componentPr', 'rawPr']
 
 /**
- * Whether a dropship vendor has every component the run needs.
+ * How much of each component the vendor actually holds.
  *
- * Dropship never touches a company warehouse, so the purchase delivery against
- * the component order is the only record that the goods arrived. A resupply
- * order's quantities live in the warehouse transfers, which this module does not
- * read — the work order detail decides that one and calls
- * `setSubconMaterialsReady`.
+ * The two supply methods record it in different places, and neither is the work
+ * order's own field:
+ *   • dropship — a 3rd party ships straight to the vendor, so the purchase
+ *     delivery against the component order is the only evidence it arrived.
+ *   • resupply — company stock moves, so the warehouse transfers carry it.
+ *
+ * Direction matters on resupply. Only stock moving INTO the vendor's location
+ * counts; a transfer the other way is a return, and counting it would report
+ * more as handed over than ever left.
  */
-function dropshipComponentsFulfilled(wo: WorkOrder): boolean {
-  if (wo.subcon?.method !== 'dropship') return false
-  const received = wo.subcon.componentReceipts ?? {}
+export function subconSentToVendor(wo: WorkOrder): Record<string, number> {
+  const c = wo.subcon
+  if (!c) return {}
+  if (c.method === 'dropship') return { ...(c.componentReceipts ?? {}) }
+  if (c.method !== 'resupply') return {}
+
+  const vendorWarehouseId = c.subconWarehouseId
+  const totals: Record<string, number> = {}
+  for (const doc of c.raisedDocuments ?? []) {
+    if (doc.route !== '/warehouse-transfers') continue
+    const transfer = warehouseTransfers.find(t => t.id === doc.id)
+    if (!transfer) continue
+    if (vendorWarehouseId && transfer.destinationId !== vendorWarehouseId) continue
+    for (const line of transfer.lines ?? []) {
+      totals[line.sku] = (totals[line.sku] ?? 0) + line.qty
+    }
+  }
+  return totals
+}
+
+/** The quantity of a component this run needs, after any adjustment. */
+function plannedComponentQty(wo: WorkOrder, sku: string, needed: number): number {
+  return wo.subcon?.componentAdjustments?.[sku] ?? needed
+}
+
+/**
+ * Whether the vendor has every component the run needs, in full.
+ *
+ * Basic has nothing to wait for — the vendor works from its own stock.
+ */
+export function subconMaterialsFulfilled(wo: WorkOrder): boolean {
+  const c = wo.subcon
+  if (!c) return true
+  if (c.method === 'basic') return true
+
   const bom = billOfMaterials.find(b => b.id === wo.bomId)
   const lines = bom?.rawMaterials ?? []
-  if (!lines.length) return false
+  // No recipe to measure against: fall back to whether supply was raised at all.
+  if (!lines.length) {
+    const RM_KINDS = ['transfer', 'rawTransfer', 'componentPr', 'rawPr']
+    return (c.raisedDocuments ?? []).some(d => RM_KINDS.includes(d.kind))
+  }
+
+  const sent = subconSentToVendor(wo)
   return lines.every((line) => {
     const sku = catalogProduct(line.productId)?.sku
     if (!sku) return false
-    const planned = wo.subcon?.componentAdjustments?.[sku] ?? line.needed
-    return (received[sku] ?? 0) >= planned
+    return (sent[sku] ?? 0) >= plannedComponentQty(wo, sku, line.needed)
   })
 }
 
@@ -404,6 +474,7 @@ export function syncSubconStatus(wo: WorkOrder): void {
       wo.status = 'in progress'
       wo.startDate = wo.startDate ?? new Date().toISOString().slice(0, 10)
     }
+    c.nextAction = deriveNextAction(wo)
     return
   }
 
@@ -411,32 +482,80 @@ export function syncSubconStatus(wo: WorkOrder): void {
   // the work was ordered, and a record already in progress has passed them —
   // seeded ones carry no documents at all, and re-deriving from documents would
   // put them back at the start.
-  if (wo.status === 'in progress') return
+  if (wo.status === 'in progress') { c.nextAction = deriveNextAction(wo); return }
 
-  const ready = c.method === 'basic' || c.materialsReady || dropshipComponentsFulfilled(wo)
-  if (ready) { wo.status = 'waiting subcon order'; return }
-
-  // Procurement has started but has not delivered everything yet.
-  const RM_KINDS = ['transfer', 'rawTransfer', 'componentPr', 'rawPr']
-  const procuring = docs.some(d => RM_KINDS.includes(d.kind))
-  wo.status = procuring ? 'waiting rm procurement' : 'not started'
+  const ready = subconMaterialsFulfilled(wo)
+  c.materialsReady = ready
+  if (ready) {
+    wo.status = 'waiting subcon order'
+  } else {
+    // Procurement has started but has not delivered everything yet.
+    const RM_KINDS = ['transfer', 'rawTransfer', 'componentPr', 'rawPr']
+    const procuring = docs.some(d => RM_KINDS.includes(d.kind))
+    wo.status = procuring ? 'waiting rm procurement' : 'not started'
+  }
+  c.nextAction = deriveNextAction(wo)
 }
 
 /**
- * Told by the work order detail that a resupply order's transfers now cover
- * every component — the quantities live in the transfers, which this module
- * does not read.
+ * Which action the work order should offer next.
+ *
+ * The screen renders what this says and never works it out for itself — in the
+ * real system the server decides it, and a page that re-derives it from
+ * quantities is a second implementation waiting to disagree with the first.
+ *
+ * The value names the STEP, not the button: the view owns the wording and the
+ * translation.
  */
-export function setSubconMaterialsReady(workOrderId: string, ready: boolean): void {
+export function deriveNextAction(wo: WorkOrder): SubconNextAction {
+  const c = wo.subcon
+  if (!c) return 'none'
+  if (['completed', 'canceled'].includes(wo.status)) return 'none'
+
+  const docs = c.raisedDocuments ?? []
+  const has = (kind: string) => docs.some(d => d.kind === kind)
+  const serviceRequestKind = c.scope === 'component' ? 'processPr' : 'subconPr'
+  const servicePo = docs.some(d => d.kind === 'purchaseOrder' && isServiceOrderDoc(d))
+
+  // ── Supply first: the vendor cannot be asked to work on nothing ──────────
+  if (!subconMaterialsFulfilled(wo)) {
+    if (c.method === 'resupply') return 'create-transfer'
+    if (c.method === 'dropship') {
+      if (!has('componentPr') && !has('rawPr')) return 'create-component-request'
+      const componentPo = docs.find(d => d.kind === 'purchaseOrder' && !isServiceOrderDoc(d))
+      return componentPo ? 'view-component-order' : 'view-component-request'
+    }
+  }
+
+  // ── Then the work itself: requested here, ordered from the request ───────
+  if (!servicePo) {
+    if (!has(serviceRequestKind)) return 'create-service-request'
+    return 'view-service-request'
+  }
+
+  // ── Ordered. Production is recorded against the vendor's deliveries ──────
+  return 'complete'
+}
+
+/** A raised document that places the vendor's WORK, not one that buys material. */
+function isServiceOrderDoc(d: RaisedSubconDocument): boolean {
+  return !(d.fromKind && COMPONENT_REQUEST_KINDS.includes(d.fromKind))
+}
+
+/**
+ * Re-derive a subcon order's status and its next action from the documents and
+ * movements that exist right now, and persist if either moved.
+ *
+ * Called when the order is opened. A record written before these fields existed
+ * carries neither, and nothing else would correct it; opening it is the moment
+ * to put it right.
+ */
+export function refreshSubconWorkOrder(workOrderId: string): void {
   const wo = workOrders.find(w => w.id === workOrderId)
   if (!wo?.subcon) return
-  // Re-derive even when readiness has not changed. A record written before these
-  // statuses existed carries an old one and nothing would otherwise correct it;
-  // opening the work order is the moment to put it right.
-  const was = { status: wo.status, ready: wo.subcon.materialsReady }
-  wo.subcon.materialsReady = ready
+  const was = { status: wo.status, action: wo.subcon.nextAction }
   syncSubconStatus(wo)
-  if (wo.status !== was.status || was.ready !== ready) persistWorkOrders()
+  if (wo.status !== was.status || wo.subcon.nextAction !== was.action) persistWorkOrders()
 }
 
 /**

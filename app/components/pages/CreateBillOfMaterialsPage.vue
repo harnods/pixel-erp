@@ -19,7 +19,7 @@ import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpAutocomplete, MpInput, MpInputGroup, MpInputLeftAddon, MpInputRightAddon, MpTextarea,
   MpButton, MpIcon, MpCheckbox, toast,
-  MpBadge, MpTooltip,
+  MpTooltip,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
@@ -805,14 +805,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <div class="bf-table-scroll">
             <table class="bf-table">
               <colgroup>
-                <col class="bf-col-svc" /><col class="bf-col-type" /><col class="bf-col-driver" />
+                <col class="bf-col-svc" /><col class="bf-col-driver" />
                 <col class="bf-col-map" /><col class="bf-col-amt" /><col class="bf-col-del" />
               </colgroup>
               <thead>
                 <tr>
                   <th class="bf-th">{{ t('Service product') }}</th>
-                  <th class="bf-th">{{ t('Type') }}</th>
-                  <th class="bf-th">{{ t('Cost driver') }}</th>
+                  <th class="bf-th">{{ t('Unit') }}</th>
                   <th class="bf-th">{{ t('Account mapping') }}</th>
                   <th class="bf-th bf-th--right">{{ t('Amount') }}</th>
                   <th class="bf-th bf-th--del" />
@@ -830,10 +829,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       is-searchable is-clearable use-portal is-full-width
                       @update:model-value="(v: string) => onSubconProduct(row, v)"
                     />
-                  </td>
-                  <!-- Stated on every row: the reason these lines never touch stock. -->
-                  <td class="bf-td">
-                    <MpBadge v-if="row.productId" for="tableStatus" type="announcement">{{ t('Non-track') }}</MpBadge>
                   </td>
                   <td class="bf-td bf-td--input">
                     <MpAutocomplete
@@ -1101,7 +1096,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .bf-section--last { border-bottom: none; }
 /* Subcon cost column widths — token scale, so the table reads like every other. */
 .bf-col-svc    { width: var(--mp-sizes-80, 320px); }
-.bf-col-type   { width: var(--mp-sizes-28, 112px); }
 .bf-col-driver { width: var(--mp-sizes-40, 160px); }
 .bf-col-map    { width: var(--mp-sizes-56, 224px); }
 .bf-col-amt    { width: var(--mp-sizes-50, 200px); }

@@ -323,7 +323,7 @@ function onSave() {
               <tr>
                 <th class="awo-th">{{ t('Cost component') }}</th>
                 <th class="awo-th">{{ t('Charged by') }}</th>
-                <th class="awo-th">{{ t('Cost driver') }}</th>
+                <th class="awo-th">{{ t('Unit') }}</th>
                 <th class="awo-th awo-th--num">{{ t('Amount') }}</th>
                 <th class="awo-th awo-th--action" />
               </tr>

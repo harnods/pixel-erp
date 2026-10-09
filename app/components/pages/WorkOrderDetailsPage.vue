@@ -50,7 +50,7 @@ import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer
 import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
 import { formatDate } from '~/utils/date'
 import { successToast } from '~/utils/toasts'
-import { workOrders, persistWorkOrders, adjustSubconWorkOrderQty, recordSubconDocument, recordSubconUnusedOutput, setSubconMaterialsReady, setSubconComponentQty, addSubconCostLine, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
+import { workOrders, persistWorkOrders, adjustSubconWorkOrderQty, recordSubconDocument, recordSubconUnusedOutput, refreshSubconWorkOrder, subconSentToVendor, subconMaterialsFulfilled, setSubconComponentQty, addSubconCostLine, type WorkOrder, type WorkOrderStatus, type SubconNextAction } from '~/data/workOrders'
 import { warehouseTransfers, addTransfer } from '~/data/warehouseTransfers'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { productionSettings } from '~/data/productionSettings'
@@ -724,45 +724,46 @@ const pendingExternalDoc = computed(() => {
   return undefined
 })
 
+/**
+ * The step this order owes next.
+ *
+ * On a subcon order it is READ, never worked out here: the store derives it
+ * whenever a document is recorded (`deriveNextAction`), so the page and the
+ * record can never disagree about what is due. A non-subcon order keeps its own
+ * small rule, which turns on status alone.
+ */
+const nextAction = computed<SubconNextAction>(() => {
+  if (!subcon.value) return 'none'
+  return subcon.value.nextAction ?? 'none'
+})
+
+/** Step → button. The wording lives here; the store names only the step. */
+const SUBCON_ACTION_LABEL: Record<SubconNextAction, string> = {
+  'create-transfer': t('Create warehouse transfer'),
+  'create-component-request': t('Create purchase request for raw material'),
+  'view-component-request': t('View purchase request'),
+  'view-component-order': t('View purchase order'),
+  'create-service-request': t('Create purchase request'),
+  'view-service-request': t('View purchase request'),
+  complete: t('Complete work order'),
+  none: '',
+}
+
 const primaryAction = computed(() => {
+  if (subcon.value) {
+    // Start is the one action the flag does not name: whether it exists at all
+    // is a module setting, not a property of this run.
+    if (nextAction.value === 'create-transfer' && canStartManually.value
+        && wo.value?.status === 'not started' && subconSupplyRaised.value) {
+      return t('Start work order')
+    }
+    return SUBCON_ACTION_LABEL[nextAction.value]
+  }
   switch (wo.value?.status) {
-    case 'not started':
-      // Nothing to start until the vendor has the materials.
-      if (subcon.value && !rawMaterialsFulfilled.value && supplyActionLabel.value) {
-        // A transfer may be raised again and again — stock leaves in whatever
-        // loads are available, so the balance is carried by the next one. A
-        // dropship component request is raised ONCE and then grows an order and
-        // a delivery in Purchases; offering it a second time would duplicate it,
-        // so this page stands back until the goods are confirmed delivered.
-        if (subcon.value.method === 'dropship' && subconSupplyRaised.value) {
-          return pendingExternalDoc.value?.label ?? ''
-        }
-        return supplyActionLabel.value
-      }
-      return canStartManually.value ? t('Start work order') : ''
-    case 'waiting rm procurement':
-      // Procurement is under way; the next step is on the document carrying it.
-      if (subcon.value && !rawMaterialsFulfilled.value && supplyActionLabel.value
-          && !(subcon.value.method === 'dropship' && subconSupplyRaised.value)) {
-        return supplyActionLabel.value
-      }
-      return pendingExternalDoc.value?.label ?? ''
-    case 'waiting subcon order':
-      // Materials are with the vendor; the work still has to be ordered. The
-      // request is raised here, the order from the request's own page.
-      if (subcon.value && pendingServiceRequest.value) return pendingServiceRequest.value.label
-      return pendingExternalDoc.value?.label ?? ''
+    case 'not started': return t('Start work order')
     case 'in progress':
     case 'partially produced':
-    case 'partially completed':
-      if (subcon.value) {
-        // Raise the request here; the order follows from the request itself.
-        if (pendingServiceRequest.value) return pendingServiceRequest.value.label
-        // Requested but not yet ordered: the next move belongs to Purchases, so
-        // this page points at the document that carries it.
-        if (!subconPoRaised.value) return pendingExternalDoc.value?.label ?? ''
-      }
-      return t('Complete work order')
+    case 'partially completed': return t('Complete work order')
     default: return '' // completed / canceled → no primary action
   }
 })
@@ -836,32 +837,13 @@ function consumedFor(productId: string): number {
  * Only `resupply` moves company stock: on `basic` the vendor uses its own, and on
  * `dropship` a third party ships direct, so neither has a quantity to report.
  */
-const sentToVendorBySku = computed<Record<string, number>>(() => {
-  const c = subcon.value
-  if (!c) return {}
-  // On dropship nothing leaves a company warehouse — a 3rd party ships straight
-  // to the vendor — so the purchase delivery against the component order is the
-  // only record that the components arrived, and it is what fills this column.
-  if (c.method === 'dropship') return { ...(c.componentReceipts ?? {}) }
-  if (c.method !== 'resupply') return {}
-  const vendorWarehouseId = c.subconWarehouseId
-  const transferIds = (c.raisedDocuments ?? [])
-    .filter(d => d.route === '/warehouse-transfers')
-    .map(d => d.id)
-  const totals: Record<string, number> = {}
-  for (const id of transferIds) {
-    const transfer = warehouseTransfers.find(t => t.id === id)
-    if (!transfer) continue
-    // Direction matters. Only stock moving INTO the vendor's location is stock
-    // sent; anything headed the other way is a return, and counting it here
-    // would report more as handed over than ever left.
-    if (vendorWarehouseId && transfer.destinationId !== vendorWarehouseId) continue
-    for (const line of transfer.lines ?? []) {
-      totals[line.sku] = (totals[line.sku] ?? 0) + line.qty
-    }
-  }
-  return totals
-})
+/**
+ * What the vendor holds, by SKU — read from the store, which derives it from
+ * the transfers (resupply) or the component delivery (dropship). Deriving it
+ * here as well would be a second implementation of the same rule.
+ */
+const sentToVendorBySku = computed<Record<string, number>>(() =>
+  (wo.value ? subconSentToVendor(wo.value) : {}))
 
 /** True when this work order reports sent-to-vendor instead of consumed qty. */
 const reportsSentQty = computed(() => !!subcon.value)
@@ -1164,32 +1146,19 @@ const canStartSubcon = computed(() => !subcon.value || subconSupplyRaised.value)
  * the vendor and we never see them, so the request existing is all we can know.
  * On `basic` the vendor supplies its own, so there is nothing to wait for.
  */
-const rawMaterialsFulfilled = computed(() => {
-  const c = subcon.value
-  if (!c) return true
-  // The vendor supplies its own materials, so there is nothing to wait for.
-  if (c.method === 'basic') return true
-  if (!rawMaterials.value.length) return subconSupplyRaised.value
-  // Resupply counts what the transfers moved; dropship counts what the component
-  // purchase delivery confirmed arrived. `sentToVendorBySku` reads whichever
-  // applies, so the rule is the same for both: every line, in full.
-  return rawMaterials.value.every(
-    r => (sentToVendorBySku.value[r.sku] ?? 0) >= plannedQtyFor(r))
-})
+const rawMaterialsFulfilled = computed(() =>
+  (wo.value ? subconMaterialsFulfilled(wo.value) : true))
 
 /**
- * Tell the store when the vendor has everything, so the status can move to
- * "waiting subcon order".
+ * Put the record's status and next action back in step with the documents and
+ * movements that exist now.
  *
- * Resupply NEEDS telling — its quantities live in the warehouse transfers, which
- * the store does not read. Dropship does not, since its receipts are on the work
- * order, but reporting it anyway keeps one rule for both and repairs any record
- * whose materials completed before this status existed.
+ * Re-derived on open because a record written before these fields existed
+ * carries neither, and because a transfer or delivery raised elsewhere does not
+ * tell the work order about itself.
  */
-watch(rawMaterialsFulfilled, (ready) => {
-  const w = wo.value
-  if (!w || !subcon.value) return
-  setSubconMaterialsReady(w.id, ready)
+watch(() => wo.value?.id, (id) => {
+  if (id && subcon.value) refreshSubconWorkOrder(id)
 }, { immediate: true })
 
 /**
@@ -1461,26 +1430,39 @@ function createDocument(kind: SubconDocKind, originWarehouseId?: string) {
 }
 
 function handlePrimaryAction() {
-  // The supply step, named on the button when it is what is due. Opens the same
-  // form the Transactions tab raises it from — including the origin breakdown
-  // when the components span warehouses.
-  if (primaryAction.value === supplyActionLabel.value && supplyActionKind.value) {
-    startBlockedMessage.value = ''
-    createDocument(supplyActionKind.value)
-    return
-  }
-
-  const request = pendingServiceRequest.value
-  if (request && primaryAction.value === request.label) {
-    createDocument(request.kind)
-    return
-  }
-
-  // Waiting on Purchases — open the document that carries the next step.
-  const pending = pendingExternalDoc.value
-  if (pending && primaryAction.value === pending.label) {
-    openRaisedDocument(pending.doc as { route: string; id: string })
-    return
+  // Dispatch on the STEP the record names, not on the button's words — a
+  // translated label is not an identity, and comparing against one breaks the
+  // moment the copy changes or the locale does.
+  if (subcon.value && primaryAction.value !== t('Start work order')) {
+    switch (nextAction.value) {
+      // A transfer may be raised again and again — stock leaves in whatever
+      // loads are available, so the balance is carried by the next one.
+      case 'create-transfer':
+      case 'create-component-request': {
+        const kind = supplyActionKind.value
+        if (!kind) return
+        startBlockedMessage.value = ''
+        createDocument(kind)
+        return
+      }
+      case 'create-service-request': {
+        const request = pendingServiceRequest.value
+        if (request) createDocument(request.kind)
+        return
+      }
+      // The next move belongs to Purchases, so this page opens the document
+      // that carries it rather than duplicating the action.
+      case 'view-component-request':
+      case 'view-component-order':
+      case 'view-service-request': {
+        const pending = pendingExternalDoc.value
+        if (pending) openRaisedDocument(pending.doc as { route: string; id: string })
+        return
+      }
+      case 'none':
+        return
+      // 'complete' falls through to the shared completion path below.
+    }
   }
 
   if (primaryAction.value === t('Start work order')) {
@@ -1845,7 +1827,12 @@ function suppressFabClick(e: MouseEvent) {
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Type')" :value="wo.type" />
-            <ContentList :label="t('Track routing')" :value="wo.trackRouting ? t('Yes') : t('No')" />
+            <!-- Absent on subcon: the routing is the vendor's, so there is no
+                 answer to print — not a "No". -->
+            <ContentList
+              :label="t('Track routing')"
+              :value="wo.trackRouting === undefined ? '—' : wo.trackRouting ? t('Yes') : t('No')"
+            />
             <!-- Accumulated against the target, so partial records read as
                  progress rather than as a number with no scale. `plannedQty` IS
                  the adjusted figure — `adjustSubconWorkOrderQty` writes it — so
@@ -1917,17 +1904,6 @@ function suppressFabClick(e: MouseEvent) {
           <MpBannerIcon />
           <MpBannerTitle>{{ t('Supply the vendor first') }}</MpBannerTitle>
           <MpBannerDescription>{{ startBlockedMessage }}</MpBannerDescription>
-        </MpBanner>
-
-        <!-- Says WHY there is nothing to do here, which a bare page did not.
-             The action lives on the document, not on the work order. -->
-        <MpBanner v-if="pendingExternalDoc" variant="info" align-items="center" class="wod-subcon-blocked">
-          <MpBannerIcon />
-          <MpBannerTitle>{{ t('Waiting on Purchases') }}</MpBannerTitle>
-          <MpBannerDescription>
-            {{ pendingExternalDoc.next }} {{ t('from') }} {{ pendingExternalDoc.doc.number }}
-            — {{ t('open it and choose it from the Actions menu there.') }}
-          </MpBannerDescription>
         </MpBanner>
 
         <!-- Refused rather than offered as a choice: see `completeBlockedMessage`. -->
