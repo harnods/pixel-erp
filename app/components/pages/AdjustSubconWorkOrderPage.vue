@@ -23,7 +23,7 @@ import { workOrders, setSubconComponentQty, setSubconCostLineAmount, addSubconCo
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 import { warehouseTransfers } from '~/data/warehouseTransfers'
 import { evaluateComponentAdjustment } from '~/data/subconAccounting'
-import { SUBCON_BATCH_QTY, SUBCON_SERVICE_FEE, SUBCON_HANDLING_FEE, SUBCON_COST_DRIVERS } from '~/data/subcon'
+import { SUBCON_BATCH_QTY, SUBCON_SERVICE_FEE, SUBCON_HANDLING_FEE, SUBCON_COST_DRIVERS, SUBCON_DEFAULT_ACCOUNT_MAPPING } from '~/data/subcon'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -88,7 +88,7 @@ interface ComponentRow {
 const components = ref<ComponentRow[]>([])
 const outputQty = ref('')
 /** `isNew` lines do not exist on the order yet — they are created on save. */
-const costLines = ref<{ id: string; name: string; driver: string; draft: string; isNew?: boolean; baseline: number }[]>([])
+const costLines = ref<{ id: string; name: string; driver: string; mapping: string; draft: string; isNew?: boolean; baseline: number }[]>([])
 
 /** Load the form from the order. Runs once — this is an edit form, not a live view. */
 onMounted(() => {
@@ -120,20 +120,28 @@ onMounted(() => {
   const amountFor = (id: string, fallback: number) => c.costLineOverrides?.[id] ?? fallback
   const fromBom = (bom.value?.subconCost ?? []).map((l) => {
     const amount = amountFor(l.productId, Math.round(l.amount * factor))
-    return { id: l.productId, name: l.name, driver: l.costDriver, draft: String(amount), baseline: amount }
+    return {
+      id: l.productId, name: l.name, driver: l.costDriver,
+      mapping: l.accountMapping || SUBCON_DEFAULT_ACCOUNT_MAPPING,
+      draft: String(amount), baseline: amount,
+    }
   })
   const base = fromBom.length ? fromBom : [
     { id: 'svc-fee', name: t(SUBCON_SERVICE_FEE[c.scope].name), driver: 'Unit',
+      mapping: SUBCON_DEFAULT_ACCOUNT_MAPPING,
       draft: String(amountFor('svc-fee', Math.round(SUBCON_SERVICE_FEE[c.scope].amount * factor))),
       baseline: amountFor('svc-fee', Math.round(SUBCON_SERVICE_FEE[c.scope].amount * factor)) },
     { id: 'svc-handling', name: t(SUBCON_HANDLING_FEE.name), driver: 'Amount',
+      mapping: SUBCON_DEFAULT_ACCOUNT_MAPPING,
       draft: String(amountFor('svc-handling', Math.round(SUBCON_HANDLING_FEE.amount * factor))),
       baseline: amountFor('svc-handling', Math.round(SUBCON_HANDLING_FEE.amount * factor)) },
   ]
   costLines.value = [
     ...base,
     ...(c.extraCostLines ?? []).map(l => ({
-      id: l.id, name: l.name, driver: l.costDriver, draft: String(l.amount), baseline: l.amount,
+      id: l.id, name: l.name, driver: l.costDriver,
+      mapping: SUBCON_DEFAULT_ACCOUNT_MAPPING,
+      draft: String(l.amount), baseline: l.amount,
     })),
   ]
 })
@@ -324,6 +332,7 @@ function onSave() {
                 <th class="awo-th">{{ t('Cost component') }}</th>
                 <th class="awo-th">{{ t('Charged by') }}</th>
                 <th class="awo-th">{{ t('Unit') }}</th>
+                <th class="awo-th">{{ t('Account mapping') }}</th>
                 <th class="awo-th awo-th--num">{{ t('Amount') }}</th>
                 <th class="awo-th awo-th--action" />
               </tr>
@@ -350,6 +359,7 @@ function onSave() {
                     >{{ t(d) }}</button>
                   </span>
                 </td>
+                <td class="awo-td">{{ line.mapping }}</td>
                 <td class="awo-td awo-td--num">
                   <MpInput
                     :id="`awo-cost-${line.id}`" v-model="line.draft" type="number" min="0" class="awo-qty"

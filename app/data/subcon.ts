@@ -622,6 +622,15 @@ export function subconServiceProduct(id: string): SubconServiceProduct | undefin
   return SUBCON_SERVICE_PRODUCTS.find(p => p.id === id)
 }
 
+/**
+ * Where a subcon charge lands when nothing more specific says otherwise.
+ *
+ * The vendor's work capitalises into the goods, which is what the accounting
+ * rules already post (`Dr wip / Cr subconAccrual`) — so a charge with no product
+ * behind it, and a derived one like the withholding gross-up, map here too.
+ */
+export const SUBCON_DEFAULT_ACCOUNT_MAPPING = 'Work in process'
+
 /** How a vendor quotes a charge. */
 export const SUBCON_COST_DRIVERS = ['Unit', 'Amount', 'Batch'] as const
 

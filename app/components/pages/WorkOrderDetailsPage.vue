@@ -23,7 +23,7 @@ import {
   buildDocumentPlan, SUBCON_SCOPE_LABEL,
   SUBCON_SERVICE_FEE, SUBCON_HANDLING_FEE, SUBCON_BATCH_QTY,
   encodeSubconPrefill, subconVendorWarehouse, SUBCON_DOC_TYPE_LABEL, SUBCON_VENDORS,
-  isComponentSupply, componentSupplyStep, subconServiceProduct,
+  isComponentSupply, componentSupplyStep, subconServiceProduct, SUBCON_DEFAULT_ACCOUNT_MAPPING,
   type SubconDocKind, type SubconPrefillLine,
 } from '~/data/subcon'
 import { addAdjustment, stockAdjustments } from '~/data/stockAdjustments'
@@ -296,6 +296,9 @@ const subconCostLines = computed(() => {
     account: l.name,
     chargedBy: c.vendorName,
     unit: l.costDriver || t('Service'),
+    // A charge agreed after the order was created has no product behind it, so
+    // it lands where every subcon charge lands.
+    accountMapping: SUBCON_DEFAULT_ACCOUNT_MAPPING,
     amount: amountFor(l.id, l.amount),
   }))
 
@@ -308,6 +311,7 @@ const subconCostLines = computed(() => {
         // The service's own unit, so the purchase request is raised in the
         // same measure the charge was quoted in.
         unit: subconServiceProduct(l.productId)?.unit ?? l.costDriver ?? t('Service'),
+        accountMapping: l.accountMapping || SUBCON_DEFAULT_ACCOUNT_MAPPING,
         amount: amountFor(l.productId, Math.round(l.amount * factor)),
       })),
       ...extras,
@@ -319,12 +323,14 @@ const subconCostLines = computed(() => {
       account: t(SUBCON_SERVICE_FEE[c.scope].name),
       chargedBy: c.vendorName,
       unit: subconServiceProduct(c.scope === 'finished-good' ? 'svc-roast-pack' : 'svc-roast')?.unit ?? t('Service'),
+      accountMapping: SUBCON_DEFAULT_ACCOUNT_MAPPING,
       amount: amountFor('svc-fee', Math.round(SUBCON_SERVICE_FEE[c.scope].amount * factor)),
     },
     {
       account: t(SUBCON_HANDLING_FEE.name),
       chargedBy: c.vendorName,
       unit: subconServiceProduct('svc-handling')?.unit ?? t('Service'),
+      accountMapping: SUBCON_DEFAULT_ACCOUNT_MAPPING,
       amount: amountFor('svc-handling', Math.round(SUBCON_HANDLING_FEE.amount * factor)),
     },
     ...extras,
@@ -409,6 +415,7 @@ const subconGrossUpRow = computed(() => {
   return {
     account: t('Withholding borne by company'),
     chargedBy: subcon.value?.vendorName ?? '',
+    accountMapping: SUBCON_DEFAULT_ACCOUNT_MAPPING,
     amount: p.grossUp,
   }
 })
@@ -2070,6 +2077,7 @@ function suppressFabClick(e: MouseEvent) {
                 <tr>
                   <th class="wod-th">{{ t('Cost component') }}</th>
                   <th class="wod-th">{{ t('Charged by') }}</th>
+                  <th class="wod-th">{{ t('Account mapping') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Amount') }}</th>
                 </tr>
               </thead>
@@ -2077,6 +2085,7 @@ function suppressFabClick(e: MouseEvent) {
                 <tr v-for="l in subconCostLines" :key="l.account" class="wod-tr">
                   <td class="wod-td">{{ l.account }}</td>
                   <td class="wod-td">{{ l.chargedBy }}</td>
+                  <td class="wod-td">{{ l.accountMapping }}</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(l.amount) }}</td>
                 </tr>
 
@@ -2095,6 +2104,7 @@ function suppressFabClick(e: MouseEvent) {
                     </span>
                   </td>
                   <td class="wod-td">{{ subconGrossUpRow.chargedBy }}</td>
+                  <td class="wod-td">{{ subconGrossUpRow.accountMapping }}</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(subconGrossUpRow.amount) }}</td>
                 </tr>
               </tbody>
