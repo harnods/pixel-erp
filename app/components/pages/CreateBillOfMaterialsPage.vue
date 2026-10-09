@@ -678,7 +678,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               :label="t('Adding a sub-assembly product is not available yet.')"
               placement="top" use-portal
             >
-              <MpButton variant="secondary" size="sm" is-rounded @click.prevent>
+              <MpButton variant="secondary" is-rounded @click.prevent>
                 <template #leftIcon><MpIcon name="add" size="sm" /></template>
                 {{ t('Sub-assembly product') }}
               </MpButton>

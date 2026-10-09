@@ -2319,8 +2319,11 @@ function suppressFabClick(e: MouseEvent) {
               </tbody>
             </table>
           </div>
-          <!-- Same empty state as the page's other bottom tabs. -->
+          <!-- rule/empty-state-structure: illustration + title + caption, as the
+               other detail pages' in-page empty tabs render it. No create button:
+               documents are raised from the primary action, not from this tab. -->
           <div v-else class="wod-empty">
+            <img src="/illustrations/empty-folder.png" alt="" class="wod-empty-illustration" width="288" height="240" />
             <p class="wod-empty-title">{{ t('No transactions') }}</p>
             <p class="wod-empty-desc">{{ t('Transactions created for this work order will appear here.') }}</p>
           </div>
@@ -2581,6 +2584,7 @@ function suppressFabClick(e: MouseEvent) {
 .wod-bottom-tab--active { color: var(--mp-text-selected); font-weight: var(--mp-font-weights-semi-bold); }
 .wod-bottom-tab--active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--mp-background-brand-bold, #029861); }
 .wod-empty { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-1); padding: var(--mp-spacing-10) 0; }
+.wod-empty-illustration { width: var(--mp-sizes-72, 288px); height: var(--mp-sizes-60, 240px); object-fit: contain; margin-bottom: var(--mp-spacing-1); }
 .wod-empty-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .wod-empty-desc { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
