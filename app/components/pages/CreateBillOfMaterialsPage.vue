@@ -649,7 +649,19 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <label class="bf-check">
             <MpCheckbox id="bf-adjust" :is-checked="allowBomAdjustment" @change="allowBomAdjustment = !allowBomAdjustment" />
             <span class="bf-check-body">
-              <span class="bf-check-title">{{ t('Allow BOM adjustment') }}</span>
+              <span class="bf-check-title">
+                {{ t('Allow BOM adjustment') }}
+                <!-- Left usable rather than greyed out: the setting is real and
+                     is saved. The tooltip says how far it currently goes, so
+                     nobody plans around a capability that is still landing. -->
+                <MpTooltip
+                  id="bf-adjust-tip"
+                  :label="t('Adjusting raw materials from a work order is not fully available yet.')"
+                  placement="top" use-portal
+                >
+                  <MpIcon name="info" size="sm" />
+                </MpTooltip>
+              </span>
               <span class="bf-check-desc">{{ t('You can add or reduce raw materials to the same SKU when creating a work order.') }}</span>
             </span>
           </label>
@@ -659,11 +671,18 @@ onUnmounted(() => { stageObserver?.disconnect() })
         <section class="bf-section">
           <h2 class="bf-section-title">{{ t('Raw materials') }}</h2>
           <div class="bf-toolbar">
-            <!-- Placeholder action (non-functional in this prototype) -->
-            <MpButton variant="secondary" size="sm" is-rounded @click.prevent>
-              <template #leftIcon><MpIcon name="add" size="sm" /></template>
-              {{ t('Sub-assembly product') }}
-            </MpButton>
+            <!-- Still a placeholder. Left clickable, but it now says so on
+                 hover instead of silently doing nothing. -->
+            <MpTooltip
+              id="bf-subassembly-tip"
+              :label="t('Adding a sub-assembly product is not available yet.')"
+              placement="top" use-portal
+            >
+              <MpButton variant="secondary" size="sm" is-rounded @click.prevent>
+                <template #leftIcon><MpIcon name="add" size="sm" /></template>
+                {{ t('Sub-assembly product') }}
+              </MpButton>
+            </MpTooltip>
           </div>
           <div class="bf-table-scroll">
             <table class="bf-table">
@@ -1159,7 +1178,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
    only the checkbox + label area is clickable (not the full stage width). */
 .bf-check { display: inline-flex; width: fit-content; max-width: 660px; align-items: flex-start; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-4); cursor: pointer; }
 .bf-check-body { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
-.bf-check-title { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.bf-check-title {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
 .bf-check-desc { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md); }
 
 /* ── Attachment ──────────────────────────────────────────────────────────── */

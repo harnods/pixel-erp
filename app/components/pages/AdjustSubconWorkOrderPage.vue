@@ -88,6 +88,9 @@ interface ComponentRow {
 const components = ref<ComponentRow[]>([])
 const outputQty = ref('')
 /** `isNew` lines do not exist on the order yet — they are created on save. */
+/** Basic: the vendor's own materials, so this order has no components to adjust. */
+const subconIsBasic = computed(() => subcon.value?.method === 'basic')
+
 const costLines = ref<{ id: string; name: string; driver: string; mapping: string; draft: string; isNew?: boolean; baseline: number }[]>([])
 
 /** Load the form from the order. Runs once — this is an edit form, not a live view. */
@@ -264,8 +267,11 @@ function onSave() {
         <span>{{ t('Unit purchase price may change if there is an adjustment to the inventory value.') }}</span>
       </div>
 
-      <!-- ── Product components ── -->
-      <section class="awo-section">
+      <!-- ── Product components ──
+           Absent on a Basic order: the vendor sources every component from its
+           own stock, so there is no quantity of ours to revise and the three
+           adjustment outcomes below have nothing to act on. -->
+      <section v-if="!subconIsBasic" class="awo-section">
         <h2 class="awo-section-title">{{ t('Product components') }}</h2>
         <div class="awo-scroll">
           <table class="awo-table">

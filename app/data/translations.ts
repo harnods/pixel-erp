@@ -3819,4 +3819,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Subcontracting part of the quantity is not supported yet.": "Subkontrak sebagian jumlah belum didukung.",
   "Subcontracting does not support multi-level work orders yet.": "Subkontrak belum mendukung work order multi-level.",
   "The promised return date cannot be before the plan start date": "Tanggal pengembalian yang dijanjikan tidak boleh sebelum tanggal mulai rencana",
+  "Adjusting raw materials from a work order is not fully available yet.": "Penyesuaian bahan baku dari work order belum sepenuhnya tersedia.",
+  "Adding a sub-assembly product is not available yet.": "Menambahkan produk sub-rakitan belum tersedia.",
 }
