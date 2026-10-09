@@ -21,7 +21,7 @@ const title = computed(() => {
   return props.refNo ? `${base} · ${props.refNo}` : base
 })
 const caption = computed(() => {
-  const by = t('By {name} on {timestamp}').replace('{name}', props.reason.by).replace('{timestamp}', formatDateTimeLong(props.reason.at))
+  const by = `${props.reason.by} · ${formatDateTimeLong(props.reason.at)}`
   return props.pending ? `${by} · ${t('Waiting for approval')}` : by
 })
 </script>

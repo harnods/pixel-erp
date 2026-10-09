@@ -3948,4 +3948,11 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Unavailable (error state)": "Tidak tersedia (kondisi error)",
   "Request canceled by": "Pengajuan dibatalkan oleh",
   "Material consume & return": "Pemakaian & pengembalian material",
+  "{action} is waiting for approval from {names} (level {n}). Only Print is available until then.": "{action} menunggu persetujuan dari {names} (level {n}). Hanya Cetak yang tersedia sampai saat itu.",
+  "This work order is locked until its request is decided. Only Print is available.": "Perintah kerja ini dikunci sampai pengajuannya diputuskan. Hanya Cetak yang tersedia.",
+  "{name}: {reason}": "{name}: {reason}",
+  "Start": "Mulai",
+  "Adjustment": "Penyesuaian",
+  "Completion": "Penyelesaian",
+  "Cancel/close": "Batal/tutup",
 }

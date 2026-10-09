@@ -281,6 +281,14 @@ const notice = computed<Notice | null>(() => {
 })
 const hasNotices = computed(() => !!notice.value)
 
+/** Short request name for the banners — "Start", "Adjustment ADJ-0007", "Cancel/close CXL-0002". */
+const SHORT_TYPE: Record<WoApprovalRequest['type'], string> = {
+  start: 'Start work order', adjustment: 'Adjustment', completion: 'Completion', cancel: 'Cancel/close',
+}
+function shortTitle(req: WoApprovalRequest): string {
+  return req.ref ? `${t(SHORT_TYPE[req.type])} ${req.ref}` : t(SHORT_TYPE[req.type])
+}
+
 // Freeze — any pending request locks every action but Print and Cancel approval request.
 // Actions stay enabled and explain themselves inline (rule: never disabled).
 const guardText = ref('')
@@ -690,16 +698,13 @@ function suppressFabClick(e: MouseEvent) {
       <MpBanner v-else-if="notice?.kind === 'pending'" variant="warning">
         <MpBannerIcon />
         <MpBannerDescription>
-          {{ notice.request.type === 'start'
-            ? t('Starting this work order is waiting for approval. Material is reserved once it\'s approved.')
-            : t('1 request on this work order is waiting for approval. Stock and journal entries are held until it\'s approved.') }}
-          <span class="wod-notice-list" data-devchange="wo-approval-status">
-            <template v-if="notice.request.type !== 'start'">{{ t(requestTitle(notice.request)) }} · </template>{{ t('Waiting for {names} (approval level {n})').replace('{names}', waitingForText(notice.request)).replace('{n}', String(notice.request.currentLevel)) }}
+          <span data-devchange="wo-approval-status">
+            {{ t('{action} is waiting for approval from {names} (level {n}). Only Print is available until then.')
+              .replace('{action}', t(shortTitle(notice.request))).replace('{names}', waitingForText(notice.request)).replace('{n}', String(notice.request.currentLevel)) }}
           </span>
           <span v-if="notice.request.payload.note && notice.request.type !== 'start'" class="wod-notice-list" data-devchange="wo-approval-reason-banner">
-            {{ notice.request.type === 'adjustment' ? t('Adjustment reason') : t('Cancel/close reason') }}: {{ notice.request.payload.note }}
+            {{ t('Reason') }}: {{ notice.request.payload.note }}
           </span>
-          <span class="wod-notice-list">{{ t('Actions on this work order are locked until it\'s decided. Print stays available.') }}</span>
         </MpBannerDescription>
         <MpBannerLink>
           <MpButton variant="textLink" size="sm" @click="openApprovalLog()">{{ t('View approval log') }}</MpButton>

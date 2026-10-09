@@ -522,7 +522,7 @@ export const FREEZE_EXEMPT_ACTIONS = ['Print', 'Cancel approval request'] as con
  */
 export function guardMessage(woId: string): string | null {
   if (!isFrozen(woId)) return null
-  return 'This work order is locked while a request is waiting for approval. Only Print is available until it\'s approved, rejected or canceled.'
+  return 'This work order is locked until its request is decided. Only Print is available.'
 }
 
 // ── Mutations ───────────────────────────────────────────────────────────────

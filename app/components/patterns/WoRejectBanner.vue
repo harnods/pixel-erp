@@ -7,15 +7,15 @@
 import {
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpBannerCloseButton, MpButton,
 } from '@mekari/pixel3'
-import { rejectionOf, typeLabel, type WoApprovalRequest } from '~/data/woApproval'
-import { formatDateTimeLong } from '~/utils/date'
+import { rejectionOf, type WoApprovalRequest } from '~/data/woApproval'
 
 const props = defineProps<{ request: WoApprovalRequest }>()
 const emit = defineEmits<{ dismiss: []; resubmit: []; viewLog: [] }>()
 const { t } = useLocale()
 
 const rejection = computed(() => rejectionOf(props.request))
-const title = computed(() => `${t(typeLabel(props.request.type))}${props.request.ref ? ` ${props.request.ref}` : ''}`)
+const SHORT_TYPE = { start: 'Start work order', adjustment: 'Adjustment', completion: 'Completion', cancel: 'Cancel/close' } as const
+const title = computed(() => `${t(SHORT_TYPE[props.request.type])}${props.request.ref ? ` ${props.request.ref}` : ''}`)
 </script>
 
 <template>
@@ -23,8 +23,7 @@ const title = computed(() => `${t(typeLabel(props.request.type))}${props.request
     <MpBannerIcon />
     <MpBannerTitle>{{ t('{title} was rejected').replace('{title}', title) }}</MpBannerTitle>
     <MpBannerDescription>
-      {{ t('{name} rejected this on {timestamp}. Reason: {reason}')
-        .replace('{name}', rejection.user).replace('{timestamp}', formatDateTimeLong(rejection.at)).replace('{reason}', rejection.reason ?? '') }}
+      {{ t('{name}: {reason}').replace('{name}', rejection.user).replace('{reason}', rejection.reason ?? '') }}
     </MpBannerDescription>
     <MpBannerLink>
       <MpButton variant="textLink" size="sm" @click="emit('resubmit')">{{ request.type === 'start' ? t('Submit again') : t('Create again') }}</MpButton>
