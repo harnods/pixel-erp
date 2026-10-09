@@ -1630,6 +1630,13 @@ const otherOutputs = computed(() =>
     return { product: p?.name ?? '—', sku: p?.sku ?? '—', qty: o.qty, unit: o.unit, percentage: o.percentage, estCost: o.estCost }
   }))
 
+/**
+ * Returned quantities are reported by the vendor at completion, so the column
+ * appears only on a completed order. Showing it earlier would print a row of
+ * dashes against a question nobody has been asked yet.
+ */
+const showReturnedQty = computed(() => reportsSentQty.value && wo.value?.status === 'completed')
+
 /** What each component came back with, by SKU — shown against what was sent. */
 const returnedBySku = computed<Record<string, number>>(() => {
   const out: Record<string, number> = {}
@@ -1936,9 +1943,11 @@ function suppressFabClick(e: MouseEvent) {
                   <!-- Subcon reports what LEFT for the vendor; a normal work
                        order reports what was consumed in-house. -->
                   <th class="wod-th wod-th--num">{{ reportsSentQty ? t('Sent to vendor') : t('Consumed qty') }}</th>
-                  <!-- What came back unconsumed at completion. Beside what was
-                       sent, because it is the same material returning. -->
-                  <th v-if="reportsSentQty" class="wod-th wod-th--num">{{ t('Returned qty') }}</th>
+                  <!-- What came back unconsumed. Beside what was sent, because
+                       it is the same material returning — and only once the
+                       order is complete, which is when the vendor reports it.
+                       Before that the column has nothing to say. -->
+                  <th v-if="showReturnedQty" class="wod-th wod-th--num">{{ t('Returned qty') }}</th>
                   <th class="wod-th">{{ t('Unit') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Estimated cost') }}</th>
                 </tr>
@@ -1961,7 +1970,7 @@ function suppressFabClick(e: MouseEvent) {
                     <template v-else-if="sendsCompanyStock">{{ num(sentToVendorBySku[r.sku] ?? 0) }}/{{ num(plannedQtyFor(r)) }}</template>
                     <span v-else class="wod-muted">—</span>
                   </td>
-                  <td v-if="reportsSentQty" class="wod-td wod-td--num">
+                  <td v-if="showReturnedQty" class="wod-td wod-td--num">
                     <template v-if="returnedBySku[r.sku]">{{ num(returnedBySku[r.sku] ?? 0) }}</template>
                     <span v-else class="wod-muted">—</span>
                   </td>
