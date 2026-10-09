@@ -19,7 +19,7 @@ import WorkOrderFiltersDrawer, { type WorkOrderFiltersValue } from '~/components
 import { formatDate } from '~/utils/date'
 import { workOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
-import { workOrderApprovalStatus, displayStatus, isFrozen } from '~/data/woApproval'
+import { workOrderApprovalStatus, displayStatus, isFrozen, pendingForWorkOrder, waitingForText } from '~/data/woApproval'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const { t } = useLocale()
@@ -67,6 +67,13 @@ const APPROVAL_STATUS_OPTIONS = [
   { label: t('Rejected'),             value: 'rejected' },
 ]
 const approvalStatusFilter = ref('')
+
+// Approval icon tooltip — "Waiting for approval from {names} (level n)" per pending request.
+function approvalTooltip(wo: WorkOrder): string {
+  return pendingForWorkOrder(wo.id)
+    .map(r => t('Waiting for approval from {names} (level {n})').replace('{names}', waitingForText(r)).replace('{n}', String(r.currentLevel)))
+    .join('. ')
+}
 const statusFilter = ref('')
 const statusLabel = computed(() => STATUS_OPTIONS.find(o => o.value === statusFilter.value)?.label ?? '')
 
@@ -295,12 +302,23 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Status badge ── -->
     <template #cell-status="{ row }">
-      <!-- Work order status as-is — a pending request doesn't change it -->
-      <ErpStatusBadge
-        :status="displayStatus(row as unknown as WorkOrder)"
-        :label="displayStatus(row as unknown as WorkOrder) === 'in progress' ? t('In progress') : undefined"
-        data-devchange="wo-approval-status"
-      />
+      <!-- Work order status as-is — a pending request doesn't change it; an approval icon
+           (Pixel task-todo, the Approval log icon) + tooltip says who it's waiting for -->
+      <span class="wo-status-cell">
+        <ErpStatusBadge
+          :status="displayStatus(row as unknown as WorkOrder)"
+          :label="displayStatus(row as unknown as WorkOrder) === 'in progress' ? t('In progress') : undefined"
+          data-devchange="wo-approval-status"
+        />
+        <MpTooltip
+          v-if="approvalTooltip(row as unknown as WorkOrder)"
+          :id="`wo-approval-tt-${row.id}`" :label="approvalTooltip(row as unknown as WorkOrder)" placement="top" use-portal
+        >
+          <span class="wo-approval-icon" tabindex="0" :aria-label="approvalTooltip(row as unknown as WorkOrder)" data-devchange="wo-approval-list-indicator">
+            <MpIcon name="task-todo" size="sm" />
+          </span>
+        </MpTooltip>
+      </span>
     </template>
 
     <!-- ── Parent work order — em dash when top-level ── -->
@@ -440,6 +458,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
 /* Kebab — 20px tall so the actions cell stays within the 40px text-only row */
+.wo-status-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
+.wo-approval-icon { display: inline-flex; color: var(--mp-icon-default); cursor: default; }
 .row-kebab {
   display: flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-5, 20px);

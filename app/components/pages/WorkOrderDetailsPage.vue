@@ -23,19 +23,20 @@ import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpTooltip, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpIcon, MpSelect, MpDatePicker, MpButton, css, toast,
-  MpBanner, MpBannerIcon, MpBannerDescription, MpBannerLink, MpBannerCloseButton,
+  MpBanner, MpBannerIcon, MpBannerDescription, MpBannerCloseButton,
 } from '@mekari/pixel3'
 import ApprovalLogModal from '~/components/patterns/ApprovalLogModal.vue'
 import RejectTransactionModal from '~/components/patterns/RejectTransactionModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import WoTransactionModal, { type WoTransactionMode, type WoTransactionResult } from '~/components/patterns/WoTransactionModal.vue'
 import WoRejectBanner from '~/components/patterns/WoRejectBanner.vue'
+import ApprovalCommentPopover from '~/components/patterns/ApprovalCommentPopover.vue'
 import WoActionReasonBanner from '~/components/patterns/WoActionReasonBanner.vue'
 import {
   pendingForWorkOrder, rejectedNotices, rejectionOf, dismissRejection, guardMessage, startWorkOrder,
   approvalLogsForWorkOrder, approvalLogFor, queueFor, rejectRequest, waitingForText,
   approveRequest, displayStatus, typeLabel, requestTitle, requestById,
-  canCancelRequest, cancelRequest,
+  canCancelRequest, cancelRequest, requestsForWorkOrder, commentsFor, addComment,
   type WoApprovalRequest,
 } from '~/data/woApproval'
 import { valUnavailable } from '~/data/valApprovalRule'
@@ -334,16 +335,11 @@ const myRequest = computed(() => (wo.value ? queueFor(actor.value).find(r => r.w
 function approveHere() {
   const req = myRequest.value
   if (!req) return
-  const label = t(typeLabel(req.type))
   const result = approveRequest(req.id, actor.value)
   if (!result) return
   guardText.value = ''
-  toast.notify({
-    variant: 'success',
-    title: result.outcome === 'final'
-      ? t('Request approved. {Type} applied').replace('{Type}', label)
-      : t('Request approved. Waiting for level {n}').replace('{n}', String(result.nextLevel)),
-  })
+  // rule/btn-save-toast — short past-participle phrase
+  toast.notify({ variant: 'success', title: t('Request approved') })
 }
 
 // Reject from the header split button — reason required (RejectTransactionModal).
@@ -370,6 +366,16 @@ const approvalLogs = computed(() => {
   const one = requestById(approvalLogRequestId.value)
   return one ? [approvalLogFor(one)] : approvalLogsForWorkOrder(wo.value.id)
 })
+// Header Comments — the thread of the pending request, else the latest one.
+const commentRequest = computed(() => {
+  if (!wo.value) return undefined
+  return pending.value[0] ?? requestsForWorkOrder(wo.value.id).slice().sort((a, b) => (b.log[0]?.at ?? '').localeCompare(a.log[0]?.at ?? ''))[0]
+})
+const headerComments = computed(() => (commentRequest.value ? commentsFor(commentRequest.value.id) : [])
+  .map(c => ({ id: c.id, author: c.author, timestamp: c.timestamp, text: c.text })))
+function postHeaderComment(text: string) {
+  if (commentRequest.value) addComment(commentRequest.value.id, actor.value, text)
+}
 function openApprovalLog(requestId = '') {
   approvalLogRequestId.value = requestId
   approvalLogOpen.value = true
@@ -390,8 +396,9 @@ function onTransactionDone(result: WoTransactionResult, mode: WoTransactionMode)
   if (mode === 'adjustment' || mode === 'cancel') activeTopTab.value = 'Overview'
   toast.notify({
     variant: 'success',
-    title: result === 'submitted' ? t('Request submitted. Waiting for approval')
-      : result === 'auto-approved' ? t('Approved automatically. {Type} applied').replace('{Type}', t(typeLabel(mode)))
+    // rule/btn-save-toast — short past-participle phrase
+    title: result === 'submitted' ? t('Request submitted')
+      : result === 'auto-approved' ? t('Request approved')
         : t('Work order updated'),
   })
 }
@@ -635,6 +642,14 @@ function suppressFabClick(e: MouseEvent) {
         <MpTooltip id="wod-tt-approval" :label="t('Approval log')" placement="bottom" use-portal>
           <MpButton variant="ghost" class="detail-icon-btn" :aria-label="t('Approval log')" left-icon="task-todo" data-devchange="wo-approval-log-tab" @click="openApprovalLog()" />
         </MpTooltip>
+        <!-- Comments — the latest request's thread (rule/detail-approval-header: Approval log + Comments) -->
+        <ApprovalCommentPopover
+          id="wod-comments"
+          data-devchange="wo-approval-log-tab"
+          :comments="headerComments"
+          :author="actor"
+          @post="postHeaderComment"
+        />
         <MpPopover id="wod-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
             <MpButton class="detail-btn detail-btn--secondary" variant="secondary">
@@ -707,16 +722,11 @@ function suppressFabClick(e: MouseEvent) {
             {{ t('Reason') }}: {{ notice.request.payload.note }}
           </span>
         </MpBannerDescription>
-        <MpBannerLink>
-          <MpButton variant="textLink" size="sm" @click="openApprovalLog()">{{ t('View approval log') }}</MpButton>
-          <MpButton v-if="canCancelRequest(notice.request, actor)" variant="textLink" size="sm" data-devchange="wo-approval-cancel-request" @click="askCancelRequest(notice.request)">{{ t('Cancel approval request') }}</MpButton>
-        </MpBannerLink>
       </MpBanner>
       <WoRejectBanner
         v-else-if="notice?.kind === 'rejected'"
         :request="notice.request"
         @dismiss="dismissRejection(notice.request.id)"
-        @view-log="openApprovalLog(notice.request.id)"
       />
       <WoActionReasonBanner
         v-else-if="notice?.kind === 'reason' && actionReason"
@@ -1193,8 +1203,8 @@ function suppressFabClick(e: MouseEvent) {
       v-model:is-open="cancelRequestOpen"
       :title="t('Cancel approval request?')"
       :description="cancelRequestDescription"
-      :confirm-label="t('Cancel request')"
-      :cancel-label="t('Back')"
+      :confirm-label="t('Cancel approval request')"
+      :cancel-label="t('Cancel')"
       @confirm="confirmCancelRequest"
     />
     <RejectTransactionModal

@@ -134,18 +134,13 @@ function viewDetails(row: QueueRow) { router.push(`/work-orders/${row.workOrderI
 function approve(row: QueueRow) {
   const req = requestOf(row.id)
   if (!req) return
-  const label = t(typeLabel(req.type))
   const result = approveRequest(row.id, actor.value)
   if (!result) {
     toast.notify({ variant: 'error', title: t('Failed to process {n} requests').replace('{n}', '1') })
     return
   }
-  toast.notify({
-    variant: 'success',
-    title: result.outcome === 'final'
-      ? t('Request approved. {Type} applied').replace('{Type}', label)
-      : t('Request approved. Waiting for level {n}').replace('{n}', String(result.nextLevel)),
-  })
+  // rule/btn-save-toast — short past-participle phrase
+  toast.notify({ variant: 'success', title: t('Request approved') })
 }
 
 /** Would one more approval by the viewer clear the request's FINAL level? */
@@ -383,8 +378,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     v-model:is-open="cancelOpen"
     :title="t('Cancel approval request?')"
     :description="cancelDescription"
-    :confirm-label="t('Cancel request')"
-    :cancel-label="t('Back')"
+    :confirm-label="t('Cancel approval request')"
+    :cancel-label="t('Cancel')"
     @confirm="confirmCancel"
   />
 

@@ -5,12 +5,12 @@
  * header / Actions menu.
  */
 import {
-  MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpBannerCloseButton, MpButton,
+  MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerCloseButton,
 } from '@mekari/pixel3'
 import { rejectionOf, type WoApprovalRequest } from '~/data/woApproval'
 
 const props = defineProps<{ request: WoApprovalRequest }>()
-const emit = defineEmits<{ dismiss: []; viewLog: [] }>()
+const emit = defineEmits<{ dismiss: [] }>()
 const { t } = useLocale()
 
 const rejection = computed(() => rejectionOf(props.request))
@@ -25,9 +25,6 @@ const title = computed(() => `${t(SHORT_TYPE[props.request.type])}${props.reques
     <MpBannerDescription>
       {{ t('{name}: {reason}').replace('{name}', rejection.user).replace('{reason}', rejection.reason ?? '') }}
     </MpBannerDescription>
-    <MpBannerLink>
-      <MpButton variant="textLink" size="sm" @click="emit('viewLog')">{{ t('View approval log') }}</MpButton>
-    </MpBannerLink>
     <MpBannerCloseButton :aria-label="t('Dismiss')" @click="emit('dismiss')" />
   </MpBanner>
 </template>

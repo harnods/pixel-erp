@@ -61,17 +61,17 @@ export const DEV_CHANGES: DevChange[] = [
   },
   {
     id: 'wo-approval-list-indicator',
-    title: 'Work order list: approval status filter',
+    title: 'Work order list: approval icon + status filter',
     description:
-      'New Approval status filter (Waiting for approval / Rejected). The status column shows Draft or Waiting approval while a request is pending (no separate clock icon).',
-    date: '2026-10-02',
+      'Approval status filter (Waiting for approval / Rejected). The status badge stays as-is; while a request is pending an approval icon (Pixel task-todo, the Approval log icon) sits next to it with a tooltip "Waiting for approval from {names} (level n)".',
+    date: '2026-10-10',
     files: ['WorkOrdersIndexPage.vue'],
   },
   {
     id: 'wo-approval-detail',
     title: 'Work order detail: approval notices and guards',
     description:
-      'For an approver at the current level, the primary action (e.g. Start work order) becomes an Approve split button with Reject in its dropdown; pending and rejected notices (the pending notice opens the Approval log), "waiting for approval" captions on consumed / produced qty, and inline refusals when a pending request blocks an action (buttons stay enabled). Only ONE notice shows at a time — the latest: an inline refusal right after a click, otherwise the newest of the pending request (with its adjust / cancel reason), the undismissed rejection and the Adjust / Cancel-close reason.',
+      'For an approver at the current level, the primary action (e.g. Start work order) becomes an Approve split button with Reject in its dropdown; pending and rejected notices (the pending notice opens the Approval log), "waiting for approval" captions on consumed / produced qty, and inline refusals when a pending request blocks an action (buttons stay enabled). Notices carry no text buttons (the log opens from the header icon; Cancel approval request is in the Actions menu). Only ONE notice shows at a time — the latest: an inline refusal right after a click, otherwise the newest of the pending request (with its adjust / cancel reason), the undismissed rejection and the Adjust / Cancel-close reason.',
     date: '2026-10-10',
     files: ['WorkOrderDetailsPage.vue', 'WoTransactionModal.vue'],
   },
@@ -135,7 +135,7 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'wo-approval-log-tab',
     title: 'Approval log icon in the work order header',
     description:
-      'Like the transaction detail pages (rule/detail-approval-header), the work order header has an Approval log icon button left of Actions. It opens the Approval log modal with every request on the work order (pending first, then the latest decided): requester, levels, approved / rejected with reason / skipped / canceled. Replaces the Approval log tab.',
+      'Like the transaction detail pages (rule/detail-approval-header), the work order header has the Approval log and Comments icon buttons left of Actions (Comments = the pending request\'s thread, else the latest request\'s). It opens the Approval log modal with every request on the work order (pending first, then the latest decided): requester, levels, approved / rejected with reason / skipped / canceled. Replaces the Approval log tab.',
     date: '2026-10-09',
     files: ['WorkOrderDetailsPage.vue', 'ApprovalLogModal.vue'],
   },

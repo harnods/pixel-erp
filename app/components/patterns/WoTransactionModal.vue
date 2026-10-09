@@ -205,10 +205,10 @@ function submit() {
           </MpBanner>
 
           <!-- Approval rule from VAL — loading / error / gated / auto-approved -->
-          <div v-if="val.loading.value" class="wtm-rule-loading" role="status" data-devchange="wo-approval-val">
+          <MpBanner v-if="val.loading.value" variant="info" role="status" data-devchange="wo-approval-val">
             <MpSpinner size="sm" />
-            <span>{{ t('Checking the approval rule…') }}</span>
-          </div>
+            <MpBannerDescription>{{ t('Checking the approval rule…') }}</MpBannerDescription>
+          </MpBanner>
           <MpBanner v-else-if="val.error.value" variant="danger" data-devchange="wo-approval-val">
             <MpBannerIcon />
             <MpBannerDescription>{{ t('The approval rule couldn\'t be loaded.') }}</MpBannerDescription>
@@ -265,9 +265,4 @@ function submit() {
 .wtm-body-text { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .wtm-helper { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .wtm-error { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-danger); }
-.wtm-rule-loading {
-  display: flex; align-items: center; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4); border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-md);
-}
 </style>
