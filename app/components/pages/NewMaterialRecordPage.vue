@@ -218,7 +218,7 @@ function parseDMY(v: string): string {
 }
 
 // Work order approval — a pending adjustment / completion / cancel-close blocks new records.
-const guard = computed(() => (wo.value ? guardMessage(wo.value.id, 'transaction') : null))
+const guard = computed(() => (wo.value ? guardMessage(wo.value.id) : null))
 const guardShown = ref(false)
 // Consume is capped at the planned qty — flagged inline under the field, not clamped.
 function consumeExceeds(row: MaterialRow): boolean {

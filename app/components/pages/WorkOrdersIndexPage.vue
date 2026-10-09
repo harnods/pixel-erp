@@ -19,7 +19,7 @@ import WorkOrderFiltersDrawer, { type WorkOrderFiltersValue } from '~/components
 import { formatDate } from '~/utils/date'
 import { workOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
-import { workOrderApprovalStatus, displayStatus } from '~/data/woApproval'
+import { workOrderApprovalStatus, displayStatus, isFrozen } from '~/data/woApproval'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const { t } = useLocale()
@@ -49,12 +49,9 @@ const typeFilter = ref('')
 const typeLabel = computed(() => TYPE_OPTIONS.find(o => o.value === typeFilter.value)?.label ?? '')
 
 // Status — the six work-order statuses. Clearing (x) resets to show-all.
-// Work order approval adds two DISPLAY statuses, derived from pending requests:
-// Draft (start waiting for approval) and Waiting approval (adjustment / completion /
-// cancel-close waiting). The status filter matches what the badge shows.
-const STATUS_OPTIONS: { label: string; value: WorkOrderStatus | 'draft' | 'waiting approval' }[] = [
-  { label: t('Draft'),                value: 'draft'                },
-  { label: t('Waiting approval'),     value: 'waiting approval'     },
+// Work order approval doesn't add a status (grooming 2026-10-09) — a pending request
+// shows through the Approval status filter instead.
+const STATUS_OPTIONS: { label: string; value: WorkOrderStatus }[] = [
   { label: t('Not started'),          value: 'not started'          },
   { label: t('In progress'),          value: 'in progress'          },
   { label: t('Partially produced'),   value: 'partially produced'   },
@@ -298,7 +295,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Status badge ── -->
     <template #cell-status="{ row }">
-      <!-- Work order approval — Draft / Waiting approval while a request is pending -->
+      <!-- Work order status as-is — a pending request doesn't change it -->
       <ErpStatusBadge
         :status="displayStatus(row as unknown as WorkOrder)"
         :label="displayStatus(row as unknown as WorkOrder) === 'in progress' ? t('In progress') : undefined"
@@ -347,9 +344,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as WorkOrder)">{{ t('View details') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
-            <!-- Cancel — only a not-started WO can be canceled (nothing produced yet) -->
+            <!-- Cancel — only a not-started WO can be canceled (nothing produced yet), and
+                 not while a request is waiting for approval (the work order is frozen) -->
             <MpPopoverListItem
-              v-if="(row as unknown as WorkOrder).status === 'not started'"
+              v-if="(row as unknown as WorkOrder).status === 'not started' && !isFrozen((row as unknown as WorkOrder).id)"
+              data-devchange="wo-approval-freeze"
               :class="css({ color: 'var(--mp-text-critical)' })"
             >{{ t('Cancel') }}</MpPopoverListItem>
           </MpPopoverList>

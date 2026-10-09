@@ -71,8 +71,6 @@ const statusConfig: Record<string, StatusConfig> = {
   'pending put-away':{ type: 'warning', label: 'Pending put-away' },
   unbilled:   { type: 'warning',      label: 'Unbilled'   },
   'in review':{ type: 'warning',      label: 'In review'  },
-  // Work order approval — an adjustment / completion / cancel-close waiting for approval.
-  'waiting approval':{ type: 'warning', label: 'Waiting approval' },
   'on progress':{ type: 'warning',    label: 'On progress'},
   medium:     { type: 'warning',      label: 'Medium'     },
   recommended:{ type: 'warning',      label: 'Recommended'},

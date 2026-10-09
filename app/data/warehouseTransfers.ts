@@ -246,6 +246,8 @@ export interface ApprovalStage {
   waitingFor?: string
   /** Set when the stage was skipped (its only approver is the requester), with the reason. */
   skipped?: string
+  /** The requester canceled the request while this stage was awaiting a decision. */
+  canceled?: boolean
 }
 export interface ApprovalLog {
   requestedBy: string
@@ -261,6 +263,8 @@ export interface ApprovalLog {
   requestedLabel?: string
   /** Earlier rejected cycles of the same request, shown collapsed as "Previous submission". */
   previous?: ApprovalLog[]
+  /** Set when the requester canceled the request (Cancel approval request). */
+  canceled?: { user: string; date: string }
 }
 
 const REQUESTER_POOL = ['Budi Santoso', 'Rizki Pratama', 'Hendra Wijaya', 'Andi Kusuma', 'Ratna Sari', 'Farhan Nugroho', 'Lestari Putri', 'Yusuf Hakim', 'Bayu Pradana']

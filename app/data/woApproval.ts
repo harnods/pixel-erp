@@ -13,14 +13,23 @@
  * are held on the work order as `reservationPlan` until then). One Work order transaction
  * type can belong to only one workflow (see approvalWorkflows.ts).
  *
- * Everything the UI shows — the Awaiting approval list + badge, the work-order list
- * clock indicator, detail notices, action guards and "waiting for approval" captions —
- * is DERIVED from these request records (never stored per row).
+ * Everything the UI shows — the Awaiting approval list + badge, detail notices, the
+ * action freeze and "waiting for approval" captions — is DERIVED from these request
+ * records (never stored per row).
+ *
+ * FE/BE grooming (2026-10-09):
+ *   • the work order status stays as-is — no Draft / Waiting approval display status;
+ *   • while ANY request is pending the work order is FROZEN: every action refuses
+ *     (inline) except Print and the requester's Cancel approval request;
+ *   • an adjustment shows its new data right away (it's written to the work order at
+ *     submission and reverted if the request is rejected or canceled);
+ *   • the requester can cancel a request until the first approver approves it;
+ *   • a rejection notice stays until the user dismisses it.
  */
 import { reactive } from 'vue'
 import { TODAY } from './master'
 import { loadSnapshot, saveSnapshot } from './persist'
-import { workOrders, persistWorkOrders, type WorkOrder } from './workOrders'
+import { workOrders, persistWorkOrders, type WorkOrder, type WorkOrderActionReason } from './workOrders'
 import { billOfMaterials } from './billOfMaterials'
 import { recordsForWorkOrder } from './materialConsumeReturn'
 import { formatIDR } from '~/utils/currency'
@@ -51,11 +60,13 @@ export interface WoRequestPayload {
   adjustmentDate?: string
   /** completion — final produced qty */
   producedQty?: number
+  /** adjustment — planned qty before the request, restored if it's rejected or canceled */
+  previousPlannedQty?: number
 }
 
 export interface WoApprovalEvent {
   /** 'skipped' — the level's only possible approver is the requester (no self-approval) */
-  event: 'submitted' | 'resubmitted' | 'approved' | 'rejected' | 'skipped'
+  event: 'submitted' | 'resubmitted' | 'approved' | 'rejected' | 'skipped' | 'canceled'
   /** 1-based approval level (approved / rejected only) */
   level?: number
   user: string
@@ -80,7 +91,8 @@ export interface WoApprovalRequest {
   /** ISO date of the underlying transaction */
   transactionDate: string
   payload: WoRequestPayload
-  status: 'pending' | 'executed' | 'rejected'
+  /** 'canceled' — withdrawn by the requester before anyone approved it */
+  status: 'pending' | 'executed' | 'rejected' | 'canceled'
   /** 1-based level awaiting a decision; null once decided */
   currentLevel: number | null
   levels: WoApprovalLevel[]
@@ -151,6 +163,7 @@ function buildSeed(): WoApprovalRequest[] {
       requester: PPIC, ruleId: 'awf-009', transactionDate: dateOnly(0),
       payload: {
         plannedQty: 180,
+        previousPlannedQty: 200,
         changes: [{ field: 'Planned qty', from: '200', to: '180' }],
         note: 'Mixer 2 down, batch size reduced',
         adjustmentDate: dateOnly(0),
@@ -180,6 +193,7 @@ function buildSeed(): WoApprovalRequest[] {
       requester: LINE_LEADER, ruleId: 'awf-009', transactionDate: dateOnly(-2),
       payload: {
         plannedQty: 46,
+        previousPlannedQty: 40,
         changes: [{ field: 'Planned qty', from: '40', to: '46' }],
         note: 'Scrap on shift 2, extra material needed',
         adjustmentDate: dateOnly(-2),
@@ -199,16 +213,33 @@ const SEED_COMMENTS: WoComment[] = [
   { id: 'woc-3', requestId: 'wor-005', author: PPIC, timestamp: at(0, '06:42'), text: 'Maintenance ticket MT-221 is attached to the work order.' },
 ]
 
-// v2 — MVP scope change (start replaces creation; consume/return not gated).
-const REQ_KEY = 'wo-approval-requests-v4'
+// v5 — grooming 2026-10-09 (adjustments carry previousPlannedQty; canceled requests).
+const REQ_KEY = 'wo-approval-requests-v5'
 const COMMENT_KEY = 'wo-approval-comments-v2'
+const DISMISSED_KEY = 'wo-approval-dismissed-v1'
 
 export const woApprovalRequests = reactive<WoApprovalRequest[]>(loadSnapshot<WoApprovalRequest>(REQ_KEY) ?? buildSeed())
 export const woApprovalComments = reactive<WoComment[]>(loadSnapshot<WoComment>(COMMENT_KEY) ?? [...SEED_COMMENTS])
+/** Rejected request ids whose notice was dismissed (× on the banner). */
+export const dismissedRejections = reactive<string[]>(loadSnapshot<string>(DISMISSED_KEY) ?? [])
 
 export function persistWoApproval(): void {
   saveSnapshot(REQ_KEY, woApprovalRequests)
   saveSnapshot(COMMENT_KEY, woApprovalComments)
+  saveSnapshot(DISMISSED_KEY, dismissedRejections)
+}
+
+// A pending adjustment is shown on the work order right away — make sure the seeded
+// ones are reflected (the work orders are seeded / persisted separately).
+// Same for the seeded Adjust / Cancel-close reasons (shown in a notice on the detail page).
+for (const r of woApprovalRequests) {
+  if (r.status !== 'pending') continue
+  const wo = workOrders.find(w => w.id === r.workOrderId)
+  if (!wo) continue
+  if (r.type === 'adjustment' && r.payload.plannedQty != null && wo.plannedQty === r.payload.previousPlannedQty) wo.plannedQty = r.payload.plannedQty
+  if ((r.type === 'adjustment' || r.type === 'cancel') && r.payload.note && !wo.actionReason) {
+    wo.actionReason = { type: r.type, reason: r.payload.note, by: r.requester, at: r.log[0]?.at ?? r.transactionDate, requestId: r.id }
+  }
 }
 
 // ── Users ───────────────────────────────────────────────────────────────────
@@ -280,6 +311,25 @@ export function preSubmitApprovers(type: WoTransactionType, requester: string): 
   const rule = findGatingRule(type, requester)
   if (!rule) return null
   return levelsFromRule(rule)[0]?.approvers ?? []
+}
+
+/** One level of the rule as the requester will meet it — `skipped` when nobody but them can act. */
+export interface WoRuleLevelPreview {
+  level: number
+  matchType: 'any' | 'all'
+  approvers: string[]
+  skipped: boolean
+}
+
+/** The gating rule's levels for a requester (what the VAL approval-rule service answers). */
+export function ruleLevelsPreview(type: WoTransactionType, requester: string): { rule: ApprovalWorkflowRule; levels: WoRuleLevelPreview[] } | null {
+  const rule = findGatingRule(type, requester)
+  if (!rule) return null
+  const levels = levelsFromRule(rule).map((l, i) => {
+    const eligible = rule.allowSelfApproval ? l.approvers : l.approvers.filter(a => a !== requester)
+    return { level: i + 1, matchType: l.matchType, approvers: l.approvers, skipped: !eligible.length }
+  })
+  return { rule, levels }
 }
 
 // ── Queries ─────────────────────────────────────────────────────────────────
@@ -384,21 +434,38 @@ export function rejectionOf(req: WoApprovalRequest): WoApprovalEvent | undefined
   return req.log.find(e => e.event === 'rejected')
 }
 
-/** Latest rejected request on a work order (detail notice) — hidden once a newer one of the same type exists. */
+/** When a request was decided (its last event). */
+function decidedAt(req: WoApprovalRequest): string {
+  return req.log[req.log.length - 1]?.at ?? submittedAt(req)
+}
+
+/**
+ * Latest rejected request on a work order — set when the newest decided request (canceled
+ * ones aside) was rejected and nothing is pending. Drives the list's Approval status filter.
+ */
 export function latestRejectedRequest(woId: string): WoApprovalRequest | undefined {
   const all = requestsForWorkOrder(woId)
-  // Once anything on the work order is approved (final level), older rejection notices
-  // are cleared — the banners disappear after an approval.
-  const lastApprovedAt = all
-    .filter(r => r.status === 'executed')
-    .map(r => r.log[r.log.length - 1]?.at ?? '')
-    .sort()
-    .pop() ?? ''
-  return all
-    .filter(r => r.status === 'rejected')
-    .filter(r => rejectionOf(r)!.at > lastApprovedAt)
-    .filter(r => !all.some(o => o.type === r.type && o.status !== 'rejected' && submittedAt(o) > submittedAt(r)))
-    .sort((a, b) => rejectionOf(b)!.at.localeCompare(rejectionOf(a)!.at))[0]
+  if (all.some(r => r.status === 'pending')) return undefined
+  const newest = all
+    .filter(r => r.status === 'executed' || r.status === 'rejected')
+    .sort((a, b) => decidedAt(b).localeCompare(decidedAt(a)))[0]
+  return newest?.status === 'rejected' ? newest : undefined
+}
+
+/**
+ * Rejection notices on the work order detail, newest first. A rejection notice is sticky:
+ * it stays until the user dismisses it (×) or acts on it (Submit again / Create again).
+ */
+export function rejectedNotices(woId: string): WoApprovalRequest[] {
+  return requestsForWorkOrder(woId)
+    .filter(r => r.status === 'rejected' && !dismissedRejections.includes(r.id))
+    .sort((a, b) => decidedAt(b).localeCompare(decidedAt(a)))
+}
+
+export function dismissRejection(id: string): void {
+  if (dismissedRejections.includes(id)) return
+  dismissedRejections.push(id)
+  persistWoApproval()
 }
 
 /** Work order list filter — Approval status. */
@@ -429,36 +496,33 @@ export function consumableQty(woId: string, productId: string): number {
 }
 
 /**
- * Status the work order SHOWS (list + detail badge), derived from its pending requests:
- * a Start waiting for approval shows "Draft"; an adjustment, completion or cancel/close
- * waiting shows "Waiting approval". Once approved the stored status applies (Start →
- * In progress, adjustment → unchanged, completion → Completed, cancel/close → Canceled).
+ * Status the work order shows (list + detail badge). Grooming 2026-10-09: the work order
+ * status stays as-is while a request is pending — there's no Draft / Waiting approval
+ * status; the freeze notice and the Approval status filter carry the signal instead.
  */
-export type WoDisplayStatus = WorkOrder['status'] | 'draft' | 'waiting approval'
+export type WoDisplayStatus = WorkOrder['status']
 export function displayStatus(wo: WorkOrder): WoDisplayStatus {
-  const pending = pendingForWorkOrder(wo.id)
-  if (pending.some(r => r.type === 'start')) return 'draft'
-  if (pending.length) return 'waiting approval'
   return wo.status
 }
 
-// ── Guards (F-3) ────────────────────────────────────────────────────────────
+// ── Freeze (F-3) ────────────────────────────────────────────────────────────
 
-/** 'complete' covers both completion and cancel/close — both need nothing else pending. */
-export type WoAction = 'start' | 'transaction' | 'complete'
+/** A work order with any request waiting for approval is frozen. */
+export function isFrozen(woId: string): boolean {
+  return pendingForWorkOrder(woId).length > 0
+}
 
-/** Inline refusal message for an action on a work order, or null when it may proceed. */
-export function guardMessage(woId: string, action: WoAction): string | null {
-  const pending = pendingForWorkOrder(woId)
-  if (pending.some(r => r.type === 'start')) return 'This work order can\'t start until it\'s approved.'
-  if (pending.some(r => r.type === 'completion')) return 'This work order is locked while its completion is waiting for approval.'
-  if (pending.some(r => r.type === 'cancel')) return 'This work order is locked while its cancel/close is waiting for approval.'
-  if (pending.some(r => r.type === 'adjustment')) return 'Resolve the adjustment waiting for approval on this work order first.'
-  if (action === 'complete' && pending.length) {
-    const types = [...new Set(pending.map(r => typeLabel(r.type).toLowerCase()))]
-    return `Resolve the requests waiting for approval on this work order first: ${joinNames(types)}.`
-  }
-  return null
+/** Actions that stay available on a frozen work order. */
+export const FREEZE_EXEMPT_ACTIONS = ['Print', 'Cancel approval request'] as const
+
+/**
+ * Inline refusal for any action on a frozen work order (Start, Adjust, Complete, Cancel,
+ * Edit, Delete, Replace attachment, material consume / return …), or null when it may
+ * proceed. Buttons stay enabled (rule: never disabled) and explain themselves.
+ */
+export function guardMessage(woId: string): string | null {
+  if (!isFrozen(woId)) return null
+  return 'This work order is locked while a request is waiting for approval. Only Print is available until it\'s approved, rejected or canceled.'
 }
 
 // ── Mutations ───────────────────────────────────────────────────────────────
@@ -506,10 +570,31 @@ export function submitRequest(input: {
     levels: levelsFromRule(rule),
     log: [{ event: 'submitted', user: input.requester, at: now }],
   }
+  // An adjustment shows its new data right away; reverted if rejected or canceled.
+  const wo = workOrderOf(req)
+  if (req.type === 'adjustment' && wo && req.payload.plannedQty != null) {
+    req.payload.previousPlannedQty ??= wo.plannedQty
+    wo.plannedQty = req.payload.plannedQty
+    persistWorkOrders()
+  }
   woApprovalRequests.push(req)
   advanceSkippedLevels(req)
   persistWoApproval()
   return req
+}
+
+/** Undo what was shown early (the adjusted planned qty) when a request won't be applied. */
+function revert(req: WoApprovalRequest): void {
+  const wo = workOrderOf(req)
+  if (wo?.actionReason?.requestId === req.id) {
+    wo.actionReason = undefined
+    persistWorkOrders()
+  }
+  if (req.type !== 'adjustment' || !wo || req.payload.previousPlannedQty == null) return
+  if (wo.plannedQty === req.payload.plannedQty) {
+    wo.plannedQty = req.payload.previousPlannedQty
+    persistWorkOrders()
+  }
 }
 
 /**
@@ -537,7 +622,7 @@ function execute(req: WoApprovalRequest) {
       startWorkOrder(wo)
       return
     case 'adjustment':
-      // Revisions are held on the work order only — the BOM is never touched.
+      // Already shown on the work order since submission — the BOM is never touched.
       if (req.payload.plannedQty != null) wo.plannedQty = req.payload.plannedQty
       break
     case 'completion':
@@ -589,6 +674,27 @@ export function rejectRequest(id: string, user: string, reason: string): boolean
   req.log.push({ event: 'rejected', level: req.currentLevel!, user, at: new Date().toISOString(), reason: reason.trim() })
   req.status = 'rejected'
   req.currentLevel = null
+  revert(req)
+  persistWoApproval()
+  return true
+}
+
+/**
+ * The requester may cancel (withdraw) their request until the first approver approves it.
+ * Skipped levels don't count as an approval.
+ */
+export function canCancelRequest(req: WoApprovalRequest, user: string): boolean {
+  return req.status === 'pending' && req.requester === user && !req.log.some(e => e.event === 'approved')
+}
+
+/** Cancel approval request — nothing is applied and the work order unfreezes. */
+export function cancelRequest(id: string, user: string): boolean {
+  const req = woApprovalRequests.find(r => r.id === id)
+  if (!req || !canCancelRequest(req, user)) return false
+  req.log.push({ event: 'canceled', level: req.currentLevel ?? undefined, user, at: new Date().toISOString() })
+  req.status = 'canceled'
+  req.currentLevel = null
+  revert(req)
   persistWoApproval()
   return true
 }
@@ -614,16 +720,20 @@ function stagesFor(req: WoApprovalRequest): ApprovalStage[] {
     const level = i + 1
     const rejectedHere = rejection?.level === level ? rejection : undefined
     const skipped = req.log.some(e => e.event === 'skipped' && e.level === level)
-    const reached = req.status !== 'pending'
-      ? level <= (rejection?.level ?? req.levels.length)
-      : level <= (req.currentLevel ?? 0)
-    // A rejection stops the chain — later levels were never reached, so they're left out.
-    if (!reached && rejection) return
+    const canceledAt = req.log.find(e => e.event === 'canceled')?.level
+    const reached = req.status === 'canceled'
+      ? level <= (canceledAt ?? 0)
+      : req.status !== 'pending'
+        ? level <= (rejection?.level ?? req.levels.length)
+        : level <= (req.currentLevel ?? 0)
+    // A rejection or cancel stops the chain — later levels were never reached, so they're left out.
+    if (!reached && (rejection || req.status === 'canceled')) return
     stages.push({
       title: `Approval level ${level}`,
       rule: l.matchType === 'all' ? 'everyone' : 'anyone',
       approvers: l.approvers,
       approvals: approvalsAtLevel(req, level).map(e => ({ user: e.user, date: e.at })),
+      canceled: req.status === 'canceled' && canceledAt === level,
       rejection: rejectedHere ? { user: rejectedHere.user, date: rejectedHere.at, reason: rejectedHere.reason ?? '' } : undefined,
       waitingFor: reached ? undefined : `Waiting for level ${level - 1}`,
       skipped: skipped ? `Skipped — ${req.requester} requested this and is the only approver` : undefined,
@@ -694,7 +804,72 @@ export function approvalLogFor(req: WoApprovalRequest): ApprovalLog {
     requestedAt: first?.at ?? req.transactionDate,
     requestedLabel: 'Requested by',
     stages: stagesFor(req),
+    canceled: canceledEvent(req),
   }
+}
+
+function canceledEvent(req: WoApprovalRequest): { user: string; date: string } | undefined {
+  const e = req.log.find(x => x.event === 'canceled')
+  return e ? { user: e.user, date: e.at } : undefined
+}
+
+// ── Approval log tab (WO detail) ──────────────────────────────────────────────
+
+export type WoRequestStatusLabel = 'Waiting for approval' | 'Approved' | 'Rejected' | 'Canceled'
+export const REQUEST_STATUS_LABEL: Record<WoApprovalRequest['status'], WoRequestStatusLabel> = {
+  pending: 'Waiting for approval', executed: 'Approved', rejected: 'Rejected', canceled: 'Canceled',
+}
+
+export interface WoApprovalHistoryRow {
+  id: string
+  /** submitted at (ISO) */
+  date: string
+  type: string
+  ref: string
+  requestedBy: string
+  /** the approval workflow (rule) that held it */
+  rule: string
+  status: WoApprovalRequest['status']
+  /** latest decision, e.g. "Rejected by Budi Santoso: <reason>" / "Waiting for Sari Indah or Dewi Rahayu (level 2)" */
+  lastAction: string
+}
+
+function lastActionText(req: WoApprovalRequest): string {
+  if (req.status === 'pending') return `Waiting for ${waitingForText(req)} (approval level ${req.currentLevel})`
+  const last = [...req.log].reverse().find(e => e.event === 'approved' || e.event === 'rejected' || e.event === 'canceled' || e.event === 'skipped')
+  if (!last) return ''
+  if (last.event === 'rejected') return `Rejected by ${last.user}: ${last.reason ?? ''}`
+  if (last.event === 'canceled') return `Canceled by ${last.user}`
+  if (last.event === 'skipped') return 'Approved automatically (requester is the only approver)'
+  return `Approved by ${last.user}`
+}
+
+/** Every request on a work order, newest first — the Approval log tab. */
+export function approvalHistoryForWorkOrder(woId: string): WoApprovalHistoryRow[] {
+  return requestsForWorkOrder(woId)
+    .slice()
+    .sort((a, b) => submittedAt(b).localeCompare(submittedAt(a)))
+    .map(r => ({
+      id: r.id,
+      date: submittedAt(r),
+      type: typeLabel(r.type),
+      ref: r.ref ?? '—',
+      requestedBy: r.requester,
+      rule: approvalWorkflows.find(w => w.id === r.ruleId)?.name ?? '—',
+      status: r.status,
+      lastAction: lastActionText(r),
+    }))
+}
+
+/** Keep the Adjust / Cancel-close reason on the work order — shown in a detail notice. */
+export function recordActionReason(wo: WorkOrder, input: Omit<WorkOrderActionReason, 'at'>): void {
+  wo.actionReason = { ...input, at: new Date().toISOString() }
+  persistWorkOrders()
+}
+
+/** The request an action reason belongs to (to say whether it's still waiting). */
+export function requestById(id: string | undefined): WoApprovalRequest | undefined {
+  return id ? woApprovalRequests.find(r => r.id === id) : undefined
 }
 
 /** Logs for a work order: pending requests first, then the last 5 decided. */

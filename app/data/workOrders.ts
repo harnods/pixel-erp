@@ -57,6 +57,21 @@ export interface WorkOrder {
    * here, unreserved; startWorkOrder() moves them into materialReservations.
    */
   reservationPlan?: Record<string, WorkOrderMaterialReservation>
+  /**
+   * Work order approval (grooming 2026-10-09) — the reason given on the latest Adjust or
+   * Cancel/close, shown in a notice on the detail page. `requestId` is set when it went
+   * through approval; it's cleared if that request is rejected or canceled.
+   */
+  actionReason?: WorkOrderActionReason
+}
+
+export interface WorkOrderActionReason {
+  type: 'adjustment' | 'cancel'
+  reason: string
+  by: string
+  /** ISO timestamp */
+  at: string
+  requestId?: string
 }
 
 export interface WorkOrderMaterialReservation {

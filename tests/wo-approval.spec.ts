@@ -7,6 +7,10 @@
  *   awf-007 start (active) · awf-009 adjustment · awf-010 completion · awf-011 cancel/close
  *           (inactive) — level 1 Budi Santoso, level 2 Sari Indah or Dewi Rahayu (any).
  * Only ACTIVE workflows gate a transaction or block a type.
+ *
+ * Grooming 2026-10-09: status stays as-is; a pending request freezes the work order;
+ * a pending adjustment shows its data right away; the requester can cancel a request
+ * until someone approves; rejection notices are sticky until dismissed; VAL stand-in.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
@@ -14,10 +18,13 @@ import {
   submitRequest, findGatingRule, preSubmitApprovers, guardMessage, pendingForWorkOrder,
   approvedConsumedQty, joinNames, approvalLogFor, workOrderApprovalStatus, latestRejectedRequest,
   consumableQty, plannedMaterialQty, completionSummary, startWorkOrder, displayStatus,
+  isFrozen, canCancelRequest, cancelRequest, rejectedNotices, dismissRejection, dismissedRejections,
+  approvalHistoryForWorkOrder, recordActionReason, ruleLevelsPreview,
   LEVEL_1, LEVEL_2, PPIC, LINE_LEADER,
 } from '~/data/woApproval'
 import { workOrders } from '~/data/workOrders'
 import { approvalWorkflows, woTypesTakenByOthers, woRuleTypes, activeWoConflicts } from '~/data/approvalWorkflows'
+import { useValApprovalRule, valUnavailable } from '~/data/valApprovalRule'
 
 const SARI = LEVEL_2[0]!
 const wo = (id: string) => workOrders.find(w => w.id === id)!
@@ -32,6 +39,7 @@ beforeEach(() => {
   woApprovalRequests.splice(0, woApprovalRequests.length, ...JSON.parse(JSON.stringify(seedRequests)))
   workOrders.splice(0, workOrders.length, ...JSON.parse(JSON.stringify(seedWorkOrders)))
   approvalWorkflows.splice(0, approvalWorkflows.length, ...JSON.parse(JSON.stringify(seedRules)))
+  dismissedRejections.splice(0)
 })
 
 describe('Awaiting approval list', () => {
@@ -134,7 +142,7 @@ describe('Start work order — reservation on approval', () => {
   })
 
   it('a pending start blocks starting again; a rejected start reserves nothing', () => {
-    expect(guardMessage('wo-25', 'start')).toMatch(/can't start/)
+    expect(guardMessage('wo-25')).toMatch(/locked/)
     rejectRequest('wor-002', LEVEL_1, 'Line not free')
     expect(wo('wo-2').status).toBe('not started')
     expect(wo('wo-2').materialReservations).toBeUndefined()
@@ -145,8 +153,9 @@ describe('Start work order — reservation on approval', () => {
 describe('approve / reject — level by level', () => {
   it('level 1 moves to level 2 without executing; the final level executes', () => {
     expect(approveRequest('wor-005', LEVEL_1)).toEqual({ outcome: 'next', nextLevel: 2 })
-    expect(wo('wo-6').plannedQty).toBe(200)
+    expect(req('wor-005').status).toBe('pending')
     expect(approveRequest('wor-005', SARI)).toEqual({ outcome: 'final' })
+    expect(req('wor-005').status).toBe('executed')
     expect(wo('wo-6').plannedQty).toBe(180)
   })
 
@@ -166,7 +175,7 @@ describe('approve / reject — level by level', () => {
   it('cancel/close locks the work order and cancels it on final approval', () => {
     rule('awf-011').isActive = true
     const r = submitRequest({ workOrderId: 'wo-9', type: 'cancel', requester: PPIC, payload: { note: 'Order withdrawn' } })!
-    expect(guardMessage('wo-9', 'transaction')).toMatch(/cancel\/close/)
+    expect(isFrozen('wo-9')).toBe(true)
     approveRequest(r.id, LEVEL_1)
     approveRequest(r.id, SARI)
     expect(wo('wo-9').status).toBe('canceled')
@@ -174,11 +183,10 @@ describe('approve / reject — level by level', () => {
 })
 
 describe('guards and quantities', () => {
-  it('refuses inline per pending request type', () => {
-    expect(guardMessage('wo-6', 'transaction')).toMatch(/adjustment/)
-    expect(guardMessage('wo-7', 'transaction')).toMatch(/locked/)
-    expect(guardMessage('wo-8', 'transaction')).toMatch(/cancel\/close/)
-    expect(guardMessage('wo-3', 'transaction')).toBeNull()
+  it('any pending request freezes the work order (only Print / Cancel approval request stay)', () => {
+    for (const id of ['wo-6', 'wo-7', 'wo-8', 'wo-25']) expect(guardMessage(id)).toMatch(/Only Print is available/)
+    expect(guardMessage('wo-3')).toBeNull()
+    expect(isFrozen('wo-26')).toBe(false)
   })
 
   it('consume (not gated) is capped at planned − consumed', () => {
@@ -188,11 +196,10 @@ describe('guards and quantities', () => {
 })
 
 describe('derived list state and log', () => {
-  it('the status shows Draft while a start waits, Waiting approval for other requests', () => {
-    expect(displayStatus(wo('wo-25'))).toBe('draft')
-    expect(displayStatus(wo('wo-6'))).toBe('waiting approval')
-    expect(displayStatus(wo('wo-7'))).toBe('waiting approval')
-    expect(displayStatus(wo('wo-8'))).toBe('waiting approval')
+  it('the status stays as-is while a request is pending', () => {
+    expect(displayStatus(wo('wo-25'))).toBe('not started')
+    expect(displayStatus(wo('wo-6'))).toBe('in progress')
+    expect(displayStatus(wo('wo-7'))).toBe(wo('wo-7').status)
     approveRequest('wor-001', SARI)
     expect(displayStatus(wo('wo-25'))).toBe('in progress')
     approveRequest('wor-005', LEVEL_1)
@@ -200,12 +207,14 @@ describe('derived list state and log', () => {
     expect(displayStatus(wo('wo-6'))).toBe('in progress')
   })
 
-  it('every banner clears once the work order’s pending request is approved', () => {
-    expect(latestRejectedRequest('wo-8')?.id).toBe('wor-008')
+  it('a rejection notice stays until it is dismissed', () => {
+    expect(rejectedNotices('wo-8').map(r => r.id)).toEqual(['wor-008'])
     approveRequest('wor-007', LEVEL_1)
     approveRequest('wor-007', SARI)
     expect(pendingForWorkOrder('wo-8')).toHaveLength(0)
-    expect(latestRejectedRequest('wo-8')).toBeUndefined()
+    expect(rejectedNotices('wo-8').map(r => r.id)).toEqual(['wor-008'])
+    dismissRejection('wor-008')
+    expect(rejectedNotices('wo-8')).toHaveLength(0)
   })
 
   it('indicator / approval status come from requests', () => {
@@ -222,5 +231,70 @@ describe('derived list state and log', () => {
 
   it('joins names without a serial comma', () => {
     expect(joinNames(['A', 'B', 'C'])).toBe('A, B and C')
+  })
+})
+
+describe('grooming 2026-10-09', () => {
+  it('a pending adjustment shows its new planned qty now; reject restores it', () => {
+    expect(wo('wo-6').plannedQty).toBe(180)
+    rejectRequest('wor-005', LEVEL_1, 'Not this week')
+    expect(wo('wo-6').plannedQty).toBe(200)
+  })
+
+  it('a submitted adjustment is applied to the work order straight away', () => {
+    rule('awf-009').isActive = true
+    const before = wo('wo-3').plannedQty
+    const r = submitRequest({ workOrderId: 'wo-3', type: 'adjustment', requester: PPIC, payload: { plannedQty: before + 5, note: 'Extra' } })!
+    expect(r.status).toBe('pending')
+    expect(wo('wo-3').plannedQty).toBe(before + 5)
+    expect(r.payload.previousPlannedQty).toBe(before)
+  })
+
+  it('the requester cancels a request until someone approves it', () => {
+    expect(canCancelRequest(req('wor-005'), PPIC)).toBe(true)
+    expect(canCancelRequest(req('wor-005'), LEVEL_1)).toBe(false)
+    expect(canCancelRequest(req('wor-001'), PPIC)).toBe(false) // level 1 already approved
+    expect(cancelRequest('wor-005', PPIC)).toBe(true)
+    expect(req('wor-005').status).toBe('canceled')
+    expect(wo('wo-6').plannedQty).toBe(200)
+    expect(isFrozen('wo-6')).toBe(false)
+    expect(approvalLogFor(req('wor-005')).canceled?.user).toBe(PPIC)
+  })
+
+  it('a canceled / rejected request clears the reason notice it set', () => {
+    recordActionReason(wo('wo-6'), { type: 'adjustment', reason: 'Mixer 2 down', by: PPIC, requestId: 'wor-005' })
+    cancelRequest('wor-005', PPIC)
+    expect(wo('wo-6').actionReason).toBeUndefined()
+  })
+
+  it('the Approval log tab lists every request with its rule and latest action', () => {
+    const rows = approvalHistoryForWorkOrder('wo-8')
+    expect(rows.map(r => r.id).sort()).toEqual(['wor-007', 'wor-008'])
+    expect(rows.find(r => r.id === 'wor-008')!.lastAction).toMatch(/^Rejected by Budi Santoso: /)
+    expect(rows.find(r => r.id === 'wor-007')!.lastAction).toMatch(/^Waiting for Budi Santoso \(approval level 1\)/)
+  })
+
+  it('VAL previews the rule; every level skipped → approved automatically', async () => {
+    expect(ruleLevelsPreview('start', PPIC)!.levels.map(l => l.skipped)).toEqual([false, false])
+    const r = rule('awf-007')
+    r.levels = [r.levels[0]!] // level 1 only — Budi
+    const val = useValApprovalRule()
+    const res = await val.load({ module: 'work-order', transactionType: 'start', requester: LEVEL_1 })
+    expect(res).toMatchObject({ gated: true, autoApproved: true })
+    const sub = submitRequest({ workOrderId: 'wo-1', type: 'start', requester: LEVEL_1, payload: {} })!
+    expect(sub.status).toBe('executed')
+  })
+
+  it('VAL failure surfaces as an error state', async () => {
+    valUnavailable.value = true
+    const val = useValApprovalRule()
+    expect(await val.load({ module: 'work-order', transactionType: 'start', requester: PPIC })).toBeNull()
+    expect(val.error.value).toBe(true)
+    valUnavailable.value = false
+  })
+
+  it('not gated → VAL says so', async () => {
+    const val = useValApprovalRule()
+    expect(await val.load({ module: 'work-order', transactionType: 'adjustment', requester: PPIC })).toMatchObject({ gated: false })
   })
 })

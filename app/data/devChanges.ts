@@ -31,8 +31,8 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'wo-approval-status',
     title: 'Work order status while approval is pending',
     description:
-      'The status shows Draft while a Start work order request waits for approval (In progress once approved), and Waiting approval while an adjustment, completion or cancel/close waits (then In progress, Completed or Canceled once approved). Approval notices now sit inside the content under the Overview / Material consume & return tabs. Partial completion is out of MVP scope and no longer a gated type. If the requester is the only approver at a level (self-approval off), that level is skipped and logged, so the request moves to the next level instead of getting stuck.',
-    date: '2026-10-08',
+      'Grooming 2026-10-09: the work order status stays as-is while a request is pending (the earlier Draft / Waiting approval display statuses are removed); once approved, Start → In progress, completion → Completed, cancel/close → Canceled. Approval notices now sit inside the content under the Overview / Material consume & return tabs. Partial completion is out of MVP scope and no longer a gated type. If the requester is the only approver at a level (self-approval off), that level is skipped and logged, so the request moves to the next level instead of getting stuck.',
+    date: '2026-10-09',
     files: ['woApproval.ts', 'WorkOrderDetailsPage.vue', 'WorkOrdersIndexPage.vue', 'ErpStatusBadge.vue'],
   },
   {
@@ -90,6 +90,54 @@ export const DEV_CHANGES: DevChange[] = [
       'A rejected request shows a notice on the work order with Submit again (start) or Create again (other types), which reopens the form pre-filled with the original data and date.',
     date: '2026-10-02',
     files: ['CreateWorkOrderPage.vue', 'NewMaterialRecordPage.vue', 'WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-approval-freeze',
+    title: 'Work order frozen while a request waits for approval',
+    description:
+      'Grooming 2026-10-09: while any approval request is pending, every work order action (Start, Complete, Adjust, Cancel/close, Edit, Delete, Replace attachment, New record) refuses with an inline notice — buttons stay enabled per the no-disabled-buttons rule. Print and the requester\'s Cancel approval request stay available. The status badge stays as-is (no Draft / Waiting approval status). In the list, row Cancel is hidden while frozen.',
+    date: '2026-10-09',
+    files: ['WorkOrderDetailsPage.vue', 'WorkOrdersIndexPage.vue', 'NewMaterialRecordPage.vue', 'woApproval.ts'],
+  },
+  {
+    id: 'wo-approval-val',
+    title: 'Confirmation modal reads the approval rule from VAL',
+    description:
+      'Start, Adjust, Complete and Cancel/close all confirm in one modal. On open it asks VAL (stand-in client with a 600 ms delay; demo FAB can make it fail) which approval rule applies and shows it in a blue info banner, with loading and error / Try again states. When every level would be skipped (the requester is the only approver) the banner says it\'s approved automatically. Adjust and Cancel/close need a reason.',
+    date: '2026-10-09',
+    files: ['WoTransactionModal.vue', 'valApprovalRule.ts'],
+  },
+  {
+    id: 'wo-approval-reason-banner',
+    title: 'Adjust / Cancel-close reason on the work order',
+    description:
+      'After Adjust or Cancel/close the detail page shows the reason given, who gave it and whether it\'s still waiting for approval. A pending adjustment\'s new planned qty shows on the list and detail right away and is reverted if the request is rejected or canceled.',
+    date: '2026-10-09',
+    files: ['WoActionReasonBanner.vue', 'WorkOrderDetailsPage.vue', 'woApproval.ts'],
+  },
+  {
+    id: 'wo-approval-reject-banner',
+    title: 'Sticky rejection notice',
+    description:
+      'A rejected request shows a danger notice with the reject reason that stays until the user dismisses it (×, remembered) or acts on it with Submit again / Create again.',
+    date: '2026-10-09',
+    files: ['WoRejectBanner.vue', 'WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-approval-cancel-request',
+    title: 'Cancel approval request',
+    description:
+      'The requester can withdraw a pending request until the first approver approves it — from the Actions menu and the pending notice on the detail page, and the row menu on Awaiting approval. Nothing is applied and the work order unlocks; the approval log records it.',
+    date: '2026-10-09',
+    files: ['WorkOrderDetailsPage.vue', 'WorkOrdersAwaitingApprovalPage.vue', 'ApprovalLogModal.vue', 'woApproval.ts'],
+  },
+  {
+    id: 'wo-approval-log-tab',
+    title: 'Approval log tab on the work order',
+    description:
+      'A third tab lists every approval request on the work order: requested on, transaction type, request no., requested by, approval rule, status and latest action (approved / rejected with reason / canceled / waiting for). Each row opens the approval log timeline.',
+    date: '2026-10-09',
+    files: ['WoApprovalLogTable.vue', 'WorkOrderDetailsPage.vue'],
   },
   {
     id: 'wo-approval-rules',

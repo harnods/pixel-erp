@@ -55,13 +55,14 @@ function stageCaption(stage: ApprovalStage): string {
 }
 function stageBadge(stage: ApprovalStage): { type: 'completed' | 'warning' | 'critical' | 'announcement'; label: string } {
   if (stage.rejection) return { type: 'critical', label: t('Rejected') }
+  if (stage.canceled) return { type: 'announcement', label: t('Canceled') }
   if (stage.skipped) return { type: 'announcement', label: t('Skipped') }
   if (isStageDone(stage)) return { type: 'completed', label: t('Approved') }
   return { type: 'warning', label: t('Awaiting approval') }
 }
 /** Pending rows: one per approver for "everyone", a single "A or B" row for "anyone". */
 function pendingRows(stage: ApprovalStage): string[] {
-  if (stage.rejection || stage.waitingFor || stage.skipped || isStageDone(stage)) return []
+  if (stage.rejection || stage.waitingFor || stage.skipped || stage.canceled || isStageDone(stage)) return []
   const approved = new Set(stage.approvals.map((a) => a.user))
   const pending = stage.approvers.filter((a) => !approved.has(a))
   if (!pending.length) return []
@@ -172,6 +173,12 @@ function pendingRows(stage: ApprovalStage): string[] {
                 <MpTimelineTitle><MpText weight="regular" color="text.secondary">{{ t(stage.waitingFor) }}</MpText></MpTimelineTitle>
               </MpTimelineItem>
             </MpTimelineAccordion>
+
+            <!-- Withdrawn by the requester (Cancel approval request) -->
+            <MpTimelineItem v-if="block.canceled" status="created" data-devchange="wo-approval-cancel-request">
+              <MpTimelineTitle><MpText weight="semiBold">{{ t('Request canceled by') }} {{ block.canceled.user }}</MpText></MpTimelineTitle>
+              <MpTimelineCaption>{{ formatDateTimeLong(block.canceled.date) }}</MpTimelineCaption>
+            </MpTimelineItem>
           </MpTimeline>
         </div>
       </MpModalBody>

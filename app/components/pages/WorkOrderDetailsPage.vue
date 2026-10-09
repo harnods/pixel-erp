@@ -8,28 +8,37 @@
  * Status-aware: the header primary action, the raw-material/routing status columns,
  * and the reserved/consumed/start/end values all reflect the work order's status.
  *
- * Work order approval (PRD Rev 2): Approve in the header for the viewer's level,
- * pending / rejected notices under it (the Approval log opens from the notice), inline guards
- * on blocked actions (buttons never disabled), "waiting for approval" captions on
- * and gated Start / Adjust / Complete / Cancel-close via WoTransactionModal. The status badge
- * shows Draft (start waiting) or Waiting approval (adjustment / completion / cancel-close).
+ * Work order approval: Approve split button in the header for the viewer's level, pending
+ * notices under the tabs, and Start / Adjust / Complete / Cancel-close through
+ * WoTransactionModal (approval rule from VAL). Grooming 2026-10-09:
+ *   • the status badge stays as-is — no Draft / Waiting approval status;
+ *   • while a request is pending the work order is frozen — every action refuses inline
+ *     (buttons never disabled) except Print and the requester's Cancel approval request;
+ *   • rejection notices are sticky until dismissed (×); the Adjust / Cancel-close reason
+ *     shows in a notice; an "Approval log" tab lists every request.
  */
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpIcon, MpSelect, MpDatePicker, MpButton, css, toast,
-  MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpBannerCloseButton,
+  MpBanner, MpBannerIcon, MpBannerDescription, MpBannerLink, MpBannerCloseButton,
 } from '@mekari/pixel3'
 import ApprovalLogModal from '~/components/patterns/ApprovalLogModal.vue'
 import RejectTransactionModal from '~/components/patterns/RejectTransactionModal.vue'
-import WoTransactionModal, { type WoTransactionMode } from '~/components/patterns/WoTransactionModal.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import WoTransactionModal, { type WoTransactionMode, type WoTransactionResult } from '~/components/patterns/WoTransactionModal.vue'
+import WoRejectBanner from '~/components/patterns/WoRejectBanner.vue'
+import WoActionReasonBanner from '~/components/patterns/WoActionReasonBanner.vue'
+import WoApprovalLogTable from '~/components/patterns/WoApprovalLogTable.vue'
 import {
-  pendingForWorkOrder, latestRejectedRequest, rejectionOf, guardMessage, startWorkOrder,
-  approvalLogsForWorkOrder, queueFor, rejectRequest, waitingForText,
-  approveRequest, displayStatus, findGatingRule, typeLabel, requestTitle,
-  type WoAction, type WoApprovalRequest,
+  pendingForWorkOrder, rejectedNotices, dismissRejection, guardMessage, startWorkOrder,
+  approvalLogsForWorkOrder, approvalLogFor, queueFor, rejectRequest, waitingForText,
+  approveRequest, displayStatus, typeLabel, requestTitle, requestById,
+  canCancelRequest, cancelRequest,
+  type WoApprovalRequest,
 } from '~/data/woApproval'
+import { valUnavailable } from '~/data/valApprovalRule'
 import { WO_APPROVAL_ACTORS } from '~/composables/useWoApprovalActor'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -75,9 +84,12 @@ const bottomTabs = computed(() =>
 const activeBottomTab = ref('Partial production')
 
 // ── Top-level tabs (Overview / Material consume & return) ────────────────────
-const topTabs = ['Overview', 'Material consume & return'] as const
+const topTabs = ['Overview', 'Material consume & return', 'Approval log'] as const
 type TopTab = typeof topTabs[number]
-const activeTopTab = ref<TopTab>(route.query.tab === 'material-consume-return' ? 'Material consume & return' : 'Overview')
+const activeTopTab = ref<TopTab>(
+  route.query.tab === 'material-consume-return' ? 'Material consume & return'
+    : route.query.tab === 'approval-log' ? 'Approval log' : 'Overview',
+)
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 const num = (n: number) => n.toLocaleString('id-ID')
@@ -100,13 +112,15 @@ const primaryAction = computed(() => {
     default: return '' // completed / canceled → no primary action
   }
 })
-// Actions menu items — terminal statuses drop the destructive/edit options.
+// Actions menu items — terminal statuses drop the destructive/edit options. The
+// requester's own pending request adds "Cancel approval request" (until someone approves).
 const actionItems = computed(() => {
   const s = wo.value?.status
-  if (s === 'completed') return ['Print']
-  if (s === 'canceled') return ['Print', 'Delete']
-  if (s === 'in progress' || s === 'partially produced') return ['Adjust work order', 'Cancel/close work order', 'Edit', 'Replace attachment', 'Print', 'Delete']
-  return ['Cancel/close work order', 'Edit', 'Replace attachment', 'Print', 'Delete']
+  const own = cancelableRequest.value ? ['Cancel approval request'] : []
+  if (s === 'completed') return [...own, 'Print']
+  if (s === 'canceled') return [...own, 'Print', 'Delete']
+  if (s === 'in progress' || s === 'partially produced') return [...own, 'Adjust work order', 'Cancel/close work order', 'Edit', 'Replace attachment', 'Print', 'Delete']
+  return [...own, 'Cancel/close work order', 'Edit', 'Replace attachment', 'Print', 'Delete']
 })
 
 // ── Attachments (representative) ────────────────────────────────────────────────
@@ -231,19 +245,12 @@ function runCompletion() {
 }
 function handlePrimaryAction() {
   if (!wo.value) return
-  if (wo.value.status === 'not started') {
-    if (blocked('start')) return
-    // Gated start → held as a request (pre-submit notice in the modal); material is
-    // reserved only once it's approved. Not gated → starts and reserves now.
-    if (findGatingRule('start', actor.value)) { openTransaction('start'); return }
-    startNow()
-    return
-  }
+  // Every action confirms in WoTransactionModal, which asks VAL for the approval rule:
+  // gated → held as a request; not gated → applied as before (material reserved at start).
+  if (blocked()) return
+  if (wo.value.status === 'not started') { openTransaction('start'); return }
   if (primaryAction.value !== t('Complete work order')) return
-  if (blocked('complete')) return
-  // Gated completion → held as a request (pre-submit notice in the modal).
-  if (findGatingRule('completion', actor.value)) { openTransaction('completion'); return }
-  runCompletion()
+  openTransaction('completion')
 }
 
 // ── Work order approval ───────────────────────────────────────────────────────
@@ -251,17 +258,47 @@ const { actor, setActor } = useWoApprovalActor()
 const pending = computed(() => (wo.value ? pendingForWorkOrder(wo.value.id) : []))
 const startPending = computed(() => pending.value.some(r => r.type === 'start'))
 const otherPending = computed(() => pending.value.filter(r => r.type !== 'start'))
-const latestRejected = computed(() => (wo.value ? latestRejectedRequest(wo.value.id) : undefined))
-const latestRejection = computed(() => (latestRejected.value ? rejectionOf(latestRejected.value) : undefined))
-const dismissedRejectedId = ref('')
-const hasNotices = computed(() => !!(guardText.value || startPending.value || otherPending.value.length || (latestRejection.value && dismissedRejectedId.value !== latestRejected.value?.id)))
+const rejections = computed(() => (wo.value ? rejectedNotices(wo.value.id) : []))
+// Adjust / Cancel-close reason — hidden for the session once dismissed.
+const actionReason = computed(() => wo.value?.actionReason)
+const actionReasonRequest = computed(() => requestById(actionReason.value?.requestId))
+const reasonDismissedAt = ref('')
+const showActionReason = computed(() => !!actionReason.value && reasonDismissedAt.value !== actionReason.value.at)
+const hasNotices = computed(() => !!(guardText.value || pending.value.length || rejections.value.length || showActionReason.value))
 
-// Inline refusal under the header — actions stay enabled and explain themselves.
+// Freeze — any pending request locks every action but Print and Cancel approval request.
+// Actions stay enabled and explain themselves inline (rule: never disabled).
 const guardText = ref('')
-function blocked(action: WoAction): boolean {
-  const msg = wo.value ? guardMessage(wo.value.id, action) : null
+function blocked(): boolean {
+  const msg = wo.value ? guardMessage(wo.value.id) : null
   guardText.value = msg ?? ''
   return !!msg
+}
+
+// Cancel approval request — the requester's own pending request, until someone approves.
+const cancelableRequest = computed(() => pending.value.find(r => canCancelRequest(r, actor.value)))
+const cancelRequestOpen = ref(false)
+const cancelRequestTarget = ref<WoApprovalRequest | null>(null)
+function askCancelRequest(req: WoApprovalRequest | undefined) {
+  if (!req) return
+  cancelRequestTarget.value = req
+  cancelRequestOpen.value = true
+}
+const cancelRequestDescription = computed(() => {
+  const req = cancelRequestTarget.value
+  if (!req) return ''
+  return t('{title} won\'t be applied and the work order is unlocked. You can submit it again later.')
+    .replace('{title}', t(requestTitle(req)))
+})
+function confirmCancelRequest() {
+  const req = cancelRequestTarget.value
+  if (!req) return
+  if (!cancelRequest(req.id, actor.value)) {
+    guardText.value = 'This request can\'t be canceled anymore because an approver has already approved it.'
+    return
+  }
+  guardText.value = ''
+  toast.notify({ variant: 'success', title: t('Approval request canceled') })
 }
 
 // Approve from the header — only when a request on this WO awaits the viewer's level.
@@ -298,7 +335,17 @@ function rejectHere(reason: string) {
 }
 
 const approvalLogOpen = ref(false)
-const approvalLogs = computed(() => (wo.value ? approvalLogsForWorkOrder(wo.value.id) : []))
+// One request (from the Approval log tab / a rejection notice) or all of them (pending notices).
+const approvalLogRequestId = ref('')
+const approvalLogs = computed(() => {
+  if (!wo.value) return []
+  const one = requestById(approvalLogRequestId.value)
+  return one ? [approvalLogFor(one)] : approvalLogsForWorkOrder(wo.value.id)
+})
+function openApprovalLog(requestId = '') {
+  approvalLogRequestId.value = requestId
+  approvalLogOpen.value = true
+}
 
 // Start / Adjust / gated Complete / Cancel-close — WoTransactionModal.
 const transactionOpen = ref(false)
@@ -309,11 +356,15 @@ function openTransaction(mode: WoTransactionMode, prefill: WoApprovalRequest | n
   transactionPrefill.value = prefill
   transactionOpen.value = true
 }
-function onTransactionDone(result: 'submitted' | 'applied') {
+function onTransactionDone(result: WoTransactionResult, mode: WoTransactionMode) {
   guardText.value = ''
+  // Adjust / Cancel-close land back on the detail Overview, where the reason notice shows.
+  if (mode === 'adjustment' || mode === 'cancel') activeTopTab.value = 'Overview'
   toast.notify({
     variant: 'success',
-    title: result === 'submitted' ? t('Request submitted. Waiting for approval') : t('Work order updated'),
+    title: result === 'submitted' ? t('Request submitted. Waiting for approval')
+      : result === 'auto-approved' ? t('Approved automatically. {Type} applied').replace('{Type}', t(typeLabel(mode)))
+        : t('Work order updated'),
   })
 }
 
@@ -335,15 +386,19 @@ function startNow() {
 }
 
 function createAgain(req: WoApprovalRequest) {
+  if (blocked()) return
   openTransaction(req.type, req)
 }
 function onActionItem(item: string) {
-  if (item === 'Adjust work order') { if (!blocked('transaction')) openTransaction('adjustment'); return }
-  // Cancel/close — like completion, refused while anything else is pending on the WO.
-  if (item === 'Cancel/close work order') { if (!blocked('complete')) openTransaction('cancel') }
+  // Exempt from the freeze.
+  if (item === 'Print') return
+  if (item === 'Cancel approval request') { askCancelRequest(cancelableRequest.value); return }
+  if (blocked()) return
+  if (item === 'Adjust work order') { openTransaction('adjustment'); return }
+  if (item === 'Cancel/close work order') openTransaction('cancel')
 }
 function onNewRecord() {
-  if (blocked('transaction')) return
+  if (blocked()) return
   goNewRecord()
 }
 
@@ -540,7 +595,7 @@ function suppressFabClick(e: MouseEvent) {
         <MpButton class="detail-breadcrumb" variant="ghost" @click="goList">{{ t('Work orders') }}</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('Work order') }} #{{ wo.number.split('-').pop() }}</h1>
-          <!-- Work order approval — Draft / Waiting approval while a request is pending -->
+          <!-- Work order status as-is — a pending request doesn't change it (grooming 2026-10-09) -->
           <ErpStatusBadge
             :status="displayStatus(wo)"
             :label="displayStatus(wo) === 'in progress' ? t('In progress') : undefined"
@@ -566,6 +621,7 @@ function suppressFabClick(e: MouseEvent) {
               <MpPopoverListItem
                 v-for="item in actionItems" :key="item"
                 :class="item === 'Delete' || item === 'Cancel/close work order' ? css({ color: 'var(--mp-text-critical)' }) : ''"
+                :data-devchange="item === 'Cancel approval request' ? 'wo-approval-cancel-request' : undefined"
                 @click="onActionItem(item)"
               >{{ t(item) }}</MpPopoverListItem>
             </MpPopoverList>
@@ -590,7 +646,7 @@ function suppressFabClick(e: MouseEvent) {
             </MpPopoverContent>
           </MpPopover>
         </div>
-        <MpButton v-else-if="primaryAction" class="detail-btn detail-btn--primary" variant="primary" @click="handlePrimaryAction">{{ primaryAction }}</MpButton>
+        <MpButton v-else-if="primaryAction" class="detail-btn detail-btn--primary" variant="primary" data-devchange="wo-approval-freeze" @click="handlePrimaryAction">{{ primaryAction }}</MpButton>
       </div>
     </header>
 
@@ -600,15 +656,16 @@ function suppressFabClick(e: MouseEvent) {
         v-for="tab in topTabs" :key="tab"
         class="detail-toptab" variant="ghost" :class="{ 'detail-toptab--active': activeTopTab === tab }"
         role="tab" :aria-selected="activeTopTab === tab"
+        :data-devchange="tab === 'Approval log' ? 'wo-approval-log-tab' : undefined"
         @click="activeTopTab = tab"
-      >{{ tab }}</MpButton>
+      >{{ t(tab) }}</MpButton>
     </div>
 
     <!-- ── Work order approval notices — inside the content, under the Overview /
          Material consume & return tabs, on whichever tab is open ── -->
     <div v-if="hasNotices"
       class="wod-notices" data-devchange="wo-approval-detail">
-      <MpBanner v-if="guardText" variant="danger" is-inline>
+      <MpBanner v-if="guardText" variant="danger" is-inline data-devchange="wo-approval-freeze">
         <MpBannerIcon />
         <MpBannerDescription>{{ t(guardText) }}</MpBannerDescription>
         <MpBannerCloseButton @click="guardText = ''" />
@@ -620,8 +677,12 @@ function suppressFabClick(e: MouseEvent) {
           <span v-for="r in pending.filter(p => p.type === 'start')" :key="r.id" class="wod-notice-list" data-devchange="wo-approval-status">
             {{ t('Waiting for {names} (approval level {n})').replace('{names}', waitingForText(r)).replace('{n}', String(r.currentLevel)) }}
           </span>
+          <span class="wod-notice-list">{{ t('Actions on this work order are locked until it\'s decided. Print stays available.') }}</span>
         </MpBannerDescription>
-        <MpBannerLink><MpButton variant="textLink" size="sm" @click="approvalLogOpen = true">{{ t('View approval log') }}</MpButton></MpBannerLink>
+        <MpBannerLink>
+          <MpButton variant="textLink" size="sm" @click="openApprovalLog()">{{ t('View approval log') }}</MpButton>
+          <MpButton v-if="cancelableRequest?.type === 'start'" variant="textLink" size="sm" data-devchange="wo-approval-cancel-request" @click="askCancelRequest(cancelableRequest)">{{ t('Cancel approval request') }}</MpButton>
+        </MpBannerLink>
       </MpBanner>
       <MpBanner v-if="otherPending.length" variant="warning">
         <MpBannerIcon />
@@ -632,18 +693,26 @@ function suppressFabClick(e: MouseEvent) {
           <span v-for="r in otherPending" :key="r.id" class="wod-notice-list" data-devchange="wo-approval-status">
             {{ t(requestTitle(r)) }} · {{ t('Waiting for {names} (approval level {n})').replace('{names}', waitingForText(r)).replace('{n}', String(r.currentLevel)) }}
           </span>
+          <span class="wod-notice-list">{{ t('Actions on this work order are locked until it\'s decided. Print stays available.') }}</span>
         </MpBannerDescription>
-        <MpBannerLink><MpButton variant="textLink" size="sm" @click="approvalLogOpen = true">{{ t('View approval log') }}</MpButton></MpBannerLink>
+        <MpBannerLink>
+          <MpButton variant="textLink" size="sm" @click="openApprovalLog()">{{ t('View approval log') }}</MpButton>
+          <MpButton v-if="cancelableRequest && cancelableRequest.type !== 'start'" variant="textLink" size="sm" data-devchange="wo-approval-cancel-request" @click="askCancelRequest(cancelableRequest)">{{ t('Cancel approval request') }}</MpButton>
+        </MpBannerLink>
       </MpBanner>
-      <MpBanner v-if="latestRejected && latestRejection && dismissedRejectedId !== latestRejected.id" variant="danger" data-devchange="wo-approval-resubmit">
-        <MpBannerIcon />
-        <MpBannerDescription>
-          {{ t('{name} rejected {type} {ref}. Reason: {reason}')
-            .replace('{name}', latestRejection.user).replace('{type}', t(typeLabel(latestRejected.type))).replace(' {ref}', latestRejected.ref ? ` ${latestRejected.ref}` : '').replace('{reason}', latestRejection.reason ?? '') }}
-        </MpBannerDescription>
-        <MpBannerLink><MpButton variant="textLink" size="sm" @click="createAgain(latestRejected)">{{ latestRejected.type === 'start' ? t('Submit again') : t('Create again') }}</MpButton></MpBannerLink>
-        <MpBannerCloseButton @click="dismissedRejectedId = latestRejected.id" />
-      </MpBanner>
+      <WoActionReasonBanner
+        v-if="showActionReason && actionReason"
+        :reason="actionReason"
+        :pending="actionReasonRequest?.status === 'pending'"
+        :ref-no="actionReasonRequest?.ref"
+      />
+      <WoRejectBanner
+        v-for="r in rejections" :key="r.id"
+        :request="r"
+        @dismiss="dismissRejection(r.id)"
+        @resubmit="createAgain(r)"
+        @view-log="openApprovalLog(r.id)"
+      />
     </div>
 
     <!-- ── Scrollable stage ── -->
@@ -952,6 +1021,11 @@ function suppressFabClick(e: MouseEvent) {
 
     </div>
 
+    <!-- ── Approval log — every approval request on this work order ── -->
+    <div v-else-if="activeTopTab === 'Approval log'" class="detail-stage detail-stage--crr" :class="{ 'detail-stage--continued': hasNotices }">
+      <WoApprovalLogTable :work-order-id="wo.id" @view-log="openApprovalLog" />
+    </div>
+
     <!-- ── Material consume & return — no records at all: illustration only, no filter bar ── -->
     <div v-else-if="consumeReturnRecords.length === 0" class="detail-stage detail-stage--crr" :class="{ 'detail-stage--continued': hasNotices }">
       <div class="crr-full-empty">
@@ -1096,6 +1170,11 @@ function suppressFabClick(e: MouseEvent) {
         <MpPopoverList>
           <MpPopoverListItem v-for="a in WO_APPROVAL_ACTORS" :key="a.name" :is-active="a.name === actor" @click="setActor(a.name)">{{ t(a.label) }}</MpPopoverListItem>
         </MpPopoverList>
+        <p class="wod-flow-fab-heading">{{ t('Approval rule service (VAL)') }}</p>
+        <MpPopoverList>
+          <MpPopoverListItem :is-active="!valUnavailable" @click="valUnavailable = false">{{ t('Available') }}</MpPopoverListItem>
+          <MpPopoverListItem :is-active="valUnavailable" @click="valUnavailable = true">{{ t('Unavailable (error state)') }}</MpPopoverListItem>
+        </MpPopoverList>
       </MpPopoverContent>
     </MpPopover>
 
@@ -1104,6 +1183,14 @@ function suppressFabClick(e: MouseEvent) {
       :logs="approvalLogs"
       empty-text="No approval request on this work order"
       @close="approvalLogOpen = false"
+    />
+    <ConfirmModal
+      v-model:is-open="cancelRequestOpen"
+      :title="t('Cancel approval request?')"
+      :description="cancelRequestDescription"
+      :confirm-label="t('Cancel request')"
+      :cancel-label="t('Back')"
+      @confirm="confirmCancelRequest"
     />
     <RejectTransactionModal
       :is-open="rejectOpen"

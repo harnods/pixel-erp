@@ -4,8 +4,9 @@
  * order request still waiting for approval (start, adjustment,
  * completion, cancel/close), for all users. Approve, Reject and the row checkbox appear
  * only on the rows the viewer can approve right now (their level, not their own request
- * unless self-approval is allowed); everyone gets the Approval log and Comments. The tab
- * badge counts all pending requests. Derived in woApproval.ts.
+ * unless self-approval is allowed); everyone gets the Approval log and Comments. The
+ * requester gets "Cancel approval request" on their own rows until someone approves
+ * (grooming 2026-10-09). The tab badge counts all pending requests. Derived in woApproval.ts.
  */
 import {
   MpButton, MpButtonGroup, MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent,
@@ -20,7 +21,7 @@ import RejectTransactionModal from '~/components/patterns/RejectTransactionModal
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { formatDate } from '~/utils/date'
 import {
-  allPending, canApprove, approveRequest, rejectRequest, approvalLogFor, commentsFor, addComment, waitingForText,
+  allPending, canApprove, approveRequest, rejectRequest, canCancelRequest, cancelRequest, requestTitle, approvalLogFor, commentsFor, addComment, waitingForText,
   requestWarehouseName, typeLabel, workOrderOf, woApprovalRequests,
   WO_TRANSACTION_TYPE_OPTIONS, type WoApprovalRequest,
 } from '~/data/woApproval'
@@ -44,6 +45,8 @@ interface QueueRow {
   waitingFor: string
   /** the viewer can approve / reject this row */
   canAct: boolean
+  /** the viewer requested it and nobody has approved yet — Cancel approval request */
+  canCancel: boolean
 }
 
 const columns: TableColumn[] = [
@@ -101,6 +104,7 @@ const baseRows = computed<QueueRow[]>(() => queue.value
     requestedBy: r.requester,
     waitingFor: waitingForText(r) || '—',
     canAct: canApprove(r, actor.value),
+    canCancel: canCancelRequest(r, actor.value),
   }))
   .filter(r => !typeFilter.value || r.typeKey === typeFilter.value)
   .filter(r => !warehouseFilter.value || r.warehouse === warehouseFilter.value))
@@ -216,6 +220,24 @@ function confirmReject(reason: string) {
   })
 }
 
+// ── Cancel approval request (requester, before anyone approves) ─────────────────
+const cancelOpen = ref(false)
+const cancelId = ref('')
+const cancelDescription = computed(() => {
+  const req = requestOf(cancelId.value)
+  return req
+    ? t('{title} won\'t be applied and the work order is unlocked. You can submit it again later.').replace('{title}', t(requestTitle(req)))
+    : ''
+})
+function askCancel(row: QueueRow) {
+  cancelId.value = row.id
+  cancelOpen.value = true
+}
+function confirmCancel() {
+  if (!cancelRequest(cancelId.value, actor.value)) return
+  toast.notify({ variant: 'success', title: t('Approval request canceled') })
+}
+
 // ── Approval log ─────────────────────────────────────────────────────────────
 const logOpen = ref(false)
 const logData = ref<ApprovalLog | null>(null)
@@ -319,6 +341,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <MpPopoverList>
               <MpPopoverListItem @click="viewDetails(row as unknown as QueueRow)">{{ t('View details') }}</MpPopoverListItem>
               <MpPopoverListItem v-if="(row as unknown as QueueRow).canAct" :class="css({ color: 'var(--mp-text-critical)' })" @click="askReject(row as unknown as QueueRow)">{{ t('Reject') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="(row as unknown as QueueRow).canCancel" :class="css({ color: 'var(--mp-text-critical)' })" data-devchange="wo-approval-cancel-request" @click="askCancel(row as unknown as QueueRow)">{{ t('Cancel approval request') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -354,6 +377,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :cancel-label="t('Cancel')"
     :is-danger="false"
     @confirm="confirmBulkApprove"
+  />
+
+  <ConfirmModal
+    v-model:is-open="cancelOpen"
+    :title="t('Cancel approval request?')"
+    :description="cancelDescription"
+    :confirm-label="t('Cancel request')"
+    :cancel-label="t('Back')"
+    @confirm="confirmCancel"
   />
 
   <ScenarioFab :model-value="scenario" :scenarios="scenarios" :aria-label="t('Change scenario state')" @update:model-value="onScenario" />
