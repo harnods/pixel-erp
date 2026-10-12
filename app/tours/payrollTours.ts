@@ -217,7 +217,7 @@ const steps: PayrollStep[] = [
   },
   {
     run: oldSyncTries,
-    route: '/payroll-settings?section=cut-over',
+    route: '/payroll-settings?section=connection',
     target: 'payroll-old-sync',
     role: 'Accountant',
     title: 'The old Talenta Expense sync tries to post September and is blocked.',
