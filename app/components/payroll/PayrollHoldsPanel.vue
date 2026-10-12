@@ -11,11 +11,11 @@ import { MpButton, MpIcon, MpInput } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
   payroll, can, runById, runHolds, rupiah, accountLabel, payrollAccount, mappingFor, suggestMapping, setPayItemMapping,
-  mapGroup, createPayrollTag, acceptFieldValue, setCostCenterCategory, setFieldPolicy, confirmSource, sourceSummary,
+  mapGroup, createPayrollTag, setFieldPolicy, confirmSource, sourceSummary,
   chooseRevision, chooseSeparateRun, decidePartial, releaseRun, versionOf,
   PAY_ROLES, type Hold, type PayRole,
 } from '~/data/payrollStore'
-import { FALLBACK_TAG, type PaySection, type TagDimension, type PayableParty } from '~/data/payrollMaster'
+import { TALENTA_FIELDS, type PaySection, type PayableParty } from '~/data/payrollMaster'
 import { successToast, infoToast } from '~/utils/toasts'
 
 const props = defineProps<{ runId: string }>()
@@ -28,7 +28,7 @@ const holds = computed(() => (run.value ? runHolds(run.value) : []))
 const TITLES: Record<string, string> = {
   'confirm-source': 'Confirm the source', choice: 'Revision or separate run', partial: 'Looks partial',
   'unmapped-item': 'Pay items with no account', 'unmapped-group': 'Groups with no dimension',
-  'new-field-value': 'New values in rule fields', 'empty-field': 'Empty grouping fields',
+  'empty-field': 'Empty dimension fields',
   'two-parties': 'Two parties on one payable', 'archived-account': 'Archived account',
 }
 const SETTINGS_FIX = ['two-parties', 'archived-account']
@@ -73,40 +73,31 @@ function saveItem(it: { key: string; name: string; section: PaySection }) {
 // ── Groups ────────────────────────────────────────────────────────────────
 const groupPick = reactive<Record<string, string>>({})
 const groupError = reactive<Record<string, string>>({})
-const dimOf = (field: string): TagDimension => (field === 'branch' ? 'Branch' : 'Organization')
-function tagOptions(field: string, value: string) {
-  const dim = dimOf(field)
-  const opts = payroll.tags.filter((tg) => tg.dimension === dim && tg.name !== FALLBACK_TAG).map((tg) => ({ value: tg.name, label: tg.name }))
+const fieldLabel = (field: string) => TALENTA_FIELDS.find((f) => f.field === field)?.label ?? field
+function tagOptions(dim: string, value: string) {
+  const opts = payroll.tags.filter((tg) => tg.dimension === dim).map((tg) => ({ value: tg.name, label: tg.name }))
   if (can('setup') && !opts.some((o) => o.value === value)) opts.push({ value: `new:${value}`, label: `${t('Create dimension value')} "${value}"` })
   return opts
 }
-function saveGroup(g: { field: string; value: string }) {
+function saveGroup(g: { field: string; dimension: string; value: string }) {
   const k = `${g.field}|${g.value}`
   let tag = groupPick[k] ?? ''
   if (!tag) { groupError[k] = 'Pick a dimension value.'; return }
   if (tag.startsWith('new:')) {
     tag = tag.slice(4)
-    const c = createPayrollTag(dimOf(g.field), tag)
+    const c = createPayrollTag(g.dimension, tag)
     if (!c.ok) { groupError[k] = c.message ?? ''; return }
   }
-  const r = mapGroup(dimOf(g.field), g.value, tag, { fromHold: true })
+  const r = mapGroup(g.dimension, g.value, tag)
   if (!r.ok) { groupError[k] = r.message ?? ''; return }
   groupError[k] = ''
   successToast(t(`${g.value} mapped to ${tag}`))
 }
 
-// ── New field values ──────────────────────────────────────────────────────
-const ccPick = reactive<Record<string, string>>({})
-function acceptValue(v: { field: string; value: string }) {
-  const r = v.field === 'cost_center'
-    ? setCostCenterCategory(v.value, (ccPick[v.value] || 'In-direct') as 'Direct' | 'In-direct')
-    : acceptFieldValue(v.field, v.value)
-  if (r.ok) successToast(t(`${v.value} accepted`))
-  else infoToast(t(r.message ?? ''))
-}
+// ── Empty dimension fields ────────────────────────────────────────────────
 function skipEmpty(field: string) {
-  const r = setFieldPolicy(field as 'organization_name' | 'branch' | 'cost_center', 'skip')
-  if (r.ok) successToast(t('Empty values are skipped from now on'))
+  const r = setFieldPolicy(field, 'skip')
+  if (r.ok) successToast(t('Empty values are left blank from now on'))
 }
 
 // ── Source, choice, partial ───────────────────────────────────────────────
@@ -275,44 +266,31 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
           </tbody>
         </table>
         <p v-if="!can('setup')" class="ph__hint">{{ t('The Accountant maps these items.') }}</p>
+        <MpButton v-else variant="ghost" is-rounded @click="router.push({ path: '/payroll-settings', query: { section: 'pay-items' } })">{{ t('Open Pay items') }}</MpButton>
       </div>
 
-      <!-- Groups with no dimension (OD-08, TN-13: never the fallback dimension value from here) -->
+      <!-- Talenta values with no dimension value -->
       <div v-else-if="h.code === 'unmapped-group'" class="ph__fix">
         <div v-for="g in d(h).groups" :key="`${g.field}|${g.value}`" class="ph__line">
           <div class="ph__linetext">
             <span class="ph__strong">{{ g.value }}</span>
-            <span class="ph__muted"> · {{ t(dimOf(g.field)) }} · {{ g.staff }} {{ t('employees') }}</span>
+            <span class="ph__muted"> · {{ t(g.dimension) }} · {{ g.staff }} {{ t('employees') }}</span>
           </div>
           <template v-if="can('post')">
-            <ErpFilterSelect :id="`ph-tag-${safeId(g.field + '-' + g.value)}`" v-model="groupPick[`${g.field}|${g.value}`]" :placeholder="t('Dimension value')" :options="tagOptions(g.field, g.value)" width="220px" />
+            <ErpFilterSelect :id="`ph-tag-${safeId(g.field + '-' + g.value)}`" v-model="groupPick[`${g.field}|${g.value}`]" :placeholder="t('Dimension value')" :options="tagOptions(g.dimension, g.value)" width="220px" />
             <MpButton variant="secondary" is-rounded @click="saveGroup(g)">{{ t('Map group') }}</MpButton>
           </template>
           <p v-if="groupError[`${g.field}|${g.value}`]" class="ph__error">{{ t(groupError[`${g.field}|${g.value}`]!) }}</p>
         </div>
       </div>
 
-      <!-- New values in fields the rules read -->
-      <div v-else-if="h.code === 'new-field-value'" class="ph__fix">
-        <div v-for="v in d(h).values" :key="`${v.field}|${v.value}`" class="ph__line">
-          <div class="ph__linetext">
-            <span class="ph__strong">{{ v.value }}</span>
-            <span class="ph__muted"> · {{ v.field }} · {{ v.staff }} {{ t('employees') }}</span>
-          </div>
-          <template v-if="v.field === 'cost_center' ? can('setup') : can('post')">
-            <ErpFilterSelect v-if="v.field === 'cost_center'" :id="`ph-cc-${safeId(v.value)}`" v-model="ccPick[v.value]" :placeholder="t('Category')" :options="['Direct', 'In-direct']" width="160px" />
-            <MpButton variant="secondary" is-rounded @click="acceptValue(v)">{{ t('Accept value') }}</MpButton>
-          </template>
-        </div>
-      </div>
-
-      <!-- Empty grouping fields -->
+      <!-- Empty dimension fields -->
       <div v-else-if="h.code === 'empty-field'" class="ph__fix">
         <div v-for="(n, field) in d(h).fields" :key="field" class="ph__line">
-          <div class="ph__linetext"><span class="ph__strong">{{ field }}</span><span class="ph__muted"> · {{ n }} {{ t('employees') }}</span></div>
-          <MpButton v-if="can('setup')" variant="secondary" is-rounded @click="skipEmpty(String(field))">{{ t('Skip empty values') }}</MpButton>
+          <div class="ph__linetext"><span class="ph__strong">{{ t(fieldLabel(String(field))) }}</span><span class="ph__muted"> · {{ n }} {{ t('employees') }}</span></div>
+          <MpButton v-if="can('setup')" variant="secondary" is-rounded @click="skipEmpty(String(field))">{{ t('Leave blank') }}</MpButton>
         </div>
-        <p class="ph__hint">{{ t('HR fills the field in Talenta and re-sends, or a role that can edit and delete (LM) sets empty values to skip.') }}</p>
+        <p class="ph__hint">{{ t('HR fills the field in Talenta and re-sends, or leave the dimension blank for empty values.') }}</p>
       </div>
 
       <!-- Build checks fixed in settings -->

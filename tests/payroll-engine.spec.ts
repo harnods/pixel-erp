@@ -3,13 +3,15 @@ import {
   payroll, resetPayroll, runs, runById, runStatus, runHolds, currentVersionOf, versionLabel, draftOf, liveJournals,
   journalTotals, journalById, simulateSend, setPayrollViewAs, setPayItemMapping, payItemKey, postRun, isDraftStale, setPayday,
   chooseRevision, chooseSeparateRun, postCorrection, correctionOf, reverseJournal, reverseAndRepost, lockPeriod, decidePartial,
-  compareVersions, can, addPayrollAccount, amendmentTasks, syncLog, mapGroup, saveRule, headcountChanges, markHeadcountExpected,
+  compareVersions, can, addPayrollAccount, amendmentTasks, syncLog, mapGroup, headcountChanges, markHeadcountExpected,
+  setPayItemAccount, setPayItemSplit, setPayableAccount, setStartMonth, linkDimension, createMissingValues, setFieldPolicy, createPayrollTag,
+  payItemType, payItemParty, payItemAccount, mappingFor, oldSyncExpense,
   clearHeadcountExpected, draftReview, runWarnings, acknowledgeWarning, postConfirmText, payablesTracker, simulateBankPayment,
   simulateManualJournal, manualJournalWarnings, setEbupotFiled, pph21Month, sendFigures, staffRows, receiveSalaryDetail,
   claimsSummary, noticesFor, SEND_KINDS, BANK_PAYMENT_KINDS, type Run, type JournalLine,
-  approvePayroll, rejectPayroll, canApprove, whyLine, journalsOf,
+  approvePayroll, rejectPayroll, canApprove, whyLine, journalsOf, rebuildDraft,
 } from '../app/data/payrollStore'
-import { ACC, buildSalaryDetail, FALLBACK_TAG } from '../app/data/payrollMaster'
+import { ACC, buildSalaryDetail } from '../app/data/payrollMaster'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { approvalWorkflows, setApprovalWorkflowActive } from '../app/data/approvalWorkflows'
@@ -156,7 +158,7 @@ describe('intake: Jurnal builds the draft; holds only for no mapping or a partia
     simulateSend('regular', { start: '2026-08-21', end: '2026-09-20', newAllowance: INS })
     const sep = run(SEP)
     expect(runHolds(sep).map((h) => h.code)).toEqual(['unmapped-group'])
-    as('Accountant + LM', () => { mapGroup('Organization', 'Legal', 'Finance', { fromHold: true }) })
+    as('Accountant + LM', () => { mapGroup('Organization', 'Legal', 'Finance') })
     expect(runHolds(sep)).toHaveLength(0)
   })
 
@@ -554,12 +556,8 @@ describe('claims, access, copy', () => {
     expect(as('View only', () => simulateBankPayment('salary')).status).toBe(403)
   })
 
-  it('group-map and rule messages say dimension, never tag', () => {
-    const msgs = [
-      mapGroup('Organization', 'New team', FALLBACK_TAG, { fromHold: true }).message,
-      saveRule({ name: 'Empty', conditions: [{ field: 'organization_name', op: 'is', values: ['Sales'] }], roles: ['Earning'], account: null, tags: null, active: true }).message,
-    ]
-    expect(msgs).toEqual(['Pick a real dimension value. A new group cannot go to the fallback dimension value from here.', 'A rule sets an account, dimensions or both.'])
+  it('group-map messages say dimension, never tag', () => {
+    expect(mapGroup('Organization', 'New team', 'Nowhere').message).toBe('Pick a value from this dimension or create it first.')
   })
 
   it('old sync for a month already in Jurnal is blocked', () => {
@@ -677,5 +675,89 @@ describe('privacy: no employee data in anything Jurnal renders or exports', () =
     const w = runWarnings(run(SEP).id).find((x) => x.code === 'duplicate-employee')!
     expect(w.message).toBe('1 employee appears more than once in this send. See who in Talenta.')
     expect(JSON.stringify(w)).not.toMatch(LEAK)
+  })
+})
+
+describe('settings: Connection, Pay items, Dimensions', () => {
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant + LM') })
+  const sales = (lines: JournalLine[], acct: string) => lines.filter((l) => l.account === acct && l.tags.Organization === 'Sales').reduce((s, l) => s + l.debit - l.credit, 0)
+
+  it('one account per pay item: a cost item takes any expense or COGS account and credits its party payable', () => {
+    const key = payItemKey('Insentif Penjualan', 'allowance')
+    const row = () => mappingFor('Insentif Penjualan', 'allowance')!
+    expect(payItemType(row())).toBe('allowance')
+    expect(setPayItemAccount(key, ACC.bpjsTk).message).toBe('Pick an expense or cost of goods sold account.')
+    expect(setPayItemAccount(key, ACC.medical).ok).toBe(true)
+    expect(row()).toMatchObject({ role: 'Earning', debit: ACC.medical, credit: ACC.hutangGaji, roleConfirmed: true })
+    expect(payItemParty(row())).toBe('Staff')
+    expect(runHolds(run(SEP))).toHaveLength(0)
+    // A new item carries no group account yet: Sales staff book it to the row account too.
+    expect(sales(draftOf(run(SEP))!.lines, ACC.medical)).toBe(11_000_000)
+    // Deductions and tax take their payable; the party label follows.
+    const bpjs = mappingFor('BPJSK Employee', 'deduction')!
+    expect(payItemType(bpjs)).toBe('deduction')
+    expect(payItemAccount(bpjs)).toBe(ACC.bpjsKes)
+    expect(payItemParty(bpjs)).toBe('BPJS Kesehatan')
+    expect(payItemType(mappingFor('PPH 21 Paid', 'deduction')!)).toBe('tax')
+    expect(as('Accountant', () => setPayItemAccount(key, ACC.salaries)).status).toBe(403)
+  })
+
+  it('a group account line and a fixed dimension value land on the right journal lines', () => {
+    mapInsentif()
+    const key = payItemKey('Insentif Penjualan', 'allowance')
+    expect(setPayItemSplit(key, { groupAccounts: [{ field: 'organization_name', value: 'Sales', account: ACC.salaries }], fixedTag: null }).ok).toBe(true)
+    const lines = () => { rebuildDraft(run(SEP).id); return draftOf(run(SEP))!.lines }
+    const ins = (acct: string) => lines().filter((l) => l.account === acct).flatMap((l) => l.sources).filter((x) => x.item === 'Insentif Penjualan').reduce((s, x) => s + x.amount, 0)
+    expect(ins(ACC.salaries)).toBe(10_500_000)
+    expect(ins(ACC.salesSalaries)).toBe(0)
+    expect(lines().find((l) => l.account === ACC.salaries && l.sources.some((x) => x.item === 'Insentif Penjualan'))!.why[0]).toContain('For Sales use 6-60101 Salaries')
+    // Fixed dimension value: every Insentif cost line carries Branch Jakarta HQ; the payable stays untagged.
+    expect(setPayItemSplit(key, { groupAccounts: [], fixedTag: { dimension: 'Branch', value: 'Jakarta HQ' } }).ok).toBe(true)
+    const tagged = lines().filter((l) => l.sources.some((x) => x.item === 'Insentif Penjualan') && l.debit > 0)
+    expect(tagged.every((l) => l.tags.Branch === 'Jakarta HQ')).toBe(true)
+    expect(lines().find((l) => l.account === ACC.hutangGaji)!.tags).toEqual({ Organization: null, Branch: null })
+    expect(journalTotals(draftOf(run(SEP))!).debit).toBe(journalTotals(draftOf(run(SEP))!).credit)
+    // Only cost items split.
+    expect(setPayItemSplit(payItemKey('BPJSK Employee', 'deduction'), { groupAccounts: [{ field: 'organization_name', value: 'Sales', account: ACC.salaries }], fixedTag: null }).ok).toBe(false)
+    expect(setPayItemSplit(key, { groupAccounts: [{ field: 'organization_name', value: 'Sales', account: ACC.bpjsKes }], fixedTag: null }).message).toBe('A group account must be an expense or cost of goods sold account.')
+  })
+
+  it('payable accounts per party move every row that credits the old payable', () => {
+    mapInsentif()
+    expect(addPayrollAccount({ code: '2-20513', name: 'BPJS TK Payable New', type: 'liability', party: null }).ok).toBe(true)
+    expect(setPayableAccount('BPJS Ketenagakerjaan', '2-20513').ok).toBe(true)
+    expect(mappingFor('JHT Employee', 'deduction')!.credit).toBe('2-20513')
+    expect(mappingFor('JKK paid by company', 'benefit')!.credit).toBe('2-20513')
+    rebuildDraft(run(SEP).id)
+    expect(net(draftOf(run(SEP))!.lines, '2-20513')).toBe(38_969_133)
+    expect(setPayableAccount('BPJS Kesehatan', '2-20513').message).toBe('BPJS TK Payable New is already the payable for BPJS Ketenagakerjaan.')
+  })
+
+  it('dimensions: a Talenta field feeds a Jurnal dimension, values match by name, unmatched values hold', () => {
+    mapInsentif()
+    expect(linkDimension('job_level', 'Job level').ok).toBe(true)
+    const sep = run(SEP)
+    rebuildDraft(sep.id)
+    const h = runHolds(sep).find((x) => x.code === 'unmapped-group')!
+    expect((h.details.groups as { value: string }[]).map((g) => g.value).sort()).toEqual(['Director', 'Manager', 'Staff', 'Supervisor'])
+    expect(createMissingValues('job_level', ['Staff', 'Supervisor', 'Manager', 'Director']).created).toBe(4)
+    expect(runHolds(sep)).toHaveLength(0)
+    const cost = draftOf(sep)!.lines.filter((l) => l.debit > 0 && l.account === ACC.salaries)
+    expect(cost.every((l) => !!l.tags['Job level'])).toBe(true)
+    expect(draftOf(sep)!.lines.filter((l) => l.account === ACC.pph21).every((l) => !l.tags['Job level'])).toBe(true)
+    // Empty value policy.
+    expect(setFieldPolicy('job_level', 'skip').ok).toBe(true)
+    expect(linkDimension('branch', 'Job level').message).toBe('Job level is already fed by Job level.')
+    expect(createPayrollTag('Job level', 'Intern').ok).toBe(true)
+  })
+
+  it('start month: earlier runs are before go-live and the old sync is blocked from it', () => {
+    expect(as('Accountant + LM', () => setStartMonth('2026-08')).status).toBe(403)
+    expect(as('Owner', () => setStartMonth('2026-08')).message).toBe('A posted payroll journal sits before that month. Reverse it first.')
+    expect(payroll.settings.cutover.firstLive).toBe('2026-07')
+    expect(oldSyncExpense({ date: '2026-10-20', amount: 1, pattern: 'Payroll' })).toMatchObject({ status: 'Blocked', message: 'Payroll from Jul 2026 posts from Talenta runs. The old sync was blocked.' })
+    expect(oldSyncExpense({ date: '2026-06-20', amount: 1, pattern: 'Payroll' }).status).toBe('Recorded')
+    expect(as('Owner', () => setStartMonth('2026-06')).ok).toBe(true)
+    expect(runs.value.find((r) => r.month === '2026-06')!.mode).toBe('Live')
   })
 })

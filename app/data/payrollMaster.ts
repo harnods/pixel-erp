@@ -105,52 +105,35 @@ export const ACC = {
 
 export const ORGANIZATIONS = ['Operations', 'Finance', 'Human Capital', 'Sales'] as const
 export const BRANCHES = ['Jakarta HQ', 'Bandung', 'Surabaya'] as const
-export const COST_CENTERS: { name: string; category: 'Direct' | 'In-direct' }[] = [
-  { name: 'Store Jakarta Kemang', category: 'Direct' },
-  { name: 'Store Bandung Dago', category: 'Direct' },
-  { name: 'Store Surabaya Tunjungan', category: 'Direct' },
-  { name: 'HQ Operations', category: 'In-direct' },
-  { name: 'HQ Finance', category: 'In-direct' },
-  { name: 'HQ Human Capital', category: 'In-direct' },
-  { name: 'HQ Sales', category: 'In-direct' },
-  { name: 'Regional Sales', category: 'In-direct' },
-]
 export const JOB_LEVELS = ['Staff', 'Supervisor', 'Manager', 'Director'] as const
 export const EMPLOYMENT_STATUSES = ['Permanent', 'Contract', 'Probation'] as const
 export const BUSINESS_UNITS = ['Coffee Retail', 'Corporate', 'B2B Beans'] as const
 
-export type TagDimension = 'Organization' | 'Branch'
+/** A Jurnal dimension, by name. Organization and Branch exist at setup; the Accountant can create more. */
+export type TagDimension = string
 export interface PayrollTag { dimension: TagDimension; name: string }
-/** The fallback tag value per dimension. A new group can never be mapped to it from the hold screen. */
-export const FALLBACK_TAG = 'Unassigned'
 export const PAYROLL_TAGS: PayrollTag[] = [
-  ...ORGANIZATIONS.map((name) => ({ dimension: 'Organization' as const, name })),
-  ...BRANCHES.map((name) => ({ dimension: 'Branch' as const, name })),
-  { dimension: 'Organization', name: FALLBACK_TAG },
-  { dimension: 'Branch', name: FALLBACK_TAG },
+  ...ORGANIZATIONS.map((name) => ({ dimension: 'Organization', name })),
+  ...BRANCHES.map((name) => ({ dimension: 'Branch', name })),
 ]
 
 /**
- * Fields the allocation rules can test (OD-08), named as the salarydetail payload names them.
- * cost_center_category is set in Jurnal; `sbu:<key>` reads one key of the employee's sbu list.
+ * Employee fields Talenta sends that can feed a Jurnal dimension, named as the salarydetail
+ * payload names them. `sbu:<key>` reads one key of the employee's sbu list.
  */
 export type TalentaField =
-  | 'organization_name' | 'branch' | 'cost_center' | 'cost_center_category'
+  | 'organization_name' | 'branch' | 'cost_center'
   | 'job_position' | 'job_level' | 'employment_status' | `sbu:${string}`
 export const SBU_KEY = 'Business Unit'
 export const TALENTA_FIELDS: { field: TalentaField; label: string }[] = [
   { field: 'organization_name', label: 'Organization' },
   { field: 'branch', label: 'Branch' },
   { field: 'cost_center', label: 'Cost center' },
-  { field: 'cost_center_category', label: 'Cost center category' },
   { field: 'job_position', label: 'Job position' },
   { field: 'job_level', label: 'Job level' },
   { field: 'employment_status', label: 'Employment status' },
   { field: `sbu:${SBU_KEY}`, label: 'Business unit' },
 ]
-/** Grouping fields whose empty value follows a field policy (hold or skip). */
-export type GroupingField = 'organization_name' | 'branch' | 'cost_center'
-export const GROUPING_FIELDS: GroupingField[] = ['organization_name', 'branch', 'cost_center']
 
 // ── Talenta payload shape (webhook "Salary Detail", final, 19 Nov 2025) ──────
 // No totals: take-home pay is computed by Jurnal (allowances - deductions).

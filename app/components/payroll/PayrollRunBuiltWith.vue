@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
  * "Built with": the read-only settings snapshot a draft or posted journal was
- * built with (TN-06): pay item mapping, allocation rules in order, group maps,
- * fallback confirmations, field policies and tax presets.
+ * built with (TN-06): pay item mapping with group accounts, dimension links,
+ * value maps and tax presets.
  */
 import { computed } from 'vue'
 import { snapshotById, accountLabel, wib, currentSnapshotId } from '~/data/payrollStore'
@@ -14,8 +14,9 @@ const s = computed(() => snap.value?.settings)
 const groupRows = computed(() => {
   const g = s.value?.groupMaps
   if (!g) return []
-  return (['Organization', 'Branch'] as const).flatMap((dim) => Object.entries(g[dim]).map(([value, tag]) => ({ dim, value, tag })))
+  return Object.entries(g).flatMap(([dim, map]) => Object.entries(map).map(([value, tag]) => ({ dim, value, tag })))
 })
+const splits = computed(() => (s.value?.mapping ?? []).filter((m) => m.groupAccounts?.length || m.fixedTag))
 const PRESETS: { key: 'pph21' | 'dtp' | 'pph26' | 'resign' | 'trueUp'; label: string }[] = [
   { key: 'pph21', label: 'Regular PPh 21' }, { key: 'dtp', label: 'PPh 21 DTP' }, { key: 'pph26', label: 'PPh 26' },
   { key: 'resign', label: 'PPh 21 on severance' }, { key: 'trueUp', label: 'December true-up' },
@@ -49,19 +50,16 @@ const PRESETS: { key: 'pph21' | 'dtp' | 'pph26' | 'resign' | 'trueUp'; label: st
       </table>
     </section>
 
-    <section class="pbw__card">
-      <header class="pbw__cardhead"><div class="pbw__cardtitle">{{ t('Allocation rules, in priority order') }}</div></header>
+    <section v-if="splits.length" class="pbw__card">
+      <header class="pbw__cardhead"><div class="pbw__cardtitle">{{ t('Group accounts and fixed dimension values') }}</div></header>
       <table class="pbw__table">
-        <thead><tr><th class="pbw__th">#</th><th class="pbw__th">{{ t('Rule') }}</th><th class="pbw__th">{{ t('Conditions') }}</th><th class="pbw__th">{{ t('Roles') }}</th><th class="pbw__th">{{ t('Sets') }}</th></tr></thead>
+        <thead><tr><th class="pbw__th">{{ t('Pay item') }}</th><th class="pbw__th">{{ t('Group account') }}</th><th class="pbw__th">{{ t('Fixed dimension value') }}</th></tr></thead>
         <tbody>
-          <tr v-for="(r, i) in s.rules" :key="r.id">
-            <td class="pbw__td">{{ i + 1 }}</td>
-            <td class="pbw__td">{{ r.name }}<span v-if="!r.active" class="pbw__muted"> · {{ t('Off') }}</span></td>
-            <td class="pbw__td">{{ r.conditions.map((c) => `${c.field} ${c.op} ${c.values.join(', ')}`).join(' and ') }}</td>
-            <td class="pbw__td">{{ r.roles.join(', ') }}</td>
-            <td class="pbw__td">{{ [r.account ? accountLabel(r.account) : '', r.tags ? Object.values(r.tags).filter(Boolean).join(', ') : ''].filter(Boolean).join(' · ') }}</td>
+          <tr v-for="m in splits" :key="m.key">
+            <td class="pbw__td">{{ m.name }}</td>
+            <td class="pbw__td">{{ (m.groupAccounts ?? []).map((g) => `${g.value}: ${accountLabel(g.account)}`).join(' · ') }}</td>
+            <td class="pbw__td">{{ m.fixedTag ? `${m.fixedTag.dimension} ${m.fixedTag.value}` : '' }}</td>
           </tr>
-          <tr v-if="!s.rules.length"><td class="pbw__td pbw__muted" colspan="5">{{ t('No allocation rules') }}</td></tr>
         </tbody>
       </table>
     </section>
@@ -77,12 +75,11 @@ const PRESETS: { key: 'pph21' | 'dtp' | 'pph26' | 'resign' | 'trueUp'; label: st
         </table>
       </section>
       <section class="pbw__card">
-        <header class="pbw__cardhead"><div class="pbw__cardtitle">{{ t('Tax presets and policies') }}</div></header>
+        <header class="pbw__cardhead"><div class="pbw__cardtitle">{{ t('Tax presets and dimensions') }}</div></header>
         <table class="pbw__table">
           <tbody>
             <tr v-for="p in PRESETS" :key="p.key"><td class="pbw__td">{{ t(p.label) }}</td><td class="pbw__td">{{ accountLabel(s.taxPresets[p.key]) }}</td></tr>
-            <tr v-for="(pol, f) in s.fieldPolicies" :key="f"><td class="pbw__td">{{ t('Empty') }} {{ f }}</td><td class="pbw__td">{{ t(pol === 'hold' ? 'Hold the run' : 'Skip') }}</td></tr>
-            <tr v-for="fb in s.fallback" :key="`${fb.field}${fb.value}`"><td class="pbw__td">{{ t('Fallback') }}: {{ fb.value }}</td><td class="pbw__td pbw__muted">{{ fb.reason }}</td></tr>
+            <tr v-for="l in s.dimensionLinks ?? []" :key="l.field"><td class="pbw__td">{{ l.dimension }}</td><td class="pbw__td">{{ t(l.empty === 'hold' ? 'Empty value holds the run' : 'Empty value left blank') }}</td></tr>
           </tbody>
         </table>
       </section>

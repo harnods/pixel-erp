@@ -1,331 +1,212 @@
 <script setup lang="ts">
 /**
- * Pay items (TS-02, OD-05, OD-06): one row per pay item matched on name and
- * section, with its role, debit and credit, Jurnal's suggestion, the last-run
- * amount and a preview of the posting. Guardrail blocks stop a save; other
- * breaches save with an override reason of 20 to 500 characters.
+ * Pay items: one row per Talenta pay item with its one Jurnal account. A cost item (allowance,
+ * benefit) takes any expense or COGS account and may split by group ("For Sales use Sales
+ * Salaries") or carry a fixed dimension value; a deduction or tax item takes its payable. The
+ * payable column follows the type. Payable accounts per party sit above the table. Unmapped
+ * items come first: they hold the run.
  */
 import { computed, reactive, ref } from 'vue'
-import { MpButton, MpInput, MpTextarea } from '@mekari/pixel3'
+import { MpButton } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import PayrollSettingsDrawer from '~/components/payroll/PayrollSettingsDrawer.vue'
-import { successToast, infoToast } from '~/utils/toasts'
+import { successToast } from '~/utils/toasts'
 import {
-  payroll, can, suggestMapping, validateMapping, setPayItemMapping, addPayItem, confirmAllSuggestions, replaceAccount,
-  accountLabel, accountName, rupiah, wib, PAY_ROLES, type PayItemMapping, type PayRole,
+  payroll, can, accountLabel, payItemType, isCostItem, payItemAccount, payItemParty, setPayItemAccount, setPayItemSplit,
+  setPayableAccount, useChartAccount, payrollAccount, payrollDimensions,
+  type PayItemMapping, type PayItemType, type GroupAccount,
 } from '~/data/payrollStore'
-import { PAYABLE_PARTIES, type PayableParty, type PaySection } from '~/data/payrollMaster'
-import { lastRunFigures, isCostAccount } from '~/data/payrollUiSettings'
+import { PAYABLE_PARTIES, TALENTA_FIELDS, type PayableParty, type PayrollAccountType, type TalentaField } from '~/data/payrollMaster'
+import { accountChoices, valuesSeen, fieldSent, type AccountOption } from '~/data/payrollUiSettings'
 
-const emit = defineEmits<{ (e: 'go', key: 'accounts'): void }>()
 const { t } = useLocale()
 
-const SECTION_LABEL: Record<PaySection, string> = { allowance: 'Allowance', deduction: 'Deduction', benefit: 'Benefit' }
-const BULK_SKIP: PayRole[] = ['Loan', 'Reimbursement', 'THR', 'Severance', 'Advance offset', 'Tax']
-const figures = computed(() => lastRunFigures())
-
-type RowState = 'Mapped' | 'Override' | 'Needs a role' | 'No account'
-function stateOf(m: PayItemMapping): RowState {
-  if (!m.role || !m.roleConfirmed) return 'Needs a role'
-  if (!m.debit || !m.credit) return 'No account'
-  return m.override ? 'Override' : 'Mapped'
+const TYPE_LABEL: Record<PayItemType, string> = { allowance: 'Allowance', deduction: 'Deduction', benefit: 'Benefit', tax: 'Tax' }
+const PARTY_LABEL: Record<PayableParty, string> = {
+  Staff: 'Staff', 'DJP PPh 21': 'Tax office (PPh 21)', 'DJP PPh 26': 'Tax office (PPh 26)',
+  'BPJS Kesehatan': 'BPJS Kesehatan', 'BPJS Ketenagakerjaan': 'BPJS Ketenagakerjaan', Other: 'DPLK',
 }
-const STATE_TYPE: Record<RowState, 'completed' | 'warning' | 'critical' | 'information'> = { Mapped: 'completed', Override: 'information', 'Needs a role': 'critical', 'No account': 'critical' }
+const TYPE_ORDER: PayItemType[] = ['allowance', 'benefit', 'deduction', 'tax']
 
-const sectionFilter = ref('all')
-const stateFilter = ref('all')
-const sectionOptions = [{ value: 'all', label: 'All sections' }, ...(['allowance', 'deduction', 'benefit'] as PaySection[]).map((x) => ({ value: x, label: SECTION_LABEL[x] }))]
-const stateOptions = [{ value: 'all', label: 'All states' }, { value: 'open', label: 'Needs a decision' }, { value: 'mapped', label: 'Mapped' }, { value: 'override', label: 'Override' }]
-const SECTION_ORDER: PaySection[] = ['allowance', 'deduction', 'benefit']
-const rows = computed(() => payroll.settings.mapping
-  .filter((m) => sectionFilter.value === 'all' || m.section === sectionFilter.value)
-  .filter((m) => {
-    const st = stateOf(m)
-    if (stateFilter.value === 'open') return st === 'Needs a role' || st === 'No account'
-    if (stateFilter.value === 'mapped') return st === 'Mapped'
-    if (stateFilter.value === 'override') return st === 'Override'
-    return true
-  })
-  .slice().sort((a, b) => SECTION_ORDER.indexOf(a.section) - SECTION_ORDER.indexOf(b.section) || a.name.localeCompare(b.name)))
-const openCount = computed(() => payroll.settings.mapping.filter((m) => { const st = stateOf(m); return st === 'Needs a role' || st === 'No account' }).length)
-const filtered = computed(() => sectionFilter.value !== 'all' || stateFilter.value !== 'all')
+const needsAccount = (m: PayItemMapping) => !m.roleConfirmed || !m.role || !m.debit || !m.credit
+const rows = computed(() => [...payroll.settings.mapping].sort((a, b) =>
+  Number(needsAccount(b)) - Number(needsAccount(a))
+  || TYPE_ORDER.indexOf(payItemType(a)) - TYPE_ORDER.indexOf(payItemType(b))
+  || a.name.localeCompare(b.name)))
+const openCount = computed(() => payroll.settings.mapping.filter(needsAccount).length)
 
-/** Suggestion chip for a row that still needs a decision; never over a mapped row. */
-function suggestionFor(m: PayItemMapping) {
-  if (stateOf(m) === 'Mapped' || stateOf(m) === 'Override') return null
-  return suggestMapping(m.name, m.section)
+// ── Account choices: any expense or COGS account for cost items, payables for the rest ──
+const COST: PayrollAccountType[] = ['expense', 'cogs']
+const costOptions = computed(() => accountChoices(COST))
+const balanceOptions = computed(() => accountChoices(['liability', 'asset']))
+const liabilityOptions = computed(() => accountChoices(['liability']))
+function optionsFor(m: PayItemMapping) {
+  if (isCostItem(m)) return costOptions.value
+  return payItemType(m) === 'tax' ? liabilityOptions.value : balanceOptions.value
+}
+function adopt(code: string, list: AccountOption[]) {
+  const o = list.find((x) => x.value === code)
+  if (o && !payrollAccount(code)) useChartAccount({ code: o.value, name: o.name, type: o.type })
 }
 const rowErrors = reactive<Record<string, string>>({})
-function accept(m: PayItemMapping) {
-  const s = suggestMapping(m.name, m.section)
-  if (!s) return
-  const r = setPayItemMapping(m.key, s)
-  if (!r.ok) { rowErrors[m.key] = t(r.message ?? ''); return }
-  rowErrors[m.key] = ''
-  successToast(t(`${m.name} mapped`))
+function onAccount(m: PayItemMapping, code: string) {
+  if (!code || code === payItemAccount(m)) return
+  adopt(code, optionsFor(m))
+  const r = setPayItemAccount(m.key, code)
+  rowErrors[m.key] = r.ok ? '' : t(r.message ?? '')
+  if (r.ok) successToast(t(`${m.name} mapped to ${accountLabel(code)}`))
 }
-function onConfirmAll() {
-  const r = confirmAllSuggestions()
-  if (!r.ok) { infoToast(t(r.message ?? '')); return }
-  successToast(t(`${r.mapped} pay item${r.mapped === 1 ? '' : 's'} mapped. ${r.skipped} left for you to decide.`))
+function partyLabel(m: PayItemMapping) {
+  const p = payItemParty(m)
+  return p ? t(PARTY_LABEL[p]) : t('None')
 }
-
-// ── Edit drawer ──
-const editKey = ref<string | null>(null)
-const editRow = computed(() => payroll.settings.mapping.find((m) => m.key === editKey.value) ?? null)
-const ed = reactive({ role: '', debit: '', credit: '', party: 'none', reason: '' })
-const edError = ref('')
-function openEdit(m: PayItemMapping) {
-  editKey.value = m.key
-  Object.assign(ed, { role: m.role ?? '', debit: m.debit ?? '', credit: m.credit ?? '', party: m.party ?? 'none', reason: m.override?.reason ?? '' })
-  edError.value = ''
-}
-function useSuggestion() {
-  const m = editRow.value
-  const s = m && suggestMapping(m.name, m.section)
-  if (!s) return
-  Object.assign(ed, { role: s.role ?? '', debit: s.debit ?? '', credit: s.credit ?? '', party: s.party ?? 'none' })
-  edError.value = ''
-}
-const roleOptions = PAY_ROLES.map((r) => ({ value: r, label: r }))
-const accountOptions = computed(() => payroll.accounts.filter((a) => !a.archived && a.type !== 'cash').map((a) => ({ value: a.code, label: `${a.code} ${a.name}` })))
-const partyOptions = [{ value: 'none', label: 'No party' }, ...PAYABLE_PARTIES.map((p) => ({ value: p, label: p }))]
-const draftRow = computed(() => editRow.value && ({
-  ...editRow.value,
-  role: (ed.role || null) as PayRole | null, debit: ed.debit || null, credit: ed.credit || null,
-  party: ed.party === 'none' ? null : (ed.party as PayableParty),
-}))
-const check = computed(() => (draftRow.value ? validateMapping(draftRow.value) : { blocks: [], overridable: [] }))
-/** Posting preview with the last-run amount (FG1-AC6). */
-const preview = computed(() => {
-  const m = editRow.value
-  if (!m || !ed.debit || !ed.credit) return null
-  const f = figures.value[m.key]
-  const amount = f?.amount ?? 0
-  const hg = payroll.settings.hutangGaji
-  return {
-    amount, staff: f?.staff ?? 0, runLabel: f?.runLabel ?? null,
-    lines: [{ side: 'Dr', account: ed.debit, amount }, { side: 'Cr', account: ed.credit, amount }],
-    hutangGajiUntouched: ed.debit !== hg && ed.credit !== hg,
-    hg,
-  }
-})
-function save() {
-  const m = editRow.value
-  if (!m) return
-  if (!ed.role) { edError.value = t('Pick a role.'); return }
-  if (!ed.debit || !ed.credit) { edError.value = t('Pick a debit and a credit account.'); return }
-  const patch = { role: ed.role as PayRole, debit: ed.debit, credit: ed.credit, party: ed.party === 'none' ? null : (ed.party as PayableParty) }
-  const r = setPayItemMapping(m.key, patch, check.value.overridable.length ? ed.reason : undefined)
-  if (!r.ok) { edError.value = t(r.message ?? ''); return }
-  editKey.value = null
-  successToast(t(check.value.overridable.length ? `${m.name} saved with an override` : `${m.name} saved`))
+function splitSummary(m: PayItemMapping) {
+  const parts: string[] = []
+  const n = m.groupAccounts?.length ?? 0
+  if (n) parts.push(t(`${n} group account${n > 1 ? 's' : ''}`))
+  if (m.fixedTag) parts.push(`${m.fixedTag.dimension} ${m.fixedTag.value}`)
+  return parts.join(' · ')
 }
 
-// ── New pay item ──
-const addOpen = ref(false)
-const add = reactive({ name: '', section: 'allowance' as PaySection })
-const addError = ref('')
-const sectionPick = (['allowance', 'deduction', 'benefit'] as PaySection[]).map((x) => ({ value: x, label: SECTION_LABEL[x] }))
-function onAdd() {
-  const r = addPayItem(add.name, add.section)
-  if (!r.ok) { addError.value = t(r.message ?? ''); return }
-  addOpen.value = false
-  const row = payroll.settings.mapping.find((m) => m.key === r.key)
-  successToast(t(`${add.name.trim()} added. Set its role and accounts.`))
-  if (row) openEdit(row)
+// ── Payable accounts per party ──
+const payables = computed(() => PAYABLE_PARTIES.map((p) => ({ party: p, label: PARTY_LABEL[p], code: payroll.settings.payables[p] })))
+const payableError = ref('')
+function onPayable(party: PayableParty, code: string) {
+  if (!code || code === payroll.settings.payables[party]) return
+  adopt(code, liabilityOptions.value)
+  const r = setPayableAccount(party, code)
+  payableError.value = r.ok ? '' : t(r.message ?? '')
+  if (r.ok) successToast(t(`${PARTY_LABEL[party]} payable saved`))
 }
 
-// ── Replace account ──
-const replOpen = ref(false)
-const repl = reactive({ from: '', to: '' })
-const replError = ref('')
-const usedAccounts = computed(() => [...new Set(payroll.settings.mapping.flatMap((m) => [m.debit, m.credit]).filter((x): x is string => !!x))].sort().map((c) => ({ value: c, label: accountLabel(c) })))
-const replRows = computed(() => payroll.settings.mapping.filter((m) => repl.from && (m.debit === repl.from || m.credit === repl.from)).length)
-function onReplace() {
-  if (!repl.from || !repl.to) { replError.value = t('Pick both accounts.'); return }
-  if (repl.from === repl.to) { replError.value = t('Pick a different account.'); return }
-  const r = replaceAccount(repl.from, repl.to)
-  if (!r.ok) { replError.value = t(r.message ?? ''); return }
-  replOpen.value = false
-  successToast(t(`${accountName(repl.from)} replaced on ${r.rows} row${r.rows === 1 ? '' : 's'}`))
+// ── Split a cost item: group accounts and a fixed dimension value ──
+const openKey = ref<string | null>(null)
+const ed = reactive<{ lines: GroupAccount[]; dim: string; value: string; error: string }>({ lines: [], dim: '', value: '', error: '' })
+function toggle(m: PayItemMapping) {
+  if (openKey.value === m.key) { openKey.value = null; return }
+  openKey.value = m.key
+  Object.assign(ed, { lines: (m.groupAccounts ?? []).map((g) => ({ ...g })), dim: m.fixedTag?.dimension ?? '', value: m.fixedTag?.value ?? '', error: '' })
 }
-
-const notInPrototype = () => infoToast(t('Not in this prototype'))
+const groupFields = computed(() => TALENTA_FIELDS.filter((f) => fieldSent(f.field)).map((f) => ({ value: f.field, label: f.label })))
+const valueOptions = (field: string) => valuesSeen(field).map((v) => ({ value: v, label: v }))
+const dimOptions = computed(() => [{ value: '', label: t('None') }, ...payrollDimensions().map((d) => ({ value: d, label: d }))])
+const dimValueOptions = computed(() => payroll.tags.filter((x) => x.dimension === ed.dim).map((x) => ({ value: x.name, label: x.name })))
+function addLine() { ed.lines.push({ field: 'organization_name', value: '', account: '' }); ed.error = '' }
+function saveSplit(m: PayItemMapping) {
+  for (const l of ed.lines) adopt(l.account, costOptions.value)
+  const r = setPayItemSplit(m.key, { groupAccounts: ed.lines, fixedTag: ed.dim && ed.value ? { dimension: ed.dim, value: ed.value } : null })
+  if (!r.ok) { ed.error = t(r.message ?? ''); return }
+  openKey.value = null
+  successToast(t(`${m.name} saved`))
+}
 </script>
 
 <template>
   <div class="pset-stack">
-    <div class="pset-bar">
-      <div class="pset-bar__left">
-        <ErpFilterSelect id="pset-pi-section" v-model="sectionFilter" :placeholder="t('Section')" :options="sectionOptions" :is-clearable="false" />
-        <ErpFilterSelect id="pset-pi-state" v-model="stateFilter" :placeholder="t('State')" :options="stateOptions" :is-clearable="false" />
-        <MpButton v-if="filtered" variant="ghost" is-rounded @click="sectionFilter = 'all'; stateFilter = 'all'">{{ t('Clear filters') }}</MpButton>
-      </div>
-      <div class="pset-bar__right">
-        <template v-if="can('setup')">
-          <MpButton variant="secondary" is-rounded @click="onConfirmAll">{{ t('Confirm all suggestions') }}</MpButton>
-          <MpButton variant="secondary" is-rounded @click="replOpen = true; repl.from = ''; repl.to = ''; replError = ''">{{ t('Replace account') }}</MpButton>
-          <MpButton variant="secondary" is-rounded @click="notInPrototype">{{ t('Submit for approval') }}</MpButton>
-        </template>
-        <MpButton variant="secondary" is-rounded @click="notInPrototype">{{ t('Export overrides') }}</MpButton>
-        <MpButton v-if="can('setup')" is-rounded left-icon="add" @click="addOpen = true; add.name = ''; addError = ''">{{ t('New pay item') }}</MpButton>
-      </div>
-    </div>
-
-    <div v-if="openCount" class="pset-note pset-note--warn">
-      {{ t(`${openCount} pay item${openCount > 1 ? 's need' : ' needs'} a decision. A run holds until every item in it has a confirmed role and both accounts.`) }}
-    </div>
-
+    <!-- Payable accounts -->
     <div class="pset-card">
-      <table class="pset-table">
+      <div class="pset-card__head">
+        <div class="pset-card__title">{{ t('Payable accounts') }}</div>
+      </div>
+      <div class="pset-card__body">
+        <div class="pset-payables">
+          <div v-for="p in payables" :key="p.party" class="pset-field">
+            <label class="pset-label" :for="`pset-payable-${p.party.replace(/\s+/g, '-')}`">{{ t(p.label) }}</label>
+            <ErpFilterSelect v-if="can('setup')" :id="`pset-payable-${p.party.replace(/\s+/g, '-')}`" :model-value="p.code" :placeholder="t('Account')" :options="liabilityOptions" width="100%" :is-clearable="false" @update:model-value="(v: string) => onPayable(p.party, v)" />
+            <span v-else class="pset-form__value">{{ accountLabel(p.code) }}</span>
+          </div>
+        </div>
+        <p v-if="payableError" class="pset-error">{{ payableError }}</p>
+      </div>
+    </div>
+
+    <!-- Pay item mapping -->
+    <div class="pset-card">
+      <div class="pset-card__head">
+        <div class="pset-card__title">{{ t('Pay items') }}</div>
+        <ErpStatusBadge v-if="openCount" status="needs-account" :label="t(`${openCount} need${openCount > 1 ? '' : 's'} an account`)" type="critical" />
+      </div>
+      <table class="pset-table pset-pi">
+        <colgroup>
+          <col class="pset-pi__name"><col class="pset-pi__type"><col class="pset-pi__acct"><col class="pset-pi__party"><col class="pset-pi__act">
+        </colgroup>
         <thead>
           <tr>
             <th class="pset-th">{{ t('Pay item') }}</th>
-            <th class="pset-th">{{ t('Role') }}</th>
-            <th class="pset-th">{{ t('Debit') }}</th>
-            <th class="pset-th">{{ t('Credit') }}</th>
-            <th class="pset-th pset-th--num">{{ t('Last run') }}</th>
-            <th class="pset-th">{{ t('State') }}</th>
+            <th class="pset-th">{{ t('Type') }}</th>
+            <th class="pset-th">{{ t('Jurnal account') }}</th>
+            <th class="pset-th">{{ t('Payable') }}</th>
             <th class="pset-th" />
           </tr>
         </thead>
         <tbody>
-          <tr v-if="!rows.length"><td class="pset-td pset-muted" colspan="7">{{ t('No pay items match the filters.') }}</td></tr>
-          <tr v-for="m in rows" :key="m.key">
-            <td class="pset-td">
-              <span class="pset-td--strong pset-link" @click="openEdit(m)">{{ m.name }}</span>
-              <span class="pset-line">{{ t(SECTION_LABEL[m.section]) }}<template v-if="m.addedBy === 'Jurnal'"> · {{ t('Added in Jurnal') }}</template><template v-if="m.party"> · {{ m.party }}</template></span>
-              <div v-if="suggestionFor(m)" class="pset-chips pset-sugg">
-                <ErpStatusBadge status="recommended" :label="t(`Suggested: ${suggestionFor(m)!.role}, Dr ${suggestionFor(m)!.debit}, Cr ${suggestionFor(m)!.credit}`)" type="information" />
-                <span v-if="can('setup')" class="pset-link pset-muted" @click="accept(m)">{{ t('Accept') }}</span>
-                <span v-if="BULK_SKIP.includes(suggestionFor(m)!.role!)" class="pset-muted">{{ t('Confirm all skips this role') }}</span>
-              </div>
-              <span v-else-if="stateOf(m) === 'Needs a role' || stateOf(m) === 'No account'" class="pset-line">{{ t('No suggestion') }}</span>
-              <span v-if="rowErrors[m.key]" class="pset-line pset-danger">{{ rowErrors[m.key] }}</span>
-            </td>
-            <td class="pset-td">{{ m.role && m.roleConfirmed ? t(m.role) : '' }}</td>
-            <td class="pset-td">{{ accountLabel(m.debit) }}</td>
-            <td class="pset-td">{{ accountLabel(m.credit) }}</td>
-            <td class="pset-td pset-td--num">
-              <template v-if="figures[m.key]">{{ rupiah(figures[m.key]!.amount) }}<span class="pset-line">{{ figures[m.key]!.staff }} {{ t('employees') }} · {{ figures[m.key]!.runLabel }}</span></template>
-              <span v-else class="pset-muted">{{ t('Not sent yet') }}</span>
-            </td>
-            <td class="pset-td">
-              <ErpStatusBadge :status="stateOf(m)" :label="t(stateOf(m))" :type="STATE_TYPE[stateOf(m)]" />
-            </td>
-            <td class="pset-td pset-td--act">
-              <MpButton size="sm" variant="secondary" is-rounded @click="openEdit(m)">{{ t(can('setup') ? 'Edit' : 'View') }}</MpButton>
-            </td>
-          </tr>
+          <template v-for="m in rows" :key="m.key">
+            <tr :data-pay-item="m.name">
+              <td class="pset-td">
+                <span>{{ m.name }}</span>
+                <span v-if="needsAccount(m)" class="pset-chip"><ErpStatusBadge status="needs-account" :label="t('Needs account')" type="critical" /></span>
+              </td>
+              <td class="pset-td">{{ t(TYPE_LABEL[payItemType(m)]) }}</td>
+              <td class="pset-td pset-pi__cell">
+                <ErpFilterSelect v-if="can('setup')" :id="`pset-acct-${m.key.replace(/[^a-zA-Z0-9]/g, '-')}`" :model-value="needsAccount(m) ? '' : (payItemAccount(m) ?? '')" :placeholder="t('Pick an account')" :options="optionsFor(m)" width="100%" :is-clearable="false" @update:model-value="(v: string) => onAccount(m, v)" />
+                <span v-else>{{ needsAccount(m) ? '' : accountLabel(payItemAccount(m)) }}</span>
+                <span v-if="splitSummary(m)" class="pset-line">{{ splitSummary(m) }}</span>
+                <span v-if="rowErrors[m.key]" class="pset-line pset-danger">{{ rowErrors[m.key] }}</span>
+              </td>
+              <td class="pset-td">{{ partyLabel(m) }}</td>
+              <td class="pset-td pset-td--act">
+                <MpButton v-if="isCostItem(m) && !needsAccount(m) && (can('setup') || splitSummary(m))" size="sm" variant="ghost" is-rounded :right-icon="openKey === m.key ? 'chevrons-up' : 'chevrons-down'" @click="toggle(m)">{{ t('Split') }}</MpButton>
+              </td>
+            </tr>
+            <tr v-if="openKey === m.key" class="pset-pi__split">
+              <td class="pset-td" colspan="5">
+                <div class="pset-split">
+                  <div v-for="(l, i) in ed.lines" :key="i" class="pset-split__row">
+                    <span class="pset-split__word">{{ t('For') }}</span>
+                    <ErpFilterSelect :id="`pset-split-field-${i}`" :model-value="l.field" :placeholder="t('Field')" :options="groupFields" width="160px" :is-clearable="false" :is-disabled="!can('setup')" @update:model-value="(v: string) => { l.field = v as TalentaField; l.value = '' }" />
+                    <ErpFilterSelect :id="`pset-split-value-${i}`" v-model="l.value" :placeholder="t('Value')" :options="valueOptions(l.field)" width="200px" :is-clearable="false" :is-disabled="!can('setup')" />
+                    <span class="pset-split__word">{{ t('use') }}</span>
+                    <ErpFilterSelect :id="`pset-split-acct-${i}`" v-model="l.account" :placeholder="t('Account')" :options="costOptions" width="260px" :is-clearable="false" :is-disabled="!can('setup')" />
+                    <MpButton v-if="can('setup')" size="sm" variant="ghost" is-rounded @click="ed.lines.splice(i, 1)">{{ t('Remove') }}</MpButton>
+                  </div>
+                  <div v-if="can('setup')"><MpButton size="sm" variant="secondary" is-rounded left-icon="add" @click="addLine">{{ t('Add group account') }}</MpButton></div>
+                  <div class="pset-split__row">
+                    <span class="pset-split__word pset-split__word--wide">{{ t('Fixed dimension value') }}</span>
+                    <ErpFilterSelect id="pset-split-dim" :model-value="ed.dim" :placeholder="t('Dimension')" :options="dimOptions" width="160px" :is-clearable="false" :is-disabled="!can('setup')" @update:model-value="(v: string) => { ed.dim = v; ed.value = '' }" />
+                    <ErpFilterSelect v-if="ed.dim" id="pset-split-dimvalue" v-model="ed.value" :placeholder="t('Value')" :options="dimValueOptions" width="200px" :is-clearable="false" :is-disabled="!can('setup')" />
+                  </div>
+                  <p v-if="ed.error" class="pset-error">{{ ed.error }}</p>
+                  <div v-if="can('setup')" class="pset-split__foot">
+                    <MpButton size="sm" variant="ghost" is-rounded @click="openKey = null">{{ t('Cancel') }}</MpButton>
+                    <MpButton size="sm" is-rounded @click="saveSplit(m)">{{ t('Save') }}</MpButton>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          </template>
         </tbody>
       </table>
     </div>
-
-    <!-- Edit one pay item -->
-    <PayrollSettingsDrawer :is-open="!!editRow" :title="editRow?.name ?? ''" :sub="editRow ? t(SECTION_LABEL[editRow.section]) : ''" wide @close="editKey = null">
-      <template v-if="editRow">
-        <div v-if="suggestMapping(editRow.name, editRow.section) && can('setup')" class="pset-note">
-          <span>{{ t(`Suggestion: ${suggestMapping(editRow.name, editRow.section)!.role}, Dr ${accountLabel(suggestMapping(editRow.name, editRow.section)!.debit)}, Cr ${accountLabel(suggestMapping(editRow.name, editRow.section)!.credit)}`) }}</span>
-          <MpButton size="sm" variant="secondary" is-rounded @click="useSuggestion">{{ t('Use suggestion') }}</MpButton>
-        </div>
-        <div class="pset-row">
-          <div class="pset-field">
-            <span class="pset-label">{{ t('Role') }}</span>
-            <ErpFilterSelect v-if="can('setup')" id="pset-ed-role" v-model="ed.role" :placeholder="t('Pick a role')" :options="roleOptions" width="100%" :is-clearable="false" @update:model-value="edError = ''" />
-            <span v-else>{{ editRow.role ?? '' }}</span>
-          </div>
-          <div class="pset-field">
-            <span class="pset-label">{{ t('Owed to') }}</span>
-            <ErpFilterSelect v-if="can('setup')" id="pset-ed-party" v-model="ed.party" :placeholder="t('Party')" :options="partyOptions" width="100%" :is-clearable="false" />
-            <span v-else>{{ editRow.party ?? t('No party') }}</span>
-          </div>
-        </div>
-        <div class="pset-row">
-          <div class="pset-field">
-            <span class="pset-label">{{ t('Debit') }}</span>
-            <ErpFilterSelect v-if="can('setup')" id="pset-ed-debit" v-model="ed.debit" :placeholder="t('Account')" :options="accountOptions" width="100%" :is-clearable="false" @update:model-value="edError = ''" />
-            <span v-else>{{ accountLabel(editRow.debit) }}</span>
-          </div>
-          <div class="pset-field">
-            <span class="pset-label">{{ t('Credit') }}</span>
-            <ErpFilterSelect v-if="can('setup')" id="pset-ed-credit" v-model="ed.credit" :placeholder="t('Account')" :options="accountOptions" width="100%" :is-clearable="false" @update:model-value="edError = ''" />
-            <span v-else>{{ accountLabel(editRow.credit) }}</span>
-          </div>
-        </div>
-
-        <!-- Guardrails (OD-06) -->
-        <div v-for="b in check.blocks" :key="b" class="pset-note pset-note--danger">{{ t(b) }}</div>
-        <template v-if="!check.blocks.length && check.overridable.length">
-          <div v-for="o in check.overridable" :key="o" class="pset-note pset-note--warn">{{ t(o) }}</div>
-          <div v-if="can('setup')" class="pset-field">
-            <label class="pset-label" for="pset-ed-reason">{{ t('Override reason') }}</label>
-            <MpTextarea id="pset-ed-reason" v-model="ed.reason" is-full-width />
-            <span class="pset-muted">{{ ed.reason.trim().length }} / 500 · {{ t('at least 20 characters') }}</span>
-          </div>
-        </template>
-        <div v-if="editRow.override" class="pset-note">{{ t(`Override on record: ${editRow.override.reason}`) }} · {{ editRow.override.by }} · {{ wib(editRow.override.at) }}</div>
-
-        <!-- Posting preview with the last-run amount -->
-        <div v-if="preview" class="pset-preview">
-          <div class="pset-preview__head">{{ preview.runLabel ? t(`Posting preview, last run ${preview.runLabel}, ${preview.staff} employees`) : t('Posting preview. Not sent by Talenta yet.') }}</div>
-          <table class="pset-table">
-            <tbody>
-              <tr v-for="l in preview.lines" :key="l.side">
-                <td class="pset-td">{{ l.side }} {{ accountLabel(l.account) }}<span v-if="l.side === 'Dr' && isCostAccount(l.account)" class="pset-line">{{ t('Dimensions from the organization and branch maps, or a rule') }}</span></td>
-                <td class="pset-td pset-td--num">{{ rupiah(l.amount) }}</td>
-              </tr>
-            </tbody>
-          </table>
-          <div v-if="ed.role === 'Employer contribution' && preview.hutangGajiUntouched" class="pset-preview__head">{{ t(`${accountName(preview.hg)} does not change.`) }}</div>
-        </div>
-        <p v-if="edError" class="pset-error">{{ edError }}</p>
-      </template>
-      <template v-if="can('setup')" #footer>
-        <MpButton variant="ghost" is-rounded @click="editKey = null">{{ t('Cancel') }}</MpButton>
-        <MpButton is-rounded @click="save">{{ t(check.overridable.length && !check.blocks.length ? 'Save with override' : 'Save') }}</MpButton>
-      </template>
-    </PayrollSettingsDrawer>
-
-    <!-- New pay item -->
-    <PayrollSettingsDrawer :is-open="addOpen" :title="t('New pay item')" @close="addOpen = false">
-      <p class="pset-hint">{{ t('Add an item before Talenta sends it. Jurnal matches on the name and section, spaces trimmed and case ignored.') }}</p>
-      <div class="pset-field">
-        <label class="pset-label" for="pset-add-name">{{ t('Name as Talenta shows it') }}</label>
-        <MpInput id="pset-add-name" v-model="add.name" :is-invalid="!!addError" @update:model-value="addError = ''" />
-      </div>
-      <div class="pset-field">
-        <span class="pset-label">{{ t('Section') }}</span>
-        <ErpFilterSelect id="pset-add-section" v-model="add.section" :placeholder="t('Section')" :options="sectionPick" width="100%" :is-clearable="false" />
-      </div>
-      <p v-if="addError" class="pset-error">{{ addError }}</p>
-      <template #footer>
-        <MpButton variant="ghost" is-rounded @click="addOpen = false">{{ t('Cancel') }}</MpButton>
-        <MpButton is-rounded @click="onAdd">{{ t('Add pay item') }}</MpButton>
-      </template>
-    </PayrollSettingsDrawer>
-
-    <!-- Replace account across rows -->
-    <PayrollSettingsDrawer :is-open="replOpen" :title="t('Replace account')" @close="replOpen = false">
-      <div class="pset-field">
-        <span class="pset-label">{{ t('Replace') }}</span>
-        <ErpFilterSelect id="pset-repl-from" v-model="repl.from" :placeholder="t('Account in use')" :options="usedAccounts" width="100%" :is-clearable="false" @update:model-value="replError = ''" />
-      </div>
-      <div class="pset-field">
-        <span class="pset-label">{{ t('With') }}</span>
-        <ErpFilterSelect id="pset-repl-to" v-model="repl.to" :placeholder="t('Account')" :options="accountOptions" width="100%" :is-clearable="false" @update:model-value="replError = ''" />
-      </div>
-      <p v-if="repl.from" class="pset-hint">{{ t(`${replRows} pay item row${replRows === 1 ? '' : 's'} use this account. Posted runs keep their own accounts.`) }}</p>
-      <p v-if="replError" class="pset-error">{{ replError }}</p>
-      <template #footer>
-        <MpButton variant="ghost" is-rounded @click="replOpen = false">{{ t('Cancel') }}</MpButton>
-        <MpButton is-rounded @click="onReplace">{{ t('Replace') }}</MpButton>
-      </template>
-    </PayrollSettingsDrawer>
   </div>
 </template>
 
 <style scoped>
-.pset-sugg { margin-top: var(--mp-spacing-2); align-items: center; }
+.pset-payables :deep(.efs), .pset-payables :deep(.efs-trigger) { display: flex; width: 100%; }
+.pset-payables { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--mp-spacing-4) var(--mp-spacing-5); }
+.pset-pi { table-layout: fixed; }
+.pset-pi__name { width: 26%; }
+.pset-pi__type { width: 11%; }
+.pset-pi__acct { width: 33%; }
+.pset-pi__party { width: 20%; }
+.pset-pi__act { width: 10%; }
+.pset-pi .pset-td { vertical-align: middle; }
+.pset-chip { display: inline-block; margin-left: var(--mp-spacing-2); vertical-align: middle; }
+.pset-pi__split .pset-td { background: var(--mp-background-neutral-subtle); }
+.pset-split { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
+.pset-split__row { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
+.pset-split__word { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); min-width: 28px; }
+.pset-split__word--wide { min-width: 160px; }
+.pset-split__foot { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); }
+.pset-pi__cell :deep(.efs) { display: block; width: 100%; }
+.pset-pi__cell :deep(.efs-trigger) { width: 100%; }
 </style>

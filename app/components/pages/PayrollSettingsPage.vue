@@ -1,46 +1,34 @@
 <script setup lang="ts">
 /**
- * Payroll settings (PRD FG-1): connection, accounts, pay items, groups and
- * rules, dry run, cut-over. Every save goes through payrollStore, which runs
- * the guardrails, snapshots the settings (LR-9) and re-checks held runs; this
+ * Payroll settings: Connection, Pay items, Dimensions. Every save goes through
+ * payrollStore, which snapshots the settings (LR-9) and re-checks held runs; this
  * page only reads the store and calls it. The tab sits in ?section= so a link
- * from a hold screen lands on the right one.
+ * from a hold lands on the right one.
  */
 import { computed } from 'vue'
 import { MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel } from '@mekari/pixel3'
-import { payroll, can } from '~/data/payrollStore'
 import PayrollSettingsConnection from '~/components/payroll/PayrollSettingsConnection.vue'
-import PayrollSettingsAccounts from '~/components/payroll/PayrollSettingsAccounts.vue'
 import PayrollSettingsPayItems from '~/components/payroll/PayrollSettingsPayItems.vue'
-import PayrollSettingsGroups from '~/components/payroll/PayrollSettingsGroups.vue'
-import PayrollSettingsDryRun from '~/components/payroll/PayrollSettingsDryRun.vue'
-import PayrollSettingsCutover from '~/components/payroll/PayrollSettingsCutover.vue'
+import PayrollSettingsDimensions from '~/components/payroll/PayrollSettingsDimensions.vue'
 
 const { t } = useLocale()
 const route = useRoute()
 const router = useRouter()
 
-const ALL_TABS = [
+const tabs = [
   { key: 'connection', label: 'Connection' },
-  { key: 'accounts', label: 'Accounts' },
   { key: 'pay-items', label: 'Pay items' },
-  { key: 'groups', label: 'Groups and rules' },
-  { key: 'dry-run', label: 'Dry run' },
-  { key: 'cut-over', label: 'Cut-over' },
+  { key: 'dimensions', label: 'Dimensions' },
 ] as const
-type TabKey = typeof ALL_TABS[number]['key']
-
-// Every role that reaches Payroll reads the connection panel; only Owner and Ultimate + LM change it.
-const tabs = computed(() => ALL_TABS.filter((x) => x.key !== 'connection' || can('view', payroll.viewAs)))
+type TabKey = typeof tabs[number]['key']
 const activeKey = computed<TabKey>(() => {
   const q = route.query.section as string | undefined
-  return (tabs.value.find((x) => x.key === q)?.key ?? tabs.value[0]!.key) as TabKey
+  return tabs.find((x) => x.key === q)?.key ?? 'connection'
 })
 const activeIndex = computed({
-  get: () => tabs.value.findIndex((x) => x.key === activeKey.value),
-  set: (i: number) => { router.replace({ query: { ...route.query, section: tabs.value[i]?.key ?? tabs.value[0]!.key } }) },
+  get: () => tabs.findIndex((x) => x.key === activeKey.value),
+  set: (i: number) => { router.replace({ query: { ...route.query, section: tabs[i]?.key ?? tabs[0].key } }) },
 })
-function go(key: TabKey) { router.replace({ query: { ...route.query, section: key } }) }
 </script>
 
 <template>
@@ -53,11 +41,8 @@ function go(key: TabKey) { router.replace({ query: { ...route.query, section: ke
         <MpTabPanel v-for="tb in tabs" :key="tb.key" :value="tb.key">
           <template v-if="tb.key === activeKey">
             <PayrollSettingsConnection v-if="tb.key === 'connection'" />
-            <PayrollSettingsAccounts v-else-if="tb.key === 'accounts'" />
-            <PayrollSettingsPayItems v-else-if="tb.key === 'pay-items'" @go="go" />
-            <PayrollSettingsGroups v-else-if="tb.key === 'groups'" />
-            <PayrollSettingsDryRun v-else-if="tb.key === 'dry-run'" @go="go" />
-            <PayrollSettingsCutover v-else-if="tb.key === 'cut-over'" @go="go" />
+            <PayrollSettingsPayItems v-else-if="tb.key === 'pay-items'" />
+            <PayrollSettingsDimensions v-else-if="tb.key === 'dimensions'" />
           </template>
         </MpTabPanel>
       </MpTabPanels>
@@ -93,7 +78,6 @@ function go(key: TabKey) { router.replace({ query: { ...route.query, section: ke
 .pset-td--act { text-align: right; white-space: nowrap; width: 1%; }
 .pset-td--strong { font-weight: var(--mp-font-weights-semi-bold); }
 .pset-table tr:last-child .pset-td { border-bottom: 0; }
-.pset-tr--total .pset-td { font-weight: var(--mp-font-weights-semi-bold); background: var(--mp-background-neutral-subtle); }
 .pset-muted { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .pset-line { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); }
 .pset-danger { color: var(--mp-text-danger); }
@@ -107,29 +91,16 @@ function go(key: TabKey) { router.replace({ query: { ...route.query, section: ke
 .pset-label { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .pset-row { display: flex; gap: var(--mp-spacing-3); align-items: flex-end; flex-wrap: wrap; }
 .pset-row > .pset-field { flex: 1 1 200px; }
-.pset-kv { display: grid; grid-template-columns: minmax(180px, max-content) 1fr; gap: var(--mp-spacing-2) var(--mp-spacing-6); font-size: var(--mp-font-sizes-md); }
-.pset-kv__k { color: var(--mp-text-secondary); }
-.pset-kv__v { color: var(--mp-text-default); min-width: 0; }
-.pset-steps { margin: 0; padding-left: var(--mp-spacing-5); display: flex; flex-direction: column; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+/* Label / value form rows: one label width so values line up. */
+.pset-form { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: var(--mp-spacing-4) var(--mp-spacing-5); align-items: start; }
+.pset-form__label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+/* A label beside a 38px control lines up with the control, not with its hint below. */
+.pset-form__label--control { align-self: start; line-height: 38px; }
+.pset-form__value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.pset-inline { flex-direction: row; align-items: center; gap: var(--mp-spacing-3); max-width: 420px; }
+.pset-steps { margin: 0; padding-left: var(--mp-spacing-5); list-style: decimal; display: flex; flex-direction: column; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .pset-chips { display: flex; gap: var(--mp-spacing-2); flex-wrap: wrap; }
 .pset-note { display: flex; gap: var(--mp-spacing-2); align-items: flex-start; padding: var(--mp-spacing-3) var(--mp-spacing-4); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral-subtle); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .pset-note--warn { background: var(--mp-colors-background-warning); color: var(--mp-colors-text-warning); }
-.pset-note--danger { background: var(--mp-colors-background-danger); color: var(--mp-text-danger); }
-.pset-preview { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); overflow: hidden; }
-.pset-preview__head { padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral-subtle); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); border-bottom: 1px solid var(--mp-border-default); }
-.pset-preview .pset-td, .pset-preview .pset-th { padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); }
-.pset-cond { display: grid; grid-template-columns: 1.2fr 0.8fr 1.6fr auto; gap: var(--mp-spacing-2); align-items: start; }
-.pset-checks { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.pset-check { display: flex; align-items: center; gap: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-/* The house stats band (BillsIndexPage): divider-separated columns on the
-   stage, caption above the figure. */
-.pset-stack .stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; padding-bottom: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-border-default); }
-.pset-stack .stat-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding-right: var(--mp-spacing-6); align-self: stretch; }
-.pset-stack .stat-card--bordered { border-right: 1px solid var(--mp-border-default); }
-.pset-stack .stat-title { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); }
-.pset-stack .stat-period { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); }
-.pset-stack .stat-amount { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-2xl, 32px); font-variant-numeric: tabular-nums; }
-.pset-stack .stat-link { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
-.pset-stack .stat-link:hover { text-decoration: underline; }
 .pset-section-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
 </style>
