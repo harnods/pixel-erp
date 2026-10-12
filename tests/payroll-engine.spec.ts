@@ -100,22 +100,22 @@ describe('seed: rebuilt on the final payload through the engine', () => {
     expect(runStatus(sep)).toBe('Held')
     expect(runHolds(sep).map((h) => h.code)).toEqual(['unmapped-item'])
     expect(runHolds(sep)[0]!.message).toBe('1 pay item needs an account: Insentif Penjualan (allowance), Rp10.500.000, 7 staff. Pick its account to clear this.')
-    for (const m of ['2026-07', '2026-08']) {
-      const rows = payablesTracker(m)
-      expect(rows.map((r) => r.status)).toEqual(['Paid', 'Paid', 'Paid', 'Paid', 'Paid', 'Paid'])
-      expect(rows.every((r) => r.flags.length === 0)).toBe(true)
-    }
+    // July is fully paid; August BPJS Kesehatan is left unpaid so Payables shows one overdue amount.
+    expect(payablesTracker('2026-07').map((r) => r.status)).toEqual(['Paid', 'Paid', 'Paid', 'Paid', 'Paid', 'Paid'])
+    expect(payablesTracker('2026-08').map((r) => r.status)).toEqual(['Paid', 'Paid', 'Paid', 'Overdue', 'Paid', 'Paid'])
+    expect(payablesTracker('2026-08').find((r) => r.party === 'BPJS Kesehatan')).toMatchObject({ balance: 16_102_029, due: '2026-09-10' })
+    for (const m of ['2026-07', '2026-08']) expect(payablesTracker(m).every((r) => r.flags.length === 0)).toBe(true)
     const pays = payroll.journals.filter((j) => j.type === 'Salary payment' || j.type === 'Statutory payment')
-    expect(pays).toHaveLength(12)
+    expect(pays).toHaveLength(11)
     expect(pays.every((j) => j.source === 'Bank reconciliation' && /^BNK-\d{4}$/.test(j.number))).toBe(true)
-    expect(payroll.bankLines).toHaveLength(12)
+    expect(payroll.bankLines).toHaveLength(11)
     expect(payroll.journals.every((j) => journalTotals(j).debit === journalTotals(j).credit)).toBe(true)
     expect(pph21Month('2026-08')).toMatchObject({ rule: 16_644_111, books: 16_644_111, paid: 16_644_111, balance: 0 })
   })
 
-  it('persists under payroll:state-v9 (v9: Run.dryRun removed)', () => {
+  it('persists under payroll:state-v10 (v9: Run.dryRun removed)', () => {
     // loadSnapshot is client-only; pin the key in the source.
-    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).toContain("const SNAPSHOT_KEY = 'payroll:state-v9'")
+    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).toContain("const SNAPSHOT_KEY = 'payroll:state-v10'")
     expect(payroll.runs.every((r) => !('dryRun' in r))).toBe(true)
   })
 })
@@ -491,7 +491,7 @@ describe('payables: a tracker; payments arrive as bank reconciliation matches', 
     expect(payroll.bankLines.at(-1)).toMatchObject({ description: 'TRF PAYROLL SEP 2026', amount: 446_901_849, paymentId: payroll.payments.at(-1)!.id })
     expect(salary()).toMatchObject({ paid: 446_901_849, balance: 0, status: 'Paid', flags: [] })
     for (const k of ['pph21', 'pph26', 'bpjs-kesehatan', 'bpjs-ketenagakerjaan', 'dplk'] as const) {
-      expect(simulateBankPayment(k, { date: '2026-10-05' }).ok, k).toBe(true)
+      expect(simulateBankPayment(k, { date: '2026-10-05', month: '2026-09' }).ok, k).toBe(true)
       expect(journalById(payroll.payments.at(-1)!.journalId)!.type).toBe('Statutory payment')
     }
     expect(payablesTracker('2026-09').map((x) => x.status)).toEqual(['Paid', 'Paid', 'Paid', 'Paid', 'Paid', 'Paid'])

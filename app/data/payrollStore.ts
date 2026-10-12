@@ -11,7 +11,7 @@
  * Hutang Gaji = take-home pay. Tax figures arrive as components (benefits: PPh 21 Benefit,
  * PPh 21 Resign Benefit, PPh 26 Benefit, Total PPh 21 DTP Received; deductions: PPH 21 Paid,
  * PPH 21 Payment). Staff are keyed by user_id internally and shown as counts only.
- * Every figure is computed on read. Persists under `erp-db:payroll:state-v9`; resetPayroll()
+ * Every figure is computed on read. Persists under `erp-db:payroll:state-v10`; resetPayroll()
  * returns to the sample.
  *
  * ─── API (UI agents: this block is the contract) ─────────────────────────────
@@ -476,7 +476,7 @@ export function tagsLabel(t: Tags): string { return tagDims(t).map((d) => t[d]).
 
 // ── State ───────────────────────────────────────────────────────────────────
 
-const SNAPSHOT_KEY = 'payroll:state-v9'
+const SNAPSHOT_KEY = 'payroll:state-v10'
 
 function defaultSettings(): PayrollSettings {
   return {
@@ -2861,7 +2861,8 @@ function seed() {
   takeSnapshot('Start booking from Jul 2026')
   // July and August: posted, then paid through bank reconciliation matches.
   monthCycle('2026-06-21', '2026-07-20', '2026-07-22T03:00:00Z', { pay: '2026-07-24', kes: '2026-08-07', tk: '2026-08-12', tax: '2026-08-13' })
-  monthCycle('2026-07-21', '2026-08-20', '2026-08-21T03:00:00Z', { pay: '2026-08-25', kes: '2026-09-08', tk: '2026-09-14', tax: '2026-09-14' })
+  // August BPJS Kesehatan is left unpaid, so Payroll payables shows one overdue amount.
+  monthCycle('2026-07-21', '2026-08-20', '2026-08-21T03:00:00Z', { pay: '2026-08-25', kes: '2026-09-08', tk: '2026-09-14', tax: '2026-09-14' }, ['bpjs-kesehatan'])
   setClock('2026-09-10T03:00:00Z')
   as('Owner', () => must(lockPeriod('2026-07'), 'lock Jul'))
   // September: arrives with a new pay item and holds. HR settled three people changes in
@@ -2873,7 +2874,7 @@ function seed() {
   payroll.viewAs = 'Accountant'
   seeding = false
 }
-function monthCycle(start: string, end: string, sentAt: string, d: { pay: string; kes: string; tk: string; tax: string }) {
+function monthCycle(start: string, end: string, sentAt: string, d: { pay: string; kes: string; tk: string; tax: string }, unpaid: BankPaymentKind[] = []) {
   setClock(sentAt)
   const r = simulateSend('regular', { start, end, sentAt })
   const run = runById(r.runId)!
@@ -2882,7 +2883,7 @@ function monthCycle(start: string, end: string, sentAt: string, d: { pay: string
     must(postRun(run.id), `post ${start}`)
   })
   const month = run.month
-  const pay = (kind: BankPaymentKind, date: string, o: BankPaymentOptions = {}) => { setClock(`${date}T03:00:00Z`); as('Accountant', () => must(simulateBankPayment(kind, { date, ...o }), `${kind} ${month}`)) }
+  const pay = (kind: BankPaymentKind, date: string, o: BankPaymentOptions = {}) => { if (unpaid.includes(kind)) return; setClock(`${date}T03:00:00Z`); as('Accountant', () => must(simulateBankPayment(kind, { date, ...o }), `${kind} ${month}`)) }
   pay('salary', d.pay, { runId: run.id })
   pay('bpjs-kesehatan', d.kes, { month })
   pay('bpjs-ketenagakerjaan', d.tk, { month })

@@ -297,7 +297,8 @@ describe('PAY-2 Monthly payroll run (replay)', () => {
     expect(sum.headcount).toBe(40)
     p.says(0, '40 staff')
     p.q(0, sum.takeHome, 446_901_849)
-    for (const m of ['2026-07', '2026-08']) expect(payablesTracker(m).every((r) => r.balance === 0), m).toBe(true)
+    expect(payablesTracker('2026-07').every((r) => r.balance === 0)).toBe(true)
+    expect(payablesTracker('2026-08').filter((r) => r.balance !== 0).map((r) => r.party)).toEqual(['BPJS Kesehatan'])
     // 2. Sync log.
     p.at(1)
     const row = sendLog.value[0]!
@@ -410,16 +411,16 @@ describe('PAY-2 Monthly payroll run (replay)', () => {
     const sal = () => payablesTracker(SEP_MONTH).find((r) => r.runId === run.id)!
     const s16 = sal()
     p.q(15, s16.owed, 446_901_849); p.q(15, s16.balance, 0)
-    expect(s16.payments.map((x) => [x.number, dateLabel(x.date)])).toEqual([['BNK-0013', '25 Sep 2026']])
-    p.says(15, 'paid by BNK-0013 on 25 Sep 2026')
+    expect(s16.payments.map((x) => [x.number, dateLabel(x.date)])).toEqual([['BNK-0012', '25 Sep 2026']])
+    p.says(15, 'paid by BNK-0012 on 25 Sep 2026')
     expect(net(j.lines, ACC.hutangGaji)).toBe(446_901_849)
     // 17. A second bank line over the run.
     p.at(16)
     const s17 = sal()
-    expect(s17.payments.map((x) => x.number)).toEqual(['BNK-0013', 'BNK-0014'])
+    expect(s17.payments.map((x) => x.number)).toEqual(['BNK-0012', 'BNK-0013'])
     p.q(16, s17.payments[1]!.amount, 250_000)
     expect(dateLabel(s17.payments[1]!.date)).toBe('26 Sep 2026')
-    p.says(16, 'BNK-0014 pays Rp250.000 more on 26 Sep 2026')
+    p.says(16, 'BNK-0013 pays Rp250.000 more on 26 Sep 2026')
     // 18. Bank differs flag on the row.
     p.at(17)
     const s18 = sal()
@@ -451,7 +452,7 @@ describe('PAY-3 When Talenta sends again (replay)', () => {
     const j1 = liveJournals(run.id)[0]!
     expect([j1.number, dateLabel(j1.date), j1.postedBy]).toEqual(['PAY-0003', '20 Sep 2026', 'Rizal Candra'])
     p.q(0, journalTotals(j1).debit, 554_203_941)
-    expect(payablesTracker(SEP_MONTH).find((r) => r.runId === run.id)!.payments.map((x) => x.number)).toEqual(['BNK-0013'])
+    expect(payablesTracker(SEP_MONTH).find((r) => r.runId === run.id)!.payments.map((x) => x.number)).toEqual(['BNK-0012'])
     // 2. Talenta sends September again (the inbox menu).
     p.at(1)
     expect([run.currentVersion, run.ledgerVersion]).toEqual([2, 1])

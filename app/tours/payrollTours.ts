@@ -422,7 +422,7 @@ const runSteps: PayrollStep[] = [
     target: 'payroll-salary-row',
     title: 'Bank reconciliation matches the salary transfer.',
     body: 'Payroll payables tracks what each party is still owed. A payment arrives when a bank statement line is matched to the payable; it clears Salaries Payable, never an expense.',
-    watch: 'Salary 21 Aug-20 Sep 2026: owed Rp446.901.849, paid by BNK-0013 on 25 Sep 2026, balance Rp0.',
+    watch: 'Salary 21 Aug-20 Sep 2026: owed Rp446.901.849, paid by BNK-0012 on 25 Sep 2026, balance Rp0.',
     placement: 'bottom',
   },
   {
@@ -431,7 +431,7 @@ const runSteps: PayrollStep[] = [
     target: 'payroll-payables-simulate',
     title: 'This menu stands in for a bank statement line.',
     body: 'In Jurnal the line comes from bank reconciliation. Here a second transfer for the September salary arrives and is matched.',
-    watch: 'BNK-0014 pays Rp250.000 more on 26 Sep 2026.',
+    watch: 'BNK-0013 pays Rp250.000 more on 26 Sep 2026.',
     placement: 'bottom',
   },
   {
@@ -464,7 +464,7 @@ const resendSteps: PayrollStep[] = [
     find: onTab('payroll-run-journals', 'Journals'),
     title: 'September is posted and the salary is paid.',
     body: 'This is where the monthly run ends: the Owner approved PAY-0003 and bank reconciliation matched the salary transfer.',
-    watch: 'PAY-0003, 20 Sep 2026, Rp554.203.941. Salary paid by BNK-0013.',
+    watch: 'PAY-0003, 20 Sep 2026, Rp554.203.941. Salary paid by BNK-0012.',
     placement: 'top',
   },
   {
