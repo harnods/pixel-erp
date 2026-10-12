@@ -23,6 +23,7 @@ import {
   getCashTx, cashTxOfKind, cashTxTotals, deleteCashTx, setCashTxRecurring,
   coaLabel, cashAccountLabel, taxName, type CashTxKind,
 } from '~/data/bankTransactions'
+import { spendMoneyPayment, checkSpendMoneyPayment, syncSpendMoneyPayment } from '~/data/payrollStore'
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
@@ -111,11 +112,18 @@ function copyLink() {
   toast.notify({ variant: 'success', title: t('Link copied to clipboard') })
 }
 const deleteOpen = ref(false)
+// A Spend money saved from Payroll payables > Pay: deleting it removes the payment (OQ20).
+const paying = computed(() => kind === 'withdrawal' && tx.value ? spendMoneyPayment(props.orderId) : null)
 function confirmDelete() {
   const back = tx.value?.cashAccountId
+  const pays = paying.value
+  // A locked month refuses before the cash changes, so cash and the payable never disagree.
+  const check = checkSpendMoneyPayment(props.orderId, null)
+  if (!check.ok) { deleteOpen.value = false; toast.notify({ variant: 'error', title: t(check.message ?? 'Unable to delete this payment. Check the date and try again.') }); return }
   deleteCashTx(props.orderId)
+  syncSpendMoneyPayment(props.orderId, null)
   deleteOpen.value = false
-  toast.notify({ variant: 'success', title: t(L.deleted) })
+  toast.notify({ variant: 'success', title: t(pays ? `${L.deleted}. ${pays.label} is owed again.` : L.deleted) })
   router.push(back ? `/cash-management/${back}` : '/cash-management')
 }
 </script>
@@ -263,7 +271,7 @@ function confirmDelete() {
     <MpModal id="ctd-delete-modal" :is-close-on-esc="false" :is-close-on-overlay-click="false" :is-open="deleteOpen" size="sm" :is-keep-alive="false" @close="deleteOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t(L.deleteTitle) }}<MpModalCloseButton /></MpModalHeader>
-        <MpModalBody>{{ t(L.name) }} #{{ tx.number }} {{ t('will be permanently deleted. This action cannot be undone.') }}</MpModalBody>
+        <MpModalBody>{{ t(L.name) }} #{{ tx.number }} {{ t('will be permanently deleted. This action cannot be undone.') }}{{ paying ? ` ${t(`It pays ${paying.label}. The payment is removed and the payable is owed again.`)}` : '' }}</MpModalBody>
         <MpModalFooter>
           <div class="ctd-delete-footer">
             <button class="btn-enterprise btn-enterprise--ghost" @click="deleteOpen = false">{{ t('Cancel') }}</button>

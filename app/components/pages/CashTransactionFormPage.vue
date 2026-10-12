@@ -21,7 +21,7 @@ import {
   CASH_TX_TAX_OPTIONS, LINE_ACCOUNT_OPTIONS,
 } from '~/data/bankTransactions'
 import { formatMoney } from '~/utils/currency'
-import { payablePrefill, recordPayablePayment, accountLabel as payrollAccountLabel, rupiah, payrollAccount, useChartAccount } from '~/data/payrollStore'
+import { payablePrefill, recordPayablePayment, spendMoneyPayment, checkSpendMoneyPayment, syncSpendMoneyPayment, accountLabel as payrollAccountLabel, rupiah, payrollAccount, useChartAccount } from '~/data/payrollStore'
 
 const props = defineProps<{ orderId?: string }>()
 const { t } = useLocale()
@@ -36,7 +36,11 @@ const accountFrom = typeof route.query.accountFrom === 'string' ? route.query.ac
 // ?payable=<key>: opened from Payroll payables > Pay. The form is prefilled with that payable, and
 // saving it records the payment against it (the payable turns Paid or Partly paid).
 const payableKey = kind === 'withdrawal' && typeof route.query.payable === 'string' ? route.query.payable : ''
-const payable = payableKey ? payablePrefill(payableKey) : null
+const payable = payableKey && !isEdit ? payablePrefill(payableKey) : null
+// Editing a Spend money saved from Pay: the payment follows it (OQ20). The banner comes from the
+// existing payment, not a new payable lookup, and saving updates or removes that payment.
+const paying = kind === 'withdrawal' && isEdit && props.orderId ? spendMoneyPayment(props.orderId) : null
+const payAccount = payable?.account ?? paying?.account ?? ''
 
 // Prod copy per kind (cashManagement.bankDeposit.* / bankWithdrawal.*)
 const L = kind === 'deposit'
@@ -56,8 +60,8 @@ const contactOptions = computed(() => {
   return list
 })
 // The payable's account may not be in the default line account list; add it so the line shows it.
-const lineAccountOptions = computed(() => (payable && !LINE_ACCOUNT_OPTIONS.some((o) => o.id === payable.account)
-  ? [{ id: payable.account, name: payrollAccountLabel(payable.account) }, ...LINE_ACCOUNT_OPTIONS]
+const lineAccountOptions = computed(() => (payAccount && !LINE_ACCOUNT_OPTIONS.some((o) => o.id === payAccount)
+  ? [{ id: payAccount, name: payrollAccountLabel(payAccount) }, ...LINE_ACCOUNT_OPTIONS]
   : LINE_ACCOUNT_OPTIONS))
 
 const cashAccountId = ref('')
@@ -145,12 +149,29 @@ function handleSave() {
     lines: filledRows.value.map((r) => ({ accountCode: r.accountCode, description: r.description.trim(), taxId: r.taxId || '', amount: amountOf(r) })),
     memo: memo.value.trim() || undefined,
   }
+  const cash = cashAccounts.find((a) => a.id === cashAccountId.value)
+  const bank = cash?.code ?? ''
+  const useBank = () => { if (cash && !payrollAccount(bank)) useChartAccount({ code: bank, name: cash.name, type: 'cash' }) }
+  // Edit of a Spend money that pays a payable: refuse a locked month before the cash changes.
+  const follow = paying && props.orderId
+    ? { amount: filledRows.value.filter((r) => r.accountCode === paying.account).reduce((sum, r) => sum + amountOf(r), 0), date: payload.transactionDate, bank }
+    : null
+  if (paying && props.orderId) {
+    const check = checkSpendMoneyPayment(props.orderId, follow)
+    if (!check.ok) { toast.notify({ variant: 'error', title: t(check.message ?? 'Unable to change this payment. Check the date and try again.') }); return }
+  }
   const saved = isEdit && props.orderId ? updateCashTx(props.orderId, payload) : addCashTx(kind, payload)
+  if (saved && paying && follow) {
+    useBank()
+    const res = syncSpendMoneyPayment(saved.id, follow)
+    if (!res.ok) { toast.notify({ variant: 'error', title: t(res.message ?? 'Unable to change this payment. Check the date and try again.') }); return }
+    toast.notify({ variant: 'success', title: t(res.removed ? `Payment removed from ${paying.label}. It is owed again.` : res.changed ? `${rupiah(follow.amount)} paid on ${paying.label}` : L.saved) })
+    router.push(`${base}/${saved.id}`)
+    return
+  }
   if (saved && payable) {
     const paidNow = payableLines.reduce((sum, r) => sum + amountOf(r), 0)
-    const cash = cashAccounts.find((a) => a.id === cashAccountId.value)
-    const bank = cash?.code ?? ''
-    if (cash && !payrollAccount(bank)) useChartAccount({ code: bank, name: cash.name, type: 'cash' })
+    useBank()
     const res = recordPayablePayment(payable.key, { cashTxId: saved.id, number: `Spend money #${saved.number}`, bank, date: payload.transactionDate, amount: paidNow })
     // Refused (locked month, role): undo the spend money too, so cash and the payable never disagree.
     if (!res.ok) { if (!isEdit) deleteCashTx(saved.id); toast.notify({ variant: 'error', title: t(res.message ?? 'Unable to record the payment. Check the date and try again.') }); return }
@@ -223,6 +244,11 @@ onUnmounted(() => { observer?.disconnect() })
         <MpBannerIcon />
         <MpBannerTitle>{{ t('Paying a payroll payable') }}</MpBannerTitle>
         <MpBannerDescription>{{ t(`${payable.label}: ${rupiah(payable.amount)} still owed to ${payable.payee}. Save to record the payment in Payroll payables.`) }}</MpBannerDescription>
+      </MpBanner>
+      <MpBanner v-else-if="paying" id="ctf-payable" variant="info" data-testid="ctf-payable" class="ctf-banner ctf-banner--payable">
+        <MpBannerIcon />
+        <MpBannerTitle>{{ t('Paying a payroll payable') }}</MpBannerTitle>
+        <MpBannerDescription>{{ t(`${paying.label}: this spend money pays ${rupiah(paying.amount)} to ${paying.payee}. Save to update the payment in Payroll payables. Remove the ${payrollAccountLabel(paying.account)} line to cancel it.`) }}</MpBannerDescription>
       </MpBanner>
       <!-- Deposit to / Pay from + Payer / Payee + Total -->
       <div class="ex-row-1">

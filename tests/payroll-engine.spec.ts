@@ -11,7 +11,7 @@ import {
   claimsSummary, noticesFor, SEND_KINDS, BANK_PAYMENT_KINDS, type Run, type JournalLine,
   approvePayroll, rejectPayroll, canApprove, whyLine, journalsOf, defaultEntryDate, checkEntryDate, payrollAccount, rebuildDraft,
   revisionNotice, PARTY_NAME, startConnection, endConnection, confirmSource, setLimits,
-  payablePrefill, recordPayablePayment, payablesSummary, reverseRun, versionOf, today, monthLabel, monthOf, payGroupKey, fieldValue,
+  payablePrefill, recordPayablePayment, spendMoneyPayment, checkSpendMoneyPayment, syncSpendMoneyPayment, payablesSummary, reverseRun, versionOf, today, monthLabel, monthOf, payGroupKey, fieldValue,
 } from '../app/data/payrollStore'
 import { paymentHistory } from '../app/data/payrollUiPayables'
 import { runRow, hrMessage, monthHeadcount } from '../app/data/payrollUiIntake'
@@ -1163,6 +1163,53 @@ describe('Pay a payable from Cash management (Spend money)', () => {
     const j = payroll.journals.find((x) => x.number === 'Spend money #1')!
     expect(j.lines.map((l) => [l.account, l.debit, l.credit])).toEqual([[ACC.bpjsKes, 16_102_029, 0], [ACC.bca, 0, 16_102_029]])
     expect(recordPayablePayment(pre.key, { cashTxId: 'x', number: 'Spend money #2', bank: ACC.bca, date: '2026-07-10', amount: 1 }).message).toBe('Jul 2026 is locked. Pick a date in an open month.')
+  })
+})
+
+describe('Spend money edits and deletes follow the payable', () => {
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant + LM') })
+  const row = () => payablesTracker('2026-08').find((r) => r.party === 'BPJS Kesehatan')!
+  const pay = () => recordPayablePayment(row().key, { cashTxId: 'bw-new-1', number: 'Spend money #1', bank: ACC.bca, date: '2026-10-05', amount: 16_102_029 })
+
+  it('edit the amount down: Partly paid with the new balance, the journal follows', () => {
+    postSep()
+    const sep = () => payablesTracker('2026-09').find((r) => r.party === 'BPJS Kesehatan')!
+    const owed = sep().owed
+    expect(recordPayablePayment(sep().key, { cashTxId: 'bw-new-2', number: 'Spend money #2', bank: ACC.bca, date: '2026-10-05', amount: owed }).ok).toBe(true)
+    expect(sep().status).toBe('Paid')
+    expect(spendMoneyPayment('bw-new-2')).toMatchObject({ key: sep().key, amount: owed, label: sep().label })
+    const res = syncSpendMoneyPayment('bw-new-2', { amount: 10_000_000, date: '2026-10-06', bank: ACC.bca })
+    expect(res).toMatchObject({ ok: true, changed: true, removed: false })
+    expect(sep()).toMatchObject({ paid: 10_000_000, balance: owed - 10_000_000, status: 'Partly paid' })
+    const j = payroll.journals.find((x) => x.number === 'Spend money #2')!
+    expect(j.date).toBe('2026-10-06')
+    expect(j.lines.map((l) => [l.account, l.debit, l.credit])).toEqual([[ACC.bpjsKes, 10_000_000, 0], [ACC.bca, 0, 10_000_000]])
+    // Amount 0 (no line left on the payable) removes the payment.
+    expect(syncSpendMoneyPayment('bw-new-2', { amount: 0, date: '2026-10-06', bank: ACC.bca })).toMatchObject({ ok: true, removed: true })
+    expect(sep()).toMatchObject({ paid: 0, balance: owed, status: 'Open' })
+  })
+
+  it('delete: the payment and its journal go, the payable is Overdue again with the balance back', () => {
+    pay()
+    expect(row().status).toBe('Paid late')
+    expect(syncSpendMoneyPayment('bw-new-1', null)).toMatchObject({ ok: true, removed: true })
+    expect(row()).toMatchObject({ paid: 0, balance: 16_102_029, status: 'Overdue', payments: [] })
+    expect(payroll.journals.some((x) => x.number === 'Spend money #1')).toBe(false)
+    expect(spendMoneyPayment('bw-new-1')).toBeNull()
+    // A Spend money that pays no payable passes untouched.
+    expect(syncSpendMoneyPayment('bw-other', null)).toEqual({ ok: true, changed: false })
+  })
+
+  it('a locked month refuses the edit or delete before anything changes', () => {
+    pay()
+    as('Owner', () => lockPeriod('2026-10', { confirm: true }))
+    const msg = 'Oct 2026 is locked. Pick a date in an open month.'
+    expect(checkSpendMoneyPayment('bw-new-1', null).message).toBe(msg)
+    expect(syncSpendMoneyPayment('bw-new-1', null).message).toBe(msg)
+    expect(syncSpendMoneyPayment('bw-new-1', { amount: 1, date: '2026-10-05', bank: ACC.bca }).message).toBe(msg)
+    // Saving with nothing that moves the payment still passes.
+    expect(checkSpendMoneyPayment('bw-new-1', { amount: 16_102_029, date: '2026-10-05', bank: ACC.bca }).ok).toBe(true)
+    expect(row()).toMatchObject({ paid: 16_102_029, balance: 0 })
   })
 })
 
