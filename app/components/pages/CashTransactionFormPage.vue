@@ -17,7 +17,7 @@ import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components
 import { cashAccounts } from '~/data/cashAccounts'
 import { contacts } from '~/data/contacts'
 import {
-  type CashTxKind, addCashTx, updateCashTx, getCashTx, nextCashTxNumber, cashTxTotals,
+  type CashTxKind, addCashTx, updateCashTx, deleteCashTx, getCashTx, nextCashTxNumber, cashTxTotals,
   CASH_TX_TAX_OPTIONS, LINE_ACCOUNT_OPTIONS,
 } from '~/data/bankTransactions'
 import { formatMoney } from '~/utils/currency'
@@ -126,6 +126,13 @@ function handleSave() {
   if (!cashAccountId.value) { cashAccountError.value = true; ok = false }
   if (!filledRows.value.length) { const r = rows.value[0]; if (r) r.accountError = true; ok = false }
   for (const r of filledRows.value) if (amountOf(r) <= 0) { r.amountError = true; ok = false }
+  // Paying a payable: at least one line must stay on the payable's account, or nothing would be paid.
+  const payableLines = payable ? filledRows.value.filter((r) => r.accountCode === payable.account) : []
+  if (payable && !payableLines.some((r) => amountOf(r) > 0)) {
+    const r = rows.value[0]; if (r) r.accountError = true
+    toast.notify({ variant: 'error', title: t(`Keep a line on ${payrollAccountLabel(payable.account)} to pay this payable.`) })
+    ok = false
+  }
   saveFailed.value = !ok
   if (!ok) return
   const payload = {
@@ -140,13 +147,14 @@ function handleSave() {
   }
   const saved = isEdit && props.orderId ? updateCashTx(props.orderId, payload) : addCashTx(kind, payload)
   if (saved && payable) {
-    const paidNow = filledRows.value.filter((r) => r.accountCode === payable.account).reduce((sum, r) => sum + amountOf(r), 0)
+    const paidNow = payableLines.reduce((sum, r) => sum + amountOf(r), 0)
     const cash = cashAccounts.find((a) => a.id === cashAccountId.value)
     const bank = cash?.code ?? ''
     if (cash && !payrollAccount(bank)) useChartAccount({ code: bank, name: cash.name, type: 'cash' })
     const res = recordPayablePayment(payable.key, { cashTxId: saved.id, number: `Spend money #${saved.number}`, bank, date: payload.transactionDate, amount: paidNow })
-    if (!res.ok) { toast.notify({ variant: 'error', title: t(res.message ?? 'Unable to record the payment on the payable.') }); return }
-    toast.notify({ variant: 'success', title: t(`${payable.label} paid: ${rupiah(paidNow)}`) })
+    // Refused (locked month, role): undo the spend money too, so cash and the payable never disagree.
+    if (!res.ok) { if (!isEdit) deleteCashTx(saved.id); toast.notify({ variant: 'error', title: t(res.message ?? 'Unable to record the payment. Check the date and try again.') }); return }
+    toast.notify({ variant: 'success', title: t(`${rupiah(paidNow)} paid on ${payable.label}`) })
     router.push('/payroll-payables')
     return
   }
@@ -211,10 +219,10 @@ onUnmounted(() => { observer?.disconnect() })
     </header>
 
     <div ref="stageEl" class="it-stage">
-      <MpBanner v-if="payable" id="ctf-payable" variant="info" data-testid="ctf-payable">
+      <MpBanner v-if="payable" id="ctf-payable" variant="info" data-testid="ctf-payable" class="ctf-banner ctf-banner--payable">
         <MpBannerIcon />
         <MpBannerTitle>{{ t('Paying a payroll payable') }}</MpBannerTitle>
-        <MpBannerDescription>{{ t(`${payable.label}: ${rupiah(payable.amount)} still owed to ${payable.payee}. Saving records the payment, and Payroll payables shows it paid.`) }}</MpBannerDescription>
+        <MpBannerDescription>{{ t(`${payable.label}: ${rupiah(payable.amount)} still owed to ${payable.payee}. Save to record the payment in Payroll payables.`) }}</MpBannerDescription>
       </MpBanner>
       <!-- Deposit to / Pay from + Payer / Payee + Total -->
       <div class="ex-row-1">
@@ -445,6 +453,7 @@ onUnmounted(() => { observer?.disconnect() })
 .ex-datepicker { width: 100%; }
 .ex-datepicker :deep(.mp-datepicker__root) { width: 100%; }
 .ctf-banner { margin-bottom: var(--mp-spacing-3); }
+.ctf-banner--payable { margin-bottom: var(--mp-spacing-5); }
 .ex-price-includes { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
 /* Line table — same form-table as InternalTransferFormPage / NewExpensePage. */

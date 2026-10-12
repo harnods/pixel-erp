@@ -52,14 +52,14 @@ function onLink(field: TalentaField, v: string) {
 const rows = computed(() => groupRows())
 const newCount = computed(() => rows.value.filter((r) => r.isNew).length)
 const columns = computed(() => rows.value[0]?.dimensions.map((d) => d.dimension) ?? dimLinks.value.filter((d) => d.link).map((d) => d.link!.dimension))
-const costOptions = computed(() => [{ value: '', label: t('Use pay item account'), name: '', type: 'expense' as const }, ...accountChoices(['expense', 'cogs'])])
+const costOptions = computed(() => [{ value: '', label: t('Use default account'), name: '', type: 'expense' as const }, ...accountChoices(['expense', 'cogs'])])
 const rowErrors = reactive<Record<string, string>>({})
 function onAccount(key: string, code: string) {
   const o = costOptions.value.find((x) => x.value === code)
   if (code && o && !payrollAccount(code)) useChartAccount({ code: o.value, name: o.name, type: o.type })
   const r = setGroupAccount(key, code || null)
   rowErrors[key] = r.ok ? '' : t(r.message ?? 'Not saved. Pick an expense or COGS account.')
-  if (r.ok) successToast(code ? t(`Group now posts to ${accountLabel(code)}`) : t('Group uses the pay item account'))
+  if (r.ok) successToast(code ? t(`Group now posts to ${accountLabel(code)}`) : t('Group uses the default account'))
 }
 function valueOptions(dimension: string, wanted: string | null) {
   const opts = payroll.tags.filter((x) => x.dimension === dimension).map((x) => ({ value: x.name, label: x.name }))
@@ -117,9 +117,9 @@ function onSave(key: string, label: string) {
       <div class="pset-card__head">
         <div>
           <div class="pset-card__title">{{ t('Groups') }}</div>
-          <div class="pset-card__sub">{{ t('The expense account applies to pay items set to Use group account. A New group holds the run until you set it up.') }}</div>
+          <div class="pset-card__sub">{{ t('Pay items set to Use group account post to the group\'s expense account. A New group holds the run until you set it up.') }}</div>
         </div>
-        <ErpStatusBadge v-if="newCount" status="new-group" :label="t(`${newCount} new`)" type="critical" />
+        <ErpStatusBadge v-if="newCount" status="new-group" :label="t(newCount === 1 ? '1 new group' : `${newCount} new groups`)" type="critical" />
       </div>
       <div v-if="rows.length" class="pgr-scroll">
       <table class="pset-table pgr-rows">
@@ -143,11 +143,11 @@ function onSave(key: string, label: string) {
             </td>
             <td class="pset-td pgr-num">{{ r.staff }}</td>
             <td class="pset-td">
-              <ErpFilterSelect v-if="canEdit" :id="`pgr-acc-${r.key.replace(/[^a-zA-Z0-9]/g, '-')}`" :model-value="r.account ?? ''" :placeholder="t('Use pay item account')" :options="costOptions" width="100%" :is-clearable="false" @update:model-value="(v: string) => onAccount(r.key, v)" />
-              <span v-else>{{ r.account ? accountLabel(r.account) : t('Use pay item account') }}</span>
+              <ErpFilterSelect v-if="canEdit" :id="`pgr-acc-${r.key.replace(/[^a-zA-Z0-9]/g, '-')}`" :model-value="r.account ?? ''" :placeholder="t('Use default account')" :options="costOptions" width="100%" :is-clearable="false" @update:model-value="(v: string) => onAccount(r.key, v)" />
+              <span v-else>{{ r.account ? accountLabel(r.account) : t('Use default account') }}</span>
             </td>
             <td v-for="d in r.dimensions" :key="d.dimension" class="pset-td">
-              <ErpFilterSelect v-if="canEdit" :id="`pgr-val-${r.key.replace(/[^a-zA-Z0-9]/g, '-')}-${d.dimension.replace(/[^a-zA-Z0-9]/g, '-')}`" :model-value="d.value ?? ''" :placeholder="t('Pick value')" :options="valueOptions(d.dimension, d.value ?? r.values[payroll.settings.groupBy.indexOf(d.field)] ?? null)" width="100%" :is-clearable="false" @update:model-value="(v: string) => onValue(r.key, d.dimension, v)" />
+              <ErpFilterSelect v-if="canEdit" :id="`pgr-val-${r.key.replace(/[^a-zA-Z0-9]/g, '-')}-${d.dimension.replace(/[^a-zA-Z0-9]/g, '-')}`" :model-value="d.value ?? ''" :placeholder="t('Select value')" :options="valueOptions(d.dimension, d.value ?? r.values[payroll.settings.groupBy.indexOf(d.field)] ?? null)" width="100%" :is-clearable="false" @update:model-value="(v: string) => onValue(r.key, d.dimension, v)" />
               <span v-else>{{ d.value ?? t('Not set') }}</span>
             </td>
           </tr>
