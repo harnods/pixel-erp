@@ -11,7 +11,7 @@
  * Hutang Gaji = take-home pay. Tax figures arrive as components (benefits: PPh 21 Benefit,
  * PPh 21 Resign Benefit, PPh 26 Benefit, Total PPh 21 DTP Received; deductions: PPH 21 Paid,
  * PPH 21 Payment). Staff are keyed by user_id internally and shown as counts only.
- * Every figure is computed on read. Persists under `erp-db:payroll:state-v6`; resetPayroll()
+ * Every figure is computed on read. Persists under `erp-db:payroll:state-v7`; resetPayroll()
  * returns to the sample.
  *
  * ─── API (UI agents: this block is the contract) ─────────────────────────────
@@ -479,7 +479,7 @@ export function tagsLabel(t: Tags): string { return tagDims(t).map((d) => t[d]).
 
 // ── State ───────────────────────────────────────────────────────────────────
 
-const SNAPSHOT_KEY = 'payroll:state-v6'
+const SNAPSHOT_KEY = 'payroll:state-v7'
 
 function defaultSettings(): PayrollSettings {
   return {
