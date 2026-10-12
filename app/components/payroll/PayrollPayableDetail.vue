@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * One payable row opened (OD-18): what is owed (the journal lines behind it, by dimension, plus
- * any correction still waiting), what the bank paid (bank reconciliation matches), and the checks
+ * any repost still waiting), what the bank paid (bank reconciliation matches), and the checks
  * on the row. No employee names.
  */
 import { MpBadge } from '@mekari/pixel3'
@@ -62,12 +62,12 @@ const pendingChange = computed(() => (props.row?.pendingOwed != null ? props.row
               <td>{{ t(l.type) }}</td><td>{{ l.date }}</td><td>{{ l.tags }}</td><td class="ppx-r">{{ rupiah(l.amount) }}</td>
             </tr>
             <tr v-if="pendingChange != null" class="ppx-pending">
-              <td>{{ t('Correction') }}</td><td>{{ t('Not posted') }}</td><td>-</td><td>{{ t('Waiting for Post correction') }}</td><td class="ppx-r">{{ rupiah(pendingChange) }}</td>
+              <td>{{ t('Repost') }}</td><td>{{ t('Not posted') }}</td><td>-</td><td>{{ t('Waiting for reverse and repost') }}</td><td class="ppx-r">{{ rupiah(pendingChange) }}</td>
             </tr>
             <tr v-if="!owed.length && pendingChange == null"><td colspan="5" class="ppx-empty">{{ t('No journal lines') }}</td></tr>
           </tbody>
         </table>
-        <p v-if="row.pendingOwed != null" class="ppx-sub">{{ t('Owed after the correction posts') }}: {{ rupiah(row.pendingOwed) }}</p>
+        <p v-if="row.pendingOwed != null" class="ppx-sub">{{ t('Owed after the repost') }}: {{ rupiah(row.pendingOwed) }}</p>
       </section>
     </template>
   </PayrollPayDrawer>

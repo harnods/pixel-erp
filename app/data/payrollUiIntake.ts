@@ -24,7 +24,7 @@ export function statusType(s: string): 'completed' | 'announcement' | 'informati
     case 'Posted': return 'completed'
     case 'Held': case 'Failed': case 'Blocked': case 'Missing send': return 'critical'
     case 'Changed': case 'Check': return 'warning'
-    case 'Waiting for your choice': case 'Confirm source': case 'Awaiting approval': case 'Correction ready': case 'Looks partial': return 'warning'
+    case 'Waiting for your choice': case 'Confirm source': case 'Awaiting approval': case 'Revision ready': case 'Looks partial': return 'warning'
     case 'Ready to post': case 'Received': case 'Current': return 'information'
     case 'No change': case 'Expected': return 'completed'
     default: return 'announcement'
@@ -36,7 +36,7 @@ const NEXT_STEP: Partial<Record<RunStatus, string>> = {
   'Awaiting approval': 'The approver approves or rejects in Inbox > Awaiting approval.',
   'Waiting for your choice': 'Pick Revision of the posted run or Separate run.',
   'Ready to post': 'Review the draft and post.',
-  'Correction ready': 'Review the correction and post it.',
+  'Revision ready': 'Pick the version and repost.',
   Reversed: 'Repost the current version.',
   'Dry run': 'Nothing posts from a dry run.',
   'Before go-live': 'Nothing posts before the first live period.',
@@ -146,7 +146,7 @@ export function runJournals(runId: string) {
     ...j,
     debit: j.lines.reduce((s, l) => s + l.debit, 0),
     credit: j.lines.reduce((s, l) => s + l.credit, 0),
-    live: !j.reversedById && !j.reversesId && (j.type === 'Payroll' || j.type === 'Correction'),
+    live: !j.reversedById && !j.reversesId && j.type === 'Payroll',
   }))
 }
 

@@ -1,14 +1,14 @@
 <script setup lang="ts">
 /**
  * Reverse (TS-07, TN-21): reversing any journal of a run lists every live journal of the run
- * and reverses them together, or reposts the latest version in full. The date is open and not
- * before the original; a locked month moves it to the first open period. Matched payments are
+ * and reverses them together (reverse and repost lives on the revision notice). The date is open
+ * and not before the original; a locked month moves it to the first open period. Matched payments are
  * listed and need a second confirm; no payment, bank line or reconciliation changes.
  */
 import { MpDatePicker, MpFormControl, MpFormLabel, MpCheckbox } from '@mekari/pixel3'
 import PayrollCompareDrawerShell from '~/components/payroll/PayrollCompareDrawerShell.vue'
 import {
-  runById, currentVersionOf, liveJournals, reverseRun, reverseAndRepost, journalTotals, paymentsFor, journalById,
+  runById, liveJournals, reverseRun, journalTotals, paymentsFor, journalById,
   isLocked, firstOpenAfter, monthLabel, dateLabel, rupiah, accountLabel, payroll,
 } from '~/data/payrollStore'
 import { successToast } from '~/utils/toasts'
@@ -19,8 +19,6 @@ const { t } = useLocale()
 
 const run = computed(() => runById(props.runId))
 const live = computed(() => (run.value ? liveJournals(run.value.id) : []))
-const cur = computed(() => (run.value ? currentVersionOf(run.value) : undefined))
-const canRepost = computed(() => !!run.value && !!cur.value && cur.value.state === 'active' && cur.value.no !== run.value.ledgerVersion)
 const earliest = computed(() => live.value.map((j) => j.date).sort().pop() ?? '')
 const salaryPays = computed(() => payroll.payments.filter((p) => p.runId === props.runId))
 const otherPays = computed(() => paymentsFor(props.runId).filter((p) => p.runId !== props.runId))
@@ -51,14 +49,6 @@ function reverseAll() {
   if (!guard()) return
   const r = reverseRun(props.runId, { date: iso.value, confirmPayments: confirmPays.value })
   if (!r.ok) { error.value = t(r.message ?? 'Nothing was reversed.'); return }
-  successToast(t(`${(r.journals as string[]).join(', ')} posted`))
-  emit('close')
-}
-function repost() {
-  error.value = ''
-  if (salaryPays.value.length && !confirmPays.value) { error.value = t('Confirm that you reverse a run with matched payments.'); return }
-  const r = reverseAndRepost(props.runId, cur.value?.no)
-  if (!r.ok) { error.value = t(r.message ?? 'Nothing was posted.'); return }
   successToast(t(`${(r.journals as string[]).join(', ')} posted`))
   emit('close')
 }
@@ -98,7 +88,6 @@ function repost() {
         <MpFormLabel>{{ t('Reversal date') }}</MpFormLabel>
         <MpDatePicker id="prv-date-input" v-model="date" format="DD/MM/YYYY" value-type="format" use-portal is-full-width :is-clearable="false" :disabled-date="disabledDate" />
       </MpFormControl>
-      <div v-if="canRepost" class="prv__hint">{{ t(`Repost v${cur!.no} in full dates the reversal and the new journal on ${dateLabel(isLocked(run.month) ? `${firstOpenAfter(run.month)}-01` : run.end)}.`) }}</div>
       <div v-if="redirected" class="prv__note" data-testid="prv-locked">
         {{ t(`${monthLabel(iso.slice(0, 7))} is locked. The reversal posts on ${dateLabel(effective)} with reference ${monthLabel(run.month)}; the tax period stays ${monthLabel(run.month)}.`) }}
       </div>
@@ -121,7 +110,6 @@ function repost() {
 
     <template #footer>
       <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="emit('close')">{{ t('Cancel') }}</button>
-      <button v-if="canRepost" class="btn-enterprise btn-enterprise--secondary" type="button" data-testid="prv-repost" @click="repost">{{ t(`Repost v${cur!.no} in full`) }}</button>
       <button class="btn-enterprise btn-enterprise--primary" type="button" data-testid="prv-confirm" @click="reverseAll">
         {{ live.length > 1 ? t(`Reverse all ${live.length}`) : t('Reverse') }}
       </button>
@@ -150,7 +138,6 @@ function repost() {
   padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-colors-background-warning);
   border-radius: var(--mp-radii-md); color: var(--mp-colors-text-warning); font-size: var(--mp-font-sizes-md);
 }
-.prv__hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: calc(-1 * var(--mp-spacing-3)); }
 .prv__pays { display: flex; flex-direction: column; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); }
 .prv__paystitle { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .prv__list { margin: 0; padding-left: var(--mp-spacing-5, 20px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }

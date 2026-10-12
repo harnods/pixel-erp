@@ -2,12 +2,12 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   payroll, resetPayroll, runs, runById, runStatus, runHolds, currentVersionOf, versionLabel, draftOf, liveJournals,
   journalTotals, journalById, simulateSend, setPayrollViewAs, setPayItemMapping, payItemKey, postRun, isDraftStale, setPayday,
-  chooseRevision, chooseSeparateRun, postCorrection, correctionOf, reverseJournal, reverseAndRepost, lockPeriod, decidePartial,
+  chooseRevision, chooseSeparateRun, revisionOf, repostVersions, reverseJournal, reverseAndRepost, lockPeriod, decidePartial, dryRunJournal,
   compareVersions, can, addPayrollAccount, amendmentTasks, syncLog, mapGroup, saveRule, headcountChanges, markHeadcountExpected,
   clearHeadcountExpected, draftReview, runWarnings, acknowledgeWarning, postConfirmText, payablesTracker, simulateBankPayment,
   simulateManualJournal, manualJournalWarnings, setEbupotFiled, pph21Month, sendFigures, staffRows, receiveSalaryDetail,
   claimsSummary, noticesFor, SEND_KINDS, BANK_PAYMENT_KINDS, type Run, type JournalLine,
-  approvePayroll, rejectPayroll, canApprove, whyLine, journalsOf,
+  approvePayroll, rejectPayroll, canApprove, whyLine, journalsOf, defaultEntryDate, checkEntryDate, payrollAccount,
 } from '../app/data/payrollStore'
 import { ACC, buildSalaryDetail, FALLBACK_TAG } from '../app/data/payrollMaster'
 import { readFileSync } from 'node:fs'
@@ -26,6 +26,7 @@ const INS = { name: 'Insentif Penjualan', organization: 'Sales', amount: 1_500_0
 const run = (key: string) => runs.value.find((r) => r.key === key)!
 const as = <T>(role: Parameters<typeof setPayrollViewAs>[0], fn: () => T): T => { const p = payroll.viewAs; setPayrollViewAs(role); try { return fn() } finally { setPayrollViewAs(p) } }
 const thpOf = (r: Run, no?: number) => sendFigures(r.versions.find((v) => v.no === (no ?? r.ledgerVersion ?? r.currentVersion))).takeHome
+const isCostCode = (code: string) => ['expense', 'cogs'].includes(payrollAccount(code)?.type ?? '')
 const net = (lines: JournalLine[], acct: string) => lines.filter((l) => l.account === acct).reduce((s, l) => s + l.credit - l.debit, 0)
 function netByKey(lines: JournalLine[]) {
   const m = new Map<string, number>()
@@ -174,7 +175,7 @@ describe('intake: Jurnal builds the draft; holds only for no mapping or a partia
 
   it('no total check exists: nothing compares against Talenta totals and no gap, suspense or rounding route remains', async () => {
     const store = await import('../app/data/payrollStore')
-    for (const gone of ['totalGaps', 'releaseWithGap', 'releaseTaxHold', 'setSuspenseAccount', 'confirmPostAsFinanceManager', 'recordSalaryPayment', 'payStatutory', 'voidPayment', 'reconciliation', 'independentChecks', 'signOffMonth', 'pph21Annual', 'postDifference'])
+    for (const gone of ['totalGaps', 'releaseWithGap', 'releaseTaxHold', 'setSuspenseAccount', 'confirmPostAsFinanceManager', 'recordSalaryPayment', 'payStatutory', 'voidPayment', 'reconciliation', 'independentChecks', 'signOffMonth', 'pph21Annual', 'postDifference', 'postCorrection', 'correctionOf'])
       expect(gone in store, gone).toBe(false)
     expect('knownGaps' in payroll).toBe(false)
     expect('suspenseAccount' in payroll.settings).toBe(false)
@@ -287,38 +288,66 @@ describe('post (TS-05)', () => {
   })
 })
 
-describe('revisions: the latest version wins and Jurnal builds the correction', () => {
+describe('revisions: the latest version wins; reverse and repost replaces the posted journal', () => {
   beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant + LM') })
 
-  it('a different send for a posted run becomes current; the correction (difference only) waits and the Accountant is notified', () => {
+  it('a different send for a posted run becomes current; the run shows what changes and the Accountant is notified', () => {
     postSep()
     const sep = run(SEP)
     const r = simulateSend('revision', { runId: sep.id })
     expect(r.status).toBe('Received')
     expect(sep.currentVersion).toBe(2)
-    expect(runStatus(sep)).toBe('Correction ready')
-    const c = correctionOf(sep.id)!
+    expect(runStatus(sep)).toBe('Revision ready')
+    const c = revisionOf(sep.id)!
     expect(c.summary).toMatchObject({
       fromVersion: 1, toVersion: 2,
       takeHome: { before: 446_901_849, after: 448_634_808, change: 1_732_959 },
       pph21: { change: 197_041 }, pph26: { change: 0 }, bpjs: { change: 244_800 },
       joined: 0, left: 0, amountChanged: 4,
     })
-    expect(c.summary.moved.filter((m) => m.change > 0).every((m) => m.label.includes('Human Capital'))).toBe(true)
-    expect(journalTotals({ lines: c.lines }).debit).toBe(2_199_800)
-    expect(noticesFor('Accountant')[0]!.text).toBe('Payroll 21 Aug-20 Sep 2026 v2 replaces v1. Take-home pay +Rp1.732.959, PPh 21 +Rp197.041, PPh 26 Rp0, BPJS +Rp244.800. 4 staff changed. Correction ready to post.')
-    expect(postRun(sep.id).message).toBe('v1 is posted as PAY-0003. Post the correction for v2.')
-    expect(postConfirmText(sep.id).title).toBe('Post the correction for 21 Aug-20 Sep 2026?')
-    const p = postCorrection(sep.id)
-    expect(p.ok).toBe(true)
+    expect(c.summary.moved.filter((m) => m.change > 0 && isCostCode(m.account)).every((m) => m.label.includes('Human Capital'))).toBe(true)
+    expect(noticesFor('Accountant')[0]!.text).toBe('Payroll 21 Aug-20 Sep 2026 v2 replaces v1. Take-home pay +Rp1.732.959, PPh 21 +Rp197.041, PPh 26 Rp0, BPJS +Rp244.800. 4 staff changed. Ready to reverse and repost.')
+    expect(postRun(sep.id).message).toBe('v1 is posted as PAY-0003. Reverse and repost v2.')
+    expect(postConfirmText(sep.id).title).toBe('Reverse and repost 21 Aug-20 Sep 2026?')
+    expect(repostVersions(sep.id).map((v) => v.no)).toEqual([2])
+  })
+
+  it('reverse and repost: the old PAY reversed in full and the new PAY in full, both on the chosen date; payables and the amendment task follow', () => {
+    postSep()
+    const sep = run(SEP)
+    const old = liveJournals(sep.id)[0]!
+    simulateSend('revision', { runId: sep.id })
+    const p = reverseAndRepost(sep.id, { date: '2026-09-30' })
+    expect(p).toMatchObject({ ok: true, journals: ['PAY-0004', 'PAY-0005'], number: 'PAY-0005', date: '2026-09-30' })
+    const rev = journalById(old.reversedById)!
+    expect(rev).toMatchObject({ type: 'Reversal', number: 'PAY-0004', date: '2026-09-30', reversesId: old.id, taxMonth: '2026-09' })
+    expect(rev.lines.map((l) => [l.account, l.debit, l.credit])).toEqual(old.lines.map((l) => [l.account, l.credit, l.debit]))
     const live = liveJournals(sep.id)
-    expect(live.map((j) => [j.number, j.type])).toEqual([['PAY-0003', 'Payroll'], ['PAY-0004', 'Correction']])
-    expect(netByKey(live.flatMap((j) => j.lines))).toEqual(netByKey(draftOf(sep)!.lines))
-    expect(net(journalById(String(p.journalId))!.lines, ACC.hutangGaji)).toBe(1_732_959)
+    expect(live.map((j) => [j.number, j.type, j.versionNo, j.date])).toEqual([['PAY-0005', 'Payroll', 2, '2026-09-30']])
+    expect(netByKey(live[0]!.lines)).toEqual(netByKey(draftOf(sep)!.lines))
+    expect(journalTotals(live[0]!).debit).toBe(journalTotals(draftOf(sep)!).debit)
+    expect(payroll.journals.some((j) => (j.type as string) === 'Correction')).toBe(false)
     expect(runStatus(sep)).toBe('Posted')
     expect(sep.ledgerVersion).toBe(2)
-    expect(postCorrection(sep.id).ok).toBe(false)
+    expect(revisionOf(sep.id)).toBeNull()
+    expect(reverseAndRepost(sep.id).ok).toBe(false)
+    expect(payablesTracker('2026-09').find((r) => r.party === 'Staff')).toMatchObject({ owed: 448_634_808 })
     expect(amendmentTasks.value.find((t) => t.taxMonth === '2026-09')!.summary).toBe('4 staff changed, period total change Rp197.041')
+  })
+
+  it('the Accountant picks the version: the latest is preselected; an older one can be reposted and the newer stays superseded', () => {
+    postSep()
+    const sep = run(SEP)
+    simulateSend('revision', { runId: sep.id })
+    simulateSend('revision', { runId: sep.id, raise: { organization: 'Human Capital', amount: 900_000 } })
+    expect(repostVersions(sep.id).map((v) => v.no)).toEqual([3, 2])
+    const r = reverseAndRepost(sep.id, { versionNo: 2 })
+    expect(r.ok).toBe(true)
+    expect(sep.ledgerVersion).toBe(2)
+    expect(sep.currentVersion).toBe(2)
+    expect(liveJournals(sep.id).map((j) => j.versionNo)).toEqual([2])
+    expect(versionLabel(sep, sep.versions[2]!)).toBe('Superseded, not posted')
+    expect(runStatus(sep)).toBe('Posted')
   })
 
   it('a send that looks like a separate run (THR only) keeps the revision-or-separate choice', () => {
@@ -336,7 +365,7 @@ describe('revisions: the latest version wins and Jurnal builds the correction', 
     resetPayroll(); setPayrollViewAs('Accountant + LM'); postSep()
     simulateSend('separate-run', { runId: run(SEP).id })
     expect(chooseRevision(run(SEP).id, 2).ok).toBe(true)
-    expect(runStatus(run(SEP))).toBe('Correction ready')
+    expect(runStatus(run(SEP))).toBe('Revision ready')
   })
 
   it('a version that moves nothing in the ledger becomes the ledger version at once, with the amendment task when tax moved', () => {
@@ -345,31 +374,30 @@ describe('revisions: the latest version wins and Jurnal builds the correction', 
     simulateSend('regular', { start: '2026-08-21', end: '2026-09-20', newAllowance: INS, taxShift: { from: 'EMP-0026', to: 'EMP-0027', amount: 50_000 } })
     expect(runStatus(sep)).toBe('Posted')
     expect(sep.ledgerVersion).toBe(2)
-    expect(correctionOf(sep.id)).toBeNull()
+    expect(revisionOf(sep.id)).toBeNull()
     expect(amendmentTasks.value.find((t) => t.taxMonth === '2026-09')).toMatchObject({ noLedgerChange: true, periodChange: 0 })
   })
 
-  it('OD-17: a correction of a locked month posts in the first open period and keeps its tax month', () => {
+  it('a revision of a locked month: the default date is refused with a clear message; a date in an open period posts and keeps the tax month', () => {
     const aug = run(AUG)
     expect(as('Owner', () => lockPeriod('2026-08')).ok).toBe(true)
     simulateSend('revision', { runId: aug.id })
-    const d = postCorrection(aug.id)
+    expect(reverseAndRepost(aug.id)).toMatchObject({ ok: false, message: 'Aug 2026 is locked. Pick a date in an open period.' })
+    expect(liveJournals(aug.id).map((j) => j.number)).toEqual(['PAY-0002'])
+    const d = reverseAndRepost(aug.id, { date: '2026-09-01' })
     expect(d.ok).toBe(true)
-    expect(d.redirected).toBe(true)
     const j = journalById(String(d.journalId))!
-    expect(j.date).toBe('2026-09-01')
-    expect(j.taxMonth).toBe('2026-08')
-    expect(j.reference).toBe('Aug 2026')
-    expect(j.memo).toBe('Correction of payroll 21 Jul-20 Aug 2026 v1 (PAY-0002), from v2 sent 5 Oct 2026')
+    expect(j).toMatchObject({ date: '2026-09-01', taxMonth: '2026-08', versionNo: 2 })
+    expect(journalById(journalsOf(aug.id).find((x) => x.number === 'PAY-0002')!.reversedById)!.date).toBe('2026-09-01')
+    expect(reverseAndRepost(aug.id, { date: '2026-08-01' }).ok).toBe(false)
   })
 
-  it('Reverse and repost (More menu) and Reverse undo the whole chain', () => {
+  it('Reverse undoes the whole chain', () => {
     postSep()
     const sep = run(SEP)
     simulateSend('revision', { runId: sep.id })
     expect(reverseAndRepost(sep.id).ok).toBe(true)
     expect(liveJournals(sep.id).map((j) => j.type)).toEqual(['Payroll'])
-    expect(netByKey(liveJournals(sep.id).flatMap((j) => j.lines))).toEqual(netByKey(draftOf(sep)!.lines))
     expect(reverseJournal(liveJournals(sep.id)[0]!.id, { confirmPayments: true }).ok).toBe(true)
     expect(runStatus(sep)).toBe('Reversed')
     expect(reverseJournal(payroll.journals.filter((j) => j.type === 'Reversal').pop()!.id).message).toBe('A reversal cannot be reversed.')
@@ -381,6 +409,60 @@ describe('revisions: the latest version wins and Jurnal builds the correction', 
     const cmp = compareVersions(run(SEP).id, 1, 2)
     expect(cmp.byPayItem.find((r) => r.name === 'PPH 21 Paid')).toMatchObject({ section: 'deduction', new: 0, missing: true })
     expect(cmp.headcount).toEqual({ added: [], removed: [] })
+  })
+})
+
+describe('entry date on every post', () => {
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant + LM') })
+
+  it('defaults to the last day of the pay period and takes an override', () => {
+    mapInsentif()
+    const sep = run(SEP)
+    expect(defaultEntryDate(sep)).toBe('2026-09-20')
+    expect(postConfirmText(sep.id).body).toMatch(/dated 20 Sep 2026\./)
+    expect(postConfirmText(sep.id, '2026-09-30').body).toMatch(/dated 30 Sep 2026\./)
+    const r = postRun(sep.id, { date: '2026-09-30' })
+    expect(r).toMatchObject({ ok: true, date: '2026-09-30' })
+    expect(liveJournals(sep.id)[0]!.date).toBe('2026-09-30')
+    resetPayroll(); mapInsentif()
+    expect(postRun(run(SEP).id)).toMatchObject({ ok: true, date: '2026-09-20' })
+  })
+
+  it('a date in a locked period is refused with a clear message and nothing posts', () => {
+    mapInsentif()
+    const sep = run(SEP)
+    expect(checkEntryDate('2026-07-31')).toBe('Jul 2026 is locked. Pick a date in an open period.')
+    expect(postRun(sep.id, { date: '2026-07-31' })).toMatchObject({ ok: false, status: 422, message: 'Jul 2026 is locked. Pick a date in an open period.' })
+    expect(postRun(sep.id, { date: 'not a date' }).message).toBe('Pick an entry date.')
+    expect(liveJournals(sep.id)).toHaveLength(0)
+  })
+})
+
+describe('dry run: shows the journal it would post and posts nothing', () => {
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant + LM') })
+
+  it('accounts, dimensions, payables per party and warnings, labelled Test, not posted; no journal, id or setting moves', () => {
+    mapInsentif()
+    const sep = run(SEP)
+    const before = JSON.stringify({ j: payroll.journals, seq: payroll.seq, m: payroll.settings.mapping.length, v: sep.versions, log: payroll.log.length })
+    const d = dryRunJournal(sep.id)
+    expect(d).toMatchObject({ ok: true, label: 'Test, not posted', versionNo: 1, date: '2026-09-20', total: 554_203_941 })
+    expect(d.lines.some((l) => l.tags.Organization === 'Sales')).toBe(true)
+    expect(Object.fromEntries(d.payables.map((p) => [p.party, p.amount]))).toMatchObject({ Staff: 446_901_849, 'DJP PPh 21': 18_323_082, 'DJP PPh 26': 21_209_400, 'BPJS Kesehatan': 16_097_029, 'BPJS Ketenagakerjaan': 38_969_133 })
+    expect(d.payables.find((p) => p.account === ACC.dplk)!.amount).toBe(9_300_000)
+    expect(d.warnings).toContain('3 headcount changes are not marked Expected.')
+    expect(JSON.stringify({ j: payroll.journals, seq: payroll.seq, m: payroll.settings.mapping.length, v: sep.versions, log: payroll.log.length })).toBe(before)
+    expect(runStatus(sep)).toBe('Ready to post')
+  })
+
+  it('a held run shows why it would not post; posting never waits for a dry run', () => {
+    const sep = run(SEP)
+    const d = dryRunJournal(sep.id)
+    expect(d.ok).toBe(false)
+    expect(d.holds.map((h) => h.code)).toEqual(['unmapped-item'])
+    expect(liveJournals(sep.id)).toHaveLength(0)
+    mapInsentif()
+    expect(postRun(sep.id).ok).toBe(true)
   })
 })
 
@@ -416,11 +498,11 @@ describe('payables: a tracker; payments arrive as bank reconciliation matches', 
     expect(salary().payments).toHaveLength(2)
   })
 
-  it('a correction waiting shows the owed figure after it; posting it re-opens the salary row', () => {
+  it('a revision waiting shows the owed figure after it; the repost reverses the old amount and re-opens the salary row by the difference', () => {
     simulateBankPayment('salary', { date: '2026-09-25' })
     simulateSend('revision', { runId: run(SEP).id })
     expect(salary()).toMatchObject({ owed: 446_901_849, pendingOwed: 448_634_808 })
-    postCorrection(run(SEP).id)
+    reverseAndRepost(run(SEP).id)
     expect(salary()).toMatchObject({ owed: 448_634_808, balance: 1_732_959, pendingOwed: null })
   })
 
@@ -548,7 +630,7 @@ describe('claims, access, copy', () => {
     expect(grid('simulate')).toEqual(['Owner', 'Ultimate', 'Ultimate + LM', 'Accountant', 'Accountant + LM'])
     // Accountant without LM: posts, cannot edit settings or post corrections.
     expect(as('Accountant', () => setPayday(26)).status).toBe(403)
-    expect(as('Accountant', () => postCorrection(run(SEP).id)).status).toBe(403)
+    expect(as('Accountant', () => reverseAndRepost(run(SEP).id)).status).toBe(403)
     expect(as('Ultimate', () => lockPeriod('2026-08')).status).toBe(403)
     expect(as('View only', () => postRun(run(SEP).id)).status).toBe(403)
     expect(as('View only', () => simulateBankPayment('salary')).status).toBe(403)
@@ -626,25 +708,35 @@ describe('approval through Settings > Approval workflows (transaction type Payro
     expect(postRun(run(SEP).id)).toMatchObject({ ok: true, number: 'PAY-0003' })
   })
 
-  it('a correction routes the same way when its difference is above the threshold, and not when below', () => {
+  it('reverse and repost routes like a first post: the chosen date is kept; on approval the reversal and the new PAY post together on it', () => {
     setApprovalWorkflowActive(PAYROLL_RULE, false)
     setPayrollViewAs('Accountant + LM')
     postSep()
-    simulateSend('revision', { runId: run(SEP).id })
+    const sep = run(SEP)
+    const old = liveJournals(sep.id)[0]!
+    simulateSend('revision', { runId: sep.id })
     setApprovalWorkflowActive(PAYROLL_RULE, true)
-    // Rp2.199.800 difference: below the threshold, posts at once.
-    expect(postCorrection(run(SEP).id)).toMatchObject({ ok: true })
+    // The repost is judged on the full new journal (Rp556.403.741), above the threshold.
+    const r = reverseAndRepost(sep.id, { date: '2026-09-30' })
+    expect(r).toMatchObject({ ok: true, awaitingApproval: true })
+    expect(sep.approval).toMatchObject({ kind: 'repost', versionNo: 2, date: '2026-09-30' })
+    expect(runStatus(sep)).toBe('Awaiting approval')
+    expect(liveJournals(sep.id)).toEqual([old])
+    expect(payrollTasks()).toHaveLength(1)
+    const a = as('Owner', () => approvePayroll(sep.id))
+    expect(a).toMatchObject({ ok: true, journals: ['PAY-0004', 'PAY-0005'] })
+    expect(journalById(old.reversedById)!.date).toBe('2026-09-30')
+    expect(liveJournals(sep.id).map((j) => [j.number, j.date, j.versionNo, j.postedBy])).toEqual([['PAY-0005', '2026-09-30', 2, 'Rizal Candra']])
+    expect(sep.ledgerVersion).toBe(2)
     expect(payrollTasks()).toHaveLength(0)
-    const rule = approvalWorkflows.find((x) => x.id === PAYROLL_RULE)!
-    rule.minAmount = 0
-    resetPayroll(); setPayrollViewAs('Accountant + LM'); setApprovalWorkflowActive(PAYROLL_RULE, false); postSep()
-    simulateSend('revision', { runId: run(SEP).id })
-    setApprovalWorkflowActive(PAYROLL_RULE, true)
-    expect(postCorrection(run(SEP).id)).toMatchObject({ ok: true, awaitingApproval: true })
-    expect(runStatus(run(SEP))).toBe('Awaiting approval')
-    expect(as('Owner', () => approvePayroll(run(SEP).id))).toMatchObject({ ok: true })
-    expect(run(SEP).ledgerVersion).toBe(2)
-    rule.minAmount = 500_000_000
+  })
+
+  it('a first post keeps its entry date through approval', () => {
+    mapInsentif()
+    const sep = run(SEP)
+    expect(postRun(sep.id, { date: '2026-09-30' })).toMatchObject({ ok: true, awaitingApproval: true })
+    expect(as('Owner', () => approvePayroll(sep.id))).toMatchObject({ ok: true, date: '2026-09-30' })
+    expect(liveJournals(sep.id)[0]!.date).toBe('2026-09-30')
   })
 })
 
@@ -661,10 +753,10 @@ describe('privacy: no employee data in anything Jurnal renders or exports', () =
     const out: unknown[] = [headcountChanges(sep.id), review, runWarnings(sep.id), why, postConfirmText(sep.id)]
     postRun(sep.id)
     simulateSend('revision', { runId: sep.id })
-    const c = correctionOf(sep.id)!
+    const c = revisionOf(sep.id)!
     expect(c.summary).toMatchObject({ joined: 0, left: 0, amountChanged: 4 })
     out.push(c.summary, compareVersions(sep.id), syncLog.value, payroll.notices, payablesTracker('2026-09'), claimsSummary(sep.id))
-    postCorrection(sep.id)
+    reverseAndRepost(sep.id)
     out.push(amendmentTasks.value, journalsOf(sep.id))
     // Journal line sources keep the user_id set internally (to count staff once across lines); no screen reads it.
     const shown = JSON.stringify(out, (k, v) => (k === 'staff' && Array.isArray(v) ? v.length : v))

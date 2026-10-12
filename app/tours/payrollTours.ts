@@ -15,7 +15,7 @@
 import {
   resetPayroll, setPayrollViewAs, runs, payItemKey, suggestMapping, setPayItemMapping,
   headcountChanges, markHeadcountExpected, runWarnings, acknowledgeWarning, postRun, simulateBankPayment,
-  simulateSend, postCorrection, amendmentTasks, setEbupotFiled, pph21Month, closeAmendmentTask,
+  simulateSend, reverseAndRepost, amendmentTasks, setEbupotFiled, pph21Month, closeAmendmentTask,
 } from '~/data/payrollStore'
 import type { PayrollRole } from '~/data/payrollMaster'
 import type { AssetTour, TourStep } from './assetTours'
@@ -111,7 +111,7 @@ function talentaResends() { simulateSend('revision', { runId: sepId() }) }
 /** Acknowledgements belong to a version: v2's warnings are acknowledged before the correction posts. */
 function postTheCorrection() {
   acknowledgeAll()
-  postCorrection(sepId())
+  reverseAndRepost(sepId())
 }
 function bankMatchesPph21() { simulateBankPayment('pph21', { month: SEP_MONTH, date: '2026-10-05' }) }
 /** Tax Staff file September once, on the v2 figures, and type the filed total. */
