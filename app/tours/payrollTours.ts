@@ -17,8 +17,11 @@ import {
   payroll, resetPayroll, setPayrollViewAs, runs, payItemKey, setPayItemAccount, setPayItemGroupsCanChange,
   setGroupBy, setGroupAccount, setGroupDimension, saveGroup, linkDimension, createPayrollTag, groupRows,
   runWarnings, acknowledgeWarning, postRun, approvePayroll, reverseAndRepost, simulateSend,
-  simulateBankPayment, simulateManualJournal,
+  simulateBankPayment, simulateManualJournal, payablesTracker, payablePrefill, recordPayablePayment, payrollAccount,
+  useChartAccount,
 } from '~/data/payrollStore'
+import { cashAccounts } from '~/data/cashAccounts'
+import { cashTransactions, addCashTx } from '~/data/bankTransactions'
 import { ACC, type PayrollRole } from '~/data/payrollMaster'
 import type { AssetTour, TourStep } from './assetTours'
 import type { ViewAsRole } from '~/data/assetStore'
@@ -31,6 +34,16 @@ export const SEP_MONTH = '2026-09'
 export const SEP_LABEL = '21 Aug-20 Sep 2026'
 export const NEW_ITEM = 'Insentif Penjualan'
 export const NEW_GROUP = 'Operations, Medan'
+/** August's BPJS Kesehatan, left unpaid in the sample data: the payable PAY-2 pays with Pay. */
+export const AUG_MONTH = '2026-08'
+export const AUG_BPJS_KES = 'BPJS Kesehatan Payable Aug 2026'
+/** The cash account Pay picks first on New spend money. */
+export const PAY_FROM = 'Bank BCA'
+/**
+ * New spend money is a Cash management screen, not a payroll one, so it carries no payroll
+ * marker: the step opened from Pay points at the form's payable banner by its test id.
+ */
+export const CASH_FORM_TARGET = 'ctf-payable'
 
 /**
  * Every data-tour marker the payroll tours may point at: the list agreed with the screens
@@ -55,6 +68,11 @@ export function sepId(): string {
 const runRoute = (tab?: string) => () => `/payroll-runs/${sepId()}${tab ? `?tab=${tab}` : ''}`
 const PAYABLES = `/payroll-payables?month=${SEP_MONTH}`
 const SETTINGS = (section: 'connection' | 'pay-items' | 'groups') => `/payroll-settings?section=${section}`
+const AUG_PAYABLES = `/payroll-payables?month=${AUG_MONTH}`
+/** The open August BPJS Kesehatan payable's key ('' once it is gone from the tracker). */
+export function augBpjsKey(): string {
+  return payablesTracker(AUG_MONTH).find((r) => r.party === 'BPJS Kesehatan')?.key ?? ''
+}
 
 // ── Finding what a step points at ───────────────────────────────────────────
 
@@ -87,6 +105,50 @@ function onTab(marker: string, ...tabs: string[]): () => HTMLElement | null {
     return null
   }
 }
+/** The Use group account toggle on the Insentif Penjualan row, else the first one on the page. */
+function insentifToggle(): HTMLElement | null {
+  const row = Array.from(document.querySelectorAll<HTMLElement>('[data-tour="payroll-payitems"] tr'))
+    .find((r) => visible(r) && r.innerText.includes(NEW_ITEM))
+  const gcc = row?.querySelector<HTMLElement>('.pset-gcc')
+  return visible(gcc) ? gcc : live('payroll-groups-can-change')
+}
+/**
+ * Payroll payables keeps its view (Payables or Payments) and its month filter while the tour only
+ * changes the query, so a target can be on the other view or filtered out. Open the view the step
+ * needs, else clear the filters, and let the runner's poll anchor next tick.
+ */
+function onPayables(view: 'Payables' | 'Payments', pick: () => HTMLElement | null | undefined): () => HTMLElement | null {
+  return () => {
+    const el = pick()
+    if (visible(el)) return el
+    const seg = Array.from(document.querySelectorAll<HTMLElement>('#pp-view label, #pp-view button, #pp-view [role="radio"], #pp-view span'))
+      .find((b) => visible(b) && b.innerText.trim() === view)
+    const onView = view === 'Payables' ? !!live('payroll-payables') : !live('payroll-payables') && !!document.querySelector('.pp')
+    if (!onView) seg?.click()
+    else Array.from(document.querySelectorAll<HTMLElement>('.pp button')).find((b) => visible(b) && b.innerText.trim() === 'Clear filters')?.click()
+    return null
+  }
+}
+const payablesMarker = (marker: string) => onPayables('Payables', () => live(marker))
+/** The September salary row (the marker sits on the latest salary row the filters leave showing). */
+const sepSalaryRow = onPayables('Payables', () => { const el = live('payroll-salary-row'); return el?.innerText.includes(SEP_LABEL) ? el : null })
+const payableRow = (label: string) => onPayables('Payables', () =>
+  Array.from(live('payroll-payables')?.querySelectorAll<HTMLElement>('tr') ?? []).find((r) => visible(r) && r.innerText.includes(label)))
+/** The Spend money payment of August BPJS Kesehatan on the Payments view. */
+const spendMoneyPayment = onPayables('Payments', () =>
+  Array.from(document.querySelectorAll<HTMLElement>('.pp tr')).find((r) => visible(r) && r.innerText.includes('Spend money') && r.innerText.includes(AUG_BPJS_KES)))
+/**
+ * The payable banner on Cash management > New spend money. Once the payable is paid (Back from a
+ * later step) the form opens blank, so the step points at the form's title instead.
+ */
+function payableBanner(): HTMLElement | null {
+  const el = document.querySelector<HTMLElement>(`[data-testid="${CASH_FORM_TARGET}"]`)
+  if (visible(el)) return el
+  const title = document.querySelector<HTMLElement>('.detail-title')
+  return visible(title) && title.innerText.trim() === 'New spend money' && augBpjsPaid() ? title : null
+}
+const augBpjsPaid = () => (payablesTracker(AUG_MONTH).find((r) => r.party === 'BPJS Kesehatan')?.balance ?? 1) <= 0
+
 /** The journal date field in the Post journal drawer, opening the drawer from the Post button once. */
 function journalDateField(): HTMLElement | null {
   const el = live('payroll-journal-date')
@@ -151,6 +213,25 @@ function ownerApproves() { approvePayroll(sepId()) }
 function bankPaysSalary() { simulateBankPayment('salary', { runId: sepId(), date: '2026-09-25' }) }
 function bankPaysTooMuch() { simulateBankPayment('overpaid', { runId: sepId(), date: '2026-09-26' }) }
 function manualJournal() { simulateManualJournal() }
+/**
+ * Pay on the August BPJS Kesehatan row, then Save on New spend money, as the form does it: a
+ * spend money from Bank BCA with one line on the payable account for the open amount, recorded
+ * against the payable. A replay reuses the spend money an earlier play saved, so Cash
+ * management does not fill up with copies.
+ */
+function payBpjsFromSpendMoney() {
+  const key = augBpjsKey()
+  const p = key ? payablePrefill(key) : null
+  const cash = cashAccounts.find((a) => a.name === PAY_FROM && !a.isArchived)
+  if (!p || !cash) return
+  const tx = cashTransactions.find((x) => x.kind === 'withdrawal' && x.memo === p.memo && x.transactionDate === p.date)
+    ?? addCashTx('withdrawal', {
+      cashAccountId: cash.id, contact: p.payee, transactionDate: p.date, tags: [], priceIncludesTax: false,
+      lines: [{ accountCode: p.account, description: p.label, taxId: '', amount: p.amount }], memo: p.memo,
+    })
+  if (!payrollAccount(cash.code)) useChartAccount({ code: cash.code, name: cash.name, type: 'cash' })
+  recordPayablePayment(key, { cashTxId: tx.id, number: `Spend money #${tx.number}`, bank: cash.code, date: p.date, amount: p.amount })
+}
 
 // PAY-3
 /** September as the monthly run leaves it: mapped, checked, posted after approval, salary paid. */
@@ -217,8 +298,9 @@ const setupSteps: PayrollStep[] = [
   {
     route: SETTINGS('pay-items'),
     target: 'payroll-groups-can-change',
+    find: insentifToggle,
     title: 'Use group account lets a group post the cost to its own account.',
-    body: 'On: the item uses the staff member\'s group account, where the group has one. Off (Use default account): the item posts to this account for every group.',
+    body: 'On, it reads Use group account: staff in a group with its own expense account post to that account. Off, it reads Use default account: everyone posts to the account above. The info tip says the same.',
     watch: 'Insentif Penjualan is paid to 7 Sales staff, so it lands on 6-60004 Sales Salaries, the Sales groups\' account, not on Salaries.',
     placement: 'top',
   },
@@ -226,8 +308,8 @@ const setupSteps: PayrollStep[] = [
     run: groupByOrganizationAndBranch,
     route: SETTINGS('groups'),
     target: 'payroll-groupby',
-    title: 'Staff are grouped by Organization and Branch.',
-    body: 'Group by takes any fields Talenta sends. Each combination Talenta has sent becomes a group row with a staff count, never names.',
+    title: 'The Groups tab groups staff by Organization and Branch.',
+    body: 'Settings has three tabs: Connection, Pay items and Groups. On Groups, Group by takes any fields Talenta sends, and each combination Talenta has sent becomes a group row with a staff count, never names.',
     watch: '9 groups from the last send. Operations, Jakarta HQ has 10 staff.',
     placement: 'bottom',
   },
@@ -253,8 +335,8 @@ const setupSteps: PayrollStep[] = [
     route: runRoute(),
     target: 'payroll-post',
     title: 'Large payroll journals go to the Owner for approval.',
-    body: 'Settings, Approval workflows holds the rule Payroll journal above Rp500.000.000. A journal above it waits in Inbox, Awaiting approval, and posts when the Owner approves.',
-    watch: 'September\'s draft is Rp554.203.941, above the limit, so Post journal sends it for approval.',
+    body: 'Settings > Approval workflows holds the rule Payroll journal above Rp500.000.000. A journal above it waits in Inbox > Awaiting approval, and posts when the Owner approves.',
+    watch: 'September\'s draft is Rp554.203.941, above the limit, so the button reads Send for approval instead of Post journal.',
     placement: 'bottom',
   },
   {
@@ -283,7 +365,7 @@ const runSteps: PayrollStep[] = [
     target: 'payroll-inbox-runs',
     find: rowIn('payroll-inbox-runs', SEP_LABEL),
     title: 'September arrives from Talenta and Jurnal builds it at once.',
-    body: 'HR settles payroll in Talenta and sends it. A send stops only when Jurnal cannot book it; July and August are posted and paid.',
+    body: 'HR settles payroll in Talenta and sends it. A send stops only when Jurnal cannot book it. July and August are posted; only August\'s BPJS Kesehatan is still unpaid.',
     watch: '21 Aug-20 Sep 2026: 40 staff, take-home pay Rp446.901.849.',
     placement: 'bottom',
   },
@@ -291,7 +373,7 @@ const runSteps: PayrollStep[] = [
     route: '/payroll-inbox?view=log',
     target: 'payroll-synclog',
     title: 'The sync log lists every send Talenta made.',
-    body: 'One row per send: when it arrived, the period, the version, staff and pay items, and what Jurnal did with it.',
+    body: 'One row per send: when it was received, the period, the version, staff and pay items, and what Jurnal did with it.',
     watch: 'The September send is v1 with 40 staff and 23 pay items.',
     placement: 'bottom',
   },
@@ -365,7 +447,7 @@ const runSteps: PayrollStep[] = [
     target: 'payroll-journal-date',
     find: journalDateField,
     role: 'Accountant + LM',
-    title: 'Post journal asks for one journal date.',
+    title: 'Send for approval asks for one journal date.',
     body: 'Journal date defaults to the last day of the pay period. A date in a locked period is refused: July is locked.',
     watch: 'Journal date 20 Sep 2026. The journal is above Rp500.000.000, so it goes for approval.',
     placement: 'left',
@@ -376,7 +458,7 @@ const runSteps: PayrollStep[] = [
     target: 'payroll-inbox-runs',
     find: rowIn('payroll-inbox-runs', SEP_LABEL),
     title: 'Bayu sends the journal for approval.',
-    body: 'The rule in Approval workflows matched, so nothing posts yet. The request waits in Inbox, Awaiting approval, with the journal date Bayu chose.',
+    body: 'The rule in Approval workflows matched, so nothing posts yet. The request waits in Inbox > Awaiting approval, with the journal date Bayu chose.',
     watch: 'September is awaiting approval from Rizal Candra: Rp554.203.941 dated 20 Sep 2026.',
     placement: 'bottom',
   },
@@ -420,6 +502,7 @@ const runSteps: PayrollStep[] = [
     run: bankPaysSalary,
     route: PAYABLES,
     target: 'payroll-salary-row',
+    find: sepSalaryRow,
     title: 'Bank reconciliation matches the salary transfer.',
     body: 'Payroll payables tracks what each party is still owed. A payment arrives when a bank statement line is matched to the payable; it clears Salaries Payable, never an expense.',
     watch: 'Salary 21 Aug-20 Sep 2026: owed Rp446.901.849, paid by BNK-0012 on 25 Sep 2026, balance Rp0.',
@@ -437,9 +520,47 @@ const runSteps: PayrollStep[] = [
   {
     route: PAYABLES,
     target: 'payroll-payables-flags',
+    find: payablesMarker('payroll-payables-flags'),
     title: 'The row flags a bank amount that differs from the run.',
     body: 'When the bank paid more or less than the posted run, the payable says so on its row.',
     watch: 'Bank paid Rp447.151.849 against Rp446.901.849: Rp250.000 over.',
+    placement: 'bottom',
+  },
+  {
+    route: AUG_PAYABLES,
+    target: 'payroll-payables',
+    find: payableRow(AUG_BPJS_KES),
+    title: 'August BPJS Kesehatan is still owed and past its due date.',
+    body: 'Each row shows what a party is owed, its due date and its status. BPJS Kesehatan is due on the 10th of the next month, and no payment has reached the August amount.',
+    watch: 'BPJS Kesehatan Payable Aug 2026: Rp16.102.029 still owed, due 10 Sep 2026, Overdue 25 days.',
+    placement: 'bottom',
+  },
+  {
+    route: () => `/bank-withdrawals/new?payable=${encodeURIComponent(augBpjsKey())}`,
+    target: CASH_FORM_TARGET,
+    find: payableBanner,
+    title: 'Pay opens Cash management > New spend money, filled in.',
+    body: 'Pay is on the row menu of every payable with a balance, and on its details. The form arrives with the payee, the payable account and the open amount; nothing is paid until it is saved.',
+    watch: 'Pay from Bank BCA to BPJS Kesehatan: one line on 2-20508 BPJS Kesehatan Payable for Rp16.102.029.',
+    placement: 'bottom',
+  },
+  {
+    run: payBpjsFromSpendMoney,
+    route: AUG_PAYABLES,
+    target: 'payroll-payables',
+    find: payableRow(AUG_BPJS_KES),
+    title: 'Saving the spend money pays the payable.',
+    body: 'The spend money debits BPJS Kesehatan Payable and credits the bank, and Payroll payables counts it against the August row.',
+    watch: 'BPJS Kesehatan Payable Aug 2026: paid Rp16.102.029, balance Rp0, Paid late, 25 days.',
+    placement: 'bottom',
+  },
+  {
+    route: '/payroll-payables?tab=payments',
+    target: 'payroll-payables',
+    find: spendMoneyPayment,
+    title: 'Payments shows where each payment came from.',
+    body: 'Source reads Spend money for a payment made with Pay, and Bank reconciliation for a bank line matched to a payable.',
+    watch: 'Spend money paid BPJS Kesehatan Payable Aug 2026 Rp16.102.029. BNK-0012 and BNK-0013 came from Bank reconciliation.',
     placement: 'bottom',
   },
   {
@@ -508,7 +629,7 @@ const resendSteps: PayrollStep[] = [
     target: 'payroll-approve',
     role: 'Owner',
     title: 'Bayu sends the repost; the Owner approves it.',
-    body: 'The repost waits in Inbox, Awaiting approval, like a first post. Approve and post books the reversal and the new journal together.',
+    body: 'The repost waits in Inbox > Awaiting approval, like a first post. Approve and post books the reversal and the new journal together.',
     placement: 'bottom',
   },
   {
@@ -524,6 +645,7 @@ const resendSteps: PayrollStep[] = [
   {
     route: PAYABLES,
     target: 'payroll-salary-row',
+    find: sepSalaryRow,
     role: 'Accountant + LM',
     title: 'Payables follow the new journal.',
     body: 'Staff are now owed the v2 take-home pay. The bank paid the v1 amount, so the rest is still open and the row flags the gap.',
@@ -581,8 +703,8 @@ export const PAYROLL_RUN_TOUR: AssetTour = {
   name: 'Monthly payroll run',
   persona: 'Accountant + LM, Owner',
   role: 'Accountant + LM' as unknown as ViewAsRole,
-  blurb: 'September arrives from Talenta with a pay item no one has mapped, then again with a new group. Bayu, an Accountant with LM, fixes both, checks the warnings and sends the journal for approval; Rizal, the Owner, approves and posts it. Bank reconciliation pays the salary. Staff are grouped by Organization and Branch, as in Set up payroll.',
-  closing: 'The new pay item and the new group held the run until they were set up, the draft review showed the exact journal by account and dimension, every warning was marked as checked, the journal went for approval with its journal date and posted when the Owner approved it, Mapping used and claims explained the journal, and Payroll payables showed the bank match, an overpayment and a manual journal. To try it yourself, use Reset sample data under View as.',
+  blurb: 'September arrives from Talenta with a pay item no one has mapped, then again with a new group. Bayu, an Accountant with LM, fixes both, checks the warnings and sends the journal for approval; Rizal, the Owner, approves and posts it. Bank reconciliation pays the salary, and Pay settles the overdue August BPJS Kesehatan from Cash management. Staff are grouped by Organization and Branch, as in Set up payroll.',
+  closing: 'The new pay item and the new group held the run until they were set up, the draft review showed the exact journal by account and dimension, every warning was marked as checked, the journal went for approval with its journal date and posted when the Owner approved it, Mapping used and claims explained the journal, Payroll payables showed the bank match and an overpayment, Pay settled the overdue August BPJS Kesehatan through New spend money, Payments named each payment\'s source, and a manual journal was warned. To try it yourself, use Reset sample data under View as.',
   steps: runSteps as unknown as TourStep[],
   onReset: reset(groupedByOrganizationAndBranch),
   applyRole,
@@ -620,6 +742,7 @@ export const PAYROLL_FEATURES: { feature: string; tour: 'PAY-1' | 'PAY-2' | 'PAY
   { feature: 'Pay item type from Talenta, with the header tip', tour: 'PAY-1', step: 4 },
   { feature: 'Map a pay item to any expense account', tour: 'PAY-1', step: 5 },
   { feature: 'Use group account', tour: 'PAY-1', step: 6 },
+  { feature: 'Settings > Groups tab', tour: 'PAY-1', step: 7 },
   { feature: 'Group by Talenta fields', tour: 'PAY-1', step: 7 },
   { feature: 'Talenta field to dimension links', tour: 'PAY-1', step: 8 },
   { feature: 'Group expense account and dimension value', tour: 'PAY-1', step: 9 },
@@ -636,7 +759,7 @@ export const PAYROLL_FEATURES: { feature: string; tour: 'PAY-1' | 'PAY-2' | 'PAY
   { feature: 'Warnings and Mark as checked', tour: 'PAY-2', step: 8 },
   { feature: 'Month headcount (Owner)', tour: 'PAY-2', step: 9 },
   { feature: 'Journal date: default and locked period', tour: 'PAY-2', step: 10 },
-  { feature: 'Send for approval to Inbox, Awaiting approval', tour: 'PAY-2', step: 11 },
+  { feature: 'Send for approval to Inbox > Awaiting approval', tour: 'PAY-2', step: 11 },
   { feature: 'Approve and post', tour: 'PAY-2', step: 12 },
   { feature: 'Journals tab', tour: 'PAY-2', step: 13 },
   { feature: 'Mapping used tab', tour: 'PAY-2', step: 14 },
@@ -644,7 +767,11 @@ export const PAYROLL_FEATURES: { feature: string; tour: 'PAY-1' | 'PAY-2' | 'PAY
   { feature: 'Payables: bank match pays salary', tour: 'PAY-2', step: 16 },
   { feature: 'Payables: bank payment menu', tour: 'PAY-2', step: 17 },
   { feature: 'Payables: bank differs flag', tour: 'PAY-2', step: 18 },
-  { feature: 'Manual journal on Salaries Payable warning', tour: 'PAY-2', step: 19 },
+  { feature: 'Payables: overdue statutory payable', tour: 'PAY-2', step: 19 },
+  { feature: 'Pay opens New spend money prefilled', tour: 'PAY-2', step: 20 },
+  { feature: 'Saving the spend money pays the payable', tour: 'PAY-2', step: 21 },
+  { feature: 'Payments: Source column', tour: 'PAY-2', step: 22 },
+  { feature: 'Manual journal on Salaries Payable warning', tour: 'PAY-2', step: 23 },
   { feature: 'Simulate Talenta send (inbox menu)', tour: 'PAY-3', step: 2 },
   { feature: 'Talenta sent this period again', tour: 'PAY-3', step: 3 },
   { feature: 'Versions: what changed', tour: 'PAY-3', step: 4 },
