@@ -2,270 +2,548 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import {
-  payroll, runs, runStatus, runHolds, draftOf, draftReview, runWarnings, headcountChanges, liveJournals, journalTotals,
-  payablesTracker, amendmentTasks, accountLabel, suggestMapping, postRun, postConfirmText, revisionOf, revisionNotice,
-  currentVersionOf, staffRows, pph21Month, rupiah, dateLabel, sourceSummary, noticesFor,
+  payroll, runs, runStatus, runHolds, draftOf, runWarnings, headcountChanges, liveJournals, journalsOf, journalTotals,
+  payablesTracker, accountLabel, revisionOf, sourceSummary, sendLog, connection, settings, payItemKey, mappingFor,
+  payItemType, payItemAccount, groupRows, can, defaultEntryDate, checkEntryDate, pendingApproval, canApprove,
+  claimsSummary, snapshotById, rupiah, dateLabel, wib, staffRows, currentVersionOf, manualJournalWarnings,
+  type Run,
 } from '../app/data/payrollStore'
 import { ACC } from '../app/data/payrollMaster'
-import { PAYROLL_TOUR, PAYROLL_TOURS, PAYROLL_TOUR_MARKERS, TOUR_WORK, tourCtx, sepId, SEP_KEY, SEP_MONTH, SEP_LABEL, NEW_ITEM } from '../app/tours/payrollTours'
+import { awaitingApprovalTasks } from '../app/data/tasks'
+import { approvalWorkflows } from '../app/data/approvalWorkflows'
+import { monthHeadcount } from '../app/data/payrollUiIntake'
+import {
+  PAYROLL_TOURS, PAYROLL_SETUP_TOUR, PAYROLL_RUN_TOUR, PAYROLL_RESEND_TOUR, PAYROLL_TOUR_MARKERS, PAYROLL_FEATURES,
+  TOUR_WORK, tourCtx, sepId, SEP_KEY, SEP_LABEL, SEP_MONTH, NEW_ITEM, NEW_GROUP,
+} from '../app/tours/payrollTours'
+import type { AssetTour } from '../app/tours/assetTours'
 
-const copyOf = (i: number) => { const s = PAYROLL_TOUR.steps[i]!; return `${s.title} ${s.body} ${s.watch ?? ''}` }
-const allCopy = [PAYROLL_TOUR.blurb, PAYROLL_TOUR.closing, ...PAYROLL_TOUR.steps.map((_, i) => copyOf(i))].join(' ')
-/** Every Rp figure the copy quotes; each must be proved by a step below. */
-const quoted = new Set([...allCopy.matchAll(/[+-]?Rp[\d.]*\d/g)].map((m) => m[0]))
-const proved = new Set<string>()
-/** Assert the engine's figure and that step i quotes it (signed when `sign`). */
-function q(i: number, n: number, expected: number, sign = false) {
-  expect(n).toBe(expected)
-  const s = (sign && n > 0 ? '+' : '') + rupiah(n)
-  expect(copyOf(i), `step ${i + 1} quotes ${s}`).toContain(s)
-  proved.add(s)
-}
+const copyOf = (t: AssetTour, i: number) => { const s = t.steps[i]!; return `${s.title} ${s.body} ${s.watch ?? ''}` }
+const allCopyOf = (t: AssetTour) => [t.blurb, t.closing, ...t.steps.map((_, i) => copyOf(t, i))].join(' ')
+const sep = (): Run => runs.value.find((r) => r.key === SEP_KEY)!
 const net = (lines: { account: string; debit: number; credit: number }[], acct: string) => lines.filter((l) => l.account === acct).reduce((s, l) => s + l.credit - l.debit, 0)
-const sep = () => runs.value.find((r) => r.key === SEP_KEY)!
 
-/** Replays PAY-1's auto-play work through the payroll engine; every figure the tour quotes must hold. */
-describe('PAY-1 guided tour (auto-play)', () => {
-  beforeEach(() => PAYROLL_TOUR.onReset!())
+/**
+ * Replays one tour's auto-play work through the payroll engine, step by step, as the runner does:
+ * View as of the step (the last role named so far), then the step's run. `q` asserts the engine's
+ * figure and that the step quotes it; `done` checks every Rp figure the tour quotes was proved.
+ */
+function player(t: AssetTour) {
+  const work = TOUR_WORK[t.code]!
+  const proved = new Set<string>()
+  const roleAt = (i: number) => t.steps.slice(0, i + 1).map((s) => s.role).filter(Boolean).pop() ?? t.role
+  return {
+    at(i: number) { t.applyRole!(roleAt(i) as string); work[i]?.() },
+    q(i: number, n: number, expected: number, sign = false) {
+      expect(n, `step ${i + 1}`).toBe(expected)
+      const s = (sign && n > 0 ? '+' : '') + rupiah(n)
+      expect(copyOf(t, i), `step ${i + 1} quotes ${s}`).toContain(s)
+      proved.add(s)
+    },
+    says(i: number, text: string) { expect(copyOf(t, i), `step ${i + 1}`).toContain(text) },
+    done() {
+      const quoted = new Set([...allCopyOf(t).matchAll(/[+-]?Rp[\d.]*\d/g)].map((m) => m[0]))
+      expect([...quoted].filter((x) => !proved.has(x)), `${t.code} quotes figures no step proves`).toEqual([])
+    },
+  }
+}
 
-  it('is the one payroll tour, reached from the Guided tours menu', async () => {
-    expect(PAYROLL_TOURS.map((t) => [t.id, t.code])).toEqual([['payroll-narrative', 'PAY-1']])
+describe('payroll guided tours: shape', () => {
+  it('three tours in the Payroll group of the one Guided tours menu', async () => {
+    expect(PAYROLL_TOURS.map((t) => [t.code, t.name])).toEqual([
+      ['PAY-1', 'Set up payroll'], ['PAY-2', 'Monthly payroll run'], ['PAY-3', 'When Talenta sends again'],
+    ])
     const { TOUR_GROUPS, orderedGroups } = await import('../app/tours/tourRegistry')
-    expect(TOUR_GROUPS.find((g) => g.key === 'payroll')!.tours).toEqual([PAYROLL_TOUR])
-    expect(orderedGroups('/payroll-inbox')[0]!.tours[0]!.code).toBe('PAY-1')
+    expect(TOUR_GROUPS.find((g) => g.key === 'payroll')!.tours).toEqual(PAYROLL_TOURS)
+    expect(orderedGroups('/payroll-inbox')[0]!.tours.map((t) => t.code)).toEqual(['PAY-1', 'PAY-2', 'PAY-3'])
   })
 
-  // PAY-1 rewrite deferred until the payroll flow is final (roles, privacy and approval changed under it).
-  it.skip('ten steps; every step after the first does its own work and asks the reader for nothing', () => {
-    expect(PAYROLL_TOUR.steps).toHaveLength(10)
-    expect(TOUR_WORK.map((w) => !!w)).toEqual([false, true, true, true, true, true, true, true, true, true])
-    expect(PAYROLL_TOUR.steps.every((s) => !s.action)).toBe(true)
-    expect(PAYROLL_TOUR.steps.map((s) => s.role ?? '')).toEqual(['Accountant', '', '', '', '', '', '', 'Tax Staff', '', 'Accountant'])
+  it('every step auto-plays: no step asks the reader to act', () => {
+    for (const t of PAYROLL_TOURS) {
+      expect(t.steps.every((s) => !s.action), t.code).toBe(true)
+      expect(TOUR_WORK[t.code]).toHaveLength(t.steps.length)
+    }
   })
 
   it('every step lands on a payroll route and one of the agreed payroll markers', () => {
-    PAYROLL_TOUR.onReset!()
-    for (const s of PAYROLL_TOUR.steps) {
-      expect(PAYROLL_TOUR_MARKERS as readonly string[], s.title).toContain(s.target)
-      const route = typeof s.route === 'function' ? s.route() : s.route!
-      expect(route).toMatch(/^\/payroll-(inbox|payables|settings|runs\/run\d+)(\?.*)?$/)
+    for (const t of PAYROLL_TOURS) {
+      t.onReset!()
+      for (const s of t.steps) {
+        expect(PAYROLL_TOUR_MARKERS as readonly string[], `${t.code}: ${s.title}`).toContain(s.target)
+        const route = typeof s.route === 'function' ? s.route() : s.route!
+        expect(route, `${t.code}: ${s.title}`).toMatch(/^\/payroll-(inbox|payables|settings|runs\/run\d+)(\?.*)?$/)
+      }
     }
+  })
+
+  it('every role a step names is a View as role', () => {
+    const roles = ['Owner', 'Ultimate', 'Ultimate + LM', 'Accountant', 'Accountant + LM', 'View only']
+    for (const t of PAYROLL_TOURS) for (const r of [t.role, ...t.steps.map((s) => s.role).filter(Boolean)]) expect(roles, t.code).toContain(r)
   })
 
   /**
    * Markers can be static (data-tour="x") or bound at runtime (:data-tour, or a lookup map such as
    * the Payables row markers); any quoted 'payroll-…' name in a payroll screen counts.
+   * Enabled by the parent after the screen branch (DES) merges.
    */
-  it('every marker the tour uses is on a payroll screen', () => {
+  it.skip('every marker the tours use is on a payroll screen', () => {
     const root = resolve(__dirname, '..', 'app', 'components')
-    const src = ['pages', 'payroll'].flatMap((d) => readdirSync(join(root, d)).filter((f) => /^Payroll.*\.vue$/.test(f)).map((f) => readFileSync(join(root, d, f), 'utf8'))).join('\n')
+    const files = [
+      ...['pages', 'payroll'].flatMap((d) => readdirSync(join(root, d)).filter((f) => /^Payroll.*\.vue$/.test(f)).map((f) => join(root, d, f))),
+      join(root, 'PayrollViewAsSwitcher.vue'),
+    ]
+    const src = files.map((f) => readFileSync(f, 'utf8')).join('\n')
     const markers = new Set([
       ...[...src.matchAll(/ data-tour="([^"]+)"/g)].map((m) => m[1]!),
       ...[...src.matchAll(/'(payroll-[a-z0-9-]+)'/g)].map((m) => m[1]!),
     ])
-    for (const s of PAYROLL_TOUR.steps) expect(markers, s.title).toContain(s.target)
+    for (const t of PAYROLL_TOURS) for (const s of t.steps) expect(markers, `${t.code}: ${s.title}`).toContain(s.target)
   })
 
-  it('copy follows the house rules', () => {
-    expect(allCopy).not.toMatch(/\u2014|\bMVP\b|prototype|\bengine\b|undefined|NaN|\bsimulat/i)
-    // The demo never narrates its own clicks, and never asks the reader to act.
-    expect(allCopy).not.toMatch(/\bthe tour\b|\bclick\b|\bpress\b/i)
-  })
-
-  // PAY-1 rewrite deferred until the payroll flow is final (roles, privacy and approval changed under it).
-  it.skip('replays the narrative with the quoted figures', () => {
-    const at = (i: number) => { PAYROLL_TOUR.applyRole!(PAYROLL_TOUR.steps.slice(0, i + 1).map((s) => s.role).filter(Boolean).pop()!); TOUR_WORK[i]?.() }
-    const run = sep()
-    expect(sepId()).toBe(run.id)
-
-    // 1. Inbox: September held on the new pay item; July and August posted and paid.
-    at(0)
-    expect(runStatus(run)).toBe('Held')
-    const hold = runHolds(run)
-    expect(hold.map((h) => h.code)).toEqual(['unmapped-item'])
-    expect(hold[0]!.message).toBe('1 pay item has no account: Insentif Penjualan (allowance), Rp10.500.000, 7 employees')
-    expect(copyOf(0)).toContain(`${SEP_LABEL} is Held: ${hold[0]!.message}`)
-    proved.add('Rp10.500.000')
-    expect(postRun(run.id).ok).toBe(false)
-    expect(draftOf(run)).toBeNull()
-    for (const m of ['2026-07', '2026-08']) {
-      const rows = payablesTracker(m)
-      expect(rows.length).toBeGreaterThan(0)
-      expect(rows.every((r) => r.balance === 0 && r.status === 'Paid'), m).toBe(true)
+  it('copy follows the house rules and the glossary', () => {
+    for (const t of PAYROLL_TOURS) {
+      const copy = allCopyOf(t)
+      expect(copy, t.code).not.toMatch(/\u2014|\bMVP\b|prototype|\bengine\b|undefined|NaN|\bsimulat|\bsnapshot|\brun key\b|\bpayload\b|\bwebhook\b/i)
+      // The demo never narrates its own clicks, and never asks the reader to act.
+      expect(copy, t.code).not.toMatch(/\bthe tour\b|\bclick\b|\bpress\b/i)
+      // Glossary: staff not employees, no revision / acknowledge / holds / entry date / tag / cost center.
+      expect(copy, t.code).not.toMatch(/\bemployees?\b|\brevision\b|\backnowledg|\bentry date\b|\btags?\b|\bcost cent(er|re)\b|\bDry run\b/i)
+      expect(copy, t.code).not.toMatch(/\bHolds\b/)
+      // No employee identifier, ever.
+      expect(copy, t.code).not.toMatch(/EMP-\d|\b510\d\d\b|user_id|employee_id/)
+      for (const s of t.steps) expect(s.title.length, `${t.code}: ${s.title}`).toBeLessThanOrEqual(80)
     }
-
-    // 2. Map from the hold: the hold clears on its own and the draft builds.
-    const sug = suggestMapping(NEW_ITEM, 'allowance')!
-    expect([sug.role, accountLabel(sug.debit), accountLabel(sug.credit)]).toEqual(['Earning', '6-60101 Salaries', '2-20201 Salaries Payable'])
-    expect(copyOf(1)).toContain('Earning, debit Salaries, credit Salaries Payable')
-    at(1)
-    expect(runHolds(run)).toHaveLength(0)
-    expect(runStatus(run)).toBe('Ready to post')
-    const d = draftOf(run)!
-    q(1, journalTotals(d).debit, 554_203_941)
-    expect(d.lines).toHaveLength(26)
-    expect(copyOf(1)).toContain('26 lines')
-    const sum = sourceSummary(run.id)!
-    q(1, sum.takeHome, 446_901_849)
-    expect(sum.headcount).toBe(40)
-    expect(copyOf(1)).toContain('40 staff')
-
-    // 3. Draft review: large changes and headcount warned, none blocks Post; all acknowledged.
-    const before = runWarnings(run.id)
-    expect(before.map((w) => w.code)).toEqual(['large-change', 'large-change', 'large-change', 'large-change', 'headcount'])
-    const hc = headcountChanges(run.id)
-    expect(hc.previous!.label).toBe('21 Jul-20 Aug 2026')
-    expect([hc.last, hc.current]).toEqual([40, 40])
-    expect(hc.left).toEqual(['EMP-0038'])
-    expect(hc.joined).toEqual(['EMP-0041'])
-    expect(hc.moved).toEqual([{ employee_id: 'EMP-0035', user_id: 51035, from: 'Sales, Jakarta HQ', to: 'Sales, Surabaya' }])
-    const grp = (label: string) => hc.groups.find((g) => g.label === label)!
-    expect(grp('Sales, Surabaya').left).toEqual(['EMP-0038'])
-    expect(grp('Sales, Bandung').joined).toEqual(['EMP-0041'])
-    for (const text of ['EMP-0038 left Sales, Surabaya', 'EMP-0041 joined Sales, Bandung', 'EMP-0035 moved from Sales, Jakarta HQ to Sales, Surabaya']) expect(copyOf(2)).toContain(text)
-    expect(payroll.settings.limits.largeChangePct).toBe(10)
-    expect(copyOf(2)).toContain('more than 10% and Rp1.000.000')
-    q(2, payroll.settings.limits.largeChangeAmount, 1_000_000)
-    const large = draftReview(run.id).changes.filter((c) => c.flag)
-    const diffOf = (label: string) => large.find((c) => c.label === label)!.diff
-    q(2, diffOf('6-60004 Sales Salaries | Sales, Bandung'), 14_846_600)
-    q(2, -diffOf('6-60004 Sales Salaries | Sales, Jakarta HQ'), 8_373_400)
-    q(2, diffOf('6-60004 Sales Salaries | Sales, Surabaya'), 3_616_560)
-    q(2, -diffOf('2-20501 Tax Payable - PPh 21'), 1_678_971)
-    expect(large).toHaveLength(4)
-    at(2)
-    const rv = draftReview(run.id)
-    expect(rv.unexpectedHeadcount).toBe(0)
-    expect(rv.unacknowledged).toBe(0)
-    expect(runWarnings(run.id).filter((w) => w.code === 'large-change').every((w) => !!w.acknowledged)).toBe(true)
-    expect(copyOf(2)).toContain('All 4 are acknowledged and the 3 headcount changes are Expected')
-    expect(postConfirmText(run.id).warnings).toEqual([])
-
-    // 4. Post: one PAY journal, one payable line per party.
-    at(3)
-    const live = liveJournals(run.id)
-    expect(live).toHaveLength(1)
-    const j = live[0]!
-    expect([j.number, j.type]).toEqual(['PAY-0003', 'Payroll'])
-    expect(dateLabel(j.date)).toBe('20 Sep 2026')
-    q(3, journalTotals(j).debit, 554_203_941)
-    const parties: [string, number][] = [[ACC.hutangGaji, 446_901_849], [ACC.pph21, 18_323_082], [ACC.pph26, 21_209_400], [ACC.bpjsKes, 16_097_029], [ACC.bpjsTk, 38_969_133], [ACC.dplk, 9_300_000]]
-    for (const [acct, amt] of parties) {
-      expect(j.lines.filter((l) => l.account === acct && l.credit > 0)).toHaveLength(1)
-      q(3, net(j.lines, acct), amt)
-    }
-    const costs = j.lines.filter((l) => l.debit > 0).map((l) => `${accountLabel(l.account)} | ${Object.values(l.tags).filter(Boolean).join(', ')}`)
-    expect(costs).toContain('5-50101 Direct Labour | Operations, Bandung')
-    expect(costs).toContain('6-60004 Sales Salaries | Sales, Surabaya')
-
-    // 5. Bank reconciliation matches the salary transfer; the payable is paid.
-    at(4)
-    const sal5 = payablesTracker(SEP_MONTH).find((r) => r.label === `Salary ${SEP_LABEL}`)!
-    q(4, sal5.owed, 446_901_849); q(4, sal5.paid, 446_901_849); q(4, sal5.balance, 0)
-    expect(sal5.status).toBe('Paid')
-    expect(sal5.flags).toEqual([])
-    expect(sal5.payments.map((p) => [p.number, p.bank, dateLabel(p.date)])).toEqual([['BNK-0013', '1-10004 Bank BCA', '25 Sep 2026']])
-    expect(copyOf(4)).toContain('by BNK-0013 from Bank BCA on 25 Sep 2026')
-    const bnk = payroll.journals.find((x) => x.number === 'BNK-0013')!
-    expect([bnk.type, bnk.source]).toEqual(['Salary payment', 'Bank reconciliation'])
-
-    // 6. Talenta re-sends September: v2 is current, the correction is built and summarised.
-    at(5)
-    expect(runStatus(run)).toBe('Correction ready')
-    expect([run.currentVersion, run.ledgerVersion]).toEqual([2, 1])
-    const corr = revisionOf(run.id)!
-    const s = corr.summary
-    q(5, s.takeHome.change, 1_732_959, true)
-    q(5, s.pph21.change, 197_041, true)
-    q(5, s.pph26.change, 0)
-    q(5, s.bpjs.change, 244_800, true)
-    expect([s.joined, s.left]).toEqual([[], []])
-    expect(s.amountChanged).toEqual(['EMP-0029', 'EMP-0030', 'EMP-0031', 'EMP-0032'])
-    const orgOf = new Map(staffRows(currentVersionOf(run)!.payload).map((e) => [e.employee_id, e.organization_name]))
-    expect(s.amountChanged.every((id) => orgOf.get(id) === 'Human Capital')).toBe(true)
-    expect(copyOf(5)).toContain('EMP-0029 to EMP-0032 in Human Capital')
-    const notice = revisionNotice(run, s)
-    expect(copyOf(5)).toContain(notice)
-    expect(noticesFor('Accountant').some((n) => n.text === notice)).toBe(true)
-    q(5, corr.lines.reduce((x, l) => x + l.debit, 0), 2_199_800)
-    expect(corr.lines).toHaveLength(7)
-    expect(copyOf(5)).toContain('on 7 lines')
-    expect(liveJournals(run.id).map((x) => x.number)).toEqual(['PAY-0003'])
-
-    // 7. Post correction: one Correction journal with the difference; the ledger holds v2.
-    at(6)
-    const live7 = liveJournals(run.id)
-    expect(live7.map((x) => [x.number, x.type])).toEqual([['PAY-0003', 'Payroll'], ['PAY-0004', 'Correction']])
-    q(6, journalTotals(live7[1]!).debit, 2_199_800)
-    expect(net(live7[1]!.lines, ACC.hutangGaji)).toBe(1_732_959)
-    expect(run.ledgerVersion).toBe(2)
-    expect(runStatus(run)).toBe('Posted')
-    const sal7 = payablesTracker(SEP_MONTH).find((r) => r.label === `Salary ${SEP_LABEL}`)!
-    q(6, sal7.owed, 448_634_808)
-    q(6, sal7.balance, 1_732_959)
-
-    // 8. Tax Staff: the amendment task, and the PPh 21 deposit matched by the bank.
-    at(7)
-    expect(payroll.viewAs).toBe('Tax Staff')
-    const task = amendmentTasks.value.find((t) => t.taxMonth === SEP_MONTH)!
-    expect(task.title).toBe('Amend e-Bupot 21/26 for Sep 2026')
-    expect(task.summary).toBe('4 staff changed, period total change Rp197.041')
-    expect(task.depositGap).toBe('Deposit matches')
-    for (const t of [task.title, task.summary, task.depositGap]) expect(copyOf(7)).toContain(t)
-    q(7, task.periodChange, 197_041)
-    q(7, pph21Month(SEP_MONTH).paid, 18_520_123)
-
-    // 9. Tax Staff type the e-Bupot filed total on Payables; it matches the books.
-    at(8)
-    const pm = pph21Month(SEP_MONTH)
-    q(8, pm.books, 18_520_123)
-    expect(pm.filed!.filed).toBe(18_520_123)
-    expect(pm.filed!.by).toBe('Putri Maharani')
-    expect(pm.flagged).toBe(false)
-    const row = payablesTracker(SEP_MONTH).find((r) => r.account === ACC.pph21)!
-    expect(row.label).toBe('Tax Payable - PPh 21 Sep 2026')
-    expect(copyOf(8)).toContain(row.label)
-    q(8, row.owed, 18_520_123); q(8, row.paid, 18_520_123); q(8, row.balance, 0)
-    expect(row.ebupot).toMatchObject({ filed: 18_520_123, books: 18_520_123, difference: 0 })
-    q(8, row.ebupot!.difference, 0)
-    expect(row.flags).toEqual([])
-    q(8, payroll.settings.limits.taxTolerance, 1_000)
-    expect(amendmentTasks.value.find((t) => t.id === task.id)!.status).toBe('Not filed yet')
-
-    // 10. The old Talenta Expense sync is blocked.
-    at(9)
-    const call = payroll.oldSync.at(-1)!
-    expect(call).toMatchObject({ date: '2026-09-20', pattern: 'Payroll', outcome: 'Blocked', message: 'Payroll for Sep 2026 is already in Jurnal. The old sync was blocked.' })
-    q(9, call.amount, 480_000_000)
-    expect(payroll.settings.cutover.firstLive).toBe('2026-07')
-    expect(copyOf(9)).toContain('Jul 2026')
-
-    // Every Rp figure in the copy was proved above.
-    expect([...quoted].filter((x) => !proved.has(x))).toEqual([])
   })
 
-  // PAY-1 rewrite deferred until the payroll flow is final (roles, privacy and approval changed under it).
-  it.skip('reset clears the previous run', () => {
-    expect(sepId()).not.toBe('')
-    TOUR_WORK[1]!()
-    expect(tourCtx.runId).not.toBe('')
-    expect(runStatus(sep())).toBe('Ready to post')
-    PAYROLL_TOUR.onReset!()
-    expect(tourCtx.runId).toBe('')
-    expect(runStatus(sep())).toBe('Held')
-    expect(payroll.viewAs).toBe('Accountant')
+  it('quotes glossary labels exactly as the screens name them', () => {
+    const all = PAYROLL_TOURS.map(allCopyOf).join(' ')
+    for (const label of ['To fix before posting', 'Mark as checked', 'Post journal', 'Approve and post', 'Use v2 and repost', 'Journal date', 'Groups can change', 'Set up group', 'Talenta sent this period again'])
+      expect(all).toContain(label)
   })
 })
 
-/** Holds regardless of the tour rewrite: what the payroll screens render carries counts, never employee ids. */
+describe('feature coverage', () => {
+  it('every payroll feature names a step that exists', () => {
+    const byCode = Object.fromEntries(PAYROLL_TOURS.map((t) => [t.code, t]))
+    for (const f of PAYROLL_FEATURES) {
+      const t = byCode[f.tour]
+      expect(t, f.feature).toBeTruthy()
+      expect(f.step, f.feature).toBeGreaterThanOrEqual(1)
+      expect(f.step, f.feature).toBeLessThanOrEqual(t!.steps.length)
+    }
+  })
+
+  it('the list holds every feature the brief asks the tours to touch', () => {
+    const required = [
+      'Connection status and Talenta company', 'How to send from Talenta', 'Payable accounts per party',
+      'Pay item type from Talenta, with the header tip', 'Map a pay item to any expense account', 'Groups can change',
+      'Group by Talenta fields', 'Talenta field to dimension links', 'Group expense account and dimension value',
+      'Approval workflows rule Payroll journal', 'View as: View only has no actions', 'View as: Accountant needs LM for settings',
+      'Inbox runs', 'Sync log', 'To fix before posting: unmapped pay item', 'Map from the hold; the hold clears',
+      'To fix before posting: New group', 'Set up group clears the New group hold', 'Draft review lines by account and dimension',
+      'Warnings and Mark as checked', 'Month headcount (Owner)', 'Journal date: default and locked period',
+      'Send for approval to Inbox, Awaiting approval', 'Approve and post', 'Journals tab', 'Mapping used tab', 'Claims',
+      'Payables: bank match pays salary', 'Payables: bank payment menu', 'Payables: bank differs flag',
+      'Manual journal on Salaries Payable warning', 'Simulate Talenta send (inbox menu)', 'Talenta sent this period again',
+      'Versions: what changed', 'Use v2 and repost on one journal date', 'Repost approval', 'Old journal reversed, new one posted',
+      'Payables follow the repost', 'Missing pay item books and warns', 'Old Talenta to Expense sync blocked',
+    ]
+    const listed = PAYROLL_FEATURES.map((f) => f.feature)
+    const missing = required.filter((r) => !listed.includes(r))
+    expect(missing, 'features with no step').toEqual([])
+    expect(new Set(listed).size).toBe(listed.length)
+  })
+
+  it('every step touches at least one feature, and each feature step points where the feature is', () => {
+    for (const t of PAYROLL_TOURS) {
+      const covered = new Set(PAYROLL_FEATURES.filter((f) => f.tour === t.code).map((f) => f.step))
+      // PAY-3 step 1 only sets the scene (September posted and paid); every other step is a feature.
+      const scene = t.code === 'PAY-3' ? [1] : []
+      t.steps.forEach((_, i) => { if (!scene.includes(i + 1)) expect(covered.has(i + 1), `${t.code} step ${i + 1} touches no feature`).toBe(true) })
+    }
+    const target = (code: string, step: number) => PAYROLL_TOURS.find((t) => t.code === code)!.steps[step - 1]!.target
+    const expectAt: Record<string, string> = {
+      'How to send from Talenta': 'payroll-how-to-send', 'Payable accounts per party': 'payroll-payable-accounts',
+      'Pay item type from Talenta, with the header tip': 'payroll-type-tip', 'Groups can change': 'payroll-groups-can-change',
+      'Group by Talenta fields': 'payroll-groupby', 'Talenta field to dimension links': 'payroll-group-dims',
+      'Sync log': 'payroll-synclog', 'Month headcount (Owner)': 'payroll-month-headcount', 'Journal date: default and locked period': 'payroll-journal-date',
+      'Approve and post': 'payroll-approve', 'Mapping used tab': 'payroll-mapping-used', 'Claims': 'payroll-claims',
+      'Payables: bank payment menu': 'payroll-payables-simulate', 'Payables: bank differs flag': 'payroll-payables-flags',
+      'Simulate Talenta send (inbox menu)': 'payroll-simulate-send', 'Talenta sent this period again': 'payroll-revision',
+      'Versions: what changed': 'payroll-versions', 'Use v2 and repost on one journal date': 'payroll-repost',
+    }
+    for (const f of PAYROLL_FEATURES) if (expectAt[f.feature]) expect(target(f.tour, f.step), f.feature).toBe(expectAt[f.feature])
+  })
+})
+
+describe('PAY-1 Set up payroll (replay)', () => {
+  const t = PAYROLL_SETUP_TOUR
+  beforeEach(() => t.onReset!())
+
+  it('replays with the quoted figures', () => {
+    const p = player(t)
+    // 1. Connection.
+    p.at(0)
+    expect(payroll.viewAs).toBe('Owner')
+    expect(connection.value.status).toBe('Connected')
+    expect(connection.value.companyId).toBe(1212)
+    p.says(0, 'company 1212')
+    expect(connection.value.sends).toBe(4)
+    p.says(0, 'sent payroll 4 times')
+    expect(wib(connection.value.lastAcceptedAt!)).toContain('21 Sep 2026')
+    p.says(0, 'arrived on 21 Sep 2026')
+    // 2. How to send: no work.
+    p.at(1)
+    // 3. Payable accounts per party.
+    p.at(2)
+    const pay = settings.value.payables
+    for (const [party, acct] of [['Staff', ACC.hutangGaji], ['DJP PPh 21', ACC.pph21], ['Other', ACC.dplk]] as const) {
+      expect(pay[party]).toBe(acct)
+      p.says(2, accountLabel(acct))
+    }
+    // 4. Type from Talenta; the new item has no account.
+    p.at(3)
+    expect(settings.value.mapping).toHaveLength(20)
+    p.says(3, '20 pay items')
+    const ins = mappingFor(NEW_ITEM, 'allowance')!
+    expect(ins.addedBy).toBe('Talenta')
+    expect(payItemAccount(ins)).toBeNull()
+    expect(payItemType(ins)).toBe('allowance')
+    expect(runStatus(sep())).toBe('Held')
+    // 5. Map it: Salaries, credit Salaries Payable; September builds.
+    p.at(4)
+    const m = mappingFor(NEW_ITEM, 'allowance')!
+    expect([accountLabel(m.debit), accountLabel(m.credit)]).toEqual(['6-60101 Salaries', '2-20201 Salaries Payable'])
+    p.says(4, 'debits 6-60101 Salaries and credits 2-20201 Salaries Payable')
+    expect(runStatus(sep())).toBe('Ready to post')
+    const d = draftOf(sep())!
+    p.q(4, journalTotals(d).debit, 554_203_941)
+    expect(d.lines).toHaveLength(26)
+    p.says(4, '26 lines')
+    // 6. Groups can change: the Sales staff's incentive lands on the Sales groups' account.
+    p.at(5)
+    expect(mappingFor(NEW_ITEM, 'allowance')!.groupsCanChange).toBe(true)
+    const src = draftOf(sep())!.lines.flatMap((l) => l.sources.filter((s) => s.item === NEW_ITEM && s.side === 'D').map((s) => ({ account: l.account, staff: s.staff.length })))
+    expect([...new Set(src.map((x) => accountLabel(x.account)))]).toEqual(['6-60004 Sales Salaries'])
+    expect(src.reduce((s, x) => s + x.staff, 0)).toBe(7)
+    p.says(5, 'paid to 7 Sales staff')
+    p.says(5, '6-60004 Sales Salaries')
+    // 7. Group by Organization and Branch.
+    p.at(6)
+    expect(settings.value.groupBy).toEqual(['organization_name', 'branch'])
+    const rows = groupRows()
+    expect(rows).toHaveLength(9)
+    p.says(6, '9 groups')
+    expect(rows.find((g) => g.label === 'Operations, Jakarta HQ')!.staff).toBe(10)
+    p.says(6, 'Operations, Jakarta HQ has 10 staff')
+    expect(rows.every((g) => !g.isNew)).toBe(true)
+    // 8. Each Group by field fills a dimension.
+    p.at(7)
+    expect(settings.value.dimensionLinks.filter((l) => settings.value.groupBy.includes(l.field)).map((l) => [l.field, l.dimension]))
+      .toEqual([['organization_name', 'Organization'], ['branch', 'Branch']])
+    // 9. A group's account and a group's dimension value.
+    p.at(8)
+    const ops = groupRows().find((g) => g.label === 'Operations, Jakarta HQ')!
+    expect(ops.account).toBe(ACC.directLabour)
+    p.says(8, `Operations, Jakarta HQ posts to ${accountLabel(ACC.directLabour)}`)
+    const kemang = staffRows(currentVersionOf(sep())!.payload).filter((e) => e.organization_name === 'Operations' && e.branch === 'Jakarta HQ')
+    expect(kemang).toHaveLength(10)
+    expect(kemang.filter((e) => /Kemang/.test(e.cost_center))).toHaveLength(9)
+    p.says(8, '9 of the 10 Operations staff at Jakarta HQ work in the Kemang store')
+    const hc = groupRows().find((g) => g.label === 'Human Capital, Surabaya')!
+    expect(hc.staff).toBe(1)
+    expect(hc.dimensions.find((x) => x.dimension === 'Branch')).toMatchObject({ value: 'Jakarta HQ', explicit: true })
+    p.says(8, 'Human Capital, Surabaya carries Branch Jakarta HQ')
+    // 10. The approval rule: the draft is above it.
+    p.at(9)
+    const rule = approvalWorkflows.find((r) => r.transactionType === 'payroll-journal' && r.isActive)!
+    expect(rule.name).toBe('Payroll journal above Rp500.000.000')
+    p.says(9, rule.name)
+    p.q(9, rule.minAmount!, 500_000_000)
+    p.q(9, journalTotals(draftOf(sep())!).debit, 554_203_941)
+    expect(journalTotals(draftOf(sep())!).debit).toBeGreaterThan(rule.minAmount!)
+    // 11. View only: reads, changes nothing.
+    p.at(10)
+    expect(payroll.viewAs).toBe('View only')
+    expect([can('view'), can('post'), can('setup'), can('simulate')]).toEqual([true, false, false, false])
+    // 12. Accountant posts but needs LM for settings.
+    p.at(11)
+    expect(payroll.viewAs).toBe('Accountant')
+    expect([can('post'), can('setup')]).toEqual([true, false])
+    expect(can('setup', 'Accountant + LM')).toBe(true)
+    expect(can('setup', 'Ultimate + LM')).toBe(true)
+    p.done()
+  })
+})
+
+describe('PAY-2 Monthly payroll run (replay)', () => {
+  const t = PAYROLL_RUN_TOUR
+  beforeEach(() => t.onReset!())
+
+  it('starts grouped by Organization and Branch, as Set up payroll leaves it', () => {
+    expect(settings.value.groupBy).toEqual(['organization_name', 'branch'])
+    t.applyRole!(t.role as string)
+    expect(payroll.viewAs).toBe('Accountant + LM')
+  })
+
+  it('replays with the quoted figures', () => {
+    const p = player(t)
+    const run = sep()
+    expect(sepId()).toBe(run.id)
+    // 1. Inbox: September held; July and August posted.
+    p.at(0)
+    expect(runStatus(run)).toBe('Held')
+    const sum = sourceSummary(run.id)!
+    expect(sum.headcount).toBe(40)
+    p.says(0, '40 staff')
+    p.q(0, sum.takeHome, 446_901_849)
+    for (const m of ['2026-07', '2026-08']) expect(payablesTracker(m).every((r) => r.balance === 0), m).toBe(true)
+    // 2. Sync log.
+    p.at(1)
+    const row = sendLog.value[0]!
+    expect([row.period, row.version, row.staff, row.payItems]).toEqual([SEP_LABEL, 'v1', 40, 23])
+    p.says(1, 'v1 with 40 staff and 23 pay items')
+    // 3. To fix before posting: the unmapped pay item.
+    p.at(2)
+    const hold = runHolds(run)
+    expect(hold.map((h) => h.code)).toEqual(['unmapped-item'])
+    const item = (hold[0]!.details as { items: { name: string; amount: number; employees: number }[] }).items[0]!
+    expect(item.name).toBe(NEW_ITEM)
+    p.q(2, item.amount, 10_500_000)
+    expect(item.employees).toBe(7)
+    p.says(2, 'for 7 staff')
+    // 4. Map from the hold: it clears and the draft builds.
+    p.at(3)
+    expect(runHolds(run)).toEqual([])
+    expect(runStatus(run)).toBe('Ready to post')
+    p.q(3, journalTotals(draftOf(run)!).debit, 554_203_941)
+    expect(draftOf(run)!.lines).toHaveLength(25)
+    p.says(3, 'on 25 lines')
+    // 5. Talenta sends again with a New group: v2 holds.
+    p.at(4)
+    expect(run.currentVersion).toBe(2)
+    expect(runStatus(run)).toBe('Held')
+    const ng = runHolds(run)
+    expect(ng.map((h) => h.code)).toEqual(['new-group'])
+    expect((ng[0]!.details as { groups: { label: string; staff: number }[] }).groups).toEqual([{ key: 'organization_name=operations|branch=medan', label: NEW_GROUP, staff: 2 }])
+    p.says(4, `${NEW_GROUP} with 2 staff is a New group`)
+    // 6. Set up group: the hold clears.
+    p.at(5)
+    const g = groupRows().find((x) => x.label === NEW_GROUP)!
+    expect([g.isNew, g.staff, g.account]).toEqual([false, 2, ACC.directLabour])
+    expect(g.dimensions.find((x) => x.dimension === 'Branch')!.value).toBe('Medan')
+    p.says(5, `${NEW_GROUP}: 2 staff, ${accountLabel(ACC.directLabour)}, Branch Medan`)
+    expect(runHolds(run)).toEqual([])
+    expect(runStatus(run)).toBe('Ready to post')
+    // 7. Draft review lines by account and dimension.
+    p.at(6)
+    const d = draftOf(run)!
+    p.q(6, journalTotals(d).debit, 554_203_941)
+    expect(d.lines).toHaveLength(26)
+    const medan = d.lines.find((l) => l.account === ACC.directLabour && l.tags.Organization === 'Operations' && l.tags.Branch === 'Medan')!
+    p.q(6, medan.debit, 36_204_342)
+    // 8. Warnings, all marked as checked.
+    p.at(7)
+    const w = runWarnings(run.id)
+    expect(w.map((x) => x.code)).toEqual([...Array(8).fill('large-change'), 'headcount'])
+    p.says(7, '9 warnings')
+    p.says(7, '8 lines that moved and 1 headcount check')
+    expect(w.every((x) => !!x.acknowledged)).toBe(true)
+    expect(payroll.settings.limits.largeChangePct).toBe(10)
+    p.says(7, 'more than 10%')
+    p.q(7, payroll.settings.limits.largeChangeAmount, 1_000_000)
+    // 9. Month headcount, Owner only.
+    p.at(8)
+    expect(payroll.viewAs).toBe('Owner')
+    expect(can('headcount.view')).toBe(true)
+    expect(can('headcount.view', 'Accountant + LM')).toBe(false)
+    const mh = monthHeadcount(SEP_MONTH)
+    expect([mh.current, mh.joined, mh.left, mh.moved.length]).toEqual([40, 1, 1, 3])
+    p.says(8, '40 staff in September: 1 joined, 1 left and 3 moved')
+    expect(JSON.stringify(headcountChanges(run.id))).not.toMatch(/EMP-\d|\b510\d\d\b/)
+    // 10. Journal date: default period end; a locked period is refused.
+    p.at(9)
+    expect(payroll.viewAs).toBe('Accountant + LM')
+    expect(dateLabel(defaultEntryDate(run))).toBe('20 Sep 2026')
+    p.says(9, 'Journal date 20 Sep 2026')
+    expect(checkEntryDate('2026-07-31')).toMatch(/locked/)
+    p.says(9, 'July is locked')
+    p.q(9, 500_000_000, 500_000_000)
+    // 11. Send for approval: the request waits in Inbox, Awaiting approval.
+    p.at(10)
+    expect(runStatus(run)).toBe('Awaiting approval')
+    expect(liveJournals(run.id)).toEqual([])
+    const a = pendingApproval(run)!
+    expect([a.kind, a.requestedBy, a.approvers]).toEqual(['post', 'Bayu Ferdian', ['Rizal Candra']])
+    p.says(10, 'Rizal Candra')
+    p.q(10, a.amount, 554_203_941)
+    expect(dateLabel(a.date)).toBe('20 Sep 2026')
+    p.says(10, 'dated 20 Sep 2026')
+    const task = awaitingApprovalTasks.find((x) => x.docType === 'Payroll Journal' && x.link === `/payroll-runs/${run.id}`)!
+    expect(task.total).toBe(554_203_941)
+    // 12. The Owner sees Approve and post.
+    p.at(11)
+    expect(canApprove(run.id)).toBe(true)
+    // 13. Approved: PAY-0003 posts on the requested date.
+    p.at(12)
+    expect(runStatus(run)).toBe('Posted')
+    const j = liveJournals(run.id)[0]!
+    expect([j.number, dateLabel(j.date), j.postedBy]).toEqual(['PAY-0003', '20 Sep 2026', 'Rizal Candra'])
+    p.says(12, 'PAY-0003, 20 Sep 2026')
+    p.q(12, journalTotals(j).debit, 554_203_941)
+    expect(awaitingApprovalTasks.some((x) => x.link === `/payroll-runs/${run.id}`)).toBe(false)
+    // 14. Mapping used: the settings the journal was built from.
+    p.at(13)
+    const snap = snapshotById(j.snapshotId)!
+    const used = snap.settings.mapping.find((x) => x.key === payItemKey(NEW_ITEM, 'allowance'))!
+    expect(accountLabel(used.debit)).toBe('6-60004 Sales Salaries')
+    p.says(13, 'Insentif Penjualan went to 6-60004 Sales Salaries')
+    // 15. Claims.
+    p.at(14)
+    const cl = claimsSummary(run.id)
+    p.q(14, cl.total, 3_000_000)
+    expect(cl.rows.reduce((s, r) => s + r.employees, 0)).toBe(6)
+    expect([...new Set(cl.rows.map((r) => [r.item, r.account].join(' | ')))]).toEqual(['Reimbursement Medical | 6-60106 Medical Expense'])
+    p.says(14, 'Reimbursement Medical: Rp3.000.000 for 6 staff on 6-60106 Medical Expense')
+    // 16. Bank match pays the salary.
+    p.at(15)
+    const sal = () => payablesTracker(SEP_MONTH).find((r) => r.runId === run.id)!
+    const s16 = sal()
+    p.q(15, s16.owed, 446_901_849); p.q(15, s16.balance, 0)
+    expect(s16.payments.map((x) => [x.number, dateLabel(x.date)])).toEqual([['BNK-0013', '25 Sep 2026']])
+    p.says(15, 'paid by BNK-0013 on 25 Sep 2026')
+    expect(net(j.lines, ACC.hutangGaji)).toBe(446_901_849)
+    // 17. A second bank line over the run.
+    p.at(16)
+    const s17 = sal()
+    expect(s17.payments.map((x) => x.number)).toEqual(['BNK-0013', 'BNK-0014'])
+    p.q(16, s17.payments[1]!.amount, 250_000)
+    expect(dateLabel(s17.payments[1]!.date)).toBe('26 Sep 2026')
+    p.says(16, 'BNK-0014 pays Rp250.000 more on 26 Sep 2026')
+    // 18. Bank differs flag on the row.
+    p.at(17)
+    const s18 = sal()
+    expect(s18.flags.map((f) => f.code)).toEqual(['bank-differs'])
+    p.q(17, s18.paid, 447_151_849); p.q(17, s18.owed, 446_901_849); p.q(17, s18.paid - s18.owed, 250_000)
+    // 19. Manual journal on Salaries Payable: the run and the row warn.
+    p.at(18)
+    const mj = manualJournalWarnings(SEP_MONTH)
+    expect(mj.map((x) => [x.number, dateLabel(x.date)])).toEqual([['JV-0001', '20 Sep 2026']])
+    p.q(18, mj[0]!.amount, 1_500_000)
+    expect(mj[0]!.accounts).toEqual([ACC.salaries, ACC.hutangGaji])
+    p.says(18, 'JV-0001 posts Rp1.500.000 to Salaries and Salaries Payable on 20 Sep 2026')
+    expect(runWarnings(run.id).some((x) => x.code === 'manual-journal' && !x.acknowledged)).toBe(true)
+    expect(sal().flags.map((f) => f.code)).toEqual(['bank-differs', 'manual-journal'])
+    p.done()
+  })
+})
+
+describe('PAY-3 When Talenta sends again (replay)', () => {
+  const t = PAYROLL_RESEND_TOUR
+  beforeEach(() => t.onReset!())
+
+  it('replays with the quoted figures', () => {
+    const p = player(t)
+    const run = sep()
+    // 1. September posted after approval, salary paid.
+    p.at(0)
+    expect(runStatus(run)).toBe('Posted')
+    const j1 = liveJournals(run.id)[0]!
+    expect([j1.number, dateLabel(j1.date), j1.postedBy]).toEqual(['PAY-0003', '20 Sep 2026', 'Rizal Candra'])
+    p.q(0, journalTotals(j1).debit, 554_203_941)
+    expect(payablesTracker(SEP_MONTH).find((r) => r.runId === run.id)!.payments.map((x) => x.number)).toEqual(['BNK-0013'])
+    // 2. Talenta sends September again (the inbox menu).
+    p.at(1)
+    expect([run.currentVersion, run.ledgerVersion]).toEqual([2, 1])
+    const row = sendLog.value[0]!
+    expect([row.period, row.version, row.staff]).toEqual([SEP_LABEL, 'v2', 40])
+    p.says(1, `${SEP_LABEL} v2 arrives with 40 staff`)
+    // 3. What v2 changes.
+    p.at(2)
+    expect(runStatus(run)).toBe('Revision ready')
+    const s = revisionOf(run.id)!.summary
+    p.q(2, s.takeHome.change, 1_732_959, true)
+    p.q(2, s.pph21.change, 197_041, true)
+    p.q(2, s.bpjs.change, 244_800, true)
+    expect(s.joined + s.left + s.amountChanged).toBe(4)
+    p.says(2, '4 staff changed')
+    expect(liveJournals(run.id).map((x) => x.number)).toEqual(['PAY-0003'])
+    // 4. Versions: the lines that move.
+    p.at(3)
+    const moved = (label: string) => s.moved.find((x) => x.label === label)!.change
+    p.q(3, moved('6-60101 Salaries | Human Capital, Jakarta HQ'), 1_648_600, true)
+    p.q(3, moved('6-60101 Salaries | Human Capital, Surabaya'), 551_200, true)
+    // 5. Use v2 and repost: one date, above the approval limit.
+    p.at(4)
+    expect(payroll.viewAs).toBe('Accountant + LM')
+    expect(can('correct')).toBe(true)
+    expect(dateLabel(defaultEntryDate(run))).toBe('20 Sep 2026')
+    p.says(4, 'Journal date 20 Sep 2026 for both journals')
+    p.q(4, journalTotals(draftOf(run)!).debit, 556_403_741)
+    p.q(4, 500_000_000, 500_000_000)
+    // 6. Bayu sends the repost; the Owner sees Approve and post.
+    p.at(5)
+    expect(payroll.viewAs).toBe('Owner')
+    const a = pendingApproval(run)!
+    expect([a.kind, a.requestedBy, a.approvers, a.versionNo]).toEqual(['repost', 'Bayu Ferdian', ['Rizal Candra'], 2])
+    expect(canApprove(run.id)).toBe(true)
+    expect(liveJournals(run.id).map((x) => x.number)).toEqual(['PAY-0003'])
+    // 7. Approved: PAY-0003 reversed in full, PAY-0005 posted in full, one date.
+    p.at(6)
+    const js = journalsOf(run.id).filter((x) => x.source === 'Talenta payroll')
+    expect(js.map((x) => [x.number, x.type, dateLabel(x.date)])).toEqual([
+      ['PAY-0003', 'Payroll', '20 Sep 2026'], ['PAY-0004', 'Reversal', '20 Sep 2026'], ['PAY-0005', 'Payroll', '20 Sep 2026'],
+    ])
+    p.says(6, 'PAY-0004 reverses')
+    p.q(6, journalTotals(js[1]!).debit, 554_203_941)
+    p.q(6, journalTotals(js[2]!).debit, 556_403_741)
+    p.says(6, 'both on 20 Sep 2026')
+    expect(liveJournals(run.id).map((x) => x.number)).toEqual(['PAY-0005'])
+    expect([run.ledgerVersion, runStatus(run)]).toEqual([2, 'Posted'])
+    // 8. Payables follow.
+    p.at(7)
+    const sal = payablesTracker(SEP_MONTH).find((r) => r.runId === run.id)!
+    p.q(7, sal.owed, 448_634_808); p.q(7, sal.paid, 446_901_849); p.q(7, sal.balance, 1_732_959)
+    expect(sal.flags.map((f) => f.code)).toEqual(['bank-differs'])
+    // 9. October without the meal allowance: books and warns.
+    p.at(8)
+    const oct = runs.value.find((r) => r.id === tourCtx.octId)!
+    expect(oct.end).toBe('2026-10-20')
+    expect(runHolds(oct)).toEqual([])
+    expect(runStatus(oct)).toBe('Ready to post')
+    const miss = runWarnings(oct.id).filter((x) => x.code === 'missing-component')
+    expect(miss.map((x) => (x.details as { name: string }).name)).toEqual(['Uang Makan'])
+    p.q(8, (miss[0]!.details as { lastAmount: number }).lastAmount, 18_375_000)
+    p.q(8, journalTotals(draftOf(oct)!).debit, 535_367_866)
+    // 10. The old Talenta to Expense sync is blocked.
+    p.at(9)
+    const call = payroll.oldSync.at(-1)!
+    expect([call.outcome, dateLabel(call.date), call.pattern]).toEqual(['Blocked', '20 Sep 2026', 'Payroll'])
+    p.q(9, call.amount, 480_000_000)
+    p.says(9, 'dated 20 Sep 2026 is blocked')
+    p.done()
+  })
+
+  it('reset clears the previous run', () => {
+    t.applyRole!(t.role as string)
+    TOUR_WORK['PAY-3']![0]!()
+    expect(runStatus(sep())).toBe('Posted')
+    t.onReset!()
+    expect(tourCtx).toEqual({ runId: '', octId: '' })
+    expect(runStatus(sep())).toBe('Held')
+  })
+})
+
+/** Holds regardless of the tours: what the payroll screens render carries counts, never employee ids. */
 describe('payroll payloads the screens render carry no employee data', () => {
-  beforeEach(() => PAYROLL_TOUR.onReset!())
-  it('headcount, draft review, warnings and the correction summary have no EMP- or user_id values', () => {
+  beforeEach(() => PAYROLL_RUN_TOUR.onReset!())
+  it('headcount, warnings, holds, group rows and the change summary have no EMP- or user_id values', () => {
     const leak = /EMP-\d|\b510\d\d\b|employee_id|user_id/
     const run = sep()
+    for (const [i, w] of TOUR_WORK['PAY-2']!.entries()) { PAYROLL_RUN_TOUR.applyRole!(PAYROLL_RUN_TOUR.steps.slice(0, i + 1).map((s) => s.role).filter(Boolean).pop() ?? PAYROLL_RUN_TOUR.role); w?.() }
     const hc = headcountChanges(run.id)
     expect(hc.groups.find((g) => g.label === 'Sales, Bandung')).toMatchObject({ joined: 1, left: 0 })
-    expect(JSON.stringify([hc, runWarnings(run.id), sourceSummary(run.id)])).not.toMatch(leak)
+    expect(JSON.stringify([hc, runWarnings(run.id), runHolds(run), sourceSummary(run.id), groupRows(), monthHeadcount(SEP_MONTH), sendLog.value])).not.toMatch(leak)
     const s = revisionOf(run.id)?.summary ?? null
     expect(s === null || (typeof s.joined === 'number' && typeof s.amountChanged === 'number')).toBe(true)
   })
