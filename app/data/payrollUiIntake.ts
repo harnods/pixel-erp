@@ -6,7 +6,7 @@
  *   versionFigures(v)               staff, take-home pay and gross of one version's send.
  *   taxRuleRows(runId)              the one PPh 21 rule (LR-10) against the draft's tax lines.
  *   headcountMonths() / latestHeadcountMonth()   months with a regular run plus the current month.
- *   monthHeadcount(month)           the month's run against the previous posted run by group: new, not in this run, moved ids.
+ *   monthHeadcount(month)           the month's run against the previous posted run by group: counts of staff who joined, left or moved.
  *   hrMessage(count, period)        the "Copy message for HR" text: a staff count, never ids.
  */
 import {
@@ -32,14 +32,14 @@ export function statusType(s: string): 'completed' | 'announcement' | 'informati
 }
 
 const NEXT_STEP: Partial<Record<RunStatus, string>> = {
-  'Confirm source': 'The Owner confirms the source.',
-  'Awaiting approval': 'The approver approves or rejects in Inbox > Awaiting approval.',
-  'Waiting for your choice': 'Pick Revision of the posted run or Separate run.',
-  'Ready to post': 'Review the draft and post.',
-  'Revision ready': 'Pick the version and repost.',
-  Reversed: 'Repost the current version.',
-  'Dry run': 'Nothing posts from a dry run.',
-  'Before go-live': 'Nothing posts before the first live period.',
+  'Confirm source': 'The Owner confirms this is your company.',
+  'Awaiting approval': 'The approver approves and posts, or rejects, from Inbox > Awaiting approval.',
+  'Waiting for your choice': 'Choose: use it as a new version, or make a separate run.',
+  'Ready to post': 'Review the draft journal and post it.',
+  'Revision ready': 'Talenta sent this period again. Review it, then use the new version and repost.',
+  Reversed: 'Post the current version again.',
+  'Dry run': 'No start month yet, not posted.',
+  'Before go-live': 'Before start month, not posted.',
   'Nothing to post': 'Nothing to do.',
   Received: 'Nothing to do.',
 }
@@ -65,7 +65,7 @@ export function runRow(run: Run) {
     takeHome: f.takeHome,
     status,
     reason: holds[0]?.message ?? (live.length ? `Posted as ${live.map((j) => j.number).join(', ')}` : ''),
-    nextStep: holds.length ? '' : (NEXT_STEP[status] ?? (status === 'Posted' ? 'The salary payable clears when the bank line is matched.' : '')),
+    nextStep: holds.length ? '' : (NEXT_STEP[status] ?? (status === 'Posted' ? 'Salaries payable clears when the bank payment is matched in bank reconciliation.' : '')),
     received: latest ? wib(latest.receivedAt) : '',
     receivedAt: latest?.receivedAt ?? '',
   }
@@ -137,7 +137,7 @@ export function monthHeadcount(month: string) {
 }
 
 export function hrMessage(count: number, period: string): string {
-  return `Payroll ${period}: please check and re-send from Talenta. ${count} staff to check; see who in Talenta.`
+  return `Payroll ${period}: please check ${count} staff in Talenta and send the period again. See who in Talenta.`
 }
 
 /** Journals of a run, newest first, with their totals. */

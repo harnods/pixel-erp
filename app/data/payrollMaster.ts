@@ -165,7 +165,7 @@ export interface TalentaPayload {
   period: { start_date: string; end_date: string }
   items: TalentaItem[]
 }
-/** The tax components the PPh 21 rule and the amendment task read, with the section they arrive in. */
+/** The tax components the PPh 21 check reads, with the section they arrive in. */
 export type TaxField = 'PPh 21 Benefit' | 'PPh 21 Resign Benefit' | 'PPh 26 Benefit' | 'Total PPh 21 DTP Received' | 'PPH 21 Paid' | 'PPH 21 Payment'
 export const TAX_COMPONENTS: { name: TaxField; section: PaySection }[] = [
   { name: 'PPh 21 Benefit', section: 'benefit' },
