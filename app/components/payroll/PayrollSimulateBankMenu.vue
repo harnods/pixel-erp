@@ -1,9 +1,8 @@
 <script setup lang="ts">
 /**
- * "Simulate" on Payroll payables: the prototype's stand-in for Jurnal's bank reconciliation
- * (a statement line matched to a payroll payable) and for a general journal posted by hand on
- * Hutang Gaji. Both go through payrollStore, so the tracker, the run and the sync log react
- * as they would to the real thing.
+ * "Simulate" on Payroll payables: stands in for Jurnal's bank reconciliation (a bank statement
+ * line matched to a payroll payable) and for a manual journal on Salaries Payable. Both go
+ * through payrollStore, so the tracker and the run react as they would to the real thing.
  */
 import { MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem } from '@mekari/pixel3'
 import { simulateBankPayment, simulateManualJournal, rupiah, type BankPaymentKind, type Result } from '~/data/payrollStore'
@@ -15,7 +14,7 @@ const { t } = useLocale()
 
 function report(r: Result, ok: string) {
   if (r.ok) successToast(t(ok))
-  else errorToast(t(r.message ?? 'Unable to record the payment. Reset sample data and try again.'))
+  else errorToast(t(r.message ?? 'Nothing to pay. Post a payroll journal first, or reset sample data.'))
   emit('done', r)
 }
 function bank(kind: BankPaymentKind) {
@@ -31,7 +30,7 @@ function manual() {
 <template>
   <MpPopover id="payroll-payables-simulate" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
     <MpPopoverTrigger>
-      <MpButton data-tour="payroll-payables-simulate" variant="secondary" is-rounded right-icon="chevrons-down">{{ t('Simulate') }}</MpButton>
+      <MpButton data-tour="payroll-payables-simulate" variant="secondary" is-rounded right-icon="chevrons-down">{{ t('Simulate bank or journal') }}</MpButton>
     </MpPopoverTrigger>
     <MpPopoverContent class="erp-dropdown-menu psb-menu">
       <div class="psb-head">{{ t('Match in bank reconciliation') }}</div>

@@ -10,13 +10,13 @@ import type { PayableParty } from './payrollMaster'
 
 /** Display name per payable party, the same on Payables and Settings. */
 export const PARTY_LABEL: Record<PayableParty, string> = {
-  Staff: 'Staff', 'DJP PPh 21': 'Tax office (PPh 21)', 'DJP PPh 26': 'Tax office (PPh 26)',
-  'BPJS Kesehatan': 'BPJS Kesehatan', 'BPJS Ketenagakerjaan': 'BPJS Ketenagakerjaan', Other: 'DPLK',
+  Staff: 'Staff (salaries payable)', 'DJP PPh 21': 'Tax office (PPh 21)', 'DJP PPh 26': 'Tax office (PPh 26)',
+  'BPJS Kesehatan': 'BPJS Kesehatan', 'BPJS Ketenagakerjaan': 'BPJS Ketenagakerjaan', Other: 'DPLK (pension fund)',
 }
 
 /** Chip label per flag code. */
 export const FLAG_CHIP: Record<PayableFlag['code'], string> = {
-  'bank-differs': 'Bank amount differs',
+  'bank-differs': 'Bank paid a different amount',
   'manual-journal': 'Manual journal',
 }
 
@@ -24,14 +24,14 @@ export const FLAG_CHIP: Record<PayableFlag['code'], string> = {
 export const SIMULATE_BANK: { kind: BankPaymentKind; label: string }[] = BANK_PAYMENT_KINDS.map((k) => ({
   kind: k.kind,
   label: ({
-    salary: 'Salary transfer',
-    pph21: 'PPh 21 deposit',
-    pph26: 'PPh 26 deposit',
+    salary: 'Salary transfer, full amount',
+    pph21: 'PPh 21 deposit to the tax office',
+    pph26: 'PPh 26 deposit to the tax office',
     'bpjs-kesehatan': 'BPJS Kesehatan payment',
     'bpjs-ketenagakerjaan': 'BPJS Ketenagakerjaan payment',
-    dplk: 'DPLK payment',
+    dplk: 'DPLK (pension fund) payment',
     partial: 'Salary transfer, half of what is owed',
-    overpaid: 'Salary transfer, Rp250.000 too much',
+    overpaid: 'Salary transfer, Rp250.000 more than owed',
   } as Record<BankPaymentKind, string>)[k.kind] ?? k.label,
 }))
 

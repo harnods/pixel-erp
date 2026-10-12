@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * Claims on the run (OD-26): reimbursement pay items by item, account and dimension, from the
- * live journals once posted, from the draft before. Replaces the old Payroll claims page.
+ * Claims on the run: reimbursement pay items by item, account and dimension, from the posted
+ * journals once posted, from the draft before.
  */
 import { computed } from 'vue'
 import { claimsSummary, runById, rupiah } from '~/data/payrollStore'
@@ -18,8 +18,8 @@ const staff = computed(() => data.value.rows.reduce((s, r) => s + r.employees, 0
     <header class="pcl__head">
       <div class="pcl__title">{{ t('Claims') }}</div>
       <div class="pcl__sub">
-        <template v-if="data.rows.length">{{ t('Reimbursements in this run') }} · {{ data.rows.length }} {{ t(data.rows.length === 1 ? 'line' : 'lines') }} · {{ rupiah(data.total) }}</template>
-        <template v-else>{{ t('No reimbursements in this run') }}</template>
+        <template v-if="data.rows.length">{{ t('Reimbursements paid through payroll') }} · {{ data.rows.length }} {{ t(data.rows.length === 1 ? 'line' : 'lines') }} · {{ rupiah(data.total) }}</template>
+        <template v-else>{{ t('No reimbursements in this run. Claims paid through payroll show here.') }}</template>
       </div>
     </header>
     <table v-if="data.rows.length" class="pcl__table">
@@ -61,11 +61,11 @@ const staff = computed(() => data.value.rows.reduce((s, r) => s + r.employees, 0
 .pcl__table { width: 100%; border-collapse: collapse; }
 .pcl__th {
   text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase;
-  color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-1) var(--mp-spacing-4);
-  border-bottom: 1px solid var(--mp-border-default);
+  color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-2) var(--mp-spacing-4);
+  border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
 }
 .pcl__td { padding: var(--mp-spacing-2\.5) var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: top; }
-.pcl__num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pcl__th.pcl__num, .pcl__num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pcl__muted { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
 .pcl__total .pcl__td { border-bottom: 0; font-weight: var(--mp-font-weights-semi-bold); }
 </style>

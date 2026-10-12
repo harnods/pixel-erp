@@ -1,13 +1,13 @@
 <script setup lang="ts">
 /**
- * Version compare (OD-15): any two versions of a run, by pay item or by account and tag, with
- * unchanged rows hidden. The old side reads the posted lines when it is the version in the
- * ledger; lines moved only by a settings change sit apart (TN-06). Headcount counts added and
- * removed staff by group, and the PPh 21 change panel totals the tax moves, no employee data
- * (TN-22), with PPh 26 and DTP apart from PPh 21.
+ * Compare versions: any two versions of a run, by account and dimension or by pay item, with
+ * unchanged rows hidden. The old side reads the posted lines when that version is posted; lines
+ * moved only by a settings change sit apart. Headcount counts added and removed staff by group,
+ * and the PPh 21 change totals the tax moves, with PPh 26 and DTP apart. No employee data.
  */
 import { MpSegmentedControl } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import { statusLabel, sectionLabel } from '~/data/payrollUiRunCopy'
 import {
   runById, compareVersions, versionLabel, rupiah, monthLabel, wib, accountLabel, tagsLabel, liveJournals, currentSnapshotId, type Tags,
 } from '~/data/payrollStore'
@@ -16,7 +16,7 @@ const props = defineProps<{ runId: string }>()
 const { t } = useLocale()
 
 const run = computed(() => runById(props.runId))
-const versionOptions = computed(() => (run.value?.versions ?? []).map((v) => ({ value: String(v.no), label: `v${v.no} · ${versionLabel(run.value!, v)}` })))
+const versionOptions = computed(() => (run.value?.versions ?? []).map((v) => ({ value: String(v.no), label: `v${v.no} · ${t(statusLabel(versionLabel(run.value!, v)))}` })))
 
 const oldNo = ref('')
 const newNo = ref('')
@@ -53,12 +53,11 @@ const selOld = computed({ get: () => oldNo.value || String(data.value?.oldNo ?? 
 const selNew = computed({ get: () => newNo.value || String(data.value?.newNo ?? ''), set: (v: string) => { newNo.value = v } })
 
 const view = ref<'item' | 'account'>('account')
-const viewOptions = [
-  { id: 'pcv-account', value: 'account', label: 'By account and dimension' },
-  { id: 'pcv-item', value: 'item', label: 'By pay item' },
-]
+const viewOptions = computed(() => [
+  { id: 'pcv-account', value: 'account', label: t('By account and dimension') },
+  { id: 'pcv-item', value: 'item', label: t('By pay item') },
+])
 
-const SECTION: Record<string, string> = { allowance: 'Allowance', deduction: 'Deduction', benefit: 'Benefit' }
 const signed = (n: number) => (n > 0 ? `+${rupiah(n)}` : rupiah(n))
 /** Ledger amounts are debit-positive; show them on their side. */
 const sided = (n: number) => (n === 0 ? rupiah(0) : `${rupiah(Math.abs(n))} ${n > 0 ? 'Dr' : 'Cr'}`)
@@ -102,6 +101,8 @@ const taxTotal = computed(() => ({
   severance: taxRows.value.reduce((s, r) => s + r.severance, 0),
   pph26: taxRows.value.reduce((s, r) => s + r.pph26, 0),
 }))
+/** The engine labels the posted side "(in the ledger)"; the screens say posted. */
+const vLabel = (l: string) => l.replace(' (in the ledger)', ' (posted)')
 const sentOf = (no: number | undefined) => { const v = run.value?.versions.find((x) => x.no === no); return v ? wib(v.sentAt) : '' }
 </script>
 
@@ -111,7 +112,7 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
       <div>
         <div class="pcv__title">{{ t('Compare versions') }}</div>
         <div v-if="data" class="pcv__sub">
-          {{ t(`${data.oldLabel} sent ${sentOf(data.oldNo)} against ${data.newLabel} sent ${sentOf(data.newNo)}`) }}
+          {{ t(`${vLabel(data.oldLabel)} sent ${sentOf(data.oldNo)} against ${vLabel(data.newLabel)} sent ${sentOf(data.newNo)}`) }}
         </div>
       </div>
       <div class="pcv__pickers">
@@ -138,8 +139,8 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
               <tr>
                 <th class="pcv__th">{{ t('Account') }}</th>
                 <th class="pcv__th">{{ t('Dimensions') }}</th>
-                <th class="pcv__th pcv__num">{{ t(data.oldLabel) }}</th>
-                <th class="pcv__th pcv__num">{{ t(data.newLabel) }}</th>
+                <th class="pcv__th pcv__num">{{ t(vLabel(data.oldLabel)) }}</th>
+                <th class="pcv__th pcv__num">{{ t(vLabel(data.newLabel)) }}</th>
                 <th class="pcv__th pcv__num">{{ t('Debit') }}</th>
                 <th class="pcv__th pcv__num">{{ t('Credit') }}</th>
               </tr>
@@ -173,15 +174,15 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
               <tr>
                 <th class="pcv__th">{{ t('Pay item') }}</th>
                 <th class="pcv__th">{{ t('Section') }}</th>
-                <th class="pcv__th pcv__num">{{ t(data.oldLabel) }}</th>
-                <th class="pcv__th pcv__num">{{ t(data.newLabel) }}</th>
+                <th class="pcv__th pcv__num">{{ t(vLabel(data.oldLabel)) }}</th>
+                <th class="pcv__th pcv__num">{{ t(vLabel(data.newLabel)) }}</th>
                 <th class="pcv__th pcv__num">{{ t('Difference') }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="r in data.byPayItem" :key="`${r.name}|${r.section}`">
                 <td class="pcv__td">{{ r.name }}</td>
-                <td class="pcv__td">{{ t(SECTION[r.section] ?? r.section) }}</td>
+                <td class="pcv__td">{{ t(sectionLabel(r.section)) }}</td>
                 <td class="pcv__td pcv__num">{{ rupiah(r.old) }}</td>
                 <td class="pcv__td pcv__num">{{ rupiah(r.new) }}</td>
                 <td class="pcv__td pcv__num" :class="{ 'pcv__neg': r.diff < 0 }">{{ signed(r.diff) }}</td>
@@ -227,8 +228,8 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
               <thead>
                 <tr>
                   <th class="pcv__th">{{ t('Group') }}</th>
-                  <th class="pcv__th">{{ t('Added') }}</th>
-                  <th class="pcv__th">{{ t('Removed') }}</th>
+                  <th class="pcv__th pcv__num">{{ t('Added') }}</th>
+                  <th class="pcv__th pcv__num">{{ t('Removed') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -248,7 +249,7 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
           <div class="pcv__blocksub">
             <template v-if="!taxRows.length">{{ t('No tax total changed.') }}</template>
             <template v-else>
-              {{ t(`${taxRows.length} staff changed · tax period ${monthLabel(run!.month)} · PPh 21 ${signed(taxTotal.pph21)}`) }}
+              {{ t(`${taxRows.length} staff changed · tax month ${monthLabel(run!.month)} · PPh 21 ${signed(taxTotal.pph21)}`) }}
               <template v-if="taxTotal.pph26"> · {{ t(`PPh 26 ${signed(taxTotal.pph26)}`) }}</template>
               <template v-if="taxTotal.dtp"> · {{ t(`PPh 21 DTP ${signed(taxTotal.dtp)}`) }}</template>
               <template v-if="taxTotal.severance"> · {{ t(`PPh 21 severance ${signed(taxTotal.severance)}`) }}</template>
@@ -259,7 +260,7 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
             <table class="pcv__table">
               <thead>
                 <tr>
-                  <th class="pcv__th">{{ t('Staff changed') }}</th>
+                  <th class="pcv__th pcv__num">{{ t('Staff changed') }}</th>
                   <th class="pcv__th pcv__num">{{ t('PPh 21 Benefit') }}</th>
                   <th class="pcv__th pcv__num">{{ t('PPh 21 Payment') }}</th>
                   <th class="pcv__th pcv__num">{{ t('PPh 21 DTP') }}</th>
@@ -271,7 +272,7 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
               <tbody>
                 <!-- Totals only: the per-person figures are in Talenta. -->
                 <tr>
-                  <td class="pcv__td">{{ taxRows.length }}</td>
+                  <td class="pcv__td pcv__num">{{ taxRows.length }}</td>
                   <td class="pcv__td pcv__num">{{ taxTotal.benefit ? signed(taxTotal.benefit) : '' }}</td>
                   <td class="pcv__td pcv__num">{{ taxTotal.payment ? signed(taxTotal.payment) : '' }}</td>
                   <td class="pcv__td pcv__num">{{ taxTotal.dtp ? signed(taxTotal.dtp) : '' }}</td>
@@ -321,7 +322,7 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
   padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
 .pcv__table tbody tr:last-child .pcv__td { border-bottom: 0; }
-.pcv__num { text-align: right; white-space: nowrap; }
+.pcv__th.pcv__num, .pcv__num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pcv__neg { color: var(--mp-text-danger); }
 .pcv__strong { font-weight: var(--mp-font-weights-semi-bold); }
 .pcv__rownote { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); }

@@ -1,15 +1,17 @@
 <script setup lang="ts">
 /**
- * Pay items: one row per Talenta pay item with its one Jurnal account. A cost item (allowance,
- * benefit) takes any expense or COGS account and is marked Groups can change (the group's
- * expense account applies, see Groups) or Same for all groups; a deduction or tax item takes its
- * payable. The type is Talenta's and read-only. The "Owed to" column follows the type. Payable accounts per party sit above the table. Unmapped
- * items come first: they hold the run.
+ * Pay items: payable accounts per party on top, then one row per Talenta pay item with its one
+ * Jurnal account. A cost item (allowance, benefit) takes any expense or COGS account and is marked
+ * Groups can change (the group's expense account applies, see Groups) or Same for all groups; a
+ * deduction or tax item takes its payable. The type is Talenta's and read-only; "Owed to" follows
+ * it. Items with no account come first: they hold the run.
  */
 import { computed, reactive, ref } from 'vue'
 import { MpIcon, MpToggle, MpTooltip } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
+import { sectionLabel } from '~/data/payrollUiRunCopy'
 import { successToast } from '~/utils/toasts'
 import {
   payroll, can, accountLabel, payItemType, isCostItem, payItemAccount, payItemParty, setPayItemAccount, setPayItemGroupsCanChange,
@@ -22,7 +24,6 @@ import { PARTY_LABEL } from '~/data/payrollUiPay'
 
 const { t } = useLocale()
 
-const TYPE_LABEL: Record<PayItemType, string> = { allowance: 'Allowance', deduction: 'Deduction', benefit: 'Benefit', tax: 'Tax' }
 const TYPE_ORDER: PayItemType[] = ['allowance', 'benefit', 'deduction', 'tax']
 
 const needsAccount = (m: PayItemMapping) => !m.roleConfirmed || !m.role || !m.debit || !m.credit
@@ -31,6 +32,8 @@ const rows = computed(() => [...payroll.settings.mapping].sort((a, b) =>
   || TYPE_ORDER.indexOf(payItemType(a)) - TYPE_ORDER.indexOf(payItemType(b))
   || a.name.localeCompare(b.name)))
 const openCount = computed(() => payroll.settings.mapping.filter(needsAccount).length)
+/** The first cost item with an account carries the Groups can change tour marker. */
+const firstCostKey = computed(() => rows.value.find((m) => isCostItem(m) && !needsAccount(m))?.key ?? null)
 
 // ── Account choices: any expense or COGS account for cost items, payables for the rest ──
 const COST: PayrollAccountType[] = ['expense', 'cogs']
@@ -50,17 +53,17 @@ function onAccount(m: PayItemMapping, code: string) {
   if (!code || code === payItemAccount(m)) return
   adopt(code, optionsFor(m))
   const r = setPayItemAccount(m.key, code)
-  rowErrors[m.key] = r.ok ? '' : t(r.message ?? '')
+  rowErrors[m.key] = r.ok ? '' : t(r.message ?? 'Not saved. Pick another account.')
   if (r.ok) successToast(t(`${m.name} now posts to ${accountLabel(code)}`))
 }
 function partyLabel(m: PayItemMapping) {
   const p = payItemParty(m)
   return p ? t(PARTY_LABEL[p]) : t('None')
 }
-const TYPE_TIP = 'From Talenta: where the item sits on the payslip (allowance, deduction or benefit). Tax items are found by name.'
+const TYPE_TIP = 'From Talenta: the payslip section the item sits in (allowance, deduction or benefit). Tax items are found by name. Change it in Talenta.'
 function onGroupsCanChange(m: PayItemMapping, on: boolean) {
   const r = setPayItemGroupsCanChange(m.key, on)
-  rowErrors[m.key] = r.ok ? '' : t(r.message ?? '')
+  rowErrors[m.key] = r.ok ? '' : t(r.message ?? 'Not saved. Try again.')
   if (r.ok) successToast(t(on ? `${m.name}: groups can change the account` : `${m.name}: same account for all groups`))
 }
 
@@ -71,7 +74,7 @@ function onPayable(party: PayableParty, code: string) {
   if (!code || code === payroll.settings.payables[party]) return
   adopt(code, liabilityOptions.value)
   const r = setPayableAccount(party, code)
-  payableError.value = r.ok ? '' : t(r.message ?? '')
+  payableError.value = r.ok ? '' : t(r.message ?? 'Not saved. Pick a liability account.')
   if (r.ok) successToast(t(`Payable account for ${PARTY_LABEL[party]} saved`))
 }
 
@@ -79,12 +82,14 @@ function onPayable(party: PayableParty, code: string) {
 
 <template>
   <div class="pset-stack">
+    <PayrollReadOnlyNote v-if="!can('setup')" :text="t('Editing needs Set up access.')" />
+
     <!-- Payable accounts -->
-    <div class="pset-card">
+    <div class="pset-card" data-tour="payroll-payable-accounts">
       <div class="pset-card__head">
         <div>
           <div class="pset-card__title">{{ t('Payable accounts') }}</div>
-          <div class="pset-card__sub">{{ t('The account that holds what is still owed to each party until it is paid.') }}</div>
+          <div class="pset-card__sub">{{ t('Where Jurnal keeps what is still owed to each party until the bank pays it.') }}</div>
         </div>
       </div>
       <div class="pset-card__body">
@@ -100,15 +105,14 @@ function onPayable(party: PayableParty, code: string) {
     </div>
 
     <!-- Pay item mapping -->
-    <div class="pset-card">
+    <div class="pset-card" data-tour="payroll-payitems">
       <div class="pset-card__head">
         <div>
           <div class="pset-card__title">{{ t('Pay items') }}</div>
-          <div class="pset-card__sub">{{ t('Each line on the payslip Talenta sends posts to one account. Items without an account hold the run.') }}</div>
+          <div class="pset-card__sub">{{ t('Each line on the payslip Talenta sends posts to one account. An item with no account holds the run.') }}</div>
         </div>
         <ErpStatusBadge v-if="openCount" status="needs-account" :label="t(`${openCount} need${openCount > 1 ? '' : 's'} an account`)" type="critical" />
       </div>
-      <p v-if="!can('setup')" class="pset-hint pset-readonly" data-testid="pset-readonly">{{ t('Editing needs Set up access.') }}</p>
       <table class="pset-table pset-pi">
         <colgroup>
           <col class="pset-pi__name"><col class="pset-pi__type"><col class="pset-pi__acct"><col class="pset-pi__party">
@@ -117,7 +121,7 @@ function onPayable(party: PayableParty, code: string) {
           <tr>
             <th class="pset-th">{{ t('Pay item') }}</th>
             <th class="pset-th">
-              <span class="pset-th__tip">{{ t('Type') }}
+              <span class="pset-th__tip" data-tour="payroll-type-tip">{{ t('Type') }}
                 <MpTooltip id="pset-type-tip" :label="t(TYPE_TIP)" placement="top" use-portal>
                   <span class="pset-th__icon" data-testid="pset-type-tip" tabindex="0" :aria-label="t(TYPE_TIP)"><MpIcon name="info" size="sm" /></span>
                 </MpTooltip>
@@ -134,11 +138,11 @@ function onPayable(party: PayableParty, code: string) {
                 <span>{{ m.name }}</span>
                 <span v-if="needsAccount(m)" class="pset-chip"><ErpStatusBadge status="needs-account" :label="t('Needs account')" type="critical" /></span>
               </td>
-              <td class="pset-td">{{ t(TYPE_LABEL[payItemType(m)]) }}</td>
+              <td class="pset-td">{{ t(sectionLabel(payItemType(m))) }}</td>
               <td class="pset-td pset-pi__cell">
                 <ErpFilterSelect v-if="can('setup')" :id="`pset-acct-${m.key.replace(/[^a-zA-Z0-9]/g, '-')}`" :model-value="needsAccount(m) ? '' : (payItemAccount(m) ?? '')" :placeholder="t('Select account')" :options="optionsFor(m)" width="100%" :is-clearable="false" @update:model-value="(v: string) => onAccount(m, v)" />
-                <span v-else>{{ needsAccount(m) ? '' : accountLabel(payItemAccount(m)) }}</span>
-                <div v-if="isCostItem(m) && !needsAccount(m)" class="pset-gcc" :data-groups-can-change="m.groupsCanChange ? 'yes' : 'no'">
+                <span v-else>{{ needsAccount(m) ? t('No account yet') : accountLabel(payItemAccount(m)) }}</span>
+                <div v-if="isCostItem(m) && !needsAccount(m)" class="pset-gcc" :data-groups-can-change="m.groupsCanChange ? 'yes' : 'no'" :data-tour="m.key === firstCostKey ? 'payroll-groups-can-change' : undefined">
                   <MpToggle v-if="can('setup')" :id="`pset-gcc-${m.key.replace(/[^a-zA-Z0-9]/g, '-')}`" :is-checked="!!m.groupsCanChange" :aria-label="t('Groups can change')" @update:is-checked="(v: boolean) => onGroupsCanChange(m, v)" />
                   <span class="pset-gcc__label">{{ t(m.groupsCanChange ? 'Groups can change' : 'Same for all groups') }}</span>
                 </div>
@@ -167,7 +171,6 @@ function onPayable(party: PayableParty, code: string) {
 .pset-gcc__label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .pset-th__tip { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
 .pset-th__icon { display: inline-flex; color: var(--mp-text-secondary); cursor: help; }
-.pset-readonly { padding: var(--mp-spacing-3) var(--mp-spacing-4) 0; }
 .pset-pi__cell :deep(.efs) { display: block; width: 100%; }
 .pset-pi__cell :deep(.efs-trigger) { width: 100%; }
 </style>

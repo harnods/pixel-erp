@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
- * One payable row opened: what is owed (the journal lines behind it, by dimension, plus
- * any repost still waiting), what the bank paid (bank reconciliation matches), and the checks
- * on the row. No employee names.
+ * One payable row opened: what is owed (the journal lines behind it, by dimension, plus any
+ * repost still waiting), what the bank paid (bank reconciliation matches), and the flags on the
+ * row. No employee names.
  */
-import { MpBadge } from '@mekari/pixel3'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PayrollPayDrawer from '~/components/payroll/PayrollPayDrawer.vue'
 import { rupiah, accountLabel, monthLabel, dateLabel, type PayableRow } from '~/data/payrollStore'
 import { payableDrill } from '~/data/payrollUiPayables'
@@ -32,9 +32,9 @@ const pendingChange = computed(() => (props.row?.pendingOwed != null ? props.row
       </dl>
 
       <section v-if="row.flags.length" class="ppx-section">
-        <h3 class="ppx-h">{{ t('Worth a look') }}</h3>
+        <h3 class="ppx-h">{{ t('Flags') }}</h3>
         <div v-for="f in row.flags" :key="f.code + f.message" class="ppx-check">
-          <MpBadge for="tableStatus" :type="f.code === 'manual-journal' ? 'warning' : 'critical'">{{ t(FLAG_CHIP[f.code]) }}</MpBadge>
+          <ErpStatusBadge :status="f.code" :label="t(FLAG_CHIP[f.code])" :type="f.code === 'manual-journal' ? 'warning' : 'critical'" />
           <span>{{ f.message }}</span>
         </div>
       </section>
@@ -47,7 +47,7 @@ const pendingChange = computed(() => (props.row?.pendingOwed != null ? props.row
             <tr v-for="p in paid" :key="p.id">
               <td>{{ p.number }}</td><td>{{ dateLabel(p.date) }}</td><td>{{ p.bank }}</td><td>{{ p.statement }}</td><td class="ppx-r">{{ rupiah(p.amount) }}</td>
             </tr>
-            <tr v-if="!paid.length"><td colspan="5" class="ppx-empty">{{ t('No payment matched yet') }}</td></tr>
+            <tr v-if="!paid.length"><td colspan="5" class="ppx-empty">{{ t('No payment matched yet. It shows here once bank reconciliation matches a bank line.') }}</td></tr>
           </tbody>
         </table>
       </section>
@@ -62,7 +62,7 @@ const pendingChange = computed(() => (props.row?.pendingOwed != null ? props.row
               <td>{{ t(l.type) }}</td><td>{{ l.date }}</td><td>{{ l.tags }}</td><td class="ppx-r">{{ rupiah(l.amount) }}</td>
             </tr>
             <tr v-if="pendingChange != null" class="ppx-pending">
-              <td>{{ t('Repost') }}</td><td>{{ t('Draft journal') }}</td><td>-</td><td>{{ t('Waiting for reverse and repost') }}</td><td class="ppx-r">{{ rupiah(pendingChange) }}</td>
+              <td>{{ t('Not posted yet') }}</td><td>{{ t('Draft journal') }}</td><td>-</td><td>{{ t('Waiting for repost') }}</td><td class="ppx-r">{{ rupiah(pendingChange) }}</td>
             </tr>
             <tr v-if="!owed.length && pendingChange == null"><td colspan="5" class="ppx-empty">{{ t('No posted journal yet') }}</td></tr>
           </tbody>
@@ -81,9 +81,9 @@ const pendingChange = computed(() => (props.row?.pendingOwed != null ? props.row
 .ppx-h { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default); }
 .ppx-check { display: flex; align-items: flex-start; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default); }
 .ppx-table { width: 100%; border-collapse: collapse; border: 1px solid var(--mp-colors-border-default); border-radius: var(--mp-radii-md); }
-.ppx-table th { text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-secondary); background: var(--mp-colors-background-neutral-subtle); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-bottom: 1px solid var(--mp-colors-border-default); }
+.ppx-table th { text-align: left; text-transform: uppercase; white-space: nowrap; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-secondary); background: var(--mp-colors-background-neutral-subtle); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-bottom: 1px solid var(--mp-colors-border-default); }
 .ppx-table td { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-bottom: 1px solid var(--mp-colors-border-default); vertical-align: top; }
-.ppx-table .ppx-r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ppx-table th.ppx-r, .ppx-table .ppx-r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ppx-pending td { color: var(--mp-colors-text-secondary); }
 .ppx-num { font-variant-numeric: tabular-nums; }
 .ppx-sub { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary); }

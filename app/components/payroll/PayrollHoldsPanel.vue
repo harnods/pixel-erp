@@ -1,11 +1,11 @@
 <script setup lang="ts">
 /**
- * Holds on a run, each with its fix inline. A send stops only for a missing mapping,
- * a partial send or a separate-run look-alike (OD-03, TN-01, TN-02). Saved mappings and tags
- * re-check every held run at once, so a fix usually clears the hold by itself;
- * "Release run" re-checks the whole run on demand.
+ * "To fix before posting": each item with its fix inline. A send stops only for a pay item with
+ * no account, a New group, a dimension value with no match, a partial send, the same-run-or-
+ * separate choice, or the first send's company check. Every save re-checks held runs, so a fix
+ * usually clears the item by itself; "Check again" re-checks the run on demand.
  */
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { MpButton, MpIcon, MpInput } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
@@ -17,7 +17,8 @@ import {
 } from '~/data/payrollStore'
 import { TALENTA_FIELDS, type PaySection, type PayableParty } from '~/data/payrollMaster'
 import { successToast, infoToast } from '~/utils/toasts'
-import { roleLabel } from '~/data/payrollUiRunCopy'
+import { roleLabel, sectionLabel } from '~/data/payrollUiRunCopy'
+import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
 
 const props = defineProps<{ runId: string }>()
 const { t } = useLocale()
@@ -28,8 +29,8 @@ const holds = computed(() => (run.value ? runHolds(run.value) : []))
 
 const TITLES: Record<string, string> = {
   'confirm-source': 'Confirm this is your company', choice: 'Talenta sent this period again', partial: 'Looks like part of the run',
-  'unmapped-item': 'Pay items with no account', 'unmapped-group': 'Groups with no dimension value',
-  'empty-field': 'Empty dimension fields',
+  'unmapped-item': 'Pay items with no account', 'new-group': 'New group not set up',
+  'unmapped-group': 'Values with no dimension value', 'empty-field': 'Empty dimension fields',
   'two-parties': 'Two parties on one payable account', 'archived-account': 'Account is archived',
 }
 const SETTINGS_FIX = ['two-parties', 'archived-account']
@@ -37,11 +38,10 @@ const SETTINGS_FIX = ['two-parties', 'archived-account']
 // ── Shared ────────────────────────────────────────────────────────────────
 const accountOptions = computed(() => payroll.accounts.filter((a) => !a.archived).map((a) => ({ value: a.code, label: `${a.code} ${a.name}` })))
 const roleOptions = PAY_ROLES.map((r) => ({ value: r, label: roleLabel(r) }))
-const released = ref('')
 function release() {
   const r = releaseRun(props.runId)
-  if (r.ok) successToast(t('All fixed. Draft journal built'))
-  else infoToast(t(`Still to fix: ${r.message ?? ''}`))
+  if (r.ok) successToast(t('All fixed. The draft journal is built.'))
+  else infoToast(t(r.message ?? 'Some items still need a fix.'))
 }
 
 // ── Unmapped pay items ────────────────────────────────────────────────────
@@ -58,7 +58,7 @@ function itemForm(it: { key: string; name: string; section: PaySection }): ItemF
 const STAFF_ROLES: PayRole[] = ['Earning', 'THR', 'Severance', 'Reimbursement']
 function saveItem(it: { key: string; name: string; section: PaySection }) {
   const f = itemForm(it)
-  if (!f.role || !f.debit || !f.credit) { f.error = 'Pick a type, a debit account and a credit account.'; return }
+  if (!f.role || !f.debit || !f.credit) { f.error = 'Pick a type, a debit account and a credit account, then save.'; return }
   const sugg = suggestMapping(it.name, it.section)
   const party: PayableParty | null = STAFF_ROLES.includes(f.role as PayRole) ? 'Staff' : (sugg?.party ?? mappingFor(it.name, it.section)?.party ?? null)
   const r = setPayItemMapping(it.key, { role: f.role as PayRole, debit: f.debit, credit: f.credit, party }, f.reason || undefined)
@@ -68,7 +68,7 @@ function saveItem(it: { key: string; name: string; section: PaySection }) {
     return
   }
   f.error = ''; f.needsOverride = []
-  successToast(t(`${it.name} mapped`))
+  successToast(t(`${it.name} saved`))
 }
 
 // ── Groups ────────────────────────────────────────────────────────────────
@@ -92,7 +92,7 @@ function saveGroup(g: { field: string; dimension: string; value: string }) {
   const r = mapGroup(g.dimension, g.value, tag)
   if (!r.ok) { groupError[k] = r.message ?? ''; return }
   groupError[k] = ''
-  successToast(t(`${g.value} mapped to ${tag}`))
+  successToast(t(`${g.value} now fills ${tag}`))
 }
 
 // ── Empty dimension fields ────────────────────────────────────────────────
@@ -106,7 +106,7 @@ const summary = computed(() => sourceSummary(props.runId))
 function doConfirmSource() {
   const r = confirmSource()
   if (r.ok) successToast(t('Company confirmed'))
-  else infoToast(t(r.message ?? ''))
+  else infoToast(t(r.message ?? 'Not confirmed. Try again.'))
 }
 function versionInState(state: string) { return run.value?.versions.find((v) => v.state === state) }
 const sep = reactive({ open: false, type: 'THR', name: '', reason: '', error: '' })
@@ -115,7 +115,7 @@ function pickRevision() {
   if (!v) return
   const r = chooseRevision(props.runId, v.no)
   if (r.ok) successToast(t(r.partial ? `v${v.no} looks like part of the run` : `v${v.no} saved as a new version of this run`))
-  else infoToast(t(r.message ?? ''))
+  else infoToast(t(r.message ?? 'Not saved. Try again.'))
 }
 function saveSeparate() {
   const v = versionInState('waiting-choice')
@@ -169,7 +169,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
           <div><dt>{{ t('Take-home pay') }}</dt><dd>{{ rupiah(summary.takeHome) }}</dd></div>
         </dl>
         <MpButton v-if="can('connection')" is-rounded @click="doConfirmSource">{{ t('Confirm company') }}</MpButton>
-        <p v-else class="ph__hint">{{ t('Waiting for the Owner to confirm.') }}</p>
+        <PayrollReadOnlyNote v-else :text="t('Waiting for the Owner to confirm the company.')" />
       </div>
 
       <!-- Same run again or separate run -->
@@ -179,7 +179,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
           <MpButton is-rounded @click="pickRevision">{{ t('Use as a new version') }}</MpButton>
           <MpButton variant="secondary" is-rounded @click="sep.open = !sep.open">{{ t('Make a separate run') }}</MpButton>
         </div>
-        <p v-else class="ph__hint">{{ t('Waiting for the Accountant to choose.') }}</p>
+        <PayrollReadOnlyNote v-else :text="t('Choosing needs edit access (LM). Waiting for someone who has it.')" />
         <div v-if="sep.open && can('correct')" class="ph__form">
           <div class="ph__field">
             <label class="ph__label" for="ph-sep-type">{{ t('Run type') }}</label>
@@ -219,7 +219,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
             <MpButton variant="secondary" is-rounded @click="decide('reject')">{{ t('Reject') }}</MpButton>
           </div>
         </template>
-        <p v-else class="ph__hint">{{ t('Waiting for the Accountant to decide.') }}</p>
+        <PayrollReadOnlyNote v-else :text="t('Deciding needs edit access (LM). Waiting for someone who has it.')" />
       </div>
 
       <!-- Unmapped pay items -->
@@ -240,12 +240,12 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
               <tr>
                 <td class="ph__td">
                   <div class="ph__strong">{{ it.name }}</div>
-                  <div class="ph__muted">{{ t(it.section) }} · {{ t(it.reason) }}</div>
+                  <div class="ph__muted">{{ t(sectionLabel(it.section)) }}</div>
                 </td>
                 <td class="ph__td ph__td--num">{{ rupiah(it.amount) }}</td>
                 <td class="ph__td ph__td--num">{{ it.employees }}</td>
                 <template v-if="can('setup')">
-                  <td class="ph__td"><ErpFilterSelect :id="`ph-role-${safeId(it.key)}`" v-model="itemForm(it).role" :placeholder="t('Type')" :options="roleOptions" width="180px" /></td>
+                  <td class="ph__td"><ErpFilterSelect :id="`ph-role-${safeId(it.key)}`" v-model="itemForm(it).role" :placeholder="t('Type')" :options="roleOptions" width="220px" /></td>
                   <td class="ph__td"><ErpFilterSelect :id="`ph-dr-${safeId(it.key)}`" v-model="itemForm(it).debit" :placeholder="t('Account')" :options="accountOptions" width="220px" /></td>
                   <td class="ph__td"><ErpFilterSelect :id="`ph-cr-${safeId(it.key)}`" v-model="itemForm(it).credit" :placeholder="t('Account')" :options="accountOptions" width="220px" /></td>
                 </template>
@@ -266,8 +266,18 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
             </template>
           </tbody>
         </table>
-        <p v-if="!can('setup')" class="ph__hint">{{ t('The Accountant picks the accounts for these items.') }}</p>
-        <MpButton v-else variant="ghost" is-rounded @click="router.push({ path: '/payroll-settings', query: { section: 'pay-items' } })">{{ t('Open pay item settings') }}</MpButton>
+        <PayrollReadOnlyNote v-if="!can('setup')" :text="t('Editing needs Set up access.')" />
+        <MpButton v-else variant="secondary" is-rounded @click="router.push({ path: '/payroll-settings', query: { section: 'pay-items' } })">{{ t('Open pay items') }}</MpButton>
+      </div>
+
+      <!-- New groups: set up in Settings > Groups -->
+      <div v-else-if="h.code === 'new-group'" class="ph__fix">
+        <div v-for="g in d(h).groups" :key="g.key" class="ph__line">
+          <span class="ph__strong">{{ g.label }}</span>
+          <span class="ph__muted">{{ g.staff }} {{ t('staff') }}</span>
+        </div>
+        <MpButton v-if="can('setup')" variant="secondary" is-rounded data-testid="ph-open-groups" @click="router.push({ path: '/payroll-settings', query: { section: 'groups' } })">{{ t('Set up group') }}</MpButton>
+        <PayrollReadOnlyNote v-else :text="t('Editing needs Set up access.')" />
       </div>
 
       <!-- Talenta values with no dimension value -->
@@ -275,9 +285,9 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
         <div v-for="g in d(h).groups" :key="`${g.field}|${g.value}`" class="ph__line">
           <div class="ph__linetext">
             <span class="ph__strong">{{ g.value }}</span>
-            <span class="ph__muted"> · {{ t(g.dimension) }} · {{ g.staff }} {{ t('employees') }}</span>
+            <span class="ph__muted"> · {{ t(g.dimension) }} · {{ g.staff }} {{ t('staff') }}</span>
           </div>
-          <template v-if="can('post')">
+          <template v-if="can('setup')">
             <ErpFilterSelect :id="`ph-tag-${safeId(g.field + '-' + g.value)}`" v-model="groupPick[`${g.field}|${g.value}`]" :placeholder="t('Dimension value')" :options="tagOptions(g.dimension, g.value)" width="220px" />
             <MpButton variant="secondary" is-rounded @click="saveGroup(g)">{{ t('Save') }}</MpButton>
           </template>
@@ -288,7 +298,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
       <!-- Empty dimension fields -->
       <div v-else-if="h.code === 'empty-field'" class="ph__fix">
         <div v-for="(n, field) in d(h).fields" :key="field" class="ph__line">
-          <div class="ph__linetext"><span class="ph__strong">{{ t(fieldLabel(String(field))) }}</span><span class="ph__muted"> · {{ n }} {{ t('employees') }}</span></div>
+          <div class="ph__linetext"><span class="ph__strong">{{ t(fieldLabel(String(field))) }}</span><span class="ph__muted"> · {{ n }} {{ t('staff') }}</span></div>
           <MpButton v-if="can('setup')" variant="secondary" is-rounded @click="skipEmpty(String(field))">{{ t('Leave blank') }}</MpButton>
         </div>
         <p class="ph__hint">{{ t('Ask HR to fill the field in Talenta and send again, or leave the dimension blank.') }}</p>
@@ -297,15 +307,15 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
       <!-- Build checks fixed in settings -->
       <div v-else-if="SETTINGS_FIX.includes(h.code)" class="ph__fix">
         <p v-if="h.code === 'archived-account' && payrollAccount(d(h).account)" class="ph__hint">{{ accountLabel(d(h).account) }}</p>
-        <MpButton variant="secondary" is-rounded @click="router.push('/payroll-settings')">{{ t('Open payroll settings') }}</MpButton>
+        <MpButton v-if="can('setup')" variant="secondary" is-rounded @click="router.push({ path: '/payroll-settings', query: { section: 'pay-items' } })">{{ t('Open pay items') }}</MpButton>
+        <PayrollReadOnlyNote v-else :text="t('Editing needs Set up access.')" />
       </div>
     </div>
-    <span v-if="released" class="ph__muted">{{ released }}</span>
   </div>
 </template>
 
 <style scoped>
-.ph { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); margin-bottom: var(--mp-spacing-5); }
+.ph { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); }
 .ph__head {
   display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4);
   padding: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default);
@@ -334,14 +344,15 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
 .ph__muted { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .ph__strong { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ph__line { display: flex; align-items: center; gap: var(--mp-spacing-3); flex-wrap: wrap; }
+.ph__line .ph__strong { min-width: 200px; }
 .ph__linetext { min-width: 240px; }
 .ph__table { width: 100%; border-collapse: collapse; }
 .ph__th {
   text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase;
-  color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  border-bottom: 1px solid var(--mp-border-default);
+  color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-2) var(--mp-spacing-4);
+  border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
 }
-.ph__th--num, .ph__td--num { text-align: right; font-variant-numeric: tabular-nums; }
-.ph__td { padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: middle; }
+.ph__th.ph__th--num, .ph__td--num { text-align: right; font-variant-numeric: tabular-nums; }
+.ph__td { padding: var(--mp-spacing-2) var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: middle; }
 .ph__td--sub { border-bottom: 1px solid var(--mp-border-default); }
 </style>

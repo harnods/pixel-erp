@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * "Simulate Talenta send": the prototype's stand-in for Talenta's salary detail
- * webhook (scope fence 2), the only Talenta webhook Jurnal reads. Every kind in SEND_KINDS goes through simulateSend, so the
- * inbox, the run record and the sync log react exactly as they would to a real send.
+ * "Simulate Talenta send": stands in for Talenta's salary detail send, the only thing Jurnal
+ * reads from Talenta. Every kind in SEND_KINDS goes through simulateSend, so the inbox, the run
+ * page and the sync log react as they would to a real send.
  */
 import { computed } from 'vue'
 import { MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem } from '@mekari/pixel3'
@@ -14,27 +14,28 @@ const { t } = useLocale()
 
 /** Every kind the engine knows (SEND_KINDS), each once: salary detail sends, then the old sync call. */
 const LABELS: Record<SendKind, string> = {
-  'regular': 'Regular run, next period',
-  'new-pay-item': 'Run with a new pay item',
-  'revision': 'Same period again (v2)',
-  'missing-component': 'Run with a missing pay item (PPh 21 paid)',
-  'partial': 'Part of the run again (one branch)',
-  'separate-run': 'THR run for a posted period',
-  'duplicate': 'Exact duplicate send',
+  'regular': 'Next period',
+  'new-pay-item': 'Next period with a new pay item',
+  'new-group': 'Next period with a new group',
+  'revision': 'Posted period sent again (v2)',
+  'missing-component': 'Next period with a pay item missing',
+  'partial': 'Part of a posted period (one branch)',
+  'separate-run': 'THR (religious holiday bonus) for a posted period',
+  'duplicate': 'Same send twice',
   'old-sync': 'Old Talenta to Expense sync',
 }
 const GROUPS = computed(() => [
-  { title: 'Payroll sends', kinds: SEND_KINDS.map((s) => s.kind).filter((k) => k !== 'old-sync') },
+  { title: 'Salary details', kinds: SEND_KINDS.map((s) => s.kind).filter((k) => k !== 'old-sync') },
   { title: 'Old sync', kinds: SEND_KINDS.map((s) => s.kind).filter((k) => k === 'old-sync') },
 ])
 const label = (k: SendKind) => LABELS[k] ?? SEND_KINDS.find((s) => s.kind === k)?.label ?? k
 
 function send(kind: SendKind) {
   const r = simulateSend(kind)
-  const msg = r.message ?? r.status
-  if (r.status === 'Failed' || r.status === 'Blocked') errorToast(t(`${r.status}: ${msg}`))
-  else if (r.status === 'Held' || r.status === 'Waiting for your choice') infoToast(t(`${r.status}: ${msg}`))
-  else successToast(t(`${r.status}: ${msg}`))
+  const msg = t(r.message ?? String(r.status))
+  if (r.status === 'Failed' || r.status === 'Blocked') errorToast(msg)
+  else if (r.status === 'Held' || r.status === 'Waiting for your choice') infoToast(msg)
+  else successToast(msg)
   emit('sent', r.runId)
 }
 </script>
@@ -42,7 +43,7 @@ function send(kind: SendKind) {
 <template>
   <MpPopover id="payroll-simulate-send" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
     <MpPopoverTrigger>
-      <MpButton variant="secondary" is-rounded right-icon="chevrons-down">{{ t('Simulate Talenta send') }}</MpButton>
+      <MpButton variant="secondary" is-rounded right-icon="chevrons-down" data-tour="payroll-simulate-send">{{ t('Simulate Talenta send') }}</MpButton>
     </MpPopoverTrigger>
     <MpPopoverContent class="erp-dropdown-menu psim-menu">
       <template v-for="g in GROUPS" :key="g.title">
