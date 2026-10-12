@@ -1,15 +1,22 @@
 /**
- * Payroll payables tracker (FG-5): display helpers for the Payables screen and its
+ * Payroll payables tracker: display helpers for the Payables screen and its
  * Simulate menu. No engine rule lives here; figures come from payrollStore.
  */
 import {
   payroll, paymentsFor, runById, journalById, accountLabel, BANK_PAYMENT_KINDS,
   type PayableRow, type PayableFlag, type BankPaymentKind,
 } from './payrollStore'
+import type { PayableParty } from './payrollMaster'
+
+/** Display name per payable party, the same on Payables and Settings. */
+export const PARTY_LABEL: Record<PayableParty, string> = {
+  Staff: 'Staff', 'DJP PPh 21': 'Tax office (PPh 21)', 'DJP PPh 26': 'Tax office (PPh 26)',
+  'BPJS Kesehatan': 'BPJS Kesehatan', 'BPJS Ketenagakerjaan': 'BPJS Ketenagakerjaan', Other: 'DPLK',
+}
 
 /** Chip label per flag code. */
 export const FLAG_CHIP: Record<PayableFlag['code'], string> = {
-  'bank-differs': 'Bank paid differs',
+  'bank-differs': 'Bank amount differs',
   'ebupot-differs': 'e-Bupot differs',
   'manual-journal': 'Manual journal',
 }
@@ -24,8 +31,8 @@ export const SIMULATE_BANK: { kind: BankPaymentKind; label: string }[] = BANK_PA
     'bpjs-kesehatan': 'BPJS Kesehatan payment',
     'bpjs-ketenagakerjaan': 'BPJS Ketenagakerjaan payment',
     dplk: 'DPLK payment',
-    partial: 'Salary transfer, half the balance',
-    overpaid: 'Salary transfer, Rp250.000 over',
+    partial: 'Salary transfer, half of what is owed',
+    overpaid: 'Salary transfer, Rp250.000 too much',
   } as Record<BankPaymentKind, string>)[k.kind] ?? k.label,
 }))
 

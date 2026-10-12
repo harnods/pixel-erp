@@ -1,7 +1,7 @@
 /**
- * Payroll payables (FG-5): read helpers for the Payables screen, built on payrollStore.
+ * Payroll payables: read helpers for the Payables screen, built on payrollStore.
  * No engine rule lives here; every figure comes from the store's journals and bank-matched payments.
- * No employee names (LR-7).
+ * No employee names.
  */
 import { computed } from 'vue'
 import {
@@ -19,21 +19,26 @@ export function payableDrill(row: PayableRow) {
 }
 
 /** Every bank-matched payment, newest first, with its journal number and bank statement line. */
-export const paymentHistory = computed(() => [...payroll.payments].reverse().map((p) => {
-  const j = journalById(p.journalId)
-  const run = runById(p.runId)
-  const line = payroll.bankLines.find((b) => b.id === p.statementLineId)
-  return {
-    id: p.id,
-    number: j?.number ?? '',
-    date: p.date,
-    dateLabel: dateLabel(p.date),
-    payable: p.kind === 'Salary' ? `Salary ${run ? periodLabel(run.start, run.end) : ''}` : `${p.party === 'Other' ? accountLabel(p.account) : p.party} ${monthLabel(p.month)}`,
-    bank: accountLabel(p.bank),
-    statement: line?.description ?? '',
-    amount: p.amount,
-  }
-}))
+export const paymentHistory = computed(() => {
+  const rows = payablesTracker()
+  return [...payroll.payments].reverse().map((p) => {
+    const j = journalById(p.journalId)
+    const run = runById(p.runId)
+    /* Same name as the payable row it paid, so the Payments tab reads like the Payables tab. */
+    const row = rows.find((r) => r.account === p.account && r.month === p.month && (r.runId ?? null) === (p.runId ?? null))
+    const line = payroll.bankLines.find((b) => b.id === p.statementLineId)
+    return {
+      id: p.id,
+      number: j?.number ?? '',
+      date: p.date,
+      dateLabel: dateLabel(p.date),
+      payable: row?.label ?? (p.kind === 'Salary' ? `Salary ${run ? periodLabel(run.start, run.end) : ''}` : `${accountLabel(p.account)} ${monthLabel(p.month)}`),
+      bank: accountLabel(p.bank),
+      statement: line?.description ?? '',
+      amount: p.amount,
+    }
+  })
+})
 
 /** dd/mm/yyyy (date picker) <-> yyyy-mm-dd (store). */
 export function toIso(d: string): string { const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(d.trim()); return m ? `${m[3]}-${m[2]}-${m[1]}` : '' }

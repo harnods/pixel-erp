@@ -15,12 +15,12 @@ const { t } = useLocale()
 
 function report(r: Result, ok: string) {
   if (r.ok) successToast(t(ok))
-  else errorToast(t(r.message ?? 'Not recorded'))
+  else errorToast(t(r.message ?? 'Unable to record the payment. Reset sample data and try again.'))
   emit('done', r)
 }
 function bank(kind: BankPaymentKind) {
   const r = simulateBankPayment(kind)
-  report(r, `${r.number} matched in bank reconciliation: ${rupiah(Number(r.amount ?? 0))}`)
+  report(r, `${r.number} matched in bank reconciliation, ${rupiah(Number(r.amount ?? 0))}`)
 }
 function manual() {
   const r = simulateManualJournal()
@@ -34,13 +34,13 @@ function manual() {
       <MpButton data-tour="payroll-payables-simulate" variant="secondary" is-rounded right-icon="chevrons-down">{{ t('Simulate') }}</MpButton>
     </MpPopoverTrigger>
     <MpPopoverContent class="erp-dropdown-menu psb-menu">
-      <div class="psb-head">{{ t('Bank reconciliation match') }}</div>
+      <div class="psb-head">{{ t('Match in bank reconciliation') }}</div>
       <MpPopoverList>
         <MpPopoverListItem v-for="k in SIMULATE_BANK" :key="k.kind" @click="bank(k.kind)">{{ t(k.label) }}</MpPopoverListItem>
       </MpPopoverList>
-      <div class="psb-head">{{ t('General journal') }}</div>
+      <div class="psb-head">{{ t('Manual journal') }}</div>
       <MpPopoverList>
-        <MpPopoverListItem @click="manual">{{ t('Manual journal on Hutang Gaji') }}</MpPopoverListItem>
+        <MpPopoverListItem @click="manual">{{ t('Post a manual journal on Hutang Gaji') }}</MpPopoverListItem>
       </MpPopoverList>
     </MpPopoverContent>
   </MpPopover>

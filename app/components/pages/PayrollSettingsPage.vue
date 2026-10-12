@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
  * Payroll settings: Connection, Pay items, Dimensions. Every save goes through
- * payrollStore, which snapshots the settings (LR-9) and re-checks held runs; this
- * page only reads the store and calls it. The tab sits in ?section= so a link
- * from a hold lands on the right one.
+ * payrollStore, which keeps a copy of the settings per journal and re-checks held runs;
+ * this page only reads the store and calls it. The tab sits in ?section= so a link
+ * from the fix list lands on the right one.
  */
 import { computed } from 'vue'
 import { MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel } from '@mekari/pixel3'
