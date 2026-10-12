@@ -242,7 +242,7 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
             <thead>
               <tr>
                 <th class="prr__th">{{ t('Version') }}</th>
-                <th class="prr__th">{{ t('Sent by Talenta (WIB)') }}</th>
+                <th class="prr__th">{{ t('Sent by Talenta') }}</th>
                 <th class="prr__th prr__num">{{ t('Staff') }}</th>
                 <th class="prr__th prr__num">{{ t('Take-home pay') }}</th>
                 <th class="prr__th">{{ t('Status') }}</th>

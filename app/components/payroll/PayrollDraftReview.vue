@@ -114,7 +114,7 @@ function unmarkExpected(key: string) {
           <template v-for="s in sections" :key="s.section">
             <tr v-for="p in s.items" :key="`${s.section}-${p.name}`">
               <td class="pdr__td">{{ p.name }} <span class="pdr__muted">· {{ t(sectionLabel(p.section)) }}</span></td>
-              <td class="pdr__td">{{ p.role ? t(roleLabel(p.role)) : t('No type yet') }}</td>
+              <td class="pdr__td">{{ p.role ? t(roleLabel(p.role)) : p.taxFigure ? t('Tax figure, used in the PPh 21 check') : t('No type yet') }}</td>
               <td class="pdr__td pdr__num">{{ p.staff }}</td>
               <td class="pdr__td pdr__num">{{ rupiah(p.amount) }}</td>
             </tr>

@@ -9,6 +9,7 @@ import { computed, ref } from 'vue'
 import { MpButton } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PayrollReverseDrawer from '~/components/payroll/PayrollReverseDrawer.vue'
+import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
 import { runJournals } from '~/data/payrollUiIntake'
 import { can, liveJournals, accountLabel, tagsLabel, rupiah, wib, dateLabel, monthLabel, journalById } from '~/data/payrollStore'
 
@@ -26,11 +27,12 @@ const reverseOpen = ref(false)
     <div v-if="!onlyLive" class="prj__bar">
       <div>
         <div class="prj__bartitle">{{ t('Payroll journals') }}</div>
-        <div class="prj__barsub">{{ live.length ? t(`${live.length} posted. Posted journals change only by reversing them.`) : t('No posted journal') }}</div>
+        <div class="prj__barsub">{{ live.length ? `${live.length} ${t(live.length === 1 ? 'journal posted' : 'journals posted')}. ${t('A posted journal changes only by reversing it.')}` : t('No posted journal') }}</div>
       </div>
       <MpButton v-if="can('correct') && live.length" variant="secondary" is-rounded data-testid="prp-reverse" @click="reverseOpen = true">
         {{ live.length > 1 ? t(`Reverse ${live.length} journals`) : t('Reverse journal') }}
       </MpButton>
+      <PayrollReadOnlyNote v-else-if="live.length && can('post')" :text="t('Reversing needs Owner, Ultimate + LM or Accountant + LM.')" />
     </div>
     <div v-if="!list.length" class="prj__card prj__empty">{{ t('No posted journal yet. Post the draft journal from Draft review.') }}</div>
     <div v-for="j in list" :key="j.id" class="prj__card" :data-journal="j.number" data-tour="payroll-journal">

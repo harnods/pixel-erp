@@ -79,8 +79,8 @@ export function notPostedLabel(mode: string): string {
 
 /** Next step per status, in glossary words (the engine text may still use old terms). */
 const NEXT_STEP: Record<string, string> = {
-  'Confirm source': 'The Owner confirms this is your company.',
-  'Waiting for your choice': 'Choose: same run sent again, or a separate run.',
+  'Confirm source': 'The Owner or an Ultimate + LM confirms this is your company.',
+  'Waiting for your choice': 'Choose: use it as a new version, or make a separate run.',
   'Ready to post': 'Check the draft journal, then post it.',
   'Revision ready': 'Talenta sent this period again. Check what changed, then repost.',
   'Awaiting approval': 'Waiting for the approver in Inbox > Awaiting approval.',

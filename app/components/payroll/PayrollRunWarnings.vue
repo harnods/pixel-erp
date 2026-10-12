@@ -34,7 +34,7 @@ const CODE_LABEL: Record<RunWarning['code'], string> = {
 function detail(w: RunWarning): string {
   const d = w.details as Record<string, unknown>
   if (w.code === 'missing-component' && typeof d.lastAmount === 'number') return `${t(sectionLabel(String(d.section ?? '')))} · ${rupiah(d.lastAmount)} ${t('in')} ${String(d.last ?? t('the last send'))}`
-  if (w.code === 'headcount' && Array.isArray(d.groups)) return (d.groups as string[]).join(', ')
+  if (w.code === 'headcount' && Array.isArray(d.groups)) return (d.groups as string[]).join('; ') // group names hold commas ("Sales, Bandung")
   return ''
 }
 function ack(w: RunWarning) {
@@ -76,7 +76,7 @@ function undo(w: RunWarning) {
         </div>
       </li>
     </ul>
-    <div v-if="warnings.length && !can('post')" class="prw__foot"><PayrollReadOnlyNote :text="t('Marking as checked needs a role that can post.')" /></div>
+    <div v-if="warnings.length && !can('post')" class="prw__foot"><PayrollReadOnlyNote :text="t('Marking as checked needs Owner, Ultimate or Accountant.')" /></div>
   </section>
 </template>
 

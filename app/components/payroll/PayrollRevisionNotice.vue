@@ -66,7 +66,7 @@ function showCompare() { emit('compare') }
       </div>
     </div>
 
-    <PayrollReadOnlyNote v-if="!can('correct')" :text="t('Reposting needs edit access (LM).')" />
+    <PayrollReadOnlyNote v-if="!can('correct')" :text="t('Reposting needs Owner, Ultimate + LM or Accountant + LM.')" />
 
     <div class="pcn__grid" data-tour="payroll-correction">
       <div v-for="f in figures" :key="f.key" class="pcn__fig" :data-figure="f.key">

@@ -169,7 +169,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
           <div><dt>{{ t('Take-home pay') }}</dt><dd>{{ rupiah(summary.takeHome) }}</dd></div>
         </dl>
         <MpButton v-if="can('connection')" is-rounded @click="doConfirmSource">{{ t('Confirm company') }}</MpButton>
-        <PayrollReadOnlyNote v-else :text="t('Waiting for the Owner to confirm the company.')" />
+        <PayrollReadOnlyNote v-else :text="t('Waiting for the Owner or an Ultimate + LM to confirm the company.')" />
       </div>
 
       <!-- Same run again or separate run -->
@@ -179,7 +179,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
           <MpButton is-rounded @click="pickRevision">{{ t('Use as a new version') }}</MpButton>
           <MpButton variant="secondary" is-rounded @click="sep.open = !sep.open">{{ t('Make a separate run') }}</MpButton>
         </div>
-        <PayrollReadOnlyNote v-else :text="t('Choosing needs edit access (LM). Waiting for someone who has it.')" />
+        <PayrollReadOnlyNote v-else :text="t('Choosing needs Owner, Ultimate + LM or Accountant + LM.')" />
         <div v-if="sep.open && can('correct')" class="ph__form">
           <div class="ph__field">
             <label class="ph__label" for="ph-sep-type">{{ t('Run type') }}</label>
@@ -206,7 +206,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
         <dl class="ph__facts">
           <div><dt>{{ t('Staff') }}</dt><dd>{{ d(h).after }} {{ t('of') }} {{ d(h).before }}</dd></div>
           <div><dt>{{ t('Take-home pay') }}</dt><dd>{{ rupiah(d(h).thpAfter) }} {{ t('of') }} {{ rupiah(d(h).thpBefore) }}</dd></div>
-          <div v-if="d(h).missing?.length"><dt>{{ t('Missing groups') }}</dt><dd>{{ d(h).missing.join(', ') }}</dd></div>
+          <div v-if="d(h).missing?.length"><dt>{{ t('Missing groups') }}</dt><dd>{{ d(h).missing.join('; ') }}</dd></div>
         </dl>
         <template v-if="can('correct')">
           <div class="ph__field">
@@ -219,21 +219,20 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
             <MpButton variant="secondary" is-rounded @click="decide('reject')">{{ t('Reject') }}</MpButton>
           </div>
         </template>
-        <PayrollReadOnlyNote v-else :text="t('Deciding needs edit access (LM). Waiting for someone who has it.')" />
+        <PayrollReadOnlyNote v-else :text="t('Deciding needs Owner, Ultimate + LM or Accountant + LM.')" />
       </div>
 
       <!-- Unmapped pay items -->
       <div v-else-if="h.code === 'unmapped-item'" class="ph__fix">
         <table class="ph__table">
-          <colgroup><col style="width: 17%"><col style="width: 12%"><col style="width: 6%"><template v-if="can('setup')"><col style="width: 19%"><col style="width: 23%"><col style="width: 23%"></template></colgroup>
+          <!-- Type and accounts sit in the form row under each item: as three columns beside the
+               figures they cut their own values short at 1280. -->
+          <colgroup><col><col style="width: 180px"><col style="width: 96px"></colgroup>
           <thead>
             <tr>
               <th class="ph__th">{{ t('Pay item') }}</th>
               <th class="ph__th ph__th--num">{{ t('Amount') }}</th>
               <th class="ph__th ph__th--num">{{ t('Staff') }}</th>
-              <th v-if="can('setup')" class="ph__th">{{ t('Type') }}</th>
-              <th v-if="can('setup')" class="ph__th">{{ t('Debit') }}</th>
-              <th v-if="can('setup')" class="ph__th">{{ t('Credit') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -245,14 +244,23 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
                 </td>
                 <td class="ph__td ph__td--num">{{ rupiah(it.amount) }}</td>
                 <td class="ph__td ph__td--num">{{ it.employees }}</td>
-                <template v-if="can('setup')">
-                  <td class="ph__td"><ErpFilterSelect :id="`ph-role-${safeId(it.key)}`" v-model="itemForm(it).role" :placeholder="t('Type')" :options="roleOptions" width="100%" /></td>
-                  <td class="ph__td"><ErpFilterSelect :id="`ph-dr-${safeId(it.key)}`" v-model="itemForm(it).debit" :placeholder="t('Account')" :options="accountOptions" width="100%" /></td>
-                  <td class="ph__td"><ErpFilterSelect :id="`ph-cr-${safeId(it.key)}`" v-model="itemForm(it).credit" :placeholder="t('Account')" :options="accountOptions" width="100%" /></td>
-                </template>
               </tr>
               <tr v-if="can('setup')">
-                <td class="ph__td ph__td--sub" colspan="6">
+                <td class="ph__td ph__td--sub" colspan="3">
+                  <div class="ph__grid">
+                    <div class="ph__field">
+                      <label class="ph__label" :for="`ph-role-${safeId(it.key)}`">{{ t('Type') }}</label>
+                      <ErpFilterSelect :id="`ph-role-${safeId(it.key)}`" v-model="itemForm(it).role" :placeholder="t('Select type')" :options="roleOptions" width="100%" />
+                    </div>
+                    <div class="ph__field">
+                      <label class="ph__label" :for="`ph-dr-${safeId(it.key)}`">{{ t('Debit account') }}</label>
+                      <ErpFilterSelect :id="`ph-dr-${safeId(it.key)}`" v-model="itemForm(it).debit" :placeholder="t('Select account')" :options="accountOptions" width="100%" />
+                    </div>
+                    <div class="ph__field">
+                      <label class="ph__label" :for="`ph-cr-${safeId(it.key)}`">{{ t('Credit account') }}</label>
+                      <ErpFilterSelect :id="`ph-cr-${safeId(it.key)}`" v-model="itemForm(it).credit" :placeholder="t('Select account')" :options="accountOptions" width="100%" />
+                    </div>
+                  </div>
                   <div v-if="itemForm(it).needsOverride.length" class="ph__field">
                     <label class="ph__label" :for="`ph-ovr-${safeId(it.key)}`">{{ t('Override reason') }}</label>
                     <div class="ph__muted">{{ itemForm(it).needsOverride.join(' ') }}</div>
@@ -356,6 +364,8 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
   border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
 }
 .ph__th.ph__th--num, .ph__td--num { text-align: right; font-variant-numeric: tabular-nums; }
+.ph__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-3); }
+.ph__grid :deep(.efs) { display: block; width: 100%; min-width: 0; }
 .ph__td { padding: var(--mp-spacing-2) var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: middle; }
 .ph__td--sub { border-bottom: 1px solid var(--mp-border-default); }
 </style>

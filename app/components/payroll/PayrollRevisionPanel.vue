@@ -77,7 +77,7 @@ const visible = computed(() => (!!partial.value && !!ledgerV.value && !hasRevisi
         <div v-if="repostError" class="prp__noticeerror" role="alert">{{ repostError }}</div>
       </div>
       <div v-if="can('post') && cur?.draft && status === 'Reversed'" class="prp__noticeactions">
-        <MpButton is-rounded data-testid="prp-repost" @click="repost">{{ t(`Post v${cur.no} journal`) }}</MpButton>
+        <MpButton is-rounded data-testid="prp-repost" @click="repost">{{ t('Post journal') }} v{{ cur.no }}</MpButton>
       </div>
     </section>
   </div>

@@ -72,11 +72,9 @@ const runColumns = computed<TableColumn[]>(() => [
   { key: 'period', label: t('Period'), kind: 'number' },
   { key: 'status', label: t('Status'), kind: 'status' },
   { key: 'reason', label: t('Next step'), kind: 'address' },
-  { key: 'type', label: t('Type'), kind: 'unit' },
-  { key: 'version', label: t('Version'), kind: 'unit' },
   { key: 'staff', label: t('Staff'), kind: 'unit', align: 'right' },
   { key: 'takeHome', label: t('Take-home pay'), kind: 'amount', align: 'right' },
-  { key: 'received', label: t('Sent by Talenta (WIB)'), kind: 'date' },
+  { key: 'received', label: t('Sent by Talenta'), kind: 'date' },
 ])
 const statusFilterOptions = computed(() => [{ value: 'needs-fix', label: t('To fix before posting') }, ...runStatusOptions.value])
 function openRun(id: string) { router.push(`/payroll-runs/${id}`) }
@@ -96,7 +94,7 @@ const pagedLog = computed(() => filteredLog.value.slice((logPage.value - 1) * lo
 watch([logResult, logSearch], () => { logPage.value = 1 })
 const logResultOptions = computed(() => (['Accepted', 'Held', 'Duplicate', 'Rejected'] as SendOutcome[]).map((s) => ({ value: s, label: t(statusLabel(s)) })))
 const logColumns = computed<TableColumn[]>(() => [
-  { key: 'at', label: t('Sent by Talenta (WIB)'), kind: 'date' },
+  { key: 'at', label: t('Received'), kind: 'date' },
   { key: 'period', label: t('Period'), kind: 'number' },
   { key: 'version', label: t('Version'), kind: 'unit' },
   { key: 'staff', label: t('Staff'), kind: 'unit', align: 'right' },
@@ -191,7 +189,7 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
           </div>
           <div v-if="canHeadcount" class="stat-card">
             <div class="stat-title">{{ t('Headcount change') }}</div>
-            <div class="stat-period">{{ trackedMonth.previous ? `${t('Staff changed')}, ${trackedMonth.label} ${t('against')} ${monthLabel(trackedMonth.previous.month)}` : `${t('Staff changed')}, ${trackedMonth.label}` }}</div>
+            <div class="stat-period">{{ trackedMonth.previous ? `${trackedMonth.label} ${t('against')} ${monthLabel(trackedMonth.previous.month)}` : trackedMonth.label }}</div>
             <div class="stat-amount">{{ trackedMonth.changed }}</div>
             <a class="stat-link" @click="() => { month = trackedMonth.month; view = 'month' }">{{ changeSummary(trackedMonth) || t('No change') }}</a>
           </div>
@@ -212,12 +210,15 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
       </template>
 
       <template #cell-period="{ row }">
-        <span class="cell-link cell-text" @click.stop="openRun((row as { id: string }).id)">{{ (row as { period: string }).period }}</span>
-      </template>
-      <template #cell-version="{ row }">
-        {{ (row as { version: string }).version }}<template v-if="(row as { versions: number }).versions > 1">{{ ` ${t('of')} ${(row as { versions: number }).versions}` }}</template>
+        <div class="pi__period">
+          <span class="cell-link cell-text" @click.stop="openRun((row as { id: string }).id)">{{ (row as { period: string }).period }}</span>
+          <!-- Type and version sit under the period: two narrow columns pushed the table past the stage at 1440. -->
+          <span class="pi__muted">{{ t((row as { type: string }).type) }} · {{ (row as { version: string }).version }}<template v-if="(row as { versions: number }).versions > 1">{{ ` ${t('of')} ${(row as { versions: number }).versions}` }}</template></span>
+        </div>
       </template>
       <template #cell-takeHome="{ value }">{{ rupiah(value as number) }}</template>
+      <!-- "21 Sep 2026 10:00 WIB" is 1-3px wider than the fixed date column; wrap rather than push the table past the stage. -->
+      <template #cell-received="{ value }"><span class="pi__wrap">{{ value }}</span></template>
       <template #cell-status="{ value }">
         <ErpStatusBadge :status="String(value)" :label="t(statusLabel(String(value)))" :type="statusType(String(value))" />
       </template>
@@ -339,6 +340,7 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
 .pi__month { display: flex; flex-direction: column; }
 .pi__muted { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
 .pi__wrap { white-space: normal; overflow-wrap: anywhere; }
+.pi__period { display: flex; flex-direction: column; gap: var(--mp-spacing-1); min-width: 0; }
 .pi__result { display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-1); }
 
 /* House stats band (BillsIndexPage). */

@@ -73,7 +73,7 @@ function confirm() {
 </script>
 
 <template>
-  <PayrollCompareDrawerShell :is-open="isOpen" :title="mode === 'post' ? t('Post journal') : t('Reverse and repost')" wide @close="emit('close')">
+  <PayrollCompareDrawerShell :is-open="isOpen" :title="mode === 'post' ? (approval?.required ? t('Send for approval') : t('Post journal')) : t('Reverse and repost')" wide @close="emit('close')">
     <template v-if="run && cur">
       <div class="ppd__identity">{{ t('Payroll') }} {{ periodLabel(run.start, run.end) }}</div>
 
