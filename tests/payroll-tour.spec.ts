@@ -86,7 +86,7 @@ describe('payroll guided tours: shape', () => {
    * the Payables row markers); any quoted 'payroll-…' name in a payroll screen counts.
    * Enabled by the parent after the screen branch (DES) merges.
    */
-  it.skip('every marker the tours use is on a payroll screen', () => {
+  it('every marker the tours use is on a payroll screen', () => {
     const root = resolve(__dirname, '..', 'app', 'components')
     const files = [
       ...['pages', 'payroll'].flatMap((d) => readdirSync(join(root, d)).filter((f) => /^Payroll.*\.vue$/.test(f)).map((f) => join(root, d, f))),
