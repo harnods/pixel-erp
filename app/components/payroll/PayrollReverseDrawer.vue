@@ -96,12 +96,12 @@ function reverseAll() {
       </div>
 
       <div v-if="salaryPays.length" class="prv__pays" data-testid="prv-payments">
-        <div class="prv__paystitle">{{ t('Payments matched to this run') }}</div>
+        <div class="prv__paystitle">{{ t('Payments on this run') }}</div>
         <ul class="prv__list">
           <li v-for="p in salaryPays" :key="p.id">{{ journalById(p.journalId)?.number }} · {{ t(PARTY_LABEL.Staff) }} · {{ rupiah(p.amount) }} · {{ dateLabel(p.date) }}</li>
           <li v-for="p in otherPays" :key="p.id">{{ journalById(p.journalId)?.number }} · {{ t(PARTY_LABEL[p.party]) }} · {{ accountLabel(p.account) }} · {{ rupiah(p.amount) }}</li>
         </ul>
-        <div class="prv__paysnote">{{ t('Payments and bank matches stay. Salaries payable goes below Rp0 until you post again.') }}</div>
+        <div class="prv__paysnote">{{ t('The payments stay. Salaries payable goes below Rp0 until you post again.') }}</div>
         <label class="prv__check">
           <MpCheckbox id="prv-confirm-pays" :is-checked="confirmPays" @change="confirmPays = !confirmPays; error = ''" />
           <span>{{ t('Reverse anyway and keep the payments') }}</span>

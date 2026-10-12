@@ -32,7 +32,7 @@ export function statusType(s: string): 'completed' | 'announcement' | 'informati
 }
 
 const NEXT_STEP: Partial<Record<RunStatus, string>> = {
-  'Confirm source': 'The Owner confirms this is your company.',
+  'Confirm source': 'The Owner or an Ultimate + LM confirms this is your company.',
   'Awaiting approval': 'The approver approves and posts, or rejects, from Inbox > Awaiting approval.',
   'Waiting for your choice': 'Choose: use it as a new version, or make a separate run.',
   'Ready to post': 'Review the draft journal and post it.',
@@ -65,8 +65,9 @@ export function runRow(run: Run) {
     takeHome: f.takeHome,
     status,
     reason: holds[0]?.message ?? (live.length ? `Posted as ${live.map((j) => j.number).join(', ')}` : ''),
-    nextStep: holds.length ? '' : (NEXT_STEP[status] ?? (status === 'Posted' ? 'Salaries payable clears when the bank payment is matched in bank reconciliation.' : '')),
-    received: latest ? wib(latest.receivedAt) : '',
+    nextStep: holds.length ? '' : (NEXT_STEP[status] ?? (status === 'Posted' ? 'Pay what is owed from Payroll payables.' : '')),
+    // Sent time, as the run page and its Versions tab show it; the sync log keeps the received time.
+    received: latest ? wib(latest.sentAt) : '',
     receivedAt: latest?.receivedAt ?? '',
   }
 }
@@ -78,6 +79,12 @@ export function taxRuleRows(runId: string) {
   const f = taxFigures(runId)
   if (!f) return null
   const p = payroll.settings.taxPresets
+  // The DTP account carries the DTP allowance (debit) and the DTP received (credit), which net to 0;
+  // the check compares what Talenta reports received with the credit the journal books.
+  const run = payroll.runs.find((r) => r.id === runId)
+  const v = run ? currentVersionOf(run) : undefined
+  const lines = v?.draft?.lines ?? liveJournals(runId).flatMap((j) => j.lines)
+  const dtpReceived = lines.filter((l) => l.account === p.dtp).reduce((s, l) => s + l.credit, 0)
   return {
     hasLines: f.hasLines,
     benefit: f.benefit, payment: f.payment, dtp: f.dtp, expected: f.rule,
@@ -85,7 +92,7 @@ export function taxRuleRows(runId: string) {
       { label: 'Regular PPh 21', account: p.pph21, rule: f.rule, ledger: f.ledger },
       { label: 'PPh 21 on severance', account: p.resign, rule: f.resign, ledger: f.resignLedger },
       { label: 'PPh 26', account: p.pph26, rule: f.pph26, ledger: f.pph26Ledger },
-      { label: 'PPh 21 DTP', account: p.dtp, rule: f.dtp, ledger: f.dtpLedger },
+      { label: 'PPh 21 DTP received', account: p.dtp, rule: f.dtp, ledger: f.hasLines ? dtpReceived : f.dtpLedger },
     ],
   }
 }
