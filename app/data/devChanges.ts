@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'replenishment-to-order-column-order',
+    title: 'To order: columns rearranged to the worklist spec',
+    description:
+      'The To order table columns now follow the PM spec order: Product, SKU, Warehouse, Movement, Signals, On hand qty, Reserved qty, Available qty, In transit qty, Suggested qty, Reorder point, Days of cover, Unit, Preferred vendor, Lead time days, Demand velocity per day, Safety days. Warehouse moved up beside the identity columns, Days of cover sits right after Reorder point, and the Vendor column is relabelled "Preferred vendor" (it already shows the per-warehouse preferred vendor). "Days of cover" appears once (the spec listed it twice).',
+    date: '2026-10-12',
+    files: ['ReplenishmentPage.vue'],
+  },
+  {
     id: 'replenishment-needssetup-no-demand-and-filters',
     title: 'Needs setup: "No demand" + "Waiting for lead time" reasons, with a Movement filter',
     description:

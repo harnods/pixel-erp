@@ -342,32 +342,32 @@ function clearFilters() {
 // ─── Columns ─────────────────────────────────────────────────────────────────
 // Widths come from each column's `kind` (rule/table-column-kind). Quantity and
 // day-count columns have no semantic kind, so they take the `default` range.
+// Column order follows the PM worklist spec (US-013 AC-01): identity (Product, SKU,
+// Warehouse) → classification (Movement, Signals) → the quantity group read left to
+// right as the calculation does (on hand → reserved → available → in transit →
+// suggested → reorder point → days of cover) → the ONE Unit column → the vendor and
+// its inputs (preferred vendor, lead time, demand velocity, safety days).
 const ALL_COLUMNS: TableColumn[] = [
   { key: 'productName',   label: 'Product',         kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'sku',           label: 'SKU',                             sortable: true, sortType: 'text' },
+  { key: 'warehouseName', label: 'Warehouse',       kind: 'name',   sortable: true, sortType: 'text' },
   // "Movement", not the bare abbreviation "FSN": the header must be readable without
   // knowing the acronym; it is spelled out once in Settings › Movement classification (FSN).
   { key: 'fsnClass',      label: 'Movement',        kind: 'status', sortable: true, sortType: 'text' },
-  // General signals (US-013 AC-01 §4): how reliable / early the numbers behind the
-  // recommendation are — the demand read (Provisional / Volatile demand) AND the
-  // lead-time basis (Estimated lead time). A row with NO lead time is never on To
-  // order — it routes to Needs setup (US-005 EH-01) — so "waiting for real lead time"
-  // is surfaced there as "Missing: Lead time", not as a worklist signal.
+  // General signals (US-013 AC-01 §4): the demand read (Provisional / Volatile demand),
+  // the lead-time basis (Estimated lead time), and the cover/in-transit states
+  // (Stocks out before resupply / Covered by in transit). A row with NO lead time is
+  // never here — it routes to Needs setup — so that case is surfaced on that tab.
   { key: 'signals',       label: 'Signals',         kind: 'tags' },
-  { key: 'warehouseName', label: 'Warehouse',       kind: 'name',   sortable: true, sortType: 'text' },
-  // The quantity group reads left to right as the calculation does: what is there
-  // (on hand → reserved → available → in transit), what to order (suggested qty)
-  // and the trigger it was measured against (reorder point) — then the ONE Unit
-  // column that serves all of them. Quantity cells show bare numbers, never "64 Bag".
   { key: 'onHandQty',     label: 'On hand qty',     sortable: true, sortType: 'number', align: 'right' },
   { key: 'reservedQty',   label: 'Reserved qty',    sortable: true, sortType: 'number', align: 'right' },
   { key: 'availableQty',  label: 'Available qty',   sortable: true, sortType: 'number', align: 'right' },
   { key: 'onOrderQty',    label: 'In transit qty',  sortable: true, sortType: 'number', align: 'right' },
   { key: 'suggestedQty',  label: 'Suggested qty',   sortable: true, sortType: 'number', align: 'right' },
   { key: 'reorderPoint',  label: 'Reorder point',   sortable: true, sortType: 'number', align: 'right' },
-  { key: 'unit',          label: 'Unit',            kind: 'unit' },
-  { key: 'vendorName',    label: 'Vendor',          kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'coverValue',    label: 'Days of cover',   sortable: true, sortType: 'number', align: 'right' },
+  { key: 'unit',          label: 'Unit',            kind: 'unit' },
+  { key: 'vendorName',    label: 'Preferred vendor', kind: 'name',  sortable: true, sortType: 'text' },
   // The unit is in the header, so these cells are bare numbers like the qty columns.
   { key: 'leadTimeDays',  label: 'Lead time days',  sortable: true, sortType: 'number', align: 'right' },
   // `wide`: the header is longer than the default 160px floor and would clip.
