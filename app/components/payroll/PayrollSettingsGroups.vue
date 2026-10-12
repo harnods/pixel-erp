@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * Groups: group staff by any Talenta fields. Each group (a combination Talenta has sent) picks an
- * expense account, applied to pay items marked "Groups can change", and dimension values for the
+ * expense account, applied to pay items set to "Use group account", and dimension values for the
  * cost lines. A group Talenta sends that is not set up yet holds the run.
  */
 import { computed, reactive, ref } from 'vue'
@@ -117,7 +117,7 @@ function onSave(key: string, label: string) {
       <div class="pset-card__head">
         <div>
           <div class="pset-card__title">{{ t('Groups') }}</div>
-          <div class="pset-card__sub">{{ t('The expense account applies to pay items marked Groups can change. A New group holds the run until you set it up.') }}</div>
+          <div class="pset-card__sub">{{ t('The expense account applies to pay items set to Use group account. A New group holds the run until you set it up.') }}</div>
         </div>
         <ErpStatusBadge v-if="newCount" status="new-group" :label="t(`${newCount} new`)" type="critical" />
       </div>

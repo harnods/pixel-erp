@@ -57,7 +57,7 @@
  *   setPayItemAccount(key, account) the row's one account: a cost item debits it (any expense or COGS account) and credits
  *                                   its party's payable; a deduction or tax item credits it and debits Hutang Gaji.
  *   setPayItemGroupsCanChange(key, on)   cost items only: on = the staff's group expense account replaces the row account
- *                                   ('Groups can change'); off = 'Same for all groups'.
+ *                                   ('Use group account'); off = 'Use default account'.
  *   payGroupKey(fields, values), groupFor(staffRow), groupLabel(values)
  *   Groups: settings.groupBy (any Talenta fields) and settings.groups[{ key, values, account, dims }].
  *   groupRows()                     every combination seen in Talenta sends plus saved ones: { key, values, label, staff (count),
@@ -206,12 +206,12 @@ export interface PayItemMapping {
   programme: BpjsProgramme | null
   override: Override | null
   addedBy: 'Talenta' | 'Jurnal'
-  /** Cost items only: true = 'Groups can change' (the staff's group expense account applies); false = 'Same for all groups'. */
+  /** Cost items only: true = 'Use group account' (the staff's group expense account applies); false = 'Use default account'. */
   groupsCanChange?: boolean
 }
 /**
  * One group: staff with the same values in the Group by fields. `account` (null = use the pay item
- * account) applies to pay items marked Groups can change; `dims` picks a dimension value per linked
+ * account) applies to pay items set to Use group account; `dims` picks a dimension value per linked
  * dimension (missing = the value of the same name). Dimensions go on cost lines only.
  */
 export interface PayGroup { key: string; values: string[]; account: string | null; dims: Record<string, string> }
@@ -888,7 +888,7 @@ function ensureGroup(key: string): PayGroup | null {
   s.groups.push(row)
   return row
 }
-/** The group's expense account (null = use the pay item account). Applies to pay items marked Groups can change. */
+/** The group's expense account (null = use the pay item account). Applies to pay items set to Use group account. */
 export function setGroupAccount(key: string, account: string | null): Result {
   if (!can('setup')) return denied('setup')
   if (account && !isCost(account)) return { ok: false, message: 'Pick an expense or cost of goods sold account.' }
@@ -977,7 +977,7 @@ export function setPayItemAccount(key: string, account: string): Result {
   }
   return setPayItemMapping(key, patch)
 }
-/** A cost item either takes its staff's group expense account ('Groups can change') or posts to its own account for every group. */
+/** A cost item either takes its staff's group expense account ('Use group account') or posts to its default account for every group. */
 export function setPayItemGroupsCanChange(key: string, on: boolean): Result {
   if (!can('setup')) return denied('setup')
   const row = payroll.settings.mapping.find((m) => m.key === key)
@@ -985,7 +985,7 @@ export function setPayItemGroupsCanChange(key: string, on: boolean): Result {
   if (on && !isCostItem(row)) return { ok: false, message: 'Only an allowance or a benefit can use the group\'s expense account.' }
   if (!!row.groupsCanChange === on) return { ok: true }
   row.groupsCanChange = on
-  changed(`Pay item ${row.name} (${row.section}): ${on ? 'groups can change the account' : 'same account for all groups'}`)
+  changed(`Pay item ${row.name} (${row.section}): ${on ? 'uses the group account' : 'uses its default account'}`)
   return { ok: true }
 }
 /**
@@ -1719,7 +1719,7 @@ function buildJournal(run: Run, v: RunVersion, s: PayrollSettings): BuildResult 
         const grp = costSide && m.groupsCanChange ? groupFor(e, s) : undefined
         const lineTags = tags
         let ruleWhy = ''
-        if (grp?.account) { debit = grp.account; ruleWhy = `Group ${groupLabel(grp.values)} books it to ${accountLabel(grp.account)} (Groups can change)` }
+        if (grp?.account) { debit = grp.account; ruleWhy = `Group ${groupLabel(grp.values)} books it to ${accountLabel(grp.account)} (Use group account)` }
         const tagWhy = isCost(debit) && tagsLabel(lineTags) ? `Dimensions ${tagsLabel(lineTags)} from the staff member's Talenta fields` : ''
         const src = { item: m.name, section, role: m.role }
         add(debit, lineTags, it.amount, [why, ruleWhy, tagWhy].filter(Boolean).join('. '), src, String(e.user_id))

@@ -2,7 +2,7 @@
 /**
  * Pay items: payable accounts per party on top, then one row per Talenta pay item with its one
  * Jurnal account. A cost item (allowance, benefit) takes any expense or COGS account and is marked
- * Groups can change (the group's expense account applies, see Groups) or Same for all groups; a
+ * Use group account (the staff's group expense account applies, see Groups) or Use default account; a
  * deduction or tax item takes its payable. The type is Talenta's and read-only; "Owed to" follows
  * it. Items with no account come first: they hold the run.
  */
@@ -32,7 +32,7 @@ const rows = computed(() => [...payroll.settings.mapping].sort((a, b) =>
   || TYPE_ORDER.indexOf(payItemType(a)) - TYPE_ORDER.indexOf(payItemType(b))
   || a.name.localeCompare(b.name)))
 const openCount = computed(() => payroll.settings.mapping.filter(needsAccount).length)
-/** The first cost item with an account carries the Groups can change tour marker. */
+/** The first cost item with an account carries the Use group account tour marker. */
 const firstCostKey = computed(() => rows.value.find((m) => isCostItem(m) && !needsAccount(m))?.key ?? null)
 
 // ── Account choices: any expense or COGS account for cost items, payables for the rest ──
@@ -60,11 +60,12 @@ function partyLabel(m: PayItemMapping) {
   const p = payItemParty(m)
   return p ? t(PARTY_LABEL[p]) : t('None')
 }
+const GCC_TIP = 'On: staff in a group with its own expense account (see Groups) post to that account. Off: everyone posts to the account above.'
 const TYPE_TIP = 'From Talenta: the payslip section the item sits in (allowance, deduction or benefit). Tax items are found by name. Change it in Talenta.'
 function onGroupsCanChange(m: PayItemMapping, on: boolean) {
   const r = setPayItemGroupsCanChange(m.key, on)
   rowErrors[m.key] = r.ok ? '' : t(r.message ?? 'Not saved. Try again.')
-  if (r.ok) successToast(t(on ? `${m.name}: groups can change the account` : `${m.name}: same account for all groups`))
+  if (r.ok) successToast(t(on ? `${m.name} now uses the group account where a group has one` : `${m.name} now uses its default account for every group`))
 }
 
 // ── Payable accounts per party ──
@@ -143,8 +144,11 @@ function onPayable(party: PayableParty, code: string) {
                 <ErpFilterSelect v-if="can('setup')" :id="`pset-acct-${m.key.replace(/[^a-zA-Z0-9]/g, '-')}`" :model-value="needsAccount(m) ? '' : (payItemAccount(m) ?? '')" :placeholder="t('Select account')" :options="optionsFor(m)" width="100%" :is-clearable="false" @update:model-value="(v: string) => onAccount(m, v)" />
                 <span v-else>{{ needsAccount(m) ? t('No account yet') : accountLabel(payItemAccount(m)) }}</span>
                 <div v-if="isCostItem(m) && !needsAccount(m)" class="pset-gcc" :data-groups-can-change="m.groupsCanChange ? 'yes' : 'no'" :data-tour="m.key === firstCostKey ? 'payroll-groups-can-change' : undefined">
-                  <MpToggle v-if="can('setup')" :id="`pset-gcc-${m.key.replace(/[^a-zA-Z0-9]/g, '-')}`" :is-checked="!!m.groupsCanChange" :aria-label="t('Groups can change')" @update:is-checked="(v: boolean) => onGroupsCanChange(m, v)" />
-                  <span class="pset-gcc__label">{{ t(m.groupsCanChange ? 'Groups can change' : 'Same for all groups') }}</span>
+                  <MpToggle v-if="can('setup')" :id="`pset-gcc-${m.key.replace(/[^a-zA-Z0-9]/g, '-')}`" :is-checked="!!m.groupsCanChange" :aria-label="t('Use group account')" @update:is-checked="(v: boolean) => onGroupsCanChange(m, v)" />
+                  <span class="pset-gcc__label">{{ t(m.groupsCanChange ? 'Use group account' : 'Use default account') }}</span>
+                  <MpTooltip :id="`pset-gcc-tip-${m.key.replace(/[^a-zA-Z0-9]/g, '-')}`" :label="t(GCC_TIP)" placement="top" use-portal>
+                    <span class="pset-th__icon" tabindex="0" :aria-label="t(GCC_TIP)"><MpIcon name="info" size="sm" /></span>
+                  </MpTooltip>
                 </div>
                 <span v-if="rowErrors[m.key]" class="pset-line pset-danger">{{ rowErrors[m.key] }}</span>
               </td>

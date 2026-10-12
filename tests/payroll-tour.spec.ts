@@ -117,7 +117,7 @@ describe('payroll guided tours: shape', () => {
 
   it('quotes glossary labels exactly as the screens name them', () => {
     const all = PAYROLL_TOURS.map(allCopyOf).join(' ')
-    for (const label of ['To fix before posting', 'Mark as checked', 'Post journal', 'Approve and post', 'Use v2 and repost', 'Journal date', 'Groups can change', 'Set up group', 'Talenta sent this period again'])
+    for (const label of ['To fix before posting', 'Mark as checked', 'Post journal', 'Approve and post', 'Use v2 and repost', 'Journal date', 'Use group account', 'Set up group', 'Talenta sent this period again'])
       expect(all).toContain(label)
   })
 })
@@ -136,7 +136,7 @@ describe('feature coverage', () => {
   it('the list holds every feature the brief asks the tours to touch', () => {
     const required = [
       'Connection status and Talenta company', 'How to send from Talenta', 'Payable accounts per party',
-      'Pay item type from Talenta, with the header tip', 'Map a pay item to any expense account', 'Groups can change',
+      'Pay item type from Talenta, with the header tip', 'Map a pay item to any expense account', 'Use group account',
       'Group by Talenta fields', 'Talenta field to dimension links', 'Group expense account and dimension value',
       'Approval workflows rule Payroll journal', 'View as: View only has no actions', 'View as: Accountant needs LM for settings',
       'Inbox runs', 'Sync log', 'To fix before posting: unmapped pay item', 'Map from the hold; the hold clears',
@@ -164,7 +164,7 @@ describe('feature coverage', () => {
     const target = (code: string, step: number) => PAYROLL_TOURS.find((t) => t.code === code)!.steps[step - 1]!.target
     const expectAt: Record<string, string> = {
       'How to send from Talenta': 'payroll-how-to-send', 'Payable accounts per party': 'payroll-payable-accounts',
-      'Pay item type from Talenta, with the header tip': 'payroll-type-tip', 'Groups can change': 'payroll-groups-can-change',
+      'Pay item type from Talenta, with the header tip': 'payroll-type-tip', 'Use group account': 'payroll-groups-can-change',
       'Group by Talenta fields': 'payroll-groupby', 'Talenta field to dimension links': 'payroll-group-dims',
       'Sync log': 'payroll-synclog', 'Month headcount (Owner)': 'payroll-month-headcount', 'Journal date: default and locked period': 'payroll-journal-date',
       'Approve and post': 'payroll-approve', 'Mapping used tab': 'payroll-mapping-used', 'Claims': 'payroll-claims',
@@ -220,7 +220,7 @@ describe('PAY-1 Set up payroll (replay)', () => {
     p.q(4, journalTotals(d).debit, 554_203_941)
     expect(d.lines).toHaveLength(26)
     p.says(4, '26 lines')
-    // 6. Groups can change: the Sales staff's incentive lands on the Sales groups' account.
+    // 6. Use group account: the Sales staff's incentive lands on the Sales groups' account.
     p.at(5)
     expect(mappingFor(NEW_ITEM, 'allowance')!.groupsCanChange).toBe(true)
     const src = draftOf(sep())!.lines.flatMap((l) => l.sources.filter((s) => s.item === NEW_ITEM && s.side === 'D').map((s) => ({ account: l.account, staff: s.staff.length })))

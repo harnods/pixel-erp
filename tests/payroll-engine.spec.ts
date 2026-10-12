@@ -834,7 +834,7 @@ describe('settings: Connection, Pay items, Dimensions', () => {
     expect(as('Accountant', () => setPayItemAccount(key, ACC.salaries)).status).toBe(403)
   })
 
-  it('group account applies only to pay items marked Groups can change', () => {
+  it('group account applies only to pay items set to Use group account', () => {
     as('Accountant + LM', () => setPayItemMapping(payItemKey('Insentif Penjualan', 'allowance'), { role: 'Earning', debit: ACC.medical, credit: ACC.hutangGaji }))
     const key = payItemKey('Insentif Penjualan', 'allowance')
     const lines = () => { rebuildDraft(run(SEP).id); return draftOf(run(SEP))!.lines }
@@ -928,7 +928,7 @@ describe('settings: Connection, Pay items, Dimensions', () => {
   })
 })
 
-describe('groups: any Talenta fields, New groups hold until set up, only Groups can change items move', () => {
+describe('groups: any Talenta fields, New groups hold until set up, only Use group account items move', () => {
   beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant + LM'); mapInsentif() })
   const sepLines = () => { rebuildDraft(run(SEP).id); return draftOf(run(SEP))!.lines }
   const itemOn = (lines: JournalLine[], acct: string, item: string) => lines.filter((l) => l.account === acct).flatMap((l) => l.sources).filter((x) => x.item === item && x.side === 'D').reduce((s, x) => s + x.amount, 0)
@@ -989,9 +989,9 @@ describe('groups: any Talenta fields, New groups hold until set up, only Groups 
     expect(runStatus(sep)).toBe('Ready to post')
   })
 
-  it('Groups can change: only items marked so take the group expense account; Same for all groups items and deductions never move', () => {
+  it('Use group account: only items set so take the group expense account; Use default account items and deductions never move', () => {
     const lines = sepLines()
-    // Sales groups use Sales Salaries for salary (Groups can change); the reimbursement stays on its own account.
+    // Sales groups use Sales Salaries for salary (Use group account); the reimbursement stays on its own account.
     expect(itemOn(lines, ACC.salesSalaries, 'Basic Salary')).toBeGreaterThan(0)
     expect(itemOn(lines, ACC.salesSalaries, 'Reimbursement Medical')).toBe(0)
     const basic = payItemKey('Basic Salary', 'allowance')
@@ -999,7 +999,7 @@ describe('groups: any Talenta fields, New groups hold until set up, only Groups 
     expect(itemOn(lines, ACC.directLabour, 'Basic Salary')).toBeGreaterThan(0)
     expect(setPayItemGroupsCanChange(basic, false).ok).toBe(true)
     const after = sepLines()
-    // Same for all groups: every group's Basic Salary books to the pay item account; other items keep moving.
+    // Use default account: every group's Basic Salary books to the pay item account; other items keep moving.
     expect(itemOn(after, ACC.salesSalaries, 'Basic Salary') + itemOn(after, ACC.directLabour, 'Basic Salary')).toBe(0)
     expect(itemOn(after, ACC.salaries, 'Basic Salary')).toBe(allBasic)
     expect(itemOn(after, ACC.salesSalaries, 'Tunjangan Jabatan')).toBe(itemOn(lines, ACC.salesSalaries, 'Tunjangan Jabatan'))
