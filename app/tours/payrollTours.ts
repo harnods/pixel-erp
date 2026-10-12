@@ -11,20 +11,13 @@
  * shows the result and points at it. The reader only presses Next.
  * tests/payroll-tour.spec.ts runs every step's work after resetPayroll() and
  * checks the figures quoted here.
- *
- * PHASE A NOTE (payroll simplification): the engine moved under this tour; the step copy and
- * figures are the old flow and are rewritten in Phase B. Steps that no longer land as written:
- * 4 (Finance Manager confirm: removed, target payroll-run-confirm gone), 7 (a re-send is now a
- * correction, no Revision/Separate choice; payroll-holds absent, falls back to journals),
- * 9 (billing code / NTPN entry removed; PPh 21 is paid by a bank match), 10 (route
- * /payroll-reconciliation removed), and every quoted take-home figure (now computed from
- * allowances - deductions). tests/payroll-tour.spec.ts is skipped until Phase B.
  */
 import {
-  payroll, resetPayroll, setPayrollViewAs, runs, payItemKey, suggestMapping, setPayItemMapping,
-  postRun, simulateBankPayment, simulateSend, postCorrection, setEbupotFiled, pph21Month, headcountChanges, markHeadcountExpected,
+  resetPayroll, setPayrollViewAs, runs, payItemKey, suggestMapping, setPayItemMapping,
+  headcountChanges, markHeadcountExpected, runWarnings, acknowledgeWarning, postRun, simulateBankPayment,
+  simulateSend, postCorrection, amendmentTasks, setEbupotFiled, pph21Month, closeAmendmentTask,
 } from '~/data/payrollStore'
-import { ACC, type PayrollRole } from '~/data/payrollMaster'
+import type { PayrollRole } from '~/data/payrollMaster'
 import type { AssetTour, TourStep } from './assetTours'
 import type { ViewAsRole } from '~/data/assetStore'
 
@@ -33,9 +26,17 @@ type PayrollStep = Omit<TourStep, 'role'> & { role?: PayrollRole }
 /** The September run: Talenta company 1212, 21 Aug to 20 Sep 2026. */
 export const SEP_KEY = '1212 / monthly / 2026-08-21 / 2026-09-20'
 export const SEP_MONTH = '2026-09'
+export const SEP_LABEL = '21 Aug-20 Sep 2026'
 export const NEW_ITEM = 'Insentif Penjualan'
-export const BILLING_CODE = '412011100202609'
-export const NTPN = '0A1B2C3D4E5F0926'
+
+/** Every data-tour marker PAY-1 points at. Product screens carry these. */
+export const PAYROLL_TOUR_MARKERS = [
+  'payroll-inbox-runs',
+  'payroll-holds', 'payroll-run-stats', 'payroll-warnings', 'payroll-draft-headcount', 'payroll-draft-lines',
+  'payroll-journal', 'payroll-journal-head', 'payroll-run-journals', 'payroll-correction', 'payroll-claims', 'payroll-amendments',
+  'payroll-payables', 'payroll-payables-simulate', 'payroll-salary-row', 'payroll-pph21-row', 'payroll-payables-flags',
+  'payroll-old-sync',
+] as const
 
 /** What the steps hand to each other within one run. */
 export const tourCtx = { runId: '' }
@@ -45,13 +46,7 @@ export function sepId(): string {
   return tourCtx.runId
 }
 const runRoute = () => `/payroll-runs/${sepId()}`
-
-/** Act as another role for one call, then return to the step's role. */
-function as<T>(role: PayrollRole, fn: () => T): T {
-  const prev = payroll.viewAs
-  setPayrollViewAs(role)
-  try { return fn() } finally { setPayrollViewAs(prev) }
-}
+const PAYABLES = `/payroll-payables?month=${SEP_MONTH}`
 
 // ── Finding what a step points at ───────────────────────────────────────────
 
@@ -61,24 +56,36 @@ function visible(el: Element | null | undefined): el is HTMLElement {
 function live(marker: string): HTMLElement | null {
   return Array.from(document.querySelectorAll<HTMLElement>(`[data-tour="${marker}"]`)).filter(visible).pop() ?? null
 }
+/** The first visible `marker` element whose text holds every text in `texts`. */
+function markerWith(marker: string, ...texts: string[]): HTMLElement | null {
+  return Array.from(document.querySelectorAll<HTMLElement>(`[data-tour="${marker}"]`))
+    .find((el) => visible(el) && texts.every((t) => el.innerText.includes(t))) ?? null
+}
 /** The first visible table row inside `marker` that contains every text in `texts`. */
 function rowIn(marker: string, ...texts: string[]): HTMLElement | null {
-  const scope = Array.from(document.querySelectorAll(`[data-tour="${marker}"]`)).filter(visible).pop()
+  const scope = live(marker)
   if (!scope) return null
   return Array.from(scope.querySelectorAll<HTMLElement>('tr'))
     .find((r) => visible(r) && texts.every((t) => r.innerText.includes(t))) ?? null
 }
-/** The headcount card of the draft review, opening the Draft review tab when Back left another one open. */
-function headcountCard(): HTMLElement | null {
-  const card = live('payroll-draft-headcount')
-  if (card) return card
-  Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]')).find((b) => visible(b) && b.innerText.trim() === 'Draft review')?.click()
-  return null
+/**
+ * A run-page section that may sit behind a tab. When Back left another tab open, open the
+ * first tab whose label starts with one of `tabs` and let the runner's poll anchor next tick.
+ */
+function onTab(marker: string, ...tabs: string[]): () => HTMLElement | null {
+  return () => {
+    const el = live(marker)
+    if (el) return el
+    Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]'))
+      .find((b) => visible(b) && tabs.some((t) => b.innerText.trim().startsWith(t)))?.click()
+    return null
+  }
 }
 /** One posted journal card with its lines open. */
 function journalOpen(number: string): HTMLElement | null {
   const card = Array.from(document.querySelectorAll<HTMLElement>(`[data-tour="payroll-journal"][data-journal="${number}"]`)).filter(visible).pop()
-  if (!card) return null
+    ?? markerWith('payroll-journal', number)
+  if (!card) { onTab('payroll-run-journals', 'Journals')(); return null }
   if (!card.querySelector('table')) { card.querySelector<HTMLElement>('[data-tour="payroll-journal-head"]')?.click(); return null }
   return card
 }
@@ -89,28 +96,29 @@ function mapNewItem() {
   const s = suggestMapping(NEW_ITEM, 'allowance')!
   setPayItemMapping(payItemKey(NEW_ITEM, 'allowance'), { role: s.role, debit: s.debit, credit: s.credit, party: 'Staff' })
 }
-/** HR settled the September people changes in Talenta; the Accountant marks each one Expected. */
-function headcountExpected() {
+/** Every open warning on the run's current version, acknowledged by the Accountant. */
+function acknowledgeAll() {
+  for (const w of runWarnings(sepId()).filter((x) => !x.acknowledged)) acknowledgeWarning(sepId(), w.key, 'Checked against the Talenta run')
+}
+/** HR settled the September people changes in Talenta: each group is marked Expected, then the large changes are acknowledged. */
+function reviewDraft() {
   for (const g of headcountChanges(sepId()).groups.filter((x) => x.flagged)) markHeadcountExpected(sepId(), g.key, 'Settled by HR in Talenta')
+  acknowledgeAll()
 }
-/** Phase A: the Finance Manager confirm is gone; this step does nothing until the Phase B rewrite. */
-function financeConfirms() { /* removed */ }
 function post() { postRun(sepId()) }
-function paySalary() { simulateBankPayment('salary', { runId: sepId(), date: '2026-09-25', bank: ACC.bca }) }
-function resend() { simulateSend('revision', { runId: sepId() }) }
-function reviseAndPostDifference() {
-  as('Accountant', () => postCorrection(sepId()))
+function bankMatchesSalary() { simulateBankPayment('salary', { runId: sepId(), date: '2026-09-25' }) }
+function talentaResends() { simulateSend('revision', { runId: sepId() }) }
+/** Acknowledgements belong to a version: v2's warnings are acknowledged before the correction posts. */
+function postTheCorrection() {
+  acknowledgeAll()
+  postCorrection(sepId())
 }
-function taxStaffFiles() {
-  simulateBankPayment('pph21', { month: SEP_MONTH, date: '2026-10-05', bank: ACC.bca })
+function bankMatchesPph21() { simulateBankPayment('pph21', { month: SEP_MONTH, date: '2026-10-05' }) }
+/** Tax Staff file September once, on the v2 figures, and type the filed total. */
+function taxStaffFile() {
   setEbupotFiled(SEP_MONTH, pph21Month(SEP_MONTH).books)
-}
-function closeMonth() {
-  as('Accountant', () => {
-    // v2 raised take-home pay after payday: the rest goes out from the bank.
-    simulateBankPayment('salary', { runId: sepId(), date: '2026-10-05', bank: ACC.bca })
-    for (const k of ['bpjs-kesehatan', 'bpjs-ketenagakerjaan', 'pph26', 'dplk'] as const) simulateBankPayment(k, { month: SEP_MONTH, date: '2026-10-05', bank: ACC.bca })
-  })
+  const task = amendmentTasks.value.find((t) => t.taxMonth === SEP_MONTH && t.status === 'Open')
+  if (task) closeAmendmentTask(task.id, 'Not filed yet')
 }
 function oldSyncTries() { simulateSend('old-sync') }
 
@@ -120,10 +128,10 @@ const steps: PayrollStep[] = [
   {
     route: '/payroll-inbox',
     target: 'payroll-inbox-runs',
-    find: () => rowIn('payroll-inbox-runs', '21 Aug-20 Sep 2026'),
+    find: () => rowIn('payroll-inbox-runs', SEP_LABEL) ?? live('payroll-inbox-runs'),
     role: 'Accountant',
     title: 'September arrives from Talenta and is held.',
-    body: 'Talenta sends the facts; Jurnal decides the accounting. HR added a new allowance this month and no account is set for it. The run waits in the payroll inbox; a wrong journal never posts. July and August are already posted and signed off.',
+    body: 'HR settles payroll in Talenta and sends it to Jurnal, which builds the draft journal right away. A send stops only when Jurnal cannot book it. This month HR added an allowance that has no account yet. July and August are posted and paid.',
     watch: '21 Aug-20 Sep 2026 is Held: 1 pay item has no account: Insentif Penjualan (allowance), Rp10.500.000, 7 employees. Nothing posts while it holds.',
     placement: 'bottom',
   },
@@ -131,92 +139,80 @@ const steps: PayrollStep[] = [
     run: mapNewItem,
     route: runRoute,
     target: 'payroll-run-stats',
-    title: 'The Accountant maps Insentif Penjualan from the hold.',
-    body: 'The fix sits on the hold itself. Jurnal suggests the role and accounts from the name: Earning, debit Salaries, credit Salaries Payable. Saving the mapping checks every held run again. The hold clears and the draft journal builds with no second step.',
-    watch: 'Ready to post. Take-home pay Rp446.901.857 for 40 staff; draft journal Rp554.203.937 on 26 lines.',
+    title: 'The Accountant maps Insentif Penjualan and the draft builds.',
+    body: 'Jurnal suggests the mapping from the name: Earning, debit Salaries, credit Salaries Payable. Saving it checks every held run again. The hold clears on its own and the draft journal builds.',
+    watch: 'Ready to post. Take-home pay Rp446.901.849 for 40 staff; draft journal Rp554.203.941 on 26 lines.',
     placement: 'bottom',
   },
   {
-    run: headcountExpected,
+    run: reviewDraft,
     route: runRoute,
-    target: 'payroll-draft-headcount',
-    find: headcountCard,
-    title: 'The draft is checked against Talenta and against August before anyone posts.',
-    body: 'Allowances Rp505.668.948 and benefits Rp9.300.000 tie to Talenta\'s totals; deductions are Rp1 apart, inside the Rp1.000 rounding limit. Rows that move more than 10% and Rp1.000.000 from August are flagged for a note. Headcount compares the employee IDs in this run with August\'s, group by group. HR settles who joins, leaves or moves in Talenta; the Accountant marks each change Expected or asks HR.',
-    watch: '40 staff in both runs, and 3 groups changed. Not in this run: EMP-0038 from Sales, Surabaya. New in this run: EMP-0041 in Sales, Bandung. Moved: EMP-0035 Sales, Jakarta HQ to Sales, Surabaya, so Sales, Surabaya keeps 2 staff with one of them different. All 3 are marked Expected.',
+    target: 'payroll-warnings',
+    find: onTab('payroll-warnings', 'Draft'),
+    title: 'Warnings point at what changed since August; none of them blocks Post.',
+    body: 'Rows that move more than 10% and Rp1.000.000 from August are warned. Headcount compares the staff in this send with August\'s by Talenta user ID. EMP-0038 left Sales, Surabaya; EMP-0041 joined Sales, Bandung; EMP-0035 moved from Sales, Jakarta HQ to Sales, Surabaya. HR settled all three in Talenta, so the Accountant marks them Expected.',
+    watch: 'Sales Salaries for Sales, Bandung up Rp14.846.600, Sales, Jakarta HQ down Rp8.373.400 and Sales, Surabaya up Rp3.616.560. PPh 21 payable up Rp1.678.971. All 4 are acknowledged and the 3 headcount changes are Expected, so the Post confirm lists no warnings.',
     placement: 'top',
-  },
-  {
-    run: financeConfirms,
-    route: runRoute,
-    target: 'payroll-run-confirm',
-    // Once posted, the confirm notice gives way to the posted figures (Back from a later step).
-    find: () => live('payroll-run-confirm') ?? live('payroll-run-stats'),
-    role: 'Finance Manager',
-    title: 'The Finance Manager confirms, because the settings changed.',
-    body: 'Mapping the new pay item changed the payroll settings since August posted. A draft built on changed settings, or with a guardrail override, needs a Finance Manager to confirm before the Accountant can post it. Each journal keeps a copy of the settings that built it.',
-    watch: 'Confirmed for posting by Bambang Sutrisno. Without it, Post is refused.',
-    placement: 'bottom',
   },
   {
     run: post,
     route: () => `${runRoute()}?tab=journals`,
     target: 'payroll-journal',
     find: () => journalOpen('PAY-0003'),
-    role: 'Accountant',
     title: 'The Accountant posts one PAY journal.',
-    body: 'One balanced journal per run, dated on the period end. Cost lands by account and dimension: Direct Labour for store staff, Sales Salaries for the sales team, Salaries for the rest. Each party gets one payable line. Tax and BPJS are then paid and checked on their own.',
-    watch: 'PAY-0003, 20 Sep 2026, Rp554.203.937. One payable each: Salaries Payable Rp446.901.857 for staff; PPh 21 Rp18.323.082 and PPh 26 Rp21.209.400; BPJS Kesehatan Rp16.097.025 and BPJS Ketenagakerjaan Rp38.969.125.',
+    body: 'One balanced journal per run, dated on the period end. Cost lands by account and by organization and branch: Direct Labour for Operations, Bandung, Sales Salaries for Sales, Surabaya. Each party gets one payable line.',
+    watch: 'PAY-0003, 20 Sep 2026, Rp554.203.941. Salaries Payable Rp446.901.849 for staff; PPh 21 Rp18.323.082 and PPh 26 Rp21.209.400; BPJS Kesehatan Rp16.097.029, BPJS Ketenagakerjaan Rp38.969.133 and DPLK Rp9.300.000.',
     placement: 'top',
   },
   {
-    run: paySalary,
-    route: '/payroll-payables?month=2026-09',
-    target: 'payroll-payables',
-    find: () => rowIn('payroll-payables', 'Salary 21 Aug-20 Sep 2026'),
-    title: 'On payday the salary is paid from Salaries Payable.',
-    body: 'The payment clears the run\'s Salaries Payable, never an expense. Cost cannot be booked twice. Payroll payables shows what each party is owed, what is paid and when the rest is due.',
-    watch: 'Salary 21 Aug-20 Sep 2026: owed Rp446.901.857, paid Rp446.901.857 from Bank BCA on 25 Sep 2026, balance Rp0. PPh 21 Rp18.323.082 is due 15 Oct 2026.',
+    run: bankMatchesSalary,
+    route: PAYABLES,
+    target: 'payroll-salary-row',
+    find: () => markerWith('payroll-salary-row', SEP_LABEL) ?? live('payroll-salary-row'),
+    title: 'Bank reconciliation matches the salary transfer and the payable shows it paid.',
+    body: 'Payroll payables is a tracker. Payments come from bank reconciliation, where the statement line is matched to the payable. The match clears Salaries Payable, never an expense, so cost cannot be booked twice.',
+    watch: 'Salary 21 Aug-20 Sep 2026: owed Rp446.901.849, paid Rp446.901.849 by BNK-0013 from Bank BCA on 25 Sep 2026, balance Rp0. Paid.',
     placement: 'bottom',
   },
   {
-    run: resend,
+    run: talentaResends,
     route: runRoute,
-    target: 'payroll-holds',
-    // Once the choice is made the hold is gone (Back from a later step): show the run's journals.
-    find: () => live('payroll-holds') ?? live('payroll-run-journals'),
-    title: 'Talenta sends September again.',
-    body: 'HR corrected Human Capital pay after September posted. A different send for a posted period never posts on its own: Jurnal asks whether it revises the posted run or is a separate run, such as THR or a bonus.',
-    watch: 'v2 waits for your choice: Revision of the posted run, or Separate run. 100% of the posted run\'s staff are in this send.',
+    target: 'payroll-correction',
+    find: () => live('payroll-correction') ?? live('payroll-run-journals'),
+    title: 'Talenta sends September again and the latest version wins.',
+    body: 'HR corrected Human Capital pay after September posted. v2 becomes the current version on its own. Jurnal builds a correction with the difference only and tells the Accountant what moved. PAY-0003 stays in the ledger until the correction posts.',
+    watch: 'Payroll 21 Aug-20 Sep 2026 v2 replaces v1. Take-home pay +Rp1.732.959, PPh 21 +Rp197.041, PPh 26 Rp0, BPJS +Rp244.800. 4 staff changed. Correction ready to post. Amounts changed for EMP-0029 to EMP-0032 in Human Capital: Rp2.199.800 on 7 lines.',
     placement: 'bottom',
   },
   {
-    run: reviseAndPostDifference,
-    route: runRoute,
+    run: postTheCorrection,
+    route: () => `${runRoute()}?tab=journals`,
     target: 'payroll-run-journals',
-    title: 'It is a revision. Jurnal compares v1 with v2 and posts the difference.',
-    body: 'A posted journal is never edited. Because v2 raises Basic Salary by Rp2.000.000 for Human Capital, the difference journal carries only that change: Salaries Payable up Rp1.732.959 and PPh 21 up Rp197.041. Reverse and repost is the other way out.',
-    watch: 'PAY-0004, a Difference journal of Rp2.199.800, sits beside PAY-0003. 2 live, and the ledger reflects v2.',
+    find: onTab('payroll-run-journals', 'Journals'),
+    title: 'The Accountant posts the correction.',
+    body: 'A posted journal is never edited. Post correction adds one journal with the difference, and Reverse and repost stays under More. Acknowledgements belong to a version, so v2\'s warnings are acknowledged again first.',
+    watch: 'PAY-0004, a Correction of Rp2.199.800, sits beside PAY-0003, and the ledger holds v2. Salaries Payable for September is now Rp448.634.808, Rp1.732.959 more than the bank paid.',
     placement: 'top',
   },
   {
-    run: taxStaffFiles,
+    run: bankMatchesPph21,
     route: runRoute,
     target: 'payroll-amendments',
+    find: () => live('payroll-amendments') ?? onTab('payroll-amendments', 'Draft', 'Journals')(),
     role: 'Tax Staff',
-    title: 'Tax Staff get the PPh 21 task, then pay and file it.',
-    body: 'A change to any employee\'s tax figures opens one amendment task for the tax month. September is not filed yet, so Tax Staff pay PPh 21 with its billing code 412011100202609 and NTPN 0A1B2C3D4E5F0926, then type the e-Bupot filed total, Rp18.520.123, which matches the ledger.',
-    watch: 'Amend e-Bupot 21/26 for Sep 2026: 4 staff changed, period total change Rp197.041. Deposit matches.',
+    title: 'Tax Staff get a PPh 21 amendment task for September.',
+    body: 'A version that changes any employee\'s tax figures opens one amendment task for the tax month. Bank reconciliation has matched the PPh 21 deposit for September, on the v2 figures.',
+    watch: 'Amend e-Bupot 21/26 for Sep 2026: 4 staff changed, period total change Rp197.041. PPh 21 paid Rp18.520.123: Deposit matches.',
     placement: 'top',
   },
   {
-    run: closeMonth,
-    route: '/payroll-reconciliation?month=2026-09',
-    target: 'payroll-recon-checks',
-    role: 'Finance Manager',
-    title: 'Five independent checks match and the Finance Manager signs off.',
-    body: 'The checks skip the mapping and compare the ledger with outside sources: Talenta, the bank and the BPJS invoices. The Accountant paid the Rp1.732.959 that v2 added to take-home pay, entered both BPJS invoices and set the month ready. HR confirmed no later change.',
-    watch: 'Take-home pay Rp448.634.816 against Salaries Payable, PPh 21 Rp18.520.123, bank Rp448.634.816 and expense Rp555.050.289: difference Rp0. BPJS payables Rp55.310.950 are Rp1 under the invoices, which round each programme, inside the Rp1.000 limit. Signed off by Bambang Sutrisno.',
+    run: taxStaffFile,
+    route: PAYABLES,
+    target: 'payroll-pph21-row',
+    find: () => live('payroll-pph21-row') ?? live('payroll-payables'),
+    title: 'Tax Staff type the e-Bupot filed total on Payables and it matches the books.',
+    body: 'September was not filed before v2 arrived, so Tax Staff file once and close the task as Not filed yet. The PPh 21 row flags a filed total more than Rp1.000 away from the books.',
+    watch: 'Tax Payable - PPh 21 Sep 2026: owed Rp18.520.123, paid Rp18.520.123, balance Rp0. The e-Bupot filed total is Rp18.520.123 against books of Rp18.520.123: difference Rp0, no flag.',
     placement: 'bottom',
   },
   {
@@ -234,11 +230,11 @@ const steps: PayrollStep[] = [
 export const PAYROLL_TOUR: AssetTour = {
   id: 'payroll-narrative',
   code: 'PAY-1',
-  name: 'From a held run to a signed-off month',
-  persona: 'Accountant, Finance Manager, Tax Staff',
+  name: 'From a held run to a corrected, paid month',
+  persona: 'Accountant, Tax Staff',
   role: 'Accountant' as unknown as ViewAsRole,
-  blurb: 'September arrives from Talenta with a pay item no one has mapped. The Accountant maps it, the Finance Manager confirms, one PAY journal posts and the salary is paid. A revision posts as a difference, Tax Staff pay and file PPh 21, the month signs off and the old sync is blocked.',
-  closing: 'The new pay item held the run until it had an account, the draft tied to Talenta, the September staff changes against August were marked Expected, the Finance Manager confirmed the changed settings, one PAY journal posted cost by dimension and one payable per party, the revision posted only its difference, PPh 21 was paid and filed against the ledger, five independent checks matched at sign-off, and the old sync could not book September twice. To try it yourself, use Reset sample data under View as.',
+  blurb: 'September arrives from Talenta with a pay item no one has mapped. The Accountant maps it, reviews the warnings and posts one PAY journal, and bank reconciliation pays the salary. Talenta re-sends September, the correction posts, Tax Staff check PPh 21 against e-Bupot and the old sync is blocked.',
+  closing: 'The new pay item held the run until it had an account, the draft built as soon as it was mapped, the large changes and the September staff changes were reviewed without blocking Post, one PAY journal posted cost by dimension and one payable per party, a bank match paid the salary, the re-send became the current version with its correction summary, the correction posted the difference only, Tax Staff saw PPh 21 deposited and filed against the books, and the old sync could not book September twice. To try it yourself, use Reset sample data under View as.',
   steps: steps as unknown as TourStep[],
   onReset: () => {
     Object.assign(tourCtx, { runId: '' })
