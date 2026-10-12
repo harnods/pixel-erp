@@ -9,10 +9,9 @@
 import { MpIcon, MpBadge } from '@mekari/pixel3'
 import PayrollCompareView from '~/components/payroll/PayrollCompareView.vue'
 import PayrollReverseDrawer from '~/components/payroll/PayrollReverseDrawer.vue'
-import PayrollAmendmentTasks from '~/components/payroll/PayrollAmendmentTasks.vue'
 import {
   runById, journalsOf, liveJournals, journalById, journalTotals, versionOf, currentVersionOf, runStatus, postRun, draftOf,
-  can, monthLabel, dateLabel, periodLabel, rupiah, wib, today, addDays, amendmentTasks, revisionOf,
+  can, monthLabel, dateLabel, periodLabel, rupiah, wib, today, addDays, revisionOf,
   type Journal,
 } from '~/data/payrollStore'
 import { successToast } from '~/utils/toasts'
@@ -71,8 +70,7 @@ function journalState(j: Journal): string {
 
 // ── Panels and drawers ──────────────────────────────────────────────────────
 const reverseOpen = ref(false)
-const hasTasks = computed(() => amendmentTasks.value.some((x) => x.runId === props.runId))
-const visible = computed(() => !!run.value && (run.value.versions.length > 1 || journals.value.length > 0 || hasTasks.value))
+const visible = computed(() => !!run.value && (run.value.versions.length > 1 || journals.value.length > 0))
 </script>
 
 <template>
@@ -158,7 +156,6 @@ const visible = computed(() => !!run.value && (run.value.versions.length > 1 || 
       <PayrollCompareView :run-id="runId" />
     </div>
 
-    <PayrollAmendmentTasks :run-id="runId" />
 
     <PayrollReverseDrawer :is-open="reverseOpen" :run-id="runId" @close="reverseOpen = false" />
   </div>

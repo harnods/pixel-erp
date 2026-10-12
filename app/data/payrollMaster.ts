@@ -287,6 +287,8 @@ export interface PayloadOptions {
   sentAt: string
   /** A new allowance Talenta starts sending (unmapped pay item hold). */
   newAllowance?: { name: string; organization?: string; amount: number }
+  /** The last `staff` employees of an organization sent under a new branch (a new group). */
+  newGroup?: { organization: string; branch: string; staff: number }
   /** Basic Salary raise for one organization (a revision). */
   raise?: { organization: string; amount: number }
   /** Only staff of one branch (a partial re-send). */
@@ -316,9 +318,11 @@ export function buildSalaryDetail(roster: RosterEmployee[], start: string, end: 
   const days = workingDays(start, end)
   const items: TalentaItem[] = []
   const R = Math.round
+  const moved = new Set(o.newGroup ? roster.filter((e) => !(e.joined > end || (e.left !== null && e.left < start)) && groupsAsOf(e, end).organization_name === o.newGroup!.organization).slice(-o.newGroup.staff).map((e) => e.employee_id) : [])
   for (const e of roster) {
     if (e.joined > end || (e.left !== null && e.left < start)) continue
-    const g = groupsAsOf(e, end)
+    const g0 = groupsAsOf(e, end)
+    const g = moved.has(e.employee_id) ? { ...g0, branch_name: o.newGroup!.branch } : g0
     if (o.onlyBranch && g.branch_name !== o.onlyBranch) continue
     const num = Number(e.employee_id.slice(4))
     const basic = e.basic + (o.raise && g.organization_name === o.raise.organization ? o.raise.amount : 0)

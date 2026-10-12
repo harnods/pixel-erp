@@ -11,15 +11,15 @@
  * Hutang Gaji = take-home pay. Tax figures arrive as components (benefits: PPh 21 Benefit,
  * PPh 21 Resign Benefit, PPh 26 Benefit, Total PPh 21 DTP Received; deductions: PPH 21 Paid,
  * PPH 21 Payment). Staff are keyed by user_id internally and shown as counts only.
- * Every figure is computed on read. Persists under `erp-db:payroll:state-v7`; resetPayroll()
+ * Every figure is computed on read. Persists under `erp-db:payroll:state-v8`; resetPayroll()
  * returns to the sample.
  *
  * ─── API (UI agents: this block is the contract) ─────────────────────────────
  * State and roles
- *   payroll                         reactive state (runs, journals, payments, bankLines, ebupot, settings, log, ...). Read it, never write it.
+ *   payroll                         reactive state (runs, journals, payments, bankLines, settings, log, ...). Read it, never write it.
  *   can(action)                     true when the View as role may take the action (hide the control when false).
  *                                   Roles (View as): Owner, Ultimate, Ultimate + LM, Accountant, Accountant + LM, View only.
- *                                   Actions: view (all), post and tax (all but View only), setup and correct (Owner, Ultimate + LM,
+ *                                   Actions: view (all), post (all but View only), setup and correct (Owner, Ultimate + LM,
  *                                   Accountant + LM), connection (Owner, Ultimate + LM), simulate (demo stand-ins, all but View only).
  *   setPayrollViewAs(role)          switch the acting role. actingPerson() returns the name for records.
  *
@@ -43,17 +43,25 @@
  *   confirmSource()                 The Owner (or Ultimate + LM) confirms the first send's source; holds clear, drafts build.
  *   sourceSummary(runId)            organizations, branches, headcount (user_id), take-home total of a run's latest send.
  *   answerOtherEntities(yes) / markOtherEntity('organization_name'|'branch', value, on)
- *   setStartMonth('2026-07')        Start booking from this month (can('connection')); the old Talenta to Expense
- *                                   sync is blocked from it, earlier runs stay Before go-live.
+ *   Connecting blocks the old Talenta to Expense sync from the connect month; Jurnal books from the first send after it.
+ *   setStartMonth('2026-07')        engine only (no screen): moves that month; earlier runs stay Before go-live.
  *
- * Settings, versioned (LR-9): Connection, Pay items, Dimensions
+ * Settings, versioned (LR-9): Connection, Pay items, Groups
  *   settings                        computed: the current settings. snapshotById(id), currentSnapshotId().
  *   payItemKey(name, section), mappingFor(name, section), suggestRole(name, section), suggestMapping(name, section)
  *   payItemType(row) 'allowance'|'deduction'|'benefit'|'tax', isCostItem(row), payItemAccount(row), payItemParty(row)
  *   setPayItemAccount(key, account) the row's one account: a cost item debits it (any expense or COGS account) and credits
  *                                   its party's payable; a deduction or tax item credits it and debits Hutang Gaji.
- *   setPayItemSplit(key, { groupAccounts[{ field, value, account }], fixedTag { dimension, value } | null })
- *                                   cost items only: "For Sales use Sales Salaries" lines and one fixed dimension value.
+ *   setPayItemGroupsCanChange(key, on)   cost items only: on = the staff's group expense account replaces the row account
+ *                                   ('Groups can change'); off = 'Same for all groups'.
+ *   payGroupKey(fields, values), groupFor(staffRow), groupLabel(values)
+ *   Groups: settings.groupBy (any Talenta fields) and settings.groups[{ key, values, account, dims }].
+ *   groupRows()                     every combination seen in Talenta sends plus saved ones: { key, values, label, staff (count),
+ *                                   account, dims, isNew, dimensions[{ dimension, field, value, explicit }] }.
+ *   setGroupBy(fields)              re-forms rows; rows that still exist keep their settings; combinations whose staff were all in
+ *                                   set-up groups are set up with defaults; the rest stay New.
+ *   setGroupAccount(key, code|null), setGroupDimension(key, dimension, value|null), saveGroup(key)   each saves the row (no longer New).
+ *   A send with a staff member in a New group holds: 'new-group' "New group: Operations, Medan. Set it up in Groups."
  *   setPayableAccount(party, code)  Payable accounts: the payable each party is owed on (settings.payables).
  *   validateMapping(row), setPayItemMapping(key, patch, overrideReason?)   the full-row save with guardrails.
  *   Every save re-checks held runs (holds clear on their own).
@@ -66,7 +74,7 @@
  *   Limits: partialStaffPct 10, partialWholeGroup, partialThpPct 20, taxTolerance 1000, largeChangePct 10, largeChangeAmount 1000000.
  *
  * Intake (OD-01, LR-3): Talenta sends, Jurnal builds the draft right away.
- *   simulateSend(kind, opts?)       kinds (SEND_KINDS): 'regular' | 'new-pay-item' | 'revision' | 'missing-component'
+ *   simulateSend(kind, opts?)       kinds (SEND_KINDS): 'regular' | 'new-pay-item' | 'new-group' | 'revision' | 'missing-component'
  *                                   | 'partial' | 'separate-run' | 'duplicate' | 'old-sync'. Returns { ok, status, message, runId?, versionNo? }.
  *                                   opts: runId, start, end, sentAt, newAllowance, raise, onlyBranch, thr, omit[], taxOff, duplicateEmployee, taxShift.
  *   receiveSalaryDetail(payload)    the webhook entry point simulateSend uses. Byte-identical duplicate: Failed "Duplicate of vN".
@@ -74,7 +82,7 @@
  *   runs (computed, newest first), runById(id), versionOf(run, no), currentVersionOf(run), draftOf(run), versionLabel(run, v)
  *   runStatus(run)                  'Confirm source' | 'Waiting for your choice' | 'Held' | 'Ready to post' | 'Posted' | 'Revision ready'
  *                                   | 'Reversed' | 'Dry run' | 'Before go-live' | 'Nothing to post' | 'Received'.
- *   runHolds(run)                   Hold[] { code, message, details }. A send STOPS only for: 'unmapped-item', 'unmapped-group',
+ *   runHolds(run)                   Hold[] { code, message, details }. A send STOPS only for: 'unmapped-item', 'new-group', 'unmapped-group',
  *                                   'empty-field' (linked field empty, set to hold), 'two-parties', 'archived-account'
  *                                   (no usable mapping), 'partial' (fewer staff than the last version), 'choice' (separate-run look-alike),
  *                                   'confirm-source' (first send).
@@ -114,11 +122,11 @@
  *                                   the Accountant is notified with revisionNotice(run, summary). summary: { fromVersion, toVersion, takeHome,
  *                                   pph21, pph26, bpjs ({ before, after, change }), joined, left, amountChanged (counts), moved[{ account, tags,
  *                                   label, change }], settingsChanged }. A version that moves nothing in the ledger becomes the ledger version at
- *                                   once (amendment task if tax moved).
+ *                                   once.
  *   repostVersions(runId)           versions the Accountant may repost, newest first (the first is preselected).
  *   reverseAndRepost(runId, { versionNo?, date? })   can('correct'): reverses every live PAY journal in full and posts the chosen version in
- *                                   full, both on the entry date. Approval applies as for a first post. Payables follow; a PPh 21 change opens
- *                                   the amendment task. There is no difference-only correction journal.
+ *                                   full, both on the entry date. Approval applies as for a first post. Payables follow. There is no
+ *                                   difference-only correction journal.
  *   dryRunJournal(runId, no?)       { ok, label 'Test, not posted', versionNo, date, lines, total, payables[{ party, account, amount }], holds,
  *                                   warnings[] }: what the run would post. Stores and posts nothing; nothing depends on it.
  *   compareVersions(runId, a?, b?)  { byPayItem[{ name, section, old, new, diff, missing }], byAccountTag, settingsMoved, headcount { added, removed },
@@ -130,17 +138,13 @@
  *   lockPeriod(month, { confirm }) / unlockPeriod(month) / isLocked(month) / firstOpenAfter(month)
  *
  * PPh 21 (OD-16)
- *   amendmentTasks (computed)       { ...task, title, summary, depositGap }. closeAmendmentTask(id, outcome, { pembetulanNo, newTotal, reason })
- *                                   (can('tax')). 'Amended' also records newTotal as the e-Bupot filed total.
- *   pph21Month(month)               { rule, books, paid, balance, filed, filedDiff, flagged, flagMessage }.
- *   setEbupotFiled(month, amount)   can('tax') types the e-Bupot PPh 21 filed total; flagged beyond Rp1.000.
+ *   pph21Month(month)               { rule, books, paid, balance }: owed and paid tracking only.
  *
  * Payables (FG-5): a tracker; payments arrive as bank reconciliation matches.
  *   payablesTracker(month?)         PayableRow[] { key, account, party, month, runId, label, owed, paid, balance, due, dueLabel, overdueDays,
  *                                   paidLateDays, status 'Open'|'Partly paid'|'Paid'|'Paid late'|'Overdue'|'Overpaid', statusLabel,
  *                                   payments[{ id, number, date, bank, amount, statement }], pendingOwed (salary row with a revision waiting),
- *                                   ebupot { filed, books, difference, by, at } (PPh 21 rows), flags[{ code 'bank-differs'|'ebupot-differs'
- *                                   |'manual-journal', message }] }.
+ *                                   flags[{ code 'bank-differs'|'manual-journal', message }] }.
  *   simulateBankPayment(kind, opts?)   BANK_PAYMENT_KINDS: 'salary' | 'pph21' | 'pph26' | 'bpjs-kesehatan' | 'bpjs-ketenagakerjaan' | 'dplk'
  *                                   | 'partial' | 'overpaid'. opts: { runId, month, of, amount, date, bank }. Creates a matched bank line
  *                                   (payroll.bankLines) and a BNK journal (Dr payable, Cr bank), type 'Salary payment' / 'Statutory payment',
@@ -195,12 +199,15 @@ export interface PayItemMapping {
   programme: BpjsProgramme | null
   override: Override | null
   addedBy: 'Talenta' | 'Jurnal'
-  /** Cost items only: "For Sales use Sales Salaries". The first line whose value matches the employee wins. */
-  groupAccounts?: GroupAccount[]
-  /** Cost items only: one dimension value every cost line of this item carries, over the employee's own. */
-  fixedTag?: { dimension: string; value: string } | null
+  /** Cost items only: true = 'Groups can change' (the staff's group expense account applies); false = 'Same for all groups'. */
+  groupsCanChange?: boolean
 }
-export interface GroupAccount { field: TalentaField; value: string; account: string }
+/**
+ * One group: staff with the same values in the Group by fields. `account` (null = use the pay item
+ * account) applies to pay items marked Groups can change; `dims` picks a dimension value per linked
+ * dimension (missing = the value of the same name). Dimensions go on cost lines only.
+ */
+export interface PayGroup { key: string; values: string[]; account: string | null; dims: Record<string, string> }
 /** Dimension values on a line, by Jurnal dimension name. Organization and Branch are always present. */
 export interface Tags { Organization: string | null; Branch: string | null; [dimension: string]: string | null }
 export const NO_TAGS: Tags = { Organization: null, Branch: null }
@@ -209,7 +216,7 @@ export interface DimensionLink { field: TalentaField; dimension: string; empty: 
 export interface TaxPresets { pph21: string; dtp: string; pph26: string; resign: string; trueUp: string }
 export interface Limits {
   partialStaffPct: number; partialWholeGroup: boolean; partialThpPct: number
-  /** Tax rule and e-Bupot checks: a difference above this many rupiah is flagged. */
+  /** Tax rule check: a difference above this many rupiah is flagged. */
   taxTolerance: number
   largeChangePct: number; largeChangeAmount: number
 }
@@ -218,6 +225,9 @@ export interface PayrollSettings {
   /** Talenta value to dimension value, by dimension. A value with no entry matches a dimension value of the same name. */
   groupMaps: Record<TagDimension, Record<string, string>>
   dimensionLinks: DimensionLink[]
+  /** Talenta fields staff are grouped by, in order; the groups set up for their value combinations. */
+  groupBy: TalentaField[]
+  groups: PayGroup[]
   /** The payable each party is owed on: Staff is Hutang Gaji, DJP PPh 21 and PPh 26 follow the tax presets. */
   payables: Record<PayableParty, string>
   taxPresets: TaxPresets
@@ -232,7 +242,7 @@ export interface SettingsSnapshot { id: string; at: string; by: string; note: st
 
 /** The only reasons a send stops: no mapping (item, dimension value, or an account the journal cannot use), a partial send, a revision-or-separate-run choice, the first send's source. */
 export type HoldCode =
-  | 'confirm-source' | 'choice' | 'partial' | 'unmapped-item' | 'unmapped-group'
+  | 'confirm-source' | 'choice' | 'partial' | 'unmapped-item' | 'new-group' | 'unmapped-group'
   | 'empty-field' | 'two-parties' | 'archived-account'
 export interface Hold { code: HoldCode; message: string; details: Record<string, unknown> }
 
@@ -363,24 +373,6 @@ export interface Payment {
   journalId: string
   statementLineId: string
 }
-export interface AmendmentTask {
-  id: string
-  taxMonth: string
-  runId: string
-  fromVersion: number
-  toVersion: number
-  /** One entry per staff member whose tax moved; no employee data. */
-  employees: { changes: Partial<Record<TaxField, number>> }[]
-  periodChange: number
-  noLedgerChange: boolean
-  status: 'Open' | 'Amended' | 'Not filed yet' | 'Dismissed'
-  pembetulanNo: string | null
-  newTotal: number | null
-  reason: string | null
-  openedAt: string
-  closedBy: string | null
-}
-export interface EbupotFiled { month: string; filed: number; by: string; at: string }
 export type LogStatus = 'Received' | 'Waiting for your choice' | 'Held' | 'Posted' | 'Failed' | 'Reversed' | 'Blocked' | 'No change' | 'Recorded'
 export interface SyncLogEntry {
   id: number
@@ -424,8 +416,6 @@ export interface PayrollState {
   journals: Journal[]
   payments: Payment[]
   bankLines: BankStatementLine[]
-  tasks: AmendmentTask[]
-  ebupot: EbupotFiled[]
   lockedMonths: string[]
   log: SyncLogEntry[]
   notices: PayrollNotice[]
@@ -479,13 +469,14 @@ export function tagsLabel(t: Tags): string { return tagDims(t).map((d) => t[d]).
 
 // ── State ───────────────────────────────────────────────────────────────────
 
-const SNAPSHOT_KEY = 'payroll:state-v7'
+const SNAPSHOT_KEY = 'payroll:state-v8'
 
 function defaultSettings(): PayrollSettings {
   return {
     mapping: [],
     groupMaps: { Organization: {}, Branch: {} },
     dimensionLinks: [{ field: 'organization_name', dimension: 'Organization', empty: 'hold' }, { field: 'branch', dimension: 'Branch', empty: 'hold' }],
+    groupBy: [], groups: [],
     payables: { Staff: ACC.hutangGaji, 'DJP PPh 21': ACC.pph21, 'DJP PPh 26': ACC.pph26, 'BPJS Kesehatan': ACC.bpjsKes, 'BPJS Ketenagakerjaan': ACC.bpjsTk, Other: ACC.dplk },
     taxPresets: { pph21: ACC.pph21, dtp: ACC.dtp, pph26: ACC.pph26, resign: ACC.pph21Final, trueUp: ACC.pph21 },
     cutover: { firstLive: null, proposedBy: null, confirmedBy: null, mode: 'Block' },
@@ -502,7 +493,7 @@ function emptyState(): PayrollState {
     connection: { status: 'Not connected', companyId: null, startedBy: null, startedAt: null, endedReason: null, sourceConfirmedBy: null, sourceConfirmedAt: null, otherEntitiesAnswer: null, lastAcceptedAt: null, rejected: [] },
     accounts: clone(PAYROLL_ACCOUNTS), tags: clone(PAYROLL_TAGS),
     settings: defaultSettings(), snapshots: [], roster: [], runs: [], journals: [], payments: [], bankLines: [],
-    tasks: [], ebupot: [], lockedMonths: [],
+    lockedMonths: [],
     log: [], notices: [], oldSync: [], simOptions: {}, payNo: 0, bnkNo: 0, jvNo: 0,
   }
 }
@@ -524,15 +515,13 @@ export function nowWib(): string { return wib(payroll.clock) }
  * it follows Settings > Approval workflows (transaction type Payroll journal).
  *   view        every role: runs, journals, payables, warnings, settings read-only, exports.
  *   post        post a draft, acknowledge warnings, mark headcount Expected, re-check a held run.
- *   tax         PPh 21 amendment task, e-Bupot filed total.
  *   setup       pay item mapping, payable accounts, dimensions, limits, period lock (LM).
  *   correct     post a correction, reverse, revision or separate run, partial re-sends (LM).
- *   connection  connect or end Talenta, confirm the source, other-entity answers, the start
- *               month (Owner, Ultimate + LM).
+ *   connection  connect or end Talenta, confirm the source, other-entity answers (Owner, Ultimate + LM).
  *   simulate    demo stand-ins for bank reconciliation and the general journal.
  *   headcount.view  month headcount and the run's headcount by group (Owner, Ultimate + LM).
  */
-export type PayrollAction = 'view' | 'post' | 'tax' | 'setup' | 'correct' | 'connection' | 'simulate'
+export type PayrollAction = 'view' | 'post' | 'setup' | 'correct' | 'connection' | 'simulate'
   | 'headcount.view'
 
 const ACTORS: PayrollRole[] = ['Owner', 'Ultimate', 'Ultimate + LM', 'Accountant', 'Accountant + LM']
@@ -540,7 +529,6 @@ const LM: PayrollRole[] = ['Owner', 'Ultimate + LM', 'Accountant + LM']
 const ACCESS: Record<PayrollAction, PayrollRole[]> = {
   view: [...ACTORS, 'View only'],
   post: ACTORS,
-  tax: ACTORS,
   setup: LM,
   correct: LM,
   connection: ['Owner', 'Ultimate + LM'],
@@ -771,6 +759,142 @@ export function setFieldPolicy(field: string, policy: 'hold' | 'skip'): Result {
   return { ok: true }
 }
 
+// ── Groups: staff grouped by any Talenta fields; each group may move the cost account and pick dimension values ──
+
+/** Stable key of a combination: field=value pairs in Group by order (values compared by name). */
+export function payGroupKey(fields: string[], values: string[]): string { return fields.map((f, i) => `${f}=${norm(values[i] ?? '')}`).join('|') }
+export function groupValuesOf(e: StaffRow, s: PayrollSettings = payroll.settings): string[] { return s.groupBy.map((f) => fieldValue(e, f).trim()) }
+/** The set-up group of an employee, or undefined (no Group by fields, or a New combination). */
+export function groupFor(e: StaffRow, s: PayrollSettings = payroll.settings): PayGroup | undefined {
+  if (!s.groupBy.length) return undefined
+  const k = payGroupKey(s.groupBy, groupValuesOf(e, s))
+  return s.groups.find((g) => g.key === k)
+}
+export function groupLabel(values: string[]): string { return values.map((v) => v || 'Not set').join(', ') }
+/** Every combination Talenta has sent for the given fields; staff = distinct staff in the newest send that has it (a count, never ids). */
+function seenCombinations(fields: string[]): Map<string, { values: string[]; staff: number }> {
+  const out = new Map<string, { values: string[]; staff: number }>()
+  if (!fields.length) return out
+  const ordered = [...payroll.runs].sort((a, b) => b.end.localeCompare(a.end))
+  for (const r of ordered) {
+    const v = currentVersionOf(r) ?? r.versions[r.versions.length - 1]
+    if (!v) continue
+    const here = new Map<string, { values: string[]; ids: Set<number> }>()
+    for (const e of staffRows(v.payload)) {
+      const values = fields.map((f) => fieldValue(e, f).trim())
+      const k = payGroupKey(fields, values)
+      const x = here.get(k) ?? { values, ids: new Set<number>() }
+      x.ids.add(e.user_id); here.set(k, x)
+    }
+    for (const [k, x] of here) if (!out.has(k)) out.set(k, { values: x.values, staff: x.ids.size })
+  }
+  return out
+}
+export interface GroupDimension { dimension: string; field: TalentaField; value: string | null; explicit: boolean }
+export interface GroupRow extends PayGroup { label: string; staff: number; isNew: boolean; dimensions: GroupDimension[] }
+/** The dimensions a group row picks values for: links whose Talenta field is a Group by field. */
+export function groupDimensionLinks(s: PayrollSettings = payroll.settings): DimensionLink[] { return s.dimensionLinks.filter((l) => s.groupBy.includes(l.field)) }
+/** Rows of the Groups table: set-up groups and every combination seen in sends, New first. */
+export function groupRows(): GroupRow[] {
+  const s = payroll.settings
+  const seen = seenCombinations(s.groupBy)
+  const keys = [...new Set([...s.groups.map((g) => g.key), ...seen.keys()])]
+  const links = groupDimensionLinks(s)
+  return keys.map((key) => {
+    const g = s.groups.find((x) => x.key === key)
+    const values = g?.values ?? seen.get(key)!.values
+    const dims = g?.dims ?? {}
+    const dimensions = links.map((l) => {
+      const raw = values[s.groupBy.indexOf(l.field)] ?? ''
+      const explicit = !!dims[l.dimension]
+      return { dimension: l.dimension, field: l.field, value: dims[l.dimension] ?? (raw ? dimensionValue(l.dimension, raw, s) : null), explicit }
+    })
+    return { key, values, account: g?.account ?? null, dims, label: groupLabel(values), staff: seen.get(key)?.staff ?? 0, isNew: !g, dimensions }
+  }).sort((a, b) => Number(b.isNew) - Number(a.isNew) || a.label.localeCompare(b.label))
+}
+/**
+ * Group staff by these Talenta fields. Rows that still exist keep their settings. A new row whose
+ * staff all sat in set-up groups is set up, keeping the expense account and dimension values those
+ * groups agreed on (else the defaults); a row holding staff of a New group stays New.
+ */
+export function setGroupBy(fields: TalentaField[]): Result {
+  if (!can('setup')) return denied()
+  const list = [...new Set(fields)]
+  if (list.some((f) => !TALENTA_FIELDS.some((x) => x.field === f))) return { ok: false, message: 'Pick fields Talenta sends.' }
+  const s = payroll.settings
+  if (list.join('|') === s.groupBy.join('|')) return { ok: true }
+  const next = new Map<string, { values: string[]; fromNew: boolean; from: Set<PayGroup | null> }>()
+  for (const r of payroll.runs) for (const v of r.versions) for (const e of staffRows(v.payload)) {
+    const values = list.map((f) => fieldValue(e, f).trim())
+    const k = payGroupKey(list, values)
+    const old = s.groupBy.length ? groupFor(e, s) ?? null : null
+    const x = next.get(k) ?? { values, fromNew: false, from: new Set<PayGroup | null>() }
+    if (s.groupBy.length && !old) x.fromNew = true
+    x.from.add(old)
+    next.set(k, x)
+  }
+  const agreed = (from: Set<PayGroup | null>) => {
+    const olds = [...from]
+    const accounts = new Set(olds.map((g) => g?.account ?? null))
+    const dims: Record<string, string> = {}
+    for (const d of new Set(olds.flatMap((g) => Object.keys(g?.dims ?? {})))) {
+      const vals = new Set(olds.map((g) => g?.dims[d] ?? ''))
+      if (vals.size === 1 && [...vals][0]) dims[d] = [...vals][0]!
+    }
+    return { account: accounts.size === 1 ? [...accounts][0]! : null, dims }
+  }
+  const groups: PayGroup[] = !list.length ? [] : [...next].flatMap(([key, x]): PayGroup[] => {
+    const same = s.groups.find((g) => g.key === key)
+    if (same) return [same]
+    if (x.fromNew) return []
+    return [{ key, values: x.values, ...agreed(x.from) }]
+  })
+  s.groupBy = list
+  s.groups = groups
+  changed(list.length ? `Group by ${listLabel(list.map((f) => TALENTA_FIELDS.find((x) => x.field === f)?.label ?? f))}` : 'Groups turned off')
+  return { ok: true }
+}
+/** The saved group for a key, created from the combination seen in sends when it is still New. */
+function ensureGroup(key: string): PayGroup | null {
+  const s = payroll.settings
+  const g = s.groups.find((x) => x.key === key)
+  if (g) return g
+  const seen = seenCombinations(s.groupBy).get(key)
+  if (!seen) return null
+  const row: PayGroup = { key, values: seen.values, account: null, dims: {} }
+  s.groups.push(row)
+  return row
+}
+/** The group's expense account (null = use the pay item account). Applies to pay items marked Groups can change. */
+export function setGroupAccount(key: string, account: string | null): Result {
+  if (!can('setup')) return denied()
+  if (account && !isCost(account)) return { ok: false, message: 'Pick an expense or cost of goods sold account.' }
+  const g = ensureGroup(key)
+  if (!g) return { ok: false, message: 'Group not found.' }
+  g.account = account
+  changed(`Group ${groupLabel(g.values)}: ${account ? accountLabel(account) : 'use pay item account'}`)
+  return { ok: true }
+}
+/** One dimension value for a group (null = the value of the same name). */
+export function setGroupDimension(key: string, dimension: string, value: string | null): Result {
+  if (!can('setup')) return denied()
+  if (value && !payroll.tags.some((t) => t.dimension === dimension && t.name === value)) return { ok: false, message: 'Pick a value from this dimension or create it first.' }
+  const g = ensureGroup(key)
+  if (!g) return { ok: false, message: 'Group not found.' }
+  if (value) g.dims[dimension] = value; else delete g.dims[dimension]
+  changed(`Group ${groupLabel(g.values)}: ${dimension} ${value ?? 'matched by name'}`)
+  return { ok: true }
+}
+/** Save a New group as it is: pay item accounts and dimension values matched by name. */
+export function saveGroup(key: string): Result {
+  if (!can('setup')) return denied()
+  const had = payroll.settings.groups.some((x) => x.key === key)
+  const g = ensureGroup(key)
+  if (!g) return { ok: false, message: 'Group not found.' }
+  if (!had) changed(`Group ${groupLabel(g.values)} set up`)
+  return { ok: true }
+}
+
 // ── Pay items: one account per row, the other side follows the type ────────
 
 /** What a row books, from its section and role: a cost (account = debit), a payable or another balance (account = the non-staff side). */
@@ -830,25 +954,15 @@ export function setPayItemAccount(key: string, account: string): Result {
   }
   return setPayItemMapping(key, patch)
 }
-/** Group accounts and the fixed dimension value of a cost item. Pass the full lists; an empty list clears them. */
-export function setPayItemSplit(key: string, o: { groupAccounts: GroupAccount[]; fixedTag: { dimension: string; value: string } | null }): Result {
+/** A cost item either takes its staff's group expense account ('Groups can change') or posts to its own account for every group. */
+export function setPayItemGroupsCanChange(key: string, on: boolean): Result {
   if (!can('setup')) return denied()
   const row = payroll.settings.mapping.find((m) => m.key === key)
   if (!row) return { ok: false, message: 'Pay item not found.' }
-  if (!isCostItem(row) && (o.groupAccounts.length || o.fixedTag)) return { ok: false, message: 'Only a cost item can split by group or carry a fixed dimension value.' }
-  const seen = new Set<string>()
-  for (const g of o.groupAccounts) {
-    if (!g.value || !g.account) return { ok: false, message: 'Pick a group and an account on every line.' }
-    if (!isCost(g.account)) return { ok: false, message: 'A group account must be an expense or cost of goods sold account.' }
-    const k = `${g.field}|${norm(g.value)}`
-    if (seen.has(k)) return { ok: false, message: `${g.value} has two lines.` }
-    seen.add(k)
-  }
-  if (o.fixedTag && (!o.fixedTag.dimension || !payroll.tags.some((t) => t.dimension === o.fixedTag!.dimension && t.name === o.fixedTag!.value)))
-    return { ok: false, message: 'Pick a dimension and one of its values.' }
-  row.groupAccounts = o.groupAccounts.map((g) => ({ ...g }))
-  row.fixedTag = o.fixedTag ? { ...o.fixedTag } : null
-  changed(`Pay item ${row.name} (${row.section}): ${row.groupAccounts.length} group account${row.groupAccounts.length === 1 ? '' : 's'}${row.fixedTag ? `, fixed ${row.fixedTag.dimension} ${row.fixedTag.value}` : ''}`)
+  if (on && !isCostItem(row)) return { ok: false, message: 'Only an allowance or benefit can take the group account.' }
+  if (!!row.groupsCanChange === on) return { ok: true }
+  row.groupsCanChange = on
+  changed(`Pay item ${row.name} (${row.section}): ${on ? 'groups can change the account' : 'same account for all groups'}`)
   return { ok: true }
 }
 /**
@@ -929,6 +1043,8 @@ export function startConnection(companyId: number): Result {
   if (payroll.connection.status === 'Connected' || payroll.connection.status === 'Waiting for first send') return { ok: false, message: 'A connection is already active.' }
   if (companyId !== PAYROLL_COMPANY_ID) return { ok: false, message: 'This Talenta company is linked elsewhere.' }
   Object.assign(payroll.connection, { status: 'Waiting for first send', companyId, startedBy: actingPerson(), startedAt: now(), endedReason: null, sourceConfirmedBy: null, sourceConfirmedAt: null })
+  // Connecting blocks the old Talenta to Expense sync at once; Jurnal books from the first send after it.
+  if (!seeding && !payroll.settings.cutover.firstLive) { const by = actingPerson(); payroll.settings.cutover = { firstLive: today().slice(0, 7), proposedBy: by, confirmedBy: by, mode: 'Block' } }
   addLog({ type: 'Connection', status: 'Recorded', reason: `Connection to Talenta company ${companyId} started`, nextStep: 'HR turns on the salary detail webhook in Talenta.' })
   return { ok: true }
 }
@@ -952,6 +1068,10 @@ export function confirmSource(): Result {
   payroll.connection.sourceConfirmedBy = actingPerson()
   payroll.connection.sourceConfirmedAt = now()
   payroll.connection.status = 'Connected'
+  // The first send after connecting is the first month Jurnal books.
+  const c = payroll.settings.cutover
+  const first = [...payroll.runs].sort((a, b) => a.month.localeCompare(b.month))[0]
+  if (!seeding && first && c.firstLive && first.month < c.firstLive) { c.firstLive = first.month; for (const r of payroll.runs) r.mode = runMode(r.month) }
   addLog({ type: 'Connection', status: 'Recorded', reason: 'Source confirmed', nextStep: 'Held sends re-check.' })
   recheckHeld()
   return { ok: true }
@@ -1384,18 +1504,15 @@ export function fieldValue(e: StaffRow, field: string): string {
 function resolveTags(e: StaffRow, s: PayrollSettings): { tags: Tags; issues: { field: string; dimension: string; value: string; kind: 'empty' | 'unmapped' }[] } {
   const tags: Tags = { Organization: null, Branch: null }
   const issues: { field: string; dimension: string; value: string; kind: 'empty' | 'unmapped' }[] = []
+  const g = groupFor(e, s)
   for (const l of s.dimensionLinks) {
     const val = fieldValue(e, l.field).trim()
     if (!val) { if (l.empty === 'hold') issues.push({ field: l.field, dimension: l.dimension, value: '', kind: 'empty' }); continue }
-    const tag = dimensionValue(l.dimension, val, s)
+    const tag = g?.dims[l.dimension] ?? dimensionValue(l.dimension, val, s)
     if (tag) tags[l.dimension] = tag
     else issues.push({ field: l.field, dimension: l.dimension, value: val, kind: 'unmapped' })
   }
   return { tags, issues }
-}
-/** The group account line for an employee: the first line whose field value matches. */
-function groupAccountFor(e: StaffRow, m: PayItemMapping): GroupAccount | undefined {
-  return (m.groupAccounts ?? []).find((g) => norm(fieldValue(e, g.field)) === norm(g.value))
 }
 
 /** The send a version is compared with for missing components: the version before it, else the previous regular run's latest send. */
@@ -1459,11 +1576,30 @@ function checkVersion(run: Run, v: RunVersion): void {
       details: { items: list.map((u) => ({ key: payItemKey(u.name, u.section), name: u.name, section: u.section, amount: u.amount, employees: u.staff.size, reason: u.reason })) },
     })
   }
+  // Combinations of the Group by fields no one has set up yet (New groups). Their dimension values are part of setting them up.
+  const fresh = new Map<string, { key: string; label: string; staff: Set<number> }>()
+  for (const e of staff) {
+    if (!s.groupBy.length || groupFor(e, s)) continue
+    const values = groupValuesOf(e, s)
+    const k = payGroupKey(s.groupBy, values)
+    const x = fresh.get(k) ?? { key: k, label: groupLabel(values), staff: new Set<number>() }
+    x.staff.add(e.user_id); fresh.set(k, x)
+  }
+  if (fresh.size) {
+    const list = [...fresh.values()]
+    holds.push({
+      code: 'new-group',
+      message: `New group${list.length > 1 ? 's' : ''}: ${list.map((g) => g.label).join('; ')}. Set ${list.length > 1 ? 'them' : 'it'} up in Groups.`,
+      details: { groups: list.map((g) => ({ key: g.key, label: g.label, staff: g.staff.size })) },
+    })
+  }
   // Dimension values with no match, and empty linked fields set to hold.
   const groups = new Map<string, { field: string; dimension: string; value: string; staff: number }>()
   const empty = new Map<string, number>()
   for (const e of staff) {
+    const isFresh = !!s.groupBy.length && !groupFor(e, s)
     for (const i of resolveTags(e, s).issues) {
+      if (isFresh && i.kind === 'unmapped' && s.groupBy.includes(i.field as TalentaField)) continue
       if (i.kind === 'empty') empty.set(i.field, (empty.get(i.field) ?? 0) + 1)
       else { const k = `${i.field}|${i.value}`; const g = groups.get(k) ?? { field: i.field, dimension: i.dimension, value: i.value, staff: 0 }; g.staff++; groups.set(k, g) }
     }
@@ -1618,12 +1754,11 @@ function buildJournal(run: Run, v: RunVersion, s: PayrollSettings): BuildResult 
         let debit = m.debit
         const why = `${m.name} (${section}), role ${m.role}: Dr ${accountLabel(m.debit)}, Cr ${accountLabel(m.credit)}`
         const costSide = !!m.role && COST_ROLES.includes(m.role) && isCost(debit)
-        const ga = costSide ? groupAccountFor(e, m) : undefined
-        let lineTags = tags
+        const grp = costSide && m.groupsCanChange ? groupFor(e, s) : undefined
+        const lineTags = tags
         let ruleWhy = ''
-        if (ga) { debit = ga.account; ruleWhy = `For ${ga.value} use ${accountLabel(ga.account)}` }
-        if (costSide && m.fixedTag) lineTags = { ...tags, [m.fixedTag.dimension]: m.fixedTag.value }
-        const tagWhy = isCost(debit) && tagsLabel(lineTags) ? `Dimensions ${tagsLabel(lineTags)} from ${costSide && m.fixedTag ? `the fixed ${m.fixedTag.dimension} value on ${m.name}` : 'the dimension links'}` : ''
+        if (grp?.account) { debit = grp.account; ruleWhy = `Group ${groupLabel(grp.values)} uses ${accountLabel(grp.account)}` }
+        const tagWhy = isCost(debit) && tagsLabel(lineTags) ? `Dimensions ${tagsLabel(lineTags)} from the employee's group` : ''
         const src = { item: m.name, section, role: m.role }
         add(debit, lineTags, it.amount, [why, ruleWhy, tagWhy].filter(Boolean).join('. '), src, String(e.user_id))
         add(m.credit, lineTags, -it.amount, why, src, String(e.user_id))
@@ -2211,8 +2346,7 @@ function refreshRevision(run: Run, v: RunVersion): void {
     v.revision = null
     const taxMoved = taxChanges(oldV.payload, v.payload)
     retireLedgerVersion(run, oldV, v)
-    addLog({ type: 'Send', status: 'No change', reason: taxMoved.length ? 'Tax change, no ledger change' : 'No ledger change', nextStep: taxMoved.length ? 'Amend e-Bupot 21/26.' : 'Nothing to do.', runId: run.id, runKey: run.key, version: v.no })
-    if (taxMoved.length) openAmendmentTask(run, oldV, v, true)
+    addLog({ type: 'Send', status: 'No change', reason: taxMoved.length ? 'Tax change, no ledger change' : 'No ledger change', nextStep: 'Nothing to do.', runId: run.id, runKey: run.key, version: v.no })
     return
   }
   const first = !v.revision
@@ -2241,8 +2375,7 @@ function retireLedgerVersion(run: Run, oldV: RunVersion, v: RunVersion) {
  * and posts the chosen version (default: the current one) in full, both on one entry date
  * (default the last day of the pay period; a locked period is refused). The approval workflow
  * applies as for a first post; reversal and repost happen together once approved. Payables
- * follow (the reversal clears the old amounts, the new journal is owed) and a PPh 21 change
- * opens the amendment task.
+ * follow (the reversal clears the old amounts, the new journal is owed).
  */
 export function reverseAndRepost(runId: string, o: { versionNo?: number; date?: string } = {}): Result {
   if (!can('correct')) return denied()
@@ -2283,7 +2416,6 @@ export function reverseAndRepost(runId: string, o: { versionNo?: number; date?: 
   retireLedgerVersion(run, oldV, v)
   if (switched) checkVersion(run, v)
   for (const x of [...reversals, j]) addLog({ type: x.type === 'Reversal' ? 'Reversal' : 'Post', status: x.type === 'Reversal' ? 'Reversed' : 'Posted', reason: `${x.memo} (${x.number})`, nextStep: 'Payables show the change.', runId: run.id, runKey: run.key, version: v.no, journalNo: x.number })
-  if (taxChanges(oldV.payload, v.payload).length) openAmendmentTask(run, oldV, v, false)
   return { ok: true, journals: [...reversals, j].map((x) => x.number), journalId: j.id, number: j.number, date, warnings }
 }
 /** Compare two versions of a run: pay items, account and dimension lines, staff by user_id (shown by employee_id), tax figures. */
@@ -2359,7 +2491,7 @@ export function reverseJournal(journalId: string, o: { date?: string; confirmPay
   return { ok: false, message: 'Bank payments are unmatched in bank reconciliation, not reversed here.' }
 }
 
-// ── PPh 21 amendment tasks (OD-16) and the PPh 21 figures behind them ───────
+// ── PPh 21 figures (OD-16) ──────────────────────────────────────────────────
 
 function taxChanges(a: TalentaPayload, b: TalentaPayload) {
   const map = (p: TalentaPayload) => new Map(staffRows(p).map((e) => [e.user_id, e]))
@@ -2374,14 +2506,6 @@ function taxChanges(a: TalentaPayload, b: TalentaPayload) {
   // Staff counted by user_id; the rows carry the tax changes only, never who.
   return out
 }
-function openAmendmentTask(run: Run, a: RunVersion, b: RunVersion, noLedgerChange: boolean) {
-  const employees = taxChanges(a.payload, b.payload)
-  const periodChange = employees.reduce((x, e) => x + (e.changes['PPh 21 Benefit'] ?? 0) + (e.changes['PPH 21 Payment'] ?? 0) - (e.changes['Total PPh 21 DTP Received'] ?? 0), 0)
-  const open = payroll.tasks.find((t) => t.taxMonth === run.month && t.status === 'Open')
-  if (open) { Object.assign(open, { toVersion: b.no, employees, periodChange, noLedgerChange }); return }
-  payroll.tasks.push({ id: nextId('task'), taxMonth: run.month, runId: run.id, fromVersion: a.no, toVersion: b.no, employees, periodChange, noLedgerChange, status: 'Open', pembetulanNo: null, newTotal: null, reason: null, openedAt: payroll.clock, closedBy: null })
-  notify(ACTORS, `Amend e-Bupot 21/26 for ${monthLabel(run.month)}: ${employees.length} staff changed, period total change ${rupiah(periodChange)}`, `/payroll-runs/${run.id}`)
-}
 function latestAccepted(run: Run): RunVersion | undefined { return [...run.versions].reverse().find((v) => v.state !== 'rejected' && v.state !== 'moved' && v.state !== 'partial' && v.state !== 'waiting-choice') }
 const BOOKED: JournalType[] = ['Payroll', 'Reversal']
 function bookedLines(month: string, account: string, runId?: string): number {
@@ -2390,8 +2514,7 @@ function bookedLines(month: string, account: string, runId?: string): number {
 }
 /**
  * PPh 21 for a tax month: Talenta's rule (PPh 21 Benefit + PPH 21 Payment - DTP) over the
- * month's live runs, the books (Hutang PPh 21 credits net), what the bank paid, and the
- * e-Bupot filed total typed, flagged when it differs from the books by more than Rp1.000.
+ * month's live runs, the books (Hutang PPh 21 credits net) and what the bank paid.
  */
 export function pph21Month(month: string) {
   const p = payroll.settings.taxPresets
@@ -2399,41 +2522,7 @@ export function pph21Month(month: string) {
   const rule = runsM.reduce((s, r) => { const v = versionOf(r, r.ledgerVersion) ?? latestAccepted(r); return s + (v ? staffRows(v.payload).reduce((x, e) => x + pph21Rule(e), 0) : 0) }, 0)
   const books = bookedLines(month, p.pph21)
   const paid = paidFor(p.pph21, month)
-  const filed = payroll.ebupot.find((x) => x.month === month) ?? null
-  const filedDiff = filed ? filed.filed - books : null
-  const flag = filedDiff != null && Math.abs(filedDiff) > payroll.settings.limits.taxTolerance
-  return {
-    month, rule, books, paid, balance: books - paid, filed, filedDiff, flagged: flag,
-    flagMessage: flag ? `e-Bupot PPh 21 filed ${rupiah(filed!.filed)} is ${rupiah(Math.abs(filedDiff!))} ${filedDiff! > 0 ? 'above' : 'below'} the books ${rupiah(books)}.` : null,
-  }
-}
-/** A role with the tax action types the PPh 21 total filed in e-Bupot for a month; the PPh 21 payables row flags a difference above Rp1.000. */
-export function setEbupotFiled(month: string, amount: number): Result {
-  if (!can('tax')) return denied()
-  if (!Number.isFinite(amount) || amount < 0) return { ok: false, message: 'Enter the filed total in rupiah.' }
-  const x = payroll.ebupot.find((e) => e.month === month)
-  const row = { month, filed: Math.round(amount), by: actingPerson(), at: now() }
-  if (x) Object.assign(x, row); else payroll.ebupot.push(row)
-  return { ok: true, message: pph21Month(month).flagMessage ?? undefined }
-}
-export const amendmentTasks = computed(() => payroll.tasks.map((t) => {
-  const m = pph21Month(t.taxMonth)
-  const gap = m.books - m.paid
-  return { ...t, title: `Amend e-Bupot 21/26 for ${monthLabel(t.taxMonth)}`, summary: `${t.employees.length} staff changed, period total change ${rupiah(t.periodChange)}`, depositGap: gap > 0 ? `Deposit ${rupiah(gap)} more` : gap < 0 ? `Overpaid ${rupiah(-gap)}` : 'Deposit matches' }
-}))
-export function closeAmendmentTask(id: string, outcome: 'Amended' | 'Not filed yet' | 'Dismissed', o: { pembetulanNo?: string; newTotal?: number; reason?: string } = {}): Result {
-  if (!can('tax')) return denied()
-  const t = payroll.tasks.find((x) => x.id === id)
-  if (!t || t.status !== 'Open') return { ok: false }
-  if (outcome === 'Amended' && (!o.pembetulanNo?.trim() || o.newTotal == null)) return { ok: false, message: `Enter the pembetulan number and the new ${monthLabel(t.taxMonth)} PPh 21 total.` }
-  if (outcome === 'Dismissed' && (o.reason ?? '').trim().length < 10) return { ok: false, message: 'Give a reason of 10 characters or more.' }
-  Object.assign(t, { status: outcome, pembetulanNo: o.pembetulanNo ?? null, newTotal: o.newTotal ?? null, reason: o.reason ?? null, closedBy: actingPerson() })
-  if (outcome === 'Amended' && o.newTotal != null) {
-    const x = payroll.ebupot.find((e) => e.month === t.taxMonth)
-    const row = { month: t.taxMonth, filed: Math.round(o.newTotal), by: actingPerson(), at: payroll.clock }
-    if (x) Object.assign(x, row); else payroll.ebupot.push(row)
-  }
-  return { ok: true }
+  return { month, rule, books, paid, balance: books - paid }
 }
 
 // ── Old sync (OD-11, LR-14) ─────────────────────────────────────────────────
@@ -2456,10 +2545,11 @@ export function oldSyncExpense(o: { date: string; amount: number; pattern: 'Payr
 
 // ── Simulated Talenta sends ─────────────────────────────────────────────────
 
-export type SendKind = 'regular' | 'new-pay-item' | 'revision' | 'missing-component' | 'partial' | 'separate-run' | 'duplicate' | 'old-sync'
+export type SendKind = 'regular' | 'new-pay-item' | 'new-group' | 'revision' | 'missing-component' | 'partial' | 'separate-run' | 'duplicate' | 'old-sync'
 export const SEND_KINDS: { kind: SendKind; label: string }[] = [
   { kind: 'regular', label: 'Regular run, next period' },
   { kind: 'new-pay-item', label: 'Run with a new pay item' },
+  { kind: 'new-group', label: 'Run with a new group (Operations, Medan)' },
   { kind: 'revision', label: 'Revision of the last posted run' },
   { kind: 'missing-component', label: 'Re-send without PPH 21 Paid' },
   { kind: 'partial', label: 'Partial re-send' },
@@ -2484,7 +2574,7 @@ function nextPeriod(): { start: string; end: string } {
 }
 function sentNow(): string { return new Date(Date.parse(payroll.clock) + 60_000).toISOString() }
 export function simulateSend(kind: SendKind, o: SimOptions = {}): SendResult {
-  const SIM_KEYS: (keyof PayloadOptions)[] = ['newAllowance', 'raise', 'onlyBranch', 'thr', 'omit', 'taxOff', 'duplicateEmployee', 'taxShift']
+  const SIM_KEYS: (keyof PayloadOptions)[] = ['newAllowance', 'newGroup', 'raise', 'onlyBranch', 'thr', 'omit', 'taxOff', 'duplicateEmployee', 'taxShift']
   const send = (start: string, end: string, extra: Partial<PayloadOptions> = {}) => {
     const opts: Partial<PayloadOptions> = {}
     for (const k of SIM_KEYS) if (o[k] !== undefined) (opts as Record<string, unknown>)[k] = o[k]
@@ -2503,6 +2593,12 @@ export function simulateSend(kind: SendKind, o: SimOptions = {}): SendResult {
       if (open) return send(open.start, open.end, { ...saved(open), newAllowance: o.newAllowance ?? { name: 'Tunjangan Transport', amount: 600_000 } })
       const p = nextPeriod()
       return send(p.start, p.end, { newAllowance: o.newAllowance ?? { name: 'Insentif Penjualan', organization: 'Sales', amount: 1_500_000 } })
+    }
+    case 'new-group': {
+      // Talenta re-sends the latest regular run with two Operations staff moved to a new branch.
+      const r = o.runId ? runById(o.runId) : regularRuns().pop()
+      if (!r) return { ok: false, status: 'Failed', message: 'No run to re-send.' }
+      return send(r.start, r.end, { ...saved(r), newGroup: o.newGroup ?? { organization: 'Operations', branch: 'Medan', staff: 2 } })
     }
     case 'revision': {
       const r = lastPosted()
@@ -2557,7 +2653,7 @@ function paidFor(account: string, month: string, runId?: string): number {
   return payroll.payments.filter((p) => p.account === account && p.month === month && (!runId || p.runId === runId)).reduce((s, p) => s + p.amount, 0)
 }
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / DAY)
-export interface PayableFlag { code: 'bank-differs' | 'ebupot-differs' | 'manual-journal'; message: string }
+export interface PayableFlag { code: 'bank-differs' | 'manual-journal'; message: string }
 export interface PayableRow {
   key: string; account: string; party: PayableParty; month: string; runId: string | null; label: string
   owed: number; paid: number; balance: number; due: string | null; dueLabel: string; overdueDays: number; paidLateDays: number
@@ -2567,15 +2663,12 @@ export interface PayableRow {
   payments: { id: string; number: string; date: string; bank: string; amount: number; statement: string }[]
   /** Revision waiting on the run (salary rows): what is owed once it is reversed and reposted. */
   pendingOwed: number | null
-  /** PPh 21 rows: the e-Bupot check. */
-  ebupot: { filed: number; books: number; difference: number; by: string; at: string } | null
   flags: PayableFlag[]
 }
 /**
  * One row per payable per tax month (salary rows per run): owed, paid, balance, due date, status,
  * plus the flags that moved here from reconciliation: bank paid differs from the posted run
- * (salary rows), e-Bupot PPh 21 filed total differs from the books by more than Rp1.000 (PPh 21
- * rows), and any manual journal on the account in the month.
+ * (salary rows) and any manual journal on the account in the month.
  */
 export function payablesTracker(month?: string): PayableRow[] {
   const rows: PayableRow[] = []
@@ -2593,12 +2686,6 @@ export function payablesTracker(month?: string): PayableRow[] {
     const statusLabel = status === 'Overpaid' ? `Overpaid ${rupiah(-balance)}` : status === 'Overdue' ? `Overdue ${overdueDays} day${overdueDays > 1 ? 's' : ''}` : status === 'Paid late' ? `Paid late, ${paidLateDays} day${paidLateDays > 1 ? 's' : ''}` : status
     const flags: PayableFlag[] = []
     if (run && paid > 0 && paid !== owed) flags.push({ code: 'bank-differs', message: `Bank paid ${rupiah(paid)} against the posted run ${rupiah(owed)}: ${paid > owed ? 'over' : 'under'} by ${rupiah(Math.abs(paid - owed))}.` })
-    let ebupot: PayableRow['ebupot'] = null
-    if (account === payroll.settings.taxPresets.pph21 && !run) {
-      const x = pph21Month(m)
-      if (x.filed) ebupot = { filed: x.filed.filed, books: x.books, difference: x.filedDiff!, by: x.filed.by, at: x.filed.at }
-      if (x.flagMessage) flags.push({ code: 'ebupot-differs', message: x.flagMessage })
-    }
     for (const w of manualJournalWarnings(m).filter((w) => w.accounts.includes(account))) flags.push({ code: 'manual-journal', message: w.message })
     const rev = run && revisionOf(run.id) ? draftOf(run) : null
     return {
@@ -2606,7 +2693,7 @@ export function payablesTracker(month?: string): PayableRow[] {
       overdueDays, paidLateDays, status, statusLabel,
       payments: pays.map((p) => ({ id: p.id, number: journalById(p.journalId)?.number ?? '', date: p.date, bank: accountLabel(p.bank), amount: p.amount, statement: payroll.bankLines.find((b) => b.id === p.statementLineId)?.description ?? '' })),
       pendingOwed: rev ? rev.lines.filter((l) => l.account === account).reduce((s, l) => s + l.credit - l.debit, 0) : null,
-      ebupot, flags,
+      flags,
     }
   }
   for (const m of months) {
@@ -2779,12 +2866,20 @@ function seedSettings() {
   M('JHT paid by company', 'benefit', 'Employer contribution', ACC.salaries, ACC.bpjsTk)
   M('JP paid by company', 'benefit', 'Employer contribution', ACC.salaries, ACC.bpjsTk)
   M('DPLK paid by company', 'benefit', 'Employer contribution', ACC.salaries, ACC.dplk)
-  // Store and sales pay goes to its own cost account; dimension values match Talenta's names, so no explicit map.
-  const split: GroupAccount[] = [
-    ...['Store Jakarta Kemang', 'Store Bandung Dago', 'Store Surabaya Tunjungan'].map((value) => ({ field: 'cost_center' as const, value, account: ACC.directLabour })),
-    { field: 'organization_name', value: 'Sales', account: ACC.salesSalaries },
-  ]
-  for (const m of s.mapping) if (m.role === 'Earning' || m.role === 'Employer contribution') m.groupAccounts = split.map((g) => ({ ...g }))
+  // Groups by Organization and Cost center: store pay goes to Direct Labour, sales pay to Sales Salaries; the rest
+  // use the pay item account. Dimension values match Talenta's names, so no explicit value. Salary and employer
+  // contributions take the group account; reimbursements, THR and tax stay the same for all groups.
+  s.groupBy = ['organization_name', 'cost_center']
+  const combos = new Map<string, string[]>()
+  for (const e of payroll.roster) for (const g of [{ organization_name: e.organization_name, cost_center_name: e.cost_center_name }, ...e.moves.map((x) => x.to)]) {
+    const values = [g.organization_name, g.cost_center_name]
+    combos.set(payGroupKey(s.groupBy, values), values)
+  }
+  s.groups = [...combos].map(([key, values]) => ({
+    key, values, dims: {},
+    account: values[1]!.startsWith('Store') ? ACC.directLabour : values[0] === 'Sales' ? ACC.salesSalaries : null,
+  }))
+  for (const m of s.mapping) if (m.role === 'Earning' || m.role === 'Employer contribution') m.groupsCanChange = true
 }
 
 function seed() {
@@ -2802,7 +2897,7 @@ function seed() {
   payroll.settings.cutover = { firstLive: '2026-07', proposedBy: payrollPerson('Owner').person, confirmedBy: payrollPerson('Owner').person, mode: 'Block' }
   for (const r of payroll.runs) r.mode = runMode(r.month)
   takeSnapshot('Start booking from Jul 2026')
-  // July and August: posted, then paid through bank reconciliation matches; e-Bupot filed.
+  // July and August: posted, then paid through bank reconciliation matches.
   monthCycle('2026-06-21', '2026-07-20', '2026-07-22T03:00:00Z', { pay: '2026-07-24', kes: '2026-08-07', tk: '2026-08-12', tax: '2026-08-13' })
   monthCycle('2026-07-21', '2026-08-20', '2026-08-21T03:00:00Z', { pay: '2026-08-25', kes: '2026-09-08', tk: '2026-09-14', tax: '2026-09-14' })
   setClock('2026-09-10T03:00:00Z')
@@ -2832,14 +2927,13 @@ function monthCycle(start: string, end: string, sentAt: string, d: { pay: string
   pay('pph21', d.tax, { month })
   pay('pph26', d.tax, { month })
   pay('dplk', d.tax, { month })
-  as('Accountant', () => must(setEbupotFiled(month, pph21Month(month).books), `e-Bupot ${month}`))
 }
 
 export function resetPayroll(): void { seed(); saveSnapshot(SNAPSHOT_KEY, [payroll]); syncApprovalTasks() }
 
 // Load: a saved snapshot wins over the sample. A fresh sample is saved at once so ids stay stable across reloads.
 const snap = loadSnapshot<PayrollState>(SNAPSHOT_KEY)
-if (snap && snap[0] && snap[0].settings?.dimensionLinks) { Object.assign(payroll, snap[0]); syncApprovalTasks() }
+if (snap && snap[0] && snap[0].settings?.dimensionLinks && snap[0].settings?.groupBy) { Object.assign(payroll, snap[0]); syncApprovalTasks() }
 else resetPayroll()
 
 watch(payroll, () => saveSnapshot(SNAPSHOT_KEY, [payroll]), { deep: true })

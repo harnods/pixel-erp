@@ -11,7 +11,7 @@ import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePa
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import PayrollPayableDetail from '~/components/payroll/PayrollPayableDetail.vue'
 import PayrollSimulateBankMenu from '~/components/payroll/PayrollSimulateBankMenu.vue'
-import { payablesTracker, setEbupotFiled, can, payroll, rupiah, monthLabel, dateLabel, today, accountLabel, type PayableRow } from '~/data/payrollStore'
+import { payablesTracker, can, payroll, rupiah, monthLabel, dateLabel, today, accountLabel, type PayableRow } from '~/data/payrollStore'
 import { paymentHistory } from '~/data/payrollUiPayables'
 import { flagChips, isPph21Row, latestSalaryKey, latestPph21Key, parseRupiahInput, PARTY_LABEL } from '~/data/payrollUiPay'
 import { successToast, errorToast } from '~/utils/toasts'
@@ -97,19 +97,6 @@ const sum = (rows: PayableRow[]) => rows.reduce((s, r) => s + r.balance, 0)
 const plural = (n: number, one: string, many: string) => `${n} ${t(n === 1 ? one : many)}`
 function drill(state: string) { clearFilters(); stateFilter.value = state; view.value = 'payables' }
 
-// ─── e-Bupot PPh 21 filed total (roles with the tax action) ─────────────────
-const ebupotDraft = reactive<Record<string, string>>({})
-const ebupotError = reactive<Record<string, string>>({})
-function saveEbupot(r: PayableRow) {
-  const amount = parseRupiahInput(ebupotDraft[r.key] ?? '')
-  if (amount == null) { ebupotError[r.key] = t('Enter the PPh 21 total filed in e-Bupot, in rupiah.'); return }
-  const res = setEbupotFiled(r.month, amount)
-  if (!res.ok) { ebupotError[r.key] = t(res.message ?? ''); errorToast(t(res.message ?? 'Unable to save the e-Bupot total. Check the amount and try again.')); return }
-  ebupotError[r.key] = ''
-  ebupotDraft[r.key] = ''
-  successToast(t(res.message ? 'e-Bupot total saved. It differs from the books, see the row.' : 'e-Bupot total saved. It matches the books.'))
-}
-const ebupotTolerance = computed(() => payroll.settings.limits.taxTolerance)
 
 // ─── Detail ─────────────────────────────────────────────────────────────────
 const detailOpen = ref(false)
@@ -212,32 +199,6 @@ const asPay = (r: unknown) => r as PayHist
             <span v-for="f in asRow(row).flags" :key="f.code + f.message" class="pp-flag">{{ f.message }}</span>
           </div>
 
-          <!-- e-Bupot PPh 21 filed total -->
-          <div v-if="isPph21Row(asRow(row))" class="pp-ebupot">
-            <span class="pp-ebupot__label">{{ t('Filed in e-Bupot') }}</span>
-            <template v-if="asRow(row).ebupot">
-              <span class="pp-ebupot__fig">{{ rupiah(asRow(row).ebupot!.filed) }}</span>
-              <MpBadge v-if="Math.abs(asRow(row).ebupot!.difference) <= ebupotTolerance" for="tableStatus" type="completed">{{ t('Matches') }}</MpBadge>
-              <MpBadge v-else for="tableStatus" type="critical">
-                {{ asRow(row).ebupot!.difference > 0 ? t('More than the books by') : t('Less than the books by') }} {{ rupiah(Math.abs(asRow(row).ebupot!.difference)) }}
-              </MpBadge>
-            </template>
-            <span v-else class="pp-sub">{{ t('Not entered') }}</span>
-            <div v-if="can('tax')" class="pp-ebupot__form">
-              <MpInput
-                :id="`pp-ebupot-${asRow(row).month}`"
-                v-model="ebupotDraft[asRow(row).key]"
-                size="sm"
-                inputmode="numeric"
-                :placeholder="t('Total filed, Rp')"
-                @input="ebupotError[asRow(row).key] = ''"
-                @keyup.enter="saveEbupot(asRow(row))"
-              />
-              <MpButton :id="`pp-ebupot-save-${asRow(row).month}`" variant="secondary" size="sm" is-rounded @click="saveEbupot(asRow(row))">{{ t('Save') }}</MpButton>
-            </div>
-            <span v-if="can('tax') && !asRow(row).ebupot && !ebupotError[asRow(row).key]" class="pp-hint">{{ t('e-Bupot is the tax office filing of tax withheld. Enter its PPh 21 total to check it against the books.') }}</span>
-            <span v-if="ebupotError[asRow(row).key]" class="pp-error">{{ ebupotError[asRow(row).key] }}</span>
-          </div>
         </div>
       </template>
       <template #cell-owed="{ row }"><span class="pp-fig" @click="openDetail(asRow(row))">{{ rupiah(asRow(row).owed) }}</span></template>
@@ -337,10 +298,6 @@ const asPay = (r: unknown) => r as PayHist
 .pp-flags { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .pp-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-1); }
 .pp-flag { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: normal; }
-.pp-ebupot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--mp-spacing-1) var(--mp-spacing-2); padding-top: var(--mp-spacing-1); border-top: 1px solid var(--mp-border-default); }
-.pp-ebupot__label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.pp-ebupot__fig { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); font-variant-numeric: tabular-nums; }
-.pp-ebupot__form { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-basis: 100%; }
 .pp-hint { flex-basis: 100%; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .pp-error { flex-basis: 100%; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
 .pp-danger { color: var(--mp-text-danger); }

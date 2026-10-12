@@ -17,7 +17,6 @@ export const PARTY_LABEL: Record<PayableParty, string> = {
 /** Chip label per flag code. */
 export const FLAG_CHIP: Record<PayableFlag['code'], string> = {
   'bank-differs': 'Bank amount differs',
-  'ebupot-differs': 'e-Bupot differs',
   'manual-journal': 'Manual journal',
 }
 

@@ -15,7 +15,7 @@
 import {
   resetPayroll, setPayrollViewAs, runs, payItemKey, suggestMapping, setPayItemMapping,
   headcountChanges, markHeadcountExpected, runWarnings, acknowledgeWarning, postRun, simulateBankPayment,
-  simulateSend, reverseAndRepost, amendmentTasks, setEbupotFiled, pph21Month, closeAmendmentTask,
+  simulateSend, reverseAndRepost, pph21Month,
 } from '~/data/payrollStore'
 import type { PayrollRole } from '~/data/payrollMaster'
 import type { AssetTour, TourStep } from './assetTours'
@@ -116,9 +116,6 @@ function postTheCorrection() {
 function bankMatchesPph21() { simulateBankPayment('pph21', { month: SEP_MONTH, date: '2026-10-05' }) }
 /** Tax Staff file September once, on the v2 figures, and type the filed total. */
 function taxStaffFile() {
-  setEbupotFiled(SEP_MONTH, pph21Month(SEP_MONTH).books)
-  const task = amendmentTasks.value.find((t) => t.taxMonth === SEP_MONTH && t.status === 'Open')
-  if (task) closeAmendmentTask(task.id, 'Not filed yet')
 }
 function oldSyncTries() { simulateSend('old-sync') }
 

@@ -1,18 +1,17 @@
 <script setup lang="ts">
 /**
- * Connection: status, the Talenta company, the last send, the month Jurnal starts posting
- * (the old Talenta to Expense sync is blocked from it) and Disconnect. HR's steps sit behind
+ * Connection: status, the Talenta company, the last send and Disconnect. Connecting blocks
+ * the old Talenta to Expense sync at once; Jurnal books from the first send after it. HR's steps sit behind
  * "How to send from Talenta". Changes take the Owner or Ultimate + LM.
  */
 import { computed, ref } from 'vue'
 import { MpButton, MpButtonGroup, MpInput, MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import PayrollSettingsDrawer from '~/components/payroll/PayrollSettingsDrawer.vue'
 import { successToast, infoToast } from '~/utils/toasts'
 import {
-  payroll, connection, can, startConnection, endConnection, restartConnection, setStartMonth,
-  wib, periodLabel, monthLabel, nextMonthOf, today,
+  payroll, connection, can, startConnection, endConnection, restartConnection,
+  wib, periodLabel,
 } from '~/data/payrollStore'
 import { PAYROLL_COMPANY_NAME } from '~/data/payrollMaster'
 
@@ -29,24 +28,6 @@ const lastSend = computed(() => {
   for (const r of payroll.runs) for (const v of r.versions) if (!best || v.receivedAt > best.at) best = { at: v.receivedAt, period: periodLabel(r.start, r.end) }
   return best
 })
-
-// ── Start booking from ──
-const startMonth = computed(() => payroll.settings.cutover.firstLive ?? '')
-const monthOptions = computed(() => {
-  const first = [...payroll.runs.map((r) => r.month), today().slice(0, 7)].sort()[0]!
-  let last = today().slice(0, 7)
-  for (let i = 0; i < 3; i++) last = nextMonthOf(last)
-  const out: { value: string; label: string }[] = []
-  for (let m = first; m <= last; m = nextMonthOf(m)) out.push({ value: m, label: monthLabel(m) })
-  return out
-})
-const monthError = ref('')
-function onMonth(m: string) {
-  if (!m || m === startMonth.value) return
-  const r = setStartMonth(m)
-  monthError.value = r.ok ? '' : t(r.message ?? '')
-  if (r.ok) successToast(t(`Jurnal posts payroll from ${monthLabel(m)}`))
-}
 
 // ── Start / restart / end ──
 const companyId = ref('')
@@ -90,13 +71,8 @@ const howOpen = ref(false)
           <span class="pset-form__label">{{ t('Last sent') }}</span>
           <span class="pset-form__value">{{ lastSend ? `${wib(lastSend.at)} · ${lastSend.period}` : t('Nothing sent yet') }}</span>
 
-          <label class="pset-form__label pset-form__label--control" for="pset-start-month">{{ t('Start booking from') }}</label>
-          <div class="pset-form__value" data-tour="payroll-old-sync">
-            <ErpFilterSelect v-if="can('connection')" id="pset-start-month" :model-value="startMonth" :placeholder="t('Select month')" :options="monthOptions" width="200px" :is-clearable="false" @update:model-value="onMonth" />
-            <span v-else>{{ startMonth ? monthLabel(startMonth) : t('Not set') }}</span>
-            <span class="pset-line">{{ t('From this month Jurnal posts payroll and the old Talenta to Expense sync stops, so nothing is booked twice.') }}</span>
-            <span v-if="monthError" class="pset-line pset-danger">{{ monthError }}</span>
-          </div>
+          <span class="pset-form__label">{{ t('Old sync') }}</span>
+          <span class="pset-form__value" data-tour="payroll-old-sync">{{ t(live ? 'Blocked since connecting. Jurnal books payroll from Talenta sends.' : 'Runs until you connect Talenta.') }}</span>
         </div>
 
         <!-- Start / restart -->
@@ -113,6 +89,7 @@ const howOpen = ref(false)
           <span class="pset-link" @click="howOpen = true">{{ t('How to send from Talenta') }}</span>
           <MpButton v-if="can('connection') && live" variant="secondary" is-rounded @click="endOpen = true">{{ t('Disconnect Talenta') }}</MpButton>
         </div>
+        <p v-if="!can('connection')" class="pset-hint" data-testid="pset-readonly">{{ t('Editing needs Set up access.') }}</p>
       </div>
     </div>
 

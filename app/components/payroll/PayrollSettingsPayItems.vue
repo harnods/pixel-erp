@@ -1,23 +1,23 @@
 <script setup lang="ts">
 /**
  * Pay items: one row per Talenta pay item with its one Jurnal account. A cost item (allowance,
- * benefit) takes any expense or COGS account and may split by group ("For Sales use Sales
- * Salaries") or carry a fixed dimension value; a deduction or tax item takes its payable. The
- * "Owed to" column follows the type. Payable accounts per party sit above the table. Unmapped
+ * benefit) takes any expense or COGS account and is marked Groups can change (the group's
+ * expense account applies, see Groups) or Same for all groups; a deduction or tax item takes its
+ * payable. The type is Talenta's and read-only. The "Owed to" column follows the type. Payable accounts per party sit above the table. Unmapped
  * items come first: they hold the run.
  */
 import { computed, reactive, ref } from 'vue'
-import { MpButton } from '@mekari/pixel3'
+import { MpIcon, MpToggle, MpTooltip } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { successToast } from '~/utils/toasts'
 import {
-  payroll, can, accountLabel, payItemType, isCostItem, payItemAccount, payItemParty, setPayItemAccount, setPayItemSplit,
-  setPayableAccount, useChartAccount, payrollAccount, payrollDimensions,
-  type PayItemMapping, type PayItemType, type GroupAccount,
+  payroll, can, accountLabel, payItemType, isCostItem, payItemAccount, payItemParty, setPayItemAccount, setPayItemGroupsCanChange,
+  setPayableAccount, useChartAccount, payrollAccount,
+  type PayItemMapping, type PayItemType,
 } from '~/data/payrollStore'
-import { PAYABLE_PARTIES, TALENTA_FIELDS, type PayableParty, type PayrollAccountType, type TalentaField } from '~/data/payrollMaster'
-import { accountChoices, valuesSeen, fieldSent, type AccountOption } from '~/data/payrollUiSettings'
+import { PAYABLE_PARTIES, type PayableParty, type PayrollAccountType } from '~/data/payrollMaster'
+import { accountChoices, type AccountOption } from '~/data/payrollUiSettings'
 import { PARTY_LABEL } from '~/data/payrollUiPay'
 
 const { t } = useLocale()
@@ -57,12 +57,11 @@ function partyLabel(m: PayItemMapping) {
   const p = payItemParty(m)
   return p ? t(PARTY_LABEL[p]) : t('None')
 }
-function splitSummary(m: PayItemMapping) {
-  const parts: string[] = []
-  const n = m.groupAccounts?.length ?? 0
-  if (n) parts.push(t(`${n} group account${n > 1 ? 's' : ''}`))
-  if (m.fixedTag) parts.push(`${m.fixedTag.dimension}: ${m.fixedTag.value}`)
-  return parts.join(' · ')
+const TYPE_TIP = 'From Talenta: where the item sits on the payslip (allowance, deduction or benefit). Tax items are found by name.'
+function onGroupsCanChange(m: PayItemMapping, on: boolean) {
+  const r = setPayItemGroupsCanChange(m.key, on)
+  rowErrors[m.key] = r.ok ? '' : t(r.message ?? '')
+  if (r.ok) successToast(t(on ? `${m.name}: groups can change the account` : `${m.name}: same account for all groups`))
 }
 
 // ── Payable accounts per party ──
@@ -76,26 +75,6 @@ function onPayable(party: PayableParty, code: string) {
   if (r.ok) successToast(t(`Payable account for ${PARTY_LABEL[party]} saved`))
 }
 
-// ── Split a cost item: group accounts and a fixed dimension value ──
-const openKey = ref<string | null>(null)
-const ed = reactive<{ lines: GroupAccount[]; dim: string; value: string; error: string }>({ lines: [], dim: '', value: '', error: '' })
-function toggle(m: PayItemMapping) {
-  if (openKey.value === m.key) { openKey.value = null; return }
-  openKey.value = m.key
-  Object.assign(ed, { lines: (m.groupAccounts ?? []).map((g) => ({ ...g })), dim: m.fixedTag?.dimension ?? '', value: m.fixedTag?.value ?? '', error: '' })
-}
-const groupFields = computed(() => TALENTA_FIELDS.filter((f) => fieldSent(f.field)).map((f) => ({ value: f.field, label: f.label })))
-const valueOptions = (field: string) => valuesSeen(field).map((v) => ({ value: v, label: v }))
-const dimOptions = computed(() => [{ value: '', label: t('None') }, ...payrollDimensions().map((d) => ({ value: d, label: d }))])
-const dimValueOptions = computed(() => payroll.tags.filter((x) => x.dimension === ed.dim).map((x) => ({ value: x.name, label: x.name })))
-function addLine() { ed.lines.push({ field: 'organization_name', value: '', account: '' }); ed.error = '' }
-function saveSplit(m: PayItemMapping) {
-  for (const l of ed.lines) adopt(l.account, costOptions.value)
-  const r = setPayItemSplit(m.key, { groupAccounts: ed.lines, fixedTag: ed.dim && ed.value ? { dimension: ed.dim, value: ed.value } : null })
-  if (!r.ok) { ed.error = t(r.message ?? ''); return }
-  openKey.value = null
-  successToast(t(`${m.name} split saved`))
-}
 </script>
 
 <template>
@@ -129,17 +108,23 @@ function saveSplit(m: PayItemMapping) {
         </div>
         <ErpStatusBadge v-if="openCount" status="needs-account" :label="t(`${openCount} need${openCount > 1 ? '' : 's'} an account`)" type="critical" />
       </div>
+      <p v-if="!can('setup')" class="pset-hint pset-readonly" data-testid="pset-readonly">{{ t('Editing needs Set up access.') }}</p>
       <table class="pset-table pset-pi">
         <colgroup>
-          <col class="pset-pi__name"><col class="pset-pi__type"><col class="pset-pi__acct"><col class="pset-pi__party"><col class="pset-pi__act">
+          <col class="pset-pi__name"><col class="pset-pi__type"><col class="pset-pi__acct"><col class="pset-pi__party">
         </colgroup>
         <thead>
           <tr>
             <th class="pset-th">{{ t('Pay item') }}</th>
-            <th class="pset-th">{{ t('Type') }}</th>
+            <th class="pset-th">
+              <span class="pset-th__tip">{{ t('Type') }}
+                <MpTooltip id="pset-type-tip" :label="t(TYPE_TIP)" placement="top" use-portal>
+                  <span class="pset-th__icon" data-testid="pset-type-tip" tabindex="0" :aria-label="t(TYPE_TIP)"><MpIcon name="info" size="sm" /></span>
+                </MpTooltip>
+              </span>
+            </th>
             <th class="pset-th">{{ t('Account') }}</th>
             <th class="pset-th">{{ t('Owed to') }}</th>
-            <th class="pset-th" />
           </tr>
         </thead>
         <tbody>
@@ -153,45 +138,13 @@ function saveSplit(m: PayItemMapping) {
               <td class="pset-td pset-pi__cell">
                 <ErpFilterSelect v-if="can('setup')" :id="`pset-acct-${m.key.replace(/[^a-zA-Z0-9]/g, '-')}`" :model-value="needsAccount(m) ? '' : (payItemAccount(m) ?? '')" :placeholder="t('Select account')" :options="optionsFor(m)" width="100%" :is-clearable="false" @update:model-value="(v: string) => onAccount(m, v)" />
                 <span v-else>{{ needsAccount(m) ? '' : accountLabel(payItemAccount(m)) }}</span>
-                <span v-if="splitSummary(m)" class="pset-line">{{ splitSummary(m) }}</span>
+                <div v-if="isCostItem(m) && !needsAccount(m)" class="pset-gcc" :data-groups-can-change="m.groupsCanChange ? 'yes' : 'no'">
+                  <MpToggle v-if="can('setup')" :id="`pset-gcc-${m.key.replace(/[^a-zA-Z0-9]/g, '-')}`" :is-checked="!!m.groupsCanChange" :aria-label="t('Groups can change')" @update:is-checked="(v: boolean) => onGroupsCanChange(m, v)" />
+                  <span class="pset-gcc__label">{{ t(m.groupsCanChange ? 'Groups can change' : 'Same for all groups') }}</span>
+                </div>
                 <span v-if="rowErrors[m.key]" class="pset-line pset-danger">{{ rowErrors[m.key] }}</span>
               </td>
               <td class="pset-td">{{ partyLabel(m) }}</td>
-              <td class="pset-td pset-td--act">
-                <MpButton v-if="isCostItem(m) && !needsAccount(m) && (can('setup') || splitSummary(m))" size="sm" variant="ghost" is-rounded :right-icon="openKey === m.key ? 'chevrons-up' : 'chevrons-down'" @click="toggle(m)">{{ t('Split') }}</MpButton>
-              </td>
-            </tr>
-            <tr v-if="openKey === m.key" class="pset-pi__split">
-              <td class="pset-td" colspan="5">
-                <div class="pset-split">
-                  <div class="pset-split__head">
-                    <span class="pset-label">{{ t('Account by group') }}</span>
-                    <span class="pset-hint">{{ t('Post staff in one group to a different account.') }}</span>
-                  </div>
-                  <div v-for="(l, i) in ed.lines" :key="i" class="pset-split__row">
-                    <span class="pset-split__word">{{ t('For') }}</span>
-                    <ErpFilterSelect :id="`pset-split-field-${i}`" :model-value="l.field" :placeholder="t('Group by')" :options="groupFields" width="160px" :is-clearable="false" :is-disabled="!can('setup')" @update:model-value="(v: string) => { l.field = v as TalentaField; l.value = '' }" />
-                    <ErpFilterSelect :id="`pset-split-value-${i}`" v-model="l.value" :placeholder="t('Value')" :options="valueOptions(l.field)" width="200px" :is-clearable="false" :is-disabled="!can('setup')" />
-                    <span class="pset-split__word">{{ t('use') }}</span>
-                    <ErpFilterSelect :id="`pset-split-acct-${i}`" v-model="l.account" :placeholder="t('Select account')" :options="costOptions" width="260px" :is-clearable="false" :is-disabled="!can('setup')" />
-                    <MpButton v-if="can('setup')" size="sm" variant="ghost" is-rounded @click="ed.lines.splice(i, 1)">{{ t('Remove') }}</MpButton>
-                  </div>
-                  <div v-if="can('setup')"><MpButton size="sm" variant="secondary" is-rounded left-icon="add" @click="addLine">{{ t('Add group account') }}</MpButton></div>
-                  <div class="pset-split__head">
-                    <span class="pset-label">{{ t('Same dimension on every line') }}</span>
-                    <span class="pset-hint">{{ t('Optional. Every cost line of this pay item gets this dimension value.') }}</span>
-                  </div>
-                  <div class="pset-split__row">
-                    <ErpFilterSelect id="pset-split-dim" :model-value="ed.dim" :placeholder="t('Dimension')" :options="dimOptions" width="160px" :is-clearable="false" :is-disabled="!can('setup')" @update:model-value="(v: string) => { ed.dim = v; ed.value = '' }" />
-                    <ErpFilterSelect v-if="ed.dim" id="pset-split-dimvalue" v-model="ed.value" :placeholder="t('Value')" :options="dimValueOptions" width="200px" :is-clearable="false" :is-disabled="!can('setup')" />
-                  </div>
-                  <p v-if="ed.error" class="pset-error">{{ ed.error }}</p>
-                  <div v-if="can('setup')" class="pset-split__foot">
-                    <MpButton size="sm" variant="ghost" is-rounded @click="openKey = null">{{ t('Cancel') }}</MpButton>
-                    <MpButton size="sm" is-rounded @click="saveSplit(m)">{{ t('Save split') }}</MpButton>
-                  </div>
-                </div>
-              </td>
             </tr>
           </template>
         </tbody>
@@ -204,20 +157,17 @@ function saveSplit(m: PayItemMapping) {
 .pset-payables :deep(.efs), .pset-payables :deep(.efs-trigger) { display: flex; width: 100%; }
 .pset-payables { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--mp-spacing-4) var(--mp-spacing-5); }
 .pset-pi { table-layout: fixed; }
-.pset-pi__name { width: 26%; }
-.pset-pi__type { width: 11%; }
-.pset-pi__acct { width: 33%; }
-.pset-pi__party { width: 20%; }
-.pset-pi__act { width: 10%; }
+.pset-pi__name { width: 28%; }
+.pset-pi__type { width: 13%; }
+.pset-pi__acct { width: 37%; }
+.pset-pi__party { width: 22%; }
 .pset-pi .pset-td { vertical-align: middle; }
 .pset-chip { display: inline-block; margin-left: var(--mp-spacing-2); vertical-align: middle; }
-.pset-pi__split .pset-td { background: var(--mp-background-neutral-subtle); }
-.pset-split { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
-.pset-split__row { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
-.pset-split__word { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); min-width: 28px; }
-.pset-split__head { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.pset-split__head + .pset-split__row { margin-top: calc(-1 * var(--mp-spacing-1)); }
-.pset-split__foot { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); }
+.pset-gcc { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); }
+.pset-gcc__label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pset-th__tip { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
+.pset-th__icon { display: inline-flex; color: var(--mp-text-secondary); cursor: help; }
+.pset-readonly { padding: var(--mp-spacing-3) var(--mp-spacing-4) 0; }
 .pset-pi__cell :deep(.efs) { display: block; width: 100%; }
 .pset-pi__cell :deep(.efs-trigger) { width: 100%; }
 </style>

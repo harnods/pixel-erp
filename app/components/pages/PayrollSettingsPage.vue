@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Payroll settings: Connection, Pay items, Dimensions. Every save goes through
+ * Payroll settings: Connection, Pay items, Groups. Every save goes through
  * payrollStore, which keeps a copy of the settings per journal and re-checks held runs;
  * this page only reads the store and calls it. The tab sits in ?section= so a link
  * from the fix list lands on the right one.
@@ -9,7 +9,7 @@ import { computed } from 'vue'
 import { MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel } from '@mekari/pixel3'
 import PayrollSettingsConnection from '~/components/payroll/PayrollSettingsConnection.vue'
 import PayrollSettingsPayItems from '~/components/payroll/PayrollSettingsPayItems.vue'
-import PayrollSettingsDimensions from '~/components/payroll/PayrollSettingsDimensions.vue'
+import PayrollSettingsGroups from '~/components/payroll/PayrollSettingsGroups.vue'
 
 const { t } = useLocale()
 const route = useRoute()
@@ -18,12 +18,12 @@ const router = useRouter()
 const tabs = [
   { key: 'connection', label: 'Connection' },
   { key: 'pay-items', label: 'Pay items' },
-  { key: 'dimensions', label: 'Dimensions' },
+  { key: 'groups', label: 'Groups' },
 ] as const
 type TabKey = typeof tabs[number]['key']
 const activeKey = computed<TabKey>(() => {
   const q = route.query.section as string | undefined
-  return tabs.find((x) => x.key === q)?.key ?? 'connection'
+  return tabs.find((x) => x.key === (q === 'dimensions' ? 'groups' : q))?.key ?? 'connection'
 })
 const activeIndex = computed({
   get: () => tabs.findIndex((x) => x.key === activeKey.value),
@@ -42,7 +42,7 @@ const activeIndex = computed({
           <template v-if="tb.key === activeKey">
             <PayrollSettingsConnection v-if="tb.key === 'connection'" />
             <PayrollSettingsPayItems v-else-if="tb.key === 'pay-items'" />
-            <PayrollSettingsDimensions v-else-if="tb.key === 'dimensions'" />
+            <PayrollSettingsGroups v-else-if="tb.key === 'groups'" />
           </template>
         </MpTabPanel>
       </MpTabPanels>

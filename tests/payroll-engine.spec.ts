@@ -3,11 +3,11 @@ import {
   payroll, resetPayroll, runs, runById, runStatus, runHolds, currentVersionOf, versionLabel, draftOf, liveJournals,
   journalTotals, journalById, simulateSend, setPayrollViewAs, setPayItemMapping, payItemKey, postRun, isDraftStale, setPayday,
   chooseRevision, chooseSeparateRun, revisionOf, repostVersions, reverseJournal, reverseAndRepost, lockPeriod, decidePartial, dryRunJournal,
-  compareVersions, can, addPayrollAccount, amendmentTasks, syncLog, mapGroup, headcountChanges, markHeadcountExpected,
-  setPayItemAccount, setPayItemSplit, setPayableAccount, setStartMonth, linkDimension, createMissingValues, setFieldPolicy, createPayrollTag,
+  compareVersions, can, addPayrollAccount, syncLog, mapGroup, headcountChanges, markHeadcountExpected,
+  setPayItemAccount, setPayItemGroupsCanChange, setPayableAccount, setStartMonth, setGroupBy, setGroupAccount, setGroupDimension, saveGroup, groupRows, linkDimension, createMissingValues, setFieldPolicy, createPayrollTag,
   payItemType, payItemParty, payItemAccount, mappingFor, oldSyncExpense,
   clearHeadcountExpected, draftReview, runWarnings, acknowledgeWarning, postConfirmText, payablesTracker, simulateBankPayment,
-  simulateManualJournal, manualJournalWarnings, setEbupotFiled, pph21Month, sendFigures, staffRows, receiveSalaryDetail,
+  simulateManualJournal, manualJournalWarnings, pph21Month, sendFigures, staffRows, receiveSalaryDetail,
   claimsSummary, noticesFor, SEND_KINDS, BANK_PAYMENT_KINDS, type Run, type JournalLine,
   approvePayroll, rejectPayroll, canApprove, whyLine, journalsOf, defaultEntryDate, checkEntryDate, payrollAccount, rebuildDraft,
 } from '../app/data/payrollStore'
@@ -108,12 +108,12 @@ describe('seed: rebuilt on the final payload through the engine', () => {
     expect(pays.every((j) => j.source === 'Bank reconciliation' && /^BNK-\d{4}$/.test(j.number))).toBe(true)
     expect(payroll.bankLines).toHaveLength(12)
     expect(payroll.journals.every((j) => journalTotals(j).debit === journalTotals(j).credit)).toBe(true)
-    expect(pph21Month('2026-08')).toMatchObject({ rule: 16_644_111, books: 16_644_111, paid: 16_644_111, filedDiff: 0, flagged: false })
+    expect(pph21Month('2026-08')).toMatchObject({ rule: 16_644_111, books: 16_644_111, paid: 16_644_111, balance: 0 })
   })
 
-  it('persists under payroll:state-v7', () => {
+  it('persists under payroll:state-v8', () => {
     // loadSnapshot is client-only; pin the key in the source.
-    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).toContain("const SNAPSHOT_KEY = 'payroll:state-v7'")
+    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).toContain("const SNAPSHOT_KEY = 'payroll:state-v8'")
   })
 })
 
@@ -154,11 +154,14 @@ describe('intake: Jurnal builds the draft; holds only for no mapping or a partia
     expect(draftOf(sep)).not.toBeNull()
   })
 
-  it('a group with no dimension holds; mapping it clears the hold', () => {
+  it('a new group holds; saving it with an unmatched dimension value still holds until a value is picked', () => {
     mapInsentif()
     payroll.roster.find((e) => e.employee_id === 'EMP-0026')!.moves.push({ effective: '2026-09-01', to: { organization_name: 'Legal', branch_name: 'Jakarta HQ', cost_center_name: 'HQ Finance' } })
     simulateSend('regular', { start: '2026-08-21', end: '2026-09-20', newAllowance: INS })
     const sep = run(SEP)
+    expect(runHolds(sep).map((h) => h.code)).toEqual(['new-group'])
+    const key = groupRows().find((g) => g.isNew)!.key
+    expect(saveGroup(key).ok).toBe(true)
     expect(runHolds(sep).map((h) => h.code)).toEqual(['unmapped-group'])
     as('Accountant + LM', () => { mapGroup('Organization', 'Legal', 'Finance') })
     expect(runHolds(sep)).toHaveLength(0)
@@ -335,7 +338,6 @@ describe('revisions: the latest version wins; reverse and repost replaces the po
     expect(revisionOf(sep.id)).toBeNull()
     expect(reverseAndRepost(sep.id).ok).toBe(false)
     expect(payablesTracker('2026-09').find((r) => r.party === 'Staff')).toMatchObject({ owed: 448_634_808 })
-    expect(amendmentTasks.value.find((t) => t.taxMonth === '2026-09')!.summary).toBe('4 staff changed, period total change Rp197.041')
   })
 
   it('the Accountant picks the version: the latest is preselected; an older one can be reposted and the newer stays superseded', () => {
@@ -378,7 +380,6 @@ describe('revisions: the latest version wins; reverse and repost replaces the po
     expect(runStatus(sep)).toBe('Posted')
     expect(sep.ledgerVersion).toBe(2)
     expect(revisionOf(sep.id)).toBeNull()
-    expect(amendmentTasks.value.find((t) => t.taxMonth === '2026-09')).toMatchObject({ noLedgerChange: true, periodChange: 0 })
   })
 
   it('a revision of a locked month: the default date is refused with a clear message; a date in an open period posts and keeps the tax month', () => {
@@ -509,17 +510,7 @@ describe('payables: a tracker; payments arrive as bank reconciliation matches', 
     expect(salary()).toMatchObject({ owed: 448_634_808, balance: 1_732_959, pendingOwed: null })
   })
 
-  it('e-Bupot: a role with the tax action types the PPh 21 filed total; the PPh 21 row flags a difference above Rp1.000', () => {
-    const pph = () => payablesTracker('2026-09').find((r) => r.account === ACC.pph21)!
-    expect(as('View only', () => setEbupotFiled('2026-09', 18_323_082)).status).toBe(403)
-    expect(as('Accountant', () => setEbupotFiled('2026-09', 18_324_082)).ok).toBe(true)
-    expect(pph().flags).toEqual([])
-    expect(pph().ebupot).toMatchObject({ filed: 18_324_082, books: 18_323_082, difference: 1_000, by: 'Andi Pratama' })
-    const r = as('Accountant', () => setEbupotFiled('2026-09', 18_324_083))
-    expect(r.message).toBe('e-Bupot PPh 21 filed Rp18.324.083 is Rp1.001 above the books Rp18.323.082.')
-    expect(pph().flags.map((f) => f.code)).toEqual(['ebupot-differs'])
-    expect(pph21Month('2026-09')).toMatchObject({ rule: 18_323_082, books: 18_323_082, flagged: true })
-  })
+  // e-Bupot filed total removed (user decision 2026-10-12): Payables track owed and paid only.
 })
 
 describe('manual journals on payroll accounts', () => {
@@ -558,7 +549,7 @@ describe('headcount from runs: keyed by user_id, counts only', () => {
   }
 
   it('Jurnal reads salary detail only: no employee webhooks', () => {
-    expect(SEND_KINDS.map((k) => k.kind)).toEqual(['regular', 'new-pay-item', 'revision', 'missing-component', 'partial', 'separate-run', 'duplicate', 'old-sync'])
+    expect(SEND_KINDS.map((k) => k.kind)).toEqual(['regular', 'new-pay-item', 'new-group', 'revision', 'missing-component', 'partial', 'separate-run', 'duplicate', 'old-sync'])
     expect('events' in payroll).toBe(false)
   })
 
@@ -626,7 +617,6 @@ describe('claims, access, copy', () => {
     const grid = (a: Parameters<typeof can>[0]) => roles.filter((r) => can(a, r))
     expect(grid('view')).toEqual([...roles])
     expect(grid('post')).toEqual(['Owner', 'Ultimate', 'Ultimate + LM', 'Accountant', 'Accountant + LM'])
-    expect(grid('tax')).toEqual(['Owner', 'Ultimate', 'Ultimate + LM', 'Accountant', 'Accountant + LM'])
     expect(grid('setup')).toEqual(['Owner', 'Ultimate + LM', 'Accountant + LM'])
     expect(grid('correct')).toEqual(['Owner', 'Ultimate + LM', 'Accountant + LM'])
     expect(grid('connection')).toEqual(['Owner', 'Ultimate + LM'])
@@ -756,7 +746,7 @@ describe('privacy: no employee data in anything Jurnal renders or exports', () =
     expect(c.summary).toMatchObject({ joined: 0, left: 0, amountChanged: 4 })
     out.push(c.summary, compareVersions(sep.id), syncLog.value, payroll.notices, payablesTracker('2026-09'), claimsSummary(sep.id))
     reverseAndRepost(sep.id)
-    out.push(amendmentTasks.value, journalsOf(sep.id))
+    out.push(journalsOf(sep.id))
     // Journal line sources keep the user_id set internally (to count staff once across lines); no screen reads it.
     const shown = JSON.stringify(out, (k, v) => (k === 'staff' && Array.isArray(v) ? v.length : v))
     expect(shown).not.toMatch(LEAK)
@@ -837,24 +827,54 @@ describe('settings: Connection, Pay items, Dimensions', () => {
     expect(as('Accountant', () => setPayItemAccount(key, ACC.salaries)).status).toBe(403)
   })
 
-  it('a group account line and a fixed dimension value land on the right journal lines', () => {
-    mapInsentif()
+  it('group account applies only to pay items marked Groups can change', () => {
+    as('Accountant + LM', () => setPayItemMapping(payItemKey('Insentif Penjualan', 'allowance'), { role: 'Earning', debit: ACC.medical, credit: ACC.hutangGaji }))
     const key = payItemKey('Insentif Penjualan', 'allowance')
-    expect(setPayItemSplit(key, { groupAccounts: [{ field: 'organization_name', value: 'Sales', account: ACC.salaries }], fixedTag: null }).ok).toBe(true)
     const lines = () => { rebuildDraft(run(SEP).id); return draftOf(run(SEP))!.lines }
     const ins = (acct: string) => lines().filter((l) => l.account === acct).flatMap((l) => l.sources).filter((x) => x.item === 'Insentif Penjualan').reduce((s, x) => s + x.amount, 0)
-    expect(ins(ACC.salaries)).toBe(10_500_000)
     expect(ins(ACC.salesSalaries)).toBe(0)
-    expect(lines().find((l) => l.account === ACC.salaries && l.sources.some((x) => x.item === 'Insentif Penjualan'))!.why[0]).toContain('For Sales use 6-60101 Salaries')
-    // Fixed dimension value: every Insentif cost line carries Branch Jakarta HQ; the payable stays untagged.
-    expect(setPayItemSplit(key, { groupAccounts: [], fixedTag: { dimension: 'Branch', value: 'Jakarta HQ' } }).ok).toBe(true)
-    const tagged = lines().filter((l) => l.sources.some((x) => x.item === 'Insentif Penjualan') && l.debit > 0)
-    expect(tagged.every((l) => l.tags.Branch === 'Jakarta HQ')).toBe(true)
-    expect(lines().find((l) => l.account === ACC.hutangGaji)!.tags).toEqual({ Organization: null, Branch: null })
+    expect(setPayItemGroupsCanChange(key, true).ok).toBe(true)
+    expect(ins(ACC.salesSalaries)).toBe(10_500_000)
     expect(journalTotals(draftOf(run(SEP))!).debit).toBe(journalTotals(draftOf(run(SEP))!).credit)
-    // Only cost items split.
-    expect(setPayItemSplit(payItemKey('BPJSK Employee', 'deduction'), { groupAccounts: [{ field: 'organization_name', value: 'Sales', account: ACC.salaries }], fixedTag: null }).ok).toBe(false)
-    expect(setPayItemSplit(key, { groupAccounts: [{ field: 'organization_name', value: 'Sales', account: ACC.bpjsKes }], fixedTag: null }).message).toBe('A group account must be an expense or cost of goods sold account.')
+    expect(lines().find((l) => l.account === ACC.hutangGaji)!.tags).toEqual({ Organization: null, Branch: null })
+    expect(setPayItemGroupsCanChange(payItemKey('BPJSK Employee', 'deduction'), true).ok).toBe(false)
+  })
+
+  it('multi-field grouping: Organization + Branch rows; a group account moves only that group and its dimension values land on cost lines', () => {
+    mapInsentif()
+    expect(setGroupBy(['organization_name', 'branch']).ok).toBe(true)
+    const rows = groupRows()
+    expect(rows.some((r) => r.isNew)).toBe(false)
+    const sb = rows.find((r) => r.label === 'Sales, Bandung')!
+    expect(sb.staff).toBe(3)
+    expect(sb.account).toBe(ACC.salesSalaries)
+    const before = journalTotals(draftOf(run(SEP))!).debit
+    expect(setGroupAccount(sb.key, ACC.directLabour).ok).toBe(true)
+    expect(setGroupDimension(sb.key, 'Branch', 'Jakarta HQ').ok).toBe(true)
+    rebuildDraft(run(SEP).id)
+    const d = draftOf(run(SEP))!
+    expect(journalTotals(d).debit).toBe(before)
+    expect(journalTotals(d).debit).toBe(journalTotals(d).credit)
+    expect(d.lines.some((l) => l.account === ACC.directLabour && l.tags.Organization === 'Sales' && l.tags.Branch === 'Jakarta HQ')).toBe(true)
+    expect(d.lines.filter((l) => !isCostCode(l.account)).every((l) => !l.tags.Organization && !l.tags.Branch)).toBe(true)
+  })
+
+  it('a send with a new group holds, and setting it up clears the hold', () => {
+    mapInsentif()
+    expect(setGroupBy(['organization_name', 'branch']).ok).toBe(true)
+    const sep = run(SEP)
+    expect(runHolds(sep)).toHaveLength(0)
+    simulateSend('new-group', { runId: sep.id })
+    const h = runHolds(sep)
+    expect(h.map((x) => x.code)).toEqual(['new-group'])
+    expect(h[0]!.message).toBe('New group: Operations, Medan. Set it up in Groups.')
+    const row = groupRows().find((r) => r.isNew)!
+    expect(row).toMatchObject({ label: 'Operations, Medan', staff: 2 })
+    expect(createPayrollTag('Branch', 'Medan').ok).toBe(true)
+    expect(runHolds(sep).map((x) => x.code)).toEqual(['new-group'])
+    expect(saveGroup(row.key).ok).toBe(true)
+    expect(runHolds(sep)).toHaveLength(0)
+    expect(draftOf(sep)).not.toBeNull()
   })
 
   it('payable accounts per party move every row that credits the old payable', () => {
