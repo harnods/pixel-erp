@@ -157,6 +157,9 @@
  *   payablesSummary(rows?)          the summary cards: { month, stillOwed, overdue, paidThisMonth } each { amount, count }, summed from the rows.
  *   payablePrefill(key) / recordPayablePayment(key, { cashTxId, number, bank, date, amount })
  *                                   Pay action: Cash management > New spend money prefilled for an open payable; saving pays it.
+ *   spendMoneyPayment(cashTxId) / checkSpendMoneyPayment(cashTxId, next) / syncSpendMoneyPayment(cashTxId, next)
+ *                                   OQ20: editing or deleting that Spend money (next = { amount, date, bank } | null) updates or
+ *                                   removes the payment and its journal; a locked month refuses before the cash transaction changes.
  *   POSTED_NEXT_STEP                what a posted run says next (inbox row and sync log).
  *   simulateBankPayment(kind, opts?)   BANK_PAYMENT_KINDS: 'salary' | 'pph21' | 'pph26' | 'bpjs-kesehatan' | 'bpjs-ketenagakerjaan' | 'dplk'
  *                                   | 'partial' | 'overpaid'. opts: { runId, month, of, amount, date, bank }. Creates a matched bank line
@@ -2858,6 +2861,68 @@ export function recordPayablePayment(key: string, o: { cashTxId: string; number:
   payroll.payments.push(p)
   addLog({ type: 'Payment', status: 'Recorded', reason: `${r.label}: ${rupiah(o.amount)} paid by ${o.number}`, nextStep: 'Nothing to do.', runId: r.runId, runKey: null, journalNo: o.number })
   return { ok: true, paymentId: p.id, number: o.number, amount: o.amount, account: r.account, month: r.month }
+}
+/** The payable a saved Spend money pays (Pay action), for its edit form and delete dialog. */
+export interface SpendMoneyPayment { paymentId: string; key: string; account: string; party: PayableParty; payee: string; month: string; runId: string | null; label: string; amount: number; date: string; bank: string; number: string }
+export function spendMoneyPayment(cashTxId: string): SpendMoneyPayment | null {
+  const p = payroll.payments.find((x) => x.cashTxId === cashTxId)
+  if (!p) return null
+  return {
+    paymentId: p.id, key: `${p.account}|${p.month}|${p.runId ?? ''}`, account: p.account, party: p.party, payee: partyName(p.party), month: p.month, runId: p.runId,
+    label: payableLabel(p.account, p.month, runById(p.runId)), amount: p.amount, date: p.date, bank: p.bank, number: journalById(p.journalId)?.number ?? '',
+  }
+}
+export type SpendMoneyChange = { amount: number; date: string; bank: string } | null
+/**
+ * OQ20: may this edit (next) or delete (null) of a Spend money go ahead? Refused when it would
+ * move a payment dated in a locked month, or into one. Call before changing the cash transaction,
+ * so cash and the payable never disagree. A Spend money that pays no payable always passes.
+ */
+export function checkSpendMoneyPayment(cashTxId: string, next: SpendMoneyChange): Result {
+  const p = payroll.payments.find((x) => x.cashTxId === cashTxId)
+  if (!p) return { ok: true }
+  const moves = !next || next.amount !== p.amount || next.date !== p.date || next.bank !== p.bank
+  if (!moves) return { ok: true }
+  if (!can('simulate')) return denied('simulate')
+  for (const d of next && next.amount > 0 ? [p.date, next.date] : [p.date]) {
+    if (isLocked(monthOf(d))) return { ok: false, message: `${monthLabel(monthOf(d))} is locked. Pick a date in an open month.` }
+  }
+  return { ok: true }
+}
+/**
+ * OQ20: the payment follows its Spend money. An edit updates the payment and its journal in place
+ * (amount, date, bank; the Spend money number stays), the way Jurnal rewrites a cash document's
+ * journal. A delete, an amount of 0 or no line left on the payable removes the payment and its
+ * journal, and the payable is owed again. Only lines on the payable's account count as the amount.
+ */
+export function syncSpendMoneyPayment(cashTxId: string, next: SpendMoneyChange): Result {
+  const p = payroll.payments.find((x) => x.cashTxId === cashTxId)
+  if (!p) return { ok: true, changed: false }
+  const check = checkSpendMoneyPayment(cashTxId, next)
+  if (!check.ok) return check
+  const j = journalById(p.journalId)
+  const label = payableLabel(p.account, p.month, runById(p.runId))
+  const number = j?.number ?? 'Spend money'
+  if (next && next.amount === p.amount && next.date === p.date && next.bank === p.bank) return { ok: true, changed: false }
+  now()
+  if (!next || next.amount <= 0) {
+    payroll.payments.splice(payroll.payments.indexOf(p), 1)
+    if (j) payroll.journals.splice(payroll.journals.indexOf(j), 1)
+    addLog({ type: 'Payment', status: 'Recorded', reason: `${label}: ${rupiah(p.amount)} payment removed, ${number} ${next ? 'no longer pays it' : 'deleted'} in Cash management`, nextStep: 'Pay the balance again from Payroll payables.', runId: p.runId, runKey: runById(p.runId)?.key ?? null, journalNo: number })
+    return { ok: true, changed: true, removed: true, label, amount: 0 }
+  }
+  const was = p.amount
+  p.amount = next.amount; p.date = next.date; p.bank = next.bank
+  if (j) {
+    const memo = `${label}, paid by ${number}`
+    j.date = next.date
+    j.lines = [
+      { account: p.account, tags: NO_TAGS, debit: next.amount, credit: 0, why: [memo], sources: [] },
+      { account: next.bank, tags: NO_TAGS, debit: 0, credit: next.amount, why: [`${number} from Cash management`], sources: [] },
+    ]
+  }
+  addLog({ type: 'Payment', status: 'Recorded', reason: `${label}: ${number} changed in Cash management, ${was === next.amount ? `${rupiah(next.amount)} paid on ${dateLabel(next.date)}` : `paid ${rupiah(was)} before, ${rupiah(next.amount)} now`}`, nextStep: 'Nothing to do.', runId: p.runId, runKey: runById(p.runId)?.key ?? null, journalNo: number })
+  return { ok: true, changed: true, removed: false, label, amount: next.amount }
 }
 
 // ── Manual journals on payroll accounts ─────────────────────────────────────
