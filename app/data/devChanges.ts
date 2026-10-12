@@ -31,7 +31,7 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'replenishment-copy-and-reason-filter',
     title: 'Copy: Mute replenishment / Vendor list / Edit; + Reason filter on Needs setup',
     description:
-      'Renamed the worklist action "Turn off tracking" to "Mute replenishment" (and its inverse "Turn on tracking" to "Unmute replenishment", with matching toasts/confirms) for a clearer mute vocabulary. The row action "View vendors, lead time and MOQ" is now "Vendor list". On the product Stock-by-warehouses tab the "Edit vendor" button is back to a general "Edit" (it edits safety days, reorder point and preferred vendor). Needs setup gains a "Reason" quick filter beside Movement (No demand / Waiting for lead time / Tracking off).',
+      'Renamed the worklist action "Turn off tracking" to "Mute replenishment" (and its inverse "Turn on tracking" to "Unmute replenishment", with matching toasts/confirms) for a clearer mute vocabulary. The row action "View vendors, lead time and MOQ" is now "Vendor list". On the product Stock-by-warehouses tab the "Edit vendor" button is back to a general "Edit" (it edits safety days, reorder point and preferred vendor). Needs setup gains a "Reason" quick filter beside Movement (No demand / Waiting for lead time / Missing vendor / Muted replenishment), and its muted-row reason reads "Muted replenishment" to match the new mute vocabulary.',
     date: '2026-10-12',
     files: ['ReplenishmentPage.vue', 'ReplenishmentSetupPage.vue', 'SkuReplenishmentSettingsDrawer.vue', 'SuggestionBreakdownDrawer.vue', 'CreatePurchaseRequestModal.vue', 'ProductDetailsPage.vue'],
   },

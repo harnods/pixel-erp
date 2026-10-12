@@ -59,9 +59,12 @@ type SetupRow = WorklistRow & { availableQty: number; fsnClass: string; reason: 
 
 /** The reason a row is in Needs setup, as a sortable/searchable string. */
 function setupReason(row: WorklistRow): string {
-  if (row.bucket === 'not-tracked') return 'Tracking off'
-  return [row.flags.noDemand ? 'No demand' : '', row.leadTimeTier === 'none' ? 'Waiting for lead time' : '']
-    .filter(Boolean).join(', ') || 'Needs setup'
+  if (row.bucket === 'not-tracked') return 'Muted replenishment'
+  return [
+    row.flags.noDemand ? 'No demand' : '',
+    row.leadTimeTier === 'none' ? 'Waiting for lead time' : '',
+    !row.vendor ? 'No vendor' : '',
+  ].filter(Boolean).join(', ') || 'Needs setup'
 }
 
 const baseRows = computed<SetupRow[]>(() =>
@@ -84,7 +87,8 @@ const FSN_OPTIONS = [
 const REASON_OPTIONS = [
   { id: 'no-demand', name: 'No demand' },
   { id: 'waiting-lead', name: 'Waiting for lead time' },
-  { id: 'tracking-off', name: 'Tracking off' },
+  { id: 'missing-vendor', name: 'No vendor' },
+  { id: 'tracking-off', name: 'Muted replenishment' },
 ]
 const fsnFilter = ref('')
 const reasonFilter = ref('')
@@ -92,6 +96,7 @@ function matchesSetupReason(row: WorklistRow): boolean {
   switch (reasonFilter.value) {
     case 'no-demand': return row.flags.noDemand
     case 'waiting-lead': return row.leadTimeTier === 'none'
+    case 'missing-vendor': return !row.vendor
     case 'tracking-off': return row.bucket === 'not-tracked'
     default: return true
   }
@@ -296,7 +301,7 @@ function onSaved() {
       <div class="rp-missing">
         <div class="rp-badges">
           <template v-if="(row as any).bucket === 'not-tracked'">
-            <MpBadge for="tableStatus" type="announcement">{{ t('Tracking off') }}</MpBadge>
+            <MpBadge for="tableStatus" type="announcement">{{ t('Muted replenishment') }}</MpBadge>
             <!-- US-011: muting never suppresses a genuine stockout risk. -->
             <MpBadge v-if="(row as any).flags.mutedButActive" for="tableStatus" type="critical">
               {{ t('Below reorder point') }}
@@ -305,7 +310,7 @@ function onSaved() {
           <template v-else>
             <MpBadge v-if="(row as any).flags.noDemand" for="tableStatus" type="warning">{{ t('No demand') }}</MpBadge>
             <MpBadge v-if="(row as any).leadTimeTier === 'none'" for="tableStatus" type="warning">{{ t('Waiting for lead time') }}</MpBadge>
-            <MpBadge v-if="!(row as any).vendor" for="tableStatus" type="warning">{{ t('Missing') }}: {{ t('Vendor') }}</MpBadge>
+            <MpBadge v-if="!(row as any).vendor" for="tableStatus" type="warning">{{ t('No vendor') }}</MpBadge>
           </template>
         </div>
         <span v-if="(row as any).bucket !== 'not-tracked' && (row as any).flags.noDemand" class="rp-missing-reason">

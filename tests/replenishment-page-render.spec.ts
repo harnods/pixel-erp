@@ -149,7 +149,7 @@ describe('ReplenishmentSetupPage — Needs setup (missing lead time + muted)', (
     expect(wrapper.text()).not.toContain('Sales history')
   })
 
-  it('lists muted products in Needs setup with a "Tracking off" reason (US-010 AC-02)', async () => {
+  it('lists muted products in Needs setup with a "Muted replenishment" reason (US-010 AC-02)', async () => {
     const { setTracked } = await import('~/data/replenishmentSettings')
     const { invalidateReplenishmentCaches } = await import('~/data/replenishment')
     const due = replenishmentWorklist('all').rows[0]!
@@ -159,7 +159,7 @@ describe('ReplenishmentSetupPage — Needs setup (missing lead time + muted)', (
       const wrapper = await mountLoaded(ReplenishmentSetupPage, { mode: 'needs-setup' })
       const wl = replenishmentWorklist('all')
       expect(wrapper.findAll('.erp-tr').length).toBe(Math.min(25, wl.needsSetup.length + wl.notTracked.length))
-      expect(wrapper.text()).toContain('Tracking off')
+      expect(wrapper.text()).toContain('Muted replenishment')
       // No separate "Show" disclosure any more — the rows are right here.
       expect(wrapper.text()).not.toContain('products are not tracked')
     } finally {

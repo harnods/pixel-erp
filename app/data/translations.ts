@@ -4185,7 +4185,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Search product or warehouse': 'Cari produk atau gudang',
   'Preferred vendor is inactive': 'Vendor utama nonaktif',
   'Only products with tracking off can be turned back on. Missing lead times are fixed in Vendors or Replenishment settings.': 'Hanya produk dengan pelacakan nonaktif yang dapat diaktifkan kembali. Waktu tunggu yang belum ada diatur di Vendor atau Pengaturan pengisian ulang.',
-  'Tracking off': 'Pelacakan nonaktif',
+  'Muted replenishment': 'Pengisian ulang dinonaktifkan',
   'No demand': 'Tanpa permintaan',
   'Waiting for lead time': 'Menunggu waktu tunggu',
   'No sales in the lookback window yet, so demand cannot be computed. It returns on its own once it starts selling.': 'Belum ada penjualan dalam periode lookback, jadi permintaan belum bisa dihitung. Akan muncul lagi otomatis setelah mulai terjual.',
