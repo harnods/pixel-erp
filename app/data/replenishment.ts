@@ -350,10 +350,19 @@ function openPrRequestedIndex(warehouseId: string): Map<string, number> {
   const map = new Map<string, number>()
   for (const pr of purchaseRequests) {
     if (pr.status !== 'open') continue
-    if (pr.replenishment?.warehouseId !== warehouseId) continue
-    for (const line of pr.lines) {
-      if (!line.sku || line.requestedQty <= 0) continue
-      map.set(line.sku, (map.get(line.sku) ?? 0) + line.requestedQty)
+    const origin = pr.replenishment
+    if (origin?.warehouseId !== warehouseId) continue
+    // Attribute ONLY the lines genuinely raised from a replenishment line (the origin
+    // line-list, VR-05) — never every vendor-facing PR line — so a PR that merely
+    // carries a replenishment flag does not leak unrelated SKUs. Read the LIVE PR-line
+    // qty where it still exists so purchasing's edits are reflected (VR-01), falling
+    // back to the requested qty captured at creation.
+    for (const ol of origin.lines) {
+      if (!ol.sku) continue
+      const live = pr.lines.find((l) => l.sku === ol.sku)
+      const qty = live ? live.requestedQty : ol.finalQty
+      if (qty <= 0) continue
+      map.set(ol.sku, (map.get(ol.sku) ?? 0) + qty)
     }
   }
   openPrRequestedCache.set(warehouseId, map)

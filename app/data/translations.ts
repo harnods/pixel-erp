@@ -3700,7 +3700,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Days of cover': 'Hari ketahanan',
   'Suggested qty': 'Qty disarankan',
   'Requested qty': 'Qty diminta',
-  'Remaining to request': 'Sisa untuk diminta',
   'Reorder point': 'Titik pemesanan ulang',
   'Lead time': 'Waktu tunggu',
   'Demand velocity': 'Laju permintaan',

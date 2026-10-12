@@ -29,11 +29,11 @@ export interface DevChange {
 export const DEV_CHANGES: DevChange[] = [
   {
     id: 'replenishment-requested-qty-us030',
-    title: 'To order: Requested qty + Remaining to request (partial-request tracking, US-030)',
+    title: 'To order: Requested qty column (partial-request tracking, US-030)',
     description:
-      'Two columns after Suggested qty track how much of a line\'s shortfall is already on OPEN Purchase Requests raised from it. Requested qty = the live sum of open replenishment PR-line qty for that SKU × warehouse (direct PRs from the PR index are excluded); Remaining to request = max(0, Suggested − Requested). A new "Request to purchase" now pre-fills the REMAINING qty (editable up), so a partial request is never double-requested. Suggested qty is unchanged — open PRs are reflected only here; when a PR converts to a PO the qty leaves Requested as In-transit rises, so it is counted exactly once (anti-double-count invariant). Columns are also in the CSV export.',
+      'A "Requested qty" column after Suggested qty tracks how much of a line\'s shortfall is already on OPEN Purchase Requests raised from it — the live sum of open replenishment PR-line qty for that SKU × warehouse. Attribution is the PR\'s replenishment ORIGIN lines (VR-05), so direct PRs from the PR index and PRs that merely carry a replenishment flag never leak unrelated SKUs; the qty read is live, reflecting purchasing edits. A new "Request to purchase" pre-fills the REMAINING need (Suggested − Requested, editable up), so a partial request is never double-requested. Suggested qty is unchanged — open PRs show only in Requested; when a PR converts to a PO the qty leaves Requested as In-transit rises, counted exactly once. The separate "Remaining to request" column was dropped (it is Suggested − Requested and the table is already wide); a few seed PRs make the column non-zero out of the box.',
     date: '2026-10-12',
-    files: ['replenishment.ts', 'replenishmentPurchaseRequest.ts', 'ReplenishmentPage.vue'],
+    files: ['replenishment.ts', 'replenishmentPurchaseRequest.ts', 'ReplenishmentPage.vue', 'purchaseRequests.ts'],
   },
   {
     id: 'replenishment-copy-and-reason-filter',

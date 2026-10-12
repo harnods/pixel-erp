@@ -3,7 +3,7 @@ import type { PurchaseRequest, PurchaseRequestLine, PurchaseRequestStatus, Urgen
 import { loadSnapshot, saveSnapshot } from './persist'
 import { CATALOG } from './catalog'
 import { vendors } from './vendors'
-import { vendorItemsForVendor } from './vendorItems'
+import { vendorItemsForVendor, preferredVendorItem } from './vendorItems'
 
 /**
  * Mock purchase requests for the coffee business — 100 records generated
@@ -15,7 +15,7 @@ import { vendorItemsForVendor } from './vendorItems'
 // Bumped to v4 — every PR is now scoped to ONE vendor (1 PR = 1 vendor), and its
 // lines are drawn from that vendor's supplied products so a conversion to PO is
 // clean. Still seeds a replenishment origin on ~1 in 4 requests (Source column).
-const SNAPSHOT_KEY = 'purchase-requests-v4'
+const SNAPSHOT_KEY = 'purchase-requests-v5'
 
 // Vendors that actually supply products (have vendor-items) — services vendors
 // like PLN/Telkom have none, so a PR is never bound to them.
@@ -118,6 +118,62 @@ function build(): PurchaseRequest[] {
           }
         : {}),
       lines,
+    })
+  }
+
+  // A few PRs that are GENUINELY partial requests raised from the replenishment worklist
+  // (US-030), so the "Requested qty" column is non-zero and realistic out of the box: an
+  // OPEN PR whose origin.lines attribute a PARTIAL qty (< the line's suggested) to a real
+  // SKU × warehouse. finalQty is deliberately well under the typical suggested qty, so
+  // Requested never exceeds Suggested from seed data.
+  const PARTIALS: { idx: number; sku: string; warehouseId: string; finalQty: number }[] = [
+    { idx: 101, sku: '1101', warehouseId: 'wh-001', finalQty: 40 },
+    { idx: 102, sku: '1003', warehouseId: 'wh-001', finalQty: 50 },
+    { idx: 103, sku: '1105', warehouseId: 'wh-009', finalQty: 20 },
+  ]
+  for (const pt of PARTIALS) {
+    const p = catalogBySku(pt.sku)
+    const vi = preferredVendorItem(pt.sku)
+    const vendor = (vi && vendors.find(v => v.id === vi.vendorId)) ?? SUPPLIER_VENDORS[0]!
+    const line: PurchaseRequestLine = {
+      product: p?.name ?? pt.sku, sku: pt.sku, description: p?.desc ?? '',
+      requestedQty: pt.finalQty, availableQty: 0, unit: p?.unit ?? 'Pcs',
+      unitCost: p?.price ?? 0, taxLabel: 'PPN 11%',
+    }
+    out.push({
+      id: `PR${String(pt.idx).padStart(3, '0')}`,
+      number: 90000 + pt.idx,
+      date: '2026-06-22',
+      procurementStaff: STAFF[0]!,
+      requiredDate: '2026-07-13',
+      status: 'open',
+      totalProducts: 1,
+      vendor: { id: vendor.id, name: vendor.name },
+      urgency: 'medium',
+      tags: ['Replenishment'],
+      replenishment: {
+        source: 'replenishment' as const,
+        asOf: '2026-06-26',
+        runNo: 1,
+        warehouseId: pt.warehouseId,
+        createdBy: STAFF[0]!,
+        lines: [{
+          sku: pt.sku,
+          recommendedQty: pt.finalQty,
+          finalQty: pt.finalQty,
+          deviation: 0,
+          suggestedVendorId: vi?.vendorId ?? null,
+          leadTimeDays: vi?.leadTimeDays ?? 14,
+          leadTimeTier: 'computed',
+          safetyDays: 7,
+          coverageDays: 14,
+          avgDailySales: 0,
+          reorderPoint: 0,
+          available: 0,
+          onOrder: 0,
+        }],
+      },
+      lines: [line],
     })
   }
   return out
