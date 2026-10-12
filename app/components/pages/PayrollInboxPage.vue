@@ -173,7 +173,7 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
       <template #stats>
         <div class="stats-section">
           <div class="stat-card stat-card--bordered">
-            <div class="stat-title">{{ t('Held runs') }}</div>
+            <div class="stat-title">{{ t('To fix before posting') }}</div>
             <div class="stat-period">{{ asOf }}</div>
             <div class="stat-amount" :class="{ 'stat-amount--danger': heldCount > 0 }">{{ heldCount }}</div>
             <a v-if="heldCount" class="stat-link" @click="drill('needs-fix')">{{ t('Show runs to fix') }}</a>

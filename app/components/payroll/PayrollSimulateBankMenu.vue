@@ -24,7 +24,7 @@ function bank(kind: BankPaymentKind) {
 }
 function manual() {
   const r = simulateManualJournal()
-  report(r, `${r.number} posted on Hutang Gaji`)
+  report(r, `${r.number} posted on Salaries Payable`)
 }
 </script>
 
@@ -40,7 +40,7 @@ function manual() {
       </MpPopoverList>
       <div class="psb-head">{{ t('Manual journal') }}</div>
       <MpPopoverList>
-        <MpPopoverListItem @click="manual">{{ t('Post a manual journal on Hutang Gaji') }}</MpPopoverListItem>
+        <MpPopoverListItem @click="manual">{{ t('Post a manual journal on Salaries Payable') }}</MpPopoverListItem>
       </MpPopoverList>
     </MpPopoverContent>
   </MpPopover>

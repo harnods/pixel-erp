@@ -254,7 +254,7 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
               <template v-if="taxTotal.severance"> · {{ t(`PPh 21 severance ${signed(taxTotal.severance)}`) }}</template>
             </template>
           </div>
-          <div v-if="taxRows.length && run!.month.endsWith('-12')" class="pcv__blocksub">{{ t('December change: the year-end PPh 21 and the 1721-A1 slips change too.') }}</div>
+          <div v-if="taxRows.length && run!.month.endsWith('-12')" class="pcv__blocksub">{{ t('December recalculates the full-year PPh 21, so the yearly tax slip (1721-A1) changes too.') }}</div>
           <div v-if="taxRows.length" class="pcv__scroll">
             <table class="pcv__table">
               <thead>
