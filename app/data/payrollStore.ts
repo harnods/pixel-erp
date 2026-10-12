@@ -24,11 +24,11 @@
  *   setPayrollViewAs(role)          switch the acting role. actingPerson() returns the name for records.
  *
  * Privacy: no employee data leaves the engine. Names are dropped at intake; employee_id and user_id
- * are read only to count. Headcount, correction summaries, warnings, why-this-line, tax changes and
+ * are read only to count. Headcount, revision summaries, warnings, why-this-line, tax changes and
  * the log carry counts per group, never ids. "See who in Talenta" is the way to the people.
  *
  * Approval (payrollApproval.ts, Settings > Approval workflows, transaction type 'payroll-journal')
- *   postRun / postCorrection        when an active rule matches (journal total above the threshold, created-by scope) the run
+ *   postRun / reverseAndRepost      when an active rule matches (journal total above the threshold, created-by scope) the run
  *                                   goes to 'Awaiting approval' and returns { ok: true, awaitingApproval: true, message }; an
  *                                   Inbox > Awaiting approval task links to /payroll-runs/<id>.
  *   pendingApproval(run), canApprove(runId), approvePayroll(runId) (posts), rejectPayroll(runId, reason) (back to draft).
@@ -67,7 +67,7 @@
  *   receiveSalaryDetail(payload)    the webhook entry point simulateSend uses. Byte-identical duplicate: Failed "Duplicate of vN".
  *                                   Same figures, new sent_at: "No change". Older than the last version: Failed.
  *   runs (computed, newest first), runById(id), versionOf(run, no), currentVersionOf(run), draftOf(run), versionLabel(run, v)
- *   runStatus(run)                  'Confirm source' | 'Waiting for your choice' | 'Held' | 'Ready to post' | 'Posted' | 'Correction ready'
+ *   runStatus(run)                  'Confirm source' | 'Waiting for your choice' | 'Held' | 'Ready to post' | 'Posted' | 'Revision ready'
  *                                   | 'Reversed' | 'Dry run' | 'Before go-live' | 'Nothing to post' | 'Received'.
  *   runHolds(run)                   Hold[] { code, message, details }. A send STOPS only for: 'unmapped-item', 'unmapped-group',
  *                                   'new-field-value', 'empty-field' (grouping field a rule needs), 'two-parties', 'archived-account'
@@ -92,7 +92,7 @@
  *                                   Rp1.000), 'duplicate-employee', 'hutang-gaji', 'negative-payable', 'large-change' (no note),
  *                                   'headcount' (not marked Expected), 'manual-journal' (non-PAY journal on a payroll account this month).
  *   acknowledgeWarning(runId, key, note?) / clearAcknowledgement(runId, key)   Accountant.
- *   postConfirmText(runId)          { title, body, warnings[] } for the Post / Post correction confirm (lists unacknowledged warnings).
+ *   postConfirmText(runId, date?)   { title, body, warnings[] } for the Post / Reverse and repost confirm (lists unacknowledged warnings).
  *   taxFigures(runId)               { benefit, payment, dtp, resign, pph26, paidDeduction, rule, ledger, pph26Ledger, dtpLedger, resignLedger, hasLines }.
  *   isDraftStale(runId), rebuildDraft(runId) -> { changed }, whyLine(runId, lineIndex), addChangeNote(runId, key, note)
  *   headcountChanges(runId)         pure, keyed by user_id internally, counts only: { previous, groups[{ key, label, last, current,
@@ -102,20 +102,26 @@
  *   claimsSummary(runId)            { rows[{ item, account, tags, amount, employees, version, journal }], total }: the claims section on the run page.
  *
  * Post, revisions, reverse (TS-05, TS-07, LR-4, LR-8)
- *   postRun(runId, { versionNo? })  first post, one PAY journal; returns { ok, number, redirected, warnings[] (unacknowledged) }.
- *                                   Refuses: stale draft (rebuilt), newer version, holds, already posted. May go to approval (below).
- *   correctionOf(runId)             Correction | null: { lines (difference only), summary, builtAt, snapshotId }. Built automatically when a
- *                                   newer version becomes current on a posted run; the Accountant is notified with correctionNotice(run, summary).
- *                                   summary: { fromVersion, toVersion, takeHome, pph21, pph26, bpjs ({ before, after, change }), joined[],
- *                                   left, amountChanged (counts), moved[{ account, tags, label, change }], settingsChanged }.
- *                                   A version that moves nothing in the ledger becomes the ledger version at once (amendment task if tax moved).
- *   postCorrection(runId)           "Post correction": one Correction journal (PAY-number). Locked month: first open period, tax month kept.
- *   reverseAndRepost(runId)         under "More": reverses every live journal and posts the current version in full.
+ *   Entry date: every post and repost takes one date, default defaultEntryDate(run) = the pay period's last day.
+ *                                   checkEntryDate(date, notBefore?) refuses a locked period. Kept on an approval request and used when approved.
+ *   postRun(runId, { versionNo?, date? })   first post, one PAY journal on the entry date; returns { ok, number, date, warnings[] (unacknowledged) }.
+ *                                   Refuses: stale draft (rebuilt), newer version, holds, already posted, locked date. May go to approval (below).
+ *   revisionOf(runId)               Revision | null: { summary, builtAt, snapshotId }, built when a newer version becomes current on a posted run;
+ *                                   the Accountant is notified with revisionNotice(run, summary). summary: { fromVersion, toVersion, takeHome,
+ *                                   pph21, pph26, bpjs ({ before, after, change }), joined, left, amountChanged (counts), moved[{ account, tags,
+ *                                   label, change }], settingsChanged }. A version that moves nothing in the ledger becomes the ledger version at
+ *                                   once (amendment task if tax moved).
+ *   repostVersions(runId)           versions the Accountant may repost, newest first (the first is preselected).
+ *   reverseAndRepost(runId, { versionNo?, date? })   can('correct'): reverses every live PAY journal in full and posts the chosen version in
+ *                                   full, both on the entry date. Approval applies as for a first post. Payables follow; a PPh 21 change opens
+ *                                   the amendment task. There is no difference-only correction journal.
+ *   dryRunJournal(runId, no?)       { ok, label 'Test, not posted', versionNo, date, lines, total, payables[{ party, account, amount }], holds,
+ *                                   warnings[] }: what the run would post. Stores and posts nothing; nothing depends on it.
  *   compareVersions(runId, a?, b?)  { byPayItem[{ name, section, old, new, diff, missing }], byAccountTag, settingsMoved, headcount { added, removed },
  *                                   taxChanges, noLedgerChange, oldLabel, newLabel }. Never call inside a computed (draws ids).
  *   reverseRun(runId, { date?, confirmPayments? }) / reverseJournal(journalId, opts)
- *   liveJournals(runId) (Payroll + Correction, not reversed), journalsOf(runId), journalById(id), journalTotals(j)
- *   Journal { number PAY-/BNK-/JV-, type 'Payroll'|'Correction'|'Reversal'|'Salary payment'|'Statutory payment'|'Manual',
+ *   liveJournals(runId) (Payroll, not reversed), journalsOf(runId), journalById(id), journalTotals(j)
+ *   Journal { number PAY-/BNK-/JV-, type 'Payroll'|'Reversal'|'Salary payment'|'Statutory payment'|'Manual',
  *           source 'Talenta payroll'|'Bank reconciliation'|'Manual journal', taxMonth, date, lines, ... }
  *   lockPeriod(month, { confirm }) / unlockPeriod(month) / isLocked(month) / firstOpenAfter(month)
  *
@@ -128,7 +134,7 @@
  * Payables (FG-5): a tracker; payments arrive as bank reconciliation matches.
  *   payablesTracker(month?)         PayableRow[] { key, account, party, month, runId, label, owed, paid, balance, due, dueLabel, overdueDays,
  *                                   paidLateDays, status 'Open'|'Partly paid'|'Paid'|'Paid late'|'Overdue'|'Overpaid', statusLabel,
- *                                   payments[{ id, number, date, bank, amount, statement }], pendingOwed (salary row with a correction waiting),
+ *                                   payments[{ id, number, date, bank, amount, statement }], pendingOwed (salary row with a revision waiting),
  *                                   ebupot { filed, books, difference, by, at } (PPh 21 rows), flags[{ code 'bank-differs'|'ebupot-differs'
  *                                   |'manual-journal', message }] }.
  *   simulateBankPayment(kind, opts?)   BANK_PAYMENT_KINDS: 'salary' | 'pph21' | 'pph26' | 'bpjs-kesehatan' | 'bpjs-ketenagakerjaan' | 'dplk'
@@ -273,8 +279,8 @@ export interface RunVersion {
   /** Warnings the Accountant acknowledged, by warning key. */
   acks: Record<string, Ack>
   draft: Draft | null
-  /** On a posted run: the correction (difference only) this version would post, with its summary. */
-  correction: Correction | null
+  /** On a posted run: what this version changes against the ledger (reverse and repost posts it in full). */
+  revision: Revision | null
   decision: { kind: string; reason: string | null; by: string; at: string } | null
   changeNotes: Record<string, string>
   /** Headcount changes marked Expected, by group key (organization|branch). */
@@ -299,18 +305,20 @@ export interface Run {
   ledgerVersion: number | null
   mode: 'Live' | 'Dry run' | 'Before go-live'
   dryRun: { passedBy: string | null; passedAt: string | null; signedOffBy: string | null; signedOffAt: string | null } | null
-  /** A newer version is current and its correction (difference only) waits for Post correction. */
+  /** A newer version is current on a posted run and waits for reverse and repost. */
   revised: boolean
   reversedAt: string | null
-  /** Post or Post correction matched a Payroll journal approval rule and waits in Inbox > Awaiting approval. */
+  /** Post or Reverse and repost matched a Payroll journal approval rule and waits in Inbox > Awaiting approval. */
   approval?: PayrollApprovalRequest | null
   /** The last rejection: the run went back to its draft with this reason. */
-  rejection?: { reason: string; by: string; at: string; kind: 'post' | 'correction' } | null
+  rejection?: { reason: string; by: string; at: string; kind: 'post' | 'repost' } | null
 }
 export interface PayrollApprovalRequest {
-  kind: 'post' | 'correction'
+  kind: 'post' | 'repost'
   versionNo: number
   amount: number
+  /** Entry date chosen at Post; the journals (and the reversal) are dated on it when approved. */
+  date: string
   ruleId: string
   ruleName: string
   approvers: string[]
@@ -318,7 +326,7 @@ export interface PayrollApprovalRequest {
   requestedAt: string
   taskId: string
 }
-export type JournalType = 'Payroll' | 'Reversal' | 'Correction' | 'Salary payment' | 'Statutory payment' | 'Manual'
+export type JournalType = 'Payroll' | 'Reversal' | 'Salary payment' | 'Statutory payment' | 'Manual'
 export type JournalSource = 'Talenta payroll' | 'Bank reconciliation' | 'Manual journal'
 export interface Journal {
   id: string
@@ -1027,7 +1035,7 @@ function runMode(month: string): Run['mode'] {
   if (!c.firstLive || !c.confirmedBy) return 'Dry run'
   return month < c.firstLive ? 'Before go-live' : 'Live'
 }
-const BOOKING: JournalType[] = ['Payroll', 'Correction']
+const BOOKING: JournalType[] = ['Payroll']
 export function liveJournals(runId: string): Journal[] {
   return payroll.journals.filter((j) => j.runId === runId && BOOKING.includes(j.type) && !j.reversedById)
 }
@@ -1035,7 +1043,7 @@ export function journalsOf(runId: string): Journal[] { return payroll.journals.f
 export function journalById(id: string | null): Journal | undefined { return id ? payroll.journals.find((j) => j.id === id) : undefined }
 export function journalTotals(j: Pick<Journal, 'lines'>) { return { debit: j.lines.reduce((s, l) => s + l.debit, 0), credit: j.lines.reduce((s, l) => s + l.credit, 0) } }
 
-export type RunStatus = 'Awaiting approval' | 'Confirm source' | 'Waiting for your choice' | 'Held' | 'Ready to post' | 'Posted' | 'Correction ready' | 'Reversed' | 'Dry run' | 'Before go-live' | 'Nothing to post' | 'Received'
+export type RunStatus = 'Awaiting approval' | 'Confirm source' | 'Waiting for your choice' | 'Held' | 'Ready to post' | 'Posted' | 'Revision ready' | 'Reversed' | 'Dry run' | 'Before go-live' | 'Nothing to post' | 'Received'
 export function runHolds(run: Run): Hold[] {
   const pending = run.versions.filter((v) => v.state === 'waiting-choice' || v.state === 'partial').flatMap((v) => v.holds)
   return [...pending, ...(currentVersionOf(run)?.holds ?? [])]
@@ -1048,7 +1056,7 @@ export function runStatus(run: Run): RunStatus {
   if (run.reversedAt && !live) return holds.length ? 'Held' : 'Reversed'
   if (holds.length) return 'Held'
   if (pendingApproval(run)) return 'Awaiting approval'
-  if (run.revised && live) return 'Correction ready'
+  if (run.revised && live) return 'Revision ready'
   if (run.ledgerVersion != null && live) return 'Posted'
   if (run.mode !== 'Live') return run.mode
   const d = draftOf(run)
@@ -1140,12 +1148,12 @@ export function receiveSalaryDetail(p: TalentaPayload): SendResult {
 function newVersion(no: number, p: TalentaPayload, h: string, state: VersionState): RunVersion {
   return {
     no, sentAt: p.sent_at, receivedAt: payroll.clock, hash: h, figuresHash: figuresHash(p), payload: clone(withoutNames(p)), state, replacedBy: null,
-    holds: [], warnings: [], acks: {}, draft: null, correction: null, decision: null, changeNotes: {}, headcountExpected: {},
+    holds: [], warnings: [], acks: {}, draft: null, revision: null, decision: null, changeNotes: {}, headcountExpected: {},
   }
 }
 /**
  * Make v the current version. Older open versions become "Replaced by vN" (or "Superseded"
- * on a posted run). On a posted run the latest version wins: Jurnal builds the correction.
+ * on a posted run). On a posted run the latest version wins: Jurnal summarises what changes.
  */
 function activate(run: Run, v: RunVersion) {
   for (const o of run.versions) {
@@ -1161,7 +1169,7 @@ function logReceipt(run: Run, v: RunVersion): SendResult {
   const status: LogStatus = v.state === 'waiting-choice' ? 'Waiting for your choice' : v.holds.length ? 'Held' : 'Received'
   const reason = v.holds[0]?.message
     ?? (run.mode !== 'Live' ? `${run.mode}: nothing posts from this send.`
-      : v.correction ? `Correction ready: ${v.correction.lines.length} lines.`
+      : v.revision ? `Revision ready: reverse and repost v${v.no}.`
         : run.ledgerVersion != null && run.ledgerVersion === v.no ? 'No ledger change.'
           : `Draft built.${v.warnings.length ? ` ${v.warnings.length} warning${v.warnings.length > 1 ? 's' : ''}.` : ''}`)
   addLog({ type: 'Send', status, reason, nextStep: nextStepFor(run, v), runId: run.id, runKey: run.key, version: v.no, employees: v.payload.items.length })
@@ -1171,7 +1179,7 @@ function logReceipt(run: Run, v: RunVersion): SendResult {
 }
 function nextStepFor(run: Run, v: RunVersion): string {
   const h = v.holds[0]
-  if (!h) return v.correction ? 'Review the correction and post it.' : v.draft && run.ledgerVersion !== v.no ? 'Review the draft and post.' : 'Nothing to do.'
+  if (!h) return v.revision ? 'Pick the version and repost.' : v.draft && run.ledgerVersion !== v.no ? 'Review the draft and post.' : 'Nothing to do.'
   const steps: Partial<Record<HoldCode, string>> = {
     'confirm-source': 'The Owner confirms the source.', choice: 'Pick Revision of the posted run or Separate run.',
     partial: 'Pick Replace the full run or Reject.', 'unmapped-item': 'Map the pay item; the run re-checks on save.',
@@ -1252,7 +1260,7 @@ export function chooseRevision(runId: string, no: number): Result {
   now()
   v.decision = { kind: 'Revision of the posted run', reason: null, by: actingPerson(), at: payroll.clock }
   v.holds = []
-  addLog({ type: 'Decision', status: 'Recorded', reason: `v${no} is a revision of the posted run`, nextStep: 'Review the correction and post it.', runId, runKey: run.key, version: no })
+  addLog({ type: 'Decision', status: 'Recorded', reason: `v${no} is a revision of the posted run`, nextStep: 'Pick the version and repost.', runId, runKey: run.key, version: no })
   v.state = 'active'
   const partial = partialCheck(run, v)
   if (partial) { v.state = 'partial'; v.holds = [partial]; return { ok: true, partial: true } }
@@ -1277,7 +1285,7 @@ export function chooseSeparateRun(runId: string, no: number, o: { type: Exclude<
     start: run.start, end: run.end, month: run.month, kind: o.type, label: name, versions: [], currentVersion: 1, ledgerVersion: null,
     mode: runMode(run.month), dryRun: null, revised: false, reversedAt: null,
   }
-  sep.versions.push({ ...clone(v), no: 1, state: 'active', holds: [], warnings: [], acks: {}, draft: null, correction: null, decision: null })
+  sep.versions.push({ ...clone(v), no: 1, state: 'active', holds: [], warnings: [], acks: {}, draft: null, revision: null, decision: null })
   payroll.runs.push(sep)
   checkVersion(sep, sep.versions[0]!)
   addLog({ type: 'Decision', status: 'Recorded', reason: `v${no} saved as separate run ${o.type} ${name}`, nextStep: nextStepFor(sep, sep.versions[0]!), runId: sep.id, runKey: sep.key, version: 1 })
@@ -1405,7 +1413,7 @@ function checkVersion(run: Run, v: RunVersion): void {
   v.draft = b.draft
   v.holds = b.holds
   v.warnings.push(...b.warnings)
-  refreshCorrection(run, v)
+  refreshRevision(run, v)
 }
 
 /** Missing components against the last send of a regular run, and duplicate user_id rows. */
@@ -1481,6 +1489,45 @@ export function previewDryRun(runId: string, no?: number): { ok: boolean; holds:
   payroll.settings.mapping.splice(mappingLen)
   payroll.seq = seq
   return { ok: true, holds: copy.holds, warnings: copy.warnings, draft: copy.draft, snapshotId: currentSnapshotId(), at: payroll.clock, versionNo: v.no }
+}
+
+/** One payable of a dry run: what the journal would owe the party. */
+export interface DryRunPayable { party: PayableParty; account: string; amount: number }
+export interface DryRunResult {
+  ok: boolean
+  label: 'Test, not posted'
+  versionNo: number | null
+  date: string
+  lines: JournalLine[]
+  total: number
+  payables: DryRunPayable[]
+  holds: Hold[]
+  warnings: string[]
+}
+/**
+ * Dry run (run page Actions): the journal a run would post on the current settings, with its
+ * payables per party and every warning or hold. Stores nothing, posts nothing, and nothing
+ * depends on it. Call from a handler, not a computed.
+ */
+export function dryRunJournal(runId: string, no?: number): DryRunResult {
+  const run = runById(runId)
+  const p = previewDryRun(runId, no)
+  const lines = p.draft?.lines ?? []
+  const byParty = new Map<string, DryRunPayable>()
+  for (const l of lines) {
+    const party = l.account === payroll.settings.hutangGaji ? 'Staff' : partyOf(l.account)
+    if (!party) continue
+    const x = byParty.get(l.account) ?? { party, account: l.account, amount: 0 }
+    x.amount += l.credit - l.debit
+    byParty.set(l.account, x)
+  }
+  const computed = run && p.versionNo === run.currentVersion ? runWarnings(runId).map((w) => w.message) : []
+  return {
+    ok: p.ok && !p.holds.length && !!p.draft && !p.draft.nothingToPost, label: 'Test, not posted', versionNo: p.versionNo,
+    date: run ? defaultEntryDate(run) : '', lines, total: lines.reduce((x, l) => x + l.debit, 0),
+    payables: [...byParty.values()].filter((x) => x.amount !== 0),
+    holds: p.holds, warnings: [...new Set([...p.warnings.map((w) => w.message), ...computed])],
+  }
 }
 
 // ── Draft build (TS-05) ─────────────────────────────────────────────────────
@@ -1598,7 +1645,7 @@ export function isDraftStale(runId: string): boolean {
   const d = draftOf(runById(runId)!)
   return !!d && d.snapshotId !== currentSnapshotId()
 }
-/** Rebuild the current draft (and correction) on current settings; returns the lines that moved. */
+/** Rebuild the current draft (and revision summary) on current settings; returns the lines that moved. */
 export function rebuildDraft(runId: string): Result {
   const run = runById(runId), v = run && currentVersionOf(run)
   if (!run || !v) return { ok: false }
@@ -1712,17 +1759,18 @@ export function clearAcknowledgement(runId: string, key: string): Result {
   delete v.acks[key]
   return { ok: true }
 }
-/** The text of the Post (or Post correction) confirm: what posts, then every unacknowledged warning. */
-export function postConfirmText(runId: string): { title: string; body: string; warnings: string[] } {
+/** The text of the Post (or Reverse and repost) confirm: what posts, on which entry date, then every unacknowledged warning. */
+export function postConfirmText(runId: string, date?: string): { title: string; body: string; warnings: string[] } {
   const run = runById(runId)!
   const v = currentVersionOf(run)
-  const corr = v?.correction
-  const lines = corr ? corr.lines : (v?.draft?.lines ?? [])
+  const rev = v?.revision
+  const lines = v?.draft?.lines ?? []
   const total = lines.reduce((s, l) => s + l.debit, 0)
   const warnings = runWarnings(runId).filter((w) => !w.acknowledged).map((w) => w.message)
-  const pd = postingDate(run.end)
-  const title = corr ? `Post the correction for ${periodLabel(run.start, run.end)}?` : `Post payroll ${periodLabel(run.start, run.end)}?`
-  const body = `${corr ? `One correction journal, v${run.ledgerVersion} to v${v?.no}` : 'One payroll journal'} of ${rupiah(total)} on ${lines.length} lines, dated ${dateLabel(pd.date)}${pd.redirected ? ` in the first open period, tax month ${monthLabel(run.month)}` : ''}.`
+  const d = date ?? defaultEntryDate(run)
+  const live = liveJournals(run.id).map((j) => j.number)
+  const title = rev ? `Reverse and repost ${periodLabel(run.start, run.end)}?` : `Post payroll ${periodLabel(run.start, run.end)}?`
+  const body = `${rev ? `Reverses ${listLabel(live)} in full and posts v${v?.no} in full` : 'One payroll journal'} of ${rupiah(total)} on ${lines.length} lines, dated ${dateLabel(d)}.`
     + (warnings.length ? ` ${warnings.length} warning${warnings.length > 1 ? 's are' : ' is'} not acknowledged: ${warnings.join(' ')}` : '')
   return { title, body, warnings }
 }
@@ -1889,7 +1937,7 @@ export function isLocked(month: string): boolean { return payroll.lockedMonths.i
 export function firstOpenAfter(month: string): string { let m = month; while (isLocked(m)) m = nextMonthOf(m); return m }
 export function lockPeriod(month: string, o: { confirm?: boolean } = {}): Result {
   if (!can('setup')) return denied()
-  const open = payroll.runs.filter((r) => r.month === month && ['Received', 'Held', 'Waiting for your choice', 'Correction ready', 'Ready to post'].includes(runStatus(r)))
+  const open = payroll.runs.filter((r) => r.month === month && ['Received', 'Held', 'Waiting for your choice', 'Revision ready', 'Ready to post'].includes(runStatus(r)))
   if (open.length && !o.confirm) return { ok: false, needsConfirm: true, runs: open.map((r) => ({ id: r.id, label: periodLabel(r.start, r.end), status: runStatus(r) })), message: `${open.length} run${open.length > 1 ? 's are' : ' is'} still open in ${monthLabel(month)}.` }
   if (!isLocked(month)) payroll.lockedMonths.push(month)
   payroll.lockedMonths.sort()
@@ -1920,14 +1968,24 @@ function addJournal(j: Omit<Journal, 'id' | 'number' | 'postedBy' | 'postedAt' |
   payroll.journals.push(journal)
   return journal
 }
-function correctionMemo(run: Run, fromV: RunVersion, oldNo: string | null): string {
-  return `Correction of payroll ${periodLabel(run.start, run.end)} v${run.ledgerVersion ?? fromV.no}${oldNo ? ` (${oldNo})` : ''}, from v${fromV.no} sent ${dateLabel(isoDateWib(fromV.sentAt))}`
-}
 function isoDateWib(iso: string): string { return new Date(Date.parse(iso) + 7 * 3_600_000).toISOString().slice(0, 10) }
 const unackedMessages = (runId: string) => runWarnings(runId).filter((w) => !w.acknowledged).map((w) => w.message)
 
-/** First post of a run: one PAY journal, all or nothing. Warnings never block; the unacknowledged ones come back in `warnings`. */
-export function postRun(runId: string, o: { versionNo?: number } = {}): Result {
+/** Entry date of a post or repost: the last day of the pay period (a repost never defaults before the journal it reverses). */
+export function defaultEntryDate(run: Run): string {
+  const posted = liveJournals(run.id).map((j) => j.date).sort().pop()
+  return posted && posted > run.end ? posted : run.end
+}
+/** A posting date must be a real date in an open period (and, for a repost, not before the journal it reverses). */
+export function checkEntryDate(date: string, notBefore?: { date: string; number: string }): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date))) return 'Pick an entry date.'
+  if (isLocked(monthOf(date))) return `${monthLabel(monthOf(date))} is locked. Pick a date in an open period.`
+  if (notBefore && date < notBefore.date) return `The entry date can't be before ${notBefore.number} (${dateLabel(notBefore.date)}).`
+  return null
+}
+
+/** First post of a run: one PAY journal on the entry date, all or nothing. Warnings never block; the unacknowledged ones come back in `warnings`. */
+export function postRun(runId: string, o: { versionNo?: number; date?: string } = {}): Result {
   if (!can('post')) return denied()
   const run = runById(runId)
   if (!run) return { ok: false, status: 404 }
@@ -1936,7 +1994,7 @@ export function postRun(runId: string, o: { versionNo?: number } = {}): Result {
   if (run.mode !== 'Live') return { ok: false, status: 409, message: `${run.mode} runs do not post.` }
   if (run.ledgerVersion != null && liveJournals(run.id).length) {
     const posted = liveJournals(run.id)[0]!
-    return { ok: false, status: 409, message: run.revised ? `v${run.ledgerVersion} is posted as ${posted.number}. Post the correction for v${run.currentVersion}.` : `v${run.ledgerVersion} is already posted as ${posted.number}.` }
+    return { ok: false, status: 409, message: run.revised ? `v${run.ledgerVersion} is posted as ${posted.number}. Reverse and repost v${run.currentVersion}.` : `v${run.ledgerVersion} is already posted as ${posted.number}.` }
   }
   if (!v || !v.draft) return { ok: false, message: runHolds(run)[0]?.message ?? 'Nothing to post.' }
   if (isDraftStale(runId)) {
@@ -1945,22 +2003,23 @@ export function postRun(runId: string, o: { versionNo?: number } = {}): Result {
   }
   if (v.holds.length) return { ok: false, message: v.holds[0]!.message }
   if (v.draft.nothingToPost) return { ok: false, message: 'Nothing to post.' }
+  const date = o.date ?? defaultEntryDate(run)
+  const bad = checkEntryDate(date)
+  if (bad) return { ok: false, status: 422, message: bad }
   const warnings = unackedMessages(runId)
   if (!approving) {
-    const gate = approvalGate(run, v, 'post', v.draft.lines.reduce((x, l) => x + l.debit, 0))
+    const gate = approvalGate(run, v, 'post', v.draft.lines.reduce((x, l) => x + l.debit, 0), date)
     if (gate) return { ...gate, warnings }
   }
   now()
-  const pd = postingDate(v.draft.date)
   const j = addJournal({
-    type: 'Payroll', source: 'Talenta payroll', runId, versionNo: v.no, date: pd.date, taxMonth: run.month,
-    memo: pd.redirected ? `Payroll ${periodLabel(run.start, run.end)} v${v.no}, posted in the first open period. ${v.draft.memo}` : v.draft.memo,
-    reference: pd.redirected ? monthLabel(run.month) : null, correction: pd.redirected,
+    type: 'Payroll', source: 'Talenta payroll', runId, versionNo: v.no, date, taxMonth: run.month,
+    memo: v.draft.memo, reference: null, correction: false,
     lines: clone(v.draft.lines), snapshotId: v.draft.snapshotId, reversesId: null, paymentId: null,
   })
   run.ledgerVersion = v.no; run.revised = false; run.reversedAt = null
   addLog({ type: 'Post', status: 'Posted', reason: `Posted as ${j.number}`, nextStep: 'The salary payable clears when the bank line is matched.', runId, runKey: run.key, version: v.no, employees: v.payload.items.length, journalNo: j.number })
-  return { ok: true, journalId: j.id, number: j.number, redirected: pd.redirected, warnings }
+  return { ok: true, journalId: j.id, number: j.number, date, warnings }
 }
 
 // ── Approval (Settings > Approval workflows, transaction type Payroll journal) ──
@@ -1972,7 +2031,7 @@ export function pendingApproval(run: Run): PayrollApprovalRequest | null {
   return a && a.versionNo === run.currentVersion ? a : null
 }
 function approvalTask(run: Run, a: PayrollApprovalRequest): InboxTask {
-  const what = a.kind === 'post' ? 'Payroll journal' : 'Payroll correction'
+  const what = a.kind === 'post' ? 'Payroll journal' : 'Payroll reverse and repost'
   return {
     id: a.taskId, docType: 'Payroll Journal', number: Number(a.taskId.replace(/\D/g, '')) || 0,
     label: `${what} ${periodLabel(run.start, run.end)} v${a.versionNo}`,
@@ -1982,15 +2041,15 @@ function approvalTask(run: Run, a: PayrollApprovalRequest): InboxTask {
     approvers: a.approvers.map((name) => ({ name, role: PAYROLL_PEOPLE.find((p) => p.person === name)?.role ?? 'Approver' })),
   }
 }
-/** Post / Post correction: when an active rule matches, the draft goes to Inbox > Awaiting approval. Seeded history predates the rule. */
-function approvalGate(run: Run, v: RunVersion, kind: 'post' | 'correction', amount: number): Result | null {
+/** Post / Reverse and repost: when an active rule matches, the draft goes to Inbox > Awaiting approval with its entry date. Seeded history predates the rule. */
+function approvalGate(run: Run, v: RunVersion, kind: 'post' | 'repost', amount: number, date: string): Result | null {
   if (seeding) return null
   const pending = pendingApproval(run)
   if (pending) return { ok: false, status: 409, message: `Awaiting approval from ${listLabel(pending.approvers)}.` }
   const check = checkApprovalRequired(amount, actingPerson())
   if (!check.required) return null
   const a: PayrollApprovalRequest = {
-    kind, versionNo: v.no, amount, ruleId: check.ruleId!, ruleName: check.ruleName!, approvers: check.approvers,
+    kind, versionNo: v.no, amount, date, ruleId: check.ruleId!, ruleName: check.ruleName!, approvers: check.approvers,
     requestedBy: actingPerson(), requestedAt: now(), taskId: nextId('PAYJ-'),
   }
   run.approval = a; run.rejection = null
@@ -2005,7 +2064,7 @@ export function canApprove(runId: string): boolean {
   const a = run ? pendingApproval(run) : null
   return !!a && a.approvers.includes(actingPerson())
 }
-/** The approver approves: the PAY journal (or the correction) posts as requested. */
+/** The approver approves: the PAY journal (or the reversal and the new PAY journal) posts as requested, on the requested entry date. */
 export function approvePayroll(runId: string): Result {
   const run = runById(runId)
   const a = run ? pendingApproval(run) : null
@@ -2013,7 +2072,7 @@ export function approvePayroll(runId: string): Result {
   if (!a.approvers.includes(actingPerson())) return denied()
   approving = true
   let r: Result
-  try { r = a.kind === 'post' ? postRun(runId, { versionNo: a.versionNo }) : postCorrection(runId) } finally { approving = false }
+  try { r = a.kind === 'post' ? postRun(runId, { versionNo: a.versionNo, date: a.date }) : reverseAndRepost(runId, { versionNo: a.versionNo, date: a.date }) } finally { approving = false }
   if (!r.ok) return r
   run.approval = null
   removePayrollApprovalTask(a.taskId)
@@ -2041,9 +2100,9 @@ function syncApprovalTasks(): void {
   syncPayrollApprovalTasks(payroll.runs.flatMap((r) => { const a = pendingApproval(r); return a ? [approvalTask(r, a)] : [] }))
 }
 
-// ── Revisions: the latest version wins, Jurnal builds the correction ────────
+// ── Revisions: the latest version wins; reverse and repost replaces the ledger version ──
 
-export interface CorrectionSummary {
+export interface RevisionSummary {
   fromVersion: number
   toVersion: number
   takeHome: { before: number; after: number; change: number }
@@ -2054,39 +2113,14 @@ export interface CorrectionSummary {
   joined: number
   left: number
   amountChanged: number
-  /** Accounts and dimensions the correction moves. */
+  /** Accounts and dimensions that move between the posted journal and the new one. */
   moved: { account: string; tags: Tags; label: string; change: number }[]
   /** Settings changed since the posted journal was built: part of the movement is the settings, not Talenta. */
   settingsChanged: boolean
 }
-export interface Correction { lines: JournalLine[]; summary: CorrectionSummary; builtAt: string; snapshotId: string }
+/** What a newer version on a posted run changes. Reverse and repost reverses the posted PAY journal in full and posts the chosen version in full. */
+export interface Revision { summary: RevisionSummary; builtAt: string; snapshotId: string }
 
-/** Lines a correction posts: the new build minus the live journals (decreases on the opposite side). */
-function differenceLines(run: Run, newLines: JournalLine[]): JournalLine[] {
-  const liveLines = liveJournals(run.id).flatMap((j) => j.lines)
-  return diffLineSets(liveLines, newLines).map((r) => ({
-    account: r.account, tags: r.tags, debit: r.diff > 0 ? r.diff : 0, credit: r.diff < 0 ? -r.diff : 0,
-    why: [`v${run.ledgerVersion} to v${run.currentVersion}`], sources: sourceDiff(liveLines, newLines, r.key),
-  })).filter((l) => l.debit || l.credit)
-}
-/** Pay item sources of a correction line: new build minus the ledger, per item, section and side. */
-function sourceDiff(base: JournalLine[], next: JournalLine[], key: string): LineSource[] {
-  const acc = new Map<string, LineSource>()
-  const add = (lines: JournalLine[], sign: 1 | -1) => {
-    for (const l of lines) {
-      if (`${l.account}#${tagsKey(l.tags)}` !== key) continue
-      for (const s of l.sources) {
-        const k = `${s.item}|${s.section}|${s.side}`
-        const x = acc.get(k) ?? { ...s, amount: 0, staff: [] as string[] }
-        x.amount += sign * s.amount
-        if (sign === 1) x.staff = [...new Set([...x.staff, ...s.staff])]
-        acc.set(k, x)
-      }
-    }
-  }
-  add(base, -1); add(next, 1)
-  return [...acc.values()].filter((s) => s.amount !== 0)
-}
 function sendTotals(p: TalentaPayload) {
   const rows = staffRows(p)
   const bpjsItems = (e: StaffRow) => SECTIONS.reduce((s, [section, k]) => s + e[k].filter((i) => { const m = mappingFor(i.name, section); return !!m && (partyOf(m.credit) === 'BPJS Kesehatan' || partyOf(m.credit) === 'BPJS Ketenagakerjaan') }).reduce((x, i) => x + i.amount, 0), 0)
@@ -2097,7 +2131,7 @@ function sendTotals(p: TalentaPayload) {
     bpjs: rows.reduce((s, e) => s + bpjsItems(e), 0),
   }
 }
-function correctionSummary(run: Run, oldV: RunVersion, v: RunVersion, lines: JournalLine[]): CorrectionSummary {
+function revisionSummary(run: Run, oldV: RunVersion, v: RunVersion, newLines: JournalLine[]): RevisionSummary {
   const a = sendTotals(oldV.payload), b = sendTotals(v.payload)
   const fig = (k: keyof typeof a) => ({ before: a[k], after: b[k], change: b[k] - a[k] })
   const ra = new Map(staffRows(oldV.payload).map((e) => [e.user_id, e])), rb = new Map(staffRows(v.payload).map((e) => [e.user_id, e]))
@@ -2109,108 +2143,102 @@ function correctionSummary(run: Run, oldV: RunVersion, v: RunVersion, lines: Jou
     joined: [...rb.keys()].filter((u) => !ra.has(u)).length,
     left: [...ra.keys()].filter((u) => !rb.has(u)).length,
     amountChanged: [...rb].filter(([u, e]) => ra.has(u) && amounts(ra.get(u)!) !== amounts(e)).length,
-    moved: lines.map((l) => ({ account: l.account, tags: l.tags, label: `${accountLabel(l.account)}${tagsLabel(l.tags) ? ` | ${tagsLabel(l.tags)}` : ''}`, change: l.debit - l.credit })),
+    moved: diffLineSets(posted.flatMap((j) => j.lines), newLines).map((r) => ({ account: r.account, tags: r.tags, label: `${accountLabel(r.account)}${tagsLabel(r.tags) ? ` | ${tagsLabel(r.tags)}` : ''}`, change: r.diff })),
     settingsChanged: posted.some((j) => j.snapshotId && j.snapshotId !== currentSnapshotId()),
   }
 }
-/** One-line notice text for a correction summary. */
-export function correctionNotice(run: Run, s: CorrectionSummary): string {
+/** One-line notice text for a revision summary. */
+export function revisionNotice(run: Run, s: RevisionSummary): string {
   const sign = (n: number) => (n > 0 ? '+' : '') + rupiah(n)
   const staff = s.joined + s.left + s.amountChanged
-  return `Payroll ${periodLabel(run.start, run.end)} v${s.toVersion} replaces v${s.fromVersion}. Take-home pay ${sign(s.takeHome.change)}, PPh 21 ${sign(s.pph21.change)}, PPh 26 ${sign(s.pph26.change)}, BPJS ${sign(s.bpjs.change)}. ${staff} staff changed. Correction ready to post.`
+  return `Payroll ${periodLabel(run.start, run.end)} v${s.toVersion} replaces v${s.fromVersion}. Take-home pay ${sign(s.takeHome.change)}, PPh 21 ${sign(s.pph21.change)}, PPh 26 ${sign(s.pph26.change)}, BPJS ${sign(s.bpjs.change)}. ${staff} staff changed. Ready to reverse and repost.`
 }
 /**
- * After a version on a posted run is checked: build its correction (difference only) and
- * notify the Accountant, or, when nothing in the ledger moves, make it the ledger version.
+ * After a version on a posted run is checked: summarise what it changes and notify the
+ * Accountant, or, when nothing in the ledger moves, make it the ledger version at once.
  */
-function refreshCorrection(run: Run, v: RunVersion): void {
-  if (run.ledgerVersion == null || v.no === run.ledgerVersion || v.state !== 'active' || run.currentVersion !== v.no || !liveJournals(run.id).length) { v.correction = null; return }
-  if (!v.draft || v.holds.length) { v.correction = null; return }
+function refreshRevision(run: Run, v: RunVersion): void {
+  if (run.ledgerVersion == null || v.no === run.ledgerVersion || v.state !== 'active' || run.currentVersion !== v.no || !liveJournals(run.id).length) { v.revision = null; return }
+  if (!v.draft || v.holds.length) { v.revision = null; return }
   const oldV = versionOf(run, run.ledgerVersion)!
-  const lines = differenceLines(run, v.draft.lines)
-  if (!lines.length) {
-    v.correction = null
+  if (!diffLineSets(liveJournals(run.id).flatMap((j) => j.lines), v.draft.lines).length) {
+    v.revision = null
     const taxMoved = taxChanges(oldV.payload, v.payload)
     retireLedgerVersion(run, oldV, v)
     addLog({ type: 'Send', status: 'No change', reason: taxMoved.length ? 'Tax change, no ledger change' : 'No ledger change', nextStep: taxMoved.length ? 'Amend e-Bupot 21/26.' : 'Nothing to do.', runId: run.id, runKey: run.key, version: v.no })
     if (taxMoved.length) openAmendmentTask(run, oldV, v, true)
     return
   }
-  const first = !v.correction
-  v.correction = { lines, summary: correctionSummary(run, oldV, v, lines), builtAt: payroll.clock, snapshotId: currentSnapshotId() }
+  const first = !v.revision
+  v.revision = { summary: revisionSummary(run, oldV, v, v.draft.lines), builtAt: payroll.clock, snapshotId: currentSnapshotId() }
   run.revised = true
-  if (first) notify(ACTORS, correctionNotice(run, v.correction.summary), `/payroll-runs/${run.id}`)
+  if (first) notify(ACTORS, revisionNotice(run, v.revision.summary), `/payroll-runs/${run.id}`)
 }
-/** The correction waiting on a run (current version against the ledger), or null. */
-export function correctionOf(runId: string): Correction | null {
+/** The revision waiting on a run (current version against the ledger), or null. */
+export function revisionOf(runId: string): Revision | null {
   const run = runById(runId)
-  return run?.revised ? (currentVersionOf(run)?.correction ?? null) : null
+  return run?.revised ? (currentVersionOf(run)?.revision ?? null) : null
 }
-function fixGuard(run: Run | undefined): { ok: true; run: Run; v: RunVersion } | (Result & { ok: false }) {
-  if (!can('correct')) return denied()
-  if (!run) return { ok: false, status: 404 }
-  const v = currentVersionOf(run)
-  if (!v || v.state !== 'active') return { ok: false, message: 'Pick the current version.' }
-  if (run.ledgerVersion == null || !liveJournals(run.id).length) return { ok: false, message: 'Nothing posted for this run. Post the draft.' }
-  if (v.no === run.ledgerVersion) return { ok: false, status: 409, message: 'This version is already in the ledger.' }
-  if (run.versions.some((x) => x.state === 'partial')) return { ok: false, message: `v${run.versions.find((x) => x.state === 'partial')!.no} looks partial. Replace the full run or reject it first.` }
-  if (isDraftStale(run.id)) { rebuildDraft(run.id); return { ok: false, stale: true, message: 'Settings changed. The correction was rebuilt; review it and post again.' } }
-  if (v.holds.length) return { ok: false, message: v.holds[0]!.message }
-  return { ok: true, run, v }
+/** Versions the Accountant may repost (newest first; the first is preselected): sent after the posted one, not rejected, partial or moved. */
+export function repostVersions(runId: string): RunVersion[] {
+  const run = runById(runId)
+  if (!run || run.ledgerVersion == null) return []
+  return run.versions.filter((v) => v.no > run.ledgerVersion! && (v.state === 'active' || v.state === 'superseded')).reverse()
 }
 function retireLedgerVersion(run: Run, oldV: RunVersion, v: RunVersion) {
   if (oldV !== v) { oldV.state = 'replaced'; oldV.replacedBy = v.no }
   run.ledgerVersion = v.no; run.revised = false
-  v.correction = null
+  v.revision = null
 }
-function afterFix(run: Run, oldV: RunVersion, v: RunVersion, journals: Journal[]) {
-  retireLedgerVersion(run, oldV, v)
-  for (const j of journals) addLog({ type: j.type === 'Reversal' ? 'Reversal' : 'Post', status: j.type === 'Reversal' ? 'Reversed' : 'Posted', reason: `${j.memo} (${j.number})`, nextStep: 'Payables show the change.', runId: run.id, runKey: run.key, version: v.no, journalNo: j.number })
-  if (taxChanges(oldV.payload, v.payload).length) openAmendmentTask(run, oldV, v, false)
-}
-/** Post correction: one Correction journal with the difference only. Locked month: posts in the first open period, tax month kept. */
-export function postCorrection(runId: string): Result {
-  const g = fixGuard(runById(runId))
-  if (!g.ok) return g
-  const { run, v } = g
-  const corr = v.correction
-  if (!corr) return { ok: false, message: 'No correction to post.' }
-  const oldV = versionOf(run, run.ledgerVersion)!
-  const warnings = unackedMessages(runId)
+/**
+ * Reverse and repost (permission 'correct'): reverses every live PAY journal of the run in full
+ * and posts the chosen version (default: the current one) in full, both on one entry date
+ * (default the last day of the pay period; a locked period is refused). The approval workflow
+ * applies as for a first post; reversal and repost happen together once approved. Payables
+ * follow (the reversal clears the old amounts, the new journal is owed) and a PPh 21 change
+ * opens the amendment task.
+ */
+export function reverseAndRepost(runId: string, o: { versionNo?: number; date?: string } = {}): Result {
+  if (!can('correct')) return denied()
+  const run = runById(runId)
+  if (!run) return { ok: false, status: 404 }
+  const live = liveJournals(run.id)
+  if (run.ledgerVersion == null || !live.length) return { ok: false, message: 'Nothing posted for this run. Post the draft.' }
+  const no = o.versionNo ?? run.currentVersion
+  const v = versionOf(run, no)
+  if (!v || !repostVersions(runId).includes(v)) return { ok: false, status: 409, message: v?.no === run.ledgerVersion ? 'This version is already in the ledger.' : 'Pick a version sent after the posted one.' }
+  if (run.versions.some((x) => x.state === 'partial')) return { ok: false, message: `v${run.versions.find((x) => x.state === 'partial')!.no} looks partial. Replace the full run or reject it first.` }
+  if (v.no === run.currentVersion && isDraftStale(run.id)) { rebuildDraft(run.id); return { ok: false, stale: true, message: 'Settings changed. The new journal was rebuilt; review it and repost.' } }
+  const built = v.no === run.currentVersion ? { holds: v.holds, draft: v.draft } : previewDryRun(runId, v.no)
+  if (built.holds.length) return { ok: false, message: built.holds[0]!.message }
+  if (!built.draft || built.draft.nothingToPost) return { ok: false, message: 'Nothing to post.' }
+  const last = [...live].sort((a, b) => b.date.localeCompare(a.date))[0]!
+  const date = o.date ?? defaultEntryDate(run)
+  const bad = checkEntryDate(date, { date: last.date, number: last.number })
+  if (bad) return { ok: false, status: 422, message: bad }
+  const warnings = v.no === run.currentVersion ? unackedMessages(runId) : []
+  const total = built.draft.lines.reduce((x, l) => x + l.debit, 0)
   if (!approving) {
-    const gate = approvalGate(run, v, 'correction', corr.lines.reduce((x, l) => x + l.debit, 0))
+    const gate = approvalGate(run, v, 'repost', total, date)
     if (gate) return { ...gate, warnings }
   }
-  const live = liveJournals(run.id)
-  const pd = postingDate(run.end)
-  now()
-  const j = addJournal({
-    type: 'Correction', source: 'Talenta payroll', runId, versionNo: v.no, date: pd.date, taxMonth: run.month,
-    memo: pd.redirected ? correctionMemo(run, v, live[0]?.number ?? null) : `Correction v${run.ledgerVersion} to v${v.no}. ${memoFor(run, v)}`,
-    reference: pd.redirected ? monthLabel(run.month) : null, correction: pd.redirected,
-    lines: clone(corr.lines), snapshotId: currentSnapshotId(), reversesId: null, paymentId: null,
-  })
-  afterFix(run, oldV, v, [j])
-  return { ok: true, journals: [j.number], journalId: j.id, number: j.number, redirected: pd.redirected, warnings }
-}
-/** "More" menu: reverse every live journal of the run and post the current version in full. */
-export function reverseAndRepost(runId: string): Result {
-  const g = fixGuard(runById(runId))
-  if (!g.ok) return g
-  const { run, v } = g
   const oldV = versionOf(run, run.ledgerVersion)!
-  const live = liveJournals(run.id)
-  const pd = postingDate(run.end)
   now()
-  const reversals = live.map((j) => reversalOf(j, pd.date))
-  const b = buildJournal(run, v, payroll.settings)
+  const reversals = live.map((j) => reversalOf(j, date))
   const j = addJournal({
-    type: 'Payroll', source: 'Talenta payroll', runId, versionNo: v.no, date: pd.date, taxMonth: run.month,
-    memo: pd.redirected ? correctionMemo(run, v, live[0]?.number ?? null) : b.draft.memo, reference: pd.redirected ? monthLabel(run.month) : null, correction: pd.redirected,
-    lines: b.draft.lines, snapshotId: currentSnapshotId(), reversesId: null, paymentId: null,
+    type: 'Payroll', source: 'Talenta payroll', runId, versionNo: v.no, date, taxMonth: run.month,
+    memo: `${built.draft.memo}. Replaces ${listLabel(live.map((x) => x.number))}`, reference: null, correction: false,
+    lines: clone(built.draft.lines), snapshotId: currentSnapshotId(), reversesId: null, paymentId: null,
   })
-  afterFix(run, oldV, v, [...reversals, j])
-  return { ok: true, journals: [...reversals, j].map((x) => x.number), redirected: pd.redirected }
+  // The chosen version is the ledger version and the current one; any newer send stays as Superseded, not posted.
+  for (const x of run.versions) if (x !== v && x.no > v.no && x.state === 'active') { x.state = 'superseded'; x.replacedBy = v.no; x.revision = null }
+  const switched = run.currentVersion !== v.no
+  if (switched) { run.currentVersion = v.no; v.state = 'active'; v.replacedBy = null }
+  retireLedgerVersion(run, oldV, v)
+  if (switched) checkVersion(run, v)
+  for (const x of [...reversals, j]) addLog({ type: x.type === 'Reversal' ? 'Reversal' : 'Post', status: x.type === 'Reversal' ? 'Reversed' : 'Posted', reason: `${x.memo} (${x.number})`, nextStep: 'Payables show the change.', runId: run.id, runKey: run.key, version: v.no, journalNo: x.number })
+  if (taxChanges(oldV.payload, v.payload).length) openAmendmentTask(run, oldV, v, false)
+  return { ok: true, journals: [...reversals, j].map((x) => x.number), journalId: j.id, number: j.number, date, warnings }
 }
 /** Compare two versions of a run: pay items, account and dimension lines, staff by user_id (shown by employee_id), tax figures. */
 export function compareVersions(runId: string, a?: number, b?: number) {
@@ -2221,7 +2249,7 @@ export function compareVersions(runId: string, a?: number, b?: number) {
   const oldLines = oldNo === run.ledgerVersion && liveJournals(run.id).length ? liveJournals(run.id).flatMap((j) => j.lines) : buildJournal(run, va, payroll.settings).draft.lines
   const newLines = buildJournal(run, vb, payroll.settings).draft.lines
   const byAccountTag = diffLineSets(oldLines, newLines).map((r) => ({ ...r, label: `${accountLabel(r.account)}${tagsLabel(r.tags) ? ` | ${tagsLabel(r.tags)}` : ''}` }))
-  /** Lines moved only because settings changed since the posted journal was built (shown apart; the correction still posts them). */
+  /** Lines moved only because settings changed since the posted journal was built (shown apart; the repost still posts them). */
   const settingsMoved = oldNo === run.ledgerVersion && liveJournals(run.id).length ? diffLineSets(oldLines, buildJournal(run, va, payroll.settings).draft.lines) : []
   const ia = componentTotals(va.payload), ib = componentTotals(vb.payload)
   const byPayItem = [...new Set([...ia.keys(), ...ib.keys()])].map((k) => {
@@ -2309,7 +2337,7 @@ function openAmendmentTask(run: Run, a: RunVersion, b: RunVersion, noLedgerChang
   notify(ACTORS, `Amend e-Bupot 21/26 for ${monthLabel(run.month)}: ${employees.length} staff changed, period total change ${rupiah(periodChange)}`, `/payroll-runs/${run.id}`)
 }
 function latestAccepted(run: Run): RunVersion | undefined { return [...run.versions].reverse().find((v) => v.state !== 'rejected' && v.state !== 'moved' && v.state !== 'partial' && v.state !== 'waiting-choice') }
-const BOOKED: JournalType[] = ['Payroll', 'Correction', 'Reversal']
+const BOOKED: JournalType[] = ['Payroll', 'Reversal']
 function bookedLines(month: string, account: string, runId?: string): number {
   return payroll.journals.filter((j) => j.taxMonth === month && j.source === 'Talenta payroll' && BOOKED.includes(j.type) && (!runId || j.runId === runId))
     .flatMap((j) => j.lines).filter((l) => l.account === account).reduce((x, l) => x + l.credit - l.debit, 0)
@@ -2492,7 +2520,7 @@ export interface PayableRow {
   statusLabel: string
   /** Payments (bank matches) behind "paid", oldest first. */
   payments: { id: string; number: string; date: string; bank: string; amount: number; statement: string }[]
-  /** Correction waiting on the run (salary rows): the take-home pay the correction would make owed. */
+  /** Revision waiting on the run (salary rows): what is owed once it is reversed and reposted. */
   pendingOwed: number | null
   /** PPh 21 rows: the e-Bupot check. */
   ebupot: { filed: number; books: number; difference: number; by: string; at: string } | null
@@ -2527,12 +2555,12 @@ export function payablesTracker(month?: string): PayableRow[] {
       if (x.flagMessage) flags.push({ code: 'ebupot-differs', message: x.flagMessage })
     }
     for (const w of manualJournalWarnings(m).filter((w) => w.accounts.includes(account))) flags.push({ code: 'manual-journal', message: w.message })
-    const corr = run ? correctionOf(run.id) : null
+    const rev = run && revisionOf(run.id) ? draftOf(run) : null
     return {
       key: `${account}|${m}|${run?.id ?? ''}`, account, party, month: m, runId: run?.id ?? null, label, owed, paid, balance, due, dueLabel: due ? dateLabel(due) : 'Not set',
       overdueDays, paidLateDays, status, statusLabel,
       payments: pays.map((p) => ({ id: p.id, number: journalById(p.journalId)?.number ?? '', date: p.date, bank: accountLabel(p.bank), amount: p.amount, statement: payroll.bankLines.find((b) => b.id === p.statementLineId)?.description ?? '' })),
-      pendingOwed: corr ? owed + corr.lines.filter((l) => l.account === account).reduce((s, l) => s + l.credit - l.debit, 0) : null,
+      pendingOwed: rev ? rev.lines.filter((l) => l.account === account).reduce((s, l) => s + l.credit - l.debit, 0) : null,
       ebupot, flags,
     }
   }

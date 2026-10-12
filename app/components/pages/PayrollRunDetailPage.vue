@@ -4,13 +4,13 @@
  * and versions; holds with their fixes in check order; the draft review (OD-12);
  * Post with the stale-draft and newer-version blocks (warnings never block;
  * the unacknowledged ones are listed in the Post confirm); the versions, posted PAY journals and the "Built with"
- * snapshot. The warnings panel (acknowledge each), the correction notice with Post correction
- * (Reverse and repost under its More menu) and the claims section sit on the page itself.
+ * snapshot. Post and Reverse and repost take one entry date (PayrollPostDrawer); Actions > Dry run
+ * shows the journal the run would post, posting nothing. The warnings panel, the revision notice
+ * and the claims section sit on the page itself.
  */
 import { computed, ref, watch } from 'vue'
 import { MpButton, MpTextlink, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import RejectTransactionModal from '~/components/patterns/RejectTransactionModal.vue'
 import PayrollHoldsPanel from '~/components/payroll/PayrollHoldsPanel.vue'
 import PayrollDraftReview from '~/components/payroll/PayrollDraftReview.vue'
@@ -18,12 +18,14 @@ import PayrollRunBuiltWith from '~/components/payroll/PayrollRunBuiltWith.vue'
 import PayrollRunJournals from '~/components/payroll/PayrollRunJournals.vue'
 import PayrollRunWarnings from '~/components/payroll/PayrollRunWarnings.vue'
 import PayrollRunClaims from '~/components/payroll/PayrollRunClaims.vue'
-import PayrollCorrectionNotice from '~/components/payroll/PayrollCorrectionNotice.vue'
+import PayrollRevisionNotice from '~/components/payroll/PayrollRevisionNotice.vue'
+import PayrollPostDrawer from '~/components/payroll/PayrollPostDrawer.vue'
+import PayrollDryRunDrawer from '~/components/payroll/PayrollDryRunDrawer.vue'
 import PayrollRevisionPanel from '~/components/payroll/PayrollRevisionPanel.vue'
 import {
-  can, runById, runStatus, runHolds, currentVersionOf, versionLabel, draftOf, liveJournals, journalsOf, postRun,
+  can, runById, runStatus, runHolds, currentVersionOf, versionLabel, draftOf, liveJournals, journalsOf,
   pendingApproval, canApprove, approvePayroll, rejectPayroll, listLabel,
-  rebuildDraft, isDraftStale, postConfirmText, runWarnings, correctionOf, rupiah, wib, periodLabel, monthLabel,
+  rebuildDraft, isDraftStale, runWarnings, revisionOf, rupiah, wib, dateLabel, periodLabel, monthLabel,
   accountLabel, tagsLabel, type Tags,
 } from '~/data/payrollStore'
 import { statusType, versionFigures } from '~/data/payrollUiIntake'
@@ -46,7 +48,7 @@ const draftTotal = computed(() => (draft.value ? draft.value.lines.reduce((s, l)
 const liveTotal = computed(() => live.value.reduce((s, j) => s + j.lines.reduce((x, l) => x + l.debit, 0), 0))
 const warningCount = computed(() => (run.value ? runWarnings(run.value.id).length : 0))
 const showWarnings = computed(() => !!run.value && !holds.value.length && ((!!draft.value && !live.value.length) || warningCount.value > 0))
-const hasCorrection = computed(() => !!run.value && !!correctionOf(run.value.id))
+const hasRevision = computed(() => !!run.value && !!revisionOf(run.value.id))
 const showClaims = computed(() => !!draft.value || live.value.length > 0)
 const showRevisionSlot = computed(() => !!run.value && (run.value.versions.length > 1 || allJournals.value.length > 0))
 
@@ -64,32 +66,13 @@ watch(() => props.orderId, () => { tab.value = 'review'; staleChanges.value = []
 const canPostNow = computed(() => status.value === 'Ready to post' && !!draft.value && !draft.value.nothingToPost && !live.value.length)
 const stale = computed(() => !!run.value && isDraftStale(run.value.id))
 const postOpen = ref(false)
+const dryRunOpen = ref(false)
 const staleChanges = ref<{ key: string; account: string; tags: Tags; old: number; new: number; diff: number }[]>([])
 const postError = ref('')
-const postDescription = computed(() => (run.value && draft.value ? `${postConfirmText(run.value.id).body} ${t('A posted journal cannot be edited or deleted; the way back is reversal.')}` : ''))
 function askPost() {
   postError.value = ''
-  if (stale.value) { doPost(); return }
+  if (stale.value) { rebuild(); return }
   postOpen.value = true
-}
-function doPost() {
-  if (!run.value) return
-  const r = postRun(run.value.id, { versionNo: v.value?.no })
-  if (r.ok && r.awaitingApproval) {
-    staleChanges.value = []
-    successToast(t('Sent for approval'))
-    return
-  }
-  if (r.ok) {
-    staleChanges.value = []
-    successToast(t(`Posted as ${r.number as string}`))
-    for (const w of (r.warnings as string[] | undefined) ?? []) infoToast(t(w))
-    tab.value = 'review'
-    return
-  }
-  if (r.stale) { staleChanges.value = (r.changed as typeof staleChanges.value) ?? []; infoToast(t('Draft rebuilt on the current settings. Review and post again')); return }
-  postError.value = r.message ?? ''
-  errorToast(t('Not posted'))
 }
 function rebuild() {
   if (!run.value) return
@@ -139,9 +122,7 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
         <p class="prr__sub">
           {{ run.key }} · {{ t(run.kind) }} · v{{ v.no }} {{ t('of') }} {{ run.versions.length }} · {{ t('sent') }} {{ wib(v.sentAt) }} · {{ t('tax month') }} {{ monthLabel(run.month) }}
         </p>
-        <p v-if="run.dryRun" class="prr__sub">
-          {{ t(run.mode) }}<template v-if="run.dryRun.passedBy"> · {{ t('passed by') }} {{ run.dryRun.passedBy }}</template><template v-if="run.dryRun.signedOffBy"> · {{ t('signed off by') }} {{ run.dryRun.signedOffBy }}</template>
-        </p>
+        <p v-if="run.mode !== 'Live'" class="prr__sub">{{ t(run.mode) }}</p>
       </div>
       <div class="prr__baractions">
         <MpPopover id="prr-more" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
@@ -150,6 +131,7 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
           </MpPopoverTrigger>
           <MpPopoverContent class="erp-dropdown-menu">
             <MpPopoverList>
+              <MpPopoverListItem data-testid="prr-dry-run" @click="dryRunOpen = true">{{ t('Dry run') }}</MpPopoverListItem>
               <MpPopoverListItem v-if="draft && can('post')" @click="rebuild">{{ t('Rebuild draft') }}</MpPopoverListItem>
               <MpPopoverListItem v-if="draft && can('post')" @click="notInPrototype">{{ t('Submit for approval') }}</MpPopoverListItem>
               <MpPopoverListItem @click="notInPrototype">{{ t('Download review') }}</MpPopoverListItem>
@@ -195,7 +177,7 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
       <!-- Approval: Post matched a Payroll journal rule in Settings > Approval workflows. -->
       <div v-if="approval" class="prr__notice" data-testid="prr-approval">
         <div class="prr__noticetitle">{{ t('Awaiting approval') }} · {{ approval.ruleName }}</div>
-        <div>{{ t(approval.kind === 'post' ? 'Payroll journal' : 'Payroll correction') }} v{{ approval.versionNo }} {{ rupiah(approval.amount) }} · {{ t('sent by') }} {{ approval.requestedBy }} {{ wib(approval.requestedAt) }} · {{ t('approver') }} {{ listLabel(approval.approvers) }}</div>
+        <div>{{ t(approval.kind === 'post' ? 'Payroll journal' : 'Reverse and repost') }} v{{ approval.versionNo }} {{ rupiah(approval.amount) }} · {{ t('entry date') }} {{ dateLabel(approval.date) }} · {{ t('sent by') }} {{ approval.requestedBy }} {{ wib(approval.requestedAt) }} · {{ t('approver') }} {{ listLabel(approval.approvers) }}</div>
       </div>
       <div v-else-if="run.rejection && !live.length" class="prr__notice" data-testid="prr-rejected">
         <div class="prr__noticetitle">{{ t('Rejected by') }} {{ run.rejection.by }} · {{ wib(run.rejection.at) }}</div>
@@ -228,8 +210,8 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
       <!-- Holds with their fixes, in check order. -->
       <PayrollHoldsPanel v-if="holds.length" :run-id="run.id" />
 
-      <!-- Correction waiting on a posted run: summary, Post correction, More > Reverse and repost. -->
-      <PayrollCorrectionNotice v-if="hasCorrection" :run-id="run.id" />
+      <!-- A newer version on a posted run: what changes, then Reverse and repost. -->
+      <PayrollRevisionNotice v-if="hasRevision" :run-id="run.id" />
 
       <!-- Warnings on the current version: never block Post. -->
       <PayrollRunWarnings v-if="showWarnings" :run-id="run.id" />
@@ -288,14 +270,8 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
       <PayrollRunClaims v-if="showClaims" :run-id="run.id" />
     </div>
 
-    <ConfirmModal
-      v-model:is-open="postOpen"
-      :title="`${t('Post payroll')} ${periodLabel(run.start, run.end)} v${v.no}`"
-      :description="postDescription"
-      :confirm-label="t('Post')"
-      :is-danger="false"
-      @confirm="doPost"
-    />
+    <PayrollPostDrawer mode="post" :is-open="postOpen" :run-id="run.id" @close="postOpen = false" />
+    <PayrollDryRunDrawer :is-open="dryRunOpen" :run-id="run.id" @close="dryRunOpen = false" />
     <RejectTransactionModal :is-open="rejectOpen" doc-type="Payroll journal" @close="rejectOpen = false" @reject="reject" />
   </div>
   <div v-else class="prr">

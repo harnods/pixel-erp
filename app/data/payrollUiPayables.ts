@@ -12,7 +12,7 @@ import {
 /** Journal lines behind a tracker row, by dimension: what was owed and the bank matches that paid it. */
 export function payableDrill(row: PayableRow) {
   const owed = payroll.journals
-    .filter((j) => j.taxMonth === row.month && j.source === 'Talenta payroll' && (!row.runId || j.runId === row.runId) && ['Payroll', 'Correction', 'Reversal'].includes(j.type))
+    .filter((j) => j.taxMonth === row.month && j.source === 'Talenta payroll' && (!row.runId || j.runId === row.runId) && ['Payroll', 'Reversal'].includes(j.type))
     .flatMap((j) => j.lines.filter((l) => l.account === row.account).map((l) => ({ number: j.number, date: dateLabel(j.date), type: j.type, tags: tagsLabel(l.tags) || 'No dimension', amount: l.credit - l.debit, runId: j.runId })))
   const paid = row.payments.map((p) => ({ ...p, date: dateLabel(p.date) }))
   return { owed, paid }

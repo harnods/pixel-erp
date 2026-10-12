@@ -1,17 +1,16 @@
 <script setup lang="ts">
 /**
- * Correction notice (TS-07, OD-15): Talenta re-sent a posted period, the latest version wins and
- * Jurnal built the correction (difference only). The summary says what moved: take-home pay,
- * PPh 21, PPh 26, BPJS, counts of staff who joined, left or changed amount (no employee data), and the
- * accounts and dimensions the correction posts to. "Post correction" is the primary action;
- * "Reverse and repost" sits under More.
+ * Revision notice: Talenta re-sent a posted period and the latest version is current. Says what
+ * changes (take-home pay, PPh 21, PPh 26, BPJS, staff joined / left / amount changed as counts,
+ * the accounts and dimensions that move). "Reverse and repost" reverses the posted PAY journal in
+ * full and posts the chosen version in full on one entry date.
  */
 import { computed, ref } from 'vue'
-import { MpButton, MpIcon, MpBadge, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem } from '@mekari/pixel3'
-import PayrollCorrectionDrawer from '~/components/payroll/PayrollCorrectionDrawer.vue'
+import { MpButton, MpIcon, MpBadge } from '@mekari/pixel3'
+import PayrollPostDrawer from '~/components/payroll/PayrollPostDrawer.vue'
 import {
-  can, runById, correctionOf, currentVersionOf, pendingApproval, liveJournals, isLocked, firstOpenAfter, pph21Month,
-  monthLabel, dateLabel, rupiah, wib, accountLabel, tagsLabel, listLabel,
+  can, runById, revisionOf, currentVersionOf, pendingApproval, liveJournals, pph21Month,
+  monthLabel, rupiah, wib, accountLabel, tagsLabel, listLabel,
 } from '~/data/payrollStore'
 import { infoToast } from '~/utils/toasts'
 
@@ -19,16 +18,13 @@ const props = defineProps<{ runId: string }>()
 const { t } = useLocale()
 
 const run = computed(() => runById(props.runId))
-const corr = computed(() => correctionOf(props.runId))
+const rev = computed(() => revisionOf(props.runId))
 const cur = computed(() => (run.value ? currentVersionOf(run.value) : undefined))
 const live = computed(() => (run.value ? liveJournals(run.value.id) : []))
-const s = computed(() => corr.value?.summary ?? null)
-const locked = computed(() => !!run.value && isLocked(run.value.month))
+const s = computed(() => rev.value?.summary ?? null)
 const filed = computed(() => !!run.value && pph21Month(run.value.month).filed != null)
 const partial = computed(() => !!run.value?.versions.some((v) => v.state === 'partial'))
 const awaiting = computed(() => !!run.value && !!pendingApproval(run.value))
-const superseded = computed(() => (run.value?.versions ?? []).filter((v) => v.state === 'superseded').map((v) => `v${v.no}`))
-const total = computed(() => (corr.value?.lines ?? []).reduce((x, l) => x + l.debit, 0))
 const sign = (n: number) => (n > 0 ? `+${rupiah(n)}` : n < 0 ? `-${rupiah(-n)}` : rupiah(0))
 
 const figures = computed(() => (s.value ? [
@@ -45,37 +41,26 @@ const people = computed(() => (s.value ? [
 const staffCount = computed(() => people.value.reduce((n, p) => n + p.count, 0))
 function seeInTalenta() { infoToast(t('Opens Talenta')) }
 
-const drawer = ref<'correction' | 'repost' | null>(null)
+const open = ref(false)
 function showCompare() { document.getElementById('prp-compare')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
 </script>
 
 <template>
-  <section v-if="run && s && cur" class="pcn" data-tour="payroll-correction" data-testid="payroll-correction">
+  <section v-if="run && s && cur" class="pcn" data-tour="payroll-correction" data-testid="payroll-revision">
     <div class="pcn__top">
       <MpIcon name="warning-circular" size="md" />
       <div class="pcn__intro">
         <div class="pcn__title">
-          {{ t('Correction ready') }}
+          {{ t('Revision ready') }}
           <MpBadge variant="subtle" variant-color="orange">{{ `v${s.toVersion}` }} {{ t('sent') }} {{ wib(cur.sentAt) }}</MpBadge>
         </div>
         <div class="pcn__text">
-          {{ t('Talenta sent') }} {{ `v${s.toVersion}` }}; {{ `v${s.fromVersion}` }} {{ t('is posted as') }} {{ listLabel(live.map((j) => j.number)) }}.
-          {{ t('The correction posts the difference') }}: {{ rupiah(total) }} {{ t('on') }} {{ corr?.lines.length ?? 0 }} {{ t((corr?.lines.length ?? 0) === 1 ? 'line' : 'lines') }}.
+          {{ `v${s.fromVersion}` }} {{ t('is posted as') }} {{ listLabel(live.map((j) => j.number)) }}. {{ t('Reverse it and repost the new version in full.') }}
         </div>
       </div>
       <div class="pcn__actions">
         <MpButton v-if="run.versions.length > 1" variant="secondary" is-rounded @click="showCompare">{{ t('Compare versions') }}</MpButton>
-        <MpPopover v-if="can('correct') && !partial && !awaiting" id="pcn-more" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-          <MpPopoverTrigger>
-            <MpButton variant="secondary" is-rounded right-icon="chevrons-down">{{ t('More') }}</MpButton>
-          </MpPopoverTrigger>
-          <MpPopoverContent class="erp-dropdown-menu">
-            <MpPopoverList>
-              <MpPopoverListItem data-testid="pcn-repost" @click="drawer = 'repost'">{{ t('Reverse and repost') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-        <MpButton v-if="can('correct') && !partial && !awaiting" is-rounded data-testid="pcn-post" @click="drawer = 'correction'">{{ t('Post correction') }}</MpButton>
+        <MpButton v-if="can('correct') && !partial && !awaiting" is-rounded data-testid="pcn-repost" @click="open = true">{{ t('Reverse and repost') }}</MpButton>
       </div>
     </div>
 
@@ -109,15 +94,13 @@ function showCompare() { document.getElementById('prp-compare')?.scrollIntoView(
       <div v-else class="pcn__muted">{{ t('No account moves') }}</div>
     </div>
 
-    <div v-if="s.settingsChanged || locked || filed || superseded.length || partial" class="pcn__notes">
-      <div v-if="s.settingsChanged">{{ t('Settings changed since the posted journal was built; part of this correction is the settings change.') }}</div>
-      <div v-if="locked">{{ monthLabel(run.month) }} {{ t('is locked. The correction posts on') }} {{ dateLabel(`${firstOpenAfter(run.month)}-01`) }} {{ t('with a correction memo; the tax month stays') }} {{ monthLabel(run.month) }}.</div>
+    <div v-if="s.settingsChanged || filed || partial" class="pcn__notes">
+      <div v-if="s.settingsChanged">{{ t('Settings changed since the posted journal; part of the move is the settings change.') }}</div>
       <div v-if="filed">{{ t('PPh 21 for') }} {{ monthLabel(run.month) }} {{ t('is filed. A PPh 21 change opens an amendment task.') }}</div>
-      <div v-if="superseded.length">{{ superseded.join(', ') }}: {{ t('superseded, not posted.') }}</div>
-      <div v-if="partial">{{ t('A later send looks partial. Replace the full run or reject it before posting the correction.') }}</div>
+      <div v-if="partial">{{ t('A later send looks partial. Replace the full run or reject it first.') }}</div>
     </div>
 
-    <PayrollCorrectionDrawer :mode="drawer ?? 'correction'" :is-open="drawer !== null" :run-id="runId" @close="drawer = null" />
+    <PayrollPostDrawer mode="repost" :is-open="open" :run-id="runId" @close="open = false" />
   </section>
 </template>
 

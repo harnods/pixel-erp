@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import {
   payroll, runs, runStatus, runHolds, draftOf, draftReview, runWarnings, headcountChanges, liveJournals, journalTotals,
-  payablesTracker, amendmentTasks, accountLabel, suggestMapping, postRun, postConfirmText, correctionOf, correctionNotice,
+  payablesTracker, amendmentTasks, accountLabel, suggestMapping, postRun, postConfirmText, revisionOf, revisionNotice,
   currentVersionOf, staffRows, pph21Month, rupiah, dateLabel, sourceSummary, noticesFor,
 } from '../app/data/payrollStore'
 import { ACC } from '../app/data/payrollMaster'
@@ -173,7 +173,7 @@ describe('PAY-1 guided tour (auto-play)', () => {
     at(5)
     expect(runStatus(run)).toBe('Correction ready')
     expect([run.currentVersion, run.ledgerVersion]).toEqual([2, 1])
-    const corr = correctionOf(run.id)!
+    const corr = revisionOf(run.id)!
     const s = corr.summary
     q(5, s.takeHome.change, 1_732_959, true)
     q(5, s.pph21.change, 197_041, true)
@@ -184,7 +184,7 @@ describe('PAY-1 guided tour (auto-play)', () => {
     const orgOf = new Map(staffRows(currentVersionOf(run)!.payload).map((e) => [e.employee_id, e.organization_name]))
     expect(s.amountChanged.every((id) => orgOf.get(id) === 'Human Capital')).toBe(true)
     expect(copyOf(5)).toContain('EMP-0029 to EMP-0032 in Human Capital')
-    const notice = correctionNotice(run, s)
+    const notice = revisionNotice(run, s)
     expect(copyOf(5)).toContain(notice)
     expect(noticesFor('Accountant').some((n) => n.text === notice)).toBe(true)
     q(5, corr.lines.reduce((x, l) => x + l.debit, 0), 2_199_800)
@@ -266,7 +266,7 @@ describe('payroll payloads the screens render carry no employee data', () => {
     const hc = headcountChanges(run.id)
     expect(hc.groups.find((g) => g.label === 'Sales, Bandung')).toMatchObject({ joined: 1, left: 0 })
     expect(JSON.stringify([hc, runWarnings(run.id), sourceSummary(run.id)])).not.toMatch(leak)
-    const s = correctionOf(run.id)?.summary ?? null
+    const s = revisionOf(run.id)?.summary ?? null
     expect(s === null || (typeof s.joined === 'number' && typeof s.amountChanged === 'number')).toBe(true)
   })
 })

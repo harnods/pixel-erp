@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * Revisions and corrections for one payroll run (PRD FG-4: TS-07, OD-14..OD-17).
- * Mounted in the run record under the correction notice (PayrollCorrectionNotice). Shows the
+ * Mounted in the run record under the revision notice (PayrollRevisionNotice). Shows the
  * separate-run choice and partial notices, the run's PAY journals with Reverse (whole chain,
  * TN-21), "Reversed, not reposted", the version compare and the PPh 21 amendment tasks. The
  * version list lives in the run page's Versions tab. Actions a role may not take are hidden.
@@ -12,7 +12,7 @@ import PayrollReverseDrawer from '~/components/payroll/PayrollReverseDrawer.vue'
 import PayrollAmendmentTasks from '~/components/payroll/PayrollAmendmentTasks.vue'
 import {
   runById, journalsOf, liveJournals, journalById, journalTotals, versionOf, currentVersionOf, runStatus, postRun, draftOf,
-  can, monthLabel, dateLabel, periodLabel, rupiah, wib, today, addDays, amendmentTasks, correctionOf,
+  can, monthLabel, dateLabel, periodLabel, rupiah, wib, today, addDays, amendmentTasks, revisionOf,
   type Journal,
 } from '~/data/payrollStore'
 import { successToast } from '~/utils/toasts'
@@ -26,10 +26,10 @@ const live = computed(() => (run.value ? liveJournals(run.value.id) : []))
 const ledgerV = computed(() => (run.value ? versionOf(run.value, run.value.ledgerVersion) : undefined))
 const cur = computed(() => (run.value ? currentVersionOf(run.value) : undefined))
 
-// ── Notices (OD-14); the correction itself is PayrollCorrectionNotice ─────────
+// ── Notices (OD-14); the revision itself is PayrollRevisionNotice ─────────
 const partial = computed(() => run.value?.versions.find((v) => v.state === 'partial'))
 const waiting = computed(() => run.value?.versions.find((v) => v.state === 'waiting-choice'))
-const hasCorrection = computed(() => !!correctionOf(props.runId))
+const hasRevision = computed(() => !!revisionOf(props.runId))
 const partialText = computed(() => {
   const d = partial.value?.holds[0]?.details as { before?: number; after?: number } | undefined
   return partial.value && d ? `v${partial.value.no} holds ${d.after} of ${d.before} staff. Reverse and repost stays off until you pick Replace the full run or Reject.` : ''
@@ -62,7 +62,7 @@ function repost() {
 }
 
 // ── Journals ────────────────────────────────────────────────────────────────
-const journals = computed(() => (run.value ? journalsOf(run.value.id).filter((j) => ['Payroll', 'Correction', 'Reversal'].includes(j.type)) : []))
+const journals = computed(() => (run.value ? journalsOf(run.value.id).filter((j) => ['Payroll', 'Reversal'].includes(j.type)) : []))
 function journalState(j: Journal): string {
   if (j.reversesId) return `Reverses ${journalById(j.reversesId)?.number ?? ''}`
   if (j.reversedById) return `Reversed by ${journalById(j.reversedById)?.number ?? ''}`
@@ -85,7 +85,7 @@ const visible = computed(() => !!run.value && (run.value.versions.length > 1 || 
       </div>
     </section>
 
-    <section v-else-if="partial && ledgerV && !hasCorrection" class="prp__notice prp__notice--warn" data-testid="prp-partial">
+    <section v-else-if="partial && ledgerV && !hasRevision" class="prp__notice prp__notice--warn" data-testid="prp-partial">
       <MpIcon name="warning-circular" size="md" />
       <div class="prp__noticebody">
         <div class="prp__noticetitle">{{ t('Looks partial') }}</div>
