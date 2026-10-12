@@ -1,17 +1,19 @@
 <script setup lang="ts">
 /**
- * Post and Reverse and repost: one drawer for both. Post books the draft as one payroll journal.
- * Repost reverses every posted payroll journal of the run in full and posts the chosen version in
- * full (latest preselected). Both take one journal date, default the last day of the pay period;
- * a locked period is refused. When an approval rule matches, the date is kept and used on approval.
+ * Post journal and Reverse and repost: one drawer for both. Post books the draft as one payroll
+ * journal. Repost reverses every posted payroll journal of the run in full and posts the chosen
+ * version in full (latest preselected). Both take one journal date, default the last day of the
+ * pay period; a locked period is refused. When a Settings > Approval workflows rule matches, the
+ * button reads Send for approval and the date is kept for the approver.
  */
 import { computed, ref, shallowRef, watch } from 'vue'
 import { MpDatePicker, MpRadio } from '@mekari/pixel3'
 import PayrollCompareDrawerShell from '~/components/payroll/PayrollCompareDrawerShell.vue'
 import {
   runById, currentVersionOf, liveJournals, journalTotals, postRun, reverseAndRepost, repostVersions, previewDryRun,
-  defaultEntryDate, checkEntryDate, postConfirmText, dateLabel, periodLabel, rupiah, wib, sendFigures,
+  defaultEntryDate, checkEntryDate, postConfirmText, dateLabel, periodLabel, rupiah, wib, sendFigures, actingPerson, listLabel,
 } from '~/data/payrollStore'
+import { checkApprovalRequired } from '~/data/payrollApproval'
 import { successToast, infoToast } from '~/utils/toasts'
 
 const props = defineProps<{ isOpen: boolean; runId: string; mode: 'post' | 'repost' }>()
@@ -51,7 +53,8 @@ const dateError = computed(() => {
   const last = [...live.value].sort((a, b) => b.date.localeCompare(a.date))[0]
   return checkEntryDate(iso.value, props.mode === 'repost' && last ? { date: last.date, number: last.number } : undefined) ?? ''
 })
-const confirmLabel = computed(() => (props.mode === 'post' ? t('Post journal') : t(`Use v${versionNo.value ?? ''} and repost`)))
+const approval = computed(() => (props.isOpen && preview.value ? checkApprovalRequired(preview.value.total, actingPerson()) : null))
+const confirmLabel = computed(() => (approval.value?.required ? t('Send for approval') : props.mode === 'post' ? t('Post journal') : t(`Use v${versionNo.value ?? ''} and repost`)))
 
 function confirm() {
   error.value = ''
@@ -61,7 +64,7 @@ function confirm() {
     ? postRun(props.runId, { versionNo: versionNo.value ?? undefined, date: iso.value })
     : reverseAndRepost(props.runId, { versionNo: versionNo.value ?? undefined, date: iso.value })
   if (!r.ok) { error.value = t(r.message ?? 'Not posted. Check the date and try again.'); return }
-  if (r.awaitingApproval) { successToast(t('Sent for approval')); emit('close'); return }
+  if (r.awaitingApproval) { successToast(t('Sent for approval. The approver sees it in Inbox > Awaiting approval.')); emit('close'); return }
   const nos = (r.journals as string[] | undefined) ?? [r.number as string]
   successToast(t(`${nos.join(', ')} posted`))
   for (const w of (r.warnings as string[] | undefined) ?? []) infoToast(t(w))
@@ -84,11 +87,12 @@ function confirm() {
             </label>
           </div>
         </div>
-        <div class="ppd__row">
-          <div class="ppd__label">{{ t('Journal date') }}</div>
+        <div class="ppd__row" data-tour="payroll-journal-date">
+          <label class="ppd__label" for="ppd-date">{{ t('Journal date') }}</label>
           <div class="ppd__field">
             <MpDatePicker id="ppd-date" v-model="date" format="DD/MM/YYYY" value-type="format" use-portal is-full-width :is-clearable="false" @update:model-value="error = ''" />
             <div v-if="dateError" class="ppd__fielderror" data-testid="ppd-date-error">{{ t(dateError) }}</div>
+            <div v-else class="ppd__fieldhint">{{ mode === 'repost' ? t('The reversal and the new journal both use this date.') : t('Defaults to the last day of the pay period.') }}</div>
           </div>
         </div>
       </div>
@@ -119,6 +123,10 @@ function confirm() {
         </table>
       </div>
 
+      <div v-if="approval?.required" class="ppd__info" data-testid="ppd-approval">
+        {{ t('This journal matches the approval rule') }} {{ approval.ruleName }}. {{ t('It posts on this date once') }} {{ listLabel(approval.approvers) }} {{ t('approves it.') }}
+      </div>
+
       <div v-if="warnings.length" class="ppd__note" data-testid="ppd-warnings">
         <div class="ppd__notetitle">{{ warnings.length }} {{ t(warnings.length === 1 ? 'warning not checked yet' : 'warnings not checked yet') }}</div>
         <ul class="ppd__list"><li v-for="w in warnings" :key="w">{{ w }}</li></ul>
@@ -137,11 +145,13 @@ function confirm() {
 .ppd__identity { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ppd__form { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
 .ppd__row { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: var(--mp-spacing-4); align-items: start; }
-.ppd__label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); padding-top: var(--mp-spacing-2); }
+.ppd__label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: 38px; }
 .ppd__field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); max-width: 360px; }
 .ppd__choices { max-width: none; gap: var(--mp-spacing-2); padding-top: var(--mp-spacing-2); }
 .ppd__choice { display: flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); cursor: pointer; }
 .ppd__fielderror { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
+.ppd__fieldhint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.ppd__info { padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-background-neutral-subtle); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .ppd__scroll { overflow-x: auto; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); }
 .ppd__table { width: 100%; border-collapse: collapse; }
 .ppd__th {

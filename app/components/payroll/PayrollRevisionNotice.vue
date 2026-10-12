@@ -1,20 +1,23 @@
 <script setup lang="ts">
 /**
- * Revision notice: Talenta re-sent a posted period and the latest version is current. Says what
- * changes (take-home pay, PPh 21, PPh 26, BPJS, staff joined / left / amount changed as counts,
- * the accounts and dimensions that move). "Use vN and repost" reverses the posted journal in
- * full and posts the chosen version in full on one journal date.
+ * "Talenta sent this period again": a posted period arrived again and the latest version is
+ * current. Says what changes (take-home pay, PPh 21, PPh 26, BPJS, staff joined / left / amount
+ * changed as counts, the accounts and dimensions that move). "Use vN and repost" reverses the
+ * posted journal in full and posts the chosen version in full on one journal date.
  */
 import { computed, ref } from 'vue'
-import { MpButton, MpIcon, MpBadge } from '@mekari/pixel3'
+import { MpButton, MpIcon } from '@mekari/pixel3'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
 import PayrollPostDrawer from '~/components/payroll/PayrollPostDrawer.vue'
 import {
-  can, runById, revisionOf, currentVersionOf, pendingApproval, liveJournals, pph21Month,
-  monthLabel, rupiah, wib, accountLabel, tagsLabel, listLabel,
+  can, runById, revisionOf, currentVersionOf, pendingApproval, liveJournals,
+  rupiah, wib, accountLabel, tagsLabel, listLabel,
 } from '~/data/payrollStore'
 import { infoToast } from '~/utils/toasts'
 
 const props = defineProps<{ runId: string }>()
+const emit = defineEmits<{ compare: [] }>()
 const { t } = useLocale()
 
 const run = computed(() => runById(props.runId))
@@ -22,14 +25,13 @@ const rev = computed(() => revisionOf(props.runId))
 const cur = computed(() => (run.value ? currentVersionOf(run.value) : undefined))
 const live = computed(() => (run.value ? liveJournals(run.value.id) : []))
 const s = computed(() => rev.value?.summary ?? null)
-const filed = computed(() => !!run.value && pph21Month(run.value.month).filed != null)
 const partial = computed(() => !!run.value?.versions.some((v) => v.state === 'partial'))
 const awaiting = computed(() => !!run.value && !!pendingApproval(run.value))
 const sign = (n: number) => (n > 0 ? `+${rupiah(n)}` : n < 0 ? `-${rupiah(-n)}` : rupiah(0))
 
 const figures = computed(() => (s.value ? [
   { key: 'thp', label: 'Take-home pay', x: s.value.takeHome },
-  { key: 'pph21', label: 'PPh 21', x: s.value.pph21 },
+  { key: 'pph21', label: 'PPh 21 (income tax)', x: s.value.pph21 },
   { key: 'pph26', label: 'PPh 26 (foreign staff)', x: s.value.pph26 },
   { key: 'bpjs', label: 'BPJS (state insurance)', x: s.value.bpjs },
 ] : []))
@@ -42,29 +44,31 @@ const staffCount = computed(() => people.value.reduce((n, p) => n + p.count, 0))
 function seeInTalenta() { infoToast(t('Opens Talenta')) }
 
 const open = ref(false)
-function showCompare() { document.getElementById('prp-compare')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
+function showCompare() { emit('compare') }
 </script>
 
 <template>
-  <section v-if="run && s && cur" class="pcn" data-tour="payroll-correction" data-testid="payroll-revision">
+  <section v-if="run && s && cur" class="pcn" data-tour="payroll-revision" data-testid="payroll-revision">
     <div class="pcn__top">
       <MpIcon name="warning-circular" size="md" />
       <div class="pcn__intro">
         <div class="pcn__title">
           {{ t('Talenta sent this period again') }}
-          <MpBadge variant="subtle" variant-color="orange">{{ `v${s.toVersion}` }} {{ t('sent') }} {{ wib(cur.sentAt) }}</MpBadge>
+          <ErpStatusBadge status="Revision ready" :label="`v${s.toVersion} ${t('sent')} ${wib(cur.sentAt)}`" type="warning" />
         </div>
         <div class="pcn__text">
-          {{ `v${s.fromVersion}` }} {{ t('is posted as') }} {{ listLabel(live.map((j) => j.number)) }}. {{ t('Reverse it and post the new version instead.') }}
+          {{ `v${s.fromVersion}` }} {{ t('is posted as') }} {{ listLabel(live.map((j) => j.number)) }}. {{ t(`Use v${s.toVersion} and repost to replace it in full.`) }}
         </div>
       </div>
       <div class="pcn__actions">
         <MpButton v-if="run.versions.length > 1" variant="secondary" is-rounded @click="showCompare">{{ t('Compare versions') }}</MpButton>
-        <MpButton v-if="can('correct') && !partial && !awaiting" is-rounded data-testid="pcn-repost" @click="open = true">{{ t(`Use v${s.toVersion} and repost`) }}</MpButton>
+        <MpButton v-if="can('correct') && !partial && !awaiting" is-rounded data-testid="pcn-repost" data-tour="payroll-repost" @click="open = true">{{ t(`Use v${s.toVersion} and repost`) }}</MpButton>
       </div>
     </div>
 
-    <div class="pcn__grid">
+    <PayrollReadOnlyNote v-if="!can('correct')" :text="t('Reposting needs edit access (LM).')" />
+
+    <div class="pcn__grid" data-tour="payroll-correction">
       <div v-for="f in figures" :key="f.key" class="pcn__fig" :data-figure="f.key">
         <div class="pcn__figlabel">{{ t(f.label) }}</div>
         <div class="pcn__figvalue" :class="{ 'pcn__figvalue--zero': !f.x.change }">{{ sign(f.x.change) }}</div>
@@ -94,9 +98,8 @@ function showCompare() { document.getElementById('prp-compare')?.scrollIntoView(
       <div v-else class="pcn__muted">{{ t('No account changes') }}</div>
     </div>
 
-    <div v-if="s.settingsChanged || filed || partial" class="pcn__notes">
+    <div v-if="s.settingsChanged || partial" class="pcn__notes">
       <div v-if="s.settingsChanged">{{ t('Settings changed after the posted journal, so part of this change comes from settings.') }}</div>
-      <div v-if="filed">{{ t('PPh 21 for') }} {{ monthLabel(run.month) }} {{ t('is already filed. A PPh 21 change opens a task to amend the filing.') }}</div>
       <div v-if="partial">{{ t('A later send looks like part of the run. Use it as the full run or reject it first.') }}</div>
     </div>
 

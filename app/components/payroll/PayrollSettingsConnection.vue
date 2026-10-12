@@ -5,8 +5,10 @@
  * "How to send from Talenta". Changes take the Owner or Ultimate + LM.
  */
 import { computed, ref } from 'vue'
-import { MpButton, MpButtonGroup, MpInput, MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay } from '@mekari/pixel3'
+import { MpButton, MpButtonGroup, MpInput, MpTextlink, MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
+import { statusLabel, statusType as badgeType } from '~/data/payrollUiRunCopy'
 import PayrollSettingsDrawer from '~/components/payroll/PayrollSettingsDrawer.vue'
 import { successToast, infoToast } from '~/utils/toasts'
 import {
@@ -17,9 +19,6 @@ import { PAYROLL_COMPANY_NAME } from '~/data/payrollMaster'
 
 const { t } = useLocale()
 const c = connection
-const statusType = computed(() => ({ Connected: 'completed', 'Waiting for first send': 'warning', Ended: 'announcement', 'Not connected': 'announcement' } as const)[c.value.status])
-/** Ended reads as Disconnected, the same word as the button that ends it. */
-const STATUS_LABEL: Record<string, string> = { Connected: 'Connected', 'Waiting for first send': 'Waiting for first send', Ended: 'Disconnected', 'Not connected': 'Not connected' }
 const live = computed(() => c.value.status === 'Connected' || c.value.status === 'Waiting for first send')
 
 /** The newest version Talenta sent. */
@@ -36,7 +35,7 @@ function onStart() {
   const id = Number(companyId.value.trim())
   if (!companyId.value.trim() || !Number.isInteger(id) || id <= 0) { startError.value = t('Enter the Talenta company ID using numbers only, for example 12345.'); return }
   const r = c.value.status === 'Ended' ? restartConnection(id) : startConnection(id)
-  if (!r.ok) { startError.value = t(r.message ?? ''); return }
+  if (!r.ok) { startError.value = t(r.message ?? 'Not connected. Check the company ID and try again.'); return }
   startError.value = ''
   companyId.value = ''
   if (r.warning) infoToast(t(String(r.warning)))
@@ -47,7 +46,7 @@ const endReason = ref('')
 const endError = ref('')
 function onEnd() {
   const r = endConnection(endReason.value)
-  if (!r.ok) { endError.value = t(r.message ?? ''); return }
+  if (!r.ok) { endError.value = t(r.message ?? 'Not disconnected. Enter a reason and try again.'); return }
   endOpen.value = false; endReason.value = ''; endError.value = ''
   successToast(t('Talenta disconnected'))
 }
@@ -56,11 +55,14 @@ const howOpen = ref(false)
 
 <template>
   <div class="pset-stack">
-    <div class="pset-card">
+    <div class="pset-card" data-tour="payroll-connection">
       <div class="pset-card__head">
-        <div class="pset-card__title">{{ t('Talenta connection') }}</div>
+        <div>
+          <div class="pset-card__title">{{ t('Talenta connection') }}</div>
+          <div class="pset-card__sub">{{ t('Talenta sends each pay period\'s salary details here, and Jurnal builds the payroll journal.') }}</div>
+        </div>
         <div class="pset-card__actions">
-          <ErpStatusBadge :status="c.status" :label="t(STATUS_LABEL[c.status] ?? c.status)" :type="statusType" />
+          <ErpStatusBadge :status="c.status" :label="t(statusLabel(c.status))" :type="badgeType(c.status)" />
         </div>
       </div>
       <div class="pset-card__body">
@@ -68,11 +70,11 @@ const howOpen = ref(false)
           <span class="pset-form__label">{{ t('Talenta company') }}</span>
           <span class="pset-form__value">{{ c.companyId ? `${PAYROLL_COMPANY_NAME} · ID ${c.companyId}` : t('Not linked') }}</span>
 
-          <span class="pset-form__label">{{ t('Last sent') }}</span>
+          <span class="pset-form__label">{{ t('Last send') }}</span>
           <span class="pset-form__value">{{ lastSend ? `${wib(lastSend.at)} · ${lastSend.period}` : t('Nothing sent yet') }}</span>
 
-          <span class="pset-form__label">{{ t('Old sync') }}</span>
-          <span class="pset-form__value" data-tour="payroll-old-sync">{{ t(live ? 'Blocked since connecting. Jurnal books payroll from Talenta sends.' : 'Runs until you connect Talenta.') }}</span>
+          <span class="pset-form__label">{{ t('Old Talenta to Expense sync') }}</span>
+          <span class="pset-form__value" data-tour="payroll-old-sync">{{ t(live ? 'Blocked since connecting, so nothing is booked twice.' : 'Still runs until you connect.') }}</span>
         </div>
 
         <!-- Start / restart -->
@@ -86,10 +88,10 @@ const howOpen = ref(false)
         <p v-if="startError" class="pset-error">{{ startError }}</p>
 
         <div class="pset-bar">
-          <span class="pset-link" @click="howOpen = true">{{ t('How to send from Talenta') }}</span>
+          <MpTextlink id="pset-how-to-send" as="a" data-tour="payroll-how-to-send" @click.prevent="howOpen = true">{{ t('How to send from Talenta') }}</MpTextlink>
           <MpButton v-if="can('connection') && live" variant="secondary" is-rounded @click="endOpen = true">{{ t('Disconnect Talenta') }}</MpButton>
         </div>
-        <p v-if="!can('connection')" class="pset-hint" data-testid="pset-readonly">{{ t('Editing needs Set up access.') }}</p>
+        <PayrollReadOnlyNote v-if="!can('connection')" :text="t('Editing needs Set up access (Owner or Ultimate + LM).')" />
       </div>
     </div>
 
@@ -106,7 +108,7 @@ const howOpen = ref(false)
         <MpModalHeader>{{ t('Disconnect Talenta?') }}</MpModalHeader>
         <MpModalBody>
           <div class="pset-stack">
-            <p class="pset-hint">{{ t('Posted journals and settings stay. Jurnal stops accepting payroll from Talenta until you reconnect.') }}</p>
+            <p class="pset-hint">{{ t('Posted journals and settings stay. Jurnal stops taking payroll from Talenta until you reconnect.') }}</p>
             <div class="pset-field">
               <label class="pset-label" for="pset-end-reason">{{ t('Reason') }}</label>
               <MpInput id="pset-end-reason" v-model="endReason" :is-invalid="!!endError" @update:model-value="endError = ''" />

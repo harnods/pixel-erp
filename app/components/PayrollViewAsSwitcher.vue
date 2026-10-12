@@ -13,8 +13,8 @@
     v-slot="{ onClosePopover }"
   >
     <MpPopoverTrigger>
-      <button type="button" class="va-trigger" data-tour="payroll-view-as" :aria-label="t('View as')">
-        <span class="va-label">
+      <button type="button" class="va-trigger" data-tour="payroll-viewas" :aria-label="t('View as')">
+        <span class="va-label" data-tour="payroll-view-as">
           <span class="va-caption">{{ t('View as') }}</span>
           <span class="va-role">{{ t(payroll.viewAs) }}</span>
         </span>
@@ -23,7 +23,7 @@
     </MpPopoverTrigger>
     <MpPopoverContent class="va-menu" is-unstyled>
       <p class="va-heading">{{ t('View payroll as') }}</p>
-      <p class="va-hint">{{ t('Each role sees only the actions it can take.') }}</p>
+      <p class="va-hint">{{ t('Each role sees only the actions it can take. LM adds edit and delete.') }}</p>
       <nav class="va-list">
         <button
           v-for="p in PAYROLL_PEOPLE"
@@ -136,11 +136,4 @@ function reset(closePopover: () => void) {
 .va-item-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary); }
 .va-reset { border-top: 1px solid var(--mp-colors-border-default); margin-top: var(--mp-spacing-1); padding-top: var(--mp-spacing-3); }
 .va-reset .va-item-name { color: var(--mp-colors-text-link, #165082); }
-.va-foot {
-  margin: var(--mp-spacing-1) 0 0;
-  padding: var(--mp-spacing-2) var(--mp-spacing-4) 0;
-  border-top: 1px solid var(--mp-colors-border-default);
-  font-size: var(--mp-font-sizes-sm);
-  color: var(--mp-colors-text-secondary);
-}
 </style>

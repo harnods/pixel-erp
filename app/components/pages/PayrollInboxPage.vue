@@ -13,10 +13,11 @@ import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePa
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PayrollInboxSimulateMenu from '~/components/payroll/PayrollInboxSimulateMenu.vue'
+import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
 import { payroll, sendLog, sendLogCsv, can, today, rupiah, wib, monthLabel, monthOf, runs, runStatus, type SendOutcome } from '~/data/payrollStore'
-import { runRow, statusType, headcountMonths, latestHeadcountMonth, monthHeadcount } from '~/data/payrollUiIntake'
+import { runRow, headcountMonths, latestHeadcountMonth, monthHeadcount } from '~/data/payrollUiIntake'
 import { infoToast } from '~/utils/toasts'
-import { statusLabel, nextStepLabel } from '~/data/payrollUiRunCopy'
+import { statusLabel, statusType, nextStepLabel } from '~/data/payrollUiRunCopy'
 
 const { t } = useLocale()
 const router = useRouter()
@@ -75,7 +76,7 @@ const runColumns = computed<TableColumn[]>(() => [
   { key: 'version', label: t('Version'), kind: 'unit' },
   { key: 'staff', label: t('Staff'), kind: 'unit', align: 'right' },
   { key: 'takeHome', label: t('Take-home pay'), kind: 'amount', align: 'right' },
-  { key: 'received', label: t('Last received'), kind: 'date' },
+  { key: 'received', label: t('Sent by Talenta (WIB)'), kind: 'date' },
 ])
 const statusFilterOptions = computed(() => [{ value: 'needs-fix', label: t('To fix before posting') }, ...runStatusOptions.value])
 function openRun(id: string) { router.push(`/payroll-runs/${id}`) }
@@ -86,9 +87,6 @@ const logResult = ref('')
 const logSearch = ref('')
 const logPage = ref(1)
 const logPerPage = ref(25)
-const RESULT_BADGE: Record<SendOutcome, 'completed' | 'warning' | 'information' | 'critical'> = {
-  Accepted: 'completed', Held: 'warning', Duplicate: 'information', Rejected: 'critical',
-}
 const logRows = computed(() => sendLog.value.map((l) => ({ ...l, at: wib(l.at) })))
 const filteredLog = computed(() => {
   const q = logSearch.value.trim().toLowerCase()
@@ -96,9 +94,9 @@ const filteredLog = computed(() => {
 })
 const pagedLog = computed(() => filteredLog.value.slice((logPage.value - 1) * logPerPage.value, logPage.value * logPerPage.value))
 watch([logResult, logSearch], () => { logPage.value = 1 })
-const logResultOptions = computed(() => (['Accepted', 'Held', 'Duplicate', 'Rejected'] as SendOutcome[]).map((s) => ({ value: s, label: t(s) })))
+const logResultOptions = computed(() => (['Accepted', 'Held', 'Duplicate', 'Rejected'] as SendOutcome[]).map((s) => ({ value: s, label: t(statusLabel(s)) })))
 const logColumns = computed<TableColumn[]>(() => [
-  { key: 'at', label: t('Received (WIB)'), kind: 'date' },
+  { key: 'at', label: t('Sent by Talenta (WIB)'), kind: 'date' },
   { key: 'period', label: t('Period'), kind: 'number' },
   { key: 'version', label: t('Version'), kind: 'unit' },
   { key: 'staff', label: t('Staff'), kind: 'unit', align: 'right' },
@@ -145,8 +143,9 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
 <template>
   <div class="pi">
     <div class="pi__toolbar">
-      <MpSegmentedControl id="pi-view" v-model="view" name="pi-view" :data="viewOptions" class="pi__views" />
-      <PayrollInboxSimulateMenu @sent="(id) => { if (id && view === 'runs') statusFilter = '' }" />
+      <MpSegmentedControl id="pi-view" v-model="view" name="pi-view" :data="viewOptions" class="pi__views" data-tour="payroll-inbox-views" />
+      <PayrollReadOnlyNote v-if="!can('simulate')" :text="t('View only. Payroll actions are off for this role.')" />
+      <PayrollInboxSimulateMenu v-else @sent="(id) => { if (id && view === 'runs') statusFilter = '' }" />
     </div>
 
     <!-- ── Runs ── -->
@@ -192,7 +191,7 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
           </div>
           <div v-if="canHeadcount" class="stat-card">
             <div class="stat-title">{{ t('Headcount change') }}</div>
-            <div class="stat-period">{{ trackedMonth.previous ? `${trackedMonth.label} ${t('against')} ${monthLabel(trackedMonth.previous.month)}` : trackedMonth.label }} · {{ t('staff changed') }}</div>
+            <div class="stat-period">{{ trackedMonth.previous ? `${t('Staff changed')}, ${trackedMonth.label} ${t('against')} ${monthLabel(trackedMonth.previous.month)}` : `${t('Staff changed')}, ${trackedMonth.label}` }}</div>
             <div class="stat-amount">{{ trackedMonth.changed }}</div>
             <a class="stat-link" @click="() => { month = trackedMonth.month; view = 'month' }">{{ changeSummary(trackedMonth) || t('No change') }}</a>
           </div>
@@ -230,6 +229,7 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
     <!-- ── Sync log ── -->
     <ErpTablePage
       v-else-if="view === 'log'"
+      data-tour="payroll-synclog"
       :columns="logColumns"
       :rows="(pagedLog as unknown as Record<string, unknown>[])"
       :total="filteredLog.length"
@@ -263,7 +263,7 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
       </template>
       <template #cell-result="{ row }">
         <div class="pi__result">
-          <ErpStatusBadge :status="(row as { result: string }).result" :label="t((row as { result: string }).result)" :type="RESULT_BADGE[(row as { result: SendOutcome }).result]" />
+          <ErpStatusBadge :status="(row as { result: string }).result" :label="t(statusLabel((row as { result: string }).result))" :type="statusType((row as { result: string }).result)" />
           <span v-if="(row as { reason: string }).reason" class="pi__muted pi__wrap">{{ (row as { reason: string }).reason }}</span>
         </div>
       </template>
@@ -273,12 +273,12 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
     </ErpTablePage>
 
     <!-- ── Month headcount ── -->
-    <template v-else-if="view === 'month' && canHeadcount">
+    <div v-else-if="view === 'month' && canHeadcount" class="pi__month" data-tour="payroll-month-headcount">
       <div class="stats-section pi__stats">
         <div class="stat-card stat-card--bordered">
-          <div class="stat-title">{{ t('Status') }}</div>
+          <div class="stat-title">{{ t('Talenta send') }}</div>
           <div class="stat-period">{{ tracker.label }} · {{ tracker.period }}</div>
-          <div class="stat-amount" :class="{ 'stat-amount--danger': tracker.status === 'Missing send' }">{{ t(tracker.status) }}</div>
+          <div class="stat-amount" :class="{ 'stat-amount--danger': tracker.status === 'Missing send' }">{{ t(statusLabel(tracker.status)) }}</div>
           <a v-if="tracker.runId" class="stat-link" @click="openRun(tracker.runId)">{{ t('Open run') }} {{ tracker.version }}</a>
         </div>
         <div class="stat-card stat-card--bordered">
@@ -310,7 +310,7 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
         <template #filters>
           <div class="filter-left">
             <ErpFilterSelect id="pm-month" v-model="month" :placeholder="t('Month')" :options="monthOptions" :is-clearable="false" />
-            <span class="pi__muted">{{ tracker.runStatus ? `${t('Regular run')} ${tracker.version} · ${t(tracker.runStatus)}` : t(tracker.status) }}</span>
+            <span class="pi__muted">{{ tracker.runStatus ? `${t('Regular run')} ${tracker.version} · ${t(statusLabel(tracker.runStatus))}` : t(statusLabel(tracker.status)) }}</span>
           </div>
         </template>
         <template #cell-people="{ row }">
@@ -321,10 +321,10 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
           </div>
         </template>
         <template #cell-state="{ value }">
-          <ErpStatusBadge :status="String(value)" :label="t(String(value))" :type="statusType(String(value))" />
+          <ErpStatusBadge :status="String(value)" :label="t(statusLabel(String(value)))" :type="statusType(String(value))" />
         </template>
       </ErpTablePage>
-    </template>
+    </div>
   </div>
 </template>
 
@@ -336,6 +336,7 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
 }
 .pi__views :deep(.mp-segmented-control__item), .pi__views :deep([data-part='item']) { min-width: max-content; }
 .pi__stats { padding-bottom: var(--mp-spacing-5); margin-bottom: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-border-default); }
+.pi__month { display: flex; flex-direction: column; }
 .pi__muted { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
 .pi__wrap { white-space: normal; overflow-wrap: anywhere; }
 .pi__result { display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-1); }

@@ -1,17 +1,18 @@
 <script setup lang="ts">
 /**
- * Reverse (TS-07, TN-21): reversing any journal of a run lists every live journal of the run
- * and reverses them together (reverse and repost lives on the revision notice). The date is open
- * and not before the original; a locked month moves it to the first open period. Matched payments are
- * listed and need a second confirm; no payment, bank line or reconciliation changes.
+ * Reverse journal: lists every posted payroll journal of the run and reverses them together
+ * (Use vN and repost lives on the "Talenta sent this period again" notice). The journal date is
+ * not before the original; a locked month moves it to the first open period. Matched payments
+ * are listed and need a second confirm; no payment, bank line or reconciliation changes.
  */
-import { MpDatePicker, MpFormControl, MpFormLabel, MpCheckbox } from '@mekari/pixel3'
+import { MpDatePicker, MpCheckbox } from '@mekari/pixel3'
 import PayrollCompareDrawerShell from '~/components/payroll/PayrollCompareDrawerShell.vue'
 import {
   runById, liveJournals, reverseRun, journalTotals, paymentsFor, journalById,
   isLocked, firstOpenAfter, monthLabel, dateLabel, rupiah, accountLabel, payroll,
 } from '~/data/payrollStore'
 import { successToast } from '~/utils/toasts'
+import { PARTY_LABEL } from '~/data/payrollUiPay'
 
 const props = defineProps<{ isOpen: boolean; runId: string }>()
 const emit = defineEmits<{ close: [] }>()
@@ -40,9 +41,9 @@ const disabledDate = (d: Date) => {
 
 function guard(): boolean {
   error.value = ''
-  if (!iso.value) { error.value = t('Pick a reversal date.'); return false }
+  if (!iso.value) { error.value = t('Pick a journal date.'); return false }
   if (iso.value < earliest.value) { error.value = t(`The date can't be before the original journal, ${dateLabel(earliest.value)}.`); return false }
-  if (salaryPays.value.length && !confirmPays.value) { error.value = t('Tick Reverse anyway to reverse a run with payments.'); return false }
+  if (salaryPays.value.length && !confirmPays.value) { error.value = t('Tick Reverse anyway and keep the payments to reverse a run that has payments.'); return false }
   return true
 }
 function reverseAll() {
@@ -55,7 +56,7 @@ function reverseAll() {
 </script>
 
 <template>
-  <PayrollCompareDrawerShell :is-open="isOpen" :title="t('Reverse journal')" wide @close="emit('close')">
+  <PayrollCompareDrawerShell :is-open="isOpen" :title="live.length > 1 ? t('Reverse journals') : t('Reverse journal')" wide @close="emit('close')">
     <template v-if="run">
       <div class="prv__identity">
         {{ live.length > 1 ? t(`This run has ${live.length} posted journals. They reverse together.`) : t('Reversing posts the same lines with debit and credit swapped.') }}
@@ -69,7 +70,7 @@ function reverseAll() {
               <th class="prv__th">{{ t('Type') }}</th>
               <th class="prv__th">{{ t('Version') }}</th>
               <th class="prv__th">{{ t('Date') }}</th>
-              <th class="prv__th pcf__num">{{ t('Total') }}</th>
+              <th class="prv__th prv__num">{{ t('Total') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -84,21 +85,23 @@ function reverseAll() {
         </table>
       </div>
 
-      <MpFormControl id="prv-date" is-required :is-invalid="!!error && !iso">
-        <MpFormLabel>{{ t('Reversal date') }}</MpFormLabel>
-        <MpDatePicker id="prv-date-input" v-model="date" format="DD/MM/YYYY" value-type="format" use-portal is-full-width :is-clearable="false" :disabled-date="disabledDate" />
-      </MpFormControl>
+      <div class="prv__row">
+        <label class="prv__label" for="prv-date-input">{{ t('Journal date') }}</label>
+        <div class="prv__field">
+          <MpDatePicker id="prv-date-input" v-model="date" format="DD/MM/YYYY" value-type="format" use-portal is-full-width :is-clearable="false" :disabled-date="disabledDate" />
+        </div>
+      </div>
       <div v-if="redirected" class="prv__note" data-testid="prv-locked">
-        {{ t(`${monthLabel(iso.slice(0, 7))} is locked, so the reversal posts on ${dateLabel(effective)}. The tax period stays ${monthLabel(run.month)}.`) }}
+        {{ t(`${monthLabel(iso.slice(0, 7))} is locked, so the reversal is dated ${dateLabel(effective)}. Tax month stays ${monthLabel(run.month)}.`) }}
       </div>
 
       <div v-if="salaryPays.length" class="prv__pays" data-testid="prv-payments">
         <div class="prv__paystitle">{{ t('Payments matched to this run') }}</div>
         <ul class="prv__list">
-          <li v-for="p in salaryPays" :key="p.id">{{ journalById(p.journalId)?.number }} · {{ t('Salary') }} · {{ rupiah(p.amount) }} · {{ dateLabel(p.date) }}</li>
-          <li v-for="p in otherPays" :key="p.id">{{ journalById(p.journalId)?.number }} · {{ t(p.party) }} · {{ accountLabel(p.account) }} · {{ rupiah(p.amount) }}</li>
+          <li v-for="p in salaryPays" :key="p.id">{{ journalById(p.journalId)?.number }} · {{ t(PARTY_LABEL.Staff) }} · {{ rupiah(p.amount) }} · {{ dateLabel(p.date) }}</li>
+          <li v-for="p in otherPays" :key="p.id">{{ journalById(p.journalId)?.number }} · {{ t(PARTY_LABEL[p.party]) }} · {{ accountLabel(p.account) }} · {{ rupiah(p.amount) }}</li>
         </ul>
-        <div class="prv__paysnote">{{ t('Payments stay as they are. Salaries payable shows a debit balance until you repost.') }}</div>
+        <div class="prv__paysnote">{{ t('Payments and bank matches stay. Salaries payable goes below Rp0 until you post again.') }}</div>
         <label class="prv__check">
           <MpCheckbox id="prv-confirm-pays" :is-checked="confirmPays" @change="confirmPays = !confirmPays; error = ''" />
           <span>{{ t('Reverse anyway and keep the payments') }}</span>
@@ -111,7 +114,7 @@ function reverseAll() {
     <template #footer>
       <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="emit('close')">{{ t('Cancel') }}</button>
       <button class="btn-enterprise btn-enterprise--primary" type="button" data-testid="prv-confirm" @click="reverseAll">
-        {{ live.length > 1 ? t(`Reverse all ${live.length}`) : t('Reverse') }}
+        {{ live.length > 1 ? t(`Reverse ${live.length} journals`) : t('Reverse journal') }}
       </button>
     </template>
   </PayrollCompareDrawerShell>
@@ -132,7 +135,10 @@ function reverseAll() {
   padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
 .prv__table tbody tr:last-child .prv__td { border-bottom: 0; }
-.prv__num, .pcf__num { text-align: right; white-space: nowrap; }
+.prv__num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.prv__row { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: var(--mp-spacing-4); align-items: start; }
+.prv__label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: 38px; }
+.prv__field { max-width: 360px; }
 .prv__nowrap { white-space: nowrap; }
 .prv__note {
   padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-colors-background-warning);

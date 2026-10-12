@@ -1,20 +1,22 @@
 <script setup lang="ts">
 /**
- * Payroll payables: a tracker. One row per party per period: owed, paid, balance,
- * due date, status. Payments arrive as bank reconciliation matches (the Simulate menu stands in
- * for the bank statement); this screen records none itself. Two checks live here: the bank
- * paid a salary run a different amount than the posted run, and the e-Bupot PPh 21 filed
- * total differs from the books. A manual journal on a payroll account shows on the rows it hits.
+ * Payroll payables: a tracker. One row per party per period: owed, paid, balance, due date,
+ * status. Payments arrive as bank reconciliation matches (the Simulate menu stands in for the
+ * bank statement); this screen records none itself. Flags sit on the rows they concern: the bank
+ * paid a salary run a different amount than the posted run, or a manual journal hit a payroll
+ * payable account.
  */
-import { MpButton, MpIcon, MpBadge, MpInput, MpSegmentedControl, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
+import { MpButton, MpIcon, MpSegmentedControl, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import PayrollPayableDetail from '~/components/payroll/PayrollPayableDetail.vue'
 import PayrollSimulateBankMenu from '~/components/payroll/PayrollSimulateBankMenu.vue'
-import { payablesTracker, can, payroll, rupiah, monthLabel, dateLabel, today, accountLabel, type PayableRow } from '~/data/payrollStore'
+import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
+import { payablesTracker, can, rupiah, monthLabel, dateLabel, today, accountLabel, type PayableRow } from '~/data/payrollStore'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import { statusType } from '~/data/payrollUiRunCopy'
 import { paymentHistory } from '~/data/payrollUiPayables'
-import { flagChips, isPph21Row, latestSalaryKey, latestPph21Key, parseRupiahInput, PARTY_LABEL } from '~/data/payrollUiPay'
-import { successToast, errorToast } from '~/utils/toasts'
+import { flagChips, latestSalaryKey, latestPph21Key, PARTY_LABEL } from '~/data/payrollUiPay'
 
 const { t } = useLocale()
 const route = useRoute()
@@ -63,10 +65,6 @@ const columns: TableColumn[] = [
 const tableRows = computed(() => paginated.value as unknown as Record<string, unknown>[])
 const asRow = (r: unknown) => r as PayableRow
 
-type BadgeType = 'completed' | 'announcement' | 'information' | 'warning' | 'critical'
-const STATUS_BADGE: Record<PayableRow['status'], BadgeType> = {
-  Open: 'announcement', 'Partly paid': 'warning', Paid: 'completed', 'Paid late': 'information', Overdue: 'critical', Overpaid: 'warning',
-}
 
 // ─── Tour markers: the latest run's salary row, the newest PPh 21 row, the flags ─
 const salaryKey = computed(() => latestSalaryKey(paginated.value))
@@ -125,7 +123,9 @@ const asPay = (r: unknown) => r as PayHist
     <div class="pp-head">
       <MpSegmentedControl id="pp-view" v-model="view" name="pp-view" :data="viewOptions" />
       <PayrollSimulateBankMenu v-if="can('simulate')" />
+      <PayrollReadOnlyNote v-else :text="t('View only. Payroll actions are off for this role.')" />
     </div>
+    <p class="pp-helper">{{ t('PPh 21 is income tax withheld from salaries; BPJS is state health and employment insurance.') }}</p>
 
     <!-- ── Payables ── -->
     <ErpTablePage
@@ -148,22 +148,22 @@ const asPay = (r: unknown) => r as PayHist
       <template #stats>
         <div class="stats-section">
           <div class="stat-card stat-card--bordered">
-            <div class="stat-title">{{ t('Open') }}</div>
-            <div class="stat-period">{{ t('Still owed') }} · {{ dateLabel(today()) }}</div>
+            <div class="stat-title">{{ t('Still owed') }}</div>
+            <div class="stat-period">{{ t('As of') }} {{ dateLabel(today()) }}</div>
             <div class="stat-amount">{{ rupiah(sum(openRows)) }}</div>
-            <a class="stat-link" @click="drill('open')">{{ plural(openRows.length, 'payable', 'payables') }}</a>
+            <a v-if="openRows.length" class="stat-link" @click="drill('open')">{{ plural(openRows.length, 'payable', 'payables') }}</a>
           </div>
           <div class="stat-card stat-card--bordered">
             <div class="stat-title">{{ t('Overdue') }}</div>
-            <div class="stat-period">{{ t('Still owed past the due date') }}</div>
+            <div class="stat-period">{{ t('Past the due date') }}</div>
             <div class="stat-amount" :class="{ 'stat-amount--danger': overdueRows.length }">{{ rupiah(sum(overdueRows)) }}</div>
-            <a class="stat-link" @click="drill('overdue')">{{ plural(overdueRows.length, 'payable', 'payables') }}</a>
+            <a v-if="overdueRows.length" class="stat-link" @click="drill('overdue')">{{ plural(overdueRows.length, 'payable', 'payables') }}</a>
           </div>
           <div class="stat-card">
-            <div class="stat-title">{{ t('Paid') }}</div>
-            <div class="stat-period">{{ t('Bank reconciliation') }} · {{ monthLabel(thisMonth) }}</div>
+            <div class="stat-title">{{ t('Paid this month') }}</div>
+            <div class="stat-period">{{ t('Matched in bank reconciliation') }} · {{ monthLabel(thisMonth) }}</div>
             <div class="stat-amount">{{ rupiah(paidThisMonth.reduce((s, p) => s + p.amount, 0)) }}</div>
-            <a class="stat-link" @click="view = 'payments'">{{ plural(paidThisMonth.length, 'payment', 'payments') }}</a>
+            <a v-if="paidThisMonth.length" class="stat-link" @click="view = 'payments'">{{ plural(paidThisMonth.length, 'payment', 'payments') }}</a>
           </div>
         </div>
       </template>
@@ -189,12 +189,13 @@ const asPay = (r: unknown) => r as PayHist
 
           <div v-if="asRow(row).flags.length" class="pp-flags" :data-tour="asRow(row).key === firstFlaggedKey ? 'payroll-payables-flags' : undefined">
             <div class="pp-chips">
-              <MpBadge
+              <ErpStatusBadge
                 v-for="c in flagChips(asRow(row))"
                 :key="c.code"
-                for="tableStatus"
+                :status="c.code"
+                :label="`${t(c.label)}${c.count > 1 ? ` (${c.count})` : ''}`"
                 :type="c.code === 'manual-journal' ? 'warning' : 'critical'"
-              >{{ t(c.label) }}{{ c.count > 1 ? ` (${c.count})` : '' }}</MpBadge>
+              />
             </div>
             <span v-for="f in asRow(row).flags" :key="f.code + f.message" class="pp-flag">{{ f.message }}</span>
           </div>
@@ -210,7 +211,7 @@ const asPay = (r: unknown) => r as PayHist
         </div>
       </template>
       <template #cell-status="{ row }">
-        <MpBadge for="tableStatus" :type="STATUS_BADGE[asRow(row).status]">{{ t(asRow(row).statusLabel) }}</MpBadge>
+        <ErpStatusBadge :status="asRow(row).status" :label="t(asRow(row).statusLabel)" :type="statusType(asRow(row).status)" />
       </template>
 
       <template #actions="{ row }">
@@ -230,7 +231,7 @@ const asPay = (r: unknown) => r as PayHist
       <template #empty>
         <div class="pp-empty">
           <p class="pp-empty-title">{{ t(hasActiveFilter ? 'No payables match the filters' : 'No payables yet') }}</p>
-          <p class="pp-empty-desc">{{ t(hasActiveFilter ? 'Clear the filters to see every payable.' : 'This is what payroll still owes staff, the tax office and BPJS. It fills once you post a payroll journal.') }}</p>
+          <p class="pp-empty-desc">{{ t(hasActiveFilter ? 'Clear the filters to see every payable.' : 'What payroll still owes staff, the tax office and BPJS. It fills once you post a payroll journal.') }}</p>
           <MpButton v-if="hasActiveFilter" variant="secondary" is-rounded @click="clearFilters">{{ t('Clear filters') }}</MpButton>
           <MpButton v-else variant="secondary" is-rounded @click="navigateTo('/payroll-inbox')">{{ t('Open payroll inbox') }}</MpButton>
         </div>
@@ -266,6 +267,7 @@ const asPay = (r: unknown) => r as PayHist
 <style scoped>
 .pp { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
 .pp-head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); }
+.pp-helper { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 .stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
 .stat-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding-right: var(--mp-spacing-6); align-self: stretch; }
@@ -298,8 +300,6 @@ const asPay = (r: unknown) => r as PayHist
 .pp-flags { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .pp-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-1); }
 .pp-flag { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: normal; }
-.pp-hint { flex-basis: 100%; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.pp-error { flex-basis: 100%; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
 .pp-danger { color: var(--mp-text-danger); }
 .pp-empty { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-10, 40px) 0; }
 .pp-empty-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }

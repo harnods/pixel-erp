@@ -1,22 +1,21 @@
 <script setup lang="ts">
 /**
- * Draft review (OD-12, TS-05): the four sections the Accountant checks before
- * Post. (1) pay item totals by section (Talenta sends no totals), (2) change from the
- * last posted period by account and tag with notes on flagged rows, (3) headcount
- * by group: counts of staff who joined, left or moved against the previous posted run
- * (who they are is read in Talenta), each group's change markable Expected (HR settles
- * the people; Posting is never blocked by it), (4) the exact lines Post writes, each with
- * "Why this line". Tax lines sit under the one PPh 21 rule (LR-10).
+ * Draft review: what the Accountant checks before posting. (1) pay item totals by payslip
+ * section (Talenta sends no totals), (2) change from the last posted period by account and
+ * dimension, with notes on lines marked Check, (3) headcount by group as counts (who they are
+ * is read in Talenta), each change markable Expected, (4) the PPh 21 check, (5) the exact lines
+ * Post journal writes, each with "Why this line".
  */
 import { computed, reactive, ref } from 'vue'
 import { MpButton, MpInput } from '@mekari/pixel3'
 import {
   can, runById, draftReview, whyLine, addChangeNote, accountLabel, tagsLabel, rupiah, currentVersionOf, isDraftStale,
-  markHeadcountExpected, clearHeadcountExpected, payroll, type Tags,
+  markHeadcountExpected, clearHeadcountExpected, liveJournals, payroll, type Tags,
 } from '~/data/payrollStore'
 import { taxRuleRows } from '~/data/payrollUiIntake'
 import { successToast, infoToast } from '~/utils/toasts'
-import { roleLabel } from '~/data/payrollUiRunCopy'
+import { roleLabel, sectionLabel } from '~/data/payrollUiRunCopy'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 
 const props = defineProps<{ runId: string }>()
 const { t } = useLocale()
@@ -24,7 +23,8 @@ const { t } = useLocale()
 const run = computed(() => runById(props.runId))
 const review = computed(() => (run.value && currentVersionOf(run.value) ? draftReview(props.runId) : null))
 const tax = computed(() => taxRuleRows(props.runId))
-const stale = computed(() => isDraftStale(props.runId))
+/** Only a draft that can still be posted needs the rebuild note. */
+const stale = computed(() => run.value?.mode === 'Live' && isDraftStale(props.runId) && !liveJournals(props.runId).length)
 const label = (account: string, tags: Tags) => `${accountLabel(account)}${tagsLabel(tags) ? ` | ${tagsLabel(tags)}` : ''}`
 const pct = (n: number | null) => (n == null ? t('New') : `${n >= 0 ? '+' : ''}${n.toFixed(1).replace('.', ',')}%`)
 const signed = (n: number) => `${n >= 0 ? '+' : ''}${rupiah(n)}`
@@ -96,7 +96,7 @@ function unmarkExpected(key: string) {
         </thead>
         <tbody>
           <tr v-for="s in review.totals" :key="s.section">
-            <td class="pdr__td pdr__strong">{{ t(`${s.section[0]!.toUpperCase()}${s.section.slice(1)}s`) }}</td>
+            <td class="pdr__td pdr__strong">{{ t(sectionLabel(s.section)) }}</td>
             <td class="pdr__td pdr__num">{{ rupiah(s.amount) }}</td>
           </tr>
         </tbody>
@@ -113,7 +113,7 @@ function unmarkExpected(key: string) {
         <tbody>
           <template v-for="s in sections" :key="s.section">
             <tr v-for="p in s.items" :key="`${s.section}-${p.name}`">
-              <td class="pdr__td">{{ p.name }} <span class="pdr__muted">· {{ t(p.section) }}</span></td>
+              <td class="pdr__td">{{ p.name }} <span class="pdr__muted">· {{ t(sectionLabel(p.section)) }}</span></td>
               <td class="pdr__td">{{ p.role ? t(roleLabel(p.role)) : t('No type yet') }}</td>
               <td class="pdr__td pdr__num">{{ p.staff }}</td>
               <td class="pdr__td pdr__num">{{ rupiah(p.amount) }}</td>
@@ -128,7 +128,7 @@ function unmarkExpected(key: string) {
       <header class="pdr__cardhead">
         <div class="pdr__cardtitle">{{ t('Change from last period') }}</div>
         <div class="pdr__cardsub">
-          <template v-if="review.previous">{{ t('Compared with') }} {{ review.previous.label }} · {{ t('marked Check when a line moves more than') }} {{ payroll.settings.limits.largeChangePct }}% {{ t('and') }} {{ rupiah(payroll.settings.limits.largeChangeAmount) }}</template>
+          <template v-if="review.previous">{{ t('Compared with') }} {{ review.previous.label }}. {{ t('A line moving more than') }} {{ payroll.settings.limits.largeChangePct }}% {{ t('and') }} {{ rupiah(payroll.settings.limits.largeChangeAmount) }} {{ t('is marked Check.') }}</template>
           <template v-else>{{ t('No earlier posted period to compare with') }}</template>
         </div>
       </header>
@@ -146,7 +146,7 @@ function unmarkExpected(key: string) {
           <tr v-for="c in [...flagged, ...(showAllChanges ? otherChanges : [])]" :key="c.key">
             <td class="pdr__td">
               {{ label(c.account, c.tags) }}
-              <span v-if="c.flag" class="pdr__flag">{{ t('Check') }}</span>
+              <ErpStatusBadge v-if="c.flag" class="pdr__badge" status="Check" :label="t('Check')" type="warning" />
             </td>
             <td class="pdr__td pdr__num">{{ rupiah(Math.abs(c.old)) }}</td>
             <td class="pdr__td pdr__num">{{ rupiah(Math.abs(c.new)) }}</td>
@@ -201,8 +201,8 @@ function unmarkExpected(key: string) {
           <tr v-for="h in hc.groups" :key="h.key" :data-group="h.key">
             <td class="pdr__td">
               {{ h.label }}
-              <span v-if="h.flagged && h.expected" class="pdr__flag pdr__flag--ok">{{ t('Expected') }}</span>
-              <span v-else-if="h.flagged" class="pdr__flag">{{ t('Check') }}</span>
+              <ErpStatusBadge v-if="h.flagged && h.expected" class="pdr__badge" status="Expected" :label="t('Expected')" type="completed" />
+              <ErpStatusBadge v-else-if="h.flagged" class="pdr__badge" status="Check" :label="t('Check')" type="warning" />
               <div v-if="h.flagged" class="pdr__hclist">
                 {{ hcCounts(h) }} · <span class="pdr__link" data-testid="pdr-see-who" @click="seeInTalenta">{{ t('See who in Talenta') }}</span>
               </div>
@@ -233,9 +233,9 @@ function unmarkExpected(key: string) {
     <!-- Tax rows under the one PPh 21 rule -->
     <section v-if="tax" class="pdr__card" data-section="tax">
       <header class="pdr__cardhead">
-        <div class="pdr__cardtitle">{{ t('PPh 21 (income tax withheld from salaries)') }}</div>
+        <div class="pdr__cardtitle">{{ t('PPh 21 check') }}</div>
         <div class="pdr__cardsub">
-          {{ t('PPh 21 = PPh 21 Benefit') }} {{ rupiah(tax.benefit) }} + {{ t('PPh 21 Payment') }} {{ rupiah(tax.payment) }} - {{ t('PPh 21 DTP received') }} {{ rupiah(tax.dtp) }} = {{ rupiah(tax.expected) }}
+          {{ t('PPh 21 is income tax withheld from salaries.') }} {{ t('Expected') }}: {{ t('PPh 21 Benefit') }} {{ rupiah(tax.benefit) }} + {{ t('PPh 21 Payment') }} {{ rupiah(tax.payment) }} - {{ t('PPh 21 DTP received') }} {{ rupiah(tax.dtp) }} = {{ rupiah(tax.expected) }}
         </div>
       </header>
       <table class="pdr__table">
@@ -263,7 +263,7 @@ function unmarkExpected(key: string) {
     <!-- 4. The lines Post writes -->
     <section class="pdr__card" data-section="lines" data-tour="payroll-draft-lines">
       <header class="pdr__cardhead">
-        <div class="pdr__cardtitle">{{ t('Draft journal') }}</div>
+        <div class="pdr__cardtitle">{{ t('Draft journal') }} ({{ review.lines.length }} {{ t('lines') }})</div>
         <div class="pdr__cardsub">{{ run && currentVersionOf(run)?.draft?.memo }}</div>
       </header>
       <table class="pdr__table">
@@ -279,8 +279,8 @@ function unmarkExpected(key: string) {
         <tbody>
           <template v-for="(l, i) in review.lines" :key="i">
             <tr>
-              <td class="pdr__td">{{ accountLabel(l.account) }}<span v-if="l.review" class="pdr__flag">{{ t('Credit on an expense, check it') }}</span></td>
-              <td class="pdr__td">{{ tagsLabel(l.tags) }}</td>
+              <td class="pdr__td">{{ accountLabel(l.account) }}<ErpStatusBadge v-if="l.review" class="pdr__badge" status="Check" :label="t('Credit on an expense, check it')" type="warning" /></td>
+              <td class="pdr__td">{{ tagsLabel(l.tags) || '-' }}</td>
               <td class="pdr__td pdr__num">{{ l.debit ? rupiah(l.debit) : '' }}</td>
               <td class="pdr__td pdr__num">{{ l.credit ? rupiah(l.credit) : '' }}</td>
               <td class="pdr__td pdr__whycell"><span class="pdr__link" @click="openWhy = openWhy === i ? null : i">{{ openWhy === i ? t('Hide') : t('Why this line') }}</span></td>
@@ -299,7 +299,7 @@ function unmarkExpected(key: string) {
                   </thead>
                   <tbody>
                     <tr v-for="(s, si) in why.sources" :key="si">
-                      <td class="pdr__td">{{ s.item }} <span class="pdr__muted">· {{ t(s.section) }}</span>
+                      <td class="pdr__td">{{ s.item }} <span class="pdr__muted">· {{ t(sectionLabel(s.section)) }}</span>
                       </td>
                       <td class="pdr__td">{{ s.role ? t(roleLabel(s.role)) : '' }}</td>
                       <td class="pdr__td pdr__num">{{ s.employees || '' }}</td>
@@ -344,19 +344,15 @@ function unmarkExpected(key: string) {
 .pdr__th {
   text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase;
   color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle);
-  padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default);
+  padding: var(--mp-spacing-2) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
 }
 .pdr__td { padding: var(--mp-spacing-2\.5) var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: top; }
-.pdr__num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pdr__th.pdr__num, .pdr__num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pdr__strong { font-weight: var(--mp-font-weights-semi-bold); }
 .pdr__muted { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
 .pdr__danger { color: var(--mp-text-danger); }
 .pdr__error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); margin: var(--mp-spacing-1) 0 0; }
-.pdr__flag {
-  display: inline-block; margin-left: var(--mp-spacing-2); padding: 0 var(--mp-spacing-2); border-radius: var(--mp-radii-full);
-  font-size: var(--mp-font-sizes-sm); background: var(--mp-colors-background-warning); color: var(--mp-colors-text-warning);
-}
-.pdr__flag--ok { background: var(--mp-colors-background-success); color: var(--mp-colors-text-success); }
+.pdr__badge { margin-left: var(--mp-spacing-2); vertical-align: middle; }
 .pdr__hclist { margin: var(--mp-spacing-1) 0 0; padding: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .pdr__notecell { min-width: 280px; }
 .pdr__noteform { display: flex; gap: var(--mp-spacing-2); align-items: center; }

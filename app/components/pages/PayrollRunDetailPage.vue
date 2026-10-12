@@ -1,14 +1,13 @@
 <script setup lang="ts">
 /**
- * Payroll run record /payroll-runs/<id> (FG-2, FG-3). Header with type and versions;
- * "To fix before posting" in check order; the draft review (OD-12), which is the exact
- * journal Post writes (months before the start month show it labelled "not posted");
- * Post with the stale-draft and newer-version blocks (warnings never block; the unchecked
- * ones are listed in the Post confirm); the versions, posted journals and "Mapping used".
- * Post and Reverse and repost take one journal date (PayrollPostDrawer).
+ * Payroll run page /payroll-runs/<id>. Header with the one primary action (Post journal, or
+ * Send for approval when a Settings > Approval workflows rule matches); "To fix before posting";
+ * "Talenta sent this period again" with Use vN and repost; warnings; then tabs: Draft review
+ * (the exact journal Post writes; months before the start month are labelled "not posted"),
+ * Versions (with the compare), Journals, Mapping used; claims below.
  */
-import { computed, ref, watch } from 'vue'
-import { MpButton, MpTextlink, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem } from '@mekari/pixel3'
+import { computed, nextTick, ref, watch } from 'vue'
+import { MpButton, MpTextlink, MpTabs, MpTabList, MpTab } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import RejectTransactionModal from '~/components/patterns/RejectTransactionModal.vue'
 import PayrollHoldsPanel from '~/components/payroll/PayrollHoldsPanel.vue'
@@ -20,15 +19,18 @@ import PayrollRunClaims from '~/components/payroll/PayrollRunClaims.vue'
 import PayrollRevisionNotice from '~/components/payroll/PayrollRevisionNotice.vue'
 import PayrollPostDrawer from '~/components/payroll/PayrollPostDrawer.vue'
 import PayrollRevisionPanel from '~/components/payroll/PayrollRevisionPanel.vue'
+import PayrollCompareView from '~/components/payroll/PayrollCompareView.vue'
+import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
 import {
   can, runById, runStatus, runHolds, currentVersionOf, versionLabel, draftOf, liveJournals, journalsOf,
-  pendingApproval, canApprove, approvePayroll, rejectPayroll, listLabel,
+  pendingApproval, canApprove, approvePayroll, rejectPayroll, listLabel, actingPerson,
   rebuildDraft, isDraftStale, runWarnings, revisionOf, rupiah, wib, dateLabel, periodLabel, monthLabel,
   accountLabel, tagsLabel, type Tags,
 } from '~/data/payrollStore'
-import { statusType, versionFigures } from '~/data/payrollUiIntake'
-import { statusLabel, notPostedLabel } from '~/data/payrollUiRunCopy'
-import { successToast, infoToast, errorToast } from '~/utils/toasts'
+import { checkApprovalRequired } from '~/data/payrollApproval'
+import { versionFigures } from '~/data/payrollUiIntake'
+import { statusLabel, statusType, notPostedLabel } from '~/data/payrollUiRunCopy'
+import { successToast, errorToast } from '~/utils/toasts'
 
 const props = defineProps<{ orderId?: string }>()
 const { t } = useLocale()
@@ -46,18 +48,20 @@ const fig = computed(() => versionFigures(v.value))
 const draftTotal = computed(() => (draft.value ? draft.value.lines.reduce((s, l) => s + l.debit, 0) : 0))
 const liveTotal = computed(() => live.value.reduce((s, j) => s + j.lines.reduce((x, l) => x + l.debit, 0), 0))
 const warningCount = computed(() => (run.value ? runWarnings(run.value.id).length : 0))
-const showWarnings = computed(() => !!run.value && !holds.value.length && ((!!draft.value && !live.value.length) || warningCount.value > 0))
+const showWarnings = computed(() => !!run.value && !holds.value.length && ((!!draft.value && !live.value.length && run.value.mode === 'Live') || warningCount.value > 0))
 const hasRevision = computed(() => !!run.value && !!revisionOf(run.value.id))
 const showClaims = computed(() => !!draft.value || live.value.length > 0)
-const showRevisionSlot = computed(() => !!run.value && (run.value.versions.length > 1 || allJournals.value.length > 0))
+const showRevisionSlot = computed(() => !!run.value)
 
 type Tab = 'review' | 'versions' | 'journals' | 'built'
+const TAB_KEYS: Tab[] = ['review', 'versions', 'journals', 'built']
 const tab = ref<Tab>('review')
+const tabIndex = computed({ get: () => TAB_KEYS.indexOf(tab.value), set: (i: number) => { tab.value = TAB_KEYS[i] ?? 'review' } })
 const tabs = computed(() => [
-  { key: 'review' as Tab, label: live.value.length && !draft.value ? 'Posted journal' : 'Draft review' },
-  { key: 'versions' as Tab, label: `Versions (${run.value?.versions.length ?? 0})` },
-  { key: 'journals' as Tab, label: `Journals (${allJournals.value.length})` },
-  { key: 'built' as Tab, label: 'Mapping used' },
+  { key: 'review' as Tab, label: t(live.value.length && !draft.value ? 'Posted journal' : 'Draft review') },
+  { key: 'versions' as Tab, label: `${t('Versions')} (${run.value?.versions.length ?? 0})` },
+  { key: 'journals' as Tab, label: `${t('Journals')} (${allJournals.value.length})` },
+  { key: 'built' as Tab, label: t('Mapping used') },
 ])
 watch(() => props.orderId, () => { tab.value = 'review'; staleChanges.value = [] })
 
@@ -78,7 +82,9 @@ function rebuild() {
   staleChanges.value = (r.changed as typeof staleChanges.value) ?? []
   successToast(t(staleChanges.value.length ? `Draft rebuilt. ${staleChanges.value.length} ${staleChanges.value.length === 1 ? 'line' : 'lines'} changed` : 'Draft rebuilt. No line changed'))
 }
-function notInPrototype() { infoToast(t('Not in this prototype')) }
+/** Post journal, or Send for approval when a Payroll journal rule in Settings > Approval workflows matches. */
+const needsApproval = computed(() => !!draft.value && checkApprovalRequired(draftTotal.value, actingPerson()).required)
+const postLabel = computed(() => t(needsApproval.value ? 'Send for approval' : 'Post journal'))
 
 // ── Approval (Settings > Approval workflows, Payroll journal) ──────────────
 const approval = computed(() => (run.value ? pendingApproval(run.value) : null))
@@ -87,7 +93,7 @@ const rejectOpen = ref(false)
 function approve() {
   if (!run.value) return
   const r = approvePayroll(run.value.id)
-  if (!r.ok) { postError.value = r.message ?? ''; errorToast(t('Not approved. See the message on the page.')); return }
+  if (!r.ok) { postError.value = r.message ?? ''; errorToast(t('Not posted. The reason is on the page.')); return }
   const nos = (r.journals as string[] | undefined) ?? (r.number ? [r.number as string] : [])
   successToast(t(`Approved and posted as ${nos.join(', ')}`))
   tab.value = 'journals'
@@ -96,11 +102,15 @@ function reject(reason: string) {
   if (!run.value) return
   const r = rejectPayroll(run.value.id, reason)
   rejectOpen.value = false
-  if (!r.ok) { errorToast(t(r.message ?? 'Not rejected')); return }
-  successToast(t('Rejected. The journal is back in draft'))
+  if (!r.ok) { errorToast(t(r.message ?? 'Not rejected. Try again.')); return }
+  successToast(t('Rejected. The journal is back in draft.'))
 }
 function back() { router.push('/payroll-inbox') }
+function showCompare() { tab.value = 'versions'; nextTick(() => document.getElementById('prp-compare')?.scrollIntoView({ behavior: 'smooth', block: 'start' })) }
 const lineLabel = (account: string, tags: Tags) => `${accountLabel(account)}${tagsLabel(tags) ? ` | ${tagsLabel(tags)}` : ''}`
+const approvalWhat = computed(() => (approval.value?.kind === 'post' ? t('Post journal') : t('Reverse and repost')))
+/** The engine records the choice in its own words; show it in glossary words. */
+const decisionLabel = (kind: string) => t(({ 'Revision of the posted run': 'Same run, sent again', 'Replaced the full run': 'Used as the full run', 'Rejected partial send': 'Rejected' } as Record<string, string>)[kind] ?? kind)
 
 // Deep links from notices: ?tab=journals|versions|built; anything else lands on the review.
 watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' || q === 'built') tab.value = q as Tab }, { immediate: true })
@@ -118,28 +128,13 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
           <ErpStatusBadge :status="status ?? ''" :label="t(statusLabel(status ?? ''))" :type="statusType(status ?? '')" size="md" badge-for="additionalInformation" />
         </div>
         <p class="prr__sub">
-          {{ t(run.kind) }} · v{{ v.no }} {{ t('of') }} {{ run.versions.length }} · {{ t('sent') }} {{ wib(v.sentAt) }} · {{ t('tax period') }} {{ monthLabel(run.month) }}
+          {{ t(run.kind) }} · v{{ v.no }} {{ t('of') }} {{ run.versions.length }} · {{ t('sent by Talenta') }} {{ wib(v.sentAt) }} · {{ t('tax month') }} {{ monthLabel(run.month) }}
         </p>
       </div>
       <div class="prr__baractions">
-        <MpPopover id="prr-more" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-          <MpPopoverTrigger>
-            <MpButton variant="secondary" is-rounded right-icon="chevrons-down">{{ t('Actions') }}</MpButton>
-          </MpPopoverTrigger>
-          <MpPopoverContent class="erp-dropdown-menu">
-            <MpPopoverList>
-              <MpPopoverListItem v-if="draft && can('post')" @click="rebuild">{{ t('Rebuild draft') }}</MpPopoverListItem>
-              <MpPopoverListItem v-if="draft && can('post')" @click="notInPrototype">{{ t('Send for approval') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Download review') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="tab = 'built'">{{ t('View mapping used') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-        <template v-if="approval && isApprover">
-          <MpButton variant="secondary" is-rounded data-testid="prr-reject" @click="rejectOpen = true">{{ t('Reject') }}</MpButton>
-          <MpButton is-rounded data-testid="prr-approve" @click="approve">{{ t('Approve and post') }}</MpButton>
-        </template>
-        <MpButton v-else-if="can('post') && canPostNow" is-rounded @click="askPost">{{ t('Post journal') }}</MpButton>
+        <MpButton v-if="can('post') && canPostNow && stale && !approval" variant="secondary" is-rounded @click="rebuild">{{ t('Rebuild draft') }}</MpButton>
+        <MpButton v-if="can('post') && canPostNow && !approval" is-rounded data-tour="payroll-post" data-testid="prr-post" @click="askPost">{{ postLabel }}</MpButton>
+        <PayrollReadOnlyNote v-else-if="!can('post')" :text="t('View only. Payroll actions are off for this role.')" />
       </div>
     </header>
 
@@ -158,34 +153,41 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
         </div>
         <div class="stat-card stat-card--bordered">
           <div class="stat-title">{{ t('Draft journal') }}</div>
-          <div class="stat-period">{{ draft ? `${t('Built')} ${wib(draft.builtAt)}` : t('Fix the items below first') }}</div>
+          <div class="stat-period">{{ draft ? `${t('Built')} ${wib(draft.builtAt)}` : t('Builds once nothing is left to fix') }}</div>
           <div class="stat-amount" :class="{ 'stat-amount--absent': !draft }">{{ draft ? rupiah(draftTotal) : t('Not built') }}</div>
           <a v-if="draft" class="stat-link" @click="tab = 'review'">{{ draft.lines.length }} {{ t('lines') }}</a>
         </div>
         <div class="stat-card">
           <div class="stat-title">{{ t('Posted journal') }}</div>
-          <div class="stat-period">{{ live.length ? `${t('Posted')} v${run.ledgerVersion}` : t('Nothing posted') }}</div>
-          <div class="stat-amount">{{ rupiah(liveTotal) }}</div>
+          <div class="stat-period">{{ live.length ? `${t('Posted')} v${run.ledgerVersion}` : t('Nothing posted yet') }}</div>
+          <div class="stat-amount" :class="{ 'stat-amount--absent': !live.length }">{{ rupiah(liveTotal) }}</div>
           <a v-if="live.length" class="stat-link" @click="tab = 'journals'">{{ live.map((j) => j.number).join(', ') }}</a>
         </div>
       </div>
 
       <!-- Approval: Post matched a Payroll journal rule in Settings > Approval workflows. -->
-      <div v-if="approval" class="prr__notice" data-testid="prr-approval">
-        <div class="prr__noticetitle">{{ t('Awaiting approval') }} · {{ approval.ruleName }}</div>
-        <div>{{ t(approval.kind === 'post' ? 'Payroll journal' : 'Reverse and repost') }} v{{ approval.versionNo }} {{ rupiah(approval.amount) }} · {{ t('journal date') }} {{ dateLabel(approval.date) }} · {{ t('sent by') }} {{ approval.requestedBy }} {{ wib(approval.requestedAt) }} · {{ t('approver') }} {{ listLabel(approval.approvers) }}</div>
-      </div>
-      <div v-else-if="run.rejection && !live.length" class="prr__notice" data-testid="prr-rejected">
+      <section v-if="approval" class="prr__notice prr__notice--warn prr__notice--row" data-testid="prr-approval" data-tour="payroll-approve">
+        <div class="prr__noticebody">
+          <div class="prr__noticetitle">{{ t('Awaiting approval') }} · {{ approval.ruleName }}</div>
+          <div>{{ approvalWhat }} v{{ approval.versionNo }}, {{ rupiah(approval.amount) }}, {{ t('journal date') }} {{ dateLabel(approval.date) }}. {{ t('Sent by') }} {{ approval.requestedBy }}, {{ wib(approval.requestedAt) }}.</div>
+          <div v-if="!isApprover" class="prr__noticesub">{{ t('Waiting for') }} {{ listLabel(approval.approvers) }} {{ t('in Inbox > Awaiting approval.') }}</div>
+        </div>
+        <div v-if="isApprover" class="prr__noticeactions">
+          <MpButton variant="secondary" is-rounded data-testid="prr-reject" @click="rejectOpen = true">{{ t('Reject') }}</MpButton>
+          <MpButton is-rounded data-testid="prr-approve" @click="approve">{{ t('Approve and post') }}</MpButton>
+        </div>
+      </section>
+      <section v-else-if="run.rejection && !live.length" class="prr__notice prr__notice--danger" data-testid="prr-rejected">
         <div class="prr__noticetitle">{{ t('Rejected by') }} {{ run.rejection.by }} · {{ wib(run.rejection.at) }}</div>
         <div>{{ run.rejection.reason }}</div>
-      </div>
+      </section>
 
       <!-- Post feedback: blocks only (warnings never block). -->
-      <div v-if="postError" class="prr__notice">
+      <section v-if="postError" class="prr__notice prr__notice--danger" role="alert">
         <div class="prr__noticetitle">{{ t('Not posted yet') }}</div>
         <div>{{ postError }}</div>
-      </div>
-      <div v-if="staleChanges.length" class="prr__card">
+      </section>
+      <section v-if="staleChanges.length" class="prr__card">
         <div class="prr__cardhead">
           <div class="prr__cardtitle">{{ t('Lines changed by the rebuild') }}</div>
           <div class="prr__cardsub">{{ t('Settings changed after the draft was built. Check these lines, then post.') }}</div>
@@ -201,63 +203,70 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
             </tr>
           </tbody>
         </table>
-      </div>
+      </section>
 
       <!-- To fix before posting, in check order. -->
       <PayrollHoldsPanel v-if="holds.length" :run-id="run.id" />
 
-      <!-- A newer version on a posted run: what changes, then Reverse and repost. -->
-      <PayrollRevisionNotice v-if="hasRevision" :run-id="run.id" />
+      <!-- Talenta sent a posted period again: what changes, then Use vN and repost. -->
+      <PayrollRevisionNotice v-if="hasRevision" :run-id="run.id" @compare="showCompare" />
 
-      <!-- Warnings on the current version: never block Post. -->
+      <!-- Warnings on the current version: never block posting. -->
       <PayrollRunWarnings v-if="showWarnings" :run-id="run.id" />
 
-      <!-- Revisions, reversal, compare, amendment tasks (FG-4). -->
+      <!-- Choice, part-of-run and reversed-not-reposted notices. -->
       <PayrollRevisionPanel v-if="showRevisionSlot" :run-id="run.id" />
 
-      <div class="prr__tabs" role="tablist">
-        <button
-          v-for="tb in tabs" :key="tb.key" type="button" class="prr__tab" :class="{ 'prr__tab--on': tab === tb.key }"
-          role="tab" :aria-selected="tab === tb.key" @click="tab = tb.key"
-        >{{ t(tb.label) }}</button>
-      </div>
+      <MpTabs id="prr-tabs" v-model="tabIndex" is-manual variant-color="green" class="prr__tabs">
+        <MpTabList>
+          <MpTab v-for="tb in tabs" :id="`prr-tab-${tb.key}`" :key="tb.key">{{ tb.label }}</MpTab>
+        </MpTabList>
+      </MpTabs>
 
       <template v-if="tab === 'review'">
-        <div v-if="draft && run.mode !== 'Live'" class="prr__notice" data-testid="prr-before-start">{{ t(notPostedLabel(run.mode)) }}</div>
+        <div v-if="draft && run.mode !== 'Live'" class="prr__notice prr__notice--info" data-testid="prr-before-start">{{ t(notPostedLabel(run.mode)) }}</div>
         <PayrollDraftReview v-if="draft" :run-id="run.id" />
         <PayrollRunJournals v-else-if="live.length" :run-id="run.id" only-live />
         <div v-else class="prr__card prr__empty">
-          {{ holds.length ? t('The draft journal builds once the items above are fixed.') : run.mode !== 'Live' ? t(notPostedLabel(run.mode)) : t('No draft journal yet. It builds when Talenta sends this period.') }}
+          {{ holds.length ? t('No draft journal yet. Fix the items in To fix before posting and it builds.') : run.mode !== 'Live' ? t(notPostedLabel(run.mode)) : t('No draft journal yet. It builds when Talenta sends this period.') }}
         </div>
       </template>
 
-      <div v-else-if="tab === 'versions'" class="prr__card">
-        <table class="prr__table">
-          <thead>
-            <tr>
-              <th class="prr__th">{{ t('Version') }}</th>
-              <th class="prr__th">{{ t('Sent (WIB)') }}</th>
-              <th class="prr__th">{{ t('Received (WIB)') }}</th>
-              <th class="prr__th prr__num">{{ t('Staff') }}</th>
-              <th class="prr__th prr__num">{{ t('Take-home pay') }}</th>
-              <th class="prr__th">{{ t('Status') }}</th>
-              <th class="prr__th">{{ t('Choice') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="x in [...run.versions].reverse()" :key="x.no" :class="{ 'prr__current': x.no === run.currentVersion }">
-              <td class="prr__td prr__strong">v{{ x.no }}</td>
-              <td class="prr__td">{{ wib(x.sentAt) }}</td>
-              <td class="prr__td">{{ wib(x.receivedAt) }}</td>
-              <td class="prr__td prr__num">{{ versionFigures(x).staff }}</td>
-              <td class="prr__td prr__num">{{ rupiah(versionFigures(x).takeHome) }}</td>
-              <td class="prr__td"><ErpStatusBadge :status="versionLabel(run, x)" :label="t(statusLabel(versionLabel(run, x)))" :type="statusType(versionLabel(run, x))" /></td>
-              <td class="prr__td">
-                <template v-if="x.decision">{{ x.decision.kind }}<span class="prr__muted"> · {{ x.decision.by }}<template v-if="x.decision.reason"> · {{ x.decision.reason }}</template></span></template>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div v-else-if="tab === 'versions'" class="prr__stack" data-tour="payroll-versions">
+        <section class="prr__card">
+          <div class="prr__cardhead">
+            <div class="prr__cardtitle">{{ t('Versions') }}</div>
+            <div class="prr__cardsub">{{ t('Each time Talenta sends this period, a new version arrives.') }}</div>
+          </div>
+          <table class="prr__table">
+            <thead>
+              <tr>
+                <th class="prr__th">{{ t('Version') }}</th>
+                <th class="prr__th">{{ t('Sent by Talenta (WIB)') }}</th>
+                <th class="prr__th prr__num">{{ t('Staff') }}</th>
+                <th class="prr__th prr__num">{{ t('Take-home pay') }}</th>
+                <th class="prr__th">{{ t('Status') }}</th>
+                <th class="prr__th">{{ t('Choice') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="x in [...run.versions].reverse()" :key="x.no" :class="{ 'prr__current': x.no === run.currentVersion }">
+                <td class="prr__td prr__strong">v{{ x.no }}</td>
+                <td class="prr__td prr__nowrap">{{ wib(x.sentAt) }}</td>
+                <td class="prr__td prr__num">{{ versionFigures(x).staff }}</td>
+                <td class="prr__td prr__num">{{ rupiah(versionFigures(x).takeHome) }}</td>
+                <td class="prr__td"><ErpStatusBadge :status="versionLabel(run, x)" :label="t(statusLabel(versionLabel(run, x)))" :type="statusType(versionLabel(run, x))" /></td>
+                <td class="prr__td">
+                  <template v-if="x.decision">{{ decisionLabel(x.decision.kind) }}<span class="prr__muted"> · {{ x.decision.by }}<template v-if="x.decision.reason"> · {{ x.decision.reason }}</template></span></template>
+                  <span v-else class="prr__muted">-</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+        <div v-if="run.versions.length > 1" id="prp-compare">
+          <PayrollCompareView :run-id="run.id" />
+        </div>
       </div>
 
       <PayrollRunJournals v-else-if="tab === 'journals'" :run-id="run.id" />
@@ -293,23 +302,31 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
 .prr__titlerow { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .prr__title { font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
 .prr__sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: var(--mp-spacing-1) 0 0; overflow-wrap: anywhere; }
-.prr__baractions { flex: none; display: flex; gap: var(--mp-spacing-2); align-items: center; }
+.prr__baractions { flex: none; display: flex; gap: var(--mp-spacing-2); align-items: center; min-height: 40px; }
 .prr__body { padding: var(--mp-spacing-6); display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
 .prr__body > .stats-section { margin-bottom: 0; }
 
 
 .prr__notice {
-  padding: var(--mp-spacing-3) var(--mp-spacing-4); border-radius: var(--mp-radii-md);
-  background: var(--mp-colors-background-warning); color: var(--mp-colors-text-warning); font-size: var(--mp-font-sizes-md);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4); border-radius: var(--mp-radii-md); font-size: var(--mp-font-sizes-md);
+  display: flex; flex-direction: column; gap: var(--mp-spacing-1);
 }
-.prr__noticetitle { font-weight: var(--mp-font-weights-semi-bold); margin-bottom: var(--mp-spacing-1); }
+.prr__notice--row { flex-direction: row; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4); }
+.prr__notice--warn { background: var(--mp-colors-background-warning); color: var(--mp-colors-text-warning); }
+.prr__notice--danger { background: var(--mp-colors-background-danger); color: var(--mp-text-danger); }
+.prr__notice--info { background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); border: 1px solid var(--mp-border-default); }
+.prr__noticebody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.prr__noticetitle { font-weight: var(--mp-font-weights-semi-bold); }
+.prr__noticesub { font-size: var(--mp-font-sizes-sm); }
+.prr__noticeactions { flex: none; display: flex; gap: var(--mp-spacing-2); align-items: center; }
+.prr__stack { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
+.prr__nowrap { white-space: nowrap; }
 
-.prr__tabs { display: flex; gap: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-border-default); }
-.prr__tab {
-  border: 0; background: transparent; cursor: pointer; padding: var(--mp-spacing-2) 0; font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-secondary); border-bottom: 2px solid transparent;
-}
-.prr__tab--on { color: var(--mp-text-selected); font-weight: var(--mp-font-weights-semi-bold); border-bottom-color: var(--mp-text-selected); }
+.prr__tabs { margin-top: 0; }
+.prr__tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: 0 !important; }
+.prr__tabs :deep(.mp-tab--isSelected_true),
+.prr__tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
+.prr__tabs :deep(.mp-tab--isSelected_true .mp-tab-selected-border) { background-color: var(--mp-text-selected) !important; }
 
 .prr__card { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); overflow: hidden; }
 .prr__empty { padding: var(--mp-spacing-4); color: var(--mp-text-secondary); display: flex; gap: var(--mp-spacing-2); }
@@ -319,10 +336,10 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
 .prr__table { width: 100%; border-collapse: collapse; }
 .prr__th {
   text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase;
-  color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-1) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default);
+  color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-2) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
 }
 .prr__td { padding: var(--mp-spacing-2\.5) var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: top; }
-.prr__num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.prr__th.prr__num, .prr__num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .prr__strong { font-weight: var(--mp-font-weights-semi-bold); }
 .prr__muted { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
 .prr__current .prr__td { background: var(--mp-background-neutral-subtle); }
