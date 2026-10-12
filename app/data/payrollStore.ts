@@ -60,7 +60,8 @@
  *                                   ('Use group account'); off = 'Use default account'.
  *   payGroupKey(fields, values), groupFor(staffRow), groupLabel(values)
  *   Groups: settings.groupBy (any Talenta fields) and settings.groups[{ key, values, account, dims }].
- *   groupRows()                     every combination seen in Talenta sends plus saved ones: { key, values, label, staff (count),
+ *   groupRows()                     every combination seen in Talenta sends plus saved ones: { key, values, label, staff (count in the
+ *                                   latest regular run's latest send, the one the next journal books),
  *                                   account, dims, isNew, dimensions[{ dimension, field, value, explicit }] }.
  *   setGroupBy(fields)              re-forms rows; rows that still exist keep their settings; combinations whose staff were all in
  *                                   set-up groups are set up with defaults; the rest stay New.
@@ -152,8 +153,10 @@
  *                                   paidLateDays, status 'Open'|'Partly paid'|'Paid'|'Paid late'|'Overdue'|'Overpaid', statusLabel,
  *                                   payments[{ id, number, date, bank, amount, statement }], pendingOwed (salary row with a revision waiting),
  *                                   flags[{ code 'bank-differs'|'manual-journal', message }] }.
+ *   payablesSummary(rows?)          the summary cards: { month, stillOwed, overdue, paidThisMonth } each { amount, count }, summed from the rows.
  *   payablePrefill(key) / recordPayablePayment(key, { cashTxId, number, bank, date, amount })
  *                                   Pay action: Cash management > New spend money prefilled for an open payable; saving pays it.
+ *   POSTED_NEXT_STEP                what a posted run says next (inbox row and sync log).
  *   simulateBankPayment(kind, opts?)   BANK_PAYMENT_KINDS: 'salary' | 'pph21' | 'pph26' | 'bpjs-kesehatan' | 'bpjs-ketenagakerjaan' | 'dplk'
  *                                   | 'partial' | 'overpaid'. opts: { runId, month, of, amount, date, bank }. Creates a matched bank line
  *                                   (payroll.bankLines) and a BNK journal (Dr payable, Cr bank), type 'Salary payment' / 'Statutory payment',
@@ -798,14 +801,20 @@ export function groupFor(e: StaffRow, s: PayrollSettings = payroll.settings): Pa
   return s.groups.find((g) => g.key === k)
 }
 export function groupLabel(values: string[]): string { return values.map((v) => v || 'Not set').join(', ') }
-/** Every combination Talenta has sent for the given fields; staff = distinct staff in the newest send that has it (a count, never ids). */
+/**
+ * Every combination Talenta has sent for the given fields. staff = distinct staff in the latest send
+ * of the newest regular run (the send the next journal books), so a row's count matches that run;
+ * a combination only older sends carry shows 0 staff. A count, never ids.
+ */
 function seenCombinations(fields: string[]): Map<string, { values: string[]; staff: number }> {
   const out = new Map<string, { values: string[]; staff: number }>()
   if (!fields.length) return out
-  const ordered = [...payroll.runs].sort((a, b) => b.end.localeCompare(a.end))
+  const ordered = [...payroll.runs].sort((a, b) => b.end.localeCompare(a.end) || Number(b.kind === 'Regular') - Number(a.kind === 'Regular'))
+  const latest = ordered.find((r) => r.kind === 'Regular')
   for (const r of ordered) {
     const v = currentVersionOf(r) ?? r.versions[r.versions.length - 1]
     if (!v) continue
+    const counts = r === latest
     const here = new Map<string, { values: string[]; ids: Set<number> }>()
     for (const e of staffRows(v.payload)) {
       const values = fields.map((f) => fieldValue(e, f).trim())
@@ -813,7 +822,7 @@ function seenCombinations(fields: string[]): Map<string, { values: string[]; sta
       const x = here.get(k) ?? { values, ids: new Set<number>() }
       x.ids.add(e.user_id); here.set(k, x)
     }
-    for (const [k, x] of here) if (!out.has(k)) out.set(k, { values: x.values, staff: x.ids.size })
+    for (const [k, x] of here) if (!out.has(k)) out.set(k, { values: x.values, staff: counts ? x.ids.size : 0 })
   }
   return out
 }
@@ -1139,7 +1148,7 @@ function sendLogRow(l: SyncLogEntry): SendLogRow {
   return {
     id: l.id, at: l.at, period: start && end ? periodLabel(start, end) : '', runId: run?.id ?? null,
     version: l.version != null ? `v${l.version}` : '', staff: l.employees,
-    payItems: v ? new Set(v.payload.items.flatMap((it) => SECTIONS.flatMap(([s, k]) => (it.components?.[k] ?? []).map((x) => `${s}:${x.name}`)))).size : null,
+    payItems: v ? payItemCount(v.payload) : null,
     result, reason: result === 'Held' ? (l.status === 'Waiting for your choice' ? 'New version or separate run?' : shortReason(l.reason)) : '',
   }
 }
@@ -1200,6 +1209,12 @@ export function staffRows(p: TalentaPayload, o: { all?: boolean } = {}): StaffRo
       takeHome: sumItems(c.allowances) - sumItems(c.deductions),
     }
   }).filter((e) => o.all || !oe.some((x) => e[x.field] === x.value))
+}
+/** Staff Jurnal books in a send: distinct user_id, other-entity groups left out (inbox, run page, sync log agree on it). */
+function staffCount(p: TalentaPayload): number { return new Set(staffRows(p).map((e) => e.user_id)).size }
+/** Pay items in a send, as the draft review lists them (by section and name, Rp0 and tax figures included). */
+function payItemCount(p: TalentaPayload): number {
+  return new Set(staffRows(p).flatMap((e) => SECTIONS.flatMap(([section, k]) => e[k].map((it) => payItemKey(it.name, section))))).size
 }
 /** Staff, take-home pay and gross allowances of one version's send. */
 export function sendFigures(v: RunVersion | undefined) {
@@ -1332,7 +1347,7 @@ export function receiveSalaryDetail(p: TalentaPayload): SendResult {
   const last = accepted[accepted.length - 1]
   if (last && Date.parse(p.sent_at) < Date.parse(last.sentAt)) return fail(`Sent before v${last.no}, so Jurnal keeps v${last.no}.`, 409)
   if (last && figuresHash(p) === last.figuresHash) {
-    addLog({ type: 'Send', status: 'No change', reason: `No change from v${last.no}`, nextStep: 'Nothing to do.', runId: regular.id, runKey: regular.key, version: last.no, employees: p.items.length })
+    addLog({ type: 'Send', status: 'No change', reason: `No change from v${last.no}`, nextStep: 'Nothing to do.', runId: regular.id, runKey: regular.key, version: last.no, employees: staffCount(p) })
     return { ok: true, status: 'No change', message: `No change from v${last.no}`, runId: regular.id }
   }
   const no = regular.versions.length + 1
@@ -1376,7 +1391,7 @@ function logReceipt(run: Run, v: RunVersion): SendResult {
       : v.revision ? `Talenta sent this period again. Use v${v.no} and repost.`
         : run.ledgerVersion != null && run.ledgerVersion === v.no ? 'No change to the posted journal.'
           : `Draft journal ready.${v.warnings.length ? ` ${v.warnings.length} warning${v.warnings.length > 1 ? 's' : ''} to check.` : ''}`)
-  addLog({ type: 'Send', status, reason, nextStep: nextStepFor(run, v), runId: run.id, runKey: run.key, version: v.no, employees: v.payload.items.length })
+  addLog({ type: 'Send', status, reason, nextStep: nextStepFor(run, v), runId: run.id, runKey: run.key, version: v.no, employees: staffCount(v.payload) })
   if (v.holds.length && v.state !== 'waiting-choice') notify(ACTORS, `Payroll ${periodLabel(run.start, run.end)} v${v.no} needs a fix before posting: ${v.holds[0]!.message}`, `/payroll-runs/${run.id}`)
   if (v.state === 'waiting-choice') notify(ACTORS, `Talenta sent Payroll ${periodLabel(run.start, run.end)} again with different pay items. Choose: use it as a new version, or make a separate run.`, `/payroll-runs/${run.id}`)
   return { ok: true, status, message: reason, runId: run.id, versionNo: v.no }
@@ -2116,6 +2131,8 @@ function addJournal(j: Omit<Journal, 'id' | 'number' | 'postedBy' | 'postedAt' |
   return journal
 }
 function isoDateWib(iso: string): string { return new Date(Date.parse(iso) + 7 * 3_600_000).toISOString().slice(0, 10) }
+/** What happens after a post: the salary is paid with Pay (Spend money) or a bank reconciliation match. */
+export const POSTED_NEXT_STEP = 'Salaries payable clears when you pay it from Payroll payables or bank reconciliation matches the payment.'
 const unackedMessages = (runId: string) => runWarnings(runId).filter((w) => !w.acknowledged).map((w) => w.message)
 
 /** Journal date of a post or repost: the last day of the pay period (a repost never defaults before the journal it reverses). */
@@ -2165,7 +2182,7 @@ export function postRun(runId: string, o: { versionNo?: number; date?: string } 
     lines: clone(v.draft.lines), snapshotId: v.draft.snapshotId, reversesId: null, paymentId: null,
   })
   run.ledgerVersion = v.no; run.revised = false; run.reversedAt = null
-  addLog({ type: 'Post', status: 'Posted', reason: `Posted as ${j.number}`, nextStep: 'Salaries payable clears when the bank payment is matched in bank reconciliation.', runId, runKey: run.key, version: v.no, employees: v.payload.items.length, journalNo: j.number })
+  addLog({ type: 'Post', status: 'Posted', reason: `Posted as ${j.number}`, nextStep: POSTED_NEXT_STEP, runId, runKey: run.key, version: v.no, employees: staffCount(v.payload), journalNo: j.number })
   return { ok: true, journalId: j.id, number: j.number, date, warnings }
 }
 
@@ -2436,7 +2453,7 @@ export function reverseRun(runId: string, o: { date?: string; confirmPayments?: 
   const live = run ? liveJournals(run.id) : []
   if (!run || !live.length) return { ok: false, message: 'Nothing is posted for this run, so there is nothing to reverse.' }
   const pays = payroll.payments.filter((p) => p.runId === runId)
-  if (pays.length && !o.confirmPayments) return { ok: false, needsConfirm: true, payments: pays.map((p) => ({ id: p.id, number: journalById(p.journalId)?.number, amount: p.amount })), message: 'Bank payments are matched to this run. They stay as they are. Confirm to reverse the journal anyway.' }
+  if (pays.length && !o.confirmPayments) return { ok: false, needsConfirm: true, payments: pays.map((p) => ({ id: p.id, number: journalById(p.journalId)?.number, amount: p.amount })), message: 'Salary payments are recorded on this run. They stay as they are. Confirm to reverse the journal anyway.' }
   now()
   const date = o.date ?? live.map((j) => j.date).sort().pop()!
   const done = live.map((j) => reversalOf(j, date))
@@ -2454,6 +2471,7 @@ export function reverseJournal(journalId: string, o: { date?: string; confirmPay
   if (j.reversesId) return { ok: false, message: 'A reversal can\'t be reversed. Post the run again instead.' }
   if (j.reversedById) return { ok: false, message: 'This journal is already reversed.' }
   if (j.runId && BOOKING.includes(j.type)) return reverseRun(j.runId, o)
+  if (j.source === 'Spend money') return { ok: false, message: `${j.number} is a Spend money payment. Change or delete it in Cash management.` }
   return { ok: false, message: 'Unmatch bank payments in bank reconciliation. They are not reversed here.' }
 }
 
@@ -2614,6 +2632,10 @@ function salaryDue(run: Run): string {
   const d = `${run.month}-${String(payroll.settings.payday).padStart(2, '0')}`
   return d > last ? last : d
 }
+/** The payable as Payroll payables names it: "Salary 21 Aug-20 Sep 2026" per run, "<payable account> Aug 2026" per month. */
+function payableLabel(account: string, month: string, run: Run | null | undefined): string {
+  return run ? `Salary ${run.kind === 'Regular' ? '' : run.label + ' '}${periodLabel(run.start, run.end)}` : `${accountName(account)} ${monthLabel(month)}`
+}
 function owedFor(account: string, month: string, runId?: string): number { return bookedLines(month, account, runId) }
 function paidFor(account: string, month: string, runId?: string): number {
   return payroll.payments.filter((p) => p.account === account && p.month === month && (!runId || p.runId === runId)).reduce((s, p) => s + p.amount, 0)
@@ -2663,13 +2685,31 @@ export function payablesTracker(month?: string): PayableRow[] {
     }
   }
   for (const m of months) {
-    for (const run of payroll.runs.filter((r) => r.month === m && journalsOf(r.id).some((j) => BOOKED.includes(j.type)))) rows.push(mk(payroll.settings.hutangGaji, 'Staff', m, run, `Salary ${run.kind === 'Regular' ? '' : run.label + ' '}${periodLabel(run.start, run.end)}`))
+    for (const run of payroll.runs.filter((r) => r.month === m && journalsOf(r.id).some((j) => BOOKED.includes(j.type)))) rows.push(mk(payroll.settings.hutangGaji, 'Staff', m, run, payableLabel(payroll.settings.hutangGaji, m, run)))
     for (const a of payroll.accounts.filter((x) => x.party && x.party !== 'Staff')) {
       if (!owedFor(a.code, m) && !paidFor(a.code, m)) continue
-      rows.push(mk(a.code, a.party!, m, null, `${a.name} ${monthLabel(m)}`))
+      rows.push(mk(a.code, a.party!, m, null, payableLabel(a.code, m, null)))
     }
   }
   return rows
+}
+/**
+ * The Payroll payables summary cards, from the rows: Still owed (open balances), Overdue (past
+ * the due date) and Paid this month (payments dated in the sample clock's month, Spend money or
+ * bank reconciliation). Each card is the sum of the rows or payments it counts.
+ */
+export function payablesSummary(rows: PayableRow[] = payablesTracker()) {
+  const month = monthOf(today())
+  const open = rows.filter((r) => r.balance > 0)
+  const overdue = rows.filter((r) => r.overdueDays > 0)
+  const paid = rows.flatMap((r) => r.payments).filter((p) => monthOf(p.date) === month)
+  const sum = (xs: { balance?: number; amount?: number }[], k: 'balance' | 'amount') => xs.reduce((s, x) => s + (x[k] ?? 0), 0)
+  return {
+    month,
+    stillOwed: { amount: sum(open, 'balance'), count: open.length },
+    overdue: { amount: sum(overdue, 'balance'), count: overdue.length },
+    paidThisMonth: { amount: sum(paid, 'amount'), count: paid.length },
+  }
 }
 
 // ── Bank payments (simulated bank reconciliation matches) ───────────────────
@@ -2720,14 +2760,14 @@ export function simulateBankPayment(kind: BankPaymentKind, o: BankPaymentOptions
     const posted = regularRuns().concat(payroll.runs.filter((r) => r.kind !== 'Regular')).filter((r) => liveJournals(r.id).length)
     run = o.runId ? runById(o.runId) : (posted.filter((r) => owedFor(payroll.settings.hutangGaji, r.month, r.id) - paidFor(payroll.settings.hutangGaji, r.month, r.id) > 0).sort((a, b) => a.end.localeCompare(b.end))[0] ?? posted.sort((a, b) => a.end.localeCompare(b.end)).pop())
     if (!run || !liveJournals(run.id).length) return { ok: false, message: 'No posted run to pay yet. Post a run first.' }
-    account = payroll.settings.hutangGaji; month = run.month; party = 'Staff'; label = `Salaries payable ${periodLabel(run.start, run.end)}`
+    account = payroll.settings.hutangGaji; month = run.month; party = 'Staff'; label = payableLabel(account, month, run)
   } else {
     account = KIND_ACCOUNT[base]()
     party = payrollAccount(account)?.party ?? 'Other'
     const open = [...new Set(payroll.journals.filter((j) => j.source === 'Talenta payroll' && BOOKED.includes(j.type)).map((j) => j.taxMonth))].sort().filter((m) => owedFor(account, m) - paidFor(account, m) > 0)
     month = o.month ?? open[0] ?? ''
     if (!month) return { ok: false, message: `Nothing is owed to ${partyName(party)}.` }
-    label = `${partyName(party)} ${monthLabel(month)}`
+    label = payableLabel(account, month, null)
   }
   const open = owedFor(account, month, run?.id) - paidFor(account, month, run?.id)
   const amount = o.amount ?? (kind === 'partial' ? Math.round(open / 2) : kind === 'overpaid' ? open + 250_000 : open)

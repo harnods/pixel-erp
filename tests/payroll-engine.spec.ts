@@ -11,8 +11,9 @@ import {
   claimsSummary, noticesFor, SEND_KINDS, BANK_PAYMENT_KINDS, type Run, type JournalLine,
   approvePayroll, rejectPayroll, canApprove, whyLine, journalsOf, defaultEntryDate, checkEntryDate, payrollAccount, rebuildDraft,
   revisionNotice, PARTY_NAME, startConnection, endConnection, confirmSource, setLimits,
-  payablePrefill, recordPayablePayment,
+  payablePrefill, recordPayablePayment, payablesSummary, reverseRun, versionOf, today, monthLabel, payGroupKey, fieldValue,
 } from '../app/data/payrollStore'
+import { paymentHistory } from '../app/data/payrollUiPayables'
 import { runRow, hrMessage, monthHeadcount } from '../app/data/payrollUiIntake'
 import { sendLog, sendLogCsv, SEND_LOG_COLUMNS } from '../app/data/payrollStore'
 import { ACC, buildSalaryDetail } from '../app/data/payrollMaster'
@@ -1088,6 +1089,15 @@ describe('copy: every string the engine returns follows the glossary', () => {
     out.push(runHolds(sep), chooseSeparateRun(sep.id, 99, { type: 'THR', name: '' }))
     out.push(simulateBankPayment('partial'), payablesTracker('2026-09'), simulateSend('old-sync'), oldSyncExpense({ date: '2026-06-20', amount: 1, pattern: 'Payroll' }))
     out.push(reverseJournal(payroll.journals.find((j) => j.type === 'Reversal')!.id), reverseJournal('nope'))
+    // Pay from Payroll payables: the prefill, the Spend money result, its journal, refusals and the log.
+    const kes = payablesTracker('2026-08').find((r) => r.party === 'BPJS Kesehatan')!
+    out.push(payablePrefill(kes.key), recordPayablePayment(kes.key, { cashTxId: 'bw-new-5', number: 'Spend money #5', bank: ACC.bca, date: '2026-10-05', amount: kes.balance }))
+    out.push(recordPayablePayment('gone', { cashTxId: 'x', number: 'Spend money #6', bank: ACC.bca, date: '2026-10-05', amount: 1 }), recordPayablePayment(kes.key, { cashTxId: 'x', number: 'Spend money #6', bank: ACC.bca, date: '2026-10-05', amount: 0 }))
+    out.push(as('View only', () => recordPayablePayment(kes.key, { cashTxId: 'x', number: 'Spend money #6', bank: ACC.bca, date: '2026-10-05', amount: 1 })))
+    const spend = payroll.journals.find((j) => j.source === 'Spend money')!
+    out.push(spend, reverseJournal(spend.id), reverseRun(sep.id), payablesTracker('2026-08'))
+    expect(reverseJournal(spend.id).message).toBe('Spend money #5 is a Spend money payment. Change or delete it in Cash management.')
+    expect(syncLog.value.find((l) => l.type === 'Post' && l.reason.startsWith('Posted as'))!.nextStep).toBe('Salaries payable clears when you pay it from Payroll payables or bank reconciliation matches the payment.')
     out.push(as('Owner', () => lockPeriod('2026-10')), setPayday(40), setLimits({}), linkDimension('job_level', ' '))
     out.push(runs.value.map(runRow), hrMessage(3, '21 Aug-20 Sep 2026'), monthHeadcount('2026-09'))
     out.push(syncLog.value.map((l) => ({ reason: l.reason, nextStep: l.nextStep })), sendLog.value, payroll.notices)
@@ -1153,5 +1163,225 @@ describe('Pay a payable from Cash management (Spend money)', () => {
     const j = payroll.journals.find((x) => x.number === 'Spend money #1')!
     expect(j.lines.map((l) => [l.account, l.debit, l.credit])).toEqual([[ACC.bpjsKes, 16_102_029, 0], [ACC.bca, 0, 16_102_029]])
     expect(recordPayablePayment(pre.key, { cashTxId: 'x', number: 'Spend money #2', bank: ACC.bca, date: '2026-07-10', amount: 1 }).message).toBe('Jul 2026 is locked. Pick a date in an open month.')
+  })
+})
+
+
+/**
+ * One figure, one value, on every screen that shows it. `agree()` reads the engine the way each
+ * screen does (inbox row, run page stat cards, sync log, draft review, month headcount, Settings >
+ * Groups, Payroll payables rows, cards and Payments tab, claims) and checks they match each other
+ * and the journals. It runs on the seed, after the PAY-2 flow (plus Pay with Spend money) and after
+ * the PAY-3 flow (reverse and repost).
+ */
+describe('numbers agree across screens', () => {
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant + LM') })
+  const HG = ACC.hutangGaji
+  const byAccount = (lines: JournalLine[]) => {
+    const m = new Map<string, number>()
+    for (const l of lines) m.set(l.account, (m.get(l.account) ?? 0) + l.credit - l.debit)
+    for (const [k, v] of m) if (!v) m.delete(k)
+    return Object.fromEntries([...m].sort())
+  }
+  const lineKey = (l: JournalLine) => [l.account, l.tags.Organization, l.tags.Branch, l.debit, l.credit].join('|')
+  /**
+   * The monthly run flow (as the PAY-2 tour plays it, through the engine API only): group by
+   * Organization + Branch, map the new pay item from the hold, Talenta sends a New group, set it up,
+   * mark warnings checked, send for approval, the Owner approves, the bank pays salary and a
+   * second transfer over it, a manual journal on Salaries Payable.
+   */
+  function monthlyRun() {
+    const sep = run(SEP)
+    as('Owner', () => setGroupBy(['organization_name', 'branch']))
+    setPayItemAccount(payItemKey('Insentif Penjualan', 'allowance'), ACC.salesSalaries)
+    simulateSend('new-group', { runId: sep.id })
+    const key = groupRows().find((g) => g.label === 'Operations, Medan')!.key
+    setGroupAccount(key, ACC.directLabour); createPayrollTag('Branch', 'Medan'); setGroupDimension(key, 'Branch', 'Medan'); saveGroup(key)
+    for (const w of runWarnings(sep.id)) acknowledgeWarning(sep.id, w.key, 'Checked')
+    setApprovalWorkflowActive(PAYROLL_RULE, true)
+    expect(postRun(sep.id).awaitingApproval).toBe(true)
+    expect(as('Owner', () => approvePayroll(sep.id)).ok).toBe(true)
+    setApprovalWorkflowActive(PAYROLL_RULE, false)
+    simulateBankPayment('salary', { runId: sep.id, date: '2026-09-25' })
+    simulateBankPayment('overpaid', { runId: sep.id, date: '2026-09-26' })
+    simulateManualJournal()
+  }
+  /** The re-send flow (PAY-3): September posted and paid, Talenta sends it again, Use v2 and repost (approved), October without Uang Makan. */
+  function resend() {
+    const sep = run(SEP)
+    as('Owner', () => setGroupBy(['organization_name', 'branch']))
+    setPayItemAccount(payItemKey('Insentif Penjualan', 'allowance'), ACC.salesSalaries)
+    for (const w of runWarnings(sep.id)) acknowledgeWarning(sep.id, w.key, 'Checked')
+    expect(postRun(sep.id).ok).toBe(true)
+    simulateBankPayment('salary', { runId: sep.id, date: '2026-09-25' })
+    simulateSend('revision', { runId: sep.id })
+    setApprovalWorkflowActive(PAYROLL_RULE, true)
+    expect(reverseAndRepost(sep.id).awaitingApproval).toBe(true)
+    expect(as('Owner', () => approvePayroll(sep.id)).ok).toBe(true)
+    setApprovalWorkflowActive(PAYROLL_RULE, false)
+    simulateSend('regular', { omit: ['Uang Makan'], newAllowance: INS })
+  }
+
+  function agree(stage: string) {
+    const rows = payablesTracker()
+    // Every journal balances (PAY, reversal, bank match, Spend money, manual).
+    for (const j of payroll.journals) expect(journalTotals(j).debit, `${stage}: ${j.number} balances`).toBe(journalTotals(j).credit)
+
+    for (const r of payroll.runs) {
+      const v = currentVersionOf(r)!
+      const row = runRow(r)
+      const fig = sendFigures(v)
+      // Inbox row = run page stat cards (versionFigures of the current version) = sync log row of that version.
+      expect([row.staff, row.takeHome], `${stage}: ${r.label} ${r.month} inbox = run page`).toEqual([fig.staff, fig.takeHome])
+      // A separate run (THR) was logged as a send of the regular run it moved from; it has no send row of its own.
+      const log = r.kind === 'Regular' ? sendLog.value.find((l) => l.runId === r.id && l.version === `v${v.no}`)! : null
+      if (log) expect(log.staff, `${stage}: ${r.month} v${v.no} sync log staff`).toBe(fig.staff)
+      if (v.draft) {
+        const review = draftReview(r.id)
+        if (log) expect(log.payItems, `${stage}: ${r.month} sync log pay items = draft review`).toBe(review.payItems.length)
+        expect(review.takeHome, `${stage}: ${r.month} draft review take-home`).toBe(fig.takeHome)
+        // Month headcount = the draft review's headcount block.
+        if (r.kind === 'Regular') {
+          const mh = monthHeadcount(r.month)
+          expect([mh.current, mh.joined, mh.left, mh.moved.length, mh.groups.map((g) => [g.label, g.current, g.joined, g.left, g.movedIn, g.movedOut])], `${stage}: ${r.month} month headcount`)
+            .toEqual([review.headcount.current, review.headcount.joined, review.headcount.left, review.headcount.moved.length, review.headcount.groups.map((g) => [g.label, g.current, g.joined, g.left, g.movedIn, g.movedOut])])
+          expect(review.headcount.current).toBe(fig.staff)
+        }
+      }
+      const live = liveJournals(r.id)
+      if (!live.length) continue
+      const posted = versionOf(r, r.ledgerVersion)!
+      const lines = live.flatMap((j) => j.lines)
+      // Take-home of the posted version = Salaries Payable credit on its PAY journal = the salary row's owed.
+      const sal = rows.find((x) => x.runId === r.id)!
+      expect([sendFigures(posted).takeHome, net(lines, HG)], `${stage}: ${r.month} take-home = Salaries Payable credit`).toEqual([sal.owed, sal.owed])
+      // The journal by account = the draft review lines it was posted from.
+      if (r.currentVersion === r.ledgerVersion) {
+        expect(byAccount(lines), `${stage}: ${r.month} journal = draft review`).toEqual(byAccount(draftReview(r.id).lines))
+        expect(lines.map(lineKey).sort()).toEqual(draftReview(r.id).lines.map(lineKey).sort())
+      } else {
+        // A newer version waits: the row shows what is owed after the repost.
+        expect(sal.pendingOwed, `${stage}: ${r.month} pending owed`).toBe(net(draftOf(r)!.lines, HG))
+      }
+      // Claims section = the reimbursement lines in the journal.
+      const reimb = payroll.settings.mapping.filter((m) => m.role === 'Reimbursement').map((m) => m.name)
+      const claimLines = lines.flatMap((l) => l.sources.filter((x) => reimb.includes(x.item) && x.side === 'D'))
+      expect(claimsSummary(r.id).total, `${stage}: ${r.month} claims`).toBe(claimLines.reduce((s, x) => s + x.amount, 0))
+      expect(claimsSummary(r.id).total).toBe(draftReview(r.id).payItems.filter((x) => reimb.includes(x.name)).reduce((s, x) => s + x.amount, 0))
+    }
+
+    // Payables: owed = the party's credits on the month's payroll journals; paid = bank matches + Spend money.
+    const months = [...new Set(rows.map((x) => x.month))]
+    for (const m of months) {
+      const payrollJ = payroll.journals.filter((j) => j.taxMonth === m && j.source === 'Talenta payroll' && (j.type === 'Payroll' || j.type === 'Reversal'))
+      const paidJ = payroll.journals.filter((j) => j.taxMonth === m && (j.type === 'Salary payment' || j.type === 'Statutory payment'))
+      for (const a of payroll.accounts.filter((x) => x.party && x.party !== 'Staff')) {
+        const owed = net(payrollJ.flatMap((j) => j.lines), a.code)
+        const row = rows.find((x) => x.month === m && x.account === a.code)
+        if (!row) { expect(owed, `${stage}: ${a.name} ${m} has no row`).toBe(0); continue }
+        expect(row.owed, `${stage}: ${row.label} owed`).toBe(owed)
+        expect(row.label).toBe(`${a.name} ${monthLabel(m)}`)
+      }
+      for (const row of rows.filter((x) => x.month === m)) {
+        const scope = (j: { runId: string | null }) => !row.runId || j.runId === row.runId
+        const paid = paidJ.filter(scope).flatMap((j) => j.lines).filter((l) => l.account === row.account).reduce((s, l) => s + l.debit - l.credit, 0)
+        const pays = payroll.payments.filter((x) => x.account === row.account && x.month === m && (!row.runId || x.runId === row.runId))
+        expect([row.paid, row.payments.reduce((s, x) => s + x.amount, 0)], `${stage}: ${row.label} paid`).toEqual([paid, paid])
+        expect(row.payments.map((x) => x.id).sort()).toEqual(pays.map((x) => x.id).sort())
+        expect(row.balance, `${stage}: ${row.label} balance`).toBe(row.owed - row.paid)
+        // Status follows the balance and the due date.
+        const past = !!row.due && today() > row.due
+        const want = row.balance < 0 ? 'Overpaid' : row.balance === 0 ? ['Paid', 'Paid late'] : past ? 'Overdue' : row.paid > 0 ? 'Partly paid' : 'Open'
+        if (Array.isArray(want)) expect(want, `${stage}: ${row.label} ${row.status}`).toContain(row.status)
+        else expect(row.status, `${stage}: ${row.label}`).toBe(want)
+        if (row.status === 'Overdue') expect(row.overdueDays).toBeGreaterThan(0)
+        if (row.status.startsWith('Paid')) expect(row.balance).toBe(0)
+      }
+    }
+    // Every payment sits on exactly one row; the Payments tab lists the same payments with the row's name and source.
+    expect(rows.flatMap((x) => x.payments).length, `${stage}: payments on rows`).toBe(payroll.payments.length)
+    for (const h of paymentHistory.value) {
+      const p = payroll.payments.find((x) => x.id === h.id)!
+      const row = rows.find((x) => x.payments.some((y) => y.id === h.id))!
+      expect([h.amount, h.payable, h.statement], `${stage}: payment ${h.number}`).toEqual([p.amount, row.label, p.cashTxId ? 'Spend money' : 'Bank reconciliation'])
+    }
+    // Summary cards = the sum of the rows (and the Payments tab for Paid this month).
+    const sum = payablesSummary(rows)
+    const open = rows.filter((x) => x.balance > 0), late = rows.filter((x) => x.status === 'Overdue')
+    expect(sum.stillOwed).toEqual({ amount: open.reduce((s, x) => s + x.balance, 0), count: open.length })
+    expect(sum.overdue).toEqual({ amount: late.reduce((s, x) => s + x.balance, 0), count: late.length })
+    const thisMonth = paymentHistory.value.filter((x) => x.date.startsWith(sum.month))
+    expect(sum.paidThisMonth).toEqual({ amount: thisMonth.reduce((s, x) => s + x.amount, 0), count: thisMonth.length })
+
+    // Settings > Groups staff = the latest regular send's staff per combination.
+    const latest = runs.value.find((r) => r.kind === 'Regular')!
+    const counts = new Map<string, Set<number>>()
+    for (const e of staffRows(currentVersionOf(latest)!.payload)) {
+      const k = payGroupKey(payroll.settings.groupBy, payroll.settings.groupBy.map((f) => fieldValue(e, f).trim()))
+      counts.set(k, (counts.get(k) ?? new Set()).add(e.user_id))
+    }
+    for (const g of groupRows()) expect(g.staff, `${stage}: group ${g.label}`).toBe(counts.get(g.key)?.size ?? 0)
+    expect(groupRows().reduce((s, g) => s + g.staff, 0)).toBe(sendFigures(currentVersionOf(latest)).staff)
+    return rows
+  }
+
+  it('on the seed', () => {
+    const rows = agree('seed')
+    const sum = payablesSummary(rows)
+    expect(sum.overdue).toEqual({ amount: 16_102_029, count: 1 })
+    expect(sum.stillOwed).toEqual({ amount: 16_102_029, count: 1 })
+    expect(groupRows().reduce((s, g) => s + g.staff, 0)).toBe(40)
+  })
+
+  it('after the PAY-2 flow, and after Pay settles the overdue payable with Spend money', () => {
+    monthlyRun()
+    agree('PAY-2')
+    const sep = run(SEP)
+    expect(runStatus(sep)).toBe('Posted')
+    expect(sendLog.value.find((l) => l.runId === sep.id && l.version === 'v2')).toMatchObject({ staff: 40, payItems: 23 })
+    const kes = payablesTracker('2026-08').find((r) => r.party === 'BPJS Kesehatan')!
+    const before = payablesSummary()
+    expect(recordPayablePayment(kes.key, { cashTxId: 'bw-new-9', number: 'Spend money #9', bank: ACC.bca, date: today(), amount: kes.balance }).ok).toBe(true)
+    const rows = agree('PAY-2 + Pay')
+    const after = payablesSummary(rows)
+    expect(after.overdue.amount).toBe(before.overdue.amount - kes.balance)
+    expect(after.paidThisMonth.amount).toBe(before.paidThisMonth.amount + kes.balance)
+    expect(rows.find((r) => r.key === kes.key)).toMatchObject({ status: 'Paid late', balance: 0 })
+  })
+
+  it('edge sends: a duplicate staff row, a THR run on the latest period, a bank match and a Spend money payment', () => {
+    // Talenta sends September with one staff member twice: the inbox, run page and sync log all count 40 staff.
+    mapInsentif()
+    simulateSend('regular', { start: '2026-08-21', end: '2026-09-20', newAllowance: INS, duplicateEmployee: 'EMP-0030' })
+    const sep = run(SEP)
+    expect(currentVersionOf(sep)!.payload.items).toHaveLength(41)
+    expect([runRow(sep).staff, sendLog.value[0]!.staff]).toEqual([40, 40])
+    expect(postRun(sep.id).ok).toBe(true)
+    // A THR-only send on the posted period becomes a separate run; Settings > Groups still counts the regular send.
+    simulateSend('separate-run', { runId: sep.id })
+    expect(chooseSeparateRun(sep.id, currentVersionOf(sep)!.no + 1, { type: 'THR', name: 'THR 2026', reason: 'Religious holiday bonus paid with September' }).ok).toBe(true)
+    // Payments read with the row's own name in the memo and the log, by bank match and by Spend money.
+    simulateBankPayment('salary', { runId: sep.id, date: '2026-09-25' })
+    const kes = payablesTracker('2026-08').find((r) => r.party === 'BPJS Kesehatan')!
+    recordPayablePayment(kes.key, { cashTxId: 'bw-new-7', number: 'Spend money #7', bank: ACC.bca, date: today(), amount: kes.balance })
+    const rows = agree('edge')
+    for (const p of payroll.payments) {
+      const row = rows.find((r) => r.payments.some((x) => x.id === p.id))!
+      expect(journalById(p.journalId)!.memo.startsWith(`${row.label}, `), `${row.label}: ${journalById(p.journalId)!.memo}`).toBe(true)
+    }
+  })
+
+  it('after the PAY-3 flow: the reversal mirrors the old journal on the new journal\'s date, and the payable follows the new journal', () => {
+    resend()
+    agree('PAY-3')
+    const sep = run(SEP)
+    const pay = journalsOf(sep.id).filter((j) => j.source === 'Talenta payroll')
+    const [old, rev, neu] = [pay.find((j) => j.type === 'Payroll' && j.reversedById)!, pay.find((j) => j.type === 'Reversal')!, liveJournals(sep.id)[0]!]
+    expect(rev.reversesId).toBe(old.id)
+    expect(rev.date).toBe(neu.date)
+    expect(rev.lines.map((l) => [l.account, l.tags, l.debit, l.credit])).toEqual(old.lines.map((l) => [l.account, l.tags, l.credit, l.debit]))
+    const sal = payablesTracker('2026-09').find((r) => r.runId === sep.id)!
+    expect(sal.owed).toBe(net(neu.lines, HG))
+    expect(sal.owed).toBe(sendFigures(versionOf(sep, sep.ledgerVersion)).takeHome)
   })
 })
