@@ -1,18 +1,20 @@
 <script setup lang="ts">
 /**
- * Payroll payables (FG-5): a tracker. One row per payable per period: owed, paid, balance,
- * due date, status. Payments arrive as bank reconciliation matches (payrollStore
- * simulateBankPayment); this screen records none itself. Every figure comes from posted
- * journals and bank-matched payments in payrollStore.
+ * Payroll payables (FG-5): a tracker. One row per party per period: owed, paid, balance,
+ * due date, status. Payments arrive as bank reconciliation matches (the Simulate menu stands in
+ * for the bank statement); this screen records none itself. Two checks live here: the bank
+ * paid a salary run a different amount than the posted run, and the e-Bupot PPh 21 filed
+ * total differs from the books. A manual journal on a payroll account shows on the rows it hits.
  */
-import {
-  MpButton, MpIcon, MpBadge, MpSegmentedControl, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
-} from '@mekari/pixel3'
+import { MpButton, MpIcon, MpBadge, MpInput, MpSegmentedControl, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import PayrollPayableDetail from '~/components/payroll/PayrollPayableDetail.vue'
-import { payablesTracker, rupiah, monthLabel, dateLabel, today, accountLabel, type PayableRow } from '~/data/payrollStore'
+import PayrollSimulateBankMenu from '~/components/payroll/PayrollSimulateBankMenu.vue'
+import { payablesTracker, setEbupotFiled, can, payroll, rupiah, monthLabel, dateLabel, today, accountLabel, type PayableRow } from '~/data/payrollStore'
 import { paymentHistory } from '~/data/payrollUiPayables'
+import { flagChips, isPph21Row, latestSalaryKey, latestPph21Key, parseRupiahInput } from '~/data/payrollUiPay'
+import { successToast, errorToast } from '~/utils/toasts'
 
 const { t } = useLocale()
 const route = useRoute()
@@ -35,11 +37,12 @@ const search = ref('')
 const monthOptions = computed(() => months.value.map((m) => ({ value: m, label: monthLabel(m) })))
 const partyOptions = computed(() => [...new Set(all.value.map((r) => r.party))].map((p) => ({ value: p, label: p === 'Staff' ? t('Salary') : p })))
 
-const stateOf = (r: PayableRow) => (r.balance < 0 ? 'overpaid' : r.overdueDays ? 'overdue' : r.balance > 0 ? 'open' : 'paid')
+const matchesState = (r: PayableRow, s: string) =>
+  s === 'open' ? r.balance > 0 : s === 'overdue' ? r.overdueDays > 0 : s === 'flagged' ? r.flags.length > 0 : true
 const filtered = computed(() => all.value.filter((r) =>
   (!monthFilter.value || r.month === monthFilter.value)
   && (!partyFilter.value || r.party === partyFilter.value)
-  && (!stateFilter.value || (stateFilter.value === 'open' ? r.balance > 0 : stateOf(r) === stateFilter.value))
+  && (!stateFilter.value || matchesState(r, stateFilter.value))
   && (!search.value || r.label.toLowerCase().includes(search.value.toLowerCase().trim()))))
 const hasActiveFilter = computed(() => !!(monthFilter.value || partyFilter.value || stateFilter.value || search.value))
 function clearFilters() { monthFilter.value = ''; partyFilter.value = ''; stateFilter.value = ''; search.value = '' }
@@ -60,25 +63,60 @@ const columns: TableColumn[] = [
 const tableRows = computed(() => paginated.value as unknown as Record<string, unknown>[])
 const asRow = (r: unknown) => r as PayableRow
 
-function badgeType(r: PayableRow) {
-  const s = stateOf(r)
-  return s === 'overdue' ? 'critical' : s === 'overpaid' || s === 'open' ? 'warning' : r.paidLateDays ? 'information' : 'completed'
+type BadgeType = 'completed' | 'announcement' | 'information' | 'warning' | 'critical'
+const STATUS_BADGE: Record<PayableRow['status'], BadgeType> = {
+  Open: 'announcement', 'Partly paid': 'warning', Paid: 'completed', 'Paid late': 'information', Overdue: 'critical', Overpaid: 'warning',
 }
 
+// ─── Tour markers: the latest run's salary row, the newest PPh 21 row, the flags ─
+const salaryKey = computed(() => latestSalaryKey(paginated.value))
+const pph21Key = computed(() => latestPph21Key(paginated.value))
+const firstFlaggedKey = computed(() => paginated.value.find((r) => r.flags.length)?.key ?? null)
+const root = ref<HTMLElement | null>(null)
+/** ErpTablePage owns the <tr>; the marker goes on the row through the cell that carries its key. */
+function markRows() {
+  const el = root.value
+  if (!el) return
+  const want: Record<string, string | null> = { 'payroll-salary-row': salaryKey.value, 'payroll-pph21-row': pph21Key.value }
+  for (const [name, key] of Object.entries(want)) {
+    const tr = key ? Array.from(el.querySelectorAll<HTMLElement>('[data-row-key]')).find((c) => c.dataset.rowKey === key)?.closest('tr') ?? null : null
+    el.querySelectorAll(`tr[data-tour="${name}"]`).forEach((x) => { if (x !== tr) x.removeAttribute('data-tour') })
+    tr?.setAttribute('data-tour', name)
+  }
+}
+watch([paginated, view], () => nextTick(markRows), { flush: 'post' })
+onMounted(() => nextTick(markRows))
+onUpdated(markRows)
+
 // ─── Stats ──────────────────────────────────────────────────────────────────
-function addDaysIso(d: string, n: number) { return new Date(Date.parse(d + 'T00:00:00Z') + n * 86_400_000).toISOString().slice(0, 10) }
 const openRows = computed(() => all.value.filter((r) => r.balance > 0))
 const overdueRows = computed(() => all.value.filter((r) => r.overdueDays > 0))
+const flaggedRows = computed(() => all.value.filter((r) => r.flags.length))
 const thisMonth = computed(() => today().slice(0, 7))
-const dueSoon = computed(() => openRows.value.filter((r) => r.due && !r.overdueDays && r.due <= addDaysIso(today(), 15)))
 const paidThisMonth = computed(() => paymentHistory.value.filter((p) => p.date.startsWith(thisMonth.value)))
 const sum = (rows: PayableRow[]) => rows.reduce((s, r) => s + r.balance, 0)
+const plural = (n: number, one: string, many: string) => `${n} ${t(n === 1 ? one : many)}`
 function drill(state: string) { clearFilters(); stateFilter.value = state; view.value = 'payables' }
 
-// ─── Actions ────────────────────────────────────────────────────────────────
+// ─── e-Bupot PPh 21 filed total (Tax Staff, Finance Manager) ─────────────────
+const ebupotDraft = reactive<Record<string, string>>({})
+const ebupotError = reactive<Record<string, string>>({})
+function saveEbupot(r: PayableRow) {
+  const amount = parseRupiahInput(ebupotDraft[r.key] ?? '')
+  if (amount == null) { ebupotError[r.key] = t('Enter the filed total in rupiah.'); return }
+  const res = setEbupotFiled(r.month, amount)
+  if (!res.ok) { ebupotError[r.key] = t(res.message ?? ''); errorToast(t(res.message ?? 'Not saved')); return }
+  ebupotError[r.key] = ''
+  ebupotDraft[r.key] = ''
+  successToast(t(res.message ? 'e-Bupot total saved. It differs from the books.' : 'e-Bupot total saved. It matches the books.'))
+}
+const ebupotTolerance = computed(() => payroll.settings.limits.taxTolerance)
+
+// ─── Detail ─────────────────────────────────────────────────────────────────
 const detailOpen = ref(false)
-const active = ref<PayableRow | null>(null)
-function openDetail(r: PayableRow) { active.value = r; detailOpen.value = true }
+const activeKey = ref<string | null>(null)
+const active = computed(() => all.value.find((r) => r.key === activeKey.value) ?? null)
+function openDetail(r: PayableRow) { activeKey.value = r.key; detailOpen.value = true }
 
 // ─── Payments ───────────────────────────────────────────────────────────────
 const paymentColumns: TableColumn[] = [
@@ -97,9 +135,10 @@ const asPay = (r: unknown) => r as PayHist
 </script>
 
 <template>
-  <div class="pp">
+  <div ref="root" class="pp">
     <div class="pp-head">
       <MpSegmentedControl id="pp-view" v-model="view" name="pp-view" :data="viewOptions" />
+      <PayrollSimulateBankMenu v-if="can('simulate.bank')" />
     </div>
 
     <!-- ── Payables ── -->
@@ -126,25 +165,26 @@ const asPay = (r: unknown) => r as PayHist
             <div class="stat-title">{{ t('Open') }}</div>
             <div class="stat-period">{{ t('Owed less paid') }} · {{ dateLabel(today()) }}</div>
             <div class="stat-amount">{{ rupiah(sum(openRows)) }}</div>
-            <a class="stat-link" @click="drill('open')">{{ openRows.length }} {{ t(openRows.length === 1 ? 'payable' : 'payables') }}</a>
+            <a class="stat-link" @click="drill('open')">{{ plural(openRows.length, 'payable', 'payables') }}</a>
           </div>
           <div class="stat-card stat-card--bordered">
             <div class="stat-title">{{ t('Overdue') }}</div>
             <div class="stat-period">{{ t('Open past the due date') }}</div>
             <div class="stat-amount" :class="{ 'stat-amount--danger': overdueRows.length }">{{ rupiah(sum(overdueRows)) }}</div>
-            <a class="stat-link" @click="drill('overdue')">{{ overdueRows.length }} {{ t(overdueRows.length === 1 ? 'payable' : 'payables') }}</a>
+            <a class="stat-link" @click="drill('overdue')">{{ plural(overdueRows.length, 'payable', 'payables') }}</a>
           </div>
           <div class="stat-card stat-card--bordered">
-            <div class="stat-title">{{ t('Due in 15 days') }}</div>
-            <div class="stat-period">{{ t('Open, not yet due') }}</div>
-            <div class="stat-amount">{{ rupiah(sum(dueSoon)) }}</div>
-            <a class="stat-link" @click="drill('open')">{{ dueSoon.length }} {{ t(dueSoon.length === 1 ? 'payable' : 'payables') }}</a>
-          </div>
-          <div class="stat-card">
             <div class="stat-title">{{ t('Paid') }}</div>
-            <div class="stat-period">{{ monthLabel(thisMonth) }}</div>
+            <div class="stat-period">{{ t('Bank matches') }} · {{ monthLabel(thisMonth) }}</div>
             <div class="stat-amount">{{ rupiah(paidThisMonth.reduce((s, p) => s + p.amount, 0)) }}</div>
-            <a class="stat-link" @click="view = 'payments'">{{ paidThisMonth.length }} {{ t(paidThisMonth.length === 1 ? 'payment' : 'payments') }}</a>
+            <a class="stat-link" @click="view = 'payments'">{{ plural(paidThisMonth.length, 'payment', 'payments') }}</a>
+          </div>
+          <div class="stat-card" :data-tour="firstFlaggedKey ? undefined : 'payroll-payables-flags'">
+            <div class="stat-title">{{ t('Checks') }}</div>
+            <div class="stat-period">{{ t('Bank, e-Bupot and manual journals') }}</div>
+            <div class="stat-amount" :class="{ 'stat-amount--warning': flaggedRows.length }">{{ plural(flaggedRows.length, 'payable', 'payables') }}</div>
+            <a v-if="flaggedRows.length" class="stat-link" @click="drill('flagged')">{{ t('Review') }}</a>
+            <span v-else class="stat-note">{{ t('Nothing to review') }}</span>
           </div>
         </div>
       </template>
@@ -164,22 +204,59 @@ const asPay = (r: unknown) => r as PayHist
       </template>
 
       <template #cell-label="{ row }">
-        <div class="pp-cell">
+        <div class="pp-cell" :data-row-key="asRow(row).key">
           <span class="pp-name" @click="openDetail(asRow(row))">{{ asRow(row).label }}</span>
           <span class="pp-sub">{{ accountLabel(asRow(row).account) }}</span>
-          <span v-for="f in asRow(row).flags" :key="f.code + f.message" class="pp-warn">{{ f.message }}</span>
+
+          <div v-if="asRow(row).flags.length" class="pp-flags" :data-tour="asRow(row).key === firstFlaggedKey ? 'payroll-payables-flags' : undefined">
+            <div class="pp-chips">
+              <MpBadge
+                v-for="c in flagChips(asRow(row))"
+                :key="c.code"
+                for="tableStatus"
+                :type="c.code === 'manual-journal' ? 'warning' : 'critical'"
+              >{{ t(c.label) }}{{ c.count > 1 ? ` (${c.count})` : '' }}</MpBadge>
+            </div>
+            <span v-for="f in asRow(row).flags" :key="f.code + f.message" class="pp-flag">{{ f.message }}</span>
+          </div>
+
+          <!-- e-Bupot PPh 21 filed total -->
+          <div v-if="isPph21Row(asRow(row))" class="pp-ebupot">
+            <span class="pp-ebupot__label">{{ t('e-Bupot filed') }}</span>
+            <template v-if="asRow(row).ebupot">
+              <span class="pp-ebupot__fig">{{ rupiah(asRow(row).ebupot!.filed) }}</span>
+              <MpBadge v-if="Math.abs(asRow(row).ebupot!.difference) <= ebupotTolerance" for="tableStatus" type="completed">{{ t('Matches') }}</MpBadge>
+              <MpBadge v-else for="tableStatus" type="critical">
+                {{ asRow(row).ebupot!.difference > 0 ? t('Above the books by') : t('Below the books by') }} {{ rupiah(Math.abs(asRow(row).ebupot!.difference)) }}
+              </MpBadge>
+            </template>
+            <span v-else class="pp-sub">{{ t('Not entered') }}</span>
+            <div v-if="can('ebupot.enter')" class="pp-ebupot__form">
+              <MpInput
+                :id="`pp-ebupot-${asRow(row).month}`"
+                v-model="ebupotDraft[asRow(row).key]"
+                size="sm"
+                inputmode="numeric"
+                :placeholder="t('Filed total, Rp')"
+                @input="ebupotError[asRow(row).key] = ''"
+                @keyup.enter="saveEbupot(asRow(row))"
+              />
+              <MpButton :id="`pp-ebupot-save-${asRow(row).month}`" variant="secondary" size="sm" is-rounded @click="saveEbupot(asRow(row))">{{ t('Save') }}</MpButton>
+            </div>
+            <span v-if="ebupotError[asRow(row).key]" class="pp-error">{{ ebupotError[asRow(row).key] }}</span>
+          </div>
         </div>
       </template>
       <template #cell-owed="{ row }"><span class="pp-fig" @click="openDetail(asRow(row))">{{ rupiah(asRow(row).owed) }}</span></template>
       <template #cell-paid="{ row }"><span class="pp-fig" @click="openDetail(asRow(row))">{{ rupiah(asRow(row).paid) }}</span></template>
       <template #cell-balance="{ row }">
-        <div class="pp-cell">
-          <span :class="{ 'pp-danger': asRow(row).overdueDays }">{{ rupiah(asRow(row).balance) }}</span>
+        <div class="pp-cell pp-cell--right">
+          <span :class="{ 'pp-danger': asRow(row).overdueDays || asRow(row).balance < 0 }">{{ rupiah(asRow(row).balance) }}</span>
           <span v-if="asRow(row).pendingOwed != null" class="pp-sub">{{ t('After correction') }} {{ rupiah(asRow(row).pendingOwed! - asRow(row).paid) }}</span>
         </div>
       </template>
       <template #cell-status="{ row }">
-        <MpBadge for="tableStatus" :type="badgeType(asRow(row))">{{ t(asRow(row).statusLabel) }}</MpBadge>
+        <MpBadge for="tableStatus" :type="STATUS_BADGE[asRow(row).status]">{{ t(asRow(row).statusLabel) }}</MpBadge>
       </template>
 
       <template #actions="{ row }">
@@ -189,7 +266,7 @@ const asPay = (r: unknown) => r as PayHist
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem @click="openDetail(asRow(row))">{{ t('View lines') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="openDetail(asRow(row))">{{ t('View details') }}</MpPopoverListItem>
               <MpPopoverListItem v-if="asRow(row).runId" @click="navigateTo(`/payroll-runs/${asRow(row).runId}`)">{{ t('Open run') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
@@ -198,8 +275,8 @@ const asPay = (r: unknown) => r as PayHist
 
       <template #empty>
         <div class="pp-empty">
-          <p class="pp-empty-title">{{ t('No payroll payables yet') }}</p>
-          <p class="pp-empty-desc">{{ t('Payables show here once a payroll run posts.') }}</p>
+          <p class="pp-empty-title">{{ t(hasActiveFilter ? 'No payables match the filters' : 'No payroll payables yet') }}</p>
+          <p class="pp-empty-desc">{{ t(hasActiveFilter ? 'Clear the filters to see every payable.' : 'Payables show here once a payroll run posts.') }}</p>
         </div>
       </template>
     </ErpTablePage>
@@ -238,7 +315,9 @@ const asPay = (r: unknown) => r as PayHist
 .stat-period { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap; }
 .stat-amount { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-2xl, 32px); white-space: nowrap; }
 .stat-amount--danger { color: var(--mp-text-danger); }
+.stat-amount--warning { color: var(--mp-colors-text-warning); }
 .stat-link { display: inline-flex; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); line-height: var(--mp-line-heights-md); cursor: pointer; padding: 0 var(--mp-spacing-0\.5); }
+.stat-note { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md); }
 
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
@@ -253,12 +332,20 @@ const asPay = (r: unknown) => r as PayHist
 .filter-search-input { flex: 1; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); min-width: 0; }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
 
-.pp-cell { display: flex; flex-direction: column; min-width: 0; }
+.pp-cell { display: flex; flex-direction: column; gap: var(--mp-spacing-1); min-width: 0; white-space: normal; }
+.pp-cell--right { align-items: flex-end; text-align: right; }
 .pp-name { color: var(--mp-text-link); cursor: pointer; }
 .pp-fig { cursor: pointer; }
 .pp-fig:hover { text-decoration: underline; }
 .pp-sub { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: normal; }
-.pp-warn { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-warning); white-space: normal; }
+.pp-flags { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.pp-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-1); }
+.pp-flag { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: normal; }
+.pp-ebupot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--mp-spacing-1) var(--mp-spacing-2); padding-top: var(--mp-spacing-1); border-top: 1px solid var(--mp-border-default); }
+.pp-ebupot__label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pp-ebupot__fig { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); font-variant-numeric: tabular-nums; }
+.pp-ebupot__form { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-basis: 100%; }
+.pp-error { flex-basis: 100%; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
 .pp-danger { color: var(--mp-text-danger); }
 .pp-empty { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-10, 40px) 0; }
 .pp-empty-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
