@@ -55,7 +55,7 @@ describe('PAY-1 guided tour (auto-play)', () => {
    * The screen branches add these markers; until they merge this check fails, and so does the
    * asset-tours check that every tour target is on a product screen. Skipped until then.
    */
-  it.skip('every marker the tour uses is on a payroll screen', () => {
+  it('every marker the tour uses is on a payroll screen', () => {
     const root = resolve(__dirname, '..', 'app', 'components')
     const src = ['pages', 'payroll'].flatMap((d) => readdirSync(join(root, d)).filter((f) => /^Payroll.*\.vue$/.test(f)).map((f) => readFileSync(join(root, d, f), 'utf8'))).join('\n')
     const markers = new Set([...src.matchAll(/ data-tour="([^"]+)"/g)].map((m) => m[1]!))
