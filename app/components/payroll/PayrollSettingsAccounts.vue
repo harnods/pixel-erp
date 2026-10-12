@@ -1,8 +1,7 @@
 <script setup lang="ts">
 /**
  * Accounts (TS-03): the payroll account set with one party label per payable,
- * the accounts payroll itself needs (Hutang Gaji,
- * tax presets), and Create account with the code clash proposal and
+ * Hutang Gaji, the tax presets, and Create account with the code clash proposal and
  * "Use existing" for a same-name chart account.
  */
 import { computed, reactive, ref } from 'vue'

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
  * Dry run (OD-10): pick a past period Talenta has sent and see the journal it
- * would post on the current settings, the totals against Talenta's own run
- * totals, the groups, the issues that would hold it and the account-class split
+ * would post on the current settings, the totals summed from the pay items,
+ * the groups, the issues that would hold it and the account-class split
  * against the old route. Posts nothing. Results stay listed with the settings
  * version that built them, so a re-run after a fix shows what moved.
  */
@@ -81,7 +81,6 @@ function copyHrText() {
   void navigator.clipboard?.writeText(hrText.value).catch(() => undefined)
   successToast(t('Copied'))
 }
-const varianceClass = (n: number) => (n ? 'pset-danger' : 'pset-ok')
 </script>
 
 <template>
@@ -175,7 +174,7 @@ const varianceClass = (n: number) => (n ? 'pset-danger' : 'pset-ok')
         <div class="pset-card__head">
           <div>
             <div class="pset-card__title">{{ t('Totals from the pay items') }}</div>
-            <div class="pset-card__sub">{{ t('Talenta sends pay items only. Each total is summed from them and compared with the journal lines.') }}</div>
+            <div class="pset-card__sub">{{ t('Talenta sends pay items only. Each total is summed from them, beside the journal lines it would post.') }}</div>
           </div>
         </div>
         <table class="pset-table">
@@ -184,7 +183,6 @@ const varianceClass = (n: number) => (n ? 'pset-danger' : 'pset-ok')
               <th class="pset-th">{{ t('Total') }}</th>
               <th class="pset-th pset-th--num">{{ t('Jurnal lines') }}</th>
               <th class="pset-th pset-th--num">{{ t('Talenta') }}</th>
-              <th class="pset-th pset-th--num">{{ t('Variance') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -192,7 +190,6 @@ const varianceClass = (n: number) => (n ? 'pset-danger' : 'pset-ok')
               <td class="pset-td">{{ t(r.label) }}</td>
               <td class="pset-td pset-td--num">{{ rupiah(r.lines) }}</td>
               <td class="pset-td pset-td--num">{{ rupiah(r.talenta) }}</td>
-              <td class="pset-td pset-td--num" :class="varianceClass(r.variance)">{{ rupiah(r.variance) }}</td>
             </tr>
           </tbody>
         </table>
