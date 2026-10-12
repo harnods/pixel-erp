@@ -6,15 +6,19 @@ import {
   payablesTracker, accountLabel, revisionOf, sourceSummary, sendLog, connection, settings, payItemKey, mappingFor,
   payItemType, payItemAccount, groupRows, can, defaultEntryDate, checkEntryDate, pendingApproval, canApprove,
   claimsSummary, snapshotById, rupiah, dateLabel, wib, staffRows, currentVersionOf, manualJournalWarnings,
-  type Run,
+  payablePrefill, journalById, today, type Run,
 } from '../app/data/payrollStore'
 import { ACC } from '../app/data/payrollMaster'
 import { awaitingApprovalTasks } from '../app/data/tasks'
 import { approvalWorkflows } from '../app/data/approvalWorkflows'
 import { monthHeadcount } from '../app/data/payrollUiIntake'
+import { paymentHistory } from '../app/data/payrollUiPayables'
+import { cashTransactions } from '../app/data/bankTransactions'
+import { cashAccounts } from '../app/data/cashAccounts'
 import {
   PAYROLL_TOURS, PAYROLL_SETUP_TOUR, PAYROLL_RUN_TOUR, PAYROLL_RESEND_TOUR, PAYROLL_TOUR_MARKERS, PAYROLL_FEATURES,
-  TOUR_WORK, tourCtx, sepId, SEP_KEY, SEP_LABEL, SEP_MONTH, NEW_ITEM, NEW_GROUP,
+  TOUR_WORK, tourCtx, sepId, SEP_KEY, SEP_LABEL, SEP_MONTH, NEW_ITEM, NEW_GROUP, AUG_MONTH, AUG_BPJS_KES, PAY_FROM,
+  CASH_FORM_TARGET, augBpjsKey,
 } from '../app/tours/payrollTours'
 import type { AssetTour } from '../app/tours/assetTours'
 
@@ -69,8 +73,14 @@ describe('payroll guided tours: shape', () => {
     for (const t of PAYROLL_TOURS) {
       t.onReset!()
       for (const s of t.steps) {
-        expect(PAYROLL_TOUR_MARKERS as readonly string[], `${t.code}: ${s.title}`).toContain(s.target)
         const route = typeof s.route === 'function' ? s.route() : s.route!
+        // The one step Pay hands to Cash management: New spend money, prefilled with the payable.
+        if (s.target === CASH_FORM_TARGET) {
+          expect(route, `${t.code}: ${s.title}`).toBe(`/bank-withdrawals/new?payable=${encodeURIComponent(augBpjsKey())}`)
+          expect(augBpjsKey()).not.toBe('')
+          continue
+        }
+        expect(PAYROLL_TOUR_MARKERS as readonly string[], `${t.code}: ${s.title}`).toContain(s.target)
         expect(route, `${t.code}: ${s.title}`).toMatch(/^\/payroll-(inbox|payables|settings|runs\/run\d+)(\?.*)?$/)
       }
     }
@@ -97,7 +107,9 @@ describe('payroll guided tours: shape', () => {
       ...[...src.matchAll(/ data-tour="([^"]+)"/g)].map((m) => m[1]!),
       ...[...src.matchAll(/'(payroll-[a-z0-9-]+)'/g)].map((m) => m[1]!),
     ])
-    for (const t of PAYROLL_TOURS) for (const s of t.steps) expect(markers, `${t.code}: ${s.title}`).toContain(s.target)
+    for (const t of PAYROLL_TOURS) for (const s of t.steps) if (s.target !== CASH_FORM_TARGET) expect(markers, `${t.code}: ${s.title}`).toContain(s.target)
+    // New spend money carries the payable banner the Pay step points at.
+    expect(readFileSync(join(root, 'pages', 'CashTransactionFormPage.vue'), 'utf8')).toContain(`data-testid="${CASH_FORM_TARGET}"`)
   })
 
   it('copy follows the house rules and the glossary', () => {
@@ -109,6 +121,8 @@ describe('payroll guided tours: shape', () => {
       // Glossary: staff not employees, no revision / acknowledge / holds / entry date / tag / cost center.
       expect(copy, t.code).not.toMatch(/\bemployees?\b|\brevision\b|\backnowledg|\bentry date\b|\btags?\b|\bcost cent(er|re)\b|\bDry run\b/i)
       expect(copy, t.code).not.toMatch(/\bHolds\b/)
+      // Menu paths read like the screens: Inbox > Awaiting approval, not 'Inbox, Awaiting approval'.
+      expect(copy, t.code).not.toMatch(/\b(Inbox|Settings|Cash management), (Awaiting|Approval|New)\b/)
       // No employee identifier, ever.
       expect(copy, t.code).not.toMatch(/EMP-\d|\b510\d\d\b|user_id|employee_id/)
       for (const s of t.steps) expect(s.title.length, `${t.code}: ${s.title}`).toBeLessThanOrEqual(80)
@@ -117,7 +131,7 @@ describe('payroll guided tours: shape', () => {
 
   it('quotes glossary labels exactly as the screens name them', () => {
     const all = PAYROLL_TOURS.map(allCopyOf).join(' ')
-    for (const label of ['To fix before posting', 'Mark as checked', 'Post journal', 'Approve and post', 'Use v2 and repost', 'Journal date', 'Use group account', 'Set up group', 'Talenta sent this period again'])
+    for (const label of ['To fix before posting', 'Mark as checked', 'Post journal', 'Approve and post', 'Use v2 and repost', 'Journal date', 'Use group account', 'Use default account', 'Send for approval', 'Inbox > Awaiting approval', 'Settings > Approval workflows', 'Cash management > New spend money', 'Set up group', 'Talenta sent this period again', 'Groups', 'New spend money', 'Pay from', 'Spend money', 'Bank reconciliation', 'Source', 'Payments', 'Overdue', 'Paid late'])
       expect(all).toContain(label)
   })
 })
@@ -137,14 +151,15 @@ describe('feature coverage', () => {
     const required = [
       'Connection status and Talenta company', 'How to send from Talenta', 'Payable accounts per party',
       'Pay item type from Talenta, with the header tip', 'Map a pay item to any expense account', 'Use group account',
-      'Group by Talenta fields', 'Talenta field to dimension links', 'Group expense account and dimension value',
+      'Settings > Groups tab', 'Group by Talenta fields', 'Talenta field to dimension links', 'Group expense account and dimension value',
       'Approval workflows rule Payroll journal', 'View as: View only has no actions', 'View as: Accountant needs LM for settings',
       'Inbox runs', 'Sync log', 'To fix before posting: unmapped pay item', 'Map from the hold; the hold clears',
       'To fix before posting: New group', 'Set up group clears the New group hold', 'Draft review lines by account and dimension',
       'Warnings and Mark as checked', 'Month headcount (Owner)', 'Journal date: default and locked period',
-      'Send for approval to Inbox, Awaiting approval', 'Approve and post', 'Journals tab', 'Mapping used tab', 'Claims',
+      'Send for approval to Inbox > Awaiting approval', 'Approve and post', 'Journals tab', 'Mapping used tab', 'Claims',
       'Payables: bank match pays salary', 'Payables: bank payment menu', 'Payables: bank differs flag',
-      'Manual journal on Salaries Payable warning', 'Simulate Talenta send (inbox menu)', 'Talenta sent this period again',
+      'Payables: overdue statutory payable', 'Pay opens New spend money prefilled', 'Saving the spend money pays the payable',
+      'Payments: Source column', 'Manual journal on Salaries Payable warning', 'Simulate Talenta send (inbox menu)', 'Talenta sent this period again',
       'Versions: what changed', 'Use v2 and repost on one journal date', 'Repost approval', 'Old journal reversed, new one posted',
       'Payables follow the repost', 'Missing pay item books and warns', 'Old Talenta to Expense sync blocked',
     ]
@@ -171,6 +186,9 @@ describe('feature coverage', () => {
       'Payables: bank payment menu': 'payroll-payables-simulate', 'Payables: bank differs flag': 'payroll-payables-flags',
       'Simulate Talenta send (inbox menu)': 'payroll-simulate-send', 'Talenta sent this period again': 'payroll-revision',
       'Versions: what changed': 'payroll-versions', 'Use v2 and repost on one journal date': 'payroll-repost',
+      'Settings > Groups tab': 'payroll-groupby', 'Pay opens New spend money prefilled': CASH_FORM_TARGET,
+      'Payables: overdue statutory payable': 'payroll-payables', 'Saving the spend money pays the payable': 'payroll-payables',
+      'Payments: Source column': 'payroll-payables',
     }
     for (const f of PAYROLL_FEATURES) if (expectAt[f.feature]) expect(target(f.tour, f.step), f.feature).toBe(expectAt[f.feature])
   })
@@ -299,6 +317,7 @@ describe('PAY-2 Monthly payroll run (replay)', () => {
     p.q(0, sum.takeHome, 446_901_849)
     expect(payablesTracker('2026-07').every((r) => r.balance === 0)).toBe(true)
     expect(payablesTracker('2026-08').filter((r) => r.balance !== 0).map((r) => r.party)).toEqual(['BPJS Kesehatan'])
+    p.says(0, 'only August\'s BPJS Kesehatan is still unpaid')
     // 2. Sync log.
     p.at(1)
     const row = sendLog.value[0]!
@@ -426,13 +445,49 @@ describe('PAY-2 Monthly payroll run (replay)', () => {
     const s18 = sal()
     expect(s18.flags.map((f) => f.code)).toEqual(['bank-differs'])
     p.q(17, s18.paid, 447_151_849); p.q(17, s18.owed, 446_901_849); p.q(17, s18.paid - s18.owed, 250_000)
-    // 19. Manual journal on Salaries Payable: the run and the row warn.
+    // 19. August BPJS Kesehatan: still owed, past its due date (the sample data leaves it unpaid).
     p.at(18)
+    const kes = () => payablesTracker(AUG_MONTH).find((r) => r.party === 'BPJS Kesehatan')!
+    const k19 = kes()
+    expect([k19.label, k19.account, k19.paid, k19.status, k19.dueLabel]).toEqual([AUG_BPJS_KES, ACC.bpjsKes, 0, 'Overdue', '10 Sep 2026'])
+    p.q(18, k19.balance, 16_102_029)
+    p.says(18, `${AUG_BPJS_KES}: Rp16.102.029 still owed, due ${k19.dueLabel}, ${k19.statusLabel}.`)
+    expect(k19.statusLabel).toBe('Overdue 25 days')
+    expect(payablesTracker().filter((r) => r.overdueDays > 0).map((r) => r.key)).toEqual([k19.key])
+    // 20. Pay: New spend money prefilled with the payee, the payable account and the open amount.
+    p.at(19)
+    const pre = payablePrefill(augBpjsKey())!
+    expect([pre.payee, pre.account, pre.label]).toEqual(['BPJS Kesehatan', ACC.bpjsKes, AUG_BPJS_KES])
+    p.q(19, pre.amount, 16_102_029)
+    expect(cashAccounts.some((a) => a.name === PAY_FROM && !a.isArchived)).toBe(true)
+    p.says(19, `Pay from ${PAY_FROM} to ${pre.payee}: one line on ${accountLabel(pre.account)}`)
+    // 21. Saving the spend money pays the payable: paid in full, after the due date.
+    const before = cashTransactions.length
+    p.at(20)
+    const k21 = kes()
+    p.q(20, k21.paid, 16_102_029); p.q(20, k21.balance, 0)
+    expect([k21.status, k21.statusLabel]).toEqual(['Paid late', 'Paid late, 25 days'])
+    p.says(20, `paid Rp16.102.029, balance Rp0, ${k21.statusLabel}.`)
+    const tx = cashTransactions.find((x) => x.kind === 'withdrawal' && x.memo === pre.memo)!
+    expect(cashTransactions.length - before).toBeLessThanOrEqual(1)
+    expect([tx.contact, tx.lines.map((l) => [l.accountCode, l.amount])]).toEqual(['BPJS Kesehatan', [[ACC.bpjsKes, 16_102_029]]])
+    const pj = journalById(payroll.payments.at(-1)!.journalId)!
+    expect([pj.source, pj.type, pj.number, pj.date]).toEqual(['Spend money', 'Statutory payment', `Spend money #${tx.number}`, today()])
+    expect(pj.lines.map((l) => [l.account, l.debit, l.credit])).toEqual([[ACC.bpjsKes, 16_102_029, 0], [cashAccounts.find((a) => a.name === PAY_FROM)!.code, 0, 16_102_029]])
+    // 22. Payments: Source says where each came from.
+    p.at(21)
+    const ph = paymentHistory.value
+    expect(ph[0]).toMatchObject({ payable: AUG_BPJS_KES, statement: 'Spend money', amount: 16_102_029 })
+    p.q(21, ph[0]!.amount, 16_102_029)
+    for (const n of ['BNK-0012', 'BNK-0013']) expect(ph.find((x) => x.number === n)!.statement, n).toBe('Bank reconciliation')
+    p.says(21, 'BNK-0012 and BNK-0013 came from Bank reconciliation')
+    // 23. Manual journal on Salaries Payable: the run and the row warn.
+    p.at(22)
     const mj = manualJournalWarnings(SEP_MONTH)
     expect(mj.map((x) => [x.number, dateLabel(x.date)])).toEqual([['JV-0001', '20 Sep 2026']])
-    p.q(18, mj[0]!.amount, 1_500_000)
+    p.q(22, mj[0]!.amount, 1_500_000)
     expect(mj[0]!.accounts).toEqual([ACC.salaries, ACC.hutangGaji])
-    p.says(18, 'JV-0001 posts Rp1.500.000 to Salaries and Salaries Payable on 20 Sep 2026')
+    p.says(22, 'JV-0001 posts Rp1.500.000 to Salaries and Salaries Payable on 20 Sep 2026')
     expect(runWarnings(run.id).some((x) => x.code === 'manual-journal' && !x.acknowledged)).toBe(true)
     expect(sal().flags.map((f) => f.code)).toEqual(['bank-differs', 'manual-journal'])
     p.done()
