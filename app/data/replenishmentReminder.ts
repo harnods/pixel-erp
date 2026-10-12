@@ -45,8 +45,8 @@ export function replenishmentReminder(t: T, tf: TF): Notification | null {
         { label: t('To order'), value: tf('{n} of {total} stocked products', { n: products, total: wl.totals.skus }) },
         { label: t('Most to order'), value: topName, sub: tf('{n} products', { n: topCount }) },
         { label: t('Stocks out before resupply'), value: String(wl.totals.belowLeadTime), danger: wl.totals.belowLeadTime > 0 },
-        // Counted in products, exactly as the worklist's Covered by inbound card does.
-        { label: t('Covered by inbound'), value: String(new Set(wl.coveredByInbound.map((r) => r.sku)).size) },
+        // Counted in products, exactly as the worklist's Covered by in transit card does.
+        { label: t('Covered by in transit'), value: String(new Set(wl.coveredByInbound.map((r) => r.sku)).size) },
       ],
       actions: [{ label: t('View worklist'), primary: true, to: '/replenishment' }],
     },

@@ -28,7 +28,7 @@ describe('daily replenishment reminder', () => {
     expect(go.to).toBe('/replenishment')
     // The numbers it quotes are the worklist's own.
     expect(n.detail.fields.find((f) => f.label === 'Stocks out before resupply')!.value).toBe(String(wl.totals.belowLeadTime))
-    expect(n.detail.fields.find((f) => f.label === 'Covered by inbound')!.value).toBe(String(new Set(wl.coveredByInbound.map((r) => r.sku)).size))
+    expect(n.detail.fields.find((f) => f.label === 'Covered by in transit')!.value).toBe(String(new Set(wl.coveredByInbound.map((r) => r.sku)).size))
   })
 
   it('is absent when the reminder is switched off', () => {

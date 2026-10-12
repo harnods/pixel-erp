@@ -687,6 +687,12 @@ export interface WorklistRow {
      * calm "covered" label and the user is prompted to verify the inbound arrival.
      */
     verifyInbound: boolean
+    /**
+     * No sales in the lookback window → demand 0 → no reorder point can be computed.
+     * A tracked SKU in this state is routed to Needs setup tagged "No demand" (it does
+     * NOT appear on To order); it leaves Needs setup on its own once a first sale lands.
+     */
+    noDemand: boolean
   }
   /** Sort score — urgency, never shown as a column. */
   urgency: number
@@ -808,12 +814,16 @@ export function buildRow(
   }
 
   // ── Bucketing ──
-  // Demand never sends a row to Needs setup any more (D18): 0 sales → demand 0 →
-  // the row simply is not due and drops off "To order". Needs setup is only about
-  // a missing LEAD TIME (no PO→GR history), which a buyer must resolve by hand.
+  // Needs setup collects what a person must resolve before a recommendation is
+  // possible: a missing LEAD TIME (no PO→GR history) and/or NO DEMAND (no sales in
+  // the lookback window, so no reorder point can be computed). A no-demand SKU shows
+  // here tagged "No demand" and leaves on its own once a first sale lands (then it is
+  // "provisional"); it never appears on To order.
+  const noDemand = !hasDemandBasis
   const missing: string[] = []
   if (!vendorItem) missing.push('Vendor')
   if (leadTimeMissing) missing.push('Lead time')
+  if (noDemand) missing.push('Sales history')
 
   // Triggered = below the reorder point on available stock (§2.7 STEP 2, no
   // in-transit in the trigger). "Due" is the subset that still needs a PR.
@@ -835,9 +845,9 @@ export function buildRow(
 
   let bucket: WorklistBucket
   if (!settings.tracked) bucket = 'not-tracked'
-  // Only a missing lead time routes here now. An ESTIMATED lead time is not a gap
+  // A missing lead time OR no demand routes here. An ESTIMATED lead time is not a gap
   // — it resolved, it is simply tagged — so it must not land in Needs setup.
-  else if (leadTimeMissing) bucket = 'needs-setup'
+  else if (leadTimeMissing || noDemand) bucket = 'needs-setup'
   // Covered by inbound leaves "To order" and its count (stockout-wins already
   // excluded from `coveredByInbound`).
   else if (coveredByInbound) bucket = 'covered-inbound'
@@ -912,6 +922,7 @@ export function buildRow(
       provisional: velocity.provisional,
       coveredByInbound,
       verifyInbound,
+      noDemand,
     },
     urgency,
     asOf,

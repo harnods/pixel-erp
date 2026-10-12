@@ -161,14 +161,13 @@ describe('worklist — buckets', () => {
   })
 
   it('needs-setup rows never carry a fabricated quantity (US-003 AC-03)', () => {
-    // Under D18 Needs setup is only for a genuinely missing lead time (demand no
-    // longer blocks — 0 sales just drops out), so with a global lead-time fallback
-    // set it can legitimately be empty. Whatever rows are here must carry no
-    // quantity and name what they are missing.
+    // Needs setup collects genuinely-blocked rows: a missing lead time and/or no demand
+    // (0-sales tracked SKUs now route here — PM override of D18). Whatever rows are here
+    // must carry no quantity and name a real, person-fixable gap.
     for (const row of list.needsSetup) {
       expect(row.suggestion.purchaseQty).toBe(0)
       expect(row.suggestion.stockingQty).toBe(0)
-      expect(row.missing).toContain('Lead time')
+      expect(row.flags.noDemand || row.missing.includes('Lead time')).toBe(true)
     }
   })
 

@@ -273,11 +273,8 @@ function matchesSignal(row: WorklistRow): boolean {
     case 'volatile': return row.flags.volatile
     case 'provisional': return row.flags.provisional
     case 'estimated-lead': return row.flags.leadTimeEstimated
-    case 'waiting-lead': return row.leadTimeTier === 'none'
     case 'below-lead': return row.flags.belowLeadTime
     case 'covered': return row.flags.coveredByInbound
-    // Velocity is only as fresh as the last run, so staleness applies to every row.
-    case 'stale': return isStale.value
     default: return true
   }
 }
@@ -353,7 +350,9 @@ const ALL_COLUMNS: TableColumn[] = [
   { key: 'fsnClass',      label: 'Movement',        kind: 'status', sortable: true, sortType: 'text' },
   // General signals (US-013 AC-01 §4): how reliable / early the numbers behind the
   // recommendation are — the demand read (Provisional / Volatile demand) AND the
-  // lead-time basis (Estimated lead time / Waiting for real lead time).
+  // lead-time basis (Estimated lead time). A row with NO lead time is never on To
+  // order — it routes to Needs setup (US-005 EH-01) — so "waiting for real lead time"
+  // is surfaced there as "Missing: Lead time", not as a worklist signal.
   { key: 'signals',       label: 'Signals',         kind: 'tags' },
   { key: 'warehouseName', label: 'Warehouse',       kind: 'name',   sortable: true, sortType: 'text' },
   // The quantity group reads left to right as the calculation does: what is there
@@ -414,7 +413,6 @@ function exportWorklist() {
     [
       r.flags.provisional ? 'Provisional' : '', r.flags.volatile ? 'Volatile demand' : '',
       r.flags.leadTimeEstimated ? 'Estimated lead time' : '',
-      r.leadTimeTier === 'none' ? 'Waiting for real lead time' : '',
     ].filter(Boolean).join('; '),
     r.warehouseName,
     r.atp.onHand, r.atp.reserved, r.atp.available, r.atp.onOrder,
@@ -718,8 +716,8 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
             <span class="stat-asof">{{ t('of') }} {{ worklist.totals.skus }} {{ t('stocked products') }}</span>
           </div>
           <div class="stat-card stat-card--bordered" data-devchange="replenishment-covered-by-inbound">
-            <div class="stat-title">{{ t('Covered by inbound') }}</div>
-            <div class="stat-period">{{ t('Open purchase orders cover the shortfall') }}</div>
+            <div class="stat-title">{{ t('Covered by in transit') }}</div>
+            <div class="stat-period">{{ t('In-transit stock covers the shortfall') }}</div>
             <div class="stat-amount">{{ cardStats.covered }}</div>
             <span class="stat-asof">{{ t('Not counted in To order') }}</span>
           </div>
@@ -876,16 +874,23 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
          separate from FSN's movement class. -->
     <template #cell-signals="{ row }">
       <div
-        data-devchange="replenishment-signals-grey"
+        data-devchange="replenishment-signals-stocks-out"
         v-if="(row as any).flags.provisional || (row as any).flags.volatile
-          || (row as any).flags.leadTimeEstimated || (row as any).leadTimeTier === 'none'
-          || (row as any).flags.coveredByInbound"
+          || (row as any).flags.leadTimeEstimated
+          || (row as any).flags.coveredByInbound
+          || (row as any).flags.belowLeadTime"
         class="rp-badges"
       >
-        <!-- Covered by an open PO; if it will still stock out first, the stockout wins over the
-             calm label and prompts the user to verify the arrival (§2.7). -->
+        <!-- Covered by an open PO/in-transit; if it will still stock out first, the stockout
+             wins over the calm label and prompts the user to verify the arrival (§2.7). -->
         <MpBadge v-if="(row as any).flags.coveredByInbound" for="tableStatus" type="announcement" data-devchange="replenishment-covered-by-inbound">
-          {{ (row as any).flags.verifyInbound ? t('Verify inbound arrival') : t('Covered by inbound') }}
+          {{ (row as any).flags.verifyInbound ? t('Verify in-transit arrival') : t('Covered by in transit') }}
+        </MpBadge>
+        <!-- Available covers only a few days and runs out before the next stock-in arrives
+             (days of cover < lead + safety). Not shown when a covered-by-in-transit row already
+             carries "Verify in-transit arrival". -->
+        <MpBadge v-if="(row as any).flags.belowLeadTime && !(row as any).flags.coveredByInbound" for="tableStatus" type="announcement">
+          {{ t('Stocks out before resupply') }}
         </MpBadge>
         <MpBadge v-if="(row as any).flags.provisional" for="tableStatus" type="announcement">
           {{ t('Provisional') }}
@@ -895,9 +900,6 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
         </MpBadge>
         <MpBadge v-if="(row as any).flags.leadTimeEstimated" for="tableStatus" type="announcement">
           {{ t('Estimated lead time') }}
-        </MpBadge>
-        <MpBadge v-if="(row as any).leadTimeTier === 'none'" for="tableStatus" type="announcement">
-          {{ t('Waiting for real lead time') }}
         </MpBadge>
       </div>
       <span v-else class="rp-signal-none">—</span>

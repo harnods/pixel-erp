@@ -37,11 +37,8 @@ export const REPLENISHMENT_SIGNALS: { id: string; name: string }[] = [
   { id: 'volatile', name: 'Volatile demand' },
   { id: 'provisional', name: 'Provisional' },
   { id: 'estimated-lead', name: 'Estimated lead time' },
-  { id: 'waiting-lead', name: 'Waiting for real lead time' },
   { id: 'below-lead', name: 'Stocks out before resupply' },
-  { id: 'covered', name: 'Covered by inbound' },
-  // Numbers from a recalculation older than the nightly window (US-002 EH-01).
-  { id: 'stale', name: 'Stale velocity' },
+  { id: 'covered', name: 'Covered by in transit' },
 ]
 
 export function emptyReplenishmentFilters(): ReplenishmentFiltersValue {

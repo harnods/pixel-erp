@@ -167,15 +167,23 @@ describe('override precedence (US-011, US-024)', () => {
     expect(overrideCount()).toBe(0)
   })
 
-  it('missing demand never routes to Needs setup (D18) — only missing lead time does', () => {
-    // A 0-sales SKU resolves to demand 0 → reorder point 0 → it drops out of the
-    // worklist entirely; it is never forced into Needs setup for demand, and any
-    // Needs-setup rows that do exist are there for a missing lead time.
+  it('a tracked 0-sales SKU routes to Needs setup tagged "No demand" (PM override of D18)', () => {
+    // Per PM decision: a tracked SKU with no sales in the lookback window has demand 0,
+    // so no reorder point can be computed — it shows in Needs setup with a "No demand"
+    // reason (it leaves on its own once a first sale lands), and never on To order.
     const list = replenishmentWorklist('all')
-    for (const row of list.needsSetup) {
-      expect(row.missing).not.toContain('Sales history')
-      expect(row.missing).toContain('Lead time')
+    const noDemand = list.needsSetup.filter((r) => r.flags.noDemand)
+    expect(noDemand.length).toBeGreaterThan(0)
+    for (const row of noDemand) {
+      expect(row.missing).toContain('Sales history')
+      expect(row.velocity.avgDailySales).toBe(0)
     }
+    // Every Needs-setup row is there for a real, person-fixable gap: no demand and/or no lead time.
+    for (const row of list.needsSetup) {
+      expect(row.flags.noDemand || row.leadTimeTier === 'none').toBe(true)
+    }
+    // And such rows never appear on To order.
+    expect(list.rows.every((r) => !r.flags.noDemand)).toBe(true)
   })
 
   it('a provisional (launch-window) SKU tops up only to its reorder point (D18 / §2.7)', () => {

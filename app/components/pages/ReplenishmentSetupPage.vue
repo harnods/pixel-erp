@@ -57,27 +57,60 @@ const worklist = computed(() => {
 /** Sort keys flattened BEFORE useTableState, which sorts the whole set on plain keys. */
 type SetupRow = WorklistRow & { availableQty: number; fsnClass: string; reason: string }
 
+/** The reason a row is in Needs setup, as a sortable/searchable string. */
+function setupReason(row: WorklistRow): string {
+  if (row.bucket === 'not-tracked') return 'Tracking off'
+  return [row.flags.noDemand ? 'No demand' : '', row.leadTimeTier === 'none' ? 'Waiting for lead time' : '']
+    .filter(Boolean).join(', ') || 'Needs setup'
+}
+
 const baseRows = computed<SetupRow[]>(() =>
   [...worklist.value.needsSetup, ...worklist.value.notTracked].map((row) => ({
     ...row,
     availableQty: row.atp.available,
     fsnClass: row.fsn.committed,
-    reason: row.bucket === 'not-tracked' ? 'Tracking off' : 'Missing lead time',
+    reason: setupReason(row),
   })),
 )
+
+// Movement + Signals quick filters, mirroring the To order tab.
+const FSN_OPTIONS = [
+  { id: 'fast', name: 'Fast' },
+  { id: 'slow', name: 'Slow' },
+  { id: 'non-moving', name: 'Non-moving' },
+]
+const NEEDS_SETUP_SIGNALS = [
+  { id: 'no-demand', name: 'No demand' },
+  { id: 'waiting-lead', name: 'Waiting for lead time' },
+]
+const fsnFilter = ref('')
+const signalFilter = ref('')
+/** One signal at a time — the two reasons a product waits in Needs setup. */
+function matchesSetupSignal(row: WorklistRow): boolean {
+  switch (signalFilter.value) {
+    case 'no-demand': return row.flags.noDemand
+    case 'waiting-lead': return row.leadTimeTier === 'none'
+    default: return true
+  }
+}
 
 const {
   search, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState<SetupRow>(baseRows, {
-  filterFn: (row, s) => !s
-    || [row.sku, row.productName, row.warehouseName].some((v) => v.toLowerCase().includes(s)),
+  filterFn: (row, s) => {
+    if (s && ![row.sku, row.productName, row.warehouseName].some((v) => v.toLowerCase().includes(s))) return false
+    if (fsnFilter.value && row.fsn.committed !== fsnFilter.value) return false
+    if (signalFilter.value && !matchesSetupSignal(row)) return false
+    return true
+  },
 })
 
 watch(warehouseId, () => setPage(1))
+watch([fsnFilter, signalFilter], () => setPage(1))
 
-const hasActiveFilter = computed(() => !!search.value)
-function clearFilters() { search.value = '' }
+const hasActiveFilter = computed(() => !!search.value || !!fsnFilter.value || !!signalFilter.value)
+function clearFilters() { search.value = ''; fsnFilter.value = ''; signalFilter.value = '' }
 
 // Widths from `kind` (rule/table-column-kind). No "Sales history" column: demand
 // no longer routes a product here (D18 — 0 sales simply drops off).
@@ -192,6 +225,25 @@ function onSaved() {
           :is-clearable="false"
           @update:model-value="(v: string) => setWarehouse(v)"
         />
+
+        <!-- Movement + Signals quick filters, same as the To order tab. -->
+        <ErpFilterSelect
+          id="rp-setup-fsn-select"
+          :model-value="fsnFilter"
+          :placeholder="t('Movement')"
+          :options="FSN_OPTIONS.map((o) => ({ value: o.id, label: t(o.name) }))"
+          width="170px"
+          @update:model-value="(v: string) => (fsnFilter = v)"
+        />
+        <ErpFilterSelect
+          id="rp-setup-signal-select"
+          :model-value="signalFilter"
+          :placeholder="t('Signals')"
+          :options="NEEDS_SETUP_SIGNALS.map((o) => ({ value: o.id, label: t(o.name) }))"
+          width="170px"
+          data-devchange="replenishment-needssetup-filters"
+          @update:model-value="(v: string) => (signalFilter = v)"
+        />
       </div>
       <div class="filter-right">
         <div class="filter-search">
@@ -247,10 +299,15 @@ function onSaved() {
               {{ t('Below reorder point') }}
             </MpBadge>
           </template>
-          <MpBadge v-for="m in (row as any).missing" v-else :key="m" for="tableStatus" type="warning">
-            {{ t('Missing') }}: {{ t(m) }}
-          </MpBadge>
+          <template v-else>
+            <MpBadge v-if="(row as any).flags.noDemand" for="tableStatus" type="warning">{{ t('No demand') }}</MpBadge>
+            <MpBadge v-if="(row as any).leadTimeTier === 'none'" for="tableStatus" type="warning">{{ t('Waiting for lead time') }}</MpBadge>
+            <MpBadge v-if="!(row as any).vendor" for="tableStatus" type="warning">{{ t('Missing') }}: {{ t('Vendor') }}</MpBadge>
+          </template>
         </div>
+        <span v-if="(row as any).bucket !== 'not-tracked' && (row as any).flags.noDemand" class="rp-missing-reason">
+          {{ t('No sales in the lookback window yet, so demand cannot be computed. It returns on its own once it starts selling.') }}
+        </span>
         <span v-if="(row as any).bucket !== 'not-tracked' && (row as any).leadTimeTier === 'none'" class="rp-missing-reason">
           {{ t('No lead time yet. Add a preferred vendor, make a purchase, or set a default lead time.') }}
         </span>

@@ -67,11 +67,11 @@ describe('ReplenishmentPage — the worklist renders', () => {
     expect(rows.length).toBe(expected)
   })
 
-  it('shows a Covered by inbound card with its own count, apart from To order', async () => {
+  it('shows a Covered by in transit card with its own count, apart from To order', async () => {
     const wrapper = await mountLoaded(ReplenishmentPage)
     const wl = replenishmentWorklist('all')
     expect(wl.coveredByInbound.length).toBeGreaterThan(0)
-    const covered = wrapper.findAll('.stat-card').find((c) => c.text().includes('Covered by inbound'))!
+    const covered = wrapper.findAll('.stat-card').find((c) => c.text().includes('Covered by in transit'))!
     expect(covered.exists()).toBe(true)
     expect(covered.text()).toContain(String(new Set(wl.coveredByInbound.map((r) => r.sku)).size))
   })
@@ -142,8 +142,9 @@ describe('ReplenishmentSetupPage — Needs setup (missing lead time + muted)', (
     const wl = replenishmentWorklist('all')
     const expected = Math.min(25, wl.needsSetup.length + wl.notTracked.length)
     expect(wrapper.findAll('.erp-tr').length).toBe(expected)
-    // No page-description subtitle (rule/no-page-description-subtitle), and no stale
-    // "Sales history" column — demand no longer routes a product here (D18).
+    // No page-description subtitle (rule/no-page-description-subtitle). A tracked 0-sales
+    // SKU now routes here tagged "No demand" (PM override of D18), shown as a badge —
+    // never the raw "Sales history" reason key.
     expect(wrapper.text()).not.toContain('cannot be suggested yet')
     expect(wrapper.text()).not.toContain('Sales history')
   })

@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'replenishment-needssetup-no-demand-and-filters',
+    title: 'Needs setup: "No demand" + "Waiting for lead time" tags, with Movement & Signals filters',
+    description:
+      'Needs setup now collects — and tags — the two gaps a person must resolve before a recommendation is possible: "No demand" (a tracked SKU with no sales in the lookback window, so no reorder point can be computed) and "Waiting for lead time" (no vendor PO→GR history and no default). A 0-sales tracked SKU now routes here with a "No demand" reason instead of dropping off silently (PM override of D18); it still leaves on its own once a first sale lands. The tab gains Movement and Signals quick filters, mirroring To order.',
+    date: '2026-10-12',
+    files: ['replenishment.ts', 'ReplenishmentSetupPage.vue'],
+  },
+  {
+    id: 'replenishment-to-order-signals-five',
+    title: 'To order: Signals aligned to the five-tag spec',
+    description:
+      'The To order Signals column and filter are exactly five: Volatile demand, Provisional, Estimated lead time, Stocks out before resupply, and Covered by in transit. "Stocks out before resupply" is now shown as a Signals badge (not only a red Days-of-cover number). "Covered by inbound" is renamed "Covered by in transit" across the badge, filter, stat card and daily reminder (the stockout-wins variant reads "Verify in-transit arrival"). "Stale velocity" is dropped as a row signal (the whole-worklist stale banner stays), and the no-lead-time case lives on Needs setup, not here.',
+    date: '2026-10-12',
+    files: ['ReplenishmentPage.vue', 'ReplenishmentFiltersDrawer.vue', 'replenishmentReminder.ts'],
+  },
+  {
     id: 'sample-multi-preferred-vendor',
     title: 'Sample: products with more than one preferred vendor',
     description:

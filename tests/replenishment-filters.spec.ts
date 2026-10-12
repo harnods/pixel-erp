@@ -47,7 +47,12 @@ describe('Warehouse, Movement and Signals live in the drawer value', () => {
 })
 
 describe('Signals quick filter options', () => {
-  it('offers Covered by inbound alongside the demand and lead-time signals', () => {
-    expect(REPLENISHMENT_SIGNALS.map((s) => s.id)).toEqual(expect.arrayContaining(['covered', 'below-lead', 'stale']))
+  it('offers exactly the five To-order signals (no Stale velocity, no Waiting for lead time)', () => {
+    // The To-order tab signal set, per PM spec: a missing lead time routes to Needs
+    // setup (not a To-order signal), and staleness is a whole-worklist banner, not a row signal.
+    expect(REPLENISHMENT_SIGNALS.map((s) => s.id)).toEqual([
+      'volatile', 'provisional', 'estimated-lead', 'below-lead', 'covered',
+    ])
+    expect(REPLENISHMENT_SIGNALS.find((s) => s.id === 'covered')!.name).toBe('Covered by in transit')
   })
 })
