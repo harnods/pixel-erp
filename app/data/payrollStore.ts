@@ -78,6 +78,7 @@
  *                                   BPJS Ketenagakerjaan, DPLK. Engine messages use it.
  *   previewDryRun(runId, no?)       { holds, warnings, draft } of a stored version on current settings: stores and posts nothing
  *                                   (Post drawer preview of an older version; reverse and repost). Call from a handler.
+ *   setTaxAccount(kind, code)          PPh 21 DTP and PPh 21 on severance accounts (Pay items > Payable accounts).
  *   setLimits(patch), setPayday(day)
  *   Limits: partialStaffPct 10, partialWholeGroup, partialThpPct 20, taxTolerance 1000, largeChangePct 10, largeChangeAmount 1000000.
  *
@@ -180,7 +181,7 @@ import { reactive, watch, computed } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
 import {
   PAYROLL_COMPANY_ID, PAYROLL_ACCOUNTS, PAYROLL_PEOPLE, ACC, PAYROLL_TAGS, TALENTA_FIELDS,
-  STATUTORY_PARTIES, TAX_COMPONENTS, TAX_FIELDS, sampleRoster, buildSalaryDetail, sampleEmployeeName, payrollPerson,
+  STATUTORY_PARTIES, PAYABLE_PARTIES, TAX_COMPONENTS, TAX_FIELDS, sampleRoster, buildSalaryDetail, sampleEmployeeName, payrollPerson,
   type PayrollRole, type PayrollAccount, type PayableParty, type PaySection, type TalentaPayload, type TalentaPayItem,
   type TalentaField, type TagDimension, type PayrollTag, type RosterEmployee,
   type PayloadOptions, type TaxField,
@@ -1025,6 +1026,24 @@ export function setPayableAccount(party: PayableParty, code: string): Result {
   const prev = payrollAccount(old)
   if (prev && prev.party === party && !s.mapping.some((m) => m.credit === old)) prev.party = null
   changed(`${partyName(party)} payable set to ${accountLabel(code)}`)
+  return { ok: true }
+}
+/** OQ19: the two tax accounts that are not a party's payable: PPh 21 DTP (the part the government pays) and PPh 21 on severance. */
+export type TaxAccountKind = 'dtp' | 'resign'
+export const TAX_ACCOUNT_LABEL: Record<TaxAccountKind, string> = { dtp: 'PPh 21 DTP (paid by the government)', resign: 'PPh 21 on severance' }
+export function setTaxAccount(kind: TaxAccountKind, code: string): Result {
+  if (!can('setup')) return denied('setup')
+  const s = payroll.settings
+  const a = payrollAccount(code)
+  if (!a) return { ok: false, message: `Account ${code} is not in the chart of accounts. Pick another account.` }
+  if (a.type !== 'liability' && !(kind === 'dtp' && a.type === 'asset')) return { ok: false, message: 'Pick a liability account.' }
+  const owner = PAYABLE_PARTIES.find((p) => s.payables[p] === code)
+  if (owner && !(kind === 'resign' && owner === 'DJP PPh 21')) return { ok: false, message: `${accountName(code)} is already the payable for ${partyName(owner)}. Pick another account.` }
+  const old = s.taxPresets[kind]
+  if (old === code) return { ok: true }
+  for (const m of s.mapping) { if (m.debit === old) m.debit = code; if (m.credit === old) m.credit = code }
+  s.taxPresets[kind] = code
+  changed(`${TAX_ACCOUNT_LABEL[kind]} account set to ${accountLabel(code)}`)
   return { ok: true }
 }
 export function setLimits(patch: Partial<Limits>): Result {
@@ -1900,7 +1919,8 @@ export function runWarnings(runId: string): RunWarning[] {
     out.push({ key: `large:${c.key}`, code: 'large-change', message: `${c.label} ${up ? 'up' : 'down'} ${rupiah(Math.abs(c.diff))} from ${prev ? periodLabel(prev.start, prev.end) : 'last period'}. Add a note or mark it as checked.`, details: { rowKey: c.key, diff: c.diff, pct: c.pct } })
   }
   const hc = headcountChanges(runId)
-  if (hc.unexpected) out.push({ key: `headcount:${hc.groups.filter((g) => g.flagged && !g.expected).map((g) => g.key).join(',')}`, code: 'headcount', message: `Headcount changed in ${hc.unexpected} group${hc.unexpected > 1 ? 's' : ''}, not marked as expected yet.`, details: { groups: hc.groups.filter((g) => g.flagged && !g.expected).map((g) => g.label) } })
+  // OQ21: the Headcount warning goes only to roles that can see the headcount table behind it.
+  if (hc.unexpected && can('headcount.view')) out.push({ key: `headcount:${hc.groups.filter((g) => g.flagged && !g.expected).map((g) => g.key).join(',')}`, code: 'headcount', message: `Headcount changed in ${hc.unexpected} group${hc.unexpected > 1 ? 's' : ''}, not marked as expected yet.`, details: { groups: hc.groups.filter((g) => g.flagged && !g.expected).map((g) => g.label) } })
   for (const m of manualJournalWarnings(run.month)) out.push({ key: `manual:${m.journalId}`, code: 'manual-journal', message: m.message, details: { ...m } })
   return out.map((w) => ({ ...w, acknowledged: v.acks[w.key] ?? null }))
 }

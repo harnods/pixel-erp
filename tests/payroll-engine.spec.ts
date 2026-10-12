@@ -12,6 +12,7 @@ import {
   approvePayroll, rejectPayroll, canApprove, whyLine, journalsOf, defaultEntryDate, checkEntryDate, payrollAccount, rebuildDraft,
   revisionNotice, PARTY_NAME, startConnection, endConnection, confirmSource, setLimits,
   payablePrefill, recordPayablePayment, payablesSummary, reverseRun, versionOf, today, monthLabel, monthOf, payGroupKey, fieldValue,
+  setTaxAccount,
 } from '../app/data/payrollStore'
 import { paymentHistory } from '../app/data/payrollUiPayables'
 import { runRow, hrMessage, monthHeadcount } from '../app/data/payrollUiIntake'
@@ -231,19 +232,20 @@ describe('warnings ride on the draft and never block Post', () => {
     mapInsentif()
     const sep = run(SEP)
     const all = runWarnings(sep.id)
-    expect(all.map((w) => w.code)).toEqual(['large-change', 'large-change', 'large-change', 'large-change', 'headcount'])
-    expect(all.find((w) => w.code === 'headcount')!.message).toBe('Headcount changed in 3 groups, not marked as expected yet.')
+    // OQ21: the headcount warning goes only to Owner and Ultimate + LM (who can see the counts).
+    expect(all.map((w) => w.code)).toEqual(['large-change', 'large-change', 'large-change', 'large-change'])
+    expect(as('Owner', () => runWarnings(sep.id)).find((w) => w.code === 'headcount')!.message).toBe('Headcount changed in 3 groups, not marked as expected yet.')
     expect(all.find((w) => w.code === 'large-change')!.message).toMatch(/ from 21 Jul-20 Aug 2026\. Add a note or mark it as checked\.$/)
     const c = postConfirmText(sep.id)
     expect(c.title).toBe('Post journal for Payroll 21 Aug-20 Sep 2026?')
-    expect(c.body).toMatch(/^Posts one payroll journal of Rp554\.203\.941 on 26 lines\. Journal date 20 Sep 2026\. 5 warnings not checked yet: /)
+    expect(c.body).toMatch(/^Posts one payroll journal of Rp554\.203\.941 on 26 lines\. Journal date 20 Sep 2026\. 4 warnings not checked yet: /)
     expect(as('View only', () => acknowledgeWarning(sep.id, all[0]!.key)).status).toBe(403)
     expect(acknowledgeWarning(sep.id, all[0]!.key, 'Sales incentive started this month').ok).toBe(true)
     expect(runWarnings(sep.id)[0]!.acknowledged).toMatchObject({ note: 'Sales incentive started this month', by: 'Bayu Ferdian' })
-    expect(postConfirmText(sep.id).warnings).toHaveLength(4)
+    expect(postConfirmText(sep.id).warnings).toHaveLength(3)
     const r = postRun(sep.id)
     expect(r.ok).toBe(true)
-    expect(r.warnings).toHaveLength(4)
+    expect(r.warnings).toHaveLength(3)
     expect(r.number).toBe('PAY-0003')
   })
 
@@ -607,7 +609,7 @@ describe('headcount from runs: keyed by user_id, counts only', () => {
     expect(grp(headcountChanges(sep.id), 'Sales, Bandung').expected).toBeNull()
     expect(grp(headcountChanges(sep.id), 'Sales, Surabaya').expected!.note).toBe('Transfer covers the leaver')
     // Sales, Jakarta HQ was never marked; Sales, Bandung lapsed.
-    expect(postRun(sep.id).warnings).toContain('Headcount changed in 2 groups, not marked as expected yet.')
+    expect(as('Owner', () => runWarnings(sep.id)).map((w) => w.message)).toContain('Headcount changed in 2 groups, not marked as expected yet.')
   })
 })
 
@@ -1396,5 +1398,28 @@ describe('Reverse follows the locked-period rule of Post', () => {
     expect(r.ok).toBe(false)
     expect(r.message).toBe(`${monthLabel(monthOf(j.date))} is locked. Pick a journal date in an open month.`)
     expect(liveJournals(aug.id).length).toBe(1)
+  })
+})
+
+describe('PM decisions 2026-10-12 (OQ19, OQ21)', () => {
+  beforeEach(() => { resetPayroll() })
+  it('OQ19: the DTP and severance tax accounts are set on Pay items, Set up access only', () => {
+    setPayrollViewAs('Accountant')
+    expect(setTaxAccount('dtp', ACC.pph21).ok).toBe(false)
+    setPayrollViewAs('Accountant + LM')
+    expect(setTaxAccount('dtp', ACC.bpjsKes).message).toContain('is already the payable for')
+    expect(setTaxAccount('resign', ACC.pph21).ok).toBe(true)
+    expect(payroll.settings.taxPresets.resign).toBe(ACC.pph21)
+  })
+  it('OQ21: the Headcount warning reaches only roles that can see the headcount table', () => {
+    const codes = (role: Parameters<typeof setPayrollViewAs>[0]) => {
+      setPayrollViewAs(role)
+      return payroll.runs.flatMap((r) => runWarnings(r.id)).filter((w) => w.code === 'headcount').length
+    }
+    const owner = codes('Owner')
+    expect(owner).toBeGreaterThan(0)
+    expect(codes('Ultimate + LM')).toBe(owner)
+    expect(codes('Accountant + LM')).toBe(0)
+    expect(codes('Accountant')).toBe(0)
   })
 })

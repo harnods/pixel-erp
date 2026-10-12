@@ -17,6 +17,7 @@ import {
   payroll, can, accountLabel, payItemType, isCostItem, payItemAccount, payItemParty, setPayItemAccount, setPayItemGroupsCanChange,
   setPayableAccount, useChartAccount, payrollAccount,
   type PayItemMapping, type PayItemType,
+  setTaxAccount, TAX_ACCOUNT_LABEL, type TaxAccountKind,
 } from '~/data/payrollStore'
 import { PAYABLE_PARTIES, type PayableParty, type PayrollAccountType } from '~/data/payrollMaster'
 import { accountChoices, type AccountOption } from '~/data/payrollUiSettings'
@@ -78,6 +79,15 @@ function onPayable(party: PayableParty, code: string) {
   payableError.value = r.ok ? '' : t(r.message ?? 'Not saved. Pick a liability account.')
   if (r.ok) successToast(t(`Payable account for ${PARTY_LABEL[party]} saved`))
 }
+// OQ19: the two tax accounts that are not a party's payable sit in the same card.
+const taxAccounts = computed(() => (['dtp', 'resign'] as TaxAccountKind[]).map((k) => ({ kind: k, label: TAX_ACCOUNT_LABEL[k], code: payroll.settings.taxPresets[k] })))
+function onTaxAccount(kind: TaxAccountKind, code: string) {
+  if (!code || code === payroll.settings.taxPresets[kind]) return
+  adopt(code, kind === 'dtp' ? balanceOptions.value : liabilityOptions.value)
+  const r = setTaxAccount(kind, code)
+  payableError.value = r.ok ? '' : t(r.message ?? 'Not saved. Pick a liability account.')
+  if (r.ok) successToast(t(`${TAX_ACCOUNT_LABEL[kind]} account saved`))
+}
 
 </script>
 
@@ -99,6 +109,11 @@ function onPayable(party: PayableParty, code: string) {
             <label class="pset-label" :for="`pset-payable-${p.party.replace(/\s+/g, '-')}`">{{ t(p.label) }}</label>
             <ErpFilterSelect v-if="can('setup')" :id="`pset-payable-${p.party.replace(/\s+/g, '-')}`" :model-value="p.code" :placeholder="t('Select account')" :options="liabilityOptions" width="100%" :is-clearable="false" @update:model-value="(v: string) => onPayable(p.party, v)" />
             <span v-else class="pset-form__value">{{ accountLabel(p.code) }}</span>
+          </div>
+          <div v-for="x in taxAccounts" :key="x.kind" class="pset-field">
+            <label class="pset-label" :for="`pset-tax-${x.kind}`">{{ t(x.label) }}</label>
+            <ErpFilterSelect v-if="can('setup')" :id="`pset-tax-${x.kind}`" :model-value="x.code" :placeholder="t('Select account')" :options="x.kind === 'dtp' ? balanceOptions : liabilityOptions" width="100%" :is-clearable="false" @update:model-value="(v: string) => onTaxAccount(x.kind, v)" />
+            <span v-else class="pset-form__value">{{ accountLabel(x.code) }}</span>
           </div>
         </div>
         <p v-if="payableError" class="pset-error">{{ payableError }}</p>

@@ -429,8 +429,8 @@ const runSteps: PayrollStep[] = [
     target: 'payroll-warnings',
     find: onTab('payroll-warnings', 'Draft'),
     title: 'Warnings point at what changed since August.',
-    body: 'Lines that move more than 10% and Rp1.000.000 are warned, and so are staff who joined, left or moved. Warnings never stop Post; Bayu checks each one and uses Mark as checked.',
-    watch: '9 warnings, all marked as checked: 8 lines that moved and 1 headcount check.',
+    body: 'Lines that move more than 10% and Rp1.000.000 are warned. Warnings never stop Post; Bayu checks each one and uses Mark as checked. Headcount changes warn only the Owner and Ultimate + LM, who can see the counts.',
+    watch: '8 warnings, all marked as checked: 8 lines that moved.',
     placement: 'top',
   },
   {

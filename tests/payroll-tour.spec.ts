@@ -7,6 +7,7 @@ import {
   payItemType, payItemAccount, groupRows, can, defaultEntryDate, checkEntryDate, pendingApproval, canApprove,
   claimsSummary, snapshotById, rupiah, dateLabel, wib, staffRows, currentVersionOf, manualJournalWarnings,
   payablePrefill, journalById, today, type Run,
+  setPayrollViewAs,
 } from '../app/data/payrollStore'
 import { ACC } from '../app/data/payrollMaster'
 import { awaitingApprovalTasks } from '../app/data/tasks'
@@ -365,9 +366,12 @@ describe('PAY-2 Monthly payroll run (replay)', () => {
     // 8. Warnings, all marked as checked.
     p.at(7)
     const w = runWarnings(run.id)
-    expect(w.map((x) => x.code)).toEqual([...Array(8).fill('large-change'), 'headcount'])
-    p.says(7, '9 warnings')
-    p.says(7, '8 lines that moved and 1 headcount check')
+    expect(w.map((x) => x.code)).toEqual(Array(8).fill('large-change'))
+    p.says(7, '8 warnings')
+    p.says(7, '8 lines that moved')
+    const viewer = payroll.viewAs; setPayrollViewAs('Owner')
+    expect(runWarnings(run.id).some((x) => x.code === 'headcount')).toBe(true)
+    setPayrollViewAs(viewer)
     expect(w.every((x) => !!x.acknowledged)).toBe(true)
     expect(payroll.settings.limits.largeChangePct).toBe(10)
     p.says(7, 'more than 10%')
