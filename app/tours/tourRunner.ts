@@ -216,8 +216,11 @@ async function enterStep(r: Running) {
     try { step.run() } catch (e) { console.error('tour step failed', e) }
   }
   const route = typeof step.route === 'function' ? step.route() : step.route
-  if (route && !sameRoute(r.router, route)) {
+  // A page reacting to the role switch (e.g. the payroll inbox dropping a view the new role can't
+  // see) can rewrite its URL and cancel this push; try again until the route lands.
+  for (let i = 0; route && i < 3 && !sameRoute(r.router, route); i++) {
     await r.router.push(route)
+    await nextTick()
   }
   await nextTick()
   const caption = `${tour.code} · Step ${index + 1} of ${m}`

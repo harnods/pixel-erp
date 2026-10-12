@@ -225,6 +225,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
       <!-- Unmapped pay items -->
       <div v-else-if="h.code === 'unmapped-item'" class="ph__fix">
         <table class="ph__table">
+          <colgroup><col style="width: 17%"><col style="width: 12%"><col style="width: 6%"><template v-if="can('setup')"><col style="width: 19%"><col style="width: 23%"><col style="width: 23%"></template></colgroup>
           <thead>
             <tr>
               <th class="ph__th">{{ t('Pay item') }}</th>
@@ -245,9 +246,9 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
                 <td class="ph__td ph__td--num">{{ rupiah(it.amount) }}</td>
                 <td class="ph__td ph__td--num">{{ it.employees }}</td>
                 <template v-if="can('setup')">
-                  <td class="ph__td"><ErpFilterSelect :id="`ph-role-${safeId(it.key)}`" v-model="itemForm(it).role" :placeholder="t('Type')" :options="roleOptions" width="220px" /></td>
-                  <td class="ph__td"><ErpFilterSelect :id="`ph-dr-${safeId(it.key)}`" v-model="itemForm(it).debit" :placeholder="t('Account')" :options="accountOptions" width="220px" /></td>
-                  <td class="ph__td"><ErpFilterSelect :id="`ph-cr-${safeId(it.key)}`" v-model="itemForm(it).credit" :placeholder="t('Account')" :options="accountOptions" width="220px" /></td>
+                  <td class="ph__td"><ErpFilterSelect :id="`ph-role-${safeId(it.key)}`" v-model="itemForm(it).role" :placeholder="t('Type')" :options="roleOptions" width="100%" /></td>
+                  <td class="ph__td"><ErpFilterSelect :id="`ph-dr-${safeId(it.key)}`" v-model="itemForm(it).debit" :placeholder="t('Account')" :options="accountOptions" width="100%" /></td>
+                  <td class="ph__td"><ErpFilterSelect :id="`ph-cr-${safeId(it.key)}`" v-model="itemForm(it).credit" :placeholder="t('Account')" :options="accountOptions" width="100%" /></td>
                 </template>
               </tr>
               <tr v-if="can('setup')">
@@ -346,7 +347,9 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
 .ph__line { display: flex; align-items: center; gap: var(--mp-spacing-3); flex-wrap: wrap; }
 .ph__line .ph__strong { min-width: 200px; }
 .ph__linetext { min-width: 240px; }
-.ph__table { width: 100%; border-collapse: collapse; }
+.ph__table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.ph__table :deep(.efs) { display: block; width: 100%; min-width: 0; }
+.ph__table :deep(.efs-trigger) { width: 100%; }
 .ph__th {
   text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase;
   color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-2) var(--mp-spacing-4);
