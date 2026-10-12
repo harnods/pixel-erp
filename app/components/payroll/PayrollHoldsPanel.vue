@@ -10,14 +10,16 @@ import { useRouter } from 'vue-router'
 import { MpButton, MpIcon, MpInput } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
-  payroll, can, runById, runHolds, rupiah, accountLabel, payrollAccount, mappingFor, suggestMapping, setPayItemMapping,
+  payroll, can, runById, runHolds, rupiah, accountLabel, payrollAccount, mappingFor, suggestMapping, setPayItemAccount,
+  useChartAccount, payItemType, isCostItem,
   mapGroup, createPayrollTag, setFieldPolicy, confirmSource, sourceSummary,
   chooseRevision, chooseSeparateRun, decidePartial, releaseRun, versionOf,
-  PAY_ROLES, type Hold, type PayRole,
+  type Hold,
 } from '~/data/payrollStore'
-import { TALENTA_FIELDS, type PaySection, type PayableParty } from '~/data/payrollMaster'
+import { TALENTA_FIELDS, type PaySection } from '~/data/payrollMaster'
+import { accountChoices, type AccountOption } from '~/data/payrollUiSettings'
 import { successToast, infoToast } from '~/utils/toasts'
-import { roleLabel, sectionLabel } from '~/data/payrollUiRunCopy'
+import { sectionLabel } from '~/data/payrollUiRunCopy'
 import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
 
 const props = defineProps<{ runId: string }>()
@@ -37,7 +39,6 @@ const SETTINGS_FIX = ['two-parties', 'archived-account']
 
 // ── Shared ────────────────────────────────────────────────────────────────
 const accountOptions = computed(() => payroll.accounts.filter((a) => !a.archived).map((a) => ({ value: a.code, label: `${a.code} ${a.name}` })))
-const roleOptions = PAY_ROLES.map((r) => ({ value: r, label: roleLabel(r) }))
 function release() {
   const r = releaseRun(props.runId)
   if (r.ok) successToast(t('All fixed. The draft journal is built.'))
@@ -45,30 +46,36 @@ function release() {
 }
 
 // ── Unmapped pay items ────────────────────────────────────────────────────
-interface ItemForm { role: string; debit: string; credit: string; reason: string; error: string; needsOverride: string[] }
+// Same one-account pick as Settings > Pay items: the type comes from Talenta, a cost item debits
+// the account and credits its party's payable, a deduction or tax item credits it.
+interface ItemForm { account: string; error: string }
 const itemForms = reactive<Record<string, ItemForm>>({})
 function itemForm(it: { key: string; name: string; section: PaySection }): ItemForm {
   if (!itemForms[it.key]) {
     const m = mappingFor(it.name, it.section)
     const s = suggestMapping(it.name, it.section)
-    itemForms[it.key] = { role: m?.role ?? s?.role ?? '', debit: m?.debit ?? s?.debit ?? '', credit: m?.credit ?? s?.credit ?? '', reason: '', error: '', needsOverride: [] }
+    const cost = it.section !== 'deduction' && s?.role !== 'Tax'
+    itemForms[it.key] = { account: (cost ? (m?.debit ?? s?.debit) : (m?.credit ?? s?.credit)) ?? '', error: '' }
   }
   return itemForms[it.key]!
 }
-const STAFF_ROLES: PayRole[] = ['Earning', 'THR', 'Severance', 'Reimbursement']
+const costOptions = computed(() => accountChoices(['expense', 'cogs']))
+const balanceOptions = computed(() => accountChoices(['liability', 'asset']))
+const liabilityOptions = computed(() => accountChoices(['liability']))
+function optionsFor(it: { name: string; section: PaySection }): AccountOption[] {
+  const m = mappingFor(it.name, it.section)
+  if (m ? isCostItem(m) : it.section !== 'deduction') return costOptions.value
+  return m && payItemType(m) === 'tax' ? liabilityOptions.value : balanceOptions.value
+}
 function saveItem(it: { key: string; name: string; section: PaySection }) {
   const f = itemForm(it)
-  if (!f.role || !f.debit || !f.credit) { f.error = 'Pick a type, a debit account and a credit account, then save.'; return }
-  const sugg = suggestMapping(it.name, it.section)
-  const party: PayableParty | null = STAFF_ROLES.includes(f.role as PayRole) ? 'Staff' : (sugg?.party ?? mappingFor(it.name, it.section)?.party ?? null)
-  const r = setPayItemMapping(it.key, { role: f.role as PayRole, debit: f.debit, credit: f.credit, party }, f.reason || undefined)
-  if (!r.ok) {
-    f.error = r.message ?? ''
-    f.needsOverride = (r.needsOverride as string[] | undefined) ?? []
-    return
-  }
-  f.error = ''; f.needsOverride = []
-  successToast(t(`${it.name} saved`))
+  if (!f.account) { f.error = 'Pick an account, then save.'; return }
+  const o = optionsFor(it).find((x) => x.value === f.account)
+  if (o && !payrollAccount(o.value)) useChartAccount({ code: o.value, name: o.name, type: o.type })
+  const r = setPayItemAccount(it.key, f.account)
+  if (!r.ok) { f.error = r.message ?? 'Not saved. Pick another account.'; return }
+  f.error = ''
+  successToast(t(`${it.name} now posts to ${accountLabel(f.account)}`))
 }
 
 // ── Groups ────────────────────────────────────────────────────────────────
@@ -247,28 +254,15 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
               </tr>
               <tr v-if="can('setup')">
                 <td class="ph__td ph__td--sub" colspan="3">
-                  <div class="ph__grid">
+                  <div class="ph__grid ph__grid--one">
                     <div class="ph__field">
-                      <label class="ph__label" :for="`ph-role-${safeId(it.key)}`">{{ t('Type') }}</label>
-                      <ErpFilterSelect :id="`ph-role-${safeId(it.key)}`" v-model="itemForm(it).role" :placeholder="t('Select type')" :options="roleOptions" width="100%" />
+                      <label class="ph__label" :for="`ph-acct-${safeId(it.key)}`">{{ t('Account') }}</label>
+                      <ErpFilterSelect :id="`ph-acct-${safeId(it.key)}`" v-model="itemForm(it).account" :placeholder="t('Select account')" :options="optionsFor(it)" width="100%" />
                     </div>
-                    <div class="ph__field">
-                      <label class="ph__label" :for="`ph-dr-${safeId(it.key)}`">{{ t('Debit account') }}</label>
-                      <ErpFilterSelect :id="`ph-dr-${safeId(it.key)}`" v-model="itemForm(it).debit" :placeholder="t('Select account')" :options="accountOptions" width="100%" />
-                    </div>
-                    <div class="ph__field">
-                      <label class="ph__label" :for="`ph-cr-${safeId(it.key)}`">{{ t('Credit account') }}</label>
-                      <ErpFilterSelect :id="`ph-cr-${safeId(it.key)}`" v-model="itemForm(it).credit" :placeholder="t('Select account')" :options="accountOptions" width="100%" />
-                    </div>
-                  </div>
-                  <div v-if="itemForm(it).needsOverride.length" class="ph__field">
-                    <label class="ph__label" :for="`ph-ovr-${safeId(it.key)}`">{{ t('Override reason') }}</label>
-                    <div class="ph__muted">{{ itemForm(it).needsOverride.join(' ') }}</div>
-                    <MpInput :id="`ph-ovr-${safeId(it.key)}`" v-model="itemForm(it).reason" />
                   </div>
                   <div class="ph__row ph__row--end">
                     <p v-if="itemForm(it).error" class="ph__error">{{ t(itemForm(it).error) }}</p>
-                    <MpButton is-rounded @click="saveItem(it)">{{ t('Save mapping') }}</MpButton>
+                    <MpButton is-rounded @click="saveItem(it)">{{ t('Save account') }}</MpButton>
                   </div>
                 </td>
               </tr>
@@ -366,6 +360,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
 .ph__th.ph__th--num, .ph__td--num { text-align: right; font-variant-numeric: tabular-nums; }
 .ph__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-3); }
 .ph__grid :deep(.efs) { display: block; width: 100%; min-width: 0; }
+.ph__grid--one { grid-template-columns: minmax(0, 420px); }
 .ph__td { padding: var(--mp-spacing-2) var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: middle; }
 .ph__td--sub { border-bottom: 1px solid var(--mp-border-default); }
 </style>
