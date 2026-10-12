@@ -111,9 +111,9 @@ describe('seed: rebuilt on the final payload through the engine', () => {
     expect(pph21Month('2026-08')).toMatchObject({ rule: 16_644_111, books: 16_644_111, paid: 16_644_111, filedDiff: 0, flagged: false })
   })
 
-  it('persists under payroll:state-v6', () => {
+  it('persists under payroll:state-v7', () => {
     // loadSnapshot is client-only; pin the key in the source.
-    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).toContain("const SNAPSHOT_KEY = 'payroll:state-v6'")
+    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).toContain("const SNAPSHOT_KEY = 'payroll:state-v7'")
   })
 })
 
