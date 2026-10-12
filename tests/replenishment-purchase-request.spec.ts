@@ -23,7 +23,7 @@ import {
   planPurchaseRequests, createPurchaseRequests, createPurchaseRequestFromGroup,
   recomputeQtyForVendor, requestedQtyFor, prSkipReasonLabel, UNSOURCED,
 } from '~/data/replenishmentPurchaseRequest'
-import { replenishmentWorklist } from '~/data/replenishment'
+import { replenishmentWorklist, requestedOpenPrQty, invalidateReplenishmentCaches } from '~/data/replenishment'
 import { purchaseRequests } from '~/data/purchaseRequests'
 import { purchaseOrders } from '~/data/purchaseOrders'
 import { PRODUCTS } from '~/data/inventory'
@@ -76,8 +76,9 @@ describe('planPurchaseRequests — grouping', () => {
 
 describe('a request needs no vendor (US-022 AC-06 / US-021 VR-01)', () => {
   it('an unsourced line forms its own valid request rather than being skipped', () => {
-    // Force every selected row to have no suggested vendor.
-    const rows = worklist.rows.slice(0, 5)
+    // Force every selected row to have no suggested vendor. Rows with nothing left to
+    // request (US-030 remaining 0) legitimately skip as zero-qty, so exclude them here.
+    const rows = worklist.rows.filter((r) => r.remainingToRequest > 0).slice(0, 5)
     const choices = Object.fromEntries(rows.map((r) => [r.key, null]))
     const plan = planPurchaseRequests(rows, {}, choices)
 
@@ -93,13 +94,15 @@ describe('a request needs no vendor (US-022 AC-06 / US-021 VR-01)', () => {
 })
 
 describe('quantities are the unrounded NEED (decision D12 / US-022 VR-02)', () => {
-  it('carries rawQty, not the MOQ/pack-rounded purchase qty', () => {
+  it('carries the unrounded remaining need, not the MOQ/pack-rounded purchase qty', () => {
     const rows = worklist.rows.filter((r) => r.suggestion.rawQty > 0)
     expect(rows.length).toBeGreaterThan(0)
     for (const g of planPurchaseRequests(rows).groups) {
       for (const line of g.lines) {
         const row = rows.find((r) => r.sku === line.sku && r.warehouseId === line.warehouseId)!
-        expect(line.recommendedQty).toBe(row.suggestion.rawQty)
+        // US-030: a new PR carries the REMAINING need (suggested − already on open PRs),
+        // still unrounded — not the MOQ/pack-rounded stocking qty.
+        expect(line.recommendedQty).toBe(row.remainingToRequest)
       }
     }
   })
@@ -163,7 +166,7 @@ describe('createPurchaseRequests — commits requests, never orders', () => {
 
     const before = purchaseRequests.length
     const posBefore = purchaseOrders.length
-    const bumped = Object.fromEntries(rows.map((r) => [r.key, r.suggestion.rawQty + 5]))
+    const bumped = Object.fromEntries(rows.map((r) => [r.key, r.remainingToRequest + 5]))
     const result = createPurchaseRequests(rows, bumped)
 
     expect(result.created.length).toBeGreaterThan(0)
@@ -236,5 +239,36 @@ describe('US-023 — replenishment never creates a PO (structural)', () => {
     // And when it does create one, it is still only ever a draft.
     const statuses = [...poSource.matchAll(/status:\s*'([a-z -]+)'/g)].map((m) => m[1])
     expect(new Set(statuses)).toEqual(new Set(['draft']))
+  })
+})
+
+describe('US-030 — requested vs remaining partial-request tracking', () => {
+  it('remaining = max(0, suggested − requested) and requested = open-PR qty on every line', () => {
+    for (const row of worklist.rows) {
+      expect(row.remainingToRequest).toBe(Math.max(0, row.suggestion.rawQty - row.requestedQty))
+      expect(row.requestedQty).toBe(requestedOpenPrQty(row.sku, row.warehouseId))
+    }
+  })
+
+  it('raising a PR from a line raises Requested, lowers Remaining, leaves Suggested (AC-01..03, VR-04)', () => {
+    const row = replenishmentWorklist('all').rows.find((r) => r.remainingToRequest > 0 && r.vendorItem)!
+    expect(row).toBeTruthy()
+    const suggested = row.suggestion.rawQty
+    const requestedBefore = row.requestedQty
+    const addedQty = Math.max(1, Math.floor(row.remainingToRequest / 2))
+
+    const result = createPurchaseRequests([row], { [row.key]: addedQty })
+    expect(result.created.length).toBeGreaterThan(0)
+    invalidateReplenishmentCaches()
+
+    const after = replenishmentWorklist('all').rows.find((r) => r.key === row.key)!
+    // An open PR raised from the line raises Requested and lowers Remaining…
+    expect(after.requestedQty).toBeGreaterThan(requestedBefore)
+    expect(after.remainingToRequest).toBeLessThanOrEqual(row.remainingToRequest)
+    // …Suggested is unchanged — open PRs show only in Requested/Remaining (VR-04)…
+    expect(after.suggestion.rawQty).toBe(suggested)
+    // …and the invariant always holds.
+    expect(after.remainingToRequest).toBe(Math.max(0, suggested - after.requestedQty))
+    expect(after.requestedQty).toBe(requestedOpenPrQty(row.sku, row.warehouseId))
   })
 })

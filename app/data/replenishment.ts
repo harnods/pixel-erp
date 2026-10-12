@@ -31,6 +31,7 @@ import { receivedSummaryForReceipt } from './receivingTasks'
 import { outgoingOrders } from './outgoing'
 import { warehouseTransfers, transferLineItems } from './warehouseTransfers'
 import { purchaseOrders } from './purchaseOrders'
+import { purchaseRequests } from './purchaseRequests'
 import { getPurchaseOrderDocument } from './purchaseOrderLines'
 import { shiftDays } from './master'
 import {
@@ -230,6 +231,7 @@ const OPEN_TRANSFER_STATUSES = new Set(['approved'])
 const stockIndexCache = new Map<string, Map<string, { onHand: number }>>()
 const reservedIndexCache = new Map<string, Map<string, number>>()
 const onOrderIndexCache = new Map<string, Map<string, AtpOnOrderDoc[]>>()
+const openPrRequestedCache = new Map<string, Map<string, number>>()
 
 function stockIndex(warehouseId: string) {
   const hit = stockIndexCache.get(warehouseId)
@@ -329,11 +331,46 @@ function onOrderIndex(warehouseId: string) {
   return map
 }
 
+/**
+ * Qty already asked for on OPEN Purchase Requests raised from the worklist, per SKU,
+ * for one warehouse (US-030 / D26). "Open" = PR still `status: 'open'` — not yet
+ * converted to a PO, rejected or cancelled. Only PRs that carry a replenishment origin
+ * are counted (direct PRs from the PR index are excluded, VR-05), and the qty read is
+ * the LIVE PR-line qty so purchasing's edits are reflected (VR-01).
+ *
+ * Open PRs are deliberately NOT netted into `onOrder` / Suggested qty — they surface
+ * only as Requested/Remaining. When an open PR converts to a PO it leaves this counter
+ * (status → closed) at the same moment the approved PO raises In-Transit, so the qty is
+ * counted exactly once across the hand-off (anti-double-count invariant, VR-03).
+ */
+function openPrRequestedIndex(warehouseId: string): Map<string, number> {
+  const hit = openPrRequestedCache.get(warehouseId)
+  if (hit) return hit
+
+  const map = new Map<string, number>()
+  for (const pr of purchaseRequests) {
+    if (pr.status !== 'open') continue
+    if (pr.replenishment?.warehouseId !== warehouseId) continue
+    for (const line of pr.lines) {
+      if (!line.sku || line.requestedQty <= 0) continue
+      map.set(line.sku, (map.get(line.sku) ?? 0) + line.requestedQty)
+    }
+  }
+  openPrRequestedCache.set(warehouseId, map)
+  return map
+}
+
+/** Open-PR requested qty for one SKU × warehouse (US-030). */
+export function requestedOpenPrQty(sku: string, warehouseId: string): number {
+  return openPrRequestedIndex(warehouseId).get(sku) ?? 0
+}
+
 /** Drop every engine cache. Call after mutating stock, receipts or receiving tasks. */
 export function invalidateReplenishmentCaches(): void {
   stockIndexCache.clear()
   reservedIndexCache.clear()
   onOrderIndexCache.clear()
+  openPrRequestedCache.clear()
   invalidateDemandHistory()
   invalidateLeadTimeHistory()
   // Anything watching the revision (tab badges, home tile) recomputes.
@@ -664,6 +701,14 @@ export interface WorklistRow {
   alternates: VendorItem[]
 
   suggestion: SuggestionResult
+  /**
+   * Qty already asked for on OPEN Purchase Requests raised from this line (US-030):
+   * live sum of open replenishment PR-line qty for this SKU × warehouse. Not netted
+   * into Suggested qty — surfaced only here and in `remainingToRequest`.
+   */
+  requestedQty: number
+  /** max(0, suggested rawQty − requestedQty) — the qty a new PR from this line pre-fills. */
+  remainingToRequest: number
   bucket: WorklistBucket
   /** What the row is still missing — drives the "Needs setup" chips. */
   missing: string[]
@@ -813,6 +858,12 @@ export function buildRow(
     trace,
   }
 
+  // Partial-request tracking (US-030): qty already on open PRs from this line, and the
+  // remainder a new PR pre-fills with. Compared against the stock-unit need (rawQty),
+  // the same figure the PR is raised in.
+  const requestedQty = requestedOpenPrQty(sku, warehouseId)
+  const remainingToRequest = Math.max(0, rawQty - requestedQty)
+
   // ── Bucketing ──
   // Needs setup collects what a person must resolve before a recommendation is
   // possible: a missing LEAD TIME (no PO→GR history) and/or NO DEMAND (no sales in
@@ -910,6 +961,8 @@ export function buildRow(
     alternates,
 
     suggestion,
+    requestedQty,
+    remainingToRequest,
     bucket,
     missing,
     flags: {

@@ -364,6 +364,10 @@ const ALL_COLUMNS: TableColumn[] = [
   { key: 'availableQty',  label: 'Available qty',   sortable: true, sortType: 'number', align: 'right' },
   { key: 'onOrderQty',    label: 'In transit qty',  sortable: true, sortType: 'number', align: 'right' },
   { key: 'suggestedQty',  label: 'Suggested qty',   sortable: true, sortType: 'number', align: 'right' },
+  // Partial-request tracking (US-030): what is already on open PRs from this line, and
+  // the remainder a new PR pre-fills with.
+  { key: 'requestedQty',  label: 'Requested qty',   sortable: true, sortType: 'number', align: 'right' },
+  { key: 'remainingToRequest', label: 'Remaining to request', kind: 'wide', sortable: true, sortType: 'number', align: 'right' },
   { key: 'reorderPoint',  label: 'Reorder point',   sortable: true, sortType: 'number', align: 'right' },
   { key: 'coverValue',    label: 'Days of cover',   sortable: true, sortType: 'number', align: 'right' },
   { key: 'unit',          label: 'Unit',            kind: 'unit' },
@@ -405,7 +409,8 @@ const EXPORT_MAX_ROWS = 1000
 function exportWorklist() {
   const header: CsvRow = [
     'Product', 'SKU', 'Movement', 'Signals', 'Warehouse', 'On hand qty', 'Reserved qty',
-    'Available qty', 'In transit qty', 'Suggested qty', 'Reorder point', 'Unit', 'Vendor',
+    'Available qty', 'In transit qty', 'Suggested qty', 'Requested qty', 'Remaining to request',
+    'Reorder point', 'Unit', 'Vendor',
     'Days of cover', 'Lead time days', 'Demand velocity per day', 'Safety days',
   ]
   const rows: CsvRow[] = sorted.value.map((r) => [
@@ -416,7 +421,8 @@ function exportWorklist() {
     ].filter(Boolean).join('; '),
     r.warehouseName,
     r.atp.onHand, r.atp.reserved, r.atp.available, r.atp.onOrder,
-    r.suggestion.rawQty, r.reorderPointSource === 'none' ? '' : r.reorderPoint, r.unit,
+    r.suggestion.rawQty, r.requestedQty, r.remainingToRequest,
+    r.reorderPointSource === 'none' ? '' : r.reorderPoint, r.unit,
     r.vendor?.name ?? '',
     r.cover.coverDays === null ? '' : r.cover.coverDays.toFixed(1),
     r.leadTimeDays, r.velocity.avgDailySales.toFixed(2), r.safetyDays,
@@ -973,6 +979,14 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
           <span class="rp-num-sub rp-num-sub--fit" data-devchange="replenishment-covered-by">{{ coveredLabel((row as any).suggestion.coveredBy) }}</span>
         </MpTooltip>
       </div>
+    </template>
+
+    <!-- ── Requested / Remaining (US-030 partial-request tracking) ── -->
+    <template #cell-requestedQty="{ row }">
+      {{ num((row as any).requestedQty) }}
+    </template>
+    <template #cell-remainingToRequest="{ row }">
+      {{ num((row as any).remainingToRequest) }}
     </template>
 
     <!-- ── Vendor ── -->

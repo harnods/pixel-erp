@@ -136,14 +136,16 @@ export function prSkipReasonLabel(reason: PrSkipReason): string {
 }
 
 /**
- * The quantity a request carries: the engine's need in STOCK units.
+ * The quantity a new request pre-fills with: the REMAINING need in STOCK units
+ * (US-030) — the suggested gap minus whatever is already on open PRs from this line,
+ * so a partial request is not double-counted. With no prior open PR, Remaining equals
+ * the full suggested qty (unchanged behaviour).
  *
- * `suggestion.rawQty`, not `purchaseQty` — `rawQty` is the demand-coverage need
- * before any vendor's MOQ or pack multiple touched it, which is exactly what D12
- * says a PR should carry.
+ * `rawQty`, not `purchaseQty` — the demand-coverage need before any vendor's MOQ or
+ * pack multiple touched it, which is exactly what D12 says a PR should carry.
  */
 export function requestedQtyFor(row: WorklistRow): number {
-  return Math.max(0, row.suggestion.rawQty)
+  return Math.max(0, row.remainingToRequest ?? row.suggestion.rawQty)
 }
 
 /**

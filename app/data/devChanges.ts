@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'replenishment-requested-qty-us030',
+    title: 'To order: Requested qty + Remaining to request (partial-request tracking, US-030)',
+    description:
+      'Two columns after Suggested qty track how much of a line\'s shortfall is already on OPEN Purchase Requests raised from it. Requested qty = the live sum of open replenishment PR-line qty for that SKU × warehouse (direct PRs from the PR index are excluded); Remaining to request = max(0, Suggested − Requested). A new "Request to purchase" now pre-fills the REMAINING qty (editable up), so a partial request is never double-requested. Suggested qty is unchanged — open PRs are reflected only here; when a PR converts to a PO the qty leaves Requested as In-transit rises, so it is counted exactly once (anti-double-count invariant). Columns are also in the CSV export.',
+    date: '2026-10-12',
+    files: ['replenishment.ts', 'replenishmentPurchaseRequest.ts', 'ReplenishmentPage.vue'],
+  },
+  {
     id: 'replenishment-copy-and-reason-filter',
     title: 'Copy: Mute replenishment / Vendor list / Edit; + Reason filter on Needs setup',
     description:
