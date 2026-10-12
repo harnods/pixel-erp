@@ -630,11 +630,11 @@ function confirmMute() {
   if (!row) return
   setTracked(row.sku, row.warehouseId, false)
   recalcTick.value++
-  toast.notify({ variant: 'success', title: t('Tracking turned off'), maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Replenishment muted'), maxWidth: 'max-content' })
 }
 
 /**
- * Bulk "Turn off tracking" confirms first, with the count, exactly like the
+ * Bulk "Mute replenishment" confirms first, with the count, exactly like the
  * single-row action — it removes rows from the worklist (reachable-states ›
  * destructive; US-010 VR-02 "confirm dialog with count").
  */
@@ -659,7 +659,7 @@ function confirmBulkMute() {
   recalcTick.value++
   toast.notify({
     variant: 'success',
-    title: rows.length === 1 ? t('Tracking turned off') : tf('Tracking turned off for {n} products', { n: rows.length }),
+    title: rows.length === 1 ? t('Replenishment muted') : tf('Replenishment muted for {n} products', { n: rows.length }),
     maxWidth: 'max-content',
   })
 }
@@ -845,7 +845,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
         size="sm"
         is-rounded
         @click="askBulkMute(selectedRows as Set<number>, deselectAll)"
-      >{{ t('Turn off tracking') }}</MpButton>
+      >{{ t('Mute replenishment') }}</MpButton>
     </template>
 
     <!-- ── Product ── -->
@@ -1033,7 +1033,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
               {{ t('View suggested qty calculation') }}
             </MpPopoverListItem>
             <MpPopoverListItem @click="openVendors((row as any).sku)">
-              {{ t('View vendors, lead time and MOQ') }}
+              {{ t('Vendor list') }}
             </MpPopoverListItem>
             <MpPopoverListItem
               v-if="!(row as any).flags.coveredByInbound"
@@ -1045,7 +1045,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
               {{ canManageReplenishment ? t('Replenishment settings') : t('View replenishment settings') }}
             </MpPopoverListItem>
             <MpPopoverListItem v-if="canManageReplenishment" @click="askMute(row as unknown as WorklistRow)">
-              {{ t('Turn off tracking') }}
+              {{ t('Mute replenishment') }}
             </MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
@@ -1145,18 +1145,18 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
 
   <ConfirmModal
     v-model:is-open="muteOpen"
-    :title="t('Turn off tracking for this product?')"
+    :title="t('Mute replenishment for this product?')"
     :description="t('It stops appearing in the replenishment worklist. Its reorder point and safety days are kept, so turning tracking back on restores them. Existing purchase orders are not affected.')"
-    :confirm-label="t('Turn off tracking')"
+    :confirm-label="t('Mute replenishment')"
     :is-danger="false"
     @confirm="confirmMute"
   />
 
   <ConfirmModal
     v-model:is-open="bulkMuteOpen"
-    :title="`${t('Turn off tracking for')} ${bulkMuteRows.length} ${bulkMuteRows.length === 1 ? t('product') : t('products')}?`"
+    :title="`${t('Mute replenishment for')} ${bulkMuteRows.length} ${bulkMuteRows.length === 1 ? t('product') : t('products')}?`"
     :description="t('They stop appearing in the replenishment worklist. Their reorder points and safety days are kept, so turning tracking back on restores them. Existing purchase orders are not affected.')"
-    :confirm-label="t('Turn off tracking')"
+    :confirm-label="t('Mute replenishment')"
     :is-danger="false"
     @confirm="confirmBulkMute"
   />

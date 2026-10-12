@@ -231,7 +231,7 @@ function exportPurchase() {
                   {{ t('Preferred vendor is inactive. Lead time falls back to the next listed vendor') }}
                 </span>
                 <MpTextlink id="rp-bd-vendors" as="a" class="rp-bd-link" @click.prevent="emit('edit-vendors', row)">
-                  {{ t('View vendors, lead time and MOQ') }}
+                  {{ t('Vendor list') }}
                 </MpTextlink>
               </ContentList>
 

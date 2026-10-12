@@ -1663,7 +1663,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                serial breakdown rather than instead of it. -->
           <MpTabPanel value="warehouses">
             <div v-if="pagedWarehouseStock.length && !whEditing && canManageReplenishment" class="pd-filter-bar pd-filter-bar--end">
-              <MpButton id="pd-wh-edit" variant="secondary" is-rounded data-devchange="product-warehouses-tidy" @click="startEditMinStock">{{ t('Edit vendor') }}</MpButton>
+              <MpButton id="pd-wh-edit" variant="secondary" is-rounded data-devchange="product-warehouses-tidy" @click="startEditMinStock">{{ t('Edit') }}</MpButton>
             </div>
             <div v-if="pagedWarehouseStock.length" class="pd-table-scroll pd-wh-scroll" :class="{ 'pd-form-table': whEditing }">
               <table class="pd-table">

@@ -80,7 +80,22 @@ const FSN_OPTIONS = [
   { id: 'slow', name: 'Slow' },
   { id: 'non-moving', name: 'Non-moving' },
 ]
+// Reason filter — the gaps that land a product in Needs setup.
+const REASON_OPTIONS = [
+  { id: 'no-demand', name: 'No demand' },
+  { id: 'waiting-lead', name: 'Waiting for lead time' },
+  { id: 'tracking-off', name: 'Tracking off' },
+]
 const fsnFilter = ref('')
+const reasonFilter = ref('')
+function matchesSetupReason(row: WorklistRow): boolean {
+  switch (reasonFilter.value) {
+    case 'no-demand': return row.flags.noDemand
+    case 'waiting-lead': return row.leadTimeTier === 'none'
+    case 'tracking-off': return row.bucket === 'not-tracked'
+    default: return true
+  }
+}
 
 const {
   search, currentPage, paginated, total, perPage,
@@ -89,15 +104,16 @@ const {
   filterFn: (row, s) => {
     if (s && ![row.sku, row.productName, row.warehouseName].some((v) => v.toLowerCase().includes(s))) return false
     if (fsnFilter.value && row.fsn.committed !== fsnFilter.value) return false
+    if (reasonFilter.value && !matchesSetupReason(row)) return false
     return true
   },
 })
 
 watch(warehouseId, () => setPage(1))
-watch(fsnFilter, () => setPage(1))
+watch([fsnFilter, reasonFilter], () => setPage(1))
 
-const hasActiveFilter = computed(() => !!search.value || !!fsnFilter.value)
-function clearFilters() { search.value = ''; fsnFilter.value = '' }
+const hasActiveFilter = computed(() => !!search.value || !!fsnFilter.value || !!reasonFilter.value)
+function clearFilters() { search.value = ''; fsnFilter.value = ''; reasonFilter.value = '' }
 
 // Widths from `kind` (rule/table-column-kind). No "Sales history" column: demand
 // no longer routes a product here (D18 — 0 sales simply drops off).
@@ -148,7 +164,7 @@ function turnOnTracking(row: WorklistRow) {
   setTracked(row.sku, row.warehouseId, true)
   invalidateReplenishmentCaches()
   tick.value++
-  toast.notify({ variant: 'success', title: t('Tracking turned on'), maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Replenishment unmuted'), maxWidth: 'max-content' })
 }
 
 function selectedRows(sel: Set<number>): WorklistRow[] {
@@ -169,7 +185,7 @@ function bulkTrackOn(sel: Set<number>, deselectAll: () => void) {
   tick.value++
   toast.notify({
     variant: 'success',
-    title: selected.length === 1 ? t('Tracking turned on') : tf('Tracking turned on for {n} products', { n: selected.length }),
+    title: selected.length === 1 ? t('Replenishment unmuted') : tf('Replenishment unmuted for {n} products', { n: selected.length }),
     maxWidth: 'max-content',
   })
 }
@@ -213,7 +229,7 @@ function onSaved() {
           @update:model-value="(v: string) => setWarehouse(v)"
         />
 
-        <!-- Movement quick filter, same as the To order tab. -->
+        <!-- Movement + Reason quick filters. -->
         <ErpFilterSelect
           id="rp-setup-fsn-select"
           :model-value="fsnFilter"
@@ -222,6 +238,14 @@ function onSaved() {
           width="170px"
           data-devchange="replenishment-needssetup-filters"
           @update:model-value="(v: string) => (fsnFilter = v)"
+        />
+        <ErpFilterSelect
+          id="rp-setup-reason-select"
+          :model-value="reasonFilter"
+          :placeholder="t('Reason')"
+          :options="REASON_OPTIONS.map((o) => ({ value: o.id, label: t(o.name) }))"
+          width="170px"
+          @update:model-value="(v: string) => (reasonFilter = v)"
         />
       </div>
       <div class="filter-right">
@@ -246,7 +270,7 @@ function onSaved() {
         size="sm"
         is-rounded
         @click="bulkTrackOn(sel as Set<number>, deselectAll)"
-      >{{ t('Turn on tracking') }} ({{ mutedIn(sel as Set<number>).length }})</MpButton>
+      >{{ t('Unmute replenishment') }} ({{ mutedIn(sel as Set<number>).length }})</MpButton>
       <span v-else-if="canManageReplenishment" class="rp-bulk-info">
         <MpIcon name="info" size="sm" />
         {{ t('Only products with tracking off can be turned back on. Missing lead times are fixed in Vendors or Replenishment settings.') }}
@@ -322,7 +346,7 @@ function onSaved() {
           <MpPopoverList>
             <MpPopoverListItem @click="viewProduct((row as any).sku)">{{ t('View details') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openVendors((row as any).sku)">
-              {{ t('View vendors, lead time and MOQ') }}
+              {{ t('Vendor list') }}
             </MpPopoverListItem>
             <MpPopoverListItem @click="openSettings(row as unknown as WorklistRow)">
               {{ canManageReplenishment ? t('Replenishment settings') : t('View replenishment settings') }}
@@ -330,7 +354,7 @@ function onSaved() {
             <MpPopoverListItem
               v-if="canManageReplenishment && (row as any).bucket === 'not-tracked'"
               @click="turnOnTracking(row as unknown as WorklistRow)"
-            >{{ t('Turn on tracking') }}</MpPopoverListItem>
+            >{{ t('Unmute replenishment') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>

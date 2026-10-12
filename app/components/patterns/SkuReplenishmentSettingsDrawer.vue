@@ -154,7 +154,7 @@ function save() {
   if (Object.keys(errors).length) return
 
   // Turning tracking off hides the row from the worklist — confirm it, as the
-  // worklist's own "Turn off tracking" does.
+  // worklist's own "Mute replenishment" does.
   if (row.fsn.tracked && !tracked.value && !muteConfirmed) {
     muteConfirmOpen.value = true
     return
@@ -317,9 +317,9 @@ function confirmMute() {
 
   <ConfirmModal
     v-model:is-open="muteConfirmOpen"
-    :title="t('Turn off tracking for this product?')"
+    :title="t('Mute replenishment for this product?')"
     :description="t('It stops appearing in the replenishment worklist. Its reorder point and safety days are kept, so turning tracking back on restores them. Existing purchase orders are not affected.')"
-    :confirm-label="t('Turn off tracking')"
+    :confirm-label="t('Mute replenishment')"
     :is-danger="false"
     @confirm="confirmMute"
   />

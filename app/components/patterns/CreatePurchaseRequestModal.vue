@@ -424,7 +424,7 @@ function confirm() {
                 as="a"
                 class="rp-po-link"
                 @click.prevent="emit('assign-vendor', s.sku)"
-              >{{ t('View vendors, lead time and MOQ') }}</MpTextlink>
+              >{{ t('Vendor list') }}</MpTextlink>
             </li>
           </ul>
         </section>
