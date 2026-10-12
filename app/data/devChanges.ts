@@ -63,7 +63,7 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'wo-approval-list-indicator',
     title: 'Work order list: approval icon + status filter',
     description:
-      'Approval status filter (Waiting for approval / Rejected). The status badge stays as-is; while a request is pending an approval icon (Pixel task-todo, the Approval log icon) sits next to it with a tooltip "Waiting for approval from {names} (level n)".',
+      'Approval status filter (Waiting for approval / Rejected). The status badge stays as-is; while a request is pending an approval icon (Pixel task-todo, the Approval log icon) sits next to it with the tooltip "Waiting for approval" (no approver details) — shown only on work orders that need approval.',
     date: '2026-10-10',
     files: ['WorkOrdersIndexPage.vue'],
   },

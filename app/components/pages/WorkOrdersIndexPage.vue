@@ -19,7 +19,7 @@ import WorkOrderFiltersDrawer, { type WorkOrderFiltersValue } from '~/components
 import { formatDate } from '~/utils/date'
 import { workOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
-import { workOrderApprovalStatus, displayStatus, isFrozen, pendingForWorkOrder, waitingForText } from '~/data/woApproval'
+import { workOrderApprovalStatus, displayStatus, isFrozen } from '~/data/woApproval'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const { t } = useLocale()
@@ -68,11 +68,9 @@ const APPROVAL_STATUS_OPTIONS = [
 ]
 const approvalStatusFilter = ref('')
 
-// Approval icon tooltip — "Waiting for approval from {names} (level n)" per pending request.
+// Approval icon — only on work orders with a request waiting for approval.
 function approvalTooltip(wo: WorkOrder): string {
-  return pendingForWorkOrder(wo.id)
-    .map(r => t('Waiting for approval from {names} (level {n})').replace('{names}', waitingForText(r)).replace('{n}', String(r.currentLevel)))
-    .join('. ')
+  return isFrozen(wo.id) ? t('Waiting for approval') : ''
 }
 const statusFilter = ref('')
 const statusLabel = computed(() => STATUS_OPTIONS.find(o => o.value === statusFilter.value)?.label ?? '')
@@ -303,7 +301,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Status badge ── -->
     <template #cell-status="{ row }">
       <!-- Work order status as-is — a pending request doesn't change it; an approval icon
-           (Pixel task-todo, the Approval log icon) + tooltip says who it's waiting for -->
+           (Pixel task-todo, the Approval log icon) + "Waiting for approval" tooltip -->
       <span class="wo-status-cell">
         <ErpStatusBadge
           :status="displayStatus(row as unknown as WorkOrder)"
