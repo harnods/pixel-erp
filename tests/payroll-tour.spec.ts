@@ -52,13 +52,16 @@ describe('PAY-1 guided tour (auto-play)', () => {
   })
 
   /**
-   * The screen branches add these markers; until they merge this check fails, and so does the
-   * asset-tours check that every tour target is on a product screen. Skipped until then.
+   * Markers can be static (data-tour="x") or bound at runtime (:data-tour, or a lookup map such as
+   * the Payables row markers); any quoted 'payroll-…' name in a payroll screen counts.
    */
   it('every marker the tour uses is on a payroll screen', () => {
     const root = resolve(__dirname, '..', 'app', 'components')
     const src = ['pages', 'payroll'].flatMap((d) => readdirSync(join(root, d)).filter((f) => /^Payroll.*\.vue$/.test(f)).map((f) => readFileSync(join(root, d, f), 'utf8'))).join('\n')
-    const markers = new Set([...src.matchAll(/ data-tour="([^"]+)"/g)].map((m) => m[1]!))
+    const markers = new Set([
+      ...[...src.matchAll(/ data-tour="([^"]+)"/g)].map((m) => m[1]!),
+      ...[...src.matchAll(/'(payroll-[a-z0-9-]+)'/g)].map((m) => m[1]!),
+    ])
     for (const s of PAYROLL_TOUR.steps) expect(markers, s.title).toContain(s.target)
   })
 
