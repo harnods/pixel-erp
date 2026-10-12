@@ -2,14 +2,14 @@
 /**
  * Reverse journal: lists every posted payroll journal of the run and reverses them together
  * (Use vN and repost lives on the "Talenta sent this period again" notice). The journal date is
- * not before the original; a locked month moves it to the first open period. Matched payments
+ * not before the original, and a date in a locked month is refused (same rule as Post). Matched payments
  * are listed and need a second confirm; no payment, bank line or reconciliation changes.
  */
 import { MpDatePicker, MpCheckbox } from '@mekari/pixel3'
 import PayrollCompareDrawerShell from '~/components/payroll/PayrollCompareDrawerShell.vue'
 import {
   runById, liveJournals, reverseRun, journalTotals, paymentsFor, journalById,
-  isLocked, firstOpenAfter, monthLabel, dateLabel, rupiah, accountLabel, payroll,
+  isLocked, firstOpenAfter, monthLabel, dateLabel, rupiah, accountLabel, payroll, checkEntryDate,
 } from '~/data/payrollStore'
 import { successToast } from '~/utils/toasts'
 import { PARTY_LABEL } from '~/data/payrollUiPay'
@@ -29,11 +29,12 @@ const toIso = (d: string) => (d ? `${d.slice(6, 10)}-${d.slice(3, 5)}-${d.slice(
 const date = ref('')
 const confirmPays = ref(false)
 const error = ref('')
-watch(() => props.isOpen, (o) => { if (o) { date.value = toDisplay(earliest.value); confirmPays.value = false; error.value = '' } })
+// Default: the original journal's date, or the first day of the first open month when that month is locked.
+const defaultDate = () => (isLocked(earliest.value.slice(0, 7)) ? `${firstOpenAfter(earliest.value.slice(0, 7))}-01` : earliest.value)
+watch(() => props.isOpen, (o) => { if (o) { date.value = toDisplay(defaultDate()); confirmPays.value = false; error.value = '' } })
 
 const iso = computed(() => toIso(date.value))
-const redirected = computed(() => !!iso.value && isLocked(iso.value.slice(0, 7)))
-const effective = computed(() => (redirected.value ? `${firstOpenAfter(iso.value.slice(0, 7))}-01` : iso.value))
+const locked = computed(() => !!iso.value && isLocked(iso.value.slice(0, 7)))
 const disabledDate = (d: Date) => {
   const s = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   return s < earliest.value
@@ -42,7 +43,8 @@ const disabledDate = (d: Date) => {
 function guard(): boolean {
   error.value = ''
   if (!iso.value) { error.value = t('Pick a journal date.'); return false }
-  if (iso.value < earliest.value) { error.value = t(`The date can't be before the original journal, ${dateLabel(earliest.value)}.`); return false }
+  const bad = checkEntryDate(iso.value, { date: earliest.value, number: live.value.find((j) => j.date === earliest.value)?.number ?? '' })
+  if (bad) { error.value = t(bad); return false }
   if (salaryPays.value.length && !confirmPays.value) { error.value = t('Tick Reverse anyway and keep the payments to reverse a run that has payments.'); return false }
   return true
 }
@@ -91,8 +93,8 @@ function reverseAll() {
           <MpDatePicker id="prv-date-input" v-model="date" format="DD/MM/YYYY" value-type="format" use-portal is-full-width :is-clearable="false" :disabled-date="disabledDate" />
         </div>
       </div>
-      <div v-if="redirected" class="prv__note" data-testid="prv-locked">
-        {{ t(`${monthLabel(iso.slice(0, 7))} is locked, so the reversal is dated ${dateLabel(effective)}. Tax month stays ${monthLabel(run.month)}.`) }}
+      <div v-if="locked" class="prv__note" data-testid="prv-locked">
+        {{ t(`${monthLabel(iso.slice(0, 7))} is locked. Pick a journal date in an open month. Tax month stays ${monthLabel(run.month)}.`) }}
       </div>
 
       <div v-if="salaryPays.length" class="prv__pays" data-testid="prv-payments">

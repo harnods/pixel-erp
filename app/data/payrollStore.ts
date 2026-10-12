@@ -2454,8 +2454,14 @@ export function reverseRun(runId: string, o: { date?: string; confirmPayments?: 
   if (!run || !live.length) return { ok: false, message: 'Nothing is posted for this run, so there is nothing to reverse.' }
   const pays = payroll.payments.filter((p) => p.runId === runId)
   if (pays.length && !o.confirmPayments) return { ok: false, needsConfirm: true, payments: pays.map((p) => ({ id: p.id, number: journalById(p.journalId)?.number, amount: p.amount })), message: 'Salary payments are recorded on this run. They stay as they are. Confirm to reverse the journal anyway.' }
+  const latest = live.map((j) => j.date).sort().pop()!
+  // Same rule as Post and repost (LR-11): a date in a locked month is refused, not moved.
+  if (o.date) {
+    const bad = checkEntryDate(o.date, { date: latest, number: live.find((j) => j.date === latest)!.number })
+    if (bad) return { ok: false, message: bad }
+  }
   now()
-  const date = o.date ?? live.map((j) => j.date).sort().pop()!
+  const date = o.date ?? postingDate(latest).date
   const done = live.map((j) => reversalOf(j, date))
   run.reversedAt = payroll.clock
   for (const d of done) addLog({ type: 'Reversal', status: 'Reversed', reason: d.memo, nextStep: 'Post the current version again.', runId, runKey: run.key, version: d.versionNo, journalNo: d.number })

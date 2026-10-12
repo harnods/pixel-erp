@@ -11,7 +11,7 @@ import {
   claimsSummary, noticesFor, SEND_KINDS, BANK_PAYMENT_KINDS, type Run, type JournalLine,
   approvePayroll, rejectPayroll, canApprove, whyLine, journalsOf, defaultEntryDate, checkEntryDate, payrollAccount, rebuildDraft,
   revisionNotice, PARTY_NAME, startConnection, endConnection, confirmSource, setLimits,
-  payablePrefill, recordPayablePayment, payablesSummary, reverseRun, versionOf, today, monthLabel, payGroupKey, fieldValue,
+  payablePrefill, recordPayablePayment, payablesSummary, reverseRun, versionOf, today, monthLabel, monthOf, payGroupKey, fieldValue,
 } from '../app/data/payrollStore'
 import { paymentHistory } from '../app/data/payrollUiPayables'
 import { runRow, hrMessage, monthHeadcount } from '../app/data/payrollUiIntake'
@@ -1383,5 +1383,18 @@ describe('numbers agree across screens', () => {
     const sal = payablesTracker('2026-09').find((r) => r.runId === sep.id)!
     expect(sal.owed).toBe(net(neu.lines, HG))
     expect(sal.owed).toBe(sendFigures(versionOf(sep, sep.ledgerVersion)).takeHome)
+  })
+})
+
+describe('Reverse follows the locked-period rule of Post', () => {
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Owner') })
+  it('refuses a journal date in a locked month instead of moving it', () => {
+    const aug = payroll.runs.find((r) => r.month === '2026-08' && liveJournals(r.id).length)!
+    const j = liveJournals(aug.id)[0]!
+    lockPeriod(monthOf(j.date), { confirm: true })
+    const r = reverseRun(aug.id, { date: j.date, confirmPayments: true })
+    expect(r.ok).toBe(false)
+    expect(r.message).toBe(`${monthLabel(monthOf(j.date))} is locked. Pick a journal date in an open month.`)
+    expect(liveJournals(aug.id).length).toBe(1)
   })
 })
