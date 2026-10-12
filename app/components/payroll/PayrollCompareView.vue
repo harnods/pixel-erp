@@ -192,7 +192,7 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
         <!-- Moved by settings change -->
         <div v-if="movedRows.length" class="pcv__block" data-testid="pcv-moved">
           <div class="pcv__blocktitle">{{ t('Moved by settings change') }}</div>
-          <div class="pcv__blocksub">{{ t(`Lines the current settings place differently from the posted journal, with the same ${data.oldLabel} figures. Post the difference leaves them out unless you include them.`) }}</div>
+          <div class="pcv__blocksub">{{ t(`Lines the current settings place differently from the posted journal, with the same ${data.oldLabel} figures. Post correction includes them.`) }}</div>
           <div class="pcv__scroll">
             <table class="pcv__table">
               <thead>

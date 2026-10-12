@@ -1,18 +1,18 @@
 <script setup lang="ts">
 /**
  * Revisions and corrections for one payroll run (PRD FG-4: TS-07, OD-14..OD-17).
- * Mounted in the run record. Shows the Revised notice with "Compare and fix",
- * the run's PAY journals with Reverse (whole chain, TN-21), "Reversed, not reposted", the
- * version compare and the PPh 21 amendment tasks. Actions a role may not take are hidden.
+ * Mounted in the run record under the correction notice (PayrollCorrectionNotice). Shows the
+ * separate-run choice and partial notices, the run's PAY journals with Reverse (whole chain,
+ * TN-21), "Reversed, not reposted", the version compare and the PPh 21 amendment tasks. The
+ * version list lives in the run page's Versions tab. Actions a role may not take are hidden.
  */
 import { MpIcon, MpBadge } from '@mekari/pixel3'
 import PayrollCompareView from '~/components/payroll/PayrollCompareView.vue'
-import PayrollCompareFixDrawer from '~/components/payroll/PayrollCompareFixDrawer.vue'
 import PayrollReverseDrawer from '~/components/payroll/PayrollReverseDrawer.vue'
 import PayrollAmendmentTasks from '~/components/payroll/PayrollAmendmentTasks.vue'
 import {
-  runById, journalsOf, liveJournals, journalById, journalTotals, versionOf, currentVersionOf, versionLabel, runStatus, postRun, draftOf,
-  can, isLocked, firstOpenAfter, monthLabel, dateLabel, periodLabel, rupiah, wib, today, addDays, pph21Month, amendmentTasks, correctionOf, sendFigures,
+  runById, journalsOf, liveJournals, journalById, journalTotals, versionOf, currentVersionOf, runStatus, postRun, draftOf,
+  can, monthLabel, dateLabel, periodLabel, rupiah, wib, today, addDays, amendmentTasks, correctionOf,
   type Journal,
 } from '~/data/payrollStore'
 import { successToast } from '~/utils/toasts'
@@ -25,24 +25,11 @@ const status = computed(() => (run.value ? runStatus(run.value) : null))
 const live = computed(() => (run.value ? liveJournals(run.value.id) : []))
 const ledgerV = computed(() => (run.value ? versionOf(run.value, run.value.ledgerVersion) : undefined))
 const cur = computed(() => (run.value ? currentVersionOf(run.value) : undefined))
-const locked = computed(() => !!run.value && isLocked(run.value.month))
-const sign = (n: number) => (n >= 0 ? `+${rupiah(n)}` : rupiah(n))
 
-// ── Revised notice (OD-14) ──────────────────────────────────────────────────
+// ── Notices (OD-14); the correction itself is PayrollCorrectionNotice ─────────
 const partial = computed(() => run.value?.versions.find((v) => v.state === 'partial'))
 const waiting = computed(() => run.value?.versions.find((v) => v.state === 'waiting-choice'))
-const revised = computed(() => {
-  const r = run.value, a = ledgerV.value, b = cur.value
-  if (!r || !r.revised || !a || !b || a.no === b.no) return null
-  const c = correctionOf(r.id)
-  return {
-    from: a.no, to: b.no, sentAt: wib(b.sentAt),
-    thp: c?.summary.takeHome.change ?? 0,
-    pph: c?.summary.pph21.change ?? 0,
-    filed: pph21Month(r.month).filed != null,
-    superseded: r.versions.filter((v) => v.state === 'superseded').map((v) => `v${v.no}`),
-  }
-})
+const hasCorrection = computed(() => !!correctionOf(props.runId))
 const partialText = computed(() => {
   const d = partial.value?.holds[0]?.details as { before?: number; after?: number } | undefined
   return partial.value && d ? `v${partial.value.no} holds ${d.after} of ${d.before} staff. Reverse and repost stays off until you pick Replace the full run or Reject.` : ''
@@ -83,37 +70,14 @@ function journalState(j: Journal): string {
 }
 
 // ── Panels and drawers ──────────────────────────────────────────────────────
-const fixOpen = ref(false)
 const reverseOpen = ref(false)
-const compareEl = ref<HTMLElement | null>(null)
-function showCompare() { compareEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
 const hasTasks = computed(() => amendmentTasks.value.some((x) => x.runId === props.runId))
 const visible = computed(() => !!run.value && (run.value.versions.length > 1 || journals.value.length > 0 || hasTasks.value))
 </script>
 
 <template>
   <div v-if="run && visible" class="prp" data-testid="payroll-revision-panel">
-    <!-- Revised notice -->
-    <section v-if="revised" class="prp__notice prp__notice--warn" data-testid="prp-revised">
-      <MpIcon name="warning-circular" size="md" />
-      <div class="prp__noticebody">
-        <div class="prp__noticetitle">
-          {{ t('Correction ready') }}
-          <MpBadge variant="subtle" variant-color="orange">{{ t(`v${revised.to} sent ${revised.sentAt}`) }}</MpBadge>
-        </div>
-        <div>{{ t(`Take-home pay ${sign(revised.thp)}. PPh 21 ${sign(revised.pph)}.`) }} {{ t(`v${revised.from} is still posted as ${live.map((j) => j.number).join(' and ')}; v${revised.to} can't post as a second full journal.`) }}</div>
-        <div v-if="locked" class="prp__noticesub">{{ t(`${monthLabel(run.month)} is locked. The fix posts on ${dateLabel(`${firstOpenAfter(run.month)}-01`)} with a correction memo; the tax period stays ${monthLabel(run.month)}.`) }}</div>
-        <div v-if="revised.filed" class="prp__noticesub">{{ t(`PPh 21 for ${monthLabel(run.month)} is filed. This change needs an amendment and can't be muted.`) }}</div>
-        <div v-if="revised.superseded.length" class="prp__noticesub">{{ t(`${revised.superseded.join(', ')}: Superseded, not posted.`) }}</div>
-        <div v-if="partialText" class="prp__noticesub">{{ t(partialText) }}</div>
-      </div>
-      <div class="prp__noticeactions">
-        <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="showCompare">{{ t('Compare') }}</button>
-        <button v-if="can('fix') && !partial" class="btn-enterprise btn-enterprise--primary" type="button" data-testid="prp-fix" @click="fixOpen = true">{{ t('Post correction') }}</button>
-      </div>
-    </section>
-
-    <section v-else-if="waiting" class="prp__notice prp__notice--info" data-testid="prp-waiting">
+    <section v-if="waiting" class="prp__notice prp__notice--info" data-testid="prp-waiting">
       <MpIcon name="info" size="md" />
       <div class="prp__noticebody">
         <div class="prp__noticetitle">{{ t(`v${waiting.no} arrived for posted payroll ${periodLabel(run.start, run.end)}`) }}</div>
@@ -121,7 +85,7 @@ const visible = computed(() => !!run.value && (run.value.versions.length > 1 || 
       </div>
     </section>
 
-    <section v-else-if="partial && ledgerV" class="prp__notice prp__notice--warn" data-testid="prp-partial">
+    <section v-else-if="partial && ledgerV && !hasCorrection" class="prp__notice prp__notice--warn" data-testid="prp-partial">
       <MpIcon name="warning-circular" size="md" />
       <div class="prp__noticebody">
         <div class="prp__noticetitle">{{ t('Looks partial') }}</div>
@@ -189,45 +153,13 @@ const visible = computed(() => !!run.value && (run.value.versions.length > 1 || 
       </div>
     </section>
 
-    <!-- Version list and compare -->
-    <section v-if="run.versions.length > 1" class="prp__card">
-      <div class="prp__cardhead">
-        <div>
-          <div class="prp__cardtitle">{{ t('Versions') }}</div>
-          <div class="prp__cardsub">{{ t(`${run.versions.length} sends for ${periodLabel(run.start, run.end)}`) }}</div>
-        </div>
-      </div>
-      <div class="prp__scroll">
-        <table class="prp__table">
-          <thead>
-            <tr>
-              <th class="prp__th">{{ t('Version') }}</th>
-              <th class="prp__th">{{ t('Sent') }}</th>
-              <th class="prp__th">{{ t('Staff') }}</th>
-              <th class="prp__th">{{ t('State') }}</th>
-              <th class="prp__th">{{ t('Decision') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="v in run.versions" :key="v.no">
-              <td class="prp__td">{{ `v${v.no}` }}</td>
-              <td class="prp__td prp__nowrap">{{ wib(v.sentAt) }}</td>
-              <td class="prp__td">{{ sendFigures(v).staff }}</td>
-              <td class="prp__td">{{ t(versionLabel(run, v)) }}</td>
-              <td class="prp__td">{{ v.decision ? `${t(v.decision.kind)} · ${v.decision.by}` : '-' }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <div v-if="run.versions.length > 1" ref="compareEl">
+    <!-- Version compare (the version list is the run page's Versions tab) -->
+    <div v-if="run.versions.length > 1" id="prp-compare">
       <PayrollCompareView :run-id="runId" />
     </div>
 
     <PayrollAmendmentTasks :run-id="runId" />
 
-    <PayrollCompareFixDrawer :is-open="fixOpen" :run-id="runId" @close="fixOpen = false" />
     <PayrollReverseDrawer :is-open="reverseOpen" :run-id="runId" @close="reverseOpen = false" />
   </div>
 </template>

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /**
  * "Simulate Talenta send": the prototype's stand-in for Talenta's salary detail
- * webhook (scope fence 2), the only Talenta webhook Jurnal reads. Every kind the engine knows goes through simulateSend, so the
+ * webhook (scope fence 2), the only Talenta webhook Jurnal reads. Every kind in SEND_KINDS goes through simulateSend, so the
  * inbox, the run record and the sync log react exactly as they would to a real send.
  */
+import { computed } from 'vue'
 import { MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem } from '@mekari/pixel3'
 import { simulateSend, SEND_KINDS, type SendKind } from '~/data/payrollStore'
 import { successToast, errorToast, infoToast } from '~/utils/toasts'
@@ -11,11 +12,22 @@ import { successToast, errorToast, infoToast } from '~/utils/toasts'
 const emit = defineEmits<{ (e: 'sent', runId: string | undefined): void }>()
 const { t } = useLocale()
 
-const GROUPS: { title: string; kinds: SendKind[] }[] = [
-  { title: 'Salary detail', kinds: ['regular', 'new-pay-item', 'revision', 'partial', 'separate-run', 'duplicate'] },
-  { title: 'Old sync', kinds: ['old-sync'] },
-]
-const label = (k: SendKind) => SEND_KINDS.find((s) => s.kind === k)?.label ?? k
+/** Every kind the engine knows (SEND_KINDS), each once: salary detail sends, then the old sync call. */
+const LABELS: Record<SendKind, string> = {
+  'regular': 'Regular run, next period',
+  'new-pay-item': 'Run with a new pay item',
+  'revision': 'Revision of the last posted run',
+  'missing-component': 'Run with a missing component (PPH 21 Paid)',
+  'partial': 'Partial re-send (one branch)',
+  'separate-run': 'THR run for a posted period',
+  'duplicate': 'Byte-identical duplicate',
+  'old-sync': 'Old-sync Expense call',
+}
+const GROUPS = computed(() => [
+  { title: 'Salary detail', kinds: SEND_KINDS.map((s) => s.kind).filter((k) => k !== 'old-sync') },
+  { title: 'Old sync', kinds: SEND_KINDS.map((s) => s.kind).filter((k) => k === 'old-sync') },
+])
+const label = (k: SendKind) => LABELS[k] ?? SEND_KINDS.find((s) => s.kind === k)?.label ?? k
 
 function send(kind: SendKind) {
   const r = simulateSend(kind)
@@ -36,7 +48,7 @@ function send(kind: SendKind) {
       <template v-for="g in GROUPS" :key="g.title">
         <div class="psim-head">{{ t(g.title) }}</div>
         <MpPopoverList>
-          <MpPopoverListItem v-for="k in g.kinds" :key="k" @click="send(k)">{{ t(label(k)) }}</MpPopoverListItem>
+          <MpPopoverListItem v-for="k in g.kinds" :key="k" :data-kind="k" @click="send(k)">{{ t(label(k)) }}</MpPopoverListItem>
         </MpPopoverList>
       </template>
     </MpPopoverContent>
