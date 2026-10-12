@@ -59,8 +59,8 @@ const columns: TableColumn[] = [
   { key: 'owed', label: t('Owed'), kind: 'amount', align: 'right' },
   { key: 'paid', label: t('Paid'), kind: 'amount', align: 'right' },
   { key: 'balance', label: t('Balance'), kind: 'amount', align: 'right' },
-  { key: 'dueLabel', label: t('Due date'), kind: 'date' },
-  { key: 'status', label: t('Status'), kind: 'status' },
+  /* Due date sits under the status badge: a separate 160px date column pushed the table past a 1280 screen. */
+  { key: 'status', label: t('Status'), kind: 'default' },
 ]
 const tableRows = computed(() => paginated.value as unknown as Record<string, unknown>[])
 const asRow = (r: unknown) => r as PayableRow
@@ -109,8 +109,8 @@ const paymentColumns: TableColumn[] = [
   { key: 'number', label: t('Journal'), kind: 'number' },
   { key: 'dateLabel', label: t('Date'), kind: 'date' },
   { key: 'payable', label: t('Payable'), kind: 'name' },
-  { key: 'bank', label: t('Bank account'), kind: 'name' },
-  { key: 'statement', label: t('Source'), kind: 'default' },
+  /* Bank account is the Source cell's second line: six columns ran 1120px in a 988px stage at 1280. */
+  { key: 'statement', label: t('Source'), kind: 'name' },
   { key: 'amount', label: t('Amount'), kind: 'amount', align: 'right' },
 ]
 const payPage = ref(1)
@@ -127,7 +127,7 @@ const asPay = (r: unknown) => r as PayHist
       <PayrollSimulateBankMenu v-if="can('simulate')" />
       <PayrollReadOnlyNote v-else :text="t('View only. Payroll actions are off for this role.')" />
     </div>
-    <p class="pp-helper">{{ t('PPh 21 is income tax withheld from salaries; BPJS is state health and employment insurance.') }}</p>
+    <p class="pp-helper">{{ t('PPh 21 and PPh 26 are income tax withheld from local and foreign staff; BPJS is state health and employment insurance; DPLK is the pension fund.') }}</p>
 
     <!-- ── Payables ── -->
     <ErpTablePage
@@ -213,7 +213,10 @@ const asPay = (r: unknown) => r as PayHist
         </div>
       </template>
       <template #cell-status="{ row }">
-        <ErpStatusBadge :status="asRow(row).status" :label="t(asRow(row).statusLabel)" :type="statusType(asRow(row).status)" />
+        <div class="pp-cell">
+          <ErpStatusBadge :status="asRow(row).status" :label="t(asRow(row).statusLabel)" :type="statusType(asRow(row).status)" />
+          <span class="pp-sub">{{ asRow(row).due ? `${t('Due')} ${asRow(row).dueLabel}` : t('No due date') }}</span>
+        </div>
       </template>
 
       <template #actions="{ row }">
@@ -234,7 +237,7 @@ const asPay = (r: unknown) => r as PayHist
       <template #empty>
         <div class="pp-empty">
           <p class="pp-empty-title">{{ t(hasActiveFilter ? 'No payables match the filters' : 'No payables yet') }}</p>
-          <p class="pp-empty-desc">{{ t(hasActiveFilter ? 'Clear the filters to see every payable.' : 'What payroll still owes staff, the tax office and BPJS. It fills once you post a payroll journal.') }}</p>
+          <p class="pp-empty-desc">{{ t(hasActiveFilter ? 'Clear the filters to see every payable.' : 'What payroll still owes staff, the tax office, BPJS and DPLK. It fills once you post a payroll journal.') }}</p>
           <MpButton v-if="hasActiveFilter" variant="secondary" is-rounded @click="clearFilters">{{ t('Clear filters') }}</MpButton>
           <MpButton v-else variant="secondary" is-rounded @click="navigateTo('/payroll-inbox')">{{ t('Open payroll inbox') }}</MpButton>
         </div>
@@ -253,12 +256,18 @@ const asPay = (r: unknown) => r as PayHist
       @page-change="(p: number) => (payPage = p)"
       @per-page-change="(n: number) => (payPerPage = n)"
     >
-      <template #cell-statement="{ row }">{{ asPay(row).statement || '-' }}</template>
+      <template #cell-payable="{ row }"><span class="pp-cell">{{ asPay(row).payable }}</span></template>
+      <template #cell-statement="{ row }">
+        <div class="pp-cell">
+          <span>{{ t(asPay(row).statement || 'Not matched') }}</span>
+          <span class="pp-sub">{{ asPay(row).bank }}</span>
+        </div>
+      </template>
       <template #cell-amount="{ row }">{{ rupiah(asPay(row).amount) }}</template>
       <template #empty>
         <div class="pp-empty">
           <p class="pp-empty-title">{{ t('No payments yet') }}</p>
-          <p class="pp-empty-desc">{{ t('A payment shows here when you pay a payable, or when bank reconciliation matches a bank line to one.') }}</p>
+          <p class="pp-empty-desc">{{ t('A payment shows here when you pay a payable, or when bank reconciliation matches a bank line to it.') }}</p>
         </div>
       </template>
     </ErpTablePage>

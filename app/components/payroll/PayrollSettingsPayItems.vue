@@ -58,7 +58,7 @@ function onAccount(m: PayItemMapping, code: string) {
 }
 function partyLabel(m: PayItemMapping) {
   const p = payItemParty(m)
-  return p ? t(PARTY_LABEL[p]) : t('None')
+  return p ? t(PARTY_LABEL[p]) : t('Company keeps it')
 }
 const GCC_TIP = 'On: staff in a group with its own expense account (see Groups) post to that account. Off: everyone posts to the account above.'
 const TYPE_TIP = 'From Talenta: the payslip section the item sits in (allowance, deduction or benefit). Tax items are found by name. Change it in Talenta.'
@@ -90,7 +90,7 @@ function onPayable(party: PayableParty, code: string) {
       <div class="pset-card__head">
         <div>
           <div class="pset-card__title">{{ t('Payable accounts') }}</div>
-          <div class="pset-card__sub">{{ t('Where Jurnal keeps what is still owed to each party until the bank pays it.') }}</div>
+          <div class="pset-card__sub">{{ t('Where Jurnal keeps what each party is still owed until it is paid.') }}</div>
         </div>
       </div>
       <div class="pset-card__body">
@@ -163,7 +163,8 @@ function onPayable(party: PayableParty, code: string) {
 
 <style scoped>
 .pset-payables :deep(.efs), .pset-payables :deep(.efs-trigger) { display: flex; width: 100%; }
-.pset-payables { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--mp-spacing-4) var(--mp-spacing-5); }
+/* 3 columns only where each select fits its longest account name (BPJS Ketenagakerjaan Payable); 2 below. */
+.pset-payables { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--mp-spacing-4) var(--mp-spacing-5); }
 .pset-pi { table-layout: fixed; }
 .pset-pi__name { width: 28%; }
 .pset-pi__type { width: 13%; }

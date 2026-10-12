@@ -91,7 +91,7 @@ const howOpen = ref(false)
           <MpTextlink id="pset-how-to-send" as="a" data-tour="payroll-how-to-send" @click.prevent="howOpen = true">{{ t('How to send from Talenta') }}</MpTextlink>
           <MpButton v-if="can('connection') && live" variant="secondary" is-rounded @click="endOpen = true">{{ t('Disconnect Talenta') }}</MpButton>
         </div>
-        <PayrollReadOnlyNote v-if="!can('connection')" :text="t('Editing needs Set up access (Owner or Ultimate + LM).')" />
+        <PayrollReadOnlyNote v-if="!can('connection')" :text="t('Changing the connection needs Owner or Ultimate + LM.')" />
       </div>
     </div>
 
