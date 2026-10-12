@@ -73,26 +73,14 @@ const baseRows = computed<SetupRow[]>(() =>
   })),
 )
 
-// Movement + Signals quick filters, mirroring the To order tab.
+// Movement quick filter, mirroring the To order tab. The two Needs-setup reasons
+// ("No demand", "Waiting for lead time") are shown in the Reason column, not as a filter.
 const FSN_OPTIONS = [
   { id: 'fast', name: 'Fast' },
   { id: 'slow', name: 'Slow' },
   { id: 'non-moving', name: 'Non-moving' },
 ]
-const NEEDS_SETUP_SIGNALS = [
-  { id: 'no-demand', name: 'No demand' },
-  { id: 'waiting-lead', name: 'Waiting for lead time' },
-]
 const fsnFilter = ref('')
-const signalFilter = ref('')
-/** One signal at a time — the two reasons a product waits in Needs setup. */
-function matchesSetupSignal(row: WorklistRow): boolean {
-  switch (signalFilter.value) {
-    case 'no-demand': return row.flags.noDemand
-    case 'waiting-lead': return row.leadTimeTier === 'none'
-    default: return true
-  }
-}
 
 const {
   search, currentPage, paginated, total, perPage,
@@ -101,16 +89,15 @@ const {
   filterFn: (row, s) => {
     if (s && ![row.sku, row.productName, row.warehouseName].some((v) => v.toLowerCase().includes(s))) return false
     if (fsnFilter.value && row.fsn.committed !== fsnFilter.value) return false
-    if (signalFilter.value && !matchesSetupSignal(row)) return false
     return true
   },
 })
 
 watch(warehouseId, () => setPage(1))
-watch([fsnFilter, signalFilter], () => setPage(1))
+watch(fsnFilter, () => setPage(1))
 
-const hasActiveFilter = computed(() => !!search.value || !!fsnFilter.value || !!signalFilter.value)
-function clearFilters() { search.value = ''; fsnFilter.value = ''; signalFilter.value = '' }
+const hasActiveFilter = computed(() => !!search.value || !!fsnFilter.value)
+function clearFilters() { search.value = ''; fsnFilter.value = '' }
 
 // Widths from `kind` (rule/table-column-kind). No "Sales history" column: demand
 // no longer routes a product here (D18 — 0 sales simply drops off).
@@ -226,23 +213,15 @@ function onSaved() {
           @update:model-value="(v: string) => setWarehouse(v)"
         />
 
-        <!-- Movement + Signals quick filters, same as the To order tab. -->
+        <!-- Movement quick filter, same as the To order tab. -->
         <ErpFilterSelect
           id="rp-setup-fsn-select"
           :model-value="fsnFilter"
           :placeholder="t('Movement')"
           :options="FSN_OPTIONS.map((o) => ({ value: o.id, label: t(o.name) }))"
           width="170px"
-          @update:model-value="(v: string) => (fsnFilter = v)"
-        />
-        <ErpFilterSelect
-          id="rp-setup-signal-select"
-          :model-value="signalFilter"
-          :placeholder="t('Signals')"
-          :options="NEEDS_SETUP_SIGNALS.map((o) => ({ value: o.id, label: t(o.name) }))"
-          width="170px"
           data-devchange="replenishment-needssetup-filters"
-          @update:model-value="(v: string) => (signalFilter = v)"
+          @update:model-value="(v: string) => (fsnFilter = v)"
         />
       </div>
       <div class="filter-right">

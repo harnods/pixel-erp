@@ -29,9 +29,9 @@ export interface DevChange {
 export const DEV_CHANGES: DevChange[] = [
   {
     id: 'replenishment-needssetup-no-demand-and-filters',
-    title: 'Needs setup: "No demand" + "Waiting for lead time" tags, with Movement & Signals filters',
+    title: 'Needs setup: "No demand" + "Waiting for lead time" reasons, with a Movement filter',
     description:
-      'Needs setup now collects — and tags — the two gaps a person must resolve before a recommendation is possible: "No demand" (a tracked SKU with no sales in the lookback window, so no reorder point can be computed) and "Waiting for lead time" (no vendor PO→GR history and no default). A 0-sales tracked SKU now routes here with a "No demand" reason instead of dropping off silently (PM override of D18); it still leaves on its own once a first sale lands. The tab gains Movement and Signals quick filters, mirroring To order.',
+      'Needs setup now shows — in the Reason column — the two gaps a person must resolve before a recommendation is possible: "No demand" (a tracked SKU with no sales in the lookback window, so no reorder point can be computed) and "Waiting for lead time" (no vendor PO→GR history and no default). A 0-sales tracked SKU now routes here with a "No demand" reason instead of dropping off silently (PM override of D18); it still leaves on its own once a first sale lands. The tab gains a Movement quick filter, mirroring To order.',
     date: '2026-10-12',
     files: ['replenishment.ts', 'ReplenishmentSetupPage.vue'],
   },
