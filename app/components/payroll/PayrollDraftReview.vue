@@ -16,6 +16,7 @@ import {
 } from '~/data/payrollStore'
 import { taxRuleRows } from '~/data/payrollUiIntake'
 import { successToast, infoToast } from '~/utils/toasts'
+import { roleLabel } from '~/data/payrollUiRunCopy'
 
 const props = defineProps<{ runId: string }>()
 const { t } = useLocale()
@@ -66,7 +67,7 @@ function markExpected(key: string) {
   const r = markHeadcountExpected(props.runId, key, hcNotes[key] ?? '')
   if (!r.ok) { hcErr[key] = r.message ?? ''; return }
   hcErr[key] = ''
-  successToast(t('Marked expected'))
+  successToast(t('Marked as expected'))
 }
 function unmarkExpected(key: string) {
   clearHeadcountExpected(props.runId, key)
@@ -77,20 +78,20 @@ function unmarkExpected(key: string) {
 <template>
   <div v-if="review && review.lines.length" class="pdr">
     <div v-if="stale" class="pdr__notice">
-      {{ t('Settings changed since this draft was built. Post rebuilds it and shows the lines that moved.') }}
+      {{ t('Settings changed after this draft was built. Posting rebuilds it first and shows what changed.') }}
     </div>
 
     <!-- 1. Pay item totals against Talenta -->
     <section class="pdr__card" data-section="pay-items">
       <header class="pdr__cardhead">
         <div class="pdr__cardtitle">{{ t('Pay item totals') }}</div>
-        <div class="pdr__cardsub">{{ t('Talenta sends pay items only. Take-home pay is allowances less deductions.') }} {{ rupiah(review.takeHome) }}</div>
+        <div class="pdr__cardsub">{{ t('Take-home pay (allowances less deductions)') }}: {{ rupiah(review.takeHome) }}</div>
       </header>
       <table class="pdr__table">
         <thead>
           <tr>
             <th class="pdr__th">{{ t('Section') }}</th>
-            <th class="pdr__th pdr__num">{{ t('Pay item lines') }}</th>
+            <th class="pdr__th pdr__num">{{ t('Amount') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -104,7 +105,7 @@ function unmarkExpected(key: string) {
         <thead>
           <tr>
             <th class="pdr__th">{{ t('Pay item') }}</th>
-            <th class="pdr__th">{{ t('Role') }}</th>
+            <th class="pdr__th">{{ t('Type') }}</th>
             <th class="pdr__th pdr__num">{{ t('Staff') }}</th>
             <th class="pdr__th pdr__num">{{ t('Amount') }}</th>
           </tr>
@@ -113,7 +114,7 @@ function unmarkExpected(key: string) {
           <template v-for="s in sections" :key="s.section">
             <tr v-for="p in s.items" :key="`${s.section}-${p.name}`">
               <td class="pdr__td">{{ p.name }} <span class="pdr__muted">· {{ t(p.section) }}</span></td>
-              <td class="pdr__td">{{ p.role ? t(p.role) : t('No role') }}</td>
+              <td class="pdr__td">{{ p.role ? t(roleLabel(p.role)) : t('No type yet') }}</td>
               <td class="pdr__td pdr__num">{{ p.staff }}</td>
               <td class="pdr__td pdr__num">{{ rupiah(p.amount) }}</td>
             </tr>
@@ -127,8 +128,8 @@ function unmarkExpected(key: string) {
       <header class="pdr__cardhead">
         <div class="pdr__cardtitle">{{ t('Change from last period') }}</div>
         <div class="pdr__cardsub">
-          <template v-if="review.previous">{{ t('Against posted') }} {{ review.previous.label }} · {{ t('flagged when a row moves more than') }} {{ payroll.settings.limits.largeChangePct }}% {{ t('and') }} {{ rupiah(payroll.settings.limits.largeChangeAmount) }}</template>
-          <template v-else>{{ t('No earlier period') }}</template>
+          <template v-if="review.previous">{{ t('Compared with') }} {{ review.previous.label }} · {{ t('marked Check when a line moves more than') }} {{ payroll.settings.limits.largeChangePct }}% {{ t('and') }} {{ rupiah(payroll.settings.limits.largeChangeAmount) }}</template>
+          <template v-else>{{ t('No earlier posted period to compare with') }}</template>
         </div>
       </header>
       <table v-if="review.previous" class="pdr__table">
@@ -163,13 +164,13 @@ function unmarkExpected(key: string) {
             </td>
           </tr>
           <tr v-if="!flagged.length && !showAllChanges">
-            <td class="pdr__td pdr__muted" colspan="5">{{ t('No row moves past the change limit.') }}</td>
+            <td class="pdr__td pdr__muted" colspan="5">{{ t('No line changed by more than the limit.') }}</td>
           </tr>
         </tbody>
       </table>
       <div v-if="review.previous && otherChanges.length" class="pdr__cardfoot">
         <MpButton variant="ghost" is-rounded @click="showAllChanges = !showAllChanges">
-          {{ showAllChanges ? t('Show flagged rows only') : `${t('Show all changes')} (${otherChanges.length + flagged.length})` }}
+          {{ showAllChanges ? t('Show lines to check only') : `${t('Show all changes')} (${otherChanges.length + flagged.length})` }}
         </MpButton>
       </div>
     </section>
@@ -180,8 +181,8 @@ function unmarkExpected(key: string) {
         <div class="pdr__cardtitle">{{ t('Headcount by group') }}</div>
         <div class="pdr__cardsub">
           <template v-if="hc.previous">
-            {{ t('Against posted') }} {{ hc.previous.label }} · {{ hc.last }} {{ t('staff then') }}, {{ hc.current }} {{ t('in this run') }} ·
-            {{ hc.flagged ? `${hc.flagged} ${t(hc.flagged === 1 ? 'group changed' : 'groups changed')}` : t('No group changed') }}<template v-if="hc.flagged">, {{ hc.unexpected }} {{ t('not marked expected') }}</template>
+            {{ t('Compared with') }} {{ hc.previous.label }} · {{ hc.last }} {{ t('staff then') }}, {{ hc.current }} {{ t('in this run') }} ·
+            {{ hc.flagged ? `${hc.flagged} ${t(hc.flagged === 1 ? 'group changed' : 'groups changed')}` : t('No group changed') }}<template v-if="hc.flagged">, {{ hc.unexpected }} {{ t('not marked as expected') }}</template>
           </template>
           <template v-else>{{ t('No earlier posted run to compare with') }}</template>
         </div>
@@ -218,7 +219,7 @@ function unmarkExpected(key: string) {
               <template v-else-if="h.flagged && can('post')">
                 <div class="pdr__noteform">
                   <MpInput :id="`pdr-hc-${safeId(h.key)}`" :placeholder="t('Note (optional)')" :model-value="hcNotes[h.key] ?? ''" :is-invalid="!!hcErr[h.key]" @update:model-value="(v: string | number) => hcNotes[h.key] = String(v)" />
-                  <MpButton variant="secondary" is-rounded @click="markExpected(h.key)">{{ t('Expected') }}</MpButton>
+                  <MpButton variant="secondary" is-rounded @click="markExpected(h.key)">{{ t('Mark as expected') }}</MpButton>
                 </div>
                 <p v-if="hcErr[h.key]" class="pdr__error">{{ t(hcErr[h.key]!) }}</p>
               </template>
@@ -232,9 +233,9 @@ function unmarkExpected(key: string) {
     <!-- Tax rows under the one PPh 21 rule -->
     <section v-if="tax" class="pdr__card" data-section="tax">
       <header class="pdr__cardhead">
-        <div class="pdr__cardtitle">{{ t('Tax lines') }}</div>
+        <div class="pdr__cardtitle">{{ t('PPh 21 (income tax withheld from salaries)') }}</div>
         <div class="pdr__cardsub">
-          {{ t('Regular PPh 21 = PPh 21 Benefit') }} {{ rupiah(tax.benefit) }} + {{ t('PPh 21 Payment') }} {{ rupiah(tax.payment) }} - {{ t('PPh 21 DTP received') }} {{ rupiah(tax.dtp) }} = {{ rupiah(tax.expected) }}
+          {{ t('PPh 21 = PPh 21 Benefit') }} {{ rupiah(tax.benefit) }} + {{ t('PPh 21 Payment') }} {{ rupiah(tax.payment) }} - {{ t('PPh 21 DTP received') }} {{ rupiah(tax.dtp) }} = {{ rupiah(tax.expected) }}
         </div>
       </header>
       <table class="pdr__table">
@@ -242,8 +243,8 @@ function unmarkExpected(key: string) {
           <tr>
             <th class="pdr__th">{{ t('Tax line') }}</th>
             <th class="pdr__th">{{ t('Account') }}</th>
-            <th class="pdr__th pdr__num">{{ t('Tax rule') }}</th>
-            <th class="pdr__th pdr__num">{{ t('In the draft') }}</th>
+            <th class="pdr__th pdr__num">{{ t('Expected') }}</th>
+            <th class="pdr__th pdr__num">{{ t('In this draft') }}</th>
             <th class="pdr__th pdr__num">{{ t('Difference') }}</th>
           </tr>
         </thead>
@@ -252,7 +253,7 @@ function unmarkExpected(key: string) {
             <td class="pdr__td">{{ t(r.label) }}</td>
             <td class="pdr__td">{{ accountLabel(r.account) }}</td>
             <td class="pdr__td pdr__num">{{ rupiah(r.rule) }}</td>
-            <td class="pdr__td pdr__num">{{ r.ledger == null ? t('In Regular PPh 21') : rupiah(r.ledger) }}</td>
+            <td class="pdr__td pdr__num">{{ r.ledger == null ? t('Included in PPh 21') : rupiah(r.ledger) }}</td>
             <td class="pdr__td pdr__num" :class="{ 'pdr__danger': r.ledger != null && Math.abs(r.ledger - r.rule) > 1000 }">{{ r.ledger == null ? '' : rupiah(r.ledger - r.rule) }}</td>
           </tr>
         </tbody>
@@ -262,7 +263,7 @@ function unmarkExpected(key: string) {
     <!-- 4. The lines Post writes -->
     <section class="pdr__card" data-section="lines" data-tour="payroll-draft-lines">
       <header class="pdr__cardhead">
-        <div class="pdr__cardtitle">{{ t('Journal preview') }}</div>
+        <div class="pdr__cardtitle">{{ t('Draft journal') }}</div>
         <div class="pdr__cardsub">{{ run && currentVersionOf(run)?.draft?.memo }}</div>
       </header>
       <table class="pdr__table">
@@ -278,7 +279,7 @@ function unmarkExpected(key: string) {
         <tbody>
           <template v-for="(l, i) in review.lines" :key="i">
             <tr>
-              <td class="pdr__td">{{ accountLabel(l.account) }}<span v-if="l.review" class="pdr__flag">{{ t('Credit on an expense, review') }}</span></td>
+              <td class="pdr__td">{{ accountLabel(l.account) }}<span v-if="l.review" class="pdr__flag">{{ t('Credit on an expense, check it') }}</span></td>
               <td class="pdr__td">{{ tagsLabel(l.tags) }}</td>
               <td class="pdr__td pdr__num">{{ l.debit ? rupiah(l.debit) : '' }}</td>
               <td class="pdr__td pdr__num">{{ l.credit ? rupiah(l.credit) : '' }}</td>
@@ -290,8 +291,8 @@ function unmarkExpected(key: string) {
                 <table class="pdr__table pdr__table--inner">
                   <thead>
                     <tr>
-                      <th class="pdr__th">{{ t('Source') }}</th>
-                      <th class="pdr__th">{{ t('Role') }}</th>
+                      <th class="pdr__th">{{ t('Pay item') }}</th>
+                      <th class="pdr__th">{{ t('Type') }}</th>
                       <th class="pdr__th pdr__num">{{ t('Staff') }}</th>
                       <th class="pdr__th pdr__num">{{ t('Amount') }}</th>
                     </tr>
@@ -300,7 +301,7 @@ function unmarkExpected(key: string) {
                     <tr v-for="(s, si) in why.sources" :key="si">
                       <td class="pdr__td">{{ s.item }} <span class="pdr__muted">· {{ t(s.section) }}</span>
                       </td>
-                      <td class="pdr__td">{{ s.role ? t(s.role) : '' }}</td>
+                      <td class="pdr__td">{{ s.role ? t(roleLabel(s.role)) : '' }}</td>
                       <td class="pdr__td pdr__num">{{ s.employees || '' }}</td>
                       <td class="pdr__td pdr__num">{{ rupiah(s.amount) }}</td>
                     </tr>
@@ -318,11 +319,11 @@ function unmarkExpected(key: string) {
         </tbody>
       </table>
       <div v-if="review.otherEntity?.staff" class="pdr__cardfoot pdr__muted">
-        {{ t('Other entity, left out of this journal') }}: {{ review.otherEntity.staff }} {{ t('staff') }}, {{ rupiah(review.otherEntity.amount) }}
+        {{ t('Staff of another company, left out of this journal') }}: {{ review.otherEntity.staff }} {{ t('staff') }}, {{ rupiah(review.otherEntity.amount) }}
       </div>
     </section>
   </div>
-  <div v-else-if="review && run && currentVersionOf(run)?.draft?.nothingToPost" class="pdr__card pdr__empty">{{ t('Nothing to post') }}</div>
+  <div v-else-if="review && run && currentVersionOf(run)?.draft?.nothingToPost" class="pdr__card pdr__empty">{{ t('Nothing to post. This send has no amounts that make a journal line.') }}</div>
 </template>
 
 <style scoped>

@@ -42,23 +42,23 @@ function guard(): boolean {
   error.value = ''
   if (!iso.value) { error.value = t('Pick a reversal date.'); return false }
   if (iso.value < earliest.value) { error.value = t(`The date can't be before the original journal, ${dateLabel(earliest.value)}.`); return false }
-  if (salaryPays.value.length && !confirmPays.value) { error.value = t('Confirm that you reverse a run with matched payments.'); return false }
+  if (salaryPays.value.length && !confirmPays.value) { error.value = t('Tick Reverse anyway to reverse a run with payments.'); return false }
   return true
 }
 function reverseAll() {
   if (!guard()) return
   const r = reverseRun(props.runId, { date: iso.value, confirmPayments: confirmPays.value })
-  if (!r.ok) { error.value = t(r.message ?? 'Nothing was reversed.'); return }
+  if (!r.ok) { error.value = t(r.message ?? 'Not reversed. Check the date and try again.'); return }
   successToast(t(`${(r.journals as string[]).join(', ')} posted`))
   emit('close')
 }
 </script>
 
 <template>
-  <PayrollCompareDrawerShell :is-open="isOpen" :title="t('Reverse payroll journals')" wide @close="emit('close')">
+  <PayrollCompareDrawerShell :is-open="isOpen" :title="t('Reverse journal')" wide @close="emit('close')">
     <template v-if="run">
       <div class="prv__identity">
-        {{ live.length > 1 ? t(`This run has ${live.length} live journals. They reverse together, so the ledger never holds part of a version.`) : t('Reverse posts the same lines with sides swapped and links both journals.') }}
+        {{ live.length > 1 ? t(`This run has ${live.length} posted journals. They reverse together.`) : t('Reversing posts the same lines with debit and credit swapped.') }}
       </div>
 
       <div class="prv__scroll">
@@ -89,7 +89,7 @@ function reverseAll() {
         <MpDatePicker id="prv-date-input" v-model="date" format="DD/MM/YYYY" value-type="format" use-portal is-full-width :is-clearable="false" :disabled-date="disabledDate" />
       </MpFormControl>
       <div v-if="redirected" class="prv__note" data-testid="prv-locked">
-        {{ t(`${monthLabel(iso.slice(0, 7))} is locked. The reversal posts on ${dateLabel(effective)} with reference ${monthLabel(run.month)}; the tax period stays ${monthLabel(run.month)}.`) }}
+        {{ t(`${monthLabel(iso.slice(0, 7))} is locked, so the reversal posts on ${dateLabel(effective)}. The tax period stays ${monthLabel(run.month)}.`) }}
       </div>
 
       <div v-if="salaryPays.length" class="prv__pays" data-testid="prv-payments">
@@ -98,10 +98,10 @@ function reverseAll() {
           <li v-for="p in salaryPays" :key="p.id">{{ journalById(p.journalId)?.number }} · {{ t('Salary') }} · {{ rupiah(p.amount) }} · {{ dateLabel(p.date) }}</li>
           <li v-for="p in otherPays" :key="p.id">{{ journalById(p.journalId)?.number }} · {{ t(p.party) }} · {{ accountLabel(p.account) }} · {{ rupiah(p.amount) }}</li>
         </ul>
-        <div class="prv__paysnote">{{ t('No payment, bank line or reconciliation changes. Salaries Payable shows a debit balance until the corrected run posts.') }}</div>
+        <div class="prv__paysnote">{{ t('Payments stay as they are. Salaries payable shows a debit balance until you repost.') }}</div>
         <label class="prv__check">
           <MpCheckbox id="prv-confirm-pays" :is-checked="confirmPays" @change="confirmPays = !confirmPays; error = ''" />
-          <span>{{ t('Reverse anyway; the payments stay as they are') }}</span>
+          <span>{{ t('Reverse anyway and keep the payments') }}</span>
         </label>
       </div>
 

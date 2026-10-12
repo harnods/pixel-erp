@@ -32,7 +32,7 @@ const waiting = computed(() => run.value?.versions.find((v) => v.state === 'wait
 const hasRevision = computed(() => !!revisionOf(props.runId))
 const partialText = computed(() => {
   const d = partial.value?.holds[0]?.details as { before?: number; after?: number } | undefined
-  return partial.value && d ? `v${partial.value.no} holds ${d.after} of ${d.before} staff. Reverse and repost stays off until you pick Replace the full run or Reject.` : ''
+  return partial.value && d ? `v${partial.value.no} has ${d.after} of ${d.before} staff. Choose Use it as the full run or Reject before you repost.` : ''
 })
 
 // ── Reversed, not reposted (TN-20, TN-21) ───────────────────────────────────
@@ -66,7 +66,7 @@ const journals = computed(() => (run.value ? journalsOf(run.value.id).filter((j)
 function journalState(j: Journal): string {
   if (j.reversesId) return `Reverses ${journalById(j.reversesId)?.number ?? ''}`
   if (j.reversedById) return `Reversed by ${journalById(j.reversedById)?.number ?? ''}`
-  return 'Live'
+  return 'Posted'
 }
 
 // ── Panels and drawers ──────────────────────────────────────────────────────
@@ -80,15 +80,15 @@ const visible = computed(() => !!run.value && (run.value.versions.length > 1 || 
     <section v-if="waiting" class="prp__notice prp__notice--info" data-testid="prp-waiting">
       <MpIcon name="info" size="md" />
       <div class="prp__noticebody">
-        <div class="prp__noticetitle">{{ t(`v${waiting.no} arrived for posted payroll ${periodLabel(run.start, run.end)}`) }}</div>
-        <div>{{ t('Pick Revision of the posted run or Separate run under Holds. Compare shows what changed.') }}</div>
+        <div class="prp__noticetitle">{{ t(`Talenta sent ${periodLabel(run.start, run.end)} again (v${waiting.no})`) }}</div>
+        <div>{{ t('Choose Use as a new version or Make a separate run above. Compare versions shows what changed.') }}</div>
       </div>
     </section>
 
     <section v-else-if="partial && ledgerV && !hasRevision" class="prp__notice prp__notice--warn" data-testid="prp-partial">
       <MpIcon name="warning-circular" size="md" />
       <div class="prp__noticebody">
-        <div class="prp__noticetitle">{{ t('Looks partial') }}</div>
+        <div class="prp__noticetitle">{{ t('Looks like part of the run') }}</div>
         <div>{{ t(partialText) }}</div>
       </div>
     </section>
@@ -99,11 +99,11 @@ const visible = computed(() => !!run.value && (run.value.versions.length > 1 || 
       <div class="prp__noticebody">
         <div class="prp__noticetitle">{{ t(`Reversed, not reposted: ${rupiah(reversedNotReposted.amount)}`) }}</div>
         <div>{{ t(`Reversed ${reversedNotReposted.at}. Payables for ${monthLabel(run.month)} show nothing owed until the run posts again.`) }}</div>
-        <div v-if="reversedNotReposted.days >= 2" class="prp__noticesub">{{ t(`${reversedNotReposted.days} working days without a repost. The run shows in the inbox.`) }}</div>
+        <div v-if="reversedNotReposted.days >= 2" class="prp__noticesub">{{ t(`Not reposted for ${reversedNotReposted.days} working days. Post it to clear the payables.`) }}</div>
         <div v-if="repostError" class="prp__noticeerror" role="alert">{{ repostError }}</div>
       </div>
       <div v-if="can('post') && cur?.draft && status === 'Reversed'" class="prp__noticeactions">
-        <button class="btn-enterprise btn-enterprise--primary" type="button" data-testid="prp-repost" @click="repost">{{ t(`Post v${cur.no}`) }}</button>
+        <button class="btn-enterprise btn-enterprise--primary" type="button" data-testid="prp-repost" @click="repost">{{ t(`Post v${cur.no} journal`) }}</button>
       </div>
     </section>
 
@@ -113,7 +113,7 @@ const visible = computed(() => !!run.value && (run.value.versions.length > 1 || 
         <div>
           <div class="prp__cardtitle">{{ t('Payroll journals') }}</div>
           <div class="prp__cardsub">
-            {{ live.length ? t(`${live.length} live · the ledger reflects v${run.ledgerVersion}`) : t('No live journal') }}
+            {{ live.length ? t(`${live.length} posted · the books show v${run.ledgerVersion}`) : t('No posted journal') }}
           </div>
         </div>
         <button v-if="can('correct') && live.length" class="btn-enterprise btn-enterprise--secondary" type="button" data-testid="prp-reverse" @click="reverseOpen = true">

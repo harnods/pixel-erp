@@ -1,12 +1,11 @@
 <script setup lang="ts">
 /**
- * Payroll run record /payroll-runs/<id> (FG-2, FG-3). Header with run key, type
- * and versions; holds with their fixes in check order; the draft review (OD-12);
- * Post with the stale-draft and newer-version blocks (warnings never block;
- * the unacknowledged ones are listed in the Post confirm); the versions, posted PAY journals and the "Built with"
- * snapshot. Post and Reverse and repost take one entry date (PayrollPostDrawer); Actions > Dry run
- * shows the journal the run would post, posting nothing. The warnings panel, the revision notice
- * and the claims section sit on the page itself.
+ * Payroll run record /payroll-runs/<id> (FG-2, FG-3). Header with type and versions;
+ * "To fix before posting" in check order; the draft review (OD-12), which is the exact
+ * journal Post writes (months before the start month show it labelled "not posted");
+ * Post with the stale-draft and newer-version blocks (warnings never block; the unchecked
+ * ones are listed in the Post confirm); the versions, posted journals and "Mapping used".
+ * Post and Reverse and repost take one journal date (PayrollPostDrawer).
  */
 import { computed, ref, watch } from 'vue'
 import { MpButton, MpTextlink, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem } from '@mekari/pixel3'
@@ -20,7 +19,6 @@ import PayrollRunWarnings from '~/components/payroll/PayrollRunWarnings.vue'
 import PayrollRunClaims from '~/components/payroll/PayrollRunClaims.vue'
 import PayrollRevisionNotice from '~/components/payroll/PayrollRevisionNotice.vue'
 import PayrollPostDrawer from '~/components/payroll/PayrollPostDrawer.vue'
-import PayrollDryRunDrawer from '~/components/payroll/PayrollDryRunDrawer.vue'
 import PayrollRevisionPanel from '~/components/payroll/PayrollRevisionPanel.vue'
 import {
   can, runById, runStatus, runHolds, currentVersionOf, versionLabel, draftOf, liveJournals, journalsOf,
@@ -29,6 +27,7 @@ import {
   accountLabel, tagsLabel, type Tags,
 } from '~/data/payrollStore'
 import { statusType, versionFigures } from '~/data/payrollUiIntake'
+import { statusLabel, notPostedLabel } from '~/data/payrollUiRunCopy'
 import { successToast, infoToast, errorToast } from '~/utils/toasts'
 
 const props = defineProps<{ orderId?: string }>()
@@ -55,10 +54,10 @@ const showRevisionSlot = computed(() => !!run.value && (run.value.versions.lengt
 type Tab = 'review' | 'versions' | 'journals' | 'built'
 const tab = ref<Tab>('review')
 const tabs = computed(() => [
-  { key: 'review' as Tab, label: live.value.length && !draft.value ? 'Posted lines' : 'Draft review' },
+  { key: 'review' as Tab, label: live.value.length && !draft.value ? 'Posted journal' : 'Draft review' },
   { key: 'versions' as Tab, label: `Versions (${run.value?.versions.length ?? 0})` },
   { key: 'journals' as Tab, label: `Journals (${allJournals.value.length})` },
-  { key: 'built' as Tab, label: 'Built with' },
+  { key: 'built' as Tab, label: 'Mapping used' },
 ])
 watch(() => props.orderId, () => { tab.value = 'review'; staleChanges.value = [] })
 
@@ -66,7 +65,6 @@ watch(() => props.orderId, () => { tab.value = 'review'; staleChanges.value = []
 const canPostNow = computed(() => status.value === 'Ready to post' && !!draft.value && !draft.value.nothingToPost && !live.value.length)
 const stale = computed(() => !!run.value && isDraftStale(run.value.id))
 const postOpen = ref(false)
-const dryRunOpen = ref(false)
 const staleChanges = ref<{ key: string; account: string; tags: Tags; old: number; new: number; diff: number }[]>([])
 const postError = ref('')
 function askPost() {
@@ -78,7 +76,7 @@ function rebuild() {
   if (!run.value) return
   const r = rebuildDraft(run.value.id)
   staleChanges.value = (r.changed as typeof staleChanges.value) ?? []
-  successToast(t(staleChanges.value.length ? `Draft rebuilt. ${staleChanges.value.length} lines moved` : 'Draft rebuilt. No line moved'))
+  successToast(t(staleChanges.value.length ? `Draft rebuilt. ${staleChanges.value.length} ${staleChanges.value.length === 1 ? 'line' : 'lines'} changed` : 'Draft rebuilt. No line changed'))
 }
 function notInPrototype() { infoToast(t('Not in this prototype')) }
 
@@ -89,7 +87,7 @@ const rejectOpen = ref(false)
 function approve() {
   if (!run.value) return
   const r = approvePayroll(run.value.id)
-  if (!r.ok) { postError.value = r.message ?? ''; errorToast(t('Not approved')); return }
+  if (!r.ok) { postError.value = r.message ?? ''; errorToast(t('Not approved. See the message on the page.')); return }
   const nos = (r.journals as string[] | undefined) ?? (r.number ? [r.number as string] : [])
   successToast(t(`Approved and posted as ${nos.join(', ')}`))
   tab.value = 'journals'
@@ -99,7 +97,7 @@ function reject(reason: string) {
   const r = rejectPayroll(run.value.id, reason)
   rejectOpen.value = false
   if (!r.ok) { errorToast(t(r.message ?? 'Not rejected')); return }
-  successToast(t('Rejected. The run is back in draft'))
+  successToast(t('Rejected. The journal is back in draft'))
 }
 function back() { router.push('/payroll-inbox') }
 const lineLabel = (account: string, tags: Tags) => `${accountLabel(account)}${tagsLabel(tags) ? ` | ${tagsLabel(tags)}` : ''}`
@@ -117,12 +115,11 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
         </nav>
         <div class="prr__titlerow">
           <h1 class="prr__title">{{ t('Payroll') }} {{ periodLabel(run.start, run.end) }}<template v-if="run.kind !== 'Regular'"> · {{ run.kind }} {{ run.label }}</template></h1>
-          <ErpStatusBadge :status="status ?? ''" :label="t(status ?? '')" :type="statusType(status ?? '')" size="md" badge-for="additionalInformation" />
+          <ErpStatusBadge :status="status ?? ''" :label="t(statusLabel(status ?? ''))" :type="statusType(status ?? '')" size="md" badge-for="additionalInformation" />
         </div>
         <p class="prr__sub">
-          {{ run.key }} · {{ t(run.kind) }} · v{{ v.no }} {{ t('of') }} {{ run.versions.length }} · {{ t('sent') }} {{ wib(v.sentAt) }} · {{ t('tax month') }} {{ monthLabel(run.month) }}
+          {{ t(run.kind) }} · v{{ v.no }} {{ t('of') }} {{ run.versions.length }} · {{ t('sent') }} {{ wib(v.sentAt) }} · {{ t('tax period') }} {{ monthLabel(run.month) }}
         </p>
-        <p v-if="run.mode !== 'Live'" class="prr__sub">{{ t(run.mode) }}</p>
       </div>
       <div class="prr__baractions">
         <MpPopover id="prr-more" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
@@ -131,19 +128,18 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
           </MpPopoverTrigger>
           <MpPopoverContent class="erp-dropdown-menu">
             <MpPopoverList>
-              <MpPopoverListItem data-testid="prr-dry-run" @click="dryRunOpen = true">{{ t('Dry run') }}</MpPopoverListItem>
               <MpPopoverListItem v-if="draft && can('post')" @click="rebuild">{{ t('Rebuild draft') }}</MpPopoverListItem>
-              <MpPopoverListItem v-if="draft && can('post')" @click="notInPrototype">{{ t('Submit for approval') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="draft && can('post')" @click="notInPrototype">{{ t('Send for approval') }}</MpPopoverListItem>
               <MpPopoverListItem @click="notInPrototype">{{ t('Download review') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="tab = 'built'">{{ t('View built with') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="tab = 'built'">{{ t('View mapping used') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
         <template v-if="approval && isApprover">
           <MpButton variant="secondary" is-rounded data-testid="prr-reject" @click="rejectOpen = true">{{ t('Reject') }}</MpButton>
-          <MpButton is-rounded data-testid="prr-approve" @click="approve">{{ t('Approve') }}</MpButton>
+          <MpButton is-rounded data-testid="prr-approve" @click="approve">{{ t('Approve and post') }}</MpButton>
         </template>
-        <MpButton v-else-if="can('post') && canPostNow" is-rounded @click="askPost">{{ t('Post') }}</MpButton>
+        <MpButton v-else-if="can('post') && canPostNow" is-rounded @click="askPost">{{ t('Post journal') }}</MpButton>
       </div>
     </header>
 
@@ -152,22 +148,22 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
       <div class="stats-section" data-tour="payroll-run-stats">
         <div class="stat-card stat-card--bordered">
           <div class="stat-title">{{ t('Take-home pay') }}</div>
-          <div class="stat-period">{{ t('Talenta, v') }}{{ v.no }} · {{ fig.staff }} {{ t('staff') }}</div>
+          <div class="stat-period">{{ t('From Talenta') }} v{{ v.no }} · {{ fig.staff }} {{ t('staff') }}</div>
           <div class="stat-amount">{{ rupiah(fig.takeHome) }}</div>
         </div>
         <div class="stat-card stat-card--bordered">
           <div class="stat-title">{{ t('Gross pay') }}</div>
-          <div class="stat-period">{{ t('Allowances in the send') }}</div>
+          <div class="stat-period">{{ t('Salary and allowances') }}</div>
           <div class="stat-amount">{{ rupiah(fig.gross) }}</div>
         </div>
         <div class="stat-card stat-card--bordered">
           <div class="stat-title">{{ t('Draft journal') }}</div>
-          <div class="stat-period">{{ draft ? `${t('Built')} ${wib(draft.builtAt)}` : t('No draft while held') }}</div>
+          <div class="stat-period">{{ draft ? `${t('Built')} ${wib(draft.builtAt)}` : t('Fix the items below first') }}</div>
           <div class="stat-amount" :class="{ 'stat-amount--absent': !draft }">{{ draft ? rupiah(draftTotal) : t('Not built') }}</div>
           <a v-if="draft" class="stat-link" @click="tab = 'review'">{{ draft.lines.length }} {{ t('lines') }}</a>
         </div>
         <div class="stat-card">
-          <div class="stat-title">{{ t('In the ledger') }}</div>
+          <div class="stat-title">{{ t('Posted journal') }}</div>
           <div class="stat-period">{{ live.length ? `${t('Posted')} v${run.ledgerVersion}` : t('Nothing posted') }}</div>
           <div class="stat-amount">{{ rupiah(liveTotal) }}</div>
           <a v-if="live.length" class="stat-link" @click="tab = 'journals'">{{ live.map((j) => j.number).join(', ') }}</a>
@@ -177,7 +173,7 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
       <!-- Approval: Post matched a Payroll journal rule in Settings > Approval workflows. -->
       <div v-if="approval" class="prr__notice" data-testid="prr-approval">
         <div class="prr__noticetitle">{{ t('Awaiting approval') }} · {{ approval.ruleName }}</div>
-        <div>{{ t(approval.kind === 'post' ? 'Payroll journal' : 'Reverse and repost') }} v{{ approval.versionNo }} {{ rupiah(approval.amount) }} · {{ t('entry date') }} {{ dateLabel(approval.date) }} · {{ t('sent by') }} {{ approval.requestedBy }} {{ wib(approval.requestedAt) }} · {{ t('approver') }} {{ listLabel(approval.approvers) }}</div>
+        <div>{{ t(approval.kind === 'post' ? 'Payroll journal' : 'Reverse and repost') }} v{{ approval.versionNo }} {{ rupiah(approval.amount) }} · {{ t('journal date') }} {{ dateLabel(approval.date) }} · {{ t('sent by') }} {{ approval.requestedBy }} {{ wib(approval.requestedAt) }} · {{ t('approver') }} {{ listLabel(approval.approvers) }}</div>
       </div>
       <div v-else-if="run.rejection && !live.length" class="prr__notice" data-testid="prr-rejected">
         <div class="prr__noticetitle">{{ t('Rejected by') }} {{ run.rejection.by }} · {{ wib(run.rejection.at) }}</div>
@@ -186,13 +182,13 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
 
       <!-- Post feedback: blocks only (warnings never block). -->
       <div v-if="postError" class="prr__notice">
-        <div class="prr__noticetitle">{{ t('Not posted') }}</div>
+        <div class="prr__noticetitle">{{ t('Not posted yet') }}</div>
         <div>{{ postError }}</div>
       </div>
       <div v-if="staleChanges.length" class="prr__card">
         <div class="prr__cardhead">
-          <div class="prr__cardtitle">{{ t('Lines moved by the rebuild') }}</div>
-          <div class="prr__cardsub">{{ t('Settings changed since the draft was built. Review the moved lines and post again.') }}</div>
+          <div class="prr__cardtitle">{{ t('Lines changed by the rebuild') }}</div>
+          <div class="prr__cardsub">{{ t('Settings changed after the draft was built. Check these lines, then post.') }}</div>
         </div>
         <table class="prr__table">
           <thead><tr><th class="prr__th">{{ t('Account and dimension') }}</th><th class="prr__th prr__num">{{ t('Before') }}</th><th class="prr__th prr__num">{{ t('After') }}</th><th class="prr__th prr__num">{{ t('Difference') }}</th></tr></thead>
@@ -207,7 +203,7 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
         </table>
       </div>
 
-      <!-- Holds with their fixes, in check order. -->
+      <!-- To fix before posting, in check order. -->
       <PayrollHoldsPanel v-if="holds.length" :run-id="run.id" />
 
       <!-- A newer version on a posted run: what changes, then Reverse and repost. -->
@@ -227,10 +223,11 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
       </div>
 
       <template v-if="tab === 'review'">
+        <div v-if="draft && run.mode !== 'Live'" class="prr__notice" data-testid="prr-before-start">{{ t(notPostedLabel(run.mode)) }}</div>
         <PayrollDraftReview v-if="draft" :run-id="run.id" />
         <PayrollRunJournals v-else-if="live.length" :run-id="run.id" only-live />
         <div v-else class="prr__card prr__empty">
-          {{ holds.length ? t('No draft builds while the run is held. Fix the holds above.') : run.mode !== 'Live' ? t(`${run.mode}: nothing posts from this run.`) : t('No draft.') }}
+          {{ holds.length ? t('The draft journal builds once the items above are fixed.') : run.mode !== 'Live' ? t(notPostedLabel(run.mode)) : t('No draft journal yet. It builds when Talenta sends this period.') }}
         </div>
       </template>
 
@@ -243,8 +240,8 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
               <th class="prr__th">{{ t('Received (WIB)') }}</th>
               <th class="prr__th prr__num">{{ t('Staff') }}</th>
               <th class="prr__th prr__num">{{ t('Take-home pay') }}</th>
-              <th class="prr__th">{{ t('State') }}</th>
-              <th class="prr__th">{{ t('Decision') }}</th>
+              <th class="prr__th">{{ t('Status') }}</th>
+              <th class="prr__th">{{ t('Choice') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -254,7 +251,7 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
               <td class="prr__td">{{ wib(x.receivedAt) }}</td>
               <td class="prr__td prr__num">{{ versionFigures(x).staff }}</td>
               <td class="prr__td prr__num">{{ rupiah(versionFigures(x).takeHome) }}</td>
-              <td class="prr__td"><ErpStatusBadge :status="versionLabel(run, x)" :label="t(versionLabel(run, x))" :type="statusType(versionLabel(run, x))" /></td>
+              <td class="prr__td"><ErpStatusBadge :status="versionLabel(run, x)" :label="t(statusLabel(versionLabel(run, x)))" :type="statusType(versionLabel(run, x))" /></td>
               <td class="prr__td">
                 <template v-if="x.decision">{{ x.decision.kind }}<span class="prr__muted"> · {{ x.decision.by }}<template v-if="x.decision.reason"> · {{ x.decision.reason }}</template></span></template>
               </td>
@@ -271,13 +268,12 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
     </div>
 
     <PayrollPostDrawer mode="post" :is-open="postOpen" :run-id="run.id" @close="postOpen = false" />
-    <PayrollDryRunDrawer :is-open="dryRunOpen" :run-id="run.id" @close="dryRunOpen = false" />
     <RejectTransactionModal :is-open="rejectOpen" doc-type="Payroll journal" @close="rejectOpen = false" @reject="reject" />
   </div>
   <div v-else class="prr">
     <div class="prr__body">
       <div class="prr__card prr__empty">
-        {{ t('This payroll run does not exist in this company.') }}
+        {{ t('This payroll run isn\'t in this company.') }}
         <MpTextlink id="prr-missing-back" as="a" @click.prevent="back">{{ t('Back to Payroll inbox') }}</MpTextlink>
       </div>
     </div>

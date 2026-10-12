@@ -1,91 +1,54 @@
 <script setup lang="ts">
 /**
- * "Built with": the read-only settings snapshot a draft or posted journal was
- * built with (TN-06): pay item mapping with group accounts, dimension links,
- * value maps and tax presets.
+ * "Mapping used": the settings a draft or posted journal was built from (TN-06), read-only.
+ * Shows only the pay item to account list and the dimension links.
  */
 import { computed } from 'vue'
-import { snapshotById, accountLabel, wib, currentSnapshotId } from '~/data/payrollStore'
+import { snapshotById, accountLabel } from '~/data/payrollStore'
 
 const props = defineProps<{ snapshotId: string | null }>()
 const { t } = useLocale()
 const snap = computed(() => snapshotById(props.snapshotId))
 const s = computed(() => snap.value?.settings)
-const groupRows = computed(() => {
-  const g = s.value?.groupMaps
-  if (!g) return []
-  return Object.entries(g).flatMap(([dim, map]) => Object.entries(map).map(([value, tag]) => ({ dim, value, tag })))
-})
-const splits = computed(() => (s.value?.mapping ?? []).filter((m) => m.groupAccounts?.length || m.fixedTag))
-const PRESETS: { key: 'pph21' | 'dtp' | 'pph26' | 'resign' | 'trueUp'; label: string }[] = [
-  { key: 'pph21', label: 'Regular PPh 21' }, { key: 'dtp', label: 'PPh 21 DTP' }, { key: 'pph26', label: 'PPh 26' },
-  { key: 'resign', label: 'PPh 21 on severance' }, { key: 'trueUp', label: 'December true-up' },
-]
+const SECTION: Record<string, string> = { allowance: 'Allowance', deduction: 'Deduction', benefit: 'Benefit' }
 </script>
 
 <template>
-  <div v-if="snap && s" class="pbw">
-    <div class="pbw__meta">
-      <span class="pbw__strong">{{ snap.id }}</span>
-      <span class="pbw__muted"> · {{ wib(snap.at) }} · {{ snap.by }} · {{ snap.note }}</span>
-      <span v-if="snap.id !== currentSnapshotId()" class="pbw__flag">{{ t('Settings changed since') }}</span>
-    </div>
+  <div v-if="snap && s" class="pbw" data-testid="payroll-mapping-used">
+    <p class="pbw__muted">{{ t('The settings this journal was built from. Later changes to settings don\'t change a posted journal.') }}</p>
 
     <section class="pbw__card">
       <header class="pbw__cardhead"><div class="pbw__cardtitle">{{ t('Pay items') }} ({{ s.mapping.length }})</div></header>
       <table class="pbw__table">
         <thead><tr>
-          <th class="pbw__th">{{ t('Pay item') }}</th><th class="pbw__th">{{ t('Role') }}</th>
-          <th class="pbw__th">{{ t('Debit') }}</th><th class="pbw__th">{{ t('Credit') }}</th><th class="pbw__th">{{ t('Override') }}</th>
+          <th class="pbw__th">{{ t('Pay item') }}</th>
+          <th class="pbw__th">{{ t('Debit account') }}</th>
+          <th class="pbw__th">{{ t('Credit account') }}</th>
         </tr></thead>
         <tbody>
           <tr v-for="m in s.mapping" :key="m.key">
-            <td class="pbw__td">{{ m.name }} <span class="pbw__muted">· {{ t(m.section) }}</span></td>
-            <td class="pbw__td">{{ m.role ? t(m.role) : t('No role') }}</td>
-            <td class="pbw__td">{{ accountLabel(m.debit) }}</td>
-            <td class="pbw__td">{{ accountLabel(m.credit) }}</td>
-            <td class="pbw__td pbw__muted">{{ m.override?.reason ?? '' }}</td>
+            <td class="pbw__td">{{ m.name }} <span class="pbw__muted">· {{ t(SECTION[m.section] ?? m.section) }}</span></td>
+            <td class="pbw__td">{{ m.debit ? accountLabel(m.debit) : '-' }}</td>
+            <td class="pbw__td">{{ m.credit ? accountLabel(m.credit) : '-' }}</td>
           </tr>
         </tbody>
       </table>
     </section>
 
-    <section v-if="splits.length" class="pbw__card">
-      <header class="pbw__cardhead"><div class="pbw__cardtitle">{{ t('Group accounts and fixed dimension values') }}</div></header>
+    <section v-if="(s.dimensionLinks ?? []).length" class="pbw__card">
+      <header class="pbw__cardhead"><div class="pbw__cardtitle">{{ t('Dimensions') }}</div></header>
       <table class="pbw__table">
-        <thead><tr><th class="pbw__th">{{ t('Pay item') }}</th><th class="pbw__th">{{ t('Group account') }}</th><th class="pbw__th">{{ t('Fixed dimension value') }}</th></tr></thead>
+        <thead><tr><th class="pbw__th">{{ t('Dimension') }}</th><th class="pbw__th">{{ t('When Talenta sends it empty') }}</th></tr></thead>
         <tbody>
-          <tr v-for="m in splits" :key="m.key">
-            <td class="pbw__td">{{ m.name }}</td>
-            <td class="pbw__td">{{ (m.groupAccounts ?? []).map((g) => `${g.value}: ${accountLabel(g.account)}`).join(' · ') }}</td>
-            <td class="pbw__td">{{ m.fixedTag ? `${m.fixedTag.dimension} ${m.fixedTag.value}` : '' }}</td>
+          <tr v-for="l in s.dimensionLinks" :key="l.field">
+            <td class="pbw__td">{{ t(l.dimension) }}</td>
+            <td class="pbw__td">{{ t(l.empty === 'hold' ? 'Hold the run until it\'s filled' : 'Leave the dimension blank') }}</td>
           </tr>
         </tbody>
       </table>
     </section>
-
-    <div class="pbw__grid">
-      <section class="pbw__card">
-        <header class="pbw__cardhead"><div class="pbw__cardtitle">{{ t('Group to dimension') }}</div></header>
-        <table class="pbw__table">
-          <thead><tr><th class="pbw__th">{{ t('Dimension') }}</th><th class="pbw__th">{{ t('Talenta value') }}</th><th class="pbw__th">{{ t('Dimension value') }}</th></tr></thead>
-          <tbody>
-            <tr v-for="g in groupRows" :key="`${g.dim}${g.value}`"><td class="pbw__td">{{ t(g.dim) }}</td><td class="pbw__td">{{ g.value }}</td><td class="pbw__td">{{ g.tag }}</td></tr>
-          </tbody>
-        </table>
-      </section>
-      <section class="pbw__card">
-        <header class="pbw__cardhead"><div class="pbw__cardtitle">{{ t('Tax presets and dimensions') }}</div></header>
-        <table class="pbw__table">
-          <tbody>
-            <tr v-for="p in PRESETS" :key="p.key"><td class="pbw__td">{{ t(p.label) }}</td><td class="pbw__td">{{ accountLabel(s.taxPresets[p.key]) }}</td></tr>
-            <tr v-for="l in s.dimensionLinks ?? []" :key="l.field"><td class="pbw__td">{{ l.dimension }}</td><td class="pbw__td">{{ t(l.empty === 'hold' ? 'Empty value holds the run' : 'Empty value left blank') }}</td></tr>
-          </tbody>
-        </table>
-      </section>
-    </div>
   </div>
-  <div v-else class="pbw__muted">{{ t('No settings snapshot') }}</div>
+  <div v-else class="pbw__muted">{{ t('No mapping saved for this run yet. It\'s saved when the draft journal builds.') }}</div>
 </template>
 
 <style scoped>

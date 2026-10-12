@@ -29,8 +29,8 @@ const FIELD_LABEL: Record<(typeof FIELDS)[number], string> = {
 }
 const fieldTotal = (x: Task, f: (typeof FIELDS)[number]) => x.employees.reduce((s, e) => s + (e.changes[f] ?? 0), 0)
 const outcome = (x: Task) => {
-  if (x.status === 'Amended') return `Pembetulan ${x.pembetulanNo} · new PPh 21 total ${rupiah(x.newTotal ?? 0)}`
-  if (x.status === 'Not filed yet') return 'Not filed yet: filed with new figures'
+  if (x.status === 'Amended') return `Amendment no. ${x.pembetulanNo} · new PPh 21 total ${rupiah(x.newTotal ?? 0)}`
+  if (x.status === 'Not filed yet') return 'Not filed yet. File it with the new figures.'
   if (x.status === 'Dismissed') return x.reason ?? ''
   return ''
 }
@@ -39,8 +39,8 @@ const outcome = (x: Task) => {
 <template>
   <section v-if="tasks.length" class="pat" data-testid="payroll-amendments" data-tour="payroll-amendments">
     <div class="pat__head">
-      <div class="pat__title">{{ t('PPh 21 amendment') }}</div>
-      <div class="pat__sub">{{ t('One task per tax period. A later version updates the open task.') }}</div>
+      <div class="pat__title">{{ t('PPh 21 filing to amend') }}</div>
+      <div class="pat__sub">{{ t('PPh 21 changed after it was filed in e-Bupot (the tax office\'s filing of tax withheld).') }}</div>
     </div>
 
     <div v-for="x in tasks" :key="x.id" class="pat__task" :data-testid="`pat-${x.id}`">
@@ -52,7 +52,7 @@ const outcome = (x: Task) => {
           </div>
           <div class="pat__tasksub">
             {{ t(x.summary) }} · {{ t(`v${x.fromVersion} to v${x.toVersion}`) }}
-            <template v-if="x.noLedgerChange"> · {{ t('Tax change, no ledger change') }}</template>
+            <template v-if="x.noLedgerChange"> · {{ t('Tax changed, the books didn\'t') }}</template>
             · {{ t(`opened ${wib(x.openedAt)}`) }}
           </div>
           <div v-if="x.status === 'Open'" class="pat__gap" :class="{ 'pat__gap--due': x.depositGap.startsWith('Deposit') && !x.depositGap.includes('matches') }">{{ t(x.depositGap) }}</div>

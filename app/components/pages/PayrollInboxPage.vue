@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Payroll inbox (FG-2: OD-01, OD-02, TS-06). One row per run and its current
+ * Payroll inbox (FG-2). One row per run and its current
  * version, the sync log of what Talenta sent, and the month headcount (Owner and
  * Ultimate + LM only): each month's run against the previous posted run, by group,
  * as counts.
@@ -16,6 +16,7 @@ import PayrollInboxSimulateMenu from '~/components/payroll/PayrollInboxSimulateM
 import { payroll, sendLog, sendLogCsv, can, today, rupiah, wib, monthLabel, monthOf, runs, runStatus, type SendOutcome } from '~/data/payrollStore'
 import { runRow, statusType, headcountMonths, latestHeadcountMonth, monthHeadcount } from '~/data/payrollUiIntake'
 import { infoToast } from '~/utils/toasts'
+import { statusLabel, nextStepLabel } from '~/data/payrollUiRunCopy'
 
 const { t } = useLocale()
 const router = useRouter()
@@ -55,7 +56,7 @@ const statusFilter = ref('')
 const search = ref('')
 const page = ref(1)
 const perPage = ref(25)
-const runStatusOptions = computed(() => [...new Set(rows.value.map((r) => r.status))].map((s) => ({ value: s, label: t(s) })))
+const runStatusOptions = computed(() => [...new Set(rows.value.map((r) => r.status))].map((s) => ({ value: s, label: t(statusLabel(s)) })))
 const filteredRuns = computed(() => {
   const q = search.value.trim().toLowerCase()
   return rows.value.filter((r) => {
@@ -69,14 +70,14 @@ watch([statusFilter, search], () => { page.value = 1 })
 const runColumns = computed<TableColumn[]>(() => [
   { key: 'period', label: t('Period'), kind: 'number' },
   { key: 'status', label: t('Status'), kind: 'status' },
-  { key: 'reason', label: t('Reason or next step'), kind: 'address' },
+  { key: 'reason', label: t('Next step'), kind: 'address' },
   { key: 'type', label: t('Type'), kind: 'unit' },
   { key: 'version', label: t('Version'), kind: 'unit' },
   { key: 'staff', label: t('Staff'), kind: 'unit', align: 'right' },
   { key: 'takeHome', label: t('Take-home pay'), kind: 'amount', align: 'right' },
-  { key: 'received', label: t('Last send'), kind: 'date' },
+  { key: 'received', label: t('Last received'), kind: 'date' },
 ])
-const statusFilterOptions = computed(() => [{ value: 'needs-fix', label: t('Needs a fix') }, ...runStatusOptions.value])
+const statusFilterOptions = computed(() => [{ value: 'needs-fix', label: t('To fix before posting') }, ...runStatusOptions.value])
 function openRun(id: string) { router.push(`/payroll-runs/${id}`) }
 function drill(filter: string) { view.value = 'runs'; statusFilter.value = filter }
 
@@ -179,13 +180,13 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
           </div>
           <div class="stat-card stat-card--bordered">
             <div class="stat-title">{{ t('Ready to post') }}</div>
-            <div class="stat-period">{{ t('Drafts built, take-home pay') }}</div>
+            <div class="stat-period">{{ t('Take-home pay in draft journals') }}</div>
             <div class="stat-amount">{{ rupiah(ready.reduce((s, r) => s + r.takeHome, 0)) }}</div>
-            <a v-if="ready.length" class="stat-link" @click="drill('Ready to post')">{{ ready.length }} {{ t(ready.length === 1 ? 'draft' : 'drafts') }}</a>
+            <a v-if="ready.length" class="stat-link" @click="drill('Ready to post')">{{ ready.length }} {{ t(ready.length === 1 ? 'draft journal' : 'draft journals') }}</a>
           </div>
           <div class="stat-card" :class="{ 'stat-card--bordered': canHeadcount }">
             <div class="stat-title">{{ t('Posted this month') }}</div>
-            <div class="stat-period">{{ t('PAY journals posted in') }} {{ monthLabel(thisMonth) }}</div>
+            <div class="stat-period">{{ t('Payroll journals posted in') }} {{ monthLabel(thisMonth) }}</div>
             <div class="stat-amount">{{ postedThisMonth.length }}</div>
             <a v-if="postedThisMonth.length" class="stat-link" @click="drill('Posted')">{{ postedThisMonth.map((j) => j.number).join(', ') }}</a>
           </div>
@@ -219,10 +220,10 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
       </template>
       <template #cell-takeHome="{ value }">{{ rupiah(value as number) }}</template>
       <template #cell-status="{ value }">
-        <ErpStatusBadge :status="String(value)" :label="t(String(value))" :type="statusType(String(value))" />
+        <ErpStatusBadge :status="String(value)" :label="t(statusLabel(String(value)))" :type="statusType(String(value))" />
       </template>
       <template #cell-reason="{ row }">
-        <span class="pi__wrap">{{ (row as { reason: string }).reason || t((row as { nextStep: string }).nextStep) }}</span>
+        <span class="pi__wrap">{{ (row as { reason: string }).reason || t(nextStepLabel((row as { status: string }).status, (row as { nextStep: string }).nextStep)) }}</span>
       </template>
     </ErpTablePage>
 
@@ -292,7 +293,7 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
         </div>
         <div class="stat-card">
           <div class="stat-title">{{ t('Staff changed') }}</div>
-          <div class="stat-period">{{ t('New, not in the run, or moved group') }}</div>
+          <div class="stat-period">{{ t('Joined, left or moved group') }}</div>
           <div class="stat-amount">{{ tracker.changed }}</div>
           <a v-if="tracker.runId && tracker.unexpected" class="stat-link" @click="openRun(tracker.runId)">{{ tracker.unexpected }} {{ t(tracker.unexpected === 1 ? 'group to check' : 'groups to check') }}</a>
         </div>

@@ -121,18 +121,18 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
       </div>
     </div>
 
-    <div v-if="cmp && !cmp.ok" class="pcv__empty">{{ t('Revised: could not compare. Ask HR to re-send the run.') }}</div>
+    <div v-if="cmp && !cmp.ok" class="pcv__empty">{{ t('Unable to compare these versions. Ask HR to send the run from Talenta again.') }}</div>
     <template v-else-if="data">
       <div v-if="data.oldNo === data.newNo" class="pcv__empty">{{ t('Pick two different versions.') }}</div>
       <template v-else>
         <div class="pcv__toolbar">
           <MpSegmentedControl id="pcv-view" v-model="view" name="pcv-view" :data="viewOptions" />
-          <span v-if="data.noLedgerChange" class="pcv__chip">{{ t('No ledger change') }}</span>
+          <span v-if="data.noLedgerChange" class="pcv__chip">{{ t('No change to the books') }}</span>
         </div>
 
         <!-- By account and dimension -->
         <div v-if="view === 'account'" class="pcv__scroll">
-          <div v-if="!accountRows.length" class="pcv__empty">{{ t('Same lines by account and dimension. No ledger change.') }}</div>
+          <div v-if="!accountRows.length" class="pcv__empty">{{ t('Same lines by account and dimension. No change to the books.') }}</div>
           <table v-else class="pcv__table">
             <thead>
               <tr>
@@ -148,7 +148,7 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
               <tr v-for="r in accountRows" :key="r.key">
                 <td class="pcv__td">
                   {{ r.account }}
-                  <div v-if="r.moved" class="pcv__rownote">{{ t('Includes a move by settings change') }}</div>
+                  <div v-if="r.moved" class="pcv__rownote">{{ t('Partly from a settings change') }}</div>
                 </td>
                 <td class="pcv__td">{{ r.tags || '-' }}</td>
                 <td class="pcv__td pcv__num">{{ sided(r.old) }}</td>
@@ -192,8 +192,8 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
 
         <!-- Moved by settings change -->
         <div v-if="movedRows.length" class="pcv__block" data-testid="pcv-moved">
-          <div class="pcv__blocktitle">{{ t('Moved by settings change') }}</div>
-          <div class="pcv__blocksub">{{ t(`Lines the current settings place differently from the posted journal, with the same ${data.oldLabel} figures. Reverse and repost includes them.`) }}</div>
+          <div class="pcv__blocktitle">{{ t('Changed by settings') }}</div>
+          <div class="pcv__blocksub">{{ t('Current settings put these lines on a different account or dimension. Reverse and repost includes them.') }}</div>
           <div class="pcv__scroll">
             <table class="pcv__table">
               <thead>
@@ -201,7 +201,7 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
                   <th class="pcv__th">{{ t('Account') }}</th>
                   <th class="pcv__th">{{ t('Dimensions') }}</th>
                   <th class="pcv__th pcv__num">{{ t('Posted') }}</th>
-                  <th class="pcv__th pcv__num">{{ t('On current settings') }}</th>
+                  <th class="pcv__th pcv__num">{{ t('With current settings') }}</th>
                   <th class="pcv__th pcv__num">{{ t('Difference') }}</th>
                 </tr>
               </thead>
@@ -254,7 +254,7 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
               <template v-if="taxTotal.severance"> · {{ t(`PPh 21 severance ${signed(taxTotal.severance)}`) }}</template>
             </template>
           </div>
-          <div v-if="taxRows.length && run!.month.endsWith('-12')" class="pcv__blocksub">{{ t('December revision: the annual true-up and 1721-A1 change.') }}</div>
+          <div v-if="taxRows.length && run!.month.endsWith('-12')" class="pcv__blocksub">{{ t('December change: the year-end PPh 21 and the 1721-A1 slips change too.') }}</div>
           <div v-if="taxRows.length" class="pcv__scroll">
             <table class="pcv__table">
               <thead>
