@@ -13,6 +13,7 @@ import {
   payroll, runs, currentVersionOf, runStatus, runHolds, liveJournals, journalsOf, headcountChanges, sendFigures, taxFigures,
   today, wib, periodLabel, monthLabel, addDays, lastDayOf, nextMonthOf, monthOf,
   type Run, type RunVersion, type RunStatus,
+  POSTED_NEXT_STEP,
 } from './payrollStore'
 
 /** Staff, take-home pay (allowances - deductions) and gross allowances of one version's send. */
@@ -65,7 +66,7 @@ export function runRow(run: Run) {
     takeHome: f.takeHome,
     status,
     reason: holds[0]?.message ?? (live.length ? `Posted as ${live.map((j) => j.number).join(', ')}` : ''),
-    nextStep: holds.length ? '' : (NEXT_STEP[status] ?? (status === 'Posted' ? 'Pay what is owed from Payroll payables.' : '')),
+    nextStep: holds.length ? '' : (NEXT_STEP[status] ?? (status === 'Posted' ? POSTED_NEXT_STEP : '')),
     // Sent time, as the run page and its Versions tab show it; the sync log keeps the received time.
     received: latest ? wib(latest.sentAt) : '',
     receivedAt: latest?.receivedAt ?? '',

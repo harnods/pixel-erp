@@ -1402,7 +1402,7 @@ function nextStepFor(run: Run, v: RunVersion): string {
   const h = v.holds[0]
   if (!h) return v.revision ? `Review what changed, then use v${v.no} and repost.` : v.draft && run.ledgerVersion !== v.no ? 'Review the draft journal and post it.' : 'Nothing to do.'
   const steps: Partial<Record<HoldCode, string>> = {
-    'confirm-source': 'The Owner confirms this is your company.', choice: 'Choose: use it as a new version, or make a separate run.',
+    'confirm-source': 'The Owner or Ultimate + LM confirms this is your company.', choice: 'Choose: use it as a new version, or make a separate run.',
     partial: 'Choose: use it as the full run, or reject it.', 'unmapped-item': 'Pick an account for each pay item. The run is checked again when you save.',
     'new-group': 'Set up the group in Payroll settings > Groups. The run is checked again when you save.',
     'unmapped-group': 'Pick a dimension value for each. The run is checked again when you save.',
