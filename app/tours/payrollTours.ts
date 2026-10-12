@@ -15,7 +15,7 @@
 import {
   payroll, resetPayroll, setPayrollViewAs, runs, payItemKey, suggestMapping, setPayItemMapping,
   confirmPostAsFinanceManager, postRun, recordSalaryPayment, simulateSend, chooseRevision, postDifference,
-  payStatutory, setEbupotTotal, markPph21Reconciled, pph21Monthly,
+  payStatutory, setEbupotTotal, markPph21Reconciled, pph21Monthly, headcountChanges, markHeadcountExpected,
   bpjsPayroll, saveBpjsInvoice, markBpjsReviewed, markReadyForSignOff, signOffMonth,
   type BpjsBody, type BpjsProgramme,
 } from '~/data/payrollStore'
@@ -63,19 +63,12 @@ function rowIn(marker: string, ...texts: string[]): HTMLElement | null {
   return Array.from(scope.querySelectorAll<HTMLElement>('tr'))
     .find((r) => visible(r) && texts.every((t) => r.innerText.includes(t))) ?? null
 }
-/** The Sales Salaries line for Sales, Bandung in the journal preview, with Why this line open. */
-function whySalesBandung(): HTMLElement | null {
-  const row = rowIn('payroll-draft-lines', '6-60004 Sales Salaries', 'Sales, Bandung')
-  if (!row) {
-    // Back from a later step can leave another tab open on the run record.
-    Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]')).find((b) => visible(b) && b.innerText.trim() === 'Draft review')?.click()
-    return null
-  }
-  // The line itself comes first; the open explanation is the row after it.
-  const link = Array.from(row.querySelectorAll<HTMLElement>('span')).find((s) => s.innerText.trim() === 'Why this line')
-  if (link) { link.click(); return null }
-  const why = row.nextElementSibling
-  return visible(why) && why.innerText.includes(NEW_ITEM) ? why : null
+/** The headcount card of the draft review, opening the Draft review tab when Back left another one open. */
+function headcountCard(): HTMLElement | null {
+  const card = live('payroll-draft-headcount')
+  if (card) return card
+  Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]')).find((b) => visible(b) && b.innerText.trim() === 'Draft review')?.click()
+  return null
 }
 /** One posted journal card with its lines open. */
 function journalOpen(number: string): HTMLElement | null {
@@ -90,6 +83,10 @@ function journalOpen(number: string): HTMLElement | null {
 function mapNewItem() {
   const s = suggestMapping(NEW_ITEM, 'allowance')!
   setPayItemMapping(payItemKey(NEW_ITEM, 'allowance'), { role: s.role, debit: s.debit, credit: s.credit, party: 'Staff' })
+}
+/** HR settled the September people changes in Talenta; the Accountant marks each one Expected. */
+function headcountExpected() {
+  for (const g of headcountChanges(sepId()).groups.filter((x) => x.flagged)) markHeadcountExpected(sepId(), g.key, 'Settled by HR in Talenta')
 }
 function financeConfirms() { confirmPostAsFinanceManager(sepId()) }
 function post() { postRun(sepId()) }
@@ -143,12 +140,13 @@ const steps: PayrollStep[] = [
     placement: 'bottom',
   },
   {
+    run: headcountExpected,
     route: runRoute,
-    target: 'payroll-draft-lines',
-    find: whySalesBandung,
-    title: 'The draft is checked against Talenta before anyone posts.',
-    body: 'Allowances Rp505.668.948 and benefits Rp9.300.000 tie to Talenta\'s totals; deductions are Rp1 apart, inside the Rp1.000 rounding limit. Rows that move more than 10% and Rp1.000.000 from August are flagged for a note. Why this line lists the pay items, staff count and rule behind any line.',
-    watch: '3 rows are flagged. Sales Salaries for Sales, Bandung is up Rp14.846.600 to Rp36.115.400; Why this line shows Insentif Penjualan Rp4.500.000 for 3 staff, moved there by the rule "Sales team to sales salaries".',
+    target: 'payroll-draft-headcount',
+    find: headcountCard,
+    title: 'The draft is checked against Talenta and against August before anyone posts.',
+    body: 'Allowances Rp505.668.948 and benefits Rp9.300.000 tie to Talenta\'s totals; deductions are Rp1 apart, inside the Rp1.000 rounding limit. Rows that move more than 10% and Rp1.000.000 from August are flagged for a note. Headcount compares the employee IDs in this run with August\'s, group by group. HR settles who joins, leaves or moves in Talenta; the Accountant marks each change Expected or asks HR.',
+    watch: '40 staff in both runs, and 3 groups changed. Not in this run: EMP-0038 from Sales, Surabaya. New in this run: EMP-0041 in Sales, Bandung. Moved: EMP-0035 Sales, Jakarta HQ to Sales, Surabaya, so Sales, Surabaya keeps 2 staff with one of them different. All 3 are marked Expected.',
     placement: 'top',
   },
   {
@@ -243,7 +241,7 @@ export const PAYROLL_TOUR: AssetTour = {
   persona: 'Accountant, Finance Manager, Tax Staff',
   role: 'Accountant' as unknown as ViewAsRole,
   blurb: 'September arrives from Talenta with a pay item no one has mapped. The Accountant maps it, the Finance Manager confirms, one PAY journal posts and the salary is paid. A revision posts as a difference, Tax Staff pay and file PPh 21, the month signs off and the old sync is blocked.',
-  closing: 'The new pay item held the run until it had an account, the draft tied to Talenta, the Finance Manager confirmed the changed settings, one PAY journal posted cost by dimension and one payable per party, the revision posted only its difference, PPh 21 was paid and filed against the ledger, five independent checks matched at sign-off, and the old sync could not book September twice. To try it yourself, use Reset sample data under View as.',
+  closing: 'The new pay item held the run until it had an account, the draft tied to Talenta, the September staff changes against August were marked Expected, the Finance Manager confirmed the changed settings, one PAY journal posted cost by dimension and one payable per party, the revision posted only its difference, PPh 21 was paid and filed against the ledger, five independent checks matched at sign-off, and the old sync could not book September twice. To try it yourself, use Reset sample data under View as.',
   steps: steps as unknown as TourStep[],
   onReset: () => {
     Object.assign(tourCtx, { runId: '' })

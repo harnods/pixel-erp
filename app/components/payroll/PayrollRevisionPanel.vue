@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * Revisions and corrections for one payroll run (PRD FG-4: TS-07, OD-14..OD-17).
- * Mounted in the run record. Shows the Revised notice with "Compare and fix", early warnings,
+ * Mounted in the run record. Shows the Revised notice with "Compare and fix",
  * the run's PAY journals with Reverse (whole chain, TN-21), "Reversed, not reposted", the
  * version compare and the PPh 21 amendment tasks. Actions a role may not take are hidden.
  */
@@ -9,7 +9,6 @@ import { MpIcon, MpBadge } from '@mekari/pixel3'
 import PayrollCompareView from '~/components/payroll/PayrollCompareView.vue'
 import PayrollCompareFixDrawer from '~/components/payroll/PayrollCompareFixDrawer.vue'
 import PayrollReverseDrawer from '~/components/payroll/PayrollReverseDrawer.vue'
-import PayrollWarningList from '~/components/payroll/PayrollWarningList.vue'
 import PayrollAmendmentTasks from '~/components/payroll/PayrollAmendmentTasks.vue'
 import {
   runById, journalsOf, liveJournals, journalById, journalTotals, versionOf, currentVersionOf, versionLabel, runStatus, postRun, draftOf,
@@ -91,7 +90,7 @@ const reverseOpen = ref(false)
 const compareEl = ref<HTMLElement | null>(null)
 function showCompare() { compareEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
 const hasTasks = computed(() => amendmentTasks.value.some((x) => x.runId === props.runId))
-const visible = computed(() => !!run.value && (run.value.versions.length > 1 || run.value.warnings.length > 0 || journals.value.length > 0 || hasTasks.value))
+const visible = computed(() => !!run.value && (run.value.versions.length > 1 || journals.value.length > 0 || hasTasks.value))
 </script>
 
 <template>
@@ -145,8 +144,6 @@ const visible = computed(() => !!run.value && (run.value.versions.length > 1 || 
         <button class="btn-enterprise btn-enterprise--primary" type="button" data-testid="prp-repost" @click="repost">{{ t(`Post v${cur.no}`) }}</button>
       </div>
     </section>
-
-    <PayrollWarningList :run-id="runId" />
 
     <!-- Ledger journals -->
     <section v-if="journals.length" class="prp__card" data-testid="prp-journals" data-tour="payroll-run-journals">

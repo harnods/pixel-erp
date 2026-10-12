@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * "Simulate Talenta send": the prototype's stand-in for Talenta's webhooks
- * (scope fence 2). Every kind the engine knows goes through simulateSend, so the
+ * "Simulate Talenta send": the prototype's stand-in for Talenta's salary detail
+ * webhook (scope fence 2), the only Talenta webhook Jurnal reads. Every kind the engine knows goes through simulateSend, so the
  * inbox, the run record and the sync log react exactly as they would to a real send.
  */
 import { MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem } from '@mekari/pixel3'
@@ -13,7 +13,6 @@ const { t } = useLocale()
 
 const GROUPS: { title: string; kinds: SendKind[] }[] = [
   { title: 'Salary detail', kinds: ['regular', 'new-pay-item', 'revision', 'partial', 'separate-run', 'duplicate'] },
-  { title: 'Employee events', kinds: ['transfer', 'resignation', 'created', 'deleted'] },
   { title: 'Old sync', kinds: ['old-sync'] },
 ]
 const label = (k: SendKind) => SEND_KINDS.find((s) => s.kind === k)?.label ?? k

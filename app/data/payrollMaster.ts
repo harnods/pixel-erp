@@ -183,11 +183,10 @@ export interface TalentaPayload {
 export type TaxField = 'PPh 21 Benefit' | 'PPh 21 Payment' | 'PPh 21 Resign Benefit' | 'PPh 26 Benefit' | 'Total PPh 21 DTP Received'
 export const TAX_FIELDS: TaxField[] = ['PPh 21 Benefit', 'PPh 21 Payment', 'PPh 21 Resign Benefit', 'PPh 26 Benefit', 'Total PPh 21 DTP Received']
 
-export type EmployeeEventType =
-  | 'talenta.employee.transfer.approved' | 'talenta.employee.resignation.created'
-  | 'talenta.employee.detail.created' | 'talenta.employee.detail.deleted'
-
 // ── Roster (Talenta employee records the sends are built from) ───────────────
+// Jurnal never reads this list. It stands in for Talenta's side so a simulated
+// salary detail send carries the right staff: who joined, who left and who moved
+// group is only visible to Jurnal through the employees in each send.
 
 export interface GroupFields { organization_name: string; branch_name: string; cost_center_name: string }
 export interface RosterEmployee extends GroupFields {
@@ -200,9 +199,10 @@ export interface RosterEmployee extends GroupFields {
   basic: number
   expat: boolean
   joined: string
+  /** Last day paid; the employee is in no send whose period starts after it. */
   left: string | null
-  deleted: boolean
-  transfers: { effective: string; to: GroupFields }[]
+  /** Group changes in Talenta, effective from the date given. */
+  moves: { effective: string; to: GroupFields }[]
 }
 
 function emp(n: number, g: GroupFields, job_position: string, job_level: string, basic: number, extra: Partial<RosterEmployee> = {}): RosterEmployee {
@@ -212,11 +212,17 @@ function emp(n: number, g: GroupFields, job_position: string, job_level: string,
   return {
     employee_id: `EMP-${String(n).padStart(4, '0')}`, ...g, job_position, job_level, grade,
     employment_status: n % 9 === 0 ? 'Contract' : n % 17 === 0 ? 'Probation' : 'Permanent',
-    business_unit: bu, basic, expat: false, joined: '2024-01-02', left: null, deleted: false, transfers: [], ...extra,
+    business_unit: bu, basic, expat: false, joined: '2024-01-02', left: null, moves: [], ...extra,
   }
 }
 
-/** 40 staff at the start of the sample; EMP-0038 leaves after August and EMP-0041 joins Sales Bandung on 1 Sep 2026. */
+/**
+ * 40 staff in every run. Between August and September HR settles three changes in
+ * Talenta: EMP-0038 leaves Sales Surabaya after 20 Aug, EMP-0035 moves from Sales
+ * Jakarta HQ to Sales Surabaya on 1 Sep and EMP-0041 joins Sales Bandung on 1 Sep.
+ * Sales Surabaya keeps 2 staff with one of them different. Jurnal sees these
+ * changes only by comparing the September send with the August one.
+ */
 export function sampleRoster(): RosterEmployee[] {
   const out: RosterEmployee[] = []
   let n = 0
@@ -234,21 +240,23 @@ export function sampleRoster(): RosterEmployee[] {
   out.push(emp(++n, G('Human Capital', 'Surabaya', 'HQ Human Capital'), 'Human Capital Staff', 'Staff', 8_400_000))
   out.push(emp(++n, G('Sales', 'Jakarta HQ', 'HQ Sales'), 'Sales Manager', 'Manager', 23_500_000))
   for (const b of [10_500_000, 9_750_000]) out.push(emp(++n, G('Sales', 'Jakarta HQ', 'HQ Sales'), 'Account Executive', 'Staff', b))
+  // EMP-0035 moves to Sales Surabaya from 1 Sep 2026, in place of EMP-0038.
+  out[out.length - 1]!.moves.push({ effective: '2026-09-01', to: G('Sales', 'Surabaya', 'Regional Sales') })
   for (const b of [9_250_000, 9_000_000]) out.push(emp(++n, G('Sales', 'Bandung', 'Regional Sales'), 'Account Executive', 'Staff', b))
-  // EMP-0038 resigns effective 20 Aug 2026 (the last day of the August run); the event arrives in August.
-  out.push(emp(++n, G('Sales', 'Surabaya', 'Regional Sales'), 'Account Executive', 'Staff', 9_100_000))
+  // EMP-0038 leaves on 20 Aug 2026, the last day of the August run.
+  out.push(emp(++n, G('Sales', 'Surabaya', 'Regional Sales'), 'Account Executive', 'Staff', 9_100_000, { left: '2026-08-20' }))
   out.push(emp(++n, G('Sales', 'Surabaya', 'Regional Sales'), 'Account Executive', 'Staff', 9_400_000))
   // The expatriate Finance Director: PPh 26.
   const dir = emp(++n, G('Finance', 'Jakarta HQ', 'HQ Finance'), 'Finance Director', 'Director', 95_000_000, { expat: true, employment_status: 'Contract' })
   out.push(dir)
-  // Joins on 1 Sep 2026 (talenta.employee.detail.created).
+  // Joins Sales Bandung on 1 Sep 2026.
   out.push(emp(++n, G('Sales', 'Bandung', 'Regional Sales'), 'Account Executive', 'Staff', 9_000_000, { joined: '2026-09-01', employment_status: 'Probation' }))
   return out
 }
 
 export function groupsAsOf(e: RosterEmployee, date: string): GroupFields {
   let g: GroupFields = { organization_name: e.organization_name, branch_name: e.branch_name, cost_center_name: e.cost_center_name }
-  for (const t of [...e.transfers].sort((a, b) => a.effective.localeCompare(b.effective))) if (t.effective <= date) g = { ...t.to }
+  for (const t of [...e.moves].sort((a, b) => a.effective.localeCompare(b.effective))) if (t.effective <= date) g = { ...t.to }
   return g
 }
 
@@ -309,7 +317,7 @@ export function buildSalaryDetail(roster: RosterEmployee[], start: string, end: 
   const days = workingDays(start, end)
   const employees: TalentaEmployee[] = []
   for (const e of roster) {
-    if (e.deleted || e.joined > end || (e.left !== null && e.left < start)) continue
+    if (e.joined > end || (e.left !== null && e.left < start)) continue
     const g = groupsAsOf(e, end)
     if (o.onlyBranch && g.branch_name !== o.onlyBranch) continue
     const num = Number(e.employee_id.slice(4))

@@ -3,8 +3,8 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import {
   payroll, runs, runStatus, runHolds, draftOf, draftReview, whyLine, liveJournals, journalTotals, journalById,
-  payablesTracker, compareVersions, amendmentTasks, pph21Monthly, independentChecks, reconciliation, accountLabel, tagsLabel,
-  postRun, rupiah, dateLabel, sourceSummary,
+  payablesTracker, compareVersions, amendmentTasks, pph21Monthly, independentChecks, reconciliation, accountLabel,
+  postRun, rupiah, dateLabel, sourceSummary, headcountChanges,
 } from '../app/data/payrollStore'
 import { ACC } from '../app/data/payrollMaster'
 import { reconView } from '../app/data/payrollUiRecon'
@@ -38,7 +38,7 @@ describe('PAY-1 guided tour (auto-play)', () => {
 
   it('eleven steps; every step after the first does its own work and asks the reader for nothing', () => {
     expect(PAYROLL_TOUR.steps).toHaveLength(11)
-    expect(TOUR_WORK.map((w) => !!w)).toEqual([false, true, false, true, true, true, true, true, true, true, true])
+    expect(TOUR_WORK.map((w) => !!w)).toEqual([false, true, true, true, true, true, true, true, true, true, true])
     expect(PAYROLL_TOUR.steps.every((s) => !s.action)).toBe(true)
     const roles = ['Jurnal Owner', 'Accountant', 'Finance Manager', 'Tax Staff', 'Auditor']
     for (const s of PAYROLL_TOUR.steps) if (s.role) expect(roles).toContain(s.role)
@@ -88,7 +88,11 @@ describe('PAY-1 guided tour (auto-play)', () => {
     q(1, sum.takeHome, 446_901_857)
     expect(sum.headcount).toBe(40)
 
-    // 3. Draft review: totals tie, large changes flagged, Why this line.
+    // 3. Draft review: totals tie, large changes flagged, headcount against August by employee_id.
+    const before = headcountChanges(run.id)
+    expect(before.previous!.label).toBe('21 Jul-20 Aug 2026')
+    expect([before.last, before.current]).toEqual([40, 40])
+    expect(before.unexpected).toBe(3)
     at(2)
     const rv = draftReview(run.id)
     const [alw, ded, ben] = rv.talentaTotals
@@ -96,20 +100,22 @@ describe('PAY-1 guided tour (auto-play)', () => {
     q(2, ben!.talenta, 9_300_000); expect(ben!.gap).toBe(0)
     expect(Math.abs(ded!.gap)).toBe(1)
     expect(copyOf(2)).toContain('Rp1 apart')
-    const flagged = rv.changes.filter((c) => c.flag)
-    expect(flagged).toHaveLength(3)
-    const sb = flagged.find((c) => c.account === ACC.salesSalaries && c.tags.Organization === 'Sales' && c.tags.Branch === 'Bandung')!
-    q(2, Math.abs(sb.new) - Math.abs(sb.old), 14_846_600)
-    q(2, Math.abs(sb.new), 36_115_400)
     expect(payroll.settings.limits.largeChangePct).toBe(10)
     q(2, payroll.settings.limits.largeChangeAmount, 1_000_000)
     q(2, payroll.settings.limits.roundingTolerance, 1_000)
-    const idx = d.lines.findIndex((l) => l.account === ACC.salesSalaries && tagsLabel(l.tags) === 'Sales, Bandung')
-    const why = whyLine(run.id, idx)!
-    const src = why.sources.find((s) => s.item === NEW_ITEM)!
-    q(2, src.amount, 4_500_000)
-    expect(src.employees).toBe(3)
-    expect(why.why.join(' ')).toContain('Rule "Sales team to sales salaries" sets 6-60004 Sales Salaries')
+    const hc = rv.headcount
+    expect(hc.joined).toEqual(['EMP-0041'])
+    expect(hc.left).toEqual(['EMP-0038'])
+    expect(hc.moved).toEqual([{ employee_id: 'EMP-0035', from: 'Sales, Jakarta HQ', to: 'Sales, Surabaya' }])
+    const grp = (label: string) => hc.groups.find((g) => g.label === label)!
+    expect(grp('Sales, Surabaya')).toMatchObject({ last: 2, current: 2, change: 0, flagged: true, left: ['EMP-0038'] })
+    expect(grp('Sales, Bandung')).toMatchObject({ last: 2, current: 3, joined: ['EMP-0041'] })
+    expect(grp('Sales, Jakarta HQ')).toMatchObject({ last: 3, current: 2 })
+    expect(hc.groups.filter((g) => g.flagged).map((g) => g.label)).toEqual(['Sales, Bandung', 'Sales, Jakarta HQ', 'Sales, Surabaya'])
+    expect(hc.unexpected).toBe(0)
+    expect(rv.unexpectedHeadcount).toBe(0)
+    for (const text of ['40 staff in both runs', '3 groups changed', 'Not in this run: EMP-0038 from Sales, Surabaya', 'New in this run: EMP-0041 in Sales, Bandung', 'Moved: EMP-0035 Sales, Jakarta HQ to Sales, Surabaya', 'All 3 are marked Expected']) expect(copyOf(2)).toContain(text)
+    expect(copyOf(2)).not.toMatch(/\bevents?\b/i)
 
     // 4. Finance Manager confirm: posting is refused until then.
     const refused = postRun(run.id)

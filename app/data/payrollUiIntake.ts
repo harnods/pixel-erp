@@ -6,19 +6,15 @@
  *   versionFigures(v)               staff, take-home pay and gross of one version's send.
  *   needsFinanceConfirm(runId)      the MLP stopgap (TN-24): override in the draft, or settings changed since the last posted run.
  *   taxRuleRows(runId)              the one PPh 21 rule (LR-10) against the draft's tax lines.
- *   completenessMonths()            months to track: every month with a run plus the current month.
- *   monthCompleteness(month)        expected vs arrived staff by group, missing and extra employee_ids, status.
- *   closeMonthGap(month, group, reason) (Accountant) / markNotExpected(month, id, reason) (Finance Manager)
+ *   headcountMonths() / latestHeadcountMonth()   months with a regular run plus the current month.
+ *   monthHeadcount(month)           the month's run against the previous posted run by group: new, not in this run, moved ids.
  *   hrMessage(ids, period)          the "Copy message for HR" text: employee_id values only.
  */
-import { reactive, watch } from 'vue'
-import { loadSnapshot, saveSnapshot } from './persist'
 import {
-  payroll, runs, runById, currentVersionOf, versionOf, runStatus, runHolds, draftOf, liveJournals, journalsOf,
-  snapshotById, actingPerson, today, wib, periodLabel, monthLabel, addDays, lastDayOf, nextMonthOf, monthOf,
+  payroll, runs, runById, currentVersionOf, runStatus, runHolds, draftOf, liveJournals, journalsOf, headcountChanges,
+  snapshotById, today, wib, periodLabel, monthLabel, addDays, lastDayOf, nextMonthOf, monthOf,
   type Run, type RunVersion, type RunStatus, type JournalLine,
 } from './payrollStore'
-import { groupsAsOf, type RosterEmployee } from './payrollMaster'
 
 const round = (x: number) => Math.round(x)
 
@@ -36,10 +32,11 @@ export function versionFigures(v: RunVersion | undefined) {
 export function statusType(s: string): 'completed' | 'announcement' | 'information' | 'warning' | 'critical' {
   switch (s) {
     case 'Posted': return 'completed'
-    case 'Held': case 'Failed': case 'Blocked': case 'Open': case 'Missing send': return 'critical'
+    case 'Held': case 'Failed': case 'Blocked': case 'Missing send': return 'critical'
+    case 'Changed': case 'Check': return 'warning'
     case 'Waiting for your choice': case 'Confirm source': case 'Revised': case 'Looks partial': return 'warning'
     case 'Ready to post': case 'Received': case 'Current': return 'information'
-    case 'Complete': return 'completed'
+    case 'No change': case 'Expected': return 'completed'
     default: return 'announcement'
   }
 }
@@ -122,30 +119,17 @@ export function taxRuleRows(runId: string) {
   }
 }
 
-// ── Month completeness (OD-02) ────────────────────────────────────────────────
+// ── Month headcount (OD-02): the month's regular run against the previous posted one ──
 
-interface MonthNotes {
-  closed: { group: string; reason: string; by: string; at: string }[]
-  notExpected: { employee_id: string; reason: string; by: string; at: string }[]
-}
-const UI_KEY = 'payroll:ui-completeness-v1'
-export const completenessNotes = reactive<Record<string, MonthNotes>>({})
-const saved = loadSnapshot<Record<string, MonthNotes>>(UI_KEY)
-if (saved && saved[0]) Object.assign(completenessNotes, saved[0])
-watch(completenessNotes, () => saveSnapshot(UI_KEY, [completenessNotes]), { deep: true })
-// "Reset sample data" rebuilds the store (a new runs array): clear these notes with it.
-watch(() => payroll.runs, () => { for (const k of Object.keys(completenessNotes)) delete completenessNotes[k] })
-
-function notesFor(month: string): MonthNotes {
-  return (completenessNotes[month] ??= { closed: [], notExpected: [] })
-}
-const readNotes = (month: string): MonthNotes => completenessNotes[month] ?? { closed: [], notExpected: [] }
-
-/** Every month with a regular run, plus the current month. */
-export function completenessMonths(): string[] {
-  const set = new Set(payroll.runs.map((r) => r.month))
+/** Every month with a regular run, plus the current month, newest first. */
+export function headcountMonths(): string[] {
+  const set = new Set(payroll.runs.filter((r) => r.kind === 'Regular').map((r) => r.month))
   set.add(monthOf(today()))
   return [...set].sort().reverse()
+}
+/** The latest month whose regular run has arrived (the inbox stat tracks it). */
+export function latestHeadcountMonth(): string {
+  return headcountMonths().find((m) => payroll.runs.some((r) => r.kind === 'Regular' && r.month === m)) ?? monthOf(today())
 }
 
 /** Pay period of a month: the regular run's, else the same day pattern as the latest run. */
@@ -160,58 +144,25 @@ function periodOfMonth(month: string): { start: string; end: string; run: Run | 
   return { start: addDays(`${prevMonth}-${day}` > lastDayOf(prevMonth) ? lastDayOf(prevMonth) : `${prevMonth}-${day}`, 1), end, run: undefined }
 }
 
-const groupOf = (g: { organization_name: string; branch_name: string }) => `${g.organization_name} / ${g.branch_name}`
-
-export function monthCompleteness(month: string) {
+/**
+ * Staff in a month's regular run against the previous posted regular run, by group,
+ * with the employee_ids that are new, not in the run, or moved (headcountChanges).
+ */
+export function monthHeadcount(month: string) {
   const { start, end, run } = periodOfMonth(month)
-  const notes = readNotes(month)
-  const notExpected = new Set(notes.notExpected.map((n) => n.employee_id))
-  const expectedStaff = payroll.roster.filter((e: RosterEmployee) => !e.deleted && e.joined <= end && (e.left === null || e.left >= start) && !notExpected.has(e.employee_id))
-  const expected = new Map<string, string[]>()
-  for (const e of expectedStaff) { const g = groupOf(groupsAsOf(e, end)); expected.set(g, [...(expected.get(g) ?? []), e.employee_id]) }
-  const v: RunVersion | undefined = run ? (currentVersionOf(run) ?? versionOf(run, run.ledgerVersion)) : undefined
-  const arrived = new Map<string, string[]>()
-  for (const e of v?.payload.employees ?? []) { const g = groupOf(e); if (!(arrived.get(g) ?? []).includes(e.employee_id)) arrived.set(g, [...(arrived.get(g) ?? []), e.employee_id]) }
-  const groups = [...new Set([...expected.keys(), ...arrived.keys()])].sort().map((g) => {
-    const exp = expected.get(g) ?? [], arr = arrived.get(g) ?? []
-    const missing = exp.filter((id) => !arr.includes(id))
-    const extra = arr.filter((id) => !exp.includes(id))
-    const closed = notes.closed.find((c) => c.group === g) ?? null
-    return { group: g, expected: exp.length, arrived: arr.length, missing, extra, closed, open: missing.length > 0 && !closed }
-  })
-  const sent = !!run
+  const hc = run ? headcountChanges(run.id) : null
+  const v: RunVersion | undefined = run ? currentVersionOf(run) : undefined
   const due = end <= today()
-  const status = !sent ? (due ? 'Missing send' : 'Not sent yet') : groups.some((g) => g.open) ? 'Open' : 'Complete'
-  const monthRuns = runs.value.filter((r) => r.month === month).map(runRow)
+  const status = !run ? (due ? 'Missing send' : 'Not sent yet') : !hc?.previous ? 'No earlier run' : hc.flagged === 0 ? 'No change' : hc.unexpected ? 'Changed' : 'Expected'
   return {
-    month, label: monthLabel(month), start, end, period: periodLabel(start, end), sent, status,
-    version: v ? `v${v.no}` : null, runId: run?.id ?? null,
-    expected: expectedStaff.length, arrived: new Set((v?.payload.employees ?? []).map((e) => e.employee_id)).size,
-    groups, runs: monthRuns, notExpected: notes.notExpected,
-    missingIds: groups.flatMap((g) => (g.closed ? [] : g.missing)),
+    month, label: monthLabel(month), start, end, period: periodLabel(start, end), sent: !!run, status,
+    runId: run?.id ?? null, runStatus: run ? runStatus(run) : null, version: v ? `v${v.no}` : null,
+    previous: hc?.previous ?? null,
+    last: hc?.last ?? null, current: hc?.current ?? 0,
+    joined: hc?.joined ?? [], left: hc?.left ?? [], moved: hc?.moved ?? [],
+    changed: (hc?.joined.length ?? 0) + (hc?.left.length ?? 0) + (hc?.moved.length ?? 0),
+    groups: hc?.groups ?? [], flagged: hc?.flagged ?? 0, unexpected: hc?.unexpected ?? 0,
   }
-}
-
-export function closeMonthGap(month: string, group: string, reason: string) {
-  if (payroll.viewAs !== 'Accountant') return { ok: false, message: 'Your role cannot do this.' }
-  if (reason.trim().length < 10) return { ok: false, message: 'Give a reason (10 characters or more).' }
-  const n = notesFor(month)
-  n.closed = n.closed.filter((c) => c.group !== group)
-  n.closed.push({ group, reason: reason.trim(), by: actingPerson(), at: wib(payroll.clock) })
-  return { ok: true }
-}
-export function reopenMonthGap(month: string, group: string) {
-  if (payroll.viewAs !== 'Accountant') return { ok: false, message: 'Your role cannot do this.' }
-  const n = notesFor(month)
-  n.closed = n.closed.filter((c) => c.group !== group)
-  return { ok: true }
-}
-export function markNotExpected(month: string, employeeId: string, reason: string) {
-  if (payroll.viewAs !== 'Finance Manager') return { ok: false, message: 'Your role cannot do this.' }
-  if (reason.trim().length < 10) return { ok: false, message: 'Give a reason (10 characters or more).' }
-  const n = notesFor(month)
-  if (!n.notExpected.some((x) => x.employee_id === employeeId)) n.notExpected.push({ employee_id: employeeId, reason: reason.trim(), by: actingPerson(), at: wib(payroll.clock) })
-  return { ok: true }
 }
 
 export function hrMessage(ids: string[], period: string): string {

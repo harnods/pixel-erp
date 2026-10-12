@@ -39,7 +39,7 @@ const allJournals = computed(() => (run.value ? journalsOf(run.value.id) : []))
 const fig = computed(() => versionFigures(v.value))
 const draftTotal = computed(() => (draft.value ? draft.value.lines.reduce((s, l) => s + l.debit, 0) : 0))
 const liveTotal = computed(() => live.value.reduce((s, j) => s + j.lines.reduce((x, l) => x + l.debit, 0), 0))
-const showRevisionSlot = computed(() => !!run.value && (run.value.versions.length > 1 || run.value.warnings.length > 0 || allJournals.value.length > 0))
+const showRevisionSlot = computed(() => !!run.value && (run.value.versions.length > 1 || allJournals.value.length > 0))
 
 type Tab = 'review' | 'versions' | 'journals' | 'built'
 const tab = ref<Tab>('review')
@@ -56,7 +56,9 @@ const canPostNow = computed(() => status.value === 'Ready to post' && !!draft.va
 const fmRequired = computed(() => !!run.value && canPostNow.value && needsFinanceConfirm(run.value.id))
 const fmConfirmed = computed(() => !!draft.value?.fmConfirmedBy)
 const stale = computed(() => !!run.value && isDraftStale(run.value.id))
-const unnoted = computed(() => (run.value && draft.value ? draftReview(run.value.id).unnotedLargeChanges : 0))
+const review = computed(() => (run.value && draft.value ? draftReview(run.value.id) : null))
+const unnoted = computed(() => review.value?.unnotedLargeChanges ?? 0)
+const unexpectedHc = computed(() => review.value?.unexpectedHeadcount ?? 0)
 const postOpen = ref(false)
 const fmNeeded = ref(false)
 const staleChanges = ref<{ key: string; account: string; tags: Tags; old: number; new: number; diff: number }[]>([])
@@ -69,6 +71,7 @@ const postDescription = computed(() => {
     `${t('Posts one PAY journal of')} ${rupiah(draftTotal.value)} ${t('dated')} ${dateLabel(date)}.`,
     locked ? `${monthLabel(run.value.month)} ${t('is locked, so it posts in the first open period with a run reference.')}` : '',
     unnoted.value ? `${unnoted.value} ${t(unnoted.value === 1 ? 'large change has no note.' : 'large changes have no note.')}` : '',
+    unexpectedHc.value ? `${unexpectedHc.value} ${t(unexpectedHc.value === 1 ? 'headcount change is not marked Expected.' : 'headcount changes are not marked Expected.')}` : '',
     t('A posted journal cannot be edited or deleted; the way back is reversal.'),
   ]
   return parts.filter(Boolean).join(' ')
@@ -204,7 +207,7 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
       <!-- Holds with their fixes, in check order. -->
       <PayrollHoldsPanel v-if="holds.length" :run-id="run.id" />
 
-      <!-- ── Agent C slot: revisions, early warnings, reversal (FG-4). ── -->
+      <!-- ── Agent C slot: revisions, reversal (FG-4). ── -->
       <PayrollRevisionPanel v-if="showRevisionSlot" :run-id="run.id" />
 
       <div class="prr__tabs" role="tablist">

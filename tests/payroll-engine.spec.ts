@@ -4,7 +4,8 @@ import {
   journalTotals, journalById, simulateSend, setPayrollViewAs, setPayItemMapping, payItemKey, postRun, confirmPostAsFinanceManager,
   isDraftStale, setPayday, chooseRevision, postDifference, reverseJournal, reverseAndRepost, lockPeriod, decidePartial,
   totalGaps, releaseTaxHold, pph21Monthly, independentChecks, reconciliation, compareVersions, can, addPayrollAccount,
-  amendmentTasks, syncLog, mapGroup, saveRule, type Run, type JournalLine,
+  amendmentTasks, syncLog, mapGroup, saveRule, headcountChanges, markHeadcountExpected, clearHeadcountExpected, draftReview,
+  SEND_KINDS, type Run, type JournalLine,
 } from '../app/data/payrollStore'
 import { ACC, buildSalaryDetail, FALLBACK_TAG } from '../app/data/payrollMaster'
 
@@ -271,6 +272,111 @@ describe('payroll engine (PRD FG-1 to FG-7, LR-1 to LR-14)', () => {
     expect(can('reverse', 'Auditor')).toBe(false)
     expect(as('Auditor', () => postRun(run(SEP).id)).status).toBe(403)
     expect(runById(run(SEP).id)).toBeDefined()
+  })
+})
+
+describe('headcount from runs: this run\'s employee_ids against the previous posted regular run', () => {
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant') })
+  const grp = (h: ReturnType<typeof headcountChanges>, label: string) => h.groups.find((g) => g.label === label)!
+  /** A September re-send built from a changed Talenta roster: the only way Jurnal learns about people. */
+  function resendWith(change: (roster: typeof payroll.roster) => void) {
+    mapInsentif()
+    change(payroll.roster)
+    simulateSend('regular', { start: '2026-08-21', end: '2026-09-20', newAllowance: INS })
+    return headcountChanges(run(SEP).id)
+  }
+
+  it('Jurnal reads salary detail only: no employee webhooks, no early warnings', () => {
+    expect(SEND_KINDS.map((k) => k.kind)).toEqual(['regular', 'new-pay-item', 'revision', 'partial', 'separate-run', 'duplicate', 'old-sync'])
+    expect(syncLog.value.some((l) => (l.type as string) === 'Employee event')).toBe(false)
+    expect('events' in payroll).toBe(false)
+    expect(payroll.runs.every((r) => !('warnings' in r))).toBe(true)
+  })
+
+  it('seed: September against August shows one leaver, one joiner and one move, by group with dimension labels', () => {
+    const h = headcountChanges(run(SEP).id)
+    expect(h.previous).toMatchObject({ label: '21 Jul-20 Aug 2026', month: '2026-08', version: 1 })
+    expect([h.last, h.current]).toEqual([40, 40])
+    expect(h.left).toEqual(['EMP-0038'])
+    expect(h.joined).toEqual(['EMP-0041'])
+    expect(h.moved).toEqual([{ employee_id: 'EMP-0035', from: 'Sales, Jakarta HQ', to: 'Sales, Surabaya' }])
+    expect(grp(h, 'Sales, Bandung')).toMatchObject({ last: 2, current: 3, change: 1, joined: ['EMP-0041'], left: [], flagged: true })
+    expect(grp(h, 'Sales, Jakarta HQ')).toMatchObject({ last: 3, current: 2, change: -1, movedOut: [{ employee_id: 'EMP-0035' }], flagged: true })
+    expect(grp(h, 'Finance, Jakarta HQ')).toMatchObject({ last: 5, current: 5, change: 0, flagged: false })
+    expect(h.flagged).toBe(3)
+    expect(h.unexpected).toBe(3)
+  })
+
+  it('same count but different people is still flagged', () => {
+    const h = headcountChanges(run(SEP).id)
+    const s = grp(h, 'Sales, Surabaya')
+    expect([s.last, s.current, s.change]).toEqual([2, 2, 0])
+    expect(s.left).toEqual(['EMP-0038'])
+    expect(s.movedIn.map((m) => m.employee_id)).toEqual(['EMP-0035'])
+    expect(s.flagged).toBe(true)
+  })
+
+  it('joiner: a new employee_id in the send is new in this run', () => {
+    const h = resendWith((r) => r.push({ ...r.find((e) => e.employee_id === 'EMP-0041')!, employee_id: 'EMP-0042', basic: 8_000_000 }))
+    expect(h.joined).toEqual(['EMP-0041', 'EMP-0042'])
+    expect(grp(h, 'Sales, Bandung')).toMatchObject({ last: 2, current: 4, joined: ['EMP-0041', 'EMP-0042'] })
+  })
+
+  it('leaver: an employee_id missing from the send is not in this run', () => {
+    const h = resendWith((r) => { r.find((e) => e.employee_id === 'EMP-0026')!.left = '2026-08-20' })
+    expect(h.left).toEqual(['EMP-0026', 'EMP-0038'])
+    expect(grp(h, 'Finance, Jakarta HQ')).toMatchObject({ last: 5, current: 4, change: -1, left: ['EMP-0026'], flagged: true })
+  })
+
+  it('mover: in both runs with another group, listed under both groups with from and to', () => {
+    const h = resendWith((r) => { r.find((e) => e.employee_id === 'EMP-0027')!.moves.push({ effective: '2026-09-01', to: { organization_name: 'Operations', branch_name: 'Jakarta HQ', cost_center_name: 'HQ Operations' } }) })
+    const m = h.moved.find((x) => x.employee_id === 'EMP-0027')!
+    expect(m).toEqual({ employee_id: 'EMP-0027', from: 'Finance, Jakarta HQ', to: 'Operations, Jakarta HQ' })
+    expect(grp(h, 'Finance, Jakarta HQ').movedOut).toEqual([m])
+    expect(grp(h, 'Operations, Jakarta HQ').movedIn).toEqual([m])
+    expect(h.joined).not.toContain('EMP-0027')
+    expect(h.left).not.toContain('EMP-0027')
+  })
+
+  it('no names anywhere: only employee_id values and group labels', () => {
+    const h = headcountChanges(run(SEP).id)
+    const text = JSON.stringify(h)
+    const ids = [...text.matchAll(/EMP-\d{4}/g)].map((x) => x[0])
+    expect(ids.length).toBeGreaterThan(0)
+    for (const g of h.groups) expect(Object.keys(g).sort()).toEqual(['change', 'current', 'expected', 'flagged', 'joined', 'key', 'label', 'last', 'left', 'movedIn', 'movedOut'])
+    expect(text).not.toMatch(/"(name|employee_name|full_name)"/)
+    const people = [...h.joined, ...h.left, ...h.moved.map((m) => m.employee_id), ...h.groups.flatMap((g) => [...g.joined, ...g.left, ...g.movedIn.map((m) => m.employee_id), ...g.movedOut.map((m) => m.employee_id)])]
+    expect(people.every((id) => /^EMP-\d{4}$/.test(id))).toBe(true)
+  })
+
+  it('Expected: the Accountant marks a change with an optional note; posting is never blocked, the Post result names unmarked changes', () => {
+    mapInsentif()
+    const sep = run(SEP)
+    expect(as('Auditor', () => markHeadcountExpected(sep.id, 'Sales|Bandung')).status).toBe(403)
+    expect(markHeadcountExpected(sep.id, 'Finance|Jakarta HQ').ok).toBe(false)
+    expect(markHeadcountExpected(sep.id, 'Sales|Bandung', 'x'.repeat(501)).ok).toBe(false)
+    expect(markHeadcountExpected(sep.id, 'Sales|Bandung').ok).toBe(true)
+    expect(markHeadcountExpected(sep.id, 'Sales|Surabaya', 'EMP-0035 covers EMP-0038').ok).toBe(true)
+    const h = headcountChanges(sep.id)
+    expect(grp(h, 'Sales, Bandung').expected).toMatchObject({ note: '', by: 'Dewi Anggraini' })
+    expect(grp(h, 'Sales, Surabaya').expected!.note).toBe('EMP-0035 covers EMP-0038')
+    expect(draftReview(sep.id).unexpectedHeadcount).toBe(1)
+    expect(clearHeadcountExpected(sep.id, 'Sales|Bandung').ok).toBe(true)
+    expect(draftReview(sep.id).unexpectedHeadcount).toBe(2)
+    as('Finance Manager', () => confirmPostAsFinanceManager(sep.id))
+    const r = postRun(sep.id)
+    expect(r.ok).toBe(true)
+    expect(r.warnings).toContain('2 headcount changes are not marked Expected.')
+  })
+
+  it('an Expected mark lapses when a later send changes the ids it covered', () => {
+    mapInsentif()
+    const sep = run(SEP)
+    markHeadcountExpected(sep.id, 'Sales|Bandung')
+    expect(grp(headcountChanges(sep.id), 'Sales, Bandung').expected).not.toBeNull()
+    payroll.roster.push({ ...payroll.roster.find((e) => e.employee_id === 'EMP-0041')!, employee_id: 'EMP-0042' })
+    simulateSend('regular', { start: '2026-08-21', end: '2026-09-20', newAllowance: INS })
+    expect(grp(headcountChanges(sep.id), 'Sales, Bandung').expected).toBeNull()
   })
 })
 

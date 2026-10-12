@@ -3,14 +3,16 @@
  * Draft review (OD-12, TS-05): the four sections the Accountant checks before
  * Post. (1) pay item totals against Talenta's section totals, (2) change from the
  * last posted period by account and tag with notes on flagged rows, (3) headcount
- * by group from employee events, (4) the exact lines Post writes, each with
+ * by group: this run's employee_ids against the previous posted run, with who is
+ * new, not in this run or moved, each group's change markable Expected (HR settles
+ * the people; Posting is never blocked by it), (4) the exact lines Post writes, each with
  * "Why this line". Tax lines sit under the one PPh 21 rule (LR-10).
  */
 import { computed, reactive, ref } from 'vue'
 import { MpButton, MpInput } from '@mekari/pixel3'
 import {
   can, runById, draftReview, whyLine, addChangeNote, accountLabel, tagsLabel, rupiah, currentVersionOf, isDraftStale,
-  payroll, type Tags,
+  markHeadcountExpected, clearHeadcountExpected, payroll, type Tags,
 } from '~/data/payrollStore'
 import { taxRuleRows } from '~/data/payrollUiIntake'
 import { successToast } from '~/utils/toasts'
@@ -50,7 +52,22 @@ function saveNote(key: string) {
 const openWhy = ref<number | null>(null)
 const why = computed(() => (openWhy.value == null ? null : whyLine(props.runId, openWhy.value)))
 const safeId = (k: string) => k.replace(/[^a-zA-Z0-9-]/g, '-')
-const hcHasEvents = computed(() => payroll.events.length > 0)
+
+// ── Headcount by group ──
+const hc = computed(() => review.value?.headcount ?? null)
+const hcNotes = reactive<Record<string, string>>({})
+const hcErr = reactive<Record<string, string>>({})
+const signedCount = (n: number) => (n > 0 ? `+${n}` : String(n))
+function markExpected(key: string) {
+  const r = markHeadcountExpected(props.runId, key, hcNotes[key] ?? '')
+  if (!r.ok) { hcErr[key] = r.message ?? ''; return }
+  hcErr[key] = ''
+  successToast(t('Marked expected'))
+}
+function unmarkExpected(key: string) {
+  clearHeadcountExpected(props.runId, key)
+  successToast(t('Expected mark removed'))
+}
 </script>
 
 <template>
@@ -157,40 +174,58 @@ const hcHasEvents = computed(() => payroll.events.length > 0)
       </div>
     </section>
 
-    <!-- 3. Headcount by group -->
-    <section class="pdr__card" data-section="headcount">
+    <!-- 3. Headcount by group: employee_ids against the previous posted run -->
+    <section v-if="hc" class="pdr__card" data-section="headcount" data-tour="payroll-draft-headcount">
       <header class="pdr__cardhead">
         <div class="pdr__cardtitle">{{ t('Headcount by group') }}</div>
         <div class="pdr__cardsub">
-          <template v-if="hcHasEvents">{{ t('Expected = last period + joiners - leavers + transfers in - transfers out, from Talenta employee events') }}</template>
-          <template v-else>{{ t('No employee events received, so there is no expected column.') }}</template>
+          <template v-if="hc.previous">
+            {{ t('Against posted') }} {{ hc.previous.label }} · {{ hc.last }} {{ t('staff then') }}, {{ hc.current }} {{ t('in this run') }} ·
+            {{ hc.flagged ? `${hc.flagged} ${t(hc.flagged === 1 ? 'group changed' : 'groups changed')}` : t('No group changed') }}<template v-if="hc.flagged">, {{ hc.unexpected }} {{ t('not marked expected') }}</template>
+          </template>
+          <template v-else>{{ t('No earlier posted run to compare with') }}</template>
         </div>
       </header>
       <table class="pdr__table">
         <thead>
           <tr>
-            <th class="pdr__th">{{ t('Organization / branch') }}</th>
+            <th class="pdr__th">{{ t('Group') }}</th>
             <th class="pdr__th pdr__num">{{ t('Last period') }}</th>
-            <th class="pdr__th pdr__num">{{ t('Joiners') }}</th>
-            <th class="pdr__th pdr__num">{{ t('Leavers') }}</th>
-            <th class="pdr__th pdr__num">{{ t('Transfers in') }}</th>
-            <th class="pdr__th pdr__num">{{ t('Transfers out') }}</th>
-            <th v-if="hcHasEvents" class="pdr__th pdr__num">{{ t('Expected') }}</th>
-            <th class="pdr__th pdr__num">{{ t('In this run') }}</th>
-            <th v-if="hcHasEvents" class="pdr__th pdr__num">{{ t('Difference') }}</th>
+            <th class="pdr__th pdr__num">{{ t('This run') }}</th>
+            <th class="pdr__th pdr__num">{{ t('Change') }}</th>
+            <th v-if="hc.flagged" class="pdr__th">{{ t('Expected') }}</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="h in review.headcount" :key="h.group">
-            <td class="pdr__td">{{ h.group }}</td>
-            <td class="pdr__td pdr__num">{{ h.last }}</td>
-            <td class="pdr__td pdr__num">{{ h.joiners }}</td>
-            <td class="pdr__td pdr__num">{{ h.leavers }}</td>
-            <td class="pdr__td pdr__num">{{ h.transfersIn }}</td>
-            <td class="pdr__td pdr__num">{{ h.transfersOut }}</td>
-            <td v-if="hcHasEvents" class="pdr__td pdr__num">{{ h.expected }}</td>
-            <td class="pdr__td pdr__num pdr__strong">{{ h.actual }}</td>
-            <td v-if="hcHasEvents" class="pdr__td pdr__num" :class="{ 'pdr__danger': h.difference }">{{ h.difference }}</td>
+          <tr v-for="h in hc.groups" :key="h.key" :data-group="h.key">
+            <td class="pdr__td">
+              {{ h.label }}
+              <span v-if="h.flagged && h.expected" class="pdr__flag pdr__flag--ok">{{ t('Expected') }}</span>
+              <span v-else-if="h.flagged" class="pdr__flag">{{ t('Check') }}</span>
+              <ul v-if="h.flagged" class="pdr__hclist">
+                <li v-if="h.left.length">{{ t('Not in this run') }}: {{ h.left.join(', ') }}</li>
+                <li v-if="h.joined.length">{{ t('New in this run') }}: {{ h.joined.join(', ') }}</li>
+                <li v-for="m in [...h.movedOut, ...h.movedIn]" :key="m.employee_id">{{ t('Moved') }}: {{ m.employee_id }} {{ m.from }} {{ t('to') }} {{ m.to }}</li>
+              </ul>
+            </td>
+            <td class="pdr__td pdr__num">{{ hc.previous ? h.last : '' }}</td>
+            <td class="pdr__td pdr__num pdr__strong">{{ h.current }}</td>
+            <td class="pdr__td pdr__num" :class="{ 'pdr__danger': h.flagged && !h.expected }">{{ hc.previous ? signedCount(h.change) : '' }}</td>
+            <td v-if="hc.flagged" class="pdr__td pdr__notecell">
+              <template v-if="h.flagged && h.expected">
+                <div>{{ h.expected.note || t('No note') }}</div>
+                <div class="pdr__muted">{{ h.expected.by }}</div>
+                <span v-if="can('draft.note')" class="pdr__link" @click="unmarkExpected(h.key)">{{ t('Undo') }}</span>
+              </template>
+              <template v-else-if="h.flagged && can('draft.note')">
+                <div class="pdr__noteform">
+                  <MpInput :id="`pdr-hc-${safeId(h.key)}`" :placeholder="t('Note (optional)')" :model-value="hcNotes[h.key] ?? ''" :is-invalid="!!hcErr[h.key]" @update:model-value="(v: string | number) => hcNotes[h.key] = String(v)" />
+                  <MpButton variant="secondary" is-rounded @click="markExpected(h.key)">{{ t('Expected') }}</MpButton>
+                </div>
+                <p v-if="hcErr[h.key]" class="pdr__error">{{ t(hcErr[h.key]!) }}</p>
+              </template>
+              <span v-else-if="h.flagged" class="pdr__danger">{{ t('Not marked') }}</span>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -323,6 +358,9 @@ const hcHasEvents = computed(() => payroll.events.length > 0)
   display: inline-block; margin-left: var(--mp-spacing-2); padding: 0 var(--mp-spacing-2); border-radius: var(--mp-radii-full);
   font-size: var(--mp-font-sizes-sm); background: var(--mp-colors-background-warning); color: var(--mp-colors-text-warning);
 }
+.pdr__flag--ok { background: var(--mp-colors-background-success); color: var(--mp-colors-text-success); }
+.pdr__hclist { margin: var(--mp-spacing-1) 0 0; padding: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pdr__hclist li { overflow-wrap: anywhere; }
 .pdr__notecell { min-width: 280px; }
 .pdr__noteform { display: flex; gap: var(--mp-spacing-2); align-items: center; }
 .pdr__whycell { text-align: right; white-space: nowrap; }

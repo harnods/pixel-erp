@@ -1,7 +1,9 @@
 <script setup lang="ts">
 /**
  * Payroll inbox (FG-2: OD-01, OD-02, TS-06). One row per run and its current
- * version, the sync log of every send and decision, and the month tracker.
+ * version, the sync log of every send and decision, and the month headcount: each
+ * month's run against the previous posted run, by group, with the employee_ids
+ * that are new, not in the run or moved.
  * Talenta sends arrive from the "Simulate Talenta send" menu. Everything reads
  * the payroll engine; no figure is stored here.
  */
@@ -11,12 +13,9 @@ import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePa
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PayrollInboxSimulateMenu from '~/components/payroll/PayrollInboxSimulateMenu.vue'
-import PayrollInboxReasonDrawer from '~/components/payroll/PayrollInboxReasonDrawer.vue'
 import { payroll, syncLog, can, today, rupiah, wib, monthLabel, monthOf, runs, runStatus } from '~/data/payrollStore'
-import {
-  runRow, statusType, completenessMonths, monthCompleteness, closeMonthGap, reopenMonthGap, markNotExpected, hrMessage,
-} from '~/data/payrollUiIntake'
-import { successToast, infoToast } from '~/utils/toasts'
+import { runRow, statusType, headcountMonths, latestHeadcountMonth, monthHeadcount } from '~/data/payrollUiIntake'
+import { infoToast } from '~/utils/toasts'
 
 const { t } = useLocale()
 const router = useRouter()
@@ -29,7 +28,7 @@ watch(() => route.query.view, (q) => { const next = (['log', 'month'] as View[])
 const viewOptions = computed(() => [
   { id: 'pi-view-runs', value: 'runs', label: t('Runs') },
   { id: 'pi-view-log', value: 'log', label: t('Sync log') },
-  { id: 'pi-view-month', value: 'month', label: t('Month completeness') },
+  { id: 'pi-view-month', value: 'month', label: t('Month headcount') },
 ])
 
 // ── Stats ──────────────────────────────────────────────────────────────────
@@ -40,10 +39,12 @@ const ready = computed(() => rows.value.filter((r) => r.status === 'Ready to pos
 const thisMonth = computed(() => monthOf(today()))
 const postedThisMonth = computed(() => payroll.journals.filter((j) => j.type === 'Payroll' && monthOf(wibDate(j.postedAt)) === thisMonth.value))
 function wibDate(iso: string) { return new Date(Date.parse(iso) + 7 * 3_600_000).toISOString().slice(0, 10) }
-const trackedMonth = computed(() => {
-  const due = completenessMonths().map(monthCompleteness).find((m) => m.end <= today())
-  return due ?? monthCompleteness(thisMonth.value)
-})
+const trackedMonth = computed(() => monthHeadcount(latestHeadcountMonth()))
+const changeSummary = (m: { joined: string[]; left: string[]; moved: unknown[] }) => [
+  m.joined.length ? `${m.joined.length} ${t('new')}` : '',
+  m.left.length ? `${m.left.length} ${t('not in the run')}` : '',
+  m.moved.length ? `${m.moved.length} ${t('moved')}` : '',
+].filter(Boolean).join(' · ')
 
 // ── Runs table ─────────────────────────────────────────────────────────────
 const statusFilter = ref('')
@@ -106,46 +107,32 @@ const logColumns = computed<TableColumn[]>(() => [
   { key: 'journalNo', label: t('Journal'), kind: 'unit' },
 ])
 
-// ── Month completeness ─────────────────────────────────────────────────────
-const monthOptions = computed(() => completenessMonths().map((m) => ({ value: m, label: monthLabel(m) })))
+// ── Month headcount ────────────────────────────────────────────────────────
+const monthOptions = computed(() => headcountMonths().map((m) => ({ value: m, label: monthLabel(m) })))
 const month = ref(trackedMonth.value.month)
-const tracker = computed(() => monthCompleteness(month.value || trackedMonth.value.month))
+const tracker = computed(() => monthHeadcount(month.value || trackedMonth.value.month))
 const groupColumns = computed<TableColumn[]>(() => [
-  { key: 'group', label: t('Organization / branch'), kind: 'name' },
-  { key: 'expected', label: t('Expected'), kind: 'unit', align: 'right' },
-  { key: 'arrived', label: t('Arrived'), kind: 'unit', align: 'right' },
-  { key: 'missing', label: t('Missing employee IDs'), kind: 'address' },
-  { key: 'extra', label: t('Not expected but sent'), kind: 'address' },
+  { key: 'label', label: t('Group'), kind: 'name' },
+  { key: 'last', label: t('Last period'), kind: 'unit', align: 'right' },
+  { key: 'current', label: t('This month'), kind: 'unit', align: 'right' },
+  { key: 'change', label: t('Change'), kind: 'unit', align: 'right' },
+  { key: 'people', label: t('Staff changes'), kind: 'address' },
   { key: 'state', label: t('Status'), kind: 'status' },
 ])
 const groupRows = computed(() => tracker.value.groups.map((g) => ({
-  ...g, missing: g.missing.join(', '), extra: g.extra.join(', '), missingIds: g.missing,
-  state: g.closed ? 'Closed with reason' : g.open ? 'Missing staff' : 'Complete',
+  key: g.key, label: g.label, last: tracker.value.previous ? g.last : '', current: g.current,
+  change: tracker.value.previous ? (g.change > 0 ? `+${g.change}` : String(g.change)) : '',
+  people: [
+    g.left.length ? `${t('Not in this run')}: ${g.left.join(', ')}` : '',
+    g.joined.length ? `${t('New in this run')}: ${g.joined.join(', ')}` : '',
+    ...[...g.movedOut, ...g.movedIn].map((m) => `${t('Moved')}: ${m.employee_id} ${m.from} ${t('to')} ${m.to}`),
+  ].filter(Boolean),
+  state: !g.flagged ? 'No change' : g.expected ? 'Expected' : 'Check',
 })))
-
-const drawer = ref<{ kind: 'close' | 'not-expected'; group?: string } | null>(null)
-const drawerError = ref('')
-const notExpectedOptions = computed(() => tracker.value.missingIds.map((id) => ({ value: id, label: id })))
-function openClose(group: string) { drawerError.value = ''; drawer.value = { kind: 'close', group } }
-function openNotExpected() { drawerError.value = ''; drawer.value = { kind: 'not-expected' } }
-function submitDrawer(v: { reason: string; pick: string }) {
-  const d = drawer.value
-  if (!d) return
-  const r = d.kind === 'close' ? closeMonthGap(tracker.value.month, d.group!, v.reason) : markNotExpected(tracker.value.month, v.pick, v.reason)
-  if (!r.ok) { drawerError.value = r.message ?? ''; return }
-  drawer.value = null
-  successToast(t(d.kind === 'close' ? 'Gap closed' : 'Marked not expected'))
-}
-function reopen(group: string) { reopenMonthGap(tracker.value.month, group); successToast(t('Gap reopened')) }
-function copyHr(ids: string[]) {
-  const text = hrMessage(ids, tracker.value.period)
-  navigator.clipboard?.writeText(text).catch(() => {})
-  successToast(t('Message for HR copied'))
-}
 function notInPrototype() { infoToast(t('Not in this prototype')) }
 
 // The run record links back here with ?view=…; keep the month picker in step with resets.
-watch(() => payroll.runs, () => { if (!completenessMonths().includes(month.value)) month.value = trackedMonth.value.month })
+watch(() => payroll.runs, () => { if (!headcountMonths().includes(month.value)) month.value = trackedMonth.value.month })
 const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for your choice', 'Confirm source'].includes(runStatus(r))).length)
 </script>
 
@@ -198,10 +185,10 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
             <a v-if="postedThisMonth.length" class="stat-link" @click="drill('Posted')">{{ postedThisMonth.map((j) => j.number).join(', ') }}</a>
           </div>
           <div class="stat-card">
-            <div class="stat-title">{{ t('Month completeness') }}</div>
-            <div class="stat-period">{{ trackedMonth.label }} · {{ t('staff arrived against expected') }}</div>
-            <div class="stat-amount" :class="{ 'stat-amount--danger': trackedMonth.status !== 'Complete' }">{{ trackedMonth.arrived }} {{ t('of') }} {{ trackedMonth.expected }}</div>
-            <a class="stat-link" @click="() => { month = trackedMonth.month; view = 'month' }">{{ t(trackedMonth.status) }}</a>
+            <div class="stat-title">{{ t('Headcount change') }}</div>
+            <div class="stat-period">{{ trackedMonth.label }}<template v-if="trackedMonth.previous"> {{ t('against') }} {{ monthLabel(trackedMonth.previous.month) }}</template> · {{ t('staff changed') }}</div>
+            <div class="stat-amount">{{ trackedMonth.changed }}</div>
+            <a class="stat-link" @click="() => { month = trackedMonth.month; view = 'month' }">{{ changeSummary(trackedMonth) || t('No change') }}</a>
           </div>
         </div>
       </template>
@@ -280,30 +267,30 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
       <template #cell-nextStep="{ value }"><span class="pi__wrap">{{ t(String(value)) }}</span></template>
     </ErpTablePage>
 
-    <!-- ── Month completeness ── -->
+    <!-- ── Month headcount ── -->
     <template v-else>
       <div class="stats-section pi__stats">
         <div class="stat-card stat-card--bordered">
           <div class="stat-title">{{ t('Status') }}</div>
           <div class="stat-period">{{ tracker.label }} · {{ tracker.period }}</div>
-          <div class="stat-amount" :class="{ 'stat-amount--danger': tracker.status === 'Open' || tracker.status === 'Missing send' }">{{ t(tracker.status) }}</div>
+          <div class="stat-amount" :class="{ 'stat-amount--danger': tracker.status === 'Missing send' }">{{ t(tracker.status) }}</div>
           <a v-if="tracker.runId" class="stat-link" @click="openRun(tracker.runId)">{{ t('Open run') }} {{ tracker.version }}</a>
         </div>
         <div class="stat-card stat-card--bordered">
-          <div class="stat-title">{{ t('Expected staff') }}</div>
-          <div class="stat-period">{{ t('Starting list and employee events') }}</div>
-          <div class="stat-amount">{{ tracker.expected }}</div>
+          <div class="stat-title">{{ t('Last period') }}</div>
+          <div class="stat-period">{{ tracker.previous ? `${t('Posted')} ${tracker.previous.label}` : t('No earlier posted run') }}</div>
+          <div class="stat-amount">{{ tracker.last ?? '-' }}</div>
         </div>
         <div class="stat-card stat-card--bordered">
-          <div class="stat-title">{{ t('Arrived') }}</div>
-          <div class="stat-period">{{ t('Staff in the current version') }}</div>
-          <div class="stat-amount">{{ tracker.arrived }}</div>
+          <div class="stat-title">{{ t('This month') }}</div>
+          <div class="stat-period">{{ tracker.version ? `${t('Staff in')} ${tracker.version}` : t('No run yet') }}</div>
+          <div class="stat-amount">{{ tracker.current }}</div>
         </div>
         <div class="stat-card">
-          <div class="stat-title">{{ t('Missing staff') }}</div>
-          <div class="stat-period">{{ t('Not closed with a reason') }}</div>
-          <div class="stat-amount" :class="{ 'stat-amount--danger': tracker.missingIds.length > 0 }">{{ tracker.missingIds.length }}</div>
-          <a v-if="tracker.missingIds.length" class="stat-link" @click="copyHr(tracker.missingIds)">{{ t('Copy message for HR') }}</a>
+          <div class="stat-title">{{ t('Staff changed') }}</div>
+          <div class="stat-period">{{ t('New, not in the run, or moved group') }}</div>
+          <div class="stat-amount">{{ tracker.changed }}</div>
+          <a v-if="tracker.runId && tracker.unexpected" class="stat-link" @click="openRun(tracker.runId)">{{ tracker.unexpected }} {{ t(tracker.unexpected === 1 ? 'group to check' : 'groups to check') }}</a>
         </div>
       </div>
 
@@ -314,50 +301,23 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
         :current-page="1"
         :per-page="100"
         no-row-hover
-        actions-width="200px"
       >
         <template #filters>
           <div class="filter-left">
             <ErpFilterSelect id="pm-month" v-model="month" :placeholder="t('Month')" :options="monthOptions" :is-clearable="false" />
-            <span class="pi__muted">{{ tracker.runs.length }} {{ t(tracker.runs.length === 1 ? 'run arrived' : 'runs arrived') }}<template v-if="tracker.runs.length">: {{ tracker.runs.map((r) => `${r.type} ${r.version} ${t(r.status)}`).join(', ') }}</template></span>
-          </div>
-          <div class="filter-right">
-            <MpButton v-if="payroll.viewAs === 'Finance Manager' && tracker.missingIds.length" variant="secondary" is-rounded @click="openNotExpected">{{ t('Mark not expected') }}</MpButton>
+            <span class="pi__muted">{{ tracker.runStatus ? `${t('Regular run')} ${tracker.version} · ${t(tracker.runStatus)}` : t(tracker.status) }}</span>
           </div>
         </template>
-        <template #cell-missing="{ value }"><span class="pi__wrap">{{ value || '' }}</span></template>
-        <template #cell-extra="{ value }"><span class="pi__wrap">{{ value || '' }}</span></template>
-        <template #cell-state="{ row }">
-          <ErpStatusBadge
-            :status="(row as { state: string }).state" :label="t((row as { state: string }).state)"
-            :type="(row as { state: string }).state === 'Complete' ? 'completed' : (row as { state: string }).state === 'Missing staff' ? 'critical' : 'announcement'"
-          />
-          <div v-if="(row as { closed: { reason: string } | null }).closed" class="pi__muted pi__wrap">{{ (row as { closed: { reason: string } }).closed.reason }}</div>
-        </template>
-        <template #actions="{ row }">
-          <div class="pi__rowactions">
-            <MpButton v-if="(row as { missingIds: string[] }).missingIds.length && !(row as { closed: unknown }).closed" size="sm" variant="secondary" is-rounded @click="copyHr((row as { missingIds: string[] }).missingIds)">{{ t('Copy for HR') }}</MpButton>
-            <MpButton v-if="payroll.viewAs === 'Accountant' && (row as { open: boolean }).open" size="sm" variant="secondary" is-rounded @click="openClose((row as { group: string }).group)">{{ t('Close gap') }}</MpButton>
-            <MpButton v-if="payroll.viewAs === 'Accountant' && (row as { closed: unknown }).closed" size="sm" variant="secondary" is-rounded @click="reopen((row as { group: string }).group)">{{ t('Reopen') }}</MpButton>
+        <template #cell-people="{ row }">
+          <div class="pi__wrap">
+            <div v-for="line in (row as { people: string[] }).people" :key="line">{{ line }}</div>
           </div>
+        </template>
+        <template #cell-state="{ value }">
+          <ErpStatusBadge :status="String(value)" :label="t(String(value))" :type="statusType(String(value))" />
         </template>
       </ErpTablePage>
-      <p v-if="tracker.notExpected.length" class="pi__muted pi__note">
-        {{ t('Not expected') }}: {{ tracker.notExpected.map((n) => `${n.employee_id} (${n.reason})`).join(', ') }}
-      </p>
     </template>
-
-    <PayrollInboxReasonDrawer
-      :is-open="!!drawer"
-      :title="drawer?.kind === 'close' ? t('Close gap') : t('Mark not expected')"
-      :subtitle="drawer?.kind === 'close' ? `${tracker.label} · ${drawer?.group}` : tracker.label"
-      :confirm-label="drawer?.kind === 'close' ? t('Close gap') : t('Mark not expected')"
-      :pick-label="drawer?.kind === 'not-expected' ? t('Employee ID') : ''"
-      :pick-options="drawer?.kind === 'not-expected' ? notExpectedOptions : []"
-      :error="drawerError"
-      @close="drawer = null"
-      @submit="submitDrawer"
-    />
   </div>
 </template>
 
@@ -371,8 +331,6 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
 .pi__stats { padding-bottom: var(--mp-spacing-5); margin-bottom: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-border-default); }
 .pi__muted { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
 .pi__wrap { white-space: normal; overflow-wrap: anywhere; }
-.pi__note { margin: var(--mp-spacing-3) 0 0; }
-.pi__rowactions { display: flex; gap: var(--mp-spacing-2); justify-content: flex-end; }
 
 /* House stats band (BillsIndexPage). */
 .stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }

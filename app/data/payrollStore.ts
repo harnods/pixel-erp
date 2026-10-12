@@ -3,7 +3,10 @@
  *
  * Talenta sends facts; Jurnal decides the accounting (LR-1). Every figure is
  * computed on read from the stored sends, the settings and the posted journals.
- * Nothing seeds a total. Persists under `erp-db:payroll:state-v2`;
+ * Jurnal reads one Talenta webhook, talenta.salarydetail: HR settles the people,
+ * the Accountant consumes the run. Who joined, left or moved group comes from
+ * comparing a run's employee_ids with the previous posted run (headcountChanges).
+ * Nothing seeds a total. Persists under `erp-db:payroll:state-v4`;
  * resetPayroll() returns to the sample. No employee names anywhere (LR-7).
  *
  * ─── API (UI agents: this block is the contract) ─────────────────────────────
@@ -50,9 +53,8 @@
  *
  * Intake (OD-01, LR-3)
  *   simulateSend(kind, opts?)       kinds: 'regular' | 'new-pay-item' | 'revision' | 'partial' | 'separate-run' | 'duplicate'
- *                                   | 'transfer' | 'resignation' | 'created' | 'deleted' | 'old-sync'. Returns { ok, status, message, runId? }.
- *   receiveSalaryDetail(payload)    the webhook entry point simulateSend uses.
- *   receiveEmployeeEvent(event)     employee transfer / resignation / created / deleted.
+ *                                   | 'old-sync'. Returns { ok, status, message, runId? }.
+ *   receiveSalaryDetail(payload)    the talenta.salarydetail webhook entry point simulateSend uses (the only Talenta webhook read).
  *   oldSyncExpense({ date, amount, pattern })   old-sync Expense call checked against the cut-over (LR-14).
  *   runs (computed, newest period first), runById(id), runStatus(run), runHolds(run), currentVersionOf(run), versionLabel(run, v)
  *   chooseRevision(runId, no) / chooseSeparateRun(runId, no, { type, name, reason })
@@ -68,9 +70,15 @@
  *
  * Draft (TS-05, OD-12)
  *   draftOf(run), isDraftStale(runId), rebuildDraft(runId) -> { changed }
- *   draftReview(runId)              { payItems, talentaTotals, changes, headcount, lines, otherEntity }
+ *   draftReview(runId)              { payItems, talentaTotals, changes, headcount, lines, otherEntity, unnotedLargeChanges, unexpectedHeadcount }
  *   whyLine(runId, lineIndex)       reasons and sources behind one draft line.
  *   addChangeNote(runId, key, note) note on a large-change row (<= 500 chars).
+ *   headcountChanges(runId)         pure: the run's employee_ids against the previous posted regular run of the same
+ *                                   period type, per group (organization + branch, as dimension labels): last, current,
+ *                                   change, joined, left, movedIn/movedOut (from, to), flagged, expected. Ids, never names.
+ *   markHeadcountExpected(runId, groupKey, note?) / clearHeadcountExpected(runId, groupKey)
+ *                                   Accountant marks a group's change Expected (note optional, <= 500 chars). Posting is never
+ *                                   blocked by headcount; unmarked changes show in the Post confirm.
  *   claimsSummary(runId)            Reimbursement lines by item and tag (OD-26).
  *
  * Post, reverse, revise (TS-05, TS-07, OD-14..17, LR-4, LR-8)
@@ -81,7 +89,6 @@
  *   compareVersions(runId, a?, b?)  { byPayItem, byAccountTag, settingsMoved, headcount, oldLabel, newLabel }
  *   reverseAndRepost(runId, no?) / postDifference(runId, no?, { includeSettingsMoves })
  *   liveJournals(runId), journalsOf(runId), journalById(id), journalTotals(j)
- *   dismissWarning(runId, warningId, reason, pick)
  *   lockPeriod(month, { confirm }) / unlockPeriod(month) / isLocked(month) / firstOpenAfter(month)
  *   amendmentTasks (computed), closeAmendmentTask(id, outcome, { pembetulanNo, newTotal, reason })
  *
@@ -110,8 +117,8 @@ import {
   PAYROLL_COMPANY_ID, PAYROLL_TODAY, PAYROLL_ACCOUNTS, PAYROLL_PEOPLE, ACC, FALLBACK_TAG, PAYROLL_TAGS,
   STATUTORY_PARTIES, COST_CENTERS, TAX_FIELDS, sampleRoster, buildSalaryDetail, payrollPerson,
   type PayrollRole, type PayrollAccount, type PayableParty, type PaySection, type TalentaPayload, type TalentaEmployee,
-  type TalentaField, type GroupingField, type TagDimension, type PayrollTag, type RosterEmployee, type GroupFields,
-  type PayloadOptions, type EmployeeEventType, type TaxField,
+  type TalentaField, type GroupingField, type TagDimension, type PayrollTag, type RosterEmployee,
+  type PayloadOptions, type TaxField,
 } from './payrollMaster'
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -223,9 +230,12 @@ export interface RunVersion {
   taxRelease: { reason: string; by: string; at: string } | null
   decision: { kind: string; reason: string | null; by: string; at: string } | null
   changeNotes: Record<string, string>
+  /** Headcount changes marked Expected, by group key (organization|branch). */
+  headcountExpected: Record<string, HeadcountExpected>
 }
 export type RunKind = 'Regular' | 'THR' | 'Bonus' | 'Off-cycle'
-export interface EarlyWarning { id: string; eventId: string; type: EmployeeEventType; employee_id: string; effective: string; from: GroupFields | null; to: GroupFields | null; text: string; dismissed: { reason: string; pick: string; by: string; at: string } | null }
+/** A group's headcount change the Accountant marked Expected on one version; `fingerprint` pins the ids it covered. */
+export interface HeadcountExpected { fingerprint: string; note: string; by: string; at: string }
 export interface Run {
   id: string
   key: string
@@ -242,7 +252,6 @@ export interface Run {
   ledgerVersion: number | null
   mode: 'Live' | 'Dry run' | 'Before go-live'
   dryRun: { passedBy: string | null; passedAt: string | null; signedOffBy: string | null; signedOffAt: string | null } | null
-  warnings: EarlyWarning[]
   revised: boolean
   reversedAt: string | null
 }
@@ -284,7 +293,6 @@ export interface Payment {
   warnings: string[]
   voidedBy: string | null
 }
-export interface PayrollEvent { id: string; type: EmployeeEventType; employee_id: string; effective: string | null; from: GroupFields | null; to: GroupFields | null; receivedAt: string }
 export interface AmendmentTask {
   id: string
   taxMonth: string
@@ -316,7 +324,7 @@ export type LogStatus = 'Received' | 'Waiting for your choice' | 'Held' | 'Poste
 export interface SyncLogEntry {
   id: number
   at: string
-  type: 'Send' | 'Hold' | 'Post' | 'Reversal' | 'Old sync' | 'Employee event' | 'Decision' | 'Payment' | 'Settings' | 'Connection'
+  type: 'Send' | 'Hold' | 'Post' | 'Reversal' | 'Old sync' | 'Decision' | 'Payment' | 'Settings' | 'Connection'
   runId: string | null
   runKey: string | null
   version: number | null
@@ -354,7 +362,6 @@ export interface PayrollState {
   runs: Run[]
   journals: Journal[]
   payments: Payment[]
-  events: PayrollEvent[]
   tasks: AmendmentTask[]
   bpjsInvoices: BpjsInvoice[]
   recon: MonthRecon[]
@@ -412,7 +419,7 @@ export function tagsLabel(t: Tags): string { return [t.Organization, t.Branch].f
 
 // ── State ───────────────────────────────────────────────────────────────────
 
-const SNAPSHOT_KEY = 'payroll:state-v3'
+const SNAPSHOT_KEY = 'payroll:state-v4'
 
 function defaultSettings(): PayrollSettings {
   return {
@@ -440,7 +447,7 @@ function emptyState(): PayrollState {
     seq: 1, clock: '2026-10-05T02:00:00.000Z', viewAs: 'Accountant',
     connection: { status: 'Not connected', companyId: null, startedBy: null, startedAt: null, endedReason: null, sourceConfirmedBy: null, sourceConfirmedAt: null, otherEntitiesAnswer: null, lastAcceptedAt: null, rejected: [] },
     accounts: clone(PAYROLL_ACCOUNTS), tags: clone(PAYROLL_TAGS),
-    settings: defaultSettings(), snapshots: [], roster: [], runs: [], journals: [], payments: [], events: [],
+    settings: defaultSettings(), snapshots: [], roster: [], runs: [], journals: [], payments: [],
     tasks: [], bpjsInvoices: [], recon: [], lockedMonths: [], knownGaps: [],
     log: [], notices: [], oldSync: [], simOptions: {}, payNo: 0, bnkNo: 0,
   }
@@ -463,7 +470,7 @@ export type PayrollAction =
   | 'settings.edit' | 'settings.override' | 'fieldPolicy.edit' | 'presets.edit' | 'limits.edit' | 'claims.edit'
   | 'dryrun.pass' | 'dryrun.signoff' | 'cutover.propose' | 'cutover.confirm'
   | 'run.choose' | 'run.partial' | 'run.release' | 'gap.release' | 'tax.release' | 'draft.note'
-  | 'post' | 'post.confirm' | 'reverse' | 'fix' | 'warning.dismiss' | 'period.lock' | 'task.close'
+  | 'post' | 'post.confirm' | 'reverse' | 'fix' | 'period.lock' | 'task.close'
   | 'payment.salary' | 'payment.statutory' | 'payment.void' | 'bpjs.programme' | 'bpjs.invoice' | 'bpjs.review'
   | 'recon.note' | 'recon.ready' | 'recon.signoff' | 'ebupot.enter' | 'pph21.reconcile'
   | 'payByEmployee.view' | 'log.export' | 'report.export'
@@ -474,7 +481,7 @@ const ACCESS: Record<PayrollAction, PayrollRole[]> = {
   'settings.edit': [A], 'settings.override': [A], 'fieldPolicy.edit': [F], 'presets.edit': [A, F], 'limits.edit': [A], 'claims.edit': [A, F],
   'dryrun.pass': [A], 'dryrun.signoff': [F], 'cutover.propose': [A], 'cutover.confirm': [F],
   'run.choose': [A], 'run.partial': [A], 'run.release': [A, F], 'gap.release': [F, O], 'tax.release': [T, F], 'draft.note': [A],
-  'post': [A], 'post.confirm': [F], 'reverse': [A, F], 'fix': [A, F], 'warning.dismiss': [A], 'period.lock': [F], 'task.close': [T],
+  'post': [A], 'post.confirm': [F], 'reverse': [A, F], 'fix': [A, F], 'period.lock': [F], 'task.close': [T],
   'payment.salary': [A], 'payment.statutory': [A, T], 'payment.void': [A], 'bpjs.programme': [A], 'bpjs.invoice': [A, T], 'bpjs.review': [A],
   'recon.note': [A], 'recon.ready': [A], 'recon.signoff': [F], 'ebupot.enter': [T, F], 'pph21.reconcile': [T, F],
   'payByEmployee.view': [A], 'log.export': [A, U], 'report.export': [O, A, F, T, U],
@@ -977,7 +984,7 @@ export function receiveSalaryDetail(p: TalentaPayload): SendResult {
     const run: Run = {
       id: nextId('run'), key: baseKey, baseKey, companyId: p.company_id, periodType: 'monthly', start: p.period.start_date, end: p.period.end_date,
       month, kind: 'Regular', label: 'Regular', versions: [], currentVersion: 1, ledgerVersion: null, mode: runMode(month),
-      dryRun: null, warnings: [], revised: false, reversedAt: null,
+      dryRun: null, revised: false, reversedAt: null,
     }
     run.versions.push(newVersion(1, p, 'active'))
     if (run.mode !== 'Live') run.dryRun = { passedBy: null, passedAt: null, signedOffBy: null, signedOffAt: null }
@@ -993,7 +1000,6 @@ export function receiveSalaryDetail(p: TalentaPayload): SendResult {
     return { ok: true, status: 'No change', message: `No change from v${last.no}`, runId: regular.id }
   }
   const no = regular.versions.length + 1
-  regular.warnings = regular.warnings.filter((w) => w.dismissed)
   if (liveJournals(regular.id).length) {
     const v = newVersion(no, p, 'waiting-choice')
     regular.versions.push(v)
@@ -1008,7 +1014,7 @@ export function receiveSalaryDetail(p: TalentaPayload): SendResult {
 }
 
 function newVersion(no: number, p: TalentaPayload, state: VersionState): RunVersion {
-  return { no, sentAt: p.sent_at, receivedAt: payroll.clock, hash: bodyHash(p), figuresHash: figuresHash(p), payload: clone(p), state, replacedBy: null, holds: [], draft: null, gapRelease: null, taxRelease: null, decision: null, changeNotes: {} }
+  return { no, sentAt: p.sent_at, receivedAt: payroll.clock, hash: bodyHash(p), figuresHash: figuresHash(p), payload: clone(p), state, replacedBy: null, holds: [], draft: null, gapRelease: null, taxRelease: null, decision: null, changeNotes: {}, headcountExpected: {} }
 }
 /** Make v the current version; older open versions become "Replaced by vN" (or "Superseded" on a posted run). */
 function activate(run: Run, v: RunVersion) {
@@ -1145,7 +1151,7 @@ export function chooseSeparateRun(runId: string, no: number, o: { type: Exclude<
   const sep: Run = {
     id: nextId('run'), key: `${run.baseKey} / ${o.type} / ${name}`, baseKey: run.baseKey, companyId: run.companyId, periodType: 'monthly',
     start: run.start, end: run.end, month: run.month, kind: o.type, label: name, versions: [], currentVersion: 1, ledgerVersion: null,
-    mode: runMode(run.month), dryRun: null, warnings: [], revised: false, reversedAt: null,
+    mode: runMode(run.month), dryRun: null, revised: false, reversedAt: null,
   }
   sep.versions.push({ ...clone(v), no: 1, state: 'active', holds: [], draft: null, decision: null })
   payroll.runs.push(sep)
@@ -1591,43 +1597,126 @@ export function draftReview(runId: string) {
     const flag = Math.abs(r.diff) > L.largeChangeAmount && (pct == null || Math.abs(pct) > L.largeChangePct)
     return { ...r, pct, flag, note: v.changeNotes[r.key] ?? null }
   }).filter((r) => isCost(r.account) || partyOf(r.account)) : []
-  // Headcount by group from events.
-  const headcount = headcountByGroup(run, v, prev)
+  // Headcount by group: this run's employee_ids against the previous posted regular run.
+  const headcount = headcountChanges(runId)
   return {
     previous: prev ? { runId: prev.id, label: periodLabel(prev.start, prev.end) } : null,
     payItems, talentaTotals, changes, headcount, lines: d?.lines ?? [], otherEntity: d?.otherEntity ?? null,
     takeHome: roundCents(staff.reduce((x, e) => x + cents(e.take_home_pay), 0)),
     unnotedLargeChanges: changes.filter((c) => c.flag && !c.note).length,
+    unexpectedHeadcount: headcount.unexpected,
   }
 }
 function previousRun(run: Run): Run | undefined {
   return payroll.runs.filter((r) => r.id !== run.id && r.kind === run.kind && (run.kind === 'Regular' || norm(r.label) === norm(run.label)) && r.end < run.end && liveJournals(r.id).length)
     .sort((a, b) => b.end.localeCompare(a.end))[0]
 }
-function headcountByGroup(run: Run, v: RunVersion, prev: Run | undefined) {
-  const group = (e: { organization_name: string; branch_name: string }) => `${e.organization_name} / ${e.branch_name}`
-  const actual = new Map<string, number>()
-  for (const e of staffOf(v.payload)) actual.set(group(e), (actual.get(group(e)) ?? 0) + 1)
+/** Previous posted regular run of the same period type, before this run's period. */
+function previousRegularRun(run: Run): Run | undefined {
+  return payroll.runs.filter((r) => r.id !== run.id && r.kind === 'Regular' && r.periodType === run.periodType && r.end < run.end && liveJournals(r.id).length)
+    .sort((a, b) => b.end.localeCompare(a.end))[0]
+}
+const groupKeyOf = (e: { organization_name: string; branch_name: string }) => `${e.organization_name}|${e.branch_name}`
+/** Organization and branch as their Jurnal dimension values ("Sales, Bandung"); the Talenta value where none is mapped. */
+function groupLabelOf(key: string): string {
+  const [org = '', branch = ''] = key.split('|')
+  const m = payroll.settings.groupMaps
+  return [m.Organization[org] ?? org, m.Branch[branch] ?? branch].filter(Boolean).join(', ')
+}
+export interface HeadcountMove { employee_id: string; from: string; to: string }
+export interface HeadcountGroup {
+  key: string
+  label: string
+  last: number
+  current: number
+  change: number
+  joined: string[]
+  left: string[]
+  movedIn: HeadcountMove[]
+  movedOut: HeadcountMove[]
+  flagged: boolean
+  expected: HeadcountExpected | null
+}
+/**
+ * Who joined, left or moved group between the previous posted regular run and this
+ * run, by employee_id (never by counts alone, never by name). Pure: reads the two
+ * sends and the dimension mapping, changes nothing.
+ */
+export function headcountChanges(runId: string) {
+  const run = runById(runId)
+  const v = run ? currentVersionOf(run) : undefined
+  const prev = run ? previousRegularRun(run) : undefined
   const pv = prev ? versionOf(prev, prev.ledgerVersion) : undefined
-  const last = new Map<string, number>()
-  if (pv) for (const e of staffOf(pv.payload)) last.set(group(e), (last.get(group(e)) ?? 0) + 1)
-  const from = prev ? addDays(prev.end, 1) : run.start
-  const inWin = (d: string | null) => !!d && d >= from && d <= run.end
-  const join = new Map<string, number>(), leave = new Map<string, number>(), tin = new Map<string, number>(), tout = new Map<string, number>()
-  const bump = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) ?? 0) + 1)
-  for (const ev of payroll.events) {
-    if (ev.type === 'talenta.employee.detail.created' && inWin(ev.effective) && ev.to) bump(join, group(ev.to))
-    if (ev.type === 'talenta.employee.resignation.created' && ev.effective && prev && ev.effective >= prev.start && ev.effective < from && ev.from) bump(leave, group(ev.from))
-    if (ev.type === 'talenta.employee.transfer.approved' && inWin(ev.effective) && ev.from && ev.to) { bump(tout, group(ev.from)); bump(tin, group(ev.to)) }
+  const byId = (p: TalentaPayload | undefined) => {
+    const m = new Map<string, string>()
+    for (const e of p ? staffOf(p) : []) if (!m.has(e.employee_id)) m.set(e.employee_id, groupKeyOf(e))
+    return m
   }
-  const keys = new Set([...actual.keys(), ...last.keys(), ...join.keys(), ...leave.keys(), ...tin.keys(), ...tout.keys()])
-  const hasEvents = payroll.events.length > 0
-  return [...keys].sort().map((g) => {
-    const lastN = last.get(g) ?? 0
-    const expected = hasEvents ? lastN + (join.get(g) ?? 0) - (leave.get(g) ?? 0) + (tin.get(g) ?? 0) - (tout.get(g) ?? 0) : null
-    const act = actual.get(g) ?? 0
-    return { group: g, last: lastN, joiners: join.get(g) ?? 0, leavers: leave.get(g) ?? 0, transfersIn: tin.get(g) ?? 0, transfersOut: tout.get(g) ?? 0, expected, actual: act, difference: expected == null ? null : act - expected }
-  })
+  const now = byId(v?.payload), before = byId(pv?.payload)
+  const groups = new Map<string, HeadcountGroup>()
+  const g = (key: string) => {
+    let x = groups.get(key)
+    if (!x) groups.set(key, x = { key, label: groupLabelOf(key), last: 0, current: 0, change: 0, joined: [], left: [], movedIn: [], movedOut: [], flagged: false, expected: null })
+    return x
+  }
+  for (const k of now.values()) g(k).current++
+  if (pv) for (const k of before.values()) g(k).last++
+  const moved: HeadcountMove[] = []
+  if (pv) {
+    for (const [id, k] of now) {
+      const was = before.get(id)
+      if (was == null) g(k).joined.push(id)
+      else if (was !== k) {
+        const m = { employee_id: id, from: groupLabelOf(was), to: groupLabelOf(k) }
+        moved.push(m); g(k).movedIn.push(m); g(was).movedOut.push(m)
+      }
+    }
+    for (const [id, k] of before) if (!now.has(id)) g(k).left.push(id)
+  }
+  const list = [...groups.values()].sort((a, b) => a.label.localeCompare(b.label))
+  for (const x of list) {
+    x.joined.sort(); x.left.sort()
+    x.change = x.current - x.last
+    x.flagged = !!(x.joined.length || x.left.length || x.movedIn.length || x.movedOut.length)
+    const e = v?.headcountExpected?.[x.key]
+    x.expected = x.flagged && e && e.fingerprint === headcountFingerprint(x) ? e : null
+  }
+  const flagged = list.filter((x) => x.flagged)
+  return {
+    previous: prev && pv ? { runId: prev.id, label: periodLabel(prev.start, prev.end), month: prev.month, version: pv.no } : null,
+    groups: list,
+    last: pv ? before.size : null,
+    current: now.size,
+    joined: list.flatMap((x) => x.joined).sort(),
+    left: list.flatMap((x) => x.left).sort(),
+    moved: moved.sort((a, b) => a.employee_id.localeCompare(b.employee_id)),
+    flagged: flagged.length,
+    unexpected: flagged.filter((x) => !x.expected).length,
+  }
+}
+/** The ids a group's change covers: an Expected mark lapses when a later send changes them. */
+function headcountFingerprint(x: Pick<HeadcountGroup, 'joined' | 'left' | 'movedIn' | 'movedOut'>): string {
+  return JSON.stringify([x.joined, x.left, x.movedIn.map((m) => `${m.employee_id}<${m.from}`).sort(), x.movedOut.map((m) => `${m.employee_id}>${m.to}`).sort()])
+}
+/** The Accountant marks a group's headcount change Expected (HR settled it; the accountant consumes it). Note optional. */
+export function markHeadcountExpected(runId: string, key: string, note = ''): Result {
+  if (!can('draft.note')) return denied()
+  const run = runById(runId)
+  const v = run ? currentVersionOf(run) : undefined
+  if (!run || !v) return { ok: false }
+  const grp = headcountChanges(runId).groups.find((x) => x.key === key)
+  if (!grp?.flagged) return { ok: false, message: 'This group has no headcount change.' }
+  if (note.length > 500) return { ok: false, message: 'Keep the note to 500 characters.' }
+  v.headcountExpected[key] = { fingerprint: headcountFingerprint(grp), note: note.trim(), by: actingPerson(), at: now() }
+  return { ok: true }
+}
+export function clearHeadcountExpected(runId: string, key: string): Result {
+  if (!can('draft.note')) return denied()
+  const run = runById(runId)
+  const v = run ? currentVersionOf(run) : undefined
+  if (!v) return { ok: false }
+  delete v.headcountExpected[key]
+  return { ok: true }
 }
 export function addChangeNote(runId: string, key: string, note: string): Result {
   if (!can('draft.note')) return denied()
@@ -1731,7 +1820,10 @@ export function postRun(runId: string, o: { versionNo?: number } = {}): Result {
   for (const k of payroll.knownGaps) if (k.releasedOn !== run.id) k.runsSeen++
   addLog({ type: 'Post', status: 'Posted', reason: `Posted as ${j.number}`, nextStep: 'Record the salary payment on payday.', runId, runKey: run.key, version: v.no, employees: v.payload.employees.length, journalNo: j.number })
   markReconOutOfDate(run.month)
-  return { ok: true, journalId: j.id, number: j.number, redirected: pd.redirected, warnings: review.unnotedLargeChanges ? [`${review.unnotedLargeChanges} large change${review.unnotedLargeChanges > 1 ? 's have' : ' has'} no note.`] : [] }
+  const warnings: string[] = []
+  if (review.unnotedLargeChanges) warnings.push(`${review.unnotedLargeChanges} large change${review.unnotedLargeChanges > 1 ? 's have' : ' has'} no note.`)
+  if (review.unexpectedHeadcount) warnings.push(`${review.unexpectedHeadcount} headcount change${review.unexpectedHeadcount > 1 ? 's are' : ' is'} not marked Expected.`)
+  return { ok: true, journalId: j.id, number: j.number, redirected: pd.redirected, warnings }
 }
 
 // ── Reverse, compare, fix (TS-07, OD-14, OD-15, OD-17, LR-4) ────────────────
@@ -1899,14 +1991,6 @@ export function postDifference(runId: string, no?: number, o: { includeSettingsM
   afterFix(run, oldV, v, [j])
   return { ok: true, journals: [j.number], journalId: j.id, redirected: pd.redirected }
 }
-export function dismissWarning(runId: string, warningId: string, reason: string, pick: 'Cost stays (accepted)' | 'Post dimension reclass'): Result {
-  if (!can('warning.dismiss')) return denied()
-  const w = runById(runId)?.warnings.find((x) => x.id === warningId)
-  if (!w) return { ok: false }
-  if (reason.trim().length < 10) return { ok: false, message: 'Give a reason of 10 characters or more.' }
-  w.dismissed = { reason: reason.trim(), pick, by: actingPerson(), at: now() }
-  return { ok: true }
-}
 
 // ── PPh 21 amendment tasks (OD-16) ──────────────────────────────────────────
 
@@ -1946,45 +2030,6 @@ export function closeAmendmentTask(id: string, outcome: 'Amended' | 'Not filed y
   return { ok: true }
 }
 
-// ── Employee events and early warnings (OD-14) ──────────────────────────────
-
-export function receiveEmployeeEvent(ev: { type: EmployeeEventType; employee_id: string; effective: string | null; to?: GroupFields | null; employee?: Partial<RosterEmployee> }): SendResult {
-  now()
-  const r = payroll.roster.find((x) => x.employee_id === ev.employee_id)
-  if (!ev.effective && ev.type !== 'talenta.employee.detail.deleted') {
-    addLog({ type: 'Employee event', status: 'Recorded', reason: 'Ignored: no effective date', nextStep: 'Nothing to do.' })
-    return { ok: false, status: 'Recorded', message: 'Ignored: no effective date' }
-  }
-  const from = r ? { organization_name: r.organization_name, branch_name: r.branch_name, cost_center_name: r.cost_center_name } : null
-  const fromAsOf = r && ev.effective ? groupsAsOfRoster(r, addDays(ev.effective, -1)) : from
-  const event: PayrollEvent = { id: nextId('ev'), type: ev.type, employee_id: ev.employee_id, effective: ev.effective, from: fromAsOf, to: ev.to ?? null, receivedAt: payroll.clock }
-  if (ev.type === 'talenta.employee.detail.created') {
-    if (!r) payroll.roster.push({ employee_id: ev.employee_id, organization_name: ev.to?.organization_name ?? '', branch_name: ev.to?.branch_name ?? '', cost_center_name: ev.to?.cost_center_name ?? '', job_position: 'Account Executive', job_level: 'Staff', grade: 'G2', employment_status: 'Probation', business_unit: 'B2B Beans', basic: 8_800_000, expat: false, joined: ev.effective!, left: null, deleted: false, transfers: [], ...ev.employee })
-    event.from = null
-    for (const [f, val] of [['organization_name', ev.to?.organization_name], ['branch_name', ev.to?.branch_name]] as const) if (val && !payroll.settings.knownValues[f]?.includes(val)) acceptValue(f, val)
-  } else if (r && ev.type === 'talenta.employee.transfer.approved' && ev.to) r.transfers.push({ effective: ev.effective!, to: ev.to })
-  else if (r && ev.type === 'talenta.employee.resignation.created') r.left = ev.effective
-  else if (r && ev.type === 'talenta.employee.detail.deleted') r.deleted = true
-  payroll.events.push(event)
-  // Early warning on a posted run whose period holds the effective date.
-  let warned: Run | undefined
-  if ((ev.type === 'talenta.employee.transfer.approved' || ev.type === 'talenta.employee.resignation.created') && ev.effective) {
-    warned = payroll.runs.find((x) => x.kind === 'Regular' && liveJournals(x.id).length && ev.effective! >= x.start && ev.effective! <= x.end)
-    if (warned) {
-      const what = ev.type === 'talenta.employee.transfer.approved' ? 'Transfer' : 'Resignation'
-      warned.warnings.push({ id: nextId('w'), eventId: event.id, type: ev.type, employee_id: ev.employee_id, effective: ev.effective, from: event.from, to: event.to, text: `The run may change. Ask HR to re-send if Talenta recalculated payroll. ${what} of ${ev.employee_id}, effective ${dateLabel(ev.effective)}.`, dismissed: null })
-      notify(['Accountant'], `${what} of ${ev.employee_id} is dated in posted payroll ${periodLabel(warned.start, warned.end)}.`, `/payroll-runs/${warned.id}`)
-    }
-  }
-  addLog({ type: 'Employee event', status: 'Recorded', reason: `${ev.type.replace('talenta.employee.', '')}: ${ev.employee_id}${ev.effective ? `, effective ${dateLabel(ev.effective)}` : ''}`, nextStep: warned ? 'Check the early warning on the posted run.' : 'Headcount uses this event.', runId: warned?.id ?? null, runKey: warned?.key ?? null })
-  return { ok: true, status: 'Recorded', runId: warned?.id }
-}
-function groupsAsOfRoster(e: RosterEmployee, date: string): GroupFields {
-  let g: GroupFields = { organization_name: e.organization_name, branch_name: e.branch_name, cost_center_name: e.cost_center_name }
-  for (const t of [...e.transfers].sort((a, b) => a.effective.localeCompare(b.effective))) if (t.effective <= date) g = { ...t.to }
-  return g
-}
-
 // ── Old sync (OD-11, LR-14) ─────────────────────────────────────────────────
 
 export function oldSyncExpense(o: { date: string; amount: number; pattern: 'Payroll' | 'Claim' }): SendResult {
@@ -2005,7 +2050,7 @@ export function oldSyncExpense(o: { date: string; amount: number; pattern: 'Payr
 
 // ── Simulated Talenta sends ─────────────────────────────────────────────────
 
-export type SendKind = 'regular' | 'new-pay-item' | 'revision' | 'partial' | 'separate-run' | 'duplicate' | 'transfer' | 'resignation' | 'created' | 'deleted' | 'old-sync'
+export type SendKind = 'regular' | 'new-pay-item' | 'revision' | 'partial' | 'separate-run' | 'duplicate' | 'old-sync'
 export const SEND_KINDS: { kind: SendKind; label: string }[] = [
   { kind: 'regular', label: 'Regular run, next period' },
   { kind: 'new-pay-item', label: 'Run with a new pay item' },
@@ -2013,19 +2058,12 @@ export const SEND_KINDS: { kind: SendKind; label: string }[] = [
   { kind: 'partial', label: 'Partial re-send' },
   { kind: 'separate-run', label: 'THR run for a posted period' },
   { kind: 'duplicate', label: 'Byte-identical duplicate' },
-  { kind: 'transfer', label: 'Employee transfer' },
-  { kind: 'resignation', label: 'Employee resignation' },
-  { kind: 'created', label: 'New employee' },
-  { kind: 'deleted', label: 'Employee deleted' },
   { kind: 'old-sync', label: 'Old-sync Expense call' },
 ]
 export interface SimOptions extends Partial<PayloadOptions> {
   runId?: string
   start?: string
   end?: string
-  employeeId?: string
-  effective?: string
-  to?: GroupFields
   pattern?: 'Payroll' | 'Claim'
   amount?: number
   date?: string
@@ -2080,21 +2118,6 @@ export function simulateSend(kind: SendKind, o: SimOptions = {}): SendResult {
       if (!last) return { ok: false, status: 'Failed', message: 'Nothing sent yet.' }
       return receiveSalaryDetail(clone(last.payload))
     }
-    case 'transfer': {
-      const r = lastPosted()
-      const id = o.employeeId ?? 'EMP-0012'
-      const eff = o.effective ?? (r ? addDays(r.start, 25) : today())
-      return receiveEmployeeEvent({ type: 'talenta.employee.transfer.approved', employee_id: id, effective: eff, to: o.to ?? { organization_name: 'Operations', branch_name: 'Surabaya', cost_center_name: 'Store Surabaya Tunjungan' } })
-    }
-    case 'resignation': {
-      const r = lastPosted()
-      return receiveEmployeeEvent({ type: 'talenta.employee.resignation.created', employee_id: o.employeeId ?? 'EMP-0036', effective: o.effective ?? (r ? addDays(r.end, -5) : today()) })
-    }
-    case 'created': {
-      const n = payroll.roster.length + 1
-      return receiveEmployeeEvent({ type: 'talenta.employee.detail.created', employee_id: o.employeeId ?? `EMP-${String(n).padStart(4, '0')}`, effective: o.effective ?? addDays(nextPeriod().start, 0), to: o.to ?? { organization_name: 'Sales', branch_name: 'Surabaya', cost_center_name: 'Regional Sales' } })
-    }
-    case 'deleted': return receiveEmployeeEvent({ type: 'talenta.employee.detail.deleted', employee_id: o.employeeId ?? payroll.roster[payroll.roster.length - 1]!.employee_id, effective: o.effective ?? today() })
     case 'old-sync': {
       const r = regularRuns().filter((x) => liveJournals(x.id).length).pop()
       return oldSyncExpense({ date: o.date ?? (r ? r.end : today()), amount: o.amount ?? 480_000_000, pattern: o.pattern ?? 'Payroll' })
@@ -2532,16 +2555,13 @@ function seed() {
   takeSnapshot('First live period Jul 2026 confirmed')
   // July: posted, paid, reconciled, signed off, locked.
   monthCycle('2026-06-21', '2026-07-20', '2026-07-22T03:00:00Z', { pay: '2026-07-24', statutory: { kes: '2026-08-07', tk: '2026-08-12', pph: '2026-08-13' } })
-  // EMP-0038 resigns effective 20 Aug (reported before August posts).
-  setClock('2026-08-05T02:00:00Z')
-  receiveEmployeeEvent({ type: 'talenta.employee.resignation.created', employee_id: 'EMP-0038', effective: '2026-08-20' })
   monthCycle('2026-07-21', '2026-08-20', '2026-08-21T03:00:00Z', { pay: '2026-08-25', statutory: { kes: '2026-09-08', tk: '2026-09-14', pph: '2026-09-14' } })
-  setClock('2026-08-25T03:00:00Z')
-  receiveEmployeeEvent({ type: 'talenta.employee.detail.created', employee_id: 'EMP-0041', effective: '2026-09-01', to: { organization_name: 'Sales', branch_name: 'Bandung', cost_center_name: 'Regional Sales' } })
   for (const m of ['2026-07', '2026-08']) closeMonth(m)
   setClock('2026-09-10T03:00:00Z')
   as('Finance Manager', () => must(lockPeriod('2026-07'), 'lock Jul'))
-  // September: arrives with a new pay item and holds.
+  // September: arrives with a new pay item and holds. HR settled three people changes in
+  // Talenta (EMP-0038 left, EMP-0035 moved to Sales Surabaya, EMP-0041 joined Sales Bandung);
+  // the send carries them and the draft review shows them against August.
   setClock('2026-09-21T03:00:00Z')
   simulateSend('new-pay-item', { start: '2026-08-21', end: '2026-09-20', sentAt: '2026-09-21T03:00:00Z', newAllowance: { name: 'Insentif Penjualan', organization: 'Sales', amount: 1_500_000 } })
   setClock('2026-10-05T02:00:00Z')
