@@ -953,6 +953,8 @@ const SECTION_PARENT: Record<string, string> = {
   Delivery: 'Outbound delivery',
   Receiving: 'Inbound delivery',
   'Put away': 'Inbound delivery',
+  // /payroll-runs/:id is a payroll run record; anchor it under Accounting › Payroll inbox.
+  'Payroll runs': 'Payroll inbox',
 }
 
 watch([currentPageKey, activeSectionOverride, () => route.path, () => route.query.tab, () => route.query.innerTab], ([urlKey, override]) => {
