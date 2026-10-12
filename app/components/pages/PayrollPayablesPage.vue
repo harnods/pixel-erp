@@ -38,7 +38,7 @@ const monthOptions = computed(() => months.value.map((m) => ({ value: m, label: 
 const partyOptions = computed(() => [...new Set(all.value.map((r) => r.party))].map((p) => ({ value: p, label: p === 'Staff' ? t('Salary') : p })))
 
 const matchesState = (r: PayableRow, s: string) =>
-  s === 'open' ? r.balance > 0 : s === 'overdue' ? r.overdueDays > 0 : s === 'flagged' ? r.flags.length > 0 : true
+  s === 'open' ? r.balance > 0 : s === 'overdue' ? r.overdueDays > 0 : true
 const filtered = computed(() => all.value.filter((r) =>
   (!monthFilter.value || r.month === monthFilter.value)
   && (!partyFilter.value || r.party === partyFilter.value)
@@ -91,7 +91,6 @@ onUpdated(markRows)
 // ─── Stats ──────────────────────────────────────────────────────────────────
 const openRows = computed(() => all.value.filter((r) => r.balance > 0))
 const overdueRows = computed(() => all.value.filter((r) => r.overdueDays > 0))
-const flaggedRows = computed(() => all.value.filter((r) => r.flags.length))
 const thisMonth = computed(() => today().slice(0, 7))
 const paidThisMonth = computed(() => paymentHistory.value.filter((p) => p.date.startsWith(thisMonth.value)))
 const sum = (rows: PayableRow[]) => rows.reduce((s, r) => s + r.balance, 0)
@@ -173,18 +172,11 @@ const asPay = (r: unknown) => r as PayHist
             <div class="stat-amount" :class="{ 'stat-amount--danger': overdueRows.length }">{{ rupiah(sum(overdueRows)) }}</div>
             <a class="stat-link" @click="drill('overdue')">{{ plural(overdueRows.length, 'payable', 'payables') }}</a>
           </div>
-          <div class="stat-card stat-card--bordered">
+          <div class="stat-card">
             <div class="stat-title">{{ t('Paid') }}</div>
             <div class="stat-period">{{ t('Bank matches') }} · {{ monthLabel(thisMonth) }}</div>
             <div class="stat-amount">{{ rupiah(paidThisMonth.reduce((s, p) => s + p.amount, 0)) }}</div>
             <a class="stat-link" @click="view = 'payments'">{{ plural(paidThisMonth.length, 'payment', 'payments') }}</a>
-          </div>
-          <div class="stat-card" :data-tour="firstFlaggedKey ? undefined : 'payroll-payables-flags'">
-            <div class="stat-title">{{ t('Checks') }}</div>
-            <div class="stat-period">{{ t('Bank, e-Bupot and manual journals') }}</div>
-            <div class="stat-amount" :class="{ 'stat-amount--warning': flaggedRows.length }">{{ plural(flaggedRows.length, 'payable', 'payables') }}</div>
-            <a v-if="flaggedRows.length" class="stat-link" @click="drill('flagged')">{{ t('Review') }}</a>
-            <span v-else class="stat-note">{{ t('Nothing to review') }}</span>
           </div>
         </div>
       </template>
@@ -315,9 +307,7 @@ const asPay = (r: unknown) => r as PayHist
 .stat-period { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap; }
 .stat-amount { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-2xl, 32px); white-space: nowrap; }
 .stat-amount--danger { color: var(--mp-text-danger); }
-.stat-amount--warning { color: var(--mp-colors-text-warning); }
 .stat-link { display: inline-flex; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); line-height: var(--mp-line-heights-md); cursor: pointer; padding: 0 var(--mp-spacing-0\.5); }
-.stat-note { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md); }
 
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
