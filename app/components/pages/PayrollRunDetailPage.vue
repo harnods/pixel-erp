@@ -4,7 +4,8 @@
  * and versions; holds with their fixes in check order; the draft review (OD-12);
  * Post with the stale-draft and newer-version blocks (warnings never block;
  * the unacknowledged ones are listed in the Post confirm); the versions, posted PAY journals and the "Built with"
- * snapshot. Agent C's revision panel mounts in the marked slot.
+ * snapshot. The warnings panel (acknowledge each), the correction notice with Post correction
+ * (Reverse and repost under its More menu) and the claims section sit on the page itself.
  */
 import { computed, ref, watch } from 'vue'
 import { MpButton, MpTextlink, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem } from '@mekari/pixel3'
@@ -14,11 +15,13 @@ import PayrollHoldsPanel from '~/components/payroll/PayrollHoldsPanel.vue'
 import PayrollDraftReview from '~/components/payroll/PayrollDraftReview.vue'
 import PayrollRunBuiltWith from '~/components/payroll/PayrollRunBuiltWith.vue'
 import PayrollRunJournals from '~/components/payroll/PayrollRunJournals.vue'
-// ── Slot for agent C (FG-4 revisions and corrections). Do not edit the panel here. ──
+import PayrollRunWarnings from '~/components/payroll/PayrollRunWarnings.vue'
+import PayrollRunClaims from '~/components/payroll/PayrollRunClaims.vue'
+import PayrollCorrectionNotice from '~/components/payroll/PayrollCorrectionNotice.vue'
 import PayrollRevisionPanel from '~/components/payroll/PayrollRevisionPanel.vue'
 import {
   can, runById, runStatus, runHolds, currentVersionOf, versionLabel, draftOf, liveJournals, journalsOf, postRun,
-  rebuildDraft, isDraftStale, postConfirmText, rupiah, wib, periodLabel, monthLabel,
+  rebuildDraft, isDraftStale, postConfirmText, runWarnings, correctionOf, rupiah, wib, periodLabel, monthLabel,
   accountLabel, tagsLabel, type Tags,
 } from '~/data/payrollStore'
 import { statusType, versionFigures } from '~/data/payrollUiIntake'
@@ -39,6 +42,10 @@ const allJournals = computed(() => (run.value ? journalsOf(run.value.id) : []))
 const fig = computed(() => versionFigures(v.value))
 const draftTotal = computed(() => (draft.value ? draft.value.lines.reduce((s, l) => s + l.debit, 0) : 0))
 const liveTotal = computed(() => live.value.reduce((s, j) => s + j.lines.reduce((x, l) => x + l.debit, 0), 0))
+const warningCount = computed(() => (run.value ? runWarnings(run.value.id).length : 0))
+const showWarnings = computed(() => !!run.value && !holds.value.length && ((!!draft.value && !live.value.length) || warningCount.value > 0))
+const hasCorrection = computed(() => !!run.value && !!correctionOf(run.value.id))
+const showClaims = computed(() => !!draft.value || live.value.length > 0)
 const showRevisionSlot = computed(() => !!run.value && (run.value.versions.length > 1 || allJournals.value.length > 0))
 
 type Tab = 'review' | 'versions' | 'journals' | 'built'
@@ -87,7 +94,7 @@ function notInPrototype() { infoToast(t('Not in this prototype')) }
 function back() { router.push('/payroll-inbox') }
 const lineLabel = (account: string, tags: Tags) => `${accountLabel(account)}${tagsLabel(tags) ? ` | ${tagsLabel(tags)}` : ''}`
 
-// Deep links from notices: ?tab=compare is the revision panel's; anything else lands on the review.
+// Deep links from notices: ?tab=journals|versions|built; anything else lands on the review.
 watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' || q === 'built') tab.value = q as Tab }, { immediate: true })
 </script>
 
@@ -159,7 +166,7 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
         <div class="prr__noticetitle">{{ t('Not posted') }}</div>
         <div>{{ postError }}</div>
       </div>
-      <div v-if="staleChanges.length" class="prr__card prr__stale">
+      <div v-if="staleChanges.length" class="prr__card">
         <div class="prr__cardhead">
           <div class="prr__cardtitle">{{ t('Lines moved by the rebuild') }}</div>
           <div class="prr__cardsub">{{ t('Settings changed since the draft was built. Review the moved lines and post again.') }}</div>
@@ -180,7 +187,13 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
       <!-- Holds with their fixes, in check order. -->
       <PayrollHoldsPanel v-if="holds.length" :run-id="run.id" />
 
-      <!-- ── Agent C slot: revisions, reversal (FG-4). ── -->
+      <!-- Correction waiting on a posted run: summary, Post correction, More > Reverse and repost. -->
+      <PayrollCorrectionNotice v-if="hasCorrection" :run-id="run.id" />
+
+      <!-- Warnings on the current version: never block Post. -->
+      <PayrollRunWarnings v-if="showWarnings" :run-id="run.id" />
+
+      <!-- Revisions, reversal, compare, amendment tasks (FG-4). -->
       <PayrollRevisionPanel v-if="showRevisionSlot" :run-id="run.id" />
 
       <div class="prr__tabs" role="tablist">
@@ -230,6 +243,8 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
       <PayrollRunJournals v-else-if="tab === 'journals'" :run-id="run.id" />
 
       <PayrollRunBuiltWith v-else :snapshot-id="draft?.snapshotId ?? live[0]?.snapshotId ?? allJournals[allJournals.length - 1]?.snapshotId ?? null" />
+
+      <PayrollRunClaims v-if="showClaims" :run-id="run.id" />
     </div>
 
     <ConfirmModal
@@ -265,16 +280,17 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
 .prr__title { font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
 .prr__sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: var(--mp-spacing-1) 0 0; overflow-wrap: anywhere; }
 .prr__baractions { flex: none; display: flex; gap: var(--mp-spacing-2); align-items: center; }
-.prr__body { padding: var(--mp-spacing-6); }
+.prr__body { padding: var(--mp-spacing-6); display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
+.prr__body > .stats-section { margin-bottom: 0; }
+
 
 .prr__notice {
-  padding: var(--mp-spacing-3) var(--mp-spacing-4); margin-bottom: var(--mp-spacing-5); border-radius: var(--mp-radii-md);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4); border-radius: var(--mp-radii-md);
   background: var(--mp-colors-background-warning); color: var(--mp-colors-text-warning); font-size: var(--mp-font-sizes-md);
 }
 .prr__noticetitle { font-weight: var(--mp-font-weights-semi-bold); margin-bottom: var(--mp-spacing-1); }
-.prr__stale { margin-bottom: var(--mp-spacing-5); }
 
-.prr__tabs { display: flex; gap: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-border-default); margin-bottom: var(--mp-spacing-4); }
+.prr__tabs { display: flex; gap: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-border-default); }
 .prr__tab {
   border: 0; background: transparent; cursor: pointer; padding: var(--mp-spacing-2) 0; font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-secondary); border-bottom: 2px solid transparent;
