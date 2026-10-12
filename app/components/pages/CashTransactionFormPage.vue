@@ -21,6 +21,7 @@ import {
   CASH_TX_TAX_OPTIONS, LINE_ACCOUNT_OPTIONS,
 } from '~/data/bankTransactions'
 import { formatMoney } from '~/utils/currency'
+import { payablePrefill, recordPayablePayment, accountLabel as payrollAccountLabel, rupiah, payrollAccount, useChartAccount } from '~/data/payrollStore'
 
 const props = defineProps<{ orderId?: string }>()
 const { t } = useLocale()
@@ -32,6 +33,10 @@ const base = kind === 'deposit' ? '/bank-deposits' : '/bank-withdrawals'
 const isEdit = route.path.endsWith('/edit')
 const duplicateFrom = typeof route.query.duplicateFrom === 'string' ? route.query.duplicateFrom : ''
 const accountFrom = typeof route.query.accountFrom === 'string' ? route.query.accountFrom : ''
+// ?payable=<key>: opened from Payroll payables > Pay. The form is prefilled with that payable, and
+// saving it records the payment against it (the payable turns Paid or Partly paid).
+const payableKey = kind === 'withdrawal' && typeof route.query.payable === 'string' ? route.query.payable : ''
+const payable = payableKey ? payablePrefill(payableKey) : null
 
 // Prod copy per kind (cashManagement.bankDeposit.* / bankWithdrawal.*)
 const L = kind === 'deposit'
@@ -45,7 +50,15 @@ function toISODate(display: string) { const [d, m, y] = display.split('/'); retu
 const cashAccountOptions = computed(() =>
   cashAccounts.filter((a) => !a.isArchived).map((a) => ({ id: a.id, name: `${a.code} ${a.name}` })),
 )
-const contactOptions = computed(() => contacts.map((c) => ({ id: c.displayName, name: c.displayName })))
+const contactOptions = computed(() => {
+  const list = contacts.map((c) => ({ id: c.displayName, name: c.displayName }))
+  if (payable && !list.some((c) => c.id === payable.payee)) list.unshift({ id: payable.payee, name: payable.payee })
+  return list
+})
+// The payable's account may not be in the default line account list; add it so the line shows it.
+const lineAccountOptions = computed(() => (payable && !LINE_ACCOUNT_OPTIONS.some((o) => o.id === payable.account)
+  ? [{ id: payable.account, name: payrollAccountLabel(payable.account) }, ...LINE_ACCOUNT_OPTIONS]
+  : LINE_ACCOUNT_OPTIONS))
 
 const cashAccountId = ref('')
 const cashAccountError = ref(false)
@@ -103,6 +116,7 @@ function removeAttachedFile(name: string) { attachedFiles.value = attachedFiles.
 // ── Save ───────────────────────────────────────────────────────────────────────
 const saveFailed = ref(false)
 function goBack() {
+  if (payable) { router.push('/payroll-payables'); return }
   if (isEdit && props.orderId) router.push(`${base}/${props.orderId}`)
   else if (accountFrom) router.push(`/cash-management/${accountFrom}`)
   else router.push('/cash-management')
@@ -125,6 +139,17 @@ function handleSave() {
     memo: memo.value.trim() || undefined,
   }
   const saved = isEdit && props.orderId ? updateCashTx(props.orderId, payload) : addCashTx(kind, payload)
+  if (saved && payable) {
+    const paidNow = filledRows.value.filter((r) => r.accountCode === payable.account).reduce((sum, r) => sum + amountOf(r), 0)
+    const cash = cashAccounts.find((a) => a.id === cashAccountId.value)
+    const bank = cash?.code ?? ''
+    if (cash && !payrollAccount(bank)) useChartAccount({ code: bank, name: cash.name, type: 'cash' })
+    const res = recordPayablePayment(payable.key, { cashTxId: saved.id, number: `Spend money #${saved.number}`, bank, date: payload.transactionDate, amount: paidNow })
+    if (!res.ok) { toast.notify({ variant: 'error', title: t(res.message ?? 'Unable to record the payment on the payable.') }); return }
+    toast.notify({ variant: 'success', title: t(`${payable.label} paid: ${rupiah(paidNow)}`) })
+    router.push('/payroll-payables')
+    return
+  }
   toast.notify({ variant: 'success', title: t(L.saved) })
   if (saved) router.push(`${base}/${saved.id}`)
 }
@@ -156,6 +181,13 @@ onMounted(() => {
   if (isEdit && props.orderId) prefill(props.orderId)
   else if (duplicateFrom) prefill(duplicateFrom)
   else if (accountFrom && cashAccounts.some((a) => a.id === accountFrom)) cashAccountId.value = accountFrom
+  else if (payable) {
+    cashAccountId.value = cashAccounts.find((a) => a.name === 'Bank BCA' && !a.isArchived)?.id ?? ''
+    contact.value = payable.payee
+    transactionDate.value = toDisplayDate(payable.date)
+    memo.value = payable.memo
+    rows.value = [{ ...makeRow(), accountCode: payable.account, description: payable.label, amount: payable.amount.toLocaleString('id-ID') }, makeRow()]
+  }
   nextTick(() => {
     checkStageOverflow()
     observer = new ResizeObserver(checkStageOverflow)
@@ -179,6 +211,11 @@ onUnmounted(() => { observer?.disconnect() })
     </header>
 
     <div ref="stageEl" class="it-stage">
+      <MpBanner v-if="payable" id="ctf-payable" variant="info" data-testid="ctf-payable">
+        <MpBannerIcon />
+        <MpBannerTitle>{{ t('Paying a payroll payable') }}</MpBannerTitle>
+        <MpBannerDescription>{{ t(`${payable.label}: ${rupiah(payable.amount)} still owed to ${payable.payee}. Saving records the payment, and Payroll payables shows it paid.`) }}</MpBannerDescription>
+      </MpBanner>
       <!-- Deposit to / Pay from + Payer / Payee + Total -->
       <div class="ex-row-1">
         <MpFormControl id="ctf-account" class="ex-field-flex" :is-invalid="cashAccountError" is-required>
@@ -267,14 +304,14 @@ onUnmounted(() => { observer?.disconnect() })
                 <td class="ex-td ex-td--input ex-td--border" :class="{ 'ex-td--error': row.accountError }">
                   <MpTooltip v-if="row.accountError" :id="`ctf-acc-tip-${row.id}`" :label="t('You must select account')" placement="top" use-portal>
                     <MpAutocomplete
-                      :id="`ctf-acc-${row.id}`" v-model="row.accountCode" :data="LINE_ACCOUNT_OPTIONS"
+                      :id="`ctf-acc-${row.id}`" v-model="row.accountCode" :data="lineAccountOptions"
                       label-prop="name" value-prop="id" is-searchable use-portal is-full-width
                       :placeholder="t('Select account')" @update:model-value="onAccountSelect(row)"
                     />
                   </MpTooltip>
                   <MpAutocomplete
                     v-else
-                    :id="`ctf-acc-${row.id}`" v-model="row.accountCode" :data="LINE_ACCOUNT_OPTIONS"
+                    :id="`ctf-acc-${row.id}`" v-model="row.accountCode" :data="lineAccountOptions"
                     label-prop="name" value-prop="id" is-searchable use-portal is-full-width
                     :placeholder="t('Select account')" @update:model-value="onAccountSelect(row)"
                   />

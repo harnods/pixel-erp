@@ -59,6 +59,7 @@ export function matchedPayments(r: PayableRow) {
     date: p.date,
     bank: accountLabel(p.bank),
     statement: payroll.bankLines.find((b) => b.id === p.statementLineId)?.description ?? '',
+    cashTxId: p.cashTxId,
     amount: p.amount,
   }))
 }

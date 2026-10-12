@@ -34,7 +34,7 @@ export const paymentHistory = computed(() => {
       dateLabel: dateLabel(p.date),
       payable: row?.label ?? (p.kind === 'Salary' ? `Salary ${run ? periodLabel(run.start, run.end) : ''}` : `${accountLabel(p.account)} ${monthLabel(p.month)}`),
       bank: accountLabel(p.bank),
-      statement: line?.description ?? '',
+      statement: p.cashTxId ? 'Spend money' : line ? 'Bank reconciliation' : '',
       amount: p.amount,
     }
   })

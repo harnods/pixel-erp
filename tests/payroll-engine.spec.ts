@@ -11,6 +11,7 @@ import {
   claimsSummary, noticesFor, SEND_KINDS, BANK_PAYMENT_KINDS, type Run, type JournalLine,
   approvePayroll, rejectPayroll, canApprove, whyLine, journalsOf, defaultEntryDate, checkEntryDate, payrollAccount, rebuildDraft,
   revisionNotice, PARTY_NAME, startConnection, endConnection, confirmSource, setLimits,
+  payablePrefill, recordPayablePayment,
 } from '../app/data/payrollStore'
 import { runRow, hrMessage, monthHeadcount } from '../app/data/payrollUiIntake'
 import { sendLog, sendLogCsv, SEND_LOG_COLUMNS } from '../app/data/payrollStore'
@@ -1136,3 +1137,21 @@ describe('privacy: no employee identifier in any returned payload', () => {
   })
 })
 
+
+describe('Pay a payable from Cash management (Spend money)', () => {
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant + LM') })
+  it('prefills the open balance and saving pays the payable', () => {
+    const row = () => payablesTracker('2026-08').find((r) => r.party === 'BPJS Kesehatan')!
+    expect(row()).toMatchObject({ status: 'Overdue', balance: 16_102_029 })
+    const pre = payablePrefill(row().key)!
+    expect(pre).toMatchObject({ account: ACC.bpjsKes, payee: 'BPJS Kesehatan', amount: 16_102_029, month: '2026-08' })
+    expect(payablePrefill(payablesTracker('2026-08').find((r) => r.party === 'Staff')!.key)).toBeNull()
+    const res = recordPayablePayment(pre.key, { cashTxId: 'bw-new-1', number: 'Spend money #1', bank: ACC.bca, date: '2026-10-05', amount: 16_102_029 })
+    expect(res.ok).toBe(true)
+    expect(row()).toMatchObject({ balance: 0, paid: 16_102_029 })
+    expect(row().payments[0]).toMatchObject({ number: 'Spend money #1', cashTxId: 'bw-new-1' })
+    const j = payroll.journals.find((x) => x.number === 'Spend money #1')!
+    expect(j.lines.map((l) => [l.account, l.debit, l.credit])).toEqual([[ACC.bpjsKes, 16_102_029, 0], [ACC.bca, 0, 16_102_029]])
+    expect(recordPayablePayment(pre.key, { cashTxId: 'x', number: 'Spend money #2', bank: ACC.bca, date: '2026-07-10', amount: 1 }).message).toBe('Jul 2026 is locked. Pick a date in an open month.')
+  })
+})

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * Payroll payables: a tracker. One row per party per period: owed, paid, balance, due date,
- * status. Payments arrive as bank reconciliation matches (the Simulate menu stands in for the
+ * status. Payments arrive from Pay (Cash management > Spend money) or as bank reconciliation matches (the Simulate menu stands in for the
  * bank statement); this screen records none itself. Flags sit on the rows they concern: the bank
  * paid a salary run a different amount than the posted run, or a manual journal hit a payroll
  * payable account.
@@ -101,6 +101,8 @@ const detailOpen = ref(false)
 const activeKey = ref<string | null>(null)
 const active = computed(() => all.value.find((r) => r.key === activeKey.value) ?? null)
 function openDetail(r: PayableRow) { activeKey.value = r.key; detailOpen.value = true }
+/** Pay: Cash management > New spend money, prefilled with this payable; saving it pays the payable. */
+function payNow(r: PayableRow) { navigateTo({ path: '/bank-withdrawals/new', query: { payable: r.key } }) }
 
 // ─── Payments ───────────────────────────────────────────────────────────────
 const paymentColumns: TableColumn[] = [
@@ -108,7 +110,7 @@ const paymentColumns: TableColumn[] = [
   { key: 'dateLabel', label: t('Date'), kind: 'date' },
   { key: 'payable', label: t('Payable'), kind: 'name' },
   { key: 'bank', label: t('Bank account'), kind: 'name' },
-  { key: 'statement', label: t('Bank statement line'), kind: 'default' },
+  { key: 'statement', label: t('Source'), kind: 'default' },
   { key: 'amount', label: t('Amount'), kind: 'amount', align: 'right' },
 ]
 const payPage = ref(1)
@@ -161,7 +163,7 @@ const asPay = (r: unknown) => r as PayHist
           </div>
           <div class="stat-card">
             <div class="stat-title">{{ t('Paid this month') }}</div>
-            <div class="stat-period">{{ t('Matched in bank reconciliation') }} · {{ monthLabel(thisMonth) }}</div>
+            <div class="stat-period">{{ t('Spend money or bank reconciliation') }} · {{ monthLabel(thisMonth) }}</div>
             <div class="stat-amount">{{ rupiah(paidThisMonth.reduce((s, p) => s + p.amount, 0)) }}</div>
             <a v-if="paidThisMonth.length" class="stat-link" @click="view = 'payments'">{{ plural(paidThisMonth.length, 'payment', 'payments') }}</a>
           </div>
@@ -221,6 +223,7 @@ const asPay = (r: unknown) => r as PayHist
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
+              <MpPopoverListItem v-if="asRow(row).balance > 0 && can('simulate')" @click="payNow(asRow(row))">{{ t('Pay') }}</MpPopoverListItem>
               <MpPopoverListItem @click="openDetail(asRow(row))">{{ t('View details') }}</MpPopoverListItem>
               <MpPopoverListItem v-if="asRow(row).runId" @click="navigateTo(`/payroll-runs/${asRow(row).runId}`)">{{ t('Open payroll run') }}</MpPopoverListItem>
             </MpPopoverList>
@@ -255,7 +258,7 @@ const asPay = (r: unknown) => r as PayHist
       <template #empty>
         <div class="pp-empty">
           <p class="pp-empty-title">{{ t('No payments yet') }}</p>
-          <p class="pp-empty-desc">{{ t('A payment shows here when bank reconciliation matches a bank statement line to a payable.') }}</p>
+          <p class="pp-empty-desc">{{ t('A payment shows here when you pay a payable, or when bank reconciliation matches a bank line to one.') }}</p>
         </div>
       </template>
     </ErpTablePage>

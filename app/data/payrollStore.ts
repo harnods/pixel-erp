@@ -152,6 +152,8 @@
  *                                   paidLateDays, status 'Open'|'Partly paid'|'Paid'|'Paid late'|'Overdue'|'Overpaid', statusLabel,
  *                                   payments[{ id, number, date, bank, amount, statement }], pendingOwed (salary row with a revision waiting),
  *                                   flags[{ code 'bank-differs'|'manual-journal', message }] }.
+ *   payablePrefill(key) / recordPayablePayment(key, { cashTxId, number, bank, date, amount })
+ *                                   Pay action: Cash management > New spend money prefilled for an open payable; saving pays it.
  *   simulateBankPayment(kind, opts?)   BANK_PAYMENT_KINDS: 'salary' | 'pph21' | 'pph26' | 'bpjs-kesehatan' | 'bpjs-ketenagakerjaan' | 'dplk'
  *                                   | 'partial' | 'overpaid'. opts: { runId, month, of, amount, date, bank }. Creates a matched bank line
  *                                   (payroll.bankLines) and a BNK journal (Dr payable, Cr bank), type 'Salary payment' / 'Statutory payment',
@@ -345,7 +347,7 @@ export interface PayrollApprovalRequest {
   taskId: string
 }
 export type JournalType = 'Payroll' | 'Reversal' | 'Salary payment' | 'Statutory payment' | 'Manual'
-export type JournalSource = 'Talenta payroll' | 'Bank reconciliation' | 'Manual journal'
+export type JournalSource = 'Talenta payroll' | 'Bank reconciliation' | 'Manual journal' | 'Spend money'
 export interface Journal {
   id: string
   number: string
@@ -379,6 +381,8 @@ export interface Payment {
   amount: number
   journalId: string
   statementLineId: string
+  /** Set when the payment was made from Cash management > Spend money (the Pay action on a payable). */
+  cashTxId?: string
 }
 export type LogStatus = 'Received' | 'Waiting for your choice' | 'Held' | 'Posted' | 'Failed' | 'Reversed' | 'Blocked' | 'No change' | 'Recorded'
 export interface SyncLogEntry {
@@ -2622,7 +2626,7 @@ export interface PayableRow {
   status: 'Open' | 'Partly paid' | 'Paid' | 'Paid late' | 'Overdue' | 'Overpaid'
   statusLabel: string
   /** Payments (bank matches) behind "paid", oldest first. */
-  payments: { id: string; number: string; date: string; bank: string; amount: number; statement: string }[]
+  payments: { id: string; number: string; date: string; bank: string; amount: number; statement: string; cashTxId?: string }[]
   /** Revision waiting on the run (salary rows): what is owed once it is reversed and reposted. */
   pendingOwed: number | null
   flags: PayableFlag[]
@@ -2653,7 +2657,7 @@ export function payablesTracker(month?: string): PayableRow[] {
     return {
       key: `${account}|${m}|${run?.id ?? ''}`, account, party, month: m, runId: run?.id ?? null, label, owed, paid, balance, due, dueLabel: due ? dateLabel(due) : 'Not set',
       overdueDays, paidLateDays, status, statusLabel,
-      payments: pays.map((p) => ({ id: p.id, number: journalById(p.journalId)?.number ?? '', date: p.date, bank: accountLabel(p.bank), amount: p.amount, statement: payroll.bankLines.find((b) => b.id === p.statementLineId)?.description ?? '' })),
+      payments: pays.map((p) => ({ id: p.id, number: journalById(p.journalId)?.number ?? '', date: p.date, bank: accountLabel(p.bank), amount: p.amount, statement: payroll.bankLines.find((b) => b.id === p.statementLineId)?.description ?? (p.cashTxId ? 'Spend money' : ''), cashTxId: p.cashTxId })),
       pendingOwed: rev ? rev.lines.filter((l) => l.account === account).reduce((s, l) => s + l.credit - l.debit, 0) : null,
       flags,
     }
@@ -2748,6 +2752,46 @@ export function simulateBankPayment(kind: BankPaymentKind, o: BankPaymentOptions
   payroll.payments.push(p)
   addLog({ type: 'Payment', status: 'Recorded', reason: `${label}: ${rupiah(amount)} paid (${j.number}), matched in bank reconciliation`, nextStep: 'Nothing to do.', runId: run?.id ?? null, runKey: run?.key ?? null, journalNo: j.number })
   return { ok: true, paymentId: p.id, number: j.number, amount, account, month }
+}
+
+// ── Pay from Cash management (Spend money) ──────────────────────────────────
+
+/** What the Pay action prefills on Cash management > New spend money for one open payable. */
+export interface PayablePrefill { key: string; account: string; party: PayableParty; payee: string; month: string; runId: string | null; amount: number; label: string; memo: string; date: string }
+export function payablePrefill(key: string): PayablePrefill | null {
+  const r = payablesTracker().find((x) => x.key === key)
+  if (!r || r.balance <= 0) return null
+  return {
+    key, account: r.account, party: r.party, payee: partyName(r.party), month: r.month, runId: r.runId, amount: r.balance, label: r.label,
+    memo: `${r.label}, paid from Payroll payables`, date: today(),
+  }
+}
+/**
+ * Spend money saved for a payable: the payment counts against that payable, and its journal
+ * (Dr the payable, Cr the bank) sits with the payroll journals so the tracker and the run agree.
+ */
+export function recordPayablePayment(key: string, o: { cashTxId: string; number: string; bank: string; date: string; amount: number }): Result {
+  if (!can('simulate')) return denied('simulate')
+  const r = payablesTracker().find((x) => x.key === key)
+  if (!r) return { ok: false, message: 'That payable is no longer open. Refresh Payroll payables.' }
+  if (o.amount <= 0) return { ok: false, message: 'Enter an amount above Rp0.' }
+  if (isLocked(monthOf(o.date))) return { ok: false, message: `${monthLabel(monthOf(o.date))} is locked. Pick a date in an open month.` }
+  now()
+  const memo = `${r.label}, paid by ${o.number}`
+  const j = addJournal({
+    number: o.number, type: r.party === 'Staff' ? 'Salary payment' : 'Statutory payment', source: 'Spend money', runId: r.runId, versionNo: null,
+    date: o.date, taxMonth: r.month, memo, reference: o.number, correction: false,
+    lines: [
+      { account: r.account, tags: NO_TAGS, debit: o.amount, credit: 0, why: [memo], sources: [] },
+      { account: o.bank, tags: NO_TAGS, debit: 0, credit: o.amount, why: [`${o.number} from Cash management`], sources: [] },
+    ],
+    snapshotId: null, reversesId: null, paymentId: null,
+  })
+  const p: Payment = { id: nextId('pay'), kind: r.party === 'Staff' ? 'Salary' : 'Statutory', party: r.party, account: r.account, runId: r.runId, month: r.month, bank: o.bank, date: o.date, amount: o.amount, journalId: j.id, statementLineId: '', cashTxId: o.cashTxId }
+  j.paymentId = p.id
+  payroll.payments.push(p)
+  addLog({ type: 'Payment', status: 'Recorded', reason: `${r.label}: ${rupiah(o.amount)} paid by ${o.number}`, nextStep: 'Nothing to do.', runId: r.runId, runKey: null, journalNo: o.number })
+  return { ok: true, paymentId: p.id, number: o.number, amount: o.amount, account: r.account, month: r.month }
 }
 
 // ── Manual journals on payroll accounts ─────────────────────────────────────

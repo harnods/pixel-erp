@@ -6,7 +6,8 @@
  */
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PayrollPayDrawer from '~/components/payroll/PayrollPayDrawer.vue'
-import { rupiah, accountLabel, monthLabel, dateLabel, type PayableRow } from '~/data/payrollStore'
+import { MpButton } from '@mekari/pixel3'
+import { rupiah, accountLabel, monthLabel, dateLabel, can, type PayableRow } from '~/data/payrollStore'
 import { payableDrill } from '~/data/payrollUiPayables'
 import { matchedPayments, FLAG_CHIP } from '~/data/payrollUiPay'
 
@@ -30,6 +31,10 @@ const pendingChange = computed(() => (props.row?.pendingOwed != null ? props.row
         <div><dt>{{ t('Paid') }}</dt><dd class="ppx-num">{{ rupiah(row.paid) }}</dd></div>
         <div><dt>{{ t('Balance') }}</dt><dd class="ppx-num">{{ rupiah(row.balance) }}</dd></div>
       </dl>
+      <div v-if="row.balance > 0 && can('simulate')" class="ppx-pay">
+        <span class="ppx-sub">{{ t('Pay it from Cash management: Spend money opens with this payable filled in.') }}</span>
+        <MpButton is-rounded data-testid="ppx-pay" @click="navigateTo({ path: '/bank-withdrawals/new', query: { payable: row.key } })">{{ t('Pay') }}</MpButton>
+      </div>
 
       <section v-if="row.flags.length" class="ppx-section">
         <h3 class="ppx-h">{{ t('Flags') }}</h3>
@@ -40,14 +45,14 @@ const pendingChange = computed(() => (props.row?.pendingOwed != null ? props.row
       </section>
 
       <section class="ppx-section">
-        <h3 class="ppx-h">{{ t('Payments matched in bank reconciliation') }}</h3>
+        <h3 class="ppx-h">{{ t('Payments') }}</h3>
         <table class="ppx-table">
-          <thead><tr><th>{{ t('Journal') }}</th><th>{{ t('Date') }}</th><th>{{ t('Bank account') }}</th><th>{{ t('Bank statement line') }}</th><th class="ppx-r">{{ t('Amount') }}</th></tr></thead>
+          <thead><tr><th>{{ t('Journal') }}</th><th>{{ t('Date') }}</th><th>{{ t('Bank account') }}</th><th>{{ t('Source') }}</th><th class="ppx-r">{{ t('Amount') }}</th></tr></thead>
           <tbody>
             <tr v-for="p in paid" :key="p.id">
-              <td>{{ p.number }}</td><td>{{ dateLabel(p.date) }}</td><td>{{ p.bank }}</td><td>{{ p.statement }}</td><td class="ppx-r">{{ rupiah(p.amount) }}</td>
+              <td><NuxtLink v-if="p.cashTxId" class="ppx-link" :to="`/bank-withdrawals/${p.cashTxId}`">{{ p.number }}</NuxtLink><span v-else>{{ p.number }}</span></td><td>{{ dateLabel(p.date) }}</td><td>{{ p.bank }}</td><td>{{ p.cashTxId ? t('Spend money') : t('Bank reconciliation') }}<span v-if="!p.cashTxId && p.statement" class="ppx-sub"> · {{ p.statement }}</span></td><td class="ppx-r">{{ rupiah(p.amount) }}</td>
             </tr>
-            <tr v-if="!paid.length"><td colspan="5" class="ppx-empty">{{ t('No payment matched yet. It shows here once bank reconciliation matches a bank line.') }}</td></tr>
+            <tr v-if="!paid.length"><td colspan="5" class="ppx-empty">{{ t('Not paid yet. Pay it here, or it clears when bank reconciliation matches the payment.') }}</td></tr>
           </tbody>
         </table>
       </section>
@@ -87,6 +92,7 @@ const pendingChange = computed(() => (props.row?.pendingOwed != null ? props.row
 .ppx-pending td { color: var(--mp-colors-text-secondary); }
 .ppx-num { font-variant-numeric: tabular-nums; }
 .ppx-sub { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary); }
+.ppx-pay { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); }
 .ppx-empty { color: var(--mp-colors-text-secondary); text-align: center; }
 .ppx-link { color: var(--mp-colors-text-link, var(--mp-text-link)); text-decoration: none; }
 </style>
