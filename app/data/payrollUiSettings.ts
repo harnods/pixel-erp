@@ -1,5 +1,5 @@
 /**
- * Payroll settings screen helpers (FG-1). Read-only views over payrollStore: values Talenta
+ * Payroll settings screen helpers. Read-only views over payrollStore: values Talenta
  * has sent per field, the accounts a pay item row can pick from the chart, and the last send.
  * Nothing here writes the payroll state.
  */

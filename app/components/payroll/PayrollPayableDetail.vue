@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * One payable row opened (OD-18): what is owed (the journal lines behind it, by dimension, plus
+ * One payable row opened: what is owed (the journal lines behind it, by dimension, plus
  * any repost still waiting), what the bank paid (bank reconciliation matches), and the checks
  * on the row. No employee names.
  */
@@ -23,16 +23,16 @@ const pendingChange = computed(() => (props.row?.pendingOwed != null ? props.row
   <PayrollPayDrawer :is-open="isOpen" :title="row ? row.label : ''" wide @update:is-open="(v: boolean) => emit('update:isOpen', v)">
     <template v-if="row">
       <dl class="ppx-facts">
-        <div><dt>{{ t('Payable') }}</dt><dd>{{ accountLabel(row.account) }}</dd></div>
+        <div><dt>{{ t('Account') }}</dt><dd>{{ accountLabel(row.account) }}</dd></div>
         <div><dt>{{ t('Period') }}</dt><dd>{{ monthLabel(row.month) }}</dd></div>
-        <div><dt>{{ t('Due') }}</dt><dd>{{ row.dueLabel }}</dd></div>
+        <div><dt>{{ t('Due date') }}</dt><dd>{{ row.dueLabel }}</dd></div>
         <div><dt>{{ t('Owed') }}</dt><dd class="ppx-num">{{ rupiah(row.owed) }}</dd></div>
         <div><dt>{{ t('Paid') }}</dt><dd class="ppx-num">{{ rupiah(row.paid) }}</dd></div>
         <div><dt>{{ t('Balance') }}</dt><dd class="ppx-num">{{ rupiah(row.balance) }}</dd></div>
       </dl>
 
       <section v-if="row.flags.length" class="ppx-section">
-        <h3 class="ppx-h">{{ t('Checks') }}</h3>
+        <h3 class="ppx-h">{{ t('Worth a look') }}</h3>
         <div v-for="f in row.flags" :key="f.code + f.message" class="ppx-check">
           <MpBadge for="tableStatus" :type="f.code === 'manual-journal' ? 'warning' : 'critical'">{{ t(FLAG_CHIP[f.code]) }}</MpBadge>
           <span>{{ f.message }}</span>
@@ -40,20 +40,20 @@ const pendingChange = computed(() => (props.row?.pendingOwed != null ? props.row
       </section>
 
       <section class="ppx-section">
-        <h3 class="ppx-h">{{ t('Paid: bank reconciliation matches') }}</h3>
+        <h3 class="ppx-h">{{ t('Payments matched in bank reconciliation') }}</h3>
         <table class="ppx-table">
-          <thead><tr><th>{{ t('Journal') }}</th><th>{{ t('Date') }}</th><th>{{ t('Bank') }}</th><th>{{ t('Bank statement line') }}</th><th class="ppx-r">{{ t('Amount') }}</th></tr></thead>
+          <thead><tr><th>{{ t('Journal') }}</th><th>{{ t('Date') }}</th><th>{{ t('Bank account') }}</th><th>{{ t('Bank statement line') }}</th><th class="ppx-r">{{ t('Amount') }}</th></tr></thead>
           <tbody>
             <tr v-for="p in paid" :key="p.id">
               <td>{{ p.number }}</td><td>{{ dateLabel(p.date) }}</td><td>{{ p.bank }}</td><td>{{ p.statement }}</td><td class="ppx-r">{{ rupiah(p.amount) }}</td>
             </tr>
-            <tr v-if="!paid.length"><td colspan="5" class="ppx-empty">{{ t('No bank match yet') }}</td></tr>
+            <tr v-if="!paid.length"><td colspan="5" class="ppx-empty">{{ t('No payment matched yet') }}</td></tr>
           </tbody>
         </table>
       </section>
 
       <section class="ppx-section">
-        <h3 class="ppx-h">{{ t('Owed: journal lines by dimension') }}</h3>
+        <h3 class="ppx-h">{{ t('Owed, by dimension') }}</h3>
         <table class="ppx-table">
           <thead><tr><th>{{ t('Journal') }}</th><th>{{ t('Type') }}</th><th>{{ t('Date') }}</th><th>{{ t('Dimensions') }}</th><th class="ppx-r">{{ t('Amount') }}</th></tr></thead>
           <tbody>
@@ -62,12 +62,12 @@ const pendingChange = computed(() => (props.row?.pendingOwed != null ? props.row
               <td>{{ t(l.type) }}</td><td>{{ l.date }}</td><td>{{ l.tags }}</td><td class="ppx-r">{{ rupiah(l.amount) }}</td>
             </tr>
             <tr v-if="pendingChange != null" class="ppx-pending">
-              <td>{{ t('Repost') }}</td><td>{{ t('Not posted') }}</td><td>-</td><td>{{ t('Waiting for reverse and repost') }}</td><td class="ppx-r">{{ rupiah(pendingChange) }}</td>
+              <td>{{ t('Repost') }}</td><td>{{ t('Draft journal') }}</td><td>-</td><td>{{ t('Waiting for reverse and repost') }}</td><td class="ppx-r">{{ rupiah(pendingChange) }}</td>
             </tr>
-            <tr v-if="!owed.length && pendingChange == null"><td colspan="5" class="ppx-empty">{{ t('No journal lines') }}</td></tr>
+            <tr v-if="!owed.length && pendingChange == null"><td colspan="5" class="ppx-empty">{{ t('No posted journal yet') }}</td></tr>
           </tbody>
         </table>
-        <p v-if="row.pendingOwed != null" class="ppx-sub">{{ t('Owed after the repost') }}: {{ rupiah(row.pendingOwed) }}</p>
+        <p v-if="row.pendingOwed != null" class="ppx-sub">{{ t('Owed after repost') }}: {{ rupiah(row.pendingOwed) }}</p>
       </section>
     </template>
   </PayrollPayDrawer>

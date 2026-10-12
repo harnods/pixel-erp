@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Payroll payables (FG-5): a tracker. One row per party per period: owed, paid, balance,
+ * Payroll payables: a tracker. One row per party per period: owed, paid, balance,
  * due date, status. Payments arrive as bank reconciliation matches (the Simulate menu stands in
  * for the bank statement); this screen records none itself. Two checks live here: the bank
  * paid a salary run a different amount than the posted run, and the e-Bupot PPh 21 filed
@@ -13,7 +13,7 @@ import PayrollPayableDetail from '~/components/payroll/PayrollPayableDetail.vue'
 import PayrollSimulateBankMenu from '~/components/payroll/PayrollSimulateBankMenu.vue'
 import { payablesTracker, setEbupotFiled, can, payroll, rupiah, monthLabel, dateLabel, today, accountLabel, type PayableRow } from '~/data/payrollStore'
 import { paymentHistory } from '~/data/payrollUiPayables'
-import { flagChips, isPph21Row, latestSalaryKey, latestPph21Key, parseRupiahInput } from '~/data/payrollUiPay'
+import { flagChips, isPph21Row, latestSalaryKey, latestPph21Key, parseRupiahInput, PARTY_LABEL } from '~/data/payrollUiPay'
 import { successToast, errorToast } from '~/utils/toasts'
 
 const { t } = useLocale()
@@ -35,7 +35,7 @@ const partyFilter = ref('')
 const stateFilter = ref('')
 const search = ref('')
 const monthOptions = computed(() => months.value.map((m) => ({ value: m, label: monthLabel(m) })))
-const partyOptions = computed(() => [...new Set(all.value.map((r) => r.party))].map((p) => ({ value: p, label: p === 'Staff' ? t('Salary') : p })))
+const partyOptions = computed(() => [...new Set(all.value.map((r) => r.party))].map((p) => ({ value: p, label: t(PARTY_LABEL[p]) })))
 
 const matchesState = (r: PayableRow, s: string) =>
   s === 'open' ? r.balance > 0 : s === 'overdue' ? r.overdueDays > 0 : true
@@ -102,12 +102,12 @@ const ebupotDraft = reactive<Record<string, string>>({})
 const ebupotError = reactive<Record<string, string>>({})
 function saveEbupot(r: PayableRow) {
   const amount = parseRupiahInput(ebupotDraft[r.key] ?? '')
-  if (amount == null) { ebupotError[r.key] = t('Enter the filed total in rupiah.'); return }
+  if (amount == null) { ebupotError[r.key] = t('Enter the PPh 21 total filed in e-Bupot, in rupiah.'); return }
   const res = setEbupotFiled(r.month, amount)
-  if (!res.ok) { ebupotError[r.key] = t(res.message ?? ''); errorToast(t(res.message ?? 'Not saved')); return }
+  if (!res.ok) { ebupotError[r.key] = t(res.message ?? ''); errorToast(t(res.message ?? 'Unable to save the e-Bupot total. Check the amount and try again.')); return }
   ebupotError[r.key] = ''
   ebupotDraft[r.key] = ''
-  successToast(t(res.message ? 'e-Bupot total saved. It differs from the books.' : 'e-Bupot total saved. It matches the books.'))
+  successToast(t(res.message ? 'e-Bupot total saved. It differs from the books, see the row.' : 'e-Bupot total saved. It matches the books.'))
 }
 const ebupotTolerance = computed(() => payroll.settings.limits.taxTolerance)
 
@@ -119,10 +119,10 @@ function openDetail(r: PayableRow) { activeKey.value = r.key; detailOpen.value =
 
 // ─── Payments ───────────────────────────────────────────────────────────────
 const paymentColumns: TableColumn[] = [
-  { key: 'number', label: t('Number'), kind: 'number' },
+  { key: 'number', label: t('Journal'), kind: 'number' },
   { key: 'dateLabel', label: t('Date'), kind: 'date' },
   { key: 'payable', label: t('Payable'), kind: 'name' },
-  { key: 'bank', label: t('Paid from'), kind: 'name' },
+  { key: 'bank', label: t('Bank account'), kind: 'name' },
   { key: 'statement', label: t('Bank statement line'), kind: 'default' },
   { key: 'amount', label: t('Amount'), kind: 'amount', align: 'right' },
 ]
@@ -162,19 +162,19 @@ const asPay = (r: unknown) => r as PayHist
         <div class="stats-section">
           <div class="stat-card stat-card--bordered">
             <div class="stat-title">{{ t('Open') }}</div>
-            <div class="stat-period">{{ t('Owed less paid') }} · {{ dateLabel(today()) }}</div>
+            <div class="stat-period">{{ t('Still owed') }} · {{ dateLabel(today()) }}</div>
             <div class="stat-amount">{{ rupiah(sum(openRows)) }}</div>
             <a class="stat-link" @click="drill('open')">{{ plural(openRows.length, 'payable', 'payables') }}</a>
           </div>
           <div class="stat-card stat-card--bordered">
             <div class="stat-title">{{ t('Overdue') }}</div>
-            <div class="stat-period">{{ t('Open past the due date') }}</div>
+            <div class="stat-period">{{ t('Still owed past the due date') }}</div>
             <div class="stat-amount" :class="{ 'stat-amount--danger': overdueRows.length }">{{ rupiah(sum(overdueRows)) }}</div>
             <a class="stat-link" @click="drill('overdue')">{{ plural(overdueRows.length, 'payable', 'payables') }}</a>
           </div>
           <div class="stat-card">
             <div class="stat-title">{{ t('Paid') }}</div>
-            <div class="stat-period">{{ t('Bank matches') }} · {{ monthLabel(thisMonth) }}</div>
+            <div class="stat-period">{{ t('Bank reconciliation') }} · {{ monthLabel(thisMonth) }}</div>
             <div class="stat-amount">{{ rupiah(paidThisMonth.reduce((s, p) => s + p.amount, 0)) }}</div>
             <a class="stat-link" @click="view = 'payments'">{{ plural(paidThisMonth.length, 'payment', 'payments') }}</a>
           </div>
@@ -214,12 +214,12 @@ const asPay = (r: unknown) => r as PayHist
 
           <!-- e-Bupot PPh 21 filed total -->
           <div v-if="isPph21Row(asRow(row))" class="pp-ebupot">
-            <span class="pp-ebupot__label">{{ t('e-Bupot filed') }}</span>
+            <span class="pp-ebupot__label">{{ t('Filed in e-Bupot') }}</span>
             <template v-if="asRow(row).ebupot">
               <span class="pp-ebupot__fig">{{ rupiah(asRow(row).ebupot!.filed) }}</span>
               <MpBadge v-if="Math.abs(asRow(row).ebupot!.difference) <= ebupotTolerance" for="tableStatus" type="completed">{{ t('Matches') }}</MpBadge>
               <MpBadge v-else for="tableStatus" type="critical">
-                {{ asRow(row).ebupot!.difference > 0 ? t('Above the books by') : t('Below the books by') }} {{ rupiah(Math.abs(asRow(row).ebupot!.difference)) }}
+                {{ asRow(row).ebupot!.difference > 0 ? t('More than the books by') : t('Less than the books by') }} {{ rupiah(Math.abs(asRow(row).ebupot!.difference)) }}
               </MpBadge>
             </template>
             <span v-else class="pp-sub">{{ t('Not entered') }}</span>
@@ -229,12 +229,13 @@ const asPay = (r: unknown) => r as PayHist
                 v-model="ebupotDraft[asRow(row).key]"
                 size="sm"
                 inputmode="numeric"
-                :placeholder="t('Filed total, Rp')"
+                :placeholder="t('Total filed, Rp')"
                 @input="ebupotError[asRow(row).key] = ''"
                 @keyup.enter="saveEbupot(asRow(row))"
               />
               <MpButton :id="`pp-ebupot-save-${asRow(row).month}`" variant="secondary" size="sm" is-rounded @click="saveEbupot(asRow(row))">{{ t('Save') }}</MpButton>
             </div>
+            <span v-if="can('tax') && !asRow(row).ebupot && !ebupotError[asRow(row).key]" class="pp-hint">{{ t('e-Bupot is the tax office filing of tax withheld. Enter its PPh 21 total to check it against the books.') }}</span>
             <span v-if="ebupotError[asRow(row).key]" class="pp-error">{{ ebupotError[asRow(row).key] }}</span>
           </div>
         </div>
@@ -244,7 +245,7 @@ const asPay = (r: unknown) => r as PayHist
       <template #cell-balance="{ row }">
         <div class="pp-cell pp-cell--right">
           <span :class="{ 'pp-danger': asRow(row).overdueDays || asRow(row).balance < 0 }">{{ rupiah(asRow(row).balance) }}</span>
-          <span v-if="asRow(row).pendingOwed != null" class="pp-sub">{{ t('After correction') }} {{ rupiah(asRow(row).pendingOwed! - asRow(row).paid) }}</span>
+          <span v-if="asRow(row).pendingOwed != null" class="pp-sub">{{ t('After repost') }} {{ rupiah(asRow(row).pendingOwed! - asRow(row).paid) }}</span>
         </div>
       </template>
       <template #cell-status="{ row }">
@@ -259,7 +260,7 @@ const asPay = (r: unknown) => r as PayHist
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
               <MpPopoverListItem @click="openDetail(asRow(row))">{{ t('View details') }}</MpPopoverListItem>
-              <MpPopoverListItem v-if="asRow(row).runId" @click="navigateTo(`/payroll-runs/${asRow(row).runId}`)">{{ t('Open run') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="asRow(row).runId" @click="navigateTo(`/payroll-runs/${asRow(row).runId}`)">{{ t('Open payroll run') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -267,8 +268,10 @@ const asPay = (r: unknown) => r as PayHist
 
       <template #empty>
         <div class="pp-empty">
-          <p class="pp-empty-title">{{ t(hasActiveFilter ? 'No payables match the filters' : 'No payroll payables yet') }}</p>
-          <p class="pp-empty-desc">{{ t(hasActiveFilter ? 'Clear the filters to see every payable.' : 'Payables show here once a payroll run posts.') }}</p>
+          <p class="pp-empty-title">{{ t(hasActiveFilter ? 'No payables match the filters' : 'No payables yet') }}</p>
+          <p class="pp-empty-desc">{{ t(hasActiveFilter ? 'Clear the filters to see every payable.' : 'This is what payroll still owes staff, the tax office and BPJS. It fills once you post a payroll journal.') }}</p>
+          <MpButton v-if="hasActiveFilter" variant="secondary" is-rounded @click="clearFilters">{{ t('Clear filters') }}</MpButton>
+          <MpButton v-else variant="secondary" is-rounded @click="navigateTo('/payroll-inbox')">{{ t('Open payroll inbox') }}</MpButton>
         </div>
       </template>
     </ErpTablePage>
@@ -288,7 +291,10 @@ const asPay = (r: unknown) => r as PayHist
       <template #cell-statement="{ row }">{{ asPay(row).statement || '-' }}</template>
       <template #cell-amount="{ row }">{{ rupiah(asPay(row).amount) }}</template>
       <template #empty>
-        <div class="pp-empty"><p class="pp-empty-title">{{ t('No payments yet') }}</p></div>
+        <div class="pp-empty">
+          <p class="pp-empty-title">{{ t('No payments yet') }}</p>
+          <p class="pp-empty-desc">{{ t('A payment shows here when bank reconciliation matches a bank statement line to a payable.') }}</p>
+        </div>
       </template>
     </ErpTablePage>
 
@@ -335,6 +341,7 @@ const asPay = (r: unknown) => r as PayHist
 .pp-ebupot__label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .pp-ebupot__fig { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); font-variant-numeric: tabular-nums; }
 .pp-ebupot__form { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-basis: 100%; }
+.pp-hint { flex-basis: 100%; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .pp-error { flex-basis: 100%; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
 .pp-danger { color: var(--mp-text-danger); }
 .pp-empty { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-10, 40px) 0; }

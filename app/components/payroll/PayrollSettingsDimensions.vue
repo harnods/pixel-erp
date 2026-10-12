@@ -36,12 +36,13 @@ function onLink(field: TalentaField, v: string) {
   const dim = v.startsWith('new:') ? v.slice(4) : v
   const r = linkDimension(field, dim || null)
   errors[field] = r.ok ? '' : t(r.message ?? '')
-  if (r.ok) successToast(t(dim ? `Feeds ${dim}` : 'Not used'))
+  const label = t(TALENTA_FIELDS.find((f) => f.field === field)?.label ?? field)
+  if (r.ok) successToast(dim ? t(`${label} now fills ${dim}`) : t(`${label} no longer fills a dimension`))
 }
-const policyOptions = [{ value: 'hold', label: 'Hold the run' }, { value: 'skip', label: 'Leave blank' }]
+const policyOptions = computed(() => [{ value: 'hold', label: t('Hold the run') }, { value: 'skip', label: t('Leave blank') }])
 function onPolicy(field: string, v: string) {
   const r = setFieldPolicy(field, v as 'hold' | 'skip')
-  if (r.ok) successToast(t('Saved'))
+  if (r.ok) successToast(t('Rule for empty values saved'))
 }
 
 // ── Map values drawer ──
@@ -54,7 +55,7 @@ function openMap(field: TalentaField) { mapField.value = field; mapError.value =
 function valueOptions(value: string) {
   const dim = mapRow.value?.link?.dimension
   const opts = payroll.tags.filter((x) => x.dimension === dim).map((x) => ({ value: x.name, label: x.name }))
-  if (!opts.some((o) => o.value.toLowerCase() === value.toLowerCase())) opts.push({ value: `new:${value}`, label: t(`Create ${value}`) })
+  if (!opts.some((o) => o.value.toLowerCase() === value.toLowerCase())) opts.push({ value: `new:${value}`, label: t(`Create value ${value}`) })
   return opts
 }
 function onValue(value: string, v: string) {
@@ -79,7 +80,7 @@ function createAll() {
       <div class="pset-card__head">
         <div>
           <div class="pset-card__title">{{ t('Dimensions') }}</div>
-          <div class="pset-card__sub">{{ t('Dimensions apply to cost lines only.') }}</div>
+          <div class="pset-card__sub">{{ t('Each Talenta field can fill one Jurnal dimension on the cost lines of the journal.') }}</div>
         </div>
       </div>
       <table class="pset-table pset-dim">
@@ -87,9 +88,9 @@ function createAll() {
         <thead>
           <tr>
             <th class="pset-th">{{ t('Talenta field') }}</th>
-            <th class="pset-th">{{ t('Jurnal dimension') }}</th>
+            <th class="pset-th">{{ t('Dimension') }}</th>
             <th class="pset-th">{{ t('Values') }}</th>
-            <th class="pset-th">{{ t('Empty value') }}</th>
+            <th class="pset-th">{{ t('When empty') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -112,19 +113,22 @@ function createAll() {
             </td>
             <td class="pset-td">
               <template v-if="r.link">
-                <ErpFilterSelect v-if="can('setup')" :id="`pset-empty-${r.field.replace(/[^a-z_]/gi, '-')}`" :model-value="r.link.empty" :placeholder="t('Empty value')" :options="policyOptions" width="100%" :is-clearable="false" @update:model-value="(v: string) => onPolicy(r.field, v)" />
+                <ErpFilterSelect v-if="can('setup')" :id="`pset-empty-${r.field.replace(/[^a-z_]/gi, '-')}`" :model-value="r.link.empty" :placeholder="t('When empty')" :options="policyOptions" width="100%" :is-clearable="false" @update:model-value="(v: string) => onPolicy(r.field, v)" />
                 <span v-else>{{ t(r.link.empty === 'hold' ? 'Hold the run' : 'Leave blank') }}</span>
               </template>
             </td>
+          </tr>
+          <tr v-if="!rows.length">
+            <td class="pset-td pset-muted" colspan="4">{{ t('No Talenta fields yet. They show here after Talenta sends its first payroll.') }}</td>
           </tr>
         </tbody>
       </table>
     </div>
 
-    <PayrollSettingsDrawer :is-open="!!mapRow" :title="t(`${mapRow?.label ?? ''} values`)" :sub="mapRow?.link ? t(`Dimension ${mapRow.link.dimension}`) : ''" @close="mapField = null">
+    <PayrollSettingsDrawer :is-open="!!mapRow" :title="t(`${mapRow?.label ?? ''} values`)" :sub="mapRow?.link ? t(`Fills the ${mapRow.link.dimension} dimension`) : ''" @close="mapField = null">
       <template v-if="mapRow">
         <div v-if="can('setup') && mapRow.unmatched" class="pset-bar">
-          <span class="pset-hint">{{ t(`${mapRow.unmatched} value${mapRow.unmatched > 1 ? 's match' : ' matches'} no dimension value.`) }}</span>
+          <span class="pset-hint">{{ t(`${mapRow.unmatched} value${mapRow.unmatched > 1 ? 's have' : ' has'} no dimension value. Pick one or create ${mapRow.unmatched > 1 ? 'them' : 'it'}.`) }}</span>
           <MpButton size="sm" variant="secondary" is-rounded @click="createAll">{{ t('Create missing values') }}</MpButton>
         </div>
         <table class="pset-table pset-dim-map">
@@ -133,7 +137,7 @@ function createAll() {
             <tr v-for="v in mapValues" :key="v.value">
               <td class="pset-td">{{ v.value }}</td>
               <td class="pset-td">
-                <ErpFilterSelect v-if="can('setup')" :id="`pset-map-${v.value.replace(/[^a-zA-Z0-9]/g, '-')}`" :model-value="pick[v.value] ?? v.tag ?? ''" :placeholder="t('Pick or create')" :options="valueOptions(v.value)" width="100%" :is-clearable="false" @update:model-value="(x: string) => { pick[v.value] = x.startsWith('new:') ? x.slice(4) : x; onValue(v.value, x) }" />
+                <ErpFilterSelect v-if="can('setup')" :id="`pset-map-${v.value.replace(/[^a-zA-Z0-9]/g, '-')}`" :model-value="pick[v.value] ?? v.tag ?? ''" :placeholder="t('Select or create')" :options="valueOptions(v.value)" width="100%" :is-clearable="false" @update:model-value="(x: string) => { pick[v.value] = x.startsWith('new:') ? x.slice(4) : x; onValue(v.value, x) }" />
                 <span v-else>{{ v.tag ?? t('Unmatched') }}</span>
               </td>
             </tr>

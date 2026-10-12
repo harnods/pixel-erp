@@ -23,6 +23,7 @@
     </MpPopoverTrigger>
     <MpPopoverContent class="va-menu" is-unstyled>
       <p class="va-heading">{{ t('View payroll as') }}</p>
+      <p class="va-hint">{{ t('Each role sees only the actions it can take.') }}</p>
       <nav class="va-list">
         <button
           v-for="p in PAYROLL_PEOPLE"
@@ -60,7 +61,7 @@ function select(role: PayrollRole, closePopover: () => void) {
 function reset(closePopover: () => void) {
   resetPayroll()
   closePopover()
-  successToast(t('Payroll sample data restored'))
+  successToast(t('Sample data reset'))
 }
 </script>
 
@@ -108,6 +109,12 @@ function reset(closePopover: () => void) {
 .va-heading {
   margin: 0;
   padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-colors-text-secondary);
+}
+.va-hint {
+  margin: 0;
+  padding: 0 var(--mp-spacing-4) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-colors-text-secondary);
 }
