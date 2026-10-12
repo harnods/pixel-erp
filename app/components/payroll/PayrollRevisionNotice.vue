@@ -2,8 +2,8 @@
 /**
  * Revision notice: Talenta re-sent a posted period and the latest version is current. Says what
  * changes (take-home pay, PPh 21, PPh 26, BPJS, staff joined / left / amount changed as counts,
- * the accounts and dimensions that move). "Reverse and repost" reverses the posted PAY journal in
- * full and posts the chosen version in full on one entry date.
+ * the accounts and dimensions that move). "Use vN and repost" reverses the posted journal in
+ * full and posts the chosen version in full on one journal date.
  */
 import { computed, ref } from 'vue'
 import { MpButton, MpIcon, MpBadge } from '@mekari/pixel3'
@@ -30,8 +30,8 @@ const sign = (n: number) => (n > 0 ? `+${rupiah(n)}` : n < 0 ? `-${rupiah(-n)}` 
 const figures = computed(() => (s.value ? [
   { key: 'thp', label: 'Take-home pay', x: s.value.takeHome },
   { key: 'pph21', label: 'PPh 21', x: s.value.pph21 },
-  { key: 'pph26', label: 'PPh 26', x: s.value.pph26 },
-  { key: 'bpjs', label: 'BPJS', x: s.value.bpjs },
+  { key: 'pph26', label: 'PPh 26 (foreign staff)', x: s.value.pph26 },
+  { key: 'bpjs', label: 'BPJS (state insurance)', x: s.value.bpjs },
 ] : []))
 const people = computed(() => (s.value ? [
   { key: 'joined', label: 'Joined', count: s.value.joined },
@@ -51,16 +51,16 @@ function showCompare() { document.getElementById('prp-compare')?.scrollIntoView(
       <MpIcon name="warning-circular" size="md" />
       <div class="pcn__intro">
         <div class="pcn__title">
-          {{ t('Revision ready') }}
+          {{ t('Talenta sent this period again') }}
           <MpBadge variant="subtle" variant-color="orange">{{ `v${s.toVersion}` }} {{ t('sent') }} {{ wib(cur.sentAt) }}</MpBadge>
         </div>
         <div class="pcn__text">
-          {{ `v${s.fromVersion}` }} {{ t('is posted as') }} {{ listLabel(live.map((j) => j.number)) }}. {{ t('Reverse it and repost the new version in full.') }}
+          {{ `v${s.fromVersion}` }} {{ t('is posted as') }} {{ listLabel(live.map((j) => j.number)) }}. {{ t('Reverse it and post the new version instead.') }}
         </div>
       </div>
       <div class="pcn__actions">
         <MpButton v-if="run.versions.length > 1" variant="secondary" is-rounded @click="showCompare">{{ t('Compare versions') }}</MpButton>
-        <MpButton v-if="can('correct') && !partial && !awaiting" is-rounded data-testid="pcn-repost" @click="open = true">{{ t('Reverse and repost') }}</MpButton>
+        <MpButton v-if="can('correct') && !partial && !awaiting" is-rounded data-testid="pcn-repost" @click="open = true">{{ t(`Use v${s.toVersion} and repost`) }}</MpButton>
       </div>
     </div>
 
@@ -84,20 +84,20 @@ function showCompare() { document.getElementById('prp-compare')?.scrollIntoView(
     </div>
 
     <div class="pcn__block">
-      <div class="pcn__blocktitle">{{ t('Accounts and dimensions that move') }} · {{ s.moved.length }}</div>
+      <div class="pcn__blocktitle">{{ t('Accounts and dimensions that change') }} · {{ s.moved.length }}</div>
       <ul v-if="s.moved.length" class="pcn__list">
         <li v-for="m in s.moved" :key="`${m.account}-${m.label}`">
           <span class="pcn__ids">{{ accountLabel(m.account) }}<template v-if="tagsLabel(m.tags)"> | {{ tagsLabel(m.tags) }}</template></span>
           <span class="pcn__amount">{{ m.change >= 0 ? t('Debit') : t('Credit') }} {{ rupiah(Math.abs(m.change)) }}</span>
         </li>
       </ul>
-      <div v-else class="pcn__muted">{{ t('No account moves') }}</div>
+      <div v-else class="pcn__muted">{{ t('No account changes') }}</div>
     </div>
 
     <div v-if="s.settingsChanged || filed || partial" class="pcn__notes">
-      <div v-if="s.settingsChanged">{{ t('Settings changed since the posted journal; part of the move is the settings change.') }}</div>
-      <div v-if="filed">{{ t('PPh 21 for') }} {{ monthLabel(run.month) }} {{ t('is filed. A PPh 21 change opens an amendment task.') }}</div>
-      <div v-if="partial">{{ t('A later send looks partial. Replace the full run or reject it first.') }}</div>
+      <div v-if="s.settingsChanged">{{ t('Settings changed after the posted journal, so part of this change comes from settings.') }}</div>
+      <div v-if="filed">{{ t('PPh 21 for') }} {{ monthLabel(run.month) }} {{ t('is already filed. A PPh 21 change opens a task to amend the filing.') }}</div>
+      <div v-if="partial">{{ t('A later send looks like part of the run. Use it as the full run or reject it first.') }}</div>
     </div>
 
     <PayrollPostDrawer mode="repost" :is-open="open" :run-id="runId" @close="open = false" />

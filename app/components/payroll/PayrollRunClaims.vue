@@ -18,8 +18,8 @@ const staff = computed(() => data.value.rows.reduce((s, r) => s + r.employees, 0
     <header class="pcl__head">
       <div class="pcl__title">{{ t('Claims') }}</div>
       <div class="pcl__sub">
-        <template v-if="data.rows.length">{{ t('Reimbursement pay items') }} · {{ data.rows.length }} {{ t(data.rows.length === 1 ? 'line' : 'lines') }} · {{ rupiah(data.total) }}</template>
-        <template v-else>{{ t('No reimbursement pay item in this run') }}</template>
+        <template v-if="data.rows.length">{{ t('Reimbursements in this run') }} · {{ data.rows.length }} {{ t(data.rows.length === 1 ? 'line' : 'lines') }} · {{ rupiah(data.total) }}</template>
+        <template v-else>{{ t('No reimbursements in this run') }}</template>
       </div>
     </header>
     <table v-if="data.rows.length" class="pcl__table">

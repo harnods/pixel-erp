@@ -16,8 +16,8 @@ const { t } = useLocale()
 
 type Outcome = 'Amended' | 'Not filed yet' | 'Dismissed'
 const OUTCOMES: { value: Outcome; label: string; sub: string }[] = [
-  { value: 'Amended', label: 'Amended', sub: 'The pembetulan is filed in e-Bupot 21/26.' },
-  { value: 'Not filed yet', label: 'Not filed yet', sub: 'The return is not filed yet; it is filed with the new figures.' },
+  { value: 'Amended', label: 'Amended', sub: 'You filed the amendment (pembetulan) in e-Bupot 21/26.' },
+  { value: 'Not filed yet', label: 'Not filed yet', sub: 'You file the return later with the new figures.' },
   { value: 'Dismissed', label: 'Dismissed', sub: 'No amendment is needed.' },
 ]
 const outcome = ref<Outcome | ''>('')
@@ -43,18 +43,18 @@ function save() {
     newTotal: parsed.value ?? undefined,
     reason: reason.value.trim() || undefined,
   })
-  if (!r.ok) { error.value = t(r.message ?? 'The task could not be closed.'); return }
+  if (!r.ok) { error.value = t(r.message ?? 'Unable to close the task. Check the fields and try again.'); return }
   successToast(t(`Task closed as ${outcome.value}`))
   emit('close')
 }
 </script>
 
 <template>
-  <PayrollCompareDrawerShell :is-open="!!task" :title="t('Close amendment task')" @close="emit('close')">
+  <PayrollCompareDrawerShell :is-open="!!task" :title="t('Close task')" @close="emit('close')">
     <template v-if="task">
       <div class="pac__identity">{{ t(task.title) }}</div>
       <dl class="pac__facts">
-        <div><dt>{{ t('Period total change') }}</dt><dd>{{ rupiah(task.periodChange) }}</dd></div>
+        <div><dt>{{ t('Change for the period') }}</dt><dd>{{ rupiah(task.periodChange) }}</dd></div>
         <div><dt>{{ t('Expected PPh 21') }}</dt><dd>{{ rupiah(expected) }}</dd></div>
         <div><dt>{{ t('Deposit') }}</dt><dd>{{ t(task.depositGap) }}</dd></div>
         <div><dt>{{ t('Filing date') }}</dt><dd>{{ dateLabel(filingDue) }}</dd></div>
@@ -73,12 +73,12 @@ function save() {
         </div>
       </MpFormControl>
       <div v-if="outcome === 'Not filed yet' && !beforeDue" class="pac__note">
-        {{ t(`The filing date for ${monthLabel(task.taxMonth)} was ${dateLabel(filingDue)}. Check that the return is not filed before you pick this.`) }}
+        {{ t(`The ${monthLabel(task.taxMonth)} filing date was ${dateLabel(filingDue)}. Pick this only if it isn\'t filed yet.`) }}
       </div>
 
       <template v-if="outcome === 'Amended'">
         <MpFormControl id="pac-pembetulan" is-required>
-          <MpFormLabel>{{ t('Pembetulan number') }}</MpFormLabel>
+          <MpFormLabel>{{ t('Amendment (pembetulan) number') }}</MpFormLabel>
           <MpInput id="pac-pembetulan-input" v-model="pembetulan" is-full-width @input="error = ''" />
         </MpFormControl>
         <MpFormControl id="pac-total" is-required>

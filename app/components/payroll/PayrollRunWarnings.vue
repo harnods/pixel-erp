@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * Warnings on the run's current version (OD-12). Warnings never block Post; each one the
- * Accountant acknowledges leaves the Post confirm text. Missing components come from the send
+ * Accountant marks as checked leaves the Post confirm text. Missing components come from the send
  * ("PPH 21 Paid not in this send"), manual journals on payroll accounts from the ledger, large
  * changes and headcount from the draft review (a note or an Expected mark clears those).
  */
@@ -19,10 +19,10 @@ const warnings = computed(() => runWarnings(props.runId))
 const open = computed(() => warnings.value.filter((w) => !w.acknowledged).length)
 
 const CODE_LABEL: Record<RunWarning['code'], string> = {
-  'missing-component': 'Missing component',
-  'tax-rule': 'Tax rule',
-  'duplicate-employee': 'Duplicate employee',
-  'hutang-gaji': 'Hutang Gaji',
+  'missing-component': 'Missing pay item',
+  'tax-rule': 'PPh 21 check',
+  'duplicate-employee': 'Same person twice',
+  'hutang-gaji': 'Salaries payable',
   'negative-payable': 'Payable below Rp0',
   'large-change': 'Large change',
   'headcount': 'Headcount',
@@ -36,13 +36,13 @@ function detail(w: RunWarning): string {
 }
 function ack(w: RunWarning) {
   const r = acknowledgeWarning(props.runId, w.key)
-  if (!r.ok) { errorToast(t(r.message ?? 'Not acknowledged')); return }
-  successToast(t('Warning acknowledged'))
+  if (!r.ok) { errorToast(t(r.message ?? 'Not saved. Try again.')); return }
+  successToast(t('Marked as checked'))
 }
 function undo(w: RunWarning) {
   const r = clearAcknowledgement(props.runId, w.key)
-  if (!r.ok) { errorToast(t(r.message ?? 'Not changed')); return }
-  successToast(t('Acknowledgement removed'))
+  if (!r.ok) { errorToast(t(r.message ?? 'Not saved. Try again.')); return }
+  successToast(t('Check mark removed'))
 }
 </script>
 
@@ -51,7 +51,7 @@ function undo(w: RunWarning) {
     <header class="prw__head">
       <div class="prw__title">{{ t('Warnings') }}</div>
       <div class="prw__sub">
-        <template v-if="warnings.length">{{ `v${v.no}` }} · {{ warnings.length }} {{ t(warnings.length === 1 ? 'warning' : 'warnings') }} · {{ open }} {{ t('not acknowledged') }} · {{ t('Warnings never block Post') }}</template>
+        <template v-if="warnings.length">{{ `v${v.no}` }} · {{ warnings.length }} {{ t(warnings.length === 1 ? 'warning' : 'warnings') }} · {{ open }} {{ t('not checked yet') }} · {{ t('Worth a look. They don\'t stop posting.') }}</template>
         <template v-else>{{ `v${v.no}` }} · {{ t('No warnings') }}</template>
       </div>
     </header>
@@ -64,12 +64,12 @@ function undo(w: RunWarning) {
           </div>
           <div v-if="detail(w)" class="prw__detail">{{ detail(w) }}</div>
           <div v-if="w.acknowledged" class="prw__detail">
-            {{ t('Acknowledged by') }} {{ w.acknowledged.by }} · {{ wib(w.acknowledged.at) }}<template v-if="w.acknowledged.note"> · {{ w.acknowledged.note }}</template>
+            {{ t('Checked by') }} {{ w.acknowledged.by }} · {{ wib(w.acknowledged.at) }}<template v-if="w.acknowledged.note"> · {{ w.acknowledged.note }}</template>
           </div>
         </div>
         <div v-if="can('post')" class="prw__actions">
           <MpButton v-if="w.acknowledged" variant="ghost" is-rounded @click="undo(w)">{{ t('Undo') }}</MpButton>
-          <MpButton v-else variant="secondary" is-rounded @click="ack(w)">{{ t('Acknowledge') }}</MpButton>
+          <MpButton v-else variant="secondary" is-rounded @click="ack(w)">{{ t('Mark as checked') }}</MpButton>
         </div>
       </li>
     </ul>

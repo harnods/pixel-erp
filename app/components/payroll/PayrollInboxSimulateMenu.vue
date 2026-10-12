@@ -16,15 +16,15 @@ const { t } = useLocale()
 const LABELS: Record<SendKind, string> = {
   'regular': 'Regular run, next period',
   'new-pay-item': 'Run with a new pay item',
-  'revision': 'Revision of the last posted run',
-  'missing-component': 'Run with a missing component (PPH 21 Paid)',
-  'partial': 'Partial re-send (one branch)',
+  'revision': 'Same period again (v2)',
+  'missing-component': 'Run with a missing pay item (PPh 21 paid)',
+  'partial': 'Part of the run again (one branch)',
   'separate-run': 'THR run for a posted period',
-  'duplicate': 'Byte-identical duplicate',
-  'old-sync': 'Old-sync Expense call',
+  'duplicate': 'Exact duplicate send',
+  'old-sync': 'Old Talenta to Expense sync',
 }
 const GROUPS = computed(() => [
-  { title: 'Salary detail', kinds: SEND_KINDS.map((s) => s.kind).filter((k) => k !== 'old-sync') },
+  { title: 'Payroll sends', kinds: SEND_KINDS.map((s) => s.kind).filter((k) => k !== 'old-sync') },
   { title: 'Old sync', kinds: SEND_KINDS.map((s) => s.kind).filter((k) => k === 'old-sync') },
 ])
 const label = (k: SendKind) => LABELS[k] ?? SEND_KINDS.find((s) => s.kind === k)?.label ?? k

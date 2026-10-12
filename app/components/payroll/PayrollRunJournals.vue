@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * PAY journals of a run (TS-05): number, type, date, tax month, memo, totals,
+ * Payroll journals of a run (TS-05): number, type, date, tax month, memo, totals,
  * who posted and when, and the reversal link. Lines open per journal. Posted
  * journals are read-only here (LR-8); corrections live in the revision panel.
  */
@@ -18,7 +18,7 @@ const state = (j: (typeof list.value)[number]) => j.reversesId ? 'Reversal' : j.
 
 <template>
   <div class="prj">
-    <div v-if="!list.length" class="prj__card prj__empty">{{ t('No journal posted for this run yet.') }}</div>
+    <div v-if="!list.length" class="prj__card prj__empty">{{ t('No journal posted for this run yet. Post the draft journal to see it here.') }}</div>
     <div v-for="j in list" :key="j.id" class="prj__card" :data-journal="j.number" data-tour="payroll-journal">
       <div class="prj__head" data-tour="payroll-journal-head" @click="open = open === j.id ? null : j.id">
         <div class="prj__headleft">
@@ -29,11 +29,10 @@ const state = (j: (typeof list.value)[number]) => j.reversesId ? 'Reversal' : j.
           </div>
           <div class="prj__memo">{{ j.memo }}</div>
           <div class="prj__muted">
-            {{ t('Date') }} {{ dateLabel(j.date) }} · {{ t('tax month') }} {{ monthLabel(j.taxMonth) }}<template v-if="j.reference"> · {{ t('ref') }} {{ j.reference }}</template>
+            {{ t('Journal date') }} {{ dateLabel(j.date) }} · {{ t('tax period') }} {{ monthLabel(j.taxMonth) }}<template v-if="j.reference"> · {{ t('ref') }} {{ j.reference }}</template>
             · {{ t('posted by') }} {{ j.postedBy }} {{ wib(j.postedAt) }}
             <template v-if="j.reversedById"> · {{ t('reversed by') }} {{ journalById(j.reversedById)?.number }}</template>
             <template v-if="j.reversesId"> · {{ t('reverses') }} {{ journalById(j.reversesId)?.number }}</template>
-            <template v-if="j.snapshotId"> · {{ t('built with') }} {{ j.snapshotId }}</template>
           </div>
         </div>
         <div class="prj__total">{{ rupiah(j.debit) }}</div>

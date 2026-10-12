@@ -1,15 +1,15 @@
 <script setup lang="ts">
 /**
- * Post and Reverse and repost: one drawer for both. Post books the draft as one PAY journal.
- * Repost reverses every live PAY journal of the run in full and posts the chosen version in
- * full (latest preselected). Both take one entry date, default the last day of the pay period;
+ * Post and Reverse and repost: one drawer for both. Post books the draft as one payroll journal.
+ * Repost reverses every posted payroll journal of the run in full and posts the chosen version in
+ * full (latest preselected). Both take one journal date, default the last day of the pay period;
  * a locked period is refused. When an approval rule matches, the date is kept and used on approval.
  */
 import { computed, ref, shallowRef, watch } from 'vue'
 import { MpDatePicker, MpRadio } from '@mekari/pixel3'
 import PayrollCompareDrawerShell from '~/components/payroll/PayrollCompareDrawerShell.vue'
 import {
-  runById, currentVersionOf, liveJournals, journalTotals, postRun, reverseAndRepost, repostVersions, dryRunJournal,
+  runById, currentVersionOf, liveJournals, journalTotals, postRun, reverseAndRepost, repostVersions, previewDryRun,
   defaultEntryDate, checkEntryDate, postConfirmText, dateLabel, periodLabel, rupiah, wib, sendFigures,
 } from '~/data/payrollStore'
 import { successToast, infoToast } from '~/utils/toasts'
@@ -41,8 +41,8 @@ const preview = shallowRef<{ total: number; lines: number } | null>(null)
 watch([() => props.isOpen, versionNo], () => {
   if (!props.isOpen || !run.value || versionNo.value == null) { preview.value = null; return }
   if (versionNo.value === cur.value?.no && cur.value?.draft) { preview.value = { total: journalTotals(cur.value.draft).debit, lines: cur.value.draft.lines.length }; return }
-  const d = dryRunJournal(props.runId, versionNo.value)
-  preview.value = { total: d.total, lines: d.lines.length }
+  const lines = previewDryRun(props.runId, versionNo.value).draft?.lines ?? []
+  preview.value = { total: lines.reduce((s, l) => s + l.debit, 0), lines: lines.length }
 }, { immediate: true })
 
 const warnings = computed(() => (props.isOpen && run.value && versionNo.value === cur.value?.no ? postConfirmText(props.runId).warnings : []))
@@ -51,16 +51,16 @@ const dateError = computed(() => {
   const last = [...live.value].sort((a, b) => b.date.localeCompare(a.date))[0]
   return checkEntryDate(iso.value, props.mode === 'repost' && last ? { date: last.date, number: last.number } : undefined) ?? ''
 })
-const confirmLabel = computed(() => (props.mode === 'post' ? t('Post') : t(`Use v${versionNo.value ?? ''} and repost`)))
+const confirmLabel = computed(() => (props.mode === 'post' ? t('Post journal') : t(`Use v${versionNo.value ?? ''} and repost`)))
 
 function confirm() {
   error.value = ''
-  if (!iso.value) { error.value = t('Pick an entry date.'); return }
+  if (!iso.value) { error.value = t('Pick a journal date.'); return }
   if (dateError.value) { error.value = t(dateError.value); return }
   const r = props.mode === 'post'
     ? postRun(props.runId, { versionNo: versionNo.value ?? undefined, date: iso.value })
     : reverseAndRepost(props.runId, { versionNo: versionNo.value ?? undefined, date: iso.value })
-  if (!r.ok) { error.value = t(r.message ?? 'Nothing posted.'); return }
+  if (!r.ok) { error.value = t(r.message ?? 'Not posted. Check the date and try again.'); return }
   if (r.awaitingApproval) { successToast(t('Sent for approval')); emit('close'); return }
   const nos = (r.journals as string[] | undefined) ?? [r.number as string]
   successToast(t(`${nos.join(', ')} posted`))
@@ -70,7 +70,7 @@ function confirm() {
 </script>
 
 <template>
-  <PayrollCompareDrawerShell :is-open="isOpen" :title="mode === 'post' ? t('Post payroll') : t('Reverse and repost')" wide @close="emit('close')">
+  <PayrollCompareDrawerShell :is-open="isOpen" :title="mode === 'post' ? t('Post journal') : t('Reverse and repost')" wide @close="emit('close')">
     <template v-if="run && cur">
       <div class="ppd__identity">{{ t('Payroll') }} {{ periodLabel(run.start, run.end) }}</div>
 
@@ -85,7 +85,7 @@ function confirm() {
           </div>
         </div>
         <div class="ppd__row">
-          <div class="ppd__label">{{ t('Entry date') }}</div>
+          <div class="ppd__label">{{ t('Journal date') }}</div>
           <div class="ppd__field">
             <MpDatePicker id="ppd-date" v-model="date" format="DD/MM/YYYY" value-type="format" use-portal is-full-width :is-clearable="false" @update:model-value="error = ''" />
             <div v-if="dateError" class="ppd__fielderror" data-testid="ppd-date-error">{{ t(dateError) }}</div>
@@ -105,7 +105,7 @@ function confirm() {
           <tbody>
             <template v-if="mode === 'repost'">
               <tr v-for="j in live" :key="j.id">
-                <td class="ppd__td">{{ t('Reversal of') }} {{ j.number }} (v{{ j.versionNo }})</td>
+                <td class="ppd__td">{{ t('Reverses') }} {{ j.number }} (v{{ j.versionNo }})</td>
                 <td class="ppd__td ppd__nowrap">{{ iso ? dateLabel(iso) : '-' }}</td>
                 <td class="ppd__td ppd__num">{{ rupiah(journalTotals(j).debit) }}</td>
               </tr>
@@ -120,7 +120,7 @@ function confirm() {
       </div>
 
       <div v-if="warnings.length" class="ppd__note" data-testid="ppd-warnings">
-        <div class="ppd__notetitle">{{ warnings.length }} {{ t(warnings.length === 1 ? 'warning not acknowledged' : 'warnings not acknowledged') }}</div>
+        <div class="ppd__notetitle">{{ warnings.length }} {{ t(warnings.length === 1 ? 'warning not checked yet' : 'warnings not checked yet') }}</div>
         <ul class="ppd__list"><li v-for="w in warnings" :key="w">{{ w }}</li></ul>
       </div>
       <div v-if="error" class="ppd__error" role="alert" data-testid="ppd-error">{{ error }}</div>
