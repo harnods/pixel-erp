@@ -1678,8 +1678,10 @@ export function headcountChanges(runId: string) {
     x.joined.sort(); x.left.sort()
     x.change = x.current - x.last
     x.flagged = !!(x.joined.length || x.left.length || x.movedIn.length || x.movedOut.length)
-    const e = v?.headcountExpected?.[x.key]
-    x.expected = x.flagged && e && e.fingerprint === headcountFingerprint(x) ? e : null
+    // A mark covers the people, not the send: an earlier version's mark holds while the ids match.
+    const fp = headcountFingerprint(x)
+    const marks = run ? run.versions.filter((o) => o.no <= (v?.no ?? 0)).sort((a, b) => b.no - a.no).map((o) => o.headcountExpected?.[x.key]) : []
+    x.expected = x.flagged ? (marks.find((e) => e && e.fingerprint === fp) ?? null) : null
   }
   const flagged = list.filter((x) => x.flagged)
   return {
@@ -1714,8 +1716,8 @@ export function clearHeadcountExpected(runId: string, key: string): Result {
   if (!can('draft.note')) return denied()
   const run = runById(runId)
   const v = run ? currentVersionOf(run) : undefined
-  if (!v) return { ok: false }
-  delete v.headcountExpected[key]
+  if (!run || !v) return { ok: false }
+  for (const o of run.versions) delete o.headcountExpected?.[key]
   return { ok: true }
 }
 export function addChangeNote(runId: string, key: string, note: string): Result {

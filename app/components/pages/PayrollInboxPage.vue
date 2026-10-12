@@ -186,7 +186,7 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
           </div>
           <div class="stat-card">
             <div class="stat-title">{{ t('Headcount change') }}</div>
-            <div class="stat-period">{{ trackedMonth.label }}<template v-if="trackedMonth.previous"> {{ t('against') }} {{ monthLabel(trackedMonth.previous.month) }}</template> · {{ t('staff changed') }}</div>
+            <div class="stat-period">{{ trackedMonth.previous ? `${trackedMonth.label} ${t('against')} ${monthLabel(trackedMonth.previous.month)}` : trackedMonth.label }} · {{ t('staff changed') }}</div>
             <div class="stat-amount">{{ trackedMonth.changed }}</div>
             <a class="stat-link" @click="() => { month = trackedMonth.month; view = 'month' }">{{ changeSummary(trackedMonth) || t('No change') }}</a>
           </div>

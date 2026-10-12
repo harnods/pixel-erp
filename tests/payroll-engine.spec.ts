@@ -378,6 +378,17 @@ describe('headcount from runs: this run\'s employee_ids against the previous pos
     simulateSend('regular', { start: '2026-08-21', end: '2026-09-20', newAllowance: INS })
     expect(grp(headcountChanges(sep.id), 'Sales, Bandung').expected).toBeNull()
   })
+
+  it('a later version with the same people keeps the Expected mark', () => {
+    mapInsentif()
+    const sep = run(SEP)
+    markHeadcountExpected(sep.id, 'Sales|Surabaya', 'EMP-0035 covers EMP-0038')
+    simulateSend('regular', { start: '2026-08-21', end: '2026-09-20', newAllowance: { ...INS, amount: 1_600_000 } })
+    expect(sep.currentVersion).toBe(2)
+    expect(grp(headcountChanges(sep.id), 'Sales, Surabaya').expected!.note).toBe('EMP-0035 covers EMP-0038')
+    expect(clearHeadcountExpected(sep.id, 'Sales|Surabaya').ok).toBe(true)
+    expect(grp(headcountChanges(sep.id), 'Sales, Surabaya').expected).toBeNull()
+  })
 })
 
 describe('copy: Jurnal calls the organization and branch values dimensions', () => {
